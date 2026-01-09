@@ -32,6 +32,7 @@ git config core.autocrlf input
  1. Launch **WSL** from *Start* icon
  2. Go to the choosen directory where you want to install the SDK, e.g.
 
+
  ```
  $ cd /mnt/d/my/path
 ```
@@ -47,6 +48,17 @@ git config core.autocrlf input
  $ cd logue-sdk
  $ git submodule update --init
  ```
+ 2. - For Windows WST only: Convert scripts from dos to unix:
+  ```
+ $ sudo apt-get install dos2unix
+ $ dos2unix ./*
+ $ dos2unix inc/*
+ $ dos2unix docker-app/*
+ $ dos2unix docker-app/builder/*
+ $ dos2unix docker-app/commands/*
+ $ dos2unix docker-app/drumlogue/*
+
+```
 
  3. Build the container.
  ```
