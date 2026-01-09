@@ -105,30 +105,34 @@ if [ ! -d "${PLATFORM_PATH}" ]; then
 fi
 
 # Normalize path for Docker Desktop on Windows
-# Docker Desktop with WSL2 backend needs /mnt/d/ style paths
+# Docker Desktop requires Windows-style paths with forward slashes (e.g., E:/path/to/dir)
 PLATFORM_MOUNT="${PLATFORM_PATH}"
 UNAME_S=$(uname -s 2>/dev/null || echo "")
 
 if [[ "${OSTYPE}" == msys* || "${OSTYPE}" == cygwin* || "${UNAME_S}" =~ MINGW ]]; then
-    # Running in Git Bash/MSYS2 on Windows with Docker Desktop WSL2 backend
-    if [[ "${WORKSPACE_ROOT}" =~ ^/([a-z])/ ]]; then
-        # Convert /d/path to /mnt/d/path for Docker WSL2 backend
-        DRIVE_LETTER=$(echo "${WORKSPACE_ROOT:1:1}" | tr '[:lower:]' '[:lower:]')
-        REST_PATH="${WORKSPACE_ROOT:2}"
-        WORKSPACE_MOUNT="/mnt/${DRIVE_LETTER}${REST_PATH}"
+    # Running in Git Bash/MSYS2 - Docker Desktop on Windows needs E:/path format
+    if command -v cygpath >/dev/null 2>&1; then
+        # Convert to mixed format (E:/path/to/dir) which Docker Desktop understands
+        PLATFORM_MOUNT=$(cygpath -m "${PLATFORM_PATH}")
+    elif [[ "${PLATFORM_PATH}" =~ ^/([a-z])/ ]]; then
+        # Fallback: manually convert /e/path to E:/path
+        DRIVE_LETTER=$(echo "${PLATFORM_PATH:1:1}" | tr '[:lower:]' '[:upper:]')
+        PLATFORM_MOUNT="${DRIVE_LETTER}:${PLATFORM_PATH:2}"
+    else
+        PLATFORM_MOUNT="${PLATFORM_PATH}"
     fi
-elif [[ "${WORKSPACE_ROOT}" =~ ^([A-Za-z]): ]]; then
-    # Running from PowerShell/CMD - convert D:\path to /mnt/d/path
-    DRIVE_LETTER=$(echo "${WORKSPACE_ROOT:0:1}" | tr '[:upper:]' '[:lower:]')
-    REST_PATH=$(echo "${WORKSPACE_ROOT:2}" | sed 's|\\|/|g')
-    WORKSPACE_MOUNT="/mnt/${DRIVE_LETTER}${REST_PATH}"
+else
+    # Likely running from PowerShell/CMD, try WSL path conversion
+    if [[ "${PLATFORM_PATH}" =~ ^([A-Za-z]): ]]; then
+        # Windows absolute path (e.g., E:/path or E:\path)
+        DRIVE_LETTER=$(echo "${PLATFORM_PATH:0:1}" | tr '[:upper:]' '[:lower:]')
+        REST_PATH=$(echo "${PLATFORM_PATH:2}" | sed 's|\\|/|g')
+        PLATFORM_MOUNT="/mnt/${DRIVE_LETTER}${REST_PATH}"
+    fi
 fi
 
-echo "[Info] Workspace root: ${WORKSPACE_ROOT}"
 echo "[Info] Platform path: ${PLATFORM_PATH}"
 echo "[Info] Mount path: ${PLATFORM_MOUNT}"
-echo "[Info] Docker command:"
-echo "[Info] docker run --rm -v \"${PLATFORM_MOUNT}:/workspace\" -h logue-sdk -it ${IMAGE_NAME}:${IMAGE_VERSION} /app/interactive_entry"
 echo "[Info] If the mount is empty in the container, ensure Docker Desktop has"
 echo "[Info] file sharing enabled for the drive in Settings > Resources > File Sharing"
 echo ""
@@ -141,7 +145,5 @@ echo ""
 # This prevents /app/interactive_entry from being converted to C:/Program Files/Git/app/...
 export MSYS_NO_PATHCONV=1
 
-docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it ${IMAGE_NAME}:${IMAGE_VERSION} /app/interactive_entry 2>&1 | tee ${PLATFORM_MOUNT}/build_effects.log
+docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it ${IMAGE_NAME}:${IMAGE_VERSION} /app/interactive_entry
 
-# rm -rf "builds/*"
-# find . -name "*.drmlgunit" -exec cp {} "builds" \;
