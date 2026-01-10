@@ -12,6 +12,7 @@
 #include "constants.h"
 
 
+
 /** main class */
 class Resonator
 {
@@ -22,28 +23,43 @@ public:
 	void setParams(float32_t _srate, bool _on, int _model, int _partials, float32_t _decay,
         float32_t _damp, float32_t tone, float32_t hit,	float32_t _rel, float32_t _inharm, float32_t _cut,
         float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm);
-
 	void activate();
-	void update(float32_t frequency, float32_t vel, bool isRelease, std::array<float32_t, 64> _model);
 	void clear();
-	float32x2_t process(float32x2_t x);
+	void update(float32_t frequency, float32_t vel, bool isRelease, std::array<float32_t, 64> _model);
+	float32x4_t process(float32x4_t input);
 
+	// Public read-only accessors for state
+	bool isActive() const { return active; }
+	int getModel() const { return nmodel; }
+	int getPartialCount() const { return npartials; }
+	int getSilenceCounter() const { return silence; }
+	bool isOn() const { return on; }
+	float32_t getCut() const { return cut; }
+	
+	// Apply filter to a NEON vector of samples
+	float32x4_t applyFilter(float32x4_t input);
+	
+	// Apply filter to scalar sample
+	float32_t applyFilterScalar(float32_t sample) { return filter.df1(sample); }
+
+private:
+	// State members - protected from external modification
 	int silence = 0; // counter of samples of silence
 	bool active = false; // returns to false if samples of silence run for a bit
-	float32_t silence_threshold = 0.00001;
-	float32_t srate = 0.0;
+	float32_t srate = 0.0f;
 	bool on = false;
 	int nmodel = 0;
 	int npartials = 0;
-	float32_t decay = 0.0;
-	float32_t radius = 0.0;
-	float32_t cut = 0.0;
+	float32_t decay = 0.0f;
+	float32_t radius = 0.0f;
+	float32_t cut = 0.0f;
 
 	std::vector<Partial> partials;
 	Waveguide waveguide{};
 	Filter filter{};
 
-private:
-
+	// Validation helpers
+	void validateAndSetPartials(int _partials);
+	void validateAndSetModel(int _model);
 };
 

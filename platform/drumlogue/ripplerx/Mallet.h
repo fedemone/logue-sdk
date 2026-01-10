@@ -39,26 +39,25 @@ public:
 
 	void trigger(/**<MalletType type, */float32_t srate, float32_t freq);
 	void clear();
-	float32_t process();
+	inline float32_t process() {
+		if (elapsed == 0) return 0.0;
+
+		float32_t sample = filter.df1(impulse);
+		impulse *= env;
+		elapsed -= 1;
+
+		return sample;
+	}
 
 	// void setFilter(float32_t norm);
-
-	// float32_t srate = 44100.0;
-
-	// impulse mallet fields
-	float32_t impulse = 0.0;
-	int elapsed = 0;
-	float32_t env = 0.0;
-	// Filter impulse_filter{};
-
-	// sample mallet fields
-	// float32_t playback = INFINITY;
-	// float32_t playback_speed = 1.0;
-	// bool disable_filter = false;
-	// Filter sample_filter{};
 
 private:
 	// Sampler& sampler;    // disable samples for the moment
 	// MalletType type = kImpulse;
 	Filter filter{};
+
+	// impulse mallet fields
+	float32_t impulse = 0.0;
+	int elapsed = 0;
+	float32_t env = 0.0;
 };

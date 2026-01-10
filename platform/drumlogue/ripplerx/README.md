@@ -1,11 +1,65 @@
 ## About this project
 
-This repository is my attempt to port the [RipplerX](https://github.com/tiagolr/ripplerx/) phisical modelling synth into Korg Drumlogue ecology.
-The version I'm working in this moment is freezed at 1.5.0. At this stage I removed the Juce dependencies and added the ARM Neon intrinsics for all the files (with some refactoring to allegedly speed up processing and simplifing calculations). Note that original code uses *double* type, which is not present in ARMv7, so there will a loss of precision that - I hope! - will not degrade too much the sound.
-Before trying to build I have to review everything (again) and continue to reshape the main files, i.e. Voice.cpp/h (which is the modelled resonator), the ripplerx.h (which is the class that will be the interface berween physical commands of drumlogue and the program itself) and unit.cc (which the interface with the platform).
-Then there will be the build, loading to a real drumlogue, troubleshooting and playtesting.
+This repository is a successful port of the [RipplerX](https://github.com/tiagolr/ripplerx/) physical modelling synth to Korg Drumlogue.
+The version is based on 1.5.0-2 with Juce dependencies removed and ARM NEON intrinsics added for optimized processing.
 
-many thanks to [Ice Moon Prison](https://github.com/futzle/logue-sdk/) for the inspiration on this.
+**Status:** ✅ Successfully compiled and built as `ripplerx.drmlgunit`
+
+### Build Process (Windows with Docker Desktop)
+
+#### Prerequisites
+1. **Docker Desktop** with WSL2 backend
+2. **File Sharing Configuration:**
+   - Open Docker Desktop → Settings → Resources → File Sharing
+   - Add `D:\Fede` (parent directory of your workspace)
+   - Apply and restart Docker Desktop
+
+#### Building
+
+**Option 1: Using direct Docker command (recommended for Windows):**
+```bash
+cd /d/Fede/drumlogue/logue-sdk-ripplerx/docker
+MSYS_NO_PATHCONV=1 docker run --rm -v "d:/Fede/drumlogue/logue-sdk-ripplerx/platform:/workspace" -h logue-sdk -it logue-sdk-dev-env:latest //app/interactive_entry
+```
+
+Inside the container:
+```bash
+env drumlogue
+build drumlogue/ripplerx
+```
+
+**Option 2: Using run_interactive.sh:**
+```bash
+cd /d/Fede/drumlogue/logue-sdk-ripplerx/docker
+bash run_interactive.sh
+env drumlogue
+build drumlogue/ripplerx
+```
+
+#### Build Output
+- Unit file: `platform/drumlogue/ripplerx/ripplerx.drmlgunit`
+- Size: ~80KB compiled binary
+
+### Installation on Drumlogue
+1. Power up drumlogue in USB mass storage mode
+2. Copy `ripplerx.drmlgunit` to `Units/Synths/` directory
+3. Restart drumlogue
+4. RipplerX will appear in synth selection
+
+### Technical Notes
+
+**Key Fixes Applied:**
+- Changed `models->` to `models.` (object member access, not pointer)
+- Changed `voice->` to `voice.` in range-based for loop (array elements, not pointers)
+
+**Architecture:**
+- 8-voice polyphonic physical modeling synthesizer
+- NEON-optimized DSP (ARM SIMD intrinsics)
+- 48 kHz sample rate, stereo output
+- 24 parameters across 6 pages (4 params per page)
+- 28 internal presets
+
+Many thanks to [Ice Moon Prison](https://github.com/futzle/logue-sdk/) for the inspiration on this.
 
 
 ## The original RipplerX readMe

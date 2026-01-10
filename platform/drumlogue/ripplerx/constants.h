@@ -8,9 +8,44 @@
 constexpr size_t c_sampleRate = 48000;
 constexpr float  c_semitoneFrequencyRatio = 1.0594630944f; // pow(2.0f, 1.0f/12.0f);
 constexpr float  c_malletStiffnessCorrectionFactor = 0.03080333075140272487101378573158f; // (log(5000.0) - log(100.0)) / 127
-constexpr size_t polyphony = 8; /**< equivalent to c_numVoices for porting */
+constexpr size_t polyphony = 8; /**< equivalent to c_numVoices for porting - NOTE: since I don't know fast processing is, let's try this value at first */
 constexpr size_t c_numVoices = polyphony;
-constexpr size_t c_max_partials = 64;  // TODO
+constexpr size_t c_max_partials = 64;
+constexpr float32_t c_res_cutoff = 20.0001;
+constexpr float32_t c_silence_threshold = 0.00001;
+// Noise filter frequency range constants (pre-computed logs)
+const float32_t c_noise_filter_freq_min = 20.0f;
+const float32_t c_noise_filter_freq_max = 20000.0f;
+const float32_t c_noise_filter_log_min = 2.995732274f;  // fasterlogf(20.0f)
+const float32_t c_noise_filter_log_max = 9.903487553f;  // fasterlogf(20000.0f)
+const float32_t c_noise_filter_log_range = 6.907755279f; // log_max - log_min
+const float32_t c_noise_filter_res_range = 3.293f;  // 4.0 - 0.707
+
+// Partial/resonator constants
+constexpr float32_t c_freq_min = 20.0f;  // Minimum resonator frequency (Hz)
+constexpr float32_t c_freq_max = 20000.0f;  // Maximum resonator frequency (Hz)
+constexpr float32_t c_nyquist_factor = 0.48f;  // Nyquist limit factor (slightly below 0.5 for safety)
+constexpr float32_t c_decay_min = 1.0e-6f;  // Minimum decay threshold to avoid division issues
+constexpr float32_t c_filter_freq_ratio = 1000.0f;  // Ratio f_max/f_min for frequency scaling
+constexpr float32_t c_butterworth_q = 0.707f;  // Butterworth Q = sqrt(2)/2 for maximally flat response
+
+// MIDI and pitch constants
+constexpr float32_t c_midi_a4_freq = 440.0f;  // Frequency of MIDI note A4 (Hz)
+constexpr int c_midi_a4_note = 69;  // MIDI note number for A4
+constexpr float32_t c_semitones_per_octave = 12.0f;  // Number of semitones in an octave
+constexpr float32_t c_cents_per_semitone = 100.0f;  // Number of cents in a semitone
+
+// Voice coupling and frequency shift constants
+constexpr float32_t c_coupling_threshold = 2.0f;  // Frequency difference threshold for coupling
+constexpr float32_t c_coupling_split_factor = 0.4f;  // Split factor for coupling calculation
+constexpr float32_t c_freq_shift_coeff_dy = 0.4f;  // Coefficient for dy term in frequency shift
+constexpr float32_t c_freq_shift_coeff_dx = 0.6f;  // Coefficient for dx term in frequency shift
+constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term in frequency shift
+
+// Waveguide constants
+constexpr float32_t c_decay_max = 100.0f;  // Maximum decay value
+constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
+constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
 
 // these are the index of the parameters got from header.c
 // page 1
@@ -77,6 +112,18 @@ const char* const c_modelName[c_modelElements] = {
     "Marimba",
     "Open Tube",
     "Closed Tube"
+};
+
+enum ModelNames : uint8_t {
+	String,
+	Beam,
+	Squared,
+	Membrane,
+	Plate,
+	Drumhead,
+	Marimba,
+	OpenTube,
+	ClosedTube
 };
 
 // this is pointed by header.c getParameter
@@ -178,7 +225,7 @@ enum  Program : uint8_t {
     Init,
     Kalimba,
     KeyRing,
-    Marimba,
+    Marimba_,
     OldClock,
     Ride,
     Ride2,
@@ -228,7 +275,7 @@ const char* const c_programName[Program::last_program] = {
 
 
 /** use table instead of reading XML file and read single param value */
-std::array<std::array<float32_t, Parameters::last_param>, Program::last_program> programs = {{
+static __attribute__((unused)) std::array<std::array<float32_t, Parameters::last_param>, Program::last_program> programs = {{
     {0.0, 372.0, -0.6200000047683716, 10.77999973297119, 0.0, 0.5, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 1.0, -0.2000000476837158, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 6.239999771118164, 0.0, 0.0, 627.0, 1.0, 500.0, 2035.0, 1.0, 2.327000141143799, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3999999761581421, 0.0, 0.0,},  //Bells
     {0.0, 144.0, -0.4700000286102295, 12.80999946594238, 0.0, 0.2599999904632568, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 0.4699999988079071, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 642.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.6100000143051147, 0.0, 0.0,},  //Bells2
     {0.0, 149.0, -0.7599999904632568, 17.17000007629395, 0.0, 0.2599999904632568, 0.002100000157952309, 4.0, 1.0, 4.0, 0.5, 0.7800000309944153, 1.0, -0.1800000071525574, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 2.760000228881836, 0.0, 0.0, 642.0, 1.0, 500.0, 2035.0, 1.0, 2.556999921798706, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,},  //Bong
@@ -261,6 +308,6 @@ std::array<std::array<float32_t, Parameters::last_param>, Program::last_program>
 
 
 // additional math values
-int pwr_2_of_index[9] = {0, 1, 4, 9, 16, 25, 36, 49, 64};
-float32_t new_ratio[9] = {};
+static __attribute__((unused)) int pwr_2_of_index[9] = {0, 1, 4, 9, 16, 25, 36, 49, 64};
+static __attribute__((unused)) float32_t new_ratio[9] = {};
 

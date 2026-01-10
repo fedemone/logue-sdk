@@ -38,35 +38,26 @@ public:
 	void init(float32_t srate, float32_t _thresh = 0.0, float32_t _bias = 70.0,
         float32_t rms_win = 100.0, float32_t makeup = 0.0)
 	{
-		threshv = e_expff(_thresh * db2log);
+		threshv = e_expff(_thresh * M_DBTOLOG);
 		ratio = 20.0;
 		bias = 80.0 * _bias / 100.0;
 		cthresh = _thresh - bias;
-		cthreshv = e_expff(cthresh * db2log);
-		makeupv = e_expff(makeup * db2log);
-		capsc = log2db;
+		cthreshv = e_expff(cthresh * M_DBTOLOG);
+		makeupv = e_expff(makeup * M_DBTOLOG);
+		capsc = M_LOGTODB;
 		attime = 0.0002;
 		reltime = 0.3;
 		atcoef = e_expff(-1.0 / (attime * srate));
 		relcoef = e_expff(-1.0 / (reltime * srate));
-		rmscoef = e_expff(-1.0 / (rmstime * srate));
 		rmstime = rms_win / 1000000.0;
-		runave = 0.0;
+		rmscoef = vdup_n_f32(e_expff(-1.0 / (rmstime * srate)));
+		runave = vdup_n_f32(0.0);
 	}
 
-	// std::tuple<float32_t, float32_t> process(float32_t spl0, float32_t spl1)
-	float32x2_t process(float32x2_t split)
+	inline float32_t calculate_grv(float32_t runave)
 	{
-		// auto maxspl = fmax(fabs(spl0), fabs(spl1));
-        float32x2_t temp = vabs_f32(split);
-        temp = vmax_f32(temp, temp);
-        float32_t maxspl;
-        vst1_lane_f32(&maxspl, temp, 0);
-		maxspl = maxspl * maxspl;
-
-		runave = maxspl + rmscoef * (runave - maxspl);
 		// auto det = sqrt(fmax(0.0, runave));
-        auto det = runave > 0 ? 0 : fasterSqrt(runave);
+        auto det = runave > 0 ? fasterSqrt(runave) : 0;
 		// auto overdb = fmax(0.0, capsc * log(det/threshv));
         auto overdb = fmax(0.0, capsc * fasterlogf(det/threshv));
 
@@ -81,33 +72,43 @@ public:
 			: 1.0 + (ratio -1.0) * fasterSqrt(overdb / bias);
 
 		auto gr = -overdb * (cratio - 1.0) / cratio;
-		auto grv = e_expff(gr * db2log);
+		return e_expff(gr * M_DBTOLOG) * makeupv;
+	}
 
-        return vmul_n_f32 (split, grv * makeupv);
-		// return std::tuple<float32_t, float32_t> (
-		// 	spl0 * grv * makeupv,
-		// 	spl1 * grv * makeupv
-		// );
+	// std::tuple<float32_t, float32_t> process(float32_t spl0, float32_t spl1)
+	float32x4_t process(float32x4_t split)
+	{
+		// Get absolute values and find max across both channels
+        float32x4_t temp = vabsq_f32(split);
+        float32x2_t max_pair = vmax_f32(vget_low_f32(temp), vget_high_f32(temp));
+		// Find the maximum of both channels for unified limiting
+		float32_t maxspl = vget_lane_f32(vpmax_f32(max_pair, max_pair), 0);
+		maxspl = maxspl * maxspl;
+
+		// Update running average (convert to scalar for unified processing)
+		float32_t runave_scalar = (vget_lane_f32(runave, 0) + vget_lane_f32(runave, 1)) * 0.5f;
+		runave_scalar = maxspl + vget_lane_f32(rmscoef, 0) * (runave_scalar - maxspl);
+		runave = vdup_n_f32(runave_scalar);
+
+		// Calculate single gain reduction value for both channels
+		float32_t grv = calculate_grv(runave_scalar);
+		return vmulq_f32(split, vdupq_n_f32(grv));
 	}
 
 private:
-  float32_t log2db = 8.6858896380650365530225783783321; // 20 / ln(10)
-  float32_t db2log = 0.11512925464970228420089957273422;
-
   float32_t rundb = 0.0;
-  float32_t runave = 0.0;
+  float32x2_t runave = vdup_n_f32(0.0);
   float32_t threshv = 0.0;
   float32_t cthresh = 0.0;
   float32_t cthreshv = 0.0;
-  float32_t ratio = 0;
+  float32_t ratio = 0.0;
   float32_t bias = 0.0;
   float32_t makeupv = 0.0;
   float32_t capsc = 0.0;
-  float32_t timeconstant = 1.0;
   float32_t attime = 0.0002;
   float32_t reltime = 0.3;
   float32_t atcoef = 0.0;
   float32_t relcoef = 0.0;
   float32_t rmstime = 0.0;
-  float32_t rmscoef = 0.0;
+  float32x2_t rmscoef = vdup_n_f32(0.0);
 };
