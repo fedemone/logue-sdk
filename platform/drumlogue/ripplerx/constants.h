@@ -101,17 +101,17 @@ const char* const c_sampleBankName[c_sampleBankElements] = {
 };
 
 
-// this is pointed by header.c parameter
+// this is pointed by header.c parameter. NOTE: names are truncated to 6 characters
 const char* const c_modelName[c_modelElements] = {
     "String",
     "Beam",
-    "Squared",
-    "Membrane",
+    "Squard",
+    "Membrn",
     "Plate",
-    "Drumhead",
-    "Marimba",
-    "Open Tube",
-    "Closed Tube"
+    "Drmhed",
+    "Marmba",
+    "OpnTub",
+    "ClsTub"
 };
 
 enum ModelNames : uint8_t {

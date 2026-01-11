@@ -29,10 +29,11 @@ const __unit_header unit_header_t unit_header = {
         //FOR PORTING. On page one must be synth type and load from xml the parameters accordingly
         //             on other pages, all the "PARAMETERS" (see PluginPorcessor.cpp)
         //             see also unit_load_preset
+        // NOTE Names are truncated to 6 characters
 
         // Page 1: Program and sample selection
         // Program, will set different values for parameters
-        {0, 27, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 27, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},
         // Res Gain
         {-240, 240, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Gain"}},
         // Sample bank
@@ -42,13 +43,13 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 2: Mallet
         // Mallet resonance
-        {0, 10, 0, 8, k_unit_param_type_none, 1, 1, 0, {"Mallet Res"}},
+        {0, 10, 0, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Mallet stiffness
-        {100, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"Mallet Stiff"}},
+        {100, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},
         // Velocity Mallet Resonance
-        {0, 1000, 0, 0, k_unit_param_type_none, 3, 0, 0, {"Vel Mal Res"}},
+        {0, 1000, 0, 0, k_unit_param_type_none, 3, 0, 0, {"VlMllRes"}},
         // Velocity Mallet Stiffness
-        {0, 1000, 0, 0, k_unit_param_type_none, 3, 1, 0, {"Vel Mal Stif"}},
+        {0, 1000, 0, 0, k_unit_param_type_none, 3, 1, 0, {"VlMllStif"}},
 
         // Page 3: Resonator A-I (extended ranges encode Resonator B when exceeding A range)
         //  Model - "String", "Beam", "Squared", "Membrane", "Plate", "Drumhead", "Marimba", "Open Tube", "Closed Tube"
@@ -56,13 +57,13 @@ const __unit_header unit_header_t unit_header = {
         {0, 17, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
         //  Partials -  "4", "8", "16", "32", "64"
         //  Range doubled: 0..4 -> A, 5..9 -> B (mapped in code)
-        {0, 9, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Partials"}},
+        {0, 9, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
         // Decay
         //  Range doubled: 0..1000 -> A, 1001..2000 -> B (mapped in code)
-        {0, 2000, 520, 10, k_unit_param_type_none, 1, 1, 0, {"Decay"}},
+        {0, 2000, 520, 10, k_unit_param_type_none, 1, 1, 0, {"Dkay"}},
         // Material (-1.0, 1.0)
         //  Range extended by span (20): [-10..10] -> A, (10..30] -> B (mapped in code)
-        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Material"}},
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Matrl"}},
 
         // TODO: use ratio in order to update the model?
 
@@ -73,33 +74,34 @@ const __unit_header unit_header_t unit_header = {
         //  Span 48 -> A: 2..50, B: 51..98 (mapped in code)
         {2, 98, 0, 26, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         // Release
-        {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Release"}},
+        {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // Inharmonic
         //  Span 9999 -> A: 1..10000, B: 10001..19999 (mapped in code)
-        {1, 19999, 3000, 1, k_unit_param_type_none, 4, 1, 0, {"Inharmonic"}},
+        {1, 19999, 3000, 1, k_unit_param_type_none, 4, 1, 0, {"Inharm"}},
 
         // Page 5: Resonator A-III (extended) + Noise-I
-        // filter cutoff
-        //  Span 19980 -> A: 20..20000, B: 20001..39980 (mapped in code)
-        {20, 39980, 10010, 20, k_unit_param_type_hertz, 0, 0, 0, {"LowCut"}},
+        // filter cutoff (scaled to fit int16)
+        //  Original span 19980 Hz -> A: 20..20000, B: 20001..39980
+        //  Scaled by 2: A: 10..10000, B: 10001..19990 (mapped back to Hz in code)
+        {10, 19990, 5005, 10, k_unit_param_type_hertz, 0, 0, 0, {"LowCut"}},
         // Tube Radius
-        {0, 20, 0, 5, k_unit_param_type_none, 1, 0, 0, {"Tube Radius"}},
+        {0, 20, 0, 5, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
         // Coarse Pitch
         //  Span 960 -> A: -480..480, B: 481..1440 (mapped in code)
-        {-480, 1440, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Coarse Pitch"}},
+        {-480, 1440, 0, 0, k_unit_param_type_none, 0, 0, 0, {"CoarsPtch"}},
         // Noise Mix
-        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"Noise Mix"}},
+        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzMix"}},
         //TODO: vel_noise_freq and vel_noise_q should be here?
 
         // Page 6: Noise II
         // Noise Resonance
-        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"Noise Res"}},
+        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         // Noise Filter Mode: "LP", "BP", "HP"
-        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Noise Filter"}},
+        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFilter"}},
         // Noise Filter Freq
-        {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NoiseFiltFrq"}},
+        {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFiltFrq"}},
         // Noise Filter Q
-        {707, 4000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NoiseFilterQ"}}
+        {707, 4000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NzFiltQ"}}
         }   // end of .params
     };
 

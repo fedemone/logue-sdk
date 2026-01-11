@@ -1,4 +1,6 @@
 #include "Resonator.h"
+#include <array>
+#include <math.h>
 // The resonator, as partial or waveguide, is the main body that's vibrating,
 // so it's the core of the sound emitted at note /
 
@@ -22,8 +24,8 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
 	srate = _srate;
 	cut = _cut;
 
-	// Map cut parameter: 1..0 to 20..20000 Hz with inverse scale for negative values
-	auto freq = c_freq_min * fasterpowf(c_filter_freq_ratio, cut < 0.0f ? 1.0f + cut : cut);
+	// LowCut now provided in Hz (converted at setParameter); clamp to safe range
+	auto freq = fmax(c_freq_min, fmin(c_freq_max, _cut));
 
 	if (_cut < 0.0f) {
 		filter.lp(srate, freq, c_butterworth_q);
