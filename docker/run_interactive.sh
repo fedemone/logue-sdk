@@ -54,6 +54,14 @@ if docker image inspect "${IMAGE_NAME_DEFAULT}:${IMAGE_VERSION}" >/dev/null 2>&1
 else
     IMAGE_NAME="${IMAGE_NAME_FALLBACK}"
 fi
+IMAGE_NAME_DEFAULT="xiashj/logue-sdk"
+IMAGE_NAME_FALLBACK="logue-sdk-dev-env"
+
+if docker image inspect "${IMAGE_NAME_DEFAULT}:${IMAGE_VERSION}" >/dev/null 2>&1; then
+    IMAGE_NAME="${IMAGE_NAME_DEFAULT}"
+else
+    IMAGE_NAME="${IMAGE_NAME_FALLBACK}"
+fi
 PLATFORM_PATH=$(realpath "${SCRIPT_DIR}/../platform")
 
 usage () {

@@ -108,10 +108,22 @@ const char* const c_modelName[c_modelElements] = {
     "Squard",
     "Membrn",
     "Plate",
-    "Drmhed",
+        "Drmhed",
     "Marmba",
     "OpnTub",
     "ClsTub"
+};
+
+enum ModelNames : uint8_t {
+	String,
+	Beam,
+	Squared,
+	Membrane,
+	Plate,
+	Drumhead,
+	Marimba,
+	OpenTube,
+	ClosedTube
 };
 
 enum ModelNames : uint8_t {
