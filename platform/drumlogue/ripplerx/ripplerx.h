@@ -141,13 +141,16 @@ class RipplerX
     }
 
     inline void loadDefaultProgramParameters() {
-        parameters[mallet_mix] = 0.0f;
-        parameters[mallet_res] = 8;
+        // Mallet parameters (normalized 0.0-1.0)
+        parameters[mallet_mix] = 0.5f;
+        parameters[mallet_res] = 0.8f;  // 8/10 normalized
         parameters[mallet_stiff] = 600;
+
+        // Resonator A parameters
         parameters[a_on] = 1;
         parameters[a_model] = ModelNames::Squared;
         parameters[a_partials] = c_partials[3];
-        parameters[a_decay] = 10;
+        parameters[a_decay] = 50;  // Increased from 10 for longer sustain
         parameters[a_damp] = 0;
         parameters[a_tone] = 0;
         parameters[a_hit] = 0.26f;
@@ -172,7 +175,7 @@ class RipplerX
         parameters[b_radius] = 0.5f;
         parameters[b_coarse] = 0.0f;
         parameters[b_fine] = 0.0f;
-        parameters[noise_mix] = 0.0f;
+        parameters[noise_mix] = 0.2f;
         parameters[noise_res] = 0.0f;
         parameters[noise_filter_mode] = 2;
         parameters[noise_filter_freq] = 20;
@@ -195,7 +198,7 @@ class RipplerX
         parameters[couple] = 0;
         parameters[ab_mix] = 0.5f;
         parameters[ab_split] = 0.01f;
-        parameters[gain] = 0;
+        parameters[gain] = 0.8f;
     }
 
     inline void Teardown() {
@@ -225,6 +228,7 @@ class RipplerX
      */
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
+        // Restore original render path
         // Load parameters once per render call (reduces memory pressure)
         const bool a_on = (bool)getParameterValue(Parameters::a_on);
         const bool b_on = (bool)getParameterValue(Parameters::b_on);
@@ -350,7 +354,9 @@ class RipplerX
                 }
 
                 // Increment frame counter: we process 2 frames per iteration
-                voice.m_framesSinceNoteOn += 2;
+                if (voice.m_initialized) {
+                    voice.m_framesSinceNoteOn += 2;
+                }
             }
 
             // ===== OPTIMIZATION 4: Mix resonator outputs =====
@@ -382,6 +388,18 @@ class RipplerX
             vst1q_f32(outBuffer, channels);
             outBuffer += 4;
         }
+
+        // === DEBUG: Check for NaNs/Infs in output buffer ===
+        static int nan_clamp_count = 0;
+        float* checkBuf = outBuffer - (frames * 2); // outBuffer was incremented
+        for (size_t i = 0; i < frames * 2; ++i) {
+            float v = checkBuf[i];
+            if (!isfinite(v)) {
+                checkBuf[i] = 0.0f;
+                nan_clamp_count++;
+            }
+        }
+        // nan_clamp_count can be inspected in a debugger or breakpoint for further analysis
     }
 
     /*===========================================================================*/
@@ -411,6 +429,7 @@ class RipplerX
                     resonatorChangedA = true;
                     resonatorChangedB = true;
                     couplingChanged = true;
+                    Reset();
                 }
                 break;
 
@@ -429,7 +448,8 @@ class RipplerX
                 break;
 
             case c_parameterMalletResonance:
-                parameters[mallet_res] = value;
+                // Normalize from 0-10 range to 0.0-1.0
+                parameters[mallet_res] = value / 10.0f;
                 break;
 
             case c_parameterMalletStifness:
@@ -437,11 +457,13 @@ class RipplerX
                 break;
 
             case c_parameterVelocityMalletResonance:
-                parameters[vel_mallet_res] = value;
+                // Normalize from 0-1000 range to 0.0-1.0
+                parameters[vel_mallet_res] = value / 1000.0f;
                 break;
 
             case c_parameterVelocityMalletStifness:
-                parameters[vel_mallet_stiff] = value;
+                // Normalize from 0-1000 range to 0.0-1.0
+                parameters[vel_mallet_stiff] = value / 1000.0f;
                 break;
 
             case c_parameterModel: {
@@ -592,12 +614,14 @@ class RipplerX
             }
 
             case c_parameterNoiseMix:
-                parameters[noise_mix] = value;
+                // Normalize from 0-1000 percent range to 0.0-1.0
+                parameters[noise_mix] = value / 1000.0f;
                 noiseChanged = true;
                 break;
 
             case c_parameterNoiseResonance:
-                parameters[noise_res] = value;
+                // Normalize from 0-1000 percent range to 0.0-1.0
+                parameters[noise_res] = value / 1000.0f;
                 noiseChanged = true;
                 break;
 
@@ -624,7 +648,6 @@ class RipplerX
 
         // Update voices with minimal overhead
         prepareToPlay(noiseChanged, pitchChanged, resonatorChangedA, resonatorChangedB, couplingChanged);
-        Reset();
     }
 
     /**
@@ -634,6 +657,8 @@ class RipplerX
     inline void prepareToPlay(bool noiseChanged = true, bool pitchChanged = true,
         bool resonatorChangedA = true, bool resonatorChangedB = true,
         bool couplingChanged = true) {
+
+        bool frequencyModelChanged = false;
 
         // Recalculate models if needed
         if (last_a_model != (int32_t)parameters[a_model]) {
@@ -645,6 +670,8 @@ class RipplerX
                 else if (parameters[a_model] == ModelNames::Plate)
                     models.recalcPlate(true, parameters[a_ratio]);
             }
+            last_a_model = (int32_t)parameters[a_model];
+            frequencyModelChanged = true;
         }
 
         if (last_b_model != (int32_t)parameters[b_model]) {
@@ -656,7 +683,12 @@ class RipplerX
                 else if (parameters[b_model] == ModelNames::Plate)
                     models.recalcPlate(false, parameters[b_ratio]);
             }
+            last_b_model = (int32_t)parameters[b_model];
+            frequencyModelChanged = true;
         }
+
+        // Frequencies need update if model, pitch, or coupling changed
+        bool updateFreqs = frequencyModelChanged || pitchChanged || couplingChanged;
 
         auto srate = getSampleRate();
 
@@ -750,8 +782,8 @@ class RipplerX
                 voice.setCoupling(cached.couple, cached.ab_split);
             }
 
-            if (resonatorChangedA || resonatorChangedB) {
-                voice.updateResonators();
+            if (resonatorChangedA || resonatorChangedB || updateFreqs) {
+                voice.updateResonators(updateFreqs);
             }
         }
     }
@@ -765,10 +797,10 @@ class RipplerX
             case c_parameterGain:                    return parameters[gain];
             case c_parameterSampleBank:              return m_sampleBank;
             case c_parameterSampleNumber:            return m_sampleNumber;
-            case c_parameterMalletResonance:         return parameters[mallet_res];
+            case c_parameterMalletResonance:         return (int32_t)(parameters[mallet_res] * 10.0f);  // denormalize 0.0-1.0 to 0-10
             case c_parameterMalletStifness:          return parameters[mallet_stiff];
-            case c_parameterVelocityMalletResonance: return parameters[vel_mallet_res];
-            case c_parameterVelocityMalletStifness:  return parameters[vel_mallet_stiff];
+            case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);  // denormalize
+            case c_parameterVelocityMalletStifness:  return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);  // denormalize
             case c_parameterModel:                   return parameters[a_model];
             case c_parameterPartials:                return parameters[a_partials];
             case c_parameterDecay:                   return parameters[a_decay];
@@ -780,8 +812,8 @@ class RipplerX
             case c_parameterFilterCutoff:            return (int32_t)(parameters[a_cut] / 2); // return scaled value (Hz/2)
             case c_parameterTubeRadius:              return parameters[a_radius];
             case c_parameterCoarsePitch:             return parameters[a_coarse];
-            case c_parameterNoiseMix:                return parameters[noise_mix];
-            case c_parameterNoiseResonance:          return parameters[noise_res];
+            case c_parameterNoiseMix:                return (int32_t)(parameters[noise_mix] * 1000.0f);  // denormalize
+            case c_parameterNoiseResonance:          return (int32_t)(parameters[noise_res] * 1000.0f);  // denormalize
             case c_parameterNoiseFilterMode:         return parameters[noise_filter_mode];
             case c_parameterNoiseFilterFreq:         return parameters[noise_filter_freq];
             case c_parameterNoiseFilterQ:            return parameters[noise_filter_q];
@@ -976,10 +1008,11 @@ class RipplerX
             sampleValid = true;
         }
 
-        // Initialize voice state
-        voice.m_initialized = sampleValid;
+        // Initialize voice state (always initialize - synth can work without samples)
+        voice.m_initialized = true;
         voice.m_gate = true;
         voice.m_framesSinceNoteOn = 0;
+        voice.isPressed = true;
 
         // Calculate mallet frequency with velocity sensitivity
         auto mallet_stiff = (float32_t)getParameterValue(Parameters::mallet_stiff);
@@ -997,7 +1030,7 @@ class RipplerX
                 voice.release();
             }
         }
-        Reset();
+        // Don't call Reset() here - let voices ring out during release
     }
 
     inline void GateOn(uint8_t velocity) {

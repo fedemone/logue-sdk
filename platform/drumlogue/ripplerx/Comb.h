@@ -2,18 +2,36 @@
 // Comb stereoizer
 #pragma once
 #include <arm_neon.h>
-#include <vector>
+// Removed <vector> to avoid potential static initialization issues
+
 class Comb
 {
 public:
-	Comb() {};
-	~Comb() {};
+	Comb() : buf(nullptr), pos(0), buf_size(0) {};
+	~Comb() {
+        if (buf) {
+            delete[] buf;
+            buf = nullptr;
+        }
+    };
 
   void init(float32_t srate)
   {
+    if (buf) {
+        delete[] buf;
+        buf = nullptr;
+    }
+    
     pos = 0;
     buf_size = (int)(20 * srate / 1000);
-    buf.resize(buf_size, vdup_n_f32(0.0f));
+    // Allocate buffer for 32-bit float pairs (stereo)
+    buf = new float32x2_t[buf_size];
+
+    // Clear buffer
+    float32x2_t zero = vdup_n_f32(0.0f);
+    for(int i=0; i<buf_size; ++i) {
+        buf[i] = zero;
+    }
 
     // Precompute stereoizer constant: [+0.165, -0.165]
     const float stereo_vals[2] = {0.165f, -0.165f};
@@ -25,6 +43,8 @@ public:
   // this version uses NEON intrinsics, and uses either a two stereo samples, or
   // four mono one. They will treated in same way, doing a sum and a difference.
   float32x4_t process(float32x4_t input) {
+    if (!buf) return input; // Safety check
+
     // Sum the high and low stereo pairs
     float32x2_t input_sum = vadd_f32(vget_high_f32(input), vget_low_f32(input));
 
@@ -48,5 +68,5 @@ private:
   int pos = 0;
   int buf_size = 0;
   float32x2_t stereoizer;
-  std::vector<float32x2_t> buf;
+  float32x2_t* buf;
 };

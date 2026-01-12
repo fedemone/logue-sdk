@@ -9,7 +9,8 @@ void Mallet::trigger(/** TODO:MalletType _type, */float32_t srate, float32_t fre
 	if (type == kImpulse) { */
 		filter.bp(srate, freq, 0.707);
 		filter.reset();
-		elapsed = (int)(srate / 10.0); // countdown for 100ms
+		// Increase mallet impulse duration to 200ms
+		elapsed = (int)(srate / 5.0); // countdown for 200ms
 		impulse = 2.0; // Pre-multiply amplitude
 		// Envelope decay coefficient for 100ms decay time
 		env = e_expff(-1.0 / (0.1f * srate));

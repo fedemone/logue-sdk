@@ -125,7 +125,12 @@ float32x4_t Resonator::process(float32x4_t input)
 	float32x2_t sum_pair = vadd_f32(sum_high, sum_low);
 	float32_t total = vget_lane_f32(vpadd_f32(sum_pair, sum_pair), 0);
 
-	silence += (total > c_silence_threshold * 4.0f) ? 1 : 0;
+	// Increment silence counter when signal is BELOW threshold, reset when above
+	if (total < c_silence_threshold) { // Reverted threshold increase to preserve tail
+		silence++;
+	} else {
+		silence = 0; // Reset counter when signal is present
+	}
 
 	// Deactivate if silent for ~1 second
 	if (silence >= static_cast<int>(srate)) {

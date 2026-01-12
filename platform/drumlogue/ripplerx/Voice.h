@@ -43,7 +43,7 @@ public:
 
 
 	*/
-	void updateResonators();
+	void updateResonators(bool updateFrequencies = true);
 	void setCoupling(bool _couple, float32_t _split);
 	inline size_t getFramesSinceNoteOn() const {
 		if (!m_initialized) return SIZE_MAX;
@@ -87,6 +87,8 @@ public:
 
 private:
 	Models* models;
+    std::array<float32_t, 64> aShifts = {};
+    std::array<float32_t, 64> bShifts = {};
 	//TODO:
 	//std::array<float32_t, 64> aPhases = {};
 	//std::array<float32_t, 64> bPhases = {};

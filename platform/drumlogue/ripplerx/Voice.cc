@@ -17,9 +17,26 @@ void Voice::trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
 		float32_t _vel, /**MalletType malletType, */float32_t malletFreq/** TODO:,
 		float32_t malletKTrack, bool skip_fade*/)
 {
+	// Clear resonator state
 	resA.clear();
 	resB.clear();
+	
+	// Set voice parameters
 	note = _note;
+	vel = _vel;
+	freq = note2freq(note);
+	isRelease = false;
+	isPressed = true;
+	
+	// Trigger excitation sources
+	mallet.trigger(srate, malletFreq);
+	noise.attack(_vel);
+	
+	// Activate resonators and update with current models
+	if (resA.isOn()) resA.activate();
+	if (resB.isOn()) resB.activate();
+	updateResonators();
+	
 	/** TODO: code froze at 1.5.0-2 version
 	srate = _srate;
 	malletType = _malletType;
@@ -29,14 +46,7 @@ void Voice::trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
 	newNote = _note;
 	newFreq = note2freq(newNote);
 	malletKtrack = _mallet_ktrack;
-	*/
-	isRelease = false;
-	isPressed = true;
-	vel = _vel;
-	freq = note2freq(note);
-	mallet.trigger(srate, malletFreq);
-	noise.attack(_vel);
-	/** TODO:
+	
 	pressed_ts = timestamp;
 
 	// fade out active voice before re-triggering
@@ -76,10 +86,10 @@ void Voice::triggerStart(bool reset)
 
 	mallet.trigger(malletType, srate, malletFreq, note, malletKtrack);
 	noise.attack(vel);
-	*/
 	if (resA.isOn()) resA.activate();
 	if (resB.isOn()) resB.activate();
 	updateResonators();
+	*/
 }
 
 void Voice::release(/**uint64_t timestamp*/)
@@ -338,129 +348,134 @@ void Voice::applyPitch(std::array<float32_t, 64>& model, float32_t factor)
  * of a new call which unrolls the calculate frequency shift call
  * check comments and refactoring steps on above commented code
  */
-void Voice::updateResonators()
+void Voice::updateResonators(bool updateFrequencies)
 {
-    std::array<float32_t, 64> aModel = models->getAModels()[resA.getModel()];
-    std::array<float32_t, 64> bModel = models->getBModels()[resB.getModel()];
+    if (updateFrequencies) {
+        std::array<float32_t, 64> aModel = models->getAModels()[resA.getModel()];
+        std::array<float32_t, 64> bModel = models->getBModels()[resB.getModel()];
 
-    if (aPitchFactor != 1.0f) applyPitch(aModel, aPitchFactor);
-    if (bPitchFactor != 1.0f) applyPitch(bModel, bPitchFactor);
+        if (aPitchFactor != 1.0f) applyPitch(aModel, aPitchFactor);
+        if (bPitchFactor != 1.0f) applyPitch(bModel, bPitchFactor);
 
-    // Initialize shifts AFTER pitch modifications
-    std::array<float32_t, 64> aShifts = aModel;
-    std::array<float32_t, 64> bShifts = bModel;
+        // Initialize shifts with base models
+        aShifts = aModel;
+        bShifts = bModel;
 
-    if (couple && resA.isOn() && resB.isOn()) {
-        // Precompute constants once
-        const float32_t k = split * c_coupling_split_factor / freq;
-        const float32_t dy = k * c_coupling_split_factor / freq;
-        const float32_t threshold = c_coupling_threshold;
+        if (couple && resA.isOn() && resB.isOn() && freq > 0.1f) {
+            // Precompute constants once
+            const float32_t k = split * c_coupling_split_factor / freq;
+            const float32_t dy = k * c_coupling_split_factor / freq;
+            const float32_t threshold = c_coupling_threshold;
 
-        // Constants for frequency shift formula
-        const float32_t coeff_dy_04 = c_freq_shift_coeff_dy * dy;
-        const float32_t coeff_dx_06 = c_freq_shift_coeff_dx;
-        const float32_t coeff_max_56 = c_freq_shift_coeff_max;
-        const float32_t coeff_dy_56 = c_freq_shift_coeff_max * dy;
+            // Constants for frequency shift formula
+            const float32_t coeff_dy_04 = c_freq_shift_coeff_dy * dy;
+            const float32_t coeff_dx_06 = c_freq_shift_coeff_dx;
+            const float32_t coeff_max_56 = c_freq_shift_coeff_max;
+            const float32_t coeff_dy_56 = c_freq_shift_coeff_max * dy;
 
-        // NEON constant vectors (preload once)
-        float32x4_t v_threshold = vdupq_n_f32(threshold);
-        float32x4_t v_dy = vdupq_n_f32(dy);
-        float32x4_t v_half = vdupq_n_f32(0.5f);
-        float32x4_t v_coeff_dy_04 = vdupq_n_f32(coeff_dy_04);
-        float32x4_t v_coeff_dx_06 = vdupq_n_f32(coeff_dx_06);
-        float32x4_t v_coeff_max_56 = vdupq_n_f32(coeff_max_56);
-        float32x4_t v_coeff_dy_56 = vdupq_n_f32(coeff_dy_56);
-        float32x4_t v_zero = vdupq_n_f32(0.0f);
+            // NEON constant vectors (preload once)
+            const float32x4_t v_threshold = vdupq_n_f32(threshold);
+            const float32x4_t v_dy = vdupq_n_f32(dy);
+            const float32x4_t v_half = vdupq_n_f32(0.5f);
+            const float32x4_t v_coeff_dy_04 = vdupq_n_f32(coeff_dy_04);
+            const float32x4_t v_coeff_dx_06 = vdupq_n_f32(coeff_dx_06);
+            const float32x4_t v_coeff_max_56 = vdupq_n_f32(coeff_max_56);
+            const float32x4_t v_coeff_dy_56 = vdupq_n_f32(coeff_dy_56);
+            const float32x4_t v_zero = vdupq_n_f32(0.0f);
+            const float32x4_t v_one = vdupq_n_f32(1.0f);
 
-        // Process outer loop in tiles of 4
-        constexpr int OUTER_TILE = 4;
+            // Process outer loop in tiles of 4
+            constexpr int OUTER_TILE = 4;
 
-        for (int i_tile = 0; i_tile < 64; i_tile += OUTER_TILE) {
-            // Load 4 fa values for this tile
-            float32x4_t fa_vec = vld1q_f32(&aModel[i_tile]);
+            for (int i_tile = 0; i_tile < 64; i_tile += OUTER_TILE) {
+                // Load 4 fa values for this tile
+                float32x4_t fa_vec = vld1q_f32(&aModel[i_tile]);
 
-            // Accumulators for this tile (one accumulator per fa)
-            float32x4_t k_count_tile = vdupq_n_f32(0.0f);    // Sum of +1/-1 for each fa
-            float32x4_t x_count_tile = vdupq_n_f32(0.0f);    // Sum of dx values
-            float32x4_t dx_max_tile = vdupq_n_f32(0.0f);     // Sum of |dx| when |dx| > |dy|
-            float32x4_t dy_max_tile = vdupq_n_f32(0.0f);     // Count when |dy| >= |dx|
+                // Accumulators for this tile (one accumulator per fa)
+                float32x4_t k_count_tile = vdupq_n_f32(0.0f);    // Sum of +1/-1 for each fa
+                float32x4_t x_count_tile = vdupq_n_f32(0.0f);    // Sum of dx values
+                float32x4_t dx_max_tile = vdupq_n_f32(0.0f);     // Sum of |dx| when |dx| > |dy|
+                float32x4_t dy_max_tile = vdupq_n_f32(0.0f);     // Count when |dy| >= |dx|
 
-            // Inner loop: process fb values in groups of 4
-            for (int j_tile = 0; j_tile < 64; j_tile += OUTER_TILE) {
-                float32x4_t fb_vec = vld1q_f32(&bModel[j_tile]);
+                // Inner loop: process fb values in groups of 4
+                for (int j_tile = 0; j_tile < 64; j_tile += OUTER_TILE) {
+                    float32x4_t fb_vec = vld1q_f32(&bModel[j_tile]);
 
-                // Process each of 4 fb values against all 4 fa values - unrolled with constant indices
-                for (int fb_idx = 0; fb_idx < OUTER_TILE; ++fb_idx) {
-                    // Broadcast single fb value to all lanes using constant index
-                    float32_t fb_scalar;
-                    switch (fb_idx) {
-                        case 0: fb_scalar = vgetq_lane_f32(fb_vec, 0); break;
-                        case 1: fb_scalar = vgetq_lane_f32(fb_vec, 1); break;
-                        case 2: fb_scalar = vgetq_lane_f32(fb_vec, 2); break;
-                        case 3: fb_scalar = vgetq_lane_f32(fb_vec, 3); break;
-                        default: fb_scalar = 0.0f;
+                    // Process each of 4 fb values against all 4 fa values - unrolled with constant indices
+                    for (int fb_idx = 0; fb_idx < OUTER_TILE; ++fb_idx) {
+                        // Broadcast single fb value to all lanes using constant index
+                        float32_t fb_scalar;
+                        switch (fb_idx) {
+                            case 0: fb_scalar = vgetq_lane_f32(fb_vec, 0); break;
+                            case 1: fb_scalar = vgetq_lane_f32(fb_vec, 1); break;
+                            case 2: fb_scalar = vgetq_lane_f32(fb_vec, 2); break;
+                            case 3: fb_scalar = vgetq_lane_f32(fb_vec, 3); break;
+                            default: fb_scalar = 0.0f;
+                        }
+                        float32x4_t fb_dup = vdupq_n_f32(fb_scalar);
+
+                        // dx = (fa - fb) * 0.5
+                        float32x4_t dx_vec = vmulq_f32(vsubq_f32(fa_vec, fb_dup), v_half);
+
+                        // abs(dx) <= threshold check
+                        float32x4_t abs_dx = vabsq_f32(dx_vec);
+                        uint32x4_t valid_mask = vcleq_f32(abs_dx, v_threshold);
+
+                        // Conditional operations only on valid elements
+                        // ========================================
+
+                        // 1. Accumulate x_count: sum all dx where valid
+                        float32x4_t dx_masked = vreinterpretq_f32_u32(vandq_u32(vreinterpretq_u32_f32(dx_vec), valid_mask));
+                        x_count_tile = vaddq_f32(x_count_tile, dx_masked);
+
+                        // 2. k_count: +1 if dx > 0, -1 if dx < 0 (only where valid)
+                        uint32x4_t dx_positive = vcgtq_f32(dx_vec, v_zero);
+                        uint32x4_t dx_negative = vcltq_f32(dx_vec, v_zero);
+
+                        uint32x4_t active_positive = vandq_u32(valid_mask, dx_positive);
+                        uint32x4_t active_negative = vandq_u32(valid_mask, dx_negative);
+
+                        // Fix: Use bitwise select (vbsl) to choose 1.0f or 0.0f based on mask
+                        float32x4_t k_inc = vbslq_f32(active_positive, v_one, v_zero);
+                        float32x4_t k_dec = vbslq_f32(active_negative, v_one, v_zero);
+
+                        k_count_tile = vaddq_f32(k_count_tile, k_inc);
+                        k_count_tile = vsubq_f32(k_count_tile, k_dec);
+
+                        // 3. dx_max accumulation: sum |dx| where |dx| > |dy|
+                        uint32x4_t abs_dx_gt_dy = vcgtq_f32(abs_dx, v_dy);
+                        uint32x4_t active_dx_max = vandq_u32(valid_mask, abs_dx_gt_dy);
+
+                        float32x4_t dx_contrib = vreinterpretq_f32_u32(vandq_u32(vreinterpretq_u32_f32(dx_vec), active_dx_max));
+                        dx_max_tile = vaddq_f32(dx_max_tile, dx_contrib);
+
+                        // 4. dy_max accumulation: count where |dy| >= |dx|
+                        uint32x4_t abs_dy_gte_dx = vcgeq_f32(v_dy, abs_dx);
+                        uint32x4_t active_dy_max = vandq_u32(valid_mask, abs_dy_gte_dx);
+                        
+                        // Fix: Use vbsl to choose 1.0 or 0.0
+                        float32x4_t dy_contrib = vbslq_f32(active_dy_max, v_one, v_zero);
+                        dy_max_tile = vaddq_f32(dy_max_tile, dy_contrib);
                     }
-                    float32x4_t fb_dup = vdupq_n_f32(fb_scalar);
-
-                    // dx = (fa - fb) * 0.5
-                    float32x4_t dx_vec = vmulq_f32(vsubq_f32(fa_vec, fb_dup), v_half);
-
-                    // abs(dx) <= threshold check
-                    float32x4_t abs_dx = vabsq_f32(dx_vec);
-                    uint32x4_t valid_mask = vcleq_f32(abs_dx, v_threshold);
-
-                    // Conditional operations only on valid elements
-                    // ========================================
-
-                    // 1. Accumulate x_count: sum all dx where valid
-                    float32x4_t dx_masked = vreinterpretq_f32_u32(vandq_u32(vreinterpretq_u32_f32(dx_vec), valid_mask));
-                    x_count_tile = vaddq_f32(x_count_tile, dx_masked);
-
-                    // 2. k_count: +1 if dx > 0, -1 if dx < 0 (only where valid)
-                    uint32x4_t dx_positive = vcgtq_f32(dx_vec, v_zero);
-                    uint32x4_t dx_negative = vcltq_f32(dx_vec, v_zero);
-
-                    uint32x4_t active_positive = vandq_u32(valid_mask, dx_positive);
-                    uint32x4_t active_negative = vandq_u32(valid_mask, dx_negative);
-
-                    float32x4_t k_inc = vreinterpretq_f32_u32(active_positive);
-                    float32x4_t k_dec = vreinterpretq_f32_u32(active_negative);
-
-                    k_count_tile = vaddq_f32(k_count_tile, k_inc);
-                    k_count_tile = vsubq_f32(k_count_tile, k_dec);
-
-                    // 3. dx_max accumulation: sum |dx| where |dx| > |dy|
-                    uint32x4_t abs_dx_gt_dy = vcgtq_f32(abs_dx, v_dy);
-                    uint32x4_t active_dx_max = vandq_u32(valid_mask, abs_dx_gt_dy);
-
-                    float32x4_t dx_contrib = vreinterpretq_f32_u32(vandq_u32(vreinterpretq_u32_f32(dx_vec), active_dx_max));
-                    dx_max_tile = vaddq_f32(dx_max_tile, dx_contrib);
-
-                    // 4. dy_max accumulation: count where |dy| >= |dx|
-                    uint32x4_t abs_dy_gte_dx = vcgeq_f32(v_dy, abs_dx);
-                    uint32x4_t active_dy_max = vandq_u32(valid_mask, abs_dy_gte_dx);
-
-                    float32x4_t dy_contrib = vreinterpretq_f32_u32(active_dy_max);
-                    dy_max_tile = vaddq_f32(dy_max_tile, dy_contrib);
                 }
+
+                // Final computation for this tile:
+                // freqShiftOpt = 0.4*dy*k_count - 0.6*x_count + 0.56*dx_max + 0.56*dy*dy_max
+                float32x4_t term1 = vmulq_f32(v_coeff_dy_04, k_count_tile);
+                float32x4_t term2 = vmulq_f32(v_coeff_dx_06, x_count_tile);
+                float32x4_t term3 = vmulq_f32(v_coeff_max_56, dx_max_tile);
+                float32x4_t term4 = vmulq_f32(v_coeff_dy_56, dy_max_tile);
+
+                float32x4_t freqShiftOpt_vec = vsubq_f32(vaddq_f32(term1, term3), term2);
+                freqShiftOpt_vec = vaddq_f32(freqShiftOpt_vec, term4);
+
+                // Apply frequency shifts to aShifts and bShifts
+                float32x4_t aShifts_vec = vld1q_f32(&aShifts[i_tile]);
+                float32x4_t bShifts_vec = vld1q_f32(&bShifts[i_tile]);
+
+                vst1q_f32(&aShifts[i_tile], vaddq_f32(aShifts_vec, freqShiftOpt_vec));
+                vst1q_f32(&bShifts[i_tile], vsubq_f32(bShifts_vec, freqShiftOpt_vec));
             }
-
-            // Final computation for this tile:
-            // freqShiftOpt = 0.4*dy*k_count - 0.6*x_count + 0.56*dx_max + 0.56*dy*dy_max
-            float32x4_t term1 = vmulq_f32(v_coeff_dy_04, k_count_tile);
-            float32x4_t term2 = vmulq_f32(v_coeff_dx_06, x_count_tile);
-            float32x4_t term3 = vmulq_f32(v_coeff_max_56, dx_max_tile);
-            float32x4_t term4 = vmulq_f32(v_coeff_dy_56, dy_max_tile);
-
-            float32x4_t freqShiftOpt_vec = vsubq_f32(vaddq_f32(term1, term3), term2);
-            freqShiftOpt_vec = vaddq_f32(freqShiftOpt_vec, term4);
-
-            // Apply frequency shifts to aShifts and bShifts
-            float32x4_t aShifts_vec = vld1q_f32(&aShifts[i_tile]);
-            float32x4_t bShifts_vec = vld1q_f32(&bShifts[i_tile]);
-
-            vst1q_f32(&aShifts[i_tile], vaddq_f32(aShifts_vec, freqShiftOpt_vec));
-            vst1q_f32(&bShifts[i_tile], vsubq_f32(bShifts_vec, freqShiftOpt_vec));
         }
     }
 

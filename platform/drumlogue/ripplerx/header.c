@@ -97,11 +97,11 @@ const __unit_header unit_header_t unit_header = {
         // Noise Resonance
         {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         // Noise Filter Mode: "LP", "BP", "HP"
-        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFilter"}},
+        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
         // Noise Filter Freq
-        {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFiltFrq"}},
+        {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFltFrq"}},
         // Noise Filter Q
-        {707, 4000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NzFiltQ"}}
+        {707, 4000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NzFltQ"}}
         }   // end of .params
     };
 
