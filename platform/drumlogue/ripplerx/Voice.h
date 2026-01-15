@@ -22,7 +22,7 @@ public:
 	~Voice() {}
 
 	void setModels(Models* m) { models = m; }
-
+	void Init();
 	float32_t note2freq(int _note);
 	void trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
 		float32_t _vel, /**MalletType malletType, */float32_t malletFreq/** TODO:,

@@ -118,7 +118,7 @@ class RipplerX
         // Initialize sample management
         m_sampleBank = 0;
         m_sampleNumber = 1;
-        m_sampleStart = 0;
+        m_sampleStart = 0;  // NOTE: not user editable
         m_sampleEnd = 1000;
 
         // Cache runtime sample access functions
@@ -127,19 +127,17 @@ class RipplerX
         m_get_sample = desc->get_sample;
 
         // Load default program
-        LoadPreset(0);
+        LoadPreset(Initial);    // this does prepareToPlay
+        Reset();
 
         // Initialize effects
         comb.init(getSampleRate());
         limiter.init(getSampleRate());
 
-        // Initialize voice states
-        Reset();
-        prepareToPlay();
-
         return k_unit_err_none;
     }
 
+    // Unused
     inline void loadDefaultProgramParameters() {
         // Mallet parameters (normalized 0.0-1.0)
         parameters[mallet_mix] = 0.5f;
@@ -207,7 +205,7 @@ class RipplerX
 
     inline void Reset() {
         clearVoices();
-        resetLastModels();
+        updateLastModels();
     }
 
     inline void Resume() {
@@ -230,20 +228,20 @@ class RipplerX
     {
         // Restore original render path
         // Load parameters once per render call (reduces memory pressure)
-        const bool a_on = (bool)getParameterValue(Parameters::a_on);
-        const bool b_on = (bool)getParameterValue(Parameters::b_on);
-        const float32_t mallet_mix = (float32_t)getParameterValue(Parameters::mallet_mix);
-        const float32_t mallet_res = (float32_t)getParameterValue(Parameters::mallet_res);
-        const float32_t vel_mallet_mix = (float32_t)getParameterValue(Parameters::vel_mallet_mix);
-        const float32_t vel_mallet_res = (float32_t)getParameterValue(Parameters::vel_mallet_res);
-        const float32_t noise_mix = (float32_t)getParameterValue(Parameters::noise_mix);
-        const float32_t noise_res = (float32_t)getParameterValue(Parameters::noise_res);
-        const float32_t vel_noise_mix = (float32_t)getParameterValue(Parameters::vel_noise_mix);
-        const float32_t vel_noise_res = (float32_t)getParameterValue(Parameters::vel_noise_res);
-        const bool serial = (bool)getParameterValue(Parameters::couple);
-        const float32_t ab_mix = (float32_t)getParameterValue(Parameters::ab_mix);
-        const float32_t gain = (float32_t)getParameterValue(Parameters::gain);
-        const bool couple = (bool)getParameterValue(Parameters::couple);
+        const bool a_on = (bool)getParameterValue(ProgramParameters::a_on);
+        const bool b_on = (bool)getParameterValue(ProgramParameters::b_on);
+        const float32_t mallet_mix = (float32_t)getParameterValue(ProgramParameters::mallet_mix);
+        const float32_t mallet_res = (float32_t)getParameterValue(ProgramParameters::mallet_res);
+        const float32_t vel_mallet_mix = (float32_t)getParameterValue(ProgramParameters::vel_mallet_mix);
+        const float32_t vel_mallet_res = (float32_t)getParameterValue(ProgramParameters::vel_mallet_res);
+        const float32_t noise_mix = (float32_t)getParameterValue(ProgramParameters::noise_mix);
+        const float32_t noise_res = (float32_t)getParameterValue(ProgramParameters::noise_res);
+        const float32_t vel_noise_mix = (float32_t)getParameterValue(ProgramParameters::vel_noise_mix);
+        const float32_t vel_noise_res = (float32_t)getParameterValue(ProgramParameters::vel_noise_res);
+        const bool serial = (bool)getParameterValue(ProgramParameters::couple);
+        const float32_t ab_mix = (float32_t)getParameterValue(ProgramParameters::ab_mix);
+        const float32_t gain = (float32_t)getParameterValue(ProgramParameters::gain);
+        const bool couple = (bool)getParameterValue(ProgramParameters::couple);
 
         // Precompute NEON constants (stay in registers across loop)
         const float32x4_t v_zero = vdupq_n_f32(0.0f);
@@ -424,19 +422,17 @@ class RipplerX
             case c_parameterProgramName:
                 if (value < (int32_t)last_program) {
                     setCurrentProgram(value);
-                    noiseChanged = true;
-                    pitchChanged = true;
-                    resonatorChangedA = true;
-                    resonatorChangedB = true;
-                    couplingChanged = true;
-                    Reset();
                 }
+                //TODO: clearVoices? If not, new sound will overlap the old (good) or just distort (bad)?
                 break;
 
-            case c_parameterGain:
-                // Precompute gain in dB -> linear conversion
-                parameters[gain] = fasterpowf(10.0, value / 20.0);
-                break;
+            // case c_parameterGain:
+            //     // Precompute gain in dB -> linear conversion
+            //     parameters[gain] = fasterpowf(10.0, value / 20.0);
+            //     break;
+
+            case c_parameterResonatorNote:
+                m_note = value;
 
             case c_parameterSampleBank:
                 if ((size_t)value < c_sampleBankElements)
@@ -474,6 +470,7 @@ class RipplerX
                     parameters[b_model] = value - (int32_t)c_modelElements;
                     resonatorChangedB = true;
                 }
+                //TODO: clearVoices? If not, new sound will overlap the old (good) or just distort (bad)?
                 break;
             }
 
@@ -648,6 +645,8 @@ class RipplerX
 
         // Update voices with minimal overhead
         prepareToPlay(noiseChanged, pitchChanged, resonatorChangedA, resonatorChangedB, couplingChanged);
+        // no effect if model did not change
+        updateLastModels();
     }
 
     /**
@@ -794,7 +793,8 @@ class RipplerX
 
         switch(index) {
             case c_parameterProgramName:             return m_currentProgram;
-            case c_parameterGain:                    return parameters[gain];
+            // case c_parameterGain:                    return parameters[gain];
+            case c_parameterResonatorNote:           return m_note;
             case c_parameterSampleBank:              return m_sampleBank;
             case c_parameterSampleNumber:            return m_sampleNumber;
             case c_parameterMalletResonance:         return (int32_t)(parameters[mallet_res] * 10.0f);  // denormalize 0.0-1.0 to 0-10
@@ -976,22 +976,11 @@ class RipplerX
     /*===========================================================================*/
     /* MIDI and Gate Control */
     /*===========================================================================*/
-
-    inline void NoteOn(uint8_t note, uint8_t velocity) {
-        auto srate = getSampleRate();
-
-        // Allocate voice using round-robin
-        nvoice = nextVoiceNumber();
-        Voice & voice = voices[nvoice];
-
-        m_note = note;
-        voice.note = note;
-
-        // Load and configure sample
+    inline void loadConfigureSample() {
         // IMPORTANT: Copy values from sampleWrapper immediately—do NOT store the pointer.
         // sampleWrapper is a temporary provided by runtime and may be freed/reused.
         const sample_wrapper_t* sampleWrapper = GetSample(m_sampleBank, m_sampleNumber - 1);
-        bool sampleValid = false;
+        // bool sampleValid = false;
 
         if (sampleWrapper) {
             // Copy critical metadata from temporary sampleWrapper
@@ -1005,18 +994,29 @@ class RipplerX
             size_t totalSamples = m_sampleFrames * m_sampleChannels;
             m_sampleIndex = (totalSamples * m_sampleStart) / 1000;
             m_sampleEnd = (totalSamples * m_sampleEnd) / 1000;
-            sampleValid = true;
+            // not used. To invalid a sample: m_sampleEnd = 0
+            // sampleValid = true;
         }
+    }
+
+    inline void NoteOn(uint8_t note, uint8_t velocity) {
+        auto srate = getSampleRate();
+
+        // Allocate voice using round-robin
+        nvoice = nextVoiceNumber();
+        Voice & voice = voices[nvoice];
+
+        m_note = note;
+        voice.note = note;
+
+        loadConfigureSample();
 
         // Initialize voice state (always initialize - synth can work without samples)
-        voice.m_initialized = true;
-        voice.m_gate = true;
-        voice.m_framesSinceNoteOn = 0;
-        voice.isPressed = true;
+        voice.Init();
 
         // Calculate mallet frequency with velocity sensitivity
-        auto mallet_stiff = (float32_t)getParameterValue(Parameters::mallet_stiff);
-        auto vel_mallet_stiff = (float32_t)getParameterValue(Parameters::vel_mallet_stiff);
+        auto mallet_stiff = (float32_t)getParameterValue(ProgramParameters::mallet_stiff);
+        auto vel_mallet_stiff = (float32_t)getParameterValue(ProgramParameters::vel_mallet_stiff);
         auto malletFreq = fmin(5000.0, e_expf(fasterlogf(mallet_stiff) +
             velocity * vel_mallet_stiff * c_malletStiffnessCorrectionFactor));
 
@@ -1047,7 +1047,7 @@ class RipplerX
 
     inline void PitchBend(uint16_t bend) {
         // Convert MIDI bend (0-0x4000, centered at 0x2000) to fine pitch (-99 to 99)
-        parameters[a_fine] = (bend - 0x2000) * 100 / 0x2000;
+        parameters[a_fine] = 100 * (bend - 0x2000) / 0x2000;        // pitchBendRange = 100
         prepareToPlay(false, true, false, false, false);
     }
 
@@ -1055,7 +1055,7 @@ class RipplerX
     inline void Aftertouch(uint8_t note, uint8_t aftertouch) { (void)note; (void)aftertouch; }
 
     inline void LoadPreset(uint8_t idx) {
-        setCurrentProgram(idx);
+        setParameter(c_parameterProgramName, idx);
     }
 
     inline uint8_t getPresetIndex() const {
@@ -1095,9 +1095,11 @@ class RipplerX
             m_currentProgram = index;
             parameters = programs[index];
         }
+        // Precompute gain in dB -> linear conversion
+        parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
     }
 
-    inline void resetLastModels() {
+    inline void updateLastModels() {
         last_a_model = (int32_t)parameters[a_model];
         last_a_partials = (int32_t)parameters[a_partials];
         last_b_model = (int32_t)parameters[b_model];
@@ -1121,7 +1123,7 @@ class RipplerX
     Limiter limiter{};
     int nvoice = 0;
 
-    // Parameters (instance member - not static)
+    // ProgramParameters (instance member - not static)
     std::array<float32_t, last_param> parameters{};
 
     // State variables
@@ -1139,7 +1141,7 @@ class RipplerX
     uint8_t m_sampleChannels = 0;
     size_t m_sampleFrames = 0;
     const float32_t * m_samplePointer = nullptr;
-    uint16_t m_sampleStart = 0;
+    uint16_t m_sampleStart = 0;  // NOTE: not user editable
     size_t m_sampleIndex = 0;
     size_t m_sampleEnd = 1000;
 

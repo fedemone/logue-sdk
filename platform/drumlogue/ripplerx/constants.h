@@ -34,6 +34,7 @@ constexpr float32_t c_midi_a4_freq = 440.0f;  // Frequency of MIDI note A4 (Hz)
 constexpr int c_midi_a4_note = 69;  // MIDI note number for A4
 constexpr float32_t c_semitones_per_octave = 12.0f;  // Number of semitones in an octave
 constexpr float32_t c_cents_per_semitone = 100.0f;  // Number of cents in a semitone
+constexpr float32_t c_midi_a4_converted = 8.1757989156437f;  // c_midi_a4_freq * fasterpowf(2.0f, - c_midi_a4_note / c_semitones_per_octave);
 
 // Voice coupling and frequency shift constants
 constexpr float32_t c_coupling_threshold = 2.0f;  // Frequency difference threshold for coupling
@@ -48,39 +49,43 @@ constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave c
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
 
 // these are the index of the parameters got from header.c
-// page 1
-constexpr size_t c_parameterProgramName = 0;
-constexpr size_t c_parameterGain = 1;
-constexpr size_t c_parameterSampleBank = 2;
-constexpr size_t c_parameterSampleNumber = 3;
+enum Parameters : size_t {
+    // page 1
+    c_parameterProgramName,
+    // c_parameterGain,
+    c_parameterResonatorNote,
+    c_parameterSampleBank,
+    c_parameterSampleNumber,
 // page 2
-constexpr size_t c_parameterMalletResonance = 4;
-constexpr size_t c_parameterMalletStifness = 5;
-constexpr size_t c_parameterVelocityMalletResonance = 6;
-constexpr size_t c_parameterVelocityMalletStifness = 7;
+    c_parameterMalletResonance,
+    c_parameterMalletStifness,
+    c_parameterVelocityMalletResonance,
+    c_parameterVelocityMalletStifness,
 // page 3
-constexpr size_t c_parameterModel = 8;
-constexpr size_t c_parameterPartials = 9;
-constexpr size_t c_parameterDecay = 10;
-constexpr size_t c_parameterMaterial = 11;
+    c_parameterModel,
+    c_parameterPartials,
+    c_parameterDecay,
+    c_parameterMaterial,
 // page 4
-constexpr size_t c_parameterTone = 12;
-constexpr size_t c_parameterHitPosition = 13;
-constexpr size_t c_parameterRelease = 14;
-constexpr size_t c_parameterInharmonic = 15;
+    c_parameterTone,
+    c_parameterHitPosition,
+    c_parameterRelease,
+    c_parameterInharmonic,
 // page 5
-constexpr size_t c_parameterFilterCutoff = 16;
-constexpr size_t c_parameterTubeRadius = 17;
-constexpr size_t c_parameterCoarsePitch = 18;
-constexpr size_t c_parameterNoiseMix = 19;
+    c_parameterFilterCutoff,
+    c_parameterTubeRadius,
+    c_parameterCoarsePitch,
+    c_parameterNoiseMix,
 // page 6
-constexpr size_t c_parameterNoiseResonance = 20;
-constexpr size_t c_parameterNoiseFilterMode = 21;
-constexpr size_t c_parameterNoiseFilterFreq = 22;
-constexpr size_t c_parameterNoiseFilterQ = 23;
-// marker
-constexpr size_t c_parameterTotal = 24;
+    c_parameterNoiseResonance,
+    c_parameterNoiseFilterMode,
+    c_parameterNoiseFilterFreq,
+    c_parameterNoiseFilterQ,
+    // marker
+     c_parameterTotal
+};
 
+// Not user editable parameters
 constexpr size_t c_sampleBankElements = 7;
 constexpr size_t c_modelElements = 9;
 constexpr size_t c_partialElements = 5;
@@ -147,7 +152,7 @@ const char* const c_noiseFilterModeName[c_noiseFilterModeElements] = {
     Programs will hold a set of these, to be accesses as
     index of array
 */
-enum Parameters : uint8_t {
+enum ProgramParameters : uint8_t {
     a_coarse,
     a_cut,
     a_damp,
@@ -205,7 +210,6 @@ enum Parameters : uint8_t {
     vel_noise_res,
     vel_noise_freq, // these two velocity params are not present in the original preset/*.xml files, but should be present among editable parameters
     vel_noise_q,
-    default_note, // Default MIDI note for Gate mode (not exposed in header.c, but used internally)
     last_param
 };
 
@@ -223,7 +227,7 @@ enum  Program : uint8_t {
     Gong,
     Harp,
     Harpsi,
-    Init,
+    Initial,
     Kalimba,
     KeyRing,
     Marimba_,
@@ -238,6 +242,7 @@ enum  Program : uint8_t {
     Tabla2,
     Tubes,
     Vibes,
+    //Debug,
     last_program
 };
 
@@ -257,7 +262,7 @@ const char* const c_programName[Program::last_program] = {
   "Gong",
   "Harp",
   "Harpsi",
-  "Init",
+  "Initial",
   "Kalimba",
   "KeyRing",
   "Marimba",
@@ -272,6 +277,7 @@ const char* const c_programName[Program::last_program] = {
   "Tabla2",
   "Tubes",
   "Vibes"
+//, "Debug"
 };
 
 
@@ -290,7 +296,7 @@ static __attribute__((unused)) std::array<std::array<float32_t, Parameters::last
     {0.0, 144.0, -0.7599999904632568, 17.17000007629395, 0.0, 0.2599999904632568, 0.002100000157952309, 5.0, 1.0, 4.0, 0.5, 0.7800000309944153, 1.0, -0.1500000357627869, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 642.0, 1.0, 500.0, 2035.0, 1.0, 2.556999921798706, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Gong
     {0.0, 20.0, -0.3199999928474426, 4.309999942779541, 0.0, 0.5, 0.00009999999747378752, 0.0, 1.0, 3.0, 0.5, 0.7800000309944153, 0.5199999809265137, -0.2800000309944153, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 10.55999755859375, 0.0, 0.0, 2188.0, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Harp
     {0.0, 20.0, 0.0, 4.920000076293945, 0.0, 0.1299999952316284, 0.00009999999747378752, 0.0, 1.0, 3.0, 0.5, 0.7800000309944153, 0.5199999809265137, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 6.239999771118164, 0.0, 0.0, 2188.0, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Harpsi
-    {0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.0, 0.0, 0.0, 0.7999999523162842, 600.0000610351562, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Init
+    {0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.0, 0.0, 0.0, 0.7999999523162842, 600.0000610351562, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Initial
     {0.0, 66.0, -0.2400000095367432, 11.98999977111816, 0.0, 0.3100000023841858, 0.008899999782443047, 6.0, 1.0, 3.0, 0.7599999904632568, 0.7800000309944153, 0.7599999904632568, 0.1499999761581421, 0.5, 0.1410000175237656, 7.0, 619.0, -0.08000004291534424, 1.039999961853027, 0.0, 0.239999994635582, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 0.8499999642372131, 0.0, 0.0, 9.239997863769531, 0.0, 0.7999999523162842, 1207.0, 1.0, 233.0, 314.0, 1.0, 1.587000012397766, 0.0, 165.0, 0.1184999942779541, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Kalimba
     {0.0, 144.0, -1.0, 12.80999946594238, 0.0, 0.2599999904632568, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 0.1000000014901161, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, -6.600000381469727, 0.0, 0.0, 642.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.4399999976158142, 0.0, 0.0, 60.0,},  //Ring
     {0.0, 144.0, -0.5400000214576721, 9.960000038146973, 0.0, 0.2599999904632568, 0.00009999999747378752, 6.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 12.23999786376953, 0.0, 0.0, 1533.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Marimba
@@ -305,6 +311,7 @@ static __attribute__((unused)) std::array<std::array<float32_t, Parameters::last
     {0.0, 372.0, -0.6599999666213989, 10.15999984741211, 0.0, 0.2599999904632568, 1.0, 5.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 6.0, 0.0, 0.0, 168.0, 1.0, 23.0, 2784.0, 1.0, 3.046999931335449, 0.0, 407.0, 0.2299999892711639, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,},  //Tabla2
     {0.0, 20.0, -0.4700000286102295, 12.80999946594238, 0.0, 0.5, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 0.4099999964237213, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 486.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5099999904632568, 0.0, 0.0, 60.0,},  //Tubes
     {0.0, 20.0, -0.4200000166893005, 4.079999923706055, 0.0, 0.2599999904632568, 0.00009999999747378752, 6.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.1180000007152557, 0.0, 20.0, 0.0, 0.6799999475479126, 96.0, 0.2599999904632568, 0.00009999999747378752, 8.0, 1.0, 3.0, 0.7400000095367432, 0.7800000309944153, 1.0, 0.0, 1.0, -8.880000114440918, 0.0, 0.0, 2052.0, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 60.0,}  //Vibes
+    //, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}   // Debug
   }};
 
 

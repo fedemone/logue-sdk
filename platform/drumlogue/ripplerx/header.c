@@ -34,8 +34,11 @@ const __unit_header unit_header_t unit_header = {
         // Page 1: Program and sample selection
         // Program, will set different values for parameters
         {0, 27, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},
-        // Res Gain
-        {-240, 240, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Gain"}},
+        {0, 27, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        // Resonator note for Gate mode
+        {1, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
+        // Res Gain - NOTE: removed for the moment
+        // {-240, 240, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Gain"}},
         // Sample bank
         {0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Bank"}},
         // Sample number

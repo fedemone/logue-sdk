@@ -3,11 +3,22 @@
 // #include "Models.h"
 #include "constants.h"
 
+void Voice::Init()
+{
+    m_initialized = true;
+    m_gate = true;
+    m_framesSinceNoteOn = 0;
+    isPressed = true;
+}
+
 /* called by Voice::trigger*/
 float32_t Voice::note2freq(int _note)
 {
     // MIDI note 69 == A4 == 440.0 Hz - see resonator_orig.h for reference
-    return c_midi_a4_freq * fasterpowf(2.0f, (_note - c_midi_a4_note) / c_semitones_per_octave);
+    // return c_midi_a4_freq * fasterpowf(2.0f, (_note - c_midi_a4_note) / c_semitones_per_octave);
+    // since c_midi_a4_freq, c_midi_a4_note, c_semitones_per_octave are constants
+    // a part can be precalculated
+    return c_midi_a4_converted * fasterpowf(2.0f, _note / c_semitones_per_octave);
 }
 
 // Set freq note, prepares mallet, noise generator, resonators, to be used at actual trigger
@@ -20,23 +31,23 @@ void Voice::trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
 	// Clear resonator state
 	resA.clear();
 	resB.clear();
-	
+
 	// Set voice parameters
 	note = _note;
 	vel = _vel;
 	freq = note2freq(note);
 	isRelease = false;
 	isPressed = true;
-	
+
 	// Trigger excitation sources
 	mallet.trigger(srate, malletFreq);
 	noise.attack(_vel);
-	
+
 	// Activate resonators and update with current models
 	if (resA.isOn()) resA.activate();
 	if (resB.isOn()) resB.activate();
 	updateResonators();
-	
+
 	/** TODO: code froze at 1.5.0-2 version
 	srate = _srate;
 	malletType = _malletType;
@@ -46,7 +57,7 @@ void Voice::trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
 	newNote = _note;
 	newFreq = note2freq(newNote);
 	malletKtrack = _mallet_ktrack;
-	
+
 	pressed_ts = timestamp;
 
 	// fade out active voice before re-triggering
@@ -452,7 +463,7 @@ void Voice::updateResonators(bool updateFrequencies)
                         // 4. dy_max accumulation: count where |dy| >= |dx|
                         uint32x4_t abs_dy_gte_dx = vcgeq_f32(v_dy, abs_dx);
                         uint32x4_t active_dy_max = vandq_u32(valid_mask, abs_dy_gte_dx);
-                        
+
                         // Fix: Use vbsl to choose 1.0 or 0.0
                         float32x4_t dy_contrib = vbslq_f32(active_dy_max, v_one, v_zero);
                         dy_max_tile = vaddq_f32(dy_max_tile, dy_contrib);
