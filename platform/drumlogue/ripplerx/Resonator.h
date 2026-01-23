@@ -4,7 +4,7 @@
 // the partials are tuned by selected model by Voice.h
 
 #pragma once
-#include <vector>
+#include "float_math.h"
 #include "Partial.h"
 #include "Waveguide.h"
 #include "Filter.h"
@@ -25,7 +25,7 @@ public:
         float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm);
 	void activate();
 	void clear();
-	void update(float32_t frequency, float32_t vel, bool isRelease, std::array<float32_t, 64> _model);
+	void update(float32_t frequency, float32_t vel, bool isRelease, float32_t _model[c_max_partials]);
 	float32x4_t process(float32x4_t input);
 
 	// Public read-only accessors for state
@@ -35,14 +35,13 @@ public:
 	int getSilenceCounter() const { return silence; }
 	bool isOn() const { return on; }
 	float32_t getCut() const { return cut; }
-	
+
 	// Apply filter to a NEON vector of samples
 	float32x4_t applyFilter(float32x4_t input);
-	
+
 	// Apply filter to scalar sample
 	float32_t applyFilterScalar(float32_t sample) { return filter.df1(sample); }
 
-private:
 	// State members - protected from external modification
 	int silence = 0; // counter of samples of silence
 	bool active = false; // returns to false if samples of silence run for a bit
@@ -54,7 +53,7 @@ private:
 	float32_t radius = 0.0f;
 	float32_t cut = 0.0f;
 
-	std::vector<Partial> partials;
+	Partial partials[c_max_partials];
 	Waveguide waveguide{};
 	Filter filter{};
 

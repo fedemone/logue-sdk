@@ -1,15 +1,23 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include <stddef.h>
+#ifdef __cplusplus
+}
+#endif
 #include "Resonator.h"
-#include <array>
-#include <math.h>
 // The resonator, as partial or waveguide, is the main body that's vibrating,
 // so it's the core of the sound emitted at note /
 
+
 Resonator::Resonator()
 {
-	for (size_t i = 0; i < c_max_partials; ++i) {
-		 partials.push_back(Partial(i + 1));
-	}
+    for (size_t i = 0; i < c_max_partials; ++i) {
+        partials[i].k = static_cast<int>(i + 1);
+    }
 }
+
+
 
 // called by original plugin::onSlider()
 void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials, float32_t _decay,
@@ -73,22 +81,22 @@ void Resonator::validateAndSetPartials(int _partials)
 	else npartials = _partials;
 }
 
-void Resonator::update(float32_t freq, float32_t vel, bool isRelease, std::array<float32_t,64> model)
+void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t model[c_max_partials])
 {
-	if (nmodel < OpenTube) {
-		// Update each partial with validated bounds
-		for (int p = 0; p < npartials; ++p) {
-			auto idx = partials[p].k - 1; // partial number to array index
-			// Bounds check: ensure idx is within valid range [0, 63]
-			if (idx >= 0 && idx < static_cast<int>(model.size())) {
-				partials[p].update(freq, model[idx], model[model.size() - 1], vel, isRelease);
-			}
-		}
-	}
-	else if (model.size() > 0) {
-		// Waveguide: use first model value as frequency multiplier
-		waveguide.update(model[0] * freq, vel, isRelease);
-	}
+    if (nmodel < OpenTube) {
+        // Update each partial with validated bounds
+        for (int p = 0; p < npartials; ++p) {
+            int idx = partials[p].k - 1; // partial number to array index
+            // Bounds check: ensure idx is within valid range [0, 63]
+            if (idx >= 0 && idx < c_max_partials) {
+                partials[p].update(freq, model[idx], model[c_max_partials - 1], vel, isRelease);
+            }
+        }
+    }
+    else {
+        // Waveguide: use first model value as frequency multiplier
+        waveguide.update(model[0] * freq, vel, isRelease);
+    }
 }
 
 void Resonator::activate()
@@ -142,8 +150,8 @@ float32x4_t Resonator::process(float32x4_t input)
 
 void Resonator::clear()
 {
-	for (Partial& partial : partials) {
-		partial.clear();
+	for (size_t i = 0; i < c_max_partials; ++i) {
+		partials[i].clear();
 	}
 	waveguide.clear();
 	filter.clear(0.0f);
@@ -158,18 +166,19 @@ float32x4_t Resonator::applyFilter(float32x4_t input)
 	float32_t lane1 = vgetq_lane_f32(input, 1);
 	float32_t lane2 = vgetq_lane_f32(input, 2);
 	float32_t lane3 = vgetq_lane_f32(input, 3);
-	
+
 	lane0 = filter.df1(lane0);
 	lane1 = filter.df1(lane1);
 	lane2 = filter.df1(lane2);
 	lane3 = filter.df1(lane3);
-	
+
 	// Use vsetq_lane to reconstruct the vector properly
 	float32x4_t result = vdupq_n_f32(0.0f);
 	result = vsetq_lane_f32(lane0, result, 0);
 	result = vsetq_lane_f32(lane1, result, 1);
 	result = vsetq_lane_f32(lane2, result, 2);
 	result = vsetq_lane_f32(lane3, result, 3);
-	
+
 	return result;
 }
+

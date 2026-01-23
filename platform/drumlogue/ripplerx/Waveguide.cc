@@ -9,7 +9,9 @@ Waveguide::Waveguide()
 	// Broadcast single values to all 4 lanes
 	radius = vdupq_n_f32(0.0f);
 	max_radius = vdupq_n_f32(1.0f);
-	tube.resize(tube_len);
+	for (int i = 0; i < tube_len; ++i) {
+		tube[i] = vdupq_n_f32(0.0f);
+	}
 }
 
 void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
@@ -40,10 +42,11 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
 float32x4_t Waveguide::process(float32x4_t input)
 {
 	// Bounds check to prevent buffer overrun
-	if (read_ptr < 0 || read_ptr >= static_cast<int>(tube.size())) {
+
+	if (read_ptr < 0 || read_ptr >= tube_len) {
 		read_ptr = 0;  // Safety reset
 	}
-	if (write_ptr < 0 || write_ptr >= static_cast<int>(tube.size())) {
+	if (write_ptr < 0 || write_ptr >= tube_len) {
 		write_ptr = 0;  // Safety reset
 	}
 
@@ -89,8 +92,7 @@ void Waveguide::clear()
 	y1 = vdupq_n_f32(0.0f);
 	read_ptr = 0;
 	write_ptr = 0;
-
-	// Clear and resize buffer safely
-	tube.clear();
-	tube.resize(tube_len);
+	for (int i = 0; i < tube_len; ++i) {
+		tube[i] = vdupq_n_f32(0.0f);
+	}
 }

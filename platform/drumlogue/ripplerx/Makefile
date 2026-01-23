@@ -203,8 +203,14 @@ CSTD ?= -std=c11
 COPT += $(CSTD)
 
 # C++ Standard
+
+# Add ARM toolchain C++ include paths for correct header resolution
 CXXSTD ?= -std=gnu++14
 CXXOPT += $(CXXSTD)
+
+# Explicitly add ARM toolchain C++ include paths to CXXFLAGS
+ARM_TOOLCHAIN_CXX_INC := -ID:/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf/include/c++/6.5.0 -ID:/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf/include/c++/6.5.0/arm-unknown-linux-gnueabihf
+CXXFLAGS  = $(MCFLAGS) $(OPT) $(CXXOPT) $(CXXWARN) -fPIC -Wa,-alms=$(LSTDIR)/$(notdir $(<:.cc=.lst)) $(DEFS) $(ARM_TOOLCHAIN_CXX_INC)
 
 # Output directory and files
 BUILDDIR ?= build

@@ -1,3 +1,11 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern volatile int g_last_output_channels;
+#ifdef __cplusplus
+}
+#endif
+#include "constants.h"
 #pragma once
 /*
 *  File: RipplerX.h
@@ -8,18 +16,31 @@
 *
 */
 
-#include <cstddef>
-#include <cstdint>
-#include <array>
+#include <stdio.h>
 #include <cstdio>
 #include <math.h>
+#include <stddef.h>
 #include "../common/runtime.h"
 #include <arm_neon.h>
 #include "constants.h"
+
 #include "Voice.h"
 #include "Limiter.h"
 #include "Comb.h"
 #include "Models.h"
+
+#include "runtime.h"
+
+
+#ifndef fmin
+#define fmin(a,b) ((a)<(b)?(a):(b))
+#endif
+#ifndef fmax
+#define fmax(a,b) ((a)>(b)?(a):(b))
+#endif
+#ifndef isfinite
+#define isfinite(x) ((x)==(x) && (x)!=(1.0/0.0) && (x)!=-(1.0/0.0))
+#endif
 
 /**
  * RipplerX Synth Engine
@@ -100,20 +121,22 @@ class RipplerX
     ~RipplerX() = default;
 
     inline int8_t Init(const unit_runtime_desc_t * desc) {
+            // TEST: Return unique error code to verify Init is called
+            return 99;
         // Validate runtime configuration
         if (desc->samplerate != c_sampleRate)
-            return k_unit_err_samplerate;
-        if (desc->output_channels != 2)
-            return k_unit_err_geometry;
-
-        if (!desc->get_num_sample_banks || !desc->get_num_samples_for_bank || !desc->get_sample)
-            return k_unit_err_undef;
+            return k_unit_err_samplerate + 10; // 10 = samplerate fail
+        g_last_output_channels = desc->output_channels;
+        if (desc->output_channels != 1 && desc->output_channels != 2) {
+            // 20 = geometry fail, plus output_channels for debug
+            return k_unit_err_geometry + 20 + (desc->output_channels & 0x7F);
+        }
+        if (!desc->get_num_sample_banks) return k_unit_err_samplebank + 30; // 30 = missing get_num_sample_banks
+        if (!desc->get_num_samples_for_bank) return k_unit_err_samplebank + 31; // 31 = missing get_num_samples_for_bank
+        if (!desc->get_sample) return k_unit_err_samplebank + 32; // 32 = missing get_sample
 
         // Initialize synth resources (static allocation - no heap)
-        // Models is now a member object, no allocation needed
-        for (size_t i = 0; i < c_numVoices; ++i) {
-            voices[i].setModels(&models);
-        }
+        // Models are now static; no per-voice setup needed
 
         // Initialize sample management
         m_sampleBank = 0;
@@ -127,7 +150,7 @@ class RipplerX
         m_get_sample = desc->get_sample;
 
         // Load default program
-        LoadPreset(Initial);    // this does prepareToPlay
+        LoadPreset(Program::Initial);    // this does prepareToPlay
         Reset();
 
         // Initialize effects
@@ -224,6 +247,245 @@ class RipplerX
      * High-performance audio rendering with ARM NEON vectorization
      * Processes voices in parallel, with scalar-to-NEON optimization
      */
+    inline void Render_debug(float * __restrict outBuffer, size_t frames)
+    {
+        // DEBUG VERSION: Temporary instrumentation for silence investigation
+        // Load parameters once per render call
+        const bool a_on = (bool)getParameterValue(ProgramParameters::a_on);
+        const bool b_on = (bool)getParameterValue(ProgramParameters::b_on);
+        const float32_t gain = (float32_t)getParameterValue(ProgramParameters::gain);
+
+        static int frameCount = 0;
+        static int renderCount = 0;
+        const bool shouldLog = (renderCount++ % 48) == 0;  // Log ~every 100ms at 48kHz
+
+        if (shouldLog) {
+            // Set debug values to Program::Debug parameters
+            setCurrentProgram(Program::Debug);
+
+            // Check voices
+            int activeVoices = 0;
+            for (size_t i = 0; i < c_numVoices; ++i) {
+                if (voices[i].m_initialized && voices[i].m_gate) {
+                    activeVoices++;
+                }
+            }
+
+            // Set debug parameters
+            setParameter(15, activeVoices);  // active voices
+            setParameter(16, (int)(gain * 1000.0f));  // gain * 1000
+            setParameter(17, a_on ? 1 : 0);  // a_on
+            setParameter(18, b_on ? 1 : 0);  // b_on
+            setParameter(19, (int)m_sampleChannels);  // sample channels
+            setParameter(20, (int)(m_sampleIndex % 1000));  // sample index mod 1000
+            setParameter(21, renderCount % 1000);  // render count mod 1000
+            setParameter(22, frameCount % 1000);  // frame count mod 1000
+            setParameter(23, (int)frames);  // frames per call
+        }
+
+        // Load precompute constants
+        const float32x4_t v_zero = vdupq_n_f32(0.0f);
+        const float32x4_t v_ab_mix = vdupq_n_f32((float32_t)getParameterValue(ProgramParameters::ab_mix));
+        const float32x4_t v_one_minus_ab_mix = vdupq_n_f32(1.0f - (float32_t)getParameterValue(ProgramParameters::ab_mix));
+
+        // Main frame loop
+        float32x4_t maxSample = vdupq_n_f32(0.0f);  // Track max output for monitoring
+
+        for (size_t frame = 0; frame < frames/2; frame++) {
+            float32x4_t dirOut = vdupq_n_f32(0.0f);
+            float32x4_t resAOut = vdupq_n_f32(0.0f);
+            float32x4_t resBOut = vdupq_n_f32(0.0f);
+            float32x4_t audioIn = vdupq_n_f32(0.0f);
+
+            // Load stereo sample input with strict bounds checking
+            if (m_samplePointer != nullptr && m_sampleIndex < m_sampleEnd) {
+                if (m_sampleChannels == 2) {
+                    if (m_sampleIndex + 4 <= m_sampleEnd) {
+                        audioIn = vld1q_f32(&m_samplePointer[m_sampleIndex]);
+                        m_sampleIndex += 4;
+                    } else {
+                        audioIn = vdupq_n_f32(0.0f);
+                        m_sampleIndex = m_sampleEnd;
+                    }
+                } else {
+                    // Mono case
+                    if (m_sampleIndex + 2 <= m_sampleEnd) {
+                        float32_t m1 = m_samplePointer[m_sampleIndex];
+                        float32_t m2 = m_samplePointer[m_sampleIndex + 1];
+                        float32x2_t s1 = vdup_n_f32(m1);
+                        float32x2_t s2 = vdup_n_f32(m2);
+                        audioIn = vcombine_f32(s1, s2);
+                        m_sampleIndex += 2;
+                    } else if (m_sampleIndex + 1 <= m_sampleEnd) {
+                        float32_t m1 = m_samplePointer[m_sampleIndex];
+                        float32x2_t s1 = vdup_n_f32(m1);
+                        float32x2_t s2 = vdup_n_f32(0.0f);
+                        audioIn = vcombine_f32(s1, s2);
+                        m_sampleIndex = m_sampleEnd;
+                    } else {
+                        audioIn = vdupq_n_f32(0.0f);
+                    }
+                }
+                audioIn = vmulq_n_f32(audioIn, gain);
+            }
+
+            // Process voices (existing code)
+            for (size_t i = 0; i < c_numVoices; ++i) {
+                Voice& voice = voices[i];
+
+                if (!voice.m_initialized) continue;
+
+                float32x4_t resOut = vdupq_n_f32(0.0f);
+
+                // Mallet processing
+                float32_t msample = voice.mallet.process();
+                if (msample != 0.0f) {
+                    float32_t mallet_mix_vel = fmax(0.0f, fmin(1.0f,
+                        (float32_t)getParameterValue(ProgramParameters::mallet_mix) +
+                        voice.vel * (float32_t)getParameterValue(ProgramParameters::vel_mallet_mix)));
+                    dirOut = vmlaq_n_f32(dirOut, vdupq_n_f32(msample), mallet_mix_vel);
+                }
+
+                // Add input sample only if voice is pressed
+                if (voice.isPressed) {
+                    resOut = vaddq_f32(resOut, audioIn);
+                }
+
+                // Noise processing
+                float32_t nsample = voice.noise.process();
+                if (nsample != 0.0f) {
+                    float32_t noise_mix_vel = fmax(0.0f, fmin(1.0f,
+                        (float32_t)getParameterValue(ProgramParameters::noise_mix) +
+                        voice.vel * (float32_t)getParameterValue(ProgramParameters::vel_noise_mix)));
+                    dirOut = vmlaq_n_f32(dirOut, vdupq_n_f32(nsample), noise_mix_vel);
+                }
+
+                // Resonator processing (simplified for debug)
+                if (a_on) {
+                    float32x4_t out = voice.resA.process(resOut);
+                    resAOut = vaddq_f32(resAOut, out);
+                }
+                if (b_on) {
+                    float32x4_t resB_input = resOut;
+                    float32x4_t out = voice.resB.process(resB_input);
+                    resBOut = vaddq_f32(resBOut, out);
+                }
+
+                voice.m_framesSinceNoteOn += 2;
+            }
+
+            // Mix and output
+            float32x4_t resOut = vaddq_f32(resAOut, resBOut);
+            float32x4_t totalOut = vmlaq_n_f32(dirOut, resOut, gain);
+            float32x4_t split = comb.process(totalOut);
+            float32x4_t channels = limiter.process(split);
+
+            // Accumulate into output buffer
+            float32x4_t old = vld1q_f32(outBuffer);
+            channels = vaddq_f32(old, channels);
+            vst1q_f32(outBuffer, channels);
+
+            // Track max for monitoring
+            float32x4_t absSamples = vabsq_f32(channels);
+            maxSample = vmaxq_f32(maxSample, absSamples);
+
+            outBuffer += 4;
+        }
+
+        if (shouldLog) {
+            // Report max output level
+            float maxArray[4];
+            vst1q_f32(maxArray, maxSample);
+            float maxVal = fmax(fmax(maxArray[0], maxArray[1]),
+                               fmax(maxArray[2], maxArray[3]));
+            setParameter(14, (int)(maxVal * 10000.0f));  // max output * 10000
+        }
+
+        // === DEBUG: Check for NaNs/Infs in output buffer ===
+        static int nan_clamp_count = 0;
+        static bool debug_triggered = false;
+        float* checkBuf = outBuffer - (frames * 2); // outBuffer was incremented
+        bool found_invalid = false;
+        for (size_t i = 0; i < frames * 2; ++i) {
+            float v = checkBuf[i];
+            if (!isfinite(v)) {
+                checkBuf[i] = 0.0f;
+                nan_clamp_count++;
+                found_invalid = true;
+            }
+        }
+        // If invalid state detected, switch to Debug program and set debug params for inspection
+        if (found_invalid && !debug_triggered) {
+            // Set Debug program (assume last_program-1 is Debug, update if needed)
+            setCurrentProgram(Program::Debug);
+
+            // Map debug state to the 24 user-visible parameters using setParameter
+            // (Parameter indices are from ProgramParameters enum, 0..23)
+            static int renderCount = 0;
+            static int frameCount = 0;
+            renderCount++;
+            frameCount += (int)frames;
+
+            // Check if all voices are inactive (not pressed, not ringing)
+            int stuckVoices = 0;
+            for (size_t vi = 0; vi < c_numVoices; ++vi) {
+                const Voice& v = voices[vi];
+                if (!v.isPressed && v.m_framesSinceNoteOn > 1000) stuckVoices++;
+            }
+
+            // 0: mallet_mix - renderCount (clamped 0..1000)
+            setParameter(0, renderCount % 1000);
+            // 1: mallet_res - frameCount (clamped 0..1000)
+            setParameter(1, frameCount % 1000);
+            // 2: mallet_stiff - frames
+            setParameter(2, (int)frames);
+            // 3: a_on - a_on state
+            setParameter(3, a_on ? 1 : 0);
+            // 4: a_model - b_on state (for debug)
+            setParameter(4, b_on ? 1 : 0);
+            // 5: a_partials - m_sampleChannels
+            setParameter(5, (int)m_sampleChannels);
+            // 6: a_decay - m_sampleIndex (clamped)
+            setParameter(6, (int)(m_sampleIndex % 1000));
+            // 7: a_damp - m_sampleEnd (clamped)
+            setParameter(7, (int)(m_sampleEnd % 1000));
+            // 8: a_tone - outBuffer ptr (lower 16 bits)
+            setParameter(8, ((uintptr_t)outBuffer) & 0xFFFF);
+            // 9: a_hit - m_samplePointer ptr (lower 16 bits)
+            setParameter(9, ((uintptr_t)m_samplePointer) & 0xFFFF);
+            // 10: a_rel - nan_clamp_count
+            setParameter(10, nan_clamp_count);
+            // 11: a_inharm - gain * 1000
+            setParameter(11, (int)(gain * 1000.0f));
+            // 12: a_ratio - ab_mix * 1000
+            setParameter(12, (int)(ab_mix * 1000.0f));
+            // 13: a_cut - couple state
+            setParameter(13, parameters[couple] ? 1 : 0);
+            // 14: a_radius - stuckVoices (number of stuck voices)
+            setParameter(14, stuckVoices);
+            // 15: a_coarse - 0 (reserved)
+            setParameter(15, 0);
+            // 16: a_fine - 0 (reserved)
+            setParameter(16, 0);
+            // 17: b_on - 0 (reserved)
+            setParameter(17, 0);
+            // 18: b_model - 0 (reserved)
+            setParameter(18, 0);
+            // 19: b_partials - 0 (reserved)
+            setParameter(19, 0);
+            // 20: b_decay - 0 (reserved)
+            setParameter(20, 0);
+            // 21: b_damp - 0 (reserved)
+            setParameter(21, 0);
+            // 22: b_tone - 0 (reserved)
+            setParameter(22, 0);
+            // 23: b_hit - 0 (reserved)
+            setParameter(23, 0);
+
+            debug_triggered = true;
+        }
+    }
+    // TODO restore this instead of the above Render which is debug version after problem has found
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
         // Restore original render path
@@ -663,11 +925,11 @@ class RipplerX
         if (last_a_model != (int32_t)parameters[a_model]) {
             if (parameters[a_ratio] > 0.0f) {
                 if (parameters[a_model] == ModelNames::Beam)
-                    models.recalcBeam(true, parameters[a_ratio]);
+                    recalcBeam(true, parameters[a_ratio]);
                 else if (parameters[a_model] == ModelNames::Membrane)
-                    models.recalcMembrane(true, parameters[a_ratio]);
+                    recalcMembrane(true, parameters[a_ratio]);
                 else if (parameters[a_model] == ModelNames::Plate)
-                    models.recalcPlate(true, parameters[a_ratio]);
+                    recalcPlate(true, parameters[a_ratio]);
             }
             last_a_model = (int32_t)parameters[a_model];
             frequencyModelChanged = true;
@@ -676,11 +938,11 @@ class RipplerX
         if (last_b_model != (int32_t)parameters[b_model]) {
             if (parameters[b_ratio] > 0.0f) {
                 if (parameters[b_model] == ModelNames::Beam)
-                    models.recalcBeam(false, parameters[b_ratio]);
+                    recalcBeam(false, parameters[b_ratio]);
                 else if (parameters[b_model] == ModelNames::Membrane)
-                    models.recalcMembrane(false, parameters[b_ratio]);
+                    recalcMembrane(false, parameters[b_ratio]);
                 else if (parameters[b_model] == ModelNames::Plate)
-                    models.recalcPlate(false, parameters[b_ratio]);
+                    recalcPlate(false, parameters[b_ratio]);
             }
             last_b_model = (int32_t)parameters[b_model];
             frequencyModelChanged = true;
@@ -827,15 +1089,15 @@ class RipplerX
         static constexpr bool k_showABMarkersNumeric = true;
         auto fmt_num = [](char* buf, size_t n, const char* prefix, int32_t scaled, int decimals, const char* suffix) {
             if (decimals <= 0) {
-                std::snprintf(buf, n, "%s%d%s", prefix, scaled, (suffix ? suffix : ""));
+                snprintf(buf, n, "%s%d%s", prefix, scaled, (suffix ? suffix : ""));
             } else if (decimals == 1) {
-                std::snprintf(buf, n, "%s%.1f%s", prefix, (double)scaled / 10.0, (suffix ? suffix : ""));
+                snprintf(buf, n, "%s%.1f%s", prefix, (double)scaled / 10.0, (suffix ? suffix : ""));
             } else if (decimals == 2) {
-                std::snprintf(buf, n, "%s%.2f%s", prefix, (double)scaled / 100.0, (suffix ? suffix : ""));
+                snprintf(buf, n, "%s%.2f%s", prefix, (double)scaled / 100.0, (suffix ? suffix : ""));
             } else if (decimals == 3) {
-                std::snprintf(buf, n, "%s%.3f%s", prefix, (double)scaled / 1000.0, (suffix ? suffix : ""));
+                snprintf(buf, n, "%s%.3f%s", prefix, (double)scaled / 1000.0, (suffix ? suffix : ""));
             } else {
-                std::snprintf(buf, n, "%s%.4f%s", prefix, (double)scaled / 10000.0, (suffix ? suffix : ""));
+                snprintf(buf, n, "%s%.4f%s", prefix, (double)scaled / 10000.0, (suffix ? suffix : ""));
             }
         };
         switch (index) {
@@ -852,14 +1114,14 @@ class RipplerX
                     if ((size_t)value < c_modelElements) {
                         if (!k_showABMarkers) return c_modelName[value];
                         static char s_modelBuf[32];
-                        std::snprintf(s_modelBuf, sizeof(s_modelBuf), "A:%s", c_modelName[value]);
+                        snprintf(s_modelBuf, sizeof(s_modelBuf), "A:%s", c_modelName[value]);
                         return s_modelBuf;
                     }
                     if ((size_t)value < (size_t)(2 * c_modelElements)) {
                         int base = value - (int32_t)c_modelElements;
                         if (!k_showABMarkers) return c_modelName[base];
                         static char s_modelBuf[32];
-                        std::snprintf(s_modelBuf, sizeof(s_modelBuf), "B:%s", c_modelName[base]);
+                        snprintf(s_modelBuf, sizeof(s_modelBuf), "B:%s", c_modelName[base]);
                         return s_modelBuf;
                     }
                 }
@@ -869,14 +1131,14 @@ class RipplerX
                     if ((size_t)value < c_partialElements) {
                         if (!k_showABMarkers) return c_partialsName[value];
                         static char s_partialsBuf[32];
-                        std::snprintf(s_partialsBuf, sizeof(s_partialsBuf), "A:%s", c_partialsName[value]);
+                        snprintf(s_partialsBuf, sizeof(s_partialsBuf), "A:%s", c_partialsName[value]);
                         return s_partialsBuf;
                     }
                     if ((size_t)value < (size_t)(2 * c_partialElements)) {
                         int base = value - (int32_t)c_partialElements;
                         if (!k_showABMarkers) return c_partialsName[base];
                         static char s_partialsBuf[32];
-                        std::snprintf(s_partialsBuf, sizeof(s_partialsBuf), "B:%s", c_partialsName[base]);
+                        snprintf(s_partialsBuf, sizeof(s_partialsBuf), "B:%s", c_partialsName[base]);
                         return s_partialsBuf;
                     }
                 }
@@ -1047,7 +1309,7 @@ class RipplerX
 
     inline void PitchBend(uint16_t bend) {
         // Convert MIDI bend (0-0x4000, centered at 0x2000) to fine pitch (-99 to 99)
-        parameters[a_fine] = 100 * (bend - 0x2000) / 0x2000;        // pitchBendRange = 100
+        parameters[a_fine] = 100.0f * (float)(bend - 0x2000) / 0x2000;        // pitchBendRange = 100
         prepareToPlay(false, true, false, false, false);
     }
 
@@ -1093,7 +1355,9 @@ class RipplerX
     inline void setCurrentProgram(int index) {
         if (index >= 0 && index < (int)last_program) {
             m_currentProgram = index;
-            parameters = programs[index];
+            for (int i = 0; i < ProgramParameters::last_param; ++i) {
+                parameters[i] = programs[index][i];
+            }
         }
         // Precompute gain in dB -> linear conversion
         parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
@@ -1118,13 +1382,13 @@ class RipplerX
 
     // Audio processing state (static allocation)
     Voice voices[c_numVoices];
-    Models models;
+
     Comb comb{};
     Limiter limiter{};
     int nvoice = 0;
 
     // ProgramParameters (instance member - not static)
-    std::array<float32_t, last_param> parameters{};
+    float32_t parameters[ProgramParameters::last_param] = {};
 
     // State variables
     uint8_t m_currentProgram = 0;

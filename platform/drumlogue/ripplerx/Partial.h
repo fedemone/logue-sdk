@@ -8,7 +8,8 @@
 class Partial
 {
 public:
-	Partial(int n) { k = n; };
+	Partial() { k = 1; } // Default constructor for array allocation
+	Partial(int n) { k = n; }
 	~Partial() {};
 
 	void update(float32_t freq, float32_t ratio, float32_t ratio_max, float32_t vel, bool isRelease);

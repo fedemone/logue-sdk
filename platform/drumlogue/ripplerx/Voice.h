@@ -5,23 +5,20 @@
 // they also calculate split frequencies for coupled resonators
 // and tune the resonators modals by providing the models
 
-#include <array>
+ #include <stddef.h>
 #include "Mallet.h"
 #include "Noise.h"
 #include "Resonator.h"
-#include "tuple"
-
-class Models;
+#include "Models.h"
 //TODO: class Sampler
 
 class Voice
 {
 public:
-	Voice() : models(nullptr) {}
-	Voice(Models& m/**< TODO:, Sampler& s */) : models(&m) {} /**<TODO: , mallet(s) {} */
+	Voice() {}
 	~Voice() {}
 
-	void setModels(Models* m) { models = m; }
+	// setModels removed; model access is now static C API
 	void Init();
 	float32_t note2freq(int _note);
 	void trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
@@ -34,9 +31,8 @@ public:
 	void clear();
 	void setPitch(float32_t a_coarse, float32_t b_coarse, float32_t a_fine, float32_t b_fine);
 	void setRatio(float32_t _a_ratio, float32_t _b_ratio);
-	void applyPitch(std::array<float32_t, 64>& model, float32_t factor);
-	float32x4_t inline freqShift(float32_t fa, float32_t fb) const;
-	std::tuple<std::array<float32_t, 64>, std::array<float32_t, 64>> calcFrequencyShifts();
+	void applyPitch(float32_t* model, float32_t factor);
+	// Frequency shift logic is now fully in updateResonators; see Voice.cc for details.
 
 	/** TODO:
 	double processOscillators(bool isA);
@@ -86,9 +82,8 @@ public:
 	Resonator resB{};
 
 private:
-	Models* models;
-    std::array<float32_t, 64> aShifts = {};
-    std::array<float32_t, 64> bShifts = {};
+	float32_t aShifts[64] = {0};
+	float32_t bShifts[64] = {0};
 	//TODO:
 	//std::array<float32_t, 64> aPhases = {};
 	//std::array<float32_t, 64> bPhases = {};

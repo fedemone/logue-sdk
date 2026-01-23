@@ -2,7 +2,7 @@
 // Waveguide for OpenTube and ClosedTube models
 // Uses float32x4_t ARM NEON vectors for consistency with rest of codebase
 #pragma once
-#include <vector>
+#include "constants.h"
 #include "float_math.h"
 
 class Waveguide
@@ -27,8 +27,7 @@ private:
 	int read_ptr = 0;
 	int write_ptr = 0;
 	float32_t tube_decay = 0.0f;
-	std::vector<float32x4_t> tube;  // Changed to float32x4_t for NEON vectorization
-	static constexpr int tube_len = 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
+	float32x4_t tube[tube_len];  // Changed to static array for NEON vectorization
 
 	float32x4_t y{};   // Zero-initialized, proper member
 	float32x4_t y1{};  // Zero-initialized, proper member

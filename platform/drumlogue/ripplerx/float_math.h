@@ -46,6 +46,12 @@
 #ifndef __float_math_h
 #define __float_math_h
 
+#ifdef fmax
+#undef fmax
+#endif
+#ifdef fmin
+#undef fmin
+#endif
 #include <math.h>
 #include <stdint.h>
 #include <arm_neon.h>

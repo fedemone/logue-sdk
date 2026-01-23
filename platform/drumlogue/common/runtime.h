@@ -166,7 +166,7 @@ enum {
   k_unit_param_frac_mode_fixed = 0U,
   k_unit_param_frac_mode_decimal = 1U,
 };
-  
+
 /** @private */
 #pragma pack(push, 1)
 typedef struct unit_param {
@@ -225,6 +225,7 @@ enum {
   k_unit_err_geometry = -8,
   k_unit_err_memory = -16,
   k_unit_err_undef = -32,
+  k_unit_err_samplebank = -64,
 };
 
 /** @private */

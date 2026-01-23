@@ -1,6 +1,8 @@
+#include <stddef.h>
 #include "float_math.h"
+#include <cstddef>
 #include "Voice.h"
-// #include "Models.h"
+#include "Models.h" // Ensure this includes the full definition, not just a forward declaration
 #include "constants.h"
 
 void Voice::Init()
@@ -130,14 +132,8 @@ void Voice::setPitch(float32_t a_coarse, float32_t b_coarse, float32_t a_fine, f
     aPitchFactor = fasterpowf(2.0f, (a_coarse + a_fine / c_cents_per_semitone) / c_semitones_per_octave);
     bPitchFactor = fasterpowf(2.0f, (b_coarse + b_fine / c_cents_per_semitone) / c_semitones_per_octave);
 }
-/**< TODO:
-void Voice::setRatio(float32_t _a_ratio, float32_t _b_ratio)
-{
-	a_ratio = _a_ratio;
-	b_ratio = _b_ratio;
-}
-*/
-void Voice::applyPitch(std::array<float32_t, 64>& model, float32_t factor)
+// setRatio is deprecated; model ratios are now handled via static model data and recalc functions.
+void Voice::applyPitch(float32_t* model, float32_t factor)
 {
     // for (float32_t& ratio : model)
     //     ratio *= factor;
@@ -146,18 +142,18 @@ void Voice::applyPitch(std::array<float32_t, 64>& model, float32_t factor)
     for (size_t i = 0; i < 64; i += 16) {
         // load from model
         a0 = vld1q_f32(&model[i]);
-        a1 = vld1q_f32(&model[i] + 4);
-        a2 = vld1q_f32(&model[i] + 8);
-        a3 = vld1q_f32(&model[i] + 12);
+        a1 = vld1q_f32(&model[i + 4]);
+        a2 = vld1q_f32(&model[i + 8]);
+        a3 = vld1q_f32(&model[i + 12]);
         a0 = vmulq_n_f32(a0, factor);
         a1 = vmulq_n_f32(a1, factor);
         a2 = vmulq_n_f32(a2, factor);
         a3 = vmulq_n_f32(a3, factor);
-        // Store the results into model
+        // Store the results into mode
         vst1q_f32(&model[i], a0);
-        vst1q_f32(&model[i] + 4, a1);
-        vst1q_f32(&model[i] + 8, a2);
-        vst1q_f32(&model[i] + 12, a3);
+        vst1q_f32(&model[i + 4], a1);
+        vst1q_f32(&model[i + 8], a2);
+        vst1q_f32(&model[i + 12], a3);
     }
 // TODO: Voice::processOscillators(bool isA)
 
@@ -362,15 +358,15 @@ void Voice::applyPitch(std::array<float32_t, 64>& model, float32_t factor)
 void Voice::updateResonators(bool updateFrequencies)
 {
     if (updateFrequencies) {
-        std::array<float32_t, 64> aModel = models->getAModels()[resA.getModel()];
-        std::array<float32_t, 64> bModel = models->getBModels()[resB.getModel()];
-
-        if (aPitchFactor != 1.0f) applyPitch(aModel, aPitchFactor);
-        if (bPitchFactor != 1.0f) applyPitch(bModel, bPitchFactor);
-
-        // Initialize shifts with base models
-        aShifts = aModel;
-        bShifts = bModel;
+        const float32_t* aModelSrc = getAModels(resA.getModel());
+        const float32_t* bModelSrc = getBModels(resB.getModel());
+        // Copy model data into local arrays
+        for (int i = 0; i < 64; ++i) {
+            aShifts[i] = aModelSrc[i];
+            bShifts[i] = bModelSrc[i];
+        }
+        if (aPitchFactor != 1.0f) applyPitch(aShifts, aPitchFactor);
+        if (bPitchFactor != 1.0f) applyPitch(bShifts, bPitchFactor);
 
         if (couple && resA.isOn() && resB.isOn() && freq > 0.1f) {
             // Precompute constants once
@@ -400,7 +396,7 @@ void Voice::updateResonators(bool updateFrequencies)
 
             for (int i_tile = 0; i_tile < 64; i_tile += OUTER_TILE) {
                 // Load 4 fa values for this tile
-                float32x4_t fa_vec = vld1q_f32(&aModel[i_tile]);
+                float32x4_t fa_vec = vld1q_f32(&aShifts[i_tile]);
 
                 // Accumulators for this tile (one accumulator per fa)
                 float32x4_t k_count_tile = vdupq_n_f32(0.0f);    // Sum of +1/-1 for each fa
@@ -410,7 +406,7 @@ void Voice::updateResonators(bool updateFrequencies)
 
                 // Inner loop: process fb values in groups of 4
                 for (int j_tile = 0; j_tile < 64; j_tile += OUTER_TILE) {
-                    float32x4_t fb_vec = vld1q_f32(&bModel[j_tile]);
+                    float32x4_t fb_vec = vld1q_f32(&bShifts[j_tile]);
 
                     // Process each of 4 fb values against all 4 fa values - unrolled with constant indices
                     for (int fb_idx = 0; fb_idx < OUTER_TILE; ++fb_idx) {
