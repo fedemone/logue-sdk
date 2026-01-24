@@ -1,6 +1,4 @@
 #include "ripplerx.h"
-// Definition of debug variable for output channel tracking
-volatile int g_last_output_channels = -1;
 #include "ripplerx.h"
 #include "constants.h"
 /* RipplerX */

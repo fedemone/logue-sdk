@@ -6,14 +6,14 @@
  *
  */
 
-#include "../common/unit.h"  // Note: Include common definitions for all units
-
+#include <cstddef>
 #include <string.h>
 #include <cstdint>
 
-#include "ripplerx.h"  // Note: Include custom master fx code
+#include "../common/unit.h"  // Note: Include common definitions for all units
+#include "ripplerx.h"        // Note: Include custom master fx code
 
-static RipplerX s_synth_instance;      // Note: In this case, actual instance of custom master fx object.
+static RipplerX s_synth_instance;           // Note: In this case, actual instance of custom master fx object.
 static unit_runtime_desc_t s_runtime_desc;  // Note: used to cache runtime descriptor obtained via init callback
 
 // ---- Callback entry points from drumlogue runtime ----------------------------------------------
@@ -56,8 +56,6 @@ __unit_callback void unit_suspend() {
 Input/output buffer geometry information is provided via the `unit_runtime_desc_t` argument of `unit_init(..)`.*/
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void)in;
-  // Initialize buffer to zero (Render accumulates into it)
-  memset(out, 0, frames * 2 * sizeof(float));
   s_synth_instance.Render(out, frames);
 }
 /*  Called to set the current value of the parameter designated by the specified index.

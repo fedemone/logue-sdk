@@ -1,7 +1,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-extern volatile int g_last_output_channels;
 #ifdef __cplusplus
 }
 #endif
@@ -121,12 +120,9 @@ class RipplerX
     ~RipplerX() = default;
 
     inline int8_t Init(const unit_runtime_desc_t * desc) {
-            // TEST: Return unique error code to verify Init is called
-            return 99;
         // Validate runtime configuration
         if (desc->samplerate != c_sampleRate)
             return k_unit_err_samplerate + 10; // 10 = samplerate fail
-        g_last_output_channels = desc->output_channels;
         if (desc->output_channels != 1 && desc->output_channels != 2) {
             // 20 = geometry fail, plus output_channels for debug
             return k_unit_err_geometry + 20 + (desc->output_channels & 0x7F);
@@ -247,7 +243,7 @@ class RipplerX
      * High-performance audio rendering with ARM NEON vectorization
      * Processes voices in parallel, with scalar-to-NEON optimization
      */
-    inline void Render_debug(float * __restrict outBuffer, size_t frames)
+    inline void Render(float * __restrict outBuffer, size_t frames)
     {
         // DEBUG VERSION: Temporary instrumentation for silence investigation
         // Load parameters once per render call
@@ -257,30 +253,17 @@ class RipplerX
 
         static int frameCount = 0;
         static int renderCount = 0;
+        static int failsafe_nan_frames = 0;
         const bool shouldLog = (renderCount++ % 48) == 0;  // Log ~every 100ms at 48kHz
 
+        // Log key parameters at start of render for troubleshooting
         if (shouldLog) {
-            // Set debug values to Program::Debug parameters
-            setCurrentProgram(Program::Debug);
-
-            // Check voices
-            int activeVoices = 0;
-            for (size_t i = 0; i < c_numVoices; ++i) {
-                if (voices[i].m_initialized && voices[i].m_gate) {
-                    activeVoices++;
-                }
-            }
-
-            // Set debug parameters
-            setParameter(15, activeVoices);  // active voices
-            setParameter(16, (int)(gain * 1000.0f));  // gain * 1000
-            setParameter(17, a_on ? 1 : 0);  // a_on
-            setParameter(18, b_on ? 1 : 0);  // b_on
-            setParameter(19, (int)m_sampleChannels);  // sample channels
-            setParameter(20, (int)(m_sampleIndex % 1000));  // sample index mod 1000
-            setParameter(21, renderCount % 1000);  // render count mod 1000
-            setParameter(22, frameCount % 1000);  // frame count mod 1000
-            setParameter(23, (int)frames);  // frames per call
+            setParameter(0, (int)a_on);
+            setParameter(1, (int)b_on);
+            setParameter(2, (int)(gain * 1000.0f));
+            setParameter(3, (int)m_sampleChannels);
+            setParameter(4, (int)(m_sampleIndex % 1000));
+            setParameter(5, (int)frames);
         }
 
         // Load precompute constants
@@ -414,79 +397,56 @@ class RipplerX
                 found_invalid = true;
             }
         }
-        // If invalid state detected, switch to Debug program and set debug params for inspection
-        if (found_invalid && !debug_triggered) {
-            // Set Debug program (assume last_program-1 is Debug, update if needed)
+        if (found_invalid) {
+            failsafe_nan_frames++;
+        } else {
+            failsafe_nan_frames = 0;
+        }
+        // If invalid state detected for several frames, switch to Debug program and silence output
+        if ((found_invalid && !debug_triggered) || failsafe_nan_frames > 4) {
             setCurrentProgram(Program::Debug);
-
+            for (size_t i = 0; i < frames * 2; ++i) {
+                checkBuf[i] = 0.0f;
+            }
             // Map debug state to the 24 user-visible parameters using setParameter
-            // (Parameter indices are from ProgramParameters enum, 0..23)
-            static int renderCount = 0;
-            static int frameCount = 0;
-            renderCount++;
-            frameCount += (int)frames;
-
-            // Check if all voices are inactive (not pressed, not ringing)
+            static int renderCountDbg = 0;
+            static int frameCountDbg = 0;
+            renderCountDbg++;
+            frameCountDbg += (int)frames;
             int stuckVoices = 0;
             for (size_t vi = 0; vi < c_numVoices; ++vi) {
                 const Voice& v = voices[vi];
                 if (!v.isPressed && v.m_framesSinceNoteOn > 1000) stuckVoices++;
             }
-
-            // 0: mallet_mix - renderCount (clamped 0..1000)
-            setParameter(0, renderCount % 1000);
-            // 1: mallet_res - frameCount (clamped 0..1000)
-            setParameter(1, frameCount % 1000);
-            // 2: mallet_stiff - frames
+            setParameter(0, renderCountDbg % 1000);
+            setParameter(1, frameCountDbg % 1000);
             setParameter(2, (int)frames);
-            // 3: a_on - a_on state
             setParameter(3, a_on ? 1 : 0);
-            // 4: a_model - b_on state (for debug)
             setParameter(4, b_on ? 1 : 0);
-            // 5: a_partials - m_sampleChannels
             setParameter(5, (int)m_sampleChannels);
-            // 6: a_decay - m_sampleIndex (clamped)
             setParameter(6, (int)(m_sampleIndex % 1000));
-            // 7: a_damp - m_sampleEnd (clamped)
             setParameter(7, (int)(m_sampleEnd % 1000));
-            // 8: a_tone - outBuffer ptr (lower 16 bits)
             setParameter(8, ((uintptr_t)outBuffer) & 0xFFFF);
-            // 9: a_hit - m_samplePointer ptr (lower 16 bits)
             setParameter(9, ((uintptr_t)m_samplePointer) & 0xFFFF);
-            // 10: a_rel - nan_clamp_count
             setParameter(10, nan_clamp_count);
-            // 11: a_inharm - gain * 1000
             setParameter(11, (int)(gain * 1000.0f));
-            // 12: a_ratio - ab_mix * 1000
-            setParameter(12, (int)(ab_mix * 1000.0f));
-            // 13: a_cut - couple state
+            setParameter(12, (int)(getParameterValue(ProgramParameters::ab_mix) * 1000.0f));
             setParameter(13, parameters[couple] ? 1 : 0);
-            // 14: a_radius - stuckVoices (number of stuck voices)
             setParameter(14, stuckVoices);
-            // 15: a_coarse - 0 (reserved)
             setParameter(15, 0);
-            // 16: a_fine - 0 (reserved)
             setParameter(16, 0);
-            // 17: b_on - 0 (reserved)
             setParameter(17, 0);
-            // 18: b_model - 0 (reserved)
             setParameter(18, 0);
-            // 19: b_partials - 0 (reserved)
             setParameter(19, 0);
-            // 20: b_decay - 0 (reserved)
             setParameter(20, 0);
-            // 21: b_damp - 0 (reserved)
             setParameter(21, 0);
-            // 22: b_tone - 0 (reserved)
             setParameter(22, 0);
-            // 23: b_hit - 0 (reserved)
             setParameter(23, 0);
-
             debug_triggered = true;
         }
     }
     // TODO restore this instead of the above Render which is debug version after problem has found
-    inline void Render(float * __restrict outBuffer, size_t frames)
+    inline void Render_origin(float * __restrict outBuffer, size_t frames)
     {
         // Restore original render path
         // Load parameters once per render call (reduces memory pressure)

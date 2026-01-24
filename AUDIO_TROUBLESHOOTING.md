@@ -1,11 +1,85 @@
-# RipplerX Audio Troubleshooting & Optimization Guide
+# Investigation Update (Jan 24, 2026)
+## Case 3: Loading a Different Program
+
+- **Test:** Loading preset 1 (should be Bells2) shows program name as Bells. Loading preset 15 (KeyRing) for value reference.
+- **Observation:** Parameter values on screen do not match expected values from the selected preset. For example, loading KeyRing does not update all parameters as expected; some values remain at defaults or previous state.
+- **Consistency:** This matches previous findings—program/parameter loading is not reliably propagating all preset values to the engine/UI. The program name may not update, and parameters may not reflect the intended preset.
+- **Status:** This is a confirmed source of confusion and potential silent/incorrect behavior. The root cause is likely incomplete or missing logic for copying all preset values from the `programs` array to the parameter state on program change.
+
+### Parameter Table (Summary)
+| Parameter | Default | Case 1 | Case 2 | Case 3 |
+|-----------|---------|--------|--------|--------|
+| Program Name | Bells | Bells2 | Bells | KeyRing |
+| Resonator Note | C4 | C-1 | C4 | C4 |
+| Sample Bank | CH | CH | CH | CH |
+| Sample Number | 1 | 1 | 1 | 1 |
+| Mallet Resonance | 0.8 | 0.0 | 0.8 | 0.7 |
+| Mallet Stiffness | 600 | 64 | 600 | 642 |
+| Velocity Mallet Resonance | 0.000 | 125.000 | 0.000 | 0.000 |
+| Velocity Mallet Stiffness | 0.000 | 0.000 | 0.000 | 0.000 |
+| Model | A:Membrane | A:Beam | A:Membrane | A:Marimba |
+| Partials | --- | A32 | --- | A64 |
+| Decay | 1.0 | 1.2 | 1.0 | 1.1 |
+| Material | 0.0 | 0.0 | 0.0 | -0.5 |
+| Tone | 0.0 | 0 | 0 | 0 |
+| Hit Position | 6.50 | 0.00 | 6.50 | 6.50 |
+| Release | 5.0 | 0.0000 | 5.0 | 0.5 |
+| Inharmonic | 0.0250 | 0.0000 | 0.0250 | 0.0250 |
+| Filter Cutoff | 10Hz | 72Hz | 10Hz | 33Hz |
+| Tube Radius | 2.5 | 0.0 | 2.5 | 2.5 |
+| Coarse Pitch | 0 | 0 | 0 | -12 |
+| Noise Mix | 0.0% | 0.0% | 0.0% | 0.0% |
+| Noise Resonance | 0.0% | 0.0% | 0.0% | 11.8% |
+| Noise Filter Mode | LP | BP | LP | HP |
+| Noise Filter Freq | 20Hz | 2035Hz | 20Hz | 314Hz |
+| Noise Filter Q | 23.567 | 0.067 | 23.567 | 0.033 |
+
+---
+
+## Updated Analysis Status
+
+- **Program/Parameter Loading:**
+    - Changing programs does not reliably update all parameters to the intended preset values.
+    - The program name and parameter values may not match the selected preset, leading to confusion and possible silent/incorrect states.
+    - This is a critical bug: the logic for loading/copying preset values from the `programs` array to the engine/UI must be reviewed and fixed.
+    - Until this is resolved, all other parameter validation and silence-source checks may be unreliable, as the synth may not be in the intended state after a program change.
+
+## Findings So Far
+- **Root causes of silence identified:**
+  - **Sample Number = 0:** This should never happen. The parameter mapping and program loading must always set sample number ≥ 1. If 0 is loaded, the engine will be silent or malfunction.
+  - **Note Number Out of Range:** If the note parameter is set above C2 or outside the valid MIDI range, the synth go silent. This needs further investigation.
+  - **Partials Parameter Out of Range:** If the partials parameter is set outside the mapped range, the resonator may be silent. This is a candidate for future fixes.
+    - **Default parameter mismatch:** The default values in `header.c` do NOT match the values for the "Bells" program in the `programs` array (`constants.h`). This can cause the synth to start in a state that does not correspond to the expected preset, leading to confusion or silent/incorrect behavior. This is a confirmed source of problems and should be fixed by aligning the defaults or always loading the correct program on init/reset.
+
+## Investigation Status
+- Parameter mapping in `header.c` and `constants.h` reviewed. The order and ranges are correct, but runtime or preset loading may allow invalid values.
+- Preset/program loading must be checked to ensure all parameters (especially sample number, note, partials) are set to valid, non-silent values.
+- No random parameter corruption observed; values are systematic and repeatable.
+
+## Next Steps
+1. **Enforce valid sample number on program load and parameter set.**
+    - Clamp or correct sample number to be at least 1 everywhere.
+    - Audit preset loading and parameter propagation for this.
+2. **Investigate note parameter handling.**
+    - Confirm that all valid MIDI notes (1..126) are handled and do not cause silence.
+    - Trace mapping from parameter value to frequency/voice.
+
+3. **Automated Unit Test for Program Parameters**
+    - Created `ripplerx_param_unittest.cpp` (host-only, not for hardware) to check all preset parameter values for valid ranges (sample number, note, partials, etc.).
+    - Run this test after any preset or parameter logic change to catch silent/invalid programs before hardware testing.
+    - Next: review and extend test to cover all silence sources and edge cases.
+4. **(Future) Clamp partials parameter.**
+    - Ensure partials parameter is always mapped to a valid value.
+
+---
+s crash persists, add more failsafes (e.g., silence output after N frames, forcibly reset synth state).
 
 ## Bugs Fixed (January 2026)
 
 ### 1. Critical Loop Iteration Bug ✓ FIXED
 **Location**: [ripplerx.h:420](platform/drumlogue/ripplerx/ripplerx.h#L420)
 
-**Problem**: 
+**Problem**:
 ```cpp
 for (size_t frame = 0; frame < frames; frame += 2)  // WRONG
 ```
@@ -35,7 +109,7 @@ m_sampleIndex += 2;
 ### 3. Frame Counter Overflow Bug ✓ FIXED
 **Location**: [ripplerx.h:522](platform/drumlogue/ripplerx/ripplerx.h#L522)
 
-**Problem**: 
+**Problem**:
 ```cpp
 voice.m_framesSinceNoteOn += frames;  // Inside loop - WRONG!
 ```
@@ -436,9 +510,9 @@ After analyzing the working **loguePADS** synth (Oleg Burdaev's sample-based dru
 
 ## Developer Notes
 
-**Author**: Fedemone (dev_id: 0x46654465 'FeDe')  
-**Hardware**: Korg drumlogue  
-**SDK**: logue-sdk (modified)  
+**Author**: Fedemone (dev_id: 0x46654465 'FeDe')
+**Hardware**: Korg drumlogue
+**SDK**: logue-sdk (modified)
 **Architecture**: ARMv7-A NEON, 48kHz stereo, hard-float ABI
 
 **Key Files**:
