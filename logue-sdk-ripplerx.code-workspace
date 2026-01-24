@@ -1,0 +1,47 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"c-cpp-flylint.enable": false,
+		"c-cpp-flylint.run": "onSave",
+		"C_Cpp.intelliSenseEngine": "disabled",
+		"C_Cpp.default.compilerPath": "D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++.exe",
+		"C_Cpp.default.cppStandard": "c++14",
+		"C_Cpp.default.cStandard": "c11",
+		"C_Cpp.default.includePath": [
+			"${workspaceFolder}/**",
+			"D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf/include/c++/6.5.0",
+			"D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf/include/c++/6.5.0/arm-unknown-linux-gnueabihf",
+			"D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf/include/c++/6.5.0/backward",
+			"D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/lib/gcc/arm-unknown-linux-gnueabihf/6.5.0/include",
+			"D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/lib/gcc/arm-unknown-linux-gnueabihf/6.5.0/include-fixed",
+			"D:/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf/include",
+			"${workspaceFolder}/platform/ext/CMSIS/CMSIS/Core/Include",
+			"${workspaceFolder}/platform/ext/CMSIS/CMSIS/DSP/Include"
+		],
+		"C_Cpp.default.defines": [
+			"__ARM_ARCH_7A__",
+			"__ARM_NEON__",
+			"__ARM_PCS_VFP",
+			"ARM_MATH_CM4",
+			"__FPU_PRESENT=1",
+			"__GNUC__=6"
+		],
+		"C_Cpp.default.intelliSenseMode": "linux-gcc-arm"
+	},
+	"launch": {
+		"configurations": [
+			{
+				"type": "cmake",
+				"request": "launch",
+				"name": "Debug portfile(s)",
+				"cmakeDebugType": "external",
+				"pipeName": "\\\\.\\pipe\\vcpkg_ext_portfile_dbg",
+				"preLaunchTask": "Debug vcpkg commands"
+			}
+		]
+	}
+}
