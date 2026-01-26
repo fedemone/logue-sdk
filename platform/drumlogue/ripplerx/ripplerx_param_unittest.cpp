@@ -89,6 +89,23 @@ int main() {
     errors += test_enum_mapping();
     errors += test_partials_silence();
     errors += test_note_silence();
+
+    // --- Dynamic test: simulate problematic partials transitions ---
+    // Simulate A:32 (0) -> B:64 (4) -> A:64 (1)
+    float partials = 0.0f; // A:32
+    float note = 60.0f;    // Middle C
+    // Step 1: A:32
+    bool silent1 = isSilent(partials, note);
+    // Step 2: B:64
+    partials = 4.0f;
+    bool silent2 = isSilent(partials, note);
+    // Step 3: A:64
+    partials = 1.0f;
+    bool silent3 = isSilent(partials, note);
+    if (!silent1 && !silent2 && silent3) {
+        std::printf("[DYNAMIC TEST] Transition A:32 -> B:64 -> A:64 caused silence!\n");
+        ++errors;
+    }
     // Additional: check for NaN and out-of-bounds values
     for (size_t prog = 0; prog < Program::last_program; ++prog) {
         for (size_t param = 0; param < ProgramParameters::last_param; ++param) {
@@ -96,25 +113,23 @@ int main() {
             if (!(value == value)) { // NaN check
                 std::printf("ERROR: Program %zu param %zu is NaN\n", prog, param);
                 ++errors;
-                    for (size_t prog = 0; prog < Program::last_program; ++prog) {
-                        for (size_t param = 0; param < ProgramParameters::last_param; ++param) {
-                            float value = programs[prog][param];
-                            if (!(value == value)) { // NaN check
-                                std::printf("ERROR: Program %zu param %zu is NaN\n", prog, param);
-                                ++errors;
-                            }
-                            // Example: negative decay
-                            if ((param == ProgramParameters::a_decay || param == ProgramParameters::b_decay) && value < 0.0f) {
-                                std::printf("ERROR: Program %zu param %zu (decay) is negative: %f\n", prog, param, value);
-                                ++errors;
-                            }
-                            // Check a_partials and b_partials are exactly 0,1,2,3,4
-                            if ((param == ProgramParameters::a_partials || param == ProgramParameters::b_partials)) {
-                                if (!(value == 0.0f || value == 1.0f || value == 2.0f || value == 3.0f || value == 4.0f)) {
-                                    std::printf("ERROR: Program %zu param %zu (partials) invalid: %f\n", prog, param, value);
-                                    ++errors;
-                                }
-                            }
-                        }
-                    }
+            }
+            // Example: negative decay
+            if ((param == ProgramParameters::a_decay || param == ProgramParameters::b_decay) && value < 0.0f) {
+                std::printf("ERROR: Program %zu param %zu (decay) is negative: %f\n", prog, param, value);
+                ++errors;
+            }
+            // Check a_partials and b_partials are exactly 0,1,2,3,4
+            if ((param == ProgramParameters::a_partials || param == ProgramParameters::b_partials)) {
+                if (!(value == 0.0f || value == 1.0f || value == 2.0f || value == 3.0f || value == 4.0f)) {
+                    std::printf("ERROR: Program %zu param %zu (partials) invalid: %f\n", prog, param, value);
+                    ++errors;
+                }
+            }
+        }
+    }
+    if (errors == 0) {
+        std::printf("All parameter and preset checks passed.\n");
+    }
+    return errors;
 }

@@ -61,11 +61,15 @@ public:
     ~RipplerX() = default;
 
     inline int8_t Init(const void* /*desc*/) {
-        // Simulate preset load
         m_currentProgram = 0;
-        // Simulate default partials value (should match Program::Initial)
-        parameters[ProgramParameters::a_partials] = 3; // index for A:4
+        parameters[ProgramParameters::a_model] = 2; // Default: Membrane
+        parameters[ProgramParameters::a_partials] = 0; // Default: A:32 (index 0)
         return 0;
+    }
+
+    inline void setParameter(uint8_t index, int32_t value) {
+        if (index < ProgramParameters::last_param)
+            parameters[index] = value;
     }
 
     inline int32_t getParameterValue(uint8_t index) const {
@@ -74,7 +78,28 @@ public:
         return parameters[index];
     }
 
+    // Simulate silence/invalid state: returns 1 if silent/invalid, 0 if OK
+    inline int isSilent() const {
+        // Simulate: silence if a_model == Drumhead (3), or a_partials transitions from B:64 to A:64 (index 1)
+        if ((int)parameters[ProgramParameters::a_model] == 3) // Drumhead
+            return 1;
+        if ((int)parameters[ProgramParameters::a_partials] == 1 && last_partials_was_b64)
+            return 1;
+        return 0;
+    }
+
+    // Call this after each partials change to track B:64 -> A:64 transition
+    inline void trackPartialsTransition(int32_t new_val) {
+        if (last_partials == 2) // 2 = B:64 (example index, adjust as needed)
+            last_partials_was_b64 = 1;
+        else
+            last_partials_was_b64 = 0;
+        last_partials = new_val;
+    }
+
 private:
     float parameters[ProgramParameters::last_param] = {};
     uint8_t m_currentProgram = 0;
+    int last_partials = 0;
+    int last_partials_was_b64 = 0;
 };

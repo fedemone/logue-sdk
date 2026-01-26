@@ -1,3 +1,8 @@
+## Debug Parameter Export Block (Jan 2026)
+
+In January 2026, a debug block was added to export internal model/partials state to user parameters (slots 15–17) in `render()`. This block was later removed from the NaN/invalid state handler after it was found to cause severe sound corruption and hardware instability if triggered outside the Debug program context. If similar issues reappear, check for accidental parameter overwrites or out-of-bounds writes in debug/diagnostic code.
+
+**Key lesson:** Only export debug state when the Debug program is selected, and never write to parameter slots unconditionally in error handlers.
 # [2026-01-25] Latest findings and next steps
 
 ## Findings

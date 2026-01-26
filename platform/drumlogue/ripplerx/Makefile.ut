@@ -1,16 +1,21 @@
 # Minimal Makefile for standalone unit test (x86_64, no ARM flags)
 
-UT_SRC = ripplerx_param_unittest.cpp
-UT_BIN = ripplerx_param_unittest
+UT_SRC = ripplerx_param_unittest.cpp ripplerx_param_unittest_merged.cpp
+UT_BIN = ripplerx_param_unittest ripplerx_param_unittest_merged
 UT_DIR = .
 
 CXX = g++
 CXXFLAGS = -std=c++14 -Wall -Wextra
 
+
 all: $(UT_BIN)
 
-$(UT_BIN): $(UT_SRC)
-	$(CXX) $(CXXFLAGS) $(UT_SRC) -o $(UT_BIN)
+
+ripplerx_param_unittest: ripplerx_param_unittest.cpp
+	$(CXX) $(CXXFLAGS) ripplerx_param_unittest.cpp -o ripplerx_param_unittest
+
+ripplerx_param_unittest_merged: ripplerx_param_unittest_merged.cpp
+	$(CXX) $(CXXFLAGS) ripplerx_param_unittest_merged.cpp -o ripplerx_param_unittest_merged
 
 clean:
 	rm -f $(UT_BIN)
