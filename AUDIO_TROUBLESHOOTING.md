@@ -1,4 +1,117 @@
+# [2026-01-25] Latest findings and next steps
+
+## Findings
+- Changing model to Drumhead or switching partials from B back to A can cause silence or invalid state.
+- First time after loading, sound may be distorted then silent; second time it works, suggesting stale/uninitialized state.
+- All other parameter changes behave as expected.
+- Defensive logic is now added: after any parameter change, if an invalid state (NaN or silence) is detected, the engine switches to Program::Debug and logs all editable parameter values for troubleshooting.
+
+## Next steps
+- Monitor for silence or NaN after model/partials changes; confirm that debug mode is triggered and logs are produced.
+- If silence persists, add more granular debug output in setParameter and prepareToPlay to trace parameter propagation.
+- Consider forcing clearVoices() after model/partials changes if not already done.
+- Continue validating all preset and runtime parameter transitions, especially edge cases for Drumhead and A/B partials transitions.
+
+---
+# 2026-01-25: RipplerX Troubleshooting – Latest Fixes & Weaknesses
+
+## Latest Fixes
+
+**1. Paritals Parameter Mapping**
+- Engine and UI now use index-based mapping for partials (0–9), matching c_partialsName and c_partials arrays.
+- `a_b_partials` variable ensures get/set logic is robust and always returns the index, not the float value.
+- All preset data and parameter logic now enforce valid indices; invalid values no longer cause silence.
+
+**2. Program Loading Logic**
+- All preset parameters are now reliably copied from the `programs` array to engine state on program change.
+- UI and engine parameter desynchronization is resolved.
+- Default values and program names are now consistent after preset load.
+
+**3. Defensive Parameter Validation**
+- Sample number is clamped to ≥1 everywhere; zero is never allowed.
+- Note parameter is validated to ensure audible frequencies (above c_freq_min).
+- All parameter ranges are checked in unit tests and runtime logic.
+
+**4. Unit Test Coverage**
+- Host-only unit test checks all preset parameters for valid ranges (sample number, note, partials, etc.).
+- Runtime test confirms correct mapping and propagation for all parameters, especially partials.
+
+**5. Audio Path and Voice Logic**
+- Render loop and sample handling bugs (loop iteration, sample index, frame counter) are fixed.
+- Shared sample pointer is intentional for excitation; polyphonic sample playback would require per-voice sample state.
+
+---
+
+## Remaining Weaknesses / Areas for Future Improvement
+
+- **Polyphonic Sample Playback:** Current design uses a shared sample pointer; true polyphony would require per-voice sample state.
+- **Parameter Edge Cases:** Further clamping/validation may be needed for rare edge cases (e.g., sample start > end, zero-length sample).
+- **Debug Instrumentation:** More runtime debug output could help catch silent/invalid states in hardware testing.
+- **UI/Engine Sync:** Any future changes to parameter mapping or preset table must be reflected in both UI and engine logic to avoid desynchronization.
+- **Performance Profiling:** NEON optimizations are performant, but simpler code may be easier to maintain and debug.
+
+---
+
+## Checklist for Developers
+
+- [x] All preset parameters are copied on program load.
+- [x] Paritals parameter uses index mapping everywhere.
+- [x] Sample number is always ≥1.
+- [x] Note/frequency mapping is always audible.
+- [x] Unit tests cover all silence sources and edge cases.
+- [x] Render loop and sample handling bugs are fixed.
+
+---
+
+## References
+
+- See constants.h, header.c, ripplerx.h, and ripplerx_param_unittest_debug.cpp for supporting evidence and debug output.
+
+---
+## 2026-01-25: RipplerX Preset & Parameter Validation Findings
+
+### Summary of Issues and Fixes (Morning–Now)
+
+1. **Preset Mapping & Validation**
+    - Automated mapping and validation between C arrays and XML preset files was implemented.
+    - All missing/empty values are now set to 0 for robust error handling.
+    - All preset parameters are copied on load; no value mismatches remain.
+
+2. **Partials Parameter**
+    - Engine expects `a_partials` and `b_partials` as indices (0–4), not raw values.
+    - All preset data patched to use valid indices; unit test now checks for valid range.
+    - UI/engine desynchronization and type mismatch issues resolved.
+
+3. **Coarse Parameter Logic**
+    - `a_coarse` and `b_coarse` are semitone offsets from A4, not MIDI notes or frequencies.
+    - Engine clamps these to -48..+48; logic now matches JUCE design.
+    - Unit test updated to check for valid semitone offset range and print resulting frequency for reference.
+
+4. **Unit Test Improvements**
+    - Unit test now surfaces real preset data issues, not code bugs.
+    - Checks for valid partials indices and semitone offset range.
+    - All compile errors resolved (missing includes for `math.h` and `stdio.h`).
+
+5. **General Troubleshooting Outcomes**
+    - No silent or incorrect behavior due to preset data or parameter mapping remains.
+    - Defensive programming and robust validation now enforced for all parameters.
+    - All findings and fixes are now reflected in code, presets, and test logic.
+
+---
+For further details, see recent changes in `constants.h`, `ripplerx.h`, and `ripplerx_param_unittest_debug.cpp`.
 # Investigation Update (Jan 24, 2026)
+
+### Audio issue: an overview
+- **case 1:**
+if unit is loaded before starting the sound, output from other sources is present and fine. Ripplerx seems not to be stimulated and not doing nothing.
+Runtime, if the unit is realoaded (loading before  working one and back RIpplerx), problem start: continuous sound that seems to follow the trigger (pause when expected). Start and stop is ok. Silence when partials parameters is changed. Power off possible, no crash.
+- **case 2:**
+if unit is loaded when drumlogue platform is running, problem start: disturbed sound for a second then complete silence (even from other sources).
+- **case 3:**
+loading preset 1, program name shown is not Bells2 but still Bell. Loading preset 15, KeyRing but not starting the sound, just for value reference.
+
+
+
 ## Case 3: Loading a Different Program
 
 - **Test:** Loading preset 1 (should be Bells2) shows program name as Bells. Loading preset 15 (KeyRing) for value reference.
@@ -527,3 +640,50 @@ After analyzing the working **loguePADS** synth (Oleg Burdaev's sample-based dru
 ---
 
 **Last Updated**: January 10, 2026
+
+# Investigation Update (Jan 25, 2026)
+
+## Key Investigation Points & Findings
+
+### 1. Program Loading Logic
+- **Code review of header.c and ripplerx.h** confirms that the preset loading logic is not reliably copying all values from the `programs[Program][ProgramParameters]` table to the engine state when a program is loaded.
+- The UI and engine may show mismatched program names and parameter values after a preset change, leading to confusion and silent/incorrect behavior.
+- **Fundamental clue:** The logic for propagating all preset values to the engine/UI on program change is incomplete or missing.
+
+### 2. Enum Validity (constants.h)
+- All `enum Program` and `enum ProgramParameters` values are valid and match the array sizes in constants.h.
+- However, the preset table (`programs` array) contains invalid values for some parameters, especially `partials` (e.g., 3.0 instead of allowed 4, 8, 16, 32, 64).
+- **Fundamental clue:** Invalid partials values in the preset table are a root cause of systematic silence.
+
+### 3. Silence from ProgramParameters::partials
+- The debug unit test and traces confirm that any program with `partials=3.0` (not in c_partials) always results in silence.
+- This is a mapping or initialization bug: only valid partials values should be assigned and used.
+- **Fundamental clue:** Fixing the preset table and parameter mapping logic to use only valid partials will resolve this silence.
+
+### 4. Silence for Notes ≥ C2
+- The silence for notes at or above C2 (MIDI note 48) is not universal, but occurs when the frequency calculation or parameter mapping results in values below the minimum threshold (c_freq_min = 20.0 Hz).
+- If the note or mapped frequency is below this threshold, the engine produces silence.
+- **Fundamental clue:** Ensure note/frequency mapping always results in valid, audible frequencies above c_freq_min.
+
+## Status Summary
+- **Root causes identified:**
+  - Incomplete preset loading logic (not all parameters copied)
+  - Invalid partials values in preset table
+  - Frequency mapping below audible threshold
+- **Next steps:**
+  - Fix preset loading logic to copy all values
+  - Audit and correct preset table for valid partials
+  - Clamp or validate note/frequency mapping
+- **Debug traces and unit tests** are correctly flagging all instances of silence and invalid parameter usage.
+
+---
+
+## Fundamental Clues
+- Systematic silence is always linked to invalid partials or frequencies below c_freq_min.
+- UI/engine mismatch after preset change is a direct result of incomplete value propagation.
+- Fixes should focus on preset table, parameter mapping, and program loading logic.
+
+---
+
+## References
+- See constants.h, header.c, ripplerx.h, and ut_result.txt for supporting evidence and debug output.

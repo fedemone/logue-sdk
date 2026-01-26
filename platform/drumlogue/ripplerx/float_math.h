@@ -54,7 +54,9 @@
 #endif
 #include <math.h>
 #include <stdint.h>
+#if defined(__arm__) || defined(__aarch64__)
 #include <arm_neon.h>
+#endif
 
 // this is stdfloat.h content
 #ifdef __cplusplus

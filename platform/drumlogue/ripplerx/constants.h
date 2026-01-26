@@ -107,16 +107,25 @@ const char* const c_sampleBankName[c_sampleBankElements] = {
 
 
 // this is pointed by header.c parameter. NOTE: names are truncated to 6 characters
-const char* const c_modelName[c_modelElements] = {
-    "String",
-    "Beam",
-    "Squard",
-    "Membrn",
-    "Plate",
-    "Drmhed",
-    "Marmba",
-    "OpnTub",
-    "ClsTub"
+const char* const c_modelName[c_modelElements * 2] = {
+    "A:String",
+    "A:Beam",
+    "A:Squard",
+    "A:Membrn",
+    "A:Plate",
+    "A:Drmhed",
+    "A:Marmba",
+    "A:OpnTub",
+    "A:ClsTub",
+    "B:String",
+    "B:Beam",
+    "B:Squard",
+    "B:Membrn",
+    "B:Plate",
+    "B:Drmhed",
+    "B:Marmba",
+    "B:OpnTub",
+    "B:ClsTub"
 };
 
 enum ModelNames : uint8_t {
@@ -132,8 +141,9 @@ enum ModelNames : uint8_t {
 };
 
 // this is pointed by header.c getParameter
-const char* const c_partialsName[c_partialElements] = {
-    "4", "8", "16", "32", "64"
+const char* const c_partialsName[c_partialElements * 2 ] = {
+    "A:4", "A:8", "A:16", "A:32", "A:64",
+    "B:4", "B:8", "B:16", "B:32", "B:64",
 };
 const int c_partials[c_partialElements] = {
     4, 8, 16, 32, 64
@@ -147,7 +157,7 @@ const char* const c_noiseFilterModeName[c_noiseFilterModeElements] = {
 };
 
 /*
-    57 parameters, only a subset (24) are editable.
+    57 parameters, only a subset (24) are editable - see header.c.
     all the others will be accessed via an array of floats
     Programs will hold a set of these, to be accesses as
     index of array

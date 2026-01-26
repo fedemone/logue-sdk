@@ -33,8 +33,7 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 1: Program and sample selection
         // Program, will set different values for parameters
-        // {0, 27, 0, 13, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},  // Program::Initial
-        {0, 27, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},  // TODO this max is wrong should be 29, same as num_presets. Dafault values is 0, Bells.
+        {0, 29, 0, 13, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},  // Program::Initial
         // Resonator note for Gate mode
         {1, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         // Res Gain - NOTE: removed for the moment

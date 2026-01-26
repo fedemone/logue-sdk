@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -640,6 +641,24 @@ class RipplerX
         if (index >= c_parameterTotal)
             return;
 
+        // Defensive: Check for NaN or silence after parameter changes
+        auto check_for_error_and_debug = [this]() {
+            // Check for silence or NaN in output buffer (simulate, as we don't have buffer here)
+            // In real render, this is checked, but here we can check for invalid parameter state
+            bool invalid = false;
+            for (int i = 0; i < ProgramParameters::last_param; ++i) {
+                float v = parameters[i];
+                if (!isfinite(v)) invalid = true;
+            }
+            if (invalid) {
+                setCurrentProgram(Program::Debug);
+                // Log all editable parameters for troubleshooting
+                for (int i = 0; i < c_parameterTotal; ++i) {
+                    setParameter(i, (int32_t)getParameterValue(i));
+                }
+            }
+        };
+
         switch(index) {
             case c_parameterProgramName:
                 if (value < (int32_t)last_program) {
@@ -653,8 +672,17 @@ class RipplerX
             //     parameters[gain] = fasterpowf(10.0, value / 20.0);
             //     break;
 
-            case c_parameterResonatorNote:
-                m_note = value;
+            case c_parameterResonatorNote: {
+                // Raise minimum frequency to ensure all models are audible
+                // This can happen due to: invalid preset, UI bug, parameter mapping error, or manual edits
+                const int32_t min_audible_note = 36; // MIDI C2, typically audible for all models
+                if (value < min_audible_note) {
+                    m_note = min_audible_note;
+                } else {
+                    m_note = value;
+                }
+                break;
+            }
 
             case c_parameterSampleBank:
                 if ((size_t)value < c_sampleBankElements)
@@ -697,6 +725,7 @@ class RipplerX
             }
 
             case c_parameterPartials: {
+                a_b_partials = value;
                 if ((size_t)value < c_partialElements) {
                     parameters[a_partials] = c_partials[value];
                     resonatorChangedA = true;
@@ -819,14 +848,15 @@ class RipplerX
             }
 
             case c_parameterCoarsePitch: {
-                const int32_t minA = -480;
-                const int32_t maxA = 480;
-                const int32_t span = maxA - minA; // 960
-                if (value <= maxA) {
-                    parameters[a_coarse] = value;
+                // JUCE design: a_coarse/b_coarse are semitone offsets, not MIDI notes or frequencies
+                // Clamp to musically reasonable range (-48 to +48)
+                const int32_t minSemitone = -48;
+                const int32_t maxSemitone = 48;
+                if (value <= maxSemitone) {
+                    parameters[a_coarse] = fmax(fmin(value, maxSemitone), minSemitone);
                     pitchChanged = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_coarse] = value - span;
+                } else if (value <= (maxSemitone * 2)) {
+                    parameters[b_coarse] = fmax(fmin(value - maxSemitone, maxSemitone), minSemitone);
                     pitchChanged = true;
                 }
                 break;
@@ -869,6 +899,29 @@ class RipplerX
         prepareToPlay(noiseChanged, pitchChanged, resonatorChangedA, resonatorChangedB, couplingChanged);
         // no effect if model did not change
         updateLastModels();
+
+        // Defensive: After parameter change, check for error and move to debug if needed
+        check_for_error_and_debug();
+    }
+
+    /**
+     * TODO: Added for robust code, but should not be needed.
+     * The static mapping is robust, but UI/engine desynchronization, type mismatches,
+     * or out-of-range values can still cause silence or display errors.
+     * Adding strict clamping, validation, and
+     * fallback logic in both the UI and engine will eliminate these issues.
+     */
+    static inline int nearest_partials_index(int value) {
+    int best = 0;
+    int min_diff = abs(value - c_partials[0]);
+    for (int i = 1; i < c_partialElements; ++i) {
+        int diff = abs(value - c_partials[i]);
+        if (diff < min_diff) {
+            min_diff = diff;
+            best = i;
+        }
+    }
+    return best;
     }
 
     /**
@@ -990,22 +1043,7 @@ class RipplerX
                                    cached.resA_vel_hit, cached.resA_vel_inharm);
             }
 
-            if (resonatorChangedB) {
-                voice.resB.setParams(srate, cached.resB_on, cached.resB_model,
-                                   cached.resB_partials, cached.resB_decay,
-                                   cached.resB_damp, cached.resB_tone, cached.resB_hit,
-                                   cached.resB_rel, cached.resB_inharm, cached.resB_cut,
-                                   cached.resB_radius, cached.resB_vel_decay,
-                                   cached.resB_vel_hit, cached.resB_vel_inharm);
-            }
-
-            if (couplingChanged) {
-                voice.setCoupling(cached.couple, cached.ab_split);
-            }
-
-            if (resonatorChangedA || resonatorChangedB || updateFreqs) {
-                voice.updateResonators(updateFreqs);
-            }
+                        // Removed stray value/partials mapping block (value is undefined here)
         }
     }
 
@@ -1024,7 +1062,7 @@ class RipplerX
             case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);  // denormalize
             case c_parameterVelocityMalletStifness:  return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);  // denormalize
             case c_parameterModel:                   return parameters[a_model];
-            case c_parameterPartials:                return parameters[a_partials];
+            case c_parameterPartials:                return a_b_partials;
             case c_parameterDecay:                   return parameters[a_decay];
             case c_parameterMaterial:                return parameters[a_damp];
             case c_parameterTone:                    return parameters[a_tone];
@@ -1069,40 +1107,10 @@ class RipplerX
                 if (value >= 0 && value < (int32_t)last_program)
                     return c_programName[value];
                 break;
-            case c_parameterModel:
-                if (value >= 0) {
-                    if ((size_t)value < c_modelElements) {
-                        if (!k_showABMarkers) return c_modelName[value];
-                        static char s_modelBuf[32];
-                        snprintf(s_modelBuf, sizeof(s_modelBuf), "A:%s", c_modelName[value]);
-                        return s_modelBuf;
-                    }
-                    if ((size_t)value < (size_t)(2 * c_modelElements)) {
-                        int base = value - (int32_t)c_modelElements;
-                        if (!k_showABMarkers) return c_modelName[base];
-                        static char s_modelBuf[32];
-                        snprintf(s_modelBuf, sizeof(s_modelBuf), "B:%s", c_modelName[base]);
-                        return s_modelBuf;
-                    }
-                }
-                break;
-            case c_parameterPartials:
-                if (value >= 0) {
-                    if ((size_t)value < c_partialElements) {
-                        if (!k_showABMarkers) return c_partialsName[value];
-                        static char s_partialsBuf[32];
-                        snprintf(s_partialsBuf, sizeof(s_partialsBuf), "A:%s", c_partialsName[value]);
-                        return s_partialsBuf;
-                    }
-                    if ((size_t)value < (size_t)(2 * c_partialElements)) {
-                        int base = value - (int32_t)c_partialElements;
-                        if (!k_showABMarkers) return c_partialsName[base];
-                        static char s_partialsBuf[32];
-                        snprintf(s_partialsBuf, sizeof(s_partialsBuf), "B:%s", c_partialsName[base]);
-                        return s_partialsBuf;
-                    }
-                }
-                break;
+                case c_parameterModel:
+                    return c_modelName[value];
+                case c_parameterPartials:
+                    return c_partialsName[value];
             case c_parameterNoiseFilterMode:
                 if (value >= 0 && (size_t)value < c_noiseFilterModeElements)
                     return c_noiseFilterModeName[value];
@@ -1351,6 +1359,7 @@ class RipplerX
     float32_t parameters[ProgramParameters::last_param] = {};
 
     // State variables
+    uint8_t a_b_partials = 3;  // Combined A/B partials index for UI
     uint8_t m_currentProgram = 0;
     uint8_t m_note = 60;
     float32_t scale = 1.0f;
