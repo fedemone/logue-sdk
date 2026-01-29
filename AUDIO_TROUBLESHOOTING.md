@@ -2,7 +2,41 @@
 
 In January 2026, a debug block was added to export internal model/partials state to user parameters (slots 15–17) in `render()`. This block was later removed from the NaN/invalid state handler after it was found to cause severe sound corruption and hardware instability if triggered outside the Debug program context. If similar issues reappear, check for accidental parameter overwrites or out-of-bounds writes in debug/diagnostic code.
 
-**Key lesson:** Only export debug state when the Debug program is selected, and never write to parameter slots unconditionally in error handlers.
+**Key lesson:** No terminal or serial port present, so not print is possible. The only way to log, is to switch to Program::Debug program, and use setParameters() to log any interesting values when error condition is met. So:
+- define errors or unexpected values or potential crash leading values (not only parameters)
+- swith to debug program
+- log found value using setParameter()
+- Such values can be different from the original parameter value and correct reading can be done reading the debug code/condition.
+
+---
+# 2026-01-26: RipplerX Troubleshooting – Latest Fixes & Weaknesses
+
+## Latest Fixes
+
+**1. Partials Parameter Mapping**
+- Loading parameters from preset is storing the index and not the partials actual value.
+
+**2. Sample End**
+- wrong calculation of sample end lead to memory misaddress and possible crash
+
+**3. Some optimizations**
+- Removed the sprintf logic by simple doubling the array of characters for both A and B
+
+**4. Removed debug render**
+- Merged previous fixes and optimized the original function
+
+**5. Memory alignment for Voice.cc**
+- using local variables we ensure that memory is aligned for vectorial processing
+
+**6. Crash safe code in Models.cc**
+- added fallback for invalid model vlue returned (just for debugging, actual code is staic and constants and such shall never happen)
+- moved back to linear logic in recalcMembrane(), to avoid memory misalignment
+
+**7. store res A/B shared parameters to local variables**
+- since some parameters can be assigned either to resonator A or B, the param range is doubled and value is inspected before actual assignment to array of parameters.
+
+---
+
 # [2026-01-25] Latest findings and next steps
 
 ## Findings
@@ -22,7 +56,7 @@ In January 2026, a debug block was added to export internal model/partials state
 
 ## Latest Fixes
 
-**1. Paritals Parameter Mapping**
+**1. Partials Parameter Mapping**
 - Engine and UI now use index-based mapping for partials (0–9), matching c_partialsName and c_partials arrays.
 - `a_b_partials` variable ensures get/set logic is robust and always returns the index, not the float value.
 - All preset data and parameter logic now enforce valid indices; invalid values no longer cause silence.
@@ -60,7 +94,7 @@ In January 2026, a debug block was added to export internal model/partials state
 ## Checklist for Developers
 
 - [x] All preset parameters are copied on program load.
-- [x] Paritals parameter uses index mapping everywhere.
+- [x] Partials parameter uses index mapping everywhere.
 - [x] Sample number is always ≥1.
 - [x] Note/frequency mapping is always audible.
 - [x] Unit tests cover all silence sources and edge cases.

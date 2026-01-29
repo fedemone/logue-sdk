@@ -169,7 +169,7 @@ class RipplerX
         parameters[a_model] = ModelNames::Squared;
         parameters[a_partials] = c_partials[3];
         parameters[a_decay] = 50;  // Increased from 10 for longer sustain
-        parameters[a_damp] = 0;
+        parameters[a_damp] = 0;     // corresponds to Material
         parameters[a_tone] = 0;
         parameters[a_hit] = 0.26f;
         parameters[a_rel] = 1.0f;
@@ -183,7 +183,7 @@ class RipplerX
         parameters[b_model] = 0;
         parameters[b_partials] = c_partials[3];
         parameters[b_decay] = 1.0f;
-        parameters[b_damp] = 0.0f;
+        parameters[b_damp] = 0.0f;   // corresponds to Material
         parameters[b_tone] = 0.0f;
         parameters[b_hit] = 0.26f;
         parameters[b_rel] = 1.0f;
@@ -411,6 +411,43 @@ class RipplerX
                 nan_clamp_count++;
             }
         }
+
+        // === Debug logic with improved safety, sotring values into parameters with valid range (see header.c)===
+        bool errorDetected = false;
+
+        for(int i = 0; i < c_parameterTotal; i++) {
+            loggedValues[i] = 6.0f; // marker for changed values
+        }
+
+        // Check for invalid gain
+        if (!isfinite(gain) ) {
+            errorDetected = true;
+            loggedValues[1] = 126.0f;   // max note
+        }
+        if( gain <= 0.0f) {
+            errorDetected = true;
+            loggedValues[5] = gain;
+        }
+
+        // Check for invalid sample indices
+        if ( m_samplePointer == nullptr) {
+            errorDetected = true;
+            loggedValues[2] = m_sampleBank;
+            loggedValues[3] = m_sampleNumber - 1;
+            loggedValues[15] = fmin(static_cast<float>(m_sampleIndex), 19990.0f);
+            loggedValues[16] = fmin(static_cast<float>(m_sampleEnd), 19990.0f);
+        }
+
+        // Defer switching to Debug program until after rendering
+        if (errorDetected) {
+            setCurrentProgram(Program::Debug);
+            for (size_t i = 1; i < c_parameterTotal - 2; ++i) {
+                setParameter(static_cast<uint8_t>(i), loggedValues[i]);
+            }
+            setParameter(c_parameterTotal - 1, static_cast<float>(nan_clamp_count)); // Log the number of NaN clamps
+        }
+
+        // === End of debug logic ===
     }
 
     /*===========================================================================*/
@@ -431,7 +468,7 @@ class RipplerX
         if (index >= c_parameterTotal)
             return;
 
-        // Expanded debug: Check for NaN, out-of-bounds, or invalid model/partials indices after parameter changes
+        // === Expanded debug: Check for NaN, out-of-bounds, or invalid model/partials indices after parameter changes
         auto check_for_error_and_debug = [this]() {
             bool invalid = false;
             // Check for NaN in all parameters
@@ -439,8 +476,8 @@ class RipplerX
                 float v = parameters[i];
                 if (!(v == v)) invalid = true; // NaN
             }
-            // Check for out-of-bounds or invalid indices for model/partials
-            if (a_b_partials < 0 || a_b_partials >= c_partialElements * 2)
+            // Check for out-of-bounds or invalid indices for model/partials - TODO remove later, just for debug
+            if (a_b_partials >= c_partialElements * 2)
                 invalid = true;
             if (parameters[a_model] < 0 || parameters[a_model] >= c_modelElements * 2)
                 invalid = true;
@@ -451,6 +488,7 @@ class RipplerX
                 setCurrentProgram(Program::Debug);
                 // Optionally log or export all parameter values for diagnosis
             }
+            // === End of debug checks ===
         };
 
         switch(index) {
@@ -506,15 +544,13 @@ class RipplerX
                 break;
 
             case c_parameterModel: {
-                // Defensive: clamp and check bounds for model index
-                int idx = value;
-                if (idx < 0) idx = 0;
-                if (idx >= c_modelElements * 2) idx = (c_modelElements * 2) - 1;
-                if (idx < c_modelElements) {
-                    parameters[a_model] = idx;
+                // Removed defensive. In case of error should swith to debug program and save the values for inspection. No error should never happen here.
+                a_b_model = value;
+                if (a_b_model < c_modelElements) {
+                    parameters[a_model] = a_b_model;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_model] = idx - c_modelElements;
+                    parameters[b_model] = a_b_model - c_modelElements;
                     resonatorChangedB = true;
                 }
                 clearVoices();
@@ -522,16 +558,13 @@ class RipplerX
             }
 
             case c_parameterPartials: {
-                // Defensive: clamp and check bounds for partials index
-                int idx = value;
-                if (idx < 0) idx = 0;
-                if (idx >= c_partialElements * 2) idx = (c_partialElements * 2) - 1;
-                a_b_partials = idx;
-                if (idx < c_partialElements) {
-                    parameters[a_partials] = c_partials[idx];
+                // Removed defensive. In case of error should swith to debug program and save the values for inspection. No error should never happen here.
+                a_b_partials = value;
+                if (a_b_partials < c_partialElements) {
+                    parameters[a_partials] = c_partials[a_b_partials];
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_partials] = c_partials[idx - c_partialElements];
+                    parameters[b_partials] = c_partials[a_b_partials - c_partialElements];
                     resonatorChangedB = true;
                 }
                 clearVoices();
@@ -539,12 +572,13 @@ class RipplerX
             }
 
             case c_parameterDecay: {
+                a_b_decay = value;
                 const int32_t maxA = 1000; // original A max
-                if (value <= maxA) {
-                    parameters[a_decay] = value;
+                if (a_b_decay <= maxA) {
+                    parameters[a_decay] = a_b_decay;
                     resonatorChangedA = true;
-                } else if (value <= (maxA * 2)) {
-                    parameters[b_decay] = value - maxA;
+                } else if (a_b_decay <= (maxA * 2)) {
+                    parameters[b_decay] = a_b_decay - maxA;
                     resonatorChangedB = true;
                 }
                 clearVoices();
@@ -555,11 +589,12 @@ class RipplerX
                 const int32_t minA = -10;
                 const int32_t maxA = 10;
                 const int32_t span = maxA - minA; // 20
-                if (value <= maxA) {
-                    parameters[a_damp] = value;
+                a_b_damp = value;
+                if (a_b_damp <= maxA) {
+                    parameters[a_damp] = a_b_damp;
                     resonatorChangedA = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_damp] = value - span;
+                } else if (a_b_damp <= (maxA + span)) {
+                    parameters[b_damp] = a_b_damp - span;
                     resonatorChangedB = true;
                 }
                 break;
@@ -569,11 +604,12 @@ class RipplerX
                 const int32_t minA = -10;
                 const int32_t maxA = 10;
                 const int32_t span = maxA - minA; // 20
-                if (value <= maxA) {
-                    parameters[a_tone] = value;
+                a_b_tone = value;
+                if (a_b_tone <= maxA) {
+                    parameters[a_tone] = a_b_tone;
                     resonatorChangedA = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_tone] = value - span;
+                } else if (a_b_tone <= (maxA + span)) {
+                    parameters[b_tone] = a_b_tone - span;
                     resonatorChangedB = true;
                 }
                 break;
@@ -583,11 +619,12 @@ class RipplerX
                 const int32_t minA = 2;
                 const int32_t maxA = 50;
                 const int32_t span = maxA - minA; // 48
-                if (value <= maxA) {
-                    parameters[a_hit] = value;
+                a_b_hit = value;
+                if (a_b_hit <= maxA) {
+                    parameters[a_hit] = a_b_hit;
                     resonatorChangedA = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_hit] = value - span;
+                } else if (a_b_hit <= (maxA + span)) {
+                    parameters[b_hit] = a_b_hit - span;
                     resonatorChangedB = true;
                 }
                 break;
@@ -596,11 +633,12 @@ class RipplerX
             case c_parameterRelease: {
                 const int32_t maxA = 10;
                 const int32_t span = 10;
-                if (value <= maxA) {
-                    parameters[a_rel] = value;
+                a_b_rel = value;
+                if (a_b_rel <= maxA) {
+                    parameters[a_rel] = a_b_rel;
                     resonatorChangedA = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_rel] = value - span;
+                } else if (a_b_rel <= (maxA + span)) {
+                    parameters[b_rel] = a_b_rel - span;
                     resonatorChangedB = true;
                 }
                 break;
@@ -610,11 +648,12 @@ class RipplerX
                 const int32_t minA = 1;
                 const int32_t maxA = 10000;
                 const int32_t span = maxA - minA; // 9999
-                if (value <= maxA) {
-                    parameters[a_inharm] = value;
+                a_b_inharm = value;
+                if (a_b_inharm <= maxA) {
+                    parameters[a_inharm] = a_b_inharm;
                     resonatorChangedA = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_inharm] = value - span;
+                } else if (a_b_inharm <= (maxA + span)) {
+                    parameters[b_inharm] = a_b_inharm - span;
                     resonatorChangedB = true;
                 }
                 break;
@@ -626,12 +665,12 @@ class RipplerX
                 const int32_t minAHz = 20;
                 const int32_t maxAHz = 20000;
                 const int32_t spanHz = maxAHz - minAHz; // 19980
-                const int32_t hz = value * 2; // restore original Hz
-                if (hz <= maxAHz) {
-                    parameters[a_cut] = hz;
+                a_b_filter = value * 2; // restore original Hz
+                if (a_b_filter <= maxAHz) {
+                    parameters[a_cut] = a_b_filter;
                     resonatorChangedA = true;
-                } else if (hz <= (maxAHz + spanHz)) {
-                    parameters[b_cut] = hz - spanHz;
+                } else if (a_b_filter <= (maxAHz + spanHz)) {
+                    parameters[b_cut] = a_b_filter - spanHz;
                     resonatorChangedB = true;
                 }
                 break;
@@ -640,11 +679,12 @@ class RipplerX
             case c_parameterTubeRadius: {
                 const int32_t maxA = 10;
                 const int32_t span = 10;
-                if (value <= maxA) {
-                    parameters[a_radius] = value;
+                a_b_radius = value;
+                if (a_b_radius <= maxA) {
+                    parameters[a_radius] = a_b_radius;
                     resonatorChangedA = true;
-                } else if (value <= (maxA + span)) {
-                    parameters[b_radius] = value - span;
+                } else if (a_b_radius <= (maxA + span)) {
+                    parameters[b_radius] = a_b_radius - span;
                     resonatorChangedB = true;
                 }
                 break;
@@ -655,11 +695,12 @@ class RipplerX
                 // Clamp to musically reasonable range (-48 to +48)
                 const int32_t minSemitone = -48;
                 const int32_t maxSemitone = 48;
-                if (value <= maxSemitone) {
-                    parameters[a_coarse] = fmax(fmin(value, maxSemitone), minSemitone);
+                a_b_coarse = value;
+                if (a_b_coarse <= maxSemitone) {
+                    parameters[a_coarse] = fmax(fmin(a_b_coarse, maxSemitone), minSemitone);
                     pitchChanged = true;
-                } else if (value <= (maxSemitone * 2)) {
-                    parameters[b_coarse] = fmax(fmin(value - maxSemitone, maxSemitone), minSemitone);
+                } else if (a_b_coarse <= (maxSemitone * 2)) {
+                    parameters[b_coarse] = fmax(fmin(a_b_coarse - maxSemitone, maxSemitone), minSemitone);
                     pitchChanged = true;
                 }
                 break;
@@ -708,7 +749,7 @@ class RipplerX
     }
 
     /**
-     * TODO: Added for robust code, but should not be needed.
+     * TODO: Added for robust code, but should not be needed. Remove after debugging.
      * The static mapping is robust, but UI/engine desynchronization, type mismatches,
      * or out-of-range values can still cause silence or display errors.
      * Adding strict clamping, validation, and
@@ -717,7 +758,7 @@ class RipplerX
     static inline int nearest_partials_index(int value) {
     int best = 0;
     int min_diff = abs(value - c_partials[0]);
-    for (int i = 1; i < c_partialElements; ++i) {
+    for (uint32_t i = 1; i < c_partialElements; ++i) {
         int diff = abs(value - c_partials[i]);
         if (diff < min_diff) {
             min_diff = diff;
@@ -726,6 +767,7 @@ class RipplerX
     }
     return best;
     }
+    // === end of debug function ===
 
     /**
      * Batch parameter propagation with cached structs
@@ -863,7 +905,7 @@ class RipplerX
             // The bool argument 'updateFrequencies' controls the expensive coupling calculation,
             // which is only needed if pitch, coupling, or models have changed.
             if (pitchChanged || couplingChanged || frequencyModelChanged || resonatorChangedA || resonatorChangedB) {
-                voice.updateResonators(pitchChanged || couplingChanged || frequencyModelChanged);
+                voice.updateResonators(updateFreqs);
             }
         }
     }
@@ -882,17 +924,17 @@ class RipplerX
             case c_parameterMalletStifness:          return parameters[mallet_stiff];
             case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);  // denormalize
             case c_parameterVelocityMalletStifness:  return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);  // denormalize
-            case c_parameterModel:                   return parameters[a_model];
+            case c_parameterModel:                   return a_b_model;
             case c_parameterPartials:                return a_b_partials;
-            case c_parameterDecay:                   return parameters[a_decay];
-            case c_parameterMaterial:                return parameters[a_damp];
-            case c_parameterTone:                    return parameters[a_tone];
-            case c_parameterHitPosition:             return parameters[a_hit];
-            case c_parameterRelease:                 return parameters[a_rel];
-            case c_parameterInharmonic:              return parameters[a_inharm];
-            case c_parameterFilterCutoff:            return (int32_t)(parameters[a_cut] / 2); // return scaled value (Hz/2)
-            case c_parameterTubeRadius:              return parameters[a_radius];
-            case c_parameterCoarsePitch:             return parameters[a_coarse];
+            case c_parameterDecay:                   return a_b_decay;
+            case c_parameterMaterial:                return a_b_damp;
+            case c_parameterTone:                    return a_b_tone;
+            case c_parameterHitPosition:             return a_b_hit;
+            case c_parameterRelease:                 return a_b_rel;
+            case c_parameterInharmonic:              return a_b_inharm;
+            case c_parameterFilterCutoff:            return (int32_t)(a_b_filter / 2); // return scaled value (Hz/2) to fit int16 in header.
+            case c_parameterTubeRadius:              return a_b_radius;
+            case c_parameterCoarsePitch:             return a_b_coarse;
             case c_parameterNoiseMix:                return (int32_t)(parameters[noise_mix] * 1000.0f);  // denormalize
             case c_parameterNoiseResonance:          return (int32_t)(parameters[noise_res] * 1000.0f);  // denormalize
             case c_parameterNoiseFilterMode:         return parameters[noise_filter_mode];
@@ -904,7 +946,6 @@ class RipplerX
 
     inline const char *getParameterStrValue(uint8_t index, int32_t value) const {
         // Optional visual cue to distinguish A vs B for extended ranges
-        static constexpr bool k_showABMarkers = true;
         static constexpr bool k_showABMarkersNumeric = true;
         auto fmt_num = [](char* buf, size_t n, const char* prefix, int32_t scaled, int decimals, const char* suffix) {
             if (decimals <= 0) {
@@ -921,21 +962,21 @@ class RipplerX
         };
         switch (index) {
             case c_parameterSampleBank:
-                if (value >= 0 && (size_t)value < c_sampleBankElements)
+                if ((size_t)value < c_sampleBankElements)
                     return c_sampleBankName[value];
                 break;
             case c_parameterProgramName:
-                if (value >= 0 && value < (int32_t)last_program)
+                if (value < (int32_t)last_program)
                     return c_programName[value];
                 break;
                 case c_parameterModel:
-                    if (value < 0 || value >= c_modelElements * 2) return "INVALID";
+                    if (value >= c_modelElements * 2) return "INVALID";
                     return c_modelName[value];
                 case c_parameterPartials:
-                    if (value < 0 || value >= c_partialElements * 2) return "INVALID";
+                    if (value >= c_partialElements * 2) return "INVALID";
                     return c_partialsName[value];
             case c_parameterNoiseFilterMode:
-                if (value >= 0 && (size_t)value < c_noiseFilterModeElements)
+                if ((size_t)value < c_noiseFilterModeElements)
                     return c_noiseFilterModeName[value];
                 break;
             case c_parameterDecay: {
@@ -1153,8 +1194,8 @@ class RipplerX
             for (int i = 0; i < ProgramParameters::last_param; ++i) {
                 parameters[i] = programs[index][i];
             }
-            parameters[a_partials] = c_partials{programs[index][a_partials]};
-            parameters[b_partials] = c_partials{programs[index][b_partials]};
+            parameters[a_partials] = (float32_t)c_partials[(int)programs[index][a_partials]];
+            parameters[b_partials] = (float32_t)c_partials[(int)programs[index][b_partials]];
         }
         // Precompute gain in dB -> linear conversion
         parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
@@ -1184,13 +1225,27 @@ class RipplerX
     Limiter limiter{};
     int nvoice = 0;
 
+private:
     // ProgramParameters (instance member - not static)
     float32_t parameters[ProgramParameters::last_param] = {};
 
+    // debug
+    float loggedValues[c_parameterTotal];  // marker for debug
+
     // State variables
-    uint8_t a_b_partials = 3;  // Combined A/B partials index for UI
-    uint8_t m_currentProgram = 0;
-    uint8_t m_note = 60;
+    uint32_t a_b_model    = 0;  // Combined A/B model for UI
+    uint32_t a_b_partials = 0;  // Combined A/B partials index for UI (need c_partials conversion for actual value)
+    uint32_t a_b_decay    = 0;  // Combined A/B decay for UI
+    uint32_t a_b_damp     = 0;  // Combined A/B material for UI
+    uint32_t a_b_tone     = 0;  // Combined A/B tone for UI
+    uint32_t a_b_hit      = 0;  // Combined A/B hit for UI
+    uint32_t a_b_rel      = 0;  // Combined A/B release for UI
+    uint32_t a_b_filter   = 0;  // Combined A/B filter cutoff for UI
+    uint32_t a_b_inharm   = 0;  // Combined A/B inharmonics for UI
+    uint32_t a_b_radius   = 0;  // Combined A/B radius for UI
+    uint32_t a_b_coarse   = 0;  // Combined A/B coarse for UI
+    uint32_t m_currentProgram = 0;
+    uint32_t m_note = 60;
     float32_t scale = 1.0f;
     int32_t last_a_model = -1;
     int32_t last_b_model = -1;

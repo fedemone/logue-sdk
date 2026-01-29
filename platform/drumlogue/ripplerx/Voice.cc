@@ -358,15 +358,20 @@ void Voice::applyPitch(float32_t* model, float32_t factor)
 void Voice::updateResonators(bool updateFrequencies)
 {
     if (updateFrequencies) {
+        // Use aligned local buffers to ensure safe NEON access, as Voice members
+        // aShifts/bShifts might not be 16-byte aligned.
+        alignas(16) float32_t localAShifts[64];
+        alignas(16) float32_t localBShifts[64];
+
         const float32_t* aModelSrc = getAModels(resA.getModel());
         const float32_t* bModelSrc = getBModels(resB.getModel());
-        // Copy model data into local arrays
+        // Copy model data into local aligned arrays
         for (int i = 0; i < 64; ++i) {
-            aShifts[i] = aModelSrc[i];
-            bShifts[i] = bModelSrc[i];
+            localAShifts[i] = aModelSrc[i];
+            localBShifts[i] = bModelSrc[i];
         }
-        if (aPitchFactor != 1.0f) applyPitch(aShifts, aPitchFactor);
-        if (bPitchFactor != 1.0f) applyPitch(bShifts, bPitchFactor);
+        if (aPitchFactor != 1.0f) applyPitch(localAShifts, aPitchFactor);
+        if (bPitchFactor != 1.0f) applyPitch(localBShifts, bPitchFactor);
 
         if (couple && resA.isOn() && resB.isOn() && freq > 0.1f) {
             // Precompute constants once
@@ -396,7 +401,7 @@ void Voice::updateResonators(bool updateFrequencies)
 
             for (int i_tile = 0; i_tile < 64; i_tile += OUTER_TILE) {
                 // Load 4 fa values for this tile
-                float32x4_t fa_vec = vld1q_f32(&aShifts[i_tile]);
+                float32x4_t fa_vec = vld1q_f32(&localAShifts[i_tile]);
 
                 // Accumulators for this tile (one accumulator per fa)
                 float32x4_t k_count_tile = vdupq_n_f32(0.0f);    // Sum of +1/-1 for each fa
@@ -406,7 +411,7 @@ void Voice::updateResonators(bool updateFrequencies)
 
                 // Inner loop: process fb values in groups of 4
                 for (int j_tile = 0; j_tile < 64; j_tile += OUTER_TILE) {
-                    float32x4_t fb_vec = vld1q_f32(&bShifts[j_tile]);
+                    float32x4_t fb_vec = vld1q_f32(&localBShifts[j_tile]);
 
                     // Process each of 4 fb values against all 4 fa values - unrolled with constant indices
                     for (int fb_idx = 0; fb_idx < OUTER_TILE; ++fb_idx) {
@@ -477,12 +482,18 @@ void Voice::updateResonators(bool updateFrequencies)
                 freqShiftOpt_vec = vaddq_f32(freqShiftOpt_vec, term4);
 
                 // Apply frequency shifts to aShifts and bShifts
-                float32x4_t aShifts_vec = vld1q_f32(&aShifts[i_tile]);
-                float32x4_t bShifts_vec = vld1q_f32(&bShifts[i_tile]);
+                float32x4_t aShifts_vec = vld1q_f32(&localAShifts[i_tile]);
+                float32x4_t bShifts_vec = vld1q_f32(&localBShifts[i_tile]);
 
-                vst1q_f32(&aShifts[i_tile], vaddq_f32(aShifts_vec, freqShiftOpt_vec));
-                vst1q_f32(&bShifts[i_tile], vsubq_f32(bShifts_vec, freqShiftOpt_vec));
+                vst1q_f32(&localAShifts[i_tile], vaddq_f32(aShifts_vec, freqShiftOpt_vec));
+                vst1q_f32(&localBShifts[i_tile], vsubq_f32(bShifts_vec, freqShiftOpt_vec));
             }
+        }
+
+        // Copy back to member variables
+        for (int i = 0; i < 64; ++i) {
+            aShifts[i] = localAShifts[i];
+            bShifts[i] = localBShifts[i];
         }
     }
 
