@@ -30,12 +30,12 @@ void Noise::initFilter()
 
 	// Compute velocity-modulated resonance, clamped to [0.707, 4.0]
 	float32_t res = q + vel * vel_q * c_noise_filter_res_range;
+	res = fmin(4.0f, fmax(0.707f, res)); // Clamp resonance to a safe range
 	filter_active = fmode == 1 || (fmode == 0 && f < 20000.0f) || (fmode == 2 && f > 20.0f);
 
-	if (fmode == 0) filter.lp(srate, f, res);
-	else if (fmode == 1) filter.bp(srate, f, res);
-	else if (fmode == 2) filter.hp(srate, f, res);
-	// Invalid filter mode - clamp to LP by default instead of throwing
+	if (fmode == 1) filter.bp(srate, f, res);      // BP
+	else if (fmode == 2) filter.hp(srate, f, res); // HP
+	else filter.lp(srate, f, res);                 // LP (default for mode 0 or invalid)
 }
 
 void Noise::release()

@@ -47,7 +47,7 @@ const __unit_header unit_header_t unit_header = {
         // Mallet resonance
         {0, 10, 0, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Mallet stiffness
-        {100, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},
+        {1, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},    // set min to 1 or debug purpose. set back to 100 after
         // Velocity Mallet Resonance
         {0, 1000, 0, 0, k_unit_param_type_none, 3, 0, 0, {"VlMllRes"}},
         // Velocity Mallet Stiffness
@@ -98,8 +98,8 @@ const __unit_header unit_header_t unit_header = {
         // Page 6: Noise II
         // Noise Resonance
         {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
-        // Noise Filter Mode: "LP", "BP", "HP"
-        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
+        // Noise Filter Mode: "LP", "BP", "HP" - "DEBUG"
+        {0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
         // Noise Filter Freq
         {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFltFrq"}},
         // Noise Filter Q

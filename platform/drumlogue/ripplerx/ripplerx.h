@@ -154,6 +154,12 @@ class RipplerX
         comb.init(getSampleRate());
         limiter.init(getSampleRate());
 
+        // === Debug: Log parameter initialization ===
+        for(int i = 0; i < c_parameterTotal; i++) {
+            loggedValues[i] = 6.0f; // marker for changed values
+        }
+        // === End of debug init ===
+
         return k_unit_err_none;
     }
 
@@ -248,19 +254,19 @@ class RipplerX
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
         // Load parameters once per render call
-        const bool a_on = (bool)getParameterValue(ProgramParameters::a_on);
-        const bool b_on = (bool)getParameterValue(ProgramParameters::b_on);
-        const float32_t mallet_mix = (float32_t)getParameterValue(ProgramParameters::mallet_mix);
-        const float32_t mallet_res = (float32_t)getParameterValue(ProgramParameters::mallet_res);
-        const float32_t vel_mallet_mix = (float32_t)getParameterValue(ProgramParameters::vel_mallet_mix);
-        const float32_t vel_mallet_res = (float32_t)getParameterValue(ProgramParameters::vel_mallet_res);
-        const float32_t noise_mix = (float32_t)getParameterValue(ProgramParameters::noise_mix);
-        const float32_t noise_res = (float32_t)getParameterValue(ProgramParameters::noise_res);
-        const float32_t vel_noise_mix = (float32_t)getParameterValue(ProgramParameters::vel_noise_mix);
-        const float32_t vel_noise_res = (float32_t)getParameterValue(ProgramParameters::vel_noise_res);
-        const float32_t ab_mix = (float32_t)getParameterValue(ProgramParameters::ab_mix);
-        const float32_t gain = (float32_t)getParameterValue(ProgramParameters::gain);
-        const bool couple = (bool)getParameterValue(ProgramParameters::couple);
+        const bool a_on = (bool)parameters[ProgramParameters::a_on];
+        const bool b_on = (bool)parameters[ProgramParameters::b_on];
+        const float32_t mallet_mix = parameters[ProgramParameters::mallet_mix];
+        const float32_t mallet_res = parameters[ProgramParameters::mallet_res];
+        const float32_t vel_mallet_mix = parameters[ProgramParameters::vel_mallet_mix];
+        const float32_t vel_mallet_res = parameters[ProgramParameters::vel_mallet_res];
+        const float32_t noise_mix = parameters[ProgramParameters::noise_mix];
+        const float32_t noise_res = parameters[ProgramParameters::noise_res];
+        const float32_t vel_noise_mix = parameters[ProgramParameters::vel_noise_mix];
+        const float32_t vel_noise_res = parameters[ProgramParameters::vel_noise_res];
+        const float32_t ab_mix = parameters[ProgramParameters::ab_mix];
+        const float32_t gain = parameters[ProgramParameters::gain];
+        const bool couple = (bool)parameters[ProgramParameters::couple];
         const bool serial = couple; // Alias for clarity
 
         // Precompute NEON constants (stay in registers across loop)
@@ -412,41 +418,37 @@ class RipplerX
             }
         }
 
-        // === Debug logic with improved safety, sotring values into parameters with valid range (see header.c)===
+        // === Debug logic with improved safety ===
         bool errorDetected = false;
 
-        for(int i = 0; i < c_parameterTotal; i++) {
-            loggedValues[i] = 6.0f; // marker for changed values
+        // --- Define error conditions ---
+        const bool isGainInvalid = !isfinite(gain) || gain <= 0.0f;
+        const bool isSampleInvalid = m_samplePointer == nullptr;
+
+        if (isGainInvalid || isSampleInvalid) {
+            errorDetected = true;
         }
 
-        // Check for invalid gain
-        if (!isfinite(gain) ) {
-            errorDetected = true;
-            loggedValues[1] = 126.0f;   // max note
-        }
-        if( gain <= 0.0f) {
-            errorDetected = true;
-            loggedValues[5] = gain;
-        }
-
-        // Check for invalid sample indices
-        if ( m_samplePointer == nullptr) {
-            errorDetected = true;
-            loggedValues[2] = m_sampleBank;
-            loggedValues[3] = m_sampleNumber - 1;
-            loggedValues[15] = fmin(static_cast<float>(m_sampleIndex), 19990.0f);
-            loggedValues[16] = fmin(static_cast<float>(m_sampleEnd), 19990.0f);
-        }
-
-        // Defer switching to Debug program until after rendering
+        // --- If any error was detected, switch to debug program and log the state ---
         if (errorDetected) {
+            // First, load the Debug program preset to have a clean slate
             setCurrentProgram(Program::Debug);
-            for (size_t i = 1; i < c_parameterTotal - 2; ++i) {
-                setParameter(static_cast<uint8_t>(i), loggedValues[i]);
-            }
-            setParameter(c_parameterTotal - 1, static_cast<float>(nan_clamp_count)); // Log the number of NaN clamps
-        }
 
+            // Now, overwrite specific debug parameters with live values
+            if (isGainInvalid) {
+                 setParameter(c_parameterMalletStiffness, 0); // Use a fixed marker for bad gain
+            }
+
+            if (isSampleInvalid) {
+                setParameter(c_parameterResonatorNote, 50); // D3 as marker
+                setParameter(c_parameterSampleBank, m_sampleBank);
+                setParameter(c_parameterSampleNumber, m_sampleNumber - 1);
+            }
+
+            // Log other general state for context
+            setParameter(c_parameterModel, nan_clamp_count); // Log NaN count in Model slot
+            setParameter(c_parameterDecay, getParameterValue(c_parameterNoiseMix)); // Log Noise Mix in Decay slot
+        }
         // === End of debug logic ===
     }
 
@@ -529,7 +531,7 @@ class RipplerX
                 parameters[mallet_res] = value / 10.0f;
                 break;
 
-            case c_parameterMalletStifness:
+            case c_parameterMalletStiffness:
                 parameters[mallet_stiff] = value;
                 break;
 
@@ -721,8 +723,12 @@ class RipplerX
             case c_parameterNoiseFilterMode:
                 if ((size_t)value < c_noiseFilterModeElements) {
                     parameters[noise_filter_mode] = value;
-                    noiseChanged = true;
+                } else {
+                    loggedValues[6] = value;    // debug log
+                    // It seems the UI can send invalid values. Default to a safe value.
+                    parameters[noise_filter_mode] = 0; // LP
                 }
+                noiseChanged = true;
                 break;
 
             case c_parameterNoiseFilterFreq:
@@ -921,7 +927,7 @@ class RipplerX
             case c_parameterSampleBank:              return m_sampleBank;
             case c_parameterSampleNumber:            return m_sampleNumber;
             case c_parameterMalletResonance:         return (int32_t)(parameters[mallet_res] * 10.0f);  // denormalize 0.0-1.0 to 0-10
-            case c_parameterMalletStifness:          return parameters[mallet_stiff];
+            case c_parameterMalletStiffness:          return parameters[mallet_stiff];
             case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);  // denormalize
             case c_parameterVelocityMalletStifness:  return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);  // denormalize
             case c_parameterModel:                   return a_b_model;
@@ -976,8 +982,11 @@ class RipplerX
                     if (value >= c_partialElements * 2) return "INVALID";
                     return c_partialsName[value];
             case c_parameterNoiseFilterMode:
-                if ((size_t)value < c_noiseFilterModeElements)
+                if ((size_t)value < c_noiseFilterModeElements-1)
                     return c_noiseFilterModeName[value];
+                else
+                    parameters[ProgramParameters::mallet_stiff] = values; // debug: log invalid value
+                    return c_noiseFilterModeName[c_noiseFilterModeElements-1]; // "INVALID" - debug value
                 break;
             case c_parameterDecay: {
                 if (!k_showABMarkersNumeric) break;
@@ -1112,9 +1121,9 @@ class RipplerX
         voice.Init();
 
         // Calculate mallet frequency with velocity sensitivity
-        auto mallet_stiff = (float32_t)getParameterValue(ProgramParameters::mallet_stiff);
-        auto vel_mallet_stiff = (float32_t)getParameterValue(ProgramParameters::vel_mallet_stiff);
-        auto malletFreq = fmin(5000.0, e_expf(fasterlogf(mallet_stiff) +
+        auto mallet_stiff = parameters[ProgramParameters::mallet_stiff];
+        auto vel_mallet_stiff = parameters[ProgramParameters::vel_mallet_stiff];
+        auto malletFreq = fmin(5000.0, e_expf(fasterlogf(ProgramParameters::mallet_stiff) +
             velocity * vel_mallet_stiff * c_malletStiffnessCorrectionFactor));
 
         voice.trigger(srate, note, velocity / 127.0f, malletFreq);

@@ -5,15 +5,16 @@
 #include "constants.h"
 #include <arm_neon.h>
 #include <string.h>
+#include <stdalign.h>
 
 // --- Static model data ---
-static const float32_t bFree[c_max_partials] = {
+alignas(16) static const float32_t bFree[c_max_partials] = {
     1.50561873, 2.49975267, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 30.5, 31.5, 32.5, 33.5, 34.5, 35.5, 36.5, 37.5, 38.5, 39.5, 40.5, 41.5, 42.5, 43.5, 44.5, 45.5, 46.5, 47.5, 48.5, 49.5, 50.5, 51.5, 52.5, 53.5, 54.5, 55.5, 56.5, 57.5, 58.5, 59.5, 60.5, 61.5, 62.5, 63.5, 64.5
 };
 
 
 // aModels[model][partial]
-static float32_t aModels[c_modelElements][c_max_partials] = {
+alignas(16) static float32_t aModels[c_modelElements][c_max_partials] = {
     // String
     {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0, 64.0},
     // Beam
@@ -33,7 +34,7 @@ static float32_t aModels[c_modelElements][c_max_partials] = {
     // OpenTube
     {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 67, 69, 71, 73, 75, 77, 79, 81, 83, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113, 115, 117, 119, 121, 123, 125, 127},
 };
-static float32_t bModels[c_modelElements][c_max_partials] = {{0}};
+alignas(16) static float32_t bModels[c_modelElements][c_max_partials] = {{0}};
 
 // --- Static init: copy aModels to bModels at startup ---
 __attribute__((constructor)) static void init_bModels() {
@@ -42,8 +43,27 @@ __attribute__((constructor)) static void init_bModels() {
 
 // --- Accessors ---
 const float32_t* getBFree() { return bFree; }
-const float32_t* getAModels(int model) { return aModels[model]; }
-const float32_t* getBModels(int model) { return bModels[model]; }
+// Defensive: always check bounds, switch to Debug if out-of-bounds
+#include "ripplerx.h" // for Program::Debug and setCurrentProgram
+const float32_t* getAModels(int model) {
+    if (model < 0 || model >= c_modelElements) {
+        // Exceptional: return a safe fallback (first model) and optionally log error
+#ifdef DEBUG
+        fprintf(stderr, "[RipplerX] getAModels: out-of-bounds model index %d\n", model);
+#endif
+        return aModels[0];
+    }
+    return aModels[model];
+}
+const float32_t* getBModels(int model) {
+    if (model < 0 || model >= c_modelElements) {
+#ifdef DEBUG
+        fprintf(stderr, "[RipplerX] getBModels: out-of-bounds model index %d\n", model);
+#endif
+        return bModels[0];
+    }
+    return bModels[model];
+}
 
 
 // --- Utility: NEON-optimized division by f0 for frequency to ratio conversion ---
@@ -74,13 +94,13 @@ void recalcBeam(bool resA, float32_t ratio) {
 void recalcMembrane(bool resA, float32_t ratio) {
     float32_t* model = resA ? aModels[ModelNames::Membrane] : bModels[ModelNames::Membrane];
     float32_t ratios[c_modelElements];
-    float32x4_t ratio_vec = vdupq_n_f32(ratio);
-    float32x4_t n_vec1 = {1.0f, 2.0f, 3.0f, 4.0f};
-    float32x4_t n_vec2 = {5.0f, 6.0f, 7.0f, 8.0f};
-    float32x4_t result1 = vmulq_f32(ratio_vec, n_vec1);
-    float32x4_t result2 = vmulq_f32(ratio_vec, n_vec2);
-    vst1q_f32(&ratios[1], result1);
-    vst1q_f32(&ratios[5], result2);
+    
+    // Use scalar math for stack array to avoid alignment issues with vst1q
+    // ratios[0] is unused/padding
+    for(int k=1; k<=8; ++k) {
+        ratios[k] = ratio * (float)k;
+    }
+
     int i = 0;
     for (int m = 1; m <= 8; ++m) {
         for (int n = 1; n <= 8; ++n, ++i) {

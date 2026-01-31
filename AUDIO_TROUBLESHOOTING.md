@@ -1,3 +1,32 @@
+# [2026-01-31] Crash, Distortion, and Zero Gain Analysis
+
+## Symptom
+- **Case 1 (Hot Load):** When loading the `ripplerx` unit while the drumlogue is playing, the unit produces a distorted sound for a few seconds and then crashes the hardware.
+- **Case 2 (Cold Load):** When loading the unit while the drumlogue is stopped, the unit loads silently and switches to the `Debug` program.
+
+## Investigation & Findings
+
+New debug logs revealed two critical issues occurring simultaneously on unit load:
+
+1.  **Zero Gain:** The debug parameter for `c_parameterMalletStifness` was used to log the `gain` value. It reported `0`, confirming that the main gain of the synth is being set to zero immediately on load. This is the primary cause of the silence in "Case 2".
+2.  **Null Sample Pointer:** The debug parameter for `c_parameterResonatorNote` was used as a marker and confirmed that `m_samplePointer` is `nullptr`, meaning the selected sample could not be loaded. This contributes to the silence.
+3.  **Crash from `NaN` values:** The distortion and crash in "Case 1" are classic symptoms of a numerical instability (generating `NaN` or `inf` values) within the DSP code.
+
+## Crash Root Cause & Fix
+
+The `NaN` generation was traced to the `Noise` generator's filter:
+
+- **Problem:** The `c_parameterNoiseFilterMode` parameter was receiving an invalid value from the drumlogue OS (represented as `---` on the display). The `Noise::initFilter()` function in `Noise.cc` had `if/else if` branches for valid modes (0, 1, 2) but no final `else` to handle an invalid mode.
+- **Result:** When an invalid mode was received, the filter was used without being initialized. Processing audio with an uninitialized filter results in garbage output, `NaN`s, and a crash.
+- **Fix Applied:** A default case was added to `Noise::initFilter()`. Now, if an invalid mode is received, the filter safely defaults to a Low-Pass (LP) configuration, preventing the instability.
+
+## Next Steps
+
+1.  **Test the fix:** The unit should no longer crash or produce distortion.
+2.  **Investigate Zero Gain:** With the unit stable, the next priority is to determine why the `gain` parameter is being set to `0` upon loading.
+
+---
+
 ## Debug Parameter Export Block (Jan 2026)
 
 In January 2026, a debug block was added to export internal model/partials state to user parameters (slots 15–17) in `render()`. This block was later removed from the NaN/invalid state handler after it was found to cause severe sound corruption and hardware instability if triggered outside the Debug program context. If similar issues reappear, check for accidental parameter overwrites or out-of-bounds writes in debug/diagnostic code.
@@ -588,11 +617,51 @@ if (m_sampleIndex < m_sampleEnd) {
 ```
 
 ---
+# [2026-01-31] Investigation into Crash, Invalid Parameters, and Random Sample Numbers
 
-## Architecture Comparison: RipplerX vs loguePADS
+## Symptoms
+- **Hot-load (running HW):** The unit produces distorted sound for a few seconds, then crashes the hardware.
+- **Cold-load (stopped HW):** Loading the unit, switching to another, and then back to ripplerx triggers the `Debug` program, displaying logged values.
 
-After analyzing the working **loguePADS** synth (Oleg Burdaev's sample-based drum machine):
+## Debug Log Analysis (from Cold-load)
+- The unit consistently enters the `Debug` program, indicating a recurring error condition is being met upon initialization.
+- The following parameter values were captured during the debug state and are highly suspect:
+  - `c_parameterSampleNumber`: `220`. This value appears to be random on each load and is a primary suspect for memory corruption.
+  - `c_parameterNoiseFilterMode`: `---`. This value is invalid according to `header.c`. The fallback logic intended to prevent this state appears to be failing or is not being triggered.
+  - Numerous other parameters show "(changed)" values, confirming that the error-handling logic is overwriting them with logged internal state variables.
 
+## Core Hypotheses
+
+1.  **Random `c_parameterSampleNumber` is the Crash Root Cause:** The most critical issue appears to be the uninitialized or random value for `c_parameterSampleNumber`. When the `GetSample()` function is called with a large, out-of-bounds index (`220`), it likely returns a `nullptr` or a wild pointer. Subsequent attempts to access this pointer in the `Render` loop would lead to memory access violations, explaining the distortion and eventual crash.
+
+2.  **Invalid `c_parameterNoiseFilterMode` Points to State Corruption:** The persistent invalid value for the noise filter mode is a strong indicator of either a parameter initialization bug or memory corruption that is overwriting this value. It's unclear why the intended fallback logic (e.g., in `Noise::initFilter()`) is not catching this. It's possible the corruption happens *after* initialization but *before* rendering.
+
+## Next Steps
+
+1.  **Trace the `m_sampleNumber` variable:** The immediate priority is to find out where `m_sampleNumber` gets its random value.
+    - Examine the `Init()`, `Reset()`, and `NoteOn()` functions in `ripplerx.h` for its initialization.
+    - Check the constructor of the `ripplerx` class.
+    - If it's not explicitly initialized, it will contain garbage data, which explains the random behavior. It **must** be initialized to a sane default (e.g., `1`).
+
+2.  **Investigate the `noise_filter_mode` parameter:**
+    - Review the logic in `header.c` to understand how the `---` display value is determined.
+    - Analyze the full lifecycle of the corresponding internal variable (`m_noiseFilterMode`?). Where is it written to? Could another process be writing out of bounds and corrupting it?
+    - Add logging within `setParameter` for `c_parameterNoiseFilterMode` to see when and with what value it is being called.
+
+3.  **Analyze Source of "Changed" Values:** The fact that the debug program is triggered means an error is detected. The source of this error must be identified by reviewing the conditions that lead to `setCurrentProgram(Program::Debug)`. The added debug information at `ripplerx.h:987-989` should be reviewed.
+
+4.  **Compare with JUCE Reference:** Continue comparing the initialization and parameter handling logic in `ripplerx.h` against the original `PluginProcessor_orig.cpp` to spot any discrepancies in the porting that could lead to uninitialized variables.
+
+---
+
+ # [2026-01-31] Crash, Distortion, and Zero Gain Analysis
+
+ ## Symptom
+
+ ## Architecture Comparison: RipplerX vs loguePADS
+
+After analyzing the working **loguePADS** synth (Oleg Burdaey's sample-based drum machine):
+ 
 ### Key Architectural Difference
 
 **loguePADS**:
