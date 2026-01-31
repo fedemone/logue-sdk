@@ -619,6 +619,21 @@ if (m_sampleIndex < m_sampleEnd) {
 ---
 # [2026-01-31] Investigation into Crash, Invalid Parameters, and Random Sample Numbers
 
+## Latest review
+**Here's the breakdown of what's happening:**
+
+- c_parameterMalletStiffness : 226: This is the smoking gun. My diagnostic code caught the invalid sample number being sent to the synthesizer. It confirms that the host environment is calling setParameter with c_parameterSampleNumber set to 226, which is outside the valid range of 1-128.
+- c_parameterTone : -49.5: This is the other marker I added. Its changed value confirms that the specific error-handling block for the invalid sample number was executed.
+- c_parameterSampleNumber : 226: This is the invalid value that was received.
+
+Conclusion: The root cause is not a logic error within the ripplerx code itself. The problem is that the host environment (the drumlogue firmware) is sending an invalid value. This is likely due to memory corruption or a state bug that occurs when you switch between different synth units.
+
+The crash is a direct result of the synth trying to load a non-existent sample (number 225), which causes sampleWrapper to be NULL.
+
+This error should never happen and clamping is not meaning that unit will work as expected.
+
+possibly the error is related to initial warning in UI display user data: unit: error 2
+
 ## Symptoms
 - **Hot-load (running HW):** The unit produces distorted sound for a few seconds, then crashes the hardware.
 - **Cold-load (stopped HW):** Loading the unit, switching to another, and then back to ripplerx triggers the `Debug` program, displaying logged values.
@@ -661,7 +676,7 @@ if (m_sampleIndex < m_sampleEnd) {
  ## Architecture Comparison: RipplerX vs loguePADS
 
 After analyzing the working **loguePADS** synth (Oleg Burdaey's sample-based drum machine):
- 
+
 ### Key Architectural Difference
 
 **loguePADS**:

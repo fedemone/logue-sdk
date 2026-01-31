@@ -523,6 +523,15 @@ class RipplerX
                 break;
 
             case c_parameterSampleNumber:
+                // Defensive check for out-of-bounds value from host - debug, remove after fix
+                if (value <= 0 || value > 128) {
+                    setCurrentProgram(Program::Debug);
+                    // Log the invalid value to another parameter for inspection
+                    parameters[mallet_stiff] = value;
+                    // Use a magic number to signify this specific error source
+                    a_b_tone = -99;
+                    parameters[a_tone] = -9.9f;
+                }
                 m_sampleNumber = value;
                 break;
 
@@ -976,18 +985,17 @@ class RipplerX
                     return c_programName[value];
                 break;
                 case c_parameterModel:
-                    if (value >= c_modelElements * 2) return "INVALID";
+                    if (value >= c_modelElements * 2) return "INVALID"; // debug purposes, remove after fix
                     return c_modelName[value];
                 case c_parameterPartials:
-                    if (value >= c_partialElements * 2) return "INVALID";
+                    if (value >= c_partialElements * 2) return "INVALID"; // debug purposes, remove after fix
                     return c_partialsName[value];
             case c_parameterNoiseFilterMode:
-                if ((size_t)value < c_noiseFilterModeElements-1)
+                if ((size_t)value < c_noiseFilterModeElements) {
                     return c_noiseFilterModeName[value];
-                else
-                    parameters[ProgramParameters::mallet_stiff] = values; // debug: log invalid value
-                    return c_noiseFilterModeName[c_noiseFilterModeElements-1]; // "INVALID" - debug value
-                break;
+                }
+                return "---"; // Invalid value
+
             case c_parameterDecay: {
                 if (!k_showABMarkersNumeric) break;
                 static char s_numBuf[32];
