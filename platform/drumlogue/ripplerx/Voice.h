@@ -12,7 +12,7 @@
 #include "Models.h"
 //TODO: class Sampler
 
-class Voice
+class alignas(16) Voice
 {
 public:
 	Voice() {}

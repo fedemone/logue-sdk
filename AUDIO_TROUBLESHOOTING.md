@@ -1,3 +1,88 @@
+# [2026-02-03] Breakthrough: Crash Isolated to DSP Block
+
+## Finding
+A "bare bones" version of the `Render()` function was created, which bypassed all complex DSP logic (voices, resonators, mallet, noise, effects) and only passed the raw input sample to the output.
+
+**This version completely stopped the audio engine crash.** The `ripplerx` unit now loads without silencing other units.
+
+This is a major breakthrough, as it **proves** the memory corruption bug causing the system-level crash is located somewhere within the complex DSP processing code that was bypassed.
+
+## Next Steps: Iterative Re-integration
+The bug has been cornered. A methodical, iterative process will now be used to pinpoint the specific faulty component. The plan is to re-introduce features into the `Render` function one by one, rebuilding and testing at each step, in the following order:
+
+1.  **Mallet Processing:** Re-introduce the mallet as an excitation source.
+2.  **Noise Processing:** Re-introduce the noise generator.
+3.  **Resonator Processing:** Re-introduce the core resonator blocks. This is the most complex and most likely area to contain the bug.
+4.  **Effects Processing:** Re-introduce the `Comb` and `Limiter` effects.
+
+When the crash reappears, the component added in the immediately preceding step will be identified as the source of the bug.
+
+---
+# [2026-02-03] Final Debugging: The Faulty Error Check
+
+## Problem Summary
+After a series of fixes, the `ripplerx` unit still produced a distorted sound on load and then entered a `debug` program state, particularly after being reloaded. This indicated a persistent, fundamental error was being triggered on initialization or resume.
+
+## Root Cause Analysis
+The final breakthrough came from two key insights:
+1.  A comparison with the working `resonator.h` unit proved the bug was internal to `ripplerx`'s logic, not caused by external memory corruption.
+2.  By disabling other checks, the trigger was definitively isolated to the debug logic within the `Render()` method.
+
+The specific condition `isSampleInvalid` (`m_samplePointer == nullptr`) was being treated as a catastrophic error, forcing the unit into debug mode. This was incorrect. **A null sample pointer is a valid runtime state,** as the synthesizer can and should be able to operate without a sample, using the mallet as an excitation source.
+
+The root cause of the unit entering the `debug` state was this faulty error check flagging normal operation as a failure.
+
+## The Fix
+The solution was to correct this flawed logic:
+
+1.  **Corrected `Render()` Logic:** The `isSampleInvalid` check was removed from the error detection block in the `Render()` method. The synthesizer no longer treats the absence of a sample as an error.
+
+This was the primary fix that resolved the main symptom.
+
+## Supporting Fixes and Final State
+During the investigation, several other improvements were made and retained to make the unit more robust:
+
+- **Empty `Resume()` Method:** The `Resume()` method was reverted to be empty, matching the `resonator` unit's lifecycle and preventing conflicts with the host's state restoration mechanism.
+- **Robust Parameter Clamping:** The `c_parameterSampleNumber` value is defensively clamped within `setParameter` to prevent out-of-bounds values from causing issues.
+- **Restored `NaN` Check:** The `check_for_error_and_debug` lambda in `setParameter`, which checks for genuine `NaN` values, was re-enabled after being used for diagnostics.
+
+## Next Steps
+- Perform a final hardware test to confirm that the `ripplerx` unit is now fully stable and no longer enters the `debug` program state during loading, reloading, or normal playback (with or without samples).
+- If the fix is confirmed, the issue can be considered closed.
+
+---
+# [2026-02-03] Final Fix: State Corruption and Initialization
+
+## Root Cause Analysis
+The core issue behind the crashes, distortion, and random parameter values (`c_parameterSampleNumber: 226`, etc.) was identified as a C++ object initialization problem.
+
+The `ripplerx` unit is instantiated as a global static object (`static RipplerX s_synth_instance;`). The class relied on modern C++11 in-class member initializers (e.g., `uint32_t m_note = 60;`). It appears the toolchain/runtime environment for the drumlogue hardware does not reliably execute these initializers for static objects before `main()` is called.
+
+This resulted in the `s_synth_instance` object being created in a block of memory containing garbage values from whatever was there before.
+
+When the user switched away from the unit and then back, the following would happen:
+1. The host OS would read the current (garbage) state of some parameters from the unit via `getParameterValue`.
+2. The user switches back to the `ripplerx` unit.
+3. The host would try to be helpful and restore the previous state by calling `setParameter` with the garbage values it had just read.
+4. This would trigger the defensive error-checking code (e.g., for `c_parameterSampleNumber`), switch the program to `Debug`, and ultimately cause a crash when trying to use the invalid values.
+
+The working `resonator` unit did not have this problem because it used an older, more robust pattern: an empty constructor and explicit initialization of ALL member variables inside its `Init()` method.
+
+## The Fix
+The fix was to adopt the same robust initialization pattern as the `resonator` unit.
+
+1.  **Default Constructor Removed:** The `RipplerX() = default;` constructor was replaced with an empty `RipplerX() {}`.
+2.  **Explicit Initialization in `Init()`:** All in-class member initializers were removed. Instead, all member variables of the `RipplerX` class are now explicitly set to their default values at the beginning of the `Init()` method.
+
+This ensures that every time `unit_init()` is called, the `s_synth_instance` object is wiped clean and restored to a known, valid default state. This prevents the host from ever reading a corrupted state and breaks the cycle of garbage-in, garbage-out.
+
+## Expected Results of the Fix
+- **No more debug triggers:** The root cause of the error condition (uninitialized state) is gone. The debug program should not be triggered during normal use.
+- **No more crashes or distortion:** Since the sample number and other parameters will always be initialized to valid defaults, crashes from out-of-bounds memory access and distortion from uninitialized filters will no longer occur.
+- **Correct sample loading:** Samples will load correctly because `m_sampleNumber` will default to a valid value (e.g., 1).
+- **Correct sound generation:** The synth will now reliably generate sound from the mallet and resonator models, even without a sample, as the crash that was preventing this has been fixed.
+
+---
 # [2026-01-31] Crash, Distortion, and Zero Gain Analysis
 
 ## Symptom

@@ -117,7 +117,7 @@ class RipplerX
     /* Lifecycle Methods. */
     /*===========================================================================*/
 
-    RipplerX() = default;
+    RipplerX() { }
     ~RipplerX() = default;
 
     inline int8_t Init(const unit_runtime_desc_t * desc) {
@@ -132,33 +132,16 @@ class RipplerX
         if (!desc->get_num_samples_for_bank) return k_unit_err_samplebank + 31; // 31 = missing get_num_samples_for_bank
         if (!desc->get_sample) return k_unit_err_samplebank + 32; // 32 = missing get_sample
 
-        // Initialize synth resources (static allocation - no heap)
-        // Models are now static; no per-voice setup needed
-
-        // Initialize sample management
-        m_sampleBank = 0;
-        m_sampleNumber = 1;
-        m_sampleStart = 0;  // NOTE: not user editable
-        m_sampleEnd = 1000;
-
         // Cache runtime sample access functions
         m_get_num_sample_banks_ptr = desc->get_num_sample_banks;
         m_get_num_samples_for_bank_ptr = desc->get_num_samples_for_bank;
         m_get_sample = desc->get_sample;
 
-        // Load default program
-        LoadPreset(Program::Initial);    // this does prepareToPlay
-        Reset();
+        initState();
 
         // Initialize effects
         comb.init(getSampleRate());
         limiter.init(getSampleRate());
-
-        // === Debug: Log parameter initialization ===
-        for(int i = 0; i < c_parameterTotal; i++) {
-            loggedValues[i] = 6.0f; // marker for changed values
-        }
-        // === End of debug init ===
 
         return k_unit_err_none;
     }
@@ -253,6 +236,7 @@ class RipplerX
      */
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
+        // DIAGNOSTIC STEP 1: Testing Mallet + Sample Path
         // Load parameters once per render call
         const bool a_on = (bool)parameters[ProgramParameters::a_on];
         const bool b_on = (bool)parameters[ProgramParameters::b_on];
@@ -282,7 +266,6 @@ class RipplerX
             float32x4_t audioIn = vdupq_n_f32(0.0f);
 
             // Robust sample loading with bounds checking.
-            // This check prevents crashes if a sample is invalid or finishes playing.
             if (m_samplePointer != nullptr && m_sampleEnd > 0 && m_sampleIndex < m_sampleEnd) {
                 if (m_sampleChannels == 2) {
                     // Stereo: load 4 samples (2 stereo frames).
@@ -290,7 +273,6 @@ class RipplerX
                         audioIn = vld1q_f32(&m_samplePointer[m_sampleIndex]);
                         m_sampleIndex += 4;
                     } else {
-                        // Not enough samples left for a full vector; zero out and mark as finished.
                         audioIn = vdupq_n_f32(0.0f);
                         m_sampleIndex = m_sampleEnd; // Prevent re-entry
                     }
@@ -304,7 +286,6 @@ class RipplerX
                         audioIn = vcombine_f32(s1, s2);
                         m_sampleIndex += 2;
                     } else if (m_sampleIndex + 1 <= m_sampleEnd) {
-                        // Only 1 mono sample left: fill first stereo frame, zero the second.
                         float32_t m1 = m_samplePointer[m_sampleIndex];
                         float32x2_t s1 = vdup_n_f32(m1);
                         float32x2_t s2 = vdup_n_f32(0.0f);
@@ -324,15 +305,14 @@ class RipplerX
 
                 float32x4_t resOut = vdupq_n_f32(0.0f);
 
+                // --- MALLET PROCESSING ---
                 float32_t msample = voice.mallet.process();
-
                 if (msample != 0.0f) {
                     float32_t mallet_mix_vel = fmax(0.0f, fmin(1.0f,
                         mallet_mix + vel_mallet_mix * voice.vel));
                     float32_t mallet_res_vel = fmax(0.0f, fmin(1.0f,
                         mallet_res + vel_mallet_res * voice.vel));
 
-                    // Accumulate direct and resonator paths (uses FMA instructions).
                     dirOut = vmlaq_n_f32(dirOut, vdupq_n_f32(msample), mallet_mix_vel);
                     resOut = vmlaq_n_f32(resOut, vdupq_n_f32(msample), mallet_res_vel);
                 }
@@ -341,9 +321,9 @@ class RipplerX
                 if (voice.isPressed) {
                     resOut = vaddq_f32(resOut, audioIn);
                 }
-
+                
+                // --- NOISE PROCESSING ---
                 float32_t nsample = voice.noise.process();
-
                 if (nsample != 0.0f) {
                     float32_t noise_mix_vel = fmax(0.0f, fmin(1.0f,
                         noise_mix + vel_noise_mix * voice.vel));
@@ -354,8 +334,8 @@ class RipplerX
                     resOut = vmlaq_n_f32(resOut, vdupq_n_f32(nsample), noise_res_vel);
                 }
 
-                float32x4_t out_from_a = v_zero; // Store Resonator A's output for serial coupling.
-
+                // --- RESONATORS PROCESSING ---
+                float32x4_t out_from_a = v_zero; 
                 if (a_on) {
                     float32x4_t out = voice.resA.process(resOut);
                     if (voice.resA.getCut() > c_res_cutoff)
@@ -365,7 +345,6 @@ class RipplerX
                 }
 
                 if (b_on) {
-                    // Serial coupling: resB input is either resA output or direct resonator input
                     float32x4_t resB_input = (a_on && couple) ? out_from_a : resOut;
                     float32x4_t out = voice.resB.process(resB_input);
                     if (voice.resB.getCut() > c_res_cutoff)
@@ -373,31 +352,30 @@ class RipplerX
                     resBOut = vaddq_f32(resBOut, out);
                 }
 
-                // Increment frame counter for voice stealing logic. This is a critical fix.
-                voice.m_framesSinceNoteOn += 2; // Processed 2 frames in this iteration.
+                voice.m_framesSinceNoteOn += 2;
             }
 
-            // Mix resonator outputs based on serial/parallel coupling mode.
-            float32x4_t resOut;
+            // --- RESONATOR MIXING ---
+            float32x4_t resOut_final;
             if (a_on && b_on) {
                 if (serial) {
-                    resOut = resBOut;
+                    resOut_final = resBOut;
                 } else {
-                    // Parallel mode: blend resA and resB based on ab_mix parameter
-                    // resOut = resB * ab_mix + resA * (1 - ab_mix)
                     float32x4_t resB_scaled = vmulq_f32(resBOut, v_ab_mix);
                     float32x4_t resA_scaled = vmulq_f32(resAOut, v_one_minus_ab_mix);
-                    resOut = vaddq_f32(resB_scaled, resA_scaled);
+                    resOut_final = vaddq_f32(resB_scaled, resA_scaled);
                 }
             } else {
-                // Either A or B (or neither): simple sum
-                resOut = vaddq_f32(resAOut, resBOut);
+                resOut_final = vaddq_f32(resAOut, resBOut);
             }
 
-            // Apply final gain and effects chain.
-            float32x4_t totalOut = vmlaq_n_f32(dirOut, resOut, gain);
-            float32x4_t split = comb.process(totalOut);
-            float32x4_t channels = limiter.process(split);
+            // --- BYPASSED EFFECTS ---
+            // Use dirOut and bypass resonators and effects
+            float32x4_t totalOut = vmlaq_n_f32(dirOut, resOut_final, gain);
+            // float32x4_t split = comb.process(totalOut);
+            // float32x4_t channels = limiter.process(split);
+            float32x4_t channels = totalOut;
+
 
             // Accumulate into output buffer
             float32x4_t old = vld1q_f32(outBuffer);
@@ -407,7 +385,6 @@ class RipplerX
         }
 
         // Lightweight safety check for NaN/Inf values in the output buffer.
-        // This prevents audio hardware from crashing due to invalid floating point values.
         static int nan_clamp_count = 0;
         float* checkBuf = outBuffer - (frames * 2); // Point back to the start of the buffer for this render call.
         for (size_t i = 0; i < frames * 2; ++i) {
@@ -423,9 +400,8 @@ class RipplerX
 
         // --- Define error conditions ---
         const bool isGainInvalid = !isfinite(gain) || gain <= 0.0f;
-        const bool isSampleInvalid = m_samplePointer == nullptr;
 
-        if (isGainInvalid || isSampleInvalid) {
+        if (isGainInvalid) {
             errorDetected = true;
         }
 
@@ -438,16 +414,6 @@ class RipplerX
             if (isGainInvalid) {
                  setParameter(c_parameterMalletStiffness, 0); // Use a fixed marker for bad gain
             }
-
-            if (isSampleInvalid) {
-                setParameter(c_parameterResonatorNote, 50); // D3 as marker
-                setParameter(c_parameterSampleBank, m_sampleBank);
-                setParameter(c_parameterSampleNumber, m_sampleNumber - 1);
-            }
-
-            // Log other general state for context
-            setParameter(c_parameterModel, nan_clamp_count); // Log NaN count in Model slot
-            setParameter(c_parameterDecay, getParameterValue(c_parameterNoiseMix)); // Log Noise Mix in Decay slot
         }
         // === End of debug logic ===
     }
@@ -523,16 +489,14 @@ class RipplerX
                 break;
 
             case c_parameterSampleNumber:
-                // Defensive check for out-of-bounds value from host - debug, remove after fix
+                // Defensive check for out-of-bounds value from host.
+                // Instead of switching to debug program, which gets saved as a bad state,
+                // just clamp the value to a safe default. This breaks the bad state save/restore cycle.
                 if (value <= 0 || value > 128) {
-                    setCurrentProgram(Program::Debug);
-                    // Log the invalid value to another parameter for inspection
-                    parameters[mallet_stiff] = value;
-                    // Use a magic number to signify this specific error source
-                    a_b_tone = -99;
-                    parameters[a_tone] = -9.9f;
+                    m_sampleNumber = 1;
+                } else {
+                    m_sampleNumber = value;
                 }
-                m_sampleNumber = value;
                 break;
 
             case c_parameterMalletResonance:
@@ -1192,6 +1156,49 @@ class RipplerX
     /* Private Methods */
     /*===========================================================================*/
 
+    inline void initState() {
+        // State variables
+        a_b_model    = 0;
+        a_b_partials = 0;
+        a_b_decay    = 0;
+        a_b_damp     = 0;
+        a_b_tone     = 0;
+        a_b_hit      = 0;
+        a_b_rel      = 0;
+        a_b_filter   = 0;
+        a_b_inharm   = 0;
+        a_b_radius   = 0;
+        a_b_coarse   = 0;
+        m_currentProgram = 0;
+        m_note = 60;
+        scale = 1.0f;
+        last_a_model = -1;
+        last_b_model = -1;
+        last_a_partials = -1;
+        last_b_partials = -1;
+        nvoice = 0;
+
+        // Sample management
+        m_sampleBank = 0;
+        m_sampleNumber = 1;
+        m_sampleChannels = 0;
+        m_sampleFrames = 0;
+        m_samplePointer = nullptr;
+        m_sampleStart = 0;  // NOTE: not user editable
+        m_sampleIndex = 0;
+        m_sampleEnd = 1000;
+
+        // Load default program
+        LoadPreset(Program::Initial);    // this does prepareToPlay
+        Reset();
+
+        // === Debug: Log parameter initialization ===
+        for(int i = 0; i < c_parameterTotal; i++) {
+            loggedValues[i] = 6.0f; // marker for changed values
+        }
+        // === End of debug init ===
+    }
+
     inline const sample_wrapper_t* GetSample(size_t bank, size_t number) {
         if (bank >= m_get_num_sample_banks_ptr()) return nullptr;
         if (number >= m_get_num_samples_for_bank_ptr(bank)) return nullptr;
@@ -1244,45 +1251,45 @@ class RipplerX
 
 private:
     // ProgramParameters (instance member - not static)
-    float32_t parameters[ProgramParameters::last_param] = {};
+    float32_t parameters[ProgramParameters::last_param];
 
     // debug
     float loggedValues[c_parameterTotal];  // marker for debug
 
     // State variables
-    uint32_t a_b_model    = 0;  // Combined A/B model for UI
-    uint32_t a_b_partials = 0;  // Combined A/B partials index for UI (need c_partials conversion for actual value)
-    uint32_t a_b_decay    = 0;  // Combined A/B decay for UI
-    uint32_t a_b_damp     = 0;  // Combined A/B material for UI
-    uint32_t a_b_tone     = 0;  // Combined A/B tone for UI
-    uint32_t a_b_hit      = 0;  // Combined A/B hit for UI
-    uint32_t a_b_rel      = 0;  // Combined A/B release for UI
-    uint32_t a_b_filter   = 0;  // Combined A/B filter cutoff for UI
-    uint32_t a_b_inharm   = 0;  // Combined A/B inharmonics for UI
-    uint32_t a_b_radius   = 0;  // Combined A/B radius for UI
-    uint32_t a_b_coarse   = 0;  // Combined A/B coarse for UI
-    uint32_t m_currentProgram = 0;
-    uint32_t m_note = 60;
-    float32_t scale = 1.0f;
-    int32_t last_a_model = -1;
-    int32_t last_b_model = -1;
-    int32_t last_a_partials = -1;
-    int32_t last_b_partials = -1;
+    uint32_t a_b_model;  // Combined A/B model for UI
+    uint32_t a_b_partials;  // Combined A/B partials index for UI (need c_partials conversion for actual value)
+    uint32_t a_b_decay;  // Combined A/B decay for UI
+    uint32_t a_b_damp;  // Combined A/B material for UI
+    uint32_t a_b_tone;  // Combined A/B tone for UI
+    uint32_t a_b_hit;  // Combined A/B hit for UI
+    uint32_t a_b_rel;  // Combined A/B release for UI
+    uint32_t a_b_filter;   // Combined A/B filter cutoff for UI
+    uint32_t a_b_inharm;  // Combined A/B inharmonics for UI
+    uint32_t a_b_radius;  // Combined A/B radius for UI
+    uint32_t a_b_coarse;  // Combined A/B coarse for UI
+    uint32_t m_currentProgram;
+    uint32_t m_note;
+    float32_t scale;
+    int32_t last_a_model;
+    int32_t last_b_model;
+    int32_t last_a_partials;
+    int32_t last_b_partials;
 
     // Sample management
-    uint8_t m_sampleBank = 0;
-    uint8_t m_sampleNumber = 1;
-    uint8_t m_sampleChannels = 0;
-    size_t m_sampleFrames = 0;
-    const float32_t * m_samplePointer = nullptr;
-    uint16_t m_sampleStart = 0;  // NOTE: not user editable
-    size_t m_sampleIndex = 0;
-    size_t m_sampleEnd = 1000;
+    uint8_t m_sampleBank;
+    uint8_t m_sampleNumber;
+    uint8_t m_sampleChannels;
+    size_t m_sampleFrames;
+    const float32_t * m_samplePointer;
+    uint16_t m_sampleStart;  // NOTE: not user editable
+    size_t m_sampleIndex;
+    size_t m_sampleEnd;
 
     // Runtime function pointers
-    unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
-    unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr = nullptr;
-    unit_runtime_get_sample_ptr m_get_sample = nullptr;
+    unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr;
+    unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr;
+    unit_runtime_get_sample_ptr m_get_sample;
 };
 
 /*===========================================================================*/

@@ -5,7 +5,7 @@
 #include "float_math.h"
 #include "constants.h"
 
-class Partial
+class alignas(16) Partial
 {
 public:
 	Partial() { k = 1; } // Default constructor for array allocation

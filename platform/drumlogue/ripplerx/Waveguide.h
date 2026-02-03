@@ -5,7 +5,7 @@
 #include "constants.h"
 #include "float_math.h"
 
-class Waveguide
+class alignas(16) Waveguide
 {
 public:
 	Waveguide();  // Proper initialization in .cpp
