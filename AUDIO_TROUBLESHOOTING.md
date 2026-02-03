@@ -10,10 +10,10 @@ This is a major breakthrough, as it **proves** the memory corruption bug causing
 ## Next Steps: Iterative Re-integration
 The bug has been cornered. A methodical, iterative process will now be used to pinpoint the specific faulty component. The plan is to re-introduce features into the `Render` function one by one, rebuilding and testing at each step, in the following order:
 
-1.  **Mallet Processing:** Re-introduce the mallet as an excitation source.
-2.  **Noise Processing:** Re-introduce the noise generator.
-3.  **Resonator Processing:** Re-introduce the core resonator blocks. This is the most complex and most likely area to contain the bug.
-4.  **Effects Processing:** Re-introduce the `Comb` and `Limiter` effects.
+1.  **Mallet Processing:** Re-introduce the mallet as an excitation source. - No crash
+2.  **Noise Processing:** Re-introduce the noise generator. - No crash
+3.  **Resonator Processing:** Re-introduce the core resonator blocks. This is the most complex and most likely area to contain the bug. - CRASH! To be analyzed. Some memory alignment done, to be tested.
+4.  **Effects Processing:** Re-introduce the `Comb` and `Limiter` effects. - To be done
 
 When the crash reappears, the component added in the immediately preceding step will be identified as the source of the bug.
 
