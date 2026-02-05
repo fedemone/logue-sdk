@@ -78,6 +78,14 @@ public:
 	// std::tuple<float32_t, float32_t> process(float32_t spl0, float32_t spl1)
 	float32x4_t process(float32x4_t split)
 	{
+		// CRITICAL: Check for NaN/Inf in input to prevent crash propagation.
+		// If input contains invalid values, return zeros to protect hardware audio.
+		float32_t lane0 = vgetq_lane_f32(split, 0);
+		if (!(lane0 == lane0) || lane0 > 1e10f || lane0 < -1e10f) {
+			// NaN detected (NaN != NaN) or extreme value - zero output
+			return vdupq_n_f32(0.0f);
+		}
+
 		// Get absolute values and find max across both channels
         float32x4_t temp = vabsq_f32(split);
         float32x2_t max_pair = vmax_f32(vget_low_f32(temp), vget_high_f32(temp));

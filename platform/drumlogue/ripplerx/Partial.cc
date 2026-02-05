@@ -55,6 +55,16 @@ float32x4_t Partial::process(float32x4_t input)
 {
 	// Second-order IIR bandpass filter: output = (b0*x + b2*x2 - a1*y1 - a2*y2) / a0
 	// Process 4 samples using NEON vectorization
+	// CRITICAL: If a0 is zero or near-zero, the filter is disabled (set in update()).
+	// Return zero to prevent division by zero which causes NaN/Inf and crashes hardware audio.
+	if (a0 < 1e-6f) {
+		// Still update delay line state to avoid glitches when filter re-enables
+		x2 = x1;
+		x1 = input;
+		// Clear output history since filter is disabled
+		y2 = y1 = vdupq_n_f32(0.0f);
+		return vdupq_n_f32(0.0f);
+	}
     float32x4_t a0_vec = vdupq_n_f32(a0);
 	float32x4_t b0_vec = vdupq_n_f32(b0);
 	float32x4_t b2_vec = vdupq_n_f32(b2);

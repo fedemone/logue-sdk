@@ -321,7 +321,7 @@ class RipplerX
                 if (voice.isPressed) {
                     resOut = vaddq_f32(resOut, audioIn);
                 }
-                
+
                 // --- NOISE PROCESSING ---
                 float32_t nsample = voice.noise.process();
                 if (nsample != 0.0f) {
@@ -335,7 +335,7 @@ class RipplerX
                 }
 
                 // --- RESONATORS PROCESSING ---
-                float32x4_t out_from_a = v_zero; 
+                float32x4_t out_from_a = v_zero;
                 if (a_on) {
                     float32x4_t out = voice.resA.process(resOut);
                     if (voice.resA.getCut() > c_res_cutoff)
@@ -394,28 +394,6 @@ class RipplerX
                 nan_clamp_count++;
             }
         }
-
-        // === Debug logic with improved safety ===
-        bool errorDetected = false;
-
-        // --- Define error conditions ---
-        const bool isGainInvalid = !isfinite(gain) || gain <= 0.0f;
-
-        if (isGainInvalid) {
-            errorDetected = true;
-        }
-
-        // --- If any error was detected, switch to debug program and log the state ---
-        if (errorDetected) {
-            // First, load the Debug program preset to have a clean slate
-            setCurrentProgram(Program::Debug);
-
-            // Now, overwrite specific debug parameters with live values
-            if (isGainInvalid) {
-                 setParameter(c_parameterMalletStiffness, 0); // Use a fixed marker for bad gain
-            }
-        }
-        // === End of debug logic ===
     }
 
     /*===========================================================================*/
@@ -435,29 +413,6 @@ class RipplerX
 
         if (index >= c_parameterTotal)
             return;
-
-        // === Expanded debug: Check for NaN, out-of-bounds, or invalid model/partials indices after parameter changes
-        auto check_for_error_and_debug = [this]() {
-            bool invalid = false;
-            // Check for NaN in all parameters
-            for (int i = 0; i < ProgramParameters::last_param; ++i) {
-                float v = parameters[i];
-                if (!(v == v)) invalid = true; // NaN
-            }
-            // Check for out-of-bounds or invalid indices for model/partials - TODO remove later, just for debug
-            if (a_b_partials >= c_partialElements * 2)
-                invalid = true;
-            if (parameters[a_model] < 0 || parameters[a_model] >= c_modelElements * 2)
-                invalid = true;
-            if (parameters[b_model] < 0 || parameters[b_model] >= c_modelElements * 2)
-                invalid = true;
-            // Optionally: check for other invalid states (e.g., extreme values)
-            if (invalid) {
-                setCurrentProgram(Program::Debug);
-                // Optionally log or export all parameter values for diagnosis
-            }
-            // === End of debug checks ===
-        };
 
         switch(index) {
             case c_parameterProgramName:
@@ -492,11 +447,12 @@ class RipplerX
                 // Defensive check for out-of-bounds value from host.
                 // Instead of switching to debug program, which gets saved as a bad state,
                 // just clamp the value to a safe default. This breaks the bad state save/restore cycle.
-                if (value <= 0 || value > 128) {
+                if (value <= 0) {
                     m_sampleNumber = 1;
-                } else {
-                    m_sampleNumber = value;
+                } else if (value >= 128) {
+                    m_sampleNumber = 128;
                 }
+                m_sampleNumber = value;
                 break;
 
             case c_parameterMalletResonance:
@@ -722,9 +678,6 @@ class RipplerX
         prepareToPlay(noiseChanged, pitchChanged, resonatorChangedA, resonatorChangedB, couplingChanged);
         // no effect if model did not change
         updateLastModels();
-
-        // Defensive: After parameter change, check for error and move to debug if needed
-        check_for_error_and_debug();
     }
 
     /**
@@ -1220,9 +1173,16 @@ class RipplerX
             }
             parameters[a_partials] = (float32_t)c_partials[(int)programs[index][a_partials]];
             parameters[b_partials] = (float32_t)c_partials[(int)programs[index][b_partials]];
+
+            // ADDED: Reset sample parameters to safe defaults on program change
+            m_sampleBank = 0;
+            m_sampleNumber = 1;
+            m_sampleStart = 0;
+            m_sampleEnd = 1000;
+
+            // Precompute gain in dB -> linear conversion
+            parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
         }
-        // Precompute gain in dB -> linear conversion
-        parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
     }
 
     inline void updateLastModels() {
