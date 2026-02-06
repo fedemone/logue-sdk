@@ -27,12 +27,10 @@ void Noise::attack(float32_t _vel)
  *
  */
 void Noise::initFilter() {
-    // Constants
-    const float log2e = 1.44269504089f;
 
     // Instead of e^log_f, we calculate 2^(log2e * log_f)
     // We can pre-multiply the range constant by log2e!
-    float32_t offset = vel * (vel_freq * (c_noise_filter_log_range * log2e));
+    float32_t offset = vel * (vel_freq * (c_noise_filter_log_range * M_LOG2_E));
 
     // f = freq * 2^offset
     // We use the bit-shift trick to skip the exp function entirely

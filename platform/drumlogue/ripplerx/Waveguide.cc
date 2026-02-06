@@ -10,7 +10,7 @@ Waveguide::Waveguide()
 	// Broadcast single values to all 4 lanes
 	radius = vdupq_n_f32(0.0f);
 	max_radius = vdupq_n_f32(1.0f);
-	for (int i = 0; i < tube_len; ++i) {
+	for (int i = 0; i < c_tube_len; ++i) {
 		tube[i] = vdupq_n_f32(0.0f);
 	}
 }
@@ -35,8 +35,7 @@ Waveguide::Waveguide()
 void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
 {
     // Constants for fast math
-    const float log2e = 1.44269504f;
-    const float inv_log2e = 0.69314718f; // ln(2)
+    // const float inv_log2e = 0.69314718f; // ln(2)
 
     // 1. Frequency Validation and Tuning
     // Prevent division by zero and extreme high frequencies
@@ -58,14 +57,14 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     float g = (1.0f - frac) / (1.0f + frac);
 
     // Update read_ptr relative to write_ptr
-    // If tube_len = 20000, we ensure we wrap within the buffer
+    // If c_tube_len = 20000, we ensure we wrap within the buffer
     read_ptr = write_ptr - int_delay;
-    while (read_ptr < 0) read_ptr += tube_len;
-    if (read_ptr >= tube_len) read_ptr %= tube_len;
+    while (read_ptr < 0) read_ptr += c_tube_len;
+    if (read_ptr >= c_tube_len) read_ptr %= c_tube_len;
 
     // 3. Decay Calculation (Optimized with Bit-Manipulation)
     // Identity: decay_base * exp(vel_offset) -> decay_base * 2^(vel_offset * log2(e))
-    float offset_decay = (vel * vel_decay * M_TWOLN100) * log2e;
+    float offset_decay = (vel * vel_decay * M_TWOLN100) * M_LOG2_E;
 
     union { float f; int32_t i; } u;
     // The constant 1065353216 is the bit-representation of 1.0f in IEEE-754
@@ -140,8 +139,8 @@ float32x4_t Waveguide::process(float32x4_t input) {
     tube[write_ptr] = vmlaq_f32(input, dsample, vPolarity);
 
     // 5. Update pointers
-    if (++read_ptr >= tube_len)  read_ptr = 0;
-    if (++write_ptr >= tube_len) write_ptr = 0;
+    if (++read_ptr >= c_tube_len)  read_ptr = 0;
+    if (++write_ptr >= c_tube_len) write_ptr = 0;
 
     return dsample;
 }
@@ -153,7 +152,7 @@ void Waveguide::clear() {
     vAP_State = vdupq_n_f32(0.0f);
     vAP_State_Prev_X = vdupq_n_f32(0.0f);
 
-    for (int i = 0; i < tube_len; ++i) {
+    for (int i = 0; i < c_tube_len; ++i) {
         tube[i] = vdupq_n_f32(0.0f);
     }
 }

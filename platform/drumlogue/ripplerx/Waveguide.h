@@ -16,7 +16,7 @@ public:
     void clear();
 
     // --- Hot Data (128-bit aligned) ---
-    float32x4_t tube[tube_len];
+    float32x4_t tube[c_tube_len];
     float32x4_t vY1;           // Damping filter state
     float32x4_t vAP_State;     // All-pass interpolation state vector
     float32x4_t vRadius;

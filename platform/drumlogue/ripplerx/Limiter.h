@@ -152,11 +152,8 @@ private:
         return vmulq_n_f32(f, 1.1920928955e-7f); // Mul by 1/2^23
     }
 
-    // Helper: Fast Vector Exp2 (Bit manipulation)
+    // Helper: Fast Vector Exp2 (Schraudolph Bit manipulation)
     inline float32x4_t v_fast_exp2(float32x4_t x) {
-        // i = x * 2^23 + 127<<23
-        float32x4_t y = vmlaq_n_f32(vdupq_n_f32(12102203.0f), x, 12102203.0f/1.442695f); // scaling
-        // Actually cleaner:
         // result = 2^x -> i = (int)(x * 8388608.0f) + 1065353216
         int32x4_t i = vcvtq_s32_f32(vmlaq_n_f32(vdupq_n_f32(1065353216.0f), x, 8388608.0f));
         return vreinterpretq_f32_s32(i);

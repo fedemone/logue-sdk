@@ -2,23 +2,24 @@
 #include <stdint.h>
 #include "float_math.h"
 
-constexpr uint32_t c_sampleRate = 48000;
-constexpr float  c_semitoneFrequencyRatio = 1.0594630944f; // pow(2.0f, 1.0f/12.0f);
-constexpr float  c_malletStiffnessCorrectionFactor = 0.03080333075140272487101378573158f; // (log(5000.0) - log(100.0)) / 127
-constexpr uint32_t polyphony = 8; /**< equivalent to c_numVoices for porting - NOTE: since I don't know fast processing is, let's try this value at first */
-constexpr uint32_t c_numVoices = polyphony;
-constexpr uint32_t c_max_partials = 64;
+// global variables and constants
+constexpr uint32_t  c_sampleRate = 48000;
+constexpr float32_t c_semitoneFrequencyRatio = 1.0594630944f; // pow(2.0f, 1.0f/12.0f);
+constexpr float32_t c_malletStiffnessCorrectionFactor = 0.03080333075140272487101378573158f; // (log(5000.0) - log(100.0)) / 127
+constexpr uint32_t  polyphony = 8; /**< equivalent to c_numVoices for porting - NOTE: since I don't know fast processing is, let's try this value at first */
+constexpr uint32_t  c_numVoices = polyphony;
+constexpr uint32_t  c_max_partials = 64;
 constexpr float32_t c_res_cutoff = 20.0001;
 constexpr float32_t c_silence_threshold = 0.00001;
-constexpr int kMaxBufSize = 2048; // enough for 48kHz, 20ms = 960, round up
+constexpr int       c_kMaxBufSize = 2048; // enough for 48kHz, 20ms = 960, round up
 
 // Noise filter frequency range constants (pre-computed logs)
-const float32_t c_noise_filter_freq_min = 20.0f;
-const float32_t c_noise_filter_freq_max = 20000.0f;
-const float32_t c_noise_filter_log_min = 2.995732274f;  // fasterlogf(20.0f)
-const float32_t c_noise_filter_log_max = 9.903487553f;  // fasterlogf(20000.0f)
-const float32_t c_noise_filter_log_range = 6.907755279f; // log_max - log_min
-const float32_t c_noise_filter_res_range = 3.293f;  // 4.0 - 0.707
+constexpr float32_t c_noise_filter_freq_min = 20.0f;
+constexpr float32_t c_noise_filter_freq_max = 20000.0f;
+constexpr float32_t c_noise_filter_log_min = 2.995732274f;  // fasterlogf(20.0f)
+constexpr float32_t c_noise_filter_log_max = 9.903487553f;  // fasterlogf(20000.0f)
+constexpr float32_t c_noise_filter_log_range = 6.907755279f; // log_max - log_min
+constexpr float32_t c_noise_filter_res_range = 3.293f;  // 4.0 - 0.707
 
 // Partial/resonator constants
 constexpr float32_t c_freq_min = 20.0f;  // Minimum resonator frequency (Hz)
@@ -30,7 +31,7 @@ constexpr float32_t c_butterworth_q = 0.707f;  // Butterworth Q = sqrt(2)/2 for 
 
 // MIDI and pitch constants
 constexpr float32_t c_midi_a4_freq = 440.0f;  // Frequency of MIDI note A4 (Hz)
-constexpr int c_midi_a4_note = 69;  // MIDI note number for A4
+constexpr int       c_midi_a4_note = 69;  // MIDI note number for A4
 constexpr float32_t c_semitones_per_octave = 12.0f;  // Number of semitones in an octave
 constexpr float32_t c_cents_per_semitone = 100.0f;  // Number of cents in a semitone
 constexpr float32_t c_midi_a4_converted = 8.1757989156437f;  // c_midi_a4_freq * fasterpowf(2.0f, - c_midi_a4_note / c_semitones_per_octave);
@@ -46,7 +47,7 @@ constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term
 constexpr float32_t c_decay_max = 100.0f;  // Maximum decay value
 constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
-constexpr int tube_len = 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
+constexpr int       c_tube_len = 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
 
 // these are the index of the parameters got from header.c
 enum Parameters : uint32_t {
@@ -89,7 +90,7 @@ enum Parameters : uint32_t {
 constexpr uint32_t c_sampleBankElements = 7;
 constexpr uint32_t c_modelElements = 9;
 constexpr uint32_t c_partialElements = 5;
-constexpr uint32_t c_noiseFilterModeElements = 4;   // for debugging, added one extra mode. Then back to 3, see header.c
+constexpr uint32_t c_noiseFilterModeElements = 3;   // for debugging, added one extra mode. Then back to 3, see header.c
 constexpr uint32_t c_repeatNoteFadeMs = 1;
 
 
@@ -154,7 +155,7 @@ const char* const c_noiseFilterModeName[c_noiseFilterModeElements] = {
     "LP",
     "BP",
     "HP",
-    "DEBUG"
+    // "DEBUG"
 };
 
 /*
@@ -253,7 +254,7 @@ enum  Program : uint8_t {
     Tabla2,
     Tubes,
     Vibes,
-    Debug,
+    // Debug,
     last_program
 };
 
@@ -288,7 +289,7 @@ const char* const c_programName[Program::last_program] = {
     "Tabla2",
     "Tubes",
     "Vibes",
-    "Debug",
+    // "Debug",
 };
 
 
@@ -322,9 +323,8 @@ static float32_t programs[Program::last_program][ProgramParameters::last_param] 
     {0.0, 372.0, -0.6599999666213989, 10.15999984741211, 0.0, 0.2599999904632568, 1.0, 5.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 6.0, 0.0, 0.0, 168.0, 1.0, 23.0, 2784.0, 1.0, 3.046999931335449, 0.0, 407.0, 0.2299999892711639, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,},  //Tabla2
     {0.0, 20.0, -0.4700000286102295, 12.80999946594238, 0.0, 0.5, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 0.4099999964237213, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 486.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5099999904632568, 0.0, 0.0,},  //Tubes
     {0.0, 20.0, -0.4200000166893005, 4.079999923706055, 0.0, 0.2599999904632568, 0.00009999999747378752, 6.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.1180000007152557, 0.0, 20.0, 0.0, 0.6799999475479126, 96.0, 0.2599999904632568, 0.00009999999747378752, 8.0, 1.0, 3.0, 0.7400000095367432, 0.7800000309944153, 1.0, 0.0, 1.0, -8.880000114440918, 0.0, 0.0, 2052.0, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,},  //Vibes
-    {6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 2000.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0,}   // Debug
+    // {6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 2000.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0,}   // Debug
 };
 
 // additional math values
-static float pwr_2_of_index[9] = {0.0f, 1.0f, 4.0f, 9.0f,   16.0f, 25.0f, 36.0f, 49.0f, 64.0f};
 

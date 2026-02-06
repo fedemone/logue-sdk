@@ -16,12 +16,12 @@ public:
         pos = 0;
         // 20ms delay is standard for Haas effect stereoizing
         buf_size = (int)(0.02f * srate);
-        if (buf_size > kMaxBufSize) buf_size = kMaxBufSize;
+        if (buf_size > c_kMaxBufSize) buf_size = c_kMaxBufSize;
 
         // Clear buffer using NEON
         float32x4_t zero = vdupq_n_f32(0.0f);
         // Ensure we clear up to the 4-sample boundary
-        for(int i = 0; i < kMaxBufSize; ++i) {
+        for(int i = 0; i < c_kMaxBufSize; ++i) {
             buf[i] = zero;
         }
 
@@ -69,6 +69,6 @@ private:
 
     // Buffer: Stores full float32x4_t vectors.
     // This allows us to delay L1, R1, L2, R2 exactly as they came in.
-    // Size = kMaxBufSize vectors (not scalars)
-    float32x4_t buf[kMaxBufSize];
+    // Size = c_kMaxBufSize vectors (not scalars)
+    float32x4_t buf[c_kMaxBufSize];
 };

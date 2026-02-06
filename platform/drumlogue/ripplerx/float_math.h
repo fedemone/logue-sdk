@@ -157,6 +157,15 @@ typedef float float64_t;
 #define M_1_SQRT2 0.7071067811865475f
 #endif
 
+#ifndef M_LOG2_E
+#define M_LOG2_E 1.4426950408889634f
+#endif
+
+// ln(2) = 1 / ln(e)
+#ifndef M_INV_LOG2_E
+#define M_INV_LOG2_E 0.6931471805599453f
+#endif
+
 // 20 / ln(10)
 #ifndef M_LOGTODB
 #define M_LOGTODB 8.6858896380650365530225783783321f

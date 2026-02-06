@@ -44,6 +44,7 @@ __attribute__((constructor)) static void init_bModels() {
     memcpy(bModels, aModels, sizeof(aModels));
 }
 
+static float pwr_2_of_index[9] = {0.0f, 1.0f, 4.0f, 9.0f,   16.0f, 25.0f, 36.0f, 49.0f, 64.0f};
 
 class Model {
 public:

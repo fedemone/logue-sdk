@@ -12,8 +12,13 @@ extern "C" {
 
 Resonator::Resonator()
 {
+    srate = c_sampleRate;
+    activePartialsCount = 0; // Start silent/clean
+
+    // Initialize partials to safe defaults
     for (size_t i = 0; i < c_max_partials; ++i) {
         partials[i].k = static_cast<int>(i + 1);
+        partials[i].clear();
     }
 }
 
@@ -25,8 +30,8 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
     float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm)
 {
 	on = _on;
-	// validateAndSetModel(_model);
-	// validateAndSetPartials(_partials);
+    npartials = _partials;
+    nmodel = _model;
 	decay = _decay;
 	radius = _radius;
 	srate = _srate;
@@ -65,23 +70,6 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
 }
 
 
-void Resonator::validateAndSetModel(int _model)
-{
-	// Clamp model to valid range [0, 7] for different resonator types
-	// See ModelNames enum for valid values
-	if (_model < 0) nmodel = 0;
-	else if (_model > ModelNames::OpenTube) nmodel = ModelNames::OpenTube;
-	else nmodel = _model;
-}
-
-void Resonator::validateAndSetPartials(int _partials)
-{
-	// Clamp to valid partial count [1, 64]
-	if (_partials < 1) npartials = 1;
-	else if (_partials > static_cast<int>(c_max_partials)) npartials = static_cast<int>(c_max_partials);
-	else npartials = _partials;
-}
-
 /**
  * @brief Key Performance Gains
  * - integrated partials update: reduce function call overhead and maximise vectorization gain
@@ -108,7 +96,6 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
     }
 
     // --- Pre-calculate Shared Constants for all Partials ---
-    const float log2e = 1.44269504f;
     const float inv_srate_2pi = M_TWOPI / srate;
     const float log_vel = vel * M_TWOLN100;
 
@@ -121,13 +108,13 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         Partial& part = partials[p];
         int idx = part.k - 1;
 
-        if (idx < 0 || idx >= c_max_partials) continue;
+        if (idx < 0 || (uint32_t)idx >= c_max_partials) continue;
 
         float32_t ratio = model[idx];
 
         // 1. Inharmonicity (using the bit-trick for 2^x)
         // Accessing vel_inharm from the specific partial
-        float exp_inharm_part = (part.vel_inharm * log_vel) * log2e;
+        float exp_inharm_part = (part.vel_inharm * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_inharm;
         u_inharm.i = (int32_t)(exp_inharm_part * 8388608.0f) + 1065353216;
 
@@ -139,7 +126,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // 2. Decay
         // Accessing vel_decay from the specific partial
-        float exp_decay_part = (part.vel_decay * log_vel) * log2e;
+        float exp_decay_part = (part.vel_decay * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_decay;
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
@@ -177,7 +164,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         part.vb2 = vdupq_n_f32(-b0_val * inv_a0);
         part.va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
         part.va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
-        
+
         activePartialsCount++;
     }
 }

@@ -1,3 +1,11 @@
+/*
+*  File: RipplerX.h
+*
+*  Synth Class derived from drumlogue unit
+*
+*  2021-2025 (c) Korg
+*
+*/
 #pragma once
 
 #include <cstdint>
@@ -26,6 +34,11 @@
 #define isfinite(x) ((x)==(x) && (x)!=(1.0f/0.0f) && (x)!=-(1.0f/0.0f))
 #endif
 
+/**
+ * RipplerX Synth Engine
+ * Optimized polyphonic resonator synthesizer with ARM NEON vectorization
+ * Manages voice allocation, parameter control, and real-time audio rendering
+ */
 class alignas(16) RipplerX
 {
 public:
@@ -119,8 +132,12 @@ public:
         updateLastModels();
         comb.init((float)c_sampleRate);
     }
-    inline void Resume() { }
-    inline void Suspend() { }
+    inline void Resume() {
+        // Resume synth operation (e.g., after focus regained)
+        }
+    inline void Suspend() {
+        // Suspend synth operation (e.g., before switching units)
+    }
 
     // ==============================================================================
     // Audio Rendering (Hot Path)
@@ -166,6 +183,7 @@ public:
                          m_sampleIndex = m_sampleEnd;
                     }
                 } else {
+                    // Mono: load 2 mono samples and duplicate to create 2 stereo frames ([M1,M1,M2,M2]).
                     if (m_sampleIndex + 2 <= m_sampleEnd) {
                         float32_t m1 = m_samplePointer[m_sampleIndex];
                         float32_t m2 = m_samplePointer[m_sampleIndex+1];
@@ -443,7 +461,7 @@ public:
 
             case c_parameterModel:
                 a_b_model = value;
-                if (value < c_modelElements) {
+                if ((uint32_t)value < c_modelElements) {
                     parameters[a_model] = (float)value;
                     resonatorChangedA = true;
                 } else {
@@ -455,7 +473,7 @@ public:
 
             case c_parameterPartials:
                 a_b_partials = value;
-                if (value < c_partialElements) {
+                if ((uint32_t )value < c_partialElements) {
                     parameters[a_partials] = (float)c_partials[value];
                     resonatorChangedA = true;
                 } else {
@@ -480,7 +498,7 @@ public:
 
             case c_parameterMaterial: {
                 a_b_damp = value;
-                const int32_t minA = -10, maxA = 10, span = 20;
+                const int32_t maxA = 10, span = 20;
                 if (value <= maxA) {
                     parameters[a_damp] = (float)value;
                     resonatorChangedA = true;
@@ -493,7 +511,7 @@ public:
 
             case c_parameterTone: {
                 a_b_tone = value;
-                const int32_t minA = -10, maxA = 10, span = 20;
+                const int32_t maxA = 10, span = 20;
                 if (value <= maxA) {
                     parameters[a_tone] = (float)value;
                     resonatorChangedA = true;
@@ -571,7 +589,7 @@ public:
 
             case c_parameterCoarsePitch: {
                 a_b_coarse = value;
-                const int32_t maxA = 48, minA = -48;
+                const int32_t maxA = 48; // 4 octaves, same as original code
                 if (value <= maxA) {
                     parameters[a_coarse] = fmax(fmin((float)value, 48.0f), -48.0f);
                     pitchChanged = true;
@@ -593,7 +611,7 @@ public:
                 break;
 
             case c_parameterNoiseFilterMode:
-                parameters[noise_filter_mode] = (value < c_noiseFilterModeElements) ? (float)value : 0.0f;
+                parameters[noise_filter_mode] = ((uint32_t)value < c_noiseFilterModeElements) ? (float)value : 0.0f;
                 noiseChanged = true;
                 break;
 
@@ -618,6 +636,31 @@ public:
     // ==============================================================================
     // MIDI / Gate
     // ==============================================================================
+    inline void loadConfigureSample() {
+        // IMPORTANT: Copy values from sampleWrapper immediately—do NOT store the pointer.
+        // sampleWrapper is a temporary provided by runtime and may be freed/reused.
+        const sample_wrapper_t* sampleWrapper = m_get_sample(m_sampleBank, m_sampleNumber - 1);
+        // bool sampleValid = false;
+
+        if (sampleWrapper) {
+            // Copy critical metadata from temporary sampleWrapper
+            m_sampleChannels = sampleWrapper->channels;
+            m_sampleFrames = sampleWrapper->frames;
+            m_samplePointer = sampleWrapper->sample_ptr;
+
+            // Calculate byte-based indices assuming sample_ptr is interleaved float array
+            // m_sampleStart and m_sampleEnd are in thousandths (0-1000)
+            // m_sampleFrames is in frames; total samples = frames * channels
+            size_t totalSamples = m_sampleFrames * m_sampleChannels;
+            m_sampleIndex = (totalSamples * m_sampleStart) / 1000;
+
+            // Fix: m_sampleEnd is an index limit. Do not use the member variable as input ratio,
+            // as it gets overwritten with the absolute count, causing exponential growth on subsequent triggers.
+            m_sampleEnd = totalSamples;
+            // not used. To invalid a sample: m_sampleEnd = 0
+            // sampleValid = true;
+        }
+    }
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         nvoice = (nvoice + 1) % c_numVoices;
@@ -647,6 +690,7 @@ public:
     inline void GateOn(uint8_t velocity) { NoteOn(m_note, velocity); }
     inline void GateOff() { NoteOff(m_note); }
     inline void AllNoteOff() { NoteOff(0xFF); }
+    // Convert MIDI bend (0-0x4000, centered at 0x2000) to fine pitch (-99 to 99)
     inline void PitchBend(uint16_t bend) {
         parameters[a_fine] = 100.0f * (float)(bend - 0x2000) / 0x2000;
         prepareToPlay(false, true, false, false, false);
@@ -696,10 +740,15 @@ public:
     inline const char *getParameterStrValue(uint8_t index, int32_t value) const {
          // [Logic identical to provided original code for string formatting]
          // Since this is UI-only code and not DSP, standard implementation is fine.
+        (void)index;
+        (void)value;
          return nullptr;
     }
 
-    inline const uint8_t * getParameterBmpValue(uint8_t index, int32_t value) const { return nullptr; }
+    inline const uint8_t * getParameterBmpValue(uint8_t index, int32_t value) const {
+        (void)index;
+        (void)value;
+        return nullptr; }
 
 private:
     // ==============================================================================
@@ -719,12 +768,26 @@ private:
         last_a_model = -1; last_b_model = -1;
         last_a_partials = -1; last_b_partials = -1;
 
-        LoadPreset(Program::Initial);
+        LoadPreset(Program::Initial);   // This performs prepareToPlay
         Reset();
     }
 
-    inline void clearVoices() {
-        for(auto& v : voices) v.clear();
+inline size_t nextVoiceNumber();
+
+inline void setCurrentProgram(int index) {
+        clearVoices();
+        if (index >= 0 && index < (int)last_program) {
+            m_currentProgram = index;
+            for (int i = 0; i < ProgramParameters::last_param; ++i) {
+                parameters[i] = programs[index][i];
+            }
+            // store the value not the index
+            parameters[a_partials] = (float32_t)c_partials[(int)programs[index][a_partials]];
+            parameters[b_partials] = (float32_t)c_partials[(int)programs[index][b_partials]];
+
+            // Precompute gain in dB -> linear conversion
+            parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
+        }
     }
 
     inline void updateLastModels() {
@@ -734,6 +797,9 @@ private:
         last_b_partials = (int)parameters[b_partials];
     }
 
+    inline void clearVoices() {
+        for(auto& v : voices) v.clear();
+    }
     // ==============================================================================
     // Member Data
     // ==============================================================================

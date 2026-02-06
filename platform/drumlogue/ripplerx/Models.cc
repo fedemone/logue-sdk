@@ -11,14 +11,14 @@ const float32_t* getBFree() { return bFree; }
 
 
 const float32_t* getAModels(int model) {
-    if (model < 0 || model >= c_modelElements) {
+    if (model < 0 || (uint32_t)model >= c_modelElements) {
         // Exceptional: return a safe fallback (first model) and optionally log error
         return aModels[0];
     }
     return aModels[model];
 }
 const float32_t* getBModels(int model) {
-    if (model < 0 || model >= c_modelElements) {
+    if (model < 0 || (uint32_t)model >= c_modelElements) {
         return bModels[0];
     }
     return bModels[model];
@@ -68,14 +68,8 @@ static inline void freqs_to_ratio(float32_t* model) {
 void recalcBeam(bool resA, float32_t ratio) {
     float32_t* model = resA ? aModels[ModelNames::Beam] : bModels[ModelNames::Beam];
 
-    // Convert int array to float array
-    float pwr_2_of_index_float[9];
-    for (int i=0; i<9; ++i) {
-        pwr_2_of_index_float[i] = (float)pwr_2_of_index[i];
-    }
-
     // Call the static NEON optimizer
-    Model::recalcBeam(model, ratio, bFree, pwr_2_of_index_float);
+    Model::recalcBeam(model, ratio, bFree, pwr_2_of_index);
 
     // Final step
     freqs_to_ratio(model);
@@ -108,7 +102,3 @@ void recalcPlate(bool resA, float32_t ratio) {
     // Final step
     freqs_to_ratio(model);
 }
-//
-//
-//
-//

@@ -7,12 +7,11 @@
  */
 void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float32_t vel, bool isRelease)
 {
-    const float log2e = 1.44269504f;
     const float inv_srate_2pi = M_TWOPI / srate;
     const float log_vel = vel * M_TWOLN100;
 
     // 1. Inharmonicity: f = inharm * 2^(vel * vel_inharm * log_vel * log2e)
-    float offset_inharm = (vel * vel_inharm * log_vel) * log2e;
+    float offset_inharm = (vel * vel_inharm * log_vel) * M_LOG2_E;
     union { float f; int32_t i; } u_inharm;
     u_inharm.i = (int32_t)(offset_inharm * 8388608.0f) + 1065353216;
 
@@ -23,7 +22,7 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     float f_k = f_0 * ratio * inharm_k;
 
     // 2. Decay calculation: d = decay * 2^(vel * vel_decay * log_vel * log2e)
-    float offset_decay = (vel * vel_decay * log_vel) * log2e;
+    float offset_decay = (vel * vel_decay * log_vel) * M_LOG2_E;
     union { float f; int32_t i; } u_decay;
     u_decay.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
