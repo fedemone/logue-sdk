@@ -38,7 +38,17 @@ public:
 	float32_t vel_decay;
 
 private:
-	float32_t tube_decay;
-	float32x4_t y;
-	float32x4_t y1;
+    // Delay Line
+    static const int kDelaySize = 1024; // Power of 2 for fast masking
+    static const int delay_mask = kDelaySize - 1;
+    float32_t delay_line[kDelaySize] = {0};
+    int32_t write_pos = 0;
+
+    // Simulation State
+    float32_t delay_len = 100.0f; // in samples
+    float32_t lp_state = 0.0f;    // Filter memory
+
+    // Parameters (set by update())
+    float32_t feedback_gain = 0.99f;
+    float32_t damp_coef = 0.5f;
 };

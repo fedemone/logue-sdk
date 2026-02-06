@@ -111,38 +111,66 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
  * $y[n] = g \cdot x[n] + x[n-1] - g \cdot y[n-1]$
  * Where $g$ is the coefficient derived from the fractional part of the delay.
  *
+ * NOTE: The Fix: Serial Loop Wrapper
+ * We accept the NEON vector input, extract the 4 samples, run the physics simulation serially,
+ * and pack the result back into a vector.
+ * In fact, Just like the Partial filter, the physical modeling waveguide is recursive: the output of
+ * the delay line (plus filtering) at sample $t$ affects the feedback that generates sample $t+1$.
+ * You cannot process t0, t1, t2, t3 in parallel because t1 needs the result of t0's feedback loop.
  * @param input
  * @return float32x4_t
  */
-float32x4_t Waveguide::process(float32x4_t input) {
-    // 1. Fetch from delay line
-    float32x4_t xn = tube[read_ptr];
 
-    // 2. All-pass Interpolation: y = g*xn + x_prev - g*y_prev
-    // Optimized as: y = x_prev + g*(xn - y_prev)
-    float32x4_t vDiff = vsubq_f32(xn, vAP_State);
-    float32x4_t sample = vmlaq_f32(vAP_State_Prev_X, vG, vDiff);
+inline float32x4_t process(float32x4_t input) {
+    // 1. Prepare IO buffers
+    alignas(16) float32_t in_buf[4];
+    alignas(16) float32_t out_buf[4];
 
-    // Update all-pass states for next sample
-    vAP_State_Prev_X = xn;
-    vAP_State = sample;
+    // Extract input excitation (Mallet/Noise)
+    vst1q_f32(in_buf, input);
 
-    // 3. Damping Filter (Radius)
-    float32x4_t vY = vmulq_f32(vRadius, sample);
-    vY = vmlaq_f32(vY, vY1, vOneMinusRad);
-    vY1 = vY;
+    // 2. Serial Physics Loop
+    // We must process samples one by one to preserve the feedback loop integrity.
+    for (int i = 0; i < 4; ++i) {
+        float32_t excitation = in_buf[i];
 
-    // 4. Decay and Feedback
-    float32x4_t dsample = vmulq_f32(vY, vDecay);
+        // --- Step A: Read from Delay Line (with linear interpolation) ---
+        // Read index = write_pos - delay_len
+        float32_t read_ptr = (float)write_pos - delay_len;
+        while (read_ptr < 0.0f) read_ptr += delay_mask + 1;
+        while (read_ptr > delay_mask) read_ptr -= delay_mask + 1;
 
-    // tube[w] = input + (dsample * polarity)
-    tube[write_ptr] = vmlaq_f32(input, dsample, vPolarity);
+        int32_t idx_int = (int32_t)read_ptr;
+        float32_t frac = read_ptr - idx_int;
+        int32_t idx_next = (idx_int + 1) & delay_mask;
 
-    // 5. Update pointers
-    if (++read_ptr >= c_tube_len)  read_ptr = 0;
-    if (++write_ptr >= c_tube_len) write_ptr = 0;
+        float32_t delayed_sample = delay_line[idx_int] + frac * (delay_line[idx_next] - delay_line[idx_int]);
 
-    return dsample;
+        // --- Step B: Lowpass Filter (Damping) ---
+        // y[n] = y[n-1] + damp_coef * (x[n] - y[n-1])
+        // This is the recursive step that failed in the previous parallel version
+        lp_state += damp_coef * (delayed_sample - lp_state);
+
+        // --- Step C: Feedback & Output ---
+        // Feedback = Filtered Delay * Decay + Excitation
+        float32_t feedback = lp_state * feedback_gain;
+
+        // Soft clipping in the loop (optional, keeps energy under control)
+        // if (feedback > 1.0f) feedback = 1.0f;
+        // else if (feedback < -1.0f) feedback = -1.0f;
+
+        // Write to delay line
+        delay_line[write_pos] = feedback + excitation;
+
+        // Output for this sample
+        out_buf[i] = feedback;
+
+        // Increment circular buffer pointer
+        write_pos = (write_pos + 1) & delay_mask;
+    }
+
+    // 3. Repack and Return
+    return vld1q_f32(out_buf);
 }
 
 void Waveguide::clear() {

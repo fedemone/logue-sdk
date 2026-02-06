@@ -176,8 +176,12 @@ public:
             // --- A. Optimized Sample Playback ---
             if (m_samplePointer && m_sampleIndex < m_sampleEnd) {
                 if (m_sampleChannels == 2) {
+                    // Safe Unaligned Load
                     if (m_sampleIndex + 4 <= m_sampleEnd) {
-                        audioIn = vld1q_f32(&m_samplePointer[m_sampleIndex]);
+                        // Cast to unaligned pointer wrapper if available, or just memcpy
+                        float32_t tmp[4];
+                        memcpy(tmp, &m_samplePointer[m_sampleIndex], 16);
+                        audioIn = vld1q_f32(tmp);
                         m_sampleIndex += 4;
                     } else {
                          m_sampleIndex = m_sampleEnd;
