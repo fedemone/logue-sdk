@@ -11,24 +11,34 @@ public:
 	Waveguide();  // Proper initialization in .cpp
 	~Waveguide() {};
 
-	void update(float32_t freq, float32_t vel, bool isRelease);
-	float32x4_t process(float32x4_t input);  // Process 4 samples (stereo pair) in parallel
-	void clear();
+	void update(float32_t f_0, float32_t vel, bool isRelease);
+    float32x4_t process(float32x4_t input);
+    void clear();
 
-	bool is_closed = false;
-	float32_t srate = 0.0f;
-	float32_t decay = 0.0f;
-	float32x4_t radius{};      // Zero-initialized (applied to all 4 samples)
-	float32x4_t max_radius{};  // Zero-initialized
-	float32_t rel = 0.0f;
-	float32_t vel_decay = 0.0f;
+    // --- Hot Data (128-bit aligned) ---
+    float32x4_t tube[tube_len];
+    float32x4_t vY1;           // Damping filter state
+    float32x4_t vAP_State;     // All-pass interpolation state vector
+    float32x4_t vRadius;
+    float32x4_t vOneMinusRad;
+    float32x4_t vDecay;
+    float32x4_t vPolarity;
+    float32x4_t vG;            // All-pass coefficient (eta)
+    float32x4_t vAP_State_Prev_X;
+
+    // --- Warm Data ---
+    int read_ptr;
+    int write_ptr;
+    bool is_closed;
+    float32_t srate;
+	float32_t decay;
+	float32x4_t radius;
+	float32x4_t max_radius;
+	float32_t rel;
+	float32_t vel_decay;
 
 private:
-	int read_ptr = 0;
-	int write_ptr = 0;
-	float32_t tube_decay = 0.0f;
-	float32x4_t tube[tube_len];  // Changed to static array for NEON vectorization
-
-	float32x4_t y{};   // Zero-initialized, proper member
-	float32x4_t y1{};  // Zero-initialized, proper member
+	float32_t tube_decay;
+	float32x4_t y;
+	float32x4_t y1;
 };

@@ -1,5 +1,4 @@
 #include "ripplerx.h"
-#include "ripplerx.h"
 #include "constants.h"
 /* RipplerX */
 //FOR PORTING this handles polyphony and voice stealing
@@ -26,4 +25,11 @@ size_t RipplerX::nextVoiceNumber()
 	return bestVoice;
 }
 
-
+void RipplerX::setCurrentProgram(uint8_t idx) {
+    if (idx >= Program::last_program) return;
+    m_currentProgram = idx;
+    for (int i = 0; i < ProgramParameters::last_param; ++i) {
+        parameters[i] = programs[idx][i];
+    }
+    prepareToPlay(true, true, true, true, true);
+}

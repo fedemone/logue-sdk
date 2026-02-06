@@ -1,3 +1,15 @@
+# [2026-02-05] Radical Optimization
+
+## Correcting the code
+In order to correct the crash, the code has been completely rewritten in ARM Neon intrinsics and better logic.
+
+**This version completely stopped the audio engine crash.** The `ripplerx` unit now loads without silencing other units.
+Just constant sound is triggered and it's constant even when HW is stopped. CHanging pèarameters has no effect. It ends when another unit is loaded. It's not retriggered when RipplerX is reloaded.
+
+
+---
+
+
 # [2026-02-03] Breakthrough: Crash Isolated to DSP Block
 
 ## Finding
@@ -13,7 +25,7 @@ The bug has been cornered. A methodical, iterative process will now be used to p
 1.  **Mallet Processing:** Re-introduce the mallet as an excitation source. - No crash
 2.  **Noise Processing:** Re-introduce the noise generator. - No crash
 3.  **Resonator Processing:** Re-introduce the core resonator blocks. This is the most complex and most likely area to contain the bug. - CRASH! To be analyzed. Some memory alignment done, to be tested.
-4.  **Effects Processing:** Re-introduce the `Comb` and `Limiter` effects. - To be done
+4.  **Effects Processing:** Re-introduce the `Comb` and `Limiter` effects. - To be tested
 
 When the crash reappears, the component added in the immediately preceding step will be identified as the source of the bug.
 

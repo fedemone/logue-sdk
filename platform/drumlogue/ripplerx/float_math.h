@@ -711,8 +711,20 @@ float fasterlogf(float x) {
   return M_LN2 * fasterlog2f(x);
 }
 
+// Real-time Audio (Frequency modulation, envelopes).
+static inline float fast_pow2(float p) {
+    // 2^p approximation using IEEE-754 floating point trick
+    // 8388608.0f = 2^23
+    // 1065353216 = 127 << 23 (exponent bias)
+    union { float f; int32_t i; } u;
+    u.i = (int32_t)(p * 8388608.0f) + 1065353216;
+    return u.f;
+}
+
+
 /** "Fast" power of 2 approximation, valid for x in [ -126, ... as precision allows.
  * @note Adapted from Paul Mineiro's FastFloat
+ * Precision-critical math (e.g. tuning tables).
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float fastpow2f(float p) {
@@ -728,6 +740,7 @@ float fastpow2f(float p) {
 
 /** "Faster" power of 2 approximation, valid for x in [ -126, ... as precision allows.
  * @note Adapted from Paul Mineiro's FastFloat
+ * General purpose where input might be $-\infty$.
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float fasterpow2f(float p) {

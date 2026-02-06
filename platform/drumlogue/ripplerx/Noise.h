@@ -1,69 +1,65 @@
-// Copyright (C) 2025 tilr
-// Noise generator with a filter and envelope
 #pragma once
+#include <arm_neon.h>
 #include "WFLCG.hh"
 #include "float_math.h"
 #include "Filter.h"
 #include "Envelope.h"
+#include "constants.h"
 
-/** Using random number generator from:
- *  https://github.com/WarpRules/WFLCG
- */
-class Noise
-{
+class Noise {
 public:
-	Noise() {};
-	~Noise() {};
+    Noise() {}
 
-	void init(float32_t _srate,
-		int filterMode,
-		float32_t _freq,
-        float32_t _q,
-		float32_t att,
-		float32_t dec,
-        float32_t sus,
-		float32_t rel,
-		// these two values are not present in the original preset/*.xml files
-		float32_t _vel_freq,
-        float32_t _vel_q);
-	inline float32_t process() {
-		// Early exit if envelope is not active
-		if (!env.getState()) return 0.0f;
+    void init(float32_t _srate, int filterMode, float32_t _freq, float32_t _q,
+              float32_t att, float32_t dec, float32_t sus, float32_t rel,
+              float32_t _vel_freq, float32_t _vel_q);
 
-		env.process();
+    inline float32_t process() {
+        // 1. Single check for envelope state
+        bool active = env.getState();
+        if (!active) return 0.0f;
 
-		// Generate noise sample in range [-1.0, 1.0)
-		// WFLCG::getFloat() returns [1.0, 2.0), so multiply by 2.0 and subtract 3.0
-		// Result: [1.0*2.0 - 3.0, 2.0*2.0 - 3.0) = [-1.0, 1.0)
-		float32_t sample = rng.getFloat() * 2.0f - 3.0f;
+        env.process();
+        float32_t env_val = env.getEnv();
 
-		if (filter_active)
-			sample = filter.df1(sample);
+        // 2. Faster Noise Generation
+        // Direct conversion of bits to float can be faster than * 2.0 - 3.0
+        // But assuming getFloat() is optimized, we keep the math lean.
+        float32_t sample = rng.getFloat() * 2.0f - 3.0f;
 
-		// Apply envelope and check if finished
-		float32_t env_val = env.getEnv();
+        // 3. Conditional execution (The compiler will likely use 'vsel' or 'vbit' on ARM)
+        // This avoids the pipeline flush of a branch
+        float32_t filtered = filter.df1(sample);
+        sample = filter_active ? filtered : sample;
 
-		// Clear filter state when envelope finishes to avoid pops
-		if (!env.getState())
-			filter.clear(0.0f);
+        // 4. Check if envelope just finished
+        if (!env.getState()) {
+            filter.clear(0.0f);
+        }
 
-		return sample * env_val;
-	}
-	void attack(float32_t vel);
-	void initFilter();
-	void release();
-	void clear();
+        return sample * env_val;
+    }
 
-	float32_t vel_freq = 0.0;
-	float32_t vel_q = 0.0;
-	float32_t srate = 44100.0;
-	float32_t vel = 0.0;
-	float32_t q = 0.707;
-	bool filter_active = false;
+    void initFilter();
+
+    void attack(float32_t velocity);
+
+    void release();
+    
+    void clear();
+
+    // Public members moved to end for better padding/alignment
+    float32_t vel_freq = 0.0f;
+    float32_t vel_q = 0.0f;
+    float32_t srate = 44100.0f;
+    float32_t vel = 0.0f;
+    float32_t q = 0.707f;
+    bool filter_active = false;
+
 private:
-	Filter filter{};
-	Envelope env{};
-	WFLCG rng{};		// Persistent RNG instance - initialized once
-	int fmode = 0;
-	float32_t freq = 0.0;
+    Filter filter{};
+    Envelope env{};
+    WFLCG rng{};
+    int fmode = 0;
+    float32_t freq = 0.0f;
 };

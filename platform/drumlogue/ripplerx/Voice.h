@@ -5,86 +5,81 @@
 // they also calculate split frequencies for coupled resonators
 // and tune the resonators modals by providing the models
 
- #include <stddef.h>
+#pragma once
+
+#include <stddef.h>
+#include <stdint.h>
+#include "float_math.h" // Needed for float32_t
 #include "Mallet.h"
 #include "Noise.h"
 #include "Resonator.h"
 #include "Models.h"
-//TODO: class Sampler
 
 class alignas(16) Voice
 {
 public:
-	Voice() {}
-	~Voice() {}
+    Voice() {}
+    ~Voice() {}
 
-	// setModels removed; model access is now static C API
-	void Init();
-	float32_t note2freq(int _note);
-	void trigger(/**uint64_t timestamp,*/ float32_t srate, int _note,
-		float32_t _vel, /**MalletType malletType, */float32_t malletFreq/** TODO:,
-		float32_t malletKTrack, bool skip_fade*/);
-	//TODO:
-	//void triggerStart(bool reset);
-	//float32_t fadeOut();
-	void release(/**uint64_t timestamp*/);
-	void clear();
-	void setPitch(float32_t a_coarse, float32_t b_coarse, float32_t a_fine, float32_t b_fine);
-	void setRatio(float32_t _a_ratio, float32_t _b_ratio);
-	void applyPitch(float32_t* model, float32_t factor);
-	// Frequency shift logic is now fully in updateResonators; see Voice.cc for details.
+    void Init();
 
-	/** TODO:
-	double processOscillators(bool isA);
+    // Core Audio Methods
+    float32_t note2freq(int _note);
 
+    // Trigger now matches the optimized .cpp signature
+    void trigger(float32_t srate, int _note, float32_t _vel, float32_t malletFreq);
 
-	*/
-	void updateResonators(bool updateFrequencies = true);
-	void setCoupling(bool _couple, float32_t _split);
-	inline size_t getFramesSinceNoteOn() const {
-		if (!m_initialized) return SIZE_MAX;
-		return m_framesSinceNoteOn;
-	}
-	int       note = 0;	// MIDI note number - set at trigger time
-	float32_t freq = 0.0;  // frequency in Hz - set at trigger time, from note number
-	float32_t vel = 0.0;  // MIDI velocity 0.0 .. 1.0 - set at trigger time
-	bool      isRelease = false;
-	bool      isPressed = false; // used for audioIn
-	bool      couple = false;
-	//TODO: float32_t malletKtrack = 0.0;
-	float32_t split = 0.0;
-	/**< TODO:
-	float32_t srate = 44100.0;	// standard audio rate
-	float32_t a_ratio = 1.0; // used to recalculate models
-	float32_t b_ratio = 1.0; // used to recalculate models
-	uint64_t  pressed_ts = 0; // timestamp used to order notes
-	uint64_t  release_ts = 0; // timestamp used to order notes
+    // Release no longer takes a timestamp in the optimized version
+    void release();
 
-	// used to fade out on repeat notes
-	bool      isFading = false;
-	int       fadeTotalSamples = 0;
-	int       fadeSamples = 0;
-	MalletType malletType = kImpulse;
-	float32_t malletFreq = 0.0;
-	float32_t newFreq = 0.0;
-	float32_t newVel = 0.0;
-	int       newNote = 0;
-	*/
-	bool      m_initialized = false;
-	bool      m_gate = false;
-	size_t    m_framesSinceNoteOn = SIZE_MAX; // Voice stealing
-	float32_t aPitchFactor = 1.0;
-	float32_t bPitchFactor = 1.0;
+    void clear();
 
-	Mallet    mallet{};
-	Noise     noise{};
-	Resonator resA{};
-	Resonator resB{};
+    // Tuning & Parameters
+    void setPitch(float32_t a_coarse, float32_t b_coarse, float32_t a_fine, float32_t b_fine);
+
+    // Applies pitch factor to a model array using NEON
+    void applyPitch(float32_t* model, float32_t factor);
+
+    /** * Main update function for physics models.
+     * Handles frequency coupling (Jitter + SIMD) and updates Resonator states.
+     * @param updateFrequencies: If false, skips expensive coupling/pitch math.
+     */
+    void updateResonators(bool updateFrequencies = true);
+
+    void setCoupling(bool _couple, float32_t _split);
+
+    // Helpers
+    inline size_t getFramesSinceNoteOn() const {
+        if (!m_initialized) return SIZE_MAX;
+        return m_framesSinceNoteOn;
+    }
+
+    // --- Public Members (accessed by Voice Manager) ---
+    int       note = 0;        // MIDI note number
+    float32_t freq = 0.0f;     // Frequency in Hz
+    float32_t vel = 0.0f;      // MIDI velocity 0.0 .. 1.0
+    bool      isRelease = false;
+    bool      isPressed = false;
+    bool      couple = false;
+    float32_t split = 0.0f;
+
+    // Pitch factors calculated from setPitch
+    float32_t aPitchFactor = 1.0f;
+    float32_t bPitchFactor = 1.0f;
+
+    bool      m_initialized = false;
+    bool      m_gate = false;
+    size_t    m_framesSinceNoteOn = SIZE_MAX;
+
+    // Components
+    Mallet    mallet{};
+    Noise     noise{};
+    Resonator resA{};
+    Resonator resB{};
 
 private:
-	float32_t aShifts[64] = {0};
-	float32_t bShifts[64] = {0};
-	//TODO:
-	//std::array<float32_t, 64> aPhases = {};
-	//std::array<float32_t, 64> bPhases = {};
+    // Persistent buffers for frequency shifts
+    // These store the state of the coupled frequencies between updates
+    alignas(16) float32_t aShifts[64] = {0};
+    alignas(16) float32_t bShifts[64] = {0};
 };

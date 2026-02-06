@@ -56,27 +56,27 @@ enum Parameters : uint32_t {
     c_parameterResonatorNote,
     c_parameterSampleBank,
     c_parameterSampleNumber,
-// page 2
+    // page 2
     c_parameterMalletResonance,
     c_parameterMalletStiffness,
     c_parameterVelocityMalletResonance,
     c_parameterVelocityMalletStifness,
-// page 3
+    // page 3
     c_parameterModel,
     c_parameterPartials,
     c_parameterDecay,
     c_parameterMaterial,
-// page 4
+    // page 4
     c_parameterTone,
     c_parameterHitPosition,
     c_parameterRelease,
     c_parameterInharmonic,
-// page 5
+    // page 5
     c_parameterFilterCutoff,
     c_parameterTubeRadius,
     c_parameterCoarsePitch,
     c_parameterNoiseMix,
-// page 6
+    // page 6
     c_parameterNoiseResonance,
     c_parameterNoiseFilterMode,
     c_parameterNoiseFilterFreq,
@@ -326,6 +326,5 @@ static float32_t programs[Program::last_program][ProgramParameters::last_param] 
 };
 
 // additional math values
-static __attribute__((unused)) int pwr_2_of_index[9] = {0, 1, 4, 9, 16, 25, 36, 49, 64};
-static __attribute__((unused)) float32_t new_ratio[9] = {};
+static float pwr_2_of_index[9] = {0.0f, 1.0f, 4.0f, 9.0f,   16.0f, 25.0f, 36.0f, 49.0f, 64.0f};
 

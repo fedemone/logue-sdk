@@ -2,43 +2,68 @@
 // Partial is a second order bandpass filter with extra variables for decay, frequency and amplitude calculation
 
 #pragma once
+#include <arm_neon.h>
 #include "float_math.h"
 #include "constants.h"
 
+/**
+ * Partial class optimized for ARM NEON.
+ * Member order is strictly controlled to maximize cache hits:
+ * 1. NEON vectors (hot path) are at the top for 16-byte alignment.
+ * 2. Scalars (warm path) follow.
+ */
 class alignas(16) Partial
 {
 public:
-	Partial() { k = 1; } // Default constructor for array allocation
-	Partial(int n) { k = n; }
-	~Partial() {};
+    Partial() : k(1) { clear(); } // Default constructor
+    Partial(int n) : k(n) { clear(); }
+    ~Partial() {};
 
-	void update(float32_t freq, float32_t ratio, float32_t ratio_max, float32_t vel, bool isRelease);
-	float32x4_t process(float32x4_t input);  // Process 4 samples in parallel
-	void clear();  // Initialize state vectors to zero
+    void update(float32_t freq, float32_t ratio, float32_t ratio_max, float32_t vel, bool isRelease);
 
-	float32_t srate = 0.0;
-	int k = 0; // Partial num
-	float32_t decay = 0.0;
-	float32_t damp = 0.0;
-	float32_t tone = 0.0;
-	float32_t hit = 0.0;
-	float32_t rel = 0.0;
-	float32_t inharm = 0.0;
-	float32_t radius = 0.0;
-	float32_t vel_decay = 0.0;
-	float32_t vel_hit = 0.0;
-	float32_t vel_inharm = 0.0;
+    /**
+     * Hot path: Process 4 samples in parallel.
+     * Inlined to allow Resonator to optimize the loop.
+     */
+    inline float32x4_t process(float32x4_t input) {
+        // b0*x + b2*x2 - a1*y1 - a2*y2
+        // Coefficients are pre-normalized by a0 in update()
+        float32x4_t out = vmulq_f32(input, vb0);
+        out = vmlaq_f32(out, x2, vb2);
+        out = vmlsq_f32(out, y1, va1);
+        out = vmlsq_f32(out, y2, va2);
+
+        // State shift
+        x2 = x1;
+        x1 = input;
+        y2 = y1;
+        y1 = out;
+
+        return out;
+    }
+
+    void clear();
+
+    // --- NEON state/coefficients (Hot Data) ---
+    // Total: 128 bytes (exactly 2 cache lines on most ARM CPUs)
+    float32x4_t vb0, vb2, va1, va2; // Normalized coefficients
+    float32x4_t x1, x2, y1, y2;     // State vectors
+
+    // --- Parameter Scalars (Warm Data) ---
+    float32_t srate = 44100.0f;
+    float32_t decay = 0.0f;
+    float32_t damp = 0.0f;
+    float32_t tone = 0.0f;
+    float32_t hit = 0.0f;
+    float32_t rel = 0.0f;
+    float32_t inharm = 0.0f;
+    float32_t radius = 0.0f;
+    float32_t vel_decay = 0.0f;
+    float32_t vel_hit = 0.0f;
+    float32_t vel_inharm = 0.0f;
+    int k = 1;
 
 private:
-	float32_t b0 = 0.0f;
-	float32_t b2 = 0.0f;
-	float32_t a0 = 1.0f;
-	float32_t a1 = 0.0f;
-	float32_t a2 = 0.0f;
-
-	// NEON state vectors - initialized via clear() in Resonator
-	float32x4_t x1 = vdupq_n_f32(0.0f);
-	float32x4_t x2 = vdupq_n_f32(0.0f);
-	float32x4_t y1 = vdupq_n_f32(0.0f);
-	float32x4_t y2 = vdupq_n_f32(0.0f);
+    // Scalar coefficients are no longer needed as members;
+    // they are calculated as locals in update() and stored in the vectors above.
 };

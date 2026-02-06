@@ -20,22 +20,43 @@ void Noise::attack(float32_t _vel)
 	env.attack(1.0);
 }
 
-void Noise::initFilter()
-{
-	// Compute velocity-modulated frequency using pre-computed log constants
-	float32_t log_f = fasterlogf(freq) + vel * vel_freq * c_noise_filter_log_range;
-	float32_t f = e_expff(log_f);
-	// Clamp frequency to valid range [20, 20000]
-	f = fmin(c_noise_filter_freq_max, fmax(c_noise_filter_freq_min, f));
+/**
+ * @brief optimized version bit bit manipulation:
+ * To use this, we change the base from $e$ to $2$.
+ * $e^x = 2^{x \cdot \log_2(e)}$ where $\log_2(e) \approx 1.442695$.
+ *
+ */
+void Noise::initFilter() {
+    // Constants
+    const float log2e = 1.44269504089f;
 
-	// Compute velocity-modulated resonance, clamped to [0.707, 4.0]
-	float32_t res = q + vel * vel_q * c_noise_filter_res_range;
-	res = fmin(4.0f, fmax(0.707f, res)); // Clamp resonance to a safe range
-	filter_active = fmode == 1 || (fmode == 0 && f < 20000.0f) || (fmode == 2 && f > 20.0f);
+    // Instead of e^log_f, we calculate 2^(log2e * log_f)
+    // We can pre-multiply the range constant by log2e!
+    float32_t offset = vel * (vel_freq * (c_noise_filter_log_range * log2e));
 
-	if (fmode == 1) filter.bp(srate, f, res);      // BP
-	else if (fmode == 2) filter.hp(srate, f, res); // HP
-	else filter.lp(srate, f, res);                 // LP (default for mode 0 or invalid)
+    // f = freq * 2^offset
+    // We use the bit-shift trick to skip the exp function entirely
+    union { float f; int32_t i; } u;
+    u.i = (int32_t)(offset * 8388608.0f) + 1065353216;
+    float32_t f = freq * u.f;
+
+    // Clamping using ARM VFP instructions (VMIN/VMAX)
+    f = fminf(c_noise_filter_freq_max, fmaxf(c_noise_filter_freq_min, f));
+
+    // Resonance
+    float32_t res = q + (vel * vel_q * c_noise_filter_res_range);
+    res = fminf(4.0f, fmaxf(0.707f, res));
+
+    // Logic Dispatch
+    filter_active = (fmode == 1) || (fmode == 0 && f < 20000.0f) || (fmode == 2 && f > 20.0f);
+    if (!filter_active) return;
+
+    // Jump Table / Switch
+    switch (fmode) {
+        case 1:  filter.bp(srate, f, res); break;
+        case 2:  filter.hp(srate, f, res); break;
+        default: filter.lp(srate, f, res); break;
+    }
 }
 
 void Noise::release()

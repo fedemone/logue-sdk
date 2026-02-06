@@ -8,6 +8,15 @@
 
 // NOTE: DISABLED FOR THE MOMENT
 
+enum MalletType {
+    kSample1,
+    kSample2,
+    kSample3,
+    kSample4,
+    kSample5,
+    kSample6
+};
+
 struct InternalSample
 {
 	MalletType type;
