@@ -82,7 +82,7 @@ public:
     // Process 4 samples (stereo pair x 2 frames, or 4 mono)
     inline float32x4_t process(float32x4_t input)
     {
-        printf("[DEBUG] Limiter input: %.4f\n", vgetq_lane_f32(input, 0));
+        // printf("[DEBUG] Limiter input: %.4f\n", vgetq_lane_f32(input, 0));
         // 1. RMS Detection (Square Law)
         float32x4_t sq = vmulq_f32(input, input);
 

@@ -206,24 +206,53 @@ float32x4_t Resonator::process(float32x4_t input)
 
     if (nmodel < OpenTube) {
         // --- START OF INTEGRATED PARTIAL MANAGER LOGIC ---
-        // By processing directly here, we keep 'out' in a register
-        // across the entire accumulation.
+        // Fixed: Serial-Parallel processing for Stereo Interleaved data [L0, R0, L1, R1]
+
+        // Extract inputs
+        float32x2_t in0 = vget_low_f32(input);  // [L0, R0]
+        float32x2_t in1 = vget_high_f32(input); // [L1, R1]
+
         for (int p = 0; p < activePartialsCount; ++p) {
             Partial& part = partials[p];
 
-            // Filter math: y = b0*x + b2*x2 - a1*y1 - a2*y2
-            float32x4_t p_out = vmulq_f32(input, part.vb0);
-            p_out = vmlaq_f32(p_out, part.x2, part.vb2);
-            p_out = vmlsq_f32(p_out, part.y1, part.va1);
-            p_out = vmlsq_f32(p_out, part.y2, part.va2);
+            // Load state (Lower 2 lanes hold [L_prev, R_prev])
+            float32x2_t x1_prev = vget_low_f32(part.vx1);
+            float32x2_t x2_prev = vget_low_f32(part.vx2);
+            float32x2_t y1_prev = vget_low_f32(part.vy1);
+            float32x2_t y2_prev = vget_low_f32(part.vy2);
 
-            // Update delay lines
-            part.x2 = part.x1;
-            part.x1 = input;
-            part.y2 = part.y1;
-            part.y1 = p_out;
+            // Load coefficients (duplicated in all lanes, so just take low)
+            float32x2_t b0 = vget_low_f32(part.vb0);
+            float32x2_t b2 = vget_low_f32(part.vb2);
+            float32x2_t a1 = vget_low_f32(part.va1);
+            float32x2_t a2 = vget_low_f32(part.va2);
+
+            // --- Frame 0 (L0, R0) ---
+            // y[n] = b0*x[n] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
+            float32x2_t term1_0 = vmul_f32(in0, b0);
+            float32x2_t term2_0 = vmul_f32(x2_prev, b2);
+            float32x2_t term3_0 = vmul_f32(y1_prev, a1);
+            float32x2_t term4_0 = vmul_f32(y2_prev, a2);
+
+            float32x2_t out0 = vsub_f32(vadd_f32(term1_0, term2_0), vadd_f32(term3_0, term4_0));
+
+            // --- Frame 1 (L1, R1) ---
+            // x[n]=in1, x[n-2]=x1_prev, y[n-1]=out0, y[n-2]=y1_prev
+            float32x2_t term1_1 = vmul_f32(in1, b0);
+            float32x2_t term2_1 = vmul_f32(x1_prev, b2);
+            float32x2_t term3_1 = vmul_f32(out0, a1);
+            float32x2_t term4_1 = vmul_f32(y1_prev, a2);
+
+            float32x2_t out1 = vsub_f32(vadd_f32(term1_1, term2_1), vadd_f32(term3_1, term4_1));
+
+            // --- Update State ---
+            part.vx1 = vcombine_f32(in1, in1);
+            part.vx2 = vcombine_f32(in0, in0);
+            part.vy1 = vcombine_f32(out1, out1);
+            part.vy2 = vcombine_f32(out0, out0);
 
             // Accumulate partial result into resonator output
+            float32x4_t p_out = vcombine_f32(out0, out1);
             out = vaddq_f32(out, p_out);
         }
         // --- END OF INTEGRATED PARTIAL MANAGER LOGIC ---

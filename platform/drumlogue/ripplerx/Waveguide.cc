@@ -123,11 +123,11 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
  */
 
 float32x4_t Waveguide::process(float32x4_t input) {
-    static int debug_count = 0;
-    if (debug_count < 5) {
-        printf("[DEBUG] Waveguide::process\n");
-        debug_count++;
-    }
+    // static int debug_count = 0;
+    // if (debug_count < 5) {
+    //     printf("[DEBUG] Waveguide::process\n");
+    //     debug_count++;
+    // }
 
     // 1. Prepare IO buffers
     alignas(16) float32_t in_buf[4];

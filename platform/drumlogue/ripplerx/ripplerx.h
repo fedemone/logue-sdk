@@ -425,10 +425,17 @@ public:
 
         switch(index) {
             case c_parameterProgramName:
-                if (value < (int32_t)last_program) setCurrentProgram(value);
+                if (value < (int32_t)last_program) {
+                    setCurrentProgram(value);
+                    noiseChanged = true;
+                    pitchChanged = true;
+                    resonatorChangedA = true;
+                    resonatorChangedB = true;
+                    couplingChanged = true;
+                }
                 break;
 
-            // case c_parameterGain:
+            // case c_parameterGain: - NOTE removed in favour of note
             //     parameters[gain] = fasterpowf(10.0f, value / 20.0f);
             //     break;
 
@@ -744,11 +751,87 @@ public:
     }
 
     inline const char *getParameterStrValue(uint8_t index, int32_t value) const {
-         // [Logic identical to provided original code for string formatting]
-         // Since this is UI-only code and not DSP, standard implementation is fine.
-        (void)index;
-        (void)value;
-         return nullptr;
+        // Optional visual cue to distinguish A vs B for extended ranges
+        static constexpr bool k_showABMarkersNumeric = true;
+        auto fmt_num = [](char* buf, size_t n, const char* prefix, int32_t scaled, int decimals, const char* suffix) {
+            if (decimals <= 0) {
+                snprintf(buf, n, "%s%d%s", prefix, scaled, (suffix ? suffix : ""));
+            } else if (decimals == 1) {
+                snprintf(buf, n, "%s%.1f%s", prefix, (double)scaled / 10.0, (suffix ? suffix : ""));
+            } else if (decimals == 2) {
+                snprintf(buf, n, "%s%.2f%s", prefix, (double)scaled / 100.0, (suffix ? suffix : ""));
+            } else if (decimals == 3) {
+                snprintf(buf, n, "%s%.3f%s", prefix, (double)scaled / 1000.0, (suffix ? suffix : ""));
+            } else {
+                snprintf(buf, n, "%s%.4f%s", prefix, (double)scaled / 10000.0, (suffix ? suffix : ""));
+            }
+        };
+        switch (index) {
+            case c_parameterSampleBank:
+                if ((size_t)value < c_sampleBankElements)
+                    return c_sampleBankName[value];
+                break;
+            case c_parameterProgramName:
+                if (value < (int32_t)last_program)
+                    return c_programName[value];
+                break;
+            case c_parameterModel:
+                if ((uint32_t)value >= c_modelElements * 2) return "INVALID";
+                return c_modelName[value];
+            case c_parameterPartials:
+                if ((uint32_t)value >= c_partialElements * 2) return "INVALID";
+                return c_partialsName[value];
+            case c_parameterNoiseFilterMode:
+                if ((size_t)value < c_noiseFilterModeElements) {
+                    return c_noiseFilterModeName[value];
+                }
+                return "---";
+
+            case c_parameterDecay: {
+                if (!k_showABMarkersNumeric) break;
+                static char s_numBuf[32];
+                const int32_t maxA = 1000;
+                const int32_t span = 1000;
+                if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 1, ""); return s_numBuf; }
+                if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 1, ""); return s_numBuf; }
+                break;
+            }
+            case c_parameterMaterial: {
+                if (!k_showABMarkersNumeric) break;
+                static char s_numBuf[32];
+                const int32_t minA = -10, maxA = 10, span = maxA - minA; // 20
+                if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 1, ""); return s_numBuf; }
+                if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 1, ""); return s_numBuf; }
+                break;
+            }
+            case c_parameterTone: {
+                if (!k_showABMarkersNumeric) break;
+                static char s_numBuf[32];
+                const int32_t minA = -10, maxA = 10, span = maxA - minA; // 20
+                if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 1, ""); return s_numBuf; }
+                if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 1, ""); return s_numBuf; }
+                break;
+            }
+            case c_parameterHitPosition: {
+                if (!k_showABMarkersNumeric) break;
+                static char s_numBuf[32];
+                const int32_t minA = 2, maxA = 50, span = maxA - minA; // 48
+                if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 2, ""); return s_numBuf; }
+                if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 2, ""); return s_numBuf; }
+                break;
+            }
+            case c_parameterRelease: {
+                if (!k_showABMarkersNumeric) break;
+                static char s_numBuf[32];
+                const int32_t maxA = 10, span = 10;
+                if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 1, ""); return s_numBuf; }
+                if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 1, ""); return s_numBuf; }
+                break;
+            }
+            // ... (Add other cases as needed, but these are the critical ones for A/B)
+            default: break;
+        }
+        return nullptr;
     }
 
     inline const uint8_t * getParameterBmpValue(uint8_t index, int32_t value) const {
@@ -790,7 +873,7 @@ inline void setCurrentProgram(int index) {
             parameters[b_partials] = (float32_t)c_partials[(int)programs[index][b_partials]];
 
             // Precompute gain in dB -> linear conversion
-            parameters[gain] = fasterpowf(10.0, parameters[gain] / 20.0);
+            parameters[gain] = fasterpowf(10.0f, parameters[gain] / 20.0f);
         }
     }
 

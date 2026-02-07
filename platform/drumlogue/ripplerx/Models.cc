@@ -67,7 +67,7 @@ static inline void freqs_to_ratio(float32_t* model) {
 
 
 void recalcBeam(bool resA, float32_t ratio) {
-    printf("[DEBUG] recalcBeam ResA=%d Ratio=%.4f\n", resA, ratio);
+    // printf("[DEBUG] recalcBeam ResA=%d Ratio=%.4f\n", resA, ratio);
     float32_t* model = resA ? aModels[ModelNames::Beam] : bModels[ModelNames::Beam];
 
     // Call the static NEON optimizer
