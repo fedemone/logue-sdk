@@ -1,0 +1,274 @@
+diff --git a/platform/drumlogue/ripplerx/Mallet.cc b/platform/drumlogue/ripplerx/Mallet.cc
+index 5032b8d..c123456 100644
+--- a/platform/drumlogue/ripplerx/Mallet.cc
++++ b/platform/drumlogue/ripplerx/Mallet.cc
+@@ -2,6 +2,7 @@
+
+ void Mallet::trigger(float32_t srate, float32_t freq)
+ {
++    printf("[DEBUG] Mallet::trigger Freq=%.2f\n", freq);
+     // 1. Setup Stiffness Filter (Bandpass)
+     // Limits the noise to a specific frequency band "knock"
+     filter.bp(srate, freq, 0.707f);
+diff --git a/platform/drumlogue/ripplerx/Mallet.h b/platform/drumlogue/ripplerx/Mallet.h
+index 1672803..d123456 100644
+--- a/platform/drumlogue/ripplerx/Mallet.h
++++ b/platform/drumlogue/ripplerx/Mallet.h
+@@ -3,6 +3,7 @@
+ #include "float_math.h"
+ #include "Filter.h"
+ #include <arm_neon.h>
++#include <cstdio>
+
+ class alignas(16) Mallet
+ {
+@@ -37,6 +38,11 @@
+         uint32x4_t v_bits = vorrq_u32(vshrq_n_u32(v_next, 9), vdupq_n_u32(0x3F800000));
+         float32x4_t noise = vsubq_f32(vreinterpretq_f32_u32(v_bits), vdupq_n_f32(1.0f));
+
++        static int debug_m = 0;
++        if (debug_m++ < 5) {
++             printf("[DEBUG] Mallet::process RawNoise=%.4f\n", vgetq_lane_f32(noise, 0));
++        }
++
+         // 2. Apply Amplitude Envelope
+         // output = noise * current_amp
+         float32x4_t output = vmulq_f32(noise, v_amp_state);
+@@ -57,10 +63,18 @@
+
+         alignas(16) float32_t tmp[4];
+         vst1q_f32(tmp, output);
++
++        if (debug_m < 6) {
++             printf("[DEBUG] Mallet::process PreFilter=%.4f\n", tmp[0]);
++        }
++
+         tmp[0] = filter.df1(tmp[0]);
+         tmp[1] = filter.df1(tmp[1]);
+         tmp[2] = filter.df1(tmp[2]);
+         tmp[3] = filter.df1(tmp[3]);
++
++        if (debug_m < 6) {
++             printf("[DEBUG] Mallet::process Filtered=%.4f\n", tmp[0]);
++        }
++
+         output = vld1q_f32(tmp);
+
+         // 5. Update Timer
+diff --git a/platform/drumlogue/ripplerx/Models.cc b/platform/drumlogue/ripplerx/Models.cc
+index 0f30c47..e123456 100644
+--- a/platform/drumlogue/ripplerx/Models.cc
++++ b/platform/drumlogue/ripplerx/Models.cc
+@@ -67,6 +67,7 @@
+
+
+ void recalcBeam(bool resA, float32_t ratio) {
++    printf("[DEBUG] recalcBeam ResA=%d Ratio=%.4f\n", resA, ratio);
+     float32_t* model = resA ? aModels[ModelNames::Beam] : bModels[ModelNames::Beam];
+
+     // Convert int array to float array
+@@ -85,6 +86,7 @@
+
+
+ void recalcMembrane(bool resA, float32_t ratio) {
++    printf("[DEBUG] recalcMembrane ResA=%d Ratio=%.4f\n", resA, ratio);
+     float32_t* model = resA ? aModels[ModelNames::Membrane] : bModels[ModelNames::Membrane];
+
+     // Call the static NEON optimizer
+@@ -97,6 +99,7 @@
+
+
+ void recalcPlate(bool resA, float32_t ratio) {
++    printf("[DEBUG] recalcPlate ResA=%d Ratio=%.4f\n", resA, ratio);
+     float32_t* model = resA ? aModels[ModelNames::Plate] : bModels[ModelNames::Plate];
+
+     // Convert int array to float array
+diff --git a/platform/drumlogue/ripplerx/Noise.cc b/platform/drumlogue/ripplerx/Noise.cc
+index 0b9ec9c..f123456 100644
+--- a/platform/drumlogue/ripplerx/Noise.cc
++++ b/platform/drumlogue/ripplerx/Noise.cc
+@@ -16,6 +16,7 @@
+
+ void Noise::attack(float32_t _vel)
+ {
++    printf("[DEBUG] Noise::attack Vel=%.2f\n", _vel);
+ 	vel = _vel;
+ 	initFilter();
+ 	env.attack(1.0);
+diff --git a/platform/drumlogue/ripplerx/Noise.h b/platform/drumlogue/ripplerx/Noise.h
+index 651770e..a123456 100644
+--- a/platform/drumlogue/ripplerx/Noise.h
++++ b/platform/drumlogue/ripplerx/Noise.h
+@@ -5,6 +5,7 @@
+ #include "Filter.h"
+ #include "Envelope.h"
+ #include "constants.h"
++#include <cstdio>
+
+ class Noise {
+ public:
+@@ -34,6 +35,11 @@
+         float32_t filtered = filter.df1(sample);
+         sample = filter_active ? filtered : sample;
+
++        static int debug_n = 0;
++        if (debug_n++ < 10) {
++            printf("[DEBUG] Noise::process Env=%.4f Raw=%.4f Sample=%.4f Filtered=%.4f Out=%.4f Active=%d\n",
++                   env_val, raw_sample, sample, filtered, sample, active);
++        }
+
+         // 4. Check if envelope just finished
+         if (!env.getState()) {
+diff --git a/platform/drumlogue/ripplerx/Resonator.cc b/platform/drumlogue/ripplerx/Resonator.cc
+index 61e63cc..b123456 100644
+--- a/platform/drumlogue/ripplerx/Resonator.cc
++++ b/platform/drumlogue/ripplerx/Resonator.cc
+@@ -209,6 +209,15 @@
+ {
+     float32x4_t out = vdupq_n_f32(0.0f);
+
++    static int debug_count = 0;
++    if (debug_count < 5) {
++        printf("[DEBUG] Resonator::process Active=%d Model=%d Partials=%d\n", active, nmodel, activePartialsCount);
++        debug_count++;
++    }
++
++    if (debug_count < 5) {
++        printf("[DEBUG] Resonator::process Input=%.4f\n", vgetq_lane_f32(input, 0));
++    }
+
+     if (!active) return out;
+
+@@ -242,6 +251,10 @@
+
+             // Accumulate partial result into resonator output
+             out = vaddq_f32(out, p_out);
++
++            if (debug_count < 5 && p == 0) {
++                 printf("[DEBUG] Resonator::process P0_Out=%.4f\n", vgetq_lane_f32(p_out, 0));
++            }
+         }
+         // --- END OF INTEGRATED PARTIAL MANAGER LOGIC ---
+     } else {
+@@ -267,5 +280,9 @@
+         this->clear();
+     }
+
++    if (debug_count < 5) {
++        printf("[DEBUG] Resonator::process FinalOut=%.4f\n", vgetq_lane_f32(out, 0));
++    }
++
+     return out;
+ }
+diff --git a/platform/drumlogue/ripplerx/Voice.cc b/platform/drumlogue/ripplerx/Voice.cc
+index 7e3aa4e..c123456 100644
+--- a/platform/drumlogue/ripplerx/Voice.cc
++++ b/platform/drumlogue/ripplerx/Voice.cc
+@@ -23,6 +23,7 @@
+
+ void Voice::trigger(float32_t srate, int _note, float32_t _vel, float32_t malletFreq)
+ {
++    printf("[DEBUG] Voice::trigger Note=%d Vel=%.2f MalletFreq=%.2f\n", _note, _vel, malletFreq);
+     resA.clear();
+     resB.clear();
+
+diff --git a/platform/drumlogue/ripplerx/Waveguide.cc b/platform/drumlogue/ripplerx/Waveguide.cc
+index 62a22db..d123456 100644
+--- a/platform/drumlogue/ripplerx/Waveguide.cc
++++ b/platform/drumlogue/ripplerx/Waveguide.cc
+@@ -1,6 +1,7 @@
+ #include "Waveguide.h"
+ #include "constants.h"
+ #include <cmath>
++#include <cstdio>
+
+ // Proper constructor with safe initialization
+ Waveguide::Waveguide()
+@@ -112,6 +113,12 @@
+  * @return float32x4_t
+  */
+ float32x4_t Waveguide::process(float32x4_t input) {
++    static int debug_count = 0;
++    if (debug_count < 5) {
++        printf("[DEBUG] Waveguide::process\n");
++        debug_count++;
++    }
++
+     // 1. Fetch from delay line
+     float32x4_t xn = tube[read_ptr];
+
+diff --git a/platform/drumlogue/ripplerx/ripplerx.h b/platform/drumlogue/ripplerx/ripplerx.h
+index 7f3cb8b..e123456 100644
+--- a/platform/drumlogue/ripplerx/ripplerx.h
++++ b/platform/drumlogue/ripplerx/ripplerx.h
+@@ -164,6 +164,14 @@
+         const float32x4_t v_ab_mix = vdupq_n_f32(parameters[ab_mix]);
+         const float32x4_t v_ab_inv = vsubq_f32(vdupq_n_f32(1.0f), v_ab_mix);
+
++        // [DEBUG] Print mix parameters once to diagnose silence
++        static int debug_print_count = 0;
++        if (debug_print_count < 10) {
++            printf("[DEBUG] Render Block %d | Gain: %.2f | Mix: M=%.2f N=%.2f | Res: A=%d B=%d\n",
++                   debug_print_count, gain, mallet_mix, noise_mix, a_on, b_on);
++            debug_print_count++;
++        }
++
+         // Loop over frames (step = 2 frames / 4 samples)
+         for (size_t i = 0; i < frames * 2; i += 4) {
+
+@@ -211,9 +219,13 @@
+             for (size_t v = 0; v < c_numVoices; ++v) {
+                 Voice& voice = voices[v];
+                 if (!voice.m_initialized || !voice.m_gate) continue;
++                printf("[DEBUG] Voice %d initialized\n",v);
+
+                 // 1. Mallet
+                 float32x4_t m_sig = voice.mallet.process();
+                 if (vgetq_lane_f32(m_sig, 0) != 0.0f) {
++                    if (debug_print_count < 10 && v == 0 && i == 0) {
++                        printf("[DEBUG] Voice %d Mallet Signal: %.4f\n",v,  vgetq_lane_f32(m_sig, 0));
++                    }
+                     float32_t mmix = fmax(0.0f, fmin(1.0f, mallet_mix + vel_mallet_mix * voice.vel));
+                     float32_t mres = fmax(0.0f, fmin(1.0f, mallet_res + vel_mallet_res * voice.vel));
+                     accum_dir = vmlaq_n_f32(accum_dir, m_sig, mmix);
+@@ -232,6 +244,9 @@
+                 // 3. Noise
+                 float32_t n_val = voice.noise.process();
+                 if (n_val != 0.0f) {
++                    if (debug_print_count < 10 && v == 0 && i == 0) {
++                        printf("[DEBUG] Voice %d Noise Signal: %.4f\n",v, n_val);
++                    }
+                     float32x4_t n_sig = vdupq_n_f32(n_val);
+                     float32_t nmix = fmax(0.0f, fmin(1.0f, noise_mix + vel_noise_mix * voice.vel));
+                     float32_t nres = fmax(0.0f, fmin(1.0f, noise_res + vel_noise_res * voice.vel));
+@@ -247,7 +262,13 @@
+                 float32x4_t res_out_B = vdupq_n_f32(0.0f);
+
+                 if (a_on) {
++                    if (debug_print_count < 10 && v == 0 && i == 0) {
++                        printf("[DEBUG] Res A Input: %.4f\n", vgetq_lane_f32(accum_res, 0));
++                    }
+                     res_out_A = voice.resA.process(accum_res);
++                    if (debug_print_count < 10 && v == 0 && i == 0) {
++                        printf("[DEBUG] Res A Output: %.4f\n", vgetq_lane_f32(res_out_A, 0));
++                    }
+                     if (voice.resA.getCut() > c_res_cutoff) {
+                          res_out_A = voice.resA.applyFilter(res_out_A);
+                     }
+@@ -284,12 +305,16 @@
+             } // End Voice Loop
+
+             // --- C. Global Effects ---
++            printf("[DEBUG] before comb: %.4f\n", vgetq_lane_f32(accum_dir, 0));
+             accum_dir = comb.process(accum_dir);
++            printf("[DEBUG] before limiter: %.4f\n", vgetq_lane_f32(accum_dir, 0));
+             accum_dir = limiter.process(accum_dir);
++            printf("[DEBUG] before gain: %.4f\n", vgetq_lane_f32(accum_dir, 0));
+             accum_dir = vmulq_f32(accum_dir, v_gain);
+
+             // Accumulate
+             float32x4_t dest = vld1q_f32(&outBuffer[i]);
++            printf("[DEBUG] read dest: %.4f\n", vgetq_lane_f32(dest, 0));
+             vst1q_f32(&outBuffer[i], vaddq_f32(dest, accum_dir));
+
+         } // End Frame Loop

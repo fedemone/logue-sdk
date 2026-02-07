@@ -206,7 +206,6 @@ public:
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
                 if (!voice.m_initialized || !voice.m_gate) continue;
-
                 // 1. Mallet
                 float32x4_t m_sig = voice.mallet.process();
                 if (vgetq_lane_f32(m_sig, 0) != 0.0f) {
@@ -467,9 +466,11 @@ public:
                 a_b_model = value;
                 if ((uint32_t)value < c_modelElements) {
                     parameters[a_model] = (float)value;
+                    parameters[a_on] = 1.0f;
                     resonatorChangedA = true;
                 } else {
                     parameters[b_model] = (float)(value - c_modelElements);
+                    parameters[b_on] = 1.0f;
                     resonatorChangedB = true;
                 }
                 clearVoices();
@@ -667,6 +668,7 @@ public:
     }
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
+        // this replaces nextVoiceNumber
         nvoice = (nvoice + 1) % c_numVoices;
         Voice & voice = voices[nvoice];
 
@@ -775,8 +777,6 @@ private:
         LoadPreset(Program::Initial);   // This performs prepareToPlay
         Reset();
     }
-
-inline size_t nextVoiceNumber();
 
 inline void setCurrentProgram(int index) {
         clearVoices();

@@ -88,9 +88,9 @@ private:
     void recalcCoefs();
 
     // Inline helper to cubic curve mapping
-    inline float32_t normalizeTension(float32_t val) {
-        // Mapping logic (assumption based on original code usage)
-        return val;
+    inline float32_t normalizeTension(float32_t t) {
+        t += 1.0f;
+        return t == 1.0f ? 100.0f : (t > 1.0f ? 3.001f - t : 0.001f + t);
     }
 
     // Parameters (Time in samples)

@@ -1,10 +1,11 @@
 #include "Waveguide.h"
 #include "constants.h"
 #include <cmath>
+#include <cstdio>
 
 // Proper constructor with safe initialization
 Waveguide::Waveguide()
-	: read_ptr(0), write_ptr(0), tube_decay(0.0f), y{}, y1{}
+	: read_ptr(0), write_ptr(0)/*, tube_decay(0.0f), y{}, y1{}*/
 {
 	// Initialize radius and max_radius using NEON intrinsics for float32x4_t
 	// Broadcast single values to all 4 lanes
@@ -121,7 +122,13 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
  * @return float32x4_t
  */
 
-inline float32x4_t process(float32x4_t input) {
+float32x4_t Waveguide::process(float32x4_t input) {
+    static int debug_count = 0;
+    if (debug_count < 5) {
+        printf("[DEBUG] Waveguide::process\n");
+        debug_count++;
+    }
+
     // 1. Prepare IO buffers
     alignas(16) float32_t in_buf[4];
     alignas(16) float32_t out_buf[4];

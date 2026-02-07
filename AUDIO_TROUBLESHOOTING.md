@@ -1,3 +1,27 @@
+# [2026-02-06] Critical Stability Fixes
+
+## 1. Division by Zero in Partial (Root Cause of Crash)
+**Diagnosis**: The "Audio Explosion" and hardware crash were traced to `Partial::process()`.
+In `Partial::update()`, if `decay_k` was below a threshold, the coefficient `a0` was set to `0.0f`.
+In `Partial::process()`, the NEON instruction `vrecpeq_f32(a0)` (reciprocal estimate) was calculating `1.0 / 0.0`, resulting in **Infinity**.
+This `Inf` value propagated through the resonator summation and into the output buffer, causing the hardware audio interface to crash.
+
+**Fix**: Added a check in `Partial::process()`: if `a0` is near zero, return 0.0 immediately, bypassing the filter logic and avoiding the division.
+
+## 2. Sample Number Parameter Corruption
+**Diagnosis**: When switching between different synth units on the Drumlogue, the firmware sends stale parameter values. Specifically, `c_parameterSampleNumber` was receiving values like `226` (valid range 1-128).
+Previous defensive code caught this and switched the unit to `Program::Debug`, which was confusing and persistent.
+
+**Fix**:
+- Removed the automatic switch to `Program::Debug`.
+- Implemented silent clamping for `c_parameterSampleNumber` in `setParameter` (1-128).
+- Corrected `setCurrentProgram` to NOT reset sample parameters (preserving user selection), relying on `Init()` for initial defaults.
+
+## 3. Defense-in-Depth (Limiter)
+**Fix**: Added a safety check in `Limiter::process()`. If any sample in the vector is NaN or exceeds reasonable bounds (>1e10), the limiter now forces the output to silence (0.0) instead of passing the invalid data to the DAC.
+
+---
+
 # [2026-02-05] Radical Optimization
 
 ## Correcting the code

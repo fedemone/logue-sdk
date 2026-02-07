@@ -28,6 +28,8 @@
 #pragma once
 #include "float_math.h"
 #include <arm_neon.h>
+#include <cstdio>
+
 
 class alignas(16) Limiter
 {
@@ -80,6 +82,7 @@ public:
     // Process 4 samples (stereo pair x 2 frames, or 4 mono)
     inline float32x4_t process(float32x4_t input)
     {
+        printf("[DEBUG] Limiter input: %.4f\n", vgetq_lane_f32(input, 0));
         // 1. RMS Detection (Square Law)
         float32x4_t sq = vmulq_f32(input, input);
 
@@ -119,7 +122,11 @@ public:
 
         // rsqrte is "Reciprocal Square Root Estimate" - very fast
         // sqrt(x) = x * rsqrt(x) roughly
-        float32x4_t sqrt_term = vmulq_f32(ratio_term, vrsqrteq_f32(ratio_term));
+        // float32x4_t sqrt_term = vmulq_f32(ratio_term, vrsqrteq_f32(ratio_term));
+        // Fix: Prevent 0 * Inf = NaN when ratio_term is 0. Use epsilon for rsqrt input.
+        float32x4_t ratio_safe = vmaxq_f32(ratio_term, vdupq_n_f32(1.0e-9f));
+        float32x4_t sqrt_term = vmulq_f32(ratio_term, vrsqrteq_f32(ratio_safe));
+
 
         float32x4_t cratio = vmlaq_f32(vdupq_n_f32(1.0f), vRatioConst, sqrt_term);
 

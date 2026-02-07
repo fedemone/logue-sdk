@@ -5,6 +5,7 @@
 #include "Filter.h"
 #include "Envelope.h"
 #include "constants.h"
+#include <cstdio>
 
 class Noise {
 public:
@@ -25,19 +26,21 @@ public:
         // 2. Faster Noise Generation
         // Direct conversion of bits to float can be faster than * 2.0 - 3.0
         // But assuming getFloat() is optimized, we keep the math lean.
-        float32_t sample = rng.getFloat() * 2.0f - 3.0f;
+        float32_t raw_sample = rng.getFloat();
+        float32_t sample = raw_sample * 2.0f - 3.0f;
 
         // 3. Conditional execution (The compiler will likely use 'vsel' or 'vbit' on ARM)
         // This avoids the pipeline flush of a branch
         float32_t filtered = filter.df1(sample);
-        sample = filter_active ? filtered : sample;
+        float32_t out_sample = filter_active ? filtered : sample;
+
 
         // 4. Check if envelope just finished
         if (!env.getState()) {
             filter.clear(0.0f);
         }
 
-        return sample * env_val;
+        return out_sample * env_val;
     }
 
     void initFilter();
@@ -45,7 +48,7 @@ public:
     void attack(float32_t velocity);
 
     void release();
-    
+
     void clear();
 
     // Public members moved to end for better padding/alignment

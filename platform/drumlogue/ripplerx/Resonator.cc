@@ -1,3 +1,4 @@
+#include <cstdio>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -200,6 +201,7 @@ float32x4_t Resonator::process(float32x4_t input)
 {
     float32x4_t out = vdupq_n_f32(0.0f);
 
+
     if (!active) return out;
 
     if (nmodel < OpenTube) {
@@ -284,4 +286,3 @@ float32x4_t Resonator::applyFilter(float32x4_t input)
 
 	return result;
 }
-

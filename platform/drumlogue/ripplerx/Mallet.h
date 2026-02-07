@@ -2,6 +2,7 @@
 #include "float_math.h"
 #include "Filter.h"
 #include <arm_neon.h>
+#include <cstdio>
 
 class alignas(16) Mallet
 {

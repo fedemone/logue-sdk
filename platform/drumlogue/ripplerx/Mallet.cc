@@ -1,5 +1,6 @@
 #include "Mallet.h"
 
+
 void Mallet::trigger(float32_t srate, float32_t freq)
 {
     // 1. Setup Stiffness Filter (Bandpass)

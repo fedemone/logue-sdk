@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <cstddef>
+#include <cstdio>
 #include <cstring> // For memcpy
 #include "float_math.h"
 #include "Voice.h"

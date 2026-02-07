@@ -94,6 +94,7 @@ public:
     // Total: 128 bytes (exactly 2 cache lines on most ARM CPUs)
     float32x4_t vb0, vb2, va1, va2; // Normalized coefficients
     float32x4_t x1, x2, y1, y2;     // State vectors
+    float32x4_t vx1, vx2, vy1, vy2; // Old state vectors
 
     // --- Parameter Scalars (Warm Data) ---
     float32_t srate = 44100.0f;
