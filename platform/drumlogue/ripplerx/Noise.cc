@@ -1,6 +1,5 @@
 #include "Noise.h"
 #include "constants.h"
-#include <cstdio>
 
 void Noise::init(float32_t _srate, int filterMode, float32_t _freq, float32_t _q, float32_t att, float32_t dec, float32_t sus, float32_t rel, float32_t _vel_freq, float32_t _vel_q)
 {

@@ -1,4 +1,3 @@
-#include <cstdio>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,7 +13,6 @@ extern "C" {
 Resonator::Resonator()
 {
     srate = c_sampleRate;
-    activePartialsCount = 0; // Start silent/clean
 
     // Initialize partials to safe defaults
     for (size_t i = 0; i < c_max_partials; ++i) {
@@ -103,7 +101,6 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
     // Shared ratio_max for the entire model
     const float ratio_max = model[c_max_partials - 1];
     const float f_nyq = c_nyquist_factor * srate;
-    activePartialsCount = 0;
 
     for (int p = 0; p < npartials; ++p) {
         Partial& part = partials[p];
@@ -165,8 +162,6 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         part.vb2 = vdupq_n_f32(-b0_val * inv_a0);
         part.va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
         part.va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
-
-        activePartialsCount++;
     }
 }
 
@@ -212,7 +207,7 @@ float32x4_t Resonator::process(float32x4_t input)
         float32x2_t in0 = vget_low_f32(input);  // [L0, R0]
         float32x2_t in1 = vget_high_f32(input); // [L1, R1]
 
-        for (int p = 0; p < activePartialsCount; ++p) {
+        for (int p = 0; p < npartials; ++p) {
             Partial& part = partials[p];
 
             // Load state (Lower 2 lanes hold [L_prev, R_prev])
@@ -284,6 +279,7 @@ float32x4_t Resonator::process(float32x4_t input)
 
 void Resonator::clear()
 {
+    active = false;
 	for (size_t i = 0; i < c_max_partials; ++i) {
 		partials[i].clear();
 	}

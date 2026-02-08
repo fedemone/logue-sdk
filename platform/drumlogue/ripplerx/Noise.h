@@ -5,7 +5,6 @@
 #include "Filter.h"
 #include "Envelope.h"
 #include "constants.h"
-#include <cstdio>
 
 class Noise {
 public:

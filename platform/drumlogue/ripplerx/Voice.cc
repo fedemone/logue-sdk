@@ -56,6 +56,10 @@ void Voice::clear()
     noise.clear();
     resA.clear();
     resB.clear();
+    m_gate = false;
+    m_initialized = false;
+    isPressed = false;
+    m_framesSinceNoteOn = SIZE_MAX;
 }
 
 void Voice::setCoupling(bool _couple, float32_t _split) {

@@ -165,7 +165,6 @@ public:
         const bool serial = (bool)parameters[ProgramParameters::couple];
         const float32x4_t v_ab_mix = vdupq_n_f32(parameters[ProgramParameters::ab_mix]);
         const float32x4_t v_ab_inv = vsubq_f32(vdupq_n_f32(1.0f), v_ab_mix);
-
         // Loop over frames (step = 2 frames / 4 samples)
         for (size_t i = 0; i < frames * 2; i += 4) {
 
@@ -206,6 +205,8 @@ public:
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
                 if (!voice.m_initialized || !voice.m_gate) continue;
+                // printf("[DEBUG] Voice %d initialized\n", v);
+
                 // 1. Mallet
                 float32x4_t m_sig = voice.mallet.process();
                 if (vgetq_lane_f32(m_sig, 0) != 0.0f) {

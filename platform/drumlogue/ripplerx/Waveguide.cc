@@ -1,7 +1,6 @@
 #include "Waveguide.h"
 #include "constants.h"
 #include <cmath>
-#include <cstdio>
 
 // Proper constructor with safe initialization
 Waveguide::Waveguide()
@@ -123,61 +122,68 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
  */
 
 float32x4_t Waveguide::process(float32x4_t input) {
-    // static int debug_count = 0;
-    // if (debug_count < 5) {
-    //     printf("[DEBUG] Waveguide::process\n");
-    //     debug_count++;
-    // }
+    // 1. Split Input into Frame 0 and Frame 1
+    float32x2_t in0 = vget_low_f32(input);
+    float32x2_t in1 = vget_high_f32(input);
 
-    // 1. Prepare IO buffers
-    alignas(16) float32_t in_buf[4];
-    alignas(16) float32_t out_buf[4];
+    // 2. Extract Coefficients (Low half of vectors)
+    float32x2_t g = vget_low_f32(vG);
+    float32x2_t radius = vget_low_f32(vRadius);
+    float32x2_t one_minus_rad = vget_low_f32(vOneMinusRad);
+    float32x2_t decay = vget_low_f32(vDecay);
+    float32x2_t polarity = vget_low_f32(vPolarity);
 
-    // Extract input excitation (Mallet/Noise)
-    vst1q_f32(in_buf, input);
+    // 3. Extract State
+    float32x2_t ap_state = vget_low_f32(vAP_State);
+    float32x2_t ap_prev_x = vget_low_f32(vAP_State_Prev_X);
+    float32x2_t damp_state = vget_low_f32(vY1);
 
-    // 2. Serial Physics Loop
-    // We must process samples one by one to preserve the feedback loop integrity.
-    for (int i = 0; i < 4; ++i) {
-        float32_t excitation = in_buf[i];
+    // --- Frame 0 Processing ---
+    // Read from tube (Allpass input x[n])
+    float32x2_t x0 = vget_low_f32(tube[read_ptr]);
 
-        // --- Step A: Read from Delay Line (with linear interpolation) ---
-        // Read index = write_pos - delay_len
-        float32_t read_ptr = (float)write_pos - delay_len;
-        while (read_ptr < 0.0f) read_ptr += delay_mask + 1;
-        while (read_ptr > delay_mask) read_ptr -= delay_mask + 1;
+    // Allpass: y[n] = x[n-1] + g * (x[n] - y[n-1])
+    float32x2_t diff0 = vsub_f32(x0, ap_state);
+    float32x2_t ap_out0 = vmla_f32(ap_prev_x, g, diff0);
 
-        int32_t idx_int = (int32_t)read_ptr;
-        float32_t frac = read_ptr - idx_int;
-        int32_t idx_next = (idx_int + 1) & delay_mask;
+    // Damping: y[n] = radius * x[n] + (1-radius) * y[n-1]
+    float32x2_t damp_out0 = vmul_f32(radius, ap_out0);
+    damp_out0 = vmla_f32(damp_out0, one_minus_rad, damp_state);
 
-        float32_t delayed_sample = delay_line[idx_int] + frac * (delay_line[idx_next] - delay_line[idx_int]);
+    // Output & Feedback
+    float32x2_t out0 = vmul_f32(damp_out0, decay);
+    float32x2_t write0 = vmla_f32(in0, out0, polarity);
+    tube[write_ptr] = vcombine_f32(write0, write0);
 
-        // --- Step B: Lowpass Filter (Damping) ---
-        // y[n] = y[n-1] + damp_coef * (x[n] - y[n-1])
-        // This is the recursive step that failed in the previous parallel version
-        lp_state += damp_coef * (delayed_sample - lp_state);
+    // Advance pointers for Frame 1
+    int r1 = (read_ptr + 1) >= c_tube_len ? 0 : read_ptr + 1;
+    int w1 = (write_ptr + 1) >= c_tube_len ? 0 : write_ptr + 1;
 
-        // --- Step C: Feedback & Output ---
-        // Feedback = Filtered Delay * Decay + Excitation
-        float32_t feedback = lp_state * feedback_gain;
+    // --- Frame 1 Processing ---
+    float32x2_t x1 = vget_low_f32(tube[r1]);
 
-        // Soft clipping in the loop (optional, keeps energy under control)
-        // if (feedback > 1.0f) feedback = 1.0f;
-        // else if (feedback < -1.0f) feedback = -1.0f;
+    // Allpass (using Frame 0 outputs as history)
+    float32x2_t diff1 = vsub_f32(x1, ap_out0);
+    float32x2_t ap_out1 = vmla_f32(x0, g, diff1);
 
-        // Write to delay line
-        delay_line[write_pos] = feedback + excitation;
+    // Damping
+    float32x2_t damp_out1 = vmul_f32(radius, ap_out1);
+    damp_out1 = vmla_f32(damp_out1, one_minus_rad, damp_out0);
 
-        // Output for this sample
-        out_buf[i] = feedback;
+    // Output & Feedback
+    float32x2_t out1 = vmul_f32(damp_out1, decay);
+    float32x2_t write1 = vmla_f32(in1, out1, polarity);
+    tube[w1] = vcombine_f32(write1, write1);
 
-        // Increment circular buffer pointer
-        write_pos = (write_pos + 1) & delay_mask;
-    }
+    // --- Update State & Pointers ---
+    vAP_State = vcombine_f32(ap_out1, ap_out1);
+    vAP_State_Prev_X = vcombine_f32(x1, x1);
+    vY1 = vcombine_f32(damp_out1, damp_out1);
 
-    // 3. Repack and Return
-    return vld1q_f32(out_buf);
+    read_ptr = (r1 + 1) >= c_tube_len ? 0 : r1 + 1;
+    write_ptr = (w1 + 1) >= c_tube_len ? 0 : w1 + 1;
+
+    return vcombine_f32(out0, out1);
 }
 
 void Waveguide::clear() {

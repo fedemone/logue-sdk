@@ -2,7 +2,6 @@
 #include "float_math.h"
 #include "Filter.h"
 #include <arm_neon.h>
-#include <cstdio>
 
 class alignas(16) Mallet
 {
@@ -59,10 +58,12 @@ public:
 
         alignas(16) float32_t tmp[4];
         vst1q_f32(tmp, output);
+
         tmp[0] = filter.df1(tmp[0]);
         tmp[1] = filter.df1(tmp[1]);
         tmp[2] = filter.df1(tmp[2]);
         tmp[3] = filter.df1(tmp[3]);
+
         output = vld1q_f32(tmp);
 
         // 5. Update Timer

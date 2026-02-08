@@ -1,3 +1,70 @@
+# [2026-02-09] Hot-Load Instability & Silence
+
+## 1. Continuous Sound on Load
+**Symptom**: When loading the unit while hardware is running, a continuous tone is heard, followed by silence (crash).
+**Diagnosis**:
+1. **Phantom Voices**: `Voice::clear()` does NOT reset `m_gate` or `m_initialized`. If the static memory contains garbage (or state from a previous load), the `Render` loop processes these voices immediately.
+2. **Phantom Resonators**: `Resonator::clear()` does NOT reset `active = false`. If `active` is true (garbage), the resonator runs immediately.
+3. **Crash Propagation**: The "Silence" is likely a hardware mute caused by NaN propagation. The **NaN safety check was removed** from the optimized `Limiter.h`, allowing invalid values to hit the DAC.
+
+**Fixes Required**:
+- **Voice**: Update `Voice::clear()` to reset `m_gate`, `m_initialized`, and `isPressed`.
+- **Resonator**: Explicitly set `active = false` in `Resonator::clear()`.
+- **Limiter**: Restore the critical NaN/Inf check at the start of `Limiter::process()`.
+
+## 2. Optimization Regression
+**Observation**: The optimized `Limiter` removed the safety checks to save cycles, but this exposed the hardware to crashes during instability.
+**Action**: Re-integrate the safety check. Stability > Micro-optimization.
+
+# [2026-02-08] Audio Distortion and Crash Fix
+
+## 1. Resonator IIR Filter Instability
+**Diagnosis**: The `Resonator::process` function was attempting to process 4 time-sequential samples (2 stereo frames) in parallel using NEON vectors.
+However, the IIR filter dependency `y[n] = ... - a1*y[n-1] - a2*y[n-2]` cannot be vectorized across time `t, t+1` without serializing the dependency.
+The previous implementation treated the 4 lanes as independent parallel filters, effectively running the filter at 1/2 or 1/4 the sample rate (downsampling), causing severe aliasing (distortion) and incorrect pole placement (instability/crash).
+
+**Fix**: Rewrote `Resonator::process` to correctly handle the serial dependency between Frame 0 and Frame 1 while maintaining parallel processing for Stereo Left/Right channels.
+- Frame 0 (L0, R0) is processed using state from the previous block.
+- Frame 1 (L1, R1) is processed using the output of Frame 0 as history.
+- State is updated correctly for the next block.
+
+## 2. Waveguide Stability & Stereo Separation
+**Diagnosis**: Similar to the Resonator, `Waveguide::process` was processing 4 samples in parallel, breaking the causal link for the delay line and damping filter.
+**Fix**:
+- Serialized the physics loop within `process` to handle Frame 0 then Frame 1.
+- Fixed vector type mismatches (`vdup_n_f32` vs `vdupq_n_f32`) that caused build failures.
+
+## 4. Post-Fix Instability (Bad Quality & Crash)
+**Diagnosis**: Even after the "serialization" fix, the unit produces distorted audio and eventually crashes (silence) after 3-4 triggers.
+This indicates the **IIR Filter Serialization** was implemented incorrectly in NEON.
+
+**The Trap**:
+If you attempt to calculate `y[n] = x[n] + a*y[n-1]` for 2 frames at once using `float32x4_t` (L0, R0, L1, R1), a standard vector multiply-add (`vmlaq_f32`) will use the *same* history state for both Frame 0 and Frame 1.
+- Frame 0 uses `y_state`.
+- Frame 1 uses `y_state` (WRONG! Should use Frame 0 output).
+
+This results in the filter running at **half sample rate** (aliasing/distortion) and using incorrect feedback (instability).
+
+**Correct NEON Implementation**:
+You must explicitly calculate Frame 0, then use its result for Frame 1.
+```cpp
+// 1. Extract Frame 0 (Low half: L0, R0)
+float32x2_t in0 = vget_low_f32(input_vec);
+float32x2_t out0 = vmla_f32(in0, state_vec, coeffs); // Standard IIR
+
+// 2. Extract Frame 1 (High half: L1, R1)
+float32x2_t in1 = vget_high_f32(input_vec);
+float32x2_t out1 = vmla_f32(in1, out0, coeffs);      // Use out0 as history!
+
+// 3. Combine & Update
+float32x4_t result = vcombine_f32(out0, out1);
+state_vec = out1;
+```
+
+## 3. UI & Parameter Logic Restoration
+**Diagnosis**: The `getParameterStrValue` function was stubbed out during optimization, breaking the UI display. `setCurrentProgram` had duplicate definitions.
+**Fix**: Restored UI string mapping and cleaned up parameter propagation logic to ensure gain conversion and voice updates occur correctly.
+
 # [2026-02-06] Critical Stability Fixes
 
 ## 1. Division by Zero in Partial (Root Cause of Crash)

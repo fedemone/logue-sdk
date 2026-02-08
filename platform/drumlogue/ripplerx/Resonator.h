@@ -60,7 +60,5 @@ public:
 	// Validation helpers
 	void validateAndSetPartials(int _partials);
 	void validateAndSetModel(int _model);
-private:
-    int activePartialsCount = 0; // Number of partials that passed the range check
 };
 

@@ -83,6 +83,19 @@ public:
     inline float32x4_t process(float32x4_t input)
     {
         // printf("[DEBUG] Limiter input: %.4f\n", vgetq_lane_f32(input, 0));
+        // CRITICAL: Check for NaN/Inf in input to prevent crash propagation.
+        // If input contains invalid values, return zeros to protect hardware audio.
+        // Check all 4 lanes for validity
+        float32_t l0 = vgetq_lane_f32(input, 0);
+        float32_t l1 = vgetq_lane_f32(input, 1);
+        float32_t l2 = vgetq_lane_f32(input, 2);
+        float32_t l3 = vgetq_lane_f32(input, 3);
+
+        if (!isfinite(l0) || !isfinite(l1) || !isfinite(l2) || !isfinite(l3) ||
+            fabs(l0) > 1e10f || fabs(l1) > 1e10f || fabs(l2) > 1e10f || fabs(l3) > 1e10f) {
+             return vdupq_n_f32(0.0f);
+        }
+
         // 1. RMS Detection (Square Law)
         float32x4_t sq = vmulq_f32(input, input);
 
@@ -119,6 +132,8 @@ public:
         // 6. Gain Reduction Calculation
         // Ratio logic: cratio = 1.0 + (ratio-1) * sqrt(rundb / bias)
         float32x4_t ratio_term = vmulq_f32(vRunDb, vInvBias);
+        //adds an epsilon to the RMS calculation to Prevent rsqrt(0)
+        ratio_term = vaddq_f32(ratio_term, vdupq_n_f32(1.0e-9f));
 
         // rsqrte is "Reciprocal Square Root Estimate" - very fast
         // sqrt(x) = x * rsqrt(x) roughly
