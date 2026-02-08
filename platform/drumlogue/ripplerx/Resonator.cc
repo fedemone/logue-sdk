@@ -279,7 +279,7 @@ float32x4_t Resonator::process(float32x4_t input)
 
 void Resonator::clear()
 {
-    active = false;
+    active = false; // CRITICAL: Must be first to prevent phantom processing
 	for (size_t i = 0; i < c_max_partials; ++i) {
 		partials[i].clear();
 	}

@@ -52,14 +52,23 @@ void Voice::release()
 
 void Voice::clear()
 {
+    // CRITICAL: Clear all component state first
     mallet.clear();
     noise.clear();
     resA.clear();
     resB.clear();
+    // CRITICAL: Reset ALL voice state flags
+    // These MUST be false to prevent phantom voices on hot-load
     m_gate = false;
     m_initialized = false;
     isPressed = false;
+    isRelease = false;
     m_framesSinceNoteOn = SIZE_MAX;
+
+    // Zero out other state
+    note = 0;
+    freq = 0.0f;
+    vel = 0.0f;
 }
 
 void Voice::setCoupling(bool _couple, float32_t _split) {

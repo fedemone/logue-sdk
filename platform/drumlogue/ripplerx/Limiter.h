@@ -82,19 +82,29 @@ public:
     // Process 4 samples (stereo pair x 2 frames, or 4 mono)
     inline float32x4_t process(float32x4_t input)
     {
-        // printf("[DEBUG] Limiter input: %.4f\n", vgetq_lane_f32(input, 0));
         // CRITICAL: Check for NaN/Inf in input to prevent crash propagation.
         // If input contains invalid values, return zeros to protect hardware audio.
-        // Check all 4 lanes for validity
-        float32_t l0 = vgetq_lane_f32(input, 0);
-        float32_t l1 = vgetq_lane_f32(input, 1);
-        float32_t l2 = vgetq_lane_f32(input, 2);
-        float32_t l3 = vgetq_lane_f32(input, 3);
+        // OPTIMIZED SIMD VALIDITY CHECK (4 lanes in parallel)
+        // 1. NaN check: x == x is false only for NaN
+        uint32x4_t nan_mask = vmvnq_u32(vceqq_f32(input, input));
 
-        if (!isfinite(l0) || !isfinite(l1) || !isfinite(l2) || !isfinite(l3) ||
-            fabs(l0) > 1e10f || fabs(l1) > 1e10f || fabs(l2) > 1e10f || fabs(l3) > 1e10f) {
-             return vdupq_n_f32(0.0f);
-        }
+        // 2. Infinity check: |x| > threshold
+        float32x4_t abs_input = vabsq_f32(input);
+        uint32x4_t inf_mask = vcgtq_f32(abs_input, vdupq_n_f32(1e10f));
+
+        // 3. Combine masks (bitwise OR)
+        uint32x4_t invalid_mask = vorrq_u32(nan_mask, inf_mask);
+
+        // 4. Fast check: any lane invalid?
+        // Convert to 64-bit for efficient checking
+        uint64x2_t invalid_64 = vreinterpretq_u64_u32(invalid_mask);
+        uint64_t check = vgetq_lane_u64(invalid_64, 0) | vgetq_lane_u64(invalid_64, 1);
+
+        if (check != 0) {
+            // At least one lane is invalid - return silence for safety
+            return vdupq_n_f32(0.0f);
+         }
+        // End of optimized NaN/Inf check
 
         // 1. RMS Detection (Square Law)
         float32x4_t sq = vmulq_f32(input, input);

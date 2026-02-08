@@ -118,19 +118,17 @@ public:
         m_get_num_sample_banks_ptr = desc->get_num_sample_banks;
         m_get_num_samples_for_bank_ptr = desc->get_num_samples_for_bank;
         m_get_sample = desc->get_sample;
-
         initState();
-        comb.init((float)c_sampleRate);
-        limiter.init((float)c_sampleRate, -0.1f, 70.0f); // Thresh -0.1dB
-
         return k_unit_err_none;
     }
 
     inline void Teardown() { }
     inline void Reset() {
-        clearVoices();
         updateLastModels();
         comb.init((float)c_sampleRate);
+        limiter.init((float)c_sampleRate, -0.1f, 70.0f); // Thresh -0.1dB
+        // CRITICAL: Clear voices again after component init to ensure clean state
+        clearVoices();
     }
     inline void Resume() {
         // Resume synth operation (e.g., after focus regained)
@@ -142,7 +140,11 @@ public:
     // ==============================================================================
     // Audio Rendering (Hot Path)
     // ==============================================================================
-
+    // Cached NEON vectors for frequently used parameters
+    // Updated only when parameters change, reducing per-frame overhead
+    float32x4_t m_v_gain_cached;
+    float32x4_t m_v_ab_mix_cached;
+    float32x4_t m_v_ab_inv_cached;
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
         // 1. Load Global Mix Parameters into Vector Registers
@@ -156,8 +158,8 @@ public:
         const float32_t vel_noise_mix   = parameters[ProgramParameters::vel_noise_mix];
         const float32_t vel_noise_res   = parameters[ProgramParameters::vel_noise_res];
 
-        const float32_t gain            = parameters[ProgramParameters::gain];
-        const float32x4_t v_gain        = vdupq_n_f32(gain);
+        // Use cached gain vectors (updated in setParameter)
+        const float32x4_t v_gain        = m_v_gain_cached;
 
         // A/B Mix Logic
         const bool a_on = (bool)parameters[ProgramParameters::a_on];
@@ -174,28 +176,33 @@ public:
 
             // --- A. Optimized Sample Playback ---
             if (m_samplePointer && m_sampleIndex < m_sampleEnd) {
+                // FIXED: Remove unnecessary memcpy, use direct NEON load
+                // NEON vld1q_f32 handles unaligned loads efficiently
                 if (m_sampleChannels == 2) {
-                    // Safe Unaligned Load
+                    // Stereo: Load 4 samples (2 stereo frames) directly
                     if (m_sampleIndex + 4 <= m_sampleEnd) {
-                        // Cast to unaligned pointer wrapper if available, or just memcpy
-                        float32_t tmp[4];
-                        memcpy(tmp, &m_samplePointer[m_sampleIndex], 16);
-                        audioIn = vld1q_f32(tmp);
+                        // Direct load - NEON handles alignment automatically
+                        audioIn = vld1q_f32(&m_samplePointer[m_sampleIndex]);
                         m_sampleIndex += 4;
                     } else {
-                         m_sampleIndex = m_sampleEnd;
+                        // FIXED: Explicitly zero the input for partial block
+                        m_sampleIndex = m_sampleEnd;
+                        audioIn = vdupq_n_f32(0.0f);
                     }
                 } else {
                     // Mono: load 2 mono samples and duplicate to create 2 stereo frames ([M1,M1,M2,M2]).
                     if (m_sampleIndex + 2 <= m_sampleEnd) {
                         float32_t m1 = m_samplePointer[m_sampleIndex];
-                        float32_t m2 = m_samplePointer[m_sampleIndex+1];
+                        float32_t m2 = m_samplePointer[m_sampleIndex + 1];
+                        // Create stereo frames: [M1, M1, M2, M2]
                         float32x2_t v_m1 = vdup_n_f32(m1);
                         float32x2_t v_m2 = vdup_n_f32(m2);
                         audioIn = vcombine_f32(v_m1, v_m2);
                         m_sampleIndex += 2;
                     } else {
+                        // FIXED: Explicitly zero the input for partial block
                         m_sampleIndex = m_sampleEnd;
+                        audioIn = vdupq_n_f32(0.0f);
                     }
                 }
                 audioIn = vmulq_f32(audioIn, v_gain);
@@ -204,6 +211,7 @@ public:
             // --- B. Voice Processing ---
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
+                // DEFENSIVE: Skip voices that are not properly initialized
                 if (!voice.m_initialized || !voice.m_gate) continue;
                 // printf("[DEBUG] Voice %d initialized\n", v);
 
@@ -846,8 +854,16 @@ private:
     // ==============================================================================
 
     inline void initState() {
+        // CRITICAL FIX: Force clear ALL voices before any other initialization
+        // This prevents phantom sounds from garbage memory on hot-load
+        clearVoices();
         m_sampleBank = 0; m_sampleNumber = 0; m_samplePointer = nullptr;
         m_sampleEnd = 1000; m_currentProgram = 0; nvoice = 0;
+
+        // Initialize cached vectors
+        m_v_gain_cached = vdupq_n_f32(1.0f);
+        m_v_ab_mix_cached = vdupq_n_f32(0.5f);
+        m_v_ab_inv_cached = vdupq_n_f32(0.5f);
 
         // Reset trackers
         a_b_model = 0; a_b_partials = 0; a_b_decay = 0; a_b_damp = 0;
@@ -875,6 +891,8 @@ inline void setCurrentProgram(int index) {
 
             // Precompute gain in dB -> linear conversion
             parameters[gain] = fasterpowf(10.0f, parameters[gain] / 20.0f);
+            // Update cached vector
+            m_v_gain_cached = vdupq_n_f32(parameters[gain]);
         }
     }
 
