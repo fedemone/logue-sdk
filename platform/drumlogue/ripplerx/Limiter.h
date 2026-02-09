@@ -82,6 +82,7 @@ public:
     // Process 4 samples (stereo pair x 2 frames, or 4 mono)
     inline float32x4_t process(float32x4_t input)
     {
+
         // CRITICAL: Check for NaN/Inf in input to prevent crash propagation.
         // If input contains invalid values, return zeros to protect hardware audio.
         // OPTIMIZED SIMD VALIDITY CHECK (4 lanes in parallel)
@@ -106,8 +107,12 @@ public:
          }
         // End of optimized NaN/Inf check
 
+        // CRITICAL FIX: Add epsilon to prevent rsqrt(0) crash on silence
+        // This is better than a branch check. We use this for RMS calc only.
+        float32x4_t safe_input = vaddq_f32(input, vdupq_n_f32(1.0e-9f));
+
         // 1. RMS Detection (Square Law)
-        float32x4_t sq = vmulq_f32(input, input);
+        float32x4_t sq = vmulq_f32(safe_input, safe_input);
 
         // 2. Running Average (One-pole filter)
         // runave = sq + rmscoef * (runave - sq)

@@ -38,7 +38,7 @@ void Mallet::clear()
 {
     elapsed = 0;
     v_amp_state = vdupq_n_f32(0.0f);
-
+    v_decay_coef = vdupq_n_f32(0.0f);
     // Reset Filter
     filter.clear();
 }

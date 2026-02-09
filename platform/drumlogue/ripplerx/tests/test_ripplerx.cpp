@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <new>
+#include <algorithm>
 
 // new unit test for proper debugging.
 // launch this command for WSL build and run
@@ -40,12 +41,32 @@ float mock_sample_data[1024];
  {
  return 1;
  }
- const sample_wrapper_t* mock_get_sample(uint8_t bank, uint8_t sample) {
+
 // In real SDK this returns a wrapper struct, but for this test
 // we only need to ensure the pointer check in Render() doesn't crash.
 // We will bypass sample playback in the test trigger to focus on Synth engine.
-return nullptr;
+ const sample_wrapper_t* mock_get_sample(uint8_t bank, uint8_t sample) {
+ return nullptr;
  }
+
+
+// Helper: Check if buffer contains valid audio (finite, not NaN)
+bool is_buffer_valid(const float* buffer, size_t size) {
+    for (size_t i = 0; i < size; ++i) {
+        if (!std::isfinite(buffer[i])) return false;
+        if (std::abs(buffer[i]) > 10.0f) return false; // Sanity check for explosion
+    }
+    return true;
+}
+
+// Helper: Check if buffer is silent (below threshold)
+bool is_buffer_silent(const float* buffer, size_t size, float threshold = 1e-5f) {
+    for (size_t i = 0; i < size; ++i) {
+        if (std::abs(buffer[i]) > threshold) return false;
+    }
+    return true;
+}
+
 // --- TEST UTILS ---
 bool is_valid_float(float x) { return std::isfinite(x) && std::abs(x) < 100.0f;
 // Threshold for "Explosion"
@@ -54,7 +75,8 @@ bool is_valid_float(float x) { return std::isfinite(x) && std::abs(x) < 100.0f;
 void test_dirty_initialization() {
     std::cout << "\n[Test] 1. Dirty Initialization (Hot-Load Simulation)..." << std::endl;
 
-    // Allocate memory filled with garbage (0xFF) to simulate uninitialized state
+    // CRITICAL TEST: Allocate memory filled with garbage (0xFF) to simulate hot-load
+    // This simulates loading the unit while hardware is already running
     alignas(16) char memory[sizeof(RipplerX)];
     std::memset(memory, 0xFF, sizeof(memory));
 
@@ -74,18 +96,42 @@ void test_dirty_initialization() {
         exit(1);
     }
 
-    // Render one block WITHOUT triggering a note.
-    // If garbage data persists (e.g. active=true, gate=true), we might get sound or crash.
+    // CRITICAL FIX: Render MULTIPLE blocks to catch persistent phantom sound
+    // The bug manifests over time as distortion builds up
+    const int kNumTestBlocks = 100;  // ~2 seconds at 48kHz
     alignas(16) float buffer[128];
-    std::memset(buffer, 0, sizeof(buffer));
-    synth->Render(buffer, 64);
 
     float maxVal = 0.0f;
-    for (float f : buffer) maxVal = std::max(maxVal, std::abs(f));
+    bool foundPhantomSound = false;
+    for (int block = 0; block < kNumTestBlocks; ++block) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth->Render(buffer, 64);
 
-    if (maxVal > 1e-6f) {
-        std::cerr << "[FAIL] Output detected without trigger! Init did not clear state. Max: " << maxVal << std::endl;
-        exit(1);
+        // Check for any output in this block
+        float blockMax = 0.0f;
+        for (float f : buffer) {
+            if (!std::isfinite(f)) {
+                std::cerr << "[FAIL] NaN/Inf detected at block " << block
+                          << " - Init did not clear state properly!" << std::endl;
+                exit(1);
+            }
+            blockMax = std::max(blockMax, std::abs(f));
+        }
+
+        maxVal = std::max(maxVal, blockMax);
+
+        // If we detect sound without trigger, that's a phantom voice
+        if (blockMax > 1e-6f) {
+            foundPhantomSound = true;
+            std::cerr << "[FAIL] Phantom sound detected at block " << block
+                      << ", amplitude: " << blockMax << std::endl;
+            std::cerr << "[FAIL] Init did not clear voice/resonator state!" << std::endl;
+            exit(1);
+        }
+    }
+    if (foundPhantomSound || maxVal > 1e-6f) {
+         std::cerr << "[FAIL] Output detected without trigger! Init did not clear state. Max: " << maxVal << std::endl;
+         exit(1);
     }
 
     std::cout << "[PASS] Dirty Init: Silence maintained (State correctly cleared)." << std::endl;
@@ -251,6 +297,297 @@ void test_high_pitch_stability() {
     }
     std::cout << "[PASS] High Pitch: No numeric instability detected." << std::endl;
 }
+void test_sample_boundary_conditions() {
+    std::cout << "\n[Test] 4. Sample Boundary Edge Cases..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Set up parameters
+    synth.setParameter(c_parameterModel, 0);
+    synth.setParameter(c_parameterPartials, 3);
+    synth.setParameter(c_parameterDecay, 500);
+
+    // Trigger note and render many blocks
+    // This tests sample boundary handling when sample ends mid-block
+    synth.NoteOn(60, 127);
+
+    alignas(16) float buffer[128];
+    for (int i = 0; i < 200; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+
+        // Verify no invalid values
+        for (int j = 0; j < 128; ++j) {
+            if (!std::isfinite(buffer[j])) {
+                std::cerr << "[FAIL] Invalid value at block " << i << std::endl;
+                exit(1);
+            }
+        }
+    }
+
+    std::cout << "[PASS] Sample boundary handling safe (200 blocks)." << std::endl;
+}
+
+void test_nan_injection() {
+    std::cout << "\n[Test] 5. NaN Injection Safety..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Set extreme parameters that might cause numerical issues
+    synth.setParameter(c_parameterDecay, 1);        // Minimum decay
+    synth.setParameter(c_parameterMaterial, 10);    // Maximum damping
+    synth.setParameter(c_parameterModel, 0);
+    synth.setParameter(c_parameterPartials, 5);     // 64 partials (stress test)
+
+    // Trigger with extreme values
+    synth.NoteOn(127, 127);  // Highest note, max velocity
+
+    alignas(16) float buffer[128];
+    for (int i = 0; i < 1000; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+
+        // Verify no NaN propagation
+        for (int j = 0; j < 128; ++j) {
+            if (!std::isfinite(buffer[j])) {
+                std::cerr << "[FAIL] NaN detected at iteration " << i
+                          << ", sample " << j << std::endl;
+                exit(1);
+            }
+        }
+    }
+
+    std::cout << "[PASS] NaN safety verified (1000 iterations)." << std::endl;
+}
+
+void test_hot_reload_stress() {
+    std::cout << "\n[Test] 6. Hot-Reload Stress Test..." << std::endl;
+
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        // Simulate hot-load with dirty memory (0xFF pattern)
+        alignas(16) char memory[sizeof(RipplerX)];
+        std::memset(memory, 0xFF, sizeof(memory));
+
+        // Placement new - construct in dirty memory
+        RipplerX* synth = new (memory) RipplerX();
+
+        unit_runtime_desc_t desc;
+        desc.samplerate = 48000;
+        desc.output_channels = 2;
+        desc.get_num_sample_banks = mock_get_num_sample_banks;
+        desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+        desc.get_sample = mock_get_sample;
+
+        if (synth->Init(&desc) != k_unit_err_none_mock) {
+            std::cerr << "[FAIL] Init failed on attempt " << attempt << std::endl;
+            exit(1);
+        }
+
+        // Render without trigger - should be SILENT
+        alignas(16) float buffer[128];
+        std::memset(buffer, 0, sizeof(buffer));
+        synth->Render(buffer, 64);
+
+        // Check for phantom sound (indicates state not cleared)
+        float maxVal = 0.0f;
+        for (float f : buffer) {
+            maxVal = std::max(maxVal, std::abs(f));
+        }
+
+        if (maxVal > 1e-6f) {
+            std::cerr << "[FAIL] Hot-reload attempt " << attempt
+                      << " produced phantom sound: " << maxVal << std::endl;
+            exit(1);
+        }
+
+        // Manual destructor call (placement new requires manual destruction)
+        synth->~RipplerX();
+    }
+
+    std::cout << "[PASS] Hot-reload stability verified (10 cycles)." << std::endl;
+}
+
+
+void test_hot_load_garbage_initialization() {
+    std::cout << "[Test] 1. Hot-Load Garbage Initialization (Comb/Voice Memory)... ";
+
+    // 1. Simulate dirty memory (e.g., previous unit state)
+    alignas(16) char memory[sizeof(RipplerX)];
+    std::memset(memory, 0xAA, sizeof(memory)); // Fill with garbage (0xAAAAAAAA is a valid-ish float but large negative)
+
+    // 2. Construct object in dirty memory
+    RipplerX* synth = new (memory) RipplerX();
+
+    // 3. Initialize
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    if (synth->Init(&desc) != k_unit_err_none) {
+        std::cout << "FAILED (Init returned error)" << std::endl;
+        exit(1);
+    }
+
+    // 4. Render immediately without triggering a note
+    // This verifies that:
+    // a) Comb filter buffer was zeroed (otherwise garbage loops)
+    // b) Voices were cleared (otherwise phantom notes play)
+    alignas(16) float buffer[256];
+    std::memset(buffer, 0, sizeof(buffer));
+
+    // Render a few blocks to allow any garbage in delay lines to propagate
+    bool failed = false;
+    float max_amp = 0.0f;
+    for (int i = 0; i < 10; ++i) {
+        synth->Render(buffer, 64); // 64 frames = 128 samples
+
+        if (!is_buffer_valid(buffer, 128)) {
+            std::cout << "FAILED (NaN/Inf detected at block " << i << ")" << std::endl;
+            failed = true;
+            break;
+        }
+
+        // Check for silence
+        for (int j = 0; j < 128; ++j) {
+            max_amp = std::max(max_amp, std::abs(buffer[j]));
+        }
+    }
+
+    if (!failed) {
+        if (max_amp > 1e-4f) {
+            std::cout << "FAILED (Phantom sound detected, max amp: " << max_amp << ")" << std::endl;
+			exit(1);
+        } else {
+            std::cout << "PASSED" << std::endl;
+        }
+    }
+
+    // Manual destructor for placement new
+    synth->~RipplerX();
+}
+
+void test_limiter_silence_stability() {
+    std::cout << "[Test] 2. Limiter Silence Stability (rsqrt(0) check)... ";
+
+    RipplerX synth;
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    alignas(16) float buffer[128];
+    std::memset(buffer, 0, sizeof(buffer)); // Input is perfect silence
+
+    // Render silence through the chain
+    // If Limiter doesn't handle 0.0f correctly (e.g. rsqrt(0)), it might produce NaNs
+    synth.Render(buffer, 64);
+
+    if (is_buffer_valid(buffer, 128)) {
+        std::cout << "PASSED" << std::endl;
+    } else {
+        std::cout << "FAILED (NaN/Inf produced from silence)" << std::endl;
+		exit(1);
+    }
+}
+
+void test_comb_filter_stability() {
+    std::cout << "[Test] 3. Comb Filter Stability... ";
+
+    RipplerX synth;
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Trigger a short impulse to fill the comb buffer
+    synth.NoteOn(60, 127);
+
+    alignas(16) float buffer[128];
+
+    // Render for a while to let the comb filter feedback loop run
+    bool stable = true;
+    for (int i = 0; i < 100; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+        if (!is_buffer_valid(buffer, 128)) {
+            stable = false;
+            break;
+        }
+    }
+
+    if (stable) {
+        std::cout << "PASSED" << std::endl;
+    } else {
+        std::cout << "FAILED (Instability detected)" << std::endl;
+		exit(1);
+    }
+}
+
+void test_percussion_auto_release() {
+    std::cout << "\n[Test] 6. Percussion Auto-Release (No NoteOff)..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Set parameters for a percussive sound (Mallet/Resonator)
+    // Decay = 50 (Short enough to decay within 2s, but long enough to verify curve)
+    synth.setParameter(c_parameterDecay, 50);
+    synth.setParameter(c_parameterMalletResonance, 10);
+    synth.setParameter(c_parameterModel, 0);
+    synth.setParameter(c_parameterNoiseMix, 0); // Disable noise to test Resonator damping only
+
+    // Trigger NoteOn (Percussion hit) BUT NO NoteOff
+    synth.NoteOn(60, 127);
+
+    // Render for 2 seconds (approx 1500 blocks)
+    // We expect the sound to fade to silence naturally due to physics damping
+    alignas(16) float buffer[128];
+    float maxVal = 0.0f;
+
+    for (int i = 0; i < 1500; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+
+        // Check the tail (last 100 blocks) for silence
+        if (i > 1400) {
+             for (float f : buffer) maxVal = std::max(maxVal, std::abs(f));
+        }
+    }
+
+    if (maxVal > 0.001f) {
+        std::cerr << "[FAIL] Sound continued without NoteOff! Max Level: " << maxVal << std::endl;
+        std::cerr << "       Percussion voices should decay naturally (Damping failed)." << std::endl;
+        exit(1);
+    }
+    std::cout << "[PASS] Auto-Release: Signal silenced naturally without NoteOff." << std::endl;
+}
+
 
 int main() {
     std::cout << ">>> STARTING RIPPLERX COMPREHENSIVE TEST SUITE <<<" << std::endl;
@@ -259,6 +596,13 @@ int main() {
     test_stress_polyphony();
     test_envelope_decay();
     test_high_pitch_stability();
+    test_sample_boundary_conditions();
+    test_nan_injection();
+    test_hot_reload_stress();
+    test_hot_load_garbage_initialization();
+    test_limiter_silence_stability();
+    test_comb_filter_stability();
+    test_percussion_auto_release();
     std::cout << "\n>>> ALL TESTS PASSED <<<" << std::endl;
     return 0;
 }

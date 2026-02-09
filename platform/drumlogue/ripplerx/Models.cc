@@ -5,6 +5,8 @@
 
 #include "Models.h"
 
+const float pwr_2_of_index[9] = {0.0f, 1.0f, 4.0f, 9.0f, 16.0f, 25.0f, 36.0f, 49.0f, 64.0f};
+
 const float32_t* getBFree() { return bFree; }
 
 
@@ -89,11 +91,6 @@ void recalcMembrane(bool resA, float32_t ratio) {
 
 void recalcPlate(bool resA, float32_t ratio) {
     float32_t* model = resA ? aModels[ModelNames::Plate] : bModels[ModelNames::Plate];
-
-    // Convert int array to float array
-    for (int i=0; i<9; ++i) {
-        pwr_2_of_index[i] = (float)pwr_2_of_index[i];
-    }
 
     // Call the static NEON optimizer
     Model::recalcPlate(model, ratio, pwr_2_of_index);
