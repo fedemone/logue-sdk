@@ -21,8 +21,6 @@ public:
     Voice() {}
     ~Voice() {}
 
-    void Init();
-
     // Core Audio Methods
     float32_t note2freq(int _note);
 
@@ -44,32 +42,24 @@ public:
      * Handles frequency coupling (Jitter + SIMD) and updates Resonator states.
      * @param updateFrequencies: If false, skips expensive coupling/pitch math.
      */
-    void updateResonators(bool updateFrequencies = true);
+    __attribute__((always_inline))
+    inline void updateResonators(bool updateFrequencies = true);
 
     void setCoupling(bool _couple, float32_t _split);
 
-    // Helpers
-    inline size_t getFramesSinceNoteOn() const {
-        if (!m_initialized) return SIZE_MAX;
-        return m_framesSinceNoteOn;
-    }
 
     // --- Public Members (accessed by Voice Manager) ---
     int       note = 0;        // MIDI note number
     float32_t freq = 0.0f;     // Frequency in Hz
     float32_t vel = 0.0f;      // MIDI velocity 0.0 .. 1.0
     bool      isRelease = false;
-    bool      isPressed = false;
+    bool      isPressed = false; // used for audioIn
     bool      couple = false;
     float32_t split = 0.0f;
 
     // Pitch factors calculated from setPitch
     float32_t aPitchFactor = 1.0f;
     float32_t bPitchFactor = 1.0f;
-
-    bool      m_initialized = false;
-    bool      m_gate = false;
-    size_t    m_framesSinceNoteOn = SIZE_MAX;
 
     // Components
     Mallet    mallet{};

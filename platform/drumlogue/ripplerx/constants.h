@@ -47,7 +47,7 @@ constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term
 constexpr float32_t c_decay_max = 100.0f;  // Maximum decay value
 constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
-constexpr int       c_tube_len = 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
+constexpr int       c_tube_len = 16384;  // 2^14 loss of capacity for performance improvement - was 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
 
 // these are the index of the parameters got from header.c
 enum Parameters : uint32_t {

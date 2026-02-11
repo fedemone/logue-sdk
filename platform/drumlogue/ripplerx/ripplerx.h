@@ -83,6 +83,11 @@ public:
         float resB_vel_hit;
         float resB_vel_inharm;
 
+        // additional
+        float32x4_t gain;
+        float32x4_t ab_mix;
+        float32x4_t ab_inv;
+
         // Noise
         int   noise_mode;
         float noise_freq;
@@ -140,11 +145,6 @@ public:
     // ==============================================================================
     // Audio Rendering (Hot Path)
     // ==============================================================================
-    // Cached NEON vectors for frequently used parameters
-    // Updated only when parameters change, reducing per-frame overhead
-    float32x4_t m_v_gain_cached;
-    float32x4_t m_v_ab_mix_cached;
-    float32x4_t m_v_ab_inv_cached;
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
         // 1. Load Global Mix Parameters into Vector Registers
@@ -158,15 +158,16 @@ public:
         const float32_t vel_noise_mix   = parameters[ProgramParameters::vel_noise_mix];
         const float32_t vel_noise_res   = parameters[ProgramParameters::vel_noise_res];
 
-        // Use cached gain vectors (updated in setParameter)
-        const float32x4_t v_gain        = m_v_gain_cached;
+        // Use cached gain vectors (updated in setCurrentProgram as are not user editable)
+        // but they change with the program
+        const float32x4_t v_gain        = cached.gain;
+        const float32x4_t v_ab_mix      = cached.ab_mix;
+        const float32x4_t v_ab_inv      = cached.ab_inv;
 
         // A/B Mix Logic
         const bool a_on = (bool)parameters[ProgramParameters::a_on];
         const bool b_on = (bool)parameters[ProgramParameters::b_on];
         const bool serial = (bool)parameters[ProgramParameters::couple];
-        const float32x4_t v_ab_mix = vdupq_n_f32(parameters[ProgramParameters::ab_mix]);
-        const float32x4_t v_ab_inv = vsubq_f32(vdupq_n_f32(1.0f), v_ab_mix);
         // Loop over frames (step = 2 frames / 4 samples)
         for (size_t i = 0; i < frames * 2; i += 4) {
 
@@ -211,9 +212,6 @@ public:
             // --- B. Voice Processing ---
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
-                // DEFENSIVE: Skip voices that are not properly initialized
-                if (!voice.m_initialized || !voice.m_gate) continue;
-                // printf("[DEBUG] Voice %d initialized\n", v);
 
                 // 1. Mallet
                 float32x4_t m_sig = voice.mallet.process();
@@ -258,20 +256,24 @@ public:
                     }
                 }
 
-                float32x4_t voice_mix;
-                if (a_on && b_on) {
-                    if (serial) {
-                        voice_mix = res_out_B;
-                    } else {
-                        voice_mix = vaddq_f32(vmulq_f32(res_out_B, v_ab_mix),
-                                              vmulq_f32(res_out_A, v_ab_inv));
-                    }
-                } else {
-                    voice_mix = vaddq_f32(res_out_A, res_out_B);
-                }
+                // Precompute all possibilities
+                float32x4_t mix_serial = res_out_B;
+                float32x4_t mix_parallel = vaddq_f32(vmulq_f32(res_out_B, v_ab_mix),
+                                                    vmulq_f32(res_out_A, v_ab_inv));
+                float32x4_t mix_single = vaddq_f32(res_out_A, res_out_B);
+
+                // Create selection masks
+                uint32x4_t both_active = vandq_u32(
+                    vdupq_n_u32(a_on ? 0xFFFFFFFF : 0),
+                    vdupq_n_u32(b_on ? 0xFFFFFFFF : 0)
+                );
+                uint32x4_t is_serial = vdupq_n_u32(serial ? 0xFFFFFFFF : 0);
+
+                // Select based on conditions
+                float32x4_t mix_both = vbslq_f32(is_serial, mix_serial, mix_parallel);
+                float32x4_t voice_mix = vbslq_f32(both_active, mix_both, mix_single);
                 accum_dir = vaddq_f32(accum_dir, voice_mix);
 
-                voice.m_framesSinceNoteOn += 2;
             } // End Voice Loop
 
             // --- C. Global Effects ---
@@ -685,7 +687,7 @@ public:
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // this replaces nextVoiceNumber
-        nvoice = (nvoice + 1) % c_numVoices;
+        nvoice = (nvoice + 1) % c_numVoices;    // round robin
         Voice & voice = voices[nvoice];
 
         if (m_samplePointer) {
@@ -693,8 +695,6 @@ public:
              m_sampleIndex = (total * m_sampleStart) / 1000;
              if (m_sampleChannels == 2) m_sampleIndex &= ~1; // Align stereo
         }
-
-        voice.Init();
 
         auto ms = parameters[mallet_stiff];
         auto vms = parameters[vel_mallet_stiff];
@@ -861,9 +861,9 @@ private:
         m_sampleEnd = 1000; m_currentProgram = 0; nvoice = 0;
 
         // Initialize cached vectors
-        m_v_gain_cached = vdupq_n_f32(1.0f);
-        m_v_ab_mix_cached = vdupq_n_f32(0.5f);
-        m_v_ab_inv_cached = vdupq_n_f32(0.5f);
+        cached.gain   = vdupq_n_f32(1.0f);
+        cached.ab_mix = vdupq_n_f32(0.5f);
+        cached.ab_inv = vdupq_n_f32(0.5f);
 
         // Reset trackers
         a_b_model = 0; a_b_partials = 0; a_b_decay = 0; a_b_damp = 0;
@@ -892,7 +892,9 @@ inline void setCurrentProgram(int index) {
             // Precompute gain in dB -> linear conversion
             parameters[gain] = fasterpowf(10.0f, parameters[gain] / 20.0f);
             // Update cached vector
-            m_v_gain_cached = vdupq_n_f32(parameters[gain]);
+            cached.gain   = vdupq_n_f32(parameters[gain]);
+            cached.ab_mix = vdupq_n_f32(parameters[ab_mix]);
+            cached.ab_inv = vsubq_f32(vdupq_n_f32(1.0f), vdupq_n_f32(cached.ab_mix));
         }
     }
 
@@ -913,7 +915,7 @@ inline void setCurrentProgram(int index) {
     Voice voices[c_numVoices];
     Comb comb;
     Limiter limiter;
-
+private:
     float32_t parameters[ProgramParameters::last_param];
 
     // Sample State

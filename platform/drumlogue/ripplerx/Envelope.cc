@@ -25,8 +25,15 @@ void Envelope::calcCoefs(float32_t targetB1, float32_t targetB2, float32_t targe
     float32_t tension, float32_t mult, float32_t& result_b, float32_t& result_c)
 {
     // Prevent division by zero
-    if (rate < 1.0f) rate = 1.0f;
-    float32_t inv_rate = 1.0f / rate;
+    float32_t inv_rate;
+    if (rate < 1.0f)
+    {
+        inv_rate = rate = 1.0f;
+    }
+    else
+    {
+        inv_rate = 1.0f / rate;
+    }
 
     float32_t t;
 

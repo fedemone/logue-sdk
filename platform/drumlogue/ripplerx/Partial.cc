@@ -2,6 +2,8 @@
 #include "constants.h"
 
 /**
+ * @brief NOTE obsolete, moved directly inside Resonator.cc
+ *
  * Updates the filter coefficients based on physical modeling parameters.
  * Optimized for ARMv7 using pre-calculated identities and bit-manipulation.
  */

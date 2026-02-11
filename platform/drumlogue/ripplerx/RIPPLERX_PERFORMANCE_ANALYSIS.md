@@ -1,6 +1,6 @@
 # RipplerX Performance Analysis & Optimization Guide
-**Date:** February 8, 2026  
-**Analysis Type:** Deep-dive Performance Review  
+**Date:** February 8, 2026
+**Analysis Type:** Deep-dive Performance Review
 **Target Platform:** Korg Drumlogue (ARMv7-A NEON, 48kHz, Hard-float ABI)
 
 ---
@@ -20,9 +20,9 @@ After comprehensive code review, RipplerX demonstrates **sophisticated NEON opti
 ## 🔴 CRITICAL OPTIMIZATIONS (Immediate Impact)
 
 ### PERF #1: 🔴 Vectorize Mallet Filter Processing
-**File:** `Mallet.h` lines 59-67  
-**Current Performance Cost:** ~40-60 cycles per call  
-**Expected Gain:** 60-70% reduction in Mallet overhead  
+**File:** `Mallet.h` lines 59-67
+**Current Performance Cost:** ~40-60 cycles per call
+**Expected Gain:** 60-70% reduction in Mallet overhead
 
 #### Current Code (Scalar):
 ```cpp
@@ -37,7 +37,7 @@ tmp[3] = filter.df1(tmp[3]);
 output = vld1q_f32(tmp);
 ```
 
-**Problem:** 
+**Problem:**
 - Store-to-load stall (vst1q → vld1q)
 - 4 scalar filter calls with branches
 - Lost SIMD opportunity
@@ -55,38 +55,38 @@ inline float32x4_t df1_vec(float32x4_t input) {
     float32x4_t v_b2 = vdupq_n_f32(b2);
     float32x4_t v_a1 = vdupq_n_f32(a1);
     float32x4_t v_a2 = vdupq_n_f32(a2);
-    
+
     // Load state
     float32x4_t v_x1 = vdupq_n_f32(x1);
     float32x4_t v_x2 = vdupq_n_f32(x2);
     float32x4_t v_y1 = vdupq_n_f32(y1);
     float32x4_t v_y2 = vdupq_n_f32(y2);
-    
+
     // Apply drive (vectorized soft clipping)
     float32x4_t v_drive = vdupq_n_f32(drive);
     float32x4_t x = vmulq_f32(input, v_drive);
-    
+
     // Soft clip: x - 0.1481*x^3 (vectorized)
     float32x4_t x_sq = vmulq_f32(x, x);
     float32x4_t x_cub = vmulq_f32(x_sq, x);
     x = vmlsq_n_f32(x, x_cub, 0.1481f);
-    
+
     // Clamp to [-1.5, 1.5]
     x = vmaxq_f32(vminq_f32(x, vdupq_n_f32(1.5f)), vdupq_n_f32(-1.5f));
-    
+
     // Biquad: y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2
     float32x4_t y = vmulq_f32(x, v_b0);
     y = vmlaq_f32(y, v_x1, v_b1);
     y = vmlaq_f32(y, v_x2, v_b2);
     y = vmlsq_f32(y, v_y1, v_a1);
     y = vmlsq_f32(y, v_y2, v_a2);
-    
+
     // Update state with LAST sample in vector
     x2 = x1;
     x1 = vgetq_lane_f32(x, 3);
     y2 = y1;
     y1 = vgetq_lane_f32(y, 3);
-    
+
     return y;
 }
 ```
@@ -125,9 +125,9 @@ inline float32x4_t process() {
 ---
 
 ### PERF #2: 🔴 Reduce Pointer Wrapping Overhead in Waveguide
-**File:** `Waveguide.cc` lines 159-160, 183-184  
-**Current Cost:** 2 conditional branches per frame  
-**Expected Gain:** 20-30% reduction in Waveguide overhead  
+**File:** `Waveguide.cc` lines 159-160, 183-184
+**Current Cost:** 2 conditional branches per frame
+**Expected Gain:** 20-30% reduction in Waveguide overhead
 
 #### Current Code:
 ```cpp
@@ -183,9 +183,9 @@ w1 = wrap_ptr(w1, c_tube_len);
 ---
 
 ### PERF #3: 🔴 Cache Hot Parameters in Render Loop
-**File:** `ripplerx.h` lines 148-167  
-**Current Cost:** Redundant loads every frame  
-**Expected Gain:** 2-3% overall Render performance  
+**File:** `ripplerx.h` lines 148-167
+**Current Cost:** Redundant loads every frame
+**Expected Gain:** 2-3% overall Render performance
 
 Already covered in the patch, but emphasis on implementation:
 
@@ -197,7 +197,7 @@ private:
     float32x4_t m_v_gain_cached;
     float32x4_t m_v_ab_mix_cached;
     float32x4_t m_v_ab_inv_cached;
-    
+
     // Cache validity flags
     bool m_cache_dirty;
 ```
@@ -218,9 +218,9 @@ m_v_ab_inv_cached = vsubq_f32(vdupq_n_f32(1.0f), m_v_ab_mix_cached);
 ## 🟡 HIGH PRIORITY OPTIMIZATIONS
 
 ### PERF #4: 🟡 Optimize Voice Loop with Early Exit
-**File:** `ripplerx.h` lines 205-267  
-**Current Cost:** Checks all 8 voices every frame  
-**Expected Gain:** 5-10% when polyphony < 8  
+**File:** `ripplerx.h` lines 205-267
+**Current Cost:** Checks all 8 voices every frame
+**Expected Gain:** 5-10% when polyphony < 8
 
 #### Current Code:
 ```cpp
@@ -240,7 +240,7 @@ for (size_t v = 0; v < c_numVoices; ++v) {
 private:
     uint8_t m_active_voice_count;
     uint8_t m_active_voice_indices[c_numVoices];
-    
+
     inline void updateActiveVoices() {
         m_active_voice_count = 0;
         for (size_t v = 0; v < c_numVoices; ++v) {
@@ -280,9 +280,9 @@ for (uint8_t i = 0; i < m_active_voice_count; ++i) {
 ---
 
 ### PERF #5: 🟡 Reduce Resonator State Duplication
-**File:** `Resonator.cc` lines 243-247  
-**Current Cost:** Wasteful memory bandwidth  
-**Expected Gain:** 3-5% in Resonator processing  
+**File:** `Resonator.cc` lines 243-247
+**Current Cost:** Wasteful memory bandwidth
+**Expected Gain:** 3-5% in Resonator processing
 
 #### Current Code:
 ```cpp
@@ -328,9 +328,9 @@ part.vy2_low = out0;
 ---
 
 ### PERF #6: 🟡 Inline Critical Path Functions
-**Files:** Multiple  
-**Current Cost:** Function call overhead  
-**Expected Gain:** 2-5% overall  
+**Files:** Multiple
+**Current Cost:** Function call overhead
+**Expected Gain:** 2-5% overall
 
 #### Functions to Force Inline:
 
@@ -355,9 +355,9 @@ inline void update(float32_t f_0, float32_t ratio, ...);
 ## 🟢 MEDIUM PRIORITY OPTIMIZATIONS
 
 ### PERF #7: 🟢 Optimize Coupling Loop in Voice
-**File:** `Voice.cc` lines 163-208  
-**Current Cost:** O(N²) = 4096 iterations for 64 partials  
-**Expected Gain:** 10-15% in coupling calculation  
+**File:** `Voice.cc` lines 163-208
+**Current Cost:** O(N²) = 4096 iterations for 64 partials
+**Expected Gain:** 10-15% in coupling calculation
 
 #### Current Code:
 ```cpp
@@ -379,7 +379,7 @@ const float32x4_t v_threshold = vdupq_n_f32(c_coupling_threshold);
 
 for (int i = 0; i < 64; i += 4) {
     float32x4_t fa_vec = vld1q_f32(&localAShifts[i]);
-    
+
     // Precompute bounds for early exit
     float fa_min = vgetq_lane_f32(fa_vec, 0);
     float fa_max = vgetq_lane_f32(fa_vec, 3);
@@ -388,20 +388,20 @@ for (int i = 0; i < 64; i += 4) {
         fa_min = fminf(fa_min, val);
         fa_max = fmaxf(fa_max, val);
     }
-    
+
     float32x4_t k_count = v_zero;
     float32x4_t x_count = v_zero;
     // ...
-    
+
     for (int j = 0; j < 64; ++j) {
         float fb = localBShifts[j];
-        
+
         // Early exit: if fb is too far from ALL fa values, skip
-        if (fabsf(fb - fa_min) > c_coupling_threshold && 
+        if (fabsf(fb - fa_min) > c_coupling_threshold &&
             fabsf(fb - fa_max) > c_coupling_threshold) {
             continue;  // Skip this j iteration
         }
-        
+
         float32x4_t fb_vec = vdupq_n_f32(fb);
         // ... existing SIMD comparison ...
     }
@@ -416,9 +416,9 @@ for (int i = 0; i < 64; i += 4) {
 ---
 
 ### PERF #8: 🟢 Branchless Mix Selection
-**File:** `ripplerx.h` lines 253-263  
-**Current Cost:** Unpredictable branches  
-**Expected Gain:** 1-2% if branch prediction is poor  
+**File:** `ripplerx.h` lines 253-263
+**Current Cost:** Unpredictable branches
+**Expected Gain:** 1-2% if branch prediction is poor
 
 #### Current Code:
 ```cpp
@@ -460,9 +460,9 @@ float32x4_t voice_mix = vbslq_f32(both_active, mix_both, mix_single);
 ---
 
 ### PERF #9: 🟢 Reduce Partial Loop Bounds
-**File:** `Resonator.cc` lines 210-252  
-**Current Cost:** Always processes up to `npartials`  
-**Expected Gain:** 5-10% when using fewer partials  
+**File:** `Resonator.cc` lines 210-252
+**Current Cost:** Always processes up to `npartials`
+**Expected Gain:** 5-10% when using fewer partials
 
 #### Current Code:
 ```cpp
@@ -487,7 +487,7 @@ In `Resonator::update()`:
 npartials_active = 0;
 for (int p = 0; p < npartials; ++p) {
     // ... existing coefficient calculation ...
-    
+
     // After setting coefficients, check if active
     if (vgetq_lane_f32(part.vb0, 0) != 0.0f) {
         npartials_active = p + 1;  // Track highest active partial
@@ -509,8 +509,8 @@ for (int p = 0; p < npartials_active; ++p) {  // Use tighter bound
 ## ⚪ LOW PRIORITY / MICRO-OPTIMIZATIONS
 
 ### PERF #10: ⚪ Prefetch Tube Buffer in Waveguide
-**File:** `Waveguide.cc` line 143  
-**Gain:** 1-2% (speculative)  
+**File:** `Waveguide.cc` line 143
+**Gain:** 1-2% (speculative)
 
 ```cpp
 // Before reading from tube, hint the prefetcher
@@ -521,18 +521,18 @@ float32x2_t x0 = vget_low_f32(tube[read_ptr]);
 ---
 
 ### PERF #11: ⚪ Loop Unrolling in Partial Processing
-**File:** `Resonator.cc` lines 210-252  
-**Gain:** 2-3% (if compiler doesn't auto-unroll)  
+**File:** `Resonator.cc` lines 210-252
+**Gain:** 2-3% (if compiler doesn't auto-unroll)
 
 ```cpp
 // Process 2 partials per iteration
 for (int p = 0; p < npartials; p += 2) {
     Partial& part0 = partials[p];
     Partial& part1 = partials[p + 1];
-    
+
     // Process part0
     // ... existing code ...
-    
+
     // Process part1 (if exists)
     if (p + 1 < npartials) {
         // ... existing code ...
@@ -543,8 +543,8 @@ for (int p = 0; p < npartials; p += 2) {
 ---
 
 ### PERF #12: ⚪ Reduce Comb Buffer Size
-**File:** `Comb.h` line 73  
-**Gain:** Minimal, but better cache utilization  
+**File:** `Comb.h` line 73
+**Gain:** Minimal, but better cache utilization
 
 #### Current:
 ```cpp
@@ -656,25 +656,25 @@ After applying critical + high priority optimizations:
 ## 🔬 CODE QUALITY OBSERVATIONS
 
 ### Strengths:
-✅ Excellent NEON utilization throughout  
-✅ Sophisticated IIR filter serialization  
-✅ Smart use of bit-manipulation for fast math  
-✅ Proper 16-byte alignment on critical structures  
-✅ Effective use of pre-calculated coefficients  
+✅ Excellent NEON utilization throughout
+✅ Sophisticated IIR filter serialization
+✅ Smart use of bit-manipulation for fast math
+✅ Proper 16-byte alignment on critical structures
+✅ Effective use of pre-calculated coefficients
 
 ### Areas for Improvement:
-⚠️ Some redundant vector operations (state duplication)  
-⚠️ Missed vectorization opportunities (mallet filter)  
-⚠️ Branch-heavy code paths (waveguide pointer wrapping)  
-⚠️ Not leveraging compiler hints (force inline, prefetch)  
+⚠️ Some redundant vector operations (state duplication)
+⚠️ Missed vectorization opportunities (mallet filter)
+⚠️ Branch-heavy code paths (waveguide pointer wrapping)
+⚠️ Not leveraging compiler hints (force inline, prefetch)
 
 ---
 
 ## 🚀 CONCLUSION
 
-RipplerX is already a **well-optimized** codebase with sophisticated DSP and NEON implementation. The optimizations identified here are **refinements** rather than fundamental redesigns. 
+RipplerX is already a **well-optimized** codebase with sophisticated DSP and NEON implementation. The optimizations identified here are **refinements** rather than fundamental redesigns.
 
-**Priority recommendation:** 
+**Priority recommendation:**
 1. Apply PERF #1 (vector mallet filter) - biggest single win
 2. Apply PERF #3 (cached vectors) - already in patch
 3. Apply PERF #4 (active voice tracking) - significant polyphony benefit
