@@ -105,7 +105,6 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
     }
 
     // --- Pre-calculation of Invariants ---
-    const float log2e = 1.44269504f;
     const float inv_srate_2pi = M_TWOPI / srate;
     const float f_nyq = c_nyquist_factor * srate;
 
@@ -125,7 +124,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Safety check for model array access
         int idx = (int)part.k - 1;
-        if (idx < 0 || idx >= c_max_partials) {
+        if (idx < 0 || (uint32_t)idx >= c_max_partials) {
             // Zero out coefficients to be safe
             part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
             continue;
@@ -137,7 +136,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // 1. Frequency & Inharmonicity (Bit-Trick Optimized)
         // ---------------------------------------------------------
         // Calc: 2^(vel_inharm * log_vel) using integer bit manipulation
-        float exp_inharm_part = (part.vel_inharm * log_vel) * log2e;
+        float exp_inharm_part = (part.vel_inharm * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_inharm;
         u_inharm.i = (int32_t)(exp_inharm_part * 8388608.0f) + 1065353216;
 
@@ -153,7 +152,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // 2. Raw Decay (Bit-Trick Optimized)
         // ---------------------------------------------------------
         // Calc: 2^(vel_decay * log_vel)
-        float exp_decay_part = (part.vel_decay * log_vel) * log2e;
+        float exp_decay_part = (part.vel_decay * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_decay;
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
