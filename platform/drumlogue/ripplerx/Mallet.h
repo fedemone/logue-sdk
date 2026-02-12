@@ -56,15 +56,8 @@ public:
         // we will process the 4 samples here.
         // Ideally, we'd vectorize the filter, but for an impulse, this loop is tight enough.
 
-        alignas(16) float32_t tmp[4];
-        vst1q_f32(tmp, output);
-
-        tmp[0] = filter.df1(tmp[0]);
-        tmp[1] = filter.df1(tmp[1]);
-        tmp[2] = filter.df1(tmp[2]);
-        tmp[3] = filter.df1(tmp[3]);
-
-        output = vld1q_f32(tmp);
+        // OPTIMIZED: Vectorized filter (single call)
+        output = filter.df1_vec(output);
 
         // 5. Update Timer
         elapsed -= 4;

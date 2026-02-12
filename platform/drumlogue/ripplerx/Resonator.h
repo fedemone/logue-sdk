@@ -25,8 +25,10 @@ public:
         float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm);
 	void activate();
 	void clear();
-	void update(float32_t frequency, float32_t vel, bool isRelease, float32_t _model[c_max_partials]);
-	float32x4_t process(float32x4_t input);
+	__attribute__((always_inline))
+    inline void update(float32_t frequency, float32_t vel, bool isRelease, float32_t _model[c_max_partials]);
+	__attribute__((always_inline))
+    inline float32x4_t process(float32x4_t input);
 
 	// Public read-only accessors for state
 	bool isActive() const { return active; }
@@ -60,5 +62,7 @@ public:
 	// Validation helpers
 	void validateAndSetPartials(int _partials);
 	void validateAndSetModel(int _model);
+    private:
+    int activePartialsCount = 0;
 };
 

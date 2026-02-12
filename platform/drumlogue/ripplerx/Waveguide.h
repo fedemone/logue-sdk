@@ -36,7 +36,16 @@ public:
 	float32x4_t max_radius;
 	float32_t rel;
 	float32_t vel_decay;
-
+    // to be used for r1 and w1 assignment in case of longer (20000) tube length
+;
+    //      int w1 = write_ptr + 1;
+    //      w1 = wrap_ptr(w1, c_tube_len);
+    // Branchless wrap using conditional move (ARM has CSEL instruction)
+    inline int wrap_ptr(int ptr, int len) {
+        int wrapped = ptr - len;
+        int mask = (wrapped >> 31);  // Sign bit: -1 if negative, 0 if positive
+        return (ptr & mask) | (wrapped & ~mask);
+    }
 private:
     // Delay Line
     static const int kDelaySize = 1024; // Power of 2 for fast masking

@@ -93,7 +93,7 @@ public:
     // --- NEON state/coefficients (Hot Data) ---
     // Total: 128 bytes (exactly 2 cache lines on most ARM CPUs)
     float32x4_t vb0, vb2, va1, va2; // Normalized coefficients
-    float32x4_t vx1, vx2, vy1, vy2; // State vectors
+    float32x2_t vx1_low, vx2_low, vy1_low, vy2_low;
 
     // --- Parameter Scalars (Warm Data) ---
     float32_t srate = 44100.0f;

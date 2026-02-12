@@ -159,8 +159,12 @@ float32x4_t Waveguide::process(float32x4_t input) {
     tube[write_ptr] = vcombine_f32(write0, write0);
 
     // Advance pointers for Frame 1
-    int r1 = (read_ptr + 1) >= c_tube_len ? 0 : read_ptr + 1;
-    int w1 = (write_ptr + 1) >= c_tube_len ? 0 : write_ptr + 1;
+    //      int r1 = read_ptr + 1;
+    //      r1 = wrap_ptr(r1, c_tube_len)
+    int r1 = (read_ptr + 1) & (c_tube_len - 1);  // Branchless wrap - faster than wrap_ptr in case of tube length power of 2
+    //      int w1 = write_ptr + 1;
+    //      w1 = wrap_ptr(w1, c_tube_len);
+    int w1 = (write_ptr + 1) & (c_tube_len - 1);
 
     // --- Frame 1 Processing ---
     float32x2_t x1 = vget_low_f32(tube[r1]);
@@ -183,8 +187,9 @@ float32x4_t Waveguide::process(float32x4_t input) {
     vAP_State_Prev_X = vcombine_f32(x1, x1);
     vY1 = vcombine_f32(damp_out1, damp_out1);
 
-    read_ptr = (r1 + 1) >= c_tube_len ? 0 : r1 + 1;
-    write_ptr = (w1 + 1) >= c_tube_len ? 0 : w1 + 1;
+    read_ptr = (r1 + 1) & (c_tube_len - 1);
+    write_ptr = (w1 + 1) & (c_tube_len - 1);
+
 
     // return vcombine_f32(out0, out1);
 

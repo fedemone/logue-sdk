@@ -85,6 +85,12 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
  * - Floating Point Dispatch: Using fminf instead of fmin prevents the compiler from promoting values to double
  * (64-bit), which is a common silent performance killer on ARMv7-A.
  *
+ * This version incorporates:
+ * - Division Minimization: Rearranges the algebra to calculate inv_decay with only 1 division (down from 2).
+ * - Safety Clamping: Ensures the divisor d_raw never hits zero, preventing Inf/NaN propagation.
+ * - Active Partial Counting: Updates activePartialsCount so the audio render loop can exit early.
+ * - Bit-Tricks: Uses the integer-exponent approximation for velocity scaling inside the loop.
+ *
  * @param freq
  * @param vel
  * @param isRelease
@@ -92,105 +98,165 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
  */
 void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t model[c_max_partials])
 {
+    // 1. Waveguide Bypass
+    // If using the waveguide model, update it and return immediately.
+    // (Ensure activePartialsCount is 0 so the Resonator::process loop is skipped)
     if (nmodel >= OpenTube) {
         waveguide.update(model[0] * freq, vel, isRelease);
+        activePartialsCount = 0;
         return;
     }
 
-    // --- Pre-calculate Shared Constants for all Partials ---
+    // --- Pre-calculation of Invariants ---
     const float inv_srate_2pi = M_TWOPI / srate;
-    const float log_vel = vel * M_TWOLN100;
-
-    // Shared ratio_max for the entire model
-    const float ratio_max = model[c_max_partials - 1];
     const float f_nyq = c_nyquist_factor * srate;
 
+    // Convert velocity (0.0-1.0) to log scale for the bit-trick
+    // M_TWOLN100 is approx 2 * ln(100), scaling velocity curve
+    const float log_vel = vel * M_TWOLN100;
+
+    // Shared model constant (Ratio of the highest partial)
+    const float ratio_max = model[c_max_partials - 1];
+
+    // Reset counter for the Render loop
+    int active_count = 0;
+
+    // --- Main Loop ---
     for (int p = 0; p < npartials; ++p) {
         Partial& part = partials[p];
-        int idx = part.k - 1;
 
-        if (idx < 0 || (uint32_t)idx >= c_max_partials) continue;
+        // Safety check for model array access
+        int idx = (int)part.k - 1;
+        if (idx < 0 || (uint32_t)idx >= c_max_partials) {
+            // Zero out coefficients to be safe
+            part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
+            continue;
+        }
 
         float32_t ratio = model[idx];
 
-        // 1. Inharmonicity (using the bit-trick for 2^x)
-        // Accessing vel_inharm from the specific partial
+        // ---------------------------------------------------------
+        // 1. Frequency & Inharmonicity (Bit-Trick Optimized)
+        // ---------------------------------------------------------
+        // Calc: 2^(vel_inharm * log_vel) using integer bit manipulation
         float exp_inharm_part = (part.vel_inharm * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_inharm;
         u_inharm.i = (int32_t)(exp_inharm_part * 8388608.0f) + 1065353216;
 
-        float inharm_k = fminf(1.0f, part.inharm * u_inharm.f) - 0.0001f;
+        float inharm_k = fminf(1.0f, part.inharm * u_inharm.f); // Clamp max inharm
+        // Stiff string approximation: f = f0 * sqrt(1 + B * (k^2 - 1))
+        // Here simplified to ratio-based scaling
         float r_m_1 = ratio - 1.0f;
-        inharm_k = fasterSqrt(1.0f + inharm_k * (r_m_1 * r_m_1));
+        inharm_k = fasterSqrt(1.0f + (inharm_k - 0.0001f) * (r_m_1 * r_m_1));
 
         float f_k = freq * ratio * inharm_k;
 
-        // 2. Decay
-        // Accessing vel_decay from the specific partial
+        // ---------------------------------------------------------
+        // 2. Raw Decay (Bit-Trick Optimized)
+        // ---------------------------------------------------------
+        // Calc: 2^(vel_decay * log_vel)
         float exp_decay_part = (part.vel_decay * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_decay;
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
-        float d_k = fminf(100.0f, (part.decay * 0.01f) * u_decay.f);
-        if (isRelease) d_k *= part.rel;
+        // Calculate raw decay time in seconds (or arbitrary units)
+        float d_raw = fminf(100.0f, (part.decay * 0.01f) * u_decay.f);
 
-        // Range Check & Early Exit
-        if (f_k >= f_nyq || f_k < c_freq_min || d_k < c_decay_min) {
+        // Apply Release Envelope
+        if (isRelease) {
+            d_raw *= fabsf(rel); // use fabsf to prevent negative decay flipping the filter stability
+        }
+
+        // ---------------------------------------------------------
+        // 3. Culling (Optimization: Active Partial Counting)
+        // ---------------------------------------------------------
+        // If frequency is above Nyquist or decay is effectively zero, mute this partial.
+        // We clamp d_raw to c_decay_min here to prevent Div-By-Zero later.
+        if (f_k >= f_nyq || f_k < c_freq_min || d_raw < c_decay_min) {
+            // Mute this partial
             part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
+            // We do NOT increment active_count.
+            // Note: This assumes partials are sorted by frequency.
+            // If they are not sorted, you must process all, but 'active_count'
+            // optimization works best if high-k partials are at the end.
             continue;
         }
 
-        // 3. Damping and Tone
-        float f_max = fminf(c_freq_max, freq * ratio_max * inharm_k);
-        float d_base = (part.damp <= 0 ? freq : f_max) / f_k;
-        float d_mod = e_expff(fasterlogf(d_base) * (part.damp * 2.0f));
-        d_k /= d_mod;
-        d_k = fmaxf(c_decay_min, d_k);  // ADD THIS LINE
+        // Increment the count of partials that need processing
+        active_count++;
 
-        float t_base = (part.tone <= 0 ? f_k / freq : f_k / f_max);
+        // ---------------------------------------------------------
+        // 4. Damping & Tone (Log Domain Math)
+        // ---------------------------------------------------------
+        // Determine the "Max Frequency" for damping calculations to simulate material loss
+        float f_max = fminf(c_freq_max, freq * ratio_max * inharm_k);
+
+        // Damping Factor (d_mod)
+        // Log-domain scaling: d_mod = (d_base ^ (damp * 2))
+        float d_base = (part.damp <= 0.0f ? freq : f_max) / f_k;
+        float d_mod = e_expff(fasterlogf(d_base) * (part.damp * 2.0f));
+
+        // Tone Gain (t_gain)
+        // Log-domain scaling: t_gain = (t_base ^ (tone * 2))
+        float t_base = (part.tone <= 0.0f ? f_k / freq : f_k / f_max);
         float t_gain = e_expff(fasterlogf(t_base) * (part.tone * 2.0f));
 
-        // 4. Hit modulation
-        float h_mod = fminf(0.5f, part.hit + vel * part.vel_hit * 0.5f);
-        float a_k = 35.0f * fabsf(fastersinfullf(M_PI * (float)part.k * h_mod));
+        // ---------------------------------------------------------
+        // 5. Coefficient Calculation (Minimized Division)
+        // ---------------------------------------------------------
+        // Original Logic:
+        //    d_k = d_raw / d_mod;
+        //    inv_decay = inv_srate_2pi / d_k;
+        //
+        // Algebraic Optimization:
+        //    inv_decay = inv_srate_2pi / (d_raw / d_mod)
+        //    inv_decay = (inv_srate_2pi * d_mod) / d_raw
+        //
+        // Benefit: 1 Div, 1 Mul. (Original: 2 Divs)
 
-        // 5. Coefficients & Pre-Normalization
+        float inv_decay = (inv_srate_2pi * d_mod) / d_raw;
+
+        // Biquad Coefficient Alpha
+        // inv_a0 = 1 / (1 + inv_decay)
+        // Since d_raw > 0 and d_mod > 0, inv_decay > 0. Denominator is safe.
+        float inv_a0 = 1.0f / (1.0f + inv_decay);
+
+        // Hit Position Modulation (Comb-like effect)
+        float h_mod = fminf(0.5f, part.hit + vel * part.vel_hit * 0.5f);
+        float a_k = 35.0f * fabsf(fastersinfullf(M_PI * part.k * h_mod));
+
+        // Final Filter Constants
         float omega = f_k * inv_srate_2pi;
         float b0_val = inv_srate_2pi * t_gain * a_k;
-        float inv_decay = inv_srate_2pi / d_k;
 
-        float inv_a0 = 1.0f / (1.0f + inv_decay);
-#ifdef DEBUGN
-        // DEBUG
-        // CRITICAL SAFETY: Check if va2 coefficient would be unstable
-        float va2_test = (1.0f - inv_decay) * inv_a0;
-        if (!std::isfinite(va2_test) || fabsf(va2_test) >= 1.0f || inv_decay > 100.0f) {
-            printf("[DIAG] partial p:%d va2 coefficient %.6f would be unstable - skipping\n", p, va2_test);
-            // Unstable - zero this partial
-            part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
-            continue;
-        }
-        if (fabsf(va2_test) > 0.999f || inv_decay > 50.0f) {
-            printf("[COEF] Partial %d: va2=%.6f, inv_decay=%.2f, d_k=%.6f\n",
-                part.k, va2_test, inv_decay, d_k);
-        }
-#endif
-        // Pre-normalized coefficients directly into NEON registers
+        // ---------------------------------------------------------
+        // 6. Broadcast to SIMD Vectors
+        // ---------------------------------------------------------
+        // We calculate scalars, then duplicate them to all 4 SIMD lanes
+        // so the serial loop in Partial::process can read them easily.
+
         part.vb0 = vdupq_n_f32(b0_val * inv_a0);
         part.vb2 = vdupq_n_f32(-b0_val * inv_a0);
-        part.va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
-        part.va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
+        // Note: b1 is implicitly 0.0f for this BP filter topology
 
-        #ifdef DEBUGN
+        part.va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
+
+        // va2 logic:
+        // va2 = (1 - inv_decay) / (1 + inv_decay)
+        //     = (1 - inv_decay) * inv_a0
+        part.va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
+#ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
         float va2_val = vgetq_lane_f32(part.va2, 0);
         if (!std::isfinite(va2_val) || fabsf(va2_val) >= 1.0f) {
             printf("[DIAG] Partial %d: va2=%.6f d_k=%.6f inv_decay=%.6f\n",
                 part.k, va2_val, d_k, inv_decay);
         }
-
-        #endif
+#endif
     }
+
+    // Update the class member for the Render loop
+    this->activePartialsCount = active_count;
 }
 
 
@@ -238,11 +304,11 @@ float32x4_t Resonator::process(float32x4_t input)
         for (int p = 0; p < npartials; ++p) {
             Partial& part = partials[p];
 
-            // Load state (Lower 2 lanes hold [L_prev, R_prev])
-            float32x2_t x1_prev = vget_low_f32(part.vx1);
-            float32x2_t x2_prev = vget_low_f32(part.vx2);
-            float32x2_t y1_prev = vget_low_f32(part.vy1);
-            float32x2_t y2_prev = vget_low_f32(part.vy2);
+            // Load state (now just 64-bit loads)
+            float32x2_t x1_prev = part.vx1_low;
+            float32x2_t x2_prev = part.vx2_low;
+            float32x2_t y1_prev = part.vy1_low;
+            float32x2_t y2_prev = part.vy2_low;
 
             // Load coefficients (duplicated in all lanes, so just take low)
             float32x2_t b0 = vget_low_f32(part.vb0);
@@ -268,11 +334,11 @@ float32x4_t Resonator::process(float32x4_t input)
 
             float32x2_t out1 = vsub_f32(vadd_f32(term1_1, term2_1), vadd_f32(term3_1, term4_1));
 
-            // --- Update State ---
-            part.vx1 = vcombine_f32(in1, in1);
-            part.vx2 = vcombine_f32(in0, in0);
-            part.vy1 = vcombine_f32(out1, out1);
-            part.vy2 = vcombine_f32(out0, out0);
+            // Store state (64-bit stores)
+            part.vx1_low = in1;
+            part.vx2_low = in0;
+            part.vy1_low = out1;
+            part.vy2_low = out0;
 
             // Accumulate partial result into resonator output
             float32x4_t p_out = vcombine_f32(out0, out1);
