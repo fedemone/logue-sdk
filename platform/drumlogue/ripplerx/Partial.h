@@ -42,10 +42,10 @@ public:
 
         // Get current state (scalar)
         // Assuming vy1, vy2 etc are stored as vectors, we only strictly need scalars for state
-        float32_t y1 = vgetq_lane_f32(vy1, 0);
-        float32_t y2 = vgetq_lane_f32(vy2, 0);
-        float32_t x1 = vgetq_lane_f32(vx1, 0);
-        float32_t x2 = vgetq_lane_f32(vx2, 0);
+        float32_t y1 = vget_lane_f32(vy1_low, 0);
+        float32_t y2 = vget_lane_f32(vy2_low, 0);
+        float32_t x1 = vget_lane_f32(vx1_low, 0);
+        float32_t x2 = vget_lane_f32(vx2_low, 0);
 
         // Input buffer
         alignas(16) float32_t in_buf[4];
@@ -79,10 +79,10 @@ public:
 
         // 3. Save State back to vectors (for next block)
         // We duplicate the state so next time we extract lane 0 it's correct
-        vy1 = vdupq_n_f32(y1);
-        vy2 = vdupq_n_f32(y2);
-        vx1 = vdupq_n_f32(x1);
-        vx2 = vdupq_n_f32(x2);
+        vy1_low = vdup_n_f32(y1);
+        vy2_low = vdup_n_f32(y2);
+        vx1_low = vdup_n_f32(x1);
+        vx2_low = vdup_n_f32(x2);
 
         // 4. Return vector
         return vld1q_f32(out_buf);

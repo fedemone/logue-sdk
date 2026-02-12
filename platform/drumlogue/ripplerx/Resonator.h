@@ -25,10 +25,8 @@ public:
         float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm);
 	void activate();
 	void clear();
-	__attribute__((always_inline))
-    inline void update(float32_t frequency, float32_t vel, bool isRelease, float32_t _model[c_max_partials]);
-	__attribute__((always_inline))
-    inline float32x4_t process(float32x4_t input);
+    void update(float32_t frequency, float32_t vel, bool isRelease, float32_t _model[c_max_partials]);
+    float32x4_t process(float32x4_t input);
 
 	// Public read-only accessors for state
 	bool isActive() const { return active; }
@@ -40,9 +38,6 @@ public:
 
 	// Apply filter to a NEON vector of samples
 	float32x4_t applyFilter(float32x4_t input);
-
-	// Apply filter to scalar sample
-	float32_t applyFilterScalar(float32_t sample) { return filter.df1(sample); }
 
 	// State members - protected from external modification
 	int silence = 0; // counter of samples of silence

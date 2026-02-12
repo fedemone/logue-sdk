@@ -17,13 +17,10 @@ float32_t Voice::note2freq(int _note)
 void Voice::trigger(float32_t srate, int _note, float32_t _vel,
     float32_t malletFreq)
 {
-    if (m_initialized && m_gate) {
-        #ifdef DEBUGN
-        printf("[VOICE STEAL] Note %d stolen, clearing resonators\n", note);
-        #endif
-        resA.clear();
-        resB.clear();
-    }
+    resA.clear();
+    resB.clear();
+    mallet.clear();
+    noise.clear();
 
     note = _note;
     vel = _vel;

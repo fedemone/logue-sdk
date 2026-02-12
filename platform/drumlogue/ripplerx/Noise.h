@@ -14,10 +14,9 @@ public:
               float32_t att, float32_t dec, float32_t sus, float32_t rel,
               float32_t _vel_freq, float32_t _vel_q);
 
-    inline float32_t process() {
+    inline float32x4_t process() {
         // 1. Single check for envelope state
-        bool active = env.getState();
-        if (!active) return 0.0f;
+        if (!env.getState()) return vdupq_n_f32(0.0f);
 
         env.process();
         float32_t env_val = env.getEnv();
@@ -30,8 +29,8 @@ public:
 
         // 3. Conditional execution (The compiler will likely use 'vsel' or 'vbit' on ARM)
         // This avoids the pipeline flush of a branch
-        float32_t filtered = filter.df1(sample);
-        float32_t out_sample = filter_active ? filtered : sample;
+        float32x4_t filtered = filter.df1_vec(vdupq_n_f32(sample));
+        float32x4_t out_sample = filter_active ? filtered : vdupq_n_f32(sample);
 
 
         // 4. Check if envelope just finished
@@ -39,7 +38,7 @@ public:
             filter.clear(0.0f);
         }
 
-        return out_sample * env_val;
+        return vmulq_n_f32(out_sample, env_val);
     }
 
     void initFilter();

@@ -42,8 +42,7 @@ public:
      * Handles frequency coupling (Jitter + SIMD) and updates Resonator states.
      * @param updateFrequencies: If false, skips expensive coupling/pitch math.
      */
-    __attribute__((always_inline))
-    inline void updateResonators(bool updateFrequencies = true);
+    void updateResonators(bool updateFrequencies = true);
 
     void setCoupling(bool _couple, float32_t _split);
 

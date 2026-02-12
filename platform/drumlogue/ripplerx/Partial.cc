@@ -77,5 +77,5 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
 void Partial::clear()
 {
     vb0 = vb2 = va1 = va2 = vdupq_n_f32(0.0f);
-    vx1 = vx2 = vy1 = vy2 = vdupq_n_f32(0.0f);
+    vx1_low = vx2_low = vy1_low = vy2_low = vdup_n_f32(0.0f);
 }

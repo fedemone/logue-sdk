@@ -631,42 +631,30 @@ void test_percussion_auto_release() {
     std::cout << "  [PASS] Auto-Release: Signal silenced naturally without NoteOff." << std::endl;
 }
 
-// TODO uncomment after pull
-// void test_component_filter_vec() {
-//     std::cout << "\n[Test 12] Component: Filter (Scalar & Vector)..." << std::endl;
-//     Filter flt;
-//     flt.lp(48000.0f, 1000.0f, 0.707f);
+void test_component_filter_vec() {
+    std::cout << "\n[Test 12] Component: Filter (Vector)..." << std::endl;
+    Filter flt;
 
-//     // DC Gain check for LP (should be 1.0)
-//     float input = 0.1f;
-//     float out = 0.0f;
-//     for(int i=0; i<200; ++i) out = flt.df1(input);
+    // Vectorization Test
+    Filter flt_vec;
+    flt_vec.lp(48000.0f, 1000.0f, 0.707f);
+    flt_vec.clear();
 
-//     float gain = out / input;
-//     if (std::abs(gain - 1.0f) > 0.05f) {
-//          std::cerr << "[FAIL] Filter LP Unity Gain failed. Out=" << out << " Gain=" << gain << std::endl; exit(1);
-//     }
+    alignas(16) float vec_in[4] = {0.1f, -0.1f, 0.05f, -0.05f};
+    float32x4_t v_in = vld1q_f32(vec_in);
+    float32x4_t v_out = flt_vec.df1_vec(v_in);
 
-//     // Vectorization Test
-//     Filter flt_vec;
-//     flt_vec.lp(48000.0f, 1000.0f, 0.707f);
-//     flt_vec.clear();
+    // Check for NaN/Explosion in vector output
+    float vec_out[4];
+    vst1q_f32(vec_out, v_out);
+    for(int i=0; i<4; ++i) {
+        if(!std::isfinite(vec_out[i])) {
+             std::cerr << "[FAIL] Filter vector output is NaN at index " << i << std::endl; exit(1);
+        }
+    }
 
-//     alignas(16) float vec_in[4] = {0.1f, -0.1f, 0.05f, -0.05f};
-//     float32x4_t v_in = vld1q_f32(vec_in);
-//     float32x4_t v_out = flt_vec.df1_vec(v_in);
-
-//     // Check for NaN/Explosion in vector output
-//     float vec_out[4];
-//     vst1q_f32(vec_out, v_out);
-//     for(int i=0; i<4; ++i) {
-//         if(!std::isfinite(vec_out[i])) {
-//              std::cerr << "[FAIL] Filter vector output is NaN at index " << i << std::endl; exit(1);
-//         }
-//     }
-
-//     std::cout << "  [PASS] Filter LP response and vectorization verified." << std::endl;
-// }
+    std::cout << "  [PASS] Filter LP response and vectorization verified." << std::endl;
+}
 
 void test_component_envelope() {
     std::cout << "\n[Test 13] Component: Envelope..." << std::endl;
@@ -704,7 +692,7 @@ int main() {
         test_limiter_silence_stability();
         test_comb_filter_stability();
         test_percussion_auto_release();
-        // test_component_filter_vec(); //TODO uncomment after pull
+        test_component_filter_vec();
         test_component_envelope();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;

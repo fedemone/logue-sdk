@@ -164,7 +164,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Apply Release Envelope
         if (isRelease) {
-            d_raw *= fabsf(rel); // use fabsf to prevent negative decay flipping the filter stability
+            d_raw *= fabsf(part.rel); // use fabsf to prevent negative decay flipping the filter stability
         }
 
         // ---------------------------------------------------------
@@ -249,8 +249,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
         float va2_val = vgetq_lane_f32(part.va2, 0);
         if (!std::isfinite(va2_val) || fabsf(va2_val) >= 1.0f) {
-            printf("[DIAG] Partial %d: va2=%.6f d_k=%.6f inv_decay=%.6f\n",
-                part.k, va2_val, d_k, inv_decay);
+            printf("[DIAG] Partial %d: va2=%.6f inv_a0=%.6f inv_decay=%.6f\n",
+                part.k, va2_val, inv_a0, inv_decay);
         }
 #endif
     }
@@ -390,24 +390,5 @@ void Resonator::clear()
 
 float32x4_t Resonator::applyFilter(float32x4_t input)
 {
-	// Extract individual lanes, apply scalar filter, and repack
-	// This is necessary because Filter::df1() operates on scalar samples
-	float32_t lane0 = vgetq_lane_f32(input, 0);
-	float32_t lane1 = vgetq_lane_f32(input, 1);
-	float32_t lane2 = vgetq_lane_f32(input, 2);
-	float32_t lane3 = vgetq_lane_f32(input, 3);
-
-	lane0 = filter.df1(lane0);
-	lane1 = filter.df1(lane1);
-	lane2 = filter.df1(lane2);
-	lane3 = filter.df1(lane3);
-
-	// Use vsetq_lane to reconstruct the vector properly
-	float32x4_t result = vdupq_n_f32(0.0f);
-	result = vsetq_lane_f32(lane0, result, 0);
-	result = vsetq_lane_f32(lane1, result, 1);
-	result = vsetq_lane_f32(lane2, result, 2);
-	result = vsetq_lane_f32(lane3, result, 3);
-
-	return result;
+	return filter.df1_vec(input);
 }
