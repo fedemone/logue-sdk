@@ -107,17 +107,30 @@ public:
     // Lifecycle
     // ==============================================================================
 
-    RipplerX() { }
+    RipplerX() {
+        // CRITICAL: Zero all voice flags on construction to prevent garbage state
+        for (auto& v : voices) {
+            v.m_gate = false;
+            v.m_initialized = false;
+            v.isPressed = false;
+            v.isRelease = false;
+        }
+    }
     ~RipplerX() = default;
 
     inline int8_t Init(const unit_runtime_desc_t * desc) {
         if (!desc) return k_unit_err_geometry;
         if (desc->samplerate != c_sampleRate) return k_unit_err_samplerate;
 
+        // CRITICAL: Clear ALL voices IMMEDIATELY before any initializatio
+        // This prevents phantom sounds from garbage memory on hot-load
+        clearVoices();
+
         // Setup function pointers for sample access
         m_get_num_sample_banks_ptr = desc->get_num_sample_banks;
         m_get_num_samples_for_bank_ptr = desc->get_num_samples_for_bank;
         m_get_sample = desc->get_sample;
+
         initState();
         return k_unit_err_none;
     }
@@ -224,6 +237,12 @@ public:
                     accum_res = vmlaq_n_f32(accum_res, m_sig, mres);
                 }
 
+                // debug mallet
+                float m_max = std::max(std::abs(vgetq_lane_f32(m_sig, 0)),
+                       std::abs(vgetq_lane_f32(m_sig, 1)));
+                if (m_max > 10.0f) printf("[DIAG] Mallet explosion: %.2f\n", m_max);
+
+
                 // 2. Input Sample Injection
                 if (voice.isPressed) {
                     accum_res = vaddq_f32(accum_res, audioIn);
@@ -250,6 +269,12 @@ public:
                     }
                 }
 
+                // debug resonator A
+                float res_a_max = std::max(std::abs(vgetq_lane_f32(res_out_A, 0)),
+                           std::abs(vgetq_lane_f32(res_out_A, 1)));
+                if (res_a_max > 10.0f) printf("[DIAG] Resonator A explosion: %.2f\n", res_a_max);
+
+
                 if (b_on) {
                     float32x4_t input_B = (a_on && serial) ? res_out_A : accum_res;
                     res_out_B = voice.resB.process(input_B);
@@ -257,6 +282,11 @@ public:
                          res_out_B = voice.resB.applyFilter(res_out_B);
                     }
                 }
+
+                // debug resonator B
+                float res_b_max = std::max(std::abs(vgetq_lane_f32(res_out_B, 0)),
+                                        std::abs(vgetq_lane_f32(res_out_B, 1)));
+                if (res_b_max > 10.0f) printf("[DIAG] Resonator B explosion: %.2f\n", res_b_max);
 
                 float32x4_t voice_mix;
                 if (a_on && b_on) {
@@ -272,10 +302,35 @@ public:
                 accum_dir = vaddq_f32(accum_dir, voice_mix);
 
                 voice.m_framesSinceNoteOn += 2;
+
+                // DEBUG
+                float frame_max = 0.0f;
+                for (int i = 0; i < 4; ++i) {
+                    frame_max = std::max(frame_max, std::abs(vgetq_lane_f32(voice_mix, i)));
+                }
+
+                #ifdef DEBUGN
+                if (frame_max > 10.0f) {
+                    printf("[DIAG] Voice %zu explosion: %.2f\n", v, frame_max);
+                }
+                float voice_max = fmaxf(fabsf(vgetq_lane_f32(voice_mix, 0)),
+                                        fabsf(vgetq_lane_f32(voice_mix, 1)));
+                if (voice_max > 10.0f) {
+                    printf("[VOICE %zu EXPLOSION] Output: %.2f, gate: %d\n",
+                        v, voice_max, voices[v].m_gate);
+                }
+                #endif
             } // End Voice Loop
 
             // --- C. Global Effects ---
             accum_dir = comb.process(accum_dir);
+
+            // [SAFETY] Silence Guard
+            // The Limiter crashes if fed perfect 0.0f (rsqrt(0) = Inf).
+            // We add a tiny epsilon to ensure stability during silence.
+            // This fixes the "Silence -> Crash" symptom.
+            accum_dir = vaddq_f32(accum_dir, vdupq_n_f32(1.0e-9f));
+
             accum_dir = limiter.process(accum_dir);
             accum_dir = vmulq_f32(accum_dir, v_gain);
 
@@ -847,8 +902,9 @@ public:
         (void)index;
         (void)value;
         return nullptr; }
-
+#ifndef DEBUGN
 private:
+#endif
     // ==============================================================================
     // Private Helpers
     // ==============================================================================

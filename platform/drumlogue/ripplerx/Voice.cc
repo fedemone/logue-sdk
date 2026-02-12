@@ -24,12 +24,21 @@ float32_t Voice::note2freq(int _note)
 
 void Voice::trigger(float32_t srate, int _note, float32_t _vel, float32_t malletFreq)
 {
-    resA.clear();
-    resB.clear();
+    if (m_initialized && m_gate) {
+        #ifdef DEBUGN
+        printf("[VOICE STEAL] Note %d stolen, clearing resonators\n", note);
+        #endif
+        resA.clear();
+        resB.clear();
+    }
 
     note = _note;
     vel = _vel;
     freq = note2freq(note);
+    #ifdef DEBUGN
+    printf("[VOICE TRIGGER] Note %d, vel %.2f, freq %.2f\n", note, vel, freq);
+    #endif
+
     isRelease = false;
     isPressed = true;
 

@@ -36,9 +36,12 @@ void Mallet::trigger(float32_t srate, float32_t freq)
 
 void Mallet::clear()
 {
+    // CRITICAL: Set elapsed to 0 FIRST to stop generation immediately
     elapsed = 0;
+
     v_amp_state = vdupq_n_f32(0.0f);
     v_decay_coef = vdupq_n_f32(0.0f);
+
     // Reset Filter
     filter.clear();
 }

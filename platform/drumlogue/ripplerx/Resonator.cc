@@ -6,6 +6,9 @@ extern "C" {
 }
 #endif
 #include "Resonator.h"
+#ifdef DEBUGN
+#include <cstdio>
+#endif
 // The resonator, as partial or waveguide, is the main body that's vibrating,
 // so it's the core of the sound emitted at note /
 
@@ -128,7 +131,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         union { float f; int32_t i; } u_decay;
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
-        float d_k = fminf(100.0f, part.decay * u_decay.f);
+        float d_k = fminf(100.0f, (part.decay * 0.01f) * u_decay.f);
         if (isRelease) d_k *= part.rel;
 
         // Range Check & Early Exit
@@ -142,6 +145,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         float d_base = (part.damp <= 0 ? freq : f_max) / f_k;
         float d_mod = e_expff(fasterlogf(d_base) * (part.damp * 2.0f));
         d_k /= d_mod;
+        d_k = fmaxf(c_decay_min, d_k);  // ADD THIS LINE
 
         float t_base = (part.tone <= 0 ? f_k / freq : f_k / f_max);
         float t_gain = e_expff(fasterlogf(t_base) * (part.tone * 2.0f));
@@ -156,12 +160,36 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         float inv_decay = inv_srate_2pi / d_k;
 
         float inv_a0 = 1.0f / (1.0f + inv_decay);
-
+#ifdef DEBUGN
+        // DEBUG
+        // CRITICAL SAFETY: Check if va2 coefficient would be unstable
+        float va2_test = (1.0f - inv_decay) * inv_a0;
+        if (!std::isfinite(va2_test) || fabsf(va2_test) >= 1.0f || inv_decay > 100.0f) {
+            printf("[DIAG] partial p:%d va2 coefficient %.6f would be unstable - skipping\n", p, va2_test);
+            // Unstable - zero this partial
+            part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
+            continue;
+        }
+        if (fabsf(va2_test) > 0.999f || inv_decay > 50.0f) {
+            printf("[COEF] Partial %d: va2=%.6f, inv_decay=%.2f, d_k=%.6f\n",
+                part.k, va2_test, inv_decay, d_k);
+        }
+#endif
         // Pre-normalized coefficients directly into NEON registers
         part.vb0 = vdupq_n_f32(b0_val * inv_a0);
         part.vb2 = vdupq_n_f32(-b0_val * inv_a0);
         part.va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
         part.va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
+
+        #ifdef DEBUGN
+        // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
+        float va2_val = vgetq_lane_f32(part.va2, 0);
+        if (!std::isfinite(va2_val) || fabsf(va2_val) >= 1.0f) {
+            printf("[DIAG] Partial %d: va2=%.6f d_k=%.6f inv_decay=%.6f\n",
+                part.k, va2_val, d_k, inv_decay);
+        }
+
+        #endif
     }
 }
 
@@ -250,6 +278,12 @@ float32x4_t Resonator::process(float32x4_t input)
             float32x4_t p_out = vcombine_f32(out0, out1);
             out = vaddq_f32(out, p_out);
         }
+        #ifdef DEBUGN
+        float max_out = fmaxf(fabsf(vgetq_lane_f32(out, 0)), fabsf(vgetq_lane_f32(out, 1)));
+        if (max_out > 10.0f) {
+            printf("[RESONATOR EXPLOSION] Output: %.2f\n", max_out);
+        }
+        #endif
         // --- END OF INTEGRATED PARTIAL MANAGER LOGIC ---
     } else {
         out = waveguide.process(input);

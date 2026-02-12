@@ -588,6 +588,176 @@ void test_percussion_auto_release() {
     std::cout << "[PASS] Auto-Release: Signal silenced naturally without NoteOff." << std::endl;
 }
 
+// --- COMPONENT UNIT TESTS ---
+
+void test_envelope_class() {
+    std::cout << "[Test] 7. Component: Envelope..." << std::endl;
+    Envelope env;
+    // Init: srate=48k, A=10ms, D=10ms, S=0.5, R=10ms
+    env.init(48000.0f, 10.0f, 10.0f, 0.5f, 10.0f, 0.0f, 0.0f, 0.0f);
+
+    env.attack(1.0f);
+    if (env.getState() != 1) { // Attack
+         std::cerr << "[FAIL] Envelope failed to enter Attack state" << std::endl; exit(1);
+    }
+
+    // Process a few samples
+    env.process();
+    if (env.getEnv() <= 0.0f) {
+         std::cerr << "[FAIL] Envelope value not increasing" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Envelope logic verified." << std::endl;
+}
+
+void test_filter_class() {
+    std::cout << "[Test] 8. Component: Filter..." << std::endl;
+    Filter flt;
+    flt.lp(48000.0f, 1000.0f, 0.707f);
+
+    // DC Gain check for LP (should be 1.0)
+    // Use small amplitude (0.1) to avoid soft clipper non-linearity at full scale
+    float input = 0.1f;
+    float out = 0.0f;
+    for(int i=0; i<200; ++i) out = flt.df1(input); // Feed DC
+
+    float gain = out / input;
+    if (std::abs(gain - 1.0f) > 0.05f) {
+         std::cerr << "[FAIL] Filter LP Unity Gain failed. Out=" << out << " Gain=" << gain << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Filter LP response verified." << std::endl;
+}
+
+void test_noise_class() {
+    std::cout << "[Test] 9. Component: Noise..." << std::endl;
+    Noise n;
+    n.init(48000.0f, 0, 1000.0f, 0.707f, 10.0f, 10.0f, 1.0f, 10.0f, 0.0f, 0.0f);
+    n.attack(1.0f);
+
+    float val = n.process();
+    if (val == 0.0f) {
+        // Extremely unlikely to be exactly 0.0f for noise
+        std::cerr << "[FAIL] Noise generator output is silent" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Noise generator verified." << std::endl;
+}
+
+void test_mallet_class() {
+    std::cout << "[Test] 10. Component: Mallet..." << std::endl;
+    Mallet m;
+    m.trigger(48000.0f, 500.0f);
+
+    float32x4_t out = m.process();
+    float val = vgetq_lane_f32(out, 0);
+
+    if (val == 0.0f) {
+        std::cerr << "[FAIL] Mallet output is silent" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Mallet trigger verified." << std::endl;
+}
+
+void test_models_logic() {
+    std::cout << "[Test] 11. Component: Models..." << std::endl;
+    // Verify accessors don't crash
+    const float* m = getAModels(0);
+    if (m[0] != 1.0f) {
+        std::cerr << "[FAIL] Model data corruption" << std::endl; exit(1);
+    }
+    // Test recalc (indirectly via function call, verifying no crash)
+    recalcBeam(true, 1.5f);
+    std::cout << "  [PASS] Models data access verified." << std::endl;
+}
+
+void test_partial_class() {
+    std::cout << "[Test] 12. Component: Partial..." << std::endl;
+    Partial p;
+    p.update(440.0f, 1.0f, 1.0f, 1.0f, false);
+
+    float32x4_t in = vdupq_n_f32(1.0f);
+    float32x4_t out = p.process(in);
+
+    if (!std::isfinite(vgetq_lane_f32(out, 0))) {
+        std::cerr << "[FAIL] Partial produced NaN" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Partial processing verified." << std::endl;
+}
+
+void test_waveguide_class() {
+    std::cout << "[Test] 13. Component: Waveguide..." << std::endl;
+    Waveguide w;
+    // Initialize parameters (normally done by Resonator::setParams)
+    w.srate = 48000.0f;
+    w.decay = 50.0f;
+    w.rel = 0.5f;
+    w.vel_decay = 0.0f;
+    w.is_closed = false;
+
+    w.update(440.0f, 1.0f, false);
+
+    float32x4_t in = vdupq_n_f32(0.5f);
+    float32x4_t out = w.process(in);
+
+    if (!std::isfinite(vgetq_lane_f32(out, 0))) {
+        std::cerr << "[FAIL] Waveguide produced NaN" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Waveguide processing verified." << std::endl;
+}
+
+void test_voice_class() {
+    std::cout << "[Test] 14. Component: Voice..." << std::endl;
+    Voice v;
+    v.Init();
+    v.trigger(48000.0f, 60, 1.0f, 500.0f);
+
+    if (!v.isPressed) {
+        std::cerr << "[FAIL] Voice trigger failed to set isPressed" << std::endl; exit(1);
+    }
+    v.release();
+    if (!v.isRelease) {
+        std::cerr << "[FAIL] Voice release failed to set isRelease" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Voice lifecycle verified." << std::endl;
+}
+
+void test_hot_load_stability_3s() {
+    std::cout << "\n[Test] 15. Hot-Load Stability (3s, Dirty Buffer)..." << std::endl;
+
+    // 1. Dirty Memory Init (Simulate Hot Load)
+    alignas(16) char memory[sizeof(RipplerX)];
+    std::memset(memory, 0xCC, sizeof(memory)); // Fill with garbage
+    RipplerX* synth = new (memory) RipplerX();
+
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    if (synth->Init(&desc) != k_unit_err_none_mock) {
+        std::cerr << "[FAIL] Init failed." << std::endl; exit(1);
+    }
+
+    // 2. Render Loop for 3 seconds with Non-Empty Buffer
+    const int kNumBlocks = (48000 * 3) / 64;
+    alignas(16) float buffer[128];
+
+    for (int i = 0; i < kNumBlocks; ++i) {
+        // Simulate "Buffer Not Empty" (e.g., previous unit output)
+        for (int j = 0; j < 128; ++j) {
+            buffer[j] = 0.1f * sinf(j * 0.1f + i);
+        }
+
+        synth->Render(buffer, 64);
+
+        if (!is_buffer_valid(buffer, 128)) {
+             std::cerr << "[FAIL] Instability/NaN at block " << i << std::endl;
+             exit(1);
+        }
+    }
+
+    std::cout << "[PASS] Hot-Load 3s Stability verified (Accumulation safe)." << std::endl;
+    synth->~RipplerX();
+}
 
 int main() {
     std::cout << ">>> STARTING RIPPLERX COMPREHENSIVE TEST SUITE <<<" << std::endl;
@@ -603,6 +773,17 @@ int main() {
     test_limiter_silence_stability();
     test_comb_filter_stability();
     test_percussion_auto_release();
+
+    test_envelope_class();
+    test_filter_class();
+    test_noise_class();
+    test_mallet_class();
+    test_models_logic();
+    test_partial_class();
+    test_waveguide_class();
+    test_voice_class();
+    test_hot_load_stability_3s();
+
     std::cout << "\n>>> ALL TESTS PASSED <<<" << std::endl;
     return 0;
 }

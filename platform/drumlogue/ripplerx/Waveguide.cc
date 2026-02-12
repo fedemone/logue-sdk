@@ -1,10 +1,12 @@
 #include "Waveguide.h"
 #include "constants.h"
 #include <cmath>
-
+#ifdef DEBUGN
+#include <cstdio>
+#endif
 // Proper constructor with safe initialization
 Waveguide::Waveguide()
-	: read_ptr(0), write_ptr(0)/*, tube_decay(0.0f), y{}, y1{}*/
+	: read_ptr(0), write_ptr(0), is_closed(false), srate(48000.0f), decay(0.0f), rel(0.0f), vel_decay(0.0f)
 {
 	// Initialize radius and max_radius using NEON intrinsics for float32x4_t
 	// Broadcast single values to all 4 lanes
@@ -71,10 +73,11 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     // 8388608.0f is 2^23, shifting the value into the exponent bits
     u.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
-    float decay_k = fminf(c_decay_max, decay * u.f);
+    float decay_k = fminf(c_decay_max, (decay * 0.01f) * u.f);
     if (isRelease) {
         decay_k *= rel;
     }
+    decay_k = fmaxf(c_decay_min, decay_k);  // ADD THIS LINE
 
     // Calculate final tube decay factor (coefficient for feedback)
     float tube_decay_val = 0.0f;
@@ -183,7 +186,19 @@ float32x4_t Waveguide::process(float32x4_t input) {
     read_ptr = (r1 + 1) >= c_tube_len ? 0 : r1 + 1;
     write_ptr = (w1 + 1) >= c_tube_len ? 0 : w1 + 1;
 
-    return vcombine_f32(out0, out1);
+    // return vcombine_f32(out0, out1);
+
+    float32x4_t result = vcombine_f32(out0, out1);
+
+    #ifdef DEBUGN
+    float max_out = fmaxf(fabsf(vgetq_lane_f32(result, 0)),
+                          fabsf(vgetq_lane_f32(result, 1)));
+    if (max_out > 10.0f) {
+        printf("[WAVEGUIDE EXPLOSION] Output: %.2f\n", max_out);
+    }
+    #endif
+
+    return result;
 }
 
 void Waveguide::clear() {

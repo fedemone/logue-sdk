@@ -25,7 +25,7 @@ constexpr float32_t c_noise_filter_res_range = 3.293f;  // 4.0 - 0.707
 constexpr float32_t c_freq_min = 20.0f;  // Minimum resonator frequency (Hz)
 constexpr float32_t c_freq_max = 20000.0f;  // Maximum resonator frequency (Hz)
 constexpr float32_t c_nyquist_factor = 0.48f;  // Nyquist limit factor (slightly below 0.5 for safety)
-constexpr float32_t c_decay_min = 1.0e-6f;  // Minimum decay threshold to avoid division issues
+constexpr float32_t c_decay_min = 0.01f;  // Minimum decay threshold to avoid division issues as 1.0e-6f is too small creating explosion in IIR filter
 constexpr float32_t c_filter_freq_ratio = 1000.0f;  // Ratio f_max/f_min for frequency scaling
 constexpr float32_t c_butterworth_q = 0.707f;  // Butterworth Q = sqrt(2)/2 for maximally flat response
 

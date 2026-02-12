@@ -11,6 +11,11 @@
 #include <chrono>
 #include <iomanip>
 
+/** Additional unit testes created by Claude
+ * to use, lauch this command
+ * /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -O3 -I.. -DDEBUGN test_ripplerx_enhanced.cpp ../ripplerx.cc ../Voice.cc ../Resonator.cc ../Partial.cc ../Waveguide.cc ../Models.cc ../Mallet.cc ../Noise.cc ../Filter.cc ../Envelope.cc -o run_test_enhanced && qemu-arm ./run_test_enhanced | tee run_test_enhanced_result.log
+*/
+
 // --- ARCHITECTURE COMPATIBILITY ---
 #include <arm_neon.h>
 
@@ -21,6 +26,8 @@
 #ifdef isfinite
 #undef isfinite
 #endif
+
+#define DEBUGN
 
 // --- MOCK DRUMLOGUE RUNTIME ---
 #define k_unit_err_none_mock 0
@@ -88,6 +95,11 @@ void verify_buffer(const float* buffer, size_t samples, const char* context) {
             exit(1);
         }
         if (std::abs(buffer[i]) > 100.0f) {
+            std::cerr << "[WARN] " << context << ": High level audio at sample " << i
+                      << " value=" << buffer[i] << std::endl;
+            exit(1);
+        }
+        if (std::abs(buffer[i]) > 500.0f) {
             std::cerr << "[FAIL] " << context << ": Audio explosion at sample " << i
                       << " value=" << buffer[i] << std::endl;
             exit(1);
@@ -530,6 +542,147 @@ void test_note_on_off_cycle() {
     std::cout << "  [PASS] 20 note on/off cycles completed" << std::endl;
 }
 
+void test_limiter_silence_stability() {
+    std::cout << "\n[Test 9] Limiter Silence Stability (rsqrt(0) check)..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    alignas(16) float buffer[128];
+    std::memset(buffer, 0, sizeof(buffer)); // Input is perfect silence
+
+    // Render silence through the chain
+    synth.Render(buffer, 64);
+
+    verify_buffer(buffer, 128, "Limiter Silence");
+    std::cout << "  [PASS] Limiter handled silence without NaN/Inf" << std::endl;
+}
+
+void test_comb_filter_stability() {
+    std::cout << "\n[Test 10] Comb Filter Stability..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Trigger a short impulse to fill the comb buffer
+    synth.NoteOn(60, 127);
+
+    alignas(16) float buffer[128];
+
+    // Render for a while to let the comb filter feedback loop run
+    for (int i = 0; i < 100; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+        verify_buffer(buffer, 128, "Comb Stability");
+    }
+    std::cout << "  [PASS] Comb filter stable under feedback" << std::endl;
+}
+
+void test_percussion_auto_release() {
+    std::cout << "\n[Test 11] Percussion Auto-Release (No NoteOff)..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Set parameters for a percussive sound
+    synth.setParameter(c_parameterDecay, 50);
+    synth.setParameter(c_parameterMalletResonance, 10);
+    synth.setParameter(c_parameterModel, 0);
+    synth.setParameter(c_parameterNoiseMix, 0);
+
+    // Trigger NoteOn (Percussion hit) BUT NO NoteOff
+    synth.NoteOn(60, 127);
+
+    alignas(16) float buffer[128];
+    float maxVal = 0.0f;
+
+    // Render for 2 seconds
+    for (int i = 0; i < 1500; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+
+        // Check the tail (last 100 blocks) for silence
+        if (i > 1400) {
+             for (float f : buffer) maxVal = std::max(maxVal, std::abs(f));
+        }
+    }
+
+    if (maxVal > 0.001f) {
+        std::cerr << "[FAIL] Sound continued without NoteOff! Max Level: " << maxVal << std::endl;
+        exit(1);
+    }
+    std::cout << "  [PASS] Auto-Release: Signal silenced naturally without NoteOff." << std::endl;
+}
+
+// TODO uncomment after pull
+// void test_component_filter_vec() {
+//     std::cout << "\n[Test 12] Component: Filter (Scalar & Vector)..." << std::endl;
+//     Filter flt;
+//     flt.lp(48000.0f, 1000.0f, 0.707f);
+
+//     // DC Gain check for LP (should be 1.0)
+//     float input = 0.1f;
+//     float out = 0.0f;
+//     for(int i=0; i<200; ++i) out = flt.df1(input);
+
+//     float gain = out / input;
+//     if (std::abs(gain - 1.0f) > 0.05f) {
+//          std::cerr << "[FAIL] Filter LP Unity Gain failed. Out=" << out << " Gain=" << gain << std::endl; exit(1);
+//     }
+
+//     // Vectorization Test
+//     Filter flt_vec;
+//     flt_vec.lp(48000.0f, 1000.0f, 0.707f);
+//     flt_vec.clear();
+
+//     alignas(16) float vec_in[4] = {0.1f, -0.1f, 0.05f, -0.05f};
+//     float32x4_t v_in = vld1q_f32(vec_in);
+//     float32x4_t v_out = flt_vec.df1_vec(v_in);
+
+//     // Check for NaN/Explosion in vector output
+//     float vec_out[4];
+//     vst1q_f32(vec_out, v_out);
+//     for(int i=0; i<4; ++i) {
+//         if(!std::isfinite(vec_out[i])) {
+//              std::cerr << "[FAIL] Filter vector output is NaN at index " << i << std::endl; exit(1);
+//         }
+//     }
+
+//     std::cout << "  [PASS] Filter LP response and vectorization verified." << std::endl;
+// }
+
+void test_component_envelope() {
+    std::cout << "\n[Test 13] Component: Envelope..." << std::endl;
+    Envelope env;
+    env.init(48000.0f, 10.0f, 10.0f, 0.5f, 10.0f, 0.0f, 0.0f, 0.0f);
+    env.attack(1.0f);
+    if (env.getState() != 1) {
+         std::cerr << "[FAIL] Envelope failed to enter Attack state" << std::endl; exit(1);
+    }
+    env.process();
+    if (env.getEnv() <= 0.0f) {
+         std::cerr << "[FAIL] Envelope value not increasing" << std::endl; exit(1);
+    }
+    std::cout << "  [PASS] Envelope logic verified." << std::endl;
+}
+
 int main() {
     std::cout << "\n";
     std::cout << "╔════════════════════════════════════════════════════════════╗\n";
@@ -548,6 +701,11 @@ int main() {
         test_extreme_parameters();
         test_hot_reload_multi_pattern();
         test_note_on_off_cycle();
+        test_limiter_silence_stability();
+        test_comb_filter_stability();
+        test_percussion_auto_release();
+        // test_component_filter_vec(); //TODO uncomment after pull
+        test_component_envelope();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;
