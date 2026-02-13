@@ -64,11 +64,9 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     float g = (1.0f - frac) / (1.0f + frac);
 
     // Update read_ptr relative to write_ptr
-    // If c_tube_len = 20000, we ensure we wrap within the buffer
-    read_ptr = write_ptr - int_delay;
-    // Branchless wrap: if negative, add c_tube_len
-    read_ptr += (read_ptr >> 31) & c_tube_len;
-    if (read_ptr >= c_tube_len) read_ptr %= c_tube_len;
+    // Robust wrap using bitwise mask (assumes c_tube_len is power of 2)
+    // This handles any large negative offset correctly in constant time
+    read_ptr = (write_ptr - int_delay) & (c_tube_len - 1);
 
     // 3. Decay Calculation (Optimized with Bit-Manipulation)
     // Identity: decay_base * exp(vel_offset) -> decay_base * 2^(vel_offset * log2(e))

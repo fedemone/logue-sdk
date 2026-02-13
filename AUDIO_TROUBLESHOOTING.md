@@ -84,6 +84,37 @@
 **Conclusion**: The synth code is correct (DC offsets fixed). The failure is a test harness artifact.
 **Action**: Ensure the test harness calls `memset(out, 0, ...)` before `Render()`.
 
+
+# [2026-02-13] Waveguide & Resonator Stability Hardening
+
+## 1. Verified Improvements
+- **Waveguide Serialization**: Confirmed that `Waveguide::process` correctly implements the serialized IIR filter loop using `float32x2_t` (processing Frame 0 then Frame 1). This architecture is sound and does not need further modification.
+
+## 2. Root Causes of "Distortion then Silence"
+Despite the serialization fix, the engine remained unstable due to three critical logic flaws identified in the original/ported code:
+
+1.  **Waveguide Pointer Crash (Low Frequency)**:
+    - **Diagnosis**: The branchless wrap logic `read_ptr += (read_ptr >> 31) & c_tube_len` in `Waveguide::update` was insufficient. If the delay length exceeded the buffer size (which happens at frequencies < 47Hz with a 1024-sample buffer), the `read_ptr` remained negative even after the addition, causing an out-of-bounds memory access (Crash/Silence).
+    - **Fix**: Replaced with a constant-time bitwise mask `read_ptr &= (c_tube_len - 1)`. This requires `c_tube_len` to be a power of 2.
+
+2.  **Resonator "Wake-Up Pop"**:
+    - **Diagnosis**: The Active Partial Counting optimization correctly muted inactive partials but failed to **reset their filter state** (`vx1`, `vy1`) when they became active again.
+    - **Symptom**: When a partial "woke up" (e.g., due to velocity modulation), it resumed processing using stale history from seconds ago. This step change acted as a massive impulse, instantly destabilizing the IIR filter.
+    - **Fix**: Added state reset logic in `Resonator::update` to zero out history vectors upon the `Inactive -> Active` transition.
+
+3.  **Missing Safety Clamps**:
+    - **Diagnosis**: The `Resonator::process` loop relied purely on physical parameters for stability. In the 32-bit floating-point domain, valid physical models can still accumulate energy to `NaN/Inf` during transients.
+    - **Fix**: Implemented "Paranoid Clamping" (`vmin_f32`/`vmax_f32`) inside the hot loop to strictly limit internal filter state to +/- 4.0f.
+
+## 3. Configuration Changes
+- **Tube Length**: Increased `c_tube_len` from **1024** to **16384** (Power of 2).
+    - **Reason**: 1024 samples at 48kHz limited the lowest valid waveguide frequency to ~47Hz. 16384 allows for deep bass (~3Hz) without pointer wrapping issues.
+
+## 4. Status
+- **Patched**: `optimizations_v2.patch` applied to `Waveguide.cc`, `Resonator.cc`, and `Partial.h`.
+- **Next Step**: Verify stability with deep bass notes (high delay lengths) and rapid re-triggering (wake-up logic test).
+
+
 # [2026-02-09] Hot-Load Instability & Silence
 
 ## 1. Continuous Sound on Load
@@ -360,7 +391,7 @@ The `NaN` generation was traced to the `Noise` generator's filter:
 
 ## Debug Parameter Export Block (Jan 2026)
 
-In January 2026, a debug block was added to export internal model/partials state to user parameters (slots 15–17) in `render()`. This block was later removed from the NaN/invalid state handler after it was found to cause severe sound corruption and hardware instability if triggered outside the Debug program context. If similar issues reappear, check for accidental parameter overwrites or out-of-bounds writes in debug/diagnostic code.
+In January 2026, a debug block was added to export internal model/partials state to user parameters (slots 15 - 17) in `render()`. This block was later removed from the NaN/invalid state handler after it was found to cause severe sound corruption and hardware instability if triggered outside the Debug program context. If similar issues reappear, check for accidental parameter overwrites or out-of-bounds writes in debug/diagnostic code.
 
 **Key lesson:** No terminal or serial port present, so not print is possible. The only way to log, is to switch to Program::Debug program, and use setParameters() to log any interesting values when error condition is met. So:
 - define errors or unexpected values or potential crash leading values (not only parameters)
@@ -369,7 +400,7 @@ In January 2026, a debug block was added to export internal model/partials state
 - Such values can be different from the original parameter value and correct reading can be done reading the debug code/condition.
 
 ---
-# 2026-01-26: RipplerX Troubleshooting – Latest Fixes & Weaknesses
+# 2026-01-26: RipplerX Troubleshooting - Latest Fixes & Weaknesses
 
 ## Latest Fixes
 
@@ -412,12 +443,12 @@ In January 2026, a debug block was added to export internal model/partials state
 - Continue validating all preset and runtime parameter transitions, especially edge cases for Drumhead and A/B partials transitions.
 
 ---
-# 2026-01-25: RipplerX Troubleshooting – Latest Fixes & Weaknesses
+# 2026-01-25: RipplerX Troubleshooting - Latest Fixes & Weaknesses
 
 ## Latest Fixes
 
 **1. Partials Parameter Mapping**
-- Engine and UI now use index-based mapping for partials (0–9), matching c_partialsName and c_partials arrays.
+- Engine and UI now use index-based mapping for partials (0-9), matching c_partialsName and c_partials arrays.
 - `a_b_partials` variable ensures get/set logic is robust and always returns the index, not the float value.
 - All preset data and parameter logic now enforce valid indices; invalid values no longer cause silence.
 
@@ -469,7 +500,7 @@ In January 2026, a debug block was added to export internal model/partials state
 ---
 ## 2026-01-25: RipplerX Preset & Parameter Validation Findings
 
-### Summary of Issues and Fixes (Morning–Now)
+### Summary of Issues and Fixes (Morning-Now)
 
 1. **Preset Mapping & Validation**
     - Automated mapping and validation between C arrays and XML preset files was implemented.
@@ -477,7 +508,7 @@ In January 2026, a debug block was added to export internal model/partials state
     - All preset parameters are copied on load; no value mismatches remain.
 
 2. **Partials Parameter**
-    - Engine expects `a_partials` and `b_partials` as indices (0–4), not raw values.
+    - Engine expects `a_partials` and `b_partials` as indices (0-4), not raw values.
     - All preset data patched to use valid indices; unit test now checks for valid range.
     - UI/engine desynchronization and type mismatch issues resolved.
 

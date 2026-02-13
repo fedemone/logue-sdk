@@ -78,4 +78,5 @@ void Partial::clear()
 {
     vb0 = vb2 = va1 = va2 = vdupq_n_f32(0.0f);
     vx1_low = vx2_low = vy1_low = vy2_low = vdup_n_f32(0.0f);
+    active_prev = false;
 }
