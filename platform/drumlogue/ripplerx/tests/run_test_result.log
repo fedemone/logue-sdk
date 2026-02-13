@@ -4,7 +4,7 @@
 [PASS] Dirty Init: Silence maintained (State correctly cleared).
 
 [Test] 2. Audio Stability & Signal Flow...
-[PASS] Stability: Max Amp 1.43226, No NaNs.
+[PASS] Stability: Max Amp 0.918097, No NaNs.
 
 [Test] 3. Stress Test (Polyphony & Stealing)...
 [PASS] Stress Test: Survived rapid triggering.

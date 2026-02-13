@@ -35,7 +35,9 @@ public:
         // Standard trick: construct IEEE float (exponent 1.0) and subtract 1.0
         // (x >> 9) | 0x3F800000 -> [1.0, 2.0)
         uint32x4_t v_bits = vorrq_u32(vshrq_n_u32(v_next, 9), vdupq_n_u32(0x3F800000));
-        float32x4_t noise = vsubq_f32(vreinterpretq_f32_u32(v_bits), vdupq_n_f32(1.0f));
+        // [1.0, 2.0) - 1.5 -> [-0.5, 0.5). * 2.0 -> [-1.0, 1.0)
+        float32x4_t noise = vsubq_f32(vreinterpretq_f32_u32(v_bits), vdupq_n_f32(1.5f));
+        noise = vmulq_n_f32(noise, 2.0f);
 
         // 2. Apply Amplitude Envelope
         // output = noise * current_amp
@@ -46,17 +48,7 @@ public:
         v_amp_state = vmulq_f32(v_amp_state, v_decay_coef);
 
         // 4. Filter the noise (Stiffness)
-        // Note: Filter::df1 is scalar. For full NEON filter, we'd need a vector filter.
-        // Since Mallet is mono excitation sent to stereo resonators,
-        // we usually process scalar filter logic and broadcast, or process 4 noise samples.
-        // For 'Drumlogue' style, the excitation is often mono broadcast to stereo.
-
-        // Let's assume we want a vector of varying noise passed through the filter:
-        // Since Filter.h (optimized previously) uses scalar 'df1' for simplicity,
-        // we will process the 4 samples here.
-        // Ideally, we'd vectorize the filter, but for an impulse, this loop is tight enough.
-
-        // OPTIMIZED: Vectorized filter (single call)
+        // Optimized: Use serial vectorized filter
         output = filter.df1_vec(output);
 
         // 5. Update Timer

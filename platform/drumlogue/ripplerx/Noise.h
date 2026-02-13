@@ -21,17 +21,23 @@ public:
         env.process();
         float32_t env_val = env.getEnv();
 
-        // 2. Faster Noise Generation
-        // Direct conversion of bits to float can be faster than * 2.0 - 3.0
-        // But assuming getFloat() is optimized, we keep the math lean.
-        float32_t raw_sample = rng.getFloat();
-        float32_t sample = raw_sample * 2.0f - 3.0f;
+        // 2. True Mono Full-Rate Noise Generation
+        // We need 2 independent samples for the 2 frames (L/R pairs) processed in this vector.
+        // This ensures L=R (Mono) and full 48kHz bandwidth (no downsampling).
+        float32_t r0 = rng.getFloat();
+        float32_t r1 = rng.getFloat();
 
-        // 3. Conditional execution (The compiler will likely use 'vsel' or 'vbit' on ARM)
-        // This avoids the pipeline flush of a branch
-        float32x4_t filtered = filter.df1_vec(vdupq_n_f32(sample));
-        float32x4_t out_sample = filter_active ? filtered : vdupq_n_f32(sample);
+        float32_t s0 = (r0 - 1.5f) * 2.0f;
+        float32_t s1 = (r1 - 1.5f) * 2.0f;
 
+        // 3. Scalar Filtering & Broadcast
+        float32_t y0 = filter_active ? filter.df1(s0) : s0;
+        float32_t y1 = filter_active ? filter.df1(s1) : s1;
+
+        // Construct [y0, y0, y1, y1] for [L0, R0, L1, R1]
+        float32x2_t frame0 = vdup_n_f32(y0);
+        float32x2_t frame1 = vdup_n_f32(y1);
+        float32x4_t out_sample = vcombine_f32(frame0, frame1);
 
         // 4. Check if envelope just finished
         if (!env.getState()) {

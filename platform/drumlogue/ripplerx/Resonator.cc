@@ -8,6 +8,7 @@ extern "C" {
 #include "Resonator.h"
 #ifdef DEBUGN
 #include <cstdio>
+#include <cstdlib>
 #endif
 // The resonator, as partial or waveguide, is the main body that's vibrating,
 // so it's the core of the sound emitted at note /
@@ -160,7 +161,9 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
         // Calculate raw decay time in seconds (or arbitrary units)
-        float d_raw = fminf(100.0f, (part.decay * 0.01f) * u_decay.f);
+        // Scale decay parameter (0-1000) to seconds (0-10s)
+        // FIX: Clamp decay to 10.0s max to prevent IIR instability while preserving long tails
+        float d_raw = fminf(10.0f, (part.decay * 0.01f) * u_decay.f);
 
         // Apply Release Envelope
         if (isRelease) {
@@ -244,10 +247,10 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // va2 logic:
         // va2 = (1 - inv_decay) / (1 + inv_decay)
         //     = (1 - inv_decay) * inv_a0
-        part.va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
+        float va2_val = (1.0f - inv_decay) * inv_a0;
+        part.va2 = vdupq_n_f32(va2_val);
 #ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
-        float va2_val = vgetq_lane_f32(part.va2, 0);
         if (!std::isfinite(va2_val) || fabsf(va2_val) >= 1.0f) {
             printf("[DIAG] Partial %d: va2=%.6f inv_a0=%.6f inv_decay=%.6f\n",
                 part.k, va2_val, inv_a0, inv_decay);
@@ -346,14 +349,25 @@ float32x4_t Resonator::process(float32x4_t input)
         }
         #ifdef DEBUGN
         float max_out = fmaxf(fabsf(vgetq_lane_f32(out, 0)), fabsf(vgetq_lane_f32(out, 1)));
-        if (max_out > 10.0f) {
+        if (max_out > 50.0f || !std::isfinite(max_out)) {
             printf("[RESONATOR EXPLOSION] Output: %.2f\n", max_out);
+            fflush(stdout);
+            exit(1);
         }
         #endif
         // --- END OF INTEGRATED PARTIAL MANAGER LOGIC ---
     } else {
         out = waveguide.process(input);
     }
+
+    #ifdef DEBUGN
+    float max_val = fmaxf(fabsf(vgetq_lane_f32(out, 0)), fabsf(vgetq_lane_f32(out, 1)));
+    if (max_val > 50.0f || !std::isfinite(max_val)) {
+        printf("[RES EXPLOSION] Val=%.2f Model=%d\n", max_val, nmodel);
+        fflush(stdout);
+        exit(1);
+    }
+    #endif
 
     // --- OPTIMIZED SILENCE TRACKING ---
     // We check (abs(out) + abs(input)) against threshold

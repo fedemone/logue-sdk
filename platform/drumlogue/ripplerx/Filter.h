@@ -27,47 +27,50 @@ public:
     void hp(float32_t srate, float32_t freq, float32_t q);
 
 /**
- * Standard Direct Form I processing with added Organic Saturation.
- * Inlined for maximum performance.
+ * Vectorized biquad filter wrapper for processing 4 samples serially.
+ * Correctly handles time-domain dependencies for mono signals.
+ *
+ * NOTE: The previous SIMD implementation treated the 4 lanes as parallel channels
+ * (Voice 1, 2, 3, 4), which caused instability when processing a single
+ * sequential audio stream (t, t+1, t+2, t+3) because y[n] depends on y[n-1].
  */
 inline float32x4_t df1_vec(float32x4_t input) {
-    // Broadcast coefficients to vectors
-    float32x4_t v_b0 = vdupq_n_f32(b0);
-    float32x4_t v_b1 = vdupq_n_f32(b1);
-    float32x4_t v_b2 = vdupq_n_f32(b2);
-    float32x4_t v_a1 = vdupq_n_f32(a1);
-    float32x4_t v_a2 = vdupq_n_f32(a2);
+    alignas(16) float buf[4];
+    vst1q_f32(buf, input);
 
-    // Load state
-    float32x4_t v_x1 = vdupq_n_f32(x1);
-    float32x4_t v_x2 = vdupq_n_f32(x2);
-    float32x4_t v_y1 = vdupq_n_f32(y1);
-    float32x4_t v_y2 = vdupq_n_f32(y2);
+    // Serial processing loop to maintain filter stability
+    for(int i=0; i<4; ++i) {
+        buf[i] = df1(buf[i]);
+    }
+    return vld1q_f32(buf);
+}
 
-    // Apply drive (vectorized soft clipping)
-    float32x4_t v_drive = vdupq_n_f32(drive);
-    float32x4_t x = vmulq_f32(input, v_drive);
+/**
+    * Standard Direct Form I processing with added Organic Saturation.
+    * Inlined for maximum performance.
+    */
+inline float32_t df1(float32_t input) {
+    // 1. Organic Drive: Boost input slightly into the clipper
+    float32_t x = input * drive;
 
-    // Soft clip: x - 0.1481*x^3 (vectorized)
-    float32x4_t x_sq = vmulq_f32(x, x);
-    float32x4_t x_cub = vmulq_f32(x_sq, x);
-    x = vmlsq_n_f32(x, x_cub, 0.1481f);
+    // 2. Soft Clipper (Fast Tanh approximation)
+    // This adds "warmth" and prevents harsh digital clipping at high resonance
+    if (x < -1.5f) x = -1.0f;
+    else if (x > 1.5f) x = 1.0f;
+    else x = x - (0.1481f * x * x * x); // Cubic approximation: x - 4/27 * x^3
 
-    // Clamp to [-1.5, 1.5]
-    x = vmaxq_f32(vminq_f32(x, vdupq_n_f32(1.5f)), vdupq_n_f32(-1.5f));
+    // 3. Standard Biquad Difference Equation
+    // y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
+    float32_t y = (b0 * x) + (b1 * x1) + (b2 * x2) - (a1 * y1) - (a2 * y2);
 
-    // Biquad: y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2
-    float32x4_t y = vmulq_f32(x, v_b0);
-    y = vmlaq_f32(y, v_x1, v_b1);
-    y = vmlaq_f32(y, v_x2, v_b2);
-    y = vmlsq_f32(y, v_y1, v_a1);
-    y = vmlsq_f32(y, v_y2, v_a2);
+    // Anti-denormal (optional but good for reverb tails/silence)
+    y += 1.0e-18f;
 
-    // Update state with LAST sample in vector
+    // Shift state
     x2 = x1;
-    x1 = vgetq_lane_f32(x, 3);
+    x1 = x;
     y2 = y1;
-    y1 = vgetq_lane_f32(y, 3);
+    y1 = y;
 
     return y;
 }

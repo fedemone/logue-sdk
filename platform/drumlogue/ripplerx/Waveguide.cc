@@ -3,7 +3,9 @@
 #include <cmath>
 #ifdef DEBUGN
 #include <cstdio>
+#include <cstdlib>
 #endif
+
 // Proper constructor with safe initialization
 Waveguide::Waveguide()
 	: read_ptr(0), write_ptr(0), is_closed(false), srate(48000.0f), decay(0.0f), rel(0.0f), vel_decay(0.0f)
@@ -12,6 +14,12 @@ Waveguide::Waveguide()
 	// Broadcast single values to all 4 lanes
 	radius = vdupq_n_f32(0.0f);
 	max_radius = vdupq_n_f32(1.0f);
+
+    // Initialize state vectors
+    vY1 = vdupq_n_f32(0.0f);
+    vAP_State = vdupq_n_f32(0.0f);
+    vAP_State_Prev_X = vdupq_n_f32(0.0f);
+
 	for (int i = 0; i < c_tube_len; ++i) {
 		tube[i] = vdupq_n_f32(0.0f);
 	}
@@ -36,9 +44,6 @@ Waveguide::Waveguide()
  */
 void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
 {
-    // Constants for fast math
-    // const float inv_log2e = 0.69314718f; // ln(2)
-
     // 1. Frequency Validation and Tuning
     // Prevent division by zero and extreme high frequencies
     f_0 = fminf(c_nyquist_factor * srate, fmaxf(c_freq_min, f_0));
@@ -61,7 +66,8 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     // Update read_ptr relative to write_ptr
     // If c_tube_len = 20000, we ensure we wrap within the buffer
     read_ptr = write_ptr - int_delay;
-    while (read_ptr < 0) read_ptr += c_tube_len;
+    // Branchless wrap: if negative, add c_tube_len
+    read_ptr += (read_ptr >> 31) & c_tube_len;
     if (read_ptr >= c_tube_len) read_ptr %= c_tube_len;
 
     // 3. Decay Calculation (Optimized with Bit-Manipulation)
@@ -73,11 +79,13 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     // 8388608.0f is 2^23, shifting the value into the exponent bits
     u.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
+    // Scale decay parameter (0-1000) to seconds (0-10s)
     float decay_k = fminf(c_decay_max, (decay * 0.01f) * u.f);
+
     if (isRelease) {
         decay_k *= rel;
     }
-    decay_k = fmaxf(c_decay_min, decay_k);  // ADD THIS LINE
+    decay_k = fmaxf(c_decay_min, decay_k);
 
     // Calculate final tube decay factor (coefficient for feedback)
     float tube_decay_val = 0.0f;
@@ -120,6 +128,9 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
  * In fact, Just like the Partial filter, the physical modeling waveguide is recursive: the output of
  * the delay line (plus filtering) at sample $t$ affects the feedback that generates sample $t+1$.
  * You cannot process t0, t1, t2, t3 in parallel because t1 needs the result of t0's feedback loop.
+ * SERIALIZED PHYSICS LOOP
+ * We must process Frame 0 then Frame 1 because of the IIR dependency (Damping).
+ * The previous parallel implementation caused instability.
  * @param input
  * @return float32x4_t
  */
@@ -159,11 +170,7 @@ float32x4_t Waveguide::process(float32x4_t input) {
     tube[write_ptr] = vcombine_f32(write0, write0);
 
     // Advance pointers for Frame 1
-    //      int r1 = read_ptr + 1;
-    //      r1 = wrap_ptr(r1, c_tube_len)
-    int r1 = (read_ptr + 1) & (c_tube_len - 1);  // Branchless wrap - faster than wrap_ptr in case of tube length power of 2
-    //      int w1 = write_ptr + 1;
-    //      w1 = wrap_ptr(w1, c_tube_len);
+    int r1 = (read_ptr + 1) & (c_tube_len - 1);
     int w1 = (write_ptr + 1) & (c_tube_len - 1);
 
     // --- Frame 1 Processing ---
@@ -173,7 +180,7 @@ float32x4_t Waveguide::process(float32x4_t input) {
     float32x2_t diff1 = vsub_f32(x1, ap_out0);
     float32x2_t ap_out1 = vmla_f32(x0, g, diff1);
 
-    // Damping
+    // Damping (using Frame 0 output as history)
     float32x2_t damp_out1 = vmul_f32(radius, ap_out1);
     damp_out1 = vmla_f32(damp_out1, one_minus_rad, damp_out0);
 
@@ -190,16 +197,15 @@ float32x4_t Waveguide::process(float32x4_t input) {
     read_ptr = (r1 + 1) & (c_tube_len - 1);
     write_ptr = (w1 + 1) & (c_tube_len - 1);
 
-
-    // return vcombine_f32(out0, out1);
-
     float32x4_t result = vcombine_f32(out0, out1);
 
     #ifdef DEBUGN
     float max_out = fmaxf(fabsf(vgetq_lane_f32(result, 0)),
                           fabsf(vgetq_lane_f32(result, 1)));
-    if (max_out > 10.0f) {
+    if (max_out > 50.0f || !std::isfinite(max_out)) {
         printf("[WAVEGUIDE EXPLOSION] Output: %.2f\n", max_out);
+        fflush(stdout);
+        exit(1);
     }
     #endif
 

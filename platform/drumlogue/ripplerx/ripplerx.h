@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <arm_neon.h>
+#include <cstdlib>
 
 #include "constants.h"
 #include "../common/runtime.h" // Drumlogue SDK runtime
@@ -122,6 +123,8 @@ public:
         // CRITICAL: Clear ALL voices IMMEDIATELY before any initializatio
         // This prevents phantom sounds from garbage memory on hot-load
         clearVoices();
+        comb.init((float)c_sampleRate);
+        limiter.init((float)c_sampleRate, -0.1f, 70.0f);
 
         // Setup function pointers for sample access
         m_get_num_sample_banks_ptr = desc->get_num_sample_banks;
@@ -218,11 +221,12 @@ public:
                 audioIn = vmulq_f32(audioIn, v_gain);
             }
 
-            // --- B. Voice Processing ---
+            // Standard Round-Robin processing (matches PluginProcessor_orig.cpp)
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
 
                 // 1. Mallet
+                // Mallet is processed unconditionally (it handles its own internal envelope state)
                 float32x4_t m_sig = voice.mallet.process();
                 if (vgetq_lane_f32(m_sig, 0) != 0.0f) {
                     float32_t mmix = fmax(0.0f, fmin(1.0f, mallet_mix + vel_mallet_mix * voice.vel));
@@ -233,11 +237,16 @@ public:
 #ifdef DEBUGN
                 // debug mallet
                 float m_max = std::max(std::abs(vgetq_lane_f32(m_sig, 0)),
-                       std::abs(vgetq_lane_f32(m_sig, 1)));
-                if (m_max > 10.0f) printf("[DIAG] Mallet explosion: %.2f\n", m_max);
+                                       std::abs(vgetq_lane_f32(m_sig, 1)));
+                if (m_max > 50.0f) {
+                    printf("[DIAG] Mallet explosion at frame %d: %.2f\n", i, m_max);
+                    fflush(stdout);
+                    exit(1);
+                }
 #endif
 
                 // 2. Input Sample Injection
+                // Only inject sample if the key is actually pressed
                 if (voice.isPressed) {
                     accum_res = vaddq_f32(accum_res, audioIn);
                 }
@@ -250,6 +259,17 @@ public:
                     accum_dir = vmlaq_n_f32(accum_dir, n_sig, nmix);
                     accum_res = vmlaq_n_f32(accum_res, n_sig, nres);
                 }
+
+#ifdef DEBUGN
+                // Debug Resonator Input
+                float rin_max = std::max(std::abs(vgetq_lane_f32(accum_res, 0)),
+                                         std::abs(vgetq_lane_f32(accum_res, 1)));
+                if (rin_max > 50.0f) {
+                    printf("[DIAG] Resonator Input explosion at frame %d: %.2f\n", i, rin_max);
+                    fflush(stdout);
+                    exit(1);
+                }
+#endif
 
                 // 4. Resonators
                 float32x4_t res_out_A = vdupq_n_f32(0.0f);
@@ -264,8 +284,12 @@ public:
 #ifdef DEBUGN
                 // debug resonator A
                 float res_a_max = std::max(std::abs(vgetq_lane_f32(res_out_A, 0)),
-                           std::abs(vgetq_lane_f32(res_out_A, 1)));
-                if (res_a_max > 10.0f) printf("[DIAG] Resonator A explosion: %.2f\n", res_a_max);
+                                           std::abs(vgetq_lane_f32(res_out_A, 1)));
+                if (res_a_max > 50.0f) {
+                    printf("[DIAG] Resonator A explosion at frame %d: %.2f\n", i, res_a_max);
+                    fflush(stdout);
+                    exit(1);
+                }
 #endif
 
                 if (b_on) {
@@ -279,8 +303,12 @@ public:
 #ifdef DEBUGN
                 // debug resonator B
                 float res_b_max = std::max(std::abs(vgetq_lane_f32(res_out_B, 0)),
-                                        std::abs(vgetq_lane_f32(res_out_B, 1)));
-                if (res_b_max > 10.0f) printf("[DIAG] Resonator B explosion: %.2f\n", res_b_max);
+                                           std::abs(vgetq_lane_f32(res_out_B, 1)));
+                if (res_b_max > 50.0f) {
+                    printf("[DIAG] Resonator B explosion at frame %d: %.2f\n", i, res_b_max);
+                    fflush(stdout);
+                    exit(1);
+                }
 #endif
 
                 // Precompute all possibilities
@@ -307,14 +335,18 @@ public:
                 for (int i = 0; i < 4; ++i) {
                     frame_max = std::max(frame_max, std::abs(vgetq_lane_f32(voice_mix, i)));
                 }
-                if (frame_max > 10.0f) {
-                    printf("[DIAG] Voice %zu explosion: %.2f\n", v, frame_max);
+                if (frame_max > 50.0f) {
+                    printf("[DIAG] Voice %zu mix explosion at frame %d: %.2f\n", v, i, frame_max);
+                    fflush(stdout);
+                    exit(1);
                 }
                 float voice_max = fmaxf(fabsf(vgetq_lane_f32(voice_mix, 0)),
                                         fabsf(vgetq_lane_f32(voice_mix, 1)));
-                if (voice_max > 10.0f) {
-                    printf("[VOICE %zu EXPLOSION] Output: %.2f, isPressed: %d\n",
-                        v, voice_max, voices[v].isPressed);
+                if (voice_max > 50.0f) {
+                    printf("[VOICE %zu EXPLOSION] Output at frame %d: %.2f, isPressed: %d\n",
+                        v, voice_max, voices[v].isPressed), i;
+                    fflush(stdout);
+                    exit(1);
                 }
 #endif
             } // End Voice Loop
@@ -322,17 +354,58 @@ public:
             // --- C. Global Effects ---
             accum_dir = comb.process(accum_dir);
 
+#ifdef DEBUGN
+            float comb_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
+                                      std::abs(vgetq_lane_f32(accum_dir, 1)));
+            if (comb_max > 50.0f) {
+                printf("[DIAG] Comb explosion at frame %d: %.2f\n", i, comb_max);
+                fflush(stdout);
+                exit(1);
+            }
+#endif
             // [SAFETY] Silence Guard
             // The Limiter crashes if fed perfect 0.0f (rsqrt(0) = Inf).
             // We add a tiny epsilon to ensure stability during silence.
             // This fixes the "Silence -> Crash" symptom.
             accum_dir = vaddq_f32(accum_dir, vdupq_n_f32(1.0e-9f));
 
+#ifdef DEBUGN
+            float pre_lim_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
+                                         std::abs(vgetq_lane_f32(accum_dir, 1)));
+            // Allow up to 50.0f for polyphonic stacking (16 voices * 1.0 + resonance), but catch explosions
+            if (pre_lim_max > 50.0f || !isfinite(pre_lim_max)) {
+                printf("[DIAG] Pre-Limiter Explosion at frame %d: %.2f\n", i, pre_lim_max);
+                fflush(stdout);
+                exit(1);
+            }
+#endif
+
             accum_dir = limiter.process(accum_dir);
             accum_dir = vmulq_f32(accum_dir, v_gain);
 
+            // PROBE FINAL OUTPUT
+#ifdef DEBUGN
+            float final_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
+                                       std::abs(vgetq_lane_f32(accum_dir, 1)));
+            if (final_max > 50.0f || !isfinite(final_max)) {
+                float g_val = vgetq_lane_f32(v_gain, 0);
+                printf("[DIAG] Final Output Explosion at frame %d: %.2f (Gain: %.2f)\n", i, final_max, g_val);
+                fflush(stdout);
+                exit(1);
+            }
+#endif
+
             // Accumulate
             float32x4_t dest = vld1q_f32(&outBuffer[i]);
+
+#ifdef DEBUGN
+            float dest_max = std::max(std::abs(vgetq_lane_f32(dest, 0)), std::abs(vgetq_lane_f32(dest, 1)));
+            if (dest_max > 100.0f) {
+                printf("[DIAG] Output Buffer Dirty! Value: %.2f\n", dest_max);
+                fflush(stdout);
+                exit(1);
+            }
+#endif
             vst1q_f32(&outBuffer[i], vaddq_f32(dest, accum_dir));
 
         } // End Frame Loop
@@ -560,10 +633,10 @@ public:
                 a_b_decay = value;
                 const int32_t maxA = 1000;
                 if (value <= maxA) {
-                    parameters[a_decay] = (float)value;
+                    parameters[a_decay] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_decay] = (float)(value - maxA);
+                    parameters[b_decay] = (float)(value - maxA) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -573,10 +646,10 @@ public:
                 a_b_damp = value;
                 const int32_t maxA = 10, span = 20;
                 if (value <= maxA) {
-                    parameters[a_damp] = (float)value;
+                    parameters[a_damp] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_damp] = (float)(value - span);
+                    parameters[b_damp] = (float)(value - span) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -586,10 +659,10 @@ public:
                 a_b_tone = value;
                 const int32_t maxA = 10, span = 20;
                 if (value <= maxA) {
-                    parameters[a_tone] = (float)value;
+                    parameters[a_tone] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_tone] = (float)(value - span);
+                    parameters[b_tone] = (float)(value - span) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -599,10 +672,10 @@ public:
                 a_b_hit = value;
                 const int32_t maxA = 50, span = 48; // span calculated from original code
                 if (value <= maxA) {
-                    parameters[a_hit] = (float)value;
+                    parameters[a_hit] = (float)value / 100.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_hit] = (float)(value - span);
+                    parameters[b_hit] = (float)(value - span) / 100.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -612,10 +685,10 @@ public:
                 a_b_rel = value;
                 const int32_t maxA = 10, span = 10;
                 if (value <= maxA) {
-                    parameters[a_rel] = (float)value;
+                    parameters[a_rel] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_rel] = (float)(value - span);
+                    parameters[b_rel] = (float)(value - span) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -625,10 +698,10 @@ public:
                 a_b_inharm = value;
                 const int32_t maxA = 10000, span = 9999;
                 if (value <= maxA) {
-                    parameters[a_inharm] = (float)value;
+                    parameters[a_inharm] = (float)value / 10000.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_inharm] = (float)(value - span);
+                    parameters[b_inharm] = (float)(value - span) / 10000.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -651,10 +724,10 @@ public:
                 a_b_radius = value;
                 const int32_t maxA = 10, span = 10;
                 if (value <= maxA) {
-                    parameters[a_radius] = (float)value;
+                    parameters[a_radius] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_radius] = (float)(value - span);
+                    parameters[b_radius] = (float)(value - span) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -694,7 +767,7 @@ public:
                 break;
 
             case c_parameterNoiseFilterQ:
-                parameters[noise_filter_q] = (float)value;
+                parameters[noise_filter_q] = (float)value / 1000.0f;
                 noiseChanged = true;
                 break;
 
@@ -941,7 +1014,7 @@ inline void setCurrentProgram(int index) {
             parameters[b_partials] = (float32_t)c_partials[(int)programs[index][b_partials]];
 
             // Precompute gain in dB -> linear conversion
-            parameters[gain] = fasterpowf(10.0f, parameters[gain] / 20.0f);
+            parameters[gain] = fmin(20.0f, fasterpowf(10.0f, parameters[gain] / 20.0f)); // Clamp max gain
             // Update cached vector
             m_v_gain_cached = vdupq_n_f32(parameters[gain]);
             m_v_ab_mix_cached = vdupq_n_f32(parameters[ab_mix]);
