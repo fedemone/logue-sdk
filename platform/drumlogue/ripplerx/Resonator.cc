@@ -161,9 +161,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
         // Calculate raw decay time in seconds (or arbitrary units)
-        // Scale decay parameter (0-1000) to seconds (0-10s)
-        // FIX: Clamp decay to 10.0s max to prevent IIR instability while preserving long tails
-        float d_raw = fminf(10.0f, (part.decay * 0.01f) * u_decay.f);
+        // REVERT: Removed 0.01f scaling to restore full range.
+        float d_raw = part.decay * u_decay.f;
 
         // Apply Release Envelope
         if (isRelease) {
@@ -216,8 +215,13 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         //    inv_decay = (inv_srate_2pi * d_mod) / d_raw
         //
         // Benefit: 1 Div, 1 Mul. (Original: 2 Divs)
-
-        float inv_decay = (inv_srate_2pi * d_mod) / d_raw;
+        
+        // FIX: Calculate effective decay and clamp IT to 10.0s.
+        // This prevents instability even if d_mod (damping) extends the decay time.
+        float d_eff = d_raw / d_mod;
+        d_eff = fminf(10.0f, d_eff);
+        
+        float inv_decay = inv_srate_2pi / d_eff;
 
         // Biquad Coefficient Alpha
         // inv_a0 = 1 / (1 + inv_decay)

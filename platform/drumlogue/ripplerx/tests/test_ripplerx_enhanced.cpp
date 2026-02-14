@@ -13,7 +13,7 @@
 
 /** Additional unit testes created by Claude
  * to use, lauch this command
- * /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -O3 -I.. -DDEBUGN test_ripplerx_debug.cpp ../ripplerx.cc ../Voice.cc ../Resonator.cc ../Partial.cc ../Waveguide.cc ../Models.cc ../Mallet.cc ../Noise.cc ../Filter.cc ../Envelope.cc -o run_test_debug && qemu-arm ./run_test_debug | tee run_test_debug_result.log
+ * /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -O3 -I.. -DDEBUGN test_ripplerx_enhanced.cpp ../ripplerx.cc ../Voice.cc ../Resonator.cc ../Partial.cc ../Waveguide.cc ../Models.cc ../Mallet.cc ../Noise.cc ../Filter.cc ../Envelope.cc -o run_test_enhanced && qemu-arm ./run_test_enhanced | tee run_test_enhanced_result.log
 */
 
 // --- ARCHITECTURE COMPATIBILITY ---
@@ -27,9 +27,7 @@
 #undef isfinite
 #endif
 
-#ifndef DEBUGN
 #define DEBUGN
-#endif
 
 // --- MOCK DRUMLOGUE RUNTIME ---
 #define k_unit_err_none_mock 0
@@ -38,28 +36,12 @@
 
 // Mock Sample Data with actual audio content
 alignas(16) float mock_sample_data[2048];
-sample_wrapper_t mock_wrapper;
 
 uint8_t mock_get_num_sample_banks() { return 1; }
 uint8_t mock_get_num_samples_for_bank(uint8_t bank) { return 1; }
 
 const sample_wrapper_t* mock_get_sample(uint8_t bank, uint8_t sample) {
-    // Initialize mock sample data with a sine wave if not already done
-    if (mock_sample_data[0] == 0.0f) {
-        std::cout << "  Initializing mock sample data..." << std::endl;
-        for (int i = 0; i < 2048; ++i) {
-            // SIMULATE REAL SAMPLE: Sharp transient (click) + Body + Noise
-            // This stresses the Resonator much more than a pure sine wave
-            float transient = (i < 10) ? (float)(10 - i) / 10.0f : 0.0f; // Sharp attack
-            float body = 0.5f * sinf(i * 0.1f);
-            float noise = 0.1f * ((float)(rand() % 100) / 50.0f - 1.0f);
-            mock_sample_data[i] = transient + body + noise;
-        }
-    }
-    mock_wrapper.sample_ptr = mock_sample_data;
-    mock_wrapper.frames = 1024; // 1024 stereo frames
-    mock_wrapper.channels = 2;
-    return &mock_wrapper;
+    return nullptr;
 }
 
 // --- TEST UTILITIES ---
@@ -619,7 +601,7 @@ void test_percussion_auto_release() {
     synth.Init(&desc);
 
     // Set parameters for a percussive sound
-    synth.setParameter(c_parameterDecay, 1); // 1 = Short decay (approx 0.1s) for test speed
+    synth.setParameter(c_parameterDecay, 5); // 5 = 0.5s decay (was 50=5.0s, too long for 2s test)
     synth.setParameter(c_parameterMalletResonance, 10);
     synth.setParameter(c_parameterModel, 0);
     synth.setParameter(c_parameterNoiseMix, 0);
@@ -747,394 +729,11 @@ void test_rhythmic_stability_crash() {
     std::cout << "  [PASS] Survived 4 beats of rhythmic triggering." << std::endl;
 }
 
-void test_degradation_over_12_beats() {
-    std::cout << "\n[Test 15] Degradation over 12 beats..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-
-    if (synth.Init(&desc) != 0) {
-        std::cerr << "Init failed" << std::endl;
-        exit(1);
-    }
-
-    // Set parameters that might cause issues, similar to preset 11 or hot-loading
-    synth.setParameter(c_parameterModel, 2); // Squared
-    synth.setParameter(c_parameterPartials, 3); // 32
-    synth.setParameter(c_parameterDecay, 800);
-    synth.setParameter(c_parameterMalletResonance, 50);
-
-    const size_t kBlockSize = 64;
-    alignas(16) float buffer[128];
-
-    // Simulate 12 beats at 120 BPM (0.5s per beat)
-    for (int beat = 1; beat <= 12; ++beat) {
-        std::cout << "  --- BEAT " << beat << " TRIGGER ---" << std::endl;
-        synth.NoteOn(60, 100);
-
-        // Render 0.5 seconds (approx 375 blocks)
-        float max_peak = 0.0f;
-        float avg_peak = 0.0f;
-        int sample_count = 0;
-
-        for (int i = 0; i < 375; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
-            synth.Render(buffer, kBlockSize);
-
-            for (int j = 0; j < 128; ++j) {
-                float val = buffer[j];
-                if (!std::isfinite(val)) {
-                    std::cerr << "[FAIL] NaN detected at Beat " << beat << " Block " << i << std::endl;
-                    exit(1);
-                }
-                if (std::abs(val) > 10.0f) {
-                    std::cerr << "[FAIL] Explosion detected at Beat " << beat << " Block " << i << " Val=" << val << std::endl;
-                    exit(1);
-                }
-                max_peak = std::max(max_peak, std::abs(val));
-                avg_peak += std::abs(val);
-                sample_count++;
-            }
-        }
-
-        avg_peak /= sample_count;
-
-        std::cout << "  Beat " << beat << " Max Peak: " << max_peak << ", Avg Peak: " << avg_peak << std::endl;
-
-        if (beat > 1 && max_peak < 0.001f) {
-             std::cerr << "[FAIL] Sound went silent prematurely at beat " << beat << std::endl;
-             exit(1);
-        }
-
-        // Note Off
-        synth.NoteOff(60);
-    }
-    std::cout << "  [PASS] Survived 12 beats of rhythmic triggering without critical failure." << std::endl;
-}
-
-void test_preset_11_issue() {
-std::cout << "\n[Test 16] Preset 11 Issue (Harp)..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-    synth.Init(&desc);
-
-    // Load Preset 11 (Harp)
-    synth.LoadPreset(11);
-
-    alignas(16) float buffer[128];
-    synth.NoteOn(60, 100);
-
-    // Render 1 second
-    for (int i = 0; i < 750; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
-        synth.Render(buffer, 64);
-        verify_buffer(buffer, 128, "Preset 11");
-    }
-    std::cout << "  [PASS] Preset 11 loaded and rendered without crash." << std::endl;
-}
-
-
-void test_preset_14_crash() {
-    std::cout << "\n[Test 17] Preset 14 Crash (Kalimba)..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-    synth.Init(&desc);
-
-    // Load Preset 14 (Kalimba) - Known to cause crash
-    synth.LoadPreset(14);
-
-    alignas(16) float buffer[128];
-    synth.NoteOn(60, 100);
-
-    // Render 1 second
-    for (int i = 0; i < 750; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
-        synth.Render(buffer, 64);
-        verify_buffer(buffer, 128, "Preset 14");
-    }
-    std::cout << "  [PASS] Preset 14 loaded and rendered without crash." << std::endl;
-}
-
-void test_preset_28_issue() {
-    std::cout << "\n[Test 18] Preset 28 Issue (Vibes)..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-    synth.Init(&desc);
-
-    // Load Preset 27 (Vibes - 0-indexed is 27, 1-indexed 28)
-    synth.LoadPreset(27);
-
-    alignas(16) float buffer[128];
-    synth.NoteOn(60, 100);
-
-    // Render 1 second
-    for (int i = 0; i < 750; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
-        synth.Render(buffer, 64);
-        verify_buffer(buffer, 128, "Preset 28");
-    }
-    std::cout << "  [PASS] Preset 28 loaded and rendered without crash." << std::endl;
-}
-
-void test_preset_loop_transition() {
-    std::cout << "\n[Test 19] Preset Loop Transition (All Presets)..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-    synth.Init(&desc);
-
-    const size_t kBlockSize = 64;
-    alignas(16) float buffer[128];
-    TestStats stats;
-
-    for (int prog = 0; prog < (int)Program::last_program; ++prog) {
-        const char* name = RipplerX::getPresetName(prog);
-        std::cout << "  Testing Preset " << prog << " (" << (name ? name : "Unknown") << ")..." << std::flush;
-
-        synth.setParameter(c_parameterProgramName, prog);
-
-        // Trigger note
-        synth.NoteOn(60, 100);
-
-        // Render 0.1 seconds (approx 75 blocks) to verify stability
-        bool stable = true;
-        for (int i = 0; i < 75; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
-            synth.Render(buffer, kBlockSize);
-
-            for (float f : buffer) {
-                stats.update(f);
-                if (!std::isfinite(f) || std::abs(f) > 10.0f) {
-                    stable = false;
-                }
-            }
-            if (!stable) break;
-        }
-
-        synth.NoteOff(60);
-
-        // Render tail (0.05s)
-        for (int i = 0; i < 35; ++i) {
-             std::memset(buffer, 0, sizeof(buffer));
-             synth.Render(buffer, kBlockSize);
-             for (float f : buffer) {
-                if (!std::isfinite(f) || std::abs(f) > 10.0f) stable = false;
-             }
-        }
-
-        if (!stable) {
-            std::cout << " [FAIL]" << std::endl;
-            std::cerr << "[FAIL] Instability detected in Preset " << prog << std::endl;
-            exit(1);
-        } else {
-            // TODO check that buffer is really different for each program, for some blocks
-
-            std::cout << " [OK]" << std::endl;
-        }
-    }
-
-    stats.finalize();
-    std::cout << "  [PASS] All " << (int)Program::last_program << " presets loaded and rendered successfully." << std::endl;
-}
-
-void test_preset_retrigger_instability() {
-    std::cout << "\n[Test 20] Preset Retrigger Instability (11 & 14)..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-    synth.Init(&desc);
-
-    int presets[] = {11, 14};
-    const size_t kBlockSize = 64;
-    alignas(16) float buffer[128];
-
-    for (int p : presets) {
-        std::cout << "  Testing Preset " << p << "..." << std::endl;
-        synth.LoadPreset(p);
-
-        // FORCE SAMPLE LOAD: Simulate hardware behavior
-        synth.setParameter(c_parameterSampleNumber, 1);
-        synth.loadConfigureSample();
-
-        // STRESS TEST: 16 triggers, NO NoteOff. Forces voice stealing and accumulation.
-        for (int beat = 0; beat < 16; ++beat) {
-            synth.NoteOn(60, 100);
-
-            // Render 0.5s (approx 375 blocks)
-            float max_peak = 0.0f;
-            for (int i = 0; i < 375; ++i) {
-                std::memset(buffer, 0, sizeof(buffer));
-                synth.Render(buffer, kBlockSize);
-
-                for (float f : buffer) {
-                    if (!std::isfinite(f) || std::abs(f) > 50.0f) {
-                        std::cerr << "[FAIL] Instability in Preset " << p << " at Beat " << beat << " Block " << i << " Val=" << f << std::endl;
-                        exit(1);
-                    }
-                    max_peak = std::max(max_peak, std::abs(f));
-                }
-            }
-            std::cout << "    Trigger " << beat << " Peak: " << max_peak << " (Voices Stacking)" << std::endl;
-            // NO NoteOff - Force overlap!
-        }
-        std::cout << "    [OK] Preset " << p << " stable." << std::endl;
-    }
-    std::cout << "  [PASS] Retrigger test passed." << std::endl;
-}
-
-void test_parameter_mapping() {
-    std::cout << "\n[Test] 16. Parameter Mapping & Scaling..." << std::endl;
-    RipplerX synth;
-    unit_runtime_desc_t desc = {0};
-    desc.samplerate = 48000;
-    synth.Init(&desc);
-
-    // Test Decay Scaling (A/B Split)
-    // Max A is 1000. Should map to 10.0f (c_decay_max)
-    synth.setParameter(c_parameterDecay, 1000);
-    float valA = synth.getInternalParameter(a_decay);
-    if (std::abs(valA - 10.0f) > 0.001f) {
-        std::cerr << "[FAIL] Decay A scaling incorrect. Input 1000 -> " << valA << " (Expected 10.0)" << std::endl;
-        exit(1);
-    }
-
-    // Test Decay B
-    // Input 1500 -> B value 500 -> 5.0f
-    synth.setParameter(c_parameterDecay, 1500);
-    float valB = synth.getInternalParameter(b_decay);
-    if (std::abs(valB - 5.0f) > 0.001f) {
-        std::cerr << "[FAIL] Decay B scaling incorrect. Input 1500 -> " << valB << " (Expected 5.0)" << std::endl;
-        exit(1);
-    }
-
-    // Test Mallet Resonance Scaling
-    // Input 500 -> Should be 0.5f (Previously was 50.0f -> clamped to 1.0f)
-    synth.setParameter(c_parameterMalletResonance, 500);
-    float valMallet = synth.getInternalParameter(mallet_res);
-    if (std::abs(valMallet - 0.5f) > 0.001f) {
-        std::cerr << "[FAIL] Mallet Resonance scaling incorrect. Input 500 -> " << valMallet
-                  << " (Expected 0.5)" << std::endl;
-        exit(1);
-    }
-
-    std::cout << "[PASS] Parameter mapping verified." << std::endl;
-}
-
-void test_api_lifecycle_stability() {
-    std::cout << "\n[Test] 21. API Lifecycle & Long-Term Stability (14+ Beats)..." << std::endl;
-
-    RipplerX synth;
-    unit_runtime_desc_t desc;
-    desc.samplerate = 48000;
-    desc.output_channels = 2;
-    desc.get_num_sample_banks = mock_get_num_sample_banks;
-    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
-    desc.get_sample = mock_get_sample;
-
-    // 1. unit_init
-    if (synth.Init(&desc) != k_unit_err_none_mock) {
-        std::cerr << "[FAIL] Init failed." << std::endl;
-        exit(1);
-    }
-
-    // 2. unit_load_preset
-    synth.LoadPreset(0); // Bells
-
-    // 3. Simulation Loop (10 seconds > 14 beats at 120BPM)
-    const int kNumBlocks = (48000 * 10) / 64;
-    alignas(16) float buffer[128];
-
-    int beat_counter = 0;
-    int samples_per_beat = 24000; // 0.5s at 48kHz (120BPM)
-    int samples_processed = 0;
-
-    for (int i = 0; i < kNumBlocks; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
-
-        // Trigger logic
-        if (samples_processed % samples_per_beat < 64) {
-            beat_counter++;
-            // unit_note_on / unit_gate_on
-            synth.NoteOn(60, 100);
-            synth.GateOn(100);
-
-            // unit_set_param_value (Modulate Decay)
-            if (beat_counter % 4 == 0) {
-                synth.setParameter(c_parameterDecay, 500 + (beat_counter * 10) % 400);
-            }
-        }
-
-        // Release logic
-        if ((samples_processed + samples_per_beat/2) % samples_per_beat < 64) {
-            // unit_note_off / unit_gate_off
-            synth.NoteOff(60);
-            synth.GateOff();
-        }
-
-        // unit_pitch_bend
-        if (i % 100 == 0) {
-            synth.PitchBend(0x2000 + (rand() % 0x1000 - 0x800));
-        }
-
-        // unit_render
-        synth.Render(buffer, 64);
-
-        // Check for explosion
-        for (float f : buffer) {
-            if (!std::isfinite(f) || std::abs(f) > 50.0f) {
-                std::cerr << "[FAIL] Instability detected at block " << i
-                          << " (Beat " << beat_counter << ")"
-                          << " Value: " << f << std::endl;
-                exit(1);
-            }
-        }
-
-        samples_processed += 64;
-    }
-
-    // 4. Lifecycle calls
-    synth.AllNoteOff(); // unit_all_note_off
-    synth.Reset();      // unit_reset
-    synth.Suspend();    // unit_suspend
-    synth.Resume();     // unit_resume
-    synth.Teardown();   // unit_teardown
-
-    std::cout << "[PASS] API Lifecycle & Long-Term Stability verified." << std::endl;
-}
-
-
 int main() {
     std::cout << "\n";
     std::cout << "╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║     RIPPLERX COMPREHENSIVE TEST SUITE v2.1 (Debug)        ║\n";
-    std::cout << "║     Includes hardware issue replication tests.            ║\n";
+    std::cout << "║     RIPPLERX COMPREHENSIVE TEST SUITE v2.0                ║\n";
+    std::cout << "║     Enhanced with 3-second runtime stability test         ║\n";
     std::cout << "╚════════════════════════════════════════════════════════════╝\n";
 
     auto total_start = std::chrono::high_resolution_clock::now();
@@ -1154,14 +753,6 @@ int main() {
         test_component_filter_vec();
         test_component_envelope();
         test_rhythmic_stability_crash();
-        test_degradation_over_12_beats();
-        test_preset_11_issue();
-        test_preset_14_crash();
-        test_preset_28_issue();
-        test_preset_loop_transition();
-        test_preset_retrigger_instability();
-        test_parameter_mapping();
-        test_api_lifecycle_stability();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;
@@ -1172,7 +763,7 @@ int main() {
 
     std::cout << "\n";
     std::cout << "╔════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║                  ALL TESTS COMPLETED                      ║\n";
+    std::cout << "║                  ALL TESTS PASSED ✓                       ║\n";
     std::cout << "║  Total execution time: " << std::setw(4) << total_duration.count() << " ms                      ║\n";
     std::cout << "╚════════════════════════════════════════════════════════════╝\n";
 

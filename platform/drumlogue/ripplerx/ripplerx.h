@@ -586,7 +586,7 @@ public:
                 break;
 
             case c_parameterMalletResonance:
-                parameters[mallet_res] = value / 10.0f;
+                parameters[mallet_res] = value / 1000.0f; // FIX: Map 0-1000 to 0-1.0f (was 10.0f)
                 break;
 
             case c_parameterMalletStiffness:
@@ -633,10 +633,10 @@ public:
                 a_b_decay = value;
                 const int32_t maxA = 1000;
                 if (value <= maxA) {
-                    parameters[a_decay] = (float)value / 10.0f;
+                    parameters[a_decay] = (float)value / 100.0f; // FIX: Map 0-1000 to 0-10.0f
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_decay] = (float)(value - maxA) / 10.0f;
+                    parameters[b_decay] = (float)(value - maxA) / 100.0f; // FIX: Map 0-1000 to 0-10.0f
                     resonatorChangedB = true;
                 }
                 break;
@@ -845,6 +845,12 @@ public:
 
     inline void LoadPreset(uint8_t idx) { setParameter(c_parameterProgramName, idx); }
     inline uint8_t getPresetIndex() const { return m_currentProgram; }
+
+    // For Unit Testing: Inspect internal parameter state
+    inline float32_t getInternalParameter(uint8_t index) const {
+        if (index < ProgramParameters::last_param) return parameters[index];
+        return 0.0f;
+    }
 
     // ==============================================================================
     // Static Helpers

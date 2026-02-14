@@ -79,8 +79,8 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     // 8388608.0f is 2^23, shifting the value into the exponent bits
     u.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
-    // Scale decay parameter (0-1000) to seconds (0-10s)
-    float decay_k = fminf(c_decay_max, (decay * 0.01f) * u.f);
+    // REVERT: Removed 0.01f scaling. c_decay_max (10.0f) handles the clamping.
+    float decay_k = fminf(c_decay_max, decay * u.f);
 
     if (isRelease) {
         decay_k *= rel;
