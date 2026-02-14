@@ -131,6 +131,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         if (idx < 0 || (uint32_t)idx >= c_max_partials) {
             // Zero out coefficients to be safe
             part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
+            part.active_prev = false;
             continue;
         }
 
@@ -181,8 +182,21 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
             // Note: This assumes partials are sorted by frequency.
             // If they are not sorted, you must process all, but 'active_count'
             // optimization works best if high-k partials are at the end.
+            part.active_prev = false;
             continue;
         }
+
+        // --- WAKE-UP LOGIC (Critical Fix) ---
+        // If partial was inactive, we MUST reset its filter state (history).
+        // Otherwise, it resumes with stale data, creating a massive "Pop"
+        // that explodes the IIR filter instantly.
+        if (!part.active_prev) {
+            part.vx1_low = vdup_n_f32(0.0f);
+            part.vx2_low = vdup_n_f32(0.0f);
+            part.vy1_low = vdup_n_f32(0.0f);
+            part.vy2_low = vdup_n_f32(0.0f);
+        }
+        part.active_prev = true;
 
         // Increment the count of partials that need processing
         active_count++;
@@ -332,6 +346,14 @@ float32x4_t Resonator::process(float32x4_t input)
 
             float32x2_t out0 = vsub_f32(vadd_f32(term1_0, term2_0), vadd_f32(term3_0, term4_0));
 
+            // --- PARANOID CLAMP (Fixes Explosion) ---
+            // IIR filters can accumulate energy to infinity. Hard clamp internal state.
+            // This prevents NaN propagation if a glitch occurs.
+            // Clamp to +/- 4.0 (ample headroom for audio, strict enough for safety)
+            float32x2_t vMax = vdup_n_f32(4.0f);
+            float32x2_t vMin = vdup_n_f32(-4.0f);
+            out0 = vmin_f32(vmax_f32(out0, vMin), vMax);
+
             // --- Frame 1 (L1, R1) ---
             // x[n]=in1, x[n-2]=x1_prev, y[n-1]=out0, y[n-2]=y1_prev
             float32x2_t term1_1 = vmul_f32(in1, b0);
@@ -340,6 +362,9 @@ float32x4_t Resonator::process(float32x4_t input)
             float32x2_t term4_1 = vmul_f32(y1_prev, a2);
 
             float32x2_t out1 = vsub_f32(vadd_f32(term1_1, term2_1), vadd_f32(term3_1, term4_1));
+
+            // Paranoid Clamp Frame 1
+            out1 = vmin_f32(vmax_f32(out1, vMin), vMax);
 
             // Store state (64-bit stores)
             part.vx1_low = in1;

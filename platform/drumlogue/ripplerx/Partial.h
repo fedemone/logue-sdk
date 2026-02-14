@@ -112,4 +112,6 @@ public:
 private:
     // Scalar coefficients are no longer needed as members;
     // they are calculated as locals in update() and stored in the vectors above.
+    // --- State variables
+    bool active_prev = false; // Tracks state for reset logic
 };

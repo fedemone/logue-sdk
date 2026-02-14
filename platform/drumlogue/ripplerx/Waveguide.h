@@ -48,7 +48,7 @@ public:
     }
 private:
     // Delay Line
-    static const int kDelaySize = 1024; // Power of 2 for fast masking
+    static const int kDelaySize = 4096; // INCREASED: 1024 is too small (~47Hz limit). 4096 allows ~11Hz. Power of 2 for fast masking
     static const int delay_mask = kDelaySize - 1;
     float32_t delay_line[kDelaySize] = {0};
     int32_t write_pos = 0;
