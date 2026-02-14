@@ -1,3 +1,23 @@
+# [2026-02-15] Final Instability: Limiter and Resonator Root Causes
+
+## 1. Symptoms
+- **Degrading Sound**: Audio starts clean, but degrades into distortion over ~4 beats, then goes silent.
+- **Hard Crash**: On some cold loads, or when sound fades naturally, the hardware crashes entirely.
+
+## 2. Diagnosis & Fixes
+
+### a. Limiter `rsqrt(0)` Bug (Hard Crash)
+- **Diagnosis**: The `ripplerx.h` render loop contained a "Silence Guard" (`+ 1.0e-9f`) to prevent the `Limiter` from receiving perfect zero. This is defensive code masking a bug. When the sound fades to true zero, the `Limiter`'s internal `rsqrt(0)` calculation produces `NaN`, crashing the hardware.
+- **Fix**: Removed the defensive epsilon from `ripplerx.h`. The `Limiter` class itself must be fixed to handle zero input gracefully (e.g., by adding an internal epsilon *only* for the `rsqrt` operation).
+
+### b. Resonator IIR Instability (Degrading Sound)
+- **Diagnosis**: The effective decay time (`d_eff`) in `Resonator::update` was clamped to `10.0s`. For a 32-bit float IIR filter, this creates a feedback coefficient `va2` so close to 1.0 that it becomes unstable over a few seconds, causing the audio to explode.
+- **Fix**: Replaced the `10.0f` clamp with a mathematically derived stability limit of `0.5f`. This keeps the `va2` coefficient in a safe range (`< 0.9995`) and prevents the slow energy accumulation. This is a correctness fix, not defensive coding.
+### c. Partial Wake-Up Explosion (Distortion then Silence)
+- **Diagnosis**: When `npartials` is reduced (e.g., via preset change), higher partials stop processing but retain their last filter state (`vx1`, `active_prev=true`). If `npartials` is later increased, these partials "wake up" and resume processing using stale history against new input. This discontinuity creates a massive impulse, exploding the filter.
+- **Fix**: Updated `Resonator::setParams` to explicitly set `active_prev = false` for all unused partials (`p >= npartials`). This forces a clean state reset when they are eventually reactivated.
+
+
 # [2026-02-11] Performance Optimization
 1. adding new algebric logic for faster rendering of Voices and Resonator, thus avoiding some critical situations.
 2. Filter and Noise has been vectorized
@@ -15,29 +35,6 @@
     1. Remove the feedback clamp.
     2. Reproduce the crash with `test_ripplerx_debug.cpp` (Test 17: Preset 14).
     3. Fix the source: Clamp the calculated `decay_k` to a safe limit (e.g., 10.0s) *before* it enters the coefficient math.
-
-# [2026-02-15] Coupling Instability & Initialization Regression
-
-## 1. Symptoms
-- **Hot Load**: Distorted beats then silence.
-- **Cold Load**: Clean -> Degrading -> Silence (4 beats).
-- **Diagnosis**:
-    1. **Coupling Instability**: The $O(N^2)$ coupling logic in `Voice::updateResonators` can generate negative or extremely large frequency shift ratios (`shifts`) when `freq` is low or partials align. These invalid ratios cause the Resonator IIR to become unstable (negative frequency or aliasing).
-    2. **Initialization Hazard**: `Voice::clear()` set `freq = 0.0f`. If `updateResonators` is called before `trigger` (e.g., during parameter load), the Resonator coefficients are calculated with 0Hz, leading to invalid state/NaNs.
-
-## 2. Fixes
-- **Voice.cc**: [REVERTED] Removed safety clamping to `localAShifts` and `localBShifts` to expose root cause during testing.
-- **Voice.cc**: Updated `Voice::clear()` to initialize `freq` to 50.0f instead of 0.0f.
-- **Resonator.cc**: Removed "Paranoid Clamp" (defensive code) to allow unit tests to catch true instability/explosions.
-- **Voice.cc**: Fixed Coupling Singularity. Raised minimum coupling frequency from 0.1Hz to `c_freq_min` (20Hz). This prevents explosion when `note=0` (~8Hz) triggers massive $1/f^2$ forces.
-- **Waveguide.cc**: Reviewed and confirmed clean of defensive signal clamps.
-- **Resonator.cc**: Added safety clamp to `npartials` in `setParams`. Prevents buffer overflow if `_partials` parameter is corrupted (>64).
-- **ripplerx.h**: Possible root cause found. Output buffer was accumulated instead of overwritten leading to sound explosion. UTs were zeroing the buffer missing completely the whole point of Hot Load simulation.
-
----
-
-
-# [2026-02-14] Instability & Silence Analysis (Preset 11/14)
 
 # [2026-02-14] Instability & Silence Analysis (Preset 11/14)
 

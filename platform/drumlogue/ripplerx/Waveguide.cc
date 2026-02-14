@@ -77,8 +77,8 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     // 8388608.0f is 2^23, shifting the value into the exponent bits
     u.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
-    // REVERT: Removed 0.01f scaling. c_decay_max (10.0f) handles the clamping.
-    float decay_k = fminf(c_decay_max, decay * u.f);
+    // Fix: Apply 0.01f scaling to map user range (0-1000) to physical seconds
+    float decay_k = fminf(c_decay_max, (decay * 0.01f) * u.f);
 
     if (isRelease) {
         decay_k *= rel;
@@ -91,6 +91,13 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
         // We use e_expff for the complex physics-based decay curve
         float exponent = (-M_PI * c_waveguide_decay_constant) / (f_0 * srate * decay_k);
         tube_decay_val = e_expff(exponent);
+#ifdef DEBUGN
+        // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
+        if (tube_decay_val >= 0.99999f) {
+            printf("[DIAG] tube_decay_val %d: decay_k=%.6f offset_decay=%.6f \n",
+                tube_decay_val, decay_k, offset_decay);
+        }
+#endif
     }
 
     // 4. NEON Vector Broadcasting

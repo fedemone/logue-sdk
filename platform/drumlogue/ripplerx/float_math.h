@@ -1005,6 +1005,32 @@ float sqrtsum2bett(const float dx, const float dy) {
     return (maxD * _1007div1024) + (minD * _441div1024) - term3;
 }
 
+/** This the famous Fast inverse square root code from Quake III!
+ * https://en.wikipedia.org/wiki/Fast_inverse_square_root
+ */
+static inline __attribute__((optimize("Ofast"), always_inline))
+float Q_rsqrt( float number )
+{
+  // safety check against zero division
+  if (number <= 0.0f) {
+    number = 1.0e-9f;
+  }
+
+	long i;
+	float x2, y;
+	const float threehalfs = 1.5F;
+
+	x2 = number * 0.5F;
+	y  = number;
+	i  = * ( long * ) &y;                       // evil floating point bit level hacking
+	i  = 0x5f3759df - ( i >> 1 );               // what the fuck?
+	y  = * ( float * ) &i;
+	y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
+//	y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can be removed
+
+	return y;
+}
+
 
 /** Fast but imprecise approximation for the euclidean distance
  * given carthesian coordinates for two points (x1,y1) and (x2,y2)
@@ -1046,4 +1072,3 @@ float eucDist2Bett(const float x1, const float y1, const float x2, const float y
 #endif // __float_math_h
 
 /** @} @} */
-

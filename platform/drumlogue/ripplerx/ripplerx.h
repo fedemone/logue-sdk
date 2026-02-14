@@ -182,9 +182,21 @@ public:
         const float32x4_t v_ab_inv = m_v_ab_inv_cached;
         // Loop over frames (step = 2 frames / 4 samples)
         for (size_t i = 0; i < frames * 2; i += 4) {
+#ifdef DEBUGN
+            // Track beats (assuming 120 BPM, 48kHz)
+            static size_t total_frames = 0;
+            static int current_beat = 0;
+            total_frames += 2;  // 2 stereo frames per iteration
 
+            const size_t frames_per_beat = 24000;  // 0.5 seconds at 48kHz
+            int beat_num = total_frames / frames_per_beat;
+
+            if (beat_num != current_beat) {
+                printf("\n[BEAT %d] Starting...\n", beat_num + 1);
+                current_beat = beat_num;
+            }
+#endif
             float32x4_t accum_dir = vdupq_n_f32(0.0f); // Direct signal
-            float32x4_t accum_res = vdupq_n_f32(0.0f); // Resonator Input
             float32x4_t audioIn   = vdupq_n_f32(0.0f); // Sample Input
 
             // --- A. Optimized Sample Playback ---
@@ -222,8 +234,16 @@ public:
             }
 
             // Standard Round-Robin processing (matches PluginProcessor_orig.cpp)
+            int active_voices_count = 0;
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
+
+                if (voice.isPressed || voice.isRelease || voice.noise.isActive()) {
+                    active_voices_count++;
+                }
+                // FIX: accum_res must be local to the voice!
+                // Previously it accumulated across all voices, causing explosion for later voices.
+                float32x4_t accum_res = vdupq_n_f32(0.0f);
 
                 // 1. Mallet
                 // Mallet is processed unconditionally (it handles its own internal envelope state)
@@ -351,6 +371,40 @@ public:
 #endif
             } // End Voice Loop
 
+            // [FIX] Normalize by active voice count to prevent accumulation
+            if (active_voices_count > 1) {
+                // Divide by sqrt(N) instead of N for more natural loudness
+                float norm_factor = Q_rsqrt((float)active_voices_count); // 1/sqrt(N) with safety check
+                accum_dir = vmulq_n_f32(accum_dir, norm_factor);
+            }
+
+#ifdef DEBUGN
+            // Report polyphony level
+            static int last_active = 0;
+            if (active_voices_count != last_active && i == 0) {  // Only report on frame 0
+                printf("[POLYPHONY] Active voices: %d\n", active_voices_count);
+                last_active = active_voices_count;
+            }
+
+            // CRITICAL: Check accumulation BEFORE effects
+            float accum_dir_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
+                                           std::abs(vgetq_lane_f32(accum_dir, 1)));
+
+            // This threshold catches the 4-beat accumulation bug
+            if (accum_dir_max > 5.0f) {
+                printf("[ACCUMULATION WARNING] Frame %zu: accum_dir=%.2f\n", i, accum_dir_max);
+                fflush(stdout);
+            }
+
+            // Hard failure on explosion
+            if (accum_dir_max > 20.0f || !isfinite(accum_dir_max)) {
+                printf("[EXPLOSION] Frame %zu: accum_dir=%.2f\n", i, accum_dir_max);
+                printf("  This is VOICE ACCUMULATION EXPLOSION!\n");
+                printf("  Check: Missing 0.01f scaling OR missing voice normalization\n");
+                fflush(stdout);
+                exit(1);
+            }
+#endif
             // --- C. Global Effects ---
             accum_dir = comb.process(accum_dir);
 
@@ -363,11 +417,6 @@ public:
                 exit(1);
             }
 #endif
-            // [SAFETY] Silence Guard
-            // The Limiter crashes if fed perfect 0.0f (rsqrt(0) = Inf).
-            // We add a tiny epsilon to ensure stability during silence.
-            // This fixes the "Silence -> Crash" symptom.
-            accum_dir = vaddq_f32(accum_dir, vdupq_n_f32(1.0e-9f));
 
 #ifdef DEBUGN
             float pre_lim_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
@@ -380,8 +429,11 @@ public:
             }
 #endif
 
-            accum_dir = limiter.process(accum_dir);
+            // [FIX] Apply Gain BEFORE Limiter.
+            // This allows the Gain to act as "Drive" into the limiter, and ensures
+            // the final output is strictly bounded by the limiter (preventing >10.0f explosions).
             accum_dir = vmulq_f32(accum_dir, v_gain);
+            accum_dir = limiter.process(accum_dir);
 
             // PROBE FINAL OUTPUT
 #ifdef DEBUGN
@@ -623,10 +675,10 @@ public:
                 a_b_decay = value;
                 const int32_t maxA = 1000;
                 if (value <= maxA) {
-                    parameters[a_decay] = (float)value / 100.0f; // FIX: Map 0-1000 to 0-10.0f
+                    parameters[a_decay] = (float)value; // Pass RAW value (0-1000) to DSP
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_decay] = (float)(value - maxA) / 100.0f; // FIX: Map 0-1000 to 0-10.0f
+                    parameters[b_decay] = (float)(value - maxA); // Pass RAW value (0-1000) to DSP
                     resonatorChangedB = true;
                 }
                 break;

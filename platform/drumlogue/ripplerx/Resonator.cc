@@ -65,6 +65,12 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
 		partials[p].srate = _srate;
 	}
 
+    // FIX: Mark unused partials as inactive so they reset if reactivated later.
+    // This prevents "Wake-Up Pop" explosions when switching from Low -> High partial counts.
+    for (uint32_t p = npartials; p < c_max_partials; ++p) {
+        partials[p].active_prev = false;
+    }
+
 	waveguide.decay = decay;
 	waveguide.radius = vdupq_n_f32(radius);
 	waveguide.is_closed = _model == ModelNames::ClosedTube;
@@ -163,8 +169,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
         // Calculate raw decay time in seconds (or arbitrary units)
-        // REVERT: Removed 0.01f scaling to restore full range.
-        float d_raw = part.decay * u_decay.f;
+        // Fix: Apply 0.01f scaling to map user range (0-1000) to physical seconds (0-10.0s)
+        float d_raw = (part.decay * 0.01f) * u_decay.f;
 
         // Apply Release Envelope
         if (isRelease) {
@@ -212,6 +218,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // Log-domain scaling: d_mod = (d_base ^ (damp * 2))
         float d_base = (part.damp <= 0.0f ? freq : f_max) / f_k;
         float d_mod = e_expff(fasterlogf(d_base) * (part.damp * 2.0f));
+        d_mod = fmaxf(0.1f, d_mod);  // Prevent d_mod from becoming too small
 
         // Tone Gain (t_gain)
         // Log-domain scaling: t_gain = (t_base ^ (tone * 2))
@@ -231,10 +238,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         //
         // Benefit: 1 Div, 1 Mul. (Original: 2 Divs)
 
-        // FIX: Calculate effective decay and clamp IT to 10.0s.
-        // This prevents instability even if d_mod (damping) extends the decay time.
-        float d_eff = d_raw / d_mod;
-        d_eff = fminf(10.0f, d_eff);
+        // d_mod is clamped to prevent explosion
+        float d_eff = d_raw / d_mod; // A 10s decay results in va2 > 0.9999, which is unstable.
 
         float inv_decay = inv_srate_2pi / d_eff;
 
@@ -270,7 +275,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         part.va2 = vdupq_n_f32(va2_val);
 #ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
-        if (!std::isfinite(va2_val) || fabsf(va2_val) >= 1.0f) {
+        if (!std::isfinite(va2_val) || fabsf(va2_val) >= 0.99999f) {
             printf("[DIAG] Partial %d: va2=%.6f inv_a0=%.6f inv_decay=%.6f\n",
                 part.k, va2_val, inv_a0, inv_decay);
         }

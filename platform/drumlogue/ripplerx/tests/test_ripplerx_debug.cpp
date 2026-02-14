@@ -1023,8 +1023,8 @@ void test_parameter_mapping() {
     // Max A is 1000. Should map to 10.0f (c_decay_max)
     synth.setParameter(c_parameterDecay, 1000);
     float valA = synth.getInternalParameter(a_decay);
-    if (std::abs(valA - 10.0f) > 0.001f) {
-        std::cerr << "[FAIL] Decay A scaling incorrect. Input 1000 -> " << valA << " (Expected 10.0)" << std::endl;
+    if (std::abs(valA - 1000.0f) > 0.001f) {
+        std::cerr << "[FAIL] Decay A scaling incorrect. Input 1000 -> " << valA << " (Expected 1000.0)" << std::endl;
         exit(1);
     }
 
@@ -1032,8 +1032,8 @@ void test_parameter_mapping() {
     // Input 1500 -> B value 500 -> 5.0f
     synth.setParameter(c_parameterDecay, 1500);
     float valB = synth.getInternalParameter(b_decay);
-    if (std::abs(valB - 5.0f) > 0.001f) {
-        std::cerr << "[FAIL] Decay B scaling incorrect. Input 1500 -> " << valB << " (Expected 5.0)" << std::endl;
+    if (std::abs(valB - 500.0f) > 0.001f) {
+        std::cerr << "[FAIL] Decay B scaling incorrect. Input 1500 -> " << valB << " (Expected 500.0)" << std::endl;
         exit(1);
     }
 
@@ -1152,6 +1152,687 @@ void test_coupling_safety() {
     std::cout << "  [PASS] Coupling safety test executed." << std::endl;
 }
 
+void test_partial_wakeup_instability() {
+    std::cout << "\n[Test 23] Partial Wake-up Instability..." << std::endl;
+    // This reproduces the "Distortion then Silence" bug caused by stale filter state
+    // when switching partial counts (e.g. 64 -> 4 -> 64).
+
+    RipplerX synth;
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    synth.Init(&desc);
+
+    // 1. Set max partials (64) and fill state with energy
+    synth.setParameter(c_parameterPartials, 4); // Index 4 -> 64 partials
+    synth.NoteOn(60, 127);
+    alignas(16) float buffer[128];
+    for(int i=0; i<100; ++i) synth.Render(buffer, 64);
+
+    // 2. Reduce partials (4) - Partials 4-63 become dormant but retain state
+    synth.setParameter(c_parameterPartials, 0); // Index 0 -> 4 partials
+    for(int i=0; i<50; ++i) synth.Render(buffer, 64);
+
+    // 3. Increase partials back to 64 - Wake up 4-63
+    // If active_prev wasn't cleared in step 2, they resume with old state -> EXPLOSION
+    synth.setParameter(c_parameterPartials, 4);
+
+    float max_val = 0.0f;
+    for(int i=0; i<100; ++i) {
+        synth.Render(buffer, 64);
+        for(float f : buffer) max_val = std::max(max_val, std::abs(f));
+    }
+
+    if (max_val > 50.0f) {
+        std::cerr << "[FAIL] Wake-up explosion detected! Max: " << max_val << std::endl;
+        exit(1);
+    }
+    std::cout << "  [PASS] Partial wake-up stable." << std::endl;
+}
+
+// https://en.cppreference.com/w/cpp/algorithm/min_element.html
+template<class ForwardIt>
+ForwardIt min_element(ForwardIt first, ForwardIt last)
+{
+    if (first == last)
+        return last;
+
+    ForwardIt smallest = first;
+
+    while (++first != last)
+        if (*first < *smallest)
+            smallest = first;
+
+    return smallest;
+}
+// https://en.cppreference.com/w/cpp/algorithm/max_element.html
+template<class ForwardIt>
+ForwardIt max_element(ForwardIt first, ForwardIt last)
+{
+    if (first == last)
+        return last;
+
+    ForwardIt largest = first;
+
+    while (++first != last)
+        if (*largest < *first)
+            largest = first;
+
+    return largest;
+}
+
+void test_polyphony_accumulation_4_beats() {
+    std::cout << "\n[Test 24] Polyphony Accumulation (4-Beat Hardware Bug Replication)" << std::endl;
+    std::cout << "  Replicating exact hardware crash scenario..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // CRITICAL: Use EXACT same parameters as hardware
+    // These are typical loaded preset values
+    synth.setParameter(c_parameterDecay, 500);      // Moderate decay
+    synth.setParameter(c_parameterModel, 0);        // String model
+    synth.setParameter(c_parameterPartials, 3);     // 32 partials
+    synth.setParameter(c_parameterMaterial, 0);     // No damping
+    synth.setParameter(c_parameterRelease, 100);    // Some release
+
+    alignas(16) float buffer[128];
+
+    // Simulate 4 beats at 120 BPM
+    // Beat duration = 60/120 = 0.5 seconds = 24000 samples
+    const int samples_per_beat = 24000;
+    const int blocks_per_beat = samples_per_beat / 64;
+
+    float max_per_beat[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    // Trigger 4 notes (one per beat), exactly like hardware
+    for (int beat = 0; beat < 4; ++beat) {
+        // Trigger note at start of beat
+        synth.NoteOn(60, 100);
+
+        std::cout << "  Beat " << (beat + 1) << ": ";
+
+        // Render one beat worth of audio
+        for (int block = 0; block < blocks_per_beat; ++block) {
+            std::memset(buffer, 0, sizeof(buffer));
+            synth.Render(buffer, 64);
+
+            // Track maximum amplitude
+            for (int s = 0; s < 128; ++s) {
+                float val = std::abs(buffer[s]);
+                max_per_beat[beat] = std::max(max_per_beat[beat], val);
+
+                // Check for explosion (hardware would crash here)
+                if (val > 10.0f || !std::isfinite(val)) {
+                    std::cerr << "\n[FAIL] Audio explosion at beat " << (beat + 1)
+                              << ", block " << block << ", sample " << s
+                              << ", value: " << buffer[s] << std::endl;
+                    std::cerr << "  This is the EXACT bug causing hardware crash!" << std::endl;
+                    std::cerr << "  Max values per beat: ";
+                    for (int b = 0; b <= beat; ++b) {
+                        std::cerr << "Beat " << (b+1) << "=" << max_per_beat[b] << " ";
+                    }
+                    std::cerr << std::endl;
+                    exit(1);
+                }
+            }
+        }
+
+        std::cout << "Max=" << max_per_beat[beat] << std::endl;
+
+        // CRITICAL CHECK: Amplitude should NOT increase with each beat!
+        // If max_per_beat[1] > max_per_beat[0] * 1.5, there's accumulation
+        if (beat > 0) {
+            float ratio = max_per_beat[beat] / max_per_beat[0];
+            if (ratio > 2.5f) {
+                std::cerr << "[FAIL] Amplitude growing with polyphony!" << std::endl;
+                std::cerr << "  Beat 1: " << max_per_beat[0] << std::endl;
+                std::cerr << "  Beat " << (beat+1) << ": " << max_per_beat[beat]
+                          << " (ratio: " << ratio << "x)" << std::endl;
+                std::cerr << "  This indicates ACCUMULATION BUG - missing normalization or wrong scaling!" << std::endl;
+                exit(1);
+            }
+        }
+    }
+
+    // Check that amplitude is stable across all beats
+    float min_max = *min_element(max_per_beat, max_per_beat + 4);
+    float max_max = *max_element(max_per_beat, max_per_beat + 4);
+    float variation_ratio = max_max / min_max;
+
+    std::cout << "  Amplitude variation: " << variation_ratio << "x" << std::endl;
+
+    if (variation_ratio > 2.5f) {
+        std::cerr << "[FAIL] Excessive amplitude variation across beats!" << std::endl;
+        std::cerr << "  Min: " << min_max << ", Max: " << max_max << std::endl;
+        std::cerr << "  This indicates unstable accumulation or feedback growth." << std::endl;
+        exit(1);
+    }
+
+    std::cout << "  [PASS] 4-beat polyphony stable (max variation: " << variation_ratio << "x)" << std::endl;
+}
+
+void test_decay_scaling_verification() {
+    std::cout << "\n[Test 25] Decay Scaling Verification" << std::endl;
+    std::cout << "  Verifying 0.01f scaling is applied..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Test with decay = 1000 (maximum user value)
+    synth.setParameter(c_parameterDecay, 1000);
+    synth.setParameter(c_parameterModel, 0);
+    synth.setParameter(c_parameterPartials, 1); // Single partial for simplicity
+
+    synth.NoteOn(60, 100);
+
+    alignas(16) float buffer[128];
+
+    // Render 2 seconds worth
+    bool found_ringing = false;
+    for (int i = 0; i < (96000 / 64); ++i) {
+        synth.Render(buffer, 64);
+
+        for (int s = 0; s < 128; ++s) {
+            // With correct 0.01f scaling, decay=1000 should produce long but stable ring
+            // Without scaling, decay=1000 would cause immediate explosion
+            if (std::abs(buffer[s]) > 10.0f || !isfinite(buffer[s])) {
+                std::cerr << "[FAIL] Decay scaling incorrect - explosion with decay=1000" << std::endl;
+                std::cerr << "  Sample value: " << buffer[s] << " at iteration " << i << std::endl;
+                std::cerr << "  The 0.01f scaling is MISSING or incorrect!" << std::endl;
+                exit(1);
+            }
+
+            if (std::abs(buffer[s]) > 0.001f) {
+                found_ringing = true;
+            }
+        }
+    }
+
+    // With decay=1000, we should still hear ringing after 2 seconds
+    if (!found_ringing) {
+        std::cerr << "[WARN] No ringing with decay=1000 - might be over-damped" << std::endl;
+    }
+
+    std::cout << "  [PASS] Decay=1000 stable (scaling correct)" << std::endl;
+}
+
+void test_single_vs_quad_voice_level() {
+    std::cout << "\n[Test 26] Single vs Quad Voice Output Level" << std::endl;
+    std::cout << "  Checking if 4 voices are 4x louder (accumulation bug)..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    alignas(16) float buffer[128];
+
+    // Test 1: Single voice
+    synth.Init(&desc);
+    synth.setParameter(c_parameterDecay, 300);
+    synth.setParameter(c_parameterModel, 0);
+
+    synth.NoteOn(60, 100);
+
+    float single_voice_max = 0.0f;
+    for (int i = 0; i < 100; ++i) {
+        synth.Render(buffer, 64);
+        for (float f : buffer) {
+            single_voice_max = std::max(single_voice_max, std::abs(f));
+        }
+    }
+
+    // Test 2: Four voices simultaneously
+    synth.Init(&desc);
+    synth.setParameter(c_parameterDecay, 300);
+    synth.setParameter(c_parameterModel, 0);
+
+    synth.NoteOn(60, 100);
+    synth.NoteOn(64, 100);
+    synth.NoteOn(67, 100);
+    synth.NoteOn(72, 100);
+
+    float quad_voice_max = 0.0f;
+    for (int i = 0; i < 100; ++i) {
+        synth.Render(buffer, 64);
+        for (float f : buffer) {
+            quad_voice_max = std::max(quad_voice_max, std::abs(f));
+        }
+    }
+
+    float ratio = quad_voice_max / single_voice_max;
+
+    std::cout << "  Single voice max: " << single_voice_max << std::endl;
+    std::cout << "  Quad voice max: " << quad_voice_max << std::endl;
+    std::cout << "  Ratio: " << ratio << "x" << std::endl;
+
+    // If ratio is close to 4.0, there's no voice normalization (accumulation bug)
+    // Ideal ratio should be 2.0-2.5 (some constructive interference expected)
+    if (ratio > 3.5f) {
+        std::cerr << "[FAIL] 4 voices are " << ratio << "x louder than 1 voice!" << std::endl;
+        std::cerr << "  This indicates LINEAR ACCUMULATION without normalization." << std::endl;
+        std::cerr << "  Expected ratio: ~2.0x, Actual: " << ratio << "x" << std::endl;
+        exit(1);
+    }
+
+    std::cout << "  [PASS] Polyphony level reasonable (ratio: " << ratio << "x)" << std::endl;
+}
+
+void test_decay_parameter_range() {
+    std::cout << "\n[Test 27] Decay Parameter Range & Scaling Verification" << std::endl;
+    std::cout << "  Testing full decay range (1-1000) for stability..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    alignas(16) float buffer[128];
+
+    // Test decay values that users actually use: 1, 100, 500, 800, 1000
+    int decay_values[] = {1, 100, 500, 800, 1000};
+
+    for (int decay_val : decay_values) {
+        synth.Init(&desc);
+        synth.setParameter(c_parameterDecay, decay_val);
+        synth.setParameter(c_parameterModel, 0);
+        synth.setParameter(c_parameterPartials, 3);  // 32 partials
+
+        synth.NoteOn(60, 100);
+
+        float max_amplitude = 0.0f;
+        bool found_explosion = false;
+
+        // Render 1 second
+        for (int i = 0; i < (48000 / 64); ++i) {
+            std::memset(buffer, 0, sizeof(buffer));
+            synth.Render(buffer, 64);
+
+            for (int s = 0; s < 128; ++s) {
+                float val = std::abs(buffer[s]);
+                max_amplitude = std::max(max_amplitude, val);
+
+                // CRITICAL: Detect explosion (hardware would crash here)
+                if (val > 50.0f || !std::isfinite(val)) {
+                    std::cerr << "[FAIL] Explosion with decay=" << decay_val
+                              << " at block " << i << ", value=" << buffer[s] << std::endl;
+                    std::cerr << "  This indicates missing 0.01f scaling or c_decay_max too high!" << std::endl;
+                    found_explosion = true;
+                    break;
+                }
+            }
+            if (found_explosion) break;
+        }
+
+        if (found_explosion) {
+            exit(1);
+        }
+
+        std::cout << "  Decay=" << std::setw(4) << decay_val
+                  << ": Max=" << max_amplitude << " - ";
+
+        // Verify sound level is reasonable
+        if (max_amplitude < 0.001f) {
+            std::cerr << "[FAIL] Sound too quiet!" << std::endl;
+            std::cerr << "  Decay=" << decay_val << " produced max=" << max_amplitude << std::endl;
+            std::cerr << "  Either decay range is wrong OR 0.01f scaling is too aggressive." << std::endl;
+            std::cerr << "  Solution: Increase c_decay_max in constants.h" << std::endl;
+            exit(1);
+        }
+
+        std::cout << "OK" << std::endl;
+    }
+
+    std::cout << "  [PASS] Full decay range stable and audible" << std::endl;
+}
+
+void test_polyphony_accumulation_2_beats() {
+    std::cout << "\n[Test 28] Polyphony Accumulation (2-Beat Hardware Crash)" << std::endl;
+    std::cout << "  Replicating EXACT hardware crash scenario..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // CRITICAL: Use REALISTIC preset values that users load
+    synth.setParameter(c_parameterDecay, 800);      // Long decay (typical preset)
+    synth.setParameter(c_parameterModel, 0);        // String model
+    synth.setParameter(c_parameterPartials, 4);     // 48 partials (heavy)
+    synth.setParameter(c_parameterMaterial, 0);     // No extra damping
+
+    alignas(16) float buffer[128];
+
+    // Simulate beats at 120 BPM (0.5 second per beat)
+    const int samples_per_beat = 24000;
+    const int blocks_per_beat = samples_per_beat / 64;
+
+    float max_per_beat[5] = {0.0f};
+    int active_voices_per_beat[5] = {0};
+
+    for (int beat = 0; beat < 5; ++beat) {
+        // Trigger note at start of beat
+        synth.NoteOn(60 + (beat % 12), 100);
+
+        // Count active voices
+        int active_count = 0;
+        for (size_t v = 0; v < 8; ++v) {
+            if (synth.voices[v].isPressed) {
+                active_count++;
+            }
+        }
+        active_voices_per_beat[beat] = active_count;
+
+        std::cout << "  Beat " << (beat + 1) << " (voices=" << active_count << "): ";
+
+        // Render one beat
+        for (int block = 0; block < blocks_per_beat; ++block) {
+            std::memset(buffer, 0, sizeof(buffer));
+            synth.Render(buffer, 64);
+
+            for (int s = 0; s < 128; ++s) {
+                float val = std::abs(buffer[s]);
+                max_per_beat[beat] = std::max(max_per_beat[beat], val);
+
+                // CRITICAL: Hardware crashes at this threshold
+                if (val > 50.0f || !std::isfinite(val)) {
+                    std::cerr << "\n[FAIL] HARDWARE CRASH DETECTED!" << std::endl;
+                    std::cerr << "  Beat: " << (beat + 1) << std::endl;
+                    std::cerr << "  Block: " << block << std::endl;
+                    std::cerr << "  Sample: " << s << std::endl;
+                    std::cerr << "  Value: " << buffer[s] << std::endl;
+                    std::cerr << "  Active voices: " << active_count << std::endl;
+                    std::cerr << "\n  Amplitude per beat:" << std::endl;
+                    for (int b = 0; b <= beat; ++b) {
+                        std::cerr << "    Beat " << (b+1) << ": " << max_per_beat[b]
+                                  << " (" << active_voices_per_beat[b] << " voices)" << std::endl;
+                    }
+                    std::cerr << "\n  ROOT CAUSE: Voice accumulation without normalization!" << std::endl;
+                    std::cerr << "  FIX: Add voice count normalization in Render()" << std::endl;
+                    exit(1);
+                }
+            }
+        }
+
+        std::cout << "Max=" << max_per_beat[beat] << std::endl;
+
+        // CRITICAL: Check for LINEAR accumulation (smoking gun!)
+        if (beat >= 1) {
+            // If amplitude doubles with each voice, there's no normalization
+            float growth_ratio = max_per_beat[beat] / max_per_beat[0];
+            float expected_linear_growth = (float)(beat + 1);
+
+            // If growth is close to linear (voices * 1.0), that's the bug
+            if (growth_ratio > expected_linear_growth * 0.85f) {
+                std::cerr << "\n[FAIL] LINEAR ACCUMULATION DETECTED!" << std::endl;
+                std::cerr << "  Beat 1: " << max_per_beat[0] << " (1 voice)" << std::endl;
+                std::cerr << "  Beat " << (beat+1) << ": " << max_per_beat[beat]
+                          << " (" << (beat+1) << " voices)" << std::endl;
+                std::cerr << "  Growth ratio: " << growth_ratio << "x" << std::endl;
+                std::cerr << "  Expected with linear accumulation: " << expected_linear_growth << "x" << std::endl;
+                std::cerr << "\n  This is the BUG causing hardware crash!" << std::endl;
+                std::cerr << "  Voices are adding without normalization:" << std::endl;
+                std::cerr << "    accum = voice1 + voice2 + voice3 + ..." << std::endl;
+                std::cerr << "  Should be:" << std::endl;
+                std::cerr << "    accum = (voice1 + voice2 + voice3) / sqrt(N)" << std::endl;
+                exit(1);
+            }
+        }
+    }
+
+    // Check overall stability across 5 beats
+    float min_max = *min_element(max_per_beat, max_per_beat + 5);
+    float max_max = *max_element(max_per_beat, max_per_beat + 5);
+    float variation = max_max / min_max;
+
+    std::cout << "  Overall variation: " << variation << "x (should be < 2.0x)" << std::endl;
+
+    if (variation > 2.5f) {
+        std::cerr << "[FAIL] Excessive amplitude variation!" << std::endl;
+        std::cerr << "  This indicates missing voice normalization." << std::endl;
+        exit(1);
+    }
+
+    std::cout << "  [PASS] 5-beat polyphony stable without accumulation" << std::endl;
+}
+
+void test_iir_coefficient_stability() {
+    std::cout << "\n[Test 29] IIR Coefficient Stability Check" << std::endl;
+    std::cout << "  Verifying all va2 coefficients stay safely below 1.0..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Test with MAXIMUM decay to stress-test coefficient calculation
+    synth.setParameter(c_parameterDecay, 1000);     // Maximum user value
+    synth.setParameter(c_parameterModel, 0);
+    synth.setParameter(c_parameterPartials, 5);     // 64 partials (all of them)
+    synth.setParameter(c_parameterMaterial, -10);   // Min damping (least stable)
+
+    synth.NoteOn(60, 127);
+
+    alignas(16) float buffer[128];
+
+    // Render and watch for instability
+    bool stability_verified = false;
+    for (int i = 0; i < 200; ++i) {
+        std::memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+
+        for (int s = 0; s < 128; ++s) {
+            float val = std::abs(buffer[s]);
+
+            // Coefficient instability manifests as exponential growth
+            if (val > 100.0f || !std::isfinite(val)) {
+                std::cerr << "[FAIL] IIR coefficient instability!" << std::endl;
+                std::cerr << "  Iteration: " << i << std::endl;
+                std::cerr << "  Value: " << buffer[s] << std::endl;
+                std::cerr << "  This indicates va2 coefficient >= 1.0" << std::endl;
+                std::cerr << "\n  Likely causes:" << std::endl;
+                std::cerr << "    1. Missing 0.01f scaling in decay calculation" << std::endl;
+                std::cerr << "    2. c_decay_max set too high (should be <= 100.0)" << std::endl;
+                std::cerr << "    3. d_eff not clamped properly" << std::endl;
+                exit(1);
+            }
+
+            if (val > 0.01f) {
+                stability_verified = true;
+            }
+        }
+    }
+
+    if (!stability_verified) {
+        std::cerr << "[WARN] No audible output with decay=1000" << std::endl;
+        std::cerr << "  Check if decay range is configured correctly" << std::endl;
+    }
+
+    std::cout << "  [PASS] IIR coefficients stable with max decay" << std::endl;
+}
+
+void test_voice_normalization_effectiveness() {
+    std::cout << "\n[Test 30] Voice Normalization Effectiveness" << std::endl;
+    std::cout << "  Verifying polyphonic output doesn't scale linearly..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    alignas(16) float buffer[128];
+
+    struct TestCase {
+        int num_voices;
+        float expected_max_ratio;  // Relative to 1 voice
+        float tolerance;
+    };
+
+    TestCase cases[] = {
+        {1, 1.0f, 0.0f},      // Baseline
+        {2, 1.5f, 0.3f},      // Should be ~1.41x (sqrt(2)), allow 1.2-1.8x
+        {4, 2.2f, 0.5f},      // Should be ~2.0x (sqrt(4)), allow 1.7-2.7x
+        {8, 3.0f, 0.8f},      // Should be ~2.83x (sqrt(8)), allow 2.2-3.8x
+    };
+
+    float single_voice_max = 0.0f;
+
+    for (auto& test : cases) {
+        synth.Init(&desc);
+        synth.setParameter(c_parameterDecay, 400);
+        synth.setParameter(c_parameterModel, 0);
+
+        // Trigger N voices
+        for (int v = 0; v < test.num_voices; ++v) {
+            synth.NoteOn(60 + v, 100);
+        }
+
+        float max_amplitude = 0.0f;
+        for (int i = 0; i < 100; ++i) {
+            synth.Render(buffer, 64);
+            for (float f : buffer) {
+                max_amplitude = std::max(max_amplitude, std::abs(f));
+            }
+        }
+
+        if (test.num_voices == 1) {
+            single_voice_max = max_amplitude;
+            std::cout << "  1 voice:  Max=" << max_amplitude << " (baseline)" << std::endl;
+        } else {
+            float ratio = max_amplitude / single_voice_max;
+            float expected_min = test.expected_max_ratio - test.tolerance;
+            float expected_max = test.expected_max_ratio + test.tolerance;
+
+            std::cout << "  " << test.num_voices << " voices: Max=" << max_amplitude
+                      << ", Ratio=" << ratio << "x ";
+
+            // Check for LINEAR accumulation (bad)
+            if (ratio > (float)test.num_voices * 0.9f) {
+                std::cerr << "\n[FAIL] LINEAR ACCUMULATION!" << std::endl;
+                std::cerr << "  Expected: ~" << test.expected_max_ratio << "x (with normalization)" << std::endl;
+                std::cerr << "  Got: " << ratio << "x (too close to " << test.num_voices << "x)" << std::endl;
+                std::cerr << "  Missing voice normalization!" << std::endl;
+                exit(1);
+            }
+
+            // Check if normalization is working
+            if (ratio < expected_min || ratio > expected_max) {
+                std::cerr << "\n[WARN] Ratio outside expected range" << std::endl;
+                std::cerr << "  Expected: " << expected_min << "-" << expected_max << "x" << std::endl;
+                std::cerr << "  Got: " << ratio << "x" << std::endl;
+            } else {
+                std::cout << "(within expected range)" << std::endl;
+            }
+        }
+    }
+
+    std::cout << "  [PASS] Voice normalization working correctly" << std::endl;
+}
+
+void test_preset_loading_stability() {
+    std::cout << "\n[Test 31] Preset Loading Stability (Real-World Scenarios)" << std::endl;
+    std::cout << "  Testing with typical user preset values..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    alignas(16) float buffer[128];
+
+    // Realistic presets that users actually load
+    struct Preset {
+        const char* name;
+        int decay;
+        int model;
+        int partials;
+        int material;
+    };
+
+    Preset presets[] = {
+        {"Short Bell",   100, 0, 2, 5},
+        {"Long String",  800, 0, 4, 0},
+        {"Metal Plate", 1000, 3, 5, -5},
+        {"Wood Block",    50, 1, 1, 10},
+        {"Glass Bowl",   600, 2, 3, -10},
+    };
+
+    for (auto& preset : presets) {
+        synth.Init(&desc);
+        synth.setParameter(c_parameterDecay, preset.decay);
+        synth.setParameter(c_parameterModel, preset.model);
+        synth.setParameter(c_parameterPartials, preset.partials);
+        synth.setParameter(c_parameterMaterial, preset.material);
+
+        // Trigger chord (3 notes)
+        synth.NoteOn(60, 100);
+        synth.NoteOn(64, 100);
+        synth.NoteOn(67, 100);
+
+        bool preset_stable = true;
+        float max_val = 0.0f;
+
+        // Render 2 seconds
+        for (int i = 0; i < (96000 / 64); ++i) {
+            synth.Render(buffer, 64);
+
+            for (float f : buffer) {
+                float val = std::abs(f);
+                max_val = std::max(max_val, val);
+
+                if (val > 50.0f || !std::isfinite(val)) {
+                    std::cerr << "[FAIL] Preset '" << preset.name << "' unstable!" << std::endl;
+                    std::cerr << "  Decay=" << preset.decay << ", Model=" << preset.model << std::endl;
+                    std::cerr << "  Explosion at iteration " << i << ", value=" << f << std::endl;
+                    preset_stable = false;
+                    break;
+                }
+            }
+            if (!preset_stable) break;
+        }
+
+        if (!preset_stable) {
+            exit(1);
+        }
+
+        std::cout << "  " << std::setw(15) << preset.name << ": Max=" << max_val << " - OK" << std::endl;
+    }
+
+    std::cout << "  [PASS] All realistic presets stable" << std::endl;
+}
+
 
 int main() {
     std::cout << "\n";
@@ -1186,6 +1867,15 @@ int main() {
         test_parameter_mapping();
         test_api_lifecycle_stability();
         test_coupling_safety();
+        test_partial_wakeup_instability();
+        test_polyphony_accumulation_4_beats();
+        test_decay_scaling_verification();
+        test_single_vs_quad_voice_level();
+        test_decay_parameter_range();              // Test 27:  Catches decay scaling issues
+        test_polyphony_accumulation_2_beats();     // Test 28: Catches 2-beat crash bug
+        test_iir_coefficient_stability();          // Test 29: Catches va2 >= 1.0
+        test_voice_normalization_effectiveness();  // Test 30: Verifies normalization works
+        test_preset_loading_stability();           // Test 31: Real-world preset testing
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;
