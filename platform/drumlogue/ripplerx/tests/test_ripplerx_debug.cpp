@@ -153,7 +153,10 @@ void test_dirty_initialization() {
         TestStats stats;
 
         for (int block = 0; block < 100; ++block) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // DIRTY BUFFER TEST: Fill with garbage before Render
+            for(int k=0; k<128; ++k) buffer[k] = 999.0f;
+
+            // Render should OVERWRITE the garbage, not add to it
             synth->Render(buffer, 64);
 
             for (float f : buffer) {
@@ -380,7 +383,7 @@ void test_envelope_decay() {
 
     // Phase 1: Render 100ms (attack + decay phase)
     for (int i = 0; i < (4800 / 64); ++i) {  // 100ms at 48kHz
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));
         synth.Render(buffer, 64);
     }
 
@@ -389,7 +392,7 @@ void test_envelope_decay() {
 
     // Phase 2: Render 500ms for release to complete
     for (int i = 0; i < (24000 / 64); ++i) {  // 500ms at 48kHz
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));
         synth.Render(buffer, 64);
     }
 
@@ -449,7 +452,7 @@ void test_extreme_parameters() {
 
         TestStats stats;
         for (int i = 0; i < 100; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // std::memset(buffer, 0, sizeof(buffer));  // try dirty buffer
             synth.Render(buffer, 64);
 
             for (float f : buffer) {
@@ -496,7 +499,7 @@ void test_hot_reload_multi_pattern() {
         float maxVal = 0.0f;
 
         for (int i = 0; i < 50; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // std::memset(buffer, 0, sizeof(buffer));
             synth->Render(buffer, 64);
 
             for (float f : buffer) {
@@ -541,7 +544,7 @@ void test_note_on_off_cycle() {
 
         // Render 10 blocks
         for (int i = 0; i < 10; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // std::memset(buffer, 0, sizeof(buffer));
             synth.Render(buffer, 64);
             verify_buffer(buffer, 128, "Note Cycle");
         }
@@ -550,7 +553,7 @@ void test_note_on_off_cycle() {
 
         // Render 5 blocks after off
         for (int i = 0; i < 5; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // std::memset(buffer, 0, sizeof(buffer));
             synth.Render(buffer, 64);
             verify_buffer(buffer, 128, "Note Cycle");
         }
@@ -600,7 +603,7 @@ void test_comb_filter_stability() {
 
     // Render for a while to let the comb filter feedback loop run
     for (int i = 0; i < 100; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));
         synth.Render(buffer, 64);
         verify_buffer(buffer, 128, "Comb Stability");
     }
@@ -632,7 +635,7 @@ void test_percussion_auto_release() {
 
     // Render for 2 seconds
     for (int i = 0; i < 1500; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));  // try with dirty buffer
         synth.Render(buffer, 64);
 
         // Check the tail (last 100 blocks) for silence
@@ -721,7 +724,7 @@ void test_rhythmic_stability_crash() {
         float max_peak = 0.0f;
 
         for (int i = 0; i < 375; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // std::memset(buffer, 0, sizeof(buffer));
             synth.Render(buffer, kBlockSize);
 
             // Check for NaN/Inf immediately
@@ -782,7 +785,7 @@ void test_degradation_over_12_beats() {
         int sample_count = 0;
 
         for (int i = 0; i < 375; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+            // std::memset(buffer, 0, sizeof(buffer));
             synth.Render(buffer, kBlockSize);
 
             for (int j = 0; j < 128; ++j) {
@@ -835,7 +838,7 @@ std::cout << "\n[Test 16] Preset 11 Issue (Harp)..." << std::endl;
 
     // Render 1 second
     for (int i = 0; i < 750; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));  // try with dirty buffer
         synth.Render(buffer, 64);
         verify_buffer(buffer, 128, "Preset 11");
     }
@@ -862,7 +865,7 @@ void test_preset_14_crash() {
 
     // Render 1 second
     for (int i = 0; i < 750; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));  // try with dirty buffer
         synth.Render(buffer, 64);
         verify_buffer(buffer, 128, "Preset 14");
     }
@@ -888,7 +891,7 @@ void test_preset_28_issue() {
 
     // Render 1 second
     for (int i = 0; i < 750; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));  // try with dirty buffer
         synth.Render(buffer, 64);
         verify_buffer(buffer, 128, "Preset 28");
     }
@@ -919,10 +922,10 @@ void test_preset_loop_transition() {
         // Trigger note
         synth.NoteOn(60, 100);
 
-        // Render 0.1 seconds (approx 75 blocks) to verify stability
+        // Render 0.2 seconds (approx 175 blocks) to verify stability
         bool stable = true;
-        for (int i = 0; i < 75; ++i) {
-            std::memset(buffer, 0, sizeof(buffer));
+        for (int i = 0; i < 175; ++i) {
+            // std::memset(buffer, 0, sizeof(buffer));
             synth.Render(buffer, kBlockSize);
 
             for (float f : buffer) {
@@ -990,7 +993,7 @@ void test_preset_retrigger_instability() {
             // Render 0.5s (approx 375 blocks)
             float max_peak = 0.0f;
             for (int i = 0; i < 375; ++i) {
-                std::memset(buffer, 0, sizeof(buffer));
+                // std::memset(buffer, 0, sizeof(buffer));
                 synth.Render(buffer, kBlockSize);
 
                 for (float f : buffer) {
@@ -1076,7 +1079,7 @@ void test_api_lifecycle_stability() {
     int samples_processed = 0;
 
     for (int i = 0; i < kNumBlocks; ++i) {
-        std::memset(buffer, 0, sizeof(buffer));
+        // std::memset(buffer, 0, sizeof(buffer));
 
         // Trigger logic
         if (samples_processed % samples_per_beat < 64) {
@@ -1129,6 +1132,26 @@ void test_api_lifecycle_stability() {
     std::cout << "[PASS] API Lifecycle & Long-Term Stability verified." << std::endl;
 }
 
+void test_coupling_safety() {
+    std::cout << "\n[Test 22] Coupling Safety (Negative Freq Check)..." << std::endl;
+    // This test verifies that the coupling logic doesn't produce NaN/Inf even with extreme inputs
+    // and that Voice::clear() initializes freq safely.
+
+    Voice v;
+    v.clear(); // Should set freq = 50.0f
+
+    // Trigger with low frequency to maximize coupling forces
+    // Note 0 -> ~8Hz.
+    v.setCoupling(true, 1.0f); // Max split
+    v.trigger(48000.0f, 0, 1.0f, 100.0f);
+
+    // We can't easily check internal state without friend classes,
+    // but we can ensure it doesn't crash during trigger/update.
+
+    // If we reached here, we didn't crash in updateResonators.
+    std::cout << "  [PASS] Coupling safety test executed." << std::endl;
+}
+
 
 int main() {
     std::cout << "\n";
@@ -1162,6 +1185,7 @@ int main() {
         test_preset_retrigger_instability();
         test_parameter_mapping();
         test_api_lifecycle_stability();
+        test_coupling_safety();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;

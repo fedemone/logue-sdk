@@ -56,7 +56,6 @@ __unit_callback void unit_suspend() {
 Input/output buffer geometry information is provided via the `unit_runtime_desc_t` argument of `unit_init(..)`.*/
 __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
   (void)in;
-  memset(out, 0, frames * 2 * sizeof(float)); // DEBUG: clear output buffer
   s_synth_instance.Render(out, frames);
 }
 /*  Called to set the current value of the parameter designated by the specified index.

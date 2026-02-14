@@ -63,7 +63,7 @@ void Voice::clear()
 
     // Zero out other state
     note = 0;
-    freq = 0.0f;
+    freq = 50.0f; // Safe default frequency to avoid div/0 in Resonator updates
     vel = 0.0f;
 }
 
@@ -159,7 +159,9 @@ void Voice::updateResonators(bool updateFrequencies)
     if (aPitchFactor != 1.0f) applyPitch(localAShifts, aPitchFactor);
     if (bPitchFactor != 1.0f) applyPitch(localBShifts, bPitchFactor);
 
-    if (couple && resA.isOn() && resB.isOn() && freq > 0.1f) {
+    // FIX: Coupling model has a singularity at DC (1/freq^2).
+    // Disable coupling below audible range (20Hz) to prevent explosion at Note 0 (~8Hz).
+    if (couple && resA.isOn() && resB.isOn() && freq > c_freq_min) {
 
         // Base constants
         const float32_t k = split * c_coupling_split_factor / freq;

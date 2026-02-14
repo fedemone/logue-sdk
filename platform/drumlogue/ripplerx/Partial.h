@@ -109,7 +109,6 @@ public:
     float32_t vel_inharm = 0.0f;
     int k = 1;
 
-private:
     // Scalar coefficients are no longer needed as members;
     // they are calculated as locals in update() and stored in the vectors above.
     // --- State variables

@@ -16,6 +16,29 @@
     2. Reproduce the crash with `test_ripplerx_debug.cpp` (Test 17: Preset 14).
     3. Fix the source: Clamp the calculated `decay_k` to a safe limit (e.g., 10.0s) *before* it enters the coefficient math.
 
+# [2026-02-15] Coupling Instability & Initialization Regression
+
+## 1. Symptoms
+- **Hot Load**: Distorted beats then silence.
+- **Cold Load**: Clean -> Degrading -> Silence (4 beats).
+- **Diagnosis**:
+    1. **Coupling Instability**: The $O(N^2)$ coupling logic in `Voice::updateResonators` can generate negative or extremely large frequency shift ratios (`shifts`) when `freq` is low or partials align. These invalid ratios cause the Resonator IIR to become unstable (negative frequency or aliasing).
+    2. **Initialization Hazard**: `Voice::clear()` set `freq = 0.0f`. If `updateResonators` is called before `trigger` (e.g., during parameter load), the Resonator coefficients are calculated with 0Hz, leading to invalid state/NaNs.
+
+## 2. Fixes
+- **Voice.cc**: [REVERTED] Removed safety clamping to `localAShifts` and `localBShifts` to expose root cause during testing.
+- **Voice.cc**: Updated `Voice::clear()` to initialize `freq` to 50.0f instead of 0.0f.
+- **Resonator.cc**: Removed "Paranoid Clamp" (defensive code) to allow unit tests to catch true instability/explosions.
+- **Voice.cc**: Fixed Coupling Singularity. Raised minimum coupling frequency from 0.1Hz to `c_freq_min` (20Hz). This prevents explosion when `note=0` (~8Hz) triggers massive $1/f^2$ forces.
+- **Waveguide.cc**: Reviewed and confirmed clean of defensive signal clamps.
+- **Resonator.cc**: Added safety clamp to `npartials` in `setParams`. Prevents buffer overflow if `_partials` parameter is corrupted (>64).
+- **ripplerx.h**: Possible root cause found. Output buffer was accumulated instead of overwritten leading to sound explosion. UTs were zeroing the buffer missing completely the whole point of Hot Load simulation.
+
+---
+
+
+# [2026-02-14] Instability & Silence Analysis (Preset 11/14)
+
 # [2026-02-14] Instability & Silence Analysis (Preset 11/14)
 
 ## 1. Symptoms

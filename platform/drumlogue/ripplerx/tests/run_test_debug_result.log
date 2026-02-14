@@ -22,13 +22,13 @@
   Progress: 66% complete...
 [VOICE TRIGGER] Note 63, vel 0.91, freq 327.03
   Progress: 83% complete...
-  [3-Second Run] Min: -0.72221, Max: 0.63813, Avg: 0.0409787, NaN: 0, Inf: 0, Clips: 0
-  Render time: 1915 ms
+  [3-Second Run] Min: -0.0125283, Max: 0.0103442, Avg: 0.00188881, NaN: 0, Inf: 0, Clips: 0
+  Render time: 1949 ms
   [PASS] 3-second stability test completed successfully
 
 [Test 3] Basic Audio Stability & Signal Flow
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [1-Second Run] Min: -0.15294, Max: 0.148196, Avg: 0.0315438, NaN: 0, Inf: 0, Clips: 0
+  [1-Second Run] Min: -0.154169, Max: 0.148673, Avg: 0.031549, NaN: 0, Inf: 0, Clips: 0
   [PASS] Basic stability test passed
 
 [Test 4] Polyphony Stress (Voice Stealing)
@@ -62,7 +62,7 @@
 [VOICE TRIGGER] Note 51, vel 0.79, freq 163.52
 [VOICE TRIGGER] Note 52, vel 0.80, freq 174.42
 [VOICE TRIGGER] Note 53, vel 0.80, freq 185.32
-  [Polyphony] Min: -3.41963, Max: 4.02811, Avg: 0.69881, NaN: 0, Inf: 0, Clips: 4972
+  [Polyphony] Min: -0.0462256, Max: 0.0515426, Avg: 0.00895555, NaN: 0, Inf: 0, Clips: 0
   [PASS] Survived 30 rapid note triggers
 
 [Test 5] Envelope Decay (Silence Verification)
@@ -71,19 +71,19 @@
 
 [Test 6] Extreme Parameters (Numerical Stability)
 [VOICE TRIGGER] Note 127, vel 1.00, freq 13255.70
-  [Very High Pitch] Max: 0.011602, NaN: 0
+  [Very High Pitch] Max: 0.0142279, NaN: 0
 [VOICE TRIGGER] Note 24, vel 1.00, freq 32.70
-  [Very Low Pitch] Max: 0.54478, NaN: 0
+  [Very Low Pitch] Max: 0.859056, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Min Decay] Max: 0.0267771, NaN: 0
+  [Min Decay] Max: 0.153767, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Max Decay] Max: 0.365734, NaN: 0
+  [Max Decay] Max: 0.592727, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Max Partials] Max: 0.278484, NaN: 0
+  [Max Partials] Max: 0.544474, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Min Damping] Max: 0.169519, NaN: 0
+  [Min Damping] Max: 0.340968, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Max Damping] Max: 0.129128, NaN: 0
+  [Max Damping] Max: 0.366874, NaN: 0
   [PASS] All extreme parameter tests passed
 
 [Test 7] Hot-Reload Multi-Pattern Stress
@@ -132,55 +132,55 @@
 [Test 14] Rhythmic Stability (4 Beats Crash Check)...
   --- BEAT 1 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 1 Max Peak: 0.298917
+  Beat 1 Max Peak: 0.00341486
   --- BEAT 2 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 2 Max Peak: 0.298999
+  Beat 2 Max Peak: 0.00319746
   --- BEAT 3 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 3 Max Peak: 0.298999
+  Beat 3 Max Peak: 0.0031698
   --- BEAT 4 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 4 Max Peak: 0.298999
+  Beat 4 Max Peak: 0.00332921
   [PASS] Survived 4 beats of rhythmic triggering.
 
 [Test 15] Degradation over 12 beats...
   --- BEAT 1 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 1 Max Peak: 0.314485, Avg Peak: 0.021786
+  Beat 1 Max Peak: 0.0171779, Avg Peak: 0.00297067
   --- BEAT 2 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 2 Max Peak: 0.314941, Avg Peak: 0.0216906
+  Beat 2 Max Peak: 0.0164444, Avg Peak: 0.00275223
   --- BEAT 3 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 3 Max Peak: 0.314949, Avg Peak: 0.0216886
+  Beat 3 Max Peak: 0.0157945, Avg Peak: 0.00215265
   --- BEAT 4 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 4 Max Peak: 0.314949, Avg Peak: 0.0216887
+  Beat 4 Max Peak: 0.0170086, Avg Peak: 0.00265597
   --- BEAT 5 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 5 Max Peak: 0.314949, Avg Peak: 0.0216887
+  Beat 5 Max Peak: 0.0162175, Avg Peak: 0.00243928
   --- BEAT 6 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 6 Max Peak: 0.314949, Avg Peak: 0.0216887
+  Beat 6 Max Peak: 0.015899, Avg Peak: 0.00234686
   --- BEAT 7 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 7 Max Peak: 0.314949, Avg Peak: 0.0216887
+  Beat 7 Max Peak: 0.0161939, Avg Peak: 0.00249043
   --- BEAT 8 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 8 Max Peak: 2.13567, Avg Peak: 0.146613
+  Beat 8 Max Peak: 0.136233, Avg Peak: 0.0228706
   --- BEAT 9 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 9 Max Peak: 1.7959, Avg Peak: 0.180807
+  Beat 9 Max Peak: 0.136903, Avg Peak: 0.0327685
   --- BEAT 10 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 10 Max Peak: 1.55248, Avg Peak: 0.155872
+  Beat 10 Max Peak: 0.10802, Avg Peak: 0.0250871
   --- BEAT 11 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 11 Max Peak: 1.30069, Avg Peak: 0.130458
+  Beat 11 Max Peak: 0.0723369, Avg Peak: 0.0145336
   --- BEAT 12 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-  Beat 12 Max Peak: 1.0429, Avg Peak: 0.104561
+  Beat 12 Max Peak: 0.060864, Avg Peak: 0.0149828
   [PASS] Survived 12 beats of rhythmic triggering without critical failure.
 
 [Test 16] Preset 11 Issue (Harp)...
@@ -256,76 +256,127 @@
 
 [Test 20] Preset Retrigger Instability (11 & 14)...
   Testing Preset 11...
+  Initializing mock sample data...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 0 Peak: 1.67748 (Voices Stacking)
+    Trigger 0 Peak: 2.00303 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 1 Peak: 4.78262 (Voices Stacking)
+    Trigger 1 Peak: 5.70938 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 2 Peak: 8.8086 (Voices Stacking)
+    Trigger 2 Peak: 9.73981 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 3 Peak: 13.6 (Voices Stacking)
+    Trigger 3 Peak: 14.0258 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 4 Peak: 18.9696 (Voices Stacking)
+    Trigger 4 Peak: 18.3528 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 5 Peak: 24.8829 (Voices Stacking)
+    Trigger 5 Peak: 22.6052 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 6 Peak: 31.2461 (Voices Stacking)
+    Trigger 6 Peak: 26.6184 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 7 Peak: 38.3012 (Voices Stacking)
+    Trigger 7 Peak: 32.0933 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 8 Peak: 36.6138 (Voices Stacking)
+    Trigger 8 Peak: 30.8361 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 9 Peak: 36.6507 (Voices Stacking)
+    Trigger 9 Peak: 30.9238 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 10 Peak: 36.6832 (Voices Stacking)
+    Trigger 10 Peak: 31.1058 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 11 Peak: 36.7155 (Voices Stacking)
+    Trigger 11 Peak: 31.2726 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 12 Peak: 36.7478 (Voices Stacking)
+    Trigger 12 Peak: 31.4092 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 13 Peak: 36.78 (Voices Stacking)
+    Trigger 13 Peak: 31.5572 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 14 Peak: 36.8123 (Voices Stacking)
+    Trigger 14 Peak: 31.7109 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 15 Peak: 36.5727 (Voices Stacking)
+    Trigger 15 Peak: 30.8205 (Voices Stacking)
     [OK] Preset 11 stable.
   Testing Preset 14...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 0 Peak: 0.360632 (Voices Stacking)
+    Trigger 0 Peak: 1.71971 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 1 Peak: 1.20048 (Voices Stacking)
+    Trigger 1 Peak: 1.87991 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 2 Peak: 2.50122 (Voices Stacking)
+    Trigger 2 Peak: 4.0813 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 3 Peak: 4.23495 (Voices Stacking)
+    Trigger 3 Peak: 6.93449 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 4 Peak: 5.96257 (Voices Stacking)
+    Trigger 4 Peak: 9.35749 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 5 Peak: 7.71206 (Voices Stacking)
+    Trigger 5 Peak: 11.7816 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 6 Peak: 9.46838 (Voices Stacking)
+    Trigger 6 Peak: 13.9333 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 7 Peak: 11.3099 (Voices Stacking)
+    Trigger 7 Peak: 15.9282 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 8 Peak: 11.28 (Voices Stacking)
+    Trigger 8 Peak: 15.67 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 9 Peak: 11.2766 (Voices Stacking)
+    Trigger 9 Peak: 15.7082 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 10 Peak: 11.2551 (Voices Stacking)
+    Trigger 10 Peak: 15.3551 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 11 Peak: 11.2563 (Voices Stacking)
+    Trigger 11 Peak: 16.0458 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 12 Peak: 11.2237 (Voices Stacking)
+    Trigger 12 Peak: 15.8405 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 13 Peak: 11.2363 (Voices Stacking)
+    Trigger 13 Peak: 15.7057 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 14 Peak: 11.2302 (Voices Stacking)
+    Trigger 14 Peak: 15.5976 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-    Trigger 15 Peak: 11.3142 (Voices Stacking)
+    Trigger 15 Peak: 15.825 (Voices Stacking)
     [OK] Preset 14 stable.
   [PASS] Retrigger test passed.
 
+[Test] 16. Parameter Mapping & Scaling...
+[PASS] Parameter mapping verified.
+
+[Test] 21. API Lifecycle & Long-Term Stability (14+ Beats)...
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[PASS] API Lifecycle & Long-Term Stability verified.
+
+[Test 22] Coupling Safety (Negative Freq Check)...
+[VOICE TRIGGER] Note 0, vel 1.00, freq 8.18
+  [PASS] Coupling safety test executed.
+
 ╔════════════════════════════════════════════════════════════╗
 ║                  ALL TESTS COMPLETED                      ║
-║  Total execution time: 50600 ms                      ║
+║  Total execution time: 53679 ms                      ║
 ╚════════════════════════════════════════════════════════════╝

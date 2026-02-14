@@ -394,19 +394,9 @@ public:
                 exit(1);
             }
 #endif
-
-            // Accumulate
-            float32x4_t dest = vld1q_f32(&outBuffer[i]);
-
-#ifdef DEBUGN
-            float dest_max = std::max(std::abs(vgetq_lane_f32(dest, 0)), std::abs(vgetq_lane_f32(dest, 1)));
-            if (dest_max > 100.0f) {
-                printf("[DIAG] Output Buffer Dirty! Value: %.2f\n", dest_max);
-                fflush(stdout);
-                exit(1);
-            }
-#endif
-            vst1q_f32(&outBuffer[i], vaddq_f32(dest, accum_dir));
+            // [OPTIMIZATION] Overwrite output buffer instead of accumulating.
+            // This protects against dirty buffers/NaNs from the host and saves a load+add op.
+            vst1q_f32(&outBuffer[i], accum_dir);
 
         } // End Frame Loop
     }
