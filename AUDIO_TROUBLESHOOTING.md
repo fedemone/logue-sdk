@@ -1,3 +1,44 @@
+# [2026-02-16] Hardware architecture difference
+## **The Culprit**: Denormal Numbers (The "Silent Killer"): The original JUCE code had this line in PluginProcessor.cpp:
+```C++
+juce::ScopedNoDenormals disableDenormals;
+```
+This line is missing in your Drumlogue port.
+## 1. What is happening?
+As your Resonator decays naturally, the values eventually drop below $1.18 \times 10^{-38}$ (the smallest normalized float). These are "Denormal" numbers.
+## 2. Why the Unit Test passes (x86)
+Your PC's CPU (x86/64) handles denormals in microcode with a negligible performance penalty, or the test harness has SSE flags set to flush them. The filter just keeps calculating tiny values.
+## 3.Why the Hardware Fails (ARM Cortex-A7/NEON)
+The ARM NEON unit cannot handle denormals in hardware. When a calculation results in a denormal, it triggers a software trap to the OS kernel to handle it slowly.
+- **Result**: Your audio loop execution time spikes by 100x.
+- **Symptom**: The audio callback misses its deadline. The Drumlogue's system watchdog detects the stall and mutes the unit (Silence) to prevent a system-wide freeze.
+This explains exactly why it happens "after a few beats" (when the tail decays) and why removing the "defensive clamp" didn't fix it (the values aren't exploding to Infinity, they are imploding to Zero too slowly).
+## **The Fix**: Enable "Flush-to-Zero" (FTZ)You must explicitly tell the ARM processor to treat denormals as zero. This is standard practice for audio DSP on embedded systems.
+Add this code to your Init function in ripplerx.h
+``` C++
+// Add header for arm intrinsics if not already there
+#include <arm_neon.h>
+
+// ... inside RipplerX class ...
+
+inline int8_t Init(const unit_runtime_desc_t * desc) {
+    if (!desc) return k_unit_err_geometry;
+    if (desc->samplerate != c_sampleRate) return k_unit_err_samplerate;
+
+    // --- [CRITICAL FIX] Enable Flush-to-Zero (FTZ) mode ---
+    // This prevents the "Silence after decay" CPU spike on ARM NEON.
+    #if defined(__arm__) || defined(__aarch64__)
+        uint32_t fpscr;
+        __asm__ volatile ("vmrs %0, fpscr" : "=r" (fpscr)); // Read FPSCR
+        fpscr |= (1 << 24); // Set Bit 24 (Flush-to-Zero mode)
+        __asm__ volatile ("vmsr fpscr, %0" : : "r" (fpscr)); // Write FPSCR
+    #endif
+
+    // ... rest of your Init code ...
+    clearVoices();
+    // ...
+}
+```
 # [2026-02-15] Final Instability: Limiter and Resonator Root Causes
 
 ## 1. Symptoms

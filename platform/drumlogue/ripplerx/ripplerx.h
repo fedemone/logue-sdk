@@ -120,6 +120,15 @@ public:
         if (!desc) return k_unit_err_geometry;
         if (desc->samplerate != c_sampleRate) return k_unit_err_samplerate;
 
+        // --- [CRITICAL FIX] Enable Flush-to-Zero (FTZ) mode ---
+        // This prevents the "Silence after decay" CPU spike on ARM NEON.
+        #if defined(__arm__) || defined(__aarch64__)
+            uint32_t fpscr;
+            __asm__ volatile ("vmrs %0, fpscr" : "=r" (fpscr)); // Read FPSCR
+            fpscr |= (1 << 24); // Set Bit 24 (Flush-to-Zero mode)
+            __asm__ volatile ("vmsr fpscr, %0" : : "r" (fpscr)); // Write FPSCR
+        #endif
+
         // CRITICAL: Clear ALL voices IMMEDIATELY before any initializatio
         // This prevents phantom sounds from garbage memory on hot-load
         clearVoices();
@@ -417,6 +426,7 @@ public:
                 exit(1);
             }
 #endif
+            // (Silence guard removed - Limiter now handles zero)
 
 #ifdef DEBUGN
             float pre_lim_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),

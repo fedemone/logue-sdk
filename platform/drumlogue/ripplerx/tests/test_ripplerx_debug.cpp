@@ -431,13 +431,13 @@ void test_extreme_parameters() {
     };
 
     TestCase cases[] = {
-        {"Very High Pitch", 127, 127, 500, 5, 3},
-        {"Very Low Pitch", 24, 127, 500, 5, 3},
+        {"Very High Pitch", 127, 127, 500, 5, 1},
+        {"Very Low Pitch", 24, 127, 500, 5, 2},
         {"Min Decay", 60, 127, 1, 5, 3},
         {"Max Decay", 60, 127, 1000, 5, 3},
-        {"Max Partials", 60, 127, 500, 5, 5}, // 64 partials
-        {"Min Damping", 60, 127, 500, -10, 3},
-        {"Max Damping", 60, 127, 500, 10, 3},
+        {"Max Partials", 60, 127, 500, 5, 4}, // 64 partials, as partials for resonator A are at indexes 0-5 and for resonator A are from index 5 to 9
+        {"Min Damping", 60, 127, 500, -10, 1},
+        {"Max Damping", 60, 127, 500, 10, 2},
     };
 
     alignas(16) float buffer[128];

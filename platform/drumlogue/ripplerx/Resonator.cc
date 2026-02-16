@@ -33,8 +33,9 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
     float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm)
 {
 	on = _on;
-    // SAFETY: Clamp partial count to array limit to prevent buffer overflow in loops
-    npartials = (_partials > (int)c_max_partials) ? (int)c_max_partials : _partials;
+    // NOTE: Clamp partial count to array limit to prevent buffer overflow in loops
+    // shall never be used as it must never happen. If it does, there's a problem
+    // in the code to be reproduced via unit test and thus investigated
     nmodel = _model;
 	decay = _decay;
 	radius = _radius;
@@ -170,7 +171,9 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Calculate raw decay time in seconds (or arbitrary units)
         // Fix: Apply 0.01f scaling to map user range (0-1000) to physical seconds (0-10.0s)
-        float d_raw = (part.decay * 0.01f) * u_decay.f;
+        // FIX: Clamp decay to 0.5s (effective) to ensure feedback coeff < 0.9995
+        // The previous 10.0s limit caused instability with 32-bit floats.
+        float d_raw = fminf(0.5f, (part.decay * 0.01f) * u_decay.f);
 
         // Apply Release Envelope
         if (isRelease) {
@@ -351,6 +354,13 @@ float32x4_t Resonator::process(float32x4_t input)
             float32x2_t term4_0 = vmul_f32(y2_prev, a2);
 
             float32x2_t out0 = vsub_f32(vadd_f32(term1_0, term2_0), vadd_f32(term3_0, term4_0));
+
+            // --- PARANOID CLAMP (Frame 0) ---
+            // NOTE: not done as no defensive programming should be applied,
+            // as in this context, static, constant and pre caluculated,
+            // such situation should never happen. If they do, there is
+            // a problem before that can be masked intead of being resolved
+
 
             // --- Frame 1 (L1, R1) ---
             // x[n]=in1, x[n-2]=x1_prev, y[n-1]=out0, y[n-2]=y1_prev
