@@ -247,7 +247,7 @@ public:
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
 
-                if (voice.isPressed || voice.isRelease || voice.noise.isActive()) {
+                if (voice.isPressed || voice.isRelease || voice.noise.filter_active) {
                     active_voices_count++;
                 }
                 // FIX: accum_res must be local to the voice!

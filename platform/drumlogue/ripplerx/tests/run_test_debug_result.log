@@ -13,55 +13,48 @@
 [Test 2] Runtime Stability (3 Seconds with Sound)
   Rendering continuous audio for 3 seconds...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
+[POLYPHONY] Active voices: 8
   Progress: 0% complete...
 
 [BEAT 3] Starting...
 [VOICE TRIGGER] Note 63, vel 0.75, freq 327.03
-[POLYPHONY] Active voices: 2
   Progress: 16% complete...
 
 [BEAT 4] Starting...
 [VOICE TRIGGER] Note 66, vel 0.87, freq 392.44
-[POLYPHONY] Active voices: 3
   Progress: 33% complete...
 
 [BEAT 5] Starting...
 [VOICE TRIGGER] Note 69, vel 0.67, freq 457.84
-[POLYPHONY] Active voices: 4
   Progress: 50% complete...
 
 [BEAT 6] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 5
   Progress: 66% complete...
 
 [BEAT 7] Starting...
 [VOICE TRIGGER] Note 63, vel 0.91, freq 327.03
-[POLYPHONY] Active voices: 6
   Progress: 83% complete...
 
 [BEAT 8] Starting...
-  [3-Second Run] Min: -0.00980769, Max: 0.00863278, Avg: 0.0011447, NaN: 0, Inf: 0, Clips: 0
-  Render time: 2187 ms
+  [3-Second Run] Min: -0.109848, Max: 0.12859, Avg: 0.0133118, NaN: 0, Inf: 0, Clips: 0
+  Render time: 1927 ms
   [PASS] 3-second stability test completed successfully
 
 [Test 3] Basic Audio Stability & Signal Flow
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
 [POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 
 [BEAT 9] Starting...
 
 [BEAT 10] Starting...
 
 [BEAT 11] Starting...
-  [1-Second Run] Min: -0.154169, Max: 0.148673, Avg: 0.031549, NaN: 0, Inf: 0, Clips: 0
+  [1-Second Run] Min: -0.152901, Max: 0.148191, Avg: 0.0315437, NaN: 0, Inf: 0, Clips: 0
   [PASS] Basic stability test passed
 
 [Test 4] Polyphony Stress (Voice Stealing)
 [VOICE TRIGGER] Note 48, vel 0.79, freq 130.81
-[POLYPHONY] Active voices: 1
 [VOICE TRIGGER] Note 49, vel 0.80, freq 141.71
 [POLYPHONY] Active voices: 2
 [VOICE TRIGGER] Note 50, vel 0.80, freq 152.61
@@ -98,7 +91,7 @@
 [VOICE TRIGGER] Note 51, vel 0.79, freq 163.52
 [VOICE TRIGGER] Note 52, vel 0.80, freq 174.42
 [VOICE TRIGGER] Note 53, vel 0.80, freq 185.32
-  [Polyphony] Min: -0.00853266, Max: 0.00860972, Avg: 0.00175276, NaN: 0, Inf: 0, Clips: 0
+  [Polyphony] Min: -0.562473, Max: 0.56418, Avg: 0.116216, NaN: 0, Inf: 0, Clips: 0
   [PASS] Survived 30 rapid note triggers
 
 [Test 5] Envelope Decay (Silence Verification)
@@ -106,31 +99,29 @@
 [POLYPHONY] Active voices: 1
 
 [BEAT 12] Starting...
-[POLYPHONY] Active voices: 0
 
 [BEAT 13] Starting...
   [PASS] Envelope decay verified (final level: 8.10575e-28)
 
 [Test 6] Extreme Parameters (Numerical Stability)
 [VOICE TRIGGER] Note 127, vel 1.00, freq 13255.70
-[POLYPHONY] Active voices: 1
-  [Very High Pitch] Max: 0.0142279, NaN: 0
+  [Very High Pitch] Max: 0.011602, NaN: 0
 [VOICE TRIGGER] Note 24, vel 1.00, freq 32.70
-  [Very Low Pitch] Max: 0.859056, NaN: 0
+  [Very Low Pitch] Max: 0.24761, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Min Decay] Max: 0.153767, NaN: 0
+  [Min Decay] Max: 0.0782056, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
 
 [BEAT 14] Starting...
-  [Max Decay] Max: 0.592727, NaN: 0
+  [Max Decay] Max: 0.272528, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Max Partials] Max: 0.544474, NaN: 0
+  [Max Partials] Max: 0.32647, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
-  [Min Damping] Max: 0.340968, NaN: 0
+  [Min Damping] Max: 0.148917, NaN: 0
 [VOICE TRIGGER] Note 60, vel 1.00, freq 261.63
 
 [BEAT 15] Starting...
-  [Max Damping] Max: 0.366874, NaN: 0
+  [Max Damping] Max: 0.0980988, NaN: 0
   [PASS] All extreme parameter tests passed
 
 [Test 7] Hot-Reload Multi-Pattern Stress
@@ -142,69 +133,38 @@
 [Test 8] Note On/Off Cycle (Gate Handling)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 61, vel 0.79, freq 283.43
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 2
 [VOICE TRIGGER] Note 62, vel 0.79, freq 305.23
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 3
 [VOICE TRIGGER] Note 63, vel 0.79, freq 327.03
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 4
 [VOICE TRIGGER] Note 64, vel 0.79, freq 348.83
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 5
 [VOICE TRIGGER] Note 65, vel 0.79, freq 370.64
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 6
 [VOICE TRIGGER] Note 66, vel 0.79, freq 392.44
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 7
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 8
 [VOICE TRIGGER] Note 68, vel 0.79, freq 436.04
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 69, vel 0.79, freq 457.84
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 70, vel 0.79, freq 479.65
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 71, vel 0.79, freq 501.45
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 61, vel 0.79, freq 283.43
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 62, vel 0.79, freq 305.23
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 63, vel 0.79, freq 327.03
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 64, vel 0.79, freq 348.83
-[POLYPHONY] Active voices: 1
 
 [BEAT 17] Starting...
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 65, vel 0.79, freq 370.64
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 66, vel 0.79, freq 392.44
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
   [PASS] 20 note on/off cycles completed
 
 [Test 9] Limiter Silence Stability (rsqrt(0) check)...
+[POLYPHONY] Active voices: 0
   [PASS] Limiter handled silence without NaN/Inf
 
 [Test 10] Comb Filter Stability...
@@ -235,89 +195,101 @@
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 22] Starting...
-  Beat 1 Max Peak: 0.00341486
+  Beat 1 Max Peak: 0.149459
   --- BEAT 2 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 2
 
 [BEAT 23] Starting...
-  Beat 2 Max Peak: 0.00319746
+  Beat 2 Max Peak: 0.105685
   --- BEAT 3 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 3
 
 [BEAT 24] Starting...
-  Beat 3 Max Peak: 0.0031698
+  Beat 3 Max Peak: 0.0862381
   --- BEAT 4 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 4
 
 [BEAT 25] Starting...
-  Beat 4 Max Peak: 0.00332921
+  Beat 4 Max Peak: 0.0746231
   [PASS] Survived 4 beats of rhythmic triggering.
 
 [Test 15] Degradation over 12 beats...
   --- BEAT 1 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 1
 
 [BEAT 26] Starting...
-  Beat 1 Max Peak: 0.0171779, Avg Peak: 0.00297067
+  Beat 1 Max Peak: 0.0149459, Avg Peak: 0.00082149
   --- BEAT 2 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 2
 
 [BEAT 27] Starting...
-  Beat 2 Max Peak: 0.0164444, Avg Peak: 0.00275223
+  Beat 2 Max Peak: 0.0105685, Avg Peak: 0.000580641
   --- BEAT 3 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 3
 
 [BEAT 28] Starting...
-  Beat 3 Max Peak: 0.0157945, Avg Peak: 0.00215265
+  Beat 3 Max Peak: 0.00862383, Avg Peak: 0.000473799
   --- BEAT 4 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 4
 
 [BEAT 29] Starting...
-  Beat 4 Max Peak: 0.0170086, Avg Peak: 0.00265597
+  Beat 4 Max Peak: 0.00746232, Avg Peak: 0.00040998
   --- BEAT 5 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 5
 
 [BEAT 30] Starting...
-  Beat 5 Max Peak: 0.0162175, Avg Peak: 0.00243928
+  Beat 5 Max Peak: 0.00668474, Avg Peak: 0.000367261
   --- BEAT 6 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 6
 
 [BEAT 31] Starting...
-  Beat 6 Max Peak: 0.015899, Avg Peak: 0.00234686
+  Beat 6 Max Peak: 0.00609482, Avg Peak: 0.000334854
   --- BEAT 7 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 7
 
 [BEAT 32] Starting...
-  Beat 7 Max Peak: 0.0161939, Avg Peak: 0.00249043
+  Beat 7 Max Peak: 0.00564278, Avg Peak: 0.000310015
   --- BEAT 8 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 8
 
 [BEAT 33] Starting...
-  Beat 8 Max Peak: 0.0159869, Avg Peak: 0.00238396
+  Beat 8 Max Peak: 0.00528429, Avg Peak: 0.00029032
   --- BEAT 9 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 34] Starting...
-  Beat 9 Max Peak: 0.0186778, Avg Peak: 0.00459789
+  Beat 9 Max Peak: 0.00421302, Avg Peak: 0.000313677
   --- BEAT 10 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 35] Starting...
-  Beat 10 Max Peak: 0.0167109, Avg Peak: 0.00401711
+  Beat 10 Max Peak: 0.00421386, Avg Peak: 0.000313678
   --- BEAT 11 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 36] Starting...
-  Beat 11 Max Peak: 0.0150861, Avg Peak: 0.00297025
+  Beat 11 Max Peak: 0.00421386, Avg Peak: 0.000313677
   --- BEAT 12 TRIGGER ---
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 37] Starting...
-  Beat 12 Max Peak: 0.0153306, Avg Peak: 0.00372384
+  Beat 12 Max Peak: 0.00421386, Avg Peak: 0.000313677
   [PASS] Survived 12 beats of rhythmic triggering without critical failure.
 
 [Test 16] Preset 11 Issue (Harp)...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 1
 
 [BEAT 38] Starting...
 
@@ -326,6 +298,7 @@
 
 [Test 17] Preset 14 Crash (Kalimba)...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 8
 
 [BEAT 40] Starting...
 
@@ -334,6 +307,7 @@
 
 [Test 18] Preset 28 Issue (Vibes)...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+[POLYPHONY] Active voices: 1
 
 [BEAT 42] Starting...
 
@@ -342,145 +316,100 @@
 
 [Test 19] Preset Loop Transition (All Presets)...
   Testing Preset 0 (Bells)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 8
  [OK]
   Testing Preset 1 (Bells2)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 44] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 2 (Bong)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 
 [BEAT 45] Starting...
  [OK]
   Testing Preset 3 (Cans)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 4 (Crash)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 46] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 5 (Crystal)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 6 (DoorBell)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 47] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 7 (Fifths)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 8 (Fight)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 48] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 9 (Flute)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 
 [BEAT 49] Starting...
  [OK]
   Testing Preset 10 (Gong)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 8
  [OK]
   Testing Preset 11 (Harp)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [POLYPHONY] Active voices: 1
 
 [BEAT 50] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 12 (Harpsi)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 13 (Initial)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 51] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 14 (Kalimba)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 8
  [OK]
   Testing Preset 15 (KeyRing)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 52] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 16 (Marimba)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 17 (OldClock)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 53] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 18 (Ride)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 
 [BEAT 54] Starting...
  [OK]
   Testing Preset 19 (Ride2)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 8
  [OK]
   Testing Preset 20 (Sankyo)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [POLYPHONY] Active voices: 1
 
 [BEAT 55] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 21 (Sink)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
+[POLYPHONY] Active voices: 8
  [OK]
   Testing Preset 22 (Stars)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 56] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 23 (Strings)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 24 (Tabla)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 57] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 25 (Tabla2)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 26 (Tubes)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 58] Starting...
-[POLYPHONY] Active voices: 0
  [OK]
   Testing Preset 27 (Vibes)...[VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 
 [BEAT 59] Starting...
  [OK]
@@ -490,7 +419,6 @@
   Testing Preset 11...
   Initializing mock sample data...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 60] Starting...
     Trigger 0 Peak: 1.14295 (Voices Stacking)
@@ -564,45 +492,37 @@
     [OK] Preset 11 stable.
   Testing Preset 14...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 1
 
 [BEAT 76] Starting...
-    Trigger 0 Peak: 0.360236 (Voices Stacking)
+    Trigger 0 Peak: 0.127331 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
 
 [BEAT 77] Starting...
-    Trigger 1 Peak: 0.49868 (Voices Stacking)
+    Trigger 1 Peak: 0.249285 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 3
 
 [BEAT 78] Starting...
-    Trigger 2 Peak: 0.610831 (Voices Stacking)
+    Trigger 2 Peak: 0.374265 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 4
 
 [BEAT 79] Starting...
-    Trigger 3 Peak: 0.700618 (Voices Stacking)
+    Trigger 3 Peak: 0.496089 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 5
 
 [BEAT 80] Starting...
-    Trigger 4 Peak: 0.781441 (Voices Stacking)
+    Trigger 4 Peak: 0.617711 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 6
 
 [BEAT 81] Starting...
-    Trigger 5 Peak: 0.850005 (Voices Stacking)
+    Trigger 5 Peak: 0.736971 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 7
 
 [BEAT 82] Starting...
-    Trigger 6 Peak: 0.918092 (Voices Stacking)
+    Trigger 6 Peak: 0.859765 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 8
 
 [BEAT 83] Starting...
-    Trigger 7 Peak: 0.977858 (Voices Stacking)
+    Trigger 7 Peak: 0.977871 (Voices Stacking)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 84] Starting...
@@ -644,122 +564,82 @@
 [Test] 21. API Lifecycle & Long-Term Stability (14+ Beats)...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 92] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 93] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 94] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 95] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 96] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 97] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 98] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 99] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 100] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 101] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 102] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 103] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 104] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 105] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 106] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 107] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 108] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 109] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 110] Starting...
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
-[POLYPHONY] Active voices: 2
-[POLYPHONY] Active voices: 0
 
 [BEAT 111] Starting...
 [PASS] API Lifecycle & Long-Term Stability verified.
@@ -780,24 +660,24 @@
   Beat 1: [POLYPHONY] Active voices: 1
 
 [BEAT 112] Starting...
-Max=0.784615
+Max=0.577767
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
   Beat 2: [POLYPHONY] Active voices: 2
 
 [BEAT 113] Starting...
-Max=0.534323
+Max=0.408471
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
   Beat 3: [POLYPHONY] Active voices: 3
 
 [BEAT 114] Starting...
-Max=0.430794
+Max=0.333307
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
   Beat 4: [POLYPHONY] Active voices: 4
 
 [BEAT 115] Starting...
-Max=0.370101
-  Amplitude variation: 2.12x
-  [PASS] 4-beat polyphony stable (max variation: 2.12x)
+Max=0.288415
+  Amplitude variation: 2.00325x
+  [PASS] 4-beat polyphony stable (max variation: 2.00325x)
 
 [Test 25] Decay Scaling Verification
   Verifying 0.01f scaling is applied...
@@ -823,10 +703,10 @@ Max=0.370101
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
 [VOICE TRIGGER] Note 72, vel 0.79, freq 523.25
 [POLYPHONY] Active voices: 4
-  Single voice max: 0.766577
-  Quad voice max: 0.758698
-  Ratio: 0.989722x
-  [PASS] Polyphony level reasonable (ratio: 0.989722x)
+  Single voice max: 0.577767
+  Quad voice max: 0.498669
+  Ratio: 0.863097x
+  [PASS] Polyphony level reasonable (ratio: 0.863097x)
 
 [Test 27] Decay Parameter Range & Scaling Verification
   Testing full decay range (1-1000) for stability...
@@ -842,25 +722,25 @@ Max=0.370101
 [BEAT 123] Starting...
 
 [BEAT 124] Starting...
-  Decay= 100: Max=0.527653 - OK
+  Decay= 100: Max=0.444832 - OK
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 125] Starting...
 
 [BEAT 126] Starting...
-  Decay= 500: Max=1.01081 - OK
+  Decay= 500: Max=0.672471 - OK
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 127] Starting...
 
 [BEAT 128] Starting...
-  Decay= 800: Max=0.802559 - OK
+  Decay= 800: Max=0.513246 - OK
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 129] Starting...
 
 [BEAT 130] Starting...
-  Decay=1000: Max=0.648141 - OK
+  Decay=1000: Max=0.468652 - OK
   [PASS] Full decay range stable and audible
 
 [Test 28] Polyphony Accumulation (2-Beat Hardware Crash)
@@ -868,28 +748,28 @@ Max=0.370101
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
   Beat 1 (voices=1): 
 [BEAT 131] Starting...
-Max=0.82452
+Max=0.623085
 [VOICE TRIGGER] Note 61, vel 0.79, freq 283.43
   Beat 2 (voices=2): [POLYPHONY] Active voices: 2
 
 [BEAT 132] Starting...
-Max=0.822038
+Max=0.393701
 [VOICE TRIGGER] Note 62, vel 0.79, freq 305.23
   Beat 3 (voices=3): [POLYPHONY] Active voices: 3
 
 [BEAT 133] Starting...
-Max=0.756204
+Max=0.260412
 [VOICE TRIGGER] Note 63, vel 0.79, freq 327.03
   Beat 4 (voices=4): [POLYPHONY] Active voices: 4
 
 [BEAT 134] Starting...
-Max=0.562839
+Max=0.248756
 [VOICE TRIGGER] Note 64, vel 0.79, freq 348.83
   Beat 5 (voices=5): [POLYPHONY] Active voices: 5
 
 [BEAT 135] Starting...
-Max=0.592973
-  Overall variation: 1.46493x (should be < 2.0x)
+Max=0.25447
+  Overall variation: 2.50481x (should be < 3.0x)
   [PASS] 5-beat polyphony stable without accumulation
 
 [Test 29] IIR Coefficient Stability Check
@@ -903,16 +783,16 @@ Max=0.592973
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 
 [BEAT 136] Starting...
-  1 voice:  Max=0.777715 (baseline)
+  1 voice:  Max=0.577767 (baseline)
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 61, vel 0.79, freq 283.43
 [POLYPHONY] Active voices: 2
-  2 voices: Max=0.795485, Ratio=1.02285x [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+  2 voices: Max=0.569719, Ratio=0.986071x [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 61, vel 0.79, freq 283.43
 [VOICE TRIGGER] Note 62, vel 0.79, freq 305.23
 [VOICE TRIGGER] Note 63, vel 0.79, freq 327.03
 [POLYPHONY] Active voices: 4
-  4 voices: Max=0.918456, Ratio=1.18097x [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
+  4 voices: Max=0.63336, Ratio=1.09622x [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 61, vel 0.79, freq 283.43
 [VOICE TRIGGER] Note 62, vel 0.79, freq 305.23
 [VOICE TRIGGER] Note 63, vel 0.79, freq 327.03
@@ -921,7 +801,7 @@ Max=0.592973
 [VOICE TRIGGER] Note 66, vel 0.79, freq 392.44
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
 [POLYPHONY] Active voices: 8
-  8 voices: Max=0.797671, Ratio=1.02566x   [PASS] Voice normalization working correctly
+  8 voices: Max=0.477494, Ratio=0.826447x   [PASS] Voice normalization working correctly
 
 [Test 31] Preset Loading Stability (Real-World Scenarios)
   Testing with typical user preset values...
@@ -937,7 +817,7 @@ Max=0.592973
 [BEAT 139] Starting...
 
 [BEAT 140] Starting...
-       Short Bell: Max=0.352314 - OK
+       Short Bell: Max=0.260179 - OK
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 64, vel 0.79, freq 348.83
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
@@ -949,7 +829,7 @@ Max=0.592973
 [BEAT 143] Starting...
 
 [BEAT 144] Starting...
-      Long String: Max=0.757121 - OK
+      Long String: Max=0.462637 - OK
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 64, vel 0.79, freq 348.83
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
@@ -961,7 +841,7 @@ Max=0.592973
 [BEAT 147] Starting...
 
 [BEAT 148] Starting...
-      Metal Plate: Max=1.30027 - OK
+      Metal Plate: Max=0.843105 - OK
 [VOICE TRIGGER] Note 60, vel 0.79, freq 261.63
 [VOICE TRIGGER] Note 64, vel 0.79, freq 348.83
 [VOICE TRIGGER] Note 67, vel 0.79, freq 414.24
@@ -985,10 +865,10 @@ Max=0.592973
 [BEAT 155] Starting...
 
 [BEAT 156] Starting...
-       Glass Bowl: Max=0.212204 - OK
+       Glass Bowl: Max=0.122007 - OK
   [PASS] All realistic presets stable
 
 ╔════════════════════════════════════════════════════════════╗
 ║                  ALL TESTS COMPLETED                      ║
-║  Total execution time: 85874 ms                      ║
+║  Total execution time: 65729 ms                      ║
 ╚════════════════════════════════════════════════════════════╝
