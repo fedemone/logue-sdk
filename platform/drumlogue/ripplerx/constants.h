@@ -6,7 +6,7 @@
 constexpr uint32_t  c_sampleRate = 48000;
 constexpr float32_t c_semitoneFrequencyRatio = 1.0594630944f; // pow(2.0f, 1.0f/12.0f);
 constexpr float32_t c_malletStiffnessCorrectionFactor = 0.03080333075140272487101378573158f; // (log(5000.0) - log(100.0)) / 127
-constexpr uint32_t  polyphony = 8; /**< equivalent to c_numVoices for porting - NOTE: since I don't know fast processing is, let's try this value at first */
+constexpr uint32_t  polyphony = 8; /**< Restored to 8. FTZ should resolve the CPU spike. */
 constexpr uint32_t  c_numVoices = polyphony;
 constexpr uint32_t  c_max_partials = 64;
 constexpr float32_t c_res_cutoff = 20.0001;
@@ -44,7 +44,7 @@ constexpr float32_t c_freq_shift_coeff_dx = 0.6f;  // Coefficient for dx term in
 constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term in frequency shift
 
 // Waveguide constants
-constexpr float32_t c_decay_max = 100.0f;  // Maximum decay value (Restored for dynamic range)
+constexpr float32_t c_decay_max = 20.0f;  // Maximum decay value (Reduced for float32 stability)
 constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
 constexpr int       c_tube_len = 16384;  // 2^14 loss of capacity for performance improvement - was 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
@@ -254,7 +254,9 @@ enum  Program : uint8_t {
     Tabla2,
     Tubes,
     Vibes,
-    // Debug,
+#ifdef DEBUGN
+    Debug,
+#endif
     last_program
 };
 
@@ -289,7 +291,9 @@ const char* const c_programName[Program::last_program] = {
     "Tabla2",
     "Tubes",
     "Vibes",
-    // "Debug",
+#ifdef DEBUGN
+    "Debug",
+#endif
 };
 
 
@@ -323,7 +327,9 @@ static float32_t programs[Program::last_program][ProgramParameters::last_param] 
     {0.0, 372.0, -0.6599999666213989, 10.15999984741211, 0.0, 0.2599999904632568, 1.0, 5.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 6.0, 0.0, 0.0, 168.0, 1.0, 23.0, 2784.0, 1.0, 3.046999931335449, 0.0, 407.0, 0.2299999892711639, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,},  //Tabla2
     {0.0, 20.0, -0.4700000286102295, 12.80999946594238, 0.0, 0.5, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 0.4099999964237213, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 486.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5099999904632568, 0.0, 0.0,},  //Tubes
     {0.0, 20.0, -0.4200000166893005, 4.079999923706055, 0.0, 0.2599999904632568, 0.00009999999747378752, 6.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.1180000007152557, 0.0, 20.0, 0.0, 0.6799999475479126, 96.0, 0.2599999904632568, 0.00009999999747378752, 8.0, 1.0, 3.0, 0.7400000095367432, 0.7800000309944153, 1.0, 0.0, 1.0, -8.880000114440918, 0.0, 0.0, 2052.0, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,},  //Vibes
-    // {6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 2000.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0,}   // Debug
+#ifdef DEBUGN
+    {0.0, 372.0, -0.6200000047683716, 10.77999973297119, 0.0, 0.5, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 1.0, -0.2000000476837158, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 23.0, 0.5, 0.5, 627.0, 1.0, 500.0, 2035.0, 1.0, 2.327000141143799, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3999999761581421, 0.0, 0.0,},  //Debug
+#endif
 };
 
 // additional math values

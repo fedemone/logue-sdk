@@ -35,10 +35,11 @@ void Voice::trigger(float32_t srate, int _note, float32_t _vel,
     mallet.trigger(srate, malletFreq);
     noise.attack(_vel);
 
+    updateResonators(true);
+
+    // FIX: Activate AFTER updating coefficients to prevent race condition in Render thread
     if (resA.isOn()) resA.activate();
     if (resB.isOn()) resB.activate();
-
-    updateResonators(true);
 }
 
 void Voice::release()

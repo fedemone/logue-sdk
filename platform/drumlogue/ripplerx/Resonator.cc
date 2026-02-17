@@ -172,9 +172,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Calculate raw decay time in seconds (or arbitrary units)
         // Fix: Apply 0.01f scaling to map user range (0-1000) to physical seconds (0-10.0s)
-        // FIX: Clamp decay to 0.5s (effective) to ensure feedback coeff < 0.9995
-        // The previous 10.0s limit caused instability with 32-bit floats.
-        float d_raw = fminf(0.5f, (part.decay * 0.01f) * u_decay.f);
+        float d_raw = fminf(c_decay_max, (part.decay * 0.01f) * u_decay.f);
 
         // Apply Release Envelope
         if (isRelease) {
@@ -196,18 +194,6 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
             part.active_prev = false;
             continue;
         }
-
-        // --- WAKE-UP LOGIC (Critical Fix) ---
-        // If partial was inactive, we MUST reset its filter state (history).
-        // Otherwise, it resumes with stale data, creating a massive "Pop"
-        // that explodes the IIR filter instantly.
-        if (!part.active_prev) {
-            part.vx1_low = vdup_n_f32(0.0f);
-            part.vx2_low = vdup_n_f32(0.0f);
-            part.vy1_low = vdup_n_f32(0.0f);
-            part.vy2_low = vdup_n_f32(0.0f);
-        }
-        part.active_prev = true;
 
         // Increment the count of partials that need processing
         active_count++;
@@ -254,10 +240,12 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Hit Position Modulation (Comb-like effect)
         float h_mod = fminf(0.5f, part.hit + vel * part.vel_hit * 0.5f);
-        float a_k = 35.0f * fabsf(fastersinfullf(M_PI * part.k * h_mod));
+        float a_k = 5.0f * fabsf(fastersinfullf(M_PI * part.k * h_mod));
 
         // Final Filter Constants
         float omega = f_k * inv_srate_2pi;
+        // FIX: Revert to inv_srate_2pi for b0 to maintain constant impulse amplitude
+        // Scaling by inv_decay made long notes too quiet.
         float b0_val = inv_srate_2pi * t_gain * a_k;
 
         // ---------------------------------------------------------
@@ -280,8 +268,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 #ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
         if (!std::isfinite(va2_val) || fabsf(va2_val) >= 0.99999f) {
-            printf("[DIAG] Partial %d: va2=%.6f inv_a0=%.6f inv_decay=%.6f\n",
-                part.k, va2_val, inv_a0, inv_decay);
+            printf("[DIAG] Partial %d: va2=%.8f inv_a0=%.8f inv_decay=%.8f d_eff=%.2f d_raw=%.2f d_mod=%.4f\n",
+                part.k, va2_val, inv_a0, inv_decay, d_eff, d_raw, d_mod);
         }
 #endif
     }
@@ -334,6 +322,18 @@ float32x4_t Resonator::process(float32x4_t input)
 
         for (int p = 0; p < npartials; ++p) {
             Partial& part = partials[p];
+
+            // --- WAKE-UP LOGIC (RACE CONDITION FIX) ---
+            // If partial was inactive (from a clear() call on trigger),
+            // reset its filter history here in the audio thread to prevent a race.
+            if (!part.active_prev) {
+                part.vx1_low = vdup_n_f32(0.0f);
+                part.vx2_low = vdup_n_f32(0.0f);
+                part.vy1_low = vdup_n_f32(0.0f);
+                part.vy2_low = vdup_n_f32(0.0f);
+                part.active_prev = true; // Mark as active now for subsequent blocks
+            }
+
 
             // Load state (now just 64-bit loads)
             float32x2_t x1_prev = part.vx1_low;
