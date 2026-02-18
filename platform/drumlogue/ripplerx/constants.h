@@ -25,7 +25,7 @@ constexpr float32_t c_noise_filter_res_range = 3.293f;  // 4.0 - 0.707
 constexpr float32_t c_freq_min = 20.0f;  // Minimum resonator frequency (Hz)
 constexpr float32_t c_freq_max = 20000.0f;  // Maximum resonator frequency (Hz)
 constexpr float32_t c_nyquist_factor = 0.48f;  // Nyquist limit factor (slightly below 0.5 for safety)
-constexpr float32_t c_decay_min = 0.01f;  // Minimum decay threshold to avoid division issues as 1.0e-6f is too small creating explosion in IIR filter
+constexpr float32_t c_decay_min = 0.001f;  // 1ms. Minimum decay threshold to avoid division issues as 1.0e-6f is too small creating explosion in IIR filter
 constexpr float32_t c_filter_freq_ratio = 1000.0f;  // Ratio f_max/f_min for frequency scaling
 constexpr float32_t c_butterworth_q = 0.707f;  // Butterworth Q = sqrt(2)/2 for maximally flat response
 
@@ -44,7 +44,7 @@ constexpr float32_t c_freq_shift_coeff_dx = 0.6f;  // Coefficient for dx term in
 constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term in frequency shift
 
 // Waveguide constants
-constexpr float32_t c_decay_max = 20.0f;  // Maximum decay value (Reduced for float32 stability)
+constexpr float32_t c_decay_max = 0.5f;  // Maximum decay value (Reduced for float32 stability)
 constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
 constexpr int       c_tube_len = 16384;  // 2^14 loss of capacity for performance improvement - was 20000;  // buffer size, 20000 allows for 10Hz at 200k srate

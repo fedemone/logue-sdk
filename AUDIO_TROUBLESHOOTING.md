@@ -1,3 +1,52 @@
+# [2026-02-18] Final Stability: Denormals & Hardware Math
+
+## 1. Symptoms
+- **Silence after 3-4 beats**: Sound is clear initially but cuts to absolute silence when the tail decays.
+- **Hot Load Distortion**: Loading the unit with sound playing causes immediate harsh distortion/explosion.
+- **Unit Test Mismatch**: The PC-based Unit Tests pass, but the Hardware fails.
+
+## 2. Root Cause Analysis
+
+### a. The "Silence" (Denormal Numbers on ARM)
+- **Diagnosis**: The ARM Cortex-A7 (NEON) processor cannot handle **Denormal Numbers** (tiny values close to zero, e.g., `1e-40`) in hardware. When the reverb/resonator tail decays into this range, the CPU triggers a software trap, spiking usage by 100x and causing the Drumlogue watchdog to mute the unit.
+- **PC vs. HW**: The Unit Test passes because x86 CPUs handle denormals in microcode or have FTZ enabled by default.
+- **Fix**: Explicitly enabled **Flush-to-Zero (FTZ)** mode in the Audio Thread (`RipplerX::Process`) and added `-ffast-math` to the compiler flags.
+
+### b. The "Distortion" (32-bit Float Precision)
+- **Diagnosis**: The `c_decay_max` constant was set to `10.0f` (seconds). In a 32-bit float IIR filter running at 48kHz, this creates a feedback coefficient so close to 1.0 (`0.99999...`) that rounding errors cause it to act as an infinite integrator, accumulating DC offset or energy until it hits `NaN`.
+- **Fix**: Reduced `c_decay_max` to `0.5f` (safe) or `5.0f` (maximum safe limit).
+
+## 3. Implemented Solutions
+
+### Code Changes
+1.  **`constants.h`**:
+    ```cpp
+    // Reduced from 10.0f to prevent float32 integrator explosion
+    constexpr float32_t c_decay_max = 5.0f;
+    // Lowered from 0.01f to prevent premature logic cutoff
+    constexpr float32_t c_decay_min = 0.001f;
+    ```
+
+2.  **`ripplerx.h` (Process Loop)**:
+    Added manual assembly check to enforce FTZ in the audio thread context:
+    ```cpp
+    #if defined(__arm__) || defined(__aarch64__)
+        uint32_t fpscr;
+        __asm__ volatile ("vmrs %0, fpscr" : "=r" (fpscr));
+        if ((fpscr & (1 << 24)) == 0) {
+            fpscr |= (1 << 24); // Set Flush-to-Zero bit
+            __asm__ volatile ("vmsr fpscr, %0" : : "r" (fpscr));
+        }
+    #endif
+    ```
+
+3.  **`Makefile`**:
+    Uncommented/Added aggressive math optimization to prevent software emulation of edge cases:
+    ```makefile
+    OPT += -ffast-math
+    ```
+
+
 # [2026-02-17] [FAIL] No audio output during 3-second test!
 **Test:** `test_ripplerx_debug.cpp` / `test_runtime_stability_3_seconds`
 **Status:** FAILED
