@@ -204,7 +204,7 @@ float32x4_t Waveguide::process(float32x4_t input) {
 
     float32x4_t result = vcombine_f32(out0, out1);
 
-    #ifdef DEBUGN
+#ifdef DEBUGN
     float max_out = fmaxf(fabsf(vgetq_lane_f32(result, 0)),
                           fabsf(vgetq_lane_f32(result, 1)));
     if (max_out > 50.0f || !std::isfinite(max_out)) {
@@ -212,7 +212,7 @@ float32x4_t Waveguide::process(float32x4_t input) {
         fflush(stdout);
         exit(1);
     }
-    #endif
+#endif
 
     return result;
 }

@@ -1,10 +1,10 @@
 #include <iostream>
 #include <vector>
-#include <cmath>
 #include <cstring>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <cmath>
 #include <cstddef>
 #include <new>
@@ -1984,10 +1984,70 @@ void test_denormal_production() {
     }
 
     if (denormal_count > 0) {
-        std::cout << "  [INFO] DETECTED " << denormal_count << " denormal numbers." << std::endl;
+        std::cout << "  [FAIL] DETECTED " << denormal_count << " denormal numbers." << std::endl;
         std::cout << "  [CONCLUSION] FTZ (Flush-to-Zero) is REQUIRED for ARM hardware stability." << std::endl;
+        exit(1);
     } else {
         std::cout << "  [INFO] No denormals detected (Safe)." << std::endl;
+    }
+}
+
+void test_catch_denormals_x86() {
+    std::cout << "[Test 36] Denormal/Subnormal Detection (Math Spy)..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    synth.Init(&desc);
+
+    // 1. Configure a sound with a very long tail
+    // This gives the filter time to decay exponentially into the dangerous range
+    synth.setParam(10, 500); // Filter Cutoff
+    synth.setParam(3, 800);  // Decay (80% of max)
+    synth.setParam(13, 100); // Release (allow tail to ring)
+
+    // 2. Trigger a note
+    synth.NoteOn(60, 100);
+
+    // 3. Render loop
+    float buffer[128];
+    bool denormal_detected = false;
+    float smallest_value = 1.0f;
+
+    // We render 5 seconds of audio. Denormals usually appear after 2-3 seconds of decay.
+    for (int i = 0; i < (48000 * 5) / 64; ++i) {
+        memset(buffer, 0, sizeof(buffer));
+        synth.Render(buffer, 64);
+
+        // SPY: Check every sample
+        for (int j = 0; j < 64; ++j) {
+            float val = std::abs(buffer[j]);
+
+            // Track smallest non-zero value for debugging
+            if (val > 0.0f && val < smallest_value) smallest_value = val;
+
+            // CHECK: Is it a Denormal?
+            // "std::fpclassify" returns FP_SUBNORMAL for denormals.
+            // Alternatively: val > 0 && val < FLT_MIN (approx 1.17e-38)
+            if (std::fpclassify(buffer[j]) == FP_SUBNORMAL) {
+                denormal_detected = true;
+
+                // Optional: Fail immediately
+                std::cerr << " [FAIL] Denormal detected at frame " << i
+                          << " val=" << buffer[j] << std::endl;
+                return;
+            }
+        }
+    }
+
+    std::cout << "  -> Smallest non-zero value seen: " << smallest_value << std::endl;
+
+    if (denormal_detected) {
+        std::cout << "  [FAIL] Denormals detected! (This causes CPU spikes on ARM)" << std::endl;
+        std::cout << "         Fix: Ensure FTZ is enabled or c_decay_min is higher." << std::endl;
+        exit(1);
+    } else {
+        std::cout << "  [PASS] No denormals found. Output cuts to clean zero." << std::endl;
     }
 }
 
@@ -2037,6 +2097,7 @@ int main() {
         test_voice_stealing_accumulation();        // Test 33: Voice stealing wrap-around
         test_dc_offset_stability();                // Test 34: DC Offset check
         test_denormal_production();                // Test 35: Check for ARM hazard
+        test_catch_denormals_x86();                // Test 35: Check for FTZ
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;
