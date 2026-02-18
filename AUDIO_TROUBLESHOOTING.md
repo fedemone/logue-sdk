@@ -1,3 +1,15 @@
+# [2026-02-18] Critical Bug Fixes
+
+## 1. Missing `npartials` Assignment (Silence Bug)
+**Symptom**: Resonator produces silence - zero partials are processed.
+**Diagnosis**: The previous commit removed the `npartials = _partials` assignment from `Resonator::setParams()` but forgot to replace it. The `_partials` parameter was received but never stored, so `npartials` stayed at its initialized value of 0. The resonator loop `for (int p = 0; p < npartials; ++p)` iterated zero times, producing no output.
+**Fix**: Restored `npartials = (_partials > (int)c_max_partials) ? (int)c_max_partials : _partials;` in `Resonator::setParams()`.
+
+## 2. Default-NaN (DN) Mode Added to FTZ Initialization
+**Symptom**: Potential NaN propagation on ARM NEON when denormal inputs feed into operations.
+**Diagnosis**: The FTZ fix only set bit 24 (Flush-to-Zero) in FPSCR but not bit 25 (Default-NaN). Without DN mode, operations on NaN inputs may produce signaling NaNs that take different code paths on different ARM implementations.
+**Fix**: Added `(1 << 25)` to the FPSCR bit mask in `Init()`. Both FTZ and DN are now enabled: `fpscr |= (1 << 24) | (1 << 25);`
+
 # [2026-02-16] Hardware architecture difference
 ## **The Culprit**: Denormal Numbers (The "Silent Killer"): The original JUCE code had this line in PluginProcessor.cpp:
 ```C++

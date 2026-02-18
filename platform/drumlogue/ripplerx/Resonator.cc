@@ -33,9 +33,8 @@ void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials,
     float32_t _radius, float32_t vel_decay, float32_t vel_hit, float32_t vel_inharm)
 {
 	on = _on;
-    // NOTE: Clamp partial count to array limit to prevent buffer overflow in loops
-    // shall never be used as it must never happen. If it does, there's a problem
-    // in the code to be reproduced via unit test and thus investigated
+    // Clamp partial count to array limit to prevent buffer overflow in loops
+    npartials = (_partials > (int)c_max_partials) ? (int)c_max_partials : _partials;
     nmodel = _model;
 	decay = _decay;
 	radius = _radius;

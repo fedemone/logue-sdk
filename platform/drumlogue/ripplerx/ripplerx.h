@@ -120,12 +120,14 @@ public:
         if (!desc) return k_unit_err_geometry;
         if (desc->samplerate != c_sampleRate) return k_unit_err_samplerate;
 
-        // --- [CRITICAL FIX] Enable Flush-to-Zero (FTZ) mode ---
+        // --- [CRITICAL FIX] Enable Flush-to-Zero (FTZ) and Default-NaN (DN) mode ---
+        // FTZ (bit 24): Denormal results are flushed to zero, preventing CPU stalls.
+        // DN  (bit 25): NaN inputs produce Default-NaN output, preventing NaN propagation.
         // This prevents the "Silence after decay" CPU spike on ARM NEON.
         #if defined(__arm__) || defined(__aarch64__)
             uint32_t fpscr;
             __asm__ volatile ("vmrs %0, fpscr" : "=r" (fpscr)); // Read FPSCR
-            fpscr |= (1 << 24); // Set Bit 24 (Flush-to-Zero mode)
+            fpscr |= (1 << 24) | (1 << 25); // Set FTZ (bit 24) and DN (bit 25)
             __asm__ volatile ("vmsr fpscr, %0" : : "r" (fpscr)); // Write FPSCR
         #endif
 
