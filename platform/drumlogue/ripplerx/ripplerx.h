@@ -160,21 +160,6 @@ public:
     float32x4_t m_v_ab_inv_cached;
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
-        // --- [CRITICAL FIX] Enable Flush-to-Zero (FTZ) mode in Audio Thread ---
-        // The OS context switch may reset FPSCR. We must enforce FTZ here to prevent
-        // denormal numbers from causing CPU spikes and watchdog silence.
-        #if defined(__aarch64__) && !defined(UNIT_TEST)
-            uint64_t fpcr;
-            __asm__ volatile ("mrs %0, fpcr" : "=r" (fpcr));
-            fpcr |= (1 << 24); // Set Bit 24 (Flush-to-Zero mode)
-            __asm__ volatile ("msr fpcr, %0" : : "r" (fpcr));
-        #elif defined(__arm__) && !defined(UNIT_TEST)
-            uint32_t fpscr;
-            __asm__ volatile ("vmrs %0, fpscr" : "=r" (fpscr));
-            fpscr |= (1 << 24); // Set Bit 24 (Flush-to-Zero mode)
-            __asm__ volatile ("vmsr fpscr, %0" : : "r" (fpscr));
-        #endif
-
         // 1. Load Global Mix Parameters into Vector Registers
         const float32_t mallet_mix      = parameters[ProgramParameters::mallet_mix];
         const float32_t mallet_res      = parameters[ProgramParameters::mallet_res];
@@ -255,6 +240,8 @@ public:
 
                 if (voice.isPressed || voice.isRelease) {
                     active_voices_count++;
+                    // [FIX] Perform the pending memory clear exactly here, safely on the audio thread
+                    voice.checkAndClear();
                 }
                 // FIX: accum_res must be local to the voice!
                 // Previously it accumulated across all voices, causing explosion for later voices.

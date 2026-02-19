@@ -17,17 +17,17 @@ float32_t Voice::note2freq(int _note)
 void Voice::trigger(float32_t srate, int _note, float32_t _vel,
     float32_t malletFreq)
 {
-    resA.clear();
-    resB.clear();
-    mallet.clear();
-    noise.clear();
+    // resA.clear();
+    // resB.clear();
+    // mallet.clear();
+    // noise.clear();
+    // [FIX] Flag the audio thread to clear memory safely.
+    // Do not call resA.clear() directly here!
+    m_needs_clear.store(true, std::memory_order_release);
 
     note = _note;
     vel = _vel;
     freq = note2freq(note);
-    #ifdef DEBUGN
-    printf("[VOICE TRIGGER] Note %d, vel %.2f, freq %.2f\n", note, vel, freq);
-    #endif
 
     isRelease = false;
     isPressed = true;

@@ -13,7 +13,7 @@
 #include "Mallet.h"
 #include "Noise.h"
 #include "Resonator.h"
-#include "Models.h"
+#include <atomic>
 
 class alignas(16) Voice
 {
@@ -46,7 +46,16 @@ public:
 
     void setCoupling(bool _couple, float32_t _split);
 
-
+    // [NEW] Safe clear method to be called by the audio thread
+    inline void checkAndClear() {
+        if (m_needs_clear.exchange(false, std::memory_order_acquire)) {
+            resA.clear();
+            resB.clear();
+            mallet.clear();
+            noise.clear();
+        }
+    }
+    
     // --- Public Members (accessed by Voice Manager) ---
     int       note = 0;        // MIDI note number
     float32_t freq = 0.0f;     // Frequency in Hz
@@ -71,4 +80,5 @@ private:
     // These store the state of the coupled frequencies between updates
     alignas(16) float32_t aShifts[64] = {0};
     alignas(16) float32_t bShifts[64] = {0};
+    std::atomic<bool> m_needs_clear{false};
 };

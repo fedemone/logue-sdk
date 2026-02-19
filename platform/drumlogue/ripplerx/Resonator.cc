@@ -320,7 +320,7 @@ float32x4_t Resonator::process(float32x4_t input)
         float32x2_t in0 = vget_low_f32(input);  // [L0, R0]
         float32x2_t in1 = vget_high_f32(input); // [L1, R1]
 
-        for (int p = 0; p < npartials; ++p) {
+        for (int p = 0; p < activePartialsCount; ++p) {
             Partial& part = partials[p];
 
             // --- WAKE-UP LOGIC (RACE CONDITION FIX) ---
