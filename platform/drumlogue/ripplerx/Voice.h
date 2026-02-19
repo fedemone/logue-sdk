@@ -50,6 +50,8 @@ public:
     std::atomic<bool> m_pending_trigger{false};
     float32_t m_pending_mallet_freq;
     float32_t m_pending_vel;
+    // [NEW] Flag to protect coefficients during UI calculations
+    std::atomic<bool> m_is_updating{false};
 
     // [FIX] Audio thread executes memory clear AND envelope triggers simultaneously
     inline void checkAndTrigger(float32_t srate) {

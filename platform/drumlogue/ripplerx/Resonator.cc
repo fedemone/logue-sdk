@@ -319,7 +319,15 @@ float32x4_t Resonator::process(float32x4_t input)
         float32x2_t in0 = vget_low_f32(input);  // [L0, R0]
         float32x2_t in1 = vget_high_f32(input); // [L1, R1]
 
-        for (int p = 0; p < activePartialsCount; ++p) {
+        // [CPU OPTIMIZATION] Limit the NEON loop to only the active partials
+        // [FIX] Removed the "npartials" fallback so it can cleanly process 0 partials (silence)
+        int process_limit = activePartialsCount;
+
+        // Hardware safety clamp
+        if (process_limit > npartials) process_limit = npartials;
+
+        // If process_limit is 0, this loop safely skips, saving CPU!
+        for (int p = 0; p < process_limit; ++p) {
             Partial& part = partials[p];
 
             // --- WAKE-UP LOGIC (RACE CONDITION FIX) ---
@@ -430,6 +438,8 @@ void Resonator::clear()
     active = false; // CRITICAL: Must be first to prevent phantom processing
 	for (size_t i = 0; i < c_max_partials; ++i) {
 		partials[i].clear();
+        // [FIX] Force the Audio Thread to zero the NEON vectors on the next sample
+        partials[i].active_prev = false;
 	}
 	waveguide.clear();
 	filter.clear(0.0f);

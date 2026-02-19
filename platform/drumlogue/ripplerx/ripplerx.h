@@ -238,6 +238,10 @@ public:
             for (size_t v = 0; v < c_numVoices; ++v) {
                 Voice& voice = voices[v];
 
+                // [FIX] Skip this voice entirely if UI thread is writing to it
+                if (voice.m_is_updating.load(std::memory_order_acquire)) {
+                    continue;
+                }
                 if (voice.isPressed || voice.isRelease) {
                     active_voices_count++;
                     // [FIX] Call the new deferred trigger function
