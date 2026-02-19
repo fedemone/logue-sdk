@@ -240,8 +240,8 @@ public:
 
                 if (voice.isPressed || voice.isRelease) {
                     active_voices_count++;
-                    // [FIX] Perform the pending memory clear exactly here, safely on the audio thread
-                    voice.checkAndClear();
+                    // [FIX] Call the new deferred trigger function
+                    voice.checkAndTrigger((float)c_sampleRate);
                 }
                 // FIX: accum_res must be local to the voice!
                 // Previously it accumulated across all voices, causing explosion for later voices.

@@ -26,7 +26,6 @@ Resonator::Resonator()
 }
 
 
-
 // called by original plugin::onSlider()
 void Resonator::setParams(float32_t _srate, bool _on, int _model, int _partials, float32_t _decay,
     float32_t _damp, float32_t tone, float32_t hit,	float32_t _rel, float32_t _inharm, float32_t _cut,
@@ -128,8 +127,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
     // Shared model constant (Ratio of the highest partial)
     const float ratio_max = model[c_max_partials - 1];
 
-    // Reset counter for the Render loop
-    int active_count = 0;
+    // Change active_count to track the highest index
+    int highest_active_index = -1;
 
     // --- Main Loop ---
     for (int p = 0; p < npartials; ++p) {
@@ -195,8 +194,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
             continue;
         }
 
-        // Increment the count of partials that need processing
-        active_count++;
+        // 2. [FIX] Track the maximum index that needs processing
+        highest_active_index = p;
 
         // ---------------------------------------------------------
         // 4. Damping & Tone (Log Domain Math)
@@ -274,8 +273,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 #endif
     }
 
-    // Update the class member for the Render loop
-    this->activePartialsCount = active_count;
+    // [FIX] The loop limit is the highest index + 1
+    this->activePartialsCount = highest_active_index + 1;
 }
 
 
