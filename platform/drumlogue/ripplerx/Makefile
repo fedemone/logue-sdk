@@ -190,7 +190,7 @@ ARCH_OPT := -march=armv7-a -mtune=cortex-a7 -marm
 OPT += -mfloat-abi=hard -mfpu=neon-vfpv4
 ifeq ($(USE_VECTORIZATION),yes)
   OPT += -mvectorize-with-neon-quad
-  OPT += -ffast-math
+  # OPT += -ffast-math
   OPT += -ftree-vectorize
   OPT += -ftree-vectorizer-verbose=4
   OPT += -funsafe-math-optimizations ## denormals assumed 0, so breaks IEEE754

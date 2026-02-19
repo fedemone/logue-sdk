@@ -7,7 +7,6 @@ void Filter::lp(float32_t srate, float32_t freq, float32_t q)
     float32_t w0 = M_TWOPI * fminf(freq / srate, 0.49f);
 
     // Optimize: Compute sin/cos.
-    // If your platform has fsincos (ARM V8), this can be one instruction.
     float32_t cos_w0 = fastcosfullf(w0);
     float32_t alpha = fastersinfullf(w0) * 0.5f / q; // / (2*q) -> * 0.5 / q
 

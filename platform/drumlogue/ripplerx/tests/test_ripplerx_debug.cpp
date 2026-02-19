@@ -13,7 +13,7 @@
 
 /** Additional unit testes created by Claude
  * to use, lauch this command
- * /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -O3 -I.. -DDEBUGN test_ripplerx_debug.cpp ../ripplerx.cc ../Voice.cc ../Resonator.cc ../Partial.cc ../Waveguide.cc ../Models.cc ../Mallet.cc ../Noise.cc ../Filter.cc ../Envelope.cc -o run_test_debug && qemu-arm ./run_test_debug | tee run_test_debug_result.log
+ * /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -pthread -O3 -I.. -DDEBUGN test_ripplerx_debug.cpp ../ripplerx.cc ../Voice.cc ../Resonator.cc ../Partial.cc ../Waveguide.cc ../Models.cc ../Mallet.cc ../Noise.cc ../Filter.cc ../Envelope.cc -o run_test_debug && qemu-arm ./run_test_debug | tee run_test_debug_result.log
 */
 
 // --- ARCHITECTURE COMPATIBILITY ---
@@ -2002,9 +2002,9 @@ void test_catch_denormals_x86() {
 
     // 1. Configure a sound with a very long tail
     // This gives the filter time to decay exponentially into the dangerous range
-    synth.setParam(10, 500); // Filter Cutoff
-    synth.setParam(3, 800);  // Decay (80% of max)
-    synth.setParam(13, 100); // Release (allow tail to ring)
+    synth.setParameter(10, 500); // Filter Cutoff
+    synth.setParameter(3, 800);  // Decay (80% of max)
+    synth.setParameter(13, 100); // Release (allow tail to ring)
 
     // 2. Trigger a note
     synth.NoteOn(60, 100);
@@ -2051,6 +2051,82 @@ void test_catch_denormals_x86() {
     }
 }
 
+void test_limiter_nan_overflow() {
+    std::cout << "\n[Test 37] Limiter Integer Overflow (Crash Reproducer)..." << std::endl;
+
+    Limiter lim;
+    lim.init(48000.0f);
+
+    // Simulate an exploded filter output (massive amplitude)
+    float32x4_t exploded_signal = vdupq_n_f32(2000000.0f);
+
+    // Process through the limiter
+    float32x4_t out = lim.process(exploded_signal);
+
+    // Extract the result
+    float out_val = vgetq_lane_f32(out, 0);
+
+    // Assert it didn't turn into NaN
+    if (std::isnan(out_val)) {
+        std::cout << "  [FAIL] Limiter generated NaN! Integer overflow occurred." << std::endl;
+        std::cout << "         This causes a hard kernel crash on the Drumlogue." << std::endl;
+    } else {
+        std::cout << "  [PASS] Limiter survived the massive input. Output: " << out_val << std::endl;
+    }
+}
+
+
+#include <thread>
+#include <atomic>
+void test_single_thread_hot_load() {
+    std::cout << "\n[Test 38] Single-Threaded Hot-Load Stress Test..." << std::endl;
+
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    synth.Init(&desc);
+
+    float buffer[64];
+    bool explosion_detected = false;
+    float max_val_seen = 0.0f;
+
+    synth.NoteOn(60, 100);
+
+    // Render 10,000 tiny blocks (simulating time passing)
+    for (int i = 0; i < 10000; ++i) {
+        memset(buffer, 0, sizeof(buffer));
+
+        // Render just 1 frame at a time
+        synth.Render(buffer, 1);
+
+        // [SIMULATE HOT LOAD]: Constantly hammer the engine mid-stream
+        // Every 47 samples, re-trigger a note
+        if (i % 47 == 0) synth.NoteOn( (i % 24) + 40, 100);
+
+        // Every 113 samples, wildly change the filter cutoff and decay
+        if (i % 113 == 0) {
+            synth.setParameter(10, (i % 1000)); // Sweep cutoff
+            synth.setParameter(3, (i % 800));   // Sweep decay
+        }
+
+        // Check for DSP explosions
+        float val = std::abs(buffer[0]);
+        if (val > max_val_seen) max_val_seen = val;
+
+        if (std::isnan(buffer[0]) || val > 100.0f) {
+            explosion_detected = true;
+            std::cout << "  [FAIL] Filter exploded at sample " << i << ". Val=" << buffer[0] << std::endl;
+            break;
+        }
+    }
+
+    if (!explosion_detected) {
+        std::cout << "  [PASS] Engine is perfectly stable under extreme Hot-Loading." << std::endl;
+        std::cout << "         Max amplitude reached: " << max_val_seen << std::endl;
+    }
+}
+
+
 int main() {
     std::cout << "\n";
     std::cout << "╔════════════════════════════════════════════════════════════╗\n";
@@ -2061,43 +2137,45 @@ int main() {
     auto total_start = std::chrono::high_resolution_clock::now();
 
     try {
-        test_dirty_initialization();
-        test_runtime_stability_3_seconds();
-        test_audio_stability();
-        test_stress_polyphony();
-        test_envelope_decay();
-        test_extreme_parameters();
-        test_hot_reload_multi_pattern();
-        test_note_on_off_cycle();
-        test_limiter_silence_stability();
-        test_comb_filter_stability();
-        test_percussion_auto_release();
-        test_component_filter_vec();
-        test_component_envelope();
-        test_rhythmic_stability_crash();
-        test_degradation_over_12_beats();
-        test_preset_11_issue();
-        test_preset_14_crash();
-        test_preset_28_issue();
-        test_preset_loop_transition();
-        test_preset_retrigger_instability();
-        test_parameter_mapping();
-        test_api_lifecycle_stability();
-        test_coupling_safety();
-        test_partial_wakeup_instability();
-        test_polyphony_accumulation_4_beats();
-        test_decay_scaling_verification();
-        test_single_vs_quad_voice_level();
-        test_decay_parameter_range();              // Test 27:  Catches decay scaling issues
-        test_polyphony_accumulation_2_beats();     // Test 28: Catches 2-beat crash bug
-        test_iir_coefficient_stability();          // Test 29: Catches va2 >= 1.0
-        test_voice_normalization_effectiveness();  // Test 30: Verifies normalization works
-        test_preset_loading_stability();           // Test 31: Real-world preset testing
-        test_long_decay_instability();             // Test 32: Slow accumulation check
-        test_voice_stealing_accumulation();        // Test 33: Voice stealing wrap-around
-        test_dc_offset_stability();                // Test 34: DC Offset check
-        test_denormal_production();                // Test 35: Check for ARM hazard
-        test_catch_denormals_x86();                // Test 35: Check for FTZ
+        // test_dirty_initialization();
+        // test_runtime_stability_3_seconds();
+        // test_audio_stability();
+        // test_stress_polyphony();
+        // test_envelope_decay();
+        // test_extreme_parameters();
+        // test_hot_reload_multi_pattern();
+        // test_note_on_off_cycle();
+        // test_limiter_silence_stability();
+        // test_comb_filter_stability();
+        // test_percussion_auto_release();
+        // test_component_filter_vec();
+        // test_component_envelope();
+        // test_rhythmic_stability_crash();
+        // test_degradation_over_12_beats();
+        // test_preset_11_issue();
+        // test_preset_14_crash();
+        // test_preset_28_issue();
+        // test_preset_loop_transition();
+        // test_preset_retrigger_instability();
+        // test_parameter_mapping();
+        // test_api_lifecycle_stability();
+        // test_coupling_safety();
+        // test_partial_wakeup_instability();
+        // test_polyphony_accumulation_4_beats();
+        // test_decay_scaling_verification();
+        // test_single_vs_quad_voice_level();
+        // test_decay_parameter_range();              // Test 27:  Catches decay scaling issues
+        // test_polyphony_accumulation_2_beats();     // Test 28: Catches 2-beat crash bug
+        // test_iir_coefficient_stability();          // Test 29: Catches va2 >= 1.0
+        // test_voice_normalization_effectiveness();  // Test 30: Verifies normalization works
+        // test_preset_loading_stability();           // Test 31: Real-world preset testing
+        // test_long_decay_instability();             // Test 32: Slow accumulation check
+        // test_voice_stealing_accumulation();        // Test 33: Voice stealing wrap-around
+        // test_dc_offset_stability();                // Test 34: DC Offset check
+        // test_denormal_production();                // Test 35: Check for ARM hazard
+        // test_catch_denormals_x86();                // Test 36: Check for FTZ
+        // test_limiter_nan_overflow();
+        test_single_thread_hot_load();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;

@@ -17,37 +17,41 @@ float32_t Voice::note2freq(int _note)
 void Voice::trigger(float32_t srate, int _note, float32_t _vel,
     float32_t malletFreq)
 {
-    resA.clear();
-    resB.clear();
-    mallet.clear();
-    noise.clear();
+    // 1. Lock Audio Thread
+    m_is_updating.store(true, std::memory_order_release);
 
     note = _note;
     vel = _vel;
     freq = note2freq(note);
-    #ifdef DEBUGN
-    printf("[VOICE TRIGGER] Note %d, vel %.2f, freq %.2f\n", note, vel, freq);
-    #endif
 
     isRelease = false;
     isPressed = true;
 
-    mallet.trigger(srate, malletFreq);
-    noise.attack(_vel);
+    // (mallet.trigger and noise.attack removed from here - handled by checkAndTrigger safely)
 
+    // 2. Safely calculate coefficients without Torn Reads
     updateResonators(true);
 
-    // FIX: Activate AFTER updating coefficients to prevent race condition in Render thread
-    if (resA.isOn()) resA.activate();
-    if (resB.isOn()) resB.activate();
+    // 3. Hand off dynamic parameters to Audio Thread
+    m_pending_mallet_freq = malletFreq;
+    m_pending_vel = _vel;
+    m_pending_trigger.store(true, std::memory_order_release);
+
+    // 4. Unlock Audio Thread
+    m_is_updating.store(false, std::memory_order_release);
 }
 
 void Voice::release()
 {
+    // Lock release updates too!
+    m_is_updating.store(true, std::memory_order_release);
+
     isRelease = true;
     isPressed = false;
     noise.release();
     updateResonators(false);
+
+    m_is_updating.store(false, std::memory_order_release);
 }
 
 void Voice::clear()

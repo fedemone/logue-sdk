@@ -13,7 +13,7 @@
 #include "Mallet.h"
 #include "Noise.h"
 #include "Resonator.h"
-#include "Models.h"
+#include <atomic>
 
 class alignas(16) Voice
 {
@@ -46,6 +46,30 @@ public:
 
     void setCoupling(bool _couple, float32_t _split);
 
+    // [FIX] Audio-Thread deferred trigger state
+    std::atomic<bool> m_pending_trigger{false};
+    float32_t m_pending_mallet_freq;
+    float32_t m_pending_vel;
+    // [NEW] Flag to protect coefficients during UI calculations
+    std::atomic<bool> m_is_updating{false};
+
+    // [FIX] Audio thread executes memory clear AND envelope triggers simultaneously
+    inline void checkAndTrigger(float32_t srate) {
+        if (m_pending_trigger.exchange(false, std::memory_order_acquire)) {
+            // 1. Safe Memory Flush
+            resA.clear();
+            resB.clear();
+            mallet.clear();
+            noise.clear();
+
+            // 2. Safe Envelope Start (Cannot be wiped now)
+            mallet.trigger(srate, m_pending_mallet_freq);
+            noise.attack(m_pending_vel);
+
+            if (resA.isOn()) resA.activate();
+            if (resB.isOn()) resB.activate();
+        }
+    }
 
     // --- Public Members (accessed by Voice Manager) ---
     int       note = 0;        // MIDI note number
@@ -71,4 +95,5 @@ private:
     // These store the state of the coupled frequencies between updates
     alignas(16) float32_t aShifts[64] = {0};
     alignas(16) float32_t bShifts[64] = {0};
+    std::atomic<bool> m_needs_clear{false};
 };

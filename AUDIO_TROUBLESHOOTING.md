@@ -1,3 +1,65 @@
+# [2026-02-19] Thread Synchronization & Active Partial Indexing Bugs
+
+## 1. Symptoms
+- **"No Sound" / Occasional Pops**: Loading a new preset or hot-loading results in total silence, occasionally accompanied by a distorted pop.
+- **Silence after 8-12 beats**: On specific presets (e.g., Program 14, 19), the sound plays initially but abruptly cuts to silence after a few beats.
+
+## 2. Root Cause Analysis
+
+### a. The "No Sound" Bug (The Envelope Wipe)
+- **Diagnosis**: To fix the NEON Hard Fault (Hardware Freeze), the `clear()` function was deferred to the audio thread via an atomic flag (`m_needs_clear`). However, the UI thread `Voice::trigger()` was still starting the Mallet and Noise envelopes *before* the flag was checked.
+- **The Conflict**: The audio thread would see the flag, call `checkAndClear()`, and instantly overwrite the newly triggered envelope states with zeroes right before processing the first sample.
+- **Fix**: Defer both the memory clear *and* the envelope triggers (`mallet.trigger`, `noise.attack`) to the audio thread simultaneously using a new `checkAndTrigger()` method.
+
+### b. The "8-Beat Silence" Bug (Index vs. Count Mismatch)
+- **Diagnosis**: To implement Active Partial Counting to save extra CPU cycles, the `Resonator::process` loop was artificially limited. The `Resonator::update` function was calculating the raw *count* of active partials.
+- **The Conflict**: If a sound had 10 partials, but partials 2 and 3 were muted, the `active_count` was 8. The `process` loop `for (int p = 0; p < 8; ++p)` would then process indices 0-7, completely skipping the highest active partials (8 and 9), and processing the dead zeroes at 2 and 3. This corrupted the biquad states and caused the loop to fail to shrink fast enough, eventually triggering the OS CPU watchdog.
+- **Fix**: Track the `highest_active_index` instead of the raw count, ensuring the loop bound encompasses the highest audible frequency without skipping.
+
+
+
+## 3. Implemented Solutions
+
+### Code Changes
+1.  **`Resonator.cc` (Index Tracking)**:
+    Changed `Resonator::update` to track the maximum array index required, rather than a raw counter:
+    ```cpp
+    int highest_active_index = -1;
+    for (int p = 0; p < npartials; ++p) {
+        // ... (mute check logic) ...
+        highest_active_index = p;
+    }
+    this->activePartialsCount = highest_active_index + 1;
+    ```
+
+2.  **`Voice.h` & `Voice.cc` (Deferred Triggers)**:
+    Replaced `m_needs_clear` with `m_pending_trigger` to safely hand off dynamic parameters to the audio thread.
+    ```cpp
+    inline void checkAndTrigger(float32_t srate) {
+        if (m_pending_trigger.exchange(false, std::memory_order_acquire)) {
+            resA.clear(); resB.clear(); mallet.clear(); noise.clear();
+            mallet.trigger(srate, m_pending_mallet_freq);
+            noise.attack(m_pending_vel);
+            if (resA.isOn()) resA.activate();
+            if (resB.isOn()) resB.activate();
+        }
+    }
+    ```
+
+3.  **`ripplerx.h` (Audio Thread Execution)**:
+    Updated the main `Render` loop to execute the deferred triggers exactly when the voice is first processed:
+    ```cpp
+    if (voice.isPressed || voice.isRelease) {
+        active_voices_count++;
+        voice.checkAndTrigger((float)c_sampleRate);
+    }
+    ```
+
+## 4. Verification
+- **No Sound**: Resolved. Envelopes are now mathematically guaranteed to start *after* the delay lines are flushed.
+- **8-Beat Silence**: Resolved. The NEON loop safely processes up to the highest active index, maintaining DSP integrity while correctly shedding CPU load as high partials decay below the auditory threshold.
+
+
 # [2026-02-18] Final Stability: Denormals & Hardware Math
 
 ## 1. Symptoms

@@ -54,9 +54,6 @@ public:
 	Waveguide waveguide{};
 	Filter filter{};
 
-	// Validation helpers
-	void validateAndSetPartials(int _partials);
-	void validateAndSetModel(int _model);
     private:
     int activePartialsCount = 0;
 };

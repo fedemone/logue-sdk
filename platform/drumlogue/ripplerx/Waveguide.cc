@@ -107,7 +107,7 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
     vG = vdupq_n_f32(g);
 
     // Radius (Damping) coefficients
-    // Assuming radius is a member updated by the user/UI
+    // radius is updated by the user/UI via Resonator::setParams()
     vRadius = radius;
     vOneMinusRad = vsubq_f32(vdupq_n_f32(1.0f), vRadius);
 }
