@@ -148,16 +148,16 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // ---------------------------------------------------------
         // 1. Frequency & Inharmonicity (Bit-Trick Optimized)
         // ---------------------------------------------------------
-        // Calc: 2^(vel_inharm * log_vel) using integer bit manipulation
         float exp_inharm_part = (part.vel_inharm * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_inharm;
         u_inharm.i = (int32_t)(exp_inharm_part * 8388608.0f) + 1065353216;
 
-        float inharm_k = fminf(1.0f, part.inharm * u_inharm.f); // Clamp max inharm
-        // Stiff string approximation: f = f0 * sqrt(1 + B * (k^2 - 1))
-        // Here simplified to ratio-based scaling
+        // [FIX] Ensure the value never drops below 0.0f BEFORE subtracting to prevent NaN Sqrt
+        float inharm_raw = part.inharm * u_inharm.f;
+        float inharm_k = fmaxf(0.0f, fminf(1.0f, inharm_raw) - 0.0001f);
+
         float r_m_1 = ratio - 1.0f;
-        inharm_k = fasterSqrt(1.0f + (inharm_k - 0.0001f) * (r_m_1 * r_m_1));
+        inharm_k = fasterSqrt(1.0f + inharm_k * (r_m_1 * r_m_1));
 
         float f_k = freq * ratio * inharm_k;
 

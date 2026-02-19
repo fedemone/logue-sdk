@@ -59,6 +59,11 @@
 - **No Sound**: Resolved. Envelopes are now mathematically guaranteed to start *after* the delay lines are flushed.
 - **8-Beat Silence**: Resolved. The NEON loop safely processes up to the highest active index, maintaining DSP integrity while correctly shedding CPU load as high partials decay below the auditory threshold.
 
+### c. The "2-Beat Silence" Bug (The NaN Square Root)
+- **Diagnosis**: Following the threading fixes, the engine produced corrupted audio for exactly two beats before muting.
+- **Root Cause**: An optimization in `Resonator::update` allowed the inharmonicity coefficient `(inharm_k - 0.0001f)` to become negative. For high partial ratios, `1.0f + (negative) * ratio^2` produced a heavily negative number. Passing this into `fasterSqrt()` instantly generated a `NaN`.
+- **The "2-Beat" Mystery**: The silence tracker (`vMask`) evaluates any comparison against `NaN` as `false`. It assumed the `NaN` signal was silence and incremented the counter. The muting threshold is `srate` (48,000 samples = 1 second). At 120 BPM, 1 second is exactly 2 beats.
+- **Fix**: Wrapped the inharmonicity calculation in a strict `fmaxf(0.0f, ...)` clamp to mathematically guarantee a positive operand for the square root function, restoring absolute IIR filter stability.
 
 # [2026-02-18] Final Stability: Denormals & Hardware Math
 
