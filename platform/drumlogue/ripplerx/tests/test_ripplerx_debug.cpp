@@ -2137,44 +2137,44 @@ int main() {
     auto total_start = std::chrono::high_resolution_clock::now();
 
     try {
-        // test_dirty_initialization();
-        // test_runtime_stability_3_seconds();
-        // test_audio_stability();
-        // test_stress_polyphony();
-        // test_envelope_decay();
-        // test_extreme_parameters();
-        // test_hot_reload_multi_pattern();
-        // test_note_on_off_cycle();
-        // test_limiter_silence_stability();
-        // test_comb_filter_stability();
-        // test_percussion_auto_release();
-        // test_component_filter_vec();
-        // test_component_envelope();
-        // test_rhythmic_stability_crash();
-        // test_degradation_over_12_beats();
-        // test_preset_11_issue();
-        // test_preset_14_crash();
-        // test_preset_28_issue();
-        // test_preset_loop_transition();
-        // test_preset_retrigger_instability();
-        // test_parameter_mapping();
-        // test_api_lifecycle_stability();
-        // test_coupling_safety();
-        // test_partial_wakeup_instability();
-        // test_polyphony_accumulation_4_beats();
-        // test_decay_scaling_verification();
-        // test_single_vs_quad_voice_level();
-        // test_decay_parameter_range();              // Test 27:  Catches decay scaling issues
-        // test_polyphony_accumulation_2_beats();     // Test 28: Catches 2-beat crash bug
-        // test_iir_coefficient_stability();          // Test 29: Catches va2 >= 1.0
-        // test_voice_normalization_effectiveness();  // Test 30: Verifies normalization works
-        // test_preset_loading_stability();           // Test 31: Real-world preset testing
-        // test_long_decay_instability();             // Test 32: Slow accumulation check
-        // test_voice_stealing_accumulation();        // Test 33: Voice stealing wrap-around
-        // test_dc_offset_stability();                // Test 34: DC Offset check
-        // test_denormal_production();                // Test 35: Check for ARM hazard
-        // test_catch_denormals_x86();                // Test 36: Check for FTZ
-        // test_limiter_nan_overflow();
+        test_dirty_initialization();
+        test_runtime_stability_3_seconds();
+        test_audio_stability();
+        test_stress_polyphony();
+        test_envelope_decay();
+        test_extreme_parameters();
+        test_hot_reload_multi_pattern();
+        test_note_on_off_cycle();
+        test_limiter_silence_stability();
+        test_comb_filter_stability();
+        test_percussion_auto_release();
+        test_component_filter_vec();
+        test_component_envelope();
+        test_rhythmic_stability_crash();
+        test_degradation_over_12_beats();
+        test_preset_11_issue();
+        test_preset_14_crash();
+        test_preset_28_issue();
+        test_preset_loop_transition();
+        test_preset_retrigger_instability();
+        test_parameter_mapping();
+        test_api_lifecycle_stability();
+        test_coupling_safety();
+        test_partial_wakeup_instability();
+        test_polyphony_accumulation_4_beats();
+        test_decay_scaling_verification();
+        test_single_vs_quad_voice_level();
+        test_decay_parameter_range();              // Test 27:  Catches decay scaling issues
+        test_polyphony_accumulation_2_beats();     // Test 28: Catches 2-beat crash bug
+        test_iir_coefficient_stability();          // Test 29: Catches va2 >= 1.0
+        test_voice_normalization_effectiveness();  // Test 30: Verifies normalization works
+        test_preset_loading_stability();           // Test 31: Real-world preset testing
+        test_long_decay_instability();             // Test 32: Slow accumulation check
+        test_voice_stealing_accumulation();        // Test 33: Voice stealing wrap-around
+        test_dc_offset_stability();                // Test 34: DC Offset check
+        test_denormal_production();                // Test 35: Check for ARM hazard
+        test_catch_denormals_x86();                // Test 36: Check for FTZ
+        test_limiter_nan_overflow();
         test_single_thread_hot_load();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;

@@ -160,6 +160,14 @@ public:
     float32x4_t m_v_ab_inv_cached;
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
+        // DEBUG
+        // 1. IF FROZEN: Output silence and do nothing else
+        // This keeps the watchdog timer happy while you read the screen!
+        if (m_telemetry_frozen) {
+            for (size_t i = 0; i < frames * 2; ++i) outBuffer[i] = 0.0f;
+            return;
+        }
+
         // 1. Load Global Mix Parameters into Vector Registers
         const float32_t mallet_mix      = parameters[ProgramParameters::mallet_mix];
         const float32_t mallet_res      = parameters[ProgramParameters::mallet_res];
@@ -303,8 +311,107 @@ public:
 
                 if (a_on) {
                     res_out_A = voice.resA.process(accum_res);
+
+
+                    // DEBUG
+                    float voice_out = vgetq_lane_f32(res_out_A, 0);
+                    // --- THE TELEMETRY TRAP ---
+                    if (!isfinite(voice_out) || std::abs(voice_out) > 50.0f) {
+                        #ifdef DEBUGN
+                        printf("[DIAG] Resonator A explosion at frame %d: %.2f\n", i, voice_out);
+                        fflush(stdout);
+                        #endif
+                        m_telemetry_frozen = true;
+                        LoadPreset(Program::Debug);
+                        // EXFILTRATE DATA TO UI PARAMETERS
+                        // Note: Depending on header.c, the UI might display these clamped,
+                        // but the raw values are now safely caught.
+                        setParameter(Parameters::c_parameterSampleNumber, 11);  // before filter
+                        // Param 0: Error Code (1.0 = NaN, 2.0 = Explosion)
+                        // parameters[0] = std::isnan(voice_out) ? 1.0f : 2.0f;
+                        setParameter(Parameters::c_parameterResonatorNote, std::isnan(voice_out) ? 1.0f : 2.0f);
+                        // Param 1 & 2: What was the voice doing?
+                        // parameters[1] = voice.freq;             // Base frequency
+                        setParameter(Parameters::c_parameterFilterCutoff, voice.freq);
+                        // parameters[2] = voice.resA.nmodel;      // The current model
+                        setParameter(Parameters::c_parameterModel, voice.resA.nmodel);
+
+                        // Param 3 & 4: What was the CPU loop doing?
+                        // parameters[3] = voice.resA.activePartialsCount; // Where did the loop stop?
+                        setParameter(Parameters::c_parameterCoarsePitch, voice.resA.activePartialsCount);
+                        // parameters[4] = voice.resA.silence;     // Was it trying to mute?
+                        setParameter(Parameters::c_parameterNoiseMix, voice.resA.silence);
+
+                        // Param 5, 6, 7: The deepest math (Inspect the lowest partial)
+                        // parameters[5] = voice.resA.partials[0].f_k;      // Partial 0 Freq
+                        setParameter(Parameters::c_parameterNoiseResonance, voice.resA.partials[0].m_f_k);
+                        // parameters[6] = voice.resA.partials[0].decay_k;  // Partial 0 Decay
+                        setParameter(Parameters::c_parameterNoiseFilterFreq, voice.resA.partials[0].m_decay_k);
+                        // parameters[7] = voice.resA.partials[0].inharm;   // Partial 0 Inharm
+                        setParameter(Parameters::c_parameterNoiseFilterQ, voice.resA.partials[0].inharm);
+
+                        // Param 8 & 9: Inspect the highest active partial
+                        int highest_idx = fmax(0, voice.resA.activePartialsCount - 1);
+                        setParameter(Parameters::c_parameterHitPosition, highest_idx);
+                        // parameters[8] = voice.resA.partials[highest_idx].f_k;
+                        setParameter(Parameters::c_parameterRelease, voice.resA.partials[highest_idx].m_f_k);
+                        // parameters[9] = voice.resA.partials[highest_idx].decay_k;
+                        setParameter(Parameters::c_parameterInharmonic, voice.resA.partials[highest_idx].m_decay_k);
+
+                        // Immediately abort this frame
+                        break;
+                    }
                     if (voice.resA.getCut() > c_res_cutoff) {
-                         res_out_A = voice.resA.applyFilter(res_out_A);
+                        res_out_A = voice.resA.applyFilter(res_out_A);
+
+                        // DEBUG
+                        voice_out = vgetq_lane_f32(res_out_A, 0);
+                        // --- THE TELEMETRY TRAP ---
+                        if (!isfinite(voice_out) || std::abs(voice_out) > 50.0f) {
+                            #ifdef DEBUGN
+                            printf("[DIAG] Resonator A explosion at frame %d: %.2f\n", i, voice_out);
+                            fflush(stdout);
+                            #endif
+                            m_telemetry_frozen = true;
+                            LoadPreset(Program::Debug);
+                            // EXFILTRATE DATA TO UI PARAMETERS
+                            // Note: Depending on header.c, the UI might display these clamped,
+                            // but the raw values are now safely caught.
+                            setParameter(Parameters::c_parameterSampleNumber, 12);  // before filter
+                            // Param 0: Error Code (1.0 = NaN, 2.0 = Explosion)
+                            // parameters[0] = std::isnan(voice_out) ? 1.0f : 2.0f;
+                            setParameter(Parameters::c_parameterResonatorNote, std::isnan(voice_out) ? 1.0f : 2.0f);
+                            // Param 1 & 2: What was the voice doing?
+                            // parameters[1] = voice.freq;             // Base frequency
+                            setParameter(Parameters::c_parameterFilterCutoff, voice.freq);
+                            // parameters[2] = voice.resA.nmodel;      // The current model
+                            setParameter(Parameters::c_parameterModel, voice.resA.nmodel);
+
+                            // Param 3 & 4: What was the CPU loop doing?
+                            // parameters[3] = voice.resA.activePartialsCount; // Where did the loop stop?
+                            setParameter(Parameters::c_parameterCoarsePitch, voice.resA.activePartialsCount);
+                            // parameters[4] = voice.resA.silence;     // Was it trying to mute?
+                            setParameter(Parameters::c_parameterNoiseMix, voice.resA.silence);
+
+                            // Param 5, 6, 7: The deepest math (Inspect the lowest partial)
+                            // parameters[5] = voice.resA.partials[0].f_k;      // Partial 0 Freq
+                            setParameter(Parameters::c_parameterNoiseResonance, voice.resA.partials[0].m_f_k);
+                            // parameters[6] = voice.resA.partials[0].decay_k;  // Partial 0 Decay
+                            setParameter(Parameters::c_parameterNoiseFilterFreq, voice.resA.partials[0].m_decay_k);
+                            // parameters[7] = voice.resA.partials[0].inharm;   // Partial 0 Inharm
+                            setParameter(Parameters::c_parameterNoiseFilterQ, voice.resA.partials[0].inharm);
+
+                            // Param 8 & 9: Inspect the highest active partial
+                            int highest_idx = fmax(0, voice.resA.activePartialsCount - 1);
+                            setParameter(Parameters::c_parameterHitPosition, highest_idx);
+                            // parameters[8] = voice.resA.partials[highest_idx].f_k;
+                            setParameter(Parameters::c_parameterRelease, voice.resA.partials[highest_idx].m_f_k);
+                            // parameters[9] = voice.resA.partials[highest_idx].decay_k;
+                            setParameter(Parameters::c_parameterInharmonic, voice.resA.partials[highest_idx].m_decay_k);
+
+                            // Immediately abort this frame
+                            break;
+                        }
                     }
                 }
 #ifdef DEBUGN
@@ -1135,4 +1242,7 @@ private:
     unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
     unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr = nullptr;
     unit_runtime_get_sample_ptr m_get_sample = nullptr;
+
+    // DEBUG --- TELEMETRY TRAP ---
+    bool m_telemetry_frozen = false;
 };

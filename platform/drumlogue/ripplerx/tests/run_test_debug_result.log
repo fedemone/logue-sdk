@@ -4,7 +4,117 @@
 ║     Includes hardware issue replication tests.            ║
 ╚════════════════════════════════════════════════════════════╝
 
-[Test 38] Single-Threaded Hot-Load Stress Test...
+[Test 1] Hot-Load Initialization (Dirty Memory)
+  Testing constructor and Init() with garbage-filled memory...
+
+[BEAT 2] Starting...
+  [PASS] All garbage patterns handled correctly (no phantom sound)
+
+[Test 2] Runtime Stability (3 Seconds with Sound)
+  Rendering continuous audio for 3 seconds...
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
+[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
+[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
+[POLYPHONY] Active voices: 1
+  Progress: 0% complete...
+
+[BEAT 3] Starting...
+[POLYPHONY] Active voices: 2
+  Progress: 16% complete...
+
+[BEAT 4] Starting...
+[POLYPHONY] Active voices: 3
+  Progress: 33% complete...
+
+[BEAT 5] Starting...
+[POLYPHONY] Active voices: 4
+  Progress: 50% complete...
+
+[BEAT 6] Starting...
+[POLYPHONY] Active voices: 5
+  Progress: 66% complete...
+
+[BEAT 7] Starting...
+[POLYPHONY] Active voices: 6
+  Progress: 83% complete...
+
+[BEAT 8] Starting...
+  [3-Second Run] Min: -2.63854, Max: 2.52545, Avg: 0.501224, NaN: 0, Inf: 0, Clips: 31862
+  Render time: 936 ms
+  [PASS] 3-second stability test completed successfully
+
+[Test 3] Basic Audio Stability & Signal Flow
+[POLYPHONY] Active voices: 1
+
+[BEAT 9] Starting...
+
+[BEAT 10] Starting...
+
+[BEAT 11] Starting...
+  [1-Second Run] Min: -0.152751, Max: 0.148172, Avg: 0.0315437, NaN: 0, Inf: 0, Clips: 0
+  [PASS] Basic stability test passed
+
+[Test 4] Polyphony Stress (Voice Stealing)
+[POLYPHONY] Active voices: 2
+[POLYPHONY] Active voices: 3
+[POLYPHONY] Active voices: 4
+[POLYPHONY] Active voices: 5
+[POLYPHONY] Active voices: 6
+[POLYPHONY] Active voices: 7
+[POLYPHONY] Active voices: 8
+  [Polyphony] Min: 0, Max: 0, Avg: 0, NaN: 0, Inf: 0, Clips: 0
+  [PASS] Survived 30 rapid note triggers
+
+[Test 5] Envelope Decay (Silence Verification)
+[POLYPHONY] Active voices: 1
+
+[BEAT 12] Starting...
+
+[BEAT 13] Starting...
+  [PASS] Envelope decay verified (final level: 4.39493e-29)
+
+[Test 6] Extreme Parameters (Numerical Stability)
+  [Very High Pitch] Max: 0, NaN: 0
+  [Very Low Pitch] Max: 0, NaN: 0
+  [Min Decay] Max: 0, NaN: 0
+
+[BEAT 14] Starting...
+  [Max Decay] Max: 0, NaN: 0
+  [Max Partials] Max: 0, NaN: 0
+  [Min Damping] Max: 0, NaN: 0
+
+[BEAT 15] Starting...
+  [Max Damping] Max: 0, NaN: 0
+  [PASS] All extreme parameter tests passed
+
+[Test 7] Hot-Reload Multi-Pattern Stress
+[POLYPHONY] Active voices: 0
+
+[BEAT 16] Starting...
+  [PASS] All 10 garbage patterns handled correctly
+
+[Test 8] Note On/Off Cycle (Gate Handling)
 [POLYPHONY] Active voices: 1
 [POLYPHONY] Active voices: 2
 [POLYPHONY] Active voices: 3
@@ -13,10 +123,65 @@
 [POLYPHONY] Active voices: 6
 [POLYPHONY] Active voices: 7
 [POLYPHONY] Active voices: 8
-  [PASS] Engine is perfectly stable under extreme Hot-Loading.
-         Max amplitude reached: 0.0654038
 
-╔════════════════════════════════════════════════════════════╗
-║                  ALL TESTS COMPLETED                      ║
-║  Total execution time:  572 ms                      ║
-╚════════════════════════════════════════════════════════════╝
+[BEAT 17] Starting...
+  [PASS] 20 note on/off cycles completed
+
+[Test 9] Limiter Silence Stability (rsqrt(0) check)...
+[POLYPHONY] Active voices: 0
+  [PASS] Limiter handled silence without NaN/Inf
+
+[Test 10] Comb Filter Stability...
+[POLYPHONY] Active voices: 1
+  [PASS] Comb filter stable under feedback
+
+[Test 11] Percussion Auto-Release (No NoteOff)...
+
+[BEAT 18] Starting...
+
+[BEAT 19] Starting...
+
+[BEAT 20] Starting...
+
+[BEAT 21] Starting...
+  [PASS] Auto-Release: Signal silenced naturally without NoteOff.
+
+[Test 12] Component: Filter (Vector)...
+  [PASS] Filter LP response and vectorization verified.
+
+[Test 13] Component: Envelope...
+  [PASS] Envelope logic verified.
+
+[Test 14] Rhythmic Stability (4 Beats Crash Check)...
+  --- BEAT 1 TRIGGER ---
+
+[BEAT 22] Starting...
+  Beat 1 Max Peak: 0
+  --- BEAT 2 TRIGGER ---
+[POLYPHONY] Active voices: 2
+
+[BEAT 23] Starting...
+  Beat 2 Max Peak: 0
+  --- BEAT 3 TRIGGER ---
+[POLYPHONY] Active voices: 3
+
+[BEAT 24] Starting...
+  Beat 3 Max Peak: 0
+  --- BEAT 4 TRIGGER ---
+[POLYPHONY] Active voices: 4
+
+[BEAT 25] Starting...
+  Beat 4 Max Peak: 0
+  [PASS] Survived 4 beats of rhythmic triggering.
+
+[Test 15] Degradation over 12 beats...
+  --- BEAT 1 TRIGGER ---
+[POLYPHONY] Active voices: 1
+
+[BEAT 26] Starting...
+  Beat 1 Max Peak: 0, Avg Peak: 0
+  --- BEAT 2 TRIGGER ---
+[POLYPHONY] Active voices: 2
+
+[BEAT 27] Starting...
+  Beat 2 Max Peak: 0, Avg Peak: 0

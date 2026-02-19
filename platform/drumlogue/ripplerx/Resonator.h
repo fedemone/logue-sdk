@@ -54,7 +54,7 @@ public:
 	Waveguide waveguide{};
 	Filter filter{};
 
-    private:
+    // private:
     int activePartialsCount = 0;
 };
 

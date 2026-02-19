@@ -29,6 +29,13 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     u_decay.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
     float decay_k = fminf(c_decay_max, decay * u_decay.f);
+
+    // debug
+    m_f_k = f_k;
+    m_decay_k = decay_k;
+
+
+
     if (isRelease) decay_k *= rel;
 
     // Boundary check for stability and Nyquist

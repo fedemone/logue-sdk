@@ -109,6 +109,10 @@ public:
     float32_t vel_inharm = 0.0f;
     int k = 1;
 
+    // DEBUG
+    float32_t m_f_k = 0.0f;
+    float32_t m_decay_k = 0.0f;
+
     // Scalar coefficients are no longer needed as members;
     // they are calculated as locals in update() and stored in the vectors above.
     // --- State variables
