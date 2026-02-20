@@ -635,7 +635,7 @@ public:
                 break;
 
             case c_parameterMalletResonance:
-                parameters[mallet_res] = value / 1000.0f; // FIX: Map 0-1000 to 0-1.0f (was 10.0f)
+                parameters[mallet_res] = value / 10.0f; // header range 0-10, maps to 0.0-1.0
                 break;
 
             case c_parameterMalletStiffness:
@@ -910,18 +910,15 @@ public:
     }
 
     inline int32_t getParameterValue(uint8_t index) const {
-        // [Simplified for brevity in response, but in full implementation
-        //  this would contain the inverse logic of setParameter to return
-        //  the combined A/B UI values (e.g., a_b_decay) instead of raw params]
         switch(index) {
             case c_parameterProgramName: return m_currentProgram;
             case c_parameterResonatorNote: return m_note;
             case c_parameterSampleBank: return m_sampleBank;
             case c_parameterSampleNumber: return m_sampleNumber;
-            case c_parameterMalletResonance: return parameters[mallet_res]  * 10.0f;
-            case c_parameterMalletStiffness: return parameters[mallet_stiff];
-            case c_parameterVelocityMalletResonance: return parameters[vel_mallet_res]  * 1000.0f;
-            case c_parameterVelocityMalletStifness: return parameters[vel_mallet_stiff]  * 1000.0f;
+            case c_parameterMalletResonance: return (int32_t)(parameters[mallet_res] * 10.0f);
+            case c_parameterMalletStiffness: return (int32_t)parameters[mallet_stiff];
+            case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);
+            case c_parameterVelocityMalletStifness: return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);
             case c_parameterModel: return a_b_model;
             case c_parameterPartials: return a_b_partials;
             case c_parameterDecay: return a_b_decay;
@@ -933,6 +930,12 @@ public:
             case c_parameterFilterCutoff: return (int32_t)(a_b_filter / 2);
             case c_parameterTubeRadius: return a_b_radius;
             case c_parameterCoarsePitch: return a_b_coarse;
+            // FIX: Add missing noise parameter cases (were falling to default:0)
+            case c_parameterNoiseMix: return (int32_t)(parameters[noise_mix] * 1000.0f);
+            case c_parameterNoiseResonance: return (int32_t)(parameters[noise_res] * 1000.0f);
+            case c_parameterNoiseFilterMode: return (int32_t)parameters[noise_filter_mode];
+            case c_parameterNoiseFilterFreq: return (int32_t)parameters[noise_filter_freq];
+            case c_parameterNoiseFilterQ: return (int32_t)(parameters[noise_filter_q] * 1000.0f);
             default: return 0;
         }
     }
@@ -1074,6 +1077,25 @@ inline void setCurrentProgram(int index) {
             m_v_gain_cached = vdupq_n_f32(parameters[gain]);
             m_v_ab_mix_cached = vdupq_n_f32(parameters[ab_mix]);
             m_v_ab_inv_cached = vsubq_f32(vdupq_n_f32(1.0f), m_v_ab_mix_cached);
+
+            // FIX: Sync a_b_* UI tracker variables from loaded preset.
+            // Without this, getParameterValue() returns stale values (0) after preset load
+            // because it reads from these trackers, not from parameters[] directly.
+            a_b_model = (uint32_t)parameters[a_model]; // Show A side (0-8)
+            // Reverse lookup: find index in c_partials[] for the loaded partial count
+            a_b_partials = 3; // default to index 3 (32 partials)
+            for (uint32_t p = 0; p < c_partialElements; ++p) {
+                if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
+            }
+            a_b_decay = (uint32_t)parameters[a_decay];
+            a_b_damp = (int32_t)(parameters[a_damp] * 10.0f);
+            a_b_tone = (int32_t)(parameters[a_tone] * 10.0f);
+            a_b_hit = (uint32_t)(parameters[a_hit] * 100.0f);
+            a_b_rel = (uint32_t)(parameters[a_rel] * 10.0f);
+            a_b_inharm = (uint32_t)(parameters[a_inharm] * 10000.0f);
+            a_b_filter = (uint32_t)parameters[a_cut];
+            a_b_radius = (uint32_t)(parameters[a_radius] * 10.0f);
+            a_b_coarse = (int32_t)parameters[a_coarse];
         }
     }
 
