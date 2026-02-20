@@ -28,6 +28,7 @@
 #pragma once
 #include "float_math.h"
 #include <arm_neon.h>
+#include <cmath>
 #include <cstdio>
 
 
@@ -41,23 +42,31 @@ public:
               float32_t rms_win = 100.0f, float32_t makeup = 0.0f)
     {
         // Pre-calculate constants to avoid math in the hot path
-        threshv = e_expff(_thresh * M_DBTOLOG);
+        threshv = expf(_thresh * M_DBTOLOG);
 
         // Logarithmic threshold for fast comparison
         // We compare log values directly to avoid exp/log calls in the loop
         log_thresh = _thresh;
 
         bias = 80.0f * _bias / 100.0f;
-        makeupv = e_expff(makeup * M_DBTOLOG);
+        makeupv = expf(makeup * M_DBTOLOG);
 
         // RMS Window: Convert to coefficient
         // 1.0 - exp(-1 / (time * srate))
         float32_t rms_t = rms_win * 0.000001f; // us to seconds
-        rmscoef = e_expff(-1.0f / (rms_t * srate));
+        rmscoef = expf(-1.0f / (rms_t * srate));
 
         // Attack/Release coefficients
-        atcoef = e_expff(-1.0f / (0.0002f * srate));
-        relcoef = e_expff(-1.0f / (0.3f * srate));
+        // FIX: Use expf() instead of e_expff() for precision.
+        // e_expff() computes (1+x/1024)^1024 via 10 squarings. For the release
+        // coefficient (-1/(0.3*48000) = -6.94e-5), the first step 1.0+x/1024
+        // produces a deviation of ~6.78e-8 from 1.0, which is below float32
+        // machine epsilon at 1.0 (1.19e-7) when -Ofast promotes 1.0 to 1.0f.
+        // This makes relcoef = exactly 1.0, so gain reduction NEVER releases,
+        // causing progressive distortion -> silence on hardware.
+        // init() is called only at load time, not in the audio hot path.
+        atcoef = expf(-1.0f / (0.0002f * srate));
+        relcoef = expf(-1.0f / (0.3f * srate));
 
         // Initialize state vectors
         vRunAve = vdupq_n_f32(0.0f);
@@ -143,6 +152,10 @@ public:
         // rundb = overdb + coef * (rundb - overdb)
         float32x4_t diff = vsubq_f32(vRunDb, overdb);
         vRunDb = vaddq_f32(overdb, vmulq_f32(diff, coef));
+
+        // Safety: Clamp vRunDb to prevent unbounded accumulation
+        // 120dB is far beyond any real signal level; catches stuck states
+        vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
 
         // 6. Gain Reduction Calculation
         // Ratio logic: cratio = 1.0 + (ratio-1) * sqrt(rundb / bias)

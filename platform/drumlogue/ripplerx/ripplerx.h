@@ -160,14 +160,6 @@ public:
     float32x4_t m_v_ab_inv_cached;
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
-        // DEBUG
-        // 1. IF FROZEN: Output silence and do nothing else
-        // This keeps the watchdog timer happy while you read the screen!
-        if (m_telemetry_frozen) {
-            for (size_t i = 0; i < frames * 2; ++i) outBuffer[i] = 0.0f;
-            return;
-        }
-
         // 1. Load Global Mix Parameters into Vector Registers
         const float32_t mallet_mix      = parameters[ProgramParameters::mallet_mix];
         const float32_t mallet_res      = parameters[ProgramParameters::mallet_res];
@@ -311,107 +303,8 @@ public:
 
                 if (a_on) {
                     res_out_A = voice.resA.process(accum_res);
-
-
-                    // DEBUG
-                    float voice_out = vgetq_lane_f32(res_out_A, 0);
-                    // --- THE TELEMETRY TRAP ---
-                    if (!isfinite(voice_out) || std::abs(voice_out) > 50.0f) {
-                        #ifdef DEBUGN
-                        printf("[DIAG] Resonator A explosion at frame %d: %.2f\n", i, voice_out);
-                        fflush(stdout);
-                        #endif
-                        m_telemetry_frozen = true;
-                        LoadPreset(Program::Debug);
-                        // EXFILTRATE DATA TO UI PARAMETERS
-                        // Note: Depending on header.c, the UI might display these clamped,
-                        // but the raw values are now safely caught.
-                        setParameter(Parameters::c_parameterSampleNumber, 11);  // before filter
-                        // Param 0: Error Code (1.0 = NaN, 2.0 = Explosion)
-                        // parameters[0] = std::isnan(voice_out) ? 1.0f : 2.0f;
-                        setParameter(Parameters::c_parameterResonatorNote, std::isnan(voice_out) ? 1.0f : 2.0f);
-                        // Param 1 & 2: What was the voice doing?
-                        // parameters[1] = voice.freq;             // Base frequency
-                        setParameter(Parameters::c_parameterFilterCutoff, voice.freq);
-                        // parameters[2] = voice.resA.nmodel;      // The current model
-                        setParameter(Parameters::c_parameterModel, voice.resA.nmodel);
-
-                        // Param 3 & 4: What was the CPU loop doing?
-                        // parameters[3] = voice.resA.activePartialsCount; // Where did the loop stop?
-                        setParameter(Parameters::c_parameterCoarsePitch, voice.resA.activePartialsCount);
-                        // parameters[4] = voice.resA.silence;     // Was it trying to mute?
-                        setParameter(Parameters::c_parameterNoiseMix, voice.resA.silence);
-
-                        // Param 5, 6, 7: The deepest math (Inspect the lowest partial)
-                        // parameters[5] = voice.resA.partials[0].f_k;      // Partial 0 Freq
-                        setParameter(Parameters::c_parameterNoiseResonance, voice.resA.partials[0].m_f_k);
-                        // parameters[6] = voice.resA.partials[0].decay_k;  // Partial 0 Decay
-                        setParameter(Parameters::c_parameterNoiseFilterFreq, voice.resA.partials[0].m_decay_k);
-                        // parameters[7] = voice.resA.partials[0].inharm;   // Partial 0 Inharm
-                        setParameter(Parameters::c_parameterNoiseFilterQ, voice.resA.partials[0].inharm);
-
-                        // Param 8 & 9: Inspect the highest active partial
-                        int highest_idx = fmax(0, voice.resA.activePartialsCount - 1);
-                        setParameter(Parameters::c_parameterHitPosition, highest_idx);
-                        // parameters[8] = voice.resA.partials[highest_idx].f_k;
-                        setParameter(Parameters::c_parameterRelease, voice.resA.partials[highest_idx].m_f_k);
-                        // parameters[9] = voice.resA.partials[highest_idx].decay_k;
-                        setParameter(Parameters::c_parameterInharmonic, voice.resA.partials[highest_idx].m_decay_k);
-
-                        // Immediately abort this frame
-                        break;
-                    }
                     if (voice.resA.getCut() > c_res_cutoff) {
-                        res_out_A = voice.resA.applyFilter(res_out_A);
-
-                        // DEBUG
-                        voice_out = vgetq_lane_f32(res_out_A, 0);
-                        // --- THE TELEMETRY TRAP ---
-                        if (!isfinite(voice_out) || std::abs(voice_out) > 50.0f) {
-                            #ifdef DEBUGN
-                            printf("[DIAG] Resonator A explosion at frame %d: %.2f\n", i, voice_out);
-                            fflush(stdout);
-                            #endif
-                            m_telemetry_frozen = true;
-                            LoadPreset(Program::Debug);
-                            // EXFILTRATE DATA TO UI PARAMETERS
-                            // Note: Depending on header.c, the UI might display these clamped,
-                            // but the raw values are now safely caught.
-                            setParameter(Parameters::c_parameterSampleNumber, 12);  // before filter
-                            // Param 0: Error Code (1.0 = NaN, 2.0 = Explosion)
-                            // parameters[0] = std::isnan(voice_out) ? 1.0f : 2.0f;
-                            setParameter(Parameters::c_parameterResonatorNote, std::isnan(voice_out) ? 1.0f : 2.0f);
-                            // Param 1 & 2: What was the voice doing?
-                            // parameters[1] = voice.freq;             // Base frequency
-                            setParameter(Parameters::c_parameterFilterCutoff, voice.freq);
-                            // parameters[2] = voice.resA.nmodel;      // The current model
-                            setParameter(Parameters::c_parameterModel, voice.resA.nmodel);
-
-                            // Param 3 & 4: What was the CPU loop doing?
-                            // parameters[3] = voice.resA.activePartialsCount; // Where did the loop stop?
-                            setParameter(Parameters::c_parameterCoarsePitch, voice.resA.activePartialsCount);
-                            // parameters[4] = voice.resA.silence;     // Was it trying to mute?
-                            setParameter(Parameters::c_parameterNoiseMix, voice.resA.silence);
-
-                            // Param 5, 6, 7: The deepest math (Inspect the lowest partial)
-                            // parameters[5] = voice.resA.partials[0].f_k;      // Partial 0 Freq
-                            setParameter(Parameters::c_parameterNoiseResonance, voice.resA.partials[0].m_f_k);
-                            // parameters[6] = voice.resA.partials[0].decay_k;  // Partial 0 Decay
-                            setParameter(Parameters::c_parameterNoiseFilterFreq, voice.resA.partials[0].m_decay_k);
-                            // parameters[7] = voice.resA.partials[0].inharm;   // Partial 0 Inharm
-                            setParameter(Parameters::c_parameterNoiseFilterQ, voice.resA.partials[0].inharm);
-
-                            // Param 8 & 9: Inspect the highest active partial
-                            int highest_idx = fmax(0, voice.resA.activePartialsCount - 1);
-                            setParameter(Parameters::c_parameterHitPosition, highest_idx);
-                            // parameters[8] = voice.resA.partials[highest_idx].f_k;
-                            setParameter(Parameters::c_parameterRelease, voice.resA.partials[highest_idx].m_f_k);
-                            // parameters[9] = voice.resA.partials[highest_idx].decay_k;
-                            setParameter(Parameters::c_parameterInharmonic, voice.resA.partials[highest_idx].m_decay_k);
-
-                            // Immediately abort this frame
-                            break;
-                        }
+                         res_out_A = voice.resA.applyFilter(res_out_A);
                     }
                 }
 #ifdef DEBUGN
@@ -742,7 +635,7 @@ public:
                 break;
 
             case c_parameterMalletResonance:
-                parameters[mallet_res] = value / 1000.0f; // FIX: Map 0-1000 to 0-1.0f (was 10.0f)
+                parameters[mallet_res] = value / 10.0f; // header range 0-10, maps to 0.0-1.0
                 break;
 
             case c_parameterMalletStiffness:
@@ -891,12 +784,14 @@ public:
 
             case c_parameterCoarsePitch: {
                 a_b_coarse = value;
-                const int32_t maxA = 48; // 4 octaves, same as original code
+                // header.c range: -480..1440 (A: -480..480, B: 481..1440)
+                // Values are 10x semitones for 0.1 semitone resolution on display
+                const int32_t maxA = 480;
                 if (value <= maxA) {
-                    parameters[a_coarse] = fmax(fmin((float)value, 48.0f), -48.0f);
+                    parameters[a_coarse] = fmax(fmin((float)value / 10.0f, 48.0f), -48.0f);
                     pitchChanged = true;
                 } else {
-                    parameters[b_coarse] = fmax(fmin((float)(value - 48), 48.0f), -48.0f);
+                    parameters[b_coarse] = fmax(fmin((float)(value - maxA) / 10.0f, 48.0f), -48.0f);
                     pitchChanged = true;
                 }
                 break;
@@ -1017,18 +912,15 @@ public:
     }
 
     inline int32_t getParameterValue(uint8_t index) const {
-        // [Simplified for brevity in response, but in full implementation
-        //  this would contain the inverse logic of setParameter to return
-        //  the combined A/B UI values (e.g., a_b_decay) instead of raw params]
         switch(index) {
             case c_parameterProgramName: return m_currentProgram;
             case c_parameterResonatorNote: return m_note;
             case c_parameterSampleBank: return m_sampleBank;
             case c_parameterSampleNumber: return m_sampleNumber;
-            case c_parameterMalletResonance: return parameters[mallet_res]  * 10.0f;
-            case c_parameterMalletStiffness: return parameters[mallet_stiff];
-            case c_parameterVelocityMalletResonance: return parameters[vel_mallet_res]  * 1000.0f;
-            case c_parameterVelocityMalletStifness: return parameters[vel_mallet_stiff]  * 1000.0f;
+            case c_parameterMalletResonance: return (int32_t)(parameters[mallet_res] * 10.0f);
+            case c_parameterMalletStiffness: return (int32_t)parameters[mallet_stiff];
+            case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);
+            case c_parameterVelocityMalletStifness: return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);
             case c_parameterModel: return a_b_model;
             case c_parameterPartials: return a_b_partials;
             case c_parameterDecay: return a_b_decay;
@@ -1040,6 +932,12 @@ public:
             case c_parameterFilterCutoff: return (int32_t)(a_b_filter / 2);
             case c_parameterTubeRadius: return a_b_radius;
             case c_parameterCoarsePitch: return a_b_coarse;
+            // FIX: Add missing noise parameter cases (were falling to default:0)
+            case c_parameterNoiseMix: return (int32_t)(parameters[noise_mix] * 1000.0f);
+            case c_parameterNoiseResonance: return (int32_t)(parameters[noise_res] * 1000.0f);
+            case c_parameterNoiseFilterMode: return (int32_t)parameters[noise_filter_mode];
+            case c_parameterNoiseFilterFreq: return (int32_t)parameters[noise_filter_freq];
+            case c_parameterNoiseFilterQ: return (int32_t)(parameters[noise_filter_q] * 1000.0f);
             default: return 0;
         }
     }
@@ -1181,6 +1079,25 @@ inline void setCurrentProgram(int index) {
             m_v_gain_cached = vdupq_n_f32(parameters[gain]);
             m_v_ab_mix_cached = vdupq_n_f32(parameters[ab_mix]);
             m_v_ab_inv_cached = vsubq_f32(vdupq_n_f32(1.0f), m_v_ab_mix_cached);
+
+            // FIX: Sync a_b_* UI tracker variables from loaded preset.
+            // Without this, getParameterValue() returns stale values (0) after preset load
+            // because it reads from these trackers, not from parameters[] directly.
+            a_b_model = (int32_t)parameters[a_model]; // Show A side (0-8)
+            // Reverse lookup: find index in c_partials[] for the loaded partial count
+            a_b_partials = 3; // default to index 3 (32 partials)
+            for (uint32_t p = 0; p < c_partialElements; ++p) {
+                if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
+            }
+            a_b_decay = (int32_t)parameters[a_decay];
+            a_b_damp = (int32_t)(parameters[a_damp] * 10.0f);
+            a_b_tone = (int32_t)(parameters[a_tone] * 10.0f);
+            a_b_hit = (int32_t)(parameters[a_hit] * 100.0f);
+            a_b_rel = (int32_t)(parameters[a_rel] * 10.0f);
+            a_b_inharm = (int32_t)(parameters[a_inharm] * 10000.0f);
+            a_b_filter = (int32_t)parameters[a_cut];
+            a_b_radius = (int32_t)(parameters[a_radius] * 10.0f);
+            a_b_coarse = (int32_t)(parameters[a_coarse] * 10.0f); // UI domain is 10x semitones
         }
     }
 
@@ -1226,23 +1143,20 @@ private:
     float32_t scale = 1.0f;
 
     // UI State Trackers
-    uint32_t a_b_model;
-    uint32_t a_b_partials;
-    uint32_t a_b_decay;
-    uint32_t a_b_damp;
-    uint32_t a_b_tone;
-    uint32_t a_b_hit;
-    uint32_t a_b_rel;
-    uint32_t a_b_filter;
-    uint32_t a_b_inharm;
-    uint32_t a_b_radius;
-    uint32_t a_b_coarse;
+    int32_t a_b_model;
+    int32_t a_b_partials;
+    int32_t a_b_decay;
+    int32_t a_b_damp;     // header range: -10..30 (signed)
+    int32_t a_b_tone;     // header range: -10..30 (signed)
+    int32_t a_b_hit;
+    int32_t a_b_rel;
+    int32_t a_b_filter;
+    int32_t a_b_inharm;
+    int32_t a_b_radius;
+    int32_t a_b_coarse;   // header range: -480..1440 (signed)
 
     // Runtime Pointers
     unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
     unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr = nullptr;
     unit_runtime_get_sample_ptr m_get_sample = nullptr;
-
-    // DEBUG --- TELEMETRY TRAP ---
-    bool m_telemetry_frozen = false;
 };

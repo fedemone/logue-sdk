@@ -51,7 +51,7 @@ const __unit_header unit_header_t unit_header = {
         // Mallet resonance
         {0, 10, 0, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Mallet stiffness
-        {1, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},    // set min to 1 or debug purpose. set back to 100 after
+        {100, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},
         // Velocity Mallet Resonance
         {0, 1000, 0, 0, k_unit_param_type_none, 3, 0, 0, {"VlMllRes"}},
         // Velocity Mallet Stiffness
@@ -75,18 +75,12 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 4: Resonator A-II (extended ranges encode Resonator B)
         // Tone (-1.0, 1.0)
-        // {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
-        // DEBUG
-        {-10, 20000, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
         // Hit Position (0.02, 0.26)
         //  Span 48 -> A: 2..50, B: 51..98 (mapped in code)
-        // {2, 98, 0, 26, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
-        // DEBUG
-        {0, 20000, 0, 26, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
+        {2, 98, 0, 26, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         // Release
-        // {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
-        // DEBUG
-        {0, 20000, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
+        {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // Inharmonic
         //  Span 9999 -> A: 1..10000, B: 10001..19999 (mapped in code)
         {1, 19999, 3000, 1, k_unit_param_type_none, 4, 1, 0, {"Inharm"}},
@@ -102,25 +96,17 @@ const __unit_header unit_header_t unit_header = {
         //  Span 960 -> A: -480..480, B: 481..1440 (mapped in code)
         {-480, 1440, 0, 0, k_unit_param_type_none, 0, 0, 0, {"CoarsPtch"}},
         // Noise Mix
-        // {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzMix"}},
-        // DEBUG
-        {0, 20000, 300, 0, k_unit_param_type_hertz, 1, 1, 0, {"NzMix"}},
+        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzMix"}},
         //TODO: vel_noise_freq and vel_noise_q should be here?
 
         // Page 6: Noise II
         // Noise Resonance
-        // {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
-        // DEBUG
-        {0, 20000, 300, 0, k_unit_param_type_hertz, 1, 1, 0, {"NzRes"}},
+        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         // Noise Filter Mode: "LP", "BP", "HP" - "DEBUG"
         {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
         // Noise Filter Freq
-        // {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFltFrq"}},
-        // DEBUG
-        {0, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFltFrq"}},
+        {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFltFrq"}},
         // Noise Filter Q
-        // {707, 4000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NzFltQ"}}
-        // DEBUG
-        {0, 20000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NzFltQ"}}
+        {707, 4000, 0, 707, k_unit_param_type_none, 3, 1, 0, {"NzFltQ"}}
         }   // end of .params
     };
