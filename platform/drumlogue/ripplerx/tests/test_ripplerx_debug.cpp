@@ -2076,6 +2076,69 @@ void test_limiter_nan_overflow() {
 }
 
 
+void test_limiter_release_coefficient() {
+    std::cout << "\n[Test 39] Limiter Release Coefficient Precision..." << std::endl;
+
+    // This test verifies the root cause fix for "progressive distortion -> silence":
+    // e_expff(-1/(0.3*48000)) could return exactly 1.0f due to float32 precision loss
+    // under -Ofast, making the limiter's gain reduction permanent (never releases).
+
+    Limiter lim;
+    lim.init(48000.0f, -0.1f, 70.0f);
+
+    // 1. Verify e_expff precision issue exists (the old code path)
+    float bad_relcoef = e_expff(-1.0f / (0.3f * 48000.0f));
+    float good_relcoef = expf(-1.0f / (0.3f * 48000.0f));
+    std::cout << "  e_expff relcoef = " << std::setprecision(10) << bad_relcoef
+              << (bad_relcoef == 1.0f ? " [EXACTLY 1.0 - BUG!]" : " [OK]") << std::endl;
+    std::cout << "  expf   relcoef = " << std::setprecision(10) << good_relcoef
+              << (good_relcoef == 1.0f ? " [EXACTLY 1.0 - BUG!]" : " [OK]") << std::endl;
+
+    if (good_relcoef == 1.0f) {
+        std::cout << "  [FAIL] expf() relcoef is exactly 1.0 — limiter will never release!" << std::endl;
+        exit(1);
+    }
+    if (good_relcoef >= 1.0f || good_relcoef < 0.999f) {
+        std::cout << "  [FAIL] expf() relcoef out of expected range: " << good_relcoef << std::endl;
+        exit(1);
+    }
+
+    // 2. Feed a loud signal to trigger gain reduction, then feed silence
+    //    and verify the limiter releases (output returns to near-unity gain)
+
+    // Phase A: Drive the limiter hard for 4800 samples (100ms)
+    float32x4_t loud = vdupq_n_f32(5.0f); // Well above -0.1dB threshold
+    for (int i = 0; i < 1200; ++i) { // 1200 * 4 = 4800 samples
+        lim.process(loud);
+    }
+
+    // Phase B: Feed quiet signal and check if limiter releases over 1 second
+    float32x4_t quiet = vdupq_n_f32(0.01f); // -40dB, well below threshold
+    float32x4_t out;
+    float initial_output = 0.0f;
+    float final_output = 0.0f;
+
+    for (int i = 0; i < 12000; ++i) { // 12000 * 4 = 48000 samples = 1 second
+        out = lim.process(quiet);
+        if (i == 0) initial_output = vgetq_lane_f32(out, 0);
+        if (i == 11999) final_output = vgetq_lane_f32(out, 0);
+    }
+
+    std::cout << "  After 1s release: initial=" << initial_output
+              << " final=" << final_output << std::endl;
+
+    // The final output should be closer to the input (0.01) than the initial
+    // If relcoef were 1.0, final would equal initial (no release)
+    if (final_output > initial_output * 1.01f) {
+        std::cout << "  [PASS] Limiter releases gain reduction correctly" << std::endl;
+    } else {
+        std::cout << "  [FAIL] Limiter gain reduction appears STUCK (relcoef may be 1.0)" << std::endl;
+        std::cout << "         This causes progressive distortion -> silence on hardware" << std::endl;
+        exit(1);
+    }
+}
+
+
 #include <thread>
 #include <atomic>
 void test_single_thread_hot_load() {
@@ -2175,6 +2238,7 @@ int main() {
         // test_denormal_production();                // Test 35: Check for ARM hazard
         // test_catch_denormals_x86();                // Test 36: Check for FTZ
         // test_limiter_nan_overflow();
+        test_limiter_release_coefficient();
         test_single_thread_hot_load();
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
