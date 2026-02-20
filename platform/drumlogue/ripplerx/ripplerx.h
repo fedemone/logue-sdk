@@ -784,12 +784,14 @@ public:
 
             case c_parameterCoarsePitch: {
                 a_b_coarse = value;
-                const int32_t maxA = 48; // 4 octaves, same as original code
+                // header.c range: -480..1440 (A: -480..480, B: 481..1440)
+                // Values are 10x semitones for 0.1 semitone resolution on display
+                const int32_t maxA = 480;
                 if (value <= maxA) {
-                    parameters[a_coarse] = fmax(fmin((float)value, 48.0f), -48.0f);
+                    parameters[a_coarse] = fmax(fmin((float)value / 10.0f, 48.0f), -48.0f);
                     pitchChanged = true;
                 } else {
-                    parameters[b_coarse] = fmax(fmin((float)(value - 48), 48.0f), -48.0f);
+                    parameters[b_coarse] = fmax(fmin((float)(value - maxA) / 10.0f, 48.0f), -48.0f);
                     pitchChanged = true;
                 }
                 break;
@@ -1081,21 +1083,21 @@ inline void setCurrentProgram(int index) {
             // FIX: Sync a_b_* UI tracker variables from loaded preset.
             // Without this, getParameterValue() returns stale values (0) after preset load
             // because it reads from these trackers, not from parameters[] directly.
-            a_b_model = (uint32_t)parameters[a_model]; // Show A side (0-8)
+            a_b_model = (int32_t)parameters[a_model]; // Show A side (0-8)
             // Reverse lookup: find index in c_partials[] for the loaded partial count
             a_b_partials = 3; // default to index 3 (32 partials)
             for (uint32_t p = 0; p < c_partialElements; ++p) {
                 if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
             }
-            a_b_decay = (uint32_t)parameters[a_decay];
+            a_b_decay = (int32_t)parameters[a_decay];
             a_b_damp = (int32_t)(parameters[a_damp] * 10.0f);
             a_b_tone = (int32_t)(parameters[a_tone] * 10.0f);
-            a_b_hit = (uint32_t)(parameters[a_hit] * 100.0f);
-            a_b_rel = (uint32_t)(parameters[a_rel] * 10.0f);
-            a_b_inharm = (uint32_t)(parameters[a_inharm] * 10000.0f);
-            a_b_filter = (uint32_t)parameters[a_cut];
-            a_b_radius = (uint32_t)(parameters[a_radius] * 10.0f);
-            a_b_coarse = (int32_t)parameters[a_coarse];
+            a_b_hit = (int32_t)(parameters[a_hit] * 100.0f);
+            a_b_rel = (int32_t)(parameters[a_rel] * 10.0f);
+            a_b_inharm = (int32_t)(parameters[a_inharm] * 10000.0f);
+            a_b_filter = (int32_t)parameters[a_cut];
+            a_b_radius = (int32_t)(parameters[a_radius] * 10.0f);
+            a_b_coarse = (int32_t)(parameters[a_coarse] * 10.0f); // UI domain is 10x semitones
         }
     }
 
@@ -1141,17 +1143,17 @@ private:
     float32_t scale = 1.0f;
 
     // UI State Trackers
-    uint32_t a_b_model;
-    uint32_t a_b_partials;
-    uint32_t a_b_decay;
-    uint32_t a_b_damp;
-    uint32_t a_b_tone;
-    uint32_t a_b_hit;
-    uint32_t a_b_rel;
-    uint32_t a_b_filter;
-    uint32_t a_b_inharm;
-    uint32_t a_b_radius;
-    uint32_t a_b_coarse;
+    int32_t a_b_model;
+    int32_t a_b_partials;
+    int32_t a_b_decay;
+    int32_t a_b_damp;     // header range: -10..30 (signed)
+    int32_t a_b_tone;     // header range: -10..30 (signed)
+    int32_t a_b_hit;
+    int32_t a_b_rel;
+    int32_t a_b_filter;
+    int32_t a_b_inharm;
+    int32_t a_b_radius;
+    int32_t a_b_coarse;   // header range: -480..1440 (signed)
 
     // Runtime Pointers
     unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
