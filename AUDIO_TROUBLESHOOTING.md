@@ -1532,10 +1532,89 @@ After analyzing the working **loguePADS** synth (Oleg Burdaey's sample-based dru
 
 ---
 
+# [2026-02-20] Limiter Release Coefficient Precision Bug (Progressive Distortion → Silence)
+
+## 1. Symptoms
+- **Hot load**: A couple of beats that get progressively more distorted, then silence
+- **Warm load**: Same pattern, possibly lasting slightly longer
+- **Preset 0**: Once normal silence, once total crash (required power cable unplug)
+- **Unit tests (QEMU)**: Did not reproduce the issue
+
+## 2. Root Cause
+
+### The `e_expff()` Float32 Precision Loss Under `-Ofast`
+
+The Limiter's release coefficient is computed in `Limiter::init()`:
+```cpp
+relcoef = e_expff(-1.0f / (0.3f * srate));  // 300ms release time
+```
+
+`e_expff()` approximates `exp(x)` as `(1 + x/1024)^1024` via 10 repeated squarings:
+```cpp
+float e_expff(float x) {
+  x = 1.0 + x / 1024;   // <-- THE BUG IS HERE
+  x *= x; x *= x; ...   // 10 squarings
+  return x;
+}
+```
+
+For `x = -1/(0.3*48000) = -6.94e-5`:
+- Step 1: `1.0 + (-6.94e-5 / 1024)` = `1.0 + (-6.78e-8)`
+- The deviation `6.78e-8` is **below** float32 machine epsilon at 1.0 (`1.19e-7`)
+- `e_expff` has `__attribute__((optimize("Ofast")))` which implies `-ffast-math`
+- `-ffast-math` may include `-fsingle-precision-constant`, treating `1.0` (double literal) as `1.0f`
+- Result: `1.0f + (-6.78e-8f)` rounds to exactly **`1.0f`**
+- Therefore: `relcoef = 1.0f^1024 = 1.0f`
+
+### Why This Kills Audio
+
+The limiter's attack/release smoothing:
+```cpp
+// coef = (overdb > rundb) ? atcoef : relcoef
+// rundb = overdb + coef * (rundb - overdb)
+```
+
+When signal drops below threshold: `overdb = 0`, `coef = relcoef = 1.0`:
+```
+rundb = 0 + 1.0 * (rundb - 0) = rundb  // NEVER DECAYS!
+```
+
+Each beat ratchets `rundb` higher → progressive gain reduction → distortion → silence.
+
+### Why Unit Tests Didn't Catch It
+- QEMU emulates ARM but may not replicate exact `-Ofast` float promotion behavior
+- The test compiler may not use `-fsingle-precision-constant`
+- The bug only manifests on the real ARM target with the specific toolchain flags
+
+## 3. Fix
+
+Replace `e_expff()` with `expf()` (from `<cmath>`) for all Limiter coefficient calculations:
+```cpp
+atcoef = expf(-1.0f / (0.0002f * srate));   // 200μs attack
+relcoef = expf(-1.0f / (0.3f * srate));      // 300ms release
+rmscoef = expf(-1.0f / (rms_t * srate));     // RMS window
+```
+
+`init()` runs only at load time (not in the audio hot path), so `expf()` performance is irrelevant.
+
+Also added a 120dB safety clamp on `vRunDb` as defense-in-depth:
+```cpp
+vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
+```
+
+## 4. Lessons Learned
+- **Never use `e_expff()` for coefficients near 1.0** (small negative exponents). The approximation loses all precision.
+- **`-Ofast` changes floating-point semantics** in ways that are invisible in source code (double→float literal demotion).
+- **Init-time calculations should use standard math** (`expf`, `logf`, etc.). Fast approximations are only needed in the audio hot path.
+- **The Limiter is the last stage before DAC** — a stuck limiter is equivalent to a global mute.
+
+---
+
 ## Fundamental Clues
 - Systematic silence is always linked to invalid partials or frequencies below c_freq_min.
 - UI/engine mismatch after preset change is a direct result of incomplete value propagation.
 - Fixes should focus on preset table, parameter mapping, and program loading logic.
+- **Progressive distortion → silence** pattern points to the Limiter's release coefficient being stuck at 1.0.
 
 ---
 
