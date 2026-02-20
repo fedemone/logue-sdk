@@ -239,7 +239,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Hit Position Modulation (Comb-like effect)
         float h_mod = fminf(0.5f, part.hit + vel * part.vel_hit * 0.5f);
-        float a_k = 5.0f * fabsf(fastersinfullf(M_PI * part.k * h_mod));
+        float a_k = 5.0f * fabsf(fast_sin(M_PI * part.k * h_mod));
 
         // Final Filter Constants
         float omega = f_k * inv_srate_2pi;
@@ -257,7 +257,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         part.vb2 = vdupq_n_f32(-b0_val * inv_a0);
         // Note: b1 is implicitly 0.0f for this BP filter topology
 
-        part.va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
+        part.va1 = vdupq_n_f32(-2.0f * fast_cos(omega) * inv_a0);
 
         // va2 logic:
         // va2 = (1 - inv_decay) / (1 + inv_decay)

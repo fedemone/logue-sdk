@@ -17,7 +17,10 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     union { float f; int32_t i; } u_inharm;
     u_inharm.i = (int32_t)(offset_inharm * 8388608.0f) + 1065353216;
 
-    float inharm_k = fminf(1.0f, inharm * u_inharm.f) - 0.0001f;
+    // [CRITICAL FIX 1] Prevent negative values before the Square Root!
+    float inharm_raw = inharm * u_inharm.f;
+    float inharm_k = fmaxf(0.0f, fminf(1.0f, inharm_raw) - 0.0001f);
+
     float r_minus_1 = ratio - 1.0f;
     inharm_k = fasterSqrt(1.0f + inharm_k * (r_minus_1 * r_minus_1));
 
@@ -59,7 +62,7 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
 
     // 4. Hit modulation
     float hit_mod = fminf(0.5f, hit + vel * vel_hit * 0.5f);
-    float amp_k = 35.0f * fabsf(fastersinfullf(M_PI * (float)k * hit_mod));
+    float amp_k = 35.0f * fabsf(fast_sin(M_PI * (float)k * hit_mod));
 
     // 5. Filter Coefficients
     float omega = f_k * inv_srate_2pi;
@@ -73,7 +76,7 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     // These vectors are used directly by the inlined process() in the header
     vb0 = vdupq_n_f32(_b0 * inv_a0);
     vb2 = vdupq_n_f32(-_b0 * inv_a0);
-    va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
+    va1 = vdupq_n_f32(-2.0f * fast_cos(omega) * inv_a0);
     va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
 }
 

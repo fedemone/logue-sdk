@@ -577,7 +577,7 @@ float fastersinf(float x) {
   vx.i &= 0x7FFFFFFF;
   const float qpprox = M_4_PI * x - M_4_PI2 * x * vx.f;
   p.i |= sign;
-  return qpprox * (q + p.f * qpprox);
+  return fmaxf(-1.0f, fminf(1.0f, qpprox * (q + p.f * qpprox)));
 }
 
 /** "Fast" sine approximation, valid on full x domain
@@ -627,9 +627,11 @@ float fastercosf(float x) {
  * @note Warning: can be slower than libc version!
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
-float fastcosfullf(float x) {
+float fast_cos(float x) {
   return fastersinfullf(x + M_PI_2);
 }
+
+const auto& fast_sin = fastersinfullf;
 
 /** "Faster" cosine approximation, valid on full x domain
  * @note Adapted from Paul Mineiro's FastFloat
@@ -1065,6 +1067,8 @@ float eucDist2Bett(const float x1, const float y1, const float x2, const float y
     auto dy = fabs(y2 - y1);
     return sqrtsum2bett(dx, dy);
 }
+
+
 
 
 /** @} */

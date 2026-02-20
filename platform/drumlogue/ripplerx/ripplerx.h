@@ -472,7 +472,14 @@ public:
         bool resonatorChangedA = true, bool resonatorChangedB = true,
         bool couplingChanged = true) {
 
+        // [CRITICAL FIX 1] Lock ALL voices before doing ANY shared model recalculations!
+        // This forces the audio thread to safely output silence while the UI thread does heavy math.
+        for (size_t i = 0; i < c_numVoices; ++i) {
+            voices[i].m_is_updating.store(true, std::memory_order_release);
+        }
+
         bool frequencyModelChanged = false;
+        bool modelChanged = false;
 
         // --- Model Recalculation Logic ---
         // If the model type changed, or if ratio changed for physically modeled types
@@ -485,6 +492,7 @@ public:
             }
             last_a_model = (int32_t)parameters[a_model];
             frequencyModelChanged = true;
+            modelChanged = true;
         }
 
         if (last_b_model != (int32_t)parameters[b_model]) {
@@ -496,6 +504,18 @@ public:
             }
             last_b_model = (int32_t)parameters[b_model];
             frequencyModelChanged = true;
+            modelChanged = true;
+        }
+
+        // [ADD THIS] Track partials count changes
+        bool partialsChanged = false;
+        if (last_a_partials != (int32_t)parameters[a_partials]) {
+            last_a_partials = (int32_t)parameters[a_partials];
+            partialsChanged = true;
+        }
+        if (last_b_partials != (int32_t)parameters[b_partials]) {
+            last_b_partials = (int32_t)parameters[b_partials];
+            partialsChanged = true;
         }
 
         bool updateFreqs = frequencyModelChanged || pitchChanged || couplingChanged;
@@ -554,6 +574,14 @@ public:
         for (size_t i = 0; i < c_numVoices; ++i) {
             Voice& voice = voices[i];
 
+            // [CRITICAL FIX 2] If the physical model completely changed, old energy will explode
+            // in the new filter. Command the audio thread to safely zero its memory buffers.
+            // [CRITICAL FIX] Only flush the old energy if the physical structure changes!
+            // Do NOT clear on parameter tweaks like Tone or Damp, otherwise you silence ringing notes!
+            if (modelChanged || partialsChanged) {
+                 voice.m_pending_clear.store(true, std::memory_order_release);
+            }
+
             if (noiseChanged) {
                 voice.noise.init(srate, cached.noise_mode, cached.noise_freq,
                                cached.noise_q, cached.noise_att, cached.noise_dec,
@@ -591,6 +619,9 @@ public:
             if (updateFreqs || resonatorChangedA || resonatorChangedB) {
                 voice.updateResonators(updateFreqs);
             }
+
+            // [CRITICAL FIX 3] Unlock the Audio Thread now that all math is done
+            voice.m_is_updating.store(false, std::memory_order_release);
         }
     }
 
@@ -627,11 +658,15 @@ public:
                 break;
 
             case c_parameterSampleBank:
-                if ((size_t)value < c_sampleBankElements) m_sampleBank = value;
+                if ((size_t)value < c_sampleBankElements) {
+                    m_sampleBank = value;
+                    loadConfigureSample(); // [FIX] Actually load the sample pointer!
+                }
                 break;
 
             case c_parameterSampleNumber:
                 m_sampleNumber = (value <= 0 || value > 128) ? 1 : value;
+                loadConfigureSample(); // [FIX] Actually load the sample pointer!
                 break;
 
             case c_parameterMalletResonance:
@@ -663,7 +698,7 @@ public:
                     parameters[b_on] = 1.0f;
                     resonatorChangedB = true;
                 }
-                clearVoices();
+                // clearVoices(); <-- [CRITICAL FIX] REMOVE THIS LINE
                 break;
 
             case c_parameterPartials:
@@ -675,17 +710,18 @@ public:
                     parameters[b_partials] = (float)c_partials[value - c_partialElements];
                     resonatorChangedB = true;
                 }
-                clearVoices();
+                // clearVoices(); <-- [CRITICAL FIX] REMOVE THIS LINE
                 break;
 
             case c_parameterDecay: {
                 a_b_decay = value;
-                const int32_t maxA = 1000;
+                const int32_t maxA = 200;
+                // Divide by 10.0f to match the UI fractional display
                 if (value <= maxA) {
-                    parameters[a_decay] = (float)value; // Pass RAW value (0-1000) to DSP
+                    parameters[a_decay] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_decay] = (float)(value - maxA); // Pass RAW value (0-1000) to DSP
+                    parameters[b_decay] = (float)(value - maxA) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -982,8 +1018,8 @@ public:
             case c_parameterDecay: {
                 if (!k_showABMarkersNumeric) break;
                 static char s_numBuf[32];
-                const int32_t maxA = 1000;
-                const int32_t span = 1000;
+                const int32_t maxA = 200;
+                const int32_t span = 200;
                 if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 1, ""); return s_numBuf; }
                 if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 1, ""); return s_numBuf; }
                 break;
@@ -1063,7 +1099,7 @@ private:
     }
 
 inline void setCurrentProgram(int index) {
-        clearVoices();
+        // [CRITICAL FIX] Removed clearVoices() here!
         if (index >= 0 && index < (int)last_program) {
             m_currentProgram = index;
             for (int i = 0; i < ProgramParameters::last_param; ++i) {
@@ -1089,11 +1125,11 @@ inline void setCurrentProgram(int index) {
             for (uint32_t p = 0; p < c_partialElements; ++p) {
                 if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
             }
-            a_b_decay = (int32_t)parameters[a_decay];
-            a_b_damp = (int32_t)(parameters[a_damp] * 10.0f);
-            a_b_tone = (int32_t)(parameters[a_tone] * 10.0f);
-            a_b_hit = (int32_t)(parameters[a_hit] * 100.0f);
-            a_b_rel = (int32_t)(parameters[a_rel] * 10.0f);
+            a_b_decay  = (int32_t)(parameters[a_decay] * 10.0f);
+            a_b_damp   = (int32_t)(parameters[a_damp] * 10.0f);
+            a_b_tone   = (int32_t)(parameters[a_tone] * 10.0f);
+            a_b_hit    = (int32_t)(parameters[a_hit] * 100.0f);
+            a_b_rel    = (int32_t)(parameters[a_rel] * 10.0f);
             a_b_inharm = (int32_t)(parameters[a_inharm] * 10000.0f);
             a_b_filter = (int32_t)parameters[a_cut];
             a_b_radius = (int32_t)(parameters[a_radius] * 10.0f);

@@ -1,3 +1,21 @@
+# [2026-02-20] RTOS Threading, UI Synchronization, & Trigonometric Overshoot Bugs
+
+## 1. Symptoms
+- **Parameter Jumps & Wrong Preset Data**: Loading a preset results in the correct sound, but twisting a knob causes the value to jump violently, drastically altering the sound.
+- **"Dead" Parameters**: Changing Sample Bank or Sample Number has no audible effect. Tweaking Tone or Hit Position while a note is ringing does nothing.
+- **Sudden Silence on Parameter Tweak**: Adjusting parameters like Damp or Tone mid-note instantly kills the ringing acoustic energy.
+- **The F#2 Crash (Low-Frequency Explosion)**: Triggering notes below G2 (e.g., F#2, ~92Hz) causes a burst of noise followed by total silence (CPU Watchdog timeout).
+- **Crash on Model Change**: Changing the physical model (e.g., Squared to Membrane) results in distortion and silence after a couple of beats.
+
+## 2. Root Cause Analysis
+
+### a. The UI Sync Disconnect
+- **Diagnosis**: When `setCurrentProgram` was called, it correctly loaded the floats into the DSP memory, but failed to update the UI state trackers (e.g., `a_b_model`, `a_b_decay`).
+- **The Conflict**: The Drumlogue OS UI knobs were left reading uninitialized garbage. Touching a knob forced the DSP to snap from the correct preset value to the garbage UI value, causing massive energy deltas.
+
+### b. The "Orphaned" Sample Engine & Physical Modeling Paradigm
+- **Diagnosis**: Changing `c_parameterSampleBank` updated the tracking integers but never actually invoked `loadConfigureSample()` [cite: uploaded:changes.
+
 # [2026-02-20] Limiter Release Coefficient Precision Bug (Progressive Distortion → Silence)
 
 ## 1. Symptoms
