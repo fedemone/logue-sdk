@@ -46,7 +46,8 @@ uint8_t mock_get_num_samples_for_bank(uint8_t bank) { return 1; }
 
 const sample_wrapper_t* mock_get_sample(uint8_t bank, uint8_t sample) {
     // Initialize mock sample data with a sine wave if not already done
-    if (mock_sample_data[0] == 0.0f) {
+    static bool initialized = false;
+    if (!initialized) {
         std::cout << "  Initializing mock sample data..." << std::endl;
         for (int i = 0; i < 48000 * 2; ++i) {
             // SIMULATE REAL SAMPLE: Sharp transient (click) + Body + Noise
@@ -56,6 +57,7 @@ const sample_wrapper_t* mock_get_sample(uint8_t bank, uint8_t sample) {
             float noise = 0.1f * ((float)(rand() % 100) / 50.0f - 1.0f);
             mock_sample_data[i] = transient + body + noise;
         }
+        initialized = true;
     }
     mock_wrapper.sample_ptr = mock_sample_data;
     mock_wrapper.frames = 48000; // 1 second stereo frames
@@ -2541,6 +2543,60 @@ void test_debug_program_stability() {
     std::cout << "  [PASS] Debug program stable." << std::endl;
 }
 
+void test_physics_values_inspection() {
+    std::cout << "\n[Test 101] Physics Values Inspection (No Clamps)..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Scenario 1: Material = 2.1 (Positive Damping)
+    // This reportedly caused a crash.
+    std::cout << "  --- Scenario 1: Material = 2.1 ---" << std::endl;
+    synth.setParameter(c_parameterProgramName, Program::Fifths); // 2.1
+    synth.setParameter(c_parameterMaterial, 21); // 2.1
+    synth.setParameter(c_parameterDecay, 500);   // 50.0s (if max is 100)
+    synth.NoteOn(60, 100);
+
+    // Inspect first few partials
+    for (int p = 0; p < 5; ++p) {
+        // Accessing internal state via public members
+        float va2 = vgetq_lane_f32(synth.voices[0].resA.partials[p].va2, 0);
+
+        // Reverse engineer d_eff from va2
+        float inv_decay = (1.0f - va2) / (1.0f + va2);
+        float d_eff = (M_TWOPI / 48000.0f) / inv_decay;
+
+        std::cout << "    Partial " << p << ": va2=" << va2 << " d_eff=" << d_eff << std::endl;
+
+        if (va2 > 0.99991f) { // Allow small epsilon for float precision
+             std::cout << "    [FAIL] Coefficient exceeds stability limit! va2=" << va2 << std::endl;
+        }
+    }
+
+    // Scenario 2: Low Note C#-1 (MIDI 13)
+    std::cout << "  --- Scenario 2: Note C#-1 (MIDI 13) ---" << std::endl;
+    synth.NoteOff(60);
+    synth.setParameter(c_parameterMaterial, 0); // Reset material
+    synth.setParameter(c_parameterResonatorNote, 13);
+    synth.NoteOn(13, 100);
+
+    for (int p = 0; p < 5; ++p) {
+        float va2 = vgetq_lane_f32(synth.voices[0].resA.partials[p].va2, 0);
+        float inv_decay = (1.0f - va2) / (1.0f + va2);
+        float d_eff = (M_TWOPI / 48000.0f) / inv_decay;
+
+        std::cout << "    Partial " << p << ": va2=" << va2 << " d_eff=" << d_eff << std::endl;
+         if (va2 > 0.99991f) {
+             std::cout << "    [FAIL] Coefficient exceeds stability limit! va2=" << va2 << std::endl;
+        }
+    }
+}
+
 int main() {
     std::cout << "\n";
     std::cout << "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
@@ -2599,6 +2655,7 @@ int main() {
         test_zero_padded_array_explosion();        // test 44
         test_instability_investigation();          // test 99
         test_debug_program_stability();            // test 100
+        test_physics_values_inspection();          // test 101
 
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;

@@ -40,8 +40,8 @@
   Progress: 83% complete...
 
 [BEAT 8] Starting...
-  [3-Second Run] Min: -2.64903, Max: 2.53447, Avg: 0.502396, NaN: 0, Inf: 0, Clips: 32115
-  Render time: 968 ms
+  [3-Second Run] Min: -2.62867, Max: 2.50798, Avg: 0.497628, NaN: 0, Inf: 0, Clips: 31178
+  Render time: 966 ms
   [PASS] 3-second stability test completed successfully
 
 [Test 3] Basic Audio Stability & Signal Flow
@@ -52,7 +52,7 @@
 [BEAT 10] Starting...
 
 [BEAT 11] Starting...
-  [1-Second Run] Min: -0.152749, Max: 0.14817, Avg: 0.0315437, NaN: 0, Inf: 0, Clips: 0
+  [1-Second Run] Min: -0.152992, Max: 0.147924, Avg: 0.0315437, NaN: 0, Inf: 0, Clips: 0
   [PASS] Basic stability test passed
 
 [Test 4] Polyphony Stress (Voice Stealing)
@@ -72,7 +72,7 @@
 [BEAT 12] Starting...
 
 [BEAT 13] Starting...
-  [PASS] Envelope decay verified (final level: 0)
+  [PASS] Envelope decay verified (final level: 3.04432e-37)
 
 [Test 6] Extreme Parameters (Numerical Stability)
   [Very High Pitch] Max: 0, NaN: 0
@@ -83,9 +83,9 @@
 [POLYPHONY] Active voices: 4
 
 [BEAT 14] Starting...
-  [Max Decay] Max: 0.0775758, NaN: 0
+  [Max Decay] Max: 0.109403, NaN: 0
 [POLYPHONY] Active voices: 5
-  [Max Partials] Max: 0.00786638, NaN: 0
+  [Max Partials] Max: 0.0138689, NaN: 0
 [POLYPHONY] Active voices: 6
   [Min Damping] Max: 0, NaN: 0
 [POLYPHONY] Active voices: 7
@@ -147,37 +147,37 @@
 [POLYPHONY] Active voices: 2
 
 [BEAT 23] Starting...
-  Beat 2 Max Peak: 0.0242643
+  Beat 2 Max Peak: 0.0252164
   --- BEAT 3 TRIGGER ---
 [POLYPHONY] Active voices: 3
 
 [BEAT 24] Starting...
-  Beat 3 Max Peak: 0.0203621
+  Beat 3 Max Peak: 0.022294
   --- BEAT 4 TRIGGER ---
 [POLYPHONY] Active voices: 4
 
 [BEAT 25] Starting...
-  Beat 4 Max Peak: 0.0178313
+  Beat 4 Max Peak: 0.0204876
   --- BEAT 5 TRIGGER ---
 [POLYPHONY] Active voices: 5
 
 [BEAT 26] Starting...
-  Beat 5 Max Peak: 0.000334853
+  Beat 5 Max Peak: 0.00118585
   --- BEAT 6 TRIGGER ---
 [POLYPHONY] Active voices: 6
 
 [BEAT 27] Starting...
-  Beat 6 Max Peak: 0.0119815
+  Beat 6 Max Peak: 0.0129618
   --- BEAT 7 TRIGGER ---
 [POLYPHONY] Active voices: 7
 
 [BEAT 28] Starting...
-  Beat 7 Max Peak: 0.0114259
+  Beat 7 Max Peak: 0.0129083
   --- BEAT 8 TRIGGER ---
 [POLYPHONY] Active voices: 8
 
 [BEAT 29] Starting...
-  Beat 8 Max Peak: 0.0108464
+  Beat 8 Max Peak: 0.0127518
   [PASS] Survived 4 beats of rhythmic triggering.
 
 [Test 15] Degradation over 12 beats...
@@ -190,53 +190,53 @@
 [POLYPHONY] Active voices: 2
 
 [BEAT 31] Starting...
-  Beat 2 Max Peak: 0.0109582, Avg Peak: 0.000243167
+  Beat 2 Max Peak: 0.0147243, Avg Peak: 0.00353988
   --- BEAT 3 TRIGGER ---
 [POLYPHONY] Active voices: 3
 
 [BEAT 32] Starting...
-  Beat 3 Max Peak: 0.00903117, Avg Peak: 0.000200343
+  Beat 3 Max Peak: 0.0148832, Avg Peak: 0.00371534
   --- BEAT 4 TRIGGER ---
 [POLYPHONY] Active voices: 4
 
 [BEAT 33] Starting...
-  Beat 4 Max Peak: 0.00781914, Avg Peak: 0.000173598
+  Beat 4 Max Peak: 0.0134438, Avg Peak: 0.00341981
   --- BEAT 5 TRIGGER ---
 [POLYPHONY] Active voices: 5
 
 [BEAT 34] Starting...
-  Beat 5 Max Peak: 0.0213466, Avg Peak: 0.00394227
+  Beat 5 Max Peak: 0.0279916, Avg Peak: 0.00492877
   --- BEAT 6 TRIGGER ---
 [POLYPHONY] Active voices: 6
 
 [BEAT 35] Starting...
-  Beat 6 Max Peak: 0.0197803, Avg Peak: 0.00359768
+  Beat 6 Max Peak: 0.0253488, Avg Peak: 0.00450353
   --- BEAT 7 TRIGGER ---
 [POLYPHONY] Active voices: 7
 
 [BEAT 36] Starting...
-  Beat 7 Max Peak: 0.0182661, Avg Peak: 0.00333017
+  Beat 7 Max Peak: 0.0233664, Avg Peak: 0.00417073
   --- BEAT 8 TRIGGER ---
 [POLYPHONY] Active voices: 8
 
 [BEAT 37] Starting...
-  Beat 8 Max Peak: 0.0171918, Avg Peak: 0.00311877
+  Beat 8 Max Peak: 0.0218556, Avg Peak: 0.00390596
   --- BEAT 9 TRIGGER ---
 
 [BEAT 38] Starting...
-  Beat 9 Max Peak: 0.0173088, Avg Peak: 0.00314969
+  Beat 9 Max Peak: 0.0217968, Avg Peak: 0.0039212
   --- BEAT 10 TRIGGER ---
 
 [BEAT 39] Starting...
-  Beat 10 Max Peak: 0.0176444, Avg Peak: 0.00316477
+  Beat 10 Max Peak: 0.0218225, Avg Peak: 0.00361137
   --- BEAT 11 TRIGGER ---
 
 [BEAT 40] Starting...
-  Beat 11 Max Peak: 0.0164517, Avg Peak: 0.00316708
+  Beat 11 Max Peak: 0.0206559, Avg Peak: 0.00353152
   --- BEAT 12 TRIGGER ---
 
 [BEAT 41] Starting...
-  Beat 12 Max Peak: 0.0165836, Avg Peak: 0.0031704
+  Beat 12 Max Peak: 0.0207453, Avg Peak: 0.00351528
   [PASS] Survived 12 beats of rhythmic triggering without critical failure.
 
 [Test 16] Preset 11 Issue (Harp)...
@@ -783,7 +783,7 @@ Max=0
 
 [BEAT 199] Starting...
   [PASS] Engine is perfectly stable under extreme Hot-Loading.
-         Max amplitude reached: 0.0957403
+         Max amplitude reached: 0.0766285
 
 [Test 39] Limiter Release Coefficient Precision...
   e_expff relcoef = 0.9999389648 [OK]
@@ -868,6 +868,20 @@ Max=0
 [BEAT 225] Starting...
   [PASS] Debug program stable.
 
+[Test 101] Physics Values Inspection (No Clamps)...
+  --- Scenario 1: Material = 2.1 ---
+    Partial 0: va2=0.999759376 d_eff=1.087871432
+    Partial 1: va2=0.9995254874 d_eff=0.5515918732
+    Partial 2: va2=0.9992622733 d_eff=0.3547422886
+    Partial 3: va2=0.9990649819 d_eff=0.2798630297
+    Partial 4: va2=0.9987976551 d_eff=0.217609778
+  --- Scenario 2: Note C#-1 (MIDI 13) ---
+    Partial 0: va2=0.9997413754 d_eff=1.012144923
+    Partial 1: va2=0.9997413754 d_eff=1.012144923
+    Partial 2: va2=0.9997413754 d_eff=1.012144923
+    Partial 3: va2=0.9997413754 d_eff=1.012144923
+    Partial 4: va2=0.9997413754 d_eff=1.012144923
+
 â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-â•‘                  ALL TESTS CTotal execution time: 64914 ms                      â•‘
+â•‘                  ALL TESTS CTotal execution time: 68124 ms                      â•‘
 â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

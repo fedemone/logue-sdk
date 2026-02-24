@@ -237,8 +237,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // d_mod is clamped to prevent explosion
         float d_eff = d_raw / d_mod; // A 10s decay results in va2 > 0.9999, which is unstable.
-        // NOTE: No clamping applied to d_eff as requested. Physics must control stability.
-        d_eff = fminf(10.0f, d_eff); // [FIX] Hard clamp effective decay to 10s to guarantee stability on HW
+        // NOTE: No clamping applied to d_eff as requested.
 
         // [FIX] Cull partials with extremely short effective decay to prevent va2 -> -1.0 instability
         // This avoids the invalid Biquad region where bandwidth > Nyquist.

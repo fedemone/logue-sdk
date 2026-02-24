@@ -451,6 +451,22 @@ vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
     res = fminf(3.9f, fmaxf(0.707f, res));
     ```
 
+# [2026-02-24] Build Configuration & Unit Test Verification
+
+## 1. Status
+- **Unit Tests**: All tests passed, including stability checks for decay, polyphony, and parameter ranges.
+- **Comparison**: Verified build configuration against working `resonator` project.
+
+## 2. Findings & Fixes
+
+### a. Makefile Typo (`DDEF` vs `DDEFS`)
+- **Diagnosis**: The Makefile contained a typo `DDEF += -D__NEON__` instead of `DDEFS += -D__NEON__`.
+- **Impact**: The `__NEON__` macro was not being defined during compilation, potentially causing code paths relying on `#ifdef __NEON__` to fall back to scalar implementations or miss optimizations, even though NEON compiler flags were active.
+- **Fix**: Corrected variable name to `DDEFS`.
+
+## 3. Next Steps
+- **Hardware Testing**: Deploy to drumlogue and verify stability with the corrected build flags.
+
 ## debug program - stable
 - this program with very low paramters (sometimes not correct though) has proved to be stable.
 - changing some values leads to the same instability: in four beats sound grow distorted and then we have silence.
