@@ -169,9 +169,9 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         union { float f; int32_t i; } u_decay;
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
-        // Calculate raw decay time in seconds (or arbitrary units)
-        // Fix: Apply 0.01f scaling to map user range (0-1000) to physical seconds (0-10.0s)
-        float d_raw = fminf(c_decay_max, (part.decay * 0.01f) * u_decay.f);
+        // Decay is stored in seconds (both from presets and from setParameter which applies /10.0f).
+        // No additional scaling needed here.
+        float d_raw = fminf(c_decay_max, part.decay * u_decay.f);
 
         // Apply Release Envelope
         if (isRelease) {
@@ -263,6 +263,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // va2 = (1 - inv_decay) / (1 + inv_decay)
         //     = (1 - inv_decay) * inv_a0
         float va2_val = (1.0f - inv_decay) * inv_a0;
+        // Safety clamp: prevent float32 precision loss from making va2 == 1.0 (infinite ring)
+        va2_val = fminf(va2_val, c_va2_max);
         part.va2 = vdupq_n_f32(va2_val);
 #ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG

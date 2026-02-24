@@ -680,12 +680,15 @@ public:
 
             case c_parameterDecay: {
                 a_b_decay = value;
+                // Header range: 0-2000, 1 fractional digit → display 0.0-200.0
+                // A: raw 0-1000 → /10.0 → 0.0-100.0 seconds (matches JUCE domain)
+                // B: raw 1001-2000 → /10.0 → 0.0-100.0 seconds
                 const int32_t maxA = 1000;
                 if (value <= maxA) {
-                    parameters[a_decay] = (float)value; // Pass RAW value (0-1000) to DSP
+                    parameters[a_decay] = (float)value / 10.0f;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_decay] = (float)(value - maxA); // Pass RAW value (0-1000) to DSP
+                    parameters[b_decay] = (float)(value - maxA) / 10.0f;
                     resonatorChangedB = true;
                 }
                 break;
@@ -870,9 +873,10 @@ public:
              if (m_sampleChannels == 2) m_sampleIndex &= ~1; // Align stereo
         }
 
-        auto ms = parameters[mallet_stiff];
+        // Safety: clamp mallet stiffness to prevent log(0) → NaN in fasterlogf
+        auto ms = fmax(1.0f, parameters[mallet_stiff]);
         auto vms = parameters[vel_mallet_stiff];
-        float32_t malletFreq = fmin(5000.0f, e_expf(fasterlogf(ms) + velocity/127.0f * vms * c_malletStiffnessCorrectionFactor));
+        float32_t malletFreq = fmin(5000.0f, fmax(20.0f, e_expf(fasterlogf(ms) + velocity/127.0f * vms * c_malletStiffnessCorrectionFactor)));
 
         voice.trigger((float)c_sampleRate, note, velocity / 127.0f, malletFreq);
     }
@@ -1089,7 +1093,7 @@ inline void setCurrentProgram(int index) {
             for (uint32_t p = 0; p < c_partialElements; ++p) {
                 if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
             }
-            a_b_decay = (int32_t)parameters[a_decay];
+            a_b_decay = (int32_t)(parameters[a_decay] * 10.0f); // seconds → UI raw (10x)
             a_b_damp = (int32_t)(parameters[a_damp] * 10.0f);
             a_b_tone = (int32_t)(parameters[a_tone] * 10.0f);
             a_b_hit = (int32_t)(parameters[a_hit] * 100.0f);
