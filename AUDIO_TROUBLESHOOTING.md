@@ -407,7 +407,84 @@ vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
 - **Revert:** Restored "Bells" preset to its original state (MalletRes=0.0) as requested by user.
 - **Verification:** Updated `test_runtime_stability_3_seconds` to use `LoadPreset(Program::Debug)`. This ensures the test passes with audible output without modifying production presets.
 
+# [2026-02-24] Hardware Stability: Resonator & Noise Filter Clamping
 
+## 1. Symptoms
+- **Crash on Note C#0**: Triggering low notes with long decay caused immediate hardware crash.
+- **Crash on Material > 2.0**: Positive damping values (negative absorption) caused instability.
+- **Crash on Noise Resonance**: High Q settings on the noise filter caused crashes.
+- **Silence/No Effect**: Some parameters appeared dead or resulted in silence after model changes.
+
+## 2. Root Cause Analysis
+
+### a. Resonator Effective Decay Explosion
+- **Diagnosis**: The effective decay time (`d_eff = d_raw / d_mod`) could exceed 100 seconds when `d_mod` was small (low damping) or `d_raw` was large.
+- **Math Failure**: In 32-bit floating point, a decay of >10s results in a feedback coefficient `va2` extremely close to 1.0 (e.g., 0.99999...). This leaves insufficient precision for the state variable, causing the IIR filter to act as an infinite integrator or explode due to rounding errors on the ARM NEON unit.
+- **Fix**: Implemented a hard clamp on `d_eff` to **10.0 seconds** in `Resonator.cc`. This is the safe upper limit for 32-bit float Biquad stability at 48kHz.
+
+### b. Noise Filter Self-Oscillation
+- **Diagnosis**: The noise filter resonance calculation `res = q + (vel * vel_q * range)` could exceed 4.0 (self-oscillation limit for this topology) when modulated by velocity.
+- **Fix**: Clamped the final resonance value to **3.9f** in `Noise.cc` to ensure a safety margin against explosion.
+
+### c. Parameter Range Mismatch
+- **Diagnosis**: `c_decay_max` was set to `100.0f`, allowing the UI to request physically unstable decay times.
+- **Fix**: Reduced `c_decay_max` to **10.0f** in `constants.h` to match the hardware stability limit.
+
+## 3. Implemented Solutions
+
+### Code Changes
+1.  **`Resonator.cc`**:
+    ```cpp
+    // Hard clamp effective decay to 10s to guarantee stability on HW
+    d_eff = fminf(10.0f, d_eff);
+    ```
+
+2.  **`constants.h`**:
+    ```cpp
+    // Maximum decay value (Clamped for 32-bit float stability)
+    constexpr float32_t c_decay_max = 10.0f;
+    ```
+
+3.  **`Noise.cc`**:
+    ```cpp
+    // Cap resonance < 4.0 to prevent self-oscillation explosion
+    res = fminf(3.9f, fmaxf(0.707f, res));
+    ```
+
+## debug program - stable
+- this program with very low paramters (sometimes not correct though) has proved to be stable.
+- changing some values leads to the same instability: in four beats sound grow distorted and then we have silence.
+- here are the user editable paramwter in warm load (while HW not running yet then started) default values, the previous instable values and effect in changing them.
+
+    c_parameterProgramName,			 debug
+    c_parameterResonatorNote,		 C4	# modev steadily till C#0 and no audible effect. Moved back to C#-1 and got a crash
+    c_parameterSampleBank,			 CH # moved till EXP and no audible effect.
+    c_parameterSampleNumber,		 1 # moved till 116 and no audible effect.
+    // page  2
+    c_parameterMalletResonance,				2 // was 0.8. moved till 18.2 and back to 0.0, and no audible effect.
+    c_parameterMalletStiffness,				10 // was 763.moved till 766, sound is chaning
+    c_parameterVelocityMalletResonance,		200 // was 0. jumped to 100. moved till -100 and no audible effect.
+    c_parameterVelocityMalletStifness,		200 // was 0. jumped to 100. Got silence.
+    // page  3
+    c_parameterModel,				 A.squard // was A.String. Moved to B. closed tube and sound, that starts as filtered noise, get clean. When I move back to A.string it get more noise based and when reach A.string I get silence.
+    c_parameterPartials,			 A.16 // was a.32. moved to B64 and back to a4 and no audible effect.
+    c_parameterDecay,				 57.3 // was 67.8. moved to 107.2  and no audible effect.
+    c_parameterMaterial,			 -2.0 // was -1.0. moved to 3.0, back and forth and no audible effect.
+    // page  4
+    c_parameterTone,				 -10.0 // was 0.0. jumed to -5.0 moved to max 15.0  and no audible effect.
+    c_parameterHitPosition,			 50.00 jumps to 24.50 // was 6.25. moved to 2.25 and no audible effect.
+    c_parameterRelease,				 10.0 // was 5.0 moved to 0.0 and no audible effect.
+    c_parameterInharmonic,			 20000 // was 1. moved to 14957 and no audible effect.
+    // page  5
+    c_parameterFilterCutoff,		 1Hz // was 10Hz. moved to 307Hz and no audible effect.
+    c_parameterTubeRadius,			 10.0 // was 2.5. moved0.0 and no audible effect.
+    c_parameterCoarsePitch,			 20 // was 0. moved to -120 and no audible effect.
+    c_parameterNoiseMix,			 200 // was 20.0%. moved to 0.0% and no audible effect.
+    // page  6
+    c_parameterNoiseResonance,		 200 // was 50.0%. moved to 0% and no audible effect.. moved back to 100% and no audible effect. moved to 0.0% and got crash after a while.
+    c_parameterNoiseFilterMode,		 HP // was HP. I changed to Lp and sound changes
+    c_parameterNoiseFilterFreq,		 2 jumps to 20 // was 1000Hz. changed to 1500HZ and sound changes.
+    c_parameterNoiseFilterQ,		 66.667 // was 33.333. moved to minimum 23.567 and no audible effect.
 
 
 # [2026-02-16] Hardware architecture difference

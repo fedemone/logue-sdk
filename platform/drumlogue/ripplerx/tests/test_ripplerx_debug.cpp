@@ -123,6 +123,32 @@ void verify_buffer(const float* buffer, size_t samples, const char* context) {
 
 // --- ENHANCED TEST SUITE ---
 
+void test_sample_loading_mechanism() {
+    std::cout << "\n[Test 0] Sample Loading Mechanism..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Verify default state after Init
+    // Accessing private members via friend or assumption of layout is hard,
+    // but we can check if NoteOn produces sound which implies sample loaded if mix is right.
+    // Better: we can check if loadConfigureSample() works by checking if we get sound from a sample-only preset.
+
+    synth.setParameter(c_parameterSampleNumber, 1);
+    synth.loadConfigureSample();
+
+    // We can't access m_samplePointer directly as it is private.
+    // However, if we trigger a note with MalletRes=0 and MalletMix=0 but Sample loaded, we should get sound.
+    // This is implicitly tested in test_runtime_stability_3_seconds if configured correctly.
+
+    std::cout << "  [PASS] loadConfigureSample called without crash." << std::endl;
+}
+
 void test_dirty_initialization() {
     std::cout << "\n[Test 1] Hot-Load Initialization (Dirty Memory)" << std::endl;
     std::cout << "  Testing constructor and Init() with garbage-filled memory..." << std::endl;
@@ -197,8 +223,16 @@ void test_runtime_stability_3_seconds() {
     synth.Init(&desc);
 
     // Set reasonable parameters
-    synth.LoadPreset(Program::Debug); // Load Debug preset (Configured for testing with Gain=23.0, MalletRes=0.5)
-    // No manual overrides - verify the Debug preset is valid and produces sound
+    synth.LoadPreset(Program::Debug); // Load safe base preset to ensure signal path works
+
+    // INJECT FAULTY VALUES to reproduce hardware crash
+    // Decay 50.0f (UI ~925), Damp 0.0f (UI 0) -> High energy accumulation
+    synth.setParameter(c_parameterDecay, 925);
+    synth.setParameter(c_parameterMaterial, 0);
+
+    // Ensure sample is loaded so we have audio excitation
+    synth.setParameter(c_parameterSampleNumber, 1);
+    synth.loadConfigureSample();
 
     const size_t kBlockSize = 64;
     const size_t kTotalBlocks = (48000 * 3) / kBlockSize; // 3 seconds
@@ -1031,33 +1065,46 @@ void test_parameter_mapping() {
     RipplerX synth;
     unit_runtime_desc_t desc = {0};
     desc.samplerate = 48000;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     synth.Init(&desc);
 
     // Test Decay Scaling (A/B Split)
-    // Max A is 1000. Should map to 10.0f (c_decay_max)
+    // Max A is 1000. Should map to 100.0f
     synth.setParameter(c_parameterDecay, 1000);
     float valA = synth.getInternalParameter(a_decay);
-    if (std::abs(valA - 1000.0f) > 0.001f) {
-        std::cerr << "[FAIL] Decay A scaling incorrect. Input 1000 -> " << valA << " (Expected 1000.0)" << std::endl;
+    if (std::abs(valA - 100.0f) > 0.001f) {
+        std::cerr << "[FAIL] Decay A scaling incorrect. Input 1000 -> " << valA << " (Expected 100.0)" << std::endl;
         exit(1);
     }
 
     // Test Decay B
-    // Input 1500 -> B value 500 -> 5.0f
+    // Input 1500 -> B value 500 -> norm_val 0.5 -> maps to 1.0f
     synth.setParameter(c_parameterDecay, 1500);
     float valB = synth.getInternalParameter(b_decay);
-    if (std::abs(valB - 500.0f) > 0.001f) {
-        std::cerr << "[FAIL] Decay B scaling incorrect. Input 1500 -> " << valB << " (Expected 500.0)" << std::endl;
+    if (std::abs(valB - 1.0f) > 0.015f) { // Looser tolerance for powf result
+        std::cerr << "[FAIL] Decay B scaling incorrect. Input 1500 -> " << valB << " (Expected 1.0)" << std::endl;
         exit(1);
     }
 
     // Test Mallet Resonance Scaling
-    // Input 500 -> Should be 0.5f (Previously was 50.0f -> clamped to 1.0f)
+    // Input 500 -> Should be 0.5f
     synth.setParameter(c_parameterMalletResonance, 500);
     float valMallet = synth.getInternalParameter(mallet_res);
     if (std::abs(valMallet - 0.5f) > 0.001f) {
         std::cerr << "[FAIL] Mallet Resonance scaling incorrect. Input 500 -> " << valMallet
                   << " (Expected 0.5)" << std::endl;
+        exit(1);
+    }
+
+    // Test Mallet Stiffness Scaling
+    // Input 1000 -> Should be 5000.0f
+    synth.setParameter(c_parameterMalletStiffness, 1000);
+    float valStiff = synth.getInternalParameter(mallet_stiff);
+    if (std::abs(valStiff - 5000.0f) > 0.01f) { // Looser tolerance for powf result
+        std::cerr << "[FAIL] Mallet Stiffness scaling incorrect. Input 1000 -> " << valStiff
+                  << " (Expected 5000.0)" << std::endl;
         exit(1);
     }
 
@@ -1174,6 +1221,9 @@ void test_partial_wakeup_instability() {
     RipplerX synth;
     unit_runtime_desc_t desc = {0};
     desc.samplerate = 48000;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     synth.Init(&desc);
 
     // 1. Set max partials (64) and fill state with energy
@@ -2018,6 +2068,10 @@ void test_catch_denormals_x86() {
     RipplerX synth;
     unit_runtime_desc_t desc;
     desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     synth.Init(&desc);
 
     // 1. Configure a sound with a very long tail
@@ -2090,6 +2144,7 @@ void test_limiter_nan_overflow() {
     if (std::isnan(out_val)) {
         std::cout << "  [FAIL] Limiter generated NaN! Integer overflow occurred." << std::endl;
         std::cout << "         This causes a hard kernel crash on the Drumlogue." << std::endl;
+        exit(1);
     } else {
         std::cout << "  [PASS] Limiter survived the massive input. Output: " << out_val << std::endl;
     }
@@ -2167,6 +2222,10 @@ void test_single_thread_hot_load() {
     RipplerX synth;
     unit_runtime_desc_t desc;
     desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     synth.Init(&desc);
 
     float buffer[64];
@@ -2199,7 +2258,7 @@ void test_single_thread_hot_load() {
         if (std::isnan(buffer[0]) || val > 100.0f) {
             explosion_detected = true;
             std::cout << "  [FAIL] Filter exploded at sample " << i << ". Val=" << buffer[0] << std::endl;
-            break;
+            exit(1);
         }
     }
 
@@ -2208,18 +2267,291 @@ void test_single_thread_hot_load() {
         std::cout << "         Max amplitude reached: " << max_val_seen << std::endl;
     }
 }
+void test_f_sharp_2_explosion() {
+    printf("\n[Test 40] F#2 Low-Frequency Cosine Overshoot...\n");
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
 
+    // Setup an F#2 note (MIDI 42)
+    synth.setParameter(c_parameterResonatorNote, 42);
+    synth.GateOn(127);
+
+    float out_buffer[1024];
+    bool exploded = false;
+
+    // Render 100 blocks (enough time for an unstable IIR filter to hit NaN/Infinity)
+    for (int block = 0; block < 100; ++block) {
+        synth.Render(out_buffer, 512);
+        for (int i = 0; i < 1024; ++i) {
+            // Check for NaN or an impossible volume level (> 50.0)
+            if (std::isnan(out_buffer[i]) || std::abs(out_buffer[i]) > 50.0f) {
+                exploded = true;
+                break;
+            }
+        }
+        if (exploded) break;
+    }
+
+    if (exploded) {
+        printf("  [FAIL] Math exploded on F#2! (Bug Reproduced)\n");
+        exit(1);
+    }
+    else          printf("  [PASS] F#2 is mathematically stable.\n");
+}
+
+void test_ratio_max_zero_padding() {
+    printf("\n[Test 41] Zero-Padded Model Division by Zero...\n");
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Load a model that doesn't use all 64 partials (causing trailing 0.0f in array)
+    synth.setParameter(c_parameterModel, 4); // Plate
+    synth.setParameter(c_parameterPartials, 1); // 8 Partials (leaves 56 zeroes)
+
+    synth.GateOn(127);
+    float out_buffer[1024];
+    synth.Render(out_buffer, 512);
+
+    // If ratio_max = model[63], it reads 0.0f, causing fasterlogf(0) -> NaN
+    if (std::isnan(out_buffer[0])) {
+        printf("  [FAIL] Engine generated NaN from padded array! (Bug Reproduced)\n");
+        exit(1);
+    } else {
+        printf("  [PASS] Engine safely handled zero-padded model.\n");
+    }
+}
+
+
+// -------------------------------------------------------------------------
+// Test 42: Sub-Bass Note Clamping & Live Pitch Sweeping Bug
+// -------------------------------------------------------------------------
+void test_note_assignment_bug() {
+    printf("\n[Test 42] Sub-Bass Note Clamping & Live Sweep...\n");
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // 1. Test the Clamp (Try to play Note 24 / C1)
+    synth.setParameter(c_parameterResonatorNote, 24);
+    int32_t current_note = synth.getParameterValue(c_parameterResonatorNote);
+
+    if (current_note == 36) {
+        printf("  [FAIL] Bug Confirmed: Note snapped to 36 (C2). Sub-bass is impossible.\n");
+        exit(1);
+    } else {
+        printf("  [PASS] Note allowed below 36.\n");
+    }
+
+    // 2. Test Live Pitch Sweeping
+    synth.GateOn(127);
+
+    int active_voice_idx = -1;
+    for (size_t i = 0; i < c_numVoices; ++i) {
+        if (synth.voices[i].isPressed) {
+            active_voice_idx = i;
+            break;
+        }
+    }
+
+    if (active_voice_idx == -1) {
+        printf("  [FAIL] No active voice found after GateOn.\n");
+        exit(1);
+    }
+
+    float freq_before = synth.voices[active_voice_idx].freq;
+
+    // Twist the UI pitch knob while the note is ringing
+    synth.setParameter(c_parameterResonatorNote, 60);
+
+    if (synth.voices[active_voice_idx].freq == freq_before) {
+        printf("  [FAIL] Bug Confirmed: Live ringing note pitch did not update. Pitch is dead.\n");
+        exit(1);
+    } else {
+        printf("  [PASS] Live pitch sweep works.\n");
+    }
+}
+
+// -------------------------------------------------------------------------
+// Test 43: The Decay Scaling / Infinite Energy Bug
+// -------------------------------------------------------------------------
+void test_decay_scaling_bug() {
+    printf("\n[Test 43] UI vs DSP Scaling (Decay Explosion)...\n");
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // In header.c, Decay has 1 fractional digit.
+    // Setting UI knob to 500 means the user wants "50.0" seconds.
+    synth.setParameter(c_parameterDecay, 500);
+
+    // Retrieve what was actually fed to the DSP math
+    float internal_decay = synth.getInternalParameter(ProgramParameters::a_decay);
+
+    if (internal_decay > 100.0f) {
+        printf("  [FAIL] Bug Confirmed: Decay scaling is missing. DSP received %.1f seconds instead of 50.0!\n", internal_decay);
+        exit(1);
+    } else {
+        printf("  [PASS] Decay scaling is correct.\n");
+    }
+}
+
+// -------------------------------------------------------------------------
+// Test 44: The Zero-Padded Array Explosion (Normal Presets Crashing)
+// -------------------------------------------------------------------------
+void test_zero_padded_array_explosion() {
+    printf("\n[Test 44] Zero-Padded Array NaN Explosion...\n");
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // 1. Setup a scenario where the array has trailing zeroes
+    // Partials setting 1 = 8 partials. The remaining 56 slots in the 64-slot array become 0.0f.
+    synth.setParameter(c_parameterModel, 4);    // Plate model
+    synth.setParameter(c_parameterPartials, 1); // 8 Partials
+
+    // 2. Set Tone > 0 to force the f_max calculation (t_base = f_k / f_max)
+    // The UI range is -10 to 30. Let's set it to 10.
+    synth.setParameter(c_parameterTone, 10);
+
+    synth.GateOn(127);
+    float out_buffer[1024];
+    bool exploded = false;
+
+    // Render a single block. If `ratio_max` blindly fetches index 63, it will read 0.0f,
+    // trigger a Division-by-Zero, and generate a NaN instantly.
+    synth.Render(out_buffer, 512);
+
+    for (int i = 0; i < 512; ++i) {
+        if (std::isnan(out_buffer[i])) {
+            exploded = true;
+            break;
+        }
+    }
+
+    if (exploded) {
+        printf("  [FAIL] Bug Confirmed: Engine generated NaN from trailing zeroes in the model array!\n");
+        exit(1);
+    } else {
+        printf("  [PASS] Engine handled zero-padding safely.\n");
+    }
+}
+
+void test_instability_investigation() {
+    std::cout << "\n[Test 99] Instability Investigation (DIAG mode)..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    // Force parameters known to cause instability (High Decay, Low Damping)
+    // This replicates the "Bells" or "Debug" preset conditions that might explode
+    synth.setParameter(c_parameterDecay, 1000);     // Max decay (100.0s raw)
+    synth.setParameter(c_parameterMaterial, -10);   // Min damping (d_mod ~ 0.1) -> d_eff ~ 1000s
+    synth.setParameter(c_parameterModel, 0);        // String model
+    synth.setParameter(c_parameterPartials, 4);     // 64 partials
+
+    std::cout << "  Triggering note (Decay=1000, Material=-10)..." << std::endl;
+    synth.NoteOn(60, 100);
+
+    alignas(16) float buffer[128];
+
+    // Render for 8 seconds (approx 16 beats at 120bpm) to allow slow accumulation
+    for (int i = 0; i < 6000; ++i) {
+        synth.Render(buffer, 64);
+
+        // Check for explosion
+        for (int j = 0; j < 128; ++j) {
+            if (std::abs(buffer[j]) > 50.0f) {
+                std::cout << "  [FAIL] Explosion detected at block " << i << " sample " << j << " val=" << buffer[j] << std::endl;
+                return;
+            }
+        }
+    }
+    std::cout << "  [PASS] No explosion detected in this run." << std::endl;
+}
+
+void test_debug_program_stability() {
+    std::cout << "\n[Test 100] Debug Program Stability..." << std::endl;
+    RipplerX synth;
+    unit_runtime_desc_t desc;
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+    synth.Init(&desc);
+
+    synth.LoadPreset(Program::Debug); // Load safe base
+
+    // INJECT FAULTY VALUES to reproduce hardware crash
+    synth.setParameter(c_parameterDecay, 925);
+    synth.setParameter(c_parameterMaterial, 0);
+
+    // Ensure sample is loaded so we have audio excitation
+    synth.setParameter(c_parameterSampleNumber, 1);
+    synth.loadConfigureSample();
+
+    std::cout << "  Triggering note..." << std::endl;
+    synth.NoteOn(60, 100);
+
+    alignas(16) float buffer[128];
+
+    // Render for 4 seconds
+    for (int i = 0; i < 3000; ++i) {
+        synth.Render(buffer, 64);
+
+        for (int j = 0; j < 128; ++j) {
+            if (std::abs(buffer[j]) > 50.0f) {
+                std::cout << "  [FAIL] Explosion at block " << i << " sample " << j << " val=" << buffer[j] << std::endl;
+                return;
+            }
+        }
+    }
+    std::cout << "  [PASS] Debug program stable." << std::endl;
+}
 
 int main() {
     std::cout << "\n";
-    std::cout << "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
+    std::cout << "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—\n";
     std::cout << "â•‘     RIPPLERX COMPREHENSIVE TEST SUITE v2.1 (Debug)        â•‘\n";
     std::cout << "â•‘     Includes hardware issue replication tests.            â•‘\n";
-    std::cout << "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
+    std::cout << "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•\n";
 
     auto total_start = std::chrono::high_resolution_clock::now();
 
     try {
+        test_sample_loading_mechanism();
         test_dirty_initialization();
         test_runtime_stability_3_seconds();
         test_audio_stability();
@@ -2258,8 +2590,16 @@ int main() {
         test_denormal_production();                // Test 35: Check for ARM hazard
         test_catch_denormals_x86();                // Test 36: Check for FTZ
         test_limiter_nan_overflow();
-        test_limiter_release_coefficient();
         test_single_thread_hot_load();
+        test_limiter_release_coefficient();
+        test_f_sharp_2_explosion();                // test 40
+        test_ratio_max_zero_padding();             // test 41
+        test_note_assignment_bug();                // test 42
+        test_decay_scaling_bug();                  // test 43
+        test_zero_padded_array_explosion();        // test 44
+        test_instability_investigation();          // test 99
+        test_debug_program_stability();            // test 100
+
     } catch (const std::exception& e) {
         std::cerr << "\n[EXCEPTION] " << e.what() << std::endl;
         return 1;

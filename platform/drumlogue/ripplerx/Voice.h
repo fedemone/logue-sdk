@@ -53,7 +53,6 @@ public:
     // [NEW] Flag to protect coefficients during UI calculations
     std::atomic<bool> m_is_updating{false};
     std::atomic<bool> m_pending_clear{false};
-    std::atomic<bool> m_pending_trigger{false};
 
     // [FIX] Audio thread executes memory clear AND envelope triggers simultaneously
     inline void checkAndTrigger(float32_t srate) {

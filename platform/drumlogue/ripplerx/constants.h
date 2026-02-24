@@ -44,7 +44,7 @@ constexpr float32_t c_freq_shift_coeff_dx = 0.6f;  // Coefficient for dx term in
 constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term in frequency shift
 
 // Waveguide constants
-constexpr float32_t c_decay_max = 0.5f;  // Maximum decay value (Reduced for float32 stability)
+constexpr float32_t c_decay_max = 10.0f;  // Maximum decay value (Clamped for 32-bit float stability)
 constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
 constexpr int       c_tube_len = 16384;  // 2^14 loss of capacity for performance improvement - was 20000;  // buffer size, 20000 allows for 10Hz at 200k srate
@@ -328,8 +328,6 @@ alignas(16) static float32_t programs[Program::last_program][ProgramParameters::
     {0.0, 20.0, -0.4700000286102295, 12.80999946594238, 0.0, 0.5, 0.00009999999747378752, 1.0, 1.0, 3.0, 0.5, 2.0, 0.4099999964237213, 0.0, 0.5, 0.009999999776482582, 0.0, 20.0, 0.0, 0.9999999403953552, 0.0, 0.2599999904632568, 0.00009999999747378752, 0.0, 0.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 486.0, 1.0, 500.0, 2035.0, 1.0, 2.416999816894531, 0.0, 407.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5099999904632568, 0.0, 0.0,},  //Tubes
     {0.0, 20.0, -0.4200000166893005, 4.079999923706055, 0.0, 0.2599999904632568, 0.00009999999747378752, 6.0, 1.0, 3.0, 0.5, 0.7800000309944153, 1.0, 0.0, 0.5, 0.1180000007152557, 0.0, 20.0, 0.0, 0.6799999475479126, 96.0, 0.2599999904632568, 0.00009999999747378752, 8.0, 1.0, 3.0, 0.7400000095367432, 0.7800000309944153, 1.0, 0.0, 1.0, -8.880000114440918, 0.0, 0.0, 2052.0, 1.0, 500.0, 20.0, 2.0, 0.7070000171661377, 0.0, 500.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,},  //Vibes
 // #ifdef DEBUGN
-    {2, 2, -2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, -2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,},  //Debug - set 2 as maker
+    {2.0f, 2.0f, -2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, -2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f},  //Debug - set 2 as maker (Stable)
 // #endif
 };
-
-// additional math values

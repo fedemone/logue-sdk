@@ -1,8 +1,12 @@
 
-â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
 â•‘     RIPPLERX COMPREHENSIVE TEST SUITE v2.1 (Debug)        â•‘
 â•‘     Includes hardware issue replication tests.            â•‘
-â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+[Test 0] Sample Loading Mechanism...
+  Initializing mock sample data...
+  [PASS] loadConfigureSample called without crash.
 
 [Test 1] Hot-Load Initialization (Dirty Memory)
   Testing constructor and Init() with garbage-filled memory...
@@ -12,30 +16,6 @@
 
 [Test 2] Runtime Stability (3 Seconds with Sound)
   Rendering continuous audio for 3 seconds...
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
 [POLYPHONY] Active voices: 1
   Progress: 0% complete...
 
@@ -60,8 +40,8 @@
   Progress: 83% complete...
 
 [BEAT 8] Starting...
-  [3-Second Run] Min: -2.63854, Max: 2.52545, Avg: 0.501224, NaN: 0, Inf: 0, Clips: 31862
-  Render time: 936 ms
+  [3-Second Run] Min: -2.64903, Max: 2.53447, Avg: 0.502396, NaN: 0, Inf: 0, Clips: 32115
+  Render time: 968 ms
   [PASS] 3-second stability test completed successfully
 
 [Test 3] Basic Audio Stability & Signal Flow
@@ -72,7 +52,7 @@
 [BEAT 10] Starting...
 
 [BEAT 11] Starting...
-  [1-Second Run] Min: -0.152751, Max: 0.148172, Avg: 0.0315437, NaN: 0, Inf: 0, Clips: 0
+  [1-Second Run] Min: -0.152749, Max: 0.14817, Avg: 0.0315437, NaN: 0, Inf: 0, Clips: 0
   [PASS] Basic stability test passed
 
 [Test 4] Polyphony Stress (Voice Stealing)
@@ -92,17 +72,23 @@
 [BEAT 12] Starting...
 
 [BEAT 13] Starting...
-  [PASS] Envelope decay verified (final level: 5.4936e-29)
+  [PASS] Envelope decay verified (final level: 0)
 
 [Test 6] Extreme Parameters (Numerical Stability)
   [Very High Pitch] Max: 0, NaN: 0
+[POLYPHONY] Active voices: 2
   [Very Low Pitch] Max: 0, NaN: 0
+[POLYPHONY] Active voices: 3
   [Min Decay] Max: 0, NaN: 0
+[POLYPHONY] Active voices: 4
 
 [BEAT 14] Starting...
-  [Max Decay] Max: 0, NaN: 0
-  [Max Partials] Max: 0, NaN: 0
+  [Max Decay] Max: 0.0775758, NaN: 0
+[POLYPHONY] Active voices: 5
+  [Max Partials] Max: 0.00786638, NaN: 0
+[POLYPHONY] Active voices: 6
   [Min Damping] Max: 0, NaN: 0
+[POLYPHONY] Active voices: 7
 
 [BEAT 15] Starting...
   [Max Damping] Max: 0, NaN: 0
@@ -156,43 +142,47 @@
   --- BEAT 1 TRIGGER ---
 
 [BEAT 22] Starting...
-  Beat 1 Max Peak: 1.46679e-15
+  Beat 1 Max Peak: 1.63979e-15
   --- BEAT 2 TRIGGER ---
 [POLYPHONY] Active voices: 2
 
 [BEAT 23] Starting...
-  Beat 2 Max Peak: 0.00273771
+  Beat 2 Max Peak: 0.0242643
   --- BEAT 3 TRIGGER ---
 [POLYPHONY] Active voices: 3
 
 [BEAT 24] Starting...
-  Beat 3 Max Peak: 0.00282982
+  Beat 3 Max Peak: 0.0203621
   --- BEAT 4 TRIGGER ---
 [POLYPHONY] Active voices: 4
 
 [BEAT 25] Starting...
-  Beat 4 Max Peak: 0.00260073
+  Beat 4 Max Peak: 0.0178313
   --- BEAT 5 TRIGGER ---
-[POLYPHONY] Active voices: 1
+[POLYPHONY] Active voices: 5
 
 [BEAT 26] Starting...
-  Beat 5 Max Peak: 0.000338162
+  Beat 5 Max Peak: 0.000334853
   --- BEAT 6 TRIGGER ---
+[POLYPHONY] Active voices: 6
 
 [BEAT 27] Starting...
-  Beat 6 Max Peak: 1.52334e-15
+  Beat 6 Max Peak: 0.0119815
   --- BEAT 7 TRIGGER ---
+[POLYPHONY] Active voices: 7
 
 [BEAT 28] Starting...
-  Beat 7 Max Peak: 1.52334e-15
+  Beat 7 Max Peak: 0.0114259
   --- BEAT 8 TRIGGER ---
+[POLYPHONY] Active voices: 8
 
 [BEAT 29] Starting...
-  Beat 8 Max Peak: 1.52334e-15
+  Beat 8 Max Peak: 0.0108464
   [PASS] Survived 4 beats of rhythmic triggering.
 
 [Test 15] Degradation over 12 beats...
   --- BEAT 1 TRIGGER ---
+[POLYPHONY] Active voices: 1
 
 [BEAT 30] Starting...
   Beat 1 Max Peak: 0, Avg Peak: 0
@@ -200,53 +190,57 @@
 [POLYPHONY] Active voices: 2
 
 [BEAT 31] Starting...
-  Beat 2 Max Peak: 0.00240711, Avg Peak: 0.000138583
+  Beat 2 Max Peak: 0.0109582, Avg Peak: 0.000243167
   --- BEAT 3 TRIGGER ---
 [POLYPHONY] Active voices: 3
 
 [BEAT 32] Starting...
-  Beat 3 Max Peak: 0.0020483, Avg Peak: 0.000115032
+  Beat 3 Max Peak: 0.00903117, Avg Peak: 0.000200343
   --- BEAT 4 TRIGGER ---
 [POLYPHONY] Active voices: 4
 
 [BEAT 33] Starting...
-  Beat 4 Max Peak: 0.00176709, Avg Peak: 9.98637e-05
+  Beat 4 Max Peak: 0.00781914, Avg Peak: 0.000173598
   --- BEAT 5 TRIGGER ---
-[POLYPHONY] Active voices: 1
+[POLYPHONY] Active voices: 5
 
 [BEAT 34] Starting...
-  Beat 5 Max Peak: 0.0346192, Avg Peak: 0.0076594
+  Beat 5 Max Peak: 0.0213466, Avg Peak: 0.00394227
   --- BEAT 6 TRIGGER ---
+[POLYPHONY] Active voices: 6
 
 [BEAT 35] Starting...
-  Beat 6 Max Peak: 0.0346192, Avg Peak: 0.00766943
+  Beat 6 Max Peak: 0.0197803, Avg Peak: 0.00359768
   --- BEAT 7 TRIGGER ---
+[POLYPHONY] Active voices: 7
 
 [BEAT 36] Starting...
-  Beat 7 Max Peak: 0.0346192, Avg Peak: 0.00766943
+  Beat 7 Max Peak: 0.0182661, Avg Peak: 0.00333017
   --- BEAT 8 TRIGGER ---
+[POLYPHONY] Active voices: 8
 
 [BEAT 37] Starting...
-  Beat 8 Max Peak: 0.0346192, Avg Peak: 0.00766943
+  Beat 8 Max Peak: 0.0171918, Avg Peak: 0.00311877
   --- BEAT 9 TRIGGER ---
 
 [BEAT 38] Starting...
-  Beat 9 Max Peak: 0.036069, Avg Peak: 0.00774707
+  Beat 9 Max Peak: 0.0173088, Avg Peak: 0.00314969
   --- BEAT 10 TRIGGER ---
 
 [BEAT 39] Starting...
-  Beat 10 Max Peak: 0.0355595, Avg Peak: 0.00777103
+  Beat 10 Max Peak: 0.0176444, Avg Peak: 0.00316477
   --- BEAT 11 TRIGGER ---
 
 [BEAT 40] Starting...
-  Beat 11 Max Peak: 0.0356823, Avg Peak: 0.00774645
+  Beat 11 Max Peak: 0.0164517, Avg Peak: 0.00316708
   --- BEAT 12 TRIGGER ---
 
 [BEAT 41] Starting...
-  Beat 12 Max Peak: 0.0357727, Avg Peak: 0.0077292
+  Beat 12 Max Peak: 0.0165836, Avg Peak: 0.0031704
   [PASS] Survived 12 beats of rhythmic triggering without critical failure.
 
 [Test 16] Preset 11 Issue (Harp)...
+[POLYPHONY] Active voices: 1
 
 [BEAT 42] Starting...
 
@@ -269,21 +263,28 @@
 
 [Test 19] Preset Loop Transition (All Presets)...
   Testing Preset 0 (Bells)... [OK]
-  Testing Preset 1 (Bells2)...
+  Testing Preset 1 (Bells2)...[POLYPHONY] Active voices: 2
+
 [BEAT 48] Starting...
  [OK]
-  Testing Preset 2 (Bong)...
+  Testing Preset 2 (Bong)...[POLYPHONY] Active voices: 3
+
 [BEAT 49] Starting...
  [OK]
-  Testing Preset 3 (Cans)... [OK]
-  Testing Preset 4 (Crash)...
+  Testing Preset 3 (Cans)...[POLYPHONY] Active voices: 4
+ [OK]
+  Testing Preset 4 (Crash)...[POLYPHONY] Active voices: 5
+
 [BEAT 50] Starting...
  [OK]
-  Testing Preset 5 (Crystal)... [OK]
-  Testing Preset 6 (DoorBell)...
+  Testing Preset 5 (Crystal)...[POLYPHONY] Active voices: 6
+ [OK]
+  Testing Preset 6 (DoorBell)...[POLYPHONY] Active voices: 7
+
 [BEAT 51] Starting...
  [OK]
-  Testing Preset 7 (Fifths)... [OK]
+  Testing Preset 7 (Fifths)...[POLYPHONY] Active voices: 8
+ [OK]
   Testing Preset 8 (Fight)...
 [BEAT 52] Starting...
  [OK]
@@ -328,36 +329,12 @@
   Testing Preset 27 (Vibes)...
 [BEAT 63] Starting...
  [OK]
-  Testing Preset 28 (Debug)...[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
-[DIAG] Partial 3: va2=-0.99999493 inv_a0=0.00000251 inv_decay=397949.65625000 d_eff=0.00 d_raw=0.02 d_mod=60802224.0000
-[DIAG] Partial 4: va2=-1.00000000 inv_a0=0.00000003 inv_decay=38353612.00000000 d_eff=0.00 d_raw=0.02 d_mod=5859999744.0000
-[DIAG] Partial 1: va2=-1.00000000 inv_a0=0.00000001 inv_decay=79868912.00000000 d_eff=0.00 d_raw=0.02 d_mod=12203069440.0000
- [OK]
+  Testing Preset 28 (Debug)... [OK]
   [PASS] All 29 presets loaded and rendered successfully.
 
 [Test 20] Preset Retrigger Instability (11 & 14)...
   Testing Preset 11...
-  Initializing mock sample data...
+[POLYPHONY] Active voices: 1
 
 [BEAT 64] Starting...
     Trigger 0 Peak: 0 (Voices Stacking)
@@ -415,62 +392,54 @@
     Trigger 15 Peak: 0 (Voices Stacking)
     [OK] Preset 11 stable.
   Testing Preset 14...
-[POLYPHONY] Active voices: 1
 
 [BEAT 80] Starting...
-    Trigger 0 Peak: 1.6644e-14 (Voices Stacking)
-[POLYPHONY] Active voices: 2
+    Trigger 0 Peak: 4.93415e-14 (Voices Stacking)
 
 [BEAT 81] Starting...
-    Trigger 1 Peak: 1.0198e-14 (Voices Stacking)
-[POLYPHONY] Active voices: 3
+    Trigger 1 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 82] Starting...
-    Trigger 2 Peak: 8.12106e-15 (Voices Stacking)
-[POLYPHONY] Active voices: 4
+    Trigger 2 Peak: 4.91905e-14 (Voices Stacking)
 
 [BEAT 83] Starting...
-    Trigger 3 Peak: 6.96318e-15 (Voices Stacking)
-[POLYPHONY] Active voices: 5
+    Trigger 3 Peak: 4.91907e-14 (Voices Stacking)
 
 [BEAT 84] Starting...
-    Trigger 4 Peak: 6.20529e-15 (Voices Stacking)
-[POLYPHONY] Active voices: 6
+    Trigger 4 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 85] Starting...
-    Trigger 5 Peak: 5.64305e-15 (Voices Stacking)
-[POLYPHONY] Active voices: 7
+    Trigger 5 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 86] Starting...
-    Trigger 6 Peak: 5.21294e-15 (Voices Stacking)
-[POLYPHONY] Active voices: 8
+    Trigger 6 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 87] Starting...
-    Trigger 7 Peak: 4.87379e-15 (Voices Stacking)
+    Trigger 7 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 88] Starting...
-    Trigger 8 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 8 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 89] Starting...
-    Trigger 9 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 9 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 90] Starting...
-    Trigger 10 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 10 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 91] Starting...
-    Trigger 11 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 11 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 92] Starting...
-    Trigger 12 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 12 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 93] Starting...
-    Trigger 13 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 13 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 94] Starting...
-    Trigger 14 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 14 Peak: 4.91906e-14 (Voices Stacking)
 
 [BEAT 95] Starting...
-    Trigger 15 Peak: 4.82972e-15 (Voices Stacking)
+    Trigger 15 Peak: 4.91906e-14 (Voices Stacking)
     [OK] Preset 14 stable.
   [PASS] Retrigger test passed.
 
@@ -529,31 +498,29 @@
 
 [Test 23] Partial Wake-up Instability...
 [POLYPHONY] Active voices: 1
-[POLYPHONY] Active voices: 0
 
 [BEAT 116] Starting...
   [PASS] Partial wake-up stable.
 
 [Test 24] Polyphony Accumulation (4-Beat Hardware Bug Replication)
   Replicating exact hardware crash scenario...
-  Beat 1: [POLYPHONY] Active voices: 1
-
+  Beat 1: 
 [BEAT 117] Starting...
-Max=5.4927e-15
+Max=7.99548e-15
   Beat 2: [POLYPHONY] Active voices: 2
 
 [BEAT 118] Starting...
-Max=4.09302e-15
+Max=5.97337e-15
   Beat 3: [POLYPHONY] Active voices: 3
 
 [BEAT 119] Starting...
-Max=3.25632e-15
+Max=4.75148e-15
   Beat 4: [POLYPHONY] Active voices: 4
 
 [BEAT 120] Starting...
-Max=2.79103e-15
-  Amplitude variation: 1.96799x
-  [PASS] 4-beat polyphony stable (max variation: 1.96799x)
+Max=4.07229e-15
+  Amplitude variation: 1.96339x
+  [PASS] 4-beat polyphony stable (max variation: 1.96339x)
 
 [Test 25] Decay Scaling Verification
   Verifying 0.01f scaling is applied...
@@ -661,7 +628,7 @@ Max=0
 [BEAT 144] Starting...
 
 [BEAT 145] Starting...
-       Short Bell: Max=5.55643e-15 - OK
+       Short Bell: Max=1.8871e-14 - OK
 
 [BEAT 146] Starting...
 
@@ -670,7 +637,7 @@ Max=0
 [BEAT 148] Starting...
 
 [BEAT 149] Starting...
-      Long String: Max=3.95069e-15 - OK
+      Long String: Max=1.39541e-14 - OK
 
 [BEAT 150] Starting...
 
@@ -688,7 +655,7 @@ Max=0
 [BEAT 156] Starting...
 
 [BEAT 157] Starting...
-       Wood Block: Max=1.57237e-15 - OK
+       Wood Block: Max=4.04215e-15 - OK
 
 [BEAT 158] Starting...
 
@@ -697,7 +664,7 @@ Max=0
 [BEAT 160] Starting...
 
 [BEAT 161] Starting...
-       Glass Bowl: Max=6.53326e-15 - OK
+       Glass Bowl: Max=2.15329e-14 - OK
   [PASS] All realistic presets stable
 
 [Test 32] Long Decay Instability (10s run)...
@@ -760,7 +727,7 @@ Max=0
 [BEAT 183] Starting...
 
 [BEAT 184] Starting...
-  [PASS] Survived 16 triggers (Voice Stealing). Max level: 5.4927e-15
+  [PASS] Survived 16 triggers (Voice Stealing). Max level: 7.99548e-15
 
 [Test 34] DC Offset Stability...
   Injecting DC offset to check for integrator explosion...
@@ -803,13 +770,7 @@ Max=0
   [PASS] No denormals found. Output cuts to clean zero.
 
 [Test 37] Limiter Integer Overflow (Crash Reproducer)...
-  [PASS] Limiter survived the massive input. Output: 1.41921e+06
-
-[Test 39] Limiter Release Coefficient Precision...
-  e_expff relcoef = 0.9999389648 [OK]
-  expf   relcoef = 0.9999305606 [OK]
-  After 1s release: initial=0.006510276813 final=0.008413924836
-  [PASS] Limiter releases gain reduction correctly
+  [PASS] Limiter survived the massive input. Output: 1.41938e+06
 
 [Test 38] Single-Threaded Hot-Load Stress Test...
 [POLYPHONY] Active voices: 2
@@ -822,8 +783,91 @@ Max=0
 
 [BEAT 199] Starting...
   [PASS] Engine is perfectly stable under extreme Hot-Loading.
-         Max amplitude reached: 0.05474752933
+         Max amplitude reached: 0.0957403
+
+[Test 39] Limiter Release Coefficient Precision...
+  e_expff relcoef = 0.9999389648 [OK]
+  expf   relcoef = 0.9999305606 [OK]
+  After 1s release: initial=0.006510276813 final=0.008577918634
+  [PASS] Limiter releases gain reduction correctly
+
+[Test 40] F#2 Low-Frequency Cosine Overshoot...
+[POLYPHONY] Active voices: 1
+
+[BEAT 200] Starting...
+
+[BEAT 201] Starting...
+  [PASS] F#2 is mathematically stable.
+
+[Test 41] Zero-Padded Model Division by Zero...
+  [PASS] Engine safely handled zero-padded model.
+
+[Test 42] Sub-Bass Note Clamping & Live Sweep...
+  [PASS] Note allowed below 36.
+  [PASS] Live pitch sweep works.
+
+[Test 43] UI vs DSP Scaling (Decay Explosion)...
+  [PASS] Decay scaling is correct.
+
+[Test 44] Zero-Padded Array NaN Explosion...
+  [PASS] Engine handled zero-padding safely.
+
+[Test 99] Instability Investigation (DIAG mode)...
+  Triggering note (Decay=1000, Material=-10)...
+
+[BEAT 202] Starting...
+
+[BEAT 203] Starting...
+
+[BEAT 204] Starting...
+
+[BEAT 205] Starting...
+
+[BEAT 206] Starting...
+
+[BEAT 207] Starting...
+
+[BEAT 208] Starting...
+
+[BEAT 209] Starting...
+
+[BEAT 210] Starting...
+
+[BEAT 211] Starting...
+
+[BEAT 212] Starting...
+
+[BEAT 213] Starting...
+
+[BEAT 214] Starting...
+
+[BEAT 215] Starting...
+
+[BEAT 216] Starting...
+
+[BEAT 217] Starting...
+  [PASS] No explosion detected in this run.
+
+[Test 100] Debug Program Stability...
+  Triggering note...
+
+[BEAT 218] Starting...
+
+[BEAT 219] Starting...
+
+[BEAT 220] Starting...
+
+[BEAT 221] Starting...
+
+[BEAT 222] Starting...
+
+[BEAT 223] Starting...
+
+[BEAT 224] Starting...
+
+[BEAT 225] Starting...
+  [PASS] Debug program stable.
 
 â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
-â•‘                  ALL TESTS CTotal execution time: 56330 ms                      â•‘
+â•‘                  ALL TESTS CTotal execution time: 64914 ms                      â•‘
 â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

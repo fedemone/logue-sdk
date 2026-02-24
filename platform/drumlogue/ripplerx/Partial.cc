@@ -62,7 +62,7 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
 
     // 4. Hit modulation
     float hit_mod = fminf(0.5f, hit + vel * vel_hit * 0.5f);
-    float amp_k = 35.0f * fabsf(fast_sin(M_PI * (float)k * hit_mod));
+    float amp_k = 35.0f * fabsf(fastersinfullf(M_PI * (float)k * hit_mod));
 
     // 5. Filter Coefficients
     float omega = f_k * inv_srate_2pi;
@@ -76,7 +76,7 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     // These vectors are used directly by the inlined process() in the header
     vb0 = vdupq_n_f32(_b0 * inv_a0);
     vb2 = vdupq_n_f32(-_b0 * inv_a0);
-    va1 = vdupq_n_f32(-2.0f * fast_cos(omega) * inv_a0);
+    va1 = vdupq_n_f32(-2.0f * fastercosfullf(omega) * inv_a0);
     va2 = vdupq_n_f32((1.0f - inv_decay) * inv_a0);
 }
 

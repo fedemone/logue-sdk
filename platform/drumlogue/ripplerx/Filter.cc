@@ -7,8 +7,8 @@ void Filter::lp(float32_t srate, float32_t freq, float32_t q)
     float32_t w0 = M_TWOPI * fminf(freq / srate, 0.49f);
 
     // Optimize: Compute sin/cos.
-    float32_t cos_w0 = fast_cos(w0);
-    float32_t alpha = fast_sin(w0) * 0.5f / q; // / (2*q) -> * 0.5 / q
+    float32_t cos_w0 = fastercosfullf(w0);
+    float32_t alpha = fastersinfullf(w0) * 0.5f / q; // / (2*q) -> * 0.5 / q
 
     float32_t inv_a0 = 1.0f / (1.0f + alpha);
 
@@ -25,11 +25,11 @@ void Filter::lp(float32_t srate, float32_t freq, float32_t q)
 void Filter::bp(float32_t srate, float32_t freq, float32_t q)
 {
     float32_t w0 = M_TWOPI * fminf(freq / srate, 0.49f);
-    float32_t alpha = fast_sin(w0) * 0.5f / q;
+    float32_t alpha = fastersinfullf(w0) * 0.5f / q;
 
     float32_t inv_a0 = 1.0f / (1.0f + alpha);
 
-    a1 = -2.0f * fast_cos(w0) * inv_a0;
+    a1 = -2.0f * fastercosfullf(w0) * inv_a0;
     a2 = (1.0f - alpha) * inv_a0;
 
     // Bandpass Constant Peak Gain (0dB)
@@ -41,8 +41,8 @@ void Filter::bp(float32_t srate, float32_t freq, float32_t q)
 void Filter::hp(float32_t srate, float32_t freq, float32_t q)
 {
     float32_t w0 = M_TWOPI * fminf(freq / srate, 0.49f);
-    float32_t cos_w0 = fast_cos(w0);
-    float32_t alpha = fast_sin(w0) * 0.5f / q;
+    float32_t cos_w0 = fastercosfullf(w0);
+    float32_t alpha = fastersinfullf(w0) * 0.5f / q;
 
     float32_t inv_a0 = 1.0f / (1.0f + alpha);
 

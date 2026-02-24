@@ -49,13 +49,13 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 2: Mallet
         // Mallet resonance
-        {0, 10, 0, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
+        {0, 1000, 500, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Mallet stiffness
-        {100, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},
+        {0, 1000, 250, 250, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},
         // Velocity Mallet Resonance
-        {0, 1000, 0, 0, k_unit_param_type_none, 3, 0, 0, {"VlMllRes"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
         // Velocity Mallet Stiffness
-        {0, 1000, 0, 0, k_unit_param_type_none, 3, 1, 0, {"VlMllStif"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
 
         // Page 3: Resonator A-I (extended ranges encode Resonator B when exceeding A range)
         //  Model - "String", "Beam", "Squared", "Membrane", "Plate", "Drumhead", "Marimba", "Open Tube", "Closed Tube"
@@ -66,10 +66,10 @@ const __unit_header unit_header_t unit_header = {
         {0, 9, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
         // Decay
         // Span 200 -> A: 0..200 (0.0 to 20.0s), B: 201..400 (0.0 to 20.0s)
-        {0, 400, 50, 10, k_unit_param_type_none, 1, 1, 0, {"Dkay"}},
+        {0, 2000, 250, 250, k_unit_param_type_none, 1, 1, 0, {"Dkay"}},
         // Material (-1.0, 1.0)
         //  Range extended by span (20): [-10..10] -> A, (10..30] -> B (mapped in code)
-        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Mterl"}},
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
 
         // TODO: use ratio in order to update the model?
 
@@ -83,7 +83,7 @@ const __unit_header unit_header_t unit_header = {
         {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // Inharmonic
         //  Span 9999 -> A: 1..10000, B: 10001..19999 (mapped in code)
-        {1, 19999, 3000, 1, k_unit_param_type_none, 4, 100, 0, {"Inharm"}},
+        {1, 19999, 3000, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
 
         // Page 5: Resonator A-III (extended) + Noise-I
         // filter cutoff (scaled to fit int16)

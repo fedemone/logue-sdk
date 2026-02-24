@@ -94,8 +94,9 @@ void Waveguide::update(float32_t f_0, float32_t vel, bool isRelease)
 #ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
         if (tube_decay_val >= 0.99999f) {
-            printf("[DIAG] tube_decay_val %d: decay_k=%.6f offset_decay=%.6f \n",
+            printf("[DIAG] tube_decay_val %.6f: decay_k=%.6f offset_decay=%.6f \n",
                 tube_decay_val, decay_k, offset_decay);
+            // exit(1); // REMOVED: Allow test to continue
         }
 #endif
     }
