@@ -17,7 +17,10 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     union { float f; int32_t i; } u_inharm;
     u_inharm.i = (int32_t)(offset_inharm * 8388608.0f) + 1065353216;
 
-    float inharm_k = fminf(1.0f, inharm * u_inharm.f) - 0.0001f;
+    // [CRITICAL FIX 1] Prevent negative values before the Square Root!
+    float inharm_raw = inharm * u_inharm.f;
+    float inharm_k = fmaxf(0.0f, fminf(1.0f, inharm_raw) - 0.0001f);
+
     float r_minus_1 = ratio - 1.0f;
     inharm_k = fasterSqrt(1.0f + inharm_k * (r_minus_1 * r_minus_1));
 
@@ -29,6 +32,13 @@ void Partial::update(float32_t f_0, float32_t ratio, float32_t ratio_max, float3
     u_decay.i = (int32_t)(offset_decay * 8388608.0f) + 1065353216;
 
     float decay_k = fminf(c_decay_max, decay * u_decay.f);
+
+    // debug
+    m_f_k = f_k;
+    m_decay_k = decay_k;
+
+
+
     if (isRelease) decay_k *= rel;
 
     // Boundary check for stability and Nyquist

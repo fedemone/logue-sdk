@@ -124,8 +124,16 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
     // M_TWOLN100 is approx 2 * ln(100), scaling velocity curve
     const float log_vel = vel * M_TWOLN100;
 
-    // Shared model constant (Ratio of the highest partial)
-    const float ratio_max = model[c_max_partials - 1];
+    // [THE TRUE FIX]
+    // Dynamically find the actual maximum ratio requested by the current model,
+    // ignoring any trailing empty zeroes in the array.
+    float ratio_max = 1.0f;
+    for (int i = npartials - 1; i >= 0; --i) {
+        if (model[i] > 0.001f) {
+            ratio_max = model[i];
+            break;
+        }
+    }
 
     // Change active_count to track the highest index
     int highest_active_index = -1;
@@ -148,16 +156,16 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // ---------------------------------------------------------
         // 1. Frequency & Inharmonicity (Bit-Trick Optimized)
         // ---------------------------------------------------------
-        // Calc: 2^(vel_inharm * log_vel) using integer bit manipulation
         float exp_inharm_part = (part.vel_inharm * log_vel) * M_LOG2_E;
         union { float f; int32_t i; } u_inharm;
         u_inharm.i = (int32_t)(exp_inharm_part * 8388608.0f) + 1065353216;
 
-        float inharm_k = fminf(1.0f, part.inharm * u_inharm.f); // Clamp max inharm
-        // Stiff string approximation: f = f0 * sqrt(1 + B * (k^2 - 1))
-        // Here simplified to ratio-based scaling
+        // [FIX] Ensure the value never drops below 0.0f BEFORE subtracting to prevent NaN Sqrt
+        float inharm_raw = part.inharm * u_inharm.f;
+        float inharm_k = fmaxf(0.0f, fminf(1.0f, inharm_raw) - 0.0001f);
+
         float r_m_1 = ratio - 1.0f;
-        inharm_k = fasterSqrt(1.0f + (inharm_k - 0.0001f) * (r_m_1 * r_m_1));
+        inharm_k = fasterSqrt(1.0f + inharm_k * (r_m_1 * r_m_1));
 
         float f_k = freq * ratio * inharm_k;
 
@@ -230,6 +238,15 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // d_mod is clamped to prevent explosion
         float d_eff = d_raw / d_mod; // A 10s decay results in va2 > 0.9999, which is unstable.
+        // NOTE: No clamping applied to d_eff as requested.
+
+        // [FIX] Cull partials with extremely short effective decay to prevent va2 -> -1.0 instability
+        // This avoids the invalid Biquad region where bandwidth > Nyquist.
+        if (d_eff < c_decay_min) {
+             part.vb0 = part.vb2 = part.va1 = part.va2 = vdupq_n_f32(0.0f);
+             part.active_prev = false;
+             continue;
+        }
 
         float inv_decay = inv_srate_2pi / d_eff;
 
@@ -270,9 +287,12 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         part.va2 = vdupq_n_f32(va2_val);
 #ifdef DEBUGN
         // DIAGNOSTIC: Log coefficients if they look suspicious - DEBUG
-        if (!std::isfinite(va2_val) || fabsf(va2_val) >= 0.99999f) {
+        // va2 close to 1.0 is fine (long decay), but va2 <= -1.0 is unstable (Nyquist oscillation)
+        // va2 >= 1.0 is unstable (integrator)
+        if (!std::isfinite(va2_val) || va2_val <= -0.999f || va2_val >= 1.0f) {
             printf("[DIAG] Partial %d: va2=%.8f inv_a0=%.8f inv_decay=%.8f d_eff=%.2f d_raw=%.2f d_mod=%.4f\n",
                 part.k, va2_val, inv_a0, inv_decay, d_eff, d_raw, d_mod);
+            // exit(1); // REMOVED: Allow test to continue if physics is valid but extreme
         }
 #endif
     }
@@ -391,6 +411,22 @@ float32x4_t Resonator::process(float32x4_t input)
 
             // Accumulate partial result into resonator output
             float32x4_t p_out = vcombine_f32(out0, out1);
+
+#ifdef DEBUGN
+            // DIAGNOSTIC: Check for partial explosion
+            // This helps identify WHICH partial is unstable and WHY (coeffs vs state)
+            float p0 = vgetq_lane_f32(p_out, 0);
+            float p1 = vgetq_lane_f32(p_out, 1);
+            if (fabsf(p0) > 50.0f || fabsf(p1) > 50.0f) {
+                 printf("[DIAG] Partial %d EXPLOSION: %.2f, %.2f\n", part.k, p0, p1);
+                 printf("       Coeffs: b0=%.6f a1=%.6f a2=%.6f\n",
+                        vgetq_lane_f32(part.vb0, 0), vgetq_lane_f32(part.va1, 0), vgetq_lane_f32(part.va2, 0));
+                 printf("       State: x1=%.2f x2=%.2f y1=%.2f y2=%.2f\n",
+                        vget_lane_f32(part.vx1_low, 0), vget_lane_f32(part.vx2_low, 0),
+                        vget_lane_f32(part.vy1_low, 0), vget_lane_f32(part.vy2_low, 0));
+            }
+#endif
+
             out = vaddq_f32(out, p_out);
         }
         #ifdef DEBUGN

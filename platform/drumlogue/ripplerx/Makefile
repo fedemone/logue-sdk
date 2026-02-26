@@ -194,7 +194,7 @@ ifeq ($(USE_VECTORIZATION),yes)
   OPT += -ftree-vectorize
   OPT += -ftree-vectorizer-verbose=4
   OPT += -funsafe-math-optimizations ## denormals assumed 0, so breaks IEEE754
-  DDEF += -D__NEON__
+  DDEFS += -D__NEON__
 endif
 DDEFS += -D__arm__ -D__cortex_a7__
 

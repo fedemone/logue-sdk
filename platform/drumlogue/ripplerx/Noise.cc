@@ -43,7 +43,7 @@ void Noise::initFilter() {
 
     // Resonance
     float32_t res = q + (vel * vel_q * c_noise_filter_res_range);
-    res = fminf(4.0f, fmaxf(0.707f, res));
+    res = fminf(3.9f, fmaxf(0.707f, res)); // [FIX] Cap resonance < 4.0 to prevent self-oscillation explosion
 
     // Logic Dispatch
     filter_active = (fmode == 1) || (fmode == 0 && f < 20000.0f) || (fmode == 2 && f > 20.0f);

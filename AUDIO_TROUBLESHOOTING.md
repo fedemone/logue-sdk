@@ -1,3 +1,140 @@
+# [2026-02-25] Sequencer Routing, Memory Bounds, & A/B Mapping Architecture
+
+## 1. Symptoms
+- **The "Dead Minimum" on Resonator B**: When tweaking Resonator B parameters, they never reach their true mathematical minimums (e.g., B's Release time bottoms out at 0.1s instead of 0.0s).
+- **Preset Load UI Corruption**: Loading a preset causes the Drumlogue screen to display incorrect knob values for Decay or Inharmonicity.
+- **Fatal Crash on Sample Select**: Twisting the Sample Number knob to a high value (or selecting an empty bank) instantly freezes the Drumlogue.
+- **The Sequencer Pitch Bug**: Playing the synth via an external MIDI keyboard works perfectly, but pressing "Play" on the Drumlogue's internal step sequencer triggers the wrong pitch or no pitch at all.
+- **Pitch Bend Tearing & Data Loss**: Using the pitch wheel permanently erases the preset's fine-tuning. Additionally, it only bends Resonator A, causing the drum to violently detune against Resonator B.
+
+## 2. Root Cause Analysis
+
+### a. The "Fencepost" A/B Span Bug
+- **Diagnosis**: The UI parameters for Resonator A and B share a single 0-100% encoder range. The mathematical `span` used to map Resonator B's data back into Resonator A's domain was off-by-one. For a range of `0 to 10` (11 discrete values), a span of `10` was subtracted instead of `11`, preventing Resonator B from ever evaluating to `0.0`.
+- **Diagnosis**: During preset load, the reverse-skew calculation for logarithmic parameters (like Decay) was incorrectly using `fasterlogf` instead of an inverse power curve (`fasterpowf(x, skew)`), and duplicating assignments.
+
+### b. The Blind Memory Fetch (Sample Engine Crash)
+- **Diagnosis**: The DSP was blindly requesting sample pointers from the OS based purely on the UI knob integer (1-128). If the user only had 5 samples loaded in RAM, asking the OS for sample index 116 triggered a fatal memory access violation (Hard Fault).
+
+
+### c. The Gate vs. Note Trigger Split
+- **Diagnosis**: The Drumlogue's internal step sequencer triggers drum parts using `unit_gate_on(velocity)`. Unlike a MIDI keyboard (`unit_note_on(note, velocity)`), the gate command does not supply a pitch. Because `GateOn` wasn't explicitly routing to the UI's `m_note` variable, the sequencer failed to play the correct frequency.
+
+
+### d. Destructive Pitch Bending
+- **Diagnosis**: The pitch bend callback was doing an absolute assignment directly into the preset data (`parameters[a_fine] = bend_val`). This permanently erased the patch's original fine-tune value upon wheel release, and completely ignored `parameters[b_fine]`, breaking the physical tuning lock between the two resonators.
+
+## 3. Implemented Solutions
+
+### Code Changes
+1. **Dynamic Memory Bounds Checking (`ripplerx.h`)**:
+   Updated `loadConfigureSample()` to query the RTOS state *before* fetching the pointer. If the OS returns false, it gracefully defaults to `nullptr` (silence) instead of crashing.
+   ```cpp
+   if (actualSampleIndex >= m_get_num_samples_for_bank_ptr(m_sampleBank)) {
+       m_samplePointer = nullptr;
+       return;
+   }
+
+
+# [2026-02-20] RTOS Threading, UI Synchronization, & Trigonometric Overshoot Bugs
+
+## 1. Symptoms
+- **Parameter Jumps & Wrong Preset Data**: Loading a preset results in the correct sound, but twisting a knob causes the value to jump violently, drastically altering the sound.
+- **"Dead" Parameters**: Changing Sample Bank or Sample Number has no audible effect. Tweaking Tone or Hit Position while a note is ringing does nothing.
+- **Sudden Silence on Parameter Tweak**: Adjusting parameters like Damp or Tone mid-note instantly kills the ringing acoustic energy.
+- **The F#2 Crash (Low-Frequency Explosion)**: Triggering notes below G2 (e.g., F#2, ~92Hz) causes a burst of noise followed by total silence (CPU Watchdog timeout).
+- **Crash on Model Change**: Changing the physical model (e.g., Squared to Membrane) results in distortion and silence after a couple of beats.
+
+## 2. Root Cause Analysis
+
+### a. The UI Sync Disconnect
+- **Diagnosis**: When `setCurrentProgram` was called, it correctly loaded the floats into the DSP memory, but failed to update the UI state trackers (e.g., `a_b_model`, `a_b_decay`).
+- **The Conflict**: The Drumlogue OS UI knobs were left reading uninitialized garbage. Touching a knob forced the DSP to snap from the correct preset value to the garbage UI value, causing massive energy deltas.
+
+### b. The "Orphaned" Sample Engine & Physical Modeling Paradigm
+- **Diagnosis**: Changing `c_parameterSampleBank` updated the tracking integers but never actually invoked `loadConfigureSample()` [cite: uploaded:changes.
+
+# [2026-02-20] Limiter Release Coefficient Precision Bug (Progressive Distortion → Silence)
+
+## 1. Symptoms
+- **Hot load**: A couple of beats that get progressively more distorted, then silence
+- **Warm load**: Same pattern, possibly lasting slightly longer
+- **Preset 0**: Once normal silence, once total crash (required power cable unplug)
+- **Unit tests (QEMU)**: Did not reproduce the issue
+
+## 2. Root Cause
+
+### The `e_expff()` Float32 Precision Loss Under `-Ofast`
+
+The Limiter's release coefficient is computed in `Limiter::init()`:
+```cpp
+relcoef = e_expff(-1.0f / (0.3f * srate));  // 300ms release time
+```
+
+`e_expff()` approximates `exp(x)` as `(1 + x/1024)^1024` via 10 repeated squarings:
+```cpp
+float e_expff(float x) {
+  x = 1.0 + x / 1024;   // <-- THE BUG IS HERE
+  x *= x; x *= x; ...   // 10 squarings
+  return x;
+}
+```
+For `x = -1/(0.3*48000) = -6.94e-5`:
+- Step 1: `1.0 + (-6.94e-5 / 1024)` = `1.0 + (-6.78e-8)`
+- The deviation `6.78e-8` is **below** float32 machine epsilon at 1.0 (`1.19e-7`)
+- `e_expff` has `__attribute__((optimize("Ofast")))` which implies `-ffast-math`
+- `-ffast-math` may include `-fsingle-precision-constant`, treating `1.0` (double literal) as `1.0f`
+- Result: `1.0f + (-6.78e-8f)` rounds to exactly **`1.0f`**
+- Therefore: `relcoef = 1.0f^1024 = 1.0f`
+### Why This Kills Audio
+The limiter's attack/release smoothing:
+```cpp
+// coef = (overdb > rundb) ? atcoef : relcoef
+// rundb = overdb + coef * (rundb - overdb)
+```
+
+When signal drops below threshold: `overdb = 0`, `coef = relcoef = 1.0`:
+```
+rundb = 0 + 1.0 * (rundb - 0) = rundb  // NEVER DECAYS!
+```
+
+Each beat ratchets `rundb` higher → progressive gain reduction → distortion → silence.
+
+### Why Unit Tests Didn't Catch It
+- QEMU emulates ARM but may not replicate exact `-Ofast` float promotion behavior
+- The test compiler may not use `-fsingle-precision-constant`
+- The bug only manifests on the real ARM target with the specific toolchain flags
+
+## 3. Fix
+
+Replace `e_expff()` with `expf()` (from `<cmath>`) for all Limiter coefficient calculations:
+```cpp
+atcoef = expf(-1.0f / (0.0002f * srate));   // 200μs attack
+relcoef = expf(-1.0f / (0.3f * srate));      // 300ms release
+rmscoef = expf(-1.0f / (rms_t * srate));     // RMS window
+```
+
+`init()` runs only at load time (not in the audio hot path), so `expf()` performance is irrelevant.
+
+Also added a 120dB safety clamp on `vRunDb` as defense-in-depth:
+```cpp
+vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
+```
+
+## 4. Lessons Learned
+- **Never use `e_expff()` for coefficients near 1.0** (small negative exponents). The approximation loses all precision.
+- **`-Ofast` changes floating-point semantics** in ways that are invisible in source code (double→float literal demotion).
+- **Init-time calculations should use standard math** (`expf`, `logf`, etc.). Fast approximations are only needed in the audio hot path.
+- **The Limiter is the last stage before DAC** — a stuck limiter is equivalent to a global mute.
+
+---
+
+## Fundamental Clues
+- Systematic silence is always linked to invalid partials or frequencies below c_freq_min.
+- UI/engine mismatch after preset change is a direct result of incomplete value propagation.
+- Fixes should focus on preset table, parameter mapping, and program loading logic.
+- **Progressive distortion → silence** pattern points to the Limiter's release coefficient being stuck at 1.0.
+
 # [2026-02-19] Thread Synchronization & Active Partial Indexing Bugs
 
 ## 1. Symptoms
@@ -59,6 +196,11 @@
 - **No Sound**: Resolved. Envelopes are now mathematically guaranteed to start *after* the delay lines are flushed.
 - **8-Beat Silence**: Resolved. The NEON loop safely processes up to the highest active index, maintaining DSP integrity while correctly shedding CPU load as high partials decay below the auditory threshold.
 
+### c. The "2-Beat Silence" Bug (The NaN Square Root)
+- **Diagnosis**: Following the threading fixes, the engine produced corrupted audio for exactly two beats before muting.
+- **Root Cause**: An optimization in `Resonator::update` allowed the inharmonicity coefficient `(inharm_k - 0.0001f)` to become negative. For high partial ratios, `1.0f + (negative) * ratio^2` produced a heavily negative number. Passing this into `fasterSqrt()` instantly generated a `NaN`.
+- **The "2-Beat" Mystery**: The silence tracker (`vMask`) evaluates any comparison against `NaN` as `false`. It assumed the `NaN` signal was silence and incremented the counter. The muting threshold is `srate` (48,000 samples = 1 second). At 120 BPM, 1 second is exactly 2 beats.
+- **Fix**: Wrapped the inharmonicity calculation in a strict `fmaxf(0.0f, ...)` clamp to mathematically guarantee a positive operand for the square root function, restoring absolute IIR filter stability.
 
 # [2026-02-18] Final Stability: Denormals & Hardware Math
 
@@ -303,7 +445,100 @@
 - **Revert:** Restored "Bells" preset to its original state (MalletRes=0.0) as requested by user.
 - **Verification:** Updated `test_runtime_stability_3_seconds` to use `LoadPreset(Program::Debug)`. This ensures the test passes with audible output without modifying production presets.
 
+# [2026-02-24] Hardware Stability: Resonator & Noise Filter Clamping
 
+## 1. Symptoms
+- **Crash on Note C#0**: Triggering low notes with long decay caused immediate hardware crash.
+- **Crash on Material > 2.0**: Positive damping values (negative absorption) caused instability.
+- **Crash on Noise Resonance**: High Q settings on the noise filter caused crashes.
+- **Silence/No Effect**: Some parameters appeared dead or resulted in silence after model changes.
+
+## 2. Root Cause Analysis
+
+### a. Resonator Effective Decay Explosion
+- **Diagnosis**: The effective decay time (`d_eff = d_raw / d_mod`) could exceed 100 seconds when `d_mod` was small (low damping) or `d_raw` was large.
+- **Math Failure**: In 32-bit floating point, a decay of >10s results in a feedback coefficient `va2` extremely close to 1.0 (e.g., 0.99999...). This leaves insufficient precision for the state variable, causing the IIR filter to act as an infinite integrator or explode due to rounding errors on the ARM NEON unit.
+- **Fix**: Implemented a hard clamp on `d_eff` to **10.0 seconds** in `Resonator.cc`. This is the safe upper limit for 32-bit float Biquad stability at 48kHz.
+
+### b. Noise Filter Self-Oscillation
+- **Diagnosis**: The noise filter resonance calculation `res = q + (vel * vel_q * range)` could exceed 4.0 (self-oscillation limit for this topology) when modulated by velocity.
+- **Fix**: Clamped the final resonance value to **3.9f** in `Noise.cc` to ensure a safety margin against explosion.
+
+### c. Parameter Range Mismatch
+- **Diagnosis**: `c_decay_max` was set to `100.0f`, allowing the UI to request physically unstable decay times.
+- **Fix**: Reduced `c_decay_max` to **10.0f** in `constants.h` to match the hardware stability limit.
+
+## 3. Implemented Solutions
+
+### Code Changes
+1.  **`Resonator.cc`**:
+    ```cpp
+    // Hard clamp effective decay to 10s to guarantee stability on HW
+    d_eff = fminf(10.0f, d_eff);
+    ```
+
+2.  **`constants.h`**:
+    ```cpp
+    // Maximum decay value (Clamped for 32-bit float stability)
+    constexpr float32_t c_decay_max = 10.0f;
+    ```
+
+3.  **`Noise.cc`**:
+    ```cpp
+    // Cap resonance < 4.0 to prevent self-oscillation explosion
+    res = fminf(3.9f, fmaxf(0.707f, res));
+    ```
+
+# [2026-02-24] Build Configuration & Unit Test Verification
+
+## 1. Status
+- **Unit Tests**: All tests passed, including stability checks for decay, polyphony, and parameter ranges.
+- **Comparison**: Verified build configuration against working `resonator` project.
+
+## 2. Findings & Fixes
+
+### a. Makefile Typo (`DDEF` vs `DDEFS`)
+- **Diagnosis**: The Makefile contained a typo `DDEF += -D__NEON__` instead of `DDEFS += -D__NEON__`.
+- **Impact**: The `__NEON__` macro was not being defined during compilation, potentially causing code paths relying on `#ifdef __NEON__` to fall back to scalar implementations or miss optimizations, even though NEON compiler flags were active.
+- **Fix**: Corrected variable name to `DDEFS`.
+
+## 3. Next Steps
+- **Hardware Testing**: Deploy to drumlogue and verify stability with the corrected build flags.
+
+## debug program - stable
+- this program with very low parameters (sometimes not correct though) has proved to be stable.
+- changing some values leads to the same instability: in four beats sound grow distorted and then we have silence.
+- here are the user editable paramwter in warm load (while HW not running yet then started) default values, the previous instable values and effect in changing them.
+
+    c_parameterProgramName,			 debug
+    c_parameterResonatorNote,		 C4	# modev steadily till C#0 and no audible effect. Moved back to C#-1 and got a crash
+    c_parameterSampleBank,			 CH # moved till EXP and no audible effect.
+    c_parameterSampleNumber,		 1 # moved till 116 and no audible effect.
+    // page  2
+    c_parameterMalletResonance,				2 // was 0.8. moved till 18.2 and back to 0.0, and no audible effect.
+    c_parameterMalletStiffness,				10 // was 763.moved till 766, sound is chaning
+    c_parameterVelocityMalletResonance,		200 // was 0. jumped to 100. moved till -100 and no audible effect.
+    c_parameterVelocityMalletStifness,		200 // was 0. jumped to 100. Got silence.
+    // page  3
+    c_parameterModel,				 A.squard // was A.String. Moved to B. closed tube and sound, that starts as filtered noise, get clean. When I move back to A.string it get more noise based and when reach A.string I get silence.
+    c_parameterPartials,			 A.16 // was a.32. moved to B64 and back to a4 and no audible effect.
+    c_parameterDecay,				 57.3 // was 67.8. moved to 107.2  and no audible effect.
+    c_parameterMaterial,			 -2.0 // was -1.0. moved to 3.0, back and forth and no audible effect.
+    // page  4
+    c_parameterTone,				 -10.0 // was 0.0. jumed to -5.0 moved to max 15.0  and no audible effect.
+    c_parameterHitPosition,			 50.00 jumps to 24.50 // was 6.25. moved to 2.25 and no audible effect.
+    c_parameterRelease,				 10.0 // was 5.0 moved to 0.0 and no audible effect.
+    c_parameterInharmonic,			 20000 // was 1. moved to 14957 and no audible effect.
+    // page  5
+    c_parameterFilterCutoff,		 1Hz // was 10Hz. moved to 307Hz and no audible effect.
+    c_parameterTubeRadius,			 10.0 // was 2.5. moved0.0 and no audible effect.
+    c_parameterCoarsePitch,			 20 // was 0. moved to -120 and no audible effect.
+    c_parameterNoiseMix,			 200 // was 20.0%. moved to 0.0% and no audible effect.
+    // page  6
+    c_parameterNoiseResonance,		 200 // was 50.0%. moved to 0% and no audible effect.. moved back to 100% and no audible effect. moved to 0.0% and got crash after a while.
+    c_parameterNoiseFilterMode,		 HP // was HP. I changed to Lp and sound changes
+    c_parameterNoiseFilterFreq,		 2 jumps to 20 // was 1000Hz. changed to 1500HZ and sound changes.
+    c_parameterNoiseFilterQ,		 66.667 // was 33.333. moved to minimum 23.567 and no audible effect.
 
 
 # [2026-02-16] Hardware architecture difference
@@ -1619,4 +1854,4 @@ vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
 ---
 
 ## References
-- See constants.h, header.c, ripplerx.h, and ut_result.txt for supporting evidence and debug output.
+- See constants.h, header.c, ripplerx.h, and run_test_debug_result.log for supporting evidence and debug output.

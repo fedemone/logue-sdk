@@ -19,11 +19,11 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x5265736fU,                                // TODO - Id for this unit, should be unique within the scope of a given dev_id
     .version = 0x00010000U,                                // This unit's version: major.minor.patch (major<<16 minor<<8 patch).
     .name = "RipplerX",                                    // Name for this unit, will be displayed on device
-#ifdef DEBUGN
+// #ifdef DEBUGN
     .num_presets = 29,                                     // Number of internal presets this unit has.
-#else
-    .num_presets = 28,                                     // Number of internal presets this unit has.
-#endif
+// #else
+    // .num_presets = 28,                                     // Number of internal presets this unit has.
+// #endif
     .num_params = 24,                                      // Number of parameters for this unit, max 24
     .params = {
         // Format: min, max, center, default, type, fractional digits, frac. type (fixed/decimal), <reserved>, name
@@ -38,8 +38,8 @@ const __unit_header unit_header_t unit_header = {
         // Page 1: Program and sample selection
         // Program, will set different values for parameters
         {0, 28, 0, 13, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},  // Program::Initial
-        // Resonator note for Gate mode
-        {1, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
+        // Resonator note for Gate mode - MIDI Note 24 (C1)
+        {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         // Res Gain - NOTE: removed for the moment
         // {-240, 240, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Gain"}},
         // Sample bank
@@ -49,13 +49,13 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 2: Mallet
         // Mallet resonance
-        {0, 10, 0, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
+        {0, 1000, 500, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Mallet stiffness
-        {1, 5000, 2560, 600, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},    // set min to 1 or debug purpose. set back to 100 after
+        {100, 5000, 250, 250, k_unit_param_type_none, 10, 0, 0, {"MlltStif"}},
         // Velocity Mallet Resonance
-        {0, 1000, 0, 0, k_unit_param_type_none, 3, 0, 0, {"VlMllRes"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
         // Velocity Mallet Stiffness
-        {0, 1000, 0, 0, k_unit_param_type_none, 3, 1, 0, {"VlMllStif"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
 
         // Page 3: Resonator A-I (extended ranges encode Resonator B when exceeding A range)
         //  Model - "String", "Beam", "Squared", "Membrane", "Plate", "Drumhead", "Marimba", "Open Tube", "Closed Tube"
@@ -65,11 +65,11 @@ const __unit_header unit_header_t unit_header = {
         //  Range doubled: 0..4 -> A, 5..9 -> B (mapped in code)
         {0, 9, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
         // Decay
-        //  Range doubled: 0..1000 -> A, 1001..2000 -> B (mapped in code)
-        {0, 2000, 520, 10, k_unit_param_type_none, 1, 1, 0, {"Dkay"}},
+        // Span 200 -> A: 0..200 (0.0 to 20.0s), B: 201..400 (0.0 to 20.0s)
+        {0, 2000, 250, 250, k_unit_param_type_none, 1, 1, 0, {"Dkay"}},
         // Material (-1.0, 1.0)
         //  Range extended by span (20): [-10..10] -> A, (10..30] -> B (mapped in code)
-        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Mterl"}},
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
 
         // TODO: use ratio in order to update the model?
 
@@ -90,11 +90,11 @@ const __unit_header unit_header_t unit_header = {
         //  Original span 19980 Hz -> A: 20..20000, B: 20001..39980
         //  Scaled by 2: A: 10..10000, B: 10001..19990 (mapped back to Hz in code)
         {10, 19990, 5005, 10, k_unit_param_type_hertz, 0, 0, 0, {"LowCut"}},
-        // Tube Radius
+        // Tube Radius: 0.0 to 1.0 A tube, 1.0 to 2.0 B tube
         {0, 20, 0, 5, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
         // Coarse Pitch
-        //  Span 960 -> A: -480..480, B: 481..1440 (mapped in code)
-        {-480, 1440, 0, 0, k_unit_param_type_none, 0, 0, 0, {"CoarsPtch"}},
+        //  Span 960 -> A: -480..480, B: 481..1442 (mapped in code). NOTE 0.0 is additional value
+        {-480, 1442, 0, 0, k_unit_param_type_none, 0, 0, 0, {"CoarsPtch"}},
         // Noise Mix
         {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzMix"}},
         //TODO: vel_noise_freq and vel_noise_q should be here?
@@ -103,7 +103,7 @@ const __unit_header unit_header_t unit_header = {
         // Noise Resonance
         {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         // Noise Filter Mode: "LP", "BP", "HP" - "DEBUG"
-        {0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
+        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
         // Noise Filter Freq
         {20, 20000, 12000, 20, k_unit_param_type_hertz, 0, 0, 0, {"NzFltFrq"}},
         // Noise Filter Q

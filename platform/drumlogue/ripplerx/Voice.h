@@ -52,9 +52,16 @@ public:
     float32_t m_pending_vel;
     // [NEW] Flag to protect coefficients during UI calculations
     std::atomic<bool> m_is_updating{false};
+    std::atomic<bool> m_pending_clear{false};
 
     // [FIX] Audio thread executes memory clear AND envelope triggers simultaneously
     inline void checkAndTrigger(float32_t srate) {
+        // Safe Model-Change Flush (Empties old energy without triggering a note)
+        if (m_pending_clear.exchange(false, std::memory_order_acquire)) {
+            resA.clear();
+            resB.clear();
+        }
+        // Safe Note Trigger
         if (m_pending_trigger.exchange(false, std::memory_order_acquire)) {
             // 1. Safe Memory Flush
             resA.clear();

@@ -158,8 +158,21 @@ public:
     float32x4_t m_v_gain_cached;
     float32x4_t m_v_ab_mix_cached;
     float32x4_t m_v_ab_inv_cached;
+    float_t preset_a_fine_cached;
+    float_t preset_b_fine_cached;
     inline void Render(float * __restrict outBuffer, size_t frames)
     {
+        // --- [CRITICAL FIX] Enable Flush-to-Zero (FTZ) mode ---
+        // This prevents the "Silence after decay" CPU spike on ARM NEON.
+        #if defined(__arm__) || defined(__aarch64__)
+            uint32_t fpscr;
+            __asm__ volatile ("vmrs %0, fpscr" : "=r" (fpscr));
+            if ((fpscr & (1 << 24)) == 0) {
+                fpscr |= (1 << 24); // Set Flush-to-Zero bit
+                __asm__ volatile ("vmsr fpscr, %0" : : "r" (fpscr));
+            }
+        #endif
+
         // 1. Load Global Mix Parameters into Vector Registers
         const float32_t mallet_mix      = parameters[ProgramParameters::mallet_mix];
         const float32_t mallet_res      = parameters[ProgramParameters::mallet_res];
@@ -475,7 +488,14 @@ public:
         bool resonatorChangedA = true, bool resonatorChangedB = true,
         bool couplingChanged = true) {
 
+        // [CRITICAL FIX 1] Lock ALL voices before doing ANY shared model recalculations!
+        // This forces the audio thread to safely output silence while the UI thread does heavy math.
+        for (size_t i = 0; i < c_numVoices; ++i) {
+            voices[i].m_is_updating.store(true, std::memory_order_release);
+        }
+
         bool frequencyModelChanged = false;
+        bool modelChanged = false;
 
         // --- Model Recalculation Logic ---
         // If the model type changed, or if ratio changed for physically modeled types
@@ -488,6 +508,7 @@ public:
             }
             last_a_model = (int32_t)parameters[a_model];
             frequencyModelChanged = true;
+            modelChanged = true;
         }
 
         if (last_b_model != (int32_t)parameters[b_model]) {
@@ -499,6 +520,18 @@ public:
             }
             last_b_model = (int32_t)parameters[b_model];
             frequencyModelChanged = true;
+            modelChanged = true;
+        }
+
+        // [ADD THIS] Track partials count changes
+        bool partialsChanged = false;
+        if (last_a_partials != (int32_t)parameters[a_partials]) {
+            last_a_partials = (int32_t)parameters[a_partials];
+            partialsChanged = true;
+        }
+        if (last_b_partials != (int32_t)parameters[b_partials]) {
+            last_b_partials = (int32_t)parameters[b_partials];
+            partialsChanged = true;
         }
 
         bool updateFreqs = frequencyModelChanged || pitchChanged || couplingChanged;
@@ -557,6 +590,14 @@ public:
         for (size_t i = 0; i < c_numVoices; ++i) {
             Voice& voice = voices[i];
 
+            // [CRITICAL FIX 2] If the physical model completely changed, old energy will explode
+            // in the new filter. Command the audio thread to safely zero its memory buffers.
+            // [CRITICAL FIX] Only flush the old energy if the physical structure changes!
+            // Do NOT clear on parameter tweaks like Tone or Damp, otherwise you silence ringing notes!
+            if (modelChanged || partialsChanged) {
+                 voice.m_pending_clear.store(true, std::memory_order_release);
+            }
+
             if (noiseChanged) {
                 voice.noise.init(srate, cached.noise_mode, cached.noise_freq,
                                cached.noise_q, cached.noise_att, cached.noise_dec,
@@ -594,6 +635,9 @@ public:
             if (updateFreqs || resonatorChangedA || resonatorChangedB) {
                 voice.updateResonators(updateFreqs);
             }
+
+            // [CRITICAL FIX 3] Unlock the Audio Thread now that all math is done
+            voice.m_is_updating.store(false, std::memory_order_release);
         }
     }
 
@@ -626,31 +670,57 @@ public:
             //     break;
 
             case c_parameterResonatorNote:
-                m_note = (value < 36) ? 36 : value;
-                break;
+            // 1. Match header.c boundaries to prevent UI snapping and allow Sub-Bass
+            m_note = value;
+            if (m_note < 1) m_note = 1;
+            if (m_note > 126) m_note = 126;
+
+            // 2. [FIX] Live Pitch Sweeping
+            // Update the frequency of all active voices immediately
+            for (size_t i = 0; i < c_numVoices; ++i) {
+                // We only need to update voices that are currently alive
+                if (voices[i].isPressed || voices[i].isRelease) {
+                    voices[i].note = m_note;
+                    voices[i].freq = voices[i].note2freq(m_note);
+                }
+            }
+
+            // 3. Command the Audio Thread to recalculate the physical models safely
+            pitchChanged = true;
+            break;
 
             case c_parameterSampleBank:
-                if ((size_t)value < c_sampleBankElements) m_sampleBank = value;
+                if ((size_t)value < c_sampleBankElements) {
+                    m_sampleBank = value;
+                    loadConfigureSample(); // [FIX] Actually load the sample pointer!
+                }
                 break;
 
             case c_parameterSampleNumber:
                 m_sampleNumber = (value <= 0 || value > 128) ? 1 : value;
+                loadConfigureSample(); // [FIX] Actually load the sample pointer!
                 break;
 
             case c_parameterMalletResonance:
-                parameters[mallet_res] = value / 10.0f; // header range 0-10, maps to 0.0-1.0
+                parameters[mallet_res] = value / 1000.0f; // header range 0-1000, maps to 0.0-1.0
                 break;
 
-            case c_parameterMalletStiffness:
-                parameters[mallet_stiff] = (float)value;
+            case c_parameterMalletStiffness: {
+                // JUCE: min 100.0, max 5000.0, skew 0.3
+                // JUCE forward formula: min + (max-min) * pow(normalized_input, 1/skew)
+                float normalized = ((float)value - 100.0f) / 4900.0f;
+                normalized = fmaxf(0.0f, fminf(1.0f, normalized));
+                // Exponent = 1.0 / 0.3 = 3.3333f
+                parameters[mallet_stiff] = 100.0f + fasterpowf(normalized, 3.3333f) * 4900.0f;
                 break;
+            }
 
             case c_parameterVelocityMalletResonance:
-                parameters[vel_mallet_res] = value / 1000.0f;
+                parameters[vel_mallet_res] = value / 100.0f;
                 break;
 
             case c_parameterVelocityMalletStifness:
-                parameters[vel_mallet_stiff] = value / 1000.0f;
+                parameters[vel_mallet_stiff] = value / 100.0f;
                 break;
 
             // --- A/B Split Parameters ---
@@ -666,7 +736,7 @@ public:
                     parameters[b_on] = 1.0f;
                     resonatorChangedB = true;
                 }
-                clearVoices();
+                // clearVoices(); <-- [CRITICAL FIX] REMOVE THIS LINE
                 break;
 
             case c_parameterPartials:
@@ -678,7 +748,7 @@ public:
                     parameters[b_partials] = (float)c_partials[value - c_partialElements];
                     resonatorChangedB = true;
                 }
-                clearVoices();
+                // clearVoices(); <-- [CRITICAL FIX] REMOVE THIS LINE
                 break;
 
             case c_parameterDecay: {
@@ -687,11 +757,18 @@ public:
                 // A: raw 0-1000 → /10.0 → 0.0-100.0 seconds (matches JUCE domain)
                 // B: raw 1001-2000 → /10.0 → 0.0-100.0 seconds
                 const int32_t maxA = 1000;
+
+                // JUCE: min 0.01, max 100.0, skew 0.2 (Exponent = 1.0 / 0.2 = 5.0)
+                float normalized = (value <= maxA) ? ((float)value / 1000.0f) : ((float)(value - maxA) / 1000.0f);
+                normalized = fmaxf(0.0f, fminf(1.0f, normalized));
+
+                float skewed_decay = 0.01f + fasterpowf(normalized, 5.0f) * 99.99f;
+
                 if (value <= maxA) {
-                    parameters[a_decay] = (float)value / 10.0f;
+                    parameters[a_decay] = skewed_decay;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_decay] = (float)(value - maxA) / 10.0f;
+                    parameters[b_decay] = skewed_decay;
                     resonatorChangedB = true;
                 }
                 break;
@@ -699,7 +776,7 @@ public:
 
             case c_parameterMaterial: {
                 a_b_damp = value;
-                const int32_t maxA = 10, span = 20;
+                const int32_t maxA = 10, span = 21; //-1.0 0.0 +1.0 are 21 values
                 if (value <= maxA) {
                     parameters[a_damp] = (float)value / 10.0f;
                     resonatorChangedA = true;
@@ -725,7 +802,7 @@ public:
 
             case c_parameterHitPosition: {
                 a_b_hit = value;
-                const int32_t maxA = 50, span = 48; // span calculated from original code
+                const int32_t maxA = 50, span = 49; // 49 steps, span calculated from original code
                 if (value <= maxA) {
                     parameters[a_hit] = (float)value / 100.0f;
                     resonatorChangedA = true;
@@ -738,7 +815,7 @@ public:
 
             case c_parameterRelease: {
                 a_b_rel = value;
-                const int32_t maxA = 10, span = 10;
+                const int32_t maxA = 10, span = 11; // [FIX] 11 steps
                 if (value <= maxA) {
                     parameters[a_rel] = (float)value / 10.0f;
                     resonatorChangedA = true;
@@ -751,7 +828,7 @@ public:
 
             case c_parameterInharmonic: {
                 a_b_inharm = value;
-                const int32_t maxA = 10000, span = 9999;
+                const int32_t maxA = 10000, span = 10000;
                 if (value <= maxA) {
                     parameters[a_inharm] = (float)value / 10000.0f;
                     resonatorChangedA = true;
@@ -762,14 +839,21 @@ public:
                 break;
             }
 
-            case c_parameterFilterCutoff: {
-                a_b_filter = value * 2; // Restore Hz
-                const int32_t maxA = 20000, span = 19980;
-                if (a_b_filter <= maxA) {
-                    parameters[a_cut] = (float)a_b_filter;
+            case c_parameterInharmonic: {
+                a_b_inharm = value;
+                const int32_t maxA = 10000, span = 10000;
+
+                // JUCE: min 0.0001, max 1.0, skew 0.3 (Exponent = 1.0 / 0.3 = 3.3333)
+                float normalized = (value <= maxA) ? ((float)value / 10000.0f) : ((float)(value - span) / 10000.0f);
+                normalized = fmaxf(0.0f, fminf(1.0f, normalized));
+
+                float skewed_inharm = 0.0001f + fasterpowf(normalized, 3.3333f) * 0.9999f;
+
+                if (value <= maxA) {
+                    parameters[a_inharm] = skewed_inharm;
                     resonatorChangedA = true;
                 } else {
-                    parameters[b_cut] = (float)(a_b_filter - span);
+                    parameters[b_inharm] = skewed_inharm;
                     resonatorChangedB = true;
                 }
                 break;
@@ -777,7 +861,7 @@ public:
 
             case c_parameterTubeRadius: {
                 a_b_radius = value;
-                const int32_t maxA = 10, span = 10;
+                const int32_t maxA = 10, span = 11;
                 if (value <= maxA) {
                     parameters[a_radius] = (float)value / 10.0f;
                     resonatorChangedA = true;
@@ -790,14 +874,14 @@ public:
 
             case c_parameterCoarsePitch: {
                 a_b_coarse = value;
-                // header.c range: -480..1440 (A: -480..480, B: 481..1440)
+                // header.c range: -480..1442 (A: -480..480, B: 481..1442)
                 // Values are 10x semitones for 0.1 semitone resolution on display
-                const int32_t maxA = 480;
+                const int32_t maxA = 480, span = 481;
                 if (value <= maxA) {
                     parameters[a_coarse] = fmax(fmin((float)value / 10.0f, 48.0f), -48.0f);
                     pitchChanged = true;
                 } else {
-                    parameters[b_coarse] = fmax(fmin((float)(value - maxA) / 10.0f, 48.0f), -48.0f);
+                    parameters[b_coarse] = fmax(fmin((float)(value - span) / 10.0f, 48.0f), -48.0f);
                     pitchChanged = true;
                 }
                 break;
@@ -840,28 +924,39 @@ public:
     // MIDI / Gate
     // ==============================================================================
     inline void loadConfigureSample() {
-        // IMPORTANT: Copy values from sampleWrapper immediately—do NOT store the pointer.
-        // sampleWrapper is a temporary provided by runtime and may be freed/reused.
-        const sample_wrapper_t* sampleWrapper = m_get_sample(m_sampleBank, m_sampleNumber - 1);
-        // bool sampleValid = false;
+        // 1. Dynamic Bounds Check: Does the requested sample bank exist?
+        if (m_sampleBank >= m_get_num_sample_banks_ptr()) {
+            m_samplePointer = nullptr;
+            return;
+        }
 
-        if (sampleWrapper) {
+        // 2. Dynamic Bounds Check: Does the sample index exist within this bank?
+        // (UI knob is 1-128, so we subtract 1 to get the 0-indexed OS array position)
+        size_t actualSampleIndex = (m_sampleNumber > 0) ? (size_t)(m_sampleNumber - 1) : 0;
+
+        if (actualSampleIndex >= m_get_num_samples_for_bank_ptr(m_sampleBank)) {
+            m_samplePointer = nullptr;
+            return;
+        }
+
+        // 3. It is now mathematically safe to fetch the sample wrapper from the OS
+        const sample_wrapper_t* sampleWrapper = m_get_sample(m_sampleBank, actualSampleIndex);
+
+        // 4. Validate the wrapper and the pointer inside it
+        if (sampleWrapper && sampleWrapper->sample_ptr) {
             // Copy critical metadata from temporary sampleWrapper
             m_sampleChannels = sampleWrapper->channels;
-            m_sampleFrames = sampleWrapper->frames;
-            m_samplePointer = sampleWrapper->sample_ptr;
+            m_sampleFrames   = sampleWrapper->frames;
+            m_samplePointer  = sampleWrapper->sample_ptr;
 
-            // Calculate byte-based indices assuming sample_ptr is interleaved float array
-            // m_sampleStart and m_sampleEnd are in thousandths (0-1000)
-            // m_sampleFrames is in frames; total samples = frames * channels
+            // Calculate byte-based indices assuming sample_ptr is an interleaved float array
+            // m_sampleStart is in thousandths (0-1000)
             size_t totalSamples = m_sampleFrames * m_sampleChannels;
             m_sampleIndex = (totalSamples * m_sampleStart) / 1000;
-
-            // Fix: m_sampleEnd is an index limit. Do not use the member variable as input ratio,
-            // as it gets overwritten with the absolute count, causing exponential growth on subsequent triggers.
             m_sampleEnd = totalSamples;
-            // not used. To invalid a sample: m_sampleEnd = 0
-            // sampleValid = true;
+        } else {
+            // Failsafe: The OS returned an empty wrapper
+            m_samplePointer = nullptr;
         }
     }
 
@@ -893,9 +988,14 @@ public:
     inline void GateOn(uint8_t velocity) { NoteOn(m_note, velocity); }
     inline void GateOff() { NoteOff(m_note); }
     inline void AllNoteOff() { NoteOff(0xFF); }
-    // Convert MIDI bend (0-0x4000, centered at 0x2000) to fine pitch (-99 to 99)
+    // Convert MIDI bend (0-0x4000, centered at 0x2000 = 8192) to fine pitch (-99 to 99)
     inline void PitchBend(uint16_t bend) {
-        parameters[a_fine] = 100.0f * (float)(bend - 0x2000) / 0x2000;
+        // Note: 200 is for standard 2-semitone bend
+        float bend_offset = 200.0f * (float)(bend - 0x2000) / 0x2000;
+        // do not overwrite original value, store the shift
+        // that will applied by PrepareToPlay
+        parameters[a_fine] = preset_a_fine_cached + bend_offset;
+        parameters[b_fine] = preset_b_fine_cached + bend_offset;
         prepareToPlay(false, true, false, false, false);
     }
     inline void ChannelPressure(uint8_t pressure) { (void)pressure; }
@@ -925,9 +1025,9 @@ public:
             case c_parameterSampleBank: return m_sampleBank;
             case c_parameterSampleNumber: return m_sampleNumber;
             case c_parameterMalletResonance: return (int32_t)(parameters[mallet_res] * 10.0f);
-            case c_parameterMalletStiffness: return (int32_t)parameters[mallet_stiff];
-            case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 1000.0f);
-            case c_parameterVelocityMalletStifness: return (int32_t)(parameters[vel_mallet_stiff] * 1000.0f);
+            case c_parameterMalletStiffness: return m_mallet_stiffness_ui;
+            case c_parameterVelocityMalletResonance: return (int32_t)(parameters[vel_mallet_res] * 100.0f);
+            case c_parameterVelocityMalletStifness: return (int32_t)(parameters[vel_mallet_stiff] * 100.0f);
             case c_parameterModel: return a_b_model;
             case c_parameterPartials: return a_b_partials;
             case c_parameterDecay: return a_b_decay;
@@ -989,8 +1089,8 @@ public:
             case c_parameterDecay: {
                 if (!k_showABMarkersNumeric) break;
                 static char s_numBuf[32];
-                const int32_t maxA = 1000;
-                const int32_t span = 1000;
+                const int32_t maxA = 200;
+                const int32_t span = 200;
                 if (value <= maxA) { fmt_num(s_numBuf, sizeof(s_numBuf), "A:", value, 1, ""); return s_numBuf; }
                 if (value <= maxA + span) { fmt_num(s_numBuf, sizeof(s_numBuf), "B:", value - span, 1, ""); return s_numBuf; }
                 break;
@@ -1048,7 +1148,7 @@ private:
         // CRITICAL FIX: Force clear ALL voices before any other initialization
         // This prevents phantom sounds from garbage memory on hot-load
         clearVoices();
-        m_sampleBank = 0; m_sampleNumber = 0; m_samplePointer = nullptr;
+        m_sampleBank = 0; m_sampleNumber = 1; m_samplePointer = nullptr;
         m_sampleEnd = 1000; m_currentProgram = 0; nvoice = 0;
 
         // Initialize cached vectors
@@ -1060,51 +1160,139 @@ private:
         a_b_model = 0; a_b_partials = 0; a_b_decay = 0; a_b_damp = 0;
         a_b_tone = 0; a_b_hit = 0; a_b_rel = 0; a_b_filter = 0;
         a_b_inharm = 0; a_b_radius = 0; a_b_coarse = 0;
-
+        preset_a_fine_cached = 0; preset_b_fine_cached = 0;
         scale = 1.0f;
         last_a_model = -1; last_b_model = -1;
         last_a_partials = -1; last_b_partials = -1;
 
         LoadPreset(Program::Initial);   // This performs prepareToPlay
+        loadConfigureSample();          // [FIX] Ensure default sample is loaded
         Reset();
     }
 
-inline void setCurrentProgram(int index) {
-        clearVoices();
+    inline void setCurrentProgram(int index) {
         if (index >= 0 && index < (int)last_program) {
             m_currentProgram = index;
             for (int i = 0; i < ProgramParameters::last_param; ++i) {
                 parameters[i] = programs[index][i];
             }
-            // store the value not the index
+
             parameters[a_partials] = (float32_t)c_partials[(int)programs[index][a_partials]];
             parameters[b_partials] = (float32_t)c_partials[(int)programs[index][b_partials]];
 
             // Precompute gain in dB -> linear conversion
-            parameters[gain] = fmin(20.0f, fasterpowf(10.0f, parameters[gain] / 20.0f)); // Clamp max gain
-            // Update cached vector
+            parameters[gain] = fmin(20.0f, fasterpowf(10.0f, parameters[gain] / 20.0f));
             m_v_gain_cached = vdupq_n_f32(parameters[gain]);
             m_v_ab_mix_cached = vdupq_n_f32(parameters[ab_mix]);
             m_v_ab_inv_cached = vsubq_f32(vdupq_n_f32(1.0f), m_v_ab_mix_cached);
+            preset_a_fine_cached = parameters[a_fine];
+            preset_b_fine_cached = parameters[b_fine];
 
-            // FIX: Sync a_b_* UI tracker variables from loaded preset.
-            // Without this, getParameterValue() returns stale values (0) after preset load
-            // because it reads from these trackers, not from parameters[] directly.
-            a_b_model = (int32_t)parameters[a_model]; // Show A side (0-8)
-            // Reverse lookup: find index in c_partials[] for the loaded partial count
-            a_b_partials = 3; // default to index 3 (32 partials)
-            for (uint32_t p = 0; p < c_partialElements; ++p) {
-                if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
+            // =================================================================================
+            // Sync UI trackers.
+            // Heuristic: If B is on and A is off, sync from B. Otherwise, default to A.
+            // =================================================================================
+            bool syncFromB = (bool)parameters[b_on] && !(bool)parameters[a_on];
+
+            if (syncFromB) {
+                // --- Sync UI from B-side parameters ---
+                a_b_model = (int32_t)parameters[b_model] + c_modelElements;
+                if (a_b_model < 9) a_b_model = 9;
+                if (a_b_model > 17) a_b_model = 17;
+
+                a_b_partials = c_partialElements;
+                for (uint32_t p = 0; p < c_partialElements; ++p) {
+                    if (c_partials[p] == (int)parameters[b_partials]) { a_b_partials = p + c_partialElements; break; }
+                }
+
+                // Decay Reverse Skew (B)
+                float decay_norm = (parameters[b_decay] - 0.01f) / 99.99f;
+                decay_norm = fmaxf(0.0f, fminf(1.0f, decay_norm));
+                a_b_decay = (int32_t)(fasterpowf(decay_norm, 0.2f) * 1000.0f) + 1000;
+                if (a_b_decay < 1001) a_b_decay = 1001;
+                if (a_b_decay > 2000) a_b_decay = 2000;
+
+                // Inharm Reverse Skew (B)
+                float inharm_norm = (parameters[b_inharm] - 0.0001f) / 0.9999f;
+                inharm_norm = fmaxf(0.0f, fminf(1.0f, inharm_norm));
+                a_b_inharm = (int32_t)(fasterpowf(inharm_norm, 0.3f) * 9999.0f) + 10000;
+                if (a_b_inharm < 10001) a_b_inharm = 10001;
+                if (a_b_inharm > 19999) a_b_inharm = 19999;
+
+                a_b_damp   = (int32_t)(parameters[b_damp] * 10.0f) + 20;
+                if (a_b_damp < 11) a_b_damp = 11; if (a_b_damp > 30) a_b_damp = 30;
+
+                a_b_tone   = (int32_t)(parameters[b_tone] * 10.0f) + 20;
+                if (a_b_tone < 11) a_b_tone = 11; if (a_b_tone > 30) a_b_tone = 30;
+
+                a_b_hit    = (int32_t)(parameters[b_hit] * 100.0f) + 48;
+                if (a_b_hit < 51) a_b_hit = 51; if (a_b_hit > 98) a_b_hit = 98;
+
+                a_b_rel    = (int32_t)(parameters[b_rel] * 10.0f) + 10;
+                if (a_b_rel < 11) a_b_rel = 11; if (a_b_rel > 20) a_b_rel = 20;
+
+                a_b_filter = (int32_t)((parameters[b_cut] + 19980) / 2.f);
+                if (a_b_filter < 10001) a_b_filter = 10001; if (a_b_filter > 19990) a_b_filter = 19990;
+
+                a_b_radius = (int32_t)(parameters[b_radius] * 10.0f) + 10;
+                if (a_b_radius < 11) a_b_radius = 11; if (a_b_radius > 20) a_b_radius = 20;
+
+                a_b_coarse = (int32_t)(parameters[b_coarse] * 10.0f) + 480;
+                if (a_b_coarse < 481) a_b_coarse = 481; if (a_b_coarse > 1440) a_b_coarse = 1440;
+
+            } else {
+                // --- Sync UI from A-side parameters (original behavior) ---
+                a_b_model = (int32_t)parameters[a_model];
+                if (a_b_model < 0) a_b_model = 0;
+                if (a_b_model > 8) a_b_model = 8;
+
+                a_b_partials = 3;
+                for (uint32_t p = 0; p < c_partialElements; ++p) {
+                    if (c_partials[p] == (int)parameters[a_partials]) { a_b_partials = p; break; }
+                }
+
+                // [FIX] Reverse Decay Skew for A (Inverse power curve)
+                float decay_norm_a = (parameters[a_decay] - 0.01f) / 99.99f;
+                decay_norm_a = fmaxf(0.0f, fminf(1.0f, decay_norm_a));
+                a_b_decay = (int32_t)(fasterpowf(decay_norm_a, 0.2f) * 1000.0f);
+                if (a_b_decay > 1000) a_b_decay = 1000;
+
+                // Inharm Reverse Skew (A)
+                float inharm_norm = (parameters[a_inharm] - 0.0001f) / 0.9999f;
+                inharm_norm = fmaxf(0.0f, fminf(1.0f, inharm_norm));
+                a_b_inharm = (int32_t)(fasterpowf(inharm_norm, 0.3f) * 10000.0f);
+                if (a_b_inharm < 1) a_b_inharm = 1;
+                if (a_b_inharm > 10000) a_b_inharm = 10000;
+
+                a_b_damp   = (int32_t)(parameters[a_damp] * 10.0f);
+                if (a_b_damp < -10) a_b_damp = -10; if (a_b_damp > 10) a_b_damp = 10;
+
+                a_b_tone   = (int32_t)(parameters[a_tone] * 10.0f);
+                if (a_b_tone < -10) a_b_tone = -10; if (a_b_tone > 10) a_b_tone = 10;
+
+                a_b_hit    = (int32_t)(parameters[a_hit] * 100.0f);
+                if (a_b_hit < 2) a_b_hit = 2; if (a_b_hit > 50) a_b_hit = 50;
+
+                a_b_rel    = (int32_t)(parameters[a_rel] * 10.0f);
+                if (a_b_rel < 0) a_b_rel = 0; if (a_b_rel > 10) a_b_rel = 10;
+
+                a_b_filter = (int32_t)parameters[a_cut];
+                if (a_b_filter < 10) a_b_filter = 10; if (a_b_filter > 10000) a_b_filter = 10000;
+
+                a_b_radius = (int32_t)(parameters[a_radius] * 10.0f);
+                if (a_b_radius < 0) a_b_radius = 0; if (a_b_radius > 10) a_b_radius = 10;
+
+                a_b_coarse = (int32_t)(parameters[a_coarse] * 10.0f);
+                if (a_b_coarse < -480) a_b_coarse = -480; if (a_b_coarse > 480) a_b_coarse = 480;
             }
-            a_b_decay = (int32_t)(parameters[a_decay] * 10.0f); // seconds → UI raw (10x)
-            a_b_damp = (int32_t)(parameters[a_damp] * 10.0f);
-            a_b_tone = (int32_t)(parameters[a_tone] * 10.0f);
-            a_b_hit = (int32_t)(parameters[a_hit] * 100.0f);
-            a_b_rel = (int32_t)(parameters[a_rel] * 10.0f);
-            a_b_inharm = (int32_t)(parameters[a_inharm] * 10000.0f);
-            a_b_filter = (int32_t)parameters[a_cut];
-            a_b_radius = (int32_t)(parameters[a_radius] * 10.0f);
-            a_b_coarse = (int32_t)(parameters[a_coarse] * 10.0f); // UI domain is 10x semitones
+
+            // --- Sync Global (non-A/B) Parameters ---
+
+            // Reverse Mallet Stiffness Skew
+            float stiff_norm = (parameters[mallet_stiff] - 100.0f) / 4900.0f;
+            stiff_norm = fmaxf(0.0f, fminf(1.0f, stiff_norm));
+            // (If you track stiffness for the UI, assign it to your UI tracker here.
+            // e.g., m_ui_stiffness = (int32_t)(100.0f + fasterpowf(stiff_norm, 0.3f) * 4900.0f); )
         }
     }
 
@@ -1161,6 +1349,7 @@ private:
     int32_t a_b_inharm;
     int32_t a_b_radius;
     int32_t a_b_coarse;   // header range: -480..1440 (signed)
+    int32_t m_mallet_stiffness_ui;
 
     // Runtime Pointers
     unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
