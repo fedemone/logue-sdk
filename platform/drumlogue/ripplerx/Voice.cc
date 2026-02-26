@@ -89,7 +89,10 @@ void Voice::setPitch(float32_t a_coarse, float32_t b_coarse, float32_t a_fine, f
 void Voice::applyPitch(float32_t* __restrict model, float32_t factor)
 {
     float32x4_t v_factor = vdupq_n_f32(factor);
-    for (size_t i = 0; i < 64; i += 16) {
+    // Round up to nearest 16 for SIMD safety
+    size_t limit = (active_partials + 15) & ~15;
+
+    for (size_t i = 0; i < limit; i += 16) {
         float32x4_t a0 = vld1q_f32(&model[i]);
         float32x4_t a1 = vld1q_f32(&model[i + 4]);
         float32x4_t a2 = vld1q_f32(&model[i + 8]);

@@ -178,8 +178,10 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         u_decay.i = (int32_t)(exp_decay_part * 8388608.0f) + 1065353216;
 
         // Calculate raw decay time in seconds (or arbitrary units)
-        // Fix: Apply 0.01f scaling to map user range (0-1000) to physical seconds (0-10.0s)
-        float d_raw = fminf(c_decay_max, (part.decay * 0.01f) * u_decay.f);
+        // must only deal in pure seconds, no scaling with 0.01.
+        // Move the scaling exclusively to setParameter()
+        // in ripplerx.h so the UI converts its integer into seconds before it touches the DSP.
+        float d_raw = fminf(c_decay_max, part.decay * u_decay.f);
 
         // Apply Release Envelope
         if (isRelease) {

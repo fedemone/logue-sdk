@@ -1,3 +1,41 @@
+# [2026-02-25] Sequencer Routing, Memory Bounds, & A/B Mapping Architecture
+
+## 1. Symptoms
+- **The "Dead Minimum" on Resonator B**: When tweaking Resonator B parameters, they never reach their true mathematical minimums (e.g., B's Release time bottoms out at 0.1s instead of 0.0s).
+- **Preset Load UI Corruption**: Loading a preset causes the Drumlogue screen to display incorrect knob values for Decay or Inharmonicity.
+- **Fatal Crash on Sample Select**: Twisting the Sample Number knob to a high value (or selecting an empty bank) instantly freezes the Drumlogue.
+- **The Sequencer Pitch Bug**: Playing the synth via an external MIDI keyboard works perfectly, but pressing "Play" on the Drumlogue's internal step sequencer triggers the wrong pitch or no pitch at all.
+- **Pitch Bend Tearing & Data Loss**: Using the pitch wheel permanently erases the preset's fine-tuning. Additionally, it only bends Resonator A, causing the drum to violently detune against Resonator B.
+
+## 2. Root Cause Analysis
+
+### a. The "Fencepost" A/B Span Bug
+- **Diagnosis**: The UI parameters for Resonator A and B share a single 0-100% encoder range. The mathematical `span` used to map Resonator B's data back into Resonator A's domain was off-by-one. For a range of `0 to 10` (11 discrete values), a span of `10` was subtracted instead of `11`, preventing Resonator B from ever evaluating to `0.0`.
+- **Diagnosis**: During preset load, the reverse-skew calculation for logarithmic parameters (like Decay) was incorrectly using `fasterlogf` instead of an inverse power curve (`fasterpowf(x, skew)`), and duplicating assignments.
+
+### b. The Blind Memory Fetch (Sample Engine Crash)
+- **Diagnosis**: The DSP was blindly requesting sample pointers from the OS based purely on the UI knob integer (1-128). If the user only had 5 samples loaded in RAM, asking the OS for sample index 116 triggered a fatal memory access violation (Hard Fault).
+
+
+### c. The Gate vs. Note Trigger Split
+- **Diagnosis**: The Drumlogue's internal step sequencer triggers drum parts using `unit_gate_on(velocity)`. Unlike a MIDI keyboard (`unit_note_on(note, velocity)`), the gate command does not supply a pitch. Because `GateOn` wasn't explicitly routing to the UI's `m_note` variable, the sequencer failed to play the correct frequency.
+
+
+### d. Destructive Pitch Bending
+- **Diagnosis**: The pitch bend callback was doing an absolute assignment directly into the preset data (`parameters[a_fine] = bend_val`). This permanently erased the patch's original fine-tune value upon wheel release, and completely ignored `parameters[b_fine]`, breaking the physical tuning lock between the two resonators.
+
+## 3. Implemented Solutions
+
+### Code Changes
+1. **Dynamic Memory Bounds Checking (`ripplerx.h`)**:
+   Updated `loadConfigureSample()` to query the RTOS state *before* fetching the pointer. If the OS returns false, it gracefully defaults to `nullptr` (silence) instead of crashing.
+   ```cpp
+   if (actualSampleIndex >= m_get_num_samples_for_bank_ptr(m_sampleBank)) {
+       m_samplePointer = nullptr;
+       return;
+   }
+
+
 # [2026-02-20] RTOS Threading, UI Synchronization, & Trigonometric Overshoot Bugs
 
 ## 1. Symptoms
@@ -468,7 +506,7 @@ vRunDb = vminq_f32(vRunDb, vdupq_n_f32(120.0f));
 - **Hardware Testing**: Deploy to drumlogue and verify stability with the corrected build flags.
 
 ## debug program - stable
-- this program with very low paramters (sometimes not correct though) has proved to be stable.
+- this program with very low parameters (sometimes not correct though) has proved to be stable.
 - changing some values leads to the same instability: in four beats sound grow distorted and then we have silence.
 - here are the user editable paramwter in warm load (while HW not running yet then started) default values, the previous instable values and effect in changing them.
 

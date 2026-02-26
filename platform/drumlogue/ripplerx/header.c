@@ -38,8 +38,8 @@ const __unit_header unit_header_t unit_header = {
         // Page 1: Program and sample selection
         // Program, will set different values for parameters
         {0, 28, 0, 13, k_unit_param_type_strings, 0, 0, 0, {"Prgram"}},  // Program::Initial
-        // Resonator note for Gate mode
-        {1, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
+        // Resonator note for Gate mode - MIDI Note 24 (C1)
+        {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         // Res Gain - NOTE: removed for the moment
         // {-240, 240, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Gain"}},
         // Sample bank
@@ -51,7 +51,7 @@ const __unit_header unit_header_t unit_header = {
         // Mallet resonance
         {0, 1000, 500, 8, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Mallet stiffness
-        {0, 1000, 250, 250, k_unit_param_type_none, 0, 0, 0, {"MlltStif"}},
+        {100, 5000, 250, 250, k_unit_param_type_none, 10, 0, 0, {"MlltStif"}},
         // Velocity Mallet Resonance
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
         // Velocity Mallet Stiffness
@@ -83,18 +83,18 @@ const __unit_header unit_header_t unit_header = {
         {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // Inharmonic
         //  Span 9999 -> A: 1..10000, B: 10001..19999 (mapped in code)
-        {1, 19999, 3000, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
+        {1, 19999, 3000, 1, k_unit_param_type_none, 4, 1, 0, {"Inharm"}},
 
         // Page 5: Resonator A-III (extended) + Noise-I
         // filter cutoff (scaled to fit int16)
         //  Original span 19980 Hz -> A: 20..20000, B: 20001..39980
         //  Scaled by 2: A: 10..10000, B: 10001..19990 (mapped back to Hz in code)
         {10, 19990, 5005, 10, k_unit_param_type_hertz, 0, 0, 0, {"LowCut"}},
-        // Tube Radius
+        // Tube Radius: 0.0 to 1.0 A tube, 1.0 to 2.0 B tube
         {0, 20, 0, 5, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
         // Coarse Pitch
-        //  Span 960 -> A: -480..480, B: 481..1440 (mapped in code)
-        {-480, 1440, 0, 0, k_unit_param_type_none, 0, 0, 0, {"CoarsPtch"}},
+        //  Span 960 -> A: -480..480, B: 481..1442 (mapped in code). NOTE 0.0 is additional value
+        {-480, 1442, 0, 0, k_unit_param_type_none, 0, 0, 0, {"CoarsPtch"}},
         // Noise Mix
         {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzMix"}},
         //TODO: vel_noise_freq and vel_noise_q should be here?
