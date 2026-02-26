@@ -196,7 +196,8 @@ public:
                 current_beat = beat_num;
             }
 #endif
-            float32x4_t accum_dir = vdupq_n_f32(0.0f); // Direct signal
+            float32x4_t accum_dir = vdupq_n_f32(0.0f); // Direct signal (mallet+noise direct, NOT gained)
+            float32x4_t accum_res_out = vdupq_n_f32(0.0f); // Resonator output (will be gained)
             float32x4_t audioIn   = vdupq_n_f32(0.0f); // Sample Input
 
             // --- A. Optimized Sample Playback ---
@@ -230,7 +231,9 @@ public:
                         audioIn = vdupq_n_f32(0.0f);
                     }
                 }
-                audioIn = vmulq_f32(audioIn, v_gain);
+                // NOTE: audioIn is NOT pre-gained here.
+                // In the original JUCE code, gain is applied only to the resonator OUTPUT,
+                // not to its input. audioIn enters the resonator at natural level.
             }
 
             // Standard Round-Robin processing (matches PluginProcessor_orig.cpp)
@@ -353,7 +356,10 @@ public:
                 // Select based on conditions
                 float32x4_t mix_both = vbslq_f32(is_serial, mix_serial, mix_parallel);
                 float32x4_t voice_mix = vbslq_f32(both_active, mix_both, mix_single);
-                accum_dir = vaddq_f32(accum_dir, voice_mix);
+                // FIX: Accumulate resonator output SEPARATELY from direct signal.
+                // In original JUCE code: totalOut = dirOut + resOut * gain
+                // Gain is applied to resonator output only, not to mallet/noise direct.
+                accum_res_out = vaddq_f32(accum_res_out, voice_mix);
 
 #ifdef DEBUGN
                 // DEBUG
@@ -382,6 +388,7 @@ public:
                 // Divide by sqrt(N) instead of N for more natural loudness
                 float norm_factor = Q_rsqrt((float)active_voices_count); // 1/sqrt(N) with safety check
                 accum_dir = vmulq_n_f32(accum_dir, norm_factor);
+                accum_res_out = vmulq_n_f32(accum_res_out, norm_factor);
             }
 
 #ifdef DEBUGN
@@ -395,40 +402,40 @@ public:
             // CRITICAL: Check accumulation BEFORE effects
             float accum_dir_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
                                            std::abs(vgetq_lane_f32(accum_dir, 1)));
+            float accum_res_max = std::max(std::abs(vgetq_lane_f32(accum_res_out, 0)),
+                                           std::abs(vgetq_lane_f32(accum_res_out, 1)));
 
-            // This threshold catches the 4-beat accumulation bug
-            if (accum_dir_max > 5.0f) {
-                printf("[ACCUMULATION WARNING] Frame %zu: accum_dir=%.2f\n", i, accum_dir_max);
+            if (accum_dir_max > 5.0f || accum_res_max > 5.0f) {
+                printf("[ACCUMULATION WARNING] Frame %zu: dir=%.2f res=%.2f\n", i, accum_dir_max, accum_res_max);
                 fflush(stdout);
             }
 
-            // Hard failure on explosion
-            if (accum_dir_max > 20.0f || !isfinite(accum_dir_max)) {
-                printf("[EXPLOSION] Frame %zu: accum_dir=%.2f\n", i, accum_dir_max);
-                printf("  This is VOICE ACCUMULATION EXPLOSION!\n");
-                printf("  Check: Missing 0.01f scaling OR missing voice normalization\n");
+            if (accum_res_max > 50.0f || !isfinite(accum_res_max) || !isfinite(accum_dir_max)) {
+                printf("[EXPLOSION] Frame %zu: dir=%.2f res=%.2f\n", i, accum_dir_max, accum_res_max);
                 fflush(stdout);
                 exit(1);
             }
 #endif
             // --- C. Global Effects ---
-            accum_dir = comb.process(accum_dir);
+            // FIX: Combine direct + gained resonator output, then process effects.
+            // Original: totalOut = dirOut + resOut * gain → comb → limiter
+            accum_res_out = vmulq_f32(accum_res_out, v_gain);
+            float32x4_t totalOut = vaddq_f32(accum_dir, accum_res_out);
+            totalOut = comb.process(totalOut);
 
 #ifdef DEBUGN
-            float comb_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
-                                      std::abs(vgetq_lane_f32(accum_dir, 1)));
+            float comb_max = std::max(std::abs(vgetq_lane_f32(totalOut, 0)),
+                                      std::abs(vgetq_lane_f32(totalOut, 1)));
             if (comb_max > 50.0f) {
                 printf("[DIAG] Comb explosion at frame %d: %.2f\n", i, comb_max);
                 fflush(stdout);
                 exit(1);
             }
 #endif
-            // (Silence guard removed - Limiter now handles zero)
 
 #ifdef DEBUGN
-            float pre_lim_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
-                                         std::abs(vgetq_lane_f32(accum_dir, 1)));
-            // Allow up to 50.0f for polyphonic stacking (16 voices * 1.0 + resonance), but catch explosions
+            float pre_lim_max = std::max(std::abs(vgetq_lane_f32(totalOut, 0)),
+                                         std::abs(vgetq_lane_f32(totalOut, 1)));
             if (pre_lim_max > 50.0f || !isfinite(pre_lim_max)) {
                 printf("[DIAG] Pre-Limiter Explosion at frame %d: %.2f\n", i, pre_lim_max);
                 fflush(stdout);
@@ -436,16 +443,12 @@ public:
             }
 #endif
 
-            // [FIX] Apply Gain BEFORE Limiter.
-            // This allows the Gain to act as "Drive" into the limiter, and ensures
-            // the final output is strictly bounded by the limiter (preventing >10.0f explosions).
-            accum_dir = vmulq_f32(accum_dir, v_gain);
-            accum_dir = limiter.process(accum_dir);
+            totalOut = limiter.process(totalOut);
 
             // PROBE FINAL OUTPUT
 #ifdef DEBUGN
-            float final_max = std::max(std::abs(vgetq_lane_f32(accum_dir, 0)),
-                                       std::abs(vgetq_lane_f32(accum_dir, 1)));
+            float final_max = std::max(std::abs(vgetq_lane_f32(totalOut, 0)),
+                                       std::abs(vgetq_lane_f32(totalOut, 1)));
             if (final_max > 50.0f || !isfinite(final_max)) {
                 float g_val = vgetq_lane_f32(v_gain, 0);
                 printf("[DIAG] Final Output Explosion at frame %d: %.2f (Gain: %.2f)\n", i, final_max, g_val);
@@ -455,7 +458,7 @@ public:
 #endif
             // [OPTIMIZATION] Overwrite output buffer instead of accumulating.
             // This protects against dirty buffers/NaNs from the host and saves a load+add op.
-            vst1q_f32(&outBuffer[i], accum_dir);
+            vst1q_f32(&outBuffer[i], totalOut);
 
         } // End Frame Loop
     }
@@ -548,7 +551,7 @@ public:
         cached.pitch_fineA = parameters[a_fine];
         cached.pitch_fineB = parameters[b_fine];
         cached.couple = (bool)parameters[couple];
-        cached.ab_split = parameters[ab_split];
+        cached.ab_split = parameters[ab_split] * 100.0f;  // Match original: split *= 100 (PluginProcessor.cpp:420)
 
         // --- Batch Update Voices ---
         for (size_t i = 0; i < c_numVoices; ++i) {

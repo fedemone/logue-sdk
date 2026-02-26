@@ -171,7 +171,7 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Decay is stored in seconds (both from presets and from setParameter which applies /10.0f).
         // No additional scaling needed here.
-        float d_raw = fminf(c_decay_max, part.decay * u_decay.f);
+        float d_raw = fmaxf(0.01f, fminf(c_decay_max, part.decay * u_decay.f));
 
         // Apply Release Envelope
         if (isRelease) {
@@ -207,7 +207,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
         // Log-domain scaling: d_mod = (d_base ^ (damp * 2))
         float d_base = (part.damp <= 0.0f ? freq : f_max) / f_k;
         float d_mod = e_expff(fasterlogf(d_base) * (part.damp * 2.0f));
-        d_mod = fmaxf(0.1f, d_mod);  // Prevent d_mod from becoming too small
+        // NOTE: No floor clamp on d_mod — original Partial.cpp has none.
+        // The physics naturally handles all damp_k values.
 
         // Tone Gain (t_gain)
         // Log-domain scaling: t_gain = (t_base ^ (tone * 2))
@@ -239,7 +240,8 @@ void Resonator::update(float32_t freq, float32_t vel, bool isRelease, float32_t 
 
         // Hit Position Modulation (Comb-like effect)
         float h_mod = fminf(0.5f, part.hit + vel * part.vel_hit * 0.5f);
-        float a_k = 5.0f * fabsf(fastersinfullf(M_PI * part.k * h_mod));
+        // Match original Partial.cpp:38 — amp_k *= 35.0 (was incorrectly 5.0 in port)
+        float a_k = 35.0f * fabsf(fastersinfullf(M_PI * part.k * h_mod));
 
         // Final Filter Constants
         float omega = f_k * inv_srate_2pi;

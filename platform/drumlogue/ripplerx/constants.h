@@ -44,7 +44,7 @@ constexpr float32_t c_freq_shift_coeff_dx = 0.6f;  // Coefficient for dx term in
 constexpr float32_t c_freq_shift_coeff_max = 0.56f;  // Coefficient for max term in frequency shift
 
 // Waveguide constants
-constexpr float32_t c_decay_max = 50.0f;  // Maximum decay time in seconds (original JUCE: 0.01-100s)
+constexpr float32_t c_decay_max = 100.0f;  // Maximum decay time in seconds (matches original JUCE: fmax(0.01, fmin(100.0, ...)))
 constexpr float32_t c_va2_max = 0.99999f;  // Safety clamp for IIR pole magnitude (prevents float32 instability)
 constexpr float32_t c_closed_tube_octave_factor = 0.5f;  // Closed tube octave correction (one octave lower)
 constexpr float32_t c_waveguide_decay_constant = 125000.0f;  // Waveguide decay formula constant
