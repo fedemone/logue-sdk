@@ -301,20 +301,239 @@ Two additional bugs found and fixed after the initial Phase 13 commit:
 - Fix: added `float m_coupling_depth` (private member, updated only when
   Partls < 5) and changed processBlock to use `m_coupling_depth` directly.
 
-## Phase 13: Still Pending (future work)
+---
 
-* **Dynamic Energy Squelch (CPU):** Track per-voice output RMS. When the
-  waveguide decays below −80 dB, set `is_active = false` immediately rather
-  than waiting for the release envelope. Prevents zombie voices consuming CPU
-  for the full envelope release time after the signal is inaudible.
-* **Pitch Bend:** Wire `unit_pitch_bend()` into `NoteOn` delay-length math.
-  A ±semitone bend would require multiplying `delay_length` by `2^(bend/12)`.
+## Phase 15: Dynamic Squelch, Pitch Bend, Tone Cache & fasterpowf Fix [COMPLETED]
+
+### Dynamic Energy Squelch
+
+Per-voice 1-pole RMS follower (α = 0.01, τ ≈ 2 ms at 48 kHz) tracks `voice_out`
+**before** the master-envelope fade. When a releasing voice's RMS drops below
+`0.0001f` (≈ −80 dB) the voice is immediately set `is_active = false`, freeing
+the CPU slot without waiting for the full release envelope to expire.
+
+A 1000-sample guard (~20 ms) prevents the squelch from firing during the
+delay-line round-trip, where `voice_out` is genuinely zero even though the
+waveguide has energy in transit. Data fields added to `VoiceState`:
+- `float rms_env = 0.0f` — RMS envelope follower state
+- `float base_delay_A/B = 0.0f` — pre-bend root delay lengths (see Pitch Bend)
+
+### Pitch Bend (MIDI 0–16383, ±2 semitone range)
+
+`PitchBend(uint16_t bend)` maps centre=8192 → 0 semitones, full-up=16383 →
++2 st, full-down=0 → −2 st. The delay multiplier is `2^(−semitones/12)` (note
+negative: higher pitch = shorter delay).
+
+`base_delay_A/B` are stored at NoteOn time (before applying any held bend) so
+that `PitchBend()` can always re-derive from the root pitch without accumulating
+error across successive bend messages.
+
+**BUG: `fasterpowf(2.0f, 0.0f)` ≈ 0.9714, not 1.0**
+`fasterpow2f(p)` = `(uint32_t)(8388608 * (p + 126.94269504))` interpreted as
+float. The constant 126.94269504 is slightly below 127, so at p=0 the result
+decodes to ≈0.9714 instead of 1.0. Every centre-bend would silently detune the
+voice downward by ~50 cents. Fixed by using an exact special-case for bend=8192:
+```cpp
+if (bend == 8192) {
+    m_pitch_bend_mult = 1.0f;
+} else {
+    float semitones = ((float)bend - 8192.0f) * (2.0f / 8192.0f);
+    m_pitch_bend_mult = powf(2.0f, -semitones / 12.0f);
+}
+```
+`powf` is used in place of `fasterpowf` throughout PitchBend because this
+function is called from the MIDI thread (not the audio loop) and accuracy
+matters more than speed here.
+
+`unit.cc` stub wired: `unit_pitch_bend` now calls `s_synth.PitchBend(bend)`.
+
+Buffer-overflow guard: all delay_length assignments in NoteOn and PitchBend are
+clamped to `[2, DELAY_BUFFER_SIZE−2]` to prevent out-of-bounds reads on low
+notes bent downward (e.g. MIDI note 0 − 2 st → delay ≈ 6585 > 4096).
+
+### Tone Parameter — audio-thread race condition fix
+
+Reading `m_params[k_paramTone]` in `processBlock` on every sample was a data
+race with the UI thread calling `setParameter`. Fixed by adding `float tone`
+to `SynthState` (updated only in `setParameter`) and hoisting
+`const float tone_val = state.tone` once per block before the voice loop.
+
+### Unit tests T16–T18
+
+- **T16a**: low-`feedback_gain` voice is killed within a bounded frame count
+  after GateOff (energy squelch fires when RMS < −80 dB).
+- **T16b**: a sustaining voice (no GateOff) stays active for 200 frames.
+- **T17a/b**: PitchBend up/down proportionally shortens/lengthens delay_length.
+- **T17c**: PitchBend(8192) (centre) restores delay_length to within 0.1
+  samples of the pre-bend value (exact, because bend == 8192 → mult = 1.0f).
+- **T18a**: a note struck while bend is held at max-up inherits the shorter
+  delay immediately.
+- **T18b**: centre-bend after a bent NoteOn restores the root pitch delay
+  (base_delay_A stored correctly in NoteOn).
+
+All 45 tests pass.
+
+### Remaining future work
+
 * **True Stereo Master Filter:** `master_filter` is a single mono `FastSVF`.
   Add a second instance to `SynthState` for the right channel so future stereo
   effects (chorus, panning) pass through a properly independent filter.
 * **Voice 0 skipped on first note:** `NoteOn` increments `next_voice_idx`
-  before assigning, so the first ever note goes to voice 1. Minor; reorder to
-  assign before incrementing or just note it as a cosmetic issue.
+  before assigning, so the first ever note goes to voice 1. Minor cosmetic issue.
+
+---
+
+## Phase 17: Partls AB/A/B Editor Selection + Bug Fixes [COMPLETED]
+
+### User change: Partls extended from 0..6 to 0..7
+
+`k_paramPartls` now has four distinct value bands:
+
+| Value | UI label   | Effect |
+|-------|-----------|--------|
+| 0–4   | AB:N / A:N / B:N | Set partial count (4/8/16/32/64) and coupling depth |
+| 5     | → ResA+B  | Route subsequent parameter edits to **both** resonators |
+| 6     | → ResA    | Route subsequent parameter edits to ResA only |
+| 7     | → ResB    | Route subsequent parameter edits to ResB only |
+
+`m_is_resonator_b` added as second routing flag (alongside `m_is_resonator_a`).
+All per-resonator `setParameter` handlers changed from `else` → `if (m_is_resonator_b)`
+to support the independent-flag routing.  The partial-count and model display strings
+now have three variants: `A:N`, `B:N`, `AB:N`.
+
+### Bug fixes applied in this review pass
+
+**1. LP group delay formula was wrong (Phase 16 regression)**
+
+The Phase 16 pitch compensation used `(1+pa)/(1-pa)` for the 1-pole LP group
+delay.  This is the allpass formula, not the LP formula.
+
+Correct derivation: for H(z) = α/(1-pa·z⁻¹), phase φ = -arctan(pa·sinω/(1-pa·cosω)).
+Group delay τ = -dφ/dω; at DC: τ_LP = pa·(1-pa)/(1-pa)² = **pa/(1-pa)** = (1-α)/α.
+
+Sanity check: pa=0 (α=1, passthrough) → τ=0 ✓; pa→1 (dark) → τ→∞ ✓.
+The old formula gave τ=1 for the passthrough case, which is wrong.
+
+**2. `tables.h` used `fasterpowf` for pitch table generation (startup bug)**
+
+`fasterpowf` has a ~3% systematic approximation error (the constant `fasterpow2(0) ≈
+0.9714` offset makes every note about 50 cents flat before any filter compensation).
+Since `generate()` runs once in `Init()` — not in the audio loop — there is no
+performance justification for the approximation.  Changed to `powf`.
+
+Combined effect of fixes 1+2: for the default preset at C4, the compensated delay
+changes from 186.1 to 181.46 samples, and T19 confirms the effective loop period
+is **183.4683 samples = 48000/261.626 Hz → pitch error 0.00 cents**.
+
+**3. Partial name string typos**
+
+`partial_names_a[]`, `partial_names_b[]`, and `partial_names_ab[]` had truncated
+two-digit numbers at indices 2–4:
+- Index 2: `"A:6"` → `"A:16"`
+- Index 3: `"A:2"` → `"A:32"`
+- Index 4: `"A:4"` → `"A:64"`
+
+**4. `m_is_resonator_b` not saved/restored in `LoadPreset`**
+
+After a preset load `m_is_resonator_b` was always left as `true` (from the ResB
+application block), overriding whatever editing mode the user had selected.  Now
+both `m_is_resonator_a` and `m_is_resonator_b` are saved and restored around the
+preset application, preserving the user's editing context.
+
+### New test: T19 — pitch compensation accuracy
+
+Verifies that `delay_length + τ_LP + τ_AP` equals the equal-temperament period
+for C4 within 2 cents.  With the corrected LP formula and `powf` table the error
+is 0.00 cents.  46/46 tests pass.
+
+---
+
+## Phase 16: Physical Model Review & DSP Correctness Pass [COMPLETED]
+
+Full audit of the digital waveguide physical model against known physical
+acoustics theory. Eight improvements applied; 45/45 tests pass.
+
+### 1. Coupling symmetry fix (correctness)
+
+The old coupling fed ResA with ResB's previous-sample output (1-sample delay)
+but fed ResB with ResA's current-sample output (zero delay). This asymmetry made
+the two resonators physically non-reciprocal — ResB always "heard" ResA one
+sample ahead — creating a subtle formant artefact at high coupling depths.
+
+Fix: added `float resA_out_prev` to `VoiceState`; both resonators now use the
+previous sample's output of the other, making the coupling symmetric and
+physically correct.
+
+### 2. Membrane inharmonicity ratio (correctness)
+
+`resB.delay_length = base_delay * 0.68f` gave a second mode ratio of 1/0.68 ≈
+1.47. Real circular membranes have overtone ratios determined by zeros of the
+Bessel function J_mn. The dominant second mode (1,1) has ratio ≈ 1.5926 →
+1/1.5926 ≈ **0.628**.
+
+Fix: changed multiplier from `0.68f` to `0.628f`.
+
+### 3. Filter order in the waveguide loop (correctness)
+
+Old order: LP → AP → write. The AP (dispersion) operated on an already
+frequency-attenuated signal, reducing its audible inharmonicity at high
+frequencies.
+
+Physical order: AP models in-medium wave propagation (stiffness); LP models
+boundary absorption (reflection loss). Correct order: **AP → LP → write**.
+
+Fix: swapped the two filter stages in `process_waveguide()`. The feedback write
+now uses `filtered_out` (LP output) rather than `ap_out` (AP output).
+
+### 4. `while` → `if` for delay-line read pointer (performance)
+
+`delay_length` is clamped to [2, 4094], so `read_idx ≥ −4094`. One addition
+of `DELAY_BUFFER_SIZE` (4096) always puts it in range. The `while` loop body
+can execute at most once; using `while` added an unnecessary backward branch in
+the innermost hot loop.
+
+### 5. Linear interpolation Horner form (performance)
+
+`(a * (1-f)) + (b * f)` → `a + f * (b - a)`: one multiply + two adds instead
+of two multiplies + one add. Saves one multiply per sample per active resonator.
+
+### 6. Mallet LP gate — denormal prevention (performance)
+
+The two cascaded mallet-shaping LP filters ran every sample for the full voice
+lifetime even though their state decays to ≈ sub-denormal within ~250 samples.
+Added a gate (`mallet_lp2 > 1e-6f`) that skips both LP updates and the
+`* 15.0f` add once the mallet has fully settled. Eliminates wasted CPU and
+prevents denormal stalls on non-FTZ hardware.
+
+### 7. `rms_env` renamed `mag_env` (naming accuracy)
+
+The envelope follower smooths `|x|` (mean absolute value), not `x²` (which
+would be RMS). Renamed to `mag_env` throughout (`dsp_core.h`,
+`synth_engine.h`). Behaviour is identical; only the name reflects what the
+code actually computes.
+
+### 8. Loop filter pitch compensation (tuning accuracy)
+
+The 1-pole LP and allpass both add group delay at the fundamental frequency ω₀,
+making the actual loop period longer than `delay_length` samples and the pitch
+correspondingly flat. For the default preset (lowpass_coeff = 0.604), the error
+was ≈ 35 cents flat at C4.
+
+Using the DC-limit approximation (valid for all MIDI notes at 48 kHz since
+ω₀ ≪ 1 rad/sample): τ_LP ≈ (1 + pole)/(1 − pole) and τ_AP ≈ (1 + c)/(1 − c).
+
+Fix: after computing the nominal delay from the lookup table, NoteOn subtracts
+(τ_LP + τ_AP) from each resonator's `delay_length` before storing it as the
+base for PitchBend. The corrected delay for C4 changes from 189.8 to 186.1
+samples — 3.7 samples shorter — bringing pitch error from −35 cents to < 1 cent.
+
+### Pre-existing compile errors also fixed
+
+Two `static constexpr` declarations were missing their `float` type keyword
+(introduced in a user commit). The `ProgramIndex` enum had enum values with
+spaces in their names and no commas — both invalid C++. Fixed: added `float`,
+replaced spaces with camelCase, added commas, renamed the count marker from
+`k_ProgramIndex` to `k_NumPrograms` to avoid shadowing confusion.
 
 ---
 

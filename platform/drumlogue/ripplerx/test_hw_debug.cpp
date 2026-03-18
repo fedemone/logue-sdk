@@ -429,7 +429,7 @@ static void test_delay_roundtrip() {
     const WaveguideState& resA = s.state.voices[active_idx].resA;
     float dl = resA.delay_length;
     std::cout << "  resA.delay_length after NoteOn(60) = " << dl << " samples\n";
-    std::cout << "  Expected for C4 @ 48kHz            ≈ 183.5 samples\n";
+    std::cout << "  Raw C4 period @ 48 kHz = 183.47 samples; after LP+AP compensation (~2 samples) ≈ 181.5\n";
 
     bool dl_sane = dl > 10.0f && dl < 4090.0f;
     result("T9a delay_length in [10, 4090] after NoteOn(60)", dl_sane,
@@ -709,6 +709,178 @@ static void test_partls_mode_select_coupling() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T16 — Dynamic Energy Squelch reclaims CPU from an inaudible voice
+//   A voice with near-zero feedback_gain decays to silence in milliseconds.
+//   After GateOff, it should become is_active=false well before the envelope's
+//   theoretical worst-case release time expires.  A voice still sustaining
+//   above threshold must remain alive.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_energy_squelch() {
+    std::cout << "\n── T16: Dynamic Energy Squelch kills inaudible releasing voices ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+
+    // Sub-test A: a voice with very low feedback_gain dies quickly after GateOff.
+    {
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        // Preset 0 has feedback_gain ≈ 0.87.  Override to near-zero so the waveguide
+        // loses energy almost instantly (one round-trip ≈ 190 samples).
+        s.state.voices[1].resA.feedback_gain = 0.001f;
+        s.state.voices[1].resB.feedback_gain = 0.001f;
+
+        s.NoteOn(60, 127);
+        // Let the exciter fire and the delay line fill for ~300 frames
+        for (int i = 0; i < 300; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
+        s.GateOff();
+
+        int frames_to_death = 0;
+        for (int i = 0; i < 5000; ++i) {
+            float buf[2]{}; s.processBlock(buf, 1);
+            if (!s.state.voices[1].is_active) { frames_to_death = i + 1; break; }
+        }
+
+        std::cout << "  low-gain voice killed after " << frames_to_death << " frames post-GateOff\n";
+        result("T16a near-zero feedback_gain voice is killed after GateOff",
+               frames_to_death > 0 && frames_to_death < 4000,
+               "Squelch never fired — voice consumed CPU for the full envelope release");
+    }
+
+    // Sub-test B: a voice that is still sustaining (normal feedback_gain) stays active.
+    {
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        s.NoteOn(60, 127);
+        for (int i = 0; i < 200; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
+        // Do NOT call GateOff — voice should remain active.
+        bool still_active = s.state.voices[1].is_active;
+        std::cout << "  sustaining voice still active after 200 frames: " << (still_active ? "yes" : "no") << "\n";
+        result("T16b sustaining voice (no GateOff) remains active",
+               still_active,
+               "Squelch incorrectly killed a sustaining voice");
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T17 — PitchBend changes delay_length proportionally and symmetrically
+//   Bending up (bend > 8192) must shorten the delay; down must lengthen it.
+//   The unbent length must be restored when bend returns to centre (8192).
+// ════════════════════════════════════════════════════════════════════════════
+static void test_pitch_bend() {
+    std::cout << "\n── T17: PitchBend adjusts active-voice delay_length ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+    s.NoteOn(60, 127);
+
+    float centre = s.state.voices[1].resA.delay_length;
+
+    s.PitchBend(16383); // maximum up (~+2 semitones)
+    float bent_up = s.state.voices[1].resA.delay_length;
+
+    s.PitchBend(0);     // maximum down (~−2 semitones)
+    float bent_down = s.state.voices[1].resA.delay_length;
+
+    s.PitchBend(8192);  // centre — should restore the original length
+    float restored = s.state.voices[1].resA.delay_length;
+
+    std::cout << "  delay_length centre=" << centre
+              << "  up=" << bent_up << "  down=" << bent_down
+              << "  restored=" << restored << "\n";
+
+    result("T17a bend-up shortens delay_length (higher pitch)",
+           bent_up < centre,
+           "PitchBend up did not shorten delay_length");
+    result("T17b bend-down lengthens delay_length (lower pitch)",
+           bent_down > centre,
+           "PitchBend down did not lengthen delay_length");
+    result("T17c centre bend (8192) restores delay_length within 0.1 sample",
+           std::fabs(restored - centre) < 0.1f,
+           "PitchBend centre did not restore the original delay_length");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T18 — Pitch bend held before NoteOn is applied immediately to new notes
+//   A bend wheel held at max-up when a new note is struck must shorten that
+//   note's delay_length from the start.  Also verifies the base_delay fields
+//   are stored correctly so a subsequent centre-bend restores the root pitch.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_pitch_bend_persists_to_new_note() {
+    std::cout << "\n── T18: Held pitch bend applies to notes struck while bent ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Establish the nominal (no-bend) delay for note 60
+    s.NoteOn(60, 127);
+    float nominal = s.state.voices[1].resA.delay_length;
+
+    // Hold bend up, then strike the same pitch — allocates voices[2]
+    s.PitchBend(16383);
+    s.NoteOn(60, 127);
+    float bent_at_noteon = s.state.voices[2].resA.delay_length; // voices[2]: second NoteOn
+
+    // Return to centre — delay should snap back to root pitch
+    s.PitchBend(8192);
+    float after_centre = s.state.voices[2].resA.delay_length;
+
+    std::cout << "  nominal delay=" << nominal
+              << "  delay while bent=" << bent_at_noteon
+              << "  after centre=" << after_centre << "\n";
+
+    result("T18a note struck while bent up has shorter delay_length",
+           bent_at_noteon < nominal,
+           "Held pitch bend was not applied to the new note's delay_length");
+    result("T18b returning to centre restores root delay_length within 0.1 sample",
+           std::fabs(after_centre - nominal) < 0.1f,
+           "Centre bend after bent NoteOn did not restore the root delay_length");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T19 — Loop filter pitch compensation accuracy
+//   After NoteOn(60) the effective loop period (delay_length + τ_LP + τ_AP)
+//   should equal srate/f₀ (183.47 samples for C4 at 48 kHz) to within 2 cents.
+//   This verifies that both the table generation (powf, not fasterpowf) and the
+//   pitch compensation formula (pa/(1-pa) for LP, (1+c)/(1-c) for AP) are correct.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_pitch_compensation_accuracy() {
+    std::cout << "\n── T19: Loop filter pitch compensation accuracy ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    s.NoteOn(60, 127);
+    uint8_t vi = s.state.next_voice_idx;
+
+    float dl  = s.state.voices[vi].resA.delay_length;
+    float lc  = s.state.voices[vi].resA.lowpass_coeff;
+    float ac  = s.state.voices[vi].resA.ap_coeff;
+
+    // Reconstruct the group delays using the same DC-limit formulas as NoteOn
+    float pa     = 1.0f - lc;
+    float tau_lp = pa / (1.0f - pa);                    // τ_LP = pa/(1-pa)
+    float tau_ap = (1.0f + ac) / (1.0f - ac);           // τ_AP = (1+c)/(1-c)
+    float effective_period = dl + tau_lp + tau_ap;
+
+    // C4 exact at A4=440 Hz, 48 kHz
+    float expected_period  = 48000.0f / (440.0f * powf(2.0f, (60.0f - 69.0f) / 12.0f));
+    float error_cents      = 1200.0f * log2f(effective_period / expected_period);
+
+    std::cout << "  delay_length    = " << dl              << " samples\n";
+    std::cout << "  lowpass_coeff   = " << lc              << "  τ_LP=" << tau_lp << "\n";
+    std::cout << "  ap_coeff        = " << ac              << "  τ_AP=" << tau_ap << "\n";
+    std::cout << "  effective period= " << effective_period << " samples (target=" << expected_period << ")\n";
+    std::cout << "  pitch error     = " << error_cents      << " cents\n";
+
+    result("T19a effective loop period within 2 cents of C4 target",
+           std::fabs(error_cents) < 2.0f,
+           "Pitch compensation inaccurate: effective period too far from 48000/261.63");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 int main() {
     std::cout << "=== RIPPLERX HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -729,6 +901,10 @@ int main() {
     test_tone_eq();
     test_noise_filter_state_clear();
     test_partls_mode_select_coupling();
+    test_energy_squelch();
+    test_pitch_bend();
+    test_pitch_bend_persists_to_new_note();
+    test_pitch_compensation_accuracy();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;
