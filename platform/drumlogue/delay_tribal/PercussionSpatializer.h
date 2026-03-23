@@ -553,20 +553,16 @@ private:
     /* Clone Generation with Proper Attack Softening using optimized vld4 gather */
     /*===========================================================================*/
 
-    /*===========================================================================*/
-    /* Clone Generation with Proper NEON v7 Implementation */
-    /*===========================================================================*/
-
     fast_inline void generate_clones_opt(float32x4_t* out_l, float32x4_t* out_r,
                                         float filter_depth) {
         float32x4_t acc_l = vdupq_n_f32(0.0f);
         float32x4_t acc_r = vdupq_n_f32(0.0f);
 
-        uint32_t num_groups = (clone_count_ + NEON_LANES - 1) / NEON_LANES;
-        uint32_t base_read = (write_ptr_ - 32) & DELAY_MASK;
+    uint32_t num_groups = (clone_count_ + NEON_LANES - 1) / NEON_LANES;
+    uint32_t base_read = (write_ptr_ - 32) & DELAY_MASK;
 
-        for (uint32_t g = 0; g < num_groups; g++) {
-            clone_group_t* group = &clone_groups_[g];
+    for (uint32_t g = 0; g < num_groups; g++) {
+        clone_group_t* group = &clone_groups_[g];
 
             // Process all 4 lanes in parallel using NEON vectors
             // Instead of scalar loops with vgetq_lane_f32, we use vector operations
