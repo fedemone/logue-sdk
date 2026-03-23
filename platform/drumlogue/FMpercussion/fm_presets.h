@@ -8,8 +8,8 @@
 #pragma once
 
 #include <stdint.h>
-#include “constants.h”
-#include “resonant_synthesis.h”
+#include "constants.h”
+#include "resonant_synthesis.h”
 
 // LFO target values (from lfo_enhanced.h)
 #define LFO_TARGET_NONE     0

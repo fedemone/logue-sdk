@@ -581,11 +581,11 @@ private:
     fast_inline float32x4_t fast_sin_neon(float32x4_t x) {
         // Manually unrolled: vgetq_lane_f32 / vsetq_lane_f32 require constant
         // lane indices; a loop variable is not accepted by the compiler.
-        float32x4_t result;
-        result = vsetq_lane_f32(fastersinfullf(vgetq_lane_f32(x, 0)), result, 0);
-        result = vsetq_lane_f32(fastersinfullf(vgetq_lane_f32(x, 1)), result, 1);
-        result = vsetq_lane_f32(fastersinfullf(vgetq_lane_f32(x, 2)), result, 2);
-        result = vsetq_lane_f32(fastersinfullf(vgetq_lane_f32(x, 3)), result, 3);
+        float s0 = fastersinfullf(vgetq_lane_f32(x, 0));
+        float s1 = fastersinfullf(vgetq_lane_f32(x, 1));
+        float s2 = fastersinfullf(vgetq_lane_f32(x, 2));
+        float s3 = fastersinfullf(vgetq_lane_f32(x, 3));
+        float32x4_t result = {s0, s1, s2, s3};
         return result;
     }
 
