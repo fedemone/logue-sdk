@@ -478,67 +478,150 @@ private:
     /* Clone Generation with Proper Attack Softening using optimized vld4 gather */
     /*===========================================================================*/
 
-    fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
-                                         float32x4_t* out_l, float32x4_t* out_r,
-                                         float filter_depth) {
-        float32x4_t acc_l = vdupq_n_f32(0.0f);
-        float32x4_t acc_r = vdupq_n_f32(0.0f);
+    /*===========================================================================*/
+/* Clone Generation with Proper NEON v7 Implementation */
+/*===========================================================================*/
 
-        uint32_t num_groups = (clone_count_ + NEON_LANES - 1) / NEON_LANES;
-        uint32_t base_read = (write_ptr_ - 32) & DELAY_MASK;
+fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
+                                     float32x4_t* out_l, float32x4_t* out_r,
+                                     float filter_depth) {
+    float32x4_t acc_l = vdupq_n_f32(0.0f);
+    float32x4_t acc_r = vdupq_n_f32(0.0f);
 
-        for (uint32_t g = 0; g < num_groups; g++) {
-            clone_group_t* group = &clone_groups_[g];
+    uint32_t num_groups = (clone_count_ + NEON_LANES - 1) / NEON_LANES;
+    uint32_t base_read = (write_ptr_ - 32) & DELAY_MASK;
 
-            // Calculate read positions for this group
-            float pos_vals[4];
-            uint32_t min_pos = DELAY_MAX_SAMPLES;
+    for (uint32_t g = 0; g < num_groups; g++) {
+        clone_group_t* group = &clone_groups_[g];
 
-            for (int lane = 0; lane < NEON_LANES; lane++) {
-                // Update LFO phase
-                float phase = vgetq_lane_f32(group->mod_phases, lane);
-                phase += vgetq_lane_f32(phase_inc_, 0);
-                if (phase >= 1.0f) phase -= 1.0f;
+            // Process all 4 lanes in parallel using NEON vectors
+            // Instead of scalar loops with vgetq_lane_f32, we use vector operations
 
-                // Update phase in vector (would need to reconstruct vector - simplified here)
-                uint32_t phase_idx = ((uint32_t)(phase * LFO_TABLE_SIZE)) & (LFO_TABLE_SIZE - 1);
-                float lfo = lfo_table[phase_idx];
+            // Step 1: Update LFO phases for all 4 lanes
+            float32x4_t phases = group->mod_phases;
+            float32x4_t phase_inc_vec = phase_inc_;
 
-                float wobble = lfo * vgetq_lane_f32(group->pitch_mod, lane) * wobble_depth_;
-                float delay = vgetq_lane_f32(group->delay_offsets, lane) + wobble;
-                float offset_samples = delay * 48.0f;
+            // Add phase increment to all lanes
+            phases = vaddq_f32(phases, phase_inc_vec);
 
-                float pos = (float)base_read - offset_samples;
-                while (pos < 0) pos += DELAY_MAX_SAMPLES;
-                while (pos >= DELAY_MAX_SAMPLES) pos -= DELAY_MAX_SAMPLES;
+            // Wrap phases to [0, 1.0)
+            uint32x4_t overflow = vcgtq_f32(phases, vdupq_n_f32(1.0f));
+            phases = vbslq_f32(overflow, vsubq_f32(phases, vdupq_n_f32(1.0f)), phases);
 
-                uint32_t pos_int = (uint32_t)pos;
-                pos_vals[lane] = pos;
-                if (pos_int < min_pos) min_pos = pos_int;
+            // Store updated phases back
+            group->mod_phases = phases;
+
+            // Step 2: Convert phases to LFO table indices
+            // Multiply by table size and convert to integer
+            float32x4_t scaled = vmulq_f32(phases, vdupq_n_f32(LFO_TABLE_SIZE));
+            uint32x4_t indices = vcvtq_u32_f32(scaled);
+            // Mask to table size (power of 2)
+            indices = vandq_u32(indices, vdupq_n_u32(LFO_TABLE_SIZE - 1));
+
+            // Step 3: Gather LFO values from table (need to do scalar due to table lookup)
+            float lfo_vals[4];
+            uint32_t idx_vals[4];
+            vst1q_u32(idx_vals, indices);
+            for (int i = 0; i < 4; i++) {
+                lfo_vals[i] = lfo_table[idx_vals[i]];
+            }
+            float32x4_t lfo = vld1q_f32(lfo_vals);
+
+            // Step 4: Calculate wobble and delay offsets
+            float32x4_t wobble = vmulq_f32(lfo, group->pitch_mod);
+            wobble = vmulq_f32(wobble, vdupq_n_f32(wobble_depth_));
+
+            float32x4_t delays = vaddq_f32(group->delay_offsets, wobble);
+            float32x4_t offset_samples = vmulq_f32(delays, vdupq_n_f32(48.0f));
+
+            // Step 5: Calculate read positions
+            float32x4_t base_read_vec = vdupq_n_f32((float)base_read);
+            float32x4_t read_pos = vsubq_f32(base_read_vec, offset_samples);
+
+            // Wrap read positions to [0, DELAY_MAX_SAMPLES)
+            float32x4_t delay_max_vec = vdupq_n_f32(DELAY_MAX_SAMPLES);
+            float32x4_t pos_adj;
+
+            // Handle negative wrap
+            uint32x4_t neg = vcltq_f32(read_pos, vdupq_n_f32(0.0f));
+            pos_adj = vbslq_f32(neg, vaddq_f32(read_pos, delay_max_vec), read_pos);
+
+            // Handle positive wrap
+            uint32x4_t overflow_pos = vcgtq_f32(pos_adj, vsubq_f32(delay_max_vec, vdupq_n_f32(1.0f)));
+            pos_adj = vbslq_f32(overflow_pos, vsubq_f32(pos_adj, delay_max_vec), pos_adj);
+
+            // Step 6: Extract integer positions and fractions
+            uint32x4_t pos_int = vcvtq_u32_f32(pos_adj);
+            float32x4_t pos_frac = vsubq_f32(pos_adj, vcvtq_f32_u32(pos_int));
+
+            // Get min position for base index
+            uint32_t pos_ints[4];
+            vst1q_u32(pos_ints, pos_int);
+            uint32_t min_pos = pos_ints[0];
+            for (int i = 1; i < 4; i++) {
+                if (pos_ints[i] < min_pos) min_pos = pos_ints[i];
             }
 
-            // OPTIMIZED: Use vld4 to load all 4 clones at once
+            // Step 7: Load using vld4 (this is the optimized part)
             uint32_t base_idx = min_pos;
             float32x4x4_t left_frames = read_delayed_vld4(base_idx);
             float32x4x4_t right_frames = vld4q_f32(&delay_line_[base_idx].samples[4]);
 
-            // Extract the right time for each clone
+            // Step 8: Extract samples for each lane with interpolation
             float32x4_t delayed_l = vdupq_n_f32(0.0f);
             float32x4_t delayed_r = vdupq_n_f32(0.0f);
 
-            for (int lane = 0; lane < NEON_LANES; lane++) {
-                int offset = (int)(pos_vals[lane] - base_idx);
+            // We need to extract per-lane, but this is unavoidable for linear interpolation
+            // Get integer offsets for each lane
+            int offsets[4];
+            for (int lane = 0; lane < 4; lane++) {
+                offsets[lane] = (int)(pos_ints[lane] - min_pos);
+            }
+
+            // Get fractions for interpolation
+            float frac_vals[4];
+            vst1q_f32(frac_vals, pos_frac);
+
+            // Extract and interpolate each lane
+            for (int lane = 0; lane < 4; lane++) {
+                int offset = offsets[lane];
                 if (offset >= 0 && offset < 4) {
-                    float l_sample = vgetq_lane_f32(left_frames.val[offset], lane);
-                    float r_sample = vgetq_lane_f32(right_frames.val[offset], lane);
+                    // Sample at base position + offset
+                    float l_sample0 = vgetq_lane_f32(left_frames.val[offset], lane);
+                    float r_sample0 = vgetq_lane_f32(right_frames.val[offset], lane);
+
+                    // If we need next sample for interpolation (offset + 1)
+                    if (offset + 1 < 4) {
+                        float l_sample1 = vgetq_lane_f32(left_frames.val[offset + 1], lane);
+                        float r_sample1 = vgetq_lane_f32(right_frames.val[offset + 1], lane);
+
+                        float frac = frac_vals[lane];
+                        float l_sample = l_sample0 + frac * (l_sample1 - l_sample0);
+                        float r_sample = r_sample0 + frac * (r_sample1 - r_sample0);
+
+                        delayed_l = vsetq_lane_f32(l_sample, delayed_l, lane);
+                        delayed_r = vsetq_lane_f32(r_sample, delayed_r, lane);
+                    } else {
+                        // No next sample available, just use current
+                        delayed_l = vsetq_lane_f32(l_sample0, delayed_l, lane);
+                        delayed_r = vsetq_lane_f32(r_sample0, delayed_r, lane);
+                    }
+                } else {
+                    // Fallback for wrap-around or out-of-range
+                    uint32_t idx = pos_ints[lane];
+                    float frac = frac_vals[lane];
+                    uint32_t idx_next = (idx + 1) & DELAY_MASK;
+
+                    float l_sample0 = delay_line_[idx].samples[lane];
+                    float r_sample0 = delay_line_[idx].samples[lane + 4];
+                    float l_sample1 = delay_line_[idx_next].samples[lane];
+                    float r_sample1 = delay_line_[idx_next].samples[lane + 4];
+
+                    float l_sample = l_sample0 + frac * (l_sample1 - l_sample0);
+                    float r_sample = r_sample0 + frac * (r_sample1 - r_sample0);
 
                     delayed_l = vsetq_lane_f32(l_sample, delayed_l, lane);
                     delayed_r = vsetq_lane_f32(r_sample, delayed_r, lane);
-                } else {
-                    // Fallback for wrap-around
-                    uint32_t idx = (uint32_t)pos_vals[lane];
-                    delayed_l = vsetq_lane_f32(delay_line_[idx].samples[lane], delayed_l, lane);
-                    delayed_r = vsetq_lane_f32(delay_line_[idx].samples[lane + 4], delayed_r, lane);
                 }
             }
 
@@ -569,8 +652,8 @@ private:
             acc_r = vmlaq_f32(acc_r, delayed_r, group->right_gains);
         }
 
-        *out_l = acc_l;
-        *out_r = acc_r;
+            *out_l = acc_l;
+            *out_r = acc_r;
     }
 
     /**
