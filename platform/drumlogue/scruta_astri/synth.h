@@ -11,16 +11,19 @@
 
 class alignas(16) ScrutaAstri {
 public:
-    static constexpr float CLEAN_MOOG_BORDER = 33.0f;
-    static constexpr float MOOG_SHE_BORDER = 66.0f;
-    enum ParamIndex {
+     enum ParamIndex {
         k_paramProgram = 0, k_paramNote, k_paramOsc1Wave, k_paramOsc2Wave,
         k_paramO2Detune, k_paramO2SubOct, k_paramOsc2Mix, k_paramMastrVol,
         k_paramF1Cutoff, k_paramF1Reso, k_paramF2Cutoff, k_paramF2Reso,
-        k_paramL1Wave, k_paramL1Rate, k_paramL1Depth, k_paramL2Rate,
-        k_paramL2Wave, k_paramL2Depth, k_paramL3Wave, k_paramL3Rate,
-        k_paramL3Depth, k_paramSampRed, k_paramBitRed, k_paramCMOSDist
+        k_paramL1Wave, k_paramL1Rate, k_paramL1Depth, k_paramL2Wave,
+        k_paramL2Rate, k_paramL2Depth, k_paramL3Wave, k_paramL3Rate,
+        k_paramL3Depth, k_paramSampRed, k_paramBitRed, k_paramCMOSDist,
+        k_paramLast // this one is just a marker
     };
+
+    // Constant Borders
+    static constexpr float CLEAN_MOOG_BORDER = 33.0f;
+    static constexpr float MOOG_SHE_BORDER = 66.0f;
 
     inline int8_t Init(const unit_runtime_desc_t * desc) {
         if (desc->samplerate != 48000) return k_unit_err_samplerate;
@@ -47,6 +50,18 @@ public:
         m_params[index] = value;
 
         switch(index) {
+            case k_paramProgram:
+                // Re-sync LFOs on Program change to act as a Drone Reset
+                lfo1.phase = 0; lfo2.phase = 0; lfo3.phase = 0;
+                break;
+            case k_paramNote:
+                m_base_hz = 440.0f * fasterpowf(2.0f, ((float)value - 69.0f) / 12.0f);
+                updateOscillators();
+                break;
+            case k_paramO2Detune:
+            case k_paramO2SubOct:
+                updateOscillators();
+                break;
             // -- LFO Rates: Exponential mapping from 0.01Hz to 1000Hz
             // A value of 0 = 0.01Hz (100 seconds per cycle for ADSR sweeps)
             // A value of 50 = 3.16Hz (Standard LFO)
@@ -80,34 +95,34 @@ public:
             // -- FX
             case k_paramSampRed: m_srr_rate = 1.0f - ((float)value / 105.0f); break;
             case k_paramBitRed:  m_brr_steps = fasterpowf(2.0f, 16.0f - (float)value); break;
+            // FIX: The Sherman Destruction Boost
             case k_paramCMOSDist: {
                 float val = (float)value;
-
-                // Store your mitigation multiplier for the audio thread
                 m_asym_mod_depth = val / MOOG_SHE_BORDER;
 
                 if (val < CLEAN_MOOG_BORDER) {
                     m_cmos_gain = 1.0f + (val * 0.5f);
-                    filter1.drive = 0.0f;
-                    filter1.sherman_asym = 0.0f;
-                    filter1.lfo_res_mod = 0.0f;
+                    filter1.drive = 0.0f; filter1.sherman_asym = 0.0f; filter1.lfo_res_mod = 0.0f;
+                    m_sherman_makeup = 1.0f;
                 }
                 else if (val < MOOG_SHE_BORDER) {
                     float moog_blend = (val - CLEAN_MOOG_BORDER) / CLEAN_MOOG_BORDER;
                     m_cmos_gain = 17.5f;
-                    filter1.drive = moog_blend * 3.0f;
-                    filter1.sherman_asym = 0.0f;
-                    filter1.lfo_res_mod = 0.0f;
+                    filter1.drive = moog_blend * 3.0f; filter1.sherman_asym = 0.0f; filter1.lfo_res_mod = 0.0f;
+                    m_sherman_makeup = 1.0f;
                 }
                 else {
                     float sherman_blend = (val - MOOG_SHE_BORDER) / (100.0f - MOOG_SHE_BORDER);
-                    m_cmos_gain = 17.5f + (sherman_blend * 10.0f);
-                    filter1.drive = 3.0f + (sherman_blend * 2.0f);
-                    filter1.sherman_asym = sherman_blend;
+                    // MASSIVE DRIVE & GAIN INCREASES
+                    m_cmos_gain = 17.5f + (sherman_blend * 40.0f); // Was 10
+                    filter1.drive = 3.0f + (sherman_blend * 5.0f); // Rip it harder
+                    filter1.sherman_asym = sherman_blend * 1.5f;   // Push base asymmetry higher
                     filter1.lfo_res_mod = sherman_blend;
+
+                    // Recover the volume lost from extreme clipping
+                    m_sherman_makeup = 1.0f + (sherman_blend * 3.5f);
                 }
 
-                // Set Filter 2 base characteristics
                 filter2.drive = filter1.drive;
                 filter2.sherman_asym = filter1.sherman_asym;
                 filter2.lfo_res_mod = filter1.lfo_res_mod;
@@ -116,12 +131,13 @@ public:
 
             // -- Mixer
             case k_paramOsc2Mix: m_osc2_mix = (float)value / 100.0f; break;
-            case k_paramMastrVol: m_master_vol = (float)value / 100.0f; break;
-
+            // FIX: 300% Volume Headroom!
+            case k_paramMastrVol: m_master_vol = ((float)value / 100.0f) * 3.0f; break;
+            // FIX: Cutoff 10x Trick
+            case k_paramF1Cutoff: m_f1_base_hz = (float)value * 10.0f; break;
+            case k_paramF2Cutoff: m_f2_base_hz = (float)value * 10.0f; break;
             // -- Filters Base (Resonance 0-100 -> Q 0.707 to 5.0)
-            case k_paramF1Cutoff: m_f1_base_hz = (float)value; break;
             case k_paramF1Reso:   m_f1_q = 0.707f + ((float)value / 25.0f); break;
-            case k_paramF2Cutoff: m_f2_base_hz = (float)value; break;
             case k_paramF2Reso:   m_f2_q = 0.707f + ((float)value / 25.0f); break;
         }
     }
@@ -135,15 +151,17 @@ public:
     }
 
     inline void updateOscillators() {
-        // True Stargazer Pitch Mapping (1Hz to 500Hz natively)
         osc1.set_frequency(m_base_hz, 48000.0f);
 
-        // True Stargazer Detune: Linear +/- 5Hz
         float detune_hz = ((float)m_params[k_paramO2Detune] / 100.0f) * 5.0f;
         float osc2_hz = m_base_hz + detune_hz;
 
-        if (m_params[k_paramO2SubOct] == 1) {
-            osc2_hz *= 0.5f; // Drop one octave
+        // FIX: The 0..3 SubOctave Range
+        switch (m_params[k_paramO2SubOct]) {
+            case 1: osc2_hz *= 0.5f; break;   // -1 Octave
+            case 2: osc2_hz *= 0.25f; break;  // -2 Octaves
+            case 3: osc2_hz *= 2.0f; break;   // +1 Octave
+            default: break;                   // 0 = Unison
         }
 
         osc2.set_frequency(osc2_hz, 48000.0f);
@@ -200,12 +218,15 @@ public:
 
             // Inject the raw wavetable shape (sig1) into Filter 2's asymmetry,
             // mitigated by your MO_SHE_BORDER math!
-            float dynamic_asym = filter1.sherman_asym + (sig1 * m_asym_mod_depth);
+            // Inject the raw wavetable shape into Filter 2's asymmetry
+            float dynamic_asym = filter1.sherman_asym + (sig1 * m_asym_mod_depth * 2.0f);
 
-            // Keep it mathematically safe so the filter doesn't explode
-            filter2.sherman_asym = fmaxf(0.0f, fminf(2.0f, dynamic_asym));
-
+            // Expanded bounds so it can tear harder
+            filter2.sherman_asym = fmaxf(0.0f, fminf(4.0f, dynamic_asym));
             mixed_sig = filter2.process(mixed_sig, l3_val);
+
+            // FIX: Apply the Sherman Make-up Gain to prevent volume drops
+            mixed_sig *= m_sherman_makeup;
 
             // 6. LFO 3 VCA & CMOS DISTORTION
             // LFO3 acts as a Tremolo (1.0 DC offset + LFO)
@@ -230,6 +251,8 @@ private:
     FastLFO lfo1;
     FastLFO lfo2;
     FastLFO lfo3;
+
+    float m_sherman_makeup = 1.0f;
 
     // Derived State Variables
     float m_base_hz = 65.4f; // Default to Note 36 (C2)
