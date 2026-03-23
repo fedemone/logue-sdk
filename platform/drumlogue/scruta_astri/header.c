@@ -17,39 +17,39 @@ const __unit_header unit_header_t unit_header = {
     .num_params = 24,
     .params = {
         // Page 1: Base
-        {0, 15, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Program"}},
+        {0, 15, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Prgrm"}},
         {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
-        {0, 239, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Osc1Wave"}},
-        {0, 239, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Osc2Wave"}},
+        {0, 89, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O1Wave"}},
+        {0, 89, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2Wave"}},
 
-        // Page 2: Osc 2 Controls
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2Detune"}},
-        {0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2SubOct"}},
-        {0, 100, 50, 0, k_unit_param_type_percent, 0, 0, 0, {"Osc2Mix"}},
-        {0, 100, 50, 0, k_unit_param_type_percent, 0, 0, 0, {"MastrVol"}},
+        // Page 2: Osc 2 & Mix
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2Dtun"}},
+        {0, 3, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2Sub"}}, // 0..3 Range!
+        {0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"O2Mix"}},
+        {0, 100, 50, 80, k_unit_param_type_percent, 0, 0, 0, {"Volume"}},
 
-        // Page 3: Filters
-        {20, 15000, 10000, 0, k_unit_param_type_hertz, 0, 0, 0, {"F1Cutoff"}},
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"F1Reso"}},
-        {20, 15000, 10000, 0, k_unit_param_type_hertz, 0, 0, 0, {"F2Cutoff"}},
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"F2Reso"}},
+        // Page 3: Filters (2 to 1500 -> will be *10 for 20Hz-15000Hz)
+        {2, 1500, 80, 80, k_unit_param_type_strings, 0, 0, 0, {"F1Cut"}},
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"F1Res"}},
+        {2, 1500, 80, 80, k_unit_param_type_strings, 0, 0, 0, {"F2Cut"}},
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"F2Res"}},
 
         // Page 4: LFO 1 & 2
         {0, 5, 0, 0, k_unit_param_type_none, 0, 0, 0, {"L1Wave"}},
-        {1, 100, 10, 0, k_unit_param_type_none, 0, 0, 0, {"L1Rate"}},
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"L1Depth"}},
-        {1, 100, 10, 0, k_unit_param_type_none, 0, 0, 0, {"L2Rate"}},
+        {0, 100, 10, 10, k_unit_param_type_none, 0, 0, 0, {"L1Rate"}},
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"L1Dpth"}},
+        {0, 5, 0, 0, k_unit_param_type_none, 0, 0, 0, {"L2Wave"}},
 
         // Page 5: LFO 2 & 3
-        {0, 5, 0, 0, k_unit_param_type_none, 0, 0, 0, {"L2Wave"}},
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
+        {0, 100, 10, 10, k_unit_param_type_none, 0, 0, 0, {"L2Rate"}},
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"L2Dpth"}},
         {0, 5, 0, 0, k_unit_param_type_none, 0, 0, 0, {"L3Wave"}},
-        {1, 100, 10, 0, k_unit_param_type_none, 0, 0, 0, {"L3Rate"}},
+        {0, 100, 10, 70, k_unit_param_type_none, 0, 0, 0, {"L3Rate"}},
 
-        // Page 6: FX & LoFi
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"L3Depth"}},
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"SampRed"}},
+        // Page 6: FX
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"L3Dpth"}},
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"SRRed"}},
         {0, 15, 0, 0, k_unit_param_type_none, 0, 0, 0, {"BitRed"}},
-        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"CMOSDist"}}
+        {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"CMOS"}}
     }
 };

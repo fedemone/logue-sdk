@@ -1,5 +1,6 @@
 #include "unit.h"
 #include "synth.h"
+#include <cstdio>
 
 static ScrutaAstri s_synth;
 
@@ -25,7 +26,23 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value) {
-    return nullptr; // Handled by OS unless custom strings are needed
+    static char buf[16];
+
+    // Format Cutoffs dynamically (value * 10)
+    if (id == ScrutaAstri::k_paramF1Cutoff || id == ScrutaAstri::k_paramF2Cutoff) {
+        snprintf(buf, sizeof(buf), "%d Hz", (int)(value * 10));
+        return buf;
+    }
+
+    // Format SubOctave cleanly
+    if (id == ScrutaAstri::k_paramO2SubOct) {
+        if (value == 0) return "Unison";
+        if (value == 1) return "-1 Oct";
+        if (value == 2) return "-2 Oct";
+        if (value == 3) return "+1 Oct";
+    }
+
+    return nullptr; // Let OS handle everything else natively
 }
 
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
