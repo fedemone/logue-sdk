@@ -479,20 +479,20 @@ private:
     /*===========================================================================*/
 
     /*===========================================================================*/
-/* Clone Generation with Proper NEON v7 Implementation */
-/*===========================================================================*/
+    /* Clone Generation with Proper NEON v7 Implementation */
+    /*===========================================================================*/
 
-fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
-                                     float32x4_t* out_l, float32x4_t* out_r,
-                                     float filter_depth) {
-    float32x4_t acc_l = vdupq_n_f32(0.0f);
-    float32x4_t acc_r = vdupq_n_f32(0.0f);
+    fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
+                                        float32x4_t* out_l, float32x4_t* out_r,
+                                        float filter_depth) {
+        float32x4_t acc_l = vdupq_n_f32(0.0f);
+        float32x4_t acc_r = vdupq_n_f32(0.0f);
 
-    uint32_t num_groups = (clone_count_ + NEON_LANES - 1) / NEON_LANES;
-    uint32_t base_read = (write_ptr_ - 32) & DELAY_MASK;
+        uint32_t num_groups = (clone_count_ + NEON_LANES - 1) / NEON_LANES;
+        uint32_t base_read = (write_ptr_ - 32) & DELAY_MASK;
 
-    for (uint32_t g = 0; g < num_groups; g++) {
-        clone_group_t* group = &clone_groups_[g];
+        for (uint32_t g = 0; g < num_groups; g++) {
+            clone_group_t* group = &clone_groups_[g];
 
             // Process all 4 lanes in parallel using NEON vectors
             // Instead of scalar loops with vgetq_lane_f32, we use vector operations
@@ -568,8 +568,18 @@ fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
             float32x4x4_t right_frames = vld4q_f32(&delay_line_[base_idx].samples[4]);
 
             // Step 8: Extract samples for each lane with interpolation
-            float32x4_t delayed_l = vdupq_n_f32(0.0f);
-            float32x4_t delayed_r = vdupq_n_f32(0.0f);
+            // Store frames into standard arrays to safely index dynamically
+            float l_frames_arr[4][4];
+            vst1q_f32(l_frames_arr[0], left_frames.val[0]);
+            vst1q_f32(l_frames_arr[1], left_frames.val[1]);
+            vst1q_f32(l_frames_arr[2], left_frames.val[2]);
+            vst1q_f32(l_frames_arr[3], left_frames.val[3]);
+
+            float r_frames_arr[4][4];
+            vst1q_f32(r_frames_arr[0], right_frames.val[0]);
+            vst1q_f32(r_frames_arr[1], right_frames.val[1]);
+            vst1q_f32(r_frames_arr[2], right_frames.val[2]);
+            vst1q_f32(r_frames_arr[3], right_frames.val[3]);
 
             // We need to extract per-lane, but this is unavoidable for linear interpolation
             // Get integer offsets for each lane
@@ -582,29 +592,29 @@ fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
             float frac_vals[4];
             vst1q_f32(frac_vals, pos_frac);
 
+            float out_l_arr[4];
+            float out_r_arr[4];
+
             // Extract and interpolate each lane
             for (int lane = 0; lane < 4; lane++) {
                 int offset = offsets[lane];
                 if (offset >= 0 && offset < 4) {
                     // Sample at base position + offset
-                    float l_sample0 = vgetq_lane_f32(left_frames.val[offset], lane);
-                    float r_sample0 = vgetq_lane_f32(right_frames.val[offset], lane);
+                    float l_sample0 = l_frames_arr[offset][lane];
+                    float r_sample0 = r_frames_arr[offset][lane];
 
                     // If we need next sample for interpolation (offset + 1)
                     if (offset + 1 < 4) {
-                        float l_sample1 = vgetq_lane_f32(left_frames.val[offset + 1], lane);
-                        float r_sample1 = vgetq_lane_f32(right_frames.val[offset + 1], lane);
+                        float l_sample1 = l_frames_arr[offset + 1][lane];
+                        float r_sample1 = r_frames_arr[offset + 1][lane];
 
                         float frac = frac_vals[lane];
-                        float l_sample = l_sample0 + frac * (l_sample1 - l_sample0);
-                        float r_sample = r_sample0 + frac * (r_sample1 - r_sample0);
-
-                        delayed_l = vsetq_lane_f32(l_sample, delayed_l, lane);
-                        delayed_r = vsetq_lane_f32(r_sample, delayed_r, lane);
+                        out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
+                        out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
                     } else {
                         // No next sample available, just use current
-                        delayed_l = vsetq_lane_f32(l_sample0, delayed_l, lane);
-                        delayed_r = vsetq_lane_f32(r_sample0, delayed_r, lane);
+                        out_l_arr[lane] = l_sample0;
+                        out_r_arr[lane] = r_sample0;
                     }
                 } else {
                     // Fallback for wrap-around or out-of-range
@@ -617,13 +627,13 @@ fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
                     float l_sample1 = delay_line_[idx_next].samples[lane];
                     float r_sample1 = delay_line_[idx_next].samples[lane + 4];
 
-                    float l_sample = l_sample0 + frac * (l_sample1 - l_sample0);
-                    float r_sample = r_sample0 + frac * (r_sample1 - r_sample0);
-
-                    delayed_l = vsetq_lane_f32(l_sample, delayed_l, lane);
-                    delayed_r = vsetq_lane_f32(r_sample, delayed_r, lane);
+                    out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
+                    out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
                 }
             }
+
+            float32x4_t delayed_l = vld1q_f32(out_l_arr);
+            float32x4_t delayed_r = vld1q_f32(out_r_arr);
 
             // Apply velocity randomization
             delayed_l = vmulq_f32(delayed_l, group->velocity);
@@ -657,23 +667,23 @@ fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
     }
 
     /**
-     * Attack softening filter using NEON
-     */
+    * Attack softening filter using NEON
+    */
     fast_inline float32x4_t apply_attack_softening(float32x4_t in, uint32_t group_idx) {
         float coeff = transient_detected_ ? attack_soften_ : 0.0f;
         float32x4_t alpha = vdupq_n_f32(coeff);
         float32x4_t one_minus_alpha = vdupq_n_f32(1.0f - coeff);
 
         float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
-                                     vmulq_f32(filter_state_[group_idx], one_minus_alpha));
+                                    vmulq_f32(filter_state_[group_idx], one_minus_alpha));
         filter_state_[group_idx] = out;
 
         return out;
     }
 
     /**
-     * Update panning using pre-calculated tables
-     */
+    * Update panning using pre-calculated tables
+    */
     void update_panning() {
         for (int group = 0; group < CLONE_GROUPS; group++) {
             clone_group_t* g = &clone_groups_[group];

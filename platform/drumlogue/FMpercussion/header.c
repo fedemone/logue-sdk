@@ -4,7 +4,6 @@
  */
 
 #include "unit.h"
-#include "constants.h"
 
 // String tables
 static const char* lfo_shape_strings[9] = {

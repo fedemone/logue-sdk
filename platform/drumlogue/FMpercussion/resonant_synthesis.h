@@ -15,11 +15,11 @@
 
 // Resonant mode types
 typedef enum {
-    RESONANT_MODE_LOWPASS = 0,   // Single-sided (low-pass character)
+    RESONANT_MODE_LOWPASS  = 0,  // Single-sided (low-pass character)
     RESONANT_MODE_BANDPASS = 1,  // Double-sided (band-pass character)
     RESONANT_MODE_HIGHPASS = 2,  // Derived high-pass
-    RESONANT_MODE_NOTCH = 3,     // Notch filter character
-    RESONANT_MODE_PEAK = 4       // Peak filter (boost around center)
+    RESONANT_MODE_NOTCH    = 3,  // Notch filter character
+    RESONANT_MODE_PEAK     = 4   // Peak filter (boost around center)
 } resonant_mode_t;
 
 /**

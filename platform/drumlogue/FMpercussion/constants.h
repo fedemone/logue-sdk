@@ -26,6 +26,7 @@
 #else
 #include <stdint.h>
 #include <math.h>
+#define constexpr static const
 #endif
 
 // ============================================================================
@@ -245,20 +246,20 @@ constexpr float FILTER_Q_LINKWITZ_RILEY = 0.5f;    // Linkwitz-Riley (cascaded)
  * Compile-time calculation of 2^(n/12) for any n
  * Can be used to generate interval ratios at compile time
  */
-constexpr float interval_ratio(int semitones) {
+static inline float interval_ratio(int semitones) {
     return powf(2.0f, semitones / 12.0f);
 }
 
 /**
  * Convert dB to linear amplitude
  */
-constexpr float db_to_linear(float db) {
+static inline float db_to_linear(float db) {
     return powf(10.0f, db / 20.0f);
 }
 
 /**
  * Convert linear amplitude to dB
  */
-constexpr float linear_to_db(float linear) {
+static inline float linear_to_db(float linear) {
     return 20.0f * log10f(linear);
 }
