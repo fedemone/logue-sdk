@@ -30,7 +30,21 @@
 #define NUM_OF_PRESETS (12)
 #define NAME_LENGTH    (12)
 
-extern char preset_names[NUM_OF_PRESETS][NAME_LENGTH];
+char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
+{
+    "Deep Tribal",
+    "Metal Storm",
+    "ChordalPerc",
+    "Phase Dance",
+    "BipolarBass",
+    "Snare Roll",
+    "AmbientMetl",
+    "Polyrhythm",
+    "ResoKick",
+    "ResoTom",
+    "ResoSnare",
+    "ResoMetal"
+};
 
 typedef enum {
   DEEP_TRIBAL = 0,
