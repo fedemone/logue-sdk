@@ -8,7 +8,7 @@
 
 #include "fm_presets.h"
 
-char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
+const char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
 {
     "Deep Tribal",
     "Metal Storm",
