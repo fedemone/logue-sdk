@@ -15,6 +15,7 @@
 #include <arm_neon.h>
 #include <math.h>
 #include <stdint.h>
+#include "float_math.h"
 
 // Drive modes
 #define DRIVE_MODE_SOFT_CLIP   0

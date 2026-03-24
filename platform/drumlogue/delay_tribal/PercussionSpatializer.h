@@ -103,6 +103,13 @@ public:
             tables_initialized = true;
         }
 
+        // Initialize LFO table (triangle wave) here to ensure it runs on drumlogue
+        // (attribute((constructor)) is unreliable in shared libs)
+        for (int i = 0; i < LFO_TABLE_SIZE; i++) {
+            float phase = (float)i / LFO_TABLE_SIZE;
+            lfo_table[i] = 2.0f * fabsf(phase - 0.5f);
+        }
+
         // Initialize filter states
         memset(&mode_filters_, 0, sizeof(mode_filters_));
 
@@ -181,71 +188,138 @@ public:
         }
 
         const float* in_p = in;
-        float* out_p = out;
-        const float* out_e = out_p + (frames << 1);
+        float*       out_p = out;
 
-        // Pre-calculate mix gains
-        float32x4_t wet_gain = vdupq_n_f32(mix_);
-        float32x4_t dry_gain = vdupq_n_f32(1.0f - mix_);
-
-        // Handle parameter ramping for filters
+        // Determine starting filter depth for ramping
+        float current_depth = mode_filters_.last_depth_param;
+        float depth_step = 0.0f;
         if (mode_filters_.ramp_samples > 0) {
-            float step = (mode_filters_.depth_param - mode_filters_.last_depth_param) /
+            depth_step = (mode_filters_.depth_param - mode_filters_.last_depth_param) /
                          mode_filters_.ramp_samples;
-            float current_depth = mode_filters_.last_depth_param;
+        }
 
-            for (; out_p < out_e && mode_filters_.ramp_samples > 0;
-                   in_p += 8, out_p += 8, mode_filters_.ramp_samples--) {
-                current_depth += step;
-                process_frame(in_p, out_p, current_depth, wet_gain, dry_gain);
+        const float32x4_t dry4 = vdupq_n_f32(1.0f - mix_);
+        const float32x4_t wet4 = vdupq_n_f32(mix_);
+
+        // -----------------------------------------------------------------------
+        // Main loop: 4 stereo frames (8 floats) per iteration.
+        // vld2q_f32 de-interleaves [L0,R0,L1,R1,L2,R2,L3,R3] into
+        //   val[0] = [L0,L1,L2,L3]  val[1] = [R0,R1,R2,R3]
+        // vst2q_f32 re-interleaves on output.
+        // -----------------------------------------------------------------------
+        size_t frames4 = frames & ~3u;
+        for (size_t i = 0; i < frames4; i += 4, in_p += 8, out_p += 8) {
+
+            // --- Advance depth ramp by 4 steps ---
+            if (mode_filters_.ramp_samples > 0) {
+                uint32_t steps = (mode_filters_.ramp_samples >= 4) ? 4u
+                                                                    : mode_filters_.ramp_samples;
+                current_depth += depth_step * (float)steps;
+                mode_filters_.ramp_samples -= steps;
+                if (mode_filters_.ramp_samples == 0) {
+                    current_depth = mode_filters_.depth_param;
+                    mode_filters_.last_depth_param = current_depth;
+                    depth_step = 0.0f;
+                }
+            } else {
+                current_depth = mode_filters_.depth_param;
             }
-            mode_filters_.last_depth_param = mode_filters_.depth_param;
+
+            // --- De-interleave 4 stereo frames in one instruction ---
+            float32x4x2_t stereo_in = vld2q_f32(in_p);
+            float32x4_t in_l4 = stereo_in.val[0];  // [L0, L1, L2, L3]
+            float32x4_t in_r4 = stereo_in.val[1];  // [R0, R1, R2, R3]
+
+            // --- Transient detection: 4 real consecutive samples per vector ---
+            transient_detected_ = detect_transient_fast(in_l4, in_r4);
+            if (transient_detected_) randomize_velocities();
+
+            // --- Write each frame then generate its clones (preserves delay ordering) ---
+            float l_arr[NEON_LANES], r_arr[NEON_LANES];
+            vst1q_f32(l_arr, in_l4);
+            vst1q_f32(r_arr, in_r4);
+
+            float wet_l_arr[NEON_LANES], wet_r_arr[NEON_LANES];
+            for (int f = 0; f < 4; f++) {
+                write_to_delay_opt(l_arr[f], r_arr[f]);
+
+                float32x4_t acc_l = vdupq_n_f32(0.0f);
+                float32x4_t acc_r = vdupq_n_f32(0.0f);
+                generate_clones_opt(&acc_l, &acc_r, current_depth);
+
+                wet_l_arr[f] = horizontal_sum_f32x4(acc_l);
+                wet_r_arr[f] = horizontal_sum_f32x4(acc_r);
+            }
+
+            float32x4_t wet_l4 = vld1q_f32(wet_l_arr);
+            float32x4_t wet_r4 = vld1q_f32(wet_r_arr);
+
+            // --- Apply mode crossfade (scalar: counter changes each frame) ---
+            if (crossfade_active_) {
+                for (int f = 0; f < 4; f++) {
+                    float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
+                    wet_l_arr[f] *= fade_in;
+                    wet_r_arr[f] *= fade_in;
+                    if (--crossfade_counter_ == 0) { crossfade_active_ = false; break; }
+                }
+                wet_l4 = vld1q_f32(wet_l_arr);
+                wet_r4 = vld1q_f32(wet_r_arr);
+            }
+
+            // --- Wet/dry mix using NEON ---
+            float32x4_t out_l4 = vmlaq_f32(vmulq_f32(in_l4, dry4), wet_l4, wet4);
+            float32x4_t out_r4 = vmlaq_f32(vmulq_f32(in_r4, dry4), wet_r4, wet4);
+
+            // --- Re-interleave and store 4 stereo frames in one instruction ---
+            float32x4x2_t stereo_out;
+            stereo_out.val[0] = out_l4;
+            stereo_out.val[1] = out_r4;
+            vst2q_f32(out_p, stereo_out);
         }
 
-        // Process remaining frames
-        for (; out_p < out_e; in_p += 8, out_p += 8) {
-            process_frame(in_p, out_p, mode_filters_.depth_param, wet_gain, dry_gain);
+        // -----------------------------------------------------------------------
+        // Scalar tail: 0-3 remaining frames (handles frames not divisible by 4).
+        // Drumlogue blocks are typically 64 or 128 so this path is rarely taken.
+        // -----------------------------------------------------------------------
+        for (size_t i = frames4; i < frames; i++, in_p += 2, out_p += 2) {
+            float in_l = in_p[0];
+            float in_r = in_p[1];
+
+            if (mode_filters_.ramp_samples > 0) {
+                current_depth += depth_step;
+                if (--mode_filters_.ramp_samples == 0) {
+                    current_depth = mode_filters_.depth_param;
+                    mode_filters_.last_depth_param = current_depth;
+                }
+            } else {
+                current_depth = mode_filters_.depth_param;
+            }
+
+            // Single-sample transient detection (tail path only)
+            float32x4_t in_l4 = vdupq_n_f32(in_l);
+            float32x4_t in_r4 = vdupq_n_f32(in_r);
+            transient_detected_ = detect_transient_fast(in_l4, in_r4);
+            if (transient_detected_) randomize_velocities();
+
+            write_to_delay_opt(in_l, in_r);
+
+            float32x4_t acc_l = vdupq_n_f32(0.0f);
+            float32x4_t acc_r = vdupq_n_f32(0.0f);
+            generate_clones_opt(&acc_l, &acc_r, current_depth);
+
+            float wet_l = horizontal_sum_f32x4(acc_l);
+            float wet_r = horizontal_sum_f32x4(acc_r);
+
+            if (crossfade_active_) {
+                float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
+                wet_l *= fade_in;
+                wet_r *= fade_in;
+                if (--crossfade_counter_ == 0) crossfade_active_ = false;
+            }
+
+            out_p[0] = (1.0f - mix_) * in_l + mix_ * wet_l;
+            out_p[1] = (1.0f - mix_) * in_r + mix_ * wet_r;
         }
-    }
-
-    fast_inline void process_frame(const float* in_p, float* out_p,
-                                    float filter_depth,
-                                    float32x4_t wet_gain, float32x4_t dry_gain) {
-        // OPTIMIZED: Prefetch next cache line
-        __builtin_prefetch(in_p + 64, 0, 3);  // Read, high locality
-        __builtin_prefetch(out_p + 64, 1, 3); // Write, high locality
-
-        // Load 4 stereo samples
-        float32x4_t in_l4 = vld1q_f32(in_p);
-        float32x4_t in_r4 = vld1q_f32(in_p + 4);
-
-        // Detect transient (branchless energy comparison)
-        transient_detected_ = detect_transient_fast(in_l4, in_r4);
-
-        // On transient, randomize velocities for next hits
-        if (transient_detected_) {
-            randomize_velocities();
-        }
-
-        // Write to interleaved delay line
-        write_to_delay_opt(in_l4, in_r4);
-
-        // Generate clones with all enhancements
-        float32x4_t out_l4, out_r4;
-        generate_clones_opt(in_l4, in_r4, &out_l4, &out_r4, filter_depth);
-
-        // Apply mode crossfade if active
-        apply_crossfade(&out_l4, &out_r4);
-
-        // Apply wet/dry mix
-        out_l4 = vaddq_f32(vmulq_f32(in_l4, dry_gain),
-                           vmulq_f32(out_l4, wet_gain));
-        out_r4 = vaddq_f32(vmulq_f32(in_r4, dry_gain),
-                           vmulq_f32(out_r4, wet_gain));
-
-        // Store results
-        vst1q_f32(out_p, out_l4);
-        vst1q_f32(out_p + 4, out_r4);
     }
 
     /*===========================================================================*/
@@ -436,10 +510,11 @@ private:
     /* Delay Line Operations */
     /*===========================================================================*/
 
-    fast_inline void write_to_delay_opt(float32x4_t in_l, float32x4_t in_r) {
+    fast_inline void write_to_delay_opt(float in_l, float in_r) {
         uint32_t pos = write_ptr_ & DELAY_MASK;
-        vst1q_f32(&delay_line_[pos].samples[0], in_l);
-        vst1q_f32(&delay_line_[pos].samples[4], in_r);
+        // Duplicate L and R for all 4 clone channels: [L,L,L,L] and [R,R,R,R]
+        vst1q_f32(&delay_line_[pos].samples[0], vdupq_n_f32(in_l));
+        vst1q_f32(&delay_line_[pos].samples[4], vdupq_n_f32(in_r));
         write_ptr_ += 1;
     }
 
@@ -482,8 +557,8 @@ private:
     /* Clone Generation with Proper NEON v7 Implementation */
     /*===========================================================================*/
 
-    fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
-                                        float32x4_t* out_l, float32x4_t* out_r,
+
+    fast_inline void generate_clones_opt(float32x4_t* out_l, float32x4_t* out_r,
                                         float filter_depth) {
         float32x4_t acc_l = vdupq_n_f32(0.0f);
         float32x4_t acc_r = vdupq_n_f32(0.0f);
@@ -519,10 +594,10 @@ private:
             indices = vandq_u32(indices, vdupq_n_u32(LFO_TABLE_SIZE - 1));
 
             // Step 3: Gather LFO values from table (need to do scalar due to table lookup)
-            float lfo_vals[4];
-            uint32_t idx_vals[4];
+            float lfo_vals[NEON_LANES];
+            uint32_t idx_vals[NEON_LANES];
             vst1q_u32(idx_vals, indices);
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < NEON_LANES; i++) {
                 lfo_vals[i] = lfo_table[idx_vals[i]];
             }
             float32x4_t lfo = vld1q_f32(lfo_vals);
@@ -555,27 +630,27 @@ private:
             float32x4_t pos_frac = vsubq_f32(pos_adj, vcvtq_f32_u32(pos_int));
 
             // Get min position for base index
-            uint32_t pos_ints[4];
+            uint32_t pos_ints[NEON_LANES];
             vst1q_u32(pos_ints, pos_int);
             uint32_t min_pos = pos_ints[0];
-            for (int i = 1; i < 4; i++) {
+            for (int i = 1; i < NEON_LANES; i++) {
                 if (pos_ints[i] < min_pos) min_pos = pos_ints[i];
             }
 
             // Step 7: Load using vld4 (this is the optimized part)
             uint32_t base_idx = min_pos;
             float32x4x4_t left_frames = read_delayed_vld4(base_idx);
-            float32x4x4_t right_frames = vld4q_f32(&delay_line_[base_idx].samples[4]);
+            float32x4x4_t right_frames = vld4q_f32(&delay_line_[base_idx].samples[NEON_LANES]);
 
             // Step 8: Extract samples for each lane with interpolation
             // Store frames into standard arrays to safely index dynamically
-            float l_frames_arr[4][4];
+            float l_frames_arr[NEON_LANES][NEON_LANES];
             vst1q_f32(l_frames_arr[0], left_frames.val[0]);
             vst1q_f32(l_frames_arr[1], left_frames.val[1]);
             vst1q_f32(l_frames_arr[2], left_frames.val[2]);
             vst1q_f32(l_frames_arr[3], left_frames.val[3]);
 
-            float r_frames_arr[4][4];
+            float r_frames_arr[NEON_LANES][NEON_LANES];
             vst1q_f32(r_frames_arr[0], right_frames.val[0]);
             vst1q_f32(r_frames_arr[1], right_frames.val[1]);
             vst1q_f32(r_frames_arr[2], right_frames.val[2]);
@@ -583,28 +658,28 @@ private:
 
             // We need to extract per-lane, but this is unavoidable for linear interpolation
             // Get integer offsets for each lane
-            int offsets[4];
-            for (int lane = 0; lane < 4; lane++) {
+            int offsets[NEON_LANES];
+            for (int lane = 0; lane < NEON_LANES; lane++) {
                 offsets[lane] = (int)(pos_ints[lane] - min_pos);
             }
 
             // Get fractions for interpolation
-            float frac_vals[4];
+            float frac_vals[NEON_LANES];
             vst1q_f32(frac_vals, pos_frac);
 
-            float out_l_arr[4];
-            float out_r_arr[4];
+            float out_l_arr[NEON_LANES];
+            float out_r_arr[NEON_LANES];
 
             // Extract and interpolate each lane
-            for (int lane = 0; lane < 4; lane++) {
+            for (int lane = 0; lane < NEON_LANES; lane++) {
                 int offset = offsets[lane];
-                if (offset >= 0 && offset < 4) {
+                if (offset >= 0 && offset < NEON_LANES) {
                     // Sample at base position + offset
                     float l_sample0 = l_frames_arr[offset][lane];
                     float r_sample0 = r_frames_arr[offset][lane];
 
                     // If we need next sample for interpolation (offset + 1)
-                    if (offset + 1 < 4) {
+                    if (offset + 1 < NEON_LANES) {
                         float l_sample1 = l_frames_arr[offset + 1][lane];
                         float r_sample1 = r_frames_arr[offset + 1][lane];
 
@@ -623,9 +698,9 @@ private:
                     uint32_t idx_next = (idx + 1) & DELAY_MASK;
 
                     float l_sample0 = delay_line_[idx].samples[lane];
-                    float r_sample0 = delay_line_[idx].samples[lane + 4];
+                    float r_sample0 = delay_line_[idx].samples[lane + NEON_LANES];
                     float l_sample1 = delay_line_[idx_next].samples[lane];
-                    float r_sample1 = delay_line_[idx_next].samples[lane + 4];
+                    float r_sample1 = delay_line_[idx_next].samples[lane + NEON_LANES];
 
                     out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
                     out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
@@ -687,7 +762,7 @@ private:
     void update_panning() {
         for (int group = 0; group < CLONE_GROUPS; group++) {
             clone_group_t* g = &clone_groups_[group];
-            float left_vals[4], right_vals[4];
+            float left_vals[NEON_LANES], right_vals[NEON_LANES];
 
             // Initialize all lanes to 0 (inactive)
             for (int i = 0; i < NEON_LANES; i++) {
@@ -707,9 +782,9 @@ private:
 
                     // Randomize phase inversion for Angel mode
                     if (current_mode_ == MODE_ANGEL) {
-                        uint32_t rand_bits[4];
+                        uint32_t rand_bits[NEON_LANES];
                         vst1q_u32(rand_bits, vandq_u32(prng_rand_u32(), vdupq_n_u32(1)));
-                        uint32_t flags[4];
+                        uint32_t flags[NEON_LANES];
                         vst1q_u32(flags, g->phase_flags);
                         flags[i] = rand_bits[i] ? 0xFFFFFFFFU : 0U;
                         g->phase_flags = vld1q_u32(flags);
@@ -722,7 +797,7 @@ private:
             g->right_gains = vld1q_f32(right_vals);
 
             // Also update active mask
-            uint32_t active_vals[4];
+            uint32_t active_vals[NEON_LANES];
             for (int i = 0; i < NEON_LANES; i++) {
                 int clone_idx = group * NEON_LANES + i;
                 active_vals[i] = (clone_idx < clone_count_) ? 0xFFFFFFFFU : 0U;

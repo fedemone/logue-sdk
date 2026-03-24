@@ -1083,6 +1083,33 @@ inline float32x4_t fast_div_neon(float32x4_t num, float32x4_t den) {
   return vmulq_f32(num, recip);
 }
 
+/**
+ * ARMv7-compatible vectorized exp(x) for 4 floats using e_expff approximation.
+ * Replacement for vexpq_f32 which is ARMv8/AArch64 only.
+ */
+static inline float32x4_t neon_expq_f32(float32x4_t x) {
+  float32_t buf[4];
+  vst1q_f32(buf, x);
+  buf[0] = e_expff(buf[0]);
+  buf[1] = e_expff(buf[1]);
+  buf[2] = e_expff(buf[2]);
+  buf[3] = e_expff(buf[3]);
+  return vld1q_f32(buf);
+}
+
+/**
+ * ARMv7-compatible vectorized sqrt(x) for 4 floats using NEON rsqrte + N-R.
+ * Replacement for vsqrtq_f32 which is ARMv8/AArch64 only.
+ */
+static inline float32x4_t neon_sqrtq_f32(float32x4_t x) {
+  /* Guard against x=0 to avoid 1/sqrt(0)=inf */
+  float32x4_t safe_x = vmaxq_f32(x, vdupq_n_f32(1e-30f));
+  float32x4_t inv_sqrt = vrsqrteq_f32(safe_x);
+  /* One Newton-Raphson step: inv_sqrt *= (3 - x * inv_sqrt^2) / 2 */
+  inv_sqrt = vmulq_f32(vrsqrtsq_f32(vmulq_f32(safe_x, inv_sqrt), inv_sqrt), inv_sqrt);
+  return vmulq_f32(safe_x, inv_sqrt);
+}
+
 /** @} */
 
 #endif // __float_math_h

@@ -85,7 +85,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
 }
 
 fast_inline void multiband_reset(multiband_t* m) {
-    multiband_init(m);
+    multiband_init(m, m->sample_rate);
 }
 
 // Set crossover frequencies
@@ -182,10 +182,10 @@ fast_inline void multiband_process(multiband_t* mb,
     mb->gr_mid = compressor_smooth(&mb->comp_mid, mid_gr, attack_coeff, release_coeff);
     mb->gr_high = compressor_smooth(&mb->comp_high, high_gr, attack_coeff, release_coeff);
 
-    // Convert gain reduction from dB to linear
-    float32x4_t low_gain = vexpq_f32(vmulq_f32(mb->gr_low, vdupq_n_f32(0.115129f)));
-    float32x4_t mid_gain = vexpq_f32(vmulq_f32(mb->gr_mid, vdupq_n_f32(0.115129f)));
-    float32x4_t high_gain = vexpq_f32(vmulq_f32(mb->gr_high, vdupq_n_f32(0.115129f)));
+    // Convert gain reduction from dB to linear (ARMv7-compatible)
+    float32x4_t low_gain = neon_expq_f32(vmulq_f32(mb->gr_low, vdupq_n_f32(0.115129f)));
+    float32x4_t mid_gain = neon_expq_f32(vmulq_f32(mb->gr_mid, vdupq_n_f32(0.115129f)));
+    float32x4_t high_gain = neon_expq_f32(vmulq_f32(mb->gr_high, vdupq_n_f32(0.115129f)));
 
     // Apply makeup gain
     low_gain = vmulq_f32(low_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_LOW].makeup_db / 20.0f)));
