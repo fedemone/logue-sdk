@@ -8,10 +8,26 @@
 
 #include "fm_presets.h"
 
+char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
+{
+    "Deep Tribal",
+    "Metal Storm",
+    "ChordalPerc",
+    "Phase Dance",
+    "BipolarBass",
+    "Snare Roll",
+    "AmbientMetl",
+    "Polyrhythm",
+    "ResoKick",
+    "ResoTom",
+    "ResoSnare",
+    "ResoMetal"
+};
+
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
-    // Preset 0: "Deep Tribal"
+    // Preset 0: "Deep Tribal" (original)
     {
-        .name = "Deep Tribal",
+        .name = preset_names[DEEP_TRIBAL], // "Deep Tribal",
         .prob_kick = 100,
         .prob_snare = 80,
         .prob_metal = 60,
@@ -37,12 +53,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 2,
         .resonant_mode = RESONANT_MODE_BANDPASS,
         .resonant_res = 50,
-        .resonant_center = 30,
+        .resonant_center = 30,  // ~2400 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 1: "Metal Storm"
+    // Preset 1: "Metal Storm" (original)
     {
-        .name = "Metal Storm",
+        .name = preset_names[METAL_STORM],  // "Metal Storm",
         .prob_kick = 60,
         .prob_snare = 80,
         .prob_metal = 100,
@@ -68,12 +84,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 90,
         .resonant_mode = RESONANT_MODE_PEAK,
         .resonant_res = 70,
-        .resonant_center = 60,
+        .resonant_center = 60,  // ~4800 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 2: "ChordalPerc"
+    // Preset 2: "Chordal Perc" (original)
     {
-        .name = "ChordalPerc",
+        .name = preset_names[CHORDAL_PERC],  //  "ChordalPerc",
         .prob_kick = 70,
         .prob_snare = 70,
         .prob_metal = 70,
@@ -99,12 +115,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 50,
         .resonant_mode = RESONANT_MODE_LOWPASS,
         .resonant_res = 30,
-        .resonant_center = 20,
+        .resonant_center = 20,  // ~1600 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 3: "Phase Dance"
+    // Preset 3: "Phase Dance" (original)
     {
-        .name = "Phase Dance",
+        .name = preset_names[PHASE_DANCE],  //  "Phase Dance",
         .prob_kick = 80,
         .prob_snare = 60,
         .prob_metal = 80,
@@ -130,12 +146,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 25,
         .resonant_mode = RESONANT_MODE_HIGHPASS,
         .resonant_res = 40,
-        .resonant_center = 40,
+        .resonant_center = 40,  // ~3200 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 4: "BipolarBass"
+    // Preset 4: "Bipolar Bass" (original)
     {
-        .name = "BipolarBass",
+        .name = preset_names[BIPOLAR_BASS],  //  "BipolarBass",
         .prob_kick = 100,
         .prob_snare = 40,
         .prob_metal = 30,
@@ -161,12 +177,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 10,
         .resonant_mode = RESONANT_MODE_LOWPASS,
         .resonant_res = 20,
-        .resonant_center = 10,
+        .resonant_center = 10,  // ~800 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 5: "Snare Roll"
+    // Preset 5: "Snare Roll" (original)
     {
-        .name = "Snare Roll",
+        .name = preset_names[SNARE_ROLL],  //  "Snare Roll",
         .prob_kick = 30,
         .prob_snare = 100,
         .prob_metal = 40,
@@ -192,12 +208,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 2,
         .resonant_mode = RESONANT_MODE_PEAK,
         .resonant_res = 60,
-        .resonant_center = 70,
+        .resonant_center = 70,  // ~5600 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 6: "AmbientMetl"
+    // Preset 6: "Ambient Metals" (original)
     {
-        .name = "AmbientMetl",
+        .name = preset_names[AMBIENT_METL],  //  "AmbientMetl",
         .prob_kick = 40,
         .prob_snare = 50,
         .prob_metal = 100,
@@ -223,12 +239,12 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 70,
         .resonant_mode = RESONANT_MODE_NOTCH,
         .resonant_res = 80,
-        .resonant_center = 50,
+        .resonant_center = 50,  // ~4000 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 7: "Polyrhythm"
+    // Preset 7: "Polyrhythm" (original)
     {
-        .name = "Polyrhythm",
+        .name = preset_names[POLYRHYTHM],  //  "Polyrhythm",
         .prob_kick = 90,
         .prob_snare = 70,
         .prob_metal = 50,
@@ -254,18 +270,20 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .resonant_morph = 50,
         .resonant_mode = RESONANT_MODE_BANDPASS,
         .resonant_res = 50,
-        .resonant_center = 30,
+        .resonant_center = 30,  // ~2400 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 8: "ResoKick"
+    // ===== NEW RESONANT PRESETS =====
+
+    // Preset 8: "ResoKick" - Resonant kick drum
     {
-        .name = "ResoKick",
+        .name = preset_names[RESOKICK],  //  "ResoKick",
         .prob_kick = 100,
         .prob_snare = 0,
         .prob_metal = 0,
         .prob_perc = 0,
         .kick_sweep = 70,
-        .kick_decay = 60,
+        .kick_decay = 60,  // These are ignored for resonant
         .snare_noise = 0,
         .snare_body = 0,
         .metal_inharm = 0,
@@ -280,17 +298,17 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .lfo2_rate = 5,
         .lfo2_target = LFO_TARGET_NONE,
         .lfo2_depth = 0,
-        .env_shape = 25,
+        .env_shape = 25,  // Medium decay
         .voice_index = 8,
         .resonant_morph = 20,
         .resonant_mode = RESONANT_MODE_LOWPASS,
         .resonant_res = 40,
-        .resonant_center = 15,
+        .resonant_center = 15,  // ~1200 Hz
         .engine_map = {ENGINE_RESONANT, ENGINE_SNARE, ENGINE_KICK, ENGINE_PERC}},
 
-    // Preset 9: "ResoTom"
+    // Preset 9: "ResoTom" - Resonant tom
     {
-        .name = "ResoTom",
+        .name = preset_names[RESOTOM],  //  "ResoTom",
         .prob_kick = 0,
         .prob_snare = 0,
         .prob_metal = 0,
@@ -311,17 +329,17 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .lfo2_rate = 8,
         .lfo2_target = LFO_TARGET_INDEX,
         .lfo2_depth = 20,
-        .env_shape = 35,
+        .env_shape = 35,  // Longer decay
         .voice_index = 1,
         .resonant_morph = 20,
         .resonant_mode = RESONANT_MODE_BANDPASS,
         .resonant_res = 60,
-        .resonant_center = 25,
+        .resonant_center = 25,  // ~2000 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_RESONANT}},
 
-    // Preset 10: "ResoSnare"
+    // Preset 10: "ResoSnare" - Resonant snare
     {
-        .name = "ResoSnare",
+        .name = preset_names[RESOSNARE],  //  "ResoSnare",
         .prob_kick = 0,
         .prob_snare = 100,
         .prob_metal = 0,
@@ -342,17 +360,17 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .lfo2_rate = 10,
         .lfo2_target = LFO_TARGET_INDEX,
         .lfo2_depth = 30,
-        .env_shape = 20,
+        .env_shape = 20,  // Short decay
         .voice_index = 3,
         .resonant_morph = 20,
         .resonant_mode = RESONANT_MODE_HIGHPASS,
         .resonant_res = 50,
-        .resonant_center = 45,
+        .resonant_center = 45,  // ~3600 Hz
         .engine_map = {ENGINE_KICK, ENGINE_RESONANT, ENGINE_METAL, ENGINE_PERC}},
 
-    // Preset 11: "ResoMetal"
+    // Preset 11: "ResoMetal" - Resonant metal/cymbal
     {
-        .name = "ResoMetal",
+        .name = preset_names[RESOMETAL],  //  "ResoMetal",
         .prob_kick = 0,
         .prob_snare = 0,
         .prob_metal = 100,
@@ -373,11 +391,11 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         .lfo2_rate = 40,
         .lfo2_target = LFO_TARGET_INDEX,
         .lfo2_depth = 40,
-        .env_shape = 10,
+        .env_shape = 10,  // Very short decay
         .voice_index = 2,
         .resonant_morph = 20,
         .resonant_mode = RESONANT_MODE_PEAK,
         .resonant_res = 80,
-        .resonant_center = 80,
+        .resonant_center = 80,  // ~6400 Hz
         .engine_map = {ENGINE_KICK, ENGINE_SNARE, ENGINE_RESONANT, ENGINE_PERC}}
 };

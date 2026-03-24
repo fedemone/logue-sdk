@@ -8,8 +8,8 @@
 #pragma once
 
 #include <stdint.h>
-#include “constants.h”
-#include “resonant_synthesis.h”
+#include "constants.h"
+#include "resonant_synthesis.h"
 
 // LFO target values (from lfo_enhanced.h)
 #define LFO_TARGET_NONE       (0)
@@ -30,21 +30,7 @@
 #define NUM_OF_PRESETS (12)
 #define NAME_LENGTH    (12)
 
-char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
-{
-    "Deep Tribal",
-    "Metal Storm",
-    "ChordalPerc",
-    "Phase Dance",
-    "BipolarBass",
-    "Snare Roll",
-    "AmbientMetl",
-    "Polyrhythm",
-    "ResoKick",
-    "ResoTom",
-    "ResoSnare",
-    "ResoMetal"
-};
+extern char preset_names[NUM_OF_PRESETS][NAME_LENGTH];
 
 typedef enum {
   DEEP_TRIBAL = 0,
