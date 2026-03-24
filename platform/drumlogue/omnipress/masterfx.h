@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <cstdio>
 #include <arm_neon.h>
 
 #include "unit.h"
@@ -43,7 +44,7 @@ public:
     MasterFX(void) : samplerate_(48000.0f) {
         // Initialize all DSP modules
         compressor_init(&comp_);
-        sidechain_hpf_init(&sc_hpf_);
+        sidechain_hpf_init(&sc_hpf_, 80.0f, samplerate_);
         wavefolder_init(&wavefolder_);
         distressor_init(&distressor_);
         multiband_init(&multiband_, samplerate_);
@@ -81,7 +82,8 @@ public:
     inline void Reset() {
         // Reset all components
         compressor_reset(&comp_);
-        sidechain_hpf_init(&sc_hpf_);
+        sc_hpf_hz_ = 80.0f;
+        sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
         wavefolder_init(&wavefolder_);
         distressor_init(&distressor_);
         multiband_init(&multiband_, samplerate_);
@@ -311,9 +313,9 @@ private:
         // Attack/release smoothing
         float32x4_t smoothed_gain_db = smoothing_process(&smoother_, target_gain_db);
 
-        // Convert to linear gain
-        float32x4_t gain_lin = vexpq_f32(vmulq_f32(smoothed_gain_db,
-                                                   vdupq_n_f32(0.115129f)));
+        // Convert to linear gain (ARMv7-compatible)
+        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db,
+                                                        vdupq_n_f32(0.115129f)));
 
         // Apply gain reduction
         *out_l = vmulq_f32(main_l, gain_lin);
@@ -340,9 +342,9 @@ private:
                                                           release_coeff_ *
                                                           distressor_.opto_release_mult);
 
-        // Convert to linear
-        float32x4_t gain_lin = vexpq_f32(vmulq_f32(smoothed_gain_db,
-                                                   vdupq_n_f32(0.115129f)));
+        // Convert to linear (ARMv7-compatible)
+        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db,
+                                                        vdupq_n_f32(0.115129f)));
 
         // Apply gain
         float32x4_t comp_l = vmulq_f32(main_l, gain_lin);
@@ -358,6 +360,7 @@ private:
         }
     }
 
+public:
     /*===========================================================================*/
     /* Parameter Handling - With Bounds Checking */
     /*===========================================================================*/

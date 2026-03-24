@@ -92,6 +92,9 @@ public:
      * @return true if initialization successful
      */
     bool init() {
+        // Initialize Hadamard mixing matrix BEFORE clearing/processing
+        initHadamardMatrix();
+
         // Clear buffer
         clear();
 
@@ -252,6 +255,7 @@ private:
         // For each channel, calculate read positions
         float32x4_t readPositions[FDN_CHANNELS];
         uint32_t baseIndices[FDN_CHANNELS][4];
+        float fracParts[FDN_CHANNELS][4];  // fractional parts for interpolation
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
@@ -263,11 +267,13 @@ private:
             vst1q_f32(pos_vals, readPositions[ch]);
 
             for (int s = 0; s < 4; s++) {
-		// Manual wrap for each sample (safer than vectorized wrap)
+                // Manual wrap for each sample (safer than vectorized wrap)
                 float pos = pos_vals[s];
                 while (pos < 0) pos += BUFFER_SIZE;
                 while (pos >= BUFFER_SIZE) pos -= BUFFER_SIZE;
-                baseIndices[ch][s] = (uint32_t)pos;
+                uint32_t base = (uint32_t)pos;
+                baseIndices[ch][s] = base;
+                fracParts[ch][s] = pos - (float)base;  // true fractional part
             }
         }
 
@@ -295,9 +301,8 @@ private:
                 // For linear interpolation, we need:
                 // For each channel, sample at time t (from frames0) and t+1 (from frames1)
 
-                // Get the fractional part for interpolation
-                float pos = baseIndices[chGroup][sampleIdx] - baseIdx;
-                float32x4_t frac = vdupq_n_f32(pos);
+                // Get the true fractional part for interpolation
+                float frac = fracParts[chGroup][sampleIdx];
 
                 // Interpolate each channel.
                 // vgetq_lane_f32/vsetq_lane_f32 require a compile-time constant
@@ -309,7 +314,7 @@ private:
                     vst1q_f32(s1_lanes, frames1.val[chOffset]);
                     vst1q_f32(out_lanes, out[chGroup + chOffset]);
 
-                    float sample = s0_lanes[sampleIdx] + pos * (s1_lanes[sampleIdx] - s0_lanes[sampleIdx]);
+                    float sample = s0_lanes[sampleIdx] + frac * (s1_lanes[sampleIdx] - s0_lanes[sampleIdx]);
                     out_lanes[sampleIdx] = sample;
 
                     out[chGroup + chOffset] = vld1q_f32(out_lanes);

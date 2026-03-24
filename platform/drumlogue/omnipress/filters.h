@@ -15,6 +15,7 @@
 
 #include <arm_neon.h>
 #include <math.h>
+#include "float_math.h"
 
 /* ---------------------------------------------------------------------------
  * 1. SIDECHAIN HPF - 12dB/oct Bessel for clean sidechain

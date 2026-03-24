@@ -103,6 +103,13 @@ public:
             tables_initialized = true;
         }
 
+        // Initialize LFO table (triangle wave) here to ensure it runs on drumlogue
+        // (attribute((constructor)) is unreliable in shared libs)
+        for (int i = 0; i < LFO_TABLE_SIZE; i++) {
+            float phase = (float)i / LFO_TABLE_SIZE;
+            lfo_table[i] = 2.0f * fabsf(phase - 0.5f);
+        }
+
         // Initialize filter states
         memset(&mode_filters_, 0, sizeof(mode_filters_));
 
@@ -184,68 +191,61 @@ public:
         float* out_p = out;
         const float* out_e = out_p + (frames << 1);
 
-        // Pre-calculate mix gains
-        float32x4_t wet_gain = vdupq_n_f32(mix_);
-        float32x4_t dry_gain = vdupq_n_f32(1.0f - mix_);
-
-        // Handle parameter ramping for filters
+        // Determine starting filter depth for ramping
+        float current_depth = mode_filters_.last_depth_param;
+        float depth_step = 0.0f;
         if (mode_filters_.ramp_samples > 0) {
-            float step = (mode_filters_.depth_param - mode_filters_.last_depth_param) /
+            depth_step = (mode_filters_.depth_param - mode_filters_.last_depth_param) /
                          mode_filters_.ramp_samples;
-            float current_depth = mode_filters_.last_depth_param;
+        }
 
-            for (; out_p < out_e && mode_filters_.ramp_samples > 0;
-                   in_p += 8, out_p += 8, mode_filters_.ramp_samples--) {
-                current_depth += step;
-                process_frame(in_p, out_p, current_depth, wet_gain, dry_gain);
+        // Process one stereo frame at a time (in_p[0]=L, in_p[1]=R)
+        for (; out_p < out_e; in_p += 2, out_p += 2) {
+            float in_l = in_p[0];
+            float in_r = in_p[1];
+
+            // Advance depth ramp
+            if (mode_filters_.ramp_samples > 0) {
+                current_depth += depth_step;
+                mode_filters_.ramp_samples--;
+                if (mode_filters_.ramp_samples == 0) {
+                    current_depth = mode_filters_.depth_param;
+                    mode_filters_.last_depth_param = current_depth;
+                }
+            } else {
+                current_depth = mode_filters_.depth_param;
             }
-            mode_filters_.last_depth_param = mode_filters_.depth_param;
+
+            // Detect transient
+            float32x4_t in_l4 = vdupq_n_f32(in_l);
+            float32x4_t in_r4 = vdupq_n_f32(in_r);
+            transient_detected_ = detect_transient_fast(in_l4, in_r4);
+            if (transient_detected_) randomize_velocities();
+
+            // Write one frame to delay line: duplicate L/R for all 4 clone channels
+            write_to_delay_opt(in_l, in_r);
+
+            // Generate clones: returns acc_l/acc_r with one value per clone lane
+            float32x4_t acc_l = vdupq_n_f32(0.0f);
+            float32x4_t acc_r = vdupq_n_f32(0.0f);
+            generate_clones_opt(&acc_l, &acc_r, current_depth);
+
+            // Horizontal sum: collapse 4 clone lanes to one output sample
+            float wet_l = horizontal_sum_f32x4(acc_l);
+            float wet_r = horizontal_sum_f32x4(acc_r);
+
+            // Apply mode crossfade
+            if (crossfade_active_) {
+                float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
+                wet_l *= fade_in;
+                wet_r *= fade_in;
+                if (--crossfade_counter_ == 0) crossfade_active_ = false;
+            }
+
+            // Wet/dry mix and write output
+            out_p[0] = (1.0f - mix_) * in_l + mix_ * wet_l;
+            out_p[1] = (1.0f - mix_) * in_r + mix_ * wet_r;
         }
-
-        // Process remaining frames
-        for (; out_p < out_e; in_p += 8, out_p += 8) {
-            process_frame(in_p, out_p, mode_filters_.depth_param, wet_gain, dry_gain);
-        }
-    }
-
-    fast_inline void process_frame(const float* in_p, float* out_p,
-                                    float filter_depth,
-                                    float32x4_t wet_gain, float32x4_t dry_gain) {
-        // OPTIMIZED: Prefetch next cache line
-        __builtin_prefetch(in_p + 64, 0, 3);  // Read, high locality
-        __builtin_prefetch(out_p + 64, 1, 3); // Write, high locality
-
-        // Load 4 stereo samples
-        float32x4_t in_l4 = vld1q_f32(in_p);
-        float32x4_t in_r4 = vld1q_f32(in_p + 4);
-
-        // Detect transient (branchless energy comparison)
-        transient_detected_ = detect_transient_fast(in_l4, in_r4);
-
-        // On transient, randomize velocities for next hits
-        if (transient_detected_) {
-            randomize_velocities();
-        }
-
-        // Write to interleaved delay line
-        write_to_delay_opt(in_l4, in_r4);
-
-        // Generate clones with all enhancements
-        float32x4_t out_l4, out_r4;
-        generate_clones_opt(in_l4, in_r4, &out_l4, &out_r4, filter_depth);
-
-        // Apply mode crossfade if active
-        apply_crossfade(&out_l4, &out_r4);
-
-        // Apply wet/dry mix
-        out_l4 = vaddq_f32(vmulq_f32(in_l4, dry_gain),
-                           vmulq_f32(out_l4, wet_gain));
-        out_r4 = vaddq_f32(vmulq_f32(in_r4, dry_gain),
-                           vmulq_f32(out_r4, wet_gain));
-
-        // Store results
-        vst1q_f32(out_p, out_l4);
-        vst1q_f32(out_p + 4, out_r4);
     }
 
     /*===========================================================================*/
@@ -436,10 +436,11 @@ private:
     /* Delay Line Operations */
     /*===========================================================================*/
 
-    fast_inline void write_to_delay_opt(float32x4_t in_l, float32x4_t in_r) {
+    fast_inline void write_to_delay_opt(float in_l, float in_r) {
         uint32_t pos = write_ptr_ & DELAY_MASK;
-        vst1q_f32(&delay_line_[pos].samples[0], in_l);
-        vst1q_f32(&delay_line_[pos].samples[4], in_r);
+        // Duplicate L and R for all 4 clone channels: [L,L,L,L] and [R,R,R,R]
+        vst1q_f32(&delay_line_[pos].samples[0], vdupq_n_f32(in_l));
+        vst1q_f32(&delay_line_[pos].samples[4], vdupq_n_f32(in_r));
         write_ptr_ += 1;
     }
 
@@ -478,9 +479,12 @@ private:
     /* Clone Generation with Proper Attack Softening using optimized vld4 gather */
     /*===========================================================================*/
 
-    fast_inline void generate_clones_opt(float32x4_t in_l, float32x4_t in_r,
-                                         float32x4_t* out_l, float32x4_t* out_r,
-                                         float filter_depth) {
+    /*===========================================================================*/
+    /* Clone Generation with Proper NEON v7 Implementation */
+    /*===========================================================================*/
+
+    fast_inline void generate_clones_opt(float32x4_t* out_l, float32x4_t* out_r,
+                                        float filter_depth) {
         float32x4_t acc_l = vdupq_n_f32(0.0f);
         float32x4_t acc_r = vdupq_n_f32(0.0f);
 
@@ -490,57 +494,146 @@ private:
         for (uint32_t g = 0; g < num_groups; g++) {
             clone_group_t* group = &clone_groups_[g];
 
-            // Calculate read positions for this group
-            float pos_vals[4];
-            uint32_t min_pos = DELAY_MAX_SAMPLES;
+            // Process all 4 lanes in parallel using NEON vectors
+            // Instead of scalar loops with vgetq_lane_f32, we use vector operations
 
-            for (int lane = 0; lane < NEON_LANES; lane++) {
-                // Update LFO phase
-                float phase = vgetq_lane_f32(group->mod_phases, lane);
-                phase += vgetq_lane_f32(phase_inc_, 0);
-                if (phase >= 1.0f) phase -= 1.0f;
+            // Step 1: Update LFO phases for all 4 lanes
+            float32x4_t phases = group->mod_phases;
+            float32x4_t phase_inc_vec = phase_inc_;
 
-                // Update phase in vector (would need to reconstruct vector - simplified here)
-                uint32_t phase_idx = ((uint32_t)(phase * LFO_TABLE_SIZE)) & (LFO_TABLE_SIZE - 1);
-                float lfo = lfo_table[phase_idx];
+            // Add phase increment to all lanes
+            phases = vaddq_f32(phases, phase_inc_vec);
 
-                float wobble = lfo * vgetq_lane_f32(group->pitch_mod, lane) * wobble_depth_;
-                float delay = vgetq_lane_f32(group->delay_offsets, lane) + wobble;
-                float offset_samples = delay * 48.0f;
+            // Wrap phases to [0, 1.0)
+            uint32x4_t overflow = vcgtq_f32(phases, vdupq_n_f32(1.0f));
+            phases = vbslq_f32(overflow, vsubq_f32(phases, vdupq_n_f32(1.0f)), phases);
 
-                float pos = (float)base_read - offset_samples;
-                while (pos < 0) pos += DELAY_MAX_SAMPLES;
-                while (pos >= DELAY_MAX_SAMPLES) pos -= DELAY_MAX_SAMPLES;
+            // Store updated phases back
+            group->mod_phases = phases;
 
-                uint32_t pos_int = (uint32_t)pos;
-                pos_vals[lane] = pos;
-                if (pos_int < min_pos) min_pos = pos_int;
+            // Step 2: Convert phases to LFO table indices
+            // Multiply by table size and convert to integer
+            float32x4_t scaled = vmulq_f32(phases, vdupq_n_f32(LFO_TABLE_SIZE));
+            uint32x4_t indices = vcvtq_u32_f32(scaled);
+            // Mask to table size (power of 2)
+            indices = vandq_u32(indices, vdupq_n_u32(LFO_TABLE_SIZE - 1));
+
+            // Step 3: Gather LFO values from table (need to do scalar due to table lookup)
+            float lfo_vals[4];
+            uint32_t idx_vals[4];
+            vst1q_u32(idx_vals, indices);
+            for (int i = 0; i < 4; i++) {
+                lfo_vals[i] = lfo_table[idx_vals[i]];
+            }
+            float32x4_t lfo = vld1q_f32(lfo_vals);
+
+            // Step 4: Calculate wobble and delay offsets
+            float32x4_t wobble = vmulq_f32(lfo, group->pitch_mod);
+            wobble = vmulq_f32(wobble, vdupq_n_f32(wobble_depth_));
+
+            float32x4_t delays = vaddq_f32(group->delay_offsets, wobble);
+            float32x4_t offset_samples = vmulq_f32(delays, vdupq_n_f32(48.0f));
+
+            // Step 5: Calculate read positions
+            float32x4_t base_read_vec = vdupq_n_f32((float)base_read);
+            float32x4_t read_pos = vsubq_f32(base_read_vec, offset_samples);
+
+            // Wrap read positions to [0, DELAY_MAX_SAMPLES)
+            float32x4_t delay_max_vec = vdupq_n_f32(DELAY_MAX_SAMPLES);
+            float32x4_t pos_adj;
+
+            // Handle negative wrap
+            uint32x4_t neg = vcltq_f32(read_pos, vdupq_n_f32(0.0f));
+            pos_adj = vbslq_f32(neg, vaddq_f32(read_pos, delay_max_vec), read_pos);
+
+            // Handle positive wrap
+            uint32x4_t overflow_pos = vcgtq_f32(pos_adj, vsubq_f32(delay_max_vec, vdupq_n_f32(1.0f)));
+            pos_adj = vbslq_f32(overflow_pos, vsubq_f32(pos_adj, delay_max_vec), pos_adj);
+
+            // Step 6: Extract integer positions and fractions
+            uint32x4_t pos_int = vcvtq_u32_f32(pos_adj);
+            float32x4_t pos_frac = vsubq_f32(pos_adj, vcvtq_f32_u32(pos_int));
+
+            // Get min position for base index
+            uint32_t pos_ints[4];
+            vst1q_u32(pos_ints, pos_int);
+            uint32_t min_pos = pos_ints[0];
+            for (int i = 1; i < 4; i++) {
+                if (pos_ints[i] < min_pos) min_pos = pos_ints[i];
             }
 
-            // OPTIMIZED: Use vld4 to load all 4 clones at once
+            // Step 7: Load using vld4 (this is the optimized part)
             uint32_t base_idx = min_pos;
             float32x4x4_t left_frames = read_delayed_vld4(base_idx);
             float32x4x4_t right_frames = vld4q_f32(&delay_line_[base_idx].samples[4]);
 
-            // Extract the right time for each clone
-            float32x4_t delayed_l = vdupq_n_f32(0.0f);
-            float32x4_t delayed_r = vdupq_n_f32(0.0f);
+            // Step 8: Extract samples for each lane with interpolation
+            // Store frames into standard arrays to safely index dynamically
+            float l_frames_arr[4][4];
+            vst1q_f32(l_frames_arr[0], left_frames.val[0]);
+            vst1q_f32(l_frames_arr[1], left_frames.val[1]);
+            vst1q_f32(l_frames_arr[2], left_frames.val[2]);
+            vst1q_f32(l_frames_arr[3], left_frames.val[3]);
 
-            for (int lane = 0; lane < NEON_LANES; lane++) {
-                int offset = (int)(pos_vals[lane] - base_idx);
+            float r_frames_arr[4][4];
+            vst1q_f32(r_frames_arr[0], right_frames.val[0]);
+            vst1q_f32(r_frames_arr[1], right_frames.val[1]);
+            vst1q_f32(r_frames_arr[2], right_frames.val[2]);
+            vst1q_f32(r_frames_arr[3], right_frames.val[3]);
+
+            // We need to extract per-lane, but this is unavoidable for linear interpolation
+            // Get integer offsets for each lane
+            int offsets[4];
+            for (int lane = 0; lane < 4; lane++) {
+                offsets[lane] = (int)(pos_ints[lane] - min_pos);
+            }
+
+            // Get fractions for interpolation
+            float frac_vals[4];
+            vst1q_f32(frac_vals, pos_frac);
+
+            float out_l_arr[4];
+            float out_r_arr[4];
+
+            // Extract and interpolate each lane
+            for (int lane = 0; lane < 4; lane++) {
+                int offset = offsets[lane];
                 if (offset >= 0 && offset < 4) {
-                    float l_sample = vgetq_lane_f32(left_frames.val[offset], lane);
-                    float r_sample = vgetq_lane_f32(right_frames.val[offset], lane);
+                    // Sample at base position + offset
+                    float l_sample0 = l_frames_arr[offset][lane];
+                    float r_sample0 = r_frames_arr[offset][lane];
 
-                    delayed_l = vsetq_lane_f32(l_sample, delayed_l, lane);
-                    delayed_r = vsetq_lane_f32(r_sample, delayed_r, lane);
+                    // If we need next sample for interpolation (offset + 1)
+                    if (offset + 1 < 4) {
+                        float l_sample1 = l_frames_arr[offset + 1][lane];
+                        float r_sample1 = r_frames_arr[offset + 1][lane];
+
+                        float frac = frac_vals[lane];
+                        out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
+                        out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
+                    } else {
+                        // No next sample available, just use current
+                        out_l_arr[lane] = l_sample0;
+                        out_r_arr[lane] = r_sample0;
+                    }
                 } else {
-                    // Fallback for wrap-around
-                    uint32_t idx = (uint32_t)pos_vals[lane];
-                    delayed_l = vsetq_lane_f32(delay_line_[idx].samples[lane], delayed_l, lane);
-                    delayed_r = vsetq_lane_f32(delay_line_[idx].samples[lane + 4], delayed_r, lane);
+                    // Fallback for wrap-around or out-of-range
+                    uint32_t idx = pos_ints[lane];
+                    float frac = frac_vals[lane];
+                    uint32_t idx_next = (idx + 1) & DELAY_MASK;
+
+                    float l_sample0 = delay_line_[idx].samples[lane];
+                    float r_sample0 = delay_line_[idx].samples[lane + 4];
+                    float l_sample1 = delay_line_[idx_next].samples[lane];
+                    float r_sample1 = delay_line_[idx_next].samples[lane + 4];
+
+                    out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
+                    out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
                 }
             }
+
+            float32x4_t delayed_l = vld1q_f32(out_l_arr);
+            float32x4_t delayed_r = vld1q_f32(out_r_arr);
 
             // Apply velocity randomization
             delayed_l = vmulq_f32(delayed_l, group->velocity);
@@ -569,28 +662,28 @@ private:
             acc_r = vmlaq_f32(acc_r, delayed_r, group->right_gains);
         }
 
-        *out_l = acc_l;
-        *out_r = acc_r;
+            *out_l = acc_l;
+            *out_r = acc_r;
     }
 
     /**
-     * Attack softening filter using NEON
-     */
+    * Attack softening filter using NEON
+    */
     fast_inline float32x4_t apply_attack_softening(float32x4_t in, uint32_t group_idx) {
         float coeff = transient_detected_ ? attack_soften_ : 0.0f;
         float32x4_t alpha = vdupq_n_f32(coeff);
         float32x4_t one_minus_alpha = vdupq_n_f32(1.0f - coeff);
 
         float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
-                                     vmulq_f32(filter_state_[group_idx], one_minus_alpha));
+                                    vmulq_f32(filter_state_[group_idx], one_minus_alpha));
         filter_state_[group_idx] = out;
 
         return out;
     }
 
     /**
-     * Update panning using pre-calculated tables
-     */
+    * Update panning using pre-calculated tables
+    */
     void update_panning() {
         for (int group = 0; group < CLONE_GROUPS; group++) {
             clone_group_t* g = &clone_groups_[group];

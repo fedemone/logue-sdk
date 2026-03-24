@@ -8,6 +8,7 @@
 
 #include <arm_neon.h>
 #include <math.h>
+#include "float_math.h"
 
 // Compressor state structure
 typedef struct {
@@ -44,8 +45,8 @@ fast_inline float32x4_t compressor_rms_process(compressor_t* comp,
     comp->rms_state = vaddq_f32(vmulq_f32(squared, alpha),
                                  vmulq_f32(comp->rms_state, one_minus_alpha));
 
-    // Return square root (approximate)
-    return vsqrtq_f32(comp->rms_state);
+    // Return square root (ARMv7-compatible approximation)
+    return neon_sqrtq_f32(comp->rms_state);
 }
 
 // Gain computer with negative ratio support
