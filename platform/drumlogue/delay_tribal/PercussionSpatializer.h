@@ -553,6 +553,10 @@ private:
     /* Clone Generation with Proper Attack Softening using optimized vld4 gather */
     /*===========================================================================*/
 
+    /*===========================================================================*/
+    /* Clone Generation with Proper NEON v7 Implementation */
+    /*===========================================================================*/
+
 
     fast_inline void generate_clones_opt(float32x4_t* out_l, float32x4_t* out_r,
                                         float filter_depth) {
