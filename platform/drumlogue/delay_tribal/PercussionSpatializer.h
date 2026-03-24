@@ -188,8 +188,7 @@ public:
         }
 
         const float* in_p = in;
-        float* out_p = out;
-        const float* out_e = out_p + (frames << 1);
+        float*       out_p = out;
 
         // Determine starting filter depth for ramping
         float current_depth = mode_filters_.last_depth_param;
@@ -199,16 +198,96 @@ public:
                          mode_filters_.ramp_samples;
         }
 
-        // Process one stereo frame at a time (in_p[0]=L, in_p[1]=R)
-        for (; out_p < out_e; in_p += 2, out_p += 2) {
+        const float32x4_t dry4 = vdupq_n_f32(1.0f - mix_);
+        const float32x4_t wet4 = vdupq_n_f32(mix_);
+
+        // -----------------------------------------------------------------------
+        // Main loop: 4 stereo frames (8 floats) per iteration.
+        // vld2q_f32 de-interleaves [L0,R0,L1,R1,L2,R2,L3,R3] into
+        //   val[0] = [L0,L1,L2,L3]  val[1] = [R0,R1,R2,R3]
+        // vst2q_f32 re-interleaves on output.
+        // -----------------------------------------------------------------------
+        size_t frames4 = frames & ~3u;
+        for (size_t i = 0; i < frames4; i += 4, in_p += 8, out_p += 8) {
+
+            // --- Advance depth ramp by 4 steps ---
+            if (mode_filters_.ramp_samples > 0) {
+                uint32_t steps = (mode_filters_.ramp_samples >= 4) ? 4u
+                                                                    : mode_filters_.ramp_samples;
+                current_depth += depth_step * (float)steps;
+                mode_filters_.ramp_samples -= steps;
+                if (mode_filters_.ramp_samples == 0) {
+                    current_depth = mode_filters_.depth_param;
+                    mode_filters_.last_depth_param = current_depth;
+                    depth_step = 0.0f;
+                }
+            } else {
+                current_depth = mode_filters_.depth_param;
+            }
+
+            // --- De-interleave 4 stereo frames in one instruction ---
+            float32x4x2_t stereo_in = vld2q_f32(in_p);
+            float32x4_t in_l4 = stereo_in.val[0];  // [L0, L1, L2, L3]
+            float32x4_t in_r4 = stereo_in.val[1];  // [R0, R1, R2, R3]
+
+            // --- Transient detection: 4 real consecutive samples per vector ---
+            transient_detected_ = detect_transient_fast(in_l4, in_r4);
+            if (transient_detected_) randomize_velocities();
+
+            // --- Write each frame then generate its clones (preserves delay ordering) ---
+            float l_arr[4], r_arr[4];
+            vst1q_f32(l_arr, in_l4);
+            vst1q_f32(r_arr, in_r4);
+
+            float wet_l_arr[4], wet_r_arr[4];
+            for (int f = 0; f < 4; f++) {
+                write_to_delay_opt(l_arr[f], r_arr[f]);
+
+                float32x4_t acc_l = vdupq_n_f32(0.0f);
+                float32x4_t acc_r = vdupq_n_f32(0.0f);
+                generate_clones_opt(&acc_l, &acc_r, current_depth);
+
+                wet_l_arr[f] = horizontal_sum_f32x4(acc_l);
+                wet_r_arr[f] = horizontal_sum_f32x4(acc_r);
+            }
+
+            float32x4_t wet_l4 = vld1q_f32(wet_l_arr);
+            float32x4_t wet_r4 = vld1q_f32(wet_r_arr);
+
+            // --- Apply mode crossfade (scalar: counter changes each frame) ---
+            if (crossfade_active_) {
+                for (int f = 0; f < 4; f++) {
+                    float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
+                    wet_l_arr[f] *= fade_in;
+                    wet_r_arr[f] *= fade_in;
+                    if (--crossfade_counter_ == 0) { crossfade_active_ = false; break; }
+                }
+                wet_l4 = vld1q_f32(wet_l_arr);
+                wet_r4 = vld1q_f32(wet_r_arr);
+            }
+
+            // --- Wet/dry mix using NEON ---
+            float32x4_t out_l4 = vmlaq_f32(vmulq_f32(in_l4, dry4), wet_l4, wet4);
+            float32x4_t out_r4 = vmlaq_f32(vmulq_f32(in_r4, dry4), wet_r4, wet4);
+
+            // --- Re-interleave and store 4 stereo frames in one instruction ---
+            float32x4x2_t stereo_out;
+            stereo_out.val[0] = out_l4;
+            stereo_out.val[1] = out_r4;
+            vst2q_f32(out_p, stereo_out);
+        }
+
+        // -----------------------------------------------------------------------
+        // Scalar tail: 0-3 remaining frames (handles frames not divisible by 4).
+        // Drumlogue blocks are typically 64 or 128 so this path is rarely taken.
+        // -----------------------------------------------------------------------
+        for (size_t i = frames4; i < frames; i++, in_p += 2, out_p += 2) {
             float in_l = in_p[0];
             float in_r = in_p[1];
 
-            // Advance depth ramp
             if (mode_filters_.ramp_samples > 0) {
                 current_depth += depth_step;
-                mode_filters_.ramp_samples--;
-                if (mode_filters_.ramp_samples == 0) {
+                if (--mode_filters_.ramp_samples == 0) {
                     current_depth = mode_filters_.depth_param;
                     mode_filters_.last_depth_param = current_depth;
                 }
@@ -216,25 +295,21 @@ public:
                 current_depth = mode_filters_.depth_param;
             }
 
-            // Detect transient
+            // Single-sample transient detection (tail path only)
             float32x4_t in_l4 = vdupq_n_f32(in_l);
             float32x4_t in_r4 = vdupq_n_f32(in_r);
             transient_detected_ = detect_transient_fast(in_l4, in_r4);
             if (transient_detected_) randomize_velocities();
 
-            // Write one frame to delay line: duplicate L/R for all 4 clone channels
             write_to_delay_opt(in_l, in_r);
 
-            // Generate clones: returns acc_l/acc_r with one value per clone lane
             float32x4_t acc_l = vdupq_n_f32(0.0f);
             float32x4_t acc_r = vdupq_n_f32(0.0f);
             generate_clones_opt(&acc_l, &acc_r, current_depth);
 
-            // Horizontal sum: collapse 4 clone lanes to one output sample
             float wet_l = horizontal_sum_f32x4(acc_l);
             float wet_r = horizontal_sum_f32x4(acc_r);
 
-            // Apply mode crossfade
             if (crossfade_active_) {
                 float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
                 wet_l *= fade_in;
@@ -242,7 +317,6 @@ public:
                 if (--crossfade_counter_ == 0) crossfade_active_ = false;
             }
 
-            // Wet/dry mix and write output
             out_p[0] = (1.0f - mix_) * in_l + mix_ * wet_l;
             out_p[1] = (1.0f - mix_) * in_r + mix_ * wet_r;
         }
