@@ -82,7 +82,7 @@ public:
                 break;
             }
 
-            // -- LFO Waves (Update UI maximum to 5 in header.c later!)
+            // -- LFO Waves (Updated UI maximum to 5 in header.c)
             case k_paramL1Wave: lfo1.wave_type = value % 6; break;
             case k_paramL2Wave: lfo2.wave_type = value % 6; break;
             case k_paramL3Wave: lfo3.wave_type = value % 6; break;
