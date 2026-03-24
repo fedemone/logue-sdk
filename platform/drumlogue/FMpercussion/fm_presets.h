@@ -8,72 +8,103 @@
 #pragma once
 
 #include <stdint.h>
-#include "constants.h”
-#include "resonant_synthesis.h”
+#include “constants.h”
+#include “resonant_synthesis.h”
 
 // LFO target values (from lfo_enhanced.h)
-#define LFO_TARGET_NONE     0
-#define LFO_TARGET_PITCH    1
-#define LFO_TARGET_INDEX    2
-#define LFO_TARGET_ENV      3
-#define LFO_TARGET_LFO2_PHASE 4
-#define LFO_TARGET_LFO1_PHASE 5
+#define LFO_TARGET_NONE       (0)
+#define LFO_TARGET_PITCH      (1)
+#define LFO_TARGET_INDEX      (2)
+#define LFO_TARGET_ENV        (3)
+#define LFO_TARGET_LFO2_PHASE (4)
+#define LFO_TARGET_LFO1_PHASE (5)
 
 // Engine modes
-#define ENGINE_KICK     0
-#define ENGINE_SNARE    1
-#define ENGINE_METAL    2
-#define ENGINE_PERC     3
-#define ENGINE_RESONANT 4
+#define ENGINE_KICK     (0)
+#define ENGINE_SNARE    (1)
+#define ENGINE_METAL    (2)
+#define ENGINE_PERC     (3)
+#define ENGINE_RESONANT (4)
 
 // from header.c
-#define NUM_OF_PRESETS 12
+#define NUM_OF_PRESETS (12)
+#define NAME_LENGTH    (12)
 
+char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
+{
+    "Deep Tribal",
+    "Metal Storm",
+    "ChordalPerc",
+    "Phase Dance",
+    "BipolarBass",
+    "Snare Roll",
+    "AmbientMetl",
+    "Polyrhythm",
+    "ResoKick",
+    "ResoTom",
+    "ResoSnare",
+    "ResoMetal"
+};
 
+typedef enum {
+  DEEP_TRIBAL = 0,
+  METAL_STORM,
+  CHORDAL_PERC,
+  PHASE_DANCE,
+  BIPOLAR_BASS,
+  SNARE_ROLL,
+  AMBIENT_METL,
+  POLYRHYTHM,
+  RESOKICK,
+  RESOTOM,
+  RESOSNARE,
+  RESOMETAL,
+  TOTAL_PRESETS = NUM_OF_PRESETS
+} preset_numer_t;
 
 typedef struct {
-    char name[12];
+  char name[NAME_LENGTH];
 
-    // Page 1: Probabilities
-    uint8_t prob_kick;
-    uint8_t prob_snare;
-    uint8_t prob_metal;
-    uint8_t prob_perc;
+  // Page 1: Probabilities
+  uint8_t prob_kick;
+  uint8_t prob_snare;
+  uint8_t prob_metal;
+  uint8_t prob_perc;
 
-    // Page 2: Kick + Snare
-    uint8_t kick_sweep;
-    uint8_t kick_decay;
-    uint8_t snare_noise;
-    uint8_t snare_body;
+  // Page 2: Kick + Snare
+  uint8_t kick_sweep;
+  uint8_t kick_decay;
+  uint8_t snare_noise;
+  uint8_t snare_body;
 
-    // Page 3: Metal + Perc
-    uint8_t metal_inharm;
-    uint8_t metal_bright;
-    uint8_t perc_ratio;
-    uint8_t perc_var;
+  // Page 3: Metal + Perc
+  uint8_t metal_inharm;
+  uint8_t metal_bright;
+  uint8_t perc_ratio;
+  uint8_t perc_var;
 
-    // Page 4: LFO1
-    uint8_t lfo1_shape;     // 0-8
-    uint8_t lfo1_rate;      // 0-100
-    uint8_t lfo1_target;    // 0-5
-    int8_t  lfo1_depth;     // -100 to 100
+  // Page 4: LFO1
+  uint8_t lfo1_shape;   // 0-8
+  uint8_t lfo1_rate;    // 0-100
+  uint8_t lfo1_target;  // 0-5
+  int8_t lfo1_depth;    // -100 to 100
 
-    // Page 5: LFO2
-    uint8_t lfo2_shape;     // 0-8
-    uint8_t lfo2_rate;      // 0-100
-    uint8_t lfo2_target;    // 0-5
-    int8_t  lfo2_depth;     // -100 to 100
+  // Page 5: LFO2
+  uint8_t lfo2_shape;   // 0-8
+  uint8_t lfo2_rate;    // 0-100
+  uint8_t lfo2_target;  // 0-5
+  int8_t lfo2_depth;    // -100 to 100
 
-    // Page 6: Envelope
-    uint8_t env_shape;      // 0-127
-    uint8_t voice_index;    // 0-VOICE_ALLOC_COUNT
+  // Page 6: Envelope
+  uint8_t env_shape;    // 0-127
+  uint8_t voice_index;  // 0-VOICE_ALLOC_COUNT
 
-    // NEW: Resonant parameters (using params 21-23)
-    uint8_t resonant_mode;   // 0-4 (LP, BP, HP, Notch, Peak)
-    uint8_t resonant_morph;  // 0-100
-    uint8_t resonant_res;    // 0-100
-    uint8_t resonant_center; // 0-100 (maps to 50-8000 Hz)
-    uint8_t engine_map[4];   // Which engine each voice uses
+  // NEW: Resonant parameters (using params 21-23)
+  uint8_t resonant_mode;    // 0-4 (LP, BP, HP, Notch, Peak)
+  uint8_t resonant_morph;   // 0-100
+  uint8_t resonant_res;     // 0-100
+  uint8_t resonant_center;  // 0-100 (maps to 50-8000 Hz)
+  uint8_t engine_map[4];    // Which engine each voice uses
 } fm_preset_t;
 
 // Array defined in fm_presets.c (C compilation) to support C99 designated
@@ -91,7 +122,7 @@ extern const fm_preset_t FM_PRESETS[NUM_OF_PRESETS];
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // Preset 0: "Deep Tribal" (original)
     {
-        .name = "Deep Tribal",
+        .name = preset_names[DEEP_TRIBAL], // "Deep Tribal",
         .prob_kick = 100,
         .prob_snare = 80,
         .prob_metal = 60,
@@ -122,7 +153,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 1: "Metal Storm" (original)
     {
-        .name = "Metal Storm",
+        .name = preset_names[METAL_STORM],  // "Metal Storm",
         .prob_kick = 60,
         .prob_snare = 80,
         .prob_metal = 100,
@@ -153,7 +184,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 2: "Chordal Perc" (original)
     {
-        .name = "ChordalPerc",
+        .name = preset_names[CHORDAL_PERC],  //  "ChordalPerc",
         .prob_kick = 70,
         .prob_snare = 70,
         .prob_metal = 70,
@@ -184,7 +215,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 3: "Phase Dance" (original)
     {
-        .name = "Phase Dance",
+        .name = preset_names[PHASE_DANCE],  //  "Phase Dance",
         .prob_kick = 80,
         .prob_snare = 60,
         .prob_metal = 80,
@@ -215,7 +246,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 4: "Bipolar Bass" (original)
     {
-        .name = "BipolarBass",
+        .name = preset_names[BIPOLAR_BASS],  //  "BipolarBass",
         .prob_kick = 100,
         .prob_snare = 40,
         .prob_metal = 30,
@@ -246,7 +277,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 5: "Snare Roll" (original)
     {
-        .name = "Snare Roll",
+        .name = preset_names[SNARE_ROLL],  //  "Snare Roll",
         .prob_kick = 30,
         .prob_snare = 100,
         .prob_metal = 40,
@@ -277,7 +308,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 6: "Ambient Metals" (original)
     {
-        .name = "AmbientMetl",
+        .name = preset_names[AMBIENT_METL],  //  "AmbientMetl",
         .prob_kick = 40,
         .prob_snare = 50,
         .prob_metal = 100,
@@ -308,7 +339,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 7: "Polyrhythm" (original)
     {
-        .name = "Polyrhythm",
+        .name = preset_names[POLYRHYTHM],  //  "Polyrhythm",
         .prob_kick = 90,
         .prob_snare = 70,
         .prob_metal = 50,
@@ -341,7 +372,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 8: "ResoKick" - Resonant kick drum
     {
-        .name = "ResoKick",
+        .name = preset_names[RESOKICK],  //  "ResoKick",
         .prob_kick = 100,
         .prob_snare = 0,
         .prob_metal = 0,
@@ -372,7 +403,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 9: "ResoTom" - Resonant tom
     {
-        .name = "ResoTom",
+        .name = preset_names[RESOTOM],  //  "ResoTom",
         .prob_kick = 0,
         .prob_snare = 0,
         .prob_metal = 0,
@@ -403,7 +434,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 10: "ResoSnare" - Resonant snare
     {
-        .name = "ResoSnare",
+        .name = preset_names[RESOSNARE],  //  "ResoSnare",
         .prob_kick = 0,
         .prob_snare = 100,
         .prob_metal = 0,
@@ -434,7 +465,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 11: "ResoMetal" - Resonant metal/cymbal
     {
-        .name = "ResoMetal",
+        .name = preset_names[RESOMETAL],  //  "ResoMetal",
         .prob_kick = 0,
         .prob_snare = 0,
         .prob_metal = 100,
