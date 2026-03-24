@@ -65,9 +65,11 @@ tools/gcc/gcc-arm-none-eabi-*
 # x86 test binaries (compiled locally, not for target)
 platform/drumlogue/FMpercussion/test_alloc
 platform/drumlogue/FMpercussion/test_lfo
+platform/drumlogue/FMpercussion/test_voice
 platform/drumlogue/delay_tribal/test_biquad
 platform/drumlogue/omnipress/test_compressor
 platform/drumlogue/reverb_labirinto/test_hadamard
+platform/drumlogue/reverb_light/test_reverb_light
 platform/drumlogue/scruta_astri/test_dsp
 
 # VS Code config
