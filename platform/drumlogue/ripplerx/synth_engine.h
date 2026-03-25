@@ -253,7 +253,7 @@ public:
     // 1. UI State & Preset Management
     // ==============================================================================
 
-    // Tracks the raw UI integer for all 24 parameter slots (indices 0–23)
+    // Tracks the raw UI integer for all 24 parameter slots (indices 0-23)
     int32_t m_params[k_lastParamIndex] = {0};
     uint8_t m_preset_idx = 0;
 
@@ -294,32 +294,32 @@ public:
         //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
         //                            ÷10                           ÷10                                                              ÷10
             { 0,  60,   0,   1,   500,  250,  0,   0,     3, 0,   25,  10,    0,  26, 10,   300,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0: Init
-            { 1,  60,   0,   1,   800,  400,  0,   0,     3, 6,   15,  -5,    0,  50,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1: Marimba
-            { 2,  36,   0,   1,   100,   50,  0,   0,     3, 5,   80, -10,    0,  50, 15,    10,     1,   5, 150,    0, 300,  0,   100, 707}, // 2: 808 Sub
-            { 3,  38,   0,   1,   400,  300,  0,   0,     3, 5,   15,  15,    0,  20,  8,   500,    15,   5,  50,  800, 500,  2,   800, 707}, // 3: Ac Snare
-            { 4,  72,   0,   1,   900,  500,  0,   0,     3, 8,  150,  30,    0,  10, 20,  1900,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4: Tubular Bell
-            { 5,  40,   0,   1,   300,   50,  0,   0,     3, 3,   60,  -5,    0,  30, 15,    20,     1,   5,  30,    0, 300,  0,   500, 707}, // 5: Timpani
-            { 6,  48,   0,   1,   600,  200,  0,   0,     3, 5,   30,   5,    0,  10, 12,    50,     5,   5,  50,   50, 200,  0,   600, 707}, // 6: Djambe
-            { 7,  36,   0,   1,   200,   80,  0,   0,     3, 5,   70, -10,    0,  50, 18,    10,     1,   5, 200,    0, 300,  0,   400, 707}, // 7: Taiko
-            { 8,  65,   0,   1,   700,  450,  0,   0,     3, 5,    8,  20,    0,  50,  3,   200,    25,   5,  80,  950, 150,  2,  1000, 707}, // 8: March Snare
-            { 9,  35,   0,   1,   100,  150,  0,   0,     3, 4,  180,  25,    0,  25, 20,  1800,     1,   5,  60,  100, 800,  0,   800, 707}, // 9: Tam Tam
-            {10,  72,   0,   1,   600,  450,  0,   0,     3, 0,   80,  10,    0,  80, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto
+            { 1,  60,   0,   1,   800,  175,  0,   0,     3, 6,  120,  -5,    0,  50,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1: Marimba
+            { 2,  36,   0,   1,   100,   50,  0,   0,     3, 5,  105, -10,    0,  50, 15,    10,     1,   5, 150,    0, 300,  0,   100, 707}, // 2: 808 Sub
+            { 3,  38,   0,   1,   400,  300,  0,   0,     3, 5,   15,  15,    0,  20,  8,   500,    15,   5,  50,   80, 500,  2,   800, 707}, // 3: Ac Snare       NzMix 800→80
+            { 4,  72,   0,   1,   900,  500,  0,   0,     3, 7,  150,  30,    0,  10, 20,  1900,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4: Tubular Bell
+            { 5,  40,   0,   1,   300,   50,  0,   0,     3, 3,  145,  -5,    0,  30, 15,    20,     1,   5,  30,    3, 300,  0,   500, 707}, // 5: Timpani        NzMix 30→3
+            { 6,  48,   0,   1,   600,  200,  0,   0,     3, 5,   80,   5,    0,  10, 12,    50,     5,   5,  50,    5, 200,  0,   600, 707}, // 6: Djambe         NzMix 50→5
+            { 7,  36,   0,   1,   200,   80,  0,   0,     3, 5,  100, -10,    0,  50, 18,    10,     1,   5, 200,    0, 300,  0,   400, 707}, // 7: Taiko
+            { 8,  65,   0,   1,   700,  450,  0,   0,     3, 5,    8,  20,    0,  50,  3,   200,    25,   5,  80,   95, 150,  2,  1000, 707}, // 8: March Snare    NzMix 950→95
+            { 9,  35,   0,   1,   100,  150,  0,   0,     3, 4,  180,  25,    0,  25, 20,  1800,     1,   5,  60,   10, 800,  0,   800, 707}, // 9: Tam Tam        NzMix 100→10
+            {10,  72,   0,   1,   600,  280,  0,   0,     3, 0,  130,  10,    0,  80, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto
             {11,  72,   0,   1,   500,  300,  0,   0,     3, 1,  120,  15,    0,  50, 18,     5,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibraphone
             {12,  76,   0,   1,   800,  350,  0,   0,     3, 2,    5,  -8,    0,  50,  2,    80,     1,   5,   0,    0, 300,  0,   500, 707}, // 12: Woodblock
-            {13,  45,   0,   1,   400,  200,  0,   0,     3, 5,   40,  -2,    0,  50, 10,    30,     1,   5,  40,   20, 300,  0,   800, 707}, // 13: Acoustic Tom
-            {14,  60,   0,   1,   800,  500,  0,   0,     3, 4,  140,  30,    0,  10, 18,  1950,    40,   5,  20,  600, 700,  2,  1400, 707}, // 14: Cymbal
-            {15,  36,   0,   1,   200,  200,  0,   0,     3, 4,  190,  20,    0,  50, 20,  1900,     1,   5,  40,  100, 800,  0,   600, 707}, // 15: Gong
-            {16,  72,   0,   1,   700,  400,  0,   0,     3, 1,   20,  25,    0,  80,  5,     1,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba
-            {17,  60,   0,   1,   600,  350,  0,   0,     3, 4,   60,  20,    0,  30, 12,   800,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan
+            {13,  45,   0,   1,   400,  200,  0,   0,     3, 5,   80,  -2,    0,  50, 10,    30,     1,   5,  40,    2, 300,  0,   800, 707}, // 13: Acoustic Tom  NzMix 20→2
+            {14,  60,   0,   1,   800,  500,  0,   0,     3, 4,  140,  30,    0,  10, 18,  1950,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal        NzMix 600→60
+            {15,  36,   0,   1,   200,  200,  0,   0,     3, 4,  190,  20,    0,  50, 20,  1900,     1,   5,  40,   10, 800,  0,   600, 707}, // 15: Gong          NzMix 100→10
+            {16,  72,   0,   1,   700,  400,  0,   0,     3, 1,  140,  25,    0,  80,  5,     1,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba
+            {17,  60,   0,   1,   600,  350,  0,   0,     3, 4,  100,  20,    0,  30, 12,   800,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan
             {18,  79,   0,   1,   900,  480,  0,   0,     3, 2,    3,   5,    0,  50,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves
-            {19,  67,   0,   1,   800,  450,  0,   0,     3, 4,   15,  25,    0,  20,  4,  1700,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell
-            {20,  84,   0,   1,   900,  500,  0,   0,     3, 1,  100,  30,    0,  10, 15,  1990,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle
-            {21,  36,   0,   1,   300,  150,  0,   0,     3, 5,   20,  -5,    0,  50,  6,    20,     1,   5, 100,   50, 200,  0,   300, 707}, // 21: Kick Drum
-            {22,  60,   0,   1,   500,  300,  0,   0,     3, 5,    5,  10,    0,  50,  3,   500,    40,   5,  50, 1000, 100,  2,  1000, 707}, // 22: Clap
-            {23,  72,   0,   1,   100,  400,  0,   0,     3, 5,    2,  15,    0,  50,  2,   100,    80,   5,  20, 1000, 300,  2,  1200, 707}, // 23: Shaker
-            {24,  72,   0,   1,   100,   50,  0,   0,     3, 7,   90,  -5,    0,  10, 12,     1,     1,   5,   0,  400, 800,  0,   600, 707}, // 24: Flute
-            {25,  60,   0,   1,   100,   50,  0,   0,     3, 8,   90,  -5,    0,  10, 12,     1,     1,   5,   0,  400, 800,  0,   600, 707}, // 25: Clarinet
-            {26,  36,   0,   1,   600,  250,  0,   0,     3, 0,   60,  -8,    0,  20, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: Pluck Bass
+            {19,  67,   0,   1,   800,  450,  0,   0,     3, 4,   55,  25,    0,  20,  4,  1700,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell
+            {20,  84,   0,   1,   900,  500,  0,   0,     3, 1,  165,  30,    0,  10, 15,  1990,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle
+            {21,  36,   0,   1,   300,  150,  0,   0,     3, 5,   50,  -5,    0,  50,  6,    20,     1,   5, 100,    5, 200,  0,   300, 707}, // 21: Kick Drum     NzMix 50→5
+            {22,  60,   0,   1,   500,  300,  0,   0,     3, 5,    5,  10,    0,  50,  3,   500,    40,   5,  50,  100, 100,  2,  1000, 707}, // 22: Clap          NzMix 1000→100
+            {23,  72,   0,   1,   100,  400,  0,   0,     3, 5,    2,  15,    0,  50,  2,   100,    80,   5,  20,  100, 300,  2,  1200, 707}, // 23: Shaker        NzMix 1000→100
+            {24,  72,   0,   1,   100,   50,  0,   0,     3, 7,   90,  -5,    0,  10, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute         NzMix 0→35 (breath noise)
+            {25,  60,   0,   1,   100,   50,  0,   0,     3, 8,   90,  -5,    0,  10, 12,     1,     1,   5,   0,   25, 800,  0,   600, 707}, // 25: Clarinet      NzMix 0→25 (reed breath noise)
+            {26,  36,   0,   1,   600,  250,  0,   0,     3, 0,   85,  -8,    0,  20, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: Pluck Bass
             {27,  76,   0,   1,   700,  350,  0,   0,     3, 4,  160,  25,    0,  80, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}  // 27: Glass Bowl
         };
 
@@ -397,7 +397,7 @@ public:
                 m_sample_number = value;
                 break;
             case k_paramMlltStif: {
-                // Stored ÷10 (10–500 represents 100–5000). Divide by 500 (new max).
+                // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
                 float norm = fmaxf(0.01f, fminf(1.0f, (float)value / 500.0f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.mallet_stiffness = norm;
@@ -406,7 +406,7 @@ public:
             }
 
             case k_paramMlltRes: {
-                // UI range 0–1000 (displays with 1 decimal via frac_type=1).
+                // UI range 0-1000 (displays with 1 decimal via frac_type=1).
                 // Maps to a second 1-pole LP coefficient stacked after mallet_stiffness LP.
                 // Low value → darker/softer mallet body. High value → brighter/sharper.
                 float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 1000.0f));
@@ -463,15 +463,26 @@ public:
 
             case k_paramDkay: {
                 // 0.85 = instant dead thud. 0.999 = rings for ~5 seconds.
-                // Stored ÷10 (0–200 represents 0–2000). Divide by 200 (new max).
+                // Stored ÷10 (0-200 represents 0-2000). Divide by 200 (new max).
                 if (value <= 200) {
                     float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 200.0f));
                     float g = 0.85f + (norm * 0.149f);
+                    // master_env gate: exponential 50ms (Decay=0) → 10s (Decay=200).
+                    // Decay is the primary sustain control; Rel only gates the noise
+                    // burst.  Without this, the master_env would kill the waveguide
+                    // resonance at ~28 ms (default Rel) regardless of Decay setting.
+                    float t_s = 0.05f * powf(200.0f, norm); // 50ms..10s
+                    float master_rate = 3.0f * M_LN10 / (t_s * default_sample_rate);
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a)
                             state.voices[i].resA.feedback_gain = g;
                         if (m_is_resonator_b)
                             state.voices[i].resB.feedback_gain = g;
+#ifdef ENABLE_PHASE_5_EXCITERS
+                        // Always update regardless of which resonator is selected —
+                        // master_env is voice-level, not per-resonator.
+                        state.voices[i].exciter.master_env.release_rate = master_rate;
+#endif
                     }
                 }
                 break;
@@ -510,12 +521,13 @@ public:
 
             case k_paramRel: {
                 float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 20.0f));
-                // Much slower release fade to prevent clicking when GateOff is received
+                // Rel controls only the noise burst release time (0→fast snap,
+                // 20→slow noise tail).  master_env gate is tied to Decay instead,
+                // so the waveguide resonance isn't prematurely killed by a short Rel.
                 float rel_rate = 0.00005f + ((1.0f - norm) * 0.01f);
                 for (int i = 0; i < NUM_VOICES; ++i) {
 #ifdef ENABLE_PHASE_5_EXCITERS
                     state.voices[i].exciter.noise_env.release_rate = rel_rate;
-                    state.voices[i].exciter.master_env.release_rate = rel_rate;
 #endif
                 }
                 break;
@@ -523,7 +535,7 @@ public:
 
             case k_paramInharm: {
                 if (value <= 1999) {
-                    // Stored 0–1999; effective range 0–19990 (×10). Divide by 2000 to normalise.
+                    // Stored 0-1999; effective range 0-19990 (×10). Divide by 2000 to normalise.
                     float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 2000.0f));
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a)
@@ -536,9 +548,9 @@ public:
             }
             case k_paramLowCut: {
 #ifdef ENABLE_PHASE_6_FILTERS
-                // Stored 1–1999; effective range 10–19990 Hz (×10 scaling).
+                // Stored 1-1999; effective range 10-19990 Hz (×10 scaling).
                 m_master_cutoff = (float)value * 10.0f;
-                // Divide by 1000: UI stores 707–4000, filter needs 0.707–4.0
+                // Divide by 1000: UI stores 707-4000, filter needs 0.707-4.0
                 float res_val = fmaxf(0.707f, (float)m_params[k_paramResnc] / 1000.0f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
 #endif
@@ -595,7 +607,7 @@ public:
 
             case k_paramNzFltFrq: {
 #ifdef ENABLE_PHASE_6_FILTERS
-                // Stored ÷10 (2–2000 represents 20–20000 Hz). Multiply by 10 for real Hz.
+                // Stored ÷10 (2-2000 represents 20-20000 Hz). Multiply by 10 for real Hz.
                 float freq = fmaxf(20.0f, fminf(20000.0f, (float)value * 10.0f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_filter.set_coeffs(freq, 0.707f, default_sample_rate);
@@ -652,17 +664,17 @@ public:
         } else if (index == k_paramNzFltr) {
             if (value >= 0 && value < 3) return nz_filter_names[value];
         } else if (index == k_paramMlltStif) {
-            // Stored ÷10; show real ×10 value (100–5000)
+            // Stored ÷10; show real ×10 value (100-5000)
             static char ms_buf[8];
             snprintf(ms_buf, sizeof(ms_buf), "%d", (int)(value * 10));
             return ms_buf;
         } else if (index == k_paramDkay) {
-            // Stored ÷10; show real ×10 value (0–2000)
+            // Stored ÷10; show real ×10 value (0-2000)
             static char dk_buf[8];
             snprintf(dk_buf, sizeof(dk_buf), "%d", (int)(value * 10));
             return dk_buf;
         } else if (index == k_paramNzFltFrq) {
-            // Stored ÷10; show real ×10 Hz/kHz value (20–20000 Hz)
+            // Stored ÷10; show real ×10 Hz/kHz value (20-20000 Hz)
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
@@ -672,7 +684,7 @@ public:
             }
             return nf_buf;
         } else if (index == k_paramLowCut) {
-            // value is 1–1999; effective Hz is value×10 (10–19990 Hz).
+            // value is 1-1999; effective Hz is value×10 (10-19990 Hz).
             static char lc_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
@@ -892,7 +904,7 @@ public:
     }
 
     inline void PitchBend(uint16_t bend) {
-        // MIDI pitch bend: 0–16383, centre = 8192.
+        // MIDI pitch bend: 0-16383, centre = 8192.
         // Map to ±2 semitones (standard default bend-sensitivity range).
         // PitchBend is not in the audio hot loop, so we use powf() for accuracy.
         // fasterpowf(2.0f, 0.0f) ≈ 0.9714 (not 1.0) due to fasterlog2f(2.0f)≈1.057
@@ -1150,9 +1162,9 @@ public:
         }
 
 #if RENDER_STAGE < 4
-        // ── Stage 1–3: hard-clip output ────────────────────────────────────
+        // ── Stage 1-3: hard-clip output ────────────────────────────────────
         // Stage 4 uses soft-clip + overdrive.  For debug stages the raw mallet
-        // impulse (~3–4 × full-scale) must be clamped or the Drumlogue DAC
+        // impulse (~3-4 × full-scale) must be clamped or the Drumlogue DAC
         // saturates on the first note and may engage hardware protection.
         for (size_t i = 0; i < frames; ++i) {
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
@@ -1221,7 +1233,7 @@ private:
     bool    m_is_resonator_b = true; // "copy" of res A
 
     uint8_t m_active_partials = 32; // Default: 32 partials (Partls index 3, ResB active)
-    float   m_coupling_depth  = 0.75f; // Coupling depth [0.0–1.0] from Partls UI index 0–4.
+    float   m_coupling_depth  = 0.75f; // Coupling depth [0.0-1.0] from Partls UI index 0-4.
     // Stored separately from m_params[k_paramPartls] so that Partls=5/6
     // (ResA/ResB editor-select modes) never corrupt the coupling amount.
     float   m_pitch_bend_mult = 1.0f; // Delay-length multiplier from MIDI pitch bend (1.0 = centred).
