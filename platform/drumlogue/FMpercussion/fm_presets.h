@@ -30,22 +30,6 @@
 #define NUM_OF_PRESETS (12)
 #define NAME_LENGTH    (12)
 
-char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
-{
-    "Deep Tribal",
-    "Metal Storm",
-    "ChordalPerc",
-    "Phase Dance",
-    "BipolarBass",
-    "Snare Roll",
-    "AmbientMetl",
-    "Polyrhythm",
-    "ResoKick",
-    "ResoTom",
-    "ResoSnare",
-    "ResoMetal"
-};
-
 typedef enum {
   DEEP_TRIBAL = 0,
   METAL_STORM,
@@ -118,7 +102,7 @@ extern const fm_preset_t FM_PRESETS[NUM_OF_PRESETS];
 #endif
 
 /* ---- full definition is in fm_presets.c ---- */
-#ifdef FM_PRESETS_DEFINE_DATA
+#if 0  /* dead — actual data lives in fm_presets.c with string literals */
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // Preset 0: "Deep Tribal" (original)
     {
