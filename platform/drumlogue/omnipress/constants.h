@@ -8,6 +8,7 @@
  */
 
 #include <cstdint>
+#include "arm_neon.h"
 
 // ============================================================================
 // DSP Constants
@@ -18,7 +19,7 @@ constexpr float SAMPLE_RATE = 48000.0f;
 constexpr float INV_SAMPLE_RATE = 1.0f / SAMPLE_RATE;
 
 // Smoothing constants
-constexpr int SMOOTH_FRAMES = 48;        // 1ms at 48kHz
+constexpr int   SMOOTH_FRAMES = 48;        // 1ms at 48kHz
 constexpr float SMOOTH_COEFF_MIN = 0.001f;
 constexpr float SMOOTH_COEFF_MAX = 0.5f;
 
@@ -71,7 +72,7 @@ constexpr int COMP_MODE_MAX = 2;
 constexpr int COMP_MODE_DEFAULT = 0;    // Standard mode
 
 constexpr int BAND_SEL_MIN = 0;
-constexpr int BAND_SEL_MAX = 3;
+constexpr int BAND_SEL_MAX = 6;
 constexpr int BAND_SEL_DEFAULT = 0;     // Low band
 
 constexpr int BAND_THRESH_MIN = -600;   // -60.0 dB
@@ -99,10 +100,15 @@ constexpr uint8_t COMP_MODE_MULTIBAND = 2;
 // Band Selection IDs
 // ============================================================================
 
-constexpr uint8_t BAND_LOW = 0;
-constexpr uint8_t BAND_MID = 1;
-constexpr uint8_t BAND_HIGH = 2;
-constexpr uint8_t BAND_ALL = 3;
+// Band selection for parameters
+constexpr uint8_t BAND_LOW       = 0;
+constexpr uint8_t BAND_MID       = 1;
+constexpr uint8_t BAND_HIGH      = 2;
+constexpr uint8_t BAND_ALL       = 3;
+constexpr uint8_t BAND_LOW_MID   = 3;
+constexpr uint8_t BAND_LOW_HI    = 4;
+constexpr uint8_t BAND_MID_HI    = 5;
+constexpr uint8_t BAND_ALL       = 6;
 
 // ============================================================================
 // Distressor Mode IDs

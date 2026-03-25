@@ -29,6 +29,7 @@ typedef struct {
     float sample_rate;
 } sidechain_hpf_t;
 
+
 /**
  * Initialize sidechain HPF (Bessel for clean phase response)
  */
@@ -373,4 +374,89 @@ fast_inline void smoothing_set_times(smoothing_t* sm,
                                      float release_ms) {
     sm->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * sm->sample_rate));
     sm->release_coeff = e_expff(-1.0f / (release_ms * 0.001f * sm->sample_rate));
+}
+
+
+
+/* ---------------------------------------------------------------------------
+ * 5. OPERATION OVERLORD DISTORTION
+ * --------------------------------------------------------------------------- */
+
+ typedef struct {
+    float32x4_t z1;
+    float32x4_t z2;
+} biquad_state_t;
+
+/**
+ * First-order shelving filter (low or high shelf)
+ * @param in        Input sample vector (4 lanes)
+ * @param state     Filter state (z1)
+ * @param freq      Shelf frequency (Hz)
+ * @param gain_db   Gain at shelf (dB)
+ * @param low_shelf 1 for low shelf, 0 for high shelf
+ * @param sr        Sample rate
+ */
+fast_inline float32x4_t shelving_filter(float32x4_t in,
+                                        biquad_state_t* state,
+                                        float freq,
+                                        float gain_db,
+                                        int low_shelf,
+                                        float sr) {
+    float gain_lin = powf(10.0f, gain_db / 20.0f);
+    float w0 = 2.0f * M_PI * freq / sr;
+    float cos_w0 = cosf(w0);
+    float sin_w0 = sinf(w0);
+    float S = 1.0f;  // slope (1 for standard shelf)
+
+    float beta = sqrtf((gain_lin * gain_lin + 1) / (gain_lin * gain_lin - 1));
+    float alpha;
+    if (low_shelf) {
+        alpha = (gain_lin - 1) / (gain_lin + 1);
+        alpha *= (sin_w0 / (2 * beta));
+    } else {
+        alpha = (gain_lin - 1) / (gain_lin + 1);
+        alpha *= (sin_w0 / (2 * beta));
+    }
+
+    // Simplified biquad coefficients for shelf filter
+    float b0 = gain_lin * ((gain_lin + 1) + (gain_lin - 1) * cos_w0 + 2 * sqrtf(gain_lin) * alpha);
+    float b1 = -2 * gain_lin * ((gain_lin - 1) + (gain_lin + 1) * cos_w0);
+    float b2 = gain_lin * ((gain_lin + 1) + (gain_lin - 1) * cos_w0 - 2 * sqrtf(gain_lin) * alpha);
+    float a0 = (gain_lin + 1) - (gain_lin - 1) * cos_w0 + 2 * sqrtf(gain_lin) * alpha;
+    float a1 = 2 * ((gain_lin - 1) - (gain_lin + 1) * cos_w0);
+    float a2 = (gain_lin + 1) - (gain_lin - 1) * cos_w0 - 2 * sqrtf(gain_lin) * alpha;
+
+    float inv_a0 = 1.0f / a0;
+    b0 *= inv_a0; b1 *= inv_a0; b2 *= inv_a0;
+    a1 *= inv_a0; a2 *= inv_a0;
+
+    // Transposed Direct Form II
+    float32x4_t y = vmlaq_f32(state->z1, in, vdupq_n_f32(b0));
+    state->z1 = vmlaq_f32(state->z2, in, vdupq_n_f32(b1));
+    state->z1 = vmlsq_f32(state->z1, y, vdupq_n_f32(a1));
+    state->z2 = vsubq_f32(vmulq_f32(in, vdupq_n_f32(b2)), vmulq_f32(y, vdupq_n_f32(a2)));
+
+    return y;
+}
+
+// High-shelf convenience wrapper
+fast_inline float32x4_t high_shelf_filter(float32x4_t in,
+                                          biquad_state_t* state,
+                                          float freq,
+                                          float gain_db,
+                                          float q,
+                                          float sr) {
+    (void)q; // Not used in first-order shelf
+    return shelving_filter(in, state, freq, gain_db, 0, sr);
+}
+
+// Low-shelf wrapper
+fast_inline float32x4_t low_shelf_filter(float32x4_t in,
+                                         biquad_state_t* state,
+                                         float freq,
+                                         float gain_db,
+                                         float q,
+                                         float sr) {
+    (void)q;
+    return shelving_filter(in, state, freq, gain_db, 1, sr);
 }

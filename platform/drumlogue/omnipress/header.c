@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00020000U,   // v2.0.0
     .name        = "OmniPress",
     .num_presets = 0,
-    .num_params  = 13,
+    .num_params  = 17,
 
     .params = {
         // Page 1: Core Dynamics
@@ -42,25 +42,26 @@ const __unit_header unit_header_t unit_header = {
         // Page 3: Mode Selection
         // ID 8: COMP MODE  0=Standard, 1=Distressor, 2=Multiband
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"COMP MODE"} },
-        // ID 9: BAND SEL  0=Low, 1=Mid, 2=High, 3=All
-        { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"BAND SEL"} },
+        // ID 9: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+Hihgh, 6=All
+        { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"BAND SEL"} },
         // ID 10: L THRESH  -60.0..0.0 dB  (per-band threshold)
         { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"L THRESH"} },
         // ID 11: L RATIO   1.0..20.0:1
         { 10, 200, 10, 40, k_unit_param_type_none, 1, 1, 0, {"L RATIO"} },
 
         // Page 4: Multiband / Distressor Parameters
-        // ID 12: DSTR MODE  0=None, 1=2nd harm, 2=3rd harm, 3=Both
-        { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DSTR MODE"} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // ID 12: DSTR MODE  0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave
+        { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DSTR DIST"} },    // ID 12 - Distressor distortion type
+        { 0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"DSTR RATIO"} },   // ID 13 - Distressor ratio selection
+        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },     // ID 14 - Overlord
+        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"TREBLE"} },   // ID 15 - Overlord
 
-        // Pages 5-6: blank padding to fill 24 slots
+        // Pages 5: blank padding to fill 24 slots
+        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"PRESENCE"} }, // ID 16 - Overlord
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // Pages 6: blank padding to fill 24 slots
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
