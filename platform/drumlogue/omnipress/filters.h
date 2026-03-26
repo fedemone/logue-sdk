@@ -387,6 +387,11 @@ fast_inline void smoothing_set_times(smoothing_t* sm,
     float32x4_t z2;
 } biquad_state_t;
 
+fast_inline void biquad_init_state(biquad_state_t* state) {
+    state->z1 = vdupq_n_f32(0.0f);
+    state->z2 = vdupq_n_f32(0.0f);
+}
+
 /**
  * First-order shelving filter (low or high shelf)
  * @param in        Input sample vector (4 lanes)

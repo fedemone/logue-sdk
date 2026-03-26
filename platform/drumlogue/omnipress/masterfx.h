@@ -47,7 +47,7 @@ public:
         compressor_init(&comp_);
         sidechain_hpf_init(&sc_hpf_, 80.0f, samplerate_);
         wavefolder_init(&wavefolder_);
-        distressor_init(&distressor_);
+        distressor_init(&distressor_, samplerate_);
         multiband_init(&multiband_, samplerate_);
         overlord_init(&overlord_, samplerate_);
 
@@ -87,7 +87,8 @@ public:
         sc_hpf_hz_ = 80.0f;
         sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
         wavefolder_init(&wavefolder_);
-        distressor_reset(&distressor_);
+        multiband_init(&multiband_, samplerate_);
+        distressor_reset(&distressor_, samplerate_);
         multiband_init(&multiband_, samplerate_);
         overlord_init(&overlord_, samplerate_);
         smoothing_init(&smoother_, samplerate_);

@@ -131,8 +131,8 @@ fast_inline float32x4_t distressor_detect(distressor_t* d,
     return envelope_detect(&d->distressor_env, detected, detected);
 }
 
-fast_inline void distressor_reset(distressor_t* d) {
-    distressor_init(d);
+fast_inline void distressor_reset(distressor_t* d, float sample_rate) {
+    distressor_init(d, sample_rate);
 }
 
 // Distressor-specific smoothing with opto mode support
