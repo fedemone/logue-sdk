@@ -104,7 +104,6 @@ constexpr uint8_t COMP_MODE_MULTIBAND = 2;
 constexpr uint8_t BAND_LOW       = 0;
 constexpr uint8_t BAND_MID       = 1;
 constexpr uint8_t BAND_HIGH      = 2;
-constexpr uint8_t BAND_ALL       = 3;
 constexpr uint8_t BAND_LOW_MID   = 3;
 constexpr uint8_t BAND_LOW_HI    = 4;
 constexpr uint8_t BAND_MID_HI    = 5;

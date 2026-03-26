@@ -33,8 +33,8 @@
 #include "distressor_mode.h"
 #include "multiband.h"
 
-// Parameter count must match header.c
-#define NUM_PARAMS 13
+// Parameter count must match header.c (params 0-16 = 17 total)
+#define NUM_PARAMS 17
 
 class MasterFX {
 public:
@@ -117,6 +117,7 @@ public:
         band_select_ = 0;
         use_external_sc_ = 0;
         detection_mode_ = DETECT_MODE_PEAK;
+        envelope_.mode = detection_mode_;  // propagate to detector
     }
 
     inline void Resume() {}
