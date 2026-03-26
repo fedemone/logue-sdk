@@ -402,6 +402,9 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
                                         float gain_db,
                                         int low_shelf,
                                         float sr) {
+    // gain_lin == 1.0 → gain_lin²-1 == 0 → beta = sqrt(x/0) = inf → NaN coefficients
+    if (fabsf(gain_db) < 0.01f) return in;
+
     float gain_lin = powf(10.0f, gain_db / 20.0f);
     float w0 = 2.0f * M_PI * freq / sr;
     float cos_w0 = cosf(w0);
