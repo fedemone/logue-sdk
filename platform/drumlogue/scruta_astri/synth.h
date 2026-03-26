@@ -9,6 +9,9 @@
 #include "lfo.h"
 #include "filter.h"
 
+constexpr float Q_Limit = 0.707f;
+constexpr float Mid_Note_Freq = 69.0f;
+
 class alignas(16) ScrutaAstri {
 public:
      enum ParamIndex {
@@ -23,10 +26,12 @@ public:
 
     // Constant Borders
     static constexpr float CLEAN_MOOG_BORDER = 33.0f;
-    static constexpr float MOOG_SHE_BORDER = 66.0f;
+    static constexpr float MOOG_SHERMAN_BORDER = 66.0f;
+    static constexpr uint32_t SAMPLE_RATE = 48000;
+    static constexpr float SAMPLE_RATE_F = (float)SAMPLE_RATE;
 
     inline int8_t Init(const unit_runtime_desc_t * desc) {
-        if (desc->samplerate != 48000) return k_unit_err_samplerate;
+        if (desc->samplerate != SAMPLE_RATE) return k_unit_err_samplerate;
         Reset();
         return k_unit_err_none;
     }
@@ -39,8 +44,8 @@ public:
         lfo2.phase = 0.0f;
         lfo3.phase = 0.0f;
 
-        filter1.mode = 0; // Lowpass
-        filter2.mode = 0; // Lowpass
+        filter1.mode = mode_low; // Lowpass
+        filter2.mode = mode_low; // Lowpass
 
         m_srr_counter = 0.0f;
         m_srr_hold_val = 0.0f;
@@ -71,7 +76,7 @@ public:
                 break;
             }
             case k_paramNote:
-                m_base_hz = 440.0f * fasterpowf(2.0f, ((float)value - 69.0f) / 12.0f);
+                m_base_hz = 440.0f * fasterpow2f(((float)value - Mid_Note_Freq) / 12.0f);
                 updateOscillators();
                 break;
             case k_paramO2Detune:
@@ -84,17 +89,17 @@ public:
             // A value of 100 = 1000Hz (Audio rate FM/AM)
             case k_paramL1Rate: {
                 float hz = 0.01f * fasterpowf(100000.0f, (float)value / 100.0f);
-                lfo1.set_rate(hz, 48000.0f);
+                lfo1.set_rate(hz, SAMPLE_RATE_F);
                 break;
             }
             case k_paramL2Rate: {
                 float hz = 0.01f * fasterpowf(100000.0f, (float)value / 100.0f);
-                lfo2.set_rate(hz, 48000.0f);
+                lfo2.set_rate(hz, SAMPLE_RATE_F);
                 break;
             }
             case k_paramL3Rate: {
                 float hz = 0.01f * fasterpowf(100000.0f, (float)value / 100.0f);
-                lfo3.set_rate(hz, 48000.0f);
+                lfo3.set_rate(hz, SAMPLE_RATE_F);
                 break;
             }
 
@@ -110,36 +115,31 @@ public:
 
             // -- FX
             case k_paramSampRed: m_srr_rate = 1.0f - ((float)value / 105.0f); break;
-            case k_paramBitRed:  m_brr_steps = fasterpowf(2.0f, 16.0f - (float)value); break;
+            case k_paramBitRed:  m_brr_steps = fasterpow2f(16.0f - (float)value); break;
+
             // FIX: The Sherman Destruction Boost
             case k_paramCMOSDist: {
-                float val = (float)value;
-                m_asym_mod_depth = val / MOOG_SHE_BORDER;
-
-                if (val < CLEAN_MOOG_BORDER) {
-                    m_cmos_gain = 1.0f + (val * 0.5f);
-                    filter1.drive = 0.0f; filter1.sherman_asym = 0.0f; filter1.lfo_res_mod = 0.0f;
+                if (value <= CLEAN_MOOG_BORDER) {
+                    m_cmos_gain = 1.0f + ((float)value / (float)CLEAN_MOOG_BORDER);
+                    filter1.drive = 0.0f;
+                    filter2.drive = 0.0f;
+                    m_sherman_asym_base = 0.0f; // Update base
                     m_sherman_makeup = 1.0f;
-                }
-                else if (val < MOOG_SHE_BORDER) {
-                    float moog_blend = (val - CLEAN_MOOG_BORDER) / CLEAN_MOOG_BORDER;
-                    m_cmos_gain = 17.5f;
-                    filter1.drive = moog_blend * 3.0f; filter1.sherman_asym = 0.0f; filter1.lfo_res_mod = 0.0f;
+                } else if (value <= MOOG_SHERMAN_BORDER) {
+                    m_cmos_gain = 2.0f;
+                    float moog_drive = ((float)(value - CLEAN_MOOG_BORDER) / (float)(MOOG_SHERMAN_BORDER - CLEAN_MOOG_BORDER)) * 2.0f;
+                    filter1.drive = moog_drive;
+                    filter2.drive = moog_drive;
+                    m_sherman_asym_base = 0.0f; // Update base
                     m_sherman_makeup = 1.0f;
+                } else {
+                    m_cmos_gain = 2.0f;
+                    filter1.drive = 2.0f;
+                    filter2.drive = 2.0f;
+                    // Update base with the parameter calculation
+                    m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) / (100.0f - MOOG_SHERMAN_BORDER)) * 2.0f;
+                    m_sherman_makeup = 1.0f + m_sherman_asym_base * 0.5f;
                 }
-                else {
-                    float sherman_blend = (val - MOOG_SHE_BORDER) / (100.0f - MOOG_SHE_BORDER);
-                    // MASSIVE DRIVE & GAIN INCREASES
-                    m_cmos_gain = 17.5f + (sherman_blend * 40.0f); // Was 10
-                    filter1.drive = 3.0f + (sherman_blend * 5.0f); // Rip it harder
-                    filter1.sherman_asym = sherman_blend * 1.5f;   // Push base asymmetry higher
-                    filter1.lfo_res_mod = sherman_blend;
-
-                    // Recover the volume lost from extreme clipping
-                    m_sherman_makeup = 1.0f + (sherman_blend * 3.5f);
-                }
-
-                filter2.drive = filter1.drive;
                 break;
             }
 
@@ -151,14 +151,14 @@ public:
             case k_paramF1Cutoff: m_f1_base_hz = (float)value * 10.0f; break;
             case k_paramF2Cutoff: m_f2_base_hz = (float)value * 10.0f; break;
             // -- Filters Base (Resonance 0-100 -> Q 0.707 to 5.0)
-            case k_paramF1Reso:   m_f1_q = 0.707f + ((float)value / 25.0f); break;
-            case k_paramF2Reso:   m_f2_q = 0.707f + ((float)value / 25.0f); break;
+            case k_paramF1Reso:   m_f1_q = Q_Limit + ((float)value / 25.0f); break;
+            case k_paramF2Reso:   m_f2_q = Q_Limit + ((float)value / 25.0f); break;
         }
     }
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // Calculate Base Frequency from MIDI Note
-        m_base_hz = 440.0f * fasterpow2f(((float)note - 69.0f) / 12.0f);
+        m_base_hz = 440.0f * fasterpow2f(((float)note - Mid_Note_Freq) / 12.0f);
         // Push immediate frequency updates to oscillators
         updateOscillators();
         // Open the drone VCA
@@ -226,7 +226,20 @@ public:
             float pre_phase1 = osc1.phase;
             float pre_phase2 = osc2.phase;
 
-            // 3.5 ACTIVE PARTIAL COUNTING (APC) BLOCK
+            // Handle structural note/subharmonic changes at zero-crossings to avoid clicks
+            bool osc1_wrapped = (m_osc1_dir > 0.0f) ? (osc1.phase < pre_phase1) : (osc1.phase > pre_phase1);
+            if (osc1_wrapped) osc1.set_frequency(m_osc1_target_hz, SAMPLE_RATE_F);
+
+            bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
+            if (osc2_wrapped) osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
+
+            // Apply smooth APC pitch modulation continuously
+            if (m_pitch_mod_multiplier != 1.0f) {
+                osc1.set_frequency(m_osc1_target_hz * m_pitch_mod_multiplier, SAMPLE_RATE_F);
+                osc2.set_frequency(m_osc2_target_hz * m_pitch_mod_multiplier, SAMPLE_RATE_F);
+            }
+
+            // 3.2 ACTIVE PARTIAL COUNTING (APC) BLOCK
             // Evaluate complex modulation targets only every 4 samples to save CPU cycles
             if (++m_apc_counter >= APC_FACTOR) {
                 m_apc_counter = 0;
@@ -237,13 +250,18 @@ public:
                 m_cmos_mod_multiplier = 1.0f;
                 m_srr_mod_offset = 0.0f;
                 m_mix_mod_offset = 0.0f;
+                m_pitch_mod_multiplier = 1.0f;
 
                 switch (mod_target) {
+                    case k_paramNote:
+                        // Modulate global pitch by +/- 12 semitones using LFO 1
+                        m_pitch_mod_multiplier = fasterpow2f(l1_val);
+                        break;
                     case k_paramF1Cutoff:
-                        m_f1_mod_multiplier = fasterpowf(2.0f, l2_val * 4.0f);
+                        m_f1_mod_multiplier = fasterpow2f(l2_val * 4.0f);
                         break;
                     case k_paramF2Cutoff:
-                        m_f2_mod_multiplier = fasterpowf(2.0f, l1_val * 4.0f);
+                        m_f2_mod_multiplier = fasterpow2f(l1_val * 4.0f);
                         break;
                     case k_paramCMOSDist:
                         m_cmos_mod_multiplier = 1.0f + (l3_val * 0.5f);
@@ -258,20 +276,35 @@ public:
                         // Apply FM via LFO1 to the Target Hz evaluated in the zero-crossing block
                         m_osc2_target_hz *= fasterpow2f(l1_val * 2.0f);
                         break;
+                    case k_paramL1Wave: filter1.mode = (filter_mode)(m_params[k_paramL1Wave] % mode_last);
+                        break;
+                    case k_paramL2Wave: filter2.mode = (filter_mode)(m_params[k_paramL2Wave] % mode_last);
+                        break;
+                    case k_paramOsc1Wave: {
+                            int base_wave1 = m_params[k_paramOsc1Wave];
+                            // LFO1 sweeps the wavetable index back and forth
+                            int wave1_offset = (int)(l1_val * 20.0f);
+                            int final_wave1 = ((base_wave1 + wave1_offset) % NUM_WAVETABLES + NUM_WAVETABLES) % NUM_WAVETABLES;
+
+                            osc1.current_table = SCRUTAASTRI_WAVETABLES[final_wave1];
+                        }
+                        break;
+                    case k_paramOsc2Wave: {
+                            int base_wave2 = m_params[k_paramOsc2Wave];
+                            // LFO2 sweeps the wavetable index back and forth
+                            int wave1_offset = (int)(l2_val * 20.0f);
+                            int final_wave2 = ((base_wave2 + wave1_offset) % NUM_WAVETABLES + NUM_WAVETABLES) % NUM_WAVETABLES;
+
+                            osc2.current_table = SCRUTAASTRI_WAVETABLES[final_wave2];
+                        }
+                        break;
                     default:
                         break;
                 }
             }
 
+
             // 4. OSCILLATOR MIX
-            int base_wave1 = m_params[k_paramOsc1Wave];
-            // LFO3 sweeps the wavetable index back and forth
-            int wave1_offset = (int)(l3_val * 20.0f);
-            int final_wave1 = ((base_wave1 + wave1_offset) % NUM_WAVETABLES + NUM_WAVETABLES) % NUM_WAVETABLES;
-
-            osc1.current_table = SCRUTAASTRI_WAVETABLES[final_wave1];
-            osc2.current_table = SCRUTAASTRI_WAVETABLES[m_params[k_paramOsc2Wave]];
-
             // Advance oscillators
             float sig1 = osc1.process() * 0.5f;
 
@@ -283,21 +316,24 @@ public:
             // Bidirectional phase wrap detection
             bool osc1_wrapped = (m_osc1_dir > 0.0f) ? (osc1.phase < pre_phase1) : (osc1.phase > pre_phase1);
             if (osc1_wrapped) {
-                osc1.set_frequency(m_osc1_target_hz, 48000.0f);
+                osc1.set_frequency(m_osc1_target_hz, SAMPLE_RATE_F);
             }
 
             bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
             if (osc2_wrapped) {
-                osc2.set_frequency(m_osc2_target_hz, 48000.0f);
+                osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
             }
 
             // 5. FILTER 1
             float f1_mod_hz = m_f1_base_hz * fasterpow2f(l1_val * 3.0f);
-            f1_mod_hz *= m_f1_mod_multiplier; // Apply APC multiplier
+            f1_mod_hz *= m_f1_mod_multiplier;
 
-            filter1.set_coeffs(f1_mod_hz, m_f1_q, 48000.0f);
+            filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
 
-            float dynamic_asym = filter1.sherman_asym + (sig1 * m_asym_mod_depth * 2.0f);
+            // Calculate dynamic asymmetry using the preserved base value
+            float dynamic_asym = m_sherman_asym_base + (sig1 * m_asym_mod_depth * 2.0f);
+
+            // Inject the clamped modulated value into the filter state
             filter1.sherman_asym = fmaxf(0.0f, fminf(4.0f, dynamic_asym));
 
             mixed_sig = filter1.process(mixed_sig, l3_val);
@@ -318,10 +354,10 @@ public:
             }
 
             // 7. FILTER 2 - Polivoks
-            float f2_mod_hz = m_f2_base_hz * fasterpowf(2.0f, l2_val * 3.0f);
+            float f2_mod_hz = m_f2_base_hz * fasterpow2f(l2_val * 3.0f);
             f2_mod_hz *= m_f2_mod_multiplier; // Apply APC multiplier
 
-            filter2.set_coeffs(f2_mod_hz, m_f2_q, 48000.0f);
+            filter2.set_coeffs(f2_mod_hz, m_f2_q, SAMPLE_RATE_F);
             filter2.drive = filter1.drive;
             mixed_sig = filter2.process(mixed_sig);
             mixed_sig *= m_sherman_makeup;
@@ -374,9 +410,12 @@ private:
     float m_asym_mod_depth = 0.0f;
 
     float m_f1_base_hz = 10000.0f;
-    float m_f1_q = 0.707f;
+    float m_f1_q = Q_Limit;
     float m_f2_base_hz = 10000.0f;
-    float m_f2_q = 0.707f;
+    float m_f2_q = Q_Limit;
+
+    // Filter Asymmetry Base State
+    float m_sherman_asym_base = 0.0f;
 
     // FX State
     float m_srr_counter = 0.0f;
@@ -399,6 +438,7 @@ private:
     float m_cmos_mod_multiplier = 1.0f;
     float m_srr_mod_offset = 0.0f;
     float m_mix_mod_offset = 0.0f;
+    float m_pitch_mod_multiplier = 1.0f;
 
     // Playback Direction Multipliers
     float m_osc1_dir = 1.0f;

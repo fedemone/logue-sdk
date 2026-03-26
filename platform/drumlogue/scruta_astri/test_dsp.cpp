@@ -177,6 +177,50 @@ int main() {
         }
     }
 
+    std::cout << "\n--- ASYMMETRY STATE CORRUPTION TEST ---\n";
+    ScrutaAstri synth_asym;
+    synth_asym.Init(&desc);
+
+    // 1. Push into Sherman Wavefolder territory (activates sherman_asym logic)
+    synth_asym.setParameter(ScrutaAstri::k_paramCMOSDist, 100);
+
+    // 2. Maximize the LFO/Asymmetry modulation depth
+    // (Ensure this matches whatever parameter maps to your m_asym_mod_depth)
+    synth_asym.setParameter(ScrutaAstri::k_paramL1Depth, 100);
+
+    // 3. Trigger a mid-range note
+    synth_asym.NoteOn(48, 127);
+
+    float asym_buf[2] = {0.0f};
+    bool latched = true;
+
+    // Process an initial block to let the SVF integrators populate
+    for (int i = 0; i < 50; ++i) {
+        synth_asym.processBlock(asym_buf, 1);
+    }
+
+    float baseline_val = asym_buf[0];
+
+    // 4. Analyze the next 1000 frames for signal freezing
+    for (int i = 0; i < 1000; ++i) {
+        synth_asym.processBlock(asym_buf, 1);
+
+        // If the output deviates from the baseline, the filter is breathing
+        // normally and not clamped to a catastrophic DC limit.
+        if (std::fabs(asym_buf[0] - baseline_val) > 0.005f) {
+            latched = false;
+            break;
+        }
+        baseline_val = asym_buf[0];
+    }
+
+    if (latched) {
+        std::cout << "FAIL: Output latched to a static DC value. State corruption is still present.\n";
+        std::cout << "      (The asymmetry variable is accumulating and hitting the ceiling.)\n";
+    } else {
+        std::cout << "PASS: Output is dynamic. The Sherman asymmetry base value is successfully preserved.\n";
+    }
+
     std::cout << "\n--- TEST COMPLETE ---\n";
     return 0;
 }

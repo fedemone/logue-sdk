@@ -3,6 +3,17 @@
 #include "float_math.h"
 
 constexpr float q_limit = 0.05f;
+constexpr float kStabilitySafetyMargin = 0.98f;
+constexpr float kWaveFoldingThreshold = 1.2f;
+constexpr float kWaveFoldingMarker = 2 * kWaveFoldingThreshold;
+
+enum filter_mode {
+    mode_low = 0,
+    mode_band,
+    mode_high,
+    mode_notch,
+    mode_last   // marker
+};
 
 // ==========================================================
 // Fast Polynomial Tanh Approximation
@@ -21,7 +32,7 @@ inline float fast_tanh(float x) {
 // FILTER 1: THE SHERMAN WAVEFOLDER
 // ==========================================================
 struct MorphingFilter {
-    int mode = 0; // 0 = LP, 1 = BP, 2 = HP
+    filter_mode mode = mode_low; // Lowpass, Bandpass, Highpass, Notch
 
     // Morphing Parameters
     float drive = 0.0f;           // 0.0 (Clean) to 5.0 (Screaming)
@@ -53,7 +64,7 @@ struct MorphingFilter {
         // (no-drive) SVF path has no integrator saturation to limit feedback, so it
         // explodes immediately. Clamp f to the max safe value for the current q.
         float f_max = sqrtf(q * q + 4.0f) - q;
-        if (f > f_max * 0.98f) f = f_max * 0.98f;
+        if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 
     inline float process(float in, float lfo_val) {
@@ -61,13 +72,13 @@ struct MorphingFilter {
 
         // Dynamic Resonance (Damping decreases as LFO pushes)
         float current_q = q * (1.0f - (lfo_val * lfo_res_mod * 0.5f));
-        current_q = fmaxf(0.05f, current_q); // Prevent total self-oscillation collapse
+        current_q = fmaxf(q_limit, current_q); // Prevent total self-oscillation collapse
 
         // STAGE 3: Sherman Asymmetrical Wavefolding (Pre-Filter)
         if (sherman_asym > 0.0f) {
             drive_sig += sherman_asym;
-            if (drive_sig > 1.2f) drive_sig = 2.4f - drive_sig;
-            else if (drive_sig < -1.2f) drive_sig = -2.4f - drive_sig;
+            if (drive_sig > kWaveFoldingMarker) drive_sig = kWaveFoldingMarker - drive_sig;
+            else if (drive_sig < -kWaveFoldingMarker) drive_sig = -kWaveFoldingMarker - drive_sig;
         }
 
         // --- Euler-Forward SVF Core ---
@@ -89,9 +100,9 @@ struct MorphingFilter {
         float notch = high + low;
 
         // Output Routing
-        if (mode == 1) return high;
-        if (mode == 2) return band;
-        if (mode == 3) return notch;
+        if (mode == mode_high) return high;
+        if (mode == mode_band) return band;
+        if (mode == mode_notch) return notch;
         return low; // mode 0
     }
 };
@@ -101,7 +112,7 @@ struct MorphingFilter {
 // ==========================================================
 class PolivoksFilter {
 public:
-    int mode = 0; // 0=Lowpass, 1=Bandpass, 2=Highpass
+    filter_mode mode = mode_low; // Lowpass, Bandpass, Highpass, Notch
     float drive = 0.0f;
 
     // Internal State Variables
@@ -121,11 +132,11 @@ public:
         f = 2.0f * sinf(M_PI * hz / sample_rate);
 
         // Invert and scale Q to replicate the aggressive Polivoks resonance slope
-        q = 1.0f / fmaxf(0.05f, reso_q);
+        q = 1.0f / fmaxf(q_limit, reso_q);
 
         // 3. Euler-forward stability guard (same condition as MorphingFilter)
         float f_max = sqrtf(q * q + 4.0f) - q;
-        if (f > f_max * 0.98f) f = f_max * 0.98f;
+        if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 
     inline float process(float in) {
@@ -140,9 +151,9 @@ public:
         // Derive Notch by summing Highpass and Lowpass
         float notch = high + ic2eq;
 
-        if (mode == 1) return ic1eq; // Bandpass
-        if (mode == 2) return high;  // Highpass
-        if (mode == 3) return notch; // Notch
+        if (mode == mode_band) return ic1eq; // Bandpass
+        if (mode == mode_high) return high;  // Highpass
+        if (mode == mode_notch) return notch; // Notch
         return ic2eq;                // Lowpass
     }
 };
