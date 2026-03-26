@@ -40,7 +40,7 @@ static bool s_bypass = true;
 // ID 3: COLR  0..100 %  default 10
 // ID 4: SPRK  0..100 %  default 5
 // ID 5: SIZE  0..100 %  default 50
-static int32_t s_params[6] = { 20, 50, 30, 10, 5, 50 };
+static int32_t s_params[6] = { 60, 50, 70, 10, 5, 50 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)

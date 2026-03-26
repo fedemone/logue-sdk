@@ -29,6 +29,7 @@ typedef struct {
     float sample_rate;
 } sidechain_hpf_t;
 
+
 /**
  * Initialize sidechain HPF (Bessel for clean phase response)
  */
@@ -373,4 +374,102 @@ fast_inline void smoothing_set_times(smoothing_t* sm,
                                      float release_ms) {
     sm->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * sm->sample_rate));
     sm->release_coeff = e_expff(-1.0f / (release_ms * 0.001f * sm->sample_rate));
+}
+
+
+
+/* ---------------------------------------------------------------------------
+ * 5. OPERATION OVERLORD DISTORTION
+ * --------------------------------------------------------------------------- */
+
+ typedef struct {
+    float32x4_t z1;
+    float32x4_t z2;
+} biquad_state_t;
+
+fast_inline void biquad_init_state(biquad_state_t* state) {
+    state->z1 = vdupq_n_f32(0.0f);
+    state->z2 = vdupq_n_f32(0.0f);
+}
+
+/**
+ * Shelving filter using Audio EQ Cookbook formulas (RBJ).
+ * @param in        Input sample vector (4 NEON lanes = 4 sequential samples, mono)
+ * @param state     Biquad state (per-channel, must not be shared between L and R)
+ * @param freq      Shelf corner frequency (Hz)
+ * @param gain_db   Gain at shelf (dB); 0 dB returns input unchanged
+ * @param low_shelf 1 for low shelf, 0 for high shelf
+ * @param sr        Sample rate
+ */
+fast_inline float32x4_t shelving_filter(float32x4_t in,
+                                        biquad_state_t* state,
+                                        float freq,
+                                        float gain_db,
+                                        int low_shelf,
+                                        float sr) {
+    if (fabsf(gain_db) < 0.01f) return in;
+
+    // A = linear amplitude ratio = 10^(dBgain/40), per Audio EQ Cookbook
+    float A     = powf(10.0f, gain_db / 40.0f);
+    float sqrtA = sqrtf(A);
+    float w0    = 2.0f * M_PI * freq / sr;
+    float cos_w0 = cosf(w0);
+    float sin_w0 = sinf(w0);
+
+    // alpha with shelf slope S=1: sin(w0)/sqrt(2), gain-independent (no div-by-zero)
+    float alpha = sin_w0 * 0.70711f;  // sin(w0) / sqrt(2)
+
+    float b0, b1, b2, a0, a1, a2;
+
+    if (low_shelf) {
+        // Audio EQ Cookbook low-shelf
+        b0 =    A * ((A+1) - (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        b1 =  2*A * ((A-1) - (A+1)*cos_w0                   );
+        b2 =    A * ((A+1) - (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
+        a0 =        ((A+1) + (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        a1 =  -2  * ((A-1) + (A+1)*cos_w0                   );
+        a2 =        ((A+1) + (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
+    } else {
+        // Audio EQ Cookbook high-shelf
+        b0 =    A * ((A+1) + (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        b1 = -2*A * ((A-1) + (A+1)*cos_w0                   );
+        b2 =    A * ((A+1) + (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
+        a0 =        ((A+1) - (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        a1 =   2  * ((A-1) - (A+1)*cos_w0                   );
+        a2 =        ((A+1) - (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
+    }
+
+    float inv_a0 = 1.0f / a0;
+    b0 *= inv_a0; b1 *= inv_a0; b2 *= inv_a0;
+    a1 *= inv_a0; a2 *= inv_a0;
+
+    // Transposed Direct Form II
+    float32x4_t y = vmlaq_f32(state->z1, in, vdupq_n_f32(b0));
+    state->z1 = vmlaq_f32(state->z2, in, vdupq_n_f32(b1));
+    state->z1 = vmlsq_f32(state->z1, y, vdupq_n_f32(a1));
+    state->z2 = vsubq_f32(vmulq_f32(in, vdupq_n_f32(b2)), vmulq_f32(y, vdupq_n_f32(a2)));
+
+    return y;
+}
+
+// High-shelf convenience wrapper
+fast_inline float32x4_t high_shelf_filter(float32x4_t in,
+                                          biquad_state_t* state,
+                                          float freq,
+                                          float gain_db,
+                                          float q,
+                                          float sr) {
+    (void)q; // Not used in first-order shelf
+    return shelving_filter(in, state, freq, gain_db, 0, sr);
+}
+
+// Low-shelf wrapper
+fast_inline float32x4_t low_shelf_filter(float32x4_t in,
+                                         biquad_state_t* state,
+                                         float freq,
+                                         float gain_db,
+                                         float q,
+                                         float sr) {
+    (void)q;
+    return shelving_filter(in, state, freq, gain_db, 1, sr);
 }

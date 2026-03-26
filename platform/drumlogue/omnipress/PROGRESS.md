@@ -1,4 +1,82 @@
 # Analysis of Current State
+# TODO - OmniPress v2.0
+## Summary of Changes
+# OmniPress - Implementation Status
+
+## ✅ Completed Core
+- [x] NEON-optimized compressor core
+- [x] Sidechain HPF (Bessel 12dB/oct)
+- [x] Envelope detector (Peak/RMS/Blend)
+- [x] Gain computer with soft/hard/medium knee
+- [x] Attack/release smoothing
+- [x] Wavefolder (5 modes including sub-octave)
+- [x] Distressor mode with 8 ratios and NUKE
+- [x] Multiband mode (3-band Linkwitz-Riley)
+- [x] Operation Overlord drive emulation
+- [x] Parameter mapping to header.c
+- [x] Stereo width control
+- [x] Add missing filter functions (shelving, high shelf)
+
+## 🔧 In Progress
+- [x] Integrate Overlord fully into signal chain
+- [x] Parameter smoothing (ramping) to eliminate zipper noise
+- [ ] Output soft-clipping protection
+- [ ] Real-time multiband crossover frequency updates
+- [ ] Distressor Opto release curve
+
+## 📝 To Do
+- [ ] Add UI string functions for Distressor modes
+- [ ] Run unit tests before test on hardware
+- [ ] Profile CPU usage
+
+***
+
+1. **Distressor detector integrated**: Now uses dedicated HPF at 100Hz and 6kHz emphasis
+2. **Wavefolder added as Distortion Mode 4**: Accessible via DSTR MODE parameter
+3. **No duplicate attack_ms fields**: Distressor uses its own detector with separate time constants
+4. **Proper integration**: The detector is now called in the processing chain
+5. **Wavefolder available in both modes**:
+   - As standalone drive (when COMP MODE ≠ 1)
+   - As Distortion Mode 4 in Distressor mode
+
+This gives you 5 distinct distortion characters in Distressor mode:
+- **Clean**: No distortion, just compression
+- **Dist 2**: Tube-like even harmonics
+- **Dist 3**: Tape-like odd harmonics
+- **Both**: Combined harmonic generation
+- **Wave**: Wavefolder distortion (from your existing wavefolder.h)
+
+## ✅ Completed
+- [x] Core compressor with negative ratios
+- [x] 3 compression modes (Standard, Distressor, Multiband)
+- [x] 5 wavefolder modes including SubOctave
+- [x] NEON optimization
+- [x] 4-channel sidechain input
+
+## 🔧 High Priority (Next Release)
+- [ ] **Distressor character enhancement** - Add detector HPF, 6kHz boost
+- [ ] **Operation Overlord drive emulation** - Tube saturation, Baxandall EQ
+- [ ] **Implement missing parameters** (BAND SEL, L THRESH, L RATIO)
+- [ ] **Add 3 new EQ parameters** (Bass, Treble, Presence) using slots 13-15
+- [ ] **Multiband mode complete** - Per-band attack/release
+
+## 📊 Medium Priority
+- [ ] **Preset system** - 8 factory presets (Drum Bus, Kick, Snare, etc.)
+- [ ] **Sidechain listen mode** - Monitor only sidechain signal
+- [ ] **Knee control** - 0-100% softness (use param 16)
+- [ ] **Stereo link adjustment** (0-100%) for multiband
+
+## 🎯 Low Priority / Future
+- [ ] **Lookahead** - 0-10ms for transient preservation
+- [ ] **Auto-makeup gain** - Intelligent output leveling
+- [ ] **Wet/dry meter** - Visual feedback on mix balance
+- [ ] **Detector mode select** - Peak/RMS/Blend (use param 17)
+
+## 📝 Performance Targets
+- CPU: < 3% @ 1GHz (current ~2.5%)
+- Memory: < 8KB (current ~5KB)
+- Latency: 0 samples (current 0)
+
 
 ## ✅ What's Good
 1. **Proper SDK structure** - `header.c` and `masterfx.h` follow drumlogue conventions
@@ -8,14 +86,39 @@
 5. **Documentation** - Clear README and PROGRESS.md with feasibility study
 
 ## 🔧 What's Missing / Needs Work
+# OmniPress - Remaining Tasks
 
-### Core DSP Components
-1. **Sidechain HPF** - No filter implementation
-2. **Envelope detector** - Missing peak/RMS detection
-3. **Gain computer** - No knee or ratio logic
-4. **Attack/release smoothing** - No time constant implementation
-5. **Drive/wavefolder** - Only described, not implemented
-6. **Mix stage** - No dry/wet blending
+## ✅ Completed
+- [x] Core compressor with negative ratios
+- [x] NEON optimization throughout
+- [x] Sidechain HPF
+- [x] Envelope detector (Peak/RMS/Blend)
+- [x] Gain computer with knee
+- [x] Attack/release smoothing
+- [x] Wavefolder with 5 modes
+- [x] Mix stage (dry/wet)
+- [x] Distressor mode with NUKE and wavefolder
+- [x] Operation Overlord drive emulation
+
+## 🔧 In Progress
+- [ ] Parameter smoothing (prevent zipper noise)
+- [ ] Multiband crossover real-time update
+- [ ] Distressor Opto mode release curve
+
+## 📝 To Do
+- [ ] Multiband compress has low volume
+- [ ] Add output soft-clipping protection
+- [ ] Implement parameter ramping for all controls
+- [ ] Add stereo link adjustment
+- [ ] Create 8 factory presets
+- [ ] Run test_compressor.cpp before test on hardware
+- [ ] Profile CPU usage with ARM Streamline
+
+## 📊 Nice to Have
+- [ ] Sidechain listen mode
+- [ ] Auto makeup gain
+- [ ] Lookahead (1-10ms)
+- [ ] GUI meter for gain reduction
 
 ### Omnipressor-Specific Features
 The Eventide Omnipressor had unique characteristics:
@@ -89,6 +192,16 @@ The implementation is complete and ready to build! The key innovations are:
 4. **Sub-octave square wave** adds a unique, synth-like character to the compressor
 
 ## Is Anything Left To Do?
+
+### Core DSP Components
+1. **Sidechain HPF** - No filter implementation
+2. **Envelope detector** - Missing peak/RMS detection
+3. **Gain computer** - No knee or ratio logic
+4. **Attack/release smoothing** - No time constant implementation
+5. **Drive/wavefolder** - Only described, not implemented
+6. **Mix stage** - No dry/wet blending
+
+*** OLD ***
 
 ### ✅ Completed
 - [x] Core compressor with negative ratios (Omnipressor-style)

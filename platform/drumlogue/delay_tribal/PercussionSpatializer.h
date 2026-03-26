@@ -481,7 +481,7 @@ private:
         for (int group = 0; group < CLONE_GROUPS; group++) {
             clone_group_t* g = &clone_groups_[group];
 
-            float base_delay = group * 0.5f;
+            float base_delay = 5.0f + group * 5.0f; // 5ms, 10ms, 15ms, 20ms per group
             float offsets[NEON_LANES];
             float phases[NEON_LANES];
             float pitch_mod[NEON_LANES];
@@ -489,7 +489,9 @@ private:
             for (int i = 0; i < NEON_LANES; i++) {
                 int clone_idx = group * NEON_LANES + i;
 
-                offsets[i] = base_delay + (i * 0.1f);
+                // Chorus micro-delays: 5–23 ms range (multiplied by 48 → samples)
+                // group 0: 5,6,7,8 ms  group 1: 10,11,12,13 ms  etc.
+                offsets[i] = base_delay + (i * 1.0f);
                 phases[i] = (float)clone_idx / MAX_CLONES;
                 pitch_mod[i] = 0.1f + (i * 0.05f);
             }

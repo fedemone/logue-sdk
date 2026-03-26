@@ -43,7 +43,7 @@ static bool s_bypass = true;
 // ID 5: WIDE 0..200 %           default 100
 // ID 6: COMP 0..1000 (x0.1%)   default 1000
 // ID 7: PILL 0..3               default 3
-static int32_t s_params[8] = { 300, 20, 20, 10, 2500, 100, 1000, 3 };
+static int32_t s_params[8] = { 700, 50, 50, 30, 2500, 100, 1000, 3 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)

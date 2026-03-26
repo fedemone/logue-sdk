@@ -20,11 +20,11 @@ const __unit_header unit_header_t unit_header = {
     .params = {
         // Page 1
         // ID 0: DARK  decay/warmth  0%-100%
-        { 0, 100, 50, 20, k_unit_param_type_percent, 0, 0, 0, {"DARK"} },
+        { 0, 100, 50, 60, k_unit_param_type_percent, 0, 0, 0, {"DARK"} },
         // ID 1: BRIG  brightness (high-freq level)  0%-100%
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BRIG"} },
         // ID 2: GLOW  wet/dry mix  0%-100%
-        { 0, 100, 50, 30, k_unit_param_type_percent, 0, 0, 0, {"GLOW"} },
+        { 0, 100, 50, 70, k_unit_param_type_percent, 0, 0, 0, {"GLOW"} },
         // ID 3: COLR  tone color (LPF amount)  0%-100%
         { 0, 100, 50, 10, k_unit_param_type_percent, 0, 0, 0, {"COLR"} },
 

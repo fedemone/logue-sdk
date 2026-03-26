@@ -9,12 +9,9 @@
 #include <arm_neon.h>
 #include "compressor_core.h"
 #include "crossover.h"
+#include "constants.h"
 
-// Band selection for parameters
-#define BAND_LOW   0
-#define BAND_MID   1
-#define BAND_HIGH  2
-#define BAND_ALL   3
+
 
 // Multiband compressor state
 typedef struct {
@@ -136,12 +133,13 @@ fast_inline void multiband_process(multiband_t* mb,
                       &mid_l, &mid_r,  // These will be overwritten
                       mb->xover_low_freq, mb->sample_rate);
 
-    // Second crossover: separate mid from high
+    // Second crossover: separate mid from high - NOTE use temporary variables to avoid corrupting the bands
+    float32x4_t mid_tmp_l, mid_tmp_r;
     crossover_process(&mb->xover_mid_high, temp_mid_high_l, temp_mid_high_r,
-                      &mid_l, &mid_r,
-                      &high_l, &high_r,
-                      &high_l, &high_r,  // Dummy - high is output
-                      mb->xover_high_freq, mb->sample_rate);
+                    &mid_l, &mid_r,
+                    &mid_tmp_l, &mid_tmp_r,
+                    &high_l, &high_r,
+                    mb->xover_high_freq, mb->sample_rate);
 
     // Calculate envelope for each band (using absolute value for peak detection)
     float32x4_t env_low = vabsq_f32(low_l);

@@ -29,11 +29,12 @@
 #include "compressor_core.h"
 #include "filters.h"
 #include "wavefolder.h"
+#include "operation_overlord.h"
 #include "distressor_mode.h"
 #include "multiband.h"
 
-// Parameter count must match header.c
-#define NUM_PARAMS 13
+// Parameter count must match header.c (params 0-16 = 17 total)
+#define NUM_PARAMS 17
 
 class MasterFX {
 public:
@@ -46,8 +47,9 @@ public:
         compressor_init(&comp_);
         sidechain_hpf_init(&sc_hpf_, 80.0f, samplerate_);
         wavefolder_init(&wavefolder_);
-        distressor_init(&distressor_);
+        distressor_init(&distressor_, samplerate_);
         multiband_init(&multiband_, samplerate_);
+        overlord_init(&overlord_, samplerate_);
 
         // Initialize smoothing
         smoothing_init(&smoother_, samplerate_);
@@ -85,8 +87,10 @@ public:
         sc_hpf_hz_ = 80.0f;
         sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
         wavefolder_init(&wavefolder_);
-        distressor_init(&distressor_);
         multiband_init(&multiband_, samplerate_);
+        distressor_reset(&distressor_, samplerate_);
+        multiband_init(&multiband_, samplerate_);
+        overlord_init(&overlord_, samplerate_);
         smoothing_init(&smoother_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
         gain_computer_init(&gain_comp_);
@@ -104,11 +108,17 @@ public:
         setParameter(9, 0);     // BAND SEL: Low
         setParameter(10, -200); // L THRESH: -20.0 dB
         setParameter(11, 40);   // L RATIO: 4.0
+        setParameter(12, 0);    // DSTR DIST: None
+        setParameter(13, 0);    // DSTR RATIO: Warm mode
+        setParameter(14, 0);    // BASS: bypass
+        setParameter(15, 0);    // TREBLE: bypass
+        setParameter(16, 0);    // PRESENCE: bypass
 
         comp_mode_ = 0;
         band_select_ = 0;
         use_external_sc_ = 0;
         detection_mode_ = DETECT_MODE_PEAK;
+        envelope_.mode = detection_mode_;  // propagate to detector
     }
 
     inline void Resume() {}
@@ -134,12 +144,25 @@ public:
         // Process complete blocks of 4 samples
         // =================================================================
         while (frames_remaining >= 4) {
-            // Load 4 stereo frames (16 floats total)
-            float32x4x4_t interleaved = vld4q_f32(in_p);
-            float32x4_t main_l = interleaved.val[0];
-            float32x4_t main_r = interleaved.val[1];
-            float32x4_t sc_l   = interleaved.val[2];
-            float32x4_t sc_r   = interleaved.val[3];
+            // Load 4 stereo frames — 2-channel or 4-channel (sidechain) layout
+            float32x4_t main_l, main_r, sc_l, sc_r;
+            if (has_sidechain_) {
+                // 4-channel: [L0,R0,SL0,SR0, L1,R1,SL1,SR1, ...] = 16 floats
+                float32x4x4_t interleaved = vld4q_f32(in_p);
+                main_l = interleaved.val[0];
+                main_r = interleaved.val[1];
+                sc_l   = interleaved.val[2];
+                sc_r   = interleaved.val[3];
+                in_p += 16;
+            } else {
+                // 2-channel: [L0,R0, L1,R1, L2,R2, L3,R3] = 8 floats
+                float32x4x2_t stereo = vld2q_f32(in_p);
+                main_l = stereo.val[0];
+                main_r = stereo.val[1];
+                sc_l   = main_l;
+                sc_r   = main_r;
+                in_p += 8;
+            }
 
             // Save dry signal for mixing
             float32x4_t dry_l = main_l;
@@ -162,55 +185,38 @@ public:
             // Store results
             vst2q_f32(out_p, mixed);
 
-            // Advance pointers
-            in_p += 16;
             out_p += 8;
             frames_remaining -= 4;
         }
 
         // =================================================================
-        // Process remaining samples (1-3) individually
+        // Process remaining samples (0-3) individually
         // =================================================================
         while (frames_remaining > 0) {
-            // Load one stereo frame (4 floats)
-            float32x4_t frame = vld1q_f32(in_p);
+            float main_l, main_r, sc_l, sc_r;
+            if (has_sidechain_) {
+                main_l = in_p[0]; main_r = in_p[1];
+                sc_l   = in_p[2]; sc_r   = in_p[3];
+                in_p += 4;
+            } else {
+                main_l = in_p[0]; main_r = in_p[1];
+                sc_l = main_l;    sc_r = main_r;
+                in_p += 2;
+            }
 
-            // Extract channels
-            float32x2_t main = vget_low_f32(frame);
-            float32x2_t sc   = vget_high_f32(frame);
-
-            float main_l = vget_lane_f32(main, 0);
-            float main_r = vget_lane_f32(main, 1);
-            float sc_l   = vget_lane_f32(sc, 0);
-            float sc_r   = vget_lane_f32(sc, 1);
-
-            // Save dry signal
             float dry_l = main_l;
             float dry_r = main_r;
 
-            // Process single sample (convert to vectors for reuse)
-            float32x4_t main_l_vec = vdupq_n_f32(main_l);
-            float32x4_t main_r_vec = vdupq_n_f32(main_r);
-            float32x4_t sc_l_vec = vdupq_n_f32(sc_l);
-            float32x4_t sc_r_vec = vdupq_n_f32(sc_r);
+            float32x4x2_t processed = process_block(
+                vdupq_n_f32(main_l), vdupq_n_f32(main_r),
+                vdupq_n_f32(sc_l),   vdupq_n_f32(sc_r));
 
-            float32x4x2_t processed = process_block(main_l_vec, main_r_vec,
-                                                     sc_l_vec, sc_r_vec);
+            float makeup_lin_scalar = powf(10.0f, makeup_db_ / 20.0f);
+            out_p[0] = (dry_l * (1.0f - mix_) + vgetq_lane_f32(processed.val[0], 0) * mix_)
+                       * makeup_lin_scalar;
+            out_p[1] = (dry_r * (1.0f - mix_) + vgetq_lane_f32(processed.val[1], 0) * mix_)
+                       * makeup_lin_scalar;
 
-            // Extract single results
-            float proc_l = vgetq_lane_f32(processed.val[0], 0);
-            float proc_r = vgetq_lane_f32(processed.val[1], 0);
-
-            // Mix and output
-            out_p[0] = dry_l * (1.0f - mix_) + proc_l * mix_;
-            out_p[1] = dry_r * (1.0f - mix_) + proc_r * mix_;
-
-            // Apply makeup gain
-            out_p[0] *= powf(10.0f, makeup_db_ / 20.0f);
-            out_p[1] *= powf(10.0f, makeup_db_ / 20.0f);
-
-            // Advance pointers
-            in_p += 4;
             out_p += 2;
             frames_remaining--;
         }
@@ -234,10 +240,8 @@ private:
         // =================================================================
         float32x4_t sidechain;
         if (has_sidechain_ && use_external_sc_) {
-            // Use external sidechain (sum L+R)
             sidechain = vaddq_f32(sc_l, sc_r);
         } else {
-            // Use main signal as sidechain (sum L+R)
             sidechain = vaddq_f32(main_l, main_r);
         }
 
@@ -247,10 +251,16 @@ private:
         sidechain = sidechain_hpf_process(&sc_hpf_, sidechain);
 
         // =================================================================
-        // 3. ENVELOPE DETECTION
+        // 3. ENVELOPE DETECTION (mode-specific)
         // =================================================================
-        float32x4_t envelope = envelope_detect(&envelope_, main_l, sidechain);
-        float32x4_t envelope_db = linear_to_db(envelope);
+        float32x4_t envelope_db;
+        if (comp_mode_ == COMP_MODE_DISTRESSOR && (distressor_.detector_mode & DETECT_HPF)) {
+            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
+            envelope_db = linear_to_db(envelope);
+        } else {
+            float32x4_t envelope = envelope_detect(&envelope_, main_l, sidechain);
+            envelope_db = linear_to_db(envelope);
+        }
 
         // =================================================================
         // 4. MODE-SPECIFIC PROCESSING
@@ -258,19 +268,16 @@ private:
         float32x4_t processed_l, processed_r;
 
         switch (comp_mode_) {
-            case 0: // Standard compressor
-                standard_process(main_l, main_r, envelope_db,
-                                &processed_l, &processed_r);
+            case COMP_MODE_STANDARD:
+                standard_process(main_l, main_r, envelope_db, &processed_l, &processed_r);
                 break;
 
-            case 1: // Distressor mode
-                distressor_process(main_l, main_r, envelope_db,
-                                  &processed_l, &processed_r);
+            case COMP_MODE_DISTRESSOR:
+                distressor_process(main_l, main_r, envelope_db, &processed_l, &processed_r);
                 break;
 
-            case 2: // Multiband mode
-                multiband_process(&multiband_, main_l, main_r,
-                                 &processed_l, &processed_r);
+            case COMP_MODE_MULTIBAND:
+                multiband_process(&multiband_, main_l, main_r, &processed_l, &processed_r);
                 break;
 
             default:
@@ -279,13 +286,16 @@ private:
         }
 
         // =================================================================
-        // 5. DRIVE / WAVEFOLDER
+        // 5. DRIVE / EQ
         // =================================================================
-        if (drive_ > 0.01f) {
-            float32x4x2_t driven = wavefolder_process(&wavefolder_,
-                                                       processed_l,
-                                                       processed_r,
-                                                       drive_);
+        if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+            // EQ-only (no tube saturation) — distressor provides its own distortion
+            float32x4x2_t eq_out = overlord_apply_eq(&overlord_, processed_l, processed_r, samplerate_);
+            processed_l = eq_out.val[0];
+            processed_r = eq_out.val[1];
+        } else if (drive_ > 0.01f) {
+            // Full EQ + tube drive for standard/multiband modes
+            float32x4x2_t driven = overlord_process(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = driven.val[0];
             processed_r = driven.val[1];
         }
@@ -323,40 +333,53 @@ private:
     }
 
     /**
-     * Distressor mode processing
+     * Distressor mode processing with integrated detector and wavefolder
      */
     fast_inline void distressor_process(float32x4_t main_l,
                                         float32x4_t main_r,
                                         float32x4_t envelope_db,
                                         float32x4_t* out_l,
                                         float32x4_t* out_r) {
-        // Distressor-specific gain computer
-        float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
-                                                               envelope_db,
-                                                               thresh_db_);
+        float32x4_t detected_db;
+        if (distressor_.detector_mode & DETECT_HPF) {
+            float32x4_t sidechain = vaddq_f32(main_l, main_r);
+            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
+            detected_db = linear_to_db(envelope);
+        } else {
+            detected_db = envelope_db;
+        }
 
-        // Smoothing with opto mode
+        float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
+                                                               detected_db, thresh_db_);
+
         float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
                                                           target_gain_db,
                                                           attack_coeff_,
-                                                          release_coeff_ *
-                                                          distressor_.opto_release_mult);
+                                                          release_coeff_ * distressor_.opto_release_mult);
 
-        // Convert to linear (ARMv7-compatible)
-        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db,
-                                                        vdupq_n_f32(0.115129f)));
+        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db, vdupq_n_f32(0.115129f)));
 
-        // Apply gain
         float32x4_t comp_l = vmulq_f32(main_l, gain_lin);
         float32x4_t comp_r = vmulq_f32(main_r, gain_lin);
 
-        // Apply harmonics
-        if (distressor_.dist_mode > 0 && distressor_.dist_mode <= 3) {
-            *out_l = generate_harmonics(&distressor_, comp_l, distressor_.dist_mode);
-            *out_r = generate_harmonics(&distressor_, comp_r, distressor_.dist_mode);
-        } else {
-            *out_l = comp_l;
-            *out_r = comp_r;
+        switch (distressor_.dist_mode) {
+            case DIST_MODE_WAVE: {
+                float32x4x2_t folded = wavefolder_process(&wavefolder_, comp_l, comp_r, drive_);
+                *out_l = folded.val[0];
+                *out_r = folded.val[1];
+                break;
+            }
+            case DIST_MODE_DIST2:
+            case DIST_MODE_DIST3:
+            case DIST_MODE_BOTH:
+                *out_l = generate_harmonics(&distressor_, comp_l, distressor_.dist_mode);
+                *out_r = generate_harmonics(&distressor_, comp_r, distressor_.dist_mode);
+                break;
+            case DIST_MODE_CLEAN:
+            default:
+                *out_l = comp_l;
+                *out_r = comp_r;
+                break;
         }
     }
 
@@ -401,6 +424,7 @@ public:
             case 5: // DRIVE (0 to 100%)
                 drive_ = value * 0.01f;
                 wavefolder_set_drive(&wavefolder_, value);
+                overlord_set_drive(&overlord_, value);
                 break;
 
             case 6: // MIX (-100 to +100)
@@ -415,27 +439,65 @@ public:
             case 8: // COMP MODE (0-2)
                 if (value >= 0 && value <= 2) {
                     comp_mode_ = value;
+
+                    // Reset appropriate detectors for the mode
+                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                        // Distressor mode - faster attack by default
+                        attack_ms_ = fmaxf(attack_ms_, 0.05f);  // Cap to 0.05ms min
+                        attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
+                    }
                 }
                 break;
 
-            case 9: // BAND SEL (0-3)
-                if (value >= 0 && value <= 3) {
-                    band_select_ = value;
+            case 9: // BAND SEL (0-6) - for multiband mode
+                band_select_ = value;
+                break;
+
+            case 10: // L THRESH (multiband low threshold) - param_id=0
+            case 11: // L RATIO (multiband low ratio) - param_id=1
+            {
+                const float val = value * 0.1f;
+                const int p_id = index - 10;
+                if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
+                    multiband_set_param(&multiband_, BAND_LOW, p_id, val);
+                }
+                if (band_select_ == BAND_MID || band_select_ == BAND_LOW_MID || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
+                    multiband_set_param(&multiband_, BAND_MID, p_id, val);
+                }
+                if (band_select_ == BAND_HIGH || band_select_ == BAND_LOW_HI || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
+                    multiband_set_param(&multiband_, BAND_HIGH, p_id, val);
                 }
                 break;
+            }
 
-            case 10: // L THRESH (multiband low threshold)
-                // Store for later use
-                break;
-
-            case 11: // L RATIO (multiband low ratio)
-                // Store for later use
-                break;
-
-            case 12: // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both)
-                if (value >= 0 && value <= 3) {
+            case 12: // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave)
+                if (value >= 0 && value <= 4) {
                     distressor_.dist_mode = value;
+
+                    // Enable/disable detector HPF based on mode
+                    if (value == DIST_MODE_WAVE) {
+                        // Wavefolder removes low frequencies from the detector path
+                        distressor_.detector_mode |= DETECT_HPF;
+                    } else {
+                        distressor_.detector_mode &= ~DETECT_HPF;
+                    }
                 }
+                break;
+
+            case 13: // DSTR RATIO
+                distressor_set_ratio(&distressor_, value);
+                break;
+
+            case 14: // BASS (Operation Overlord EQ)
+                overlord_.bass = value / 100.0f;
+                break;
+
+            case 15: // TREBLE
+                overlord_.treble = value / 100.0f;
+                break;
+
+            case 16: // PRESENCE
+                overlord_.presence = value / 100.0f;
                 break;
         }
     }
@@ -460,8 +522,8 @@ public:
                 break;
 
             case 9: // BAND SEL
-                if (value >= 0 && value <= 3) {
-                    static const char* bands[] = {"Low", "Mid", "High", "All"};
+                if (value >= 0 && value <= 6) {
+                    static const char* bands[] = {"Low", "Mid", "High", "LowMid", "LowHi", "MidHi", "All"};
                     return bands[value];
                 }
                 break;
@@ -485,9 +547,14 @@ public:
                 break;
 
             case 12: // DSTR MODE
-                if (value >= 0 && value <= 3) {
-                    static const char* dstr_modes[] = {"None", "2nd", "3rd", "Both"};
-                    return dstr_modes[value];
+                if (value >= 0 && value <= 4) {
+                    return distressor_dist_strings[value];
+                }
+                break;
+
+            case 13: // DSTR RATIO
+                if (value >= 0 && value <= 7) {
+                    return distressor_ratio_strings[value];
                 }
                 break;
         }
@@ -544,4 +611,5 @@ private:
     envelope_detector_t envelope_;
     gain_computer_t gain_comp_;
     smoothing_t smoother_;
+    overlord_t overlord_;
 };
