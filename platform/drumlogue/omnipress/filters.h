@@ -393,11 +393,11 @@ fast_inline void biquad_init_state(biquad_state_t* state) {
 }
 
 /**
- * First-order shelving filter (low or high shelf)
- * @param in        Input sample vector (4 lanes)
- * @param state     Filter state (z1)
- * @param freq      Shelf frequency (Hz)
- * @param gain_db   Gain at shelf (dB)
+ * Shelving filter using Audio EQ Cookbook formulas (RBJ).
+ * @param in        Input sample vector (4 NEON lanes = 4 sequential samples, mono)
+ * @param state     Biquad state (per-channel, must not be shared between L and R)
+ * @param freq      Shelf corner frequency (Hz)
+ * @param gain_db   Gain at shelf (dB); 0 dB returns input unchanged
  * @param low_shelf 1 for low shelf, 0 for high shelf
  * @param sr        Sample rate
  */
@@ -407,32 +407,37 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
                                         float gain_db,
                                         int low_shelf,
                                         float sr) {
-    // gain_lin == 1.0 → gain_lin²-1 == 0 → beta = sqrt(x/0) = inf → NaN coefficients
     if (fabsf(gain_db) < 0.01f) return in;
 
-    float gain_lin = powf(10.0f, gain_db / 20.0f);
-    float w0 = 2.0f * M_PI * freq / sr;
+    // A = linear amplitude ratio = 10^(dBgain/40), per Audio EQ Cookbook
+    float A     = powf(10.0f, gain_db / 40.0f);
+    float sqrtA = sqrtf(A);
+    float w0    = 2.0f * M_PI * freq / sr;
     float cos_w0 = cosf(w0);
     float sin_w0 = sinf(w0);
-    float S = 1.0f;  // slope (1 for standard shelf)
 
-    float beta = sqrtf((gain_lin * gain_lin + 1) / (gain_lin * gain_lin - 1));
-    float alpha;
+    // alpha with shelf slope S=1: sin(w0)/sqrt(2), gain-independent (no div-by-zero)
+    float alpha = sin_w0 * 0.70711f;  // sin(w0) / sqrt(2)
+
+    float b0, b1, b2, a0, a1, a2;
+
     if (low_shelf) {
-        alpha = (gain_lin - 1) / (gain_lin + 1);
-        alpha *= (sin_w0 / (2 * beta));
+        // Audio EQ Cookbook low-shelf
+        b0 =    A * ((A+1) - (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        b1 =  2*A * ((A-1) - (A+1)*cos_w0                   );
+        b2 =    A * ((A+1) - (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
+        a0 =        ((A+1) + (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        a1 =  -2  * ((A-1) + (A+1)*cos_w0                   );
+        a2 =        ((A+1) + (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
     } else {
-        alpha = (gain_lin - 1) / (gain_lin + 1);
-        alpha *= (sin_w0 / (2 * beta));
+        // Audio EQ Cookbook high-shelf
+        b0 =    A * ((A+1) + (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        b1 = -2*A * ((A-1) + (A+1)*cos_w0                   );
+        b2 =    A * ((A+1) + (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
+        a0 =        ((A+1) - (A-1)*cos_w0 + 2.0f*sqrtA*alpha);
+        a1 =   2  * ((A-1) - (A+1)*cos_w0                   );
+        a2 =        ((A+1) - (A-1)*cos_w0 - 2.0f*sqrtA*alpha);
     }
-
-    // Simplified biquad coefficients for shelf filter
-    float b0 = gain_lin * ((gain_lin + 1) + (gain_lin - 1) * cos_w0 + 2 * sqrtf(gain_lin) * alpha);
-    float b1 = -2 * gain_lin * ((gain_lin - 1) + (gain_lin + 1) * cos_w0);
-    float b2 = gain_lin * ((gain_lin + 1) + (gain_lin - 1) * cos_w0 - 2 * sqrtf(gain_lin) * alpha);
-    float a0 = (gain_lin + 1) - (gain_lin - 1) * cos_w0 + 2 * sqrtf(gain_lin) * alpha;
-    float a1 = 2 * ((gain_lin - 1) - (gain_lin + 1) * cos_w0);
-    float a2 = (gain_lin + 1) - (gain_lin - 1) * cos_w0 - 2 * sqrtf(gain_lin) * alpha;
 
     float inv_a0 = 1.0f / a0;
     b0 *= inv_a0; b1 *= inv_a0; b2 *= inv_a0;
