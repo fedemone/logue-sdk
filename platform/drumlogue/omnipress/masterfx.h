@@ -285,9 +285,15 @@ private:
         }
 
         // =================================================================
-        // 5. DRIVE
+        // 5. DRIVE / EQ
         // =================================================================
-        if ((comp_mode_ != COMP_MODE_DISTRESSOR) && (drive_ > 0.01f)) {
+        if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+            // EQ-only (no tube saturation) — distressor provides its own distortion
+            float32x4x2_t eq_out = overlord_apply_eq(&overlord_, processed_l, processed_r, samplerate_);
+            processed_l = eq_out.val[0];
+            processed_r = eq_out.val[1];
+        } else if (drive_ > 0.01f) {
+            // Full EQ + tube drive for standard/multiband modes
             float32x4x2_t driven = overlord_process(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = driven.val[0];
             processed_r = driven.val[1];
@@ -499,21 +505,15 @@ public:
                 break;
 
             case 14: // BASS (Operation Overlord EQ)
-                if (comp_mode_ == COMP_MODE_DISTRESSOR) {  // Distressor mode benefits most from EQ
-                    overlord_.bass = value / 100.0f;
-                }
+                overlord_.bass = value / 100.0f;
                 break;
 
             case 15: // TREBLE
-                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                    overlord_.treble = value / 100.0f;
-                }
+                overlord_.treble = value / 100.0f;
                 break;
 
             case 16: // PRESENCE
-                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                    overlord_.presence = value / 100.0f;
-                }
+                overlord_.presence = value / 100.0f;
                 break;
         }
     }

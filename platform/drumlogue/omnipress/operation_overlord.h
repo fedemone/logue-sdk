@@ -23,7 +23,7 @@ typedef struct {
     // EQ filters
     biquad_state_t bass_boost;
     biquad_state_t treble_boost;
-    biquad_state_t presence;
+    biquad_state_t presence_state;
 
     // Blend
     float32x4_t dry_wet;
@@ -50,7 +50,7 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     // Initialize EQ filters (Baxandall topology)
     biquad_init_state(&ov->bass_boost);
     biquad_init_state(&ov->treble_boost);
-    biquad_init_state(&ov->presence);
+    biquad_init_state(&ov->presence_state);
 }
 
 /**
@@ -114,6 +114,37 @@ fast_inline float32x4_t baxandall_eq(float32x4_t in,
     return treble_shelf;
 }
 
+// EQ-only path (no tube saturation) — for use in distressor mode
+// Applies bass/treble Baxandall EQ and presence shelf without adding drive distortion
+fast_inline float32x4x2_t overlord_apply_eq(overlord_t* ov,
+                                             float32x4_t in_l,
+                                             float32x4_t in_r,
+                                             float sample_rate) {
+    float active_threshold = 0.01f;
+    if (fabsf(ov->bass - 0.5f) < active_threshold &&
+        fabsf(ov->treble - 0.5f) < active_threshold &&
+        fabsf(ov->presence) < active_threshold) {
+        float32x4x2_t bypass;
+        bypass.val[0] = in_l;
+        bypass.val[1] = in_r;
+        return bypass;
+    }
+
+    float32x4_t eq_l = baxandall_eq(in_l, &ov->bass_boost, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_r = baxandall_eq(in_r, &ov->treble_boost, ov->bass, ov->treble, sample_rate);
+
+    float presence_gain = ov->presence * 12.0f;
+    float32x4_t out_l = high_shelf_filter(eq_l, &ov->presence_state, 5000.0f,
+                                           presence_gain, 0.5f, sample_rate);
+    float32x4_t out_r = high_shelf_filter(eq_r, &ov->presence_state, 5000.0f,
+                                           presence_gain, 0.5f, sample_rate);
+
+    float32x4x2_t out;
+    out.val[0] = out_l;
+    out.val[1] = out_r;
+    return out;
+}
+
 // Main Overlord processing
 fast_inline float32x4x2_t overlord_process(overlord_t* ov,
                                            float32x4_t in_l,
@@ -148,10 +179,10 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov,
     float32x4_t tube2_r = tube_saturate(tube1_r, ov->drive * 0.7f);
 
     // 3. Presence control (high shelf boost)
-    float32x4_t presence_gain = 0.0f + ov->presence * 12.0f;  // 0 to +12 dB
-    float32x4_t presence_l = high_shelf_filter(tube2_l, &ov->presence, 5000.0f,
+    float presence_gain = ov->presence * 12.0f;  // 0 to +12 dB
+    float32x4_t presence_l = high_shelf_filter(tube2_l, &ov->presence_state, 5000.0f,
                                                 presence_gain, 0.5f, sample_rate);
-    float32x4_t presence_r = high_shelf_filter(tube2_r, &ov->presence, 5000.0f,
+    float32x4_t presence_r = high_shelf_filter(tube2_r, &ov->presence_state, 5000.0f,
                                                 presence_gain, 0.5f, sample_rate);
 
     // 4. Blend (parallel processing)
