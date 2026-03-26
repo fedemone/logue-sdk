@@ -45,12 +45,13 @@ struct FastLFO {
                     current_val = ((float)(int32_t)rand_seed / 2147483648.0f);
                 }
                 break;
-            case LFO_EXP_DECAY: // ADSR-style percussive strike
+            case LFO_EXP_DECAY: { // ADSR-style percussive strike
                 // Avoid expf(). Using a cubic polynomial curve (1-x)^3 creates a sharp,
                 // CPU-efficient exponential decay from 1.0 down to -1.0.
                 float inv = 1.0f - phase;
                 current_val = (inv * inv * inv) * 2.0f - 1.0f;
                 break;
+            }
             default:
                 current_val =  0.0f;
         }

@@ -334,7 +334,9 @@ public:
             float dynamic_cmos = m_cmos_gain * m_cmos_mod_multiplier; // Apply APC multiplier
             mixed_sig *= dynamic_cmos;
 
-            float master_out = (mixed_sig / (1.0f + fabsf(mixed_sig))) * m_master_vol;
+            // Apply master vol first, then soft-clip so output stays within [-1, 1]
+            float scaled = mixed_sig * m_master_vol;
+            float master_out = scaled / (1.0f + fabsf(scaled));
             master_out *= m_drone_amp;
 
             main_out[i * 2]     = master_out;
