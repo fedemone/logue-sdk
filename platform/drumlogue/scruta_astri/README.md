@@ -1,10 +1,8 @@
 # ScrutaAstri
-A Korg drumlogue port of the Moffenzeef Stargazer drone synthesizer, supercharged with audio-rate modulations and morphing filters.
+A Korg drumlogue port of the Moffenzeef Stargazer drone synthesizer, supercharged with audio-rate modulations, morphing filters, and a chaotic Polivoks emulation.
 
 ## Overview
-ScrutaAstri (Italian for "Stargazer") transforms the Korg drumlogue into a continuous, evolving drone machine. It replicates the core architecture of the original hardware—utilizing wavetable synthesis, dual resonant filters, and aggressive LoFi distortion—while extending its capabilities with Drumlogue-exclusive features like audio-rate LFOs and Sherman-style filter asymmetry.
-
-
+ScrutaAstri (Italian for "Stargazer") transforms the Korg drumlogue into a continuous, evolving drone machine. It replicates the core architecture of the original hardware—utilizing wavetable synthesis, dual resonant filters, and aggressive LoFi distortion—while extending its capabilities with Drumlogue-exclusive features like audio-rate LFOs, bidirectional wavetable scanning, and an extensive modulation matrix.
 
 ## The Authentic Signal Path
 By analyzing the original Teensy Audio patches from the hardware's source code, ScrutaAstri replicates the exact "Crush Sandwich" routing of the Stargazer:
@@ -16,11 +14,25 @@ By analyzing the original Teensy Audio patches from the hardware's source code, 
 6. **CMOS Distortion:** Emulated with an extreme mathematical soft-clipper.
 
 ## Drumlogue-Exclusive Enhancements
-* **The Morphing Filter:** The `CMOSDist` parameter does more than add gain. It morphs the filters smoothly from Clean SVF (0-33) -> Moog-style symmetrical saturation (34-65) -> Sherman Filterbank asymmetrical chaos (66-100).
-* **Audio-Rate Wavetable Asymmetry:** In the Sherman territory, the raw shape of Wavetable 1 is injected into Filter 2 at audio rates (48kHz), physically ripping the filter's DC offset apart based on the audio source.
+* **The Morphing Filter:** The `CMOSDist` parameter morphs Filter 1 smoothly from a Clean SVF (0-33) -> Moog-style symmetrical saturation (34-65) -> Sherman Filterbank asymmetrical chaos (66-100).
+* **Polivoks Chaos:** A secondary filter model aggressively replicates the Formanta Polivoks topology, utilizing non-linear mathematical saturation inside the resonance feedback loop and integrators to achieve its signature unstable howling.
+* **Audio-Rate Wavetable Asymmetry:** In the Sherman territory, the raw shape of Wavetable 1 is injected into Filter 1 at audio rates (48kHz), physically ripping the filter's DC offset apart based on the audio source.
+* **Bidirectional Wavetable Scanning:** Wavetable playback direction is dictated by the active preset program range.
+  * `0-23`: Forward scanning.
+  * `24-47`: Oscillator 1 plays in reverse.
+  * `48-71`: Oscillator 2 plays in reverse.
+  * `72-95`: Both oscillators play in reverse.
 * **Exponential LFOs:** LFO rates are exponentially mapped from glacial 100-second cycles (0.01Hz) up to audio-rate FM screams (1000Hz).
 * **Percussive Shapes:** A new `LFO_EXP_DECAY` shape provides ADSR-like percussive strikes for the Master VCA.
-* **Wavetable Morphing:** LFO 3 secretly sweeps the Osc 1 wavetable index across the 90-wave array for evolving textures.
 
 ## The Drone / Sequencer Concept
 Unlike typical drumlogue synthesizers, ScrutaAstri operates in **Infinite Sustain** mode. The audio thread continuously calculates and outputs the drone. The step sequencer is primarily used for **Motion Sequencing**—automating LFO rates, filters, and distortion parameters per step while the drone screams continuously in the background.
+
+## The Modulation Matrix & Operational Quirks
+ScrutaAstri utilizes a heavily optimized Active Partial Counting matrix to route modulations without exhausting the Drumlogue's CPU. The modulation target is defined by the active preset: `Target = Program % 24`.
+
+**Important UI Quirk (Filter Modes via Proxy):**
+Because the Drumlogue lacks a dedicated "Filter Mode" knob, preset `12` (and its modulo equivalents like 36, 60, 84) hijacks the **LFO 1 Wave** parameter to act as a static Filter Mode selector.
+* When Preset 12 is active, changing the LFO 1 shape will immediately snap Filter 1 to a new mode (0=Lowpass, 1=Highpass, 2=Bandpass, 3=Notch).
+* *The filter mode is a latched state.* If you set the filter to Highpass using Preset 12 and then change to a different preset (e.g., Preset 13), the filter will remain locked in Highpass mode, while the LFO 1 Wave parameter reverts to controlling the actual LFO shape.
+* To restore the original Lowpass state, you must return to Preset 12 or equivalent (15 or equivalent for filter 2), manually set the LFO 1 Wave parameter to `0` (Triangle), and then switch back to your desired preset.
