@@ -142,12 +142,25 @@ public:
         // Process complete blocks of 4 samples
         // =================================================================
         while (frames_remaining >= 4) {
-            // Load 4 stereo frames (16 floats total)
-            float32x4x4_t interleaved = vld4q_f32(in_p);
-            float32x4_t main_l = interleaved.val[0];
-            float32x4_t main_r = interleaved.val[1];
-            float32x4_t sc_l   = interleaved.val[2];
-            float32x4_t sc_r   = interleaved.val[3];
+            // Load 4 stereo frames — 2-channel or 4-channel (sidechain) layout
+            float32x4_t main_l, main_r, sc_l, sc_r;
+            if (has_sidechain_) {
+                // 4-channel: [L0,R0,SL0,SR0, L1,R1,SL1,SR1, ...] = 16 floats
+                float32x4x4_t interleaved = vld4q_f32(in_p);
+                main_l = interleaved.val[0];
+                main_r = interleaved.val[1];
+                sc_l   = interleaved.val[2];
+                sc_r   = interleaved.val[3];
+                in_p += 16;
+            } else {
+                // 2-channel: [L0,R0, L1,R1, L2,R2, L3,R3] = 8 floats
+                float32x4x2_t stereo = vld2q_f32(in_p);
+                main_l = stereo.val[0];
+                main_r = stereo.val[1];
+                sc_l   = main_l;
+                sc_r   = main_r;
+                in_p += 8;
+            }
 
             // Save dry signal for mixing
             float32x4_t dry_l = main_l;
@@ -170,55 +183,38 @@ public:
             // Store results
             vst2q_f32(out_p, mixed);
 
-            // Advance pointers
-            in_p += 16;
             out_p += 8;
             frames_remaining -= 4;
         }
 
         // =================================================================
-        // Process remaining samples (1-3) individually
+        // Process remaining samples (0-3) individually
         // =================================================================
         while (frames_remaining > 0) {
-            // Load one stereo frame (4 floats)
-            float32x4_t frame = vld1q_f32(in_p);
+            float main_l, main_r, sc_l, sc_r;
+            if (has_sidechain_) {
+                main_l = in_p[0]; main_r = in_p[1];
+                sc_l   = in_p[2]; sc_r   = in_p[3];
+                in_p += 4;
+            } else {
+                main_l = in_p[0]; main_r = in_p[1];
+                sc_l = main_l;    sc_r = main_r;
+                in_p += 2;
+            }
 
-            // Extract channels
-            float32x2_t main = vget_low_f32(frame);
-            float32x2_t sc   = vget_high_f32(frame);
-
-            float main_l = vget_lane_f32(main, 0);
-            float main_r = vget_lane_f32(main, 1);
-            float sc_l   = vget_lane_f32(sc, 0);
-            float sc_r   = vget_lane_f32(sc, 1);
-
-            // Save dry signal
             float dry_l = main_l;
             float dry_r = main_r;
 
-            // Process single sample (convert to vectors for reuse)
-            float32x4_t main_l_vec = vdupq_n_f32(main_l);
-            float32x4_t main_r_vec = vdupq_n_f32(main_r);
-            float32x4_t sc_l_vec = vdupq_n_f32(sc_l);
-            float32x4_t sc_r_vec = vdupq_n_f32(sc_r);
+            float32x4x2_t processed = process_block(
+                vdupq_n_f32(main_l), vdupq_n_f32(main_r),
+                vdupq_n_f32(sc_l),   vdupq_n_f32(sc_r));
 
-            float32x4x2_t processed = process_block(main_l_vec, main_r_vec,
-                                                     sc_l_vec, sc_r_vec);
+            float makeup_lin_scalar = powf(10.0f, makeup_db_ / 20.0f);
+            out_p[0] = (dry_l * (1.0f - mix_) + vgetq_lane_f32(processed.val[0], 0) * mix_)
+                       * makeup_lin_scalar;
+            out_p[1] = (dry_r * (1.0f - mix_) + vgetq_lane_f32(processed.val[1], 0) * mix_)
+                       * makeup_lin_scalar;
 
-            // Extract single results
-            float proc_l = vgetq_lane_f32(processed.val[0], 0);
-            float proc_r = vgetq_lane_f32(processed.val[1], 0);
-
-            // Mix and output
-            out_p[0] = dry_l * (1.0f - mix_) + proc_l * mix_;
-            out_p[1] = dry_r * (1.0f - mix_) + proc_r * mix_;
-
-            // Apply makeup gain
-            out_p[0] *= powf(10.0f, makeup_db_ / 20.0f);
-            out_p[1] *= powf(10.0f, makeup_db_ / 20.0f);
-
-            // Advance pointers
-            in_p += 4;
             out_p += 2;
             frames_remaining--;
         }
@@ -233,8 +229,7 @@ private:
      * Process one block of 4 samples (all modes)
      * Returns processed stereo signal
      */
-    fast_inline float32x4x2_t process_block(MasterFX* fx,
-                                            float32x4_t main_l,
+    fast_inline float32x4x2_t process_block(float32x4_t main_l,
                                             float32x4_t main_r,
                                             float32x4_t sc_l,
                                             float32x4_t sc_r) {
@@ -242,30 +237,26 @@ private:
         // 1. SIDECHAIN SELECTION
         // =================================================================
         float32x4_t sidechain;
-        if (fx->has_sidechain_ && fx->use_external_sc_) {
-            // Use external sidechain (sum L+R)
+        if (has_sidechain_ && use_external_sc_) {
             sidechain = vaddq_f32(sc_l, sc_r);
         } else {
-            // Use main signal as sidechain (sum L+R)
             sidechain = vaddq_f32(main_l, main_r);
         }
 
         // =================================================================
         // 2. SIDECHAIN HPF
         // =================================================================
-        sidechain = sidechain_hpf_process(&fx->sc_hpf_, sidechain);
+        sidechain = sidechain_hpf_process(&sc_hpf_, sidechain);
 
         // =================================================================
         // 3. ENVELOPE DETECTION (mode-specific)
         // =================================================================
         float32x4_t envelope_db;
-        if (fx->comp_mode_ == COMP_MODE_DISTRESSOR && (fx->distressor_.detector_mode & DETECT_HPF)) {
-            // Use Distressor's dedicated detector (already in dB)
-            float32x4_t envelope = distressor_detect(&fx->distressor_, sidechain, fx->samplerate_);
+        if (comp_mode_ == COMP_MODE_DISTRESSOR && (distressor_.detector_mode & DETECT_HPF)) {
+            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
             envelope_db = linear_to_db(envelope);
         } else {
-            // Standard envelope detection
-            float32x4_t envelope = envelope_detect(&fx->envelope_, main_l, sidechain);
+            float32x4_t envelope = envelope_detect(&envelope_, main_l, sidechain);
             envelope_db = linear_to_db(envelope);
         }
 
@@ -274,20 +265,17 @@ private:
         // =================================================================
         float32x4_t processed_l, processed_r;
 
-        switch (fx->comp_mode_) {
-            case COMP_MODE_STANDARD: // Standard compressor
-                fx->standard_process(main_l, main_r, envelope_db,
-                                    &processed_l, &processed_r);
+        switch (comp_mode_) {
+            case COMP_MODE_STANDARD:
+                standard_process(main_l, main_r, envelope_db, &processed_l, &processed_r);
                 break;
 
-            case COMP_MODE_DISTRESSOR: // Distressor mode - contains wavefolder_process
-                fx->distressor_process(main_l, main_r, envelope_db,
-                                    &processed_l, &processed_r);
+            case COMP_MODE_DISTRESSOR:
+                distressor_process(main_l, main_r, envelope_db, &processed_l, &processed_r);
                 break;
 
-            case COMP_MODE_MULTIBAND: // Multiband mode
-                multiband_process(&fx->multiband_, main_l, main_r,
-                                &processed_l, &processed_r);
+            case COMP_MODE_MULTIBAND:
+                multiband_process(&multiband_, main_l, main_r, &processed_l, &processed_r);
                 break;
 
             default:
@@ -298,8 +286,7 @@ private:
         // =================================================================
         // 5. DRIVE
         // =================================================================
-        // distressor uses wavefolding as distortion, apply just one
-        if ((fx->comp_mode_ != COMP_MODE_DISTRESSOR) && (fx->drive_ > 0.01f)) {
+        if ((comp_mode_ != COMP_MODE_DISTRESSOR) && (drive_ > 0.01f)) {
             float32x4x2_t driven = overlord_process(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = driven.val[0];
             processed_r = driven.val[1];
@@ -340,68 +327,48 @@ private:
     /**
      * Distressor mode processing with integrated detector and wavefolder
      */
-    fast_inline void distressor_process(MasterFX* fx,
-                                        float32x4_t main_l,
+    fast_inline void distressor_process(float32x4_t main_l,
                                         float32x4_t main_r,
                                         float32x4_t envelope_db,
                                         float32x4_t* out_l,
                                         float32x4_t* out_r) {
-        // Use Distressor's dedicated envelope detector if available
         float32x4_t detected_db;
-        if (fx->distressor_.detector_mode & DETECT_HPF) {
-            // Distressor-specific detection with HPF and emphasis
+        if (distressor_.detector_mode & DETECT_HPF) {
             float32x4_t sidechain = vaddq_f32(main_l, main_r);
-            float32x4_t envelope = distressor_detect(&fx->distressor_, sidechain, fx->samplerate_);
+            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
             detected_db = linear_to_db(envelope);
         } else {
             detected_db = envelope_db;
         }
 
-        // Distressor-specific gain computer
-        float32x4_t target_gain_db = distressor_gain_computer(&fx->distressor_,
-                                                            detected_db,
-                                                            fx->thresh_db_);
+        float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
+                                                               detected_db, thresh_db_);
 
-        // Smoothing with opto mode
-        float32x4_t smoothed_gain_db = distressor_smooth(&fx->distressor_,
-                                                        target_gain_db,
-                                                        fx->attack_coeff_,
-                                                        fx->release_coeff_ *
-                                                        fx->distressor_.opto_release_mult);
+        float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
+                                                          target_gain_db,
+                                                          attack_coeff_,
+                                                          release_coeff_ * distressor_.opto_release_mult);
 
-        // Convert to linear (ARMv7-compatible)
-        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db,
-                                                        vdupq_n_f32(0.115129f)));
+        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db, vdupq_n_f32(0.115129f)));
 
-        // Apply gain
         float32x4_t comp_l = vmulq_f32(main_l, gain_lin);
         float32x4_t comp_r = vmulq_f32(main_r, gain_lin);
 
-        // Apply harmonics or wavefolder based on dist_mode
-        switch (fx->distressor_.dist_mode) {
-            case DIST_MODE_WAVE:
-                // Apply wavefolder to compressed signal
-                {
-                    float32x4x2_t folded = wavefolder_process(&fx->wavefolder_,
-                                                            comp_l,
-                                                            comp_r,
-                                                            fx->drive_);
-                    *out_l = folded.val[0];
-                    *out_r = folded.val[1];
-                }
+        switch (distressor_.dist_mode) {
+            case DIST_MODE_WAVE: {
+                float32x4x2_t folded = wavefolder_process(&wavefolder_, comp_l, comp_r, drive_);
+                *out_l = folded.val[0];
+                *out_r = folded.val[1];
                 break;
-
+            }
             case DIST_MODE_DIST2:
             case DIST_MODE_DIST3:
             case DIST_MODE_BOTH:
-                // Apply harmonic generation
-                *out_l = generate_harmonics(&fx->distressor_, comp_l, fx->distressor_.dist_mode);
-                *out_r = generate_harmonics(&fx->distressor_, comp_r, fx->distressor_.dist_mode);
+                *out_l = generate_harmonics(&distressor_, comp_l, distressor_.dist_mode);
+                *out_r = generate_harmonics(&distressor_, comp_r, distressor_.dist_mode);
                 break;
-
             case DIST_MODE_CLEAN:
             default:
-                // No harmonics, just compressed signal
                 *out_l = comp_l;
                 *out_r = comp_r;
                 break;
@@ -597,7 +564,6 @@ public:
             case 12: // DSTR MODE
                 if (value >= 0 && value <= 4) {
                     return distressor_dist_strings[value];
-                    return dstr_modes[value];
                 }
                 break;
 

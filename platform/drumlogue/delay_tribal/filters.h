@@ -180,9 +180,22 @@ fast_inline void update_filter_params(
         calculate_highpass_coeffs(&coeffs, freq, 0.707f);
         break;
       }
-      case MODE_ANGEL:
-        // For Angel mode, we'll set in apply function
+      case MODE_ANGEL: {
+        // Pre-compute HPF (pre) and LPF (post) coefficients once here —
+        // avoids calling cosf/sinf per sample in apply_mode_filters.
+        biquad_coeffs_t lpf_coeffs;
+        calculate_highpass_coeffs(&coeffs, ANGEL_DEFAULT_LOW_CUT, ANGEL_DEFAULT_Q);
+        calculate_lowpass_coeffs(&lpf_coeffs,
+            ANGEL_DEFAULT_HIGH_CUT + depth * (ANGEL_MAX_HIGH_CUT - ANGEL_DEFAULT_HIGH_CUT),
+            ANGEL_DEFAULT_Q);
+        for (int g = 0; g < CLONE_GROUPS; g++) {
+            filters->filters[g * 4 + 0].coeffs = coeffs;    // L HPF
+            filters->filters[g * 4 + 1].coeffs = lpf_coeffs; // L LPF
+            filters->filters[g * 4 + 2].coeffs = coeffs;    // R HPF
+            filters->filters[g * 4 + 3].coeffs = lpf_coeffs; // R LPF
+        }
         return;
+      }
     }
 
     // Apply to all clone groups (L and R pre-filter slots; post unused for single-stage modes)
@@ -236,18 +249,17 @@ fast_inline void apply_mode_filters(
         }
 
         case MODE_ANGEL: {
-            // Angel: HPF (pre) + LPF (post) in series, separate states per stage and channel
-            biquad_coeffs_t hpf_coeffs, lpf_coeffs;
-            calculate_highpass_coeffs(&hpf_coeffs, 500.0f, 1.0f);
-            calculate_lowpass_coeffs(&lpf_coeffs, 4000.0f + depth * 2000.0f, 1.0f);
+            // Angel: HPF (base+0/2) + LPF (base+1/3) in series.
+            // Coefficients are pre-computed in update_filter_params — no cosf/sinf here.
+            *samples_l = biquad_process(*samples_l,
+                &filters->filters[base].coeffs,     &filters->filters[base].state);
+            *samples_l = biquad_process(*samples_l,
+                &filters->filters[base + 1].coeffs, &filters->filters[base + 1].state);
 
-            // L channel: HPF (base+0) then LPF (base+1)
-            *samples_l = biquad_process(*samples_l, &hpf_coeffs, &filters->filters[base].state);
-            *samples_l = biquad_process(*samples_l, &lpf_coeffs, &filters->filters[base + 1].state);
-
-            // R channel: HPF (base+2) then LPF (base+3)
-            *samples_r = biquad_process(*samples_r, &hpf_coeffs, &filters->filters[base + 2].state);
-            *samples_r = biquad_process(*samples_r, &lpf_coeffs, &filters->filters[base + 3].state);
+            *samples_r = biquad_process(*samples_r,
+                &filters->filters[base + 2].coeffs, &filters->filters[base + 2].state);
+            *samples_r = biquad_process(*samples_r,
+                &filters->filters[base + 3].coeffs, &filters->filters[base + 3].state);
             break;
         }
     }

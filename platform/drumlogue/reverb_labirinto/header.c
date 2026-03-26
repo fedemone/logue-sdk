@@ -20,13 +20,13 @@ const __unit_header unit_header_t unit_header = {
     .params = {
         // Page 1: Main reverb controls
         // ID 0: MIX  wet/dry blend  0.0%-100.0% (x0.1 precision, stored 0..1000)
-        { 0, 1000, 500, 300, k_unit_param_type_percent, 1, 0, 0, {"MIX"} },
+        { 0, 1000, 500, 700, k_unit_param_type_percent, 1, 0, 0, {"MIX"} },
         // ID 1: TIME mid RT60 x0.1 s  (1=0.1s .. 100=10.0s)
-        { 1, 100, 20, 20, k_unit_param_type_none, 0, 0, 0, {"TIME"} },
+        { 1, 100, 20, 50, k_unit_param_type_none, 0, 0, 0, {"TIME"} },
         // ID 2: LOW  low-freq RT60 x0.1 s
-        { 1, 100, 20, 20, k_unit_param_type_none, 0, 0, 0, {"LOW"} },
+        { 1, 100, 20, 50, k_unit_param_type_none, 0, 0, 0, {"LOW"} },
         // ID 3: HIGH high-freq RT60 x0.1 s
-        { 1, 100, 20, 10, k_unit_param_type_none, 0, 0, 0, {"HIGH"} },
+        { 1, 100, 20, 30, k_unit_param_type_none, 0, 0, 0, {"HIGH"} },
 
         // Page 2: Advanced controls
         // ID 4: DAMP damping crossover frequency  200..10000 Hz

@@ -277,49 +277,23 @@ private:
             }
         }
 
-        // OPTIMIZED: Load using vld4q_f32 - 4 channels × 4 samples at once
-        // Process in groups of 4 channels (since vld4 handles 4 vectors)
-        for (int chGroup = 0; chGroup < FDN_CHANNELS; chGroup += 4) {
-            // For each sample position (0-3), we need data from all 4 channels
-            for (int sampleIdx = 0; sampleIdx < 4; sampleIdx++) {
-                uint32_t baseIdx = baseIndices[chGroup][sampleIdx];
+        // Read each channel independently: each channel has its own read position
+        // (baseIndices[ch][s]) so we cannot share a single vld4q_f32 across channels.
+        // Scalar interpolation per channel avoids the previous cross-frame read bug.
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            float out_lanes[4];
+            vst1q_f32(out_lanes, out[ch]);
 
-                // Load 4 consecutive frames for interpolation
-                // Each frame contains all 8 channels at that time
-                uint32_t idx0 = baseIdx & BUFFER_MASK;
+            for (int s = 0; s < 4; s++) {
+                uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
                 uint32_t idx1 = (idx0 + 1) & BUFFER_MASK;
-
-                // Load 4 channels × 4 time positions using vld4
-                float32x4x4_t frames0 = vld4q_f32(&delayLine[idx0].samples[chGroup]);
-                float32x4x4_t frames1 = vld4q_f32(&delayLine[idx1].samples[chGroup]);
-
-                // frames0.val[0] = ch0 at times t, t+1, t+2, t+3
-                // frames0.val[1] = ch1 at times t, t+1, t+2, t+3
-                // frames0.val[2] = ch2 at times t, t+1, t+2, t+3
-                // frames0.val[3] = ch3 at times t, t+1, t+2, t+3
-
-                // For linear interpolation, we need:
-                // For each channel, sample at time t (from frames0) and t+1 (from frames1)
-
-                // Get the true fractional part for interpolation
-                float frac = fracParts[chGroup][sampleIdx];
-
-                // Interpolate each channel.
-                // vgetq_lane_f32/vsetq_lane_f32 require a compile-time constant
-                // lane index; use vst1q_f32/vld1q_f32 to spill/fill via a
-                // float[4] array instead so sampleIdx can be a variable.
-                for (int chOffset = 0; chOffset < 4; chOffset++) {
-                    float s0_lanes[4], s1_lanes[4], out_lanes[4];
-                    vst1q_f32(s0_lanes, frames0.val[chOffset]);
-                    vst1q_f32(s1_lanes, frames1.val[chOffset]);
-                    vst1q_f32(out_lanes, out[chGroup + chOffset]);
-
-                    float sample = s0_lanes[sampleIdx] + frac * (s1_lanes[sampleIdx] - s0_lanes[sampleIdx]);
-                    out_lanes[sampleIdx] = sample;
-
-                    out[chGroup + chOffset] = vld1q_f32(out_lanes);
-                }
+                float frac = fracParts[ch][s];
+                float s0 = delayLine[idx0].samples[ch];
+                float s1 = delayLine[idx1].samples[ch];
+                out_lanes[s] = s0 + frac * (s1 - s0);
             }
+
+            out[ch] = vld1q_f32(out_lanes);
         }
     }
 
