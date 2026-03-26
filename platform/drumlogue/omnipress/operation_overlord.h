@@ -14,6 +14,7 @@
 
 #include <arm_neon.h>
 #include <filters.h>
+#include <cmath>
 
 typedef struct {
     // Tube emulation stages
@@ -115,7 +116,7 @@ fast_inline float32x4_t baxandall_eq(float32x4_t in,
     float32x4_t bass_shelf = low_shelf_filter(in, bass_state, 100.0f, bass_gain, 1.0f, sample_rate);
 
     // High shelf at 10 kHz — treble cut/boost (fed from bass shelf output)
-    float32x4_t treble_shelf = high_shelf_filter(bass_shelf, treble_state, 10000.0f, treble_gain, 1.0f, sample_rate);
+    float32x4_t treble_shelf = high_shelf_filter(bass_shelf, treble_state, 10000.0f, treble_gain, 0.0f, sample_rate);
 
     return treble_shelf;
 }

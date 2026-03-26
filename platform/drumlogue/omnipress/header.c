@@ -42,7 +42,7 @@ const __unit_header unit_header_t unit_header = {
         // Page 3: Mode Selection
         // ID 8: COMP MODE  0=Standard, 1=Distressor, 2=Multiband
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"COMP MODE"} },
-        // ID 9: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+Hihgh, 6=All
+        // ID 9: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All
         { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"BAND SEL"} },
         // ID 10: L THRESH  -60.0..0.0 dB  (per-band threshold)
         { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"L THRESH"} },

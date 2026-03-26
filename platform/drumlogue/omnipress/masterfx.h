@@ -455,37 +455,20 @@ public:
 
             case 10: // L THRESH (multiband low threshold) - param_id=0
             case 11: // L RATIO (multiband low ratio) - param_id=1
-                switch(band_select_) {
-                    case BAND_LOW:
-                        multiband_set_param(&multiband_, BAND_LOW, index - 10, value * 0.1f);
-                        break;
-                    case BAND_MID:
-                        multiband_set_param(&multiband_, BAND_MID, index - 10, value * 0.1f);
-                        break;
-                    case BAND_LOW_MID:
-                        multiband_set_param(&multiband_, BAND_LOW, index - 10, value * 0.1f);
-                        multiband_set_param(&multiband_, BAND_MID, index - 10, value * 0.1f);
-                        break;
-                    case BAND_LOW_HI:
-                        multiband_set_param(&multiband_, BAND_LOW, index - 10, value * 0.1f);
-                        multiband_set_param(&multiband_, BAND_HIGH, index - 10, value * 0.1f);
-                        break;
-                     case BAND_MID_HI:
-                        multiband_set_param(&multiband_, BAND_MID, index - 10, value * 0.1f);
-                        multiband_set_param(&multiband_, BAND_HIGH, index - 10, value * 0.1f);
-                        break;
-                    case BAND_HIGH:
-                        multiband_set_param(&multiband_, BAND_HIGH, index - 10, value * 0.1f);
-                        break;
-                    case BAND_ALL:
-                        multiband_set_param(&multiband_, BAND_LOW, index - 10, value * 0.1f);
-                        multiband_set_param(&multiband_, BAND_MID, index - 10, value * 0.1f);
-                        multiband_set_param(&multiband_, BAND_HIGH, index - 10, value * 0.1f);
-                        break;
-                    default:
-                        break;
-                    }
+            {
+                const float val = value * 0.1f;
+                const int p_id = index - 10;
+                if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
+                    multiband_set_param(&multiband_, BAND_LOW, p_id, val);
+                }
+                if (band_select_ == BAND_MID || band_select_ == BAND_LOW_MID || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
+                    multiband_set_param(&multiband_, BAND_MID, p_id, val);
+                }
+                if (band_select_ == BAND_HIGH || band_select_ == BAND_LOW_HI || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
+                    multiband_set_param(&multiband_, BAND_HIGH, p_id, val);
+                }
                 break;
+            }
 
             case 12: // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave)
                 if (value >= 0 && value <= 4) {
@@ -493,7 +476,7 @@ public:
 
                     // Enable/disable detector HPF based on mode
                     if (value == DIST_MODE_WAVE) {
-                        // Wavefolder benefits from full frequency detection
+                        // Wavefolder removes low frequencies from the detector path
                         distressor_.detector_mode |= DETECT_HPF;
                     } else {
                         distressor_.detector_mode &= ~DETECT_HPF;
