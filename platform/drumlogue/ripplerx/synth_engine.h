@@ -1121,7 +1121,7 @@ public:
                 // ── Stage 4a: Tilt EQ ──────────────────────────────────────
                 voice.tone_lp = (voice_out * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
                 if (tone_val < zeroThreshold) {
-                    voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val / kToneCutDivisor);
+                    voice_out = linintf(-tone_val / kToneCutDivisor, voice_out, voice.tone_lp);
                 } else if (tone_val > zeroThreshold) {
                     float hp = voice_out - voice.tone_lp;
                     voice_out += hp * (tone_val / kToneBoostDivisor);
