@@ -20,10 +20,13 @@ typedef struct {
     float32x4_t tube_state;      // First tube stage
     float32x4_t tube_state2;     // Second tube stage
 
-    // EQ filters
-    biquad_state_t bass_boost;
-    biquad_state_t treble_boost;
-    biquad_state_t presence_state;
+    // EQ filter states — separate per channel (L/R biquad histories must not be shared)
+    biquad_state_t bass_boost_l;
+    biquad_state_t treble_boost_l;
+    biquad_state_t presence_l;
+    biquad_state_t bass_boost_r;
+    biquad_state_t treble_boost_r;
+    biquad_state_t presence_r;
 
     // Blend
     float32x4_t dry_wet;
@@ -47,10 +50,13 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     ov->tube_state = vdupq_n_f32(0.0f);
     ov->tube_state2 = vdupq_n_f32(0.0f);
 
-    // Initialize EQ filters (Baxandall topology)
-    biquad_init_state(&ov->bass_boost);
-    biquad_init_state(&ov->treble_boost);
-    biquad_init_state(&ov->presence_state);
+    // Initialize EQ filter states (separate for L and R channels)
+    biquad_init_state(&ov->bass_boost_l);
+    biquad_init_state(&ov->treble_boost_l);
+    biquad_init_state(&ov->presence_l);
+    biquad_init_state(&ov->bass_boost_r);
+    biquad_init_state(&ov->treble_boost_r);
+    biquad_init_state(&ov->presence_r);
 }
 
 /**
@@ -95,21 +101,21 @@ fast_inline float32x4_t tube_saturate(float32x4_t in, float drive) {
     return clipped;
 }
 
-// Baxandall bass/treble EQ (used in many tube preamps)
+// Baxandall bass/treble EQ: low shelf into high shelf in series
 fast_inline float32x4_t baxandall_eq(float32x4_t in,
-                                     biquad_state_t* state,
+                                     biquad_state_t* bass_state,
+                                     biquad_state_t* treble_state,
                                      float bass,
                                      float treble,
                                      float sample_rate) {
-    // Simplified Baxandall: two shelving filters in parallel
-    float bass_gain = -12.0f + bass * 24.0f;   // -12 to +12 dB
+    float bass_gain = -12.0f + bass * 24.0f;    // -12 to +12 dB
     float treble_gain = -12.0f + treble * 24.0f;
 
-    // Bass shelf at 100 Hz
-    float32x4_t bass_shelf = shelving_filter(in, state, 100.0f, bass_gain, 0.5f, sample_rate);
+    // Low shelf at 100 Hz — bass cut/boost
+    float32x4_t bass_shelf = low_shelf_filter(in, bass_state, 100.0f, bass_gain, 1.0f, sample_rate);
 
-    // Treble shelf at 10 kHz
-    float32x4_t treble_shelf = shelving_filter(bass_shelf, state, 10000.0f, treble_gain, 0.5f, sample_rate);
+    // High shelf at 10 kHz — treble cut/boost (fed from bass shelf output)
+    float32x4_t treble_shelf = high_shelf_filter(bass_shelf, treble_state, 10000.0f, treble_gain, 1.0f, sample_rate);
 
     return treble_shelf;
 }
@@ -130,14 +136,14 @@ fast_inline float32x4x2_t overlord_apply_eq(overlord_t* ov,
         return bypass;
     }
 
-    float32x4_t eq_l = baxandall_eq(in_l, &ov->bass_boost, ov->bass, ov->treble, sample_rate);
-    float32x4_t eq_r = baxandall_eq(in_r, &ov->treble_boost, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_l = baxandall_eq(in_l, &ov->bass_boost_l, &ov->treble_boost_l, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_r = baxandall_eq(in_r, &ov->bass_boost_r, &ov->treble_boost_r, ov->bass, ov->treble, sample_rate);
 
     float presence_gain = ov->presence * 12.0f;
-    float32x4_t out_l = high_shelf_filter(eq_l, &ov->presence_state, 5000.0f,
-                                           presence_gain, 0.5f, sample_rate);
-    float32x4_t out_r = high_shelf_filter(eq_r, &ov->presence_state, 5000.0f,
-                                           presence_gain, 0.5f, sample_rate);
+    float32x4_t out_l = high_shelf_filter(eq_l, &ov->presence_l, 5000.0f,
+                                           presence_gain, 1.0f, sample_rate);
+    float32x4_t out_r = high_shelf_filter(eq_r, &ov->presence_r, 5000.0f,
+                                           presence_gain, 1.0f, sample_rate);
 
     float32x4x2_t out;
     out.val[0] = out_l;
@@ -168,8 +174,8 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov,
     float32x4_t dry_r = in_r;
 
     // 1. Pre-drive EQ (bass/treble boost/cut)
-    float32x4_t eq_l = baxandall_eq(in_l, &ov->bass_boost, ov->bass, ov->treble, sample_rate);
-    float32x4_t eq_r = baxandall_eq(in_r, &ov->treble_boost, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_l = baxandall_eq(in_l, &ov->bass_boost_l, &ov->treble_boost_l, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_r = baxandall_eq(in_r, &ov->bass_boost_r, &ov->treble_boost_r, ov->bass, ov->treble, sample_rate);
 
     // 2. Tube saturation (dual stage)
     float32x4_t tube1_l = tube_saturate(eq_l, ov->drive);
@@ -180,10 +186,10 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov,
 
     // 3. Presence control (high shelf boost)
     float presence_gain = ov->presence * 12.0f;  // 0 to +12 dB
-    float32x4_t presence_l = high_shelf_filter(tube2_l, &ov->presence_state, 5000.0f,
-                                                presence_gain, 0.5f, sample_rate);
-    float32x4_t presence_r = high_shelf_filter(tube2_r, &ov->presence_state, 5000.0f,
-                                                presence_gain, 0.5f, sample_rate);
+    float32x4_t presence_l = high_shelf_filter(tube2_l, &ov->presence_l, 5000.0f,
+                                                presence_gain, 1.0f, sample_rate);
+    float32x4_t presence_r = high_shelf_filter(tube2_r, &ov->presence_r, 5000.0f,
+                                                presence_gain, 1.0f, sample_rate);
 
     // 4. Blend (parallel processing)
     float32x4_t wet_gain = vdupq_n_f32(ov->blend);
