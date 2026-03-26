@@ -13,11 +13,11 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x53637275U,      // 'Scru'
     .version = 0x00010000U,
     .name = "ScrtAstr",          // Max 8 chars on OLED
-    .num_presets = 48,
+    .num_presets = 95,
     .num_params = 24,
     .params = {
         // Page 1: Base
-        {0, 15, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Prgrm"}},
+        {0, 95, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Prgrm"}},
         {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         {0, 239, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O1Wave"}},
         {0, 239, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2Wave"}},

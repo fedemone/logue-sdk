@@ -1,35 +1,49 @@
 #pragma once
-#include <cmath>
 #include <cstdint>
+#include "wavetables.h"
 
-struct WavetableOsc {
+class WavetableOsc {
+public:
     float phase = 0.0f;
     float phase_inc = 0.0f;
-
     // Pointer to the active waveform array
     const float* current_table = nullptr;
-    size_t table_length = 256;
+    float table_length = 256.0f;
 
     // Call this from NoteOn or when the drone pitch is modulated
-    inline void set_frequency(float hz, float srate) {
-        phase_inc = hz / srate;
+    inline void set_frequency(float hz, float sample_rate) {
+        phase_inc = hz / sample_rate;
+    }
+
+    inline float interpolate(float p) {
+        // Assuming standard 256 samples per cycle for AKWF wavetables
+        float f_idx = p * table_length;
+        int idx = (int)f_idx;
+        float frac = f_idx - (float)idx;
+
+        int next_idx = (idx + 1) % (int)table_length;
+
+        float val1 = current_table[idx];
+        float val2 = current_table[next_idx];
+
+        return val1 + frac * (val2 - val1);
     }
 
     inline float process() {
         if (!current_table) return 0.0f;
 
-        // Advance phase
+        float out = interpolate(phase);
+
+        // Advance or decrement phase based on phase_inc sign
         phase += phase_inc;
-        if (phase >= 1.0f) phase -= 1.0f;
 
-        // Find exact position in the wavetable
-        float exact_pos = phase * (float)table_length;
-        uint32_t index_A = (uint32_t)exact_pos;
-        uint32_t index_B = (index_A + 1) & 255u; // table is always 256 samples (power-of-2)
+        // Bidirectional wrapping logic
+        if (phase >= 1.0f) {
+            phase -= 1.0f;
+        } else if (phase < 0.0f) {
+            phase += 1.0f;
+        }
 
-        // Linear Interpolation for smooth sub-octave pitching
-        float frac = exact_pos - (float)index_A;
-
-        return (current_table[index_A] * (1.0f - frac)) + (current_table[index_B] * frac);
+        return out;
     }
 };
