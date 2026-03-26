@@ -89,7 +89,7 @@ fast_inline float32x4_t tube_saturate(float32x4_t in, float drive) {
     clipped = vbslq_f32(neg, vnegq_f32(neg_clip), clipped);
 
     // Soft knee for tube warmth
-    float32x4_t knee_region = vandq_u32(
+    uint32x4_t knee_region = vandq_u32(
         vcgtq_f32(driven, vmulq_f32(pos_clip, vdupq_n_f32(0.9f))),
         vcltq_f32(driven, pos_clip)
     );

@@ -314,12 +314,12 @@ public:
             float mixed_sig = sig1 + sig2;
 
             // Bidirectional phase wrap detection
-            bool osc1_wrapped = (m_osc1_dir > 0.0f) ? (osc1.phase < pre_phase1) : (osc1.phase > pre_phase1);
+            osc1_wrapped = (m_osc1_dir > 0.0f) ? (osc1.phase < pre_phase1) : (osc1.phase > pre_phase1);
             if (osc1_wrapped) {
                 osc1.set_frequency(m_osc1_target_hz, SAMPLE_RATE_F);
             }
 
-            bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
+            osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
             if (osc2_wrapped) {
                 osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
             }
