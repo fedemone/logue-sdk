@@ -15,7 +15,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id     = 0x00010000U,
     .version     = 0x00010000U,   // v1.0.0
     .name        = "NeonLabirinto",
-    .num_presets = 0,
+    .num_presets = 4,
     .num_params  = 8,
     .params = {
         // Page 1: Main reverb controls
@@ -35,8 +35,8 @@ const __unit_header unit_header_t unit_header = {
         { 0, 200, 100, 100, k_unit_param_type_percent, 0, 0, 0, {"WIDE"} },
         // ID 6: COMP diffusion/complexity  0.0%-100.0% (x0.1, stored 0..1000)
         { 0, 1000, 500, 1000, k_unit_param_type_percent, 1, 0, 0, {"COMP"} },
-        // ID 7: PILL pillar count index  0=4, 1=8, 2=16, 3=32
-        { 0, 3, 3, 3, k_unit_param_type_none, 0, 0, 0, {"PILL"} },
+        // ID 7: PILL pillar count index  0=sparse(2ch), 1=ping-pong(4ch), 2=stone(6ch), 3=full(8ch), 4=shimmer(8ch+)
+        { 0, 4, 3, 3, k_unit_param_type_none, 0, 0, 0, {"PILL"} },
 
         // Pages 3-6: blank
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },

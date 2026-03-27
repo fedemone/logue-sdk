@@ -42,8 +42,27 @@ static bool s_bypass = true;
 // ID 4: DAMP 20..1000           default 250  (×10 in code → 2500 Hz)
 // ID 5: WIDE 0..200 %           default 100
 // ID 6: COMP 0..1000 (x0.1%)   default 1000
-// ID 7: PILL 0..3               default 3
+// ID 7: PILL 0..4               default 3
 static int32_t s_params[8] = { 700, 50, 50, 70, 250, 100, 1000, 3 };
+
+// ============================================================================
+// Factory Presets
+// ============================================================================
+// Each preset: {MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
+static const int32_t k_presets[4][8] = {
+    // 0: foresta – mellow, sparse, "wood" (warm lows, short, moderate decay)
+    { 600, 40, 60, 40, 200, 80,  600, 3 },
+    // 1: tempio  – sombre, "stone" (heavy lows, long, dark, 6-ch)
+    { 700, 70, 80, 25, 130, 130, 800, 2 },
+    // 2: labirinto – center values with ping-pong stereo bouncing
+    { 500, 50, 50, 50, 510, 100, 500, 1 },
+    // 3: stellare – long, subtle, "spacey" shimmer (8-ch + shimmer)
+    { 400, 90, 50, 80, 800, 180, 300, 4 },
+};
+static const char* k_preset_names[4] = {
+    "foresta", "tempio", "labirinto", "stellare"
+};
+static uint8_t s_current_preset = 0xFF;  /* 0xFF = no preset loaded */
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -179,8 +198,8 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         case 6: // COMP  0..1000 → diffusion 0.0..1.0
             s_reverb->setDiffusion(value / 1000.0f);
             break;
-        case 7: // PILL  0..3  (pillar count index, stored for info)
-            // FDN channel count is fixed at compile time; store only
+        case 7: // PILL  0..4  – pillar routing mode
+            s_reverb->setPillar(value);
             break;
         default:
             break;
@@ -218,6 +237,19 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
     (void)aftertouch;
 }
 
-__unit_callback void unit_load_preset(uint8_t idx) { (void)idx; }
-__unit_callback uint8_t unit_get_preset_index() { return 0; }
-__unit_callback const char* unit_get_preset_name(uint8_t idx) { return nullptr; }
+__unit_callback void unit_load_preset(uint8_t idx) {
+    if (idx >= 4) return;
+    s_current_preset = idx;
+    for (uint8_t i = 0; i < 8; i++) {
+        unit_set_param_value(i, k_presets[idx][i]);
+    }
+}
+
+__unit_callback uint8_t unit_get_preset_index() {
+    return (s_current_preset < 4) ? s_current_preset : 0;
+}
+
+__unit_callback const char* unit_get_preset_name(uint8_t idx) {
+    if (idx >= 4) return nullptr;
+    return k_preset_names[idx];
+}
