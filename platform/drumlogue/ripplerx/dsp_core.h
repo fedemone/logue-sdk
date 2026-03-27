@@ -32,6 +32,12 @@
 #endif
 
 
+// =================================================================
+// UNCOMMENT THIS LINE TO ACTIVATE PHASE 8 (2D DRUMHEAD STRIKE PHYSICS)
+// #define ENABLE_PHASE_8_2D_DRUMHEAD 1
+// =================================================================
+
+
 
 /** Because we are optimizing for bare-metal, notice there are no virtual functions,
  * no dynamic memory (new/malloc), and no deep class hierarchies.

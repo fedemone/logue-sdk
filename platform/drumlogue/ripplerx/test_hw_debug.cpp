@@ -11,12 +11,12 @@
  *
  * Each test is independent and prints PASS/FAIL with a reason.
  * Silent-on-HW hypotheses covered:
- *   H1 – feedback_gain or mallet_stiffness left at zero by default
- *   H2 – Init preset has Gain=0, making master_drive only 1.0 (UT masked with Gain=50)
- *   H3 – Denormals: feedback ring decays into sub-normal range and is flushed to 0
- *   H4 – GateOn → NoteOn(m_ui_note, vel) path differs from UT's NoteOn(60, 127)
- *   H5 – Larger block size (32/64 frames) exposes a buffer-clear or indexing bug
- *   H6 – After unit_reset() the parameters are intact but delay buffers zeroed;
+ *   H1 - feedback_gain or mallet_stiffness left at zero by default
+ *   H2 - Init preset has Gain=0, making master_drive only 1.0 (UT masked with Gain=50)
+ *   H3 - Denormals: feedback ring decays into sub-normal range and is flushed to 0
+ *   H4 - GateOn → NoteOn(m_ui_note, vel) path differs from UT's NoteOn(60, 127)
+ *   H5 - Larger block size (32/64 frames) exposes a buffer-clear or indexing bug
+ *   H6 - After unit_reset() the parameters are intact but delay buffers zeroed;
  *         subsequent GateOn must still produce sound
  */
 
@@ -96,7 +96,7 @@ static void result(const char* name, bool pass, const char* detail = "") {
 
 // ════════════════════════════════════════════════════════════════════════════
 // T0 — Parameter audit (H1, H2)
-//   After Init() + LoadPreset(0) – exactly what the HW does – print every
+//   After Init() + LoadPreset(0) - exactly what the HW does - print every
 //   critical DSP coefficient and assert nothing is zero where it shouldn't be.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_param_audit() {
@@ -123,10 +123,10 @@ static void test_param_audit() {
     std::cout << "  exciter.mallet_res   = " << st.voices[0].exciter.mallet_res_coeff << "\n";
     std::cout << "  exciter.noise_decay  = " << st.voices[0].exciter.noise_decay_coeff << "\n";
 
-    // H1: feedback_gain must not be zero – zero means silence after frame 0
+    // H1: feedback_gain must not be zero - zero means silence after frame 0
     bool fg_ok = st.voices[0].resA.feedback_gain > 0.01f;
     result("T0a feedback_gain > 0.01 after LoadPreset(0)", fg_ok,
-           "feedback_gain is zero – resonator will not sustain");
+           "feedback_gain is zero - resonator will not sustain");
 
     // H2: master_drive at Gain=0 → 1.0f (unity, not muted).
     //     The UT hid this by setting Gain=50 → drive=11.0.
@@ -203,7 +203,7 @@ static void test_default_preset_no_override() {
     }
 
     result("T2 preset-0 defaults produce nonzero output", peak > 1e-9f,
-           "completely silent with default Dkay=250 / Gain=0 – hardware would be mute");
+           "completely silent with default Dkay=250 / Gain=0 - hardware would be mute");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -241,13 +241,13 @@ static void test_denormal_decay() {
     }
 
     result("T3a no NaN/Inf in 100 ms of output", !nan_or_inf_detected,
-           "NaN or Inf detected – would be clamped to 0.99 by limiter, masking silence");
+           "NaN or Inf detected - would be clamped to 0.99 by limiter, masking silence");
     result("T3b signal > 1e-9 at 50 ms (feedback_gain=0.869 not decaying into denormals)",
            still_audible_at_50ms,
-           "signal flushed to zero before 50 ms – FTZ/denormal issue on hardware");
+           "signal flushed to zero before 50 ms - FTZ/denormal issue on hardware");
     result("T3c signal > 1e-9 at 100 ms",
            still_audible_at_100ms,
-           "signal gone before 100 ms – sound may be inaudible before DAC transduces it");
+           "signal gone before 100 ms - sound may be inaudible before DAC transduces it");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -278,9 +278,9 @@ static void test_gate_on_off_cycle() {
     result("T4a first GateOn produces sound",   peak_during  > 1e-9f,
            "no audio during first gate hold");
     result("T4b GateOff enters release (not hard zero)", peak_release > 1e-9f,
-           "signal hard-zeroed on GateOff – release not working; hardware would click");
+           "signal hard-zeroed on GateOff - release not working; hardware would click");
     result("T4c second GateOn also produces sound", peak_second > 1e-9f,
-           "re-trigger after GateOff produces no sound – voice state corrupt");
+           "re-trigger after GateOff produces no sound - voice state corrupt");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -356,7 +356,7 @@ static void test_all_presets_audible() {
         }
     }
     result("T7 all 28 presets audible on first GateOn", !any_fail,
-           "one or more presets produce no audio – hardware would be silent on those presets");
+           "one or more presets produce no audio - hardware would be silent on those presets");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -364,7 +364,7 @@ static void test_all_presets_audible() {
 //   Regression for next_voice_idx advancing before indexing (voice 0 skipped).
 // ════════════════════════════════════════════════════════════════════════════
 static void test_voice_allocation() {
-    std::cout << "\n── T8: Voice allocation – first NoteOn activates a processed voice ──\n";
+    std::cout << "\n── T8: Voice allocation - first NoteOn activates a processed voice ──\n";
 
     unit_runtime_desc_t desc = make_desc();
     RipplerXWaveguide s;
@@ -433,7 +433,7 @@ static void test_delay_roundtrip() {
 
     bool dl_sane = dl > 10.0f && dl < 4090.0f;
     result("T9a delay_length in [10, 4090] after NoteOn(60)", dl_sane,
-           "delay_length is 0 or huge – waveguide permanently silent (matches log)");
+           "delay_length is 0 or huge - waveguide permanently silent (matches log)");
 
     if (!dl_sane) {
         std::cout << "  *** SKIP round-trip check because delay_length=" << dl << " ***\n";
@@ -455,7 +455,7 @@ static void test_delay_roundtrip() {
     std::cout << "  max |ut_delay_read| over " << roundtrip+1
               << " frames = " << max_delay_read << "\n";
     result("T9b delay line returns nonzero after one round trip", max_delay_read > 1e-4f,
-           "delay line always reads zero – same symptom as run_test_result.log silent HW");
+           "delay line always reads zero - same symptom as run_test_result.log silent HW");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -672,7 +672,7 @@ static void test_noise_filter_state_clear() {
 // ════════════════════════════════════════════════════════════════════════════
 // T15 — Partls=5/6 (editor-select mode) must not change coupling depth
 //   Values 5 and 6 select which resonator subsequent edits target.
-//   They must not reset or replace the coupling depth set by values 0–4.
+//   They must not reset or replace the coupling depth set by values 0-4.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_partls_mode_select_coupling() {
     std::cout << "\n── T15: Partls=5/6 editor-select leaves coupling depth unchanged ──\n";
