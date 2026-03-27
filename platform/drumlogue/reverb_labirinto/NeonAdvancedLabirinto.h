@@ -397,19 +397,17 @@ private:
         applyHadamard4(delayOut, mixed);
 
         // =================================================================
-        // Apply frequency-dependent decay:
-        // Channels 0-3 have shorter delays (brighter content) → decay * highDecayMult
-        // Channels 4-7 have longer delays (warmer content)    → decay * lowDecayMult
+        // Apply decay uniformly to all channels using the geometric mean of
+        // highDecayMult and lowDecayMult. This preserves the warmth/brightness
+        // balance controls while avoiding L/R stereo imbalance that would result
+        // from applying different decay multipliers to the two channel groups.
         // =================================================================
-        float32x4_t decayHi = vdupq_n_f32(fminf(0.99f, decay * highDecayMult));
-        float32x4_t decayLo = vdupq_n_f32(fminf(0.99f, decay * lowDecayMult));
+        float unifiedDecay = fminf(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
+        float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
         float32x4_t feedback = vdupq_n_f32(1.0f - decay);
 
-        for (int i = 0; i < 4; i++) {
-            mixed[i] = vmulq_f32(mixed[i], decayHi);
-        }
-        for (int i = 4; i < FDN_CHANNELS; i++) {
-            mixed[i] = vmulq_f32(mixed[i], decayLo);
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            mixed[i] = vmulq_f32(mixed[i], decayAll);
         }
 
         // Add input to first channel (with feedback control)
@@ -529,8 +527,8 @@ private:
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 sum += hadamard[i][j] * delayOut[j];
             }
-            float dm = (i < 4) ? (decay * highDecayMult) : (decay * lowDecayMult);
-            mixed[i] = sum * std::min(0.99f, dm);
+            float dm = std::min(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
+            mixed[i] = sum * dm;
         }
 
         mixed[0] += input * (1.0f - decay);

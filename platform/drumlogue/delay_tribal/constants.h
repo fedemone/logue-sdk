@@ -17,9 +17,10 @@ constexpr int CACHE_LINE_SIZE = 64;  // ARM Cortex-A9 cache line
 constexpr int PREFETCH_DISTANCE = 4;  // Prefetch 4 samples ahead
 
 // Delay line configuration (48kHz sample rate)
-constexpr int DELAY_MAX_MS = 500;
-constexpr int DELAY_MAX_SAMPLES = DELAY_MAX_MS * 48;
-constexpr int DELAY_MASK = DELAY_MAX_SAMPLES - 1;
+// Must be a power of 2 so DELAY_MASK = DELAY_MAX_SAMPLES - 1 works as a modulo mask.
+// Actual delays are 5-23ms (240-1136 samples); 4096 (~85ms) gives ample headroom.
+constexpr int DELAY_MAX_SAMPLES = 4096;  // 2^12
+constexpr int DELAY_MASK = DELAY_MAX_SAMPLES - 1;  // 0x0FFF
 
 // LFO configuration
 constexpr int LFO_TABLE_SIZE = 256;

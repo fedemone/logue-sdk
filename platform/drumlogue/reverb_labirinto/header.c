@@ -26,11 +26,11 @@ const __unit_header unit_header_t unit_header = {
         // ID 2: LOW  low-freq RT60 x0.1 s
         { 1, 100, 20, 50, k_unit_param_type_none, 0, 0, 0, {"LOW"} },
         // ID 3: HIGH high-freq RT60 x0.1 s
-        { 1, 100, 20, 30, k_unit_param_type_none, 0, 0, 0, {"HIGH"} },
+        { 1, 100, 50, 70, k_unit_param_type_none, 0, 0, 0, {"HIGH"} },
 
         // Page 2: Advanced controls
-        // ID 4: DAMP damping crossover frequency  200..10000 Hz
-        { 200, 10000, 2500, 2500, k_unit_param_type_none, 0, 0, 0, {"DAMP"} },
+        // ID 4: DAMP damping crossover  20..1000 (unit.cc multiplies by 10 → 200..10000 Hz)
+        { 20, 1000, 250, 250, k_unit_param_type_none, 0, 0, 0, {"DAMP"} },
         // ID 5: WIDE stereo width  0%-200%
         { 0, 200, 100, 100, k_unit_param_type_percent, 0, 0, 0, {"WIDE"} },
         // ID 6: COMP diffusion/complexity  0.0%-100.0% (x0.1, stored 0..1000)

@@ -35,15 +35,15 @@ static bool s_bypass = true;
 // ============================================================================
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
-// ID 0: MIX  0..1000 (x0.1%)   default 300
-// ID 1: TIME 1..100             default 20
-// ID 2: LOW  1..100             default 20
-// ID 3: HIGH 1..100             default 10
-// ID 4: DAMP 200..10000 Hz      default 2500
+// ID 0: MIX  0..1000 (x0.1%)   default 700 (70%)
+// ID 1: TIME 1..100             default 50
+// ID 2: LOW  1..100             default 50
+// ID 3: HIGH 1..100             default 70
+// ID 4: DAMP 20..1000           default 250  (×10 in code → 2500 Hz)
 // ID 5: WIDE 0..200 %           default 100
 // ID 6: COMP 0..1000 (x0.1%)   default 1000
 // ID 7: PILL 0..3               default 3
-static int32_t s_params[8] = { 700, 50, 50, 30, 2500, 100, 1000, 3 };
+static int32_t s_params[8] = { 700, 50, 50, 70, 250, 100, 1000, 3 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -170,8 +170,8 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         case 3: // HIGH  1..100 → high-freq decay multiplier
             s_reverb->setHighDecay((float)value);
             break;
-        case 4: // DAMP  200..10000 Hz
-            s_reverb->setDamping((float)value);
+        case 4: // DAMP  20..1000 (×10 → 200..10000 Hz)
+            s_reverb->setDamping((float)value * 10.0f);
             break;
         case 5: // WIDE  0..200 → stereo width 0.0..2.0
             s_reverb->setWidth(value / 100.0f);
