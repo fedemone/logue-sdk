@@ -39,7 +39,8 @@ const __unit_header unit_header_t unit_header = {
         { 0, 4, 3, 3, k_unit_param_type_none, 0, 0, 0, {"PILL"} },
 
         // Pages 3-6: blank
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // ID 8: PILL4FREQ shimmer frequency for microtonal low pitch shimmer
+        { 0, 100, 50, 35, k_unit_param_type_strings, 0, 0, 0, {"PILL4FREQ"} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },

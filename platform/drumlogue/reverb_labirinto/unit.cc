@@ -50,13 +50,13 @@ static int32_t s_params[8] = { 700, 50, 50, 70, 250, 100, 1000, 3 };
 // ============================================================================
 // Each preset: {MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
 static const int32_t k_presets[4][8] = {
-    // 0: foresta – mellow, sparse, "wood" (warm lows, short, moderate decay)
+    // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
     { 600, 40, 60, 40, 200, 80,  600, 3 },
-    // 1: tempio  – sombre, "stone" (heavy lows, long, dark, 6-ch)
+    // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
     { 700, 70, 80, 25, 130, 130, 800, 2 },
-    // 2: labirinto – center values with ping-pong stereo bouncing
+    // 2: labirinto - center values with ping-pong stereo bouncing
     { 500, 50, 50, 50, 510, 100, 500, 1 },
-    // 3: stellare – long, subtle, "spacey" shimmer (8-ch + shimmer)
+    // 3: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
     { 400, 90, 50, 80, 800, 180, 300, 4 },
 };
 static const char* k_preset_names[4] = {
@@ -198,8 +198,11 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         case 6: // COMP  0..1000 → diffusion 0.0..1.0
             s_reverb->setDiffusion(value / 1000.0f);
             break;
-        case 7: // PILL  0..4  – pillar routing mode
+        case 7: // PILL  0..4  - pillar routing mode
             s_reverb->setPillar(value);
+            break;
+        case 8: // PILL4FREQ  0..100  - shimmer frequency
+            s_reverb->setShimmerFreq(value);
             break;
         default:
             break;
@@ -207,13 +210,20 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id >= 8) return 0;
+    if (id > 8) return 0;
     return s_params[id];
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
-    (void)id;
+    static char sf_buf[10];
     (void)value;
+    if (id == 8)
+    {
+        int32_t hz_x10 = (int32_t)(s_reverb->getShimmerFreq() * 10.0f);
+        snprintf(sf_buf, sizeof(sf_buf), "%d.%dHz", hz_x10 / 10, hz_x10 % 10);
+        return sf_buf;
+    }
+    (void)id;
     return nullptr;
 }
 

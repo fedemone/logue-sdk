@@ -29,6 +29,7 @@
 // Buffer size for delay lines (power of 2 for efficient modulo)
 #define BUFFER_SIZE 65536  // 2^16
 #define BUFFER_MASK (BUFFER_SIZE - 1)
+#define FREQ_MAX_DIV_MIN (18.333f)
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -61,7 +62,8 @@ public:
         , pillar_(3)
         , pingPong_(false)
         , shimmerDepth_(0.0f)
-        , shimmerPhase_(0.0f) {
+        , shimmerPhase_(0.0f)
+        , shimmerFreq_ (35.0f) {
 
         // Initialize delay times (prime-based for smooth diffusion)
         float baseDelays[FDN_CHANNELS] = {
@@ -161,11 +163,23 @@ public:
         pingPong_     = (pillar_ == 1);
         shimmerDepth_ = (pillar_ == 4) ? 0.04f : 0.0f;
         shimmerPhase_ = 0.0f;
+        shimmerFreq_  = 35.0f;
     }
     void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
     void setModRate(float r) { modRate = fmaxf(0.1f, fminf(10.0f, r)); }
     void setMix(float m) { mix = fmaxf(0.0f, fminf(1.0f, m)); }
     void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); }
+    // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.
+    // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
+    void setShimmerFreq(float s) {
+        // Normalize UI value to 0.0 -> 1.0
+        float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+
+        // Exponential mapping: min * (max/min)^norm
+        // 3.0f * (55.0 / 3.0)^norm
+        shimmerFreq_ = 3.0f * fasterpowf(FREQ_MAX_DIV_MIN, norm);
+    }
+    float getShimmerFreq() { return shimmerFreq_; }
 
     void setDamping(float freqHz) {
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
@@ -439,6 +453,44 @@ private:
         applyDiffusion4(mixed);
 
         // =================================================================
+        // Exotic Low-Pitching Shimmer (PILL=4) - NEON Vectorized
+        // =================================================================
+        if (shimmerDepth_ > 0.0f) {
+            // 1. Sum channels 0-3 (Left) and 4-7 (Right)
+            float32x4_t sumL = vaddq_f32(vaddq_f32(mixed[0], mixed[1]),
+                                         vaddq_f32(mixed[2], mixed[3]));
+            float32x4_t sumR = vaddq_f32(vaddq_f32(mixed[4], mixed[5]),
+                                         vaddq_f32(mixed[6], mixed[7]));
+
+            // 2. Mix them down to a mono preview and scale by 0.125 (1/8)
+            float32x4_t monoPreview = vmulq_f32(vaddq_f32(sumL, sumR), vdupq_n_f32(0.125f));
+
+            // 3. Calculate phase increments for 4 parallel samples
+            float inc = M_TWOPI * shimmerFreq_ / sampleRate;
+            float32x4_t phaseVec = {
+                shimmerPhase_,
+                shimmerPhase_ + inc,
+                shimmerPhase_ + 2.0f * inc,
+                shimmerPhase_ + 3.0f * inc
+            };
+
+            // 4. Generate 4 sine wave samples at once using your fast approximation
+            float32x4_t sinVec = fast_sin_neon(phaseVec);
+
+            // 5. Calculate the ring-modulated shimmer signal (preview * sin * depth)
+            float32x4_t shim = vmulq_f32(monoPreview,
+                                         vmulq_f32(sinVec, vdupq_n_f32(shimmerDepth_)));
+
+            // 6. Inject the shimmer back into channels 6 and 7 with inverted phase
+            mixed[FDN_CHANNELS - 2] = vaddq_f32(mixed[FDN_CHANNELS - 2], shim);
+            mixed[FDN_CHANNELS - 1] = vsubq_f32(mixed[FDN_CHANNELS - 1], shim);
+
+            // 7. Advance the master scalar phase for the next block of 4 samples
+            shimmerPhase_ += 4.0f * inc;
+            while (shimmerPhase_ >= M_TWOPI) { shimmerPhase_ -= M_TWOPI; }
+        }
+
+        // =================================================================
         // Write back to delay lines
         // =================================================================
         writeDelayLines4(mixed);
@@ -570,18 +622,27 @@ private:
 
         mixed[0] += input * (1.0f - decay);
 
+        // Exotic "Low Pitching" Shimmer (PILL=4)
+        // Injects a ring-modulated copy of the wet signal back into the network.
+        // The cascading sum/difference frequencies create dense, microtonal undertones.
         // Shimmer (PILL=4): inject a small frequency-modulated copy of the
         // current wet signal back into channels 6 and 7 before writing.
         // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
         if (shimmerDepth_ > 0.0f) {
             float previewL = 0.0f, previewR = 0.0f;
-            for (int i = 0; i < 4; i++)           previewL += mixed[i];
+            for (int i = 0; i < 4; i++)            previewL += mixed[i];
             for (int i = 4; i < FDN_CHANNELS; i++) previewR += mixed[i];
+
             float monoPreview = (previewL + previewR) * 0.125f; // /8
-            float shim = monoPreview * sinf(shimmerPhase_) * shimmerDepth_;
+
+            // The microtonal happens here: modulating at audio-rate (e.g., 35 Hz)
+            float shim = monoPreview * fastersinfullf(shimmerPhase_) * shimmerDepth_;
+
             mixed[FDN_CHANNELS - 2] += shim;
             mixed[FDN_CHANNELS - 1] -= shim;
-            shimmerPhase_ += M_TWOPI * 1.5f / sampleRate; // 1.5 Hz
+
+            // Advance phase using our new low-frequency target
+            shimmerPhase_ += M_TWOPI * shimmerFreq_ / sampleRate;
             if (shimmerPhase_ >= M_TWOPI) shimmerPhase_ -= M_TWOPI;
         }
 
@@ -688,6 +749,7 @@ private:
     bool  pingPong_;      /* true when pillar_==1 */
     float shimmerDepth_;  /* re-injection gain for pillar_==4 */
     float shimmerPhase_;  /* LFO phase for shimmer (radians) */
+    float shimmerFreq_; // Low audio rate for cascading undertones
 
     interleaved_frame_t delayLine[BUFFER_SIZE] __attribute__((aligned(64)));
 
