@@ -52,6 +52,7 @@ static constexpr float alpha = 0.01f;
 static constexpr float limiter = 0.99f;
 static constexpr int kSquelchGuardSamples = 1000; // ~20 ms
 static constexpr float kSquelchThreshold = 0.0001f; // -80 dB
+static constexpr float k_log_2_of_200 = 7.643856f;
 
 // ==============================================================================
 // MAIN CLASS
@@ -336,6 +337,12 @@ public:
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
+
+            // FIX: Enforce ResA-only routing on every single parameter
+            // so k_paramPartls (index 8) cannot hijack the rest of the loop.
+            m_is_resonator_a = true;
+            m_is_resonator_b = false;
+
             setParameter(param_id, presets[idx][param_id]);
         }
 
@@ -471,8 +478,8 @@ public:
                     // Decay is the primary sustain control; Rel only gates the noise
                     // burst.  Without this, the master_env would kill the waveguide
                     // resonance at ~28 ms (default Rel) regardless of Decay setting.
-                    float t_s = 0.05f * powf(200.0f, norm); // 50ms..10s
-                    float master_rate = 3.0f * M_LN10 / (t_s * default_sample_rate);
+                    float t_s = 0.05f * fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
+                    float master_rate = M_THREELN10 / (t_s * default_sample_rate);  // was 3.0f * M_LN10
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a)
                             state.voices[i].resA.feedback_gain = g;
@@ -1121,7 +1128,7 @@ public:
                 // ── Stage 4a: Tilt EQ ──────────────────────────────────────
                 voice.tone_lp = (voice_out * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
                 if (tone_val < zeroThreshold) {
-                    voice_out = linintf(-tone_val / kToneCutDivisor, voice_out, voice.tone_lp);
+                    voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val / kToneCutDivisor);
                 } else if (tone_val > zeroThreshold) {
                     float hp = voice_out - voice.tone_lp;
                     voice_out += hp * (tone_val / kToneBoostDivisor);
