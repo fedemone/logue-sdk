@@ -101,7 +101,7 @@ typedef float float64_t;
 #define M_LN10  2.30258509299404568402f
 #endif
 
-#ifndef M_LN10
+#ifndef M_THREELN10
 #define M_THREELN10  6.90775528f
 #endif
 

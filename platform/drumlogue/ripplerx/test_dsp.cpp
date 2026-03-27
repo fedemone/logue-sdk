@@ -129,12 +129,13 @@ void run_active_test2() {
     std::cout << "Buffer[0] Memory  : " << v.resA.buffer[0] << " (If 0.0, the waveguide multiplied the Mallet by zero!)\n";
 
     std::cout << "\n--- 2nd DIAGNOSTIC COMPLETE ---\n";
-    return 0;
 }
 
 static void test_nan_explosion_and_dc_offset() {
+    std::cout << "\n--- T21a No NaNs generated during heavy transient strike START ---\n";
+    std::cout << "\n--- T21b Output did not flatline into a DC offset (Silence Bug) START ---\n";
     // 1. Setup the test environment
-    unit_runtime_desc_t desc = {48000, 2, nullptr, nullptr, nullptr};
+    unit_runtime_desc_t desc = {0};
     RipplerXWaveguide s;
     s.Init(&desc);
 
@@ -148,14 +149,14 @@ static void test_nan_explosion_and_dc_offset() {
     bool has_nan = false;
     int consecutive_dc_samples = 0;
     bool has_permanent_dc = false;
-
+    int block;
+    size_t i;
     // 2. Render 100 audio blocks (~68 ms, plenty of time for a NaN to propagate)
-    for (int block = 0; block < 100; ++block) {
+    for (block = 0; block < 100; ++block) {
         s.processBlock(out_buffer, frames);
 
-        for (size_t i = 0; i < frames * 2; ++i) {
+        for (i = 0; i < frames * 2; ++i) {
             float sample = out_buffer[i];
-
             // Check 1: Did the math explode?
             if (std::isnan(sample) || std::isinf(sample)) {
                 has_nan = true;
@@ -179,13 +180,19 @@ static void test_nan_explosion_and_dc_offset() {
     }
 
     // 3. Report results using your existing test runner format
-    result("T21a No NaNs generated during heavy transient strike",
-           !has_nan,
-           "Engine produced a NaN/Inf value!");
+    if (has_nan)
+    {
+        std::cout << "Engine produced a NaN/Inf value at frame:" << i << " of block: " << block <<"!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T21a No NaNs generated during heavy transient strike COMPLETE ---\n";
+    if (has_permanent_dc)
+    {
+        std::cout << "Output pegged to limiter max (0.99) permanently. Math explosion masked by limiter at frame:" << i << " of block: " << block <<"!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T21b Output did not flatline into a DC offset (Silence Bug) COMPLETE ---\n";
 
-    result("T21b Output did not flatline into a DC offset (Silence Bug)",
-           !has_permanent_dc,
-           "Output pegged to limiter max (0.99) permanently. Math explosion masked by limiter.");
 }
 
 // Make sure to declare the extern debug variables if not already at the top of your test file
@@ -194,7 +201,8 @@ extern float ut_delay_read;
 extern float ut_voice_out;
 
 static void test_denormal_stalls() {
-    unit_runtime_desc_t desc = {48000, 2, nullptr, nullptr, nullptr};
+    std::cout << "\n--- T22 Denormal/Subnormal Stall Prevention START ---\n";
+    unit_runtime_desc_t desc = {0};
     RipplerXWaveguide s;
     s.Init(&desc);
 
@@ -204,9 +212,10 @@ static void test_denormal_stalls() {
 
     const size_t frames = 32;
     float out_buffer[frames * 2];
-
+    int block = 0;
+    size_t i = 0;
     // Render enough audio to let the note release and decay into microscopic territory
-    for (int i = 0; i < 50; ++i) {
+    for (i = 0; i < 50; ++i) {
         s.processBlock(out_buffer, frames);
     }
     s.GateOff();
@@ -214,7 +223,7 @@ static void test_denormal_stalls() {
     bool hit_subnormal = false;
 
     // Render 20,000 more samples (the tail end of the release)
-    for (int block = 0; block < 625; ++block) {
+    for (block = 0; block < 625; ++block) {
         s.processBlock(out_buffer, frames);
 
         // If the FPU drops into subnormal processing, ARM Cortex CPUs without FTZ
@@ -224,14 +233,17 @@ static void test_denormal_stalls() {
             break;
         }
     }
-
-    result("T22 Denormal/Subnormal Stall Prevention",
-           !hit_subnormal,
-           "ut_voice_out decayed into FP_SUBNORMAL range! Add a +1e-15f DC offset or FTZ flag.");
+    if (hit_subnormal)
+    {
+        std::cout << "ut_voice_out decayed into FP_SUBNORMAL range! Add a +1e-15f DC offset or FTZ flag at block: " << block << "." << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T22 Denormal/Subnormal Stall Prevention COMPLETE ---\n";
 }
 
 static void test_stereo_phase_alignment() {
-    unit_runtime_desc_t desc = {48000, 2, nullptr, nullptr, nullptr};
+    std::cout << "\n--- T23 Stereo Phase Alignment START ---\n";
+    unit_runtime_desc_t desc = {0};
     RipplerXWaveguide s;
     s.Init(&desc);
 
@@ -242,12 +254,13 @@ static void test_stereo_phase_alignment() {
     float out_buffer[frames * 2];
 
     bool phase_mismatch = false;
-
+    int block = 0;
+    size_t i = 0;
     // Render a few blocks to get the SVF and overdrive heavily saturated
-    for (int block = 0; block < 10; ++block) {
+    for (block = 0; block < 10; ++block) {
         s.processBlock(out_buffer, frames);
 
-        for (size_t i = 0; i < frames; ++i) {
+        for (i = 0; i < frames; ++i) {
             float left_channel = out_buffer[i * 2];
             float right_channel = out_buffer[i * 2 + 1];
 
@@ -261,24 +274,28 @@ static void test_stereo_phase_alignment() {
         if (phase_mismatch) break;
     }
 
-    result("T23 Stereo Phase Alignment",
-           !phase_mismatch,
-           "Left and Right channels deviated! Check the master FX routing loop.");
+    if(phase_mismatch)
+    {
+        std::cout << "Left and Right channels deviated! Check the master FX routing loop:" << i << " of block: " << block <<"!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T23 Stereo Phase Alignment COMPLETE ---\n";
 }
 
 static void test_delay_memory_leak() {
-    unit_runtime_desc_t desc = {48000, 2, nullptr, nullptr, nullptr};
+    std::cout << "\n--- T24 Delay Line Memory Leak on Reset START ---\n";
+    unit_runtime_desc_t desc = {0};
     RipplerXWaveguide s;
     s.Init(&desc);
 
     // 1. Blast the delay lines with a loud, sustained note
     s.setParameter(RipplerXWaveguide::k_paramProgram, 2); // 808 Sub
     s.GateOn(127);
-
+    int block = 0;
     const size_t frames = 32;
     float out_buffer[frames * 2];
 
-    for (int block = 0; block < 100; ++block) {
+    for (block = 0; block < 100; ++block) {
         s.processBlock(out_buffer, frames);
     }
 
@@ -295,10 +312,12 @@ static void test_delay_memory_leak() {
     if (fabsf(ut_delay_read) > 0.0f) {
         memory_leak_detected = true;
     }
-
-    result("T24 Delay Line Memory Leak on Reset",
-           !memory_leak_detected,
-           "ut_delay_read returned non-zero audio immediately after Reset()!");
+    if(memory_leak_detected)
+    {
+        std::cout << "ut_delay_read returned non-zero audio immediately after Reset()!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T24 Delay Line Memory Leak on Reset COMPLETE ---\n";
 }
 
 int main() {
