@@ -57,7 +57,11 @@ public:
         , dampingCoeff(0.5f)
         , lowDecayMult(1.0f)
         , highDecayMult(0.5f)
-        , initialized(false) {
+        , initialized(false)
+        , pillar_(3)
+        , pingPong_(false)
+        , shimmerDepth_(0.0f)
+        , shimmerPhase_(0.0f) {
 
         // Initialize delay times (prime-based for smooth diffusion)
         float baseDelays[FDN_CHANNELS] = {
@@ -119,7 +123,7 @@ public:
         // Reset modulation phases with proper per-lane offsets
 	    // lane k = k * incPerSample so sequential
         // samples start at phase 0, inc, 2*inc, 3*inc
-        float incPerSample = modRate * 2.0f * M_PI / sampleRate;
+        float incPerSample = modRate * M_TWOPI / sampleRate;
         float32x4_t init_phases = {
             0.0f,
             incPerSample,
@@ -142,6 +146,22 @@ public:
 
     void setDecay(float d) { decay = fmaxf(0.0f, fminf(0.99f, d)); }
     void setDiffusion(float d) { diffusion = fmaxf(0.0f, fminf(1.0f, d)); }
+
+    /**
+     * Set pillar count / routing mode.
+     *
+     * 0 = sparse  (only 2 channels reach output - large sparse room feel)
+     * 1 = ping-pong (4 channels, alternating L/R - bouncing stereo echo)
+     * 2 = stone    (6 channels - sombre, dense)
+     * 3 = full     (all 8 channels - full FDN, default)
+     * 4 = shimmer  (all 8 channels + subtle frequency-modulated re-injection)
+     */
+    void setPillar(int value) {
+        pillar_       = std::max(0, std::min(value, 4));
+        pingPong_     = (pillar_ == 1);
+        shimmerDepth_ = (pillar_ == 4) ? 0.04f : 0.0f;
+        shimmerPhase_ = 0.0f;
+    }
     void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
     void setModRate(float r) { modRate = fmaxf(0.1f, fminf(10.0f, r)); }
     void setMix(float m) { mix = fmaxf(0.0f, fminf(1.0f, m)); }
@@ -243,7 +263,7 @@ private:
 
             // Compute sin(2π * phase) for all 4 samples at once
             // First scale to [0, 2π]
-            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(2.0f * M_PI));
+            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_TWOPI));
 
             // Compute sin using NEON approximation
             float32x4_t sin_vals = fast_sin_neon(angles);
@@ -397,19 +417,17 @@ private:
         applyHadamard4(delayOut, mixed);
 
         // =================================================================
-        // Apply frequency-dependent decay:
-        // Channels 0-3 have shorter delays (brighter content) → decay * highDecayMult
-        // Channels 4-7 have longer delays (warmer content)    → decay * lowDecayMult
+        // Apply decay uniformly to all channels using the geometric mean of
+        // highDecayMult and lowDecayMult. This preserves the warmth/brightness
+        // balance controls while avoiding L/R stereo imbalance that would result
+        // from applying different decay multipliers to the two channel groups.
         // =================================================================
-        float32x4_t decayHi = vdupq_n_f32(fminf(0.99f, decay * highDecayMult));
-        float32x4_t decayLo = vdupq_n_f32(fminf(0.99f, decay * lowDecayMult));
+        float unifiedDecay = fminf(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
+        float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
         float32x4_t feedback = vdupq_n_f32(1.0f - decay);
 
-        for (int i = 0; i < 4; i++) {
-            mixed[i] = vmulq_f32(mixed[i], decayHi);
-        }
-        for (int i = 4; i < FDN_CHANNELS; i++) {
-            mixed[i] = vmulq_f32(mixed[i], decayLo);
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            mixed[i] = vmulq_f32(mixed[i], decayAll);
         }
 
         // Add input to first channel (with feedback control)
@@ -426,24 +444,41 @@ private:
         writeDelayLines4(mixed);
 
         // =================================================================
-        // Mix down to stereo (channels 0-3 to L, 4-7 to R)
+        // Mix down to stereo — routing depends on PILL value
         // =================================================================
-        float32x4_t leftSum = vdupq_n_f32(0.0f);
-        float32x4_t rightSum = vdupq_n_f32(0.0f);
+        float32x4_t leftMix, rightMix;
 
-        // Sum first 4 channels to left
-        for (int i = 0; i < 4; i++) {
-            leftSum = vaddq_f32(leftSum, mixed[i]);
+        if (pingPong_) {
+            // PILL=1: alternating channels — ch 0,2 → L; ch 1,3 → R
+            float32x4_t pingL = vaddq_f32(mixed[0], mixed[2]);
+            float32x4_t pingR = vaddq_f32(mixed[1], mixed[3]);
+            leftMix  = vmulq_f32(pingL, vdupq_n_f32(0.5f));
+            rightMix = vmulq_f32(pingR, vdupq_n_f32(0.5f));
+        } else {
+            int activeCh;
+            switch (pillar_) {
+                case 0: activeCh = 2; break;
+                case 2: activeCh = 6; break;
+                default: activeCh = FDN_CHANNELS; break;  // 3, 4 → 8
+            }
+
+            int halfL = activeCh < 4 ? activeCh : 4;
+            int halfR = activeCh > 4 ? activeCh - 4 : 0;
+
+            float32x4_t leftSum  = vdupq_n_f32(0.0f);
+            float32x4_t rightSum = vdupq_n_f32(0.0f);
+            for (int i = 0; i < halfL; i++)
+                leftSum = vaddq_f32(leftSum, mixed[i]);
+            for (int i = 4; i < 4 + halfR; i++)
+                rightSum = vaddq_f32(rightSum, mixed[i]);
+
+            float normL = halfL > 0 ? 1.0f / halfL : 1.0f;
+            leftMix = vmulq_f32(leftSum, vdupq_n_f32(normL));
+            if (halfR > 0)
+                rightMix = vmulq_f32(rightSum, vdupq_n_f32(1.0f / halfR));
+            else
+                rightMix = leftMix; // PILL=0: mono fold
         }
-
-        // Sum last 4 channels to right
-        for (int i = 4; i < FDN_CHANNELS; i++) {
-            rightSum = vaddq_f32(rightSum, mixed[i]);
-        }
-
-        // Normalize
-        float32x4_t leftMix = vmulq_f32(leftSum, vdupq_n_f32(0.25f));
-        float32x4_t rightMix = vmulq_f32(rightSum, vdupq_n_f32(0.25f));
 
         // Apply stereo width:  mid = (L+R)*0.5, side = (L-R)*0.5
         // outL_wet = mid + side*width,  outR_wet = mid - side*width
@@ -467,15 +502,15 @@ private:
     }
 
     void updateModulation4() {
-        float incPerSample = modRate * 2.0f * M_PI / sampleRate;
+        float incPerSample = modRate * M_TWOPI / sampleRate;
         float32x4_t blockAdvance = vdupq_n_f32(4.0f * incPerSample);
-        float32x4_t twoPi = vdupq_n_f32(2.0f * M_PI);
+        float32x4_t twoPi = vdupq_n_f32(M_TWOPI);
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float32x4_t newPhases = vaddq_f32(modPhaseVec[ch], blockAdvance);
 
             // Wrap to [0, 2π) using truncate-toward-zero floor
-            float32x4_t div = vmulq_f32(newPhases, vdupq_n_f32(1.0f / (2.0f * M_PI)));
+            float32x4_t div = vmulq_f32(newPhases, vdupq_n_f32(1.0f / (M_TWOPI)));
             float32x4_t floor_f = vcvtq_f32_s32(vcvtq_s32_f32(div));
             newPhases = vsubq_f32(newPhases, vmulq_f32(floor_f, twoPi));
 
@@ -498,7 +533,7 @@ private:
             float phase = vgetq_lane_f32(modPhaseVec[ch], 0);
 
             float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = sinf(phase * 2.0f * M_PI) * modDepth * 100.0f;
+            float mod = sinf(phase * M_TWOPI) * modDepth * 100.0f;
             float readPos = (float)writePos - (delaySamples + mod);
 
             while (readPos < 0) readPos += BUFFER_SIZE;
@@ -513,8 +548,8 @@ private:
             delayOut[ch] = s1 + frac * (s2 - s1);
 
             // Update scalar phase (only for lane 0)
-            float new_phase = phase + modRate * 2.0f * M_PI / sampleRate;
-            if (new_phase >= 2.0f * M_PI) new_phase -= 2.0f * M_PI;
+            float new_phase = phase + modRate * M_TWOPI / sampleRate;
+            if (new_phase >= M_TWOPI) new_phase -= M_TWOPI;
 
             // Update just lane 0, preserve other lanes
             float32x4_t temp = modPhaseVec[ch];
@@ -529,23 +564,57 @@ private:
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 sum += hadamard[i][j] * delayOut[j];
             }
-            float dm = (i < 4) ? (decay * highDecayMult) : (decay * lowDecayMult);
-            mixed[i] = sum * std::min(0.99f, dm);
+            float dm = std::min(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
+            mixed[i] = sum * dm;
         }
 
         mixed[0] += input * (1.0f - decay);
+
+        // Shimmer (PILL=4): inject a small frequency-modulated copy of the
+        // current wet signal back into channels 6 and 7 before writing.
+        // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
+        if (shimmerDepth_ > 0.0f) {
+            float previewL = 0.0f, previewR = 0.0f;
+            for (int i = 0; i < 4; i++)           previewL += mixed[i];
+            for (int i = 4; i < FDN_CHANNELS; i++) previewR += mixed[i];
+            float monoPreview = (previewL + previewR) * 0.125f; // /8
+            float shim = monoPreview * sinf(shimmerPhase_) * shimmerDepth_;
+            mixed[FDN_CHANNELS - 2] += shim;
+            mixed[FDN_CHANNELS - 1] -= shim;
+            shimmerPhase_ += M_TWOPI * 1.5f / sampleRate; // 1.5 Hz
+            if (shimmerPhase_ >= M_TWOPI) shimmerPhase_ -= M_TWOPI;
+        }
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             delayLine[writePos].samples[ch] = mixed[ch];
         }
         writePos = (writePos + 1) & BUFFER_MASK;
 
-        // Stereo mix-down
+        // Stereo mix-down: routing depends on PILL value
         float leftRaw = 0.0f, rightRaw = 0.0f;
-        for (int i = 0; i < 4; i++)           leftRaw  += mixed[i];
-        for (int i = 4; i < FDN_CHANNELS; i++) rightRaw += mixed[i];
-        leftRaw  *= 0.25f;
-        rightRaw *= 0.25f;
+
+        if (pingPong_) {
+            // PILL=1: alternating L/R among 4 active channels
+            // ch 0, 2 → L;  ch 1, 3 → R
+            leftRaw  = (mixed[0] + mixed[2]) * 0.5f;
+            rightRaw = (mixed[1] + mixed[3]) * 0.5f;
+        } else {
+            // Determine active channel count
+            int activeCh;
+            if      (pillar_ == 0) activeCh = 2;
+            else if (pillar_ == 2) activeCh = 6;
+            else                   activeCh = FDN_CHANNELS;  // 3, 4 → 8
+
+            int halfL = activeCh < 4 ? activeCh : 4;
+            int halfR = activeCh > 4 ? activeCh - 4 : 0;
+            for (int i = 0; i < halfL; i++)         leftRaw  += mixed[i];
+            for (int i = 4; i < 4 + halfR; i++)     rightRaw += mixed[i];
+            leftRaw  /= (halfL > 0 ? (float)halfL : 1.0f);
+            if (halfR > 0)
+                rightRaw /= (float)halfR;
+            else
+                rightRaw  = leftRaw;  // mono fold for very sparse (PILL=0)
+        }
 
         // Apply stereo width
         float mid  = (leftRaw + rightRaw) * 0.5f;
@@ -615,6 +684,11 @@ private:
     float highDecayMult; // high-freq decay multiplier
 
     bool initialized;
+    int   pillar_;        /* 0..4 - pillar count / routing mode */
+    bool  pingPong_;      /* true when pillar_==1 */
+    float shimmerDepth_;  /* re-injection gain for pillar_==4 */
+    float shimmerPhase_;  /* LFO phase for shimmer (radians) */
+
     interleaved_frame_t delayLine[BUFFER_SIZE] __attribute__((aligned(64)));
 
     float32x4_t hadamardCols[FDN_CHANNELS][FDN_CHANNELS/4] __attribute__((aligned(16)));  // Column-major for NEON

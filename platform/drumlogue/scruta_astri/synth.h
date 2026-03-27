@@ -182,6 +182,11 @@ public:
 
         // Apply direction to Target Osc 2
         m_osc2_target_hz = osc2_hz * m_osc2_dir;
+
+        // Immediately set oscillator frequencies so sound starts on the first sample.
+        // Zero-crossing updates in the audio loop handle live pitch changes without clicks.
+        osc1.set_frequency(m_osc1_target_hz, SAMPLE_RATE_F);
+        osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
     }
 
     // The Drumlogue sends this when the sequencer stops!
@@ -206,8 +211,8 @@ public:
 
         for (size_t i = 0; i < frames; ++i) {
 
-            // 1. HARDWARE DRONE GATE (Smooth 10ms AR Envelope)
-            m_drone_amp += (m_drone_target - m_drone_amp) * 0.001f;
+            // 1. HARDWARE DRONE GATE (Smooth ~2ms AR Envelope)
+            m_drone_amp += (m_drone_target - m_drone_amp) * 0.01f;
 
             // 2. CPU SQUELCH: If the hardware is paused and faded out, output silence!
             if (m_drone_amp < 0.0001f && m_drone_target == 0.0f) {
@@ -226,12 +231,7 @@ public:
             float pre_phase1 = osc1.phase;
             float pre_phase2 = osc2.phase;
 
-            // Handle structural note/subharmonic changes at zero-crossings to avoid clicks
-            bool osc1_wrapped = (m_osc1_dir > 0.0f) ? (osc1.phase < pre_phase1) : (osc1.phase > pre_phase1);
-            if (osc1_wrapped) osc1.set_frequency(m_osc1_target_hz, SAMPLE_RATE_F);
-
-            bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
-            if (osc2_wrapped) osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
+            // Zero-crossing frequency updates happen after oscillator processing (see below)
 
             // Apply smooth APC pitch modulation continuously
             if (m_pitch_mod_multiplier != 1.0f) {

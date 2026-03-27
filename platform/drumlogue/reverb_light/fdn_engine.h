@@ -172,7 +172,8 @@ public:
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 100.0f;
+            // Max ±3 samples depth to avoid Doppler pitch shift exceeding decay rate
+            float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 3.0f;
             float readPos = (float)writePos - (delaySamples + mod);
 
             while (readPos < 0) readPos += FDN_BUFFER_SIZE;
@@ -187,8 +188,8 @@ public:
 
             delayOut[ch] = s1 + frac * (s2 - s1);
 
-            // Update modulation phase
-            modPhases[ch] += modulation * 100.0f / sampleRate;
+            // Max 2 Hz LFO rate to avoid Doppler-induced energy accumulation
+            modPhases[ch] += modulation * 2.0f / sampleRate;
             if (modPhases[ch] > 1.0f) modPhases[ch] -= 1.0f;
         }
 
@@ -249,15 +250,16 @@ public:
             // Calculate read positions for 4 samples
             float readPos[4];
             for (int s = 0; s < 4; s++) {
-                float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 100.0f;
+                // Max ±3 samples depth to avoid Doppler pitch shift exceeding decay rate
+                float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 3.0f;
                 float pos = (float)(writePos + s) - (delaySamples + mod);
                 while (pos < 0) pos += FDN_BUFFER_SIZE;
                 while (pos >= FDN_BUFFER_SIZE) pos -= FDN_BUFFER_SIZE;
                 readPos[s] = pos;
 
-                // Update modulation phase (once per 4 samples)
+                // Update modulation phase (once per 4 samples, max 2 Hz LFO rate)
                 if (s == 3) {
-                    modPhases[ch] += modulation * 100.0f / sampleRate * 4.0f;
+                    modPhases[ch] += modulation * 2.0f / sampleRate * 4.0f;
                     if (modPhases[ch] > 1.0f) modPhases[ch] -= 1.0f;
                 }
             }
