@@ -82,7 +82,7 @@ static void lab_init(ScalarLabirinto *lab) {
     lab->lowDecayMult  = 1.0f;
     lab->highDecayMult = 0.5f;
     lab->diffusion     = 0.3f;
-    float omega = 2.0f * 3.14159265f * 500.0f / SAMPLE_RATE;
+    float omega = M_TWOPI * 500.0f / SAMPLE_RATE;
     lab->dampingCoeff  = expf(-omega);
     lab->modDepth      = 0.1f;
     lab->modRate       = 0.5f;
@@ -90,7 +90,7 @@ static void lab_init(ScalarLabirinto *lab) {
     lab->width         = 1.0f;
     /* modPhase: spread phases across channels */
     for (int i = 0; i < FDN_CH; i++)
-        lab->modPhase[i] = i * (2.0f * 3.14159265f / FDN_CH);
+        lab->modPhase[i] = i * (M_TWOPI / FDN_CH);
 }
 
 static void lab_set_params(ScalarLabirinto *lab,
@@ -102,7 +102,7 @@ static void lab_set_params(ScalarLabirinto *lab,
     lab->decay         = decay;
     lab->lowDecayMult  = lowDecayMult;
     lab->highDecayMult = highDecayMult;
-    float omega = 2.0f * 3.14159265f * dampingFreqHz / SAMPLE_RATE;
+    float omega = M_TWOPI * dampingFreqHz / SAMPLE_RATE;
     lab->dampingCoeff  = expf(-omega);
     lab->width         = width;
     lab->diffusion     = diffusion;
@@ -127,9 +127,9 @@ static void lab_process_sample(ScalarLabirinto *lab, float inL, float inR,
         float frac = rpos - i1;
         delayOut[ch] = lab->buf[ch][i1] + frac * (lab->buf[ch][i2] - lab->buf[ch][i1]);
         /* advance LFO */
-        lab->modPhase[ch] += lab->modRate * 2.0f * 3.14159265f / SAMPLE_RATE;
-        if (lab->modPhase[ch] >= 2.0f * 3.14159265f)
-            lab->modPhase[ch] -= 2.0f * 3.14159265f;
+        lab->modPhase[ch] += lab->modRate * M_TWOPI / SAMPLE_RATE;
+        if (lab->modPhase[ch] >= M_TWOPI)
+            lab->modPhase[ch] -= M_TWOPI;
     }
 
     /* Hadamard mix + unified decay (geometric mean of low/high multipliers) */

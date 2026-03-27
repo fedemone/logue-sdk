@@ -112,7 +112,7 @@ static void fdn_process_sample(ScalarFDN *fdn, float inL, float inR,
     float delayOut[FDN_CH];
     for (int ch = 0; ch < FDN_CH; ch++) {
         float ds  = fdn->delayTimes[ch] * SAMPLE_RATE;
-        float mod = sinf(fdn->modPhase[ch] * 2.0f * 3.14159265f)
+        float mod = sinf(fdn->modPhase[ch] * M_TWOPI)
                     * fdn->modulation * 3.0f;
         float rpos = (float)fdn->writePos - (ds + mod);
         while (rpos < 0)         rpos += BUF_SIZE;
@@ -266,7 +266,7 @@ static void test_modulation_doppler_bound() {
      * Margin: 1 - decay = 1 - 0.99 = 0.01  >>  0.000785  (12.7× headroom) */
     float max_depth      = 3.0f;           /* samples at modulation=1.0 */
     float max_rate_hz    = 2.0f;           /* Hz at modulation=1.0 */
-    float doppler_ratio  = max_depth * 2.0f * 3.14159265f * max_rate_hz / SAMPLE_RATE;
+    float doppler_ratio  = max_depth * M_TWOPI * max_rate_hz / SAMPLE_RATE;
     float stability_margin = (1.0f - 0.99f) / doppler_ratio;
 
     printf("  Max Doppler ratio = %.6f\n", doppler_ratio);

@@ -123,7 +123,7 @@ public:
         // Reset modulation phases with proper per-lane offsets
 	    // lane k = k * incPerSample so sequential
         // samples start at phase 0, inc, 2*inc, 3*inc
-        float incPerSample = modRate * 2.0f * M_PI / sampleRate;
+        float incPerSample = modRate * M_TWOPI / sampleRate;
         float32x4_t init_phases = {
             0.0f,
             incPerSample,
@@ -150,14 +150,14 @@ public:
     /**
      * Set pillar count / routing mode.
      *
-     * 0 = sparse  (only 2 channels reach output – large sparse room feel)
-     * 1 = ping-pong (4 channels, alternating L/R – bouncing stereo echo)
-     * 2 = stone    (6 channels – sombre, dense)
-     * 3 = full     (all 8 channels – full FDN, default)
+     * 0 = sparse  (only 2 channels reach output - large sparse room feel)
+     * 1 = ping-pong (4 channels, alternating L/R - bouncing stereo echo)
+     * 2 = stone    (6 channels - sombre, dense)
+     * 3 = full     (all 8 channels - full FDN, default)
      * 4 = shimmer  (all 8 channels + subtle frequency-modulated re-injection)
      */
     void setPillar(int value) {
-        pillar_       = value < 0 ? 0 : (value > 4 ? 4 : value);
+        pillar_       = std::max(0, std::min(value, 4));
         pingPong_     = (pillar_ == 1);
         shimmerDepth_ = (pillar_ == 4) ? 0.04f : 0.0f;
         shimmerPhase_ = 0.0f;
@@ -263,7 +263,7 @@ private:
 
             // Compute sin(2π * phase) for all 4 samples at once
             // First scale to [0, 2π]
-            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(2.0f * M_PI));
+            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_TWOPI));
 
             // Compute sin using NEON approximation
             float32x4_t sin_vals = fast_sin_neon(angles);
@@ -456,9 +456,11 @@ private:
             rightMix = vmulq_f32(pingR, vdupq_n_f32(0.5f));
         } else {
             int activeCh;
-            if      (pillar_ == 0) activeCh = 2;
-            else if (pillar_ == 2) activeCh = 6;
-            else                   activeCh = FDN_CHANNELS; // 3, 4 → 8
+            switch (pillar_) {
+                case 0: activeCh = 2; break;
+                case 2: activeCh = 6; break;
+                default: activeCh = FDN_CHANNELS; break;  // 3, 4 → 8
+            }
 
             int halfL = activeCh < 4 ? activeCh : 4;
             int halfR = activeCh > 4 ? activeCh - 4 : 0;
@@ -500,15 +502,15 @@ private:
     }
 
     void updateModulation4() {
-        float incPerSample = modRate * 2.0f * M_PI / sampleRate;
+        float incPerSample = modRate * M_TWOPI / sampleRate;
         float32x4_t blockAdvance = vdupq_n_f32(4.0f * incPerSample);
-        float32x4_t twoPi = vdupq_n_f32(2.0f * M_PI);
+        float32x4_t twoPi = vdupq_n_f32(M_TWOPI);
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float32x4_t newPhases = vaddq_f32(modPhaseVec[ch], blockAdvance);
 
             // Wrap to [0, 2π) using truncate-toward-zero floor
-            float32x4_t div = vmulq_f32(newPhases, vdupq_n_f32(1.0f / (2.0f * M_PI)));
+            float32x4_t div = vmulq_f32(newPhases, vdupq_n_f32(1.0f / (M_TWOPI)));
             float32x4_t floor_f = vcvtq_f32_s32(vcvtq_s32_f32(div));
             newPhases = vsubq_f32(newPhases, vmulq_f32(floor_f, twoPi));
 
@@ -531,7 +533,7 @@ private:
             float phase = vgetq_lane_f32(modPhaseVec[ch], 0);
 
             float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = sinf(phase * 2.0f * M_PI) * modDepth * 100.0f;
+            float mod = sinf(phase * M_TWOPI) * modDepth * 100.0f;
             float readPos = (float)writePos - (delaySamples + mod);
 
             while (readPos < 0) readPos += BUFFER_SIZE;
@@ -546,8 +548,8 @@ private:
             delayOut[ch] = s1 + frac * (s2 - s1);
 
             // Update scalar phase (only for lane 0)
-            float new_phase = phase + modRate * 2.0f * M_PI / sampleRate;
-            if (new_phase >= 2.0f * M_PI) new_phase -= 2.0f * M_PI;
+            float new_phase = phase + modRate * M_TWOPI / sampleRate;
+            if (new_phase >= M_TWOPI) new_phase -= M_TWOPI;
 
             // Update just lane 0, preserve other lanes
             float32x4_t temp = modPhaseVec[ch];
@@ -579,8 +581,8 @@ private:
             float shim = monoPreview * sinf(shimmerPhase_) * shimmerDepth_;
             mixed[FDN_CHANNELS - 2] += shim;
             mixed[FDN_CHANNELS - 1] -= shim;
-            shimmerPhase_ += 2.0f * 3.14159265f * 1.5f / sampleRate; // 1.5 Hz
-            if (shimmerPhase_ >= 2.0f * 3.14159265f) shimmerPhase_ -= 2.0f * 3.14159265f;
+            shimmerPhase_ += M_TWOPI * 1.5f / sampleRate; // 1.5 Hz
+            if (shimmerPhase_ >= M_TWOPI) shimmerPhase_ -= M_TWOPI;
         }
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
@@ -682,7 +684,7 @@ private:
     float highDecayMult; // high-freq decay multiplier
 
     bool initialized;
-    int   pillar_;        /* 0..4 – pillar count / routing mode */
+    int   pillar_;        /* 0..4 - pillar count / routing mode */
     bool  pingPong_;      /* true when pillar_==1 */
     float shimmerDepth_;  /* re-injection gain for pillar_==4 */
     float shimmerPhase_;  /* LFO phase for shimmer (radians) */

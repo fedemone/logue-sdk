@@ -33,6 +33,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <algorithm>
+#include "float_math.h"
 
 #define SAMPLE_RATE    48000.0f
 #define DELAY_MAX      8192        /* power of 2 ≥ 23ms * 48kHz for max offsets */
@@ -72,7 +73,7 @@ typedef struct {
 static void spat_init(ScalarSpatializer *s) {
     memset(s, 0, sizeof(*s));
     for (int i = 0; i < 360; i++) {
-        float a = i * 2.0f * 3.14159265f / 360.0f;
+        float a = i * M_TWOPI / 360.0f;
         s->sinTab[i] = sinf(a);
         s->cosTab[i] = cosf(a);
     }
@@ -218,7 +219,7 @@ static void test_gain_model_analysis() {
     printf("\n=== Gain Analysis: 16 clones at spread=1.0 ===\n");
     float sinTab[360], cosTab[360];
     for (int i = 0; i < 360; i++) {
-        float a = i * 2.0f * 3.14159265f / 360.0f;
+        float a = i * M_TWOPI / 360.0f;
         sinTab[i] = sinf(a);
         cosTab[i] = cosf(a);
     }

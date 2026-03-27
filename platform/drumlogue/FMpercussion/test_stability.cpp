@@ -72,8 +72,8 @@ static void test_fm_carrier_bounded() {
         if (fabsf(out) > maxAbs) maxAbs = fabsf(out);
         if (isnan(out)) { nanCount++; break; }
 
-        phase     += 2.0f * 3.14159265f * carrier_freq / SAMPLE_RATE;
-        mod_phase += 2.0f * 3.14159265f * mod_freq     / SAMPLE_RATE;
+        phase     += M_TWOPI * carrier_freq / SAMPLE_RATE;
+        mod_phase += M_TWOPI * mod_freq     / SAMPLE_RATE;
     }
 
     printf("  Modulation index = %.0f\n", mod_index);
@@ -113,7 +113,7 @@ static void test_kick_sweep_convergence() {
         if (fabsf(out) > maxAbs) maxAbs = fabsf(out);
         if (isnan(out) || isnan(freq)) { nanCount++; break; }
 
-        phase += 2.0f * 3.14159265f * freq / SAMPLE_RATE;
+        phase += M_TWOPI * freq / SAMPLE_RATE;
         freq  = fmaxf(end_freq, freq * expf(-sweep_rate));
         env   = fmaxf(0.0f, env - env_rate);
     }
@@ -182,9 +182,9 @@ static void test_voice_sum_normalization() {
 
     for (int n = 0; n < TEST_SAMPLES; n++) {
         /* Simulate 4 FM voices */
-        float v0 = sinf(n * 2.0f * 3.14159265f * 100.0f / SAMPLE_RATE);
-        float v1 = sinf(n * 2.0f * 3.14159265f * 200.0f / SAMPLE_RATE);
-        float v2 = sinf(n * 2.0f * 3.14159265f * 400.0f / SAMPLE_RATE);
+        float v0 = sinf(n * M_TWOPI * 100.0f / SAMPLE_RATE);
+        float v1 = sinf(n * M_TWOPI * 200.0f / SAMPLE_RATE);
+        float v2 = sinf(n * M_TWOPI * 400.0f / SAMPLE_RATE);
         float v3 = lcg_noise();  /* noise voice */
 
         float sum = (v0 + v1 + v2 + v3) * 0.25f;  /* / 4 */
@@ -227,8 +227,8 @@ static void test_lfo_modulation_clamped() {
         if (modFreq < minFreqSeen) minFreqSeen = modFreq;
         if (isnan(modFreq)) { nanCount++; break; }
 
-        lfo_phase += 2.0f * 3.14159265f * lfo_rate / SAMPLE_RATE;
-        if (lfo_phase > 2.0f * 3.14159265f) lfo_phase -= 2.0f * 3.14159265f;
+        lfo_phase += M_TWOPI * lfo_rate / SAMPLE_RATE;
+        if (lfo_phase > M_TWOPI) lfo_phase -= M_TWOPI;
     }
 
     printf("  LFO rate = %.0f Hz, depth = 100%%\n", lfo_rate);
