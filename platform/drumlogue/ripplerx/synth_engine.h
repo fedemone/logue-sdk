@@ -1098,6 +1098,15 @@ public:
         for (size_t i = 0; i < frames * 2; ++i)
             main_out[i] = 0.0f;
 
+#ifdef UNIT_TEST_DEBUG
+        // Reset probes each block so callers that check them after a block with
+        // no active voices (e.g. after Reset()) correctly observe 0, not the
+        // stale value from the previous block.
+        ut_exciter_out = 0.0f;
+        ut_delay_read  = 0.0f;
+        ut_voice_out   = 0.0f;
+#endif
+
         // Hoist tone read outside all loops — avoids UI/audio-thread race.
         const float tone_val = state.tone;
 
@@ -1282,10 +1291,10 @@ private:
 private:
     float m_master_cutoff = 10000.0f; // Default open filter
 
-    // Functions from unit runtime
-    unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr;
-    unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr;
-    unit_runtime_get_sample_ptr m_get_sample;
+    // Functions from unit runtime (nullptr until Init() assigns them from the OS descriptor)
+    unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
+    unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr = nullptr;
+    unit_runtime_get_sample_ptr m_get_sample = nullptr;
 
     uint8_t m_ui_note = 60;
     uint8_t m_sample_bank = 0;
