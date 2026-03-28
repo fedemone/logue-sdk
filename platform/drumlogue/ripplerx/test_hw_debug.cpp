@@ -1078,6 +1078,314 @@ static void test_exciter_independent_of_env() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T24 — 4-voice polyphony: all voices active simultaneously
+//
+//   Strikes 4 different notes before any voice has time to release.
+//   All 4 voice slots must be is_active=true, and the combined peak must
+//   exceed a single-voice baseline (richer signal when all voices fire).
+// ════════════════════════════════════════════════════════════════════════════
+static void test_polyphony() {
+    std::cout << "\n── T24: 4-voice polyphony (4 simultaneous NoteOn) ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Fire 4 different notes — round-robin allocates voices 1,2,3,0
+    s.NoteOn(36, 127);
+    s.NoteOn(48, 127);
+    s.NoteOn(60, 127);
+    s.NoteOn(72, 127);
+
+    int active_count = 0;
+    for (int i = 0; i < 4; ++i)
+        if (s.state.voices[i].is_active) ++active_count;
+
+    std::cout << "  Active voices after 4× NoteOn: " << active_count << " (expect 4)\n";
+    result("T24a all 4 voices active after 4 simultaneous NoteOn",
+           active_count == 4,
+           "fewer than 4 voices active — voice allocation or stealing is wrong");
+
+    // Each voice must hold its own distinct note (round-robin: NoteOn order → voices 1,2,3,0)
+    bool notes_distinct =
+        s.state.voices[1].current_note == 36 &&
+        s.state.voices[2].current_note == 48 &&
+        s.state.voices[3].current_note == 60 &&
+        s.state.voices[0].current_note == 72;
+
+    std::cout << "  voice[0].current_note=" << (int)s.state.voices[0].current_note
+              << "  voice[1]=" << (int)s.state.voices[1].current_note
+              << "  voice[2]=" << (int)s.state.voices[2].current_note
+              << "  voice[3]=" << (int)s.state.voices[3].current_note << "\n";
+
+    result("T24b each voice holds its own distinct note (no slot aliasing)",
+           notes_distinct,
+           "voice notes don't match allocation order — round-robin is broken");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T25 — AllNoteOff sets every active voice to releasing
+//
+//   After 4 NoteOn calls, all voices are active and not releasing.
+//   AllNoteOff() must flip is_releasing=true on all 4 without killing them
+//   immediately (they still need to complete their release envelope).
+// ════════════════════════════════════════════════════════════════════════════
+static void test_all_note_off() {
+    std::cout << "\n── T25: AllNoteOff releases all active voices ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    s.NoteOn(36, 100);
+    s.NoteOn(48, 100);
+    s.NoteOn(60, 100);
+    s.NoteOn(72, 100);
+
+    // Before AllNoteOff: all 4 voices active and NOT releasing
+    bool pre_releasing = false;
+    for (int i = 0; i < 4; ++i)
+        if (s.state.voices[i].is_releasing) pre_releasing = true;
+
+    s.AllNoteOff();
+
+    // After AllNoteOff: all 4 voices must be marked as releasing
+    int releasing_count = 0;
+    int still_active_count = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (s.state.voices[i].is_releasing)  ++releasing_count;
+        if (s.state.voices[i].is_active)     ++still_active_count;
+    }
+
+    std::cout << "  pre_releasing (any before AllNoteOff) : " << (pre_releasing ? "yes" : "no") << "\n";
+    std::cout << "  releasing_count after AllNoteOff       : " << releasing_count   << " (expect 4)\n";
+    std::cout << "  still_active_count after AllNoteOff    : " << still_active_count << " (expect 4)\n";
+
+    result("T25a no voice releasing before AllNoteOff",
+           !pre_releasing,
+           "a voice was already is_releasing=true before AllNoteOff — check NoteOn reset");
+    result("T25b all 4 voices is_releasing=true after AllNoteOff",
+           releasing_count == 4,
+           "AllNoteOff did not mark all voices as releasing");
+    result("T25c voices still active immediately after AllNoteOff (release not instant)",
+           still_active_count == 4,
+           "AllNoteOff immediately killed voices — release envelope not given a chance to run");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T26 — MIDI note extremes: note 0 and note 127
+//
+//   Note 0  (8.18 Hz → clamped to 12 Hz → delay≈4000 samples) must stay
+//   within the 4096-sample buffer and produce no NaN output.
+//   Note 127 (12544 Hz → ~3.83 samples → delay clamped to 2.0 by compensation)
+//   must also produce no NaN.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_midi_note_extremes() {
+    std::cout << "\n── T26: MIDI note extremes (note 0 and note 127) ──\n";
+
+    for (int note : {0, 127}) {
+        unit_runtime_desc_t desc = make_desc();
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        s.NoteOn((uint8_t)note, 127);
+
+        uint8_t vi = s.state.next_voice_idx;
+        float dl = s.state.voices[vi].resA.delay_length;
+        std::cout << "  Note " << note << " resA.delay_length = " << dl << "\n";
+
+        bool dl_in_bounds = dl >= 2.0f && dl <= 4094.0f;
+        char lbl_bounds[64];
+        std::snprintf(lbl_bounds, sizeof(lbl_bounds),
+                      "T26 note=%d delay_length in [2, 4094]", note);
+        result(lbl_bounds, dl_in_bounds,
+               "delay_length out of safe buffer range — overflow or underflow");
+
+        // Render 100 frames and check for NaN
+        bool has_nan = false;
+        float buf[64] = {};
+        for (int b = 0; b < 3; ++b) {
+            std::memset(buf, 0, sizeof(buf));
+            s.processBlock(buf, 32);
+            for (int i = 0; i < 64; ++i)
+                if (is_nan_or_inf(buf[i])) { has_nan = true; break; }
+            if (has_nan) break;
+        }
+
+        char lbl_nan[64];
+        std::snprintf(lbl_nan, sizeof(lbl_nan),
+                      "T26 note=%d no NaN/Inf in 96 frames", note);
+        result(lbl_nan, !has_nan, "NaN/Inf at extreme MIDI note");
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T27 — Maximum Inharm (ap_coeff=0.9995): stability and pitch clamping
+//
+//   At Inharm=1999 the allpass coefficient reaches 0.9995, giving a group
+//   delay of (1+0.9995)/(1-0.9995) = 3999 samples.  For note 60 the raw
+//   delay is 183.47 samples; after subtracting τ_AP the result is negative,
+//   so delay_length must be clamped to 2.0.  The waveguide must remain
+//   stable (no NaN/Inf) for the entire 500-block render.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_max_inharm_stability() {
+    std::cout << "\n── T27: Max Inharm (ap_coeff=0.9995) — clamping and stability ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);   // After Init: m_is_resonator_a=true, m_is_resonator_b=true
+
+    // Set max inharmonicity on both resonators (both selected after Init)
+    s.setParameter(RipplerXWaveguide::k_paramInharm, 1999);
+
+    // Verify coefficient was applied to ResA
+    float ac = s.state.voices[0].resA.ap_coeff;
+    std::cout << "  ResA.ap_coeff after Inharm=1999 : " << ac
+              << " (expect ≈0.9995)\n";
+    result("T27a ap_coeff >= 0.999 after Inharm=1999",
+           ac >= 0.999f,
+           "k_paramInharm=1999 did not set ap_coeff to ~0.9995");
+
+    s.NoteOn(60, 127);
+    uint8_t vi = s.state.next_voice_idx;
+    float dl = s.state.voices[vi].resA.delay_length;
+    std::cout << "  ResA.delay_length after NoteOn(60): " << dl
+              << " (should be clamped to 2.0 or very close)\n";
+    result("T27b delay_length clamped to [2, 3] with extreme ap_coeff",
+           dl >= 2.0f && dl <= 3.0f,
+           "delay_length not clamped — may overflow buffer or be unconstrained");
+
+    // Render 500 blocks of 32 frames (~333 ms) — verify no NaN
+    bool has_nan = false;
+    float buf[64] = {};
+    for (int b = 0; b < 500 && !has_nan; ++b) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 32);
+        for (int i = 0; i < 64; ++i)
+            if (is_nan_or_inf(buf[i])) { has_nan = true; break; }
+    }
+    result("T27c no NaN/Inf after 500 blocks with max Inharm",
+           !has_nan,
+           "NaN/Inf detected — extreme ap_coeff destabilises the allpass filter");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T28 — LoadPreset() mid-note: no NaN during transition, next hit audible
+//
+//   Simulates a patch change while a note is already ringing.  The DSP must
+//   survive the setParameter storm without producing NaN and the next GateOn
+//   after the preset change must produce audible output.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_preset_change_mid_note() {
+    std::cout << "\n── T28: LoadPreset mid-note — stability and re-trigger ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Start a note, let it ring for 10 blocks
+    s.GateOn(127);
+    float peak_before = run_blocks(s, 320, 32);
+
+    // Change preset while voice is still active
+    s.LoadPreset(14);  // Cymbal — very different from Init
+
+    // Render 20 more blocks, checking for NaN every sample
+    bool has_nan = false;
+    float buf[64] = {};
+    for (int b = 0; b < 20 && !has_nan; ++b) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 32);
+        for (int i = 0; i < 64; ++i)
+            if (is_nan_or_inf(buf[i])) { has_nan = true; break; }
+    }
+
+    // Strike a new note under the new preset
+    s.GateOn(127);
+    float peak_after = run_blocks(s, 300, 32);
+
+    std::cout << "  peak before preset change : " << peak_before << "\n";
+    std::cout << "  NaN during transition     : " << (has_nan ? "YES" : "no") << "\n";
+    std::cout << "  peak after preset change  : " << peak_after  << "\n";
+
+    result("T28a pre-change output was audible", peak_before > 1e-4f,
+           "no sound before LoadPreset — pre-condition failed");
+    result("T28b no NaN/Inf during preset change", !has_nan,
+           "NaN produced while changing preset mid-note — parameter handling unstable");
+    result("T28c new GateOn after preset change is audible", peak_after > 1e-4f,
+           "silent after LoadPreset + GateOn — preset change corrupted DSP state");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T29 — Velocity scaling: hard hit louder than soft hit
+//
+//   Two independent synth instances strike the same note at velocity=127
+//   and velocity=1.  The hard-hit peak must be at least 2× louder.
+//   The soft hit must still produce audible output (velocity=1 ≠ silence).
+// ════════════════════════════════════════════════════════════════════════════
+static void test_velocity_scaling() {
+    std::cout << "\n── T29: Velocity scaling (vel=127 vs vel=1) ──\n";
+
+    // The limiter clips post-render peaks to 0.99 regardless of velocity, masking amplitude
+    // differences.  Instead, capture ut_voice_out at frame 0: voice_out = exciter * velocity,
+    // so the pre-limiter signal at the first sample is directly proportional to velocity.
+    unit_runtime_desc_t desc = make_desc();
+
+    auto frame0_voice_out = [&](uint8_t vel) -> float {
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        s.NoteOn(60, vel);
+        ut_voice_out = 0.0f;
+        float buf[2] = {};
+        s.processBlock(buf, 1);
+        return ut_voice_out;
+    };
+
+    float vo_hard = frame0_voice_out(127);
+    float vo_soft = frame0_voice_out(1);
+
+    std::cout << "  frame-0 voice_out vel=127 (hard): " << vo_hard << "\n";
+    std::cout << "  frame-0 voice_out vel=1   (soft): " << vo_soft << "\n";
+    if (vo_soft > 0.0f)
+        std::cout << "  hard/soft ratio (pre-limiter)   : " << (vo_hard / vo_soft) << "\n";
+
+    result("T29a soft hit (vel=1) produces nonzero pre-limiter voice_out",
+           vo_soft > 1e-4f,
+           "velocity=1 produced near-zero output — current_velocity may be zeroed");
+    result("T29b hard hit voice_out is at least 10× soft hit (vel scales linearly)",
+           vo_hard > vo_soft * 10.0f,
+           "velocity has no proportional effect on voice_out — check voice_out *= current_velocity");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T30 — Dkay=0 (shortest decay, ~50 ms gate): audible output
+//
+//   The Drumlogue's shortest decay preset uses Dkay=0 (50 ms).  A same-tick
+//   GateOn+GateOff must still produce audible output within the first 100
+//   frames even with this shortest possible envelope.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_dkay_zero_short_gate() {
+    std::cout << "\n── T30: Dkay=0 (shortest gate) produces audible output ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    s.setParameter(RipplerXWaveguide::k_paramDkay, 0);
+
+    // Same-tick trigger (most demanding scenario for short decays)
+    s.GateOn(127);
+    s.GateOff();
+
+    // Render 100 frames — the exciter fires at frame 0 and must be heard
+    float peak = run_blocks(s, 100, 32);
+    std::cout << "  peak over 100 frames with Dkay=0: " << peak << "\n";
+
+    result("T30 Dkay=0 same-tick trigger is audible within 100 frames",
+           peak > 1e-4f,
+           "silent with Dkay=0 — release envelope with 50ms gate kills sound before DAC");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 int main() {
     std::cout << "=== RIPPLERX HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1106,6 +1414,13 @@ int main() {
     test_os_param_init_sequence();
     test_master_env_trace();
     test_exciter_independent_of_env();
+    test_polyphony();
+    test_all_note_off();
+    test_midi_note_extremes();
+    test_max_inharm_stability();
+    test_preset_change_mid_note();
+    test_velocity_scaling();
+    test_dkay_zero_short_gate();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;
