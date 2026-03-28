@@ -52,6 +52,7 @@ static constexpr float alpha = 0.01f;
 static constexpr float limiter = 0.99f;
 static constexpr int kSquelchGuardSamples = 1000; // ~20 ms
 static constexpr float kSquelchThreshold = 0.0001f; // -80 dB
+static constexpr float k_log_2_of_200 = 7.643856f;
 
 // ==============================================================================
 // MAIN CLASS
@@ -336,6 +337,12 @@ public:
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
+
+            // FIX: Enforce ResA-only routing on every single parameter
+            // so k_paramPartls (index 8) cannot hijack the rest of the loop.
+            m_is_resonator_a = true;
+            m_is_resonator_b = false;
+
             setParameter(param_id, presets[idx][param_id]);
         }
 
@@ -471,8 +478,8 @@ public:
                     // Decay is the primary sustain control; Rel only gates the noise
                     // burst.  Without this, the master_env would kill the waveguide
                     // resonance at ~28 ms (default Rel) regardless of Decay setting.
-                    float t_s = 0.05f * powf(200.0f, norm); // 50ms..10s
-                    float master_rate = 3.0f * M_LN10 / (t_s * default_sample_rate);
+                    float t_s = 0.05f * fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
+                    float master_rate = M_THREELN10 / (t_s * default_sample_rate);  // was 3.0f * M_LN10
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a)
                             state.voices[i].resA.feedback_gain = g;
@@ -734,6 +741,16 @@ public:
 
         v.current_note = note;
         v.current_velocity = (float)velocity / 127.0f;
+#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
+        // --- 2D DRUMHEAD STRIKE PHYSICS ---
+        // 1. Calculate the physical strike location once for the entire voice
+        float hit_x = (float)m_params[k_paramHitPos] / 100.0f;
+        float hit_y = (1.0f - v.current_velocity) * hit_x * 0.5f;
+
+        // Use our fast-math approximation to find distance from center (0.0 to 1.0)
+        float radius = sqrtsum2acc(hit_x, hit_y); //
+        radius = fminf(1.0f, radius);
+#endif
 
         // --- VELOCITY MODULATION ---
         // VlMllStf: harder hit → stiffer (brighter) mallet.
@@ -742,6 +759,10 @@ public:
         {
             float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] / 500.0f));
             float stif_mod   = (float)m_params[k_paramVlMllStf] / 100.0f; // -1.0 to +1.0
+#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
+            // Add up to a 50% stiffness boost when striking at the absolute edge
+            float rim_stiffness_boost = radius * 0.5f;
+#endif
             v.exciter.mallet_stiffness = fmaxf(0.01f, fminf(1.0f,
                 base_stiff + stif_mod * v.current_velocity));
         }
@@ -752,8 +773,16 @@ public:
             float base_nz     = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] / 1000.0f));
             float base_attack = 0.9f - (base_nz * 0.8f);
             float res_mod     = (float)m_params[k_paramVlMllRes] / 100.0f; // -1.0 to +1.0
+#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
+        // Add up to a 10% speed boost to the attack rate for extreme rim hits
+            float rim_snap_boost = radius * 0.1f;
+
+            v.exciter.noise_env.attack_rate = fmaxf(0.01f, fminf(0.99f,
+                base_attack + (res_mod * v.current_velocity * 0.5f) + rim_snap_boost)); //
+#else
             v.exciter.noise_env.attack_rate = fmaxf(0.01f, fminf(0.99f,
                 base_attack + res_mod * v.current_velocity * 0.5f));
+#endif
         }
 
         // --- THE PHYSICS OF PITCH ---
@@ -766,6 +795,7 @@ public:
         v.resA.delay_length = base_delay;
         // ResB: its own model (m_model_b) determines whether it tracks an irrational offset.
         if (m_model_b == 3 || m_model_b == 5) {
+#ifndef ENABLE_PHASE_8_2D_DRUMHEAD
             // Membrane / Drumhead Logic:
             // A circular membrane's overtone ratios are determined by the zeros of the
             // Bessel function J_mn.  The dominant second mode (1,1) has ratio ≈ 1.5926
@@ -773,6 +803,17 @@ public:
             // fundamental delay.  The old value of 0.68 (ratio 1.47) was not a Bessel
             // zero and produced an off-character "wrong" shimmer.
             v.resB.delay_length = base_delay * 0.628f;
+#else
+            // --- 2D DRUMHEAD STRIKE PHYSICS ---
+            // 4. Interpolate between Bessel modes based on strike radius
+            // Center (r=0): Mode (1,1) -> ratio ~ 0.628
+            // Edge   (r=1): Mode (2,1) -> ratio ~ 0.466
+            const float mode_1_1 = 0.628f;
+            const float mode_2_1 = 0.466f;
+            float dynamic_ratio = mode_1_1 + radius * (mode_2_1 - mode_1_1);
+
+            v.resB.delay_length = base_delay * dynamic_ratio;
+#endif
         } else {
             // Standard matched resonators (Strings, Tubes, Bars)
             v.resB.delay_length = base_delay;
@@ -1083,7 +1124,30 @@ public:
                 float inputA = exciter_sig + (voice.resB_out_prev * m_coupling_depth * 0.5f);
                 outA = process_waveguide(voice.resA, inputA);
                 float outB = 0.0f;
+#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
+                // --- ACTIVE PARTIAL COUNTING ---
+                // Dynamically drop Resonator B to reclaim CPU cycles.
+                // We only run the second delay line if:
+                // 1. The user actually requested dual resonators (m_active_partials >= 16)
+                // 2. AND (ResB is audible in the mix OR coupling is feeding it into ResA)
+                // 3. OR ResB still has ringing energy left to decay (> -90 dB)
 
+                bool resB_needed = (m_active_partials >= 16) &&
+                                   (state.mix_ab > 0.001f ||
+                                    m_coupling_depth > 0.001f ||
+                                    fabsf(voice.resB_out_prev) > 0.00003f);
+
+                if (resB_needed) {
+                    float inputB = exciter_sig + (voice.resA_out_prev * m_coupling_depth * 0.5f);
+                    outB = process_waveguide(voice.resB, inputB); //
+                    voice.resA_out_prev = outA;
+                    voice.resB_out_prev = outB;
+                } else {
+                    // ResB is bypassed. Keep its output at 0 to prevent coupling artifacts.
+                    voice.resA_out_prev = outA;
+                    voice.resB_out_prev = 0.0f;
+                }
+#else
                 if (m_active_partials >= 16) {
                     float inputB = exciter_sig + (voice.resA_out_prev * m_coupling_depth * 0.5f);
                     outB = process_waveguide(voice.resB, inputB);
@@ -1093,7 +1157,7 @@ public:
                     voice.resA_out_prev = 0.0f;
                     voice.resB_out_prev = 0.0f;
                 }
-
+#endif
                 voice_out = ((outA * (1.0f - state.mix_ab)) + (outB * state.mix_ab))
                             * voice.current_velocity;
 #endif // RENDER_STAGE >= 2

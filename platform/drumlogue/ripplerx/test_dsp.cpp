@@ -129,11 +129,203 @@ void run_active_test2() {
     std::cout << "Buffer[0] Memory  : " << v.resA.buffer[0] << " (If 0.0, the waveguide multiplied the Mallet by zero!)\n";
 
     std::cout << "\n--- 2nd DIAGNOSTIC COMPLETE ---\n";
-    return;
+}
+
+static void test_nan_explosion_and_dc_offset() {
+    std::cout << "\n--- T21a No NaNs generated during heavy transient strike START ---\n";
+    std::cout << "\n--- T21b Output did not flatline into a DC offset (Silence Bug) START ---\n";
+    // 1. Setup the test environment
+    unit_runtime_desc_t desc = {0};
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // We want to test a sharp transient that might trigger SVF or envelope blowups
+    s.setParameter(RipplerXWaveguide::k_paramProgram, 3); // Load Ac Snare
+    s.GateOn(127); // Hardest possible velocity strike
+
+    const size_t frames = 32;
+    float out_buffer[frames * 2];
+
+    bool has_nan = false;
+    int consecutive_dc_samples = 0;
+    bool has_permanent_dc = false;
+    int block;
+    size_t i;
+    // 2. Render 100 audio blocks (~68 ms, plenty of time for a NaN to propagate)
+    for (block = 0; block < 100; ++block) {
+        s.processBlock(out_buffer, frames);
+
+        for (i = 0; i < frames * 2; ++i) {
+            float sample = out_buffer[i];
+            // Check 1: Did the math explode?
+            if (std::isnan(sample) || std::isinf(sample)) {
+                has_nan = true;
+                break;
+            }
+
+            // Check 2: Did the limiter catch a NaN and peg the output to 0.99f permanently?
+            // We check if it stays exactly at the limiter threshold for consecutive samples.
+            if (fabsf(sample) >= 0.9899f) {
+                consecutive_dc_samples++;
+                if (consecutive_dc_samples > 50) { // 50 samples of pure DC is a brickwalled signal
+                    has_permanent_dc = true;
+                    break;
+                }
+            } else {
+                consecutive_dc_samples = 0; // Reset if the wave actually oscillates
+            }
+        }
+
+        if (has_nan || has_permanent_dc) break;
+    }
+
+    // 3. Report results using your existing test runner format
+    if (has_nan)
+    {
+        std::cout << "Engine produced a NaN/Inf value at frame:" << i << " of block: " << block <<"!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T21a No NaNs generated during heavy transient strike COMPLETE ---\n";
+    if (has_permanent_dc)
+    {
+        std::cout << "Output pegged to limiter max (0.99) permanently. Math explosion masked by limiter at frame:" << i << " of block: " << block <<"!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T21b Output did not flatline into a DC offset (Silence Bug) COMPLETE ---\n";
+
+}
+
+// Make sure to declare the extern debug variables if not already at the top of your test file
+extern float ut_exciter_out;
+extern float ut_delay_read;
+extern float ut_voice_out;
+
+static void test_denormal_stalls() {
+    std::cout << "\n--- T22 Denormal/Subnormal Stall Prevention START ---\n";
+    unit_runtime_desc_t desc = {0};
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Load a preset with a long decay, strike it, and release it
+    s.setParameter(RipplerXWaveguide::k_paramProgram, 4); // Tubular Bell has long decay
+    s.GateOn(127);
+
+    const size_t frames = 32;
+    float out_buffer[frames * 2];
+    int block = 0;
+    size_t i = 0;
+    // Render enough audio to let the note release and decay into microscopic territory
+    for (i = 0; i < 50; ++i) {
+        s.processBlock(out_buffer, frames);
+    }
+    s.GateOff();
+
+    bool hit_subnormal = false;
+
+    // Render 20,000 more samples (the tail end of the release)
+    for (block = 0; block < 625; ++block) {
+        s.processBlock(out_buffer, frames);
+
+        // If the FPU drops into subnormal processing, ARM Cortex CPUs without FTZ
+        // enabled will experience massive pipeline stalls, destroying your 20us budget.
+        if (std::fpclassify(ut_voice_out) == FP_SUBNORMAL) {
+            hit_subnormal = true;
+            break;
+        }
+    }
+    if (hit_subnormal)
+    {
+        std::cout << "ut_voice_out decayed into FP_SUBNORMAL range! Add a +1e-15f DC offset or FTZ flag at block: " << block << "." << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T22 Denormal/Subnormal Stall Prevention COMPLETE ---\n";
+}
+
+static void test_stereo_phase_alignment() {
+    std::cout << "\n--- T23 Stereo Phase Alignment START ---\n";
+    unit_runtime_desc_t desc = {0};
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    s.setParameter(RipplerXWaveguide::k_paramProgram, 3); // Ac Snare (wide frequency spread)
+    s.GateOn(127);
+
+    const size_t frames = 32;
+    float out_buffer[frames * 2];
+
+    bool phase_mismatch = false;
+    int block = 0;
+    size_t i = 0;
+    // Render a few blocks to get the SVF and overdrive heavily saturated
+    for (block = 0; block < 10; ++block) {
+        s.processBlock(out_buffer, frames);
+
+        for (i = 0; i < frames; ++i) {
+            float left_channel = out_buffer[i * 2];
+            float right_channel = out_buffer[i * 2 + 1];
+
+            // Because your current master_filter is mono, both channels must be
+            // bit-for-bit identical. If they deviate, you have a phase cancellation bug.
+            if (left_channel != right_channel) {
+                phase_mismatch = true;
+                break;
+            }
+        }
+        if (phase_mismatch) break;
+    }
+
+    if(phase_mismatch)
+    {
+        std::cout << "Left and Right channels deviated! Check the master FX routing loop:" << i << " of block: " << block <<"!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T23 Stereo Phase Alignment COMPLETE ---\n";
+}
+
+static void test_delay_memory_leak() {
+    std::cout << "\n--- T24 Delay Line Memory Leak on Reset START ---\n";
+    unit_runtime_desc_t desc = {0};
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // 1. Blast the delay lines with a loud, sustained note
+    s.setParameter(RipplerXWaveguide::k_paramProgram, 2); // 808 Sub
+    s.GateOn(127);
+    int block = 0;
+    const size_t frames = 32;
+    float out_buffer[frames * 2];
+
+    for (block = 0; block < 100; ++block) {
+        s.processBlock(out_buffer, frames);
+    }
+
+    // 2. Hard reset the engine (simulating a sudden patch change or OS interrupt)
+    s.Reset();
+
+    // 3. Render a new block of audio WITHOUT triggering a new note
+    s.processBlock(out_buffer, frames);
+
+    bool memory_leak_detected = false;
+
+    // The delay read tap must be exactly 0.0f. If it isn't, stale audio from
+    // the previous note survived the Reset() and will cause a pop on the next NoteOn.
+    if (fabsf(ut_delay_read) > 0.0f) {
+        memory_leak_detected = true;
+    }
+    if(memory_leak_detected)
+    {
+        std::cout << "ut_delay_read returned non-zero audio immediately after Reset()!" << std::endl;
+        exit(1);
+    }
+    std::cout << "\n--- T24 Delay Line Memory Leak on Reset COMPLETE ---\n";
 }
 
 int main() {
     run_active_test();
     run_active_test2();
+    test_nan_explosion_and_dc_offset();
+    test_denormal_stalls();
+    test_stereo_phase_alignment();
+    test_delay_memory_leak();
     return 0;
 }
