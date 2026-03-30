@@ -30,6 +30,8 @@
 #define BUFFER_SIZE 65536  // 2^16
 #define BUFFER_MASK (BUFFER_SIZE - 1)
 #define FREQ_MAX_DIV_MIN (18.333f)
+#define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
+#define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -140,6 +142,11 @@ public:
         for (int i = 0; i < FDN_CHANNELS; i++) {
             lpfState[i] = zero;
         }
+
+        // Reset pre delay line
+        memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
+        preDelayWritePos = 0;
+        activeSampleCount = 0;
     }
 
     /*===========================================================================*/
@@ -170,7 +177,7 @@ public:
     void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); }
     // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
-    void setShimmerFreq(float s) {
+    void setShimmerFreq(float value) {
         // Normalize UI value to 0.0 -> 1.0
         float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
 
@@ -179,7 +186,10 @@ public:
         shimmerFreq_ = 3.0f * fasterpowf(FREQ_MAX_DIV_MIN, norm);
     }
     float getShimmerFreq() { return shimmerFreq_; }
-
+    void setPreDelay(float ms) {
+        float clampedMs = fmaxf(0.0f, fminf(340.0f, ms));
+        preDelayOffsetSamples = (int)(clampedMs * sampleRate / 1000.0f);
+    }
     void setDamping(float freqHz) {
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
 	    // omega = 2π * fc / fs;  coeff ≈ 1 - omega  (first-order approx)
@@ -402,6 +412,52 @@ private:
         float32x4_t inMono = vmulq_f32(vaddq_f32(inL4, inR4), vdupq_n_f32(0.5f));
 
         // =================================================================
+        // 1. Pre-Delay Write
+        // =================================================================
+        // TO BE EVALUATED: Add tape saturation to the pre-delay buffer?
+        float monoLanes[4];
+        vst1q_f32(monoLanes, inMono);
+
+        for (int s = 0; s < 4; s++) {
+            preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
+        }
+
+        // =================================================================
+        // 2. Pre-Delay Read
+        // =================================================================
+        float delayedLanes[4];
+        for (int s = 0; s < 4; s++) {
+            int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
+            delayedLanes[s] = preDelayBuffer[readPos];
+        }
+        float32x4_t delayedMono = vld1q_f32(delayedLanes);
+        preDelayWritePos = (preDelayWritePos + 4) & PREDELAY_MASK;
+
+        // =================================================================
+        // 3. Active Partial Counting (CPU Optimization)
+        // =================================================================
+        // Check if the current delayed input block contains active audio
+        float32x4_t absIn = vabsq_f32(delayedMono);
+        float32x4_t max1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
+        float32x4_t max2 = vmaxq_f32(max1, vextq_f32(max1, max1, 1));
+
+        if (vgetq_lane_f32(max2, 0) > 1e-5f) {
+            // Signal present: reset counter to maximum reverb tail length
+            // RT60 roughly corresponds to decay time + predelay
+            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+        } else if (activeSampleCount > 0) {
+            // Signal absent: decrement counter
+            activeSampleCount -= 4;
+        }
+
+        // If counter has expired, bypass FDN processing to save cycles
+        if (activeSampleCount <= 0) {
+            vst1q_f32(outL, inL4);
+            vst1q_f32(outR, inR4);
+            return;
+        }
+
+        // =================================================================
         // Read from all 8 delay lines for 4 samples using current phases
         // =================================================================
         float32x4_t delayOut[FDN_CHANNELS];
@@ -431,7 +487,7 @@ private:
         }
 
         // Add input to first channel (with feedback control)
-        mixed[0] = vaddq_f32(mixed[0], vmulq_f32(inMono, feedback));
+        mixed[0] = vaddq_f32(mixed[0], vmulq_f32(delayedMono, feedback));
 
         // =================================================================
         // Apply DAMP (dampingCoeff) + COMP (diffusion) filters
@@ -566,6 +622,28 @@ private:
     void processScalar(float input, float& wetL, float& wetR) {
         float delayOut[FDN_CHANNELS];
 
+        // 1. Pre-Delay Write
+        preDelayBuffer[preDelayWritePos] = input;
+
+        // 2. Pre-Delay Read
+        int readPos = (preDelayWritePos - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
+        float delayedInput = preDelayBuffer[readPos];
+        preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
+
+        // 3. Active Partial Counting
+        if (fabsf(delayedInput) > 1e-5f) {
+            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+        } else if (activeSampleCount > 0) {
+            activeSampleCount--;
+        }
+
+        // Bypass if tail is dead
+        if (activeSampleCount <= 0) {
+            wetL = input;
+            wetR = input;
+            return;
+        }
+
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             // For scalar path, we only need the current phase (lane 0)
             float phase = vgetq_lane_f32(modPhaseVec[ch], 0);
@@ -596,6 +674,7 @@ private:
         }
 
         // Frequency-dependent decay
+        // Frequency-dependent decay
         float mixed[FDN_CHANNELS];
         for (int i = 0; i < FDN_CHANNELS; i++) {
             float sum = 0.0f;
@@ -606,7 +685,8 @@ private:
             mixed[i] = sum * dm;
         }
 
-        mixed[0] += input * (1.0f - decay);
+        // 4. Inject delayedInput instead of raw input
+        mixed[0] += delayedInput * (1.0f - decay);
 
         // Exotic "Low Pitching" Shimmer (PILL=4)
         // Injects a ring-modulated copy of the wet signal back into the network.
@@ -614,6 +694,7 @@ private:
         // Shimmer (PILL=4): inject a small frequency-modulated copy of the
         // current wet signal back into channels 6 and 7 before writing.
         // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
+        // TO BE EVALUATED: introduce wavetable LFO for shimmer?
         if (shimmerDepth_ > 0.0f) {
             float previewL = 0.0f, previewR = 0.0f;
             for (int i = 0; i < 4; i++)            previewL += mixed[i];
@@ -744,4 +825,9 @@ private:
     float32x4_t modPhaseVec[FDN_CHANNELS] __attribute__((aligned(16)));
     float32x4_t lpfState[FDN_CHANNELS] __attribute__((aligned(16)));
     float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(64)));
+
+    float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
+    int preDelayWritePos;
+    int preDelayOffsetSamples;
+    int activeSampleCount; // Tracks tail for Active Partial Counting
 };

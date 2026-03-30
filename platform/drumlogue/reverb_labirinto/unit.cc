@@ -43,16 +43,17 @@ static bool s_bypass = true;
 // ID 5: DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
 // ID 6: WIDE   0..200 %           default 100
 // ID 7: COMP   0..1000 (x0.1%)    default 1000
-// ID 8: PILL   0..4               default 3
-// ID 9: PL4FRQ 0..100             default 35
+// ID k_total: PILL   0..4         default 3
+// ID 9: PL4FRQ 0..100             default 35 (Hz)
+// ID 10: PDLY  0..100             default 0 (ms)
 
 enum parameterState {
   k_paramProgram = 0,
   k_mix, k_time, k_low, k_high, k_damp,
   k_wide, k_comp, k_pill, k_shimmer_freq,
-  k_total};
+  k_pre_delay, k_total};
 
-static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3};
+static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0};
 static const int k_preset_number = 4;
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
                                                       "labirinto", "stellare"};
@@ -64,15 +65,15 @@ static uint8_t s_current_preset = 0xFF; /* 0xFF = no preset loaded */
 // Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {0, 600, 40, 60, 40, 200, 80, 600, 3, 0},
+    {0, 600, 40, 60, 40, 200, 80, 600, 3, 0, 0},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {1, 700, 70, 80, 25, 130, 130, 800, 2, 0},
+    {1, 700, 70, 80, 25, 130, 130, 800, 2, 0, 0},
     // 2: labirinto - center values with ping-pong stereo bouncing
-    {2, 500, 50, 50, 50, 510, 100, 500, 1, 0},
+    {2, 500, 50, 50, 50, 510, 100, 500, 1, 0, 10},
     // 3: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {3, 400, 90, 50, 80, 800, 180, 300, 4, 35},
+    {3, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20},
 };
-static const char* k_preset_names[4] = {
+static const char* k_preset_names[k_preset_number] = {
     "foresta", "tempio", "labirinto", "stellare"
 };
 static uint8_t s_current_preset = 0xFF;  /* 0xFF = no preset loaded */
@@ -118,7 +119,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     s_bypass = false;
 
     // Apply default parameter values
-    for (uint8_t i = 0; i < 8; i++) {
+    for (uint8_t i = 0; i < k_total; i++) {
         unit_set_param_value(i, s_params[i]);
     }
 
@@ -217,13 +218,16 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case k_shimmer_freq: // PL4FRQ  0..100  - shimmer frequency
       s_reverb->setShimmerFreq(value);
       break;
+    case k_pre_delay: // PDLY 0..200 ms
+        s_reverb->setPreDelay((float)value);
+        break;
     default:
       break;
     }
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id > 8) return 0;
+    if (id > k_total) return 0;
     return s_params[id];
 }
 
@@ -264,18 +268,18 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 }
 
 __unit_callback void unit_load_preset(uint8_t idx) {
-    if (idx >= 4) return;
+    if (idx >= k_preset_number) return;
     s_current_preset = idx;
-    for (uint8_t i = 0; i < 8; i++) {
+    for (uint8_t i = 0; i < k_total; i++) {
         unit_set_param_value(i, k_presets[idx][i]);
     }
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
-    return (s_current_preset < 4) ? s_current_preset : 0;
+    return (s_current_preset < k_preset_number) ? s_current_preset : 0;
 }
 
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {
-    if (idx >= 4) return nullptr;
+    if (idx >= k_preset_number) return nullptr;
     return k_preset_names[idx];
 }
