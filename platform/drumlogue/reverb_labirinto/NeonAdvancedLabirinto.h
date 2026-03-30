@@ -163,7 +163,6 @@ public:
         pingPong_     = (pillar_ == 1);
         shimmerDepth_ = (pillar_ == 4) ? 0.04f : 0.0f;
         shimmerPhase_ = 0.0f;
-        shimmerFreq_  = 35.0f;
     }
     void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
     void setModRate(float r) { modRate = fmaxf(0.1f, fminf(10.0f, r)); }
@@ -183,7 +182,7 @@ public:
 
     void setDamping(float freqHz) {
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
-	// omega = 2π * fc / fs;  coeff ≈ 1 - omega  (first-order approx)
+	    // omega = 2π * fc / fs;  coeff ≈ 1 - omega  (first-order approx)
         float omega = 2.0f * (float)M_PI * freqHz / sampleRate;
         dampingCoeff = e_expff(-omega);
     }
@@ -316,7 +315,6 @@ private:
         // Scalar interpolation per channel avoids the previous cross-frame read bug.
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float out_lanes[4];
-            vst1q_f32(out_lanes, out[ch]);
 
             for (int s = 0; s < 4; s++) {
                 uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
@@ -336,25 +334,13 @@ private:
     /*===========================================================================*/
 
     void applyHadamard4(const float32x4_t* in, float32x4_t* out) {
-        // Clear accumulators
+        // Standard matrix multiplication mapped across parallel time lanes
         for (int i = 0; i < FDN_CHANNELS; i++) {
             out[i] = vdupq_n_f32(0.0f);
-        }
-
-        // For each input channel, add its contribution to all outputs
-        for (int j = 0; j < FDN_CHANNELS; j++) {
-            float32x4_t inVal = in[j];
-
-            // For each group of 4 output channels
-            for (int i = 0; i < FDN_CHANNELS; i += 4) {
-                float32x4_t coeffs = hadamardCols[j][i/4];
-
-                // out[i..i+3] += coeffs * inVal
-                float32x4_t contrib = vmulq_f32(coeffs, inVal);
-                out[i] = vaddq_f32(out[i], vdupq_lane_f32(vget_low_f32(contrib), 0));
-                out[i + 1] = vaddq_f32(out[i + 1], vdupq_lane_f32(vget_low_f32(contrib), 1));
-                out[i + 2] = vaddq_f32(out[i + 2], vdupq_lane_f32(vget_high_f32(contrib), 0));
-                out[i + 3] = vaddq_f32(out[i + 3], vdupq_lane_f32(vget_high_f32(contrib), 1));
+            for (int j = 0; j < FDN_CHANNELS; j++) {
+                // in[j] holds 4 time samples.
+                // hadamard[i][j] is the scalar mixing coefficient.
+                out[i] = vmlaq_f32(out[i], in[j], vdupq_n_f32(hadamard[i][j]));
             }
         }
     }

@@ -35,29 +35,42 @@ static bool s_bypass = true;
 // ============================================================================
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
-// ID 0: MIX  0..1000 (x0.1%)   default 700 (70%)
-// ID 1: TIME 1..100             default 50
-// ID 2: LOW  1..100             default 50
-// ID 3: HIGH 1..100             default 70
-// ID 4: DAMP 20..1000           default 250  (×10 in code → 2500 Hz)
-// ID 5: WIDE 0..200 %           default 100
-// ID 6: COMP 0..1000 (x0.1%)   default 1000
-// ID 7: PILL 0..4               default 3
-static int32_t s_params[8] = { 700, 50, 50, 70, 250, 100, 1000, 3 };
+// ID 0: PRESET 0..3               default 0 (foresta)
+// ID 1: MIX    0..1000 (x0.1%)    default 700 (70%)
+// ID 2: TIME   1..100             default 50
+// ID 3: LOW    1..100             default 50
+// ID 4: HIGH   1..100             default 70
+// ID 5: DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
+// ID 6: WIDE   0..200 %           default 100
+// ID 7: COMP   0..1000 (x0.1%)    default 1000
+// ID 8: PILL   0..4               default 3
+// ID 9: PL4FRQ 0..100             default 35
+
+enum parameterState {
+  k_paramProgram = 0,
+  k_mix, k_time, k_low, k_high, k_damp,
+  k_wide, k_comp, k_pill, k_shimmer_freq,
+  k_total};
+
+static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3};
+static const int k_preset_number = 4;
+static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
+                                                      "labirinto", "stellare"};
+static uint8_t s_current_preset = 0xFF; /* 0xFF = no preset loaded */
 
 // ============================================================================
 // Factory Presets
 // ============================================================================
-// Each preset: {MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
-static const int32_t k_presets[4][8] = {
+// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
+static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    { 600, 40, 60, 40, 200, 80,  600, 3 },
+    {0, 600, 40, 60, 40, 200, 80, 600, 3, 0},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    { 700, 70, 80, 25, 130, 130, 800, 2 },
+    {1, 700, 70, 80, 25, 130, 130, 800, 2, 0},
     // 2: labirinto - center values with ping-pong stereo bouncing
-    { 500, 50, 50, 50, 510, 100, 500, 1 },
+    {2, 500, 50, 50, 50, 510, 100, 500, 1, 0},
     // 3: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    { 400, 90, 50, 80, 800, 180, 300, 4 },
+    {3, 400, 90, 50, 80, 800, 180, 300, 4, 35},
 };
 static const char* k_preset_names[4] = {
     "foresta", "tempio", "labirinto", "stellare"
@@ -172,40 +185,40 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
-    if (id >= 8) return;
-    s_params[id] = value;
     if (!s_reverb) return;
+    if (id >= k_total) return;
+    s_params[id] = value;
 
     switch (id) {
-        case 0: // MIX  0..1000 → 0.0..1.0
-            s_reverb->setMix(value / 1000.0f);
-            break;
-        case 1: // TIME  1..100 → decay 0.01..0.99
-            s_reverb->setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
-            break;
-        case 2: // LOW  1..100 → low-freq decay multiplier
-            s_reverb->setLowDecay((float)value);
-            break;
-        case 3: // HIGH  1..100 → high-freq decay multiplier
-            s_reverb->setHighDecay((float)value);
-            break;
-        case 4: // DAMP  20..1000 (×10 → 200..10000 Hz)
-            s_reverb->setDamping((float)value * 10.0f);
-            break;
-        case 5: // WIDE  0..200 → stereo width 0.0..2.0
-            s_reverb->setWidth(value / 100.0f);
-            break;
-        case 6: // COMP  0..1000 → diffusion 0.0..1.0
-            s_reverb->setDiffusion(value / 1000.0f);
-            break;
-        case 7: // PILL  0..4  - pillar routing mode
-            s_reverb->setPillar(value);
-            break;
-        case 8: // PILL4FREQ  0..100  - shimmer frequency
-            s_reverb->setShimmerFreq(value);
-            break;
-        default:
-            break;
+    case k_mix: // MIX  0..1000 → 0.0..1.0
+      s_reverb->setMix(value / 1000.0f);
+      break;
+    case k_time: // TIME  1..100 → decay 0.01..0.99
+      s_reverb->setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
+      break;
+    case k_low: // LOW  1..100 → low-freq decay multiplier
+      s_reverb->setLowDecay((float)value);
+      break;
+    case k_high: // HIGH  1..100 → high-freq decay multiplier
+      s_reverb->setHighDecay((float)value);
+      break;
+    case k_damp: // DAMP  20..1000 (×10 → 200..10000 Hz)
+      s_reverb->setDamping((float)value * 10.0f);
+      break;
+    case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
+      s_reverb->setWidth(value / 100.0f);
+      break;
+    case k_comp: // COMP  0..1000 → diffusion 0.0..1.0
+      s_reverb->setDiffusion(value / 1000.0f);
+      break;
+    case k_pill: // PILL  0..4  - pillar routing mode
+      s_reverb->setPillar(value);
+      break;
+    case k_shimmer_freq: // PL4FRQ  0..100  - shimmer frequency
+      s_reverb->setShimmerFreq(value);
+      break;
+    default:
+      break;
     }
 }
 
@@ -215,15 +228,18 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
-    static char sf_buf[10];
+  static char sf_buf[10];
+    if ((id == k_paramProgram) && (value < k_preset_number)) {
+        return k_preset_names[value];
+    }
+    (void)id;
     (void)value;
-    if (id == 8)
+    if (id == k_shimmer_freq)
     {
         int32_t hz_x10 = (int32_t)(s_reverb->getShimmerFreq() * 10.0f);
         snprintf(sf_buf, sizeof(sf_buf), "%d.%dHz", hz_x10 / 10, hz_x10 % 10);
         return sf_buf;
     }
-    (void)id;
     return nullptr;
 }
 
