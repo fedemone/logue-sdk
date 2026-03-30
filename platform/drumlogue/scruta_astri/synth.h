@@ -368,11 +368,21 @@ public:
             }
 
             float dynamic_cmos = m_cmos_gain * m_cmos_mod_multiplier; // Apply APC multiplier
-            mixed_sig *= dynamic_cmos;
 
-            // Apply master vol first, then soft-clip so output stays within [-1, 1]
-            float scaled = mixed_sig * m_master_vol;
-            float master_out = scaled / (1.0f + fabsf(scaled));
+            // Optional: small DC bias to avoid zero‑crossing stutter
+            const float dc_bias = 0.005f;  // adjust to taste (0.001-0.01 works)
+            float distorted = mixed_sig * dynamic_cmos + dc_bias;
+
+            // Apply smooth cubic saturation (fast_tanh)
+            distorted = fast_tanh( fast_tanh( distorted * 1.2f ) ) * 0.9f;  // defined in filter.h
+
+            // Remove the DC bias (optional - could leave a tiny offset)
+            // distorted -= dc_bias;
+
+            // Apply master volume (no additional clipper needed)
+            float scaled = distorted * m_master_vol;
+            float master_out = scaled;   // fast_tanh already bounds output to ±1
+
             master_out *= m_drone_amp;
 
             main_out[i * 2]     = master_out;
