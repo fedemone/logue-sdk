@@ -1432,14 +1432,6 @@ static void test_string_one_second_sustain() {
     // Skip the first 200 frames while the delay line fills
     run_blocks(s, 200, 32);
 
-    // Measure peak in a 32-frame window at each checkpoint
-    auto peak_at = [&](int target_frame) -> float {
-        // target_frame counts from NoteOn, we already consumed 200
-        // Run to just before the window, then measure
-        return run_blocks(s, 32, 32);  // caller must advance manually
-    };
-    (void)peak_at; // suppress unused warning — using inline approach below
-
     // Advance to 0.5 s mark (24000 frames from NoteOn, minus 200 already consumed)
     float peak_500ms = run_blocks(s, 24000 - 200, 32);
 
