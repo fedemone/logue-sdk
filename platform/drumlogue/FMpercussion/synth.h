@@ -7,7 +7,6 @@
  *  Version 1.0
  */
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -17,11 +16,17 @@
 #include "fm_presets.h"
 #include "constants.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 // defined in header.c
 extern const char* const lfo_shape_strings[9];
 extern const char* const lfo_target_strings[8];
 extern const char* const resonant_mode_strings[5];
 extern const char* const voice_alloc_strings[12];
+#ifdef __cplusplus
+}
+#endif
 
 class Synth {
 public:
@@ -97,9 +102,12 @@ public:
     }
 
     inline void NoteOff(uint8_t note) {
-        fm_perc_synth_note_off(&synth_, note);
-        // Update active voices count
-        active_voices_ = 0;
+    fm_perc_synth_note_off(&synth_, note);
+    // Recalculate active voices from the synth state
+    active_voices_ = vgetq_lane_u32(synth_.voice_triggered, 0) |
+                     vgetq_lane_u32(synth_.voice_triggered, 1) |
+                     vgetq_lane_u32(synth_.voice_triggered, 2) |
+                     vgetq_lane_u32(synth_.voice_triggered, 3);
     }
 
     inline void GateOn(uint8_t velocity) {
@@ -144,7 +152,7 @@ public:
         if (index >= 24) return;
 
         // Store parameter value
-        synth_.params[index] = (uint8_t)value;
+        synth_.params[index] = (int8_t)value;
 
         // Update synth with new parameters
         fm_perc_synth_update_params(&synth_);
@@ -219,5 +227,4 @@ private:
     uint32_t sample_rate_;
     uint32_t active_voices_;
     uint8_t current_preset_;
-    std::atomic_uint_fast32_t flags_;
 };

@@ -100,9 +100,7 @@ fast_inline void resonant_synth_set_f0(resonant_synth_t* rs,
     float32x4_t exponent = vmulq_f32(vsubq_f32(midi_notes, a4_midi), twelfth);
 
     // 2^x approximation: 1 + x*0.693 + x²*0.24
-    float32x4_t x2 = vmulq_f32(exponent, exponent);
-    float32x4_t two_pow = vmlaq_f32(vdupq_n_f32(1.0f), exponent, vdupq_n_f32(0.693f));
-    two_pow = vmlaq_f32(two_pow, x2, vdupq_n_f32(0.24f));
+    float32x4_t two_pow = exp2_neon(exponent)
 
     float32x4_t base_freq = vmulq_f32(a4_freq, two_pow);
 

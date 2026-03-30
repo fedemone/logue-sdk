@@ -10,18 +10,18 @@
 
 const char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
 {
-    "Deep Tribal",
-    "Metal Storm",
-    "ChordalPerc",
-    "Phase Dance",
-    "BipolarBass",
-    "Snare Roll",
-    "AmbientMetl",
-    "Polyrhythm",
-    "ResoKick",
-    "ResoTom",
-    "ResoSnare",
-    "ResoMetal"
+    "DepTrbl",
+    "MtlStrm",
+    "ChrdPerc",
+    "PhseDnc",
+    "BplrBss",
+    "SnreRll",
+    "AbntMtl",
+    "Polyrtm",
+    "ResKick",
+    "ResTom",
+    "ResSnr",
+    "ResMtl"
 };
 
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {

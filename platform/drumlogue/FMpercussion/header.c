@@ -6,23 +6,23 @@
 #include "unit.h"
 
 // String tables
-static const char* lfo_shape_strings[9] = {
+const char* lfo_shape_strings[9] = {
     "Tri+Tri", "Ramp+Ramp", "Chord+Chord",
     "Tri+Ramp", "Tri+Chord", "Ramp+Tri",
     "Ramp+Chord", "Chord+Tri", "Chord+Ramp"
 };
 
-static const char* lfo_target_strings[8] = {
+const char* lfo_target_strings[8] = {
     "None", "Pitch", "ModIdx", "Env",
     "LFO2Ph", "LFO1Ph", "ResFreq", "Resonance"
 };
 
-static const char* resonant_mode_strings[5] = {
+const char* resonant_mode_strings[5] = {
     "LowPass", "BandPass", "HighPass", "Notch", "Peak"
 };
 
 // Voice allocation - 12 valid combinations (no duplicates)
-static const char* voice_alloc_strings[12] = {
+const char* voice_alloc_strings[12] = {
     "K-S-M-P",  // 0: Classic (no resonant)
     "K-S-M-R",  // 1: Resonant on Perc
     "K-S-R-P",  // 2: Resonant on Metal
@@ -71,13 +71,13 @@ const __unit_header unit_header_t unit_header = {
         {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Shape"}},
         {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L1Rate"}},
         {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Dest"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L1Depth"}},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L1Depth"}},
 
         // Page 5: LFO2
         {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Shape"}},
         {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L2Rate"}},
         {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Dest"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
 
         // Page 6: Envelope + Voice + Resonant
         {0, 127, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}},
