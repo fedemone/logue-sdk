@@ -32,6 +32,26 @@ static bool s_initialized = false;
 static bool s_bypass = true;
 
 // ============================================================================
+// Presets
+// ============================================================================
+static const char* k_preset_names[4] = {
+    "Neon Room",   // 0: Tight, bright, standard drum room
+    "Dark Alley",  // 1: Long decay, heavy LPF, spooky
+    "Tape Slap",   // 2: High pre-delay, short decay, heavily modulated
+    "Abyss"        // 3: Massive size, max decay, floating
+};
+
+// Values map to: { DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY }
+static const int32_t k_preset_values[4][7] = {
+    { 40, 70, 30, 10,  5, 30,  5 },  // Neon Room
+    { 80, 20, 40, 80, 10, 60, 15 },  // Dark Alley
+    { 20, 50, 40, 40, 40, 10, 80 },  // Tape Slap
+    { 95, 40, 60, 30, 25, 90, 10 }   // Abyss
+};
+
+static uint8_t s_current_preset = 0;
+
+// ============================================================================
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
 // ID 0: DARK  0..100 %  default 20
@@ -94,6 +114,14 @@ __unit_callback void unit_reset() {
 __unit_callback void unit_resume() {}
 __unit_callback void unit_suspend() {}
 
+// Simple one-pole DC blocker / HPF
+fast_inline float pre_delay(float inL)
+{
+    float currentL = inL;
+    hpfStateL = currentL - hpfStateL + (hpfCoeff * hpfStateL);
+    return hpfStateL;
+}
+
 __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     // ========================================================================
     // Safety Check: Bypass if not initialized
@@ -116,8 +144,9 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     // Deinterleave input: [L,R,L,R,...] -> separate L and R buffers
     // ========================================================================
     for (uint32_t i = 0; i < frames; i++) {
-        s_inL[i] = in[i * 2];
-        s_inR[i] = in[i * 2 + 1];
+        // Simple one-pole DC blocker / HPF
+        s_inL[i] = pre_delay(in[i * 2]);
+        s_inR[i] = pre_delay(in[i * 2 + 1]);
     }
 
     // ========================================================================
@@ -159,6 +188,9 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         case 5: // SIZE  room size  0-100% → scale 0.1..2.0
             s_fdn_engine.setSize(0.1f + norm * 1.9f);
             break;
+        case 6: // PDLY pre delay
+            s_fdn_engine.setPreDelay(norm * 200.0f);
+            break;
         default:
             break;
     }
@@ -195,6 +227,24 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
     (void)aftertouch;
 }
 
-__unit_callback void unit_load_preset(uint8_t idx) { (void)idx; }
-__unit_callback uint8_t unit_get_preset_index() { return 0; }
-__unit_callback const char* unit_get_preset_name(uint8_t idx) { return nullptr; }
+__unit_callback uint8_t unit_get_preset_index() {
+    return s_current_preset;
+}
+
+__unit_callback const char* unit_get_preset_name(uint8_t idx) {
+    if (idx >= 4) return nullptr;
+    return k_preset_names[idx];
+}
+
+__unit_callback void unit_load_preset(uint8_t idx) {
+    if (idx >= 4) return;
+    s_current_preset = idx;
+
+    // Apply all parameter values from the preset
+    for (uint8_t p = 0; p < 7; p++) {
+        // Update the internal state array
+        s_params[p] = k_preset_values[idx][p];
+        // Trigger the logic to update the FDN engine
+        unit_set_param_value(p, s_params[p]);
+    }
+}
