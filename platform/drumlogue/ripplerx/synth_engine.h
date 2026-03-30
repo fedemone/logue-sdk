@@ -898,17 +898,16 @@ public:
 #ifdef ENABLE_PHASE_5_EXCITERS
         // Trigger the envelopes when a note hits
         v.exciter.noise_env.trigger();
-        // Configure master envelope as a Gate (Instant attack, infinite sustain)
-        v.exciter.master_env.attack_rate = 0.99f;
+        // Configure master envelope as a fully-open gate (value=1.0, ENV_DECAY).
+        // Direct assignment avoids the  trigger() + process()  pattern that relied on
+        // the floating-point comparison  value >= 0.99f  after one multiply-add.
+        // ARM -ffast-math may emit an FMA whose rounding leaves value fractionally
+        // below 0.99f, keeping state in ENV_ATTACK and silencing the gate permanently.
+        // release_rate is already set for this voice by setParameter(k_paramDkay).
         v.exciter.master_env.decay_rate = 0.0f;
         v.exciter.master_env.sustain_level = 1.0f;
-        v.exciter.master_env.trigger();
-        // Pre-advance through the 1-sample attack so a same-tick GateOff doesn't
-        // silence the voice.  On the Drumlogue, gate_on + gate_off can both fire
-        // before the first audio block (drum one-shot trigger model).  Without this
-        // call, release() finds value=0 → ENV_RELEASE → ENV_IDLE in one sample → 0.
-        // With attack_rate=0.99, one process() call: value 0→1.0, state→ENV_DECAY.
-        v.exciter.master_env.process();
+        v.exciter.master_env.value = 1.0f;
+        v.exciter.master_env.state = ENV_DECAY;
 #endif
     }
 
@@ -1099,6 +1098,15 @@ public:
         for (size_t i = 0; i < frames * 2; ++i)
             main_out[i] = 0.0f;
 
+#ifdef UNIT_TEST_DEBUG
+        // Reset probes each block so callers that check them after a block with
+        // no active voices (e.g. after Reset()) correctly observe 0, not the
+        // stale value from the previous block.
+        ut_exciter_out = 0.0f;
+        ut_delay_read  = 0.0f;
+        ut_voice_out   = 0.0f;
+#endif
+
         // Hoist tone read outside all loops — avoids UI/audio-thread race.
         const float tone_val = state.tone;
 
@@ -1283,10 +1291,10 @@ private:
 private:
     float m_master_cutoff = 10000.0f; // Default open filter
 
-    // Functions from unit runtime
-    unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr;
-    unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr;
-    unit_runtime_get_sample_ptr m_get_sample;
+    // Functions from unit runtime (nullptr until Init() assigns them from the OS descriptor)
+    unit_runtime_get_num_sample_banks_ptr m_get_num_sample_banks_ptr = nullptr;
+    unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr = nullptr;
+    unit_runtime_get_sample_ptr m_get_sample = nullptr;
 
     uint8_t m_ui_note = 60;
     uint8_t m_sample_bank = 0;
