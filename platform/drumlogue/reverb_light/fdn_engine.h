@@ -440,11 +440,11 @@ public:
         for (int i = samplesProcessed; i < numSamples; i++) {
             // Simple one-pole DC blocker / HPF
             float currentL = (inL[i] + inR[i]) * 0.5f;
-            float filteredL = currentL - hpfStateL + (hpfCoeff * hpfStateL);
-            hpfStateL = filteredL;
+            float filtered = currentL - hpfStateL;
+            hpfStateL = currentL - hpfCoeff * filtered;
 
             // Pre-Delay
-            preDelayBuffer[preDelayWritePos] = currentL;
+            preDelayBuffer[preDelayWritePos] = filtered;
             int readPos = (preDelayWritePos - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
             float delayedInput = preDelayBuffer[readPos];
             preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
