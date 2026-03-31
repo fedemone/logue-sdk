@@ -235,8 +235,8 @@ public:
         float monoLanes[4];
         vst1q_f32(monoLanes, inMono);
         for(int s = 0; s < 4; s++) {
-            float filtered = monoLanes[s] - hpfStateL + (hpfCoeff * hpfStateL);
-            hpfStateL = filtered;
+            float filtered = monoLanes[s] - hpfStateL;
+            hpfStateL = monoLanes[s] - hpfCoeff * filtered;
             monoLanes[s] = filtered; // Overwrite with high-passed signal
         }
         inMono = vld1q_f32(monoLanes); // Reload filtered signal into NEON vector
@@ -524,7 +524,7 @@ private:
 
     // High Pass filter
     float hpfStateL = 0.0f;
-    float hpfStateR = 0.0f;
+    // float hpfStateR = 0.0f;
     float hpfCoeff = 0.85f; // Adjust between 0.0 (off) and 0.99 (heavy low cut)
 
     bool initialized;

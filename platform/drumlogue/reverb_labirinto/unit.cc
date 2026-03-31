@@ -226,7 +226,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id > k_total) return 0;
+    if (id >= k_total) return 0;
     return s_params[id];
 }
 

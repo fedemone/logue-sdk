@@ -95,19 +95,20 @@ public:
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         fm_perc_synth_note_on(&synth_, note, velocity);
-        active_voices_ = vgetq_lane_u32(synth_.voice_triggered, 0) |
-                        vgetq_lane_u32(synth_.voice_triggered, 1) |
-                        vgetq_lane_u32(synth_.voice_triggered, 2) |
+        // total number of active voices
+        active_voices_ = vgetq_lane_u32(synth_.voice_triggered, 0) +
+                        vgetq_lane_u32(synth_.voice_triggered, 1) +
+                        vgetq_lane_u32(synth_.voice_triggered, 2) +
                         vgetq_lane_u32(synth_.voice_triggered, 3);
     }
 
     inline void NoteOff(uint8_t note) {
-    fm_perc_synth_note_off(&synth_, note);
-    // Recalculate active voices from the synth state
-    active_voices_ = vgetq_lane_u32(synth_.voice_triggered, 0) |
-                     vgetq_lane_u32(synth_.voice_triggered, 1) |
-                     vgetq_lane_u32(synth_.voice_triggered, 2) |
-                     vgetq_lane_u32(synth_.voice_triggered, 3);
+        fm_perc_synth_note_off(&synth_, note);
+        // Recalculate total number of active voices from the synth state
+        active_voices_ = vgetq_lane_u32(synth_.voice_triggered, 0) +
+                        vgetq_lane_u32(synth_.voice_triggered, 1) +
+                        vgetq_lane_u32(synth_.voice_triggered, 2) +
+                        vgetq_lane_u32(synth_.voice_triggered, 3);
     }
 
     inline void GateOn(uint8_t velocity) {
