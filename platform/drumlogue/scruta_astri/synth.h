@@ -377,13 +377,11 @@ public:
             distorted = fast_tanh( fast_tanh( distorted * 1.2f ) ) * 0.9f;  // defined in filter.h
 
             // Remove the DC bias (optional - could leave a tiny offset)
-            // distorted -= dc_bias;
+            distorted -= dc_bias * 0.9f;
 
             // Apply master volume (no additional clipper needed)
             float scaled = distorted * m_master_vol;
             float master_out = scaled;   // fast_tanh already bounds output to ±1
-
-            master_out *= m_drone_amp;
 
             main_out[i * 2]     = master_out;
             main_out[i * 2 + 1] = master_out;
