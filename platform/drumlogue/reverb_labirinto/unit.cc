@@ -43,7 +43,7 @@ static bool s_bypass = true;
 // ID 5: DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
 // ID 6: WIDE   0..200 %           default 100
 // ID 7: COMP   0..1000 (x0.1%)    default 1000
-// ID k_total: PILL   0..4         default 3
+// ID 8: PILL   0..4               default 3
 // ID 9: PL4FRQ 0..100             default 35 (Hz)
 // ID 10: PDLY  0..100             default 0 (ms)
 
@@ -76,7 +76,6 @@ static const int32_t k_presets[k_preset_number][k_total] = {
 static const char* k_preset_names[k_preset_number] = {
     "foresta", "tempio", "labirinto", "stellare"
 };
-static uint8_t s_current_preset = 0xFF;  /* 0xFF = no preset loaded */
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)

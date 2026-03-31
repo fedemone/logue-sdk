@@ -162,7 +162,7 @@ public:
         // Push immediate frequency updates to oscillators
         updateOscillators();
         // Open the drone VCA
-        m_drone_target = 1.0f;
+        // m_drone_target = 1.0f;
     }
 
     inline void updateOscillators() {
@@ -191,13 +191,13 @@ public:
 
     // The Drumlogue sends this when the sequencer stops!
     inline void AllNoteOff() {
-        m_drone_target = 0.0f; // Smoothly fade out the drone
+        // m_drone_target = 0.0f; // Smoothly fade out the drone
     }
 
     // Hard stop
     inline void Suspend() {
-        m_drone_target = 0.0f;
-        m_drone_amp = 0.0f;
+        // m_drone_target = 0.0f;
+        // m_drone_amp = 0.0f;
     }
 
     inline void processBlock(float* __restrict main_out, size_t frames) {
@@ -212,14 +212,14 @@ public:
         for (size_t i = 0; i < frames; ++i) {
 
             // 1. HARDWARE DRONE GATE (Smooth ~2ms AR Envelope)
-            m_drone_amp += (m_drone_target - m_drone_amp) * 0.01f;
+            // m_drone_amp += (m_drone_target - m_drone_amp) * 0.01f;
 
-            // 2. CPU SQUELCH: If the hardware is paused and faded out, output silence!
-            if (m_drone_amp < 0.0001f && m_drone_target == 0.0f) {
-                main_out[i * 2] = 0.0f;
-                main_out[i * 2 + 1] = 0.0f;
-                continue; // Skip all DSP calculations for this frame!
-            }
+            // // 2. CPU SQUELCH: If the hardware is paused and faded out, output silence!
+            // if (m_drone_amp < 0.0001f && m_drone_target == 0.0f) {
+            //     main_out[i * 2] = 0.0f;
+            //     main_out[i * 2 + 1] = 0.0f;
+            //     continue; // Skip all DSP calculations for this frame!
+            // }
 
             // 3. CORE MODULATION SIGNALS
             float l1_val = lfo1.process() * m_lfo1_depth;
@@ -404,8 +404,8 @@ private:
 
 
     // Hardware Gate Trackers
-    float m_drone_target = 0.0f;
-    float m_drone_amp = 0.0f;
+    // float m_drone_target = 0.0f;
+    // float m_drone_amp = 0.0f;
 
     float m_sherman_makeup = 1.0f;
 

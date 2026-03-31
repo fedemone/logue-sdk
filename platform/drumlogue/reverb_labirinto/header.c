@@ -58,6 +58,5 @@ const __unit_header unit_header_t unit_header = {
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
     }
 };

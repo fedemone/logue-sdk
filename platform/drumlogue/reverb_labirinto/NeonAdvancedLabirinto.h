@@ -227,7 +227,7 @@ public:
                  float* outL, float* outR,
                  int numSamples) {
 
-	// Safety check
+	    // Safety check
         if (!initialized) {
             memcpy(outL, inL, numSamples * sizeof(float));
             memcpy(outR, inR, numSamples * sizeof(float));

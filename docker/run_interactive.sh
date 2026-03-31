@@ -148,4 +148,10 @@ echo ""
 # This prevents /app/interactive_entry from being converted to C:/Program Files/Git/app/...
 export MSYS_NO_PATHCONV=1
 
-docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it ${IMAGE_NAME}:${IMAGE_VERSION} /app/interactive_entry
+docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it ${IMAGE_NAME}:${IMAGE_VERSION} /app/interactive_entry 2>&1 | tee ${PLATFORM_MOUNT}\build_effects.log
+
+mkdir -p "builds"
+
+find "${PLATFORM_MOUNT}/drumlogue" -name "*.drmlgunit" -exec cp {} "builds" \;
+
+echo "find units to be loaded under ${PLATFORM_MOUNT}/drumlogue/builds path"

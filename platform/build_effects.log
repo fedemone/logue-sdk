@@ -30,12 +30,142 @@ chown: changing ownership of 'build/obj/_unit_base.o': Operation not permitted
 chown: changing ownership of 'build/obj': Operation not permitted
 chown: changing ownership of 'build': Operation not permitted
 make: *** [Makefile:292: POST_MAKE_ALL_RULE_HOOK] Error 1
+
+
 >> Installing /workspace/drumlogue/FMpercussion
 Deploying to /workspace/drumlogue/FMpercussion//fm_perc_synth.drmlgunit
 
 Done
 
 >> Building /workspace/drumlogue/delay_tribal
+Compiling unit.cc
+Compiling PercussionSpatializer.cc
+In file included from PercussionSpatializer.h:21:0,
+                 from unit.cc:7:
+filters.h: In function 'void update_filter_params(mode_filters_t*, float, uint32_t)':
+filters.h:172:12: warning: enumeration value 'MODE_COUNT' not handled in switch [-Wswitch]
+     switch (filters->mode) {
+            ^
+filters.h: In function 'void apply_mode_filters(mode_filters_t*, uint32_t, float32x4_t*, float32x4_t*, float)':
+filters.h:225:12: warning: enumeration value 'MODE_COUNT' not handled in switch [-Wswitch]
+     switch (filters->mode) {
+            ^
+In file included from unit.cc:7:0:
+PercussionSpatializer.h: In constructor 'PercussionSpatializer::PercussionSpatializer()':
+PercussionSpatializer.h:880:14: warning: 'PercussionSpatializer::clone_count_' will be initialized after [-Wreorder]
+     uint32_t clone_count_;
+              ^~~~~~~~~~~~
+PercussionSpatializer.h:879:20: warning:   'spatial_mode_t PercussionSpatializer::current_mode_' [-Wreorder]
+     spatial_mode_t current_mode_;
+                    ^~~~~~~~~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:890:10: warning: 'PercussionSpatializer::initialized_' will be initialized after [-Wreorder]
+     bool initialized_;
+          ^~~~~~~~~~~~
+PercussionSpatializer.h:888:14: warning:   'uint32_t PercussionSpatializer::sample_rate_' [-Wreorder]
+     uint32_t sample_rate_;
+              ^~~~~~~~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:898:11: warning: 'PercussionSpatializer::transient_energy_' will be initialized after [-Wreorder]
+     float transient_energy_;
+           ^~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:881:11: warning:   'float PercussionSpatializer::depth_' [-Wreorder]
+     float depth_;
+           ^~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:905:10: warning: 'PercussionSpatializer::crossfade_active_' will be initialized after [-Wreorder]
+     bool crossfade_active_;
+          ^~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:900:31: warning:   'std::atomic_uint_fast32_t PercussionSpatializer::flags_' [-Wreorder]
+     std::atomic_uint_fast32_t flags_;
+                               ^~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h: In static member function 'static const char* PercussionSpatializer::getPresetName(uint8_t)':
+PercussionSpatializer.h:391:53: warning: unused parameter 'idx' [-Wunused-parameter]
+     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
+                                                     ^~~
+PercussionSpatializer.h: In member function 'void PercussionSpatializer::update_panning()':
+PercussionSpatializer.h:775:31: warning: comparison between signed and unsigned integer expressions [-Wsign-compare]
+                 if (clone_idx < clone_count_) {
+                     ~~~~~~~~~~^~~~~~~~~~~~~~
+PercussionSpatializer.h:803:45: warning: comparison between signed and unsigned integer expressions [-Wsign-compare]
+                 active_vals[i] = (clone_idx < clone_count_) ? 0xFFFFFFFFU : 0U;
+                                   ~~~~~~~~~~^~~~~~~~~~~~~~
+PercussionSpatializer.h: In member function 'void PercussionSpatializer::apply_crossfade(float32x4_t*, float32x4_t*)':
+PercussionSpatializer.h:847:21: warning: unused variable 'fade_out_vec' [-Wunused-variable]
+         float32x4_t fade_out_vec = vdupq_n_f32(fade_out);
+                     ^~~~~~~~~~~~
+In file included from PercussionSpatializer.h:21:0,
+                 from PercussionSpatializer.cc:2:
+filters.h: In function 'void update_filter_params(mode_filters_t*, float, uint32_t)':
+filters.h:172:12: warning: enumeration value 'MODE_COUNT' not handled in switch [-Wswitch]
+     switch (filters->mode) {
+            ^
+filters.h: In function 'void apply_mode_filters(mode_filters_t*, uint32_t, float32x4_t*, float32x4_t*, float)':
+filters.h:225:12: warning: enumeration value 'MODE_COUNT' not handled in switch [-Wswitch]
+     switch (filters->mode) {
+            ^
+In file included from PercussionSpatializer.cc:2:0:
+PercussionSpatializer.h: In constructor 'PercussionSpatializer::PercussionSpatializer()':
+PercussionSpatializer.h:880:14: warning: 'PercussionSpatializer::clone_count_' will be initialized after [-Wreorder]
+     uint32_t clone_count_;
+              ^~~~~~~~~~~~
+PercussionSpatializer.h:879:20: warning:   'spatial_mode_t PercussionSpatializer::current_mode_' [-Wreorder]
+     spatial_mode_t current_mode_;
+                    ^~~~~~~~~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:890:10: warning: 'PercussionSpatializer::initialized_' will be initialized after [-Wreorder]
+     bool initialized_;
+          ^~~~~~~~~~~~
+PercussionSpatializer.h:888:14: warning:   'uint32_t PercussionSpatializer::sample_rate_' [-Wreorder]
+     uint32_t sample_rate_;
+              ^~~~~~~~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:898:11: warning: 'PercussionSpatializer::transient_energy_' will be initialized after [-Wreorder]
+     float transient_energy_;
+           ^~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:881:11: warning:   'float PercussionSpatializer::depth_' [-Wreorder]
+     float depth_;
+           ^~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:905:10: warning: 'PercussionSpatializer::crossfade_active_' will be initialized after [-Wreorder]
+     bool crossfade_active_;
+          ^~~~~~~~~~~~~~~~~
+PercussionSpatializer.h:900:31: warning:   'std::atomic_uint_fast32_t PercussionSpatializer::flags_' [-Wreorder]
+     std::atomic_uint_fast32_t flags_;
+                               ^~~~~~
+PercussionSpatializer.h:71:5: warning:   when initialized here [-Wreorder]
+     PercussionSpatializer()
+     ^~~~~~~~~~~~~~~~~~~~~
+PercussionSpatializer.h: In static member function 'static const char* PercussionSpatializer::getPresetName(uint8_t)':
+PercussionSpatializer.h:391:53: warning: unused parameter 'idx' [-Wunused-parameter]
+     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
+                                                     ^~~
+PercussionSpatializer.h: In member function 'void PercussionSpatializer::update_panning()':
+PercussionSpatializer.h:775:31: warning: comparison between signed and unsigned integer expressions [-Wsign-compare]
+                 if (clone_idx < clone_count_) {
+                     ~~~~~~~~~~^~~~~~~~~~~~~~
+PercussionSpatializer.h:803:45: warning: comparison between signed and unsigned integer expressions [-Wsign-compare]
+                 active_vals[i] = (clone_idx < clone_count_) ? 0xFFFFFFFFU : 0U;
+                                   ~~~~~~~~~~^~~~~~~~~~~~~~
+PercussionSpatializer.h: In member function 'void PercussionSpatializer::apply_crossfade(float32x4_t*, float32x4_t*)':
+PercussionSpatializer.h:847:21: warning: unused variable 'fade_out_vec' [-Wunused-variable]
+         float32x4_t fade_out_vec = vdupq_n_f32(fade_out);
+                     ^~~~~~~~~~~~
 
 Linking build/delay_tribal.drmlgunit
 Stripping build/delay_tribal.drmlgunit
@@ -45,7 +175,7 @@ Creating build/delay_tribal.dmp
 Creating build/delay_tribal.list
 
    text	   data	    bss	    dec	    hex	filename
-  12938	    408	 775120	 788466	  c07f2	build/delay_tribal.drmlgunit
+  13318	    408	 775120	 788846	  c096e	build/delay_tribal.drmlgunit
 
 Done
 
@@ -76,9 +206,9 @@ Done
 
 Linking build/dummy_delay.drmlgunit
 Stripping build/dummy_delay.drmlgunit
-Creating build/dummy_delay.hex
-Creating build/dummy_delay.dmp
 Creating build/dummy_delay.bin
+Creating build/dummy_delay.dmp
+Creating build/dummy_delay.hex
 Creating build/dummy_delay.list
 
 
@@ -151,8 +281,8 @@ Creating build/dummy_reverb.bin
 Creating build/dummy_reverb.dmp
 Creating build/dummy_reverb.list
 
-Done
 
+Done
 
    text	   data	    bss	    dec	    hex	filename
    3595	    344	 192032	 195971	  2fd83	build/dummy_reverb.drmlgunit
@@ -210,401 +340,122 @@ Deploying to /workspace/drumlogue/dummy-synth//dummy_synth.drmlgunit
 Done
 
 >> Building /workspace/drumlogue/omnipress
-Compiler Options
-arm-unknown-linux-gnueabihf-gcc -c -march=armv7-a -mtune=cortex-a7 -marm -Os -flto -mfloat-abi=hard -mfpu=neon-vfpv4 -mvectorize-with-neon-quad -ftree-vectorize -ftree-vectorizer-verbose=4 -funsafe-math-optimizations -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 -fno-math-errno -fomit-frame-pointer -finline-limit=9999999999 --param max-inline-insns-single=9999999999 -std=c11 -W -Wall -Wextra -fPIC -Wa,-alms=build/lst/ -D__arm__ -D__cortex_a7__ -DARM_NEON_OPTIMIZATION -MMD -MP -MF .dep/build.d -I. -I/workspace/drumlogue/common -I. xxxx.c -o build/obj/xxxx.o
-arm-unknown-linux-gnueabihf-g++ -c -march=armv7-a -mtune=cortex-a7 -marm -Os -flto -mfloat-abi=hard -mfpu=neon-vfpv4 -mvectorize-with-neon-quad -ftree-vectorize -ftree-vectorizer-verbose=4 -funsafe-math-optimizations -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 -fno-math-errno -fconcepts -fomit-frame-pointer -finline-limit=9999999999 --param max-inline-insns-single=9999999999 -fno-threadsafe-statics -std=gnu++14 -W -Wall -Wextra -Wno-ignored-qualifiers -fPIC -Wa,-alms=build/lst/ -D__arm__ -D__cortex_a7__ -DARM_NEON_OPTIMIZATION -MMD -MP -MF .dep/build.d -I. -I/workspace/drumlogue/common -I. xxxx.cc -o build/obj/xxxx.o
-arm-unknown-linux-gnueabihf-g++ -c -march=armv7-a -mtune=cortex-a7 -marm -fPIC -Wa,-amhls=build/lst/ -MMD -MP -MF .dep/build.d -I. -I/workspace/drumlogue/common -I. xxxx.s -o build/obj/xxxx.o
-arm-unknown-linux-gnueabihf-gcc -c -march=armv7-a -mtune=cortex-a7 -marm -fPIC -Wa,-amhls=build/lst/ -MMD -MP -MF .dep/build.d -I. -I/workspace/drumlogue/common -I. xxxx.s -o build/obj/xxxx.o
-arm-unknown-linux-gnueabihf-g++ xxxx.o -march=armv7-a -mtune=cortex-a7 -marm -Os -flto -mfloat-abi=hard -mfpu=neon-vfpv4 -mvectorize-with-neon-quad -ftree-vectorize -ftree-vectorizer-verbose=4 -funsafe-math-optimizations -shared -Wl,-Map=build/omnipress.map,--cref -lm -lc -o build/omnipress.elf
+Compiling unit.cc
+In file included from compressor_core.h:11:0,
+                 from masterfx.h:29,
+                 from unit.cc:9:
+float_math.h: In function 'float Q_rsqrt(float)':
+float_math.h:1017:21: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+  i  = * ( long * ) &y;                       // evil floating point bit level hacking
+                     ^
+float_math.h:1019:22: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+  y  = * ( float * ) &i;
+                      ^
+In file included from masterfx.h:29:0,
+                 from unit.cc:9:
+compressor_core.h: In function 'float32x4_t compressor_calc_gain(compressor_t*, float32x4_t, float, float)':
+compressor_core.h:53:60: warning: unused parameter 'comp' [-Wunused-parameter]
+ fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
+                                                            ^~~~
+In file included from masterfx.h:30:0,
+                 from unit.cc:9:
+filters.h: In function 'float32x4_t envelope_detect(envelope_detector_t*, float32x4_t, float32x4_t)':
+filters.h:152:53: warning: unused parameter 'in' [-Wunused-parameter]
+                                         float32x4_t in,
+                                                     ^~
+In file included from masterfx.h:32:0,
+                 from unit.cc:9:
+distressor_mode.h: In function 'float32x4_t generate_harmonics(distressor_t*, float32x4_t, uint8_t)':
+distressor_mode.h:123:17: warning: unused variable 'two' [-Wunused-variable]
+     float32x4_t two = vdupq_n_f32(2.0f);
+                 ^~~
+distressor_mode.h:124:17: warning: unused variable 'three' [-Wunused-variable]
+     float32x4_t three = vdupq_n_f32(3.0f);
+                 ^~~~~
+distressor_mode.h:125:17: warning: unused variable 'four' [-Wunused-variable]
+     float32x4_t four = vdupq_n_f32(4.0f);
+                 ^~~~
+distressor_mode.h:119:58: warning: unused parameter 'd' [-Wunused-parameter]
+ fast_inline float32x4_t generate_harmonics(distressor_t* d,
+                                                          ^
+In file included from masterfx.h:33:0,
+                 from unit.cc:9:
+multiband.h: In function 'void multiband_process(multiband_t*, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
+multiband.h:153:16: warning: unused variable 'exp_mask' [-Wunused-variable]
+     uint32x4_t exp_mask = vdupq_n_u32(0x7F800000);
+                ^~~~~~~~
+multiband.h:154:16: warning: unused variable 'mant_mask' [-Wunused-variable]
+     uint32x4_t mant_mask = vdupq_n_u32(0x007FFFFF);
+                ^~~~~~~~~
+multiband.h:160:17: warning: unused variable 'low_db' [-Wunused-variable]
+     float32x4_t low_db = vdupq_n_f32(0.0f);  // Simplified - proper dB conversion
+                 ^~~~~~
+multiband.h:166:17: warning: unused variable 'mid_db' [-Wunused-variable]
+     float32x4_t mid_db = vdupq_n_f32(0.0f);
+                 ^~~~~~
+multiband.h:172:17: warning: unused variable 'high_db' [-Wunused-variable]
+     float32x4_t high_db = vdupq_n_f32(0.0f);
+                 ^~~~~~~
+In file included from unit.cc:9:0:
+masterfx.h: In static member function 'static const char* MasterFX::getPresetName(uint8_t)':
+masterfx.h:505:53: warning: unused parameter 'idx' [-Wunused-parameter]
+     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
+                                                     ^~~
+In file included from masterfx.h:32:0,
+                 from unit.cc:9:
+distressor_mode.h: At global scope:
+distressor_mode.h:41:20: warning: 'distressor_mode_strings' defined but not used [-Wunused-variable]
+ static const char* distressor_mode_strings[6] = {
+                    ^~~~~~~~~~~~~~~~~~~~~~~
 
-Compiling header.c
-Compiling _unit_base.c
-Compiling unit.cc
-In file included from masterfx.h:28:0,
-                 from unit.cc:9:
-compressor_core.h: In function 'float32x4_t compressor_rms_process(compressor_t*, float32x4_t)':
-compressor_core.h:48:38: error: 'vsqrtq_f32' was not declared in this scope
-     return vsqrtq_f32(comp->rms_state);
-                                      ^
-compressor_core.h: In function 'float32x4_t compressor_calc_gain(compressor_t*, float32x4_t, float, float)':
-compressor_core.h:94:65: error: 'fast_div_neon' was not declared in this scope
-     float32x4_t gain_red = fast_div_neon(gain_red_num, ratio_vec);
-                                                                 ^
-compressor_core.h:52:60: warning: unused parameter 'comp' [-Wunused-parameter]
- fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
-                                                            ^~~~
-In file included from masterfx.h:29:0,
-                 from unit.cc:9:
-filters.h: In function 'void envelope_detector_init(envelope_detector_t*, float)':
-filters.h:137:53: error: 'e_expff' was not declared in this scope
-     env->attack_coeff = e_expff(-1.0f / (0.01f * sr));
-                                                     ^
-filters.h: In function 'void envelope_set_attack_release(envelope_detector_t*, float, float)':
-filters.h:145:80: error: 'e_expff' was not declared in this scope
-     env->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * env->sample_rate));
-                                                                                ^
-filters.h: In function 'float32x4_t envelope_detect(envelope_detector_t*, float32x4_t, float32x4_t)':
-filters.h:151:53: warning: unused parameter 'in' [-Wunused-parameter]
-                                         float32x4_t in,
-                                                     ^~
-filters.h: In function 'float32x4_t gain_computer_process(gain_computer_t*, float32x4_t, float, float)':
-filters.h:295:85: error: 'fast_div_neon' was not declared in this scope
-             float32x4_t x = fast_div_neon(vsubq_f32(envelope_db, knee_start), knee_w);
-                                                                                     ^
-filters.h:314:95: error: 'fast_div_neon' was not declared in this scope
-             float32x4_t in_knee_amt = fast_div_neon(vsubq_f32(envelope_db, knee_start), knee_w);
-                                                                                               ^
-filters.h: In function 'void smoothing_init(smoothing_t*, float)':
-filters.h:341:52: error: 'e_expff' was not declared in this scope
-     sm->attack_coeff = e_expff(-1.0f / (0.01f * sr));    // 10ms default
-                                                    ^
-filters.h: In function 'void smoothing_set_times(smoothing_t*, float, float)':
-filters.h:373:78: error: 'e_expff' was not declared in this scope
-     sm->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * sm->sample_rate));
-                                                                              ^
-In file included from masterfx.h:30:0,
-                 from unit.cc:9:
-wavefolder.h: In function 'float32x4_t soft_clip(float32x4_t)':
-wavefolder.h:108:62: error: 'fast_div_neon' was not declared in this scope
-     float32x4_t approx = vsubq_f32(x, fast_div_neon(x3, three));
-                                                              ^
-In file included from masterfx.h:31:0,
-                 from unit.cc:9:
-distressor_mode.h: In function 'float32x4_t generate_harmonics(distressor_t*, float32x4_t, uint8_t)':
-distressor_mode.h:123:17: warning: unused variable 'two' [-Wunused-variable]
-     float32x4_t two = vdupq_n_f32(2.0f);
-                 ^~~
-distressor_mode.h:124:17: warning: unused variable 'three' [-Wunused-variable]
-     float32x4_t three = vdupq_n_f32(3.0f);
-                 ^~~~~
-distressor_mode.h:125:17: warning: unused variable 'four' [-Wunused-variable]
-     float32x4_t four = vdupq_n_f32(4.0f);
-                 ^~~~
-distressor_mode.h:119:58: warning: unused parameter 'd' [-Wunused-parameter]
- fast_inline float32x4_t generate_harmonics(distressor_t* d,
-                                                          ^
-In file included from masterfx.h:32:0,
-                 from unit.cc:9:
-multiband.h: In function 'void multiband_reset(multiband_t*)':
-multiband.h:88:21: error: too few arguments to function 'void multiband_init(multiband_t*, float)'
-     multiband_init(m);
-                     ^
-multiband.h:55:18: note: declared here
- fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
-                  ^~~~~~~~~~~~~~
-multiband.h: In function 'void multiband_process(multiband_t*, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
-multiband.h:186:83: error: 'vexpq_f32' was not declared in this scope
-     float32x4_t low_gain = vexpq_f32(vmulq_f32(mb->gr_low, vdupq_n_f32(0.115129f)));
-                                                                                   ^
-multiband.h:153:16: warning: unused variable 'exp_mask' [-Wunused-variable]
-     uint32x4_t exp_mask = vdupq_n_u32(0x7F800000);
-                ^~~~~~~~
-multiband.h:154:16: warning: unused variable 'mant_mask' [-Wunused-variable]
-     uint32x4_t mant_mask = vdupq_n_u32(0x007FFFFF);
-                ^~~~~~~~~
-multiband.h:160:17: warning: unused variable 'low_db' [-Wunused-variable]
-     float32x4_t low_db = vdupq_n_f32(0.0f);  // Simplified - proper dB conversion
-                 ^~~~~~
-multiband.h:166:17: warning: unused variable 'mid_db' [-Wunused-variable]
-     float32x4_t mid_db = vdupq_n_f32(0.0f);
-                 ^~~~~~
-multiband.h:172:17: warning: unused variable 'high_db' [-Wunused-variable]
-     float32x4_t high_db = vdupq_n_f32(0.0f);
-                 ^~~~~~~
-In file included from unit.cc:9:0:
-masterfx.h: In constructor 'MasterFX::MasterFX()':
-masterfx.h:46:36: error: too few arguments to function 'void sidechain_hpf_init(sidechain_hpf_t*, float, float)'
-         sidechain_hpf_init(&sc_hpf_);
-                                    ^
-In file included from masterfx.h:29:0,
-                 from unit.cc:9:
-filters.h:34:18: note: declared here
- fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) {
-                  ^~~~~~~~~~~~~~~~~~
-In file included from unit.cc:9:0:
-masterfx.h: In member function 'void MasterFX::Reset()':
-masterfx.h:84:36: error: too few arguments to function 'void sidechain_hpf_init(sidechain_hpf_t*, float, float)'
-         sidechain_hpf_init(&sc_hpf_);
-                                    ^
-In file included from masterfx.h:29:0,
-                 from unit.cc:9:
-filters.h:34:18: note: declared here
- fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) {
-                  ^~~~~~~~~~~~~~~~~~
-In file included from unit.cc:9:0:
-masterfx.h: In member function 'void MasterFX::standard_process(float32x4_t, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
-masterfx.h:316:75: error: 'vexpq_f32' was not declared in this scope
-                                                    vdupq_n_f32(0.115129f)));
-                                                                           ^
-masterfx.h: In member function 'void MasterFX::distressor_process(float32x4_t, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
-masterfx.h:345:75: error: 'vexpq_f32' was not declared in this scope
-                                                    vdupq_n_f32(0.115129f)));
-                                                                           ^
-masterfx.h: In member function 'const char* MasterFX::getParameterStrValue(uint8_t, int32_t) const':
-masterfx.h:472:75: error: 'snprintf' was not declared in this scope
-                         snprintf(str_buf, sizeof(str_buf), "%.1f:1", ratio);
-                                                                           ^
-masterfx.h: In static member function 'static const char* MasterFX::getPresetName(uint8_t)':
-masterfx.h:502:53: warning: unused parameter 'idx' [-Wunused-parameter]
-     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
-                                                     ^~~
-unit.cc: In function 'void unit_set_param_value(uint8_t, int32_t)':
-unit.cc:44:41: error: 'void MasterFX::setParameter(uint8_t, int32_t)' is private within this context
-     s_fx_instance.setParameter(id, value);
-                                         ^
-In file included from unit.cc:9:0:
-masterfx.h:365:17: note: declared private here
-     inline void setParameter(uint8_t index, int32_t value) {
-                 ^~~~~~~~~~~~
-unit.cc: In function 'int32_t unit_get_param_value(uint8_t)':
-unit.cc:48:46: error: 'int32_t MasterFX::getParameterValue(uint8_t) const' is private within this context
-     return s_fx_instance.getParameterValue(id);
-                                              ^
-In file included from unit.cc:9:0:
-masterfx.h:440:20: note: declared private here
-     inline int32_t getParameterValue(uint8_t index) const {
-                    ^~~~~~~~~~~~~~~~~
-unit.cc: In function 'const char* unit_get_param_str_value(uint8_t, int32_t)':
-unit.cc:52:56: error: 'const char* MasterFX::getParameterStrValue(uint8_t, int32_t) const' is private within this context
-     return s_fx_instance.getParameterStrValue(id, value);
-                                                        ^
-In file included from unit.cc:9:0:
-masterfx.h:448:24: note: declared private here
-     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
-                        ^~~~~~~~~~~~~~~~~~~~
-unit.cc: In function 'const uint8_t* unit_get_param_bmp_value(uint8_t, int32_t)':
-unit.cc:56:56: error: 'const uint8_t* MasterFX::getParameterBmpValue(uint8_t, int32_t) const' is private within this context
-     return s_fx_instance.getParameterBmpValue(id, value);
-                                                        ^
-In file included from unit.cc:9:0:
-masterfx.h:494:27: note: declared private here
-     inline const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const {
-                           ^~~~~~~~~~~~~~~~~~~~
-unit.cc: In function 'void unit_load_preset(uint8_t)':
-unit.cc:72:33: error: 'void MasterFX::LoadPreset(uint8_t)' is private within this context
-     s_fx_instance.LoadPreset(idx);
-                                 ^
-In file included from unit.cc:9:0:
-masterfx.h:500:17: note: declared private here
-     inline void LoadPreset(uint8_t idx) { (void)idx; }
-                 ^~~~~~~~~~
-unit.cc: In function 'uint8_t unit_get_preset_index()':
-unit.cc:76:41: error: 'uint8_t MasterFX::getPresetIndex() const' is private within this context
-     return s_fx_instance.getPresetIndex();
-                                         ^
-In file included from unit.cc:9:0:
-masterfx.h:501:20: note: declared private here
-     inline uint8_t getPresetIndex() const { return 0; }
-                    ^~~~~~~~~~~~~~
-unit.cc: In function 'const char* unit_get_preset_name(uint8_t)':
-unit.cc:80:39: error: 'static const char* MasterFX::getPresetName(uint8_t)' is private within this context
-     return MasterFX::getPresetName(idx);
-                                       ^
-In file included from unit.cc:9:0:
-masterfx.h:502:31: note: declared private here
-     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
-                               ^~~~~~~~~~~~~
-In file included from masterfx.h:31:0,
-                 from unit.cc:9:
-distressor_mode.h: At global scope:
-distressor_mode.h:41:20: warning: 'distressor_mode_strings' defined but not used [-Wunused-variable]
- static const char* distressor_mode_strings[6] = {
-                    ^~~~~~~~~~~~~~~~~~~~~~~
-make: *** [Makefile:320: build/obj/unit.o] Error 1
+Linking build/omnipress.drmlgunit
+Stripping build/omnipress.drmlgunit
+Creating build/omnipress.hex
+Creating build/omnipress.bin
+Creating build/omnipress.dmp
+Creating build/omnipress.list
+
+   text	   data	    bss	    dec	    hex	filename
+  20906	    424	   1264	  22594	   5842	build/omnipress.drmlgunit
+
+Done
+
+chown: changing ownership of 'build/lst/header.lst': Operation not permitted
+chown: changing ownership of 'build/lst/unit.lst': Operation not permitted
+chown: changing ownership of 'build/lst/_unit_base.lst': Operation not permitted
+chown: changing ownership of 'build/lst': Operation not permitted
+chown: changing ownership of 'build/obj/header.o': Operation not permitted
+chown: changing ownership of 'build/obj/unit.o': Operation not permitted
+chown: changing ownership of 'build/obj/_unit_base.o': Operation not permitted
+chown: changing ownership of 'build/obj': Operation not permitted
+chown: changing ownership of 'build/omnipress.bin': Operation not permitted
+chown: changing ownership of 'build/omnipress.dmp': Operation not permitted
+chown: changing ownership of 'build/omnipress.drmlgunit': Operation not permitted
+chown: changing ownership of 'build/omnipress.hex': Operation not permitted
+chown: changing ownership of 'build/omnipress.list': Operation not permitted
+chown: changing ownership of 'build/omnipress.map': Operation not permitted
+chown: changing ownership of 'build': Operation not permitted
+make: *** [Makefile:291: POST_MAKE_ALL_RULE_HOOK] Error 1
 >> Installing /workspace/drumlogue/omnipress
-Compiling unit.cc
-In file included from masterfx.h:28:0,
-                 from unit.cc:9:
-compressor_core.h: In function 'float32x4_t compressor_rms_process(compressor_t*, float32x4_t)':
-compressor_core.h:48:38: error: 'vsqrtq_f32' was not declared in this scope
-     return vsqrtq_f32(comp->rms_state);
-                                      ^
-compressor_core.h: In function 'float32x4_t compressor_calc_gain(compressor_t*, float32x4_t, float, float)':
-compressor_core.h:94:65: error: 'fast_div_neon' was not declared in this scope
-     float32x4_t gain_red = fast_div_neon(gain_red_num, ratio_vec);
-                                                                 ^
-compressor_core.h:52:60: warning: unused parameter 'comp' [-Wunused-parameter]
- fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
-                                                            ^~~~
-In file included from masterfx.h:29:0,
-                 from unit.cc:9:
-filters.h: In function 'void envelope_detector_init(envelope_detector_t*, float)':
-filters.h:137:53: error: 'e_expff' was not declared in this scope
-     env->attack_coeff = e_expff(-1.0f / (0.01f * sr));
-                                                     ^
-filters.h: In function 'void envelope_set_attack_release(envelope_detector_t*, float, float)':
-filters.h:145:80: error: 'e_expff' was not declared in this scope
-     env->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * env->sample_rate));
-                                                                                ^
-filters.h: In function 'float32x4_t envelope_detect(envelope_detector_t*, float32x4_t, float32x4_t)':
-filters.h:151:53: warning: unused parameter 'in' [-Wunused-parameter]
-                                         float32x4_t in,
-                                                     ^~
-filters.h: In function 'float32x4_t gain_computer_process(gain_computer_t*, float32x4_t, float, float)':
-filters.h:295:85: error: 'fast_div_neon' was not declared in this scope
-             float32x4_t x = fast_div_neon(vsubq_f32(envelope_db, knee_start), knee_w);
-                                                                                     ^
-filters.h:314:95: error: 'fast_div_neon' was not declared in this scope
-             float32x4_t in_knee_amt = fast_div_neon(vsubq_f32(envelope_db, knee_start), knee_w);
-                                                                                               ^
-filters.h: In function 'void smoothing_init(smoothing_t*, float)':
-filters.h:341:52: error: 'e_expff' was not declared in this scope
-     sm->attack_coeff = e_expff(-1.0f / (0.01f * sr));    // 10ms default
-                                                    ^
-filters.h: In function 'void smoothing_set_times(smoothing_t*, float, float)':
-filters.h:373:78: error: 'e_expff' was not declared in this scope
-     sm->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * sm->sample_rate));
-                                                                              ^
-In file included from masterfx.h:30:0,
-                 from unit.cc:9:
-wavefolder.h: In function 'float32x4_t soft_clip(float32x4_t)':
-wavefolder.h:108:62: error: 'fast_div_neon' was not declared in this scope
-     float32x4_t approx = vsubq_f32(x, fast_div_neon(x3, three));
-                                                              ^
-In file included from masterfx.h:31:0,
-                 from unit.cc:9:
-distressor_mode.h: In function 'float32x4_t generate_harmonics(distressor_t*, float32x4_t, uint8_t)':
-distressor_mode.h:123:17: warning: unused variable 'two' [-Wunused-variable]
-     float32x4_t two = vdupq_n_f32(2.0f);
-                 ^~~
-distressor_mode.h:124:17: warning: unused variable 'three' [-Wunused-variable]
-     float32x4_t three = vdupq_n_f32(3.0f);
-                 ^~~~~
-distressor_mode.h:125:17: warning: unused variable 'four' [-Wunused-variable]
-     float32x4_t four = vdupq_n_f32(4.0f);
-                 ^~~~
-distressor_mode.h:119:58: warning: unused parameter 'd' [-Wunused-parameter]
- fast_inline float32x4_t generate_harmonics(distressor_t* d,
-                                                          ^
-In file included from masterfx.h:32:0,
-                 from unit.cc:9:
-multiband.h: In function 'void multiband_reset(multiband_t*)':
-multiband.h:88:21: error: too few arguments to function 'void multiband_init(multiband_t*, float)'
-     multiband_init(m);
-                     ^
-multiband.h:55:18: note: declared here
- fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
-                  ^~~~~~~~~~~~~~
-multiband.h: In function 'void multiband_process(multiband_t*, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
-multiband.h:186:83: error: 'vexpq_f32' was not declared in this scope
-     float32x4_t low_gain = vexpq_f32(vmulq_f32(mb->gr_low, vdupq_n_f32(0.115129f)));
-                                                                                   ^
-multiband.h:153:16: warning: unused variable 'exp_mask' [-Wunused-variable]
-     uint32x4_t exp_mask = vdupq_n_u32(0x7F800000);
-                ^~~~~~~~
-multiband.h:154:16: warning: unused variable 'mant_mask' [-Wunused-variable]
-     uint32x4_t mant_mask = vdupq_n_u32(0x007FFFFF);
-                ^~~~~~~~~
-multiband.h:160:17: warning: unused variable 'low_db' [-Wunused-variable]
-     float32x4_t low_db = vdupq_n_f32(0.0f);  // Simplified - proper dB conversion
-                 ^~~~~~
-multiband.h:166:17: warning: unused variable 'mid_db' [-Wunused-variable]
-     float32x4_t mid_db = vdupq_n_f32(0.0f);
-                 ^~~~~~
-multiband.h:172:17: warning: unused variable 'high_db' [-Wunused-variable]
-     float32x4_t high_db = vdupq_n_f32(0.0f);
-                 ^~~~~~~
-In file included from unit.cc:9:0:
-masterfx.h: In constructor 'MasterFX::MasterFX()':
-masterfx.h:46:36: error: too few arguments to function 'void sidechain_hpf_init(sidechain_hpf_t*, float, float)'
-         sidechain_hpf_init(&sc_hpf_);
-                                    ^
-In file included from masterfx.h:29:0,
-                 from unit.cc:9:
-filters.h:34:18: note: declared here
- fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) {
-                  ^~~~~~~~~~~~~~~~~~
-In file included from unit.cc:9:0:
-masterfx.h: In member function 'void MasterFX::Reset()':
-masterfx.h:84:36: error: too few arguments to function 'void sidechain_hpf_init(sidechain_hpf_t*, float, float)'
-         sidechain_hpf_init(&sc_hpf_);
-                                    ^
-In file included from masterfx.h:29:0,
-                 from unit.cc:9:
-filters.h:34:18: note: declared here
- fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) {
-                  ^~~~~~~~~~~~~~~~~~
-In file included from unit.cc:9:0:
-masterfx.h: In member function 'void MasterFX::standard_process(float32x4_t, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
-masterfx.h:316:75: error: 'vexpq_f32' was not declared in this scope
-                                                    vdupq_n_f32(0.115129f)));
-                                                                           ^
-masterfx.h: In member function 'void MasterFX::distressor_process(float32x4_t, float32x4_t, float32x4_t, float32x4_t*, float32x4_t*)':
-masterfx.h:345:75: error: 'vexpq_f32' was not declared in this scope
-                                                    vdupq_n_f32(0.115129f)));
-                                                                           ^
-masterfx.h: In member function 'const char* MasterFX::getParameterStrValue(uint8_t, int32_t) const':
-masterfx.h:472:75: error: 'snprintf' was not declared in this scope
-                         snprintf(str_buf, sizeof(str_buf), "%.1f:1", ratio);
-                                                                           ^
-masterfx.h: In static member function 'static const char* MasterFX::getPresetName(uint8_t)':
-masterfx.h:502:53: warning: unused parameter 'idx' [-Wunused-parameter]
-     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
-                                                     ^~~
-unit.cc: In function 'void unit_set_param_value(uint8_t, int32_t)':
-unit.cc:44:41: error: 'void MasterFX::setParameter(uint8_t, int32_t)' is private within this context
-     s_fx_instance.setParameter(id, value);
-                                         ^
-In file included from unit.cc:9:0:
-masterfx.h:365:17: note: declared private here
-     inline void setParameter(uint8_t index, int32_t value) {
-                 ^~~~~~~~~~~~
-unit.cc: In function 'int32_t unit_get_param_value(uint8_t)':
-unit.cc:48:46: error: 'int32_t MasterFX::getParameterValue(uint8_t) const' is private within this context
-     return s_fx_instance.getParameterValue(id);
-                                              ^
-In file included from unit.cc:9:0:
-masterfx.h:440:20: note: declared private here
-     inline int32_t getParameterValue(uint8_t index) const {
-                    ^~~~~~~~~~~~~~~~~
-unit.cc: In function 'const char* unit_get_param_str_value(uint8_t, int32_t)':
-unit.cc:52:56: error: 'const char* MasterFX::getParameterStrValue(uint8_t, int32_t) const' is private within this context
-     return s_fx_instance.getParameterStrValue(id, value);
-                                                        ^
-In file included from unit.cc:9:0:
-masterfx.h:448:24: note: declared private here
-     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
-                        ^~~~~~~~~~~~~~~~~~~~
-unit.cc: In function 'const uint8_t* unit_get_param_bmp_value(uint8_t, int32_t)':
-unit.cc:56:56: error: 'const uint8_t* MasterFX::getParameterBmpValue(uint8_t, int32_t) const' is private within this context
-     return s_fx_instance.getParameterBmpValue(id, value);
-                                                        ^
-In file included from unit.cc:9:0:
-masterfx.h:494:27: note: declared private here
-     inline const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const {
-                           ^~~~~~~~~~~~~~~~~~~~
-unit.cc: In function 'void unit_load_preset(uint8_t)':
-unit.cc:72:33: error: 'void MasterFX::LoadPreset(uint8_t)' is private within this context
-     s_fx_instance.LoadPreset(idx);
-                                 ^
-In file included from unit.cc:9:0:
-masterfx.h:500:17: note: declared private here
-     inline void LoadPreset(uint8_t idx) { (void)idx; }
-                 ^~~~~~~~~~
-unit.cc: In function 'uint8_t unit_get_preset_index()':
-unit.cc:76:41: error: 'uint8_t MasterFX::getPresetIndex() const' is private within this context
-     return s_fx_instance.getPresetIndex();
-                                         ^
-In file included from unit.cc:9:0:
-masterfx.h:501:20: note: declared private here
-     inline uint8_t getPresetIndex() const { return 0; }
-                    ^~~~~~~~~~~~~~
-unit.cc: In function 'const char* unit_get_preset_name(uint8_t)':
-unit.cc:80:39: error: 'static const char* MasterFX::getPresetName(uint8_t)' is private within this context
-     return MasterFX::getPresetName(idx);
-                                       ^
-In file included from unit.cc:9:0:
-masterfx.h:502:31: note: declared private here
-     static inline const char* getPresetName(uint8_t idx) { return nullptr; }
-                               ^~~~~~~~~~~~~
-In file included from masterfx.h:31:0,
-                 from unit.cc:9:
-distressor_mode.h: At global scope:
-distressor_mode.h:41:20: warning: 'distressor_mode_strings' defined but not used [-Wunused-variable]
- static const char* distressor_mode_strings[6] = {
-                    ^~~~~~~~~~~~~~~~~~~~~~~
-make: *** [Makefile:320: build/obj/unit.o] Error 1
+Deploying to /workspace/drumlogue/omnipress//omnipress.drmlgunit
+
+Done
+
 >> Building /workspace/drumlogue/reverb_labirinto
+Compiling unit.cc
+In file included from NeonAdvancedLabirinto.h:19:0,
+                 from unit.cc:17:
+./float_math.h: In function 'float Q_rsqrt(float)':
+./float_math.h:1020:21: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+  i  = * ( long * ) &y;                       // evil floating point bit level hacking
+                     ^
+./float_math.h:1022:22: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+  y  = * ( float * ) &i;
+                      ^
+unit.cc: In function 'const char* unit_get_preset_name(uint8_t)':
+unit.cc:223:58: warning: unused parameter 'idx' [-Wunused-parameter]
+ __unit_callback const char* unit_get_preset_name(uint8_t idx) { return nullptr; }
+                                                          ^~~
 
 Linking build/neon_labirinto_reverb.drmlgunit
 Stripping build/neon_labirinto_reverb.drmlgunit
@@ -614,7 +465,7 @@ Creating build/neon_labirinto_reverb.dmp
 Creating build/neon_labirinto_reverb.list
 
    text	   data	    bss	    dec	    hex	filename
-   8424	    369	   4112	  12905	   3269	build/neon_labirinto_reverb.drmlgunit
+   8548	    369	   4112	  13029	   32e5	build/neon_labirinto_reverb.drmlgunit
 
 Done
 
@@ -675,6 +526,53 @@ Deploying to /workspace/drumlogue/reverb_light//light_fdn_reverb.drmlgunit
 Done
 
 >> Building /workspace/drumlogue/scruta_astri
+Compiling header.c
+Compiling unit.cc
+In file included from synth.h:3:0,
+                 from unit.cc:2:
+float_math.h: In function 'float Q_rsqrt(float)':
+float_math.h:1017:21: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+  i  = * ( long * ) &y;                       // evil floating point bit level hacking
+                     ^
+float_math.h:1019:22: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+  y  = * ( float * ) &i;
+                      ^
+In file included from unit.cc:2:0:
+synth.h: In member function 'void ScrutaAstri::NoteOn(uint8_t, uint8_t)':
+synth.h:145:46: warning: unused parameter 'velocity' [-Wunused-parameter]
+     inline void NoteOn(uint8_t note, uint8_t velocity) {
+                                              ^~~~~~~~
+unit.cc: In function 'void unit_render(const float*, float*, uint32_t)':
+unit.cc:16:48: warning: unused parameter 'in' [-Wunused-parameter]
+ __unit_callback void unit_render(const float * in, float * out, uint32_t frames) {
+                                                ^~
+unit.cc: In function 'int32_t unit_get_param_value(uint8_t)':
+unit.cc:24:54: warning: unused parameter 'id' [-Wunused-parameter]
+ __unit_callback int32_t unit_get_param_value(uint8_t id) {
+                                                      ^~
+unit.cc: In function 'void unit_note_off(uint8_t)':
+unit.cc:52:44: warning: unused parameter 'note' [-Wunused-parameter]
+ __unit_callback void unit_note_off(uint8_t note) { }
+                                            ^~~~
+unit.cc: In function 'void unit_gate_on(uint8_t)':
+unit.cc:53:43: warning: unused parameter 'velocity' [-Wunused-parameter]
+ __unit_callback void unit_gate_on(uint8_t velocity) { }
+                                           ^~~~~~~~
+unit.cc: In function 'void unit_pitch_bend(uint16_t)':
+unit.cc:56:47: warning: unused parameter 'bend' [-Wunused-parameter]
+ __unit_callback void unit_pitch_bend(uint16_t bend) { }
+                                               ^~~~
+unit.cc: In function 'void unit_channel_pressure(uint8_t)':
+unit.cc:57:52: warning: unused parameter 'pressure' [-Wunused-parameter]
+ __unit_callback void unit_channel_pressure(uint8_t pressure) { }
+                                                    ^~~~~~~~
+unit.cc: In function 'void unit_aftertouch(uint8_t, uint8_t)':
+unit.cc:58:46: warning: unused parameter 'note' [-Wunused-parameter]
+ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) { }
+                                              ^~~~
+unit.cc:58:60: warning: unused parameter 'aftertouch' [-Wunused-parameter]
+ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) { }
+                                                            ^~~~~~~~~~
 
 Linking build/scruta_astri.drmlgunit
 Stripping build/scruta_astri.drmlgunit
