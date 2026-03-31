@@ -631,82 +631,32 @@ private:
             uint32x4_t pos_int = vcvtq_u32_f32(pos_adj);
             float32x4_t pos_frac = vsubq_f32(pos_adj, vcvtq_f32_u32(pos_int));
 
-            // Get min position for base index
+            // Spill integer positions for per-lane scalar access
             uint32_t pos_ints[NEON_LANES];
             vst1q_u32(pos_ints, pos_int);
-            uint32_t min_pos = pos_ints[0];
-            for (int i = 1; i < NEON_LANES; i++) {
-                if (pos_ints[i] < min_pos) min_pos = pos_ints[i];
-            }
 
-            // Step 7: Load using vld4 (this is the optimized part)
-            uint32_t base_idx = min_pos;
-            float32x4x4_t left_frames = read_delayed_vld4(base_idx);
-            float32x4x4_t right_frames = vld4q_f32(&delay_line_[base_idx].samples[NEON_LANES]);
-
-            // Step 8: Extract samples for each lane with interpolation
-            // Store frames into standard arrays to safely index dynamically
-            float l_frames_arr[NEON_LANES][NEON_LANES];
-            vst1q_f32(l_frames_arr[0], left_frames.val[0]);
-            vst1q_f32(l_frames_arr[1], left_frames.val[1]);
-            vst1q_f32(l_frames_arr[2], left_frames.val[2]);
-            vst1q_f32(l_frames_arr[3], left_frames.val[3]);
-
-            float r_frames_arr[NEON_LANES][NEON_LANES];
-            vst1q_f32(r_frames_arr[0], right_frames.val[0]);
-            vst1q_f32(r_frames_arr[1], right_frames.val[1]);
-            vst1q_f32(r_frames_arr[2], right_frames.val[2]);
-            vst1q_f32(r_frames_arr[3], right_frames.val[3]);
-
-            // We need to extract per-lane, but this is unavoidable for linear interpolation
-            // Get integer offsets for each lane
-            int offsets[NEON_LANES];
-            for (int lane = 0; lane < NEON_LANES; lane++) {
-                offsets[lane] = (int)(pos_ints[lane] - min_pos);
-            }
-
-            // Get fractions for interpolation
+            // Step 7: Read each lane independently with linear interpolation.
+            // delay_line_[t].samples[lane]            = L for clone `lane` at time t
+            // delay_line_[t].samples[lane + NEON_LANES] = R for clone `lane` at time t
+            // Using & DELAY_MASK on both indices prevents any out-of-bounds access.
             float frac_vals[NEON_LANES];
             vst1q_f32(frac_vals, pos_frac);
 
             float out_l_arr[NEON_LANES];
             float out_r_arr[NEON_LANES];
 
-            // Extract and interpolate each lane
             for (int lane = 0; lane < NEON_LANES; lane++) {
-                int offset = offsets[lane];
-                if (offset >= 0 && offset < NEON_LANES) {
-                    // Sample at base position + offset
-                    float l_sample0 = l_frames_arr[offset][lane];
-                    float r_sample0 = r_frames_arr[offset][lane];
+                uint32_t idx      = pos_ints[lane] & DELAY_MASK;
+                uint32_t idx_next = (idx + 1)      & DELAY_MASK;
+                float    frac     = frac_vals[lane];
 
-                    // If we need next sample for interpolation (offset + 1)
-                    if (offset + 1 < NEON_LANES) {
-                        float l_sample1 = l_frames_arr[offset + 1][lane];
-                        float r_sample1 = r_frames_arr[offset + 1][lane];
+                float l0 = delay_line_[idx].samples[lane];
+                float l1 = delay_line_[idx_next].samples[lane];
+                float r0 = delay_line_[idx].samples[lane + NEON_LANES];
+                float r1 = delay_line_[idx_next].samples[lane + NEON_LANES];
 
-                        float frac = frac_vals[lane];
-                        out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
-                        out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
-                    } else {
-                        // No next sample available, just use current
-                        out_l_arr[lane] = l_sample0;
-                        out_r_arr[lane] = r_sample0;
-                    }
-                } else {
-                    // Fallback for wrap-around or out-of-range
-                    uint32_t idx = pos_ints[lane];
-                    float frac = frac_vals[lane];
-                    uint32_t idx_next = (idx + 1) & DELAY_MASK;
-
-                    float l_sample0 = delay_line_[idx].samples[lane];
-                    float r_sample0 = delay_line_[idx].samples[lane + NEON_LANES];
-                    float l_sample1 = delay_line_[idx_next].samples[lane];
-                    float r_sample1 = delay_line_[idx_next].samples[lane + NEON_LANES];
-
-                    out_l_arr[lane] = l_sample0 + frac * (l_sample1 - l_sample0);
-                    out_r_arr[lane] = r_sample0 + frac * (r_sample1 - r_sample0);
-                }
+                out_l_arr[lane] = l0 + frac * (l1 - l0);
+                out_r_arr[lane] = r0 + frac * (r1 - r0);
             }
 
             float32x4_t delayed_l = vld1q_f32(out_l_arr);

@@ -362,18 +362,29 @@ private:
      * NEON one-pole LPF per channel.
      */
     void applyDiffusion4(float32x4_t* signals) {
-        // pole = amount of previous-sample blending
+        // Causal one-pole LPF per channel.
+        // The 4 lanes of signals[ch] hold 4 consecutive TIME samples for channel ch.
+        // We must process them in order, carrying the filter state sample-to-sample.
+        // State carried across blocks = lane 3 of the previous block's output.
         float pole = diffusion * dampingCoeff;
-        float32x4_t pole4 = vdupq_n_f32(pole);
-        float32x4_t oneMinusPole = vdupq_n_f32(1.0f - pole);
+        float oneminuspole = 1.0f - pole;
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float32x4_t filtered = vaddq_f32(
-                vmulq_f32(signals[ch], oneMinusPole),
-                vmulq_f32(lpfState[ch], pole4)
-            );
-            lpfState[ch] = filtered;
-            signals[ch] = filtered;
+            // Extract inter-block carry: most recent output from the previous block
+            float state = vgetq_lane_f32(lpfState[ch], 3);
+
+            float lanes[4];
+            vst1q_f32(lanes, signals[ch]);
+
+            for (int s = 0; s < 4; s++) {
+                float y = lanes[s] * oneminuspole + state * pole;
+                lanes[s] = y;
+                state = y;
+            }
+
+            float32x4_t result = vld1q_f32(lanes);
+            lpfState[ch] = result;
+            signals[ch] = result;
         }
     }
 

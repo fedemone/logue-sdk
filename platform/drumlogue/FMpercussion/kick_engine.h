@@ -75,7 +75,7 @@ fast_inline void kick_engine_set_note(kick_engine_t* kick,
     float32x4_t exponent = vmulq_f32(vsubq_f32(midi_notes, a4_midi), twelfth);
 
     // 2^exponent using polynomial approximation
-    float32x4_t two_pow = exp2_neon(exponent)
+    float32x4_t two_pow = exp2_neon(exponent);
 
     // Base frequency = 440 * 2^((note-69)/12)
     float32x4_t base_freq = vmulq_f32(a4_freq, two_pow);

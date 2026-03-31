@@ -242,11 +242,8 @@ public:
         inMono = vld1q_f32(monoLanes); // Reload filtered signal into NEON vector
 
         // =================================================================
-        // 1. Pre-Delay Write & Read
+        // 1. Pre-Delay Write & Read (monoLanes already holds HPF output above)
         // =================================================================
-        float monoLanes[4];
-        vst1q_f32(monoLanes, inMono);
-
         float delayedLanes[4];
         for (int s = 0; s < 4; s++) {
             preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
@@ -418,7 +415,7 @@ public:
                        int numSamples) {
 
         // Bypass if not initialized
-        if (!initialized || fdnMem == nullptr) {
+        if (!initialized) {
             memcpy(outL, inL, numSamples * sizeof(float));
             memcpy(outR, inR, numSamples * sizeof(float));
             return;
