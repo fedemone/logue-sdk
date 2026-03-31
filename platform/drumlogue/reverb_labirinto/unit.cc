@@ -73,9 +73,6 @@ static const int32_t k_presets[k_preset_number][k_total] = {
     // 3: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
     {3, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20},
 };
-static const char* k_preset_names[k_preset_number] = {
-    "foresta", "tempio", "labirinto", "stellare"
-};
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)

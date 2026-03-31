@@ -10,10 +10,10 @@ PROJECT_TYPE := synth
 #
 
 # C sources
-CSRC = header.c fm_presets.cpp
+CSRC = header.c
 
 # C++ sources
-CXXSRC = unit.cc
+CXXSRC = unit.cc fm_presets.cpp
 
 # List all your FM percussion synth source files
 # Note: These are all headers, so no need to list them in sources
