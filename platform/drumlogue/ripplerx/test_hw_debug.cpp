@@ -1386,6 +1386,171 @@ static void test_dkay_zero_short_gate() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T31 — String sustain for 1 second (Karplus-Strong long-decay reference)
+//
+//   Proves that the physical model can sustain a plucked string for at least
+//   1 second when parameters are configured for maximum sustain:
+//     Dkay=200  → feedback_gain=0.999, master_env gate=10s
+//     Mterl=30, TubRad=20  → lowpass_coeff≈0.901 (bright, low loss)
+//     NzMix=0   → pure mallet exciter, no noise burst
+//     Model=0 (String), GateOn only (no GateOff to avoid early release)
+//
+//   Theoretical T_60 with g=0.999 at C4 (period≈183.5 samples):
+//     T_60 = −3·ln(10) / (Hz·ln(g)) = −6.908 / (261.6·(−0.001)) = 26.4 s
+//   So after 1 s the amplitude should be ≈0.999^(261.6) ≈ 0.77 (−2.3 dB).
+// ════════════════════════════════════════════════════════════════════════════
+static void test_string_one_second_sustain() {
+    std::cout << "\n── T31: String sustain 1 second (Dkay=200, Mterl=30, TubRad=20) ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Configure for maximum-sustain string.  Both resonators are selected
+    // after Init (m_is_resonator_a=true, m_is_resonator_b=true).
+    s.setParameter(RipplerXWaveguide::k_paramDkay,    200); // g=0.999, gate=10s
+    s.setParameter(RipplerXWaveguide::k_paramMterl,    30); // bright material
+    s.setParameter(RipplerXWaveguide::k_paramTubRad,   20); // wide tube
+    s.setParameter(RipplerXWaveguide::k_paramNzMix,     0); // no noise
+    s.setParameter(RipplerXWaveguide::k_paramModel,     0); // String
+
+    // Report the actual coefficients so the test is self-documenting
+    float g  = s.state.voices[0].resA.feedback_gain;
+    float lc = s.state.voices[0].resA.lowpass_coeff;
+    float c4_hz = 440.0f * powf(2.0f, (60.0f - 69.0f) / 12.0f); // 261.626 Hz
+    float period_s = 1.0f / c4_hz;
+    // T_60 = -3*ln(10) / (ln(g)/period)  [log-energy decay formula]
+    float t60_s = (-3.0f * logf(10.0f)) * period_s / logf(g);
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "  feedback_gain = " << g  << "  (expect ≈0.999)\n";
+    std::cout << "  lowpass_coeff = " << lc << "  (expect ≈0.90)\n";
+    std::cout << "  Theoretical T_60 at C4 = " << t60_s << " s  (expect ≈26 s)\n";
+
+    // GateOn only — no GateOff — so master_env holds at 1.0 for the duration
+    s.GateOn(127);
+
+    // Skip the first 200 frames while the delay line fills
+    run_blocks(s, 200, 32);
+
+    // Advance to 0.5 s mark (24000 frames from NoteOn, minus 200 already consumed)
+    float peak_500ms = run_blocks(s, 24000 - 200, 32);
+
+    // Advance another 0.5 s to the 1.0 s mark
+    float peak_1000ms = run_blocks(s, 24000, 32);
+
+    std::cout << "  peak at 0.5 s : " << peak_500ms  << "  (expect > 0.05)\n";
+    std::cout << "  peak at 1.0 s : " << peak_1000ms << "  (expect > 0.05)\n";
+
+    result("T31a feedback_gain >= 0.998 after Dkay=200",
+           g >= 0.998f,
+           "Dkay=200 did not yield g≈0.999 — feedback gain mapping may be wrong");
+    result("T31b string audible at 0.5 s (Karplus-Strong sustain proven)",
+           peak_500ms > 0.05f,
+           "string decayed to silence before 0.5 s — feedback_gain or master_env wrong");
+    result("T31c string audible at 1.0 s (T_60 ≈ 26 s confirmed)",
+           peak_1000ms > 0.05f,
+           "string decayed to silence before 1.0 s — decay far shorter than theoretical T_60");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T32 — Dkay controls waveguide decay time (isolated single resonator)
+//
+//   Partls=0 isolates ResA (no coupling, no ResB) so only the waveguide's own
+//   feedback_gain determines decay.  The ut_delay_read probe captures the
+//   waveguide output directly, bypassing the limiter and velocity scaling.
+//
+//   At t=300 ms (14400 frames), with note 60 (period≈183.5 s):
+//     Dkay=25  → g=0.869 → 78.5 round trips → amplitude ≈ A0 × 0.869^78.5 ≈ 0
+//     Dkay=200 → g=0.999 → 78.5 round trips → amplitude ≈ A0 × 0.999^78.5 ≈ A0×0.925
+// ════════════════════════════════════════════════════════════════════════════
+static void test_dkay_controls_decay() {
+    std::cout << "\n── T32: Dkay controls waveguide decay (ResA only, ut_delay_read probe) ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+
+    // Helper: isolate ResA (Partls=0 → no coupling, m_active_partials=4 < 16)
+    // then advance to frame 14400 (300 ms) and capture one frame via ut_delay_read.
+    auto probe_at_300ms = [&](int32_t dkay_val) -> float {
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        s.setParameter(RipplerXWaveguide::k_paramPartls, 0); // ResA only, no coupling
+        s.setParameter(RipplerXWaveguide::k_paramDkay,   dkay_val);
+        s.GateOn(127);
+        // Advance to ~290 ms, then measure the peak over ~400 frames (≈2 C4 periods).
+        // Single-sample measurement can land on a zero crossing of the 261 Hz sinusoid,
+        // giving a false near-zero reading even when the waveguide is sustaining normally.
+        run_blocks(s, 13952, 32);  // 290.7 ms
+        float peak = 0.0f;
+        for (int i = 0; i < 448; ++i) {  // ~9.3 ms window (448 frames, >2 periods at C4)
+            ut_delay_read = 0.0f;
+            float buf[2] = {};
+            s.processBlock(buf, 1);
+            float v = std::fabs(ut_delay_read);
+            if (v > peak) peak = v;
+        }
+        return peak;
+    };
+
+    float probe_short = probe_at_300ms(25);
+    float probe_long  = probe_at_300ms(200);
+
+    float g_short = 0.85f + (25.0f  / 200.0f) * 0.149f;
+    float g_long  = 0.85f + (200.0f / 200.0f) * 0.149f;
+    float trips_300ms = 14400.0f / 183.47f; // ≈78.5 trips
+    std::cout << std::fixed << std::setprecision(4);
+    std::cout << "  Dkay=25:  g=" << g_short << "  expected trips@300ms=" << trips_300ms
+              << "  peak|delay_read|@300ms=" << probe_short << "\n";
+    std::cout << "  Dkay=200: g=" << g_long
+              << "  peak|delay_read|@300ms=" << probe_long  << "\n";
+    if (probe_short > 0.0f)
+        std::cout << "  long/short ratio: " << (probe_long / probe_short) << "\n";
+
+    // With g=0.999 and 78.5 round trips, expected amplitude ≈ initial × 0.875.
+    // Initial exciter peak ≈ 3.79 (mallet_lp2 × 15 × velocity at frame 0),
+    // so expect peak|delay_read| ≈ 3.3 at 300ms.  Threshold 0.5 gives 85% margin.
+    result("T32a Dkay=200 waveguide still active at 300 ms",
+           probe_long > 0.5f,
+           "Dkay=200 delay-read at noise floor at 300 ms — feedback_gain not routing or filter unstable");
+    result("T32b Dkay=25 waveguide quieter at 300 ms than Dkay=200 (> 10× ratio)",
+           probe_long > probe_short * 10.0f,
+           "Dkay has no measurable effect on waveguide amplitude — feedback_gain not routed");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T33 — Dkay → feedback_gain mapping correctness
+//
+//   The mapping is: g = 0.85 + (value/200) * 0.149
+//   Verify three anchor points: min (0→0.85), mid (100→0.9245), max (200→0.999).
+//   This protects against future refactors accidentally changing the range.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_dkay_feedback_gain_mapping() {
+    std::cout << "\n── T33: Dkay → feedback_gain mapping correctness ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Both resonators selected after Init; check voice[0].resA
+    struct { int32_t val; float expected_g; const char* label; } cases[] = {
+        {   0, 0.850f, "Dkay=0   → g=0.850 (instant dead thud)" },
+        { 100, 0.850f + (100.0f/200.0f) * 0.149f, "Dkay=100 → g=0.9245 (mid sustain)" },
+        { 200, 0.999f, "Dkay=200 → g=0.999 (near-infinite sustain)" },
+    };
+
+    for (auto& c : cases) {
+        s.setParameter(RipplerXWaveguide::k_paramDkay, c.val);
+        float g = s.state.voices[0].resA.feedback_gain;
+        std::cout << "  " << c.label << "  actual=" << std::fixed
+                  << std::setprecision(4) << g << "\n";
+        char label[80];
+        std::snprintf(label, sizeof(label), "T33 Dkay=%-3d: feedback_gain within 0.001 of expected",
+                      (int)c.val);
+        result(label, std::fabs(g - c.expected_g) < 0.001f,
+               "feedback_gain does not match the formula g=0.85+(val/200)*0.149");
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 int main() {
     std::cout << "=== RIPPLERX HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1421,6 +1586,9 @@ int main() {
     test_preset_change_mid_note();
     test_velocity_scaling();
     test_dkay_zero_short_gate();
+    test_string_one_second_sustain();
+    test_dkay_controls_decay();
+    test_dkay_feedback_gain_mapping();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

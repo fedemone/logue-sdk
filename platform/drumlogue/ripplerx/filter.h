@@ -38,6 +38,15 @@ struct FastSVF {
         // Butterworth Q and made the minimum labelled value have no effect.
         float safe_res = fmaxf(0.5f, fminf(resonance, 10.0f));
         q = 1.0f / safe_res;
+
+        // Chamberlin SVF stability: eigenvalues exit the unit circle when
+        // f >= sqrt(4 + q²) - q, causing exponential divergence to Inf.
+        // On x86 strict IEEE 754: Inf * 0 = NaN, contaminating the waveguide.
+        // On ARM -ffast-math: 0 * Inf = 0, so hardware is spared.
+        // Init preset: NzFltFrq=1200→12000Hz→f=1.414, Q=0.707→q=√2,
+        // stability requires f < √6-√2 ≈ 1.035 but f=1.414 → UNSTABLE.
+        float f_stable_max = sqrtf(4.0f + q * q) - q;
+        f = fminf(f, f_stable_max * 0.999f);
     }
 
     // Called by the Audio Thread (processBlock)
