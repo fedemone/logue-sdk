@@ -232,14 +232,34 @@ public:
         // =================================================================
         // THE HPF (Personality Injector) - Processed manually for 4 lanes
         // =================================================================
-        float monoLanes[4];
-        vst1q_f32(monoLanes, inMono);
-        for(int s = 0; s < 4; s++) {
-            float filtered = monoLanes[s] - hpfStateL;
-            hpfStateL = monoLanes[s] - hpfCoeff * filtered;
-            monoLanes[s] = filtered; // Overwrite with high-passed signal
-        }
-        inMono = vld1q_f32(monoLanes); // Reload filtered signal into NEON vector
+        // Load the input vector (already in a NEON register)
+        float32x4_t v = inMono;
+
+        // Process lanes sequentially, building the result vector directly
+        float32x4_t result;
+
+        // Lane 0
+        float f0 = vgetq_lane_f32(v, 0) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 0) - hpfCoeff * f0;
+        result = vsetq_lane_f32(f0, result, 0);
+
+        // Lane 1
+        float f1 = vgetq_lane_f32(v, 1) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 1) - hpfCoeff * f1;
+        result = vsetq_lane_f32(f1, result, 1);
+
+        // Lane 2
+        float f2 = vgetq_lane_f32(v, 2) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 2) - hpfCoeff * f2;
+        result = vsetq_lane_f32(f2, result, 2);
+
+        // Lane 3
+        float f3 = vgetq_lane_f32(v, 3) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 3) - hpfCoeff * f3;
+        result = vsetq_lane_f32(f3, result, 3);
+
+        // Assign the filtered vector back to inMono
+        inMono = result;
 
         // =================================================================
         // 1. Pre-Delay Write & Read (monoLanes already holds HPF output above)
