@@ -118,7 +118,8 @@ public:
         k_Clarinet,         // 25
         k_PluckBass,        // 26
         k_GlassBowl,        // 27
-        k_NumPrograms       // 28 — marker (count)
+        k_GuitarStr,        // 28 — reference: Karplus-Strong string at A4 for model validation
+        k_NumPrograms       // 29 — marker (count)
     };
 
     SynthState state;
@@ -321,7 +322,15 @@ public:
             {24,  72,   0,   1,   100,   50,  0,   0,     3, 7,   90,  -5,    0,  10, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute         NzMix 0→35 (breath noise)
             {25,  60,   0,   1,   100,   50,  0,   0,     3, 8,   90,  -5,    0,  10, 12,     1,     1,   5,   0,   25, 800,  0,   600, 707}, // 25: Clarinet      NzMix 0→25 (reed breath noise)
             {26,  36,   0,   1,   600,  250,  0,   0,     3, 0,   85,  -8,    0,  20, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: Pluck Bass
-            {27,  76,   0,   1,   700,  350,  0,   0,     3, 4,  160,  25,    0,  80, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}  // 27: Glass Bowl
+            {27,  76,   0,   1,   700,  350,  0,   0,     3, 4,  160,  25,    0,  80, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: Glass Bowl
+            // 28: Guitar String — Karplus-Strong reference for physical model validation.
+            // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.997 → T_60≈5.2 s.
+            // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
+            // Expected: bright attack (Mterl=28), gradual darkening, 5-second sustain.
+            // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 5 s;
+            //           (3) harmonic spectrum, no flutter/beating.
+            //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,  50, 15,    50,     1,  15,   0,    0, 300,  0,  1200, 707}   // 28: Guitar String
         };
 
         if (idx >= k_NumPrograms) return;
@@ -373,7 +382,8 @@ public:
             "Wodblk",  "Ac Tom", "Cymbal", "Gong",
             "Kalimba", "StelPan","Claves", "Cowbel",
             "Trngle",  "Kick",    "Clap",  "Shaker",
-            "Flute",   "Clrint", "PlkBss", "GlsBwl"
+            "Flute",   "Clrint", "PlkBss", "GlsBwl",
+            "GtrStr"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -837,30 +847,35 @@ public:
         // delay from the nominal delay line length so the loop oscillates at f₀.
         //
         // DC-limit approximations (valid for all MIDI notes at 48 kHz, ω₀ ≪ 1):
-        //   LP  H(z) = α/(1-pa·z⁻¹),  pole at pa=1-α  →  τ_LP = pa/(1-pa) = (1-α)/α
-        //   AP  H(z) = (c+z⁻¹)/(1+c·z⁻¹)              →  τ_AP = (1+c)/(1-c)
+        //   LP  H(z) = α/(1-pa·z⁻¹),  pole at pa=1-α  →  τ_LP = pa/(1-pa)
+        //   AP  H(z) = (c+z⁻¹)/(1+c·z⁻¹)              →  τ_AP = (1-c)/(1+c)
         //
         // Derivation (LP): phase φ = -arctan(pa·sinω/(1-pa·cosω))
         //   τ = -dφ/dω = pa·(cosω-pa)/(1-2pa·cosω+pa²)
         //   At DC: pa·(1-pa)/(1-pa)² = pa/(1-pa).
         //   Sanity: pa=0 (α=1, passthrough) → τ=0; pa→1 (dark) → τ→∞.  Both ✓
         //
-        // The AP formula (1+c)/(1-c) is the standard first-order allpass result; at
-        // c=0 (no dispersion) it reduces to 1 sample — the pure z⁻¹ delay built into
-        // the allpass recurrence.
+        // AP derivation: for H(z) = (c + z⁻¹) / (1 + c·z⁻¹):
+        //   Phase = arg(c + e^{-jω}) - arg(1 + c·e^{-jω})
+        //   τ = -dPhase/dω = (1-c²)/(1+c²+2c·cosω)
+        //   At DC (ω=0): τ_AP = (1-c²)/(1+c)² = (1-c)/(1+c).
+        //   At c=0: τ=1 (pure z⁻¹ delay). ✓
+        //   NOTE: The incorrect formula (1+c)/(1-c) over-compensates, making pitch sharp.
+        //   That formula applies to H(z) = (-c + z⁻¹)/(1 - c·z⁻¹), which has the
+        //   opposite dispersion direction and is NOT what this code implements.
         {
             // ResA
             float pa = 1.0f - v.resA.lowpass_coeff;          // LP pole
             float ca = v.resA.ap_coeff;                       // AP coefficient
             float lp_del_A = pa / (1.0f - pa);                // τ_LP: pa/(1-pa)
-            float ap_del_A = (1.0f + ca) / (1.0f - ca);      // τ_AP: (1+c)/(1-c) ≥ 1
+            float ap_del_A = (1.0f - ca) / (1.0f + ca);      // τ_AP: (1-c)/(1+c) ≤ 1
             v.resA.delay_length = fmaxf(2.0f, v.resA.delay_length - lp_del_A - ap_del_A);
 
             // ResB
             float pb = 1.0f - v.resB.lowpass_coeff;
             float cb = v.resB.ap_coeff;
             float lp_del_B = pb / (1.0f - pb);
-            float ap_del_B = (1.0f + cb) / (1.0f - cb);
+            float ap_del_B = (1.0f - cb) / (1.0f + cb);
             v.resB.delay_length = fmaxf(2.0f, v.resB.delay_length - lp_del_B - ap_del_B);
         }
 
@@ -885,6 +900,19 @@ public:
         v.resA_out_prev = 0.0f;
         v.resB_out_prev = 0.0f;
         v.tone_lp = 0.0f;
+
+        // Clear waveguide delay line, LP state, and write pointer.
+        // Without this, re-using a voice slot (round-robin after 4 notes) starts with
+        // residual oscillation from the previous note.  That residual is at an arbitrary
+        // phase relative to the new mallet impulse: destructive interference makes each
+        // successive press shorter and quieter until the note is completely silent.
+        // Reset() correctly zeros these on cold start; NoteOn must do the same.
+        memset(v.resA.buffer, 0, sizeof(v.resA.buffer));
+        memset(v.resB.buffer, 0, sizeof(v.resB.buffer));
+        v.resA.z1 = 0.0f;
+        v.resB.z1 = 0.0f;
+        v.resA.write_ptr = 0;
+        v.resB.write_ptr = 0;
 
 #ifdef ENABLE_PHASE_6_FILTERS
         // Clear noise SVF delay states so rapid re-triggering doesn't produce

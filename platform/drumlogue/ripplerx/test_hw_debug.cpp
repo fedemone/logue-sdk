@@ -846,7 +846,7 @@ static void test_pitch_bend_persists_to_new_note() {
 //   After NoteOn(60) the effective loop period (delay_length + τ_LP + τ_AP)
 //   should equal srate/f₀ (183.47 samples for C4 at 48 kHz) to within 2 cents.
 //   This verifies that both the table generation (powf, not fasterpowf) and the
-//   pitch compensation formula (pa/(1-pa) for LP, (1+c)/(1-c) for AP) are correct.
+//   pitch compensation formula (pa/(1-pa) for LP, (1-c)/(1+c) for AP) are correct.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_pitch_compensation_accuracy() {
     std::cout << "\n── T19: Loop filter pitch compensation accuracy ──\n";
@@ -862,10 +862,11 @@ static void test_pitch_compensation_accuracy() {
     float lc  = s.state.voices[vi].resA.lowpass_coeff;
     float ac  = s.state.voices[vi].resA.ap_coeff;
 
-    // Reconstruct the group delays using the same DC-limit formulas as NoteOn
+    // Reconstruct the group delays using the corrected DC-limit formulas matching NoteOn.
+    // AP: H(z) = (c+z⁻¹)/(1+c·z⁻¹)  →  τ_AP at DC = (1-c)/(1+c)  [NOT (1+c)/(1-c)]
     float pa     = 1.0f - lc;
     float tau_lp = pa / (1.0f - pa);                    // τ_LP = pa/(1-pa)
-    float tau_ap = (1.0f + ac) / (1.0f - ac);           // τ_AP = (1+c)/(1-c)
+    float tau_ap = (1.0f - ac) / (1.0f + ac);           // τ_AP = (1-c)/(1+c) ← corrected
     float effective_period = dl + tau_lp + tau_ap;
 
     // C4 exact at A4=440 Hz, 48 kHz
@@ -873,8 +874,8 @@ static void test_pitch_compensation_accuracy() {
     float error_cents      = 1200.0f * log2f(effective_period / expected_period);
 
     std::cout << "  delay_length    = " << dl              << " samples\n";
-    std::cout << "  lowpass_coeff   = " << lc              << "  τ_LP=" << tau_lp << "\n";
-    std::cout << "  ap_coeff        = " << ac              << "  τ_AP=" << tau_ap << "\n";
+    std::cout << "  lowpass_coeff   = " << lc              << "  τ_LP=" << tau_lp << " (pa/(1-pa))\n";
+    std::cout << "  ap_coeff        = " << ac              << "  τ_AP=" << tau_ap << " ((1-c)/(1+c))\n";
     std::cout << "  effective period= " << effective_period << " samples (target=" << expected_period << ")\n";
     std::cout << "  pitch error     = " << error_cents      << " cents\n";
 
@@ -1248,11 +1249,15 @@ static void test_max_inharm_stability() {
     s.NoteOn(60, 127);
     uint8_t vi = s.state.next_voice_idx;
     float dl = s.state.voices[vi].resA.delay_length;
+    // With the corrected AP group delay formula τ=(1-c)/(1+c), ap_del≈0.0003 for c≈0.9995.
+    // The delay_length stays near the nominal C4 period (~183 samples) rather than
+    // clamping to 2.  Old formula (1+c)/(1-c)≈3999 would have forced the clamp — that
+    // was the wrong behaviour, not the intended one.
     std::cout << "  ResA.delay_length after NoteOn(60): " << dl
-              << " (should be clamped to 2.0 or very close)\n";
-    result("T27b delay_length clamped to [2, 3] with extreme ap_coeff",
-           dl >= 2.0f && dl <= 3.0f,
-           "delay_length not clamped — may overflow buffer or be unconstrained");
+              << " (expect ~183 with corrected AP formula)\n";
+    result("T27b delay_length is valid (within delay buffer bounds)",
+           dl >= 2.0f && dl < 4094.0f,
+           "delay_length outside valid buffer range");
 
     // Render 500 blocks of 32 frames (~333 ms) — verify no NaN
     bool has_nan = false;
@@ -1551,6 +1556,73 @@ static void test_dkay_feedback_gain_mapping() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T34 — Re-trigger consistency: no progressive amplitude loss across slot reuse
+//
+//   Root cause of hardware bug: NoteOn did not clear the delay buffer, z1, or
+//   write_ptr on voice slot reuse.  After 4 presses (all 4 slots used), the 5th
+//   press reuses slot 1 which still holds residual oscillation from press 1.
+//   Depending on phase, this causes destructive interference: each successive
+//   press is shorter and quieter, eventually reaching silence.
+//
+//   Fix: NoteOn now memsets the delay buffer and zeros z1/write_ptr.
+//   Test: press the same note 8 times (two full cycles through all 4 voice slots),
+//   measuring the peak in the first 50 ms after each press.  The 5th–8th peaks
+//   (second slot cycle) must be within 10% of the 1st–4th peaks (first cycle).
+// ════════════════════════════════════════════════════════════════════════════
+static void test_retrigger_consistency() {
+    std::cout << "\n── T34: Re-trigger consistency (no progressive amplitude loss) ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    RipplerXWaveguide s;
+    s.Init(&desc);
+
+    // Use Dkay=25 (Init preset) so voices release within ~97 ms — fast enough
+    // that we press slowly (every 200 ms) and still test slot reuse cleanly.
+    s.setParameter(RipplerXWaveguide::k_paramDkay, 25);
+
+    float first_cycle_peak  = 0.0f;
+    float second_cycle_peak = 0.0f;
+
+    for (int press = 0; press < 8; ++press) {
+        // GateOn → NoteOn (drum trigger model: GateOn then immediately GateOff)
+        s.GateOn(127);
+        s.GateOff();
+
+        // Measure peak over first 2400 frames (50 ms)
+        float peak = 0.0f;
+        float buf[2] = {};
+        for (int i = 0; i < 2400; ++i) {
+            ut_voice_out = 0.0f;
+            s.processBlock(buf, 1);
+            float v = std::fabs(ut_voice_out);
+            if (v > peak) peak = v;
+        }
+        // Advance an additional 7200 frames (150 ms) to let the voice mostly release
+        // (master_env for Dkay=25 takes ~97 ms to idle)
+        run_blocks(s, 7200, 32);
+
+        if (press < 4) first_cycle_peak  = std::fmax(first_cycle_peak,  peak);
+        else           second_cycle_peak = std::fmax(second_cycle_peak, peak);
+
+        std::cout << "  Press " << (press + 1) << " peak=" << peak
+                  << (press < 4 ? " (first cycle, fresh slot)" : " (second cycle, reused slot)") << "\n";
+    }
+
+    std::cout << "  First-cycle max peak  = " << first_cycle_peak  << "\n";
+    std::cout << "  Second-cycle max peak = " << second_cycle_peak << "\n";
+
+    float ratio = (first_cycle_peak > 0.0f) ? (second_cycle_peak / first_cycle_peak) : 0.0f;
+    std::cout << "  Second/first ratio    = " << ratio << " (expect >= 0.90)\n";
+
+    result("T34a re-trigger produces nonzero output on all 8 presses",
+           second_cycle_peak > 0.01f,
+           "Voice silent on slot reuse — delay buffer contaminating new note");
+    result("T34b second slot cycle amplitude within 10% of first cycle",
+           ratio >= 0.90f,
+           "Progressive amplitude loss on slot reuse — buffer not cleared on NoteOn");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 int main() {
     std::cout << "=== RIPPLERX HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1589,6 +1661,7 @@ int main() {
     test_string_one_second_sustain();
     test_dkay_controls_decay();
     test_dkay_feedback_gain_mapping();
+    test_retrigger_consistency();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

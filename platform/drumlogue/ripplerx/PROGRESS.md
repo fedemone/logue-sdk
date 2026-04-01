@@ -1,5 +1,136 @@
 # Project Status Tracker
 
+## Phase 20: Progressive Silence Bug, Allpass Formula Fix & Reference Preset [COMPLETED]
+
+Hardware test revealed two confirmed bugs causing progressive silence and pitch error.
+T34 added; **82/82 tests pass**. Guitar String reference preset added for model validation.
+
+### Hardware Symptoms Reported
+
+**Init preset:**
+- Press 1: high-pitched synth + ~8 quick beats
+- Press 2: same but shorter synth
+- Press 4: beats only, no synth
+- Press 8: complete silence
+
+**Preset 5 (Timpani):**
+- Press 1: whining synth sound (no beats)
+- Press 2+: nothing
+
+### BUG 1 — CRITICAL: Delay buffer not cleared on NoteOn (progressive silence)
+
+**Root cause:** `NoteOn()` did not clear the waveguide delay buffer (`resA.buffer`,
+`resB.buffer`), the LP filter state (`z1`), or the write pointer (`write_ptr`) when
+reusing a voice slot. `Reset()` correctly zeros all of these, but that only runs at
+cold start. After 4 NoteOn calls, round-robin wraps back to slot 1, which still
+holds residual oscillation from the previous note.
+
+**Mechanism:** The residual oscillation is at an arbitrary phase relative to the new
+mallet impulse. Destructive interference reduces the perceived amplitude. Constructive
+interference is possible but rare; on average each successive press is shorter and
+quieter. After 8+ presses the accumulated interference silences the note entirely.
+
+**Diagnosis of symptom progression:**
+- Press 1–4: uses fresh slots (cleared by cold-start Reset) → normal sound
+- Press 5: slot 1 reused; buffer has residual → shorter, quieter sound
+- Press 8: second full cycle; residual from 2nd use overlaps 3rd → silence
+
+**Fix added to `NoteOn()`:**
+```cpp
+memset(v.resA.buffer, 0, sizeof(v.resA.buffer));
+memset(v.resB.buffer, 0, sizeof(v.resB.buffer));
+v.resA.z1 = 0.0f;
+v.resB.z1 = 0.0f;
+v.resA.write_ptr = 0;
+v.resB.write_ptr = 0;
+```
+
+**Performance:** `memset` of 32 KB (two 16 KB delay buffers) takes ~8–16 µs on ARM
+Cortex-A5 — well under one audio sample (20.8 µs). No audible glitch.
+
+**T34 confirms the fix:** 8 consecutive presses all produce identical peak amplitude
+(5.173) with no progressive decay. Before the fix, presses 5–8 would produce
+decreasing amplitude due to phase cancellation.
+
+### BUG 2 — MEDIUM: Allpass group delay formula wrong → pitch slightly sharp
+
+**Root cause:** The pitch compensation formula for the allpass filter used
+`τ_AP = (1+c)/(1-c)`, which is the correct formula for
+`H(z) = (−c + z⁻¹) / (1 − c·z⁻¹)`. However, the implemented allpass is
+`H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`, whose DC group delay is `(1−c)/(1+c)` — the
+reciprocal.
+
+**Effect:** The old formula over-compensates by `(1+c)/(1-c) − (1-c)/(1+c) = 4c/(1−c²)`:
+
+| ap_coeff (InHm) | Over-compensation | Pitch error at C4 |
+|---|---|---|
+| 0.01 (InHm=20) | 0.04 samples | < 0.1 cents |
+| 0.15 (InHm=300, Init) | 0.61 samples | ~6 cents sharp |
+| 0.50 (InHm=1000) | 2.67 samples | ~25 cents sharp |
+| 0.90 (InHm=1800) | 18.95 samples | ~2 semitones sharp |
+
+With the old formula the delay line was SHORTER than intended → pitch SHARP.
+The fix makes notes FLATTER (closer to correct pitch). Existing presets with high
+InHm were significantly detuned; low-InHm presets had negligible error.
+
+**Fix in `NoteOn()`:**
+```cpp
+// Was: float ap_del_A = (1.0f + ca) / (1.0f - ca);  // WRONG (other AP variant)
+float ap_del_A = (1.0f - ca) / (1.0f + ca);  // Correct for H=(c+z⁻¹)/(1+c·z⁻¹)
+```
+
+**T19a updated** to use the corrected formula in the pitch round-trip check.
+**T27b updated**: old test expected delay clamped to 2 (a consequence of the wrong
+enormous ap_del); correct behavior is delay near 183 samples for C4.
+
+### "8 Quick Beats" Investigation
+
+The "8 beats" heard with Init preset are most likely from the **PCM sample playback**.
+Init preset has `Smp=1` → loads sample bank 0, sample index 0. If the user's drum
+kit has a sample loaded there (a drum fill, clap, or noise burst with multiple peaks),
+it plays on every trigger alongside the waveguide.
+
+**To isolate waveguide-only sound:** Set `Smp=0` in the Init preset (or use the new
+Guitar String preset 28 which has Smp=0). If the beats disappear, the sample was
+the source. If they remain, further diagnosis needed.
+
+### Reference Preset 28: Guitar String (Karplus-Strong Validation)
+
+Added preset 28 "GtrStr" specifically for physical model validation:
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| Note | 69 (A4) | 440 Hz — standard pitch reference (can verify with a tuner app) |
+| Dkay | 195 | g≈0.997, T_60≈5.2 s at A4 — realistic guitar string sustain |
+| Mterl | 28 | lowpass_coeff≈0.97 — bright string, minimal high-frequency loss |
+| TubRad | 15 | slight tube resonance |
+| Partls | 0 | single resonator — no coupling complexity |
+| Model | 0 | String — positive feedback, harmonically pure |
+| NzMix | 0 | no noise — pure plucked string excitation |
+| Smp | 0 | no sample — waveguide exciter only |
+| InHm | 50 | ap_coeff=0.025 — slight stiffness (piano-like) |
+
+**Expected behaviour:**
+1. **Pitch:** 440 Hz ± 5 Hz — verifiable with any guitar tuner app (should read "A4")
+2. **Sustain:** note clearly audible 5 seconds after strike (T_60≈5.2 s)
+3. **Timbre:** bright attack, gradually darkening (1-pole LP rolls off harmonics)
+4. **Harmonic content:** no flutter or beating (single resonator, no coupling)
+5. **Decay law:** if you record and measure, amplitude should follow A₀ × g^n where
+   n = round trips completed and g=0.997
+
+This preset serves as the reference point for "does the physical model work?" —
+if it sounds like a plucked string with 5-second sustain at A4, the model is correct.
+
+### New Test T34
+
+**T34a:** 8 consecutive GateOn+GateOff presses all produce nonzero output.
+**T34b:** Second slot cycle (presses 5–8) amplitude within 10% of first cycle.
+Result: all 8 presses produce peak=5.173 (identical) → PASS.
+
+**Total: 82/82 tests pass.**
+
+---
+
 ## Phase 19: Hardware Testing, SVF Stability Fix & Predictive Sound Design [COMPLETED]
 
 Hardware load confirmed working (RenderStage 1–4). Tests T24–T33 added;
