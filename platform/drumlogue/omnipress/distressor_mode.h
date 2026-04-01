@@ -26,6 +26,7 @@
 #define DIST_MODE_DIST3  2  // 3rd harmonic emphasis (tape-like)
 #define DIST_MODE_BOTH   3  // Both harmonics
 #define DIST_MODE_WAVE   4  // Wavefolder
+#define DIST_MODE_TOTAL  4  // Counter
 
 // Detector modes (bit flags)
 #define DETECT_NONE      0

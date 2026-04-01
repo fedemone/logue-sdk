@@ -397,7 +397,7 @@ void test_sc_hpf_range() {
 }
 
 /* -------------------------------------------------------------------------
- * Test 11: NUM_PARAMS count matches expected (13 parameters)
+ * Test 11: k_num_params count matches expected (13 parameters)
  * ---------------------------------------------------------------------- */
 
 void test_param_count() {

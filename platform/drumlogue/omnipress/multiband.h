@@ -11,7 +11,10 @@
 #include "crossover.h"
 #include "constants.h"
 
-
+#define BAND_LOW 0
+#define BAND_MID 1
+#define BAND_HIGH 2
+#define NUM_OF_BANDS (3)
 
 // Multiband compressor state
 typedef struct {
@@ -33,7 +36,10 @@ typedef struct {
         float release_ms;
         float mute;          // 0=off, 1=on (for solo/mute)
         float solo;          // 0=off, 1=on
-    } bands[3];
+        // per‑band time constants
+        float attack_coeff;
+        float release_coeff;
+    } bands[NUM_OF_BANDS];
 
     // Crossover frequencies
     float xover_low_freq;    // e.g., 250 Hz
@@ -53,7 +59,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     mb->sample_rate = sample_rate;
 
     // Default crossover frequencies
-    mb->xover_low_freq = 250.0f;
+    mb->xover_low_freq  = 250.0f;
     mb->xover_high_freq = 2500.0f;
 
     // Initialize crossovers
@@ -66,7 +72,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     compressor_init(&mb->comp_high);
 
     // Default band parameters
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < NUM_OF_BANDS; i++) {
         mb->bands[i].thresh_db = -20.0f;
         mb->bands[i].ratio = 4.0f;
         mb->bands[i].makeup_db = 0.0f;
@@ -74,10 +80,11 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
         mb->bands[i].release_ms = 100.0f;
         mb->bands[i].mute = 0.0f;
         mb->bands[i].solo = 0.0f;
+        multiband_update_coeff(mb, i);
     }
 
-    mb->gr_low = vdupq_n_f32(0.0f);
-    mb->gr_mid = vdupq_n_f32(0.0f);
+    mb->gr_low  = vdupq_n_f32(0.0f);
+    mb->gr_mid  = vdupq_n_f32(0.0f);
     mb->gr_high = vdupq_n_f32(0.0f);
 }
 
@@ -89,12 +96,17 @@ fast_inline void multiband_reset(multiband_t* m) {
 fast_inline void multiband_set_crossover(multiband_t* mb,
                                          float low_freq,
                                          float high_freq) {
-    mb->xover_low_freq = low_freq;
+    mb->xover_low_freq  = low_freq;
     mb->xover_high_freq = high_freq;
 
     // Reinitialize crossovers
     crossover_init(&mb->xover_low_mid, low_freq, mb->sample_rate);
     crossover_init(&mb->xover_mid_high, high_freq, mb->sample_rate);
+}
+
+fast_inline void multiband_update_coeff(multiband_t* mb, int band) {
+    mb->bands[band].attack_coeff  = expf(-1.0f / (mb->bands[band].attack_ms * 0.001f * mb->sample_rate));
+    mb->bands[band].release_coeff = expf(-1.0f / (mb->bands[band].release_ms * 0.001f * mb->sample_rate));
 }
 
 // Set band parameter
@@ -108,8 +120,8 @@ fast_inline void multiband_set_param(multiband_t* mb,
         case 0: mb->bands[band].thresh_db = value; break;
         case 1: mb->bands[band].ratio = value; break;
         case 2: mb->bands[band].makeup_db = value; break;
-        case 3: mb->bands[band].attack_ms = value; break;
-        case 4: mb->bands[band].release_ms = value; break;
+        case 3: mb->bands[band].attack_ms = value; multiband_update_coeff(mb, band); break;
+        case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;
         case 5: mb->bands[band].mute = value; break;
         case 6: mb->bands[band].solo = value; break;
     }
@@ -122,24 +134,34 @@ fast_inline void multiband_process(multiband_t* mb,
                                    float32x4_t* out_l,
                                    float32x4_t* out_r) {
 
-    // Split into bands
-    float32x4_t low_l, low_r, mid_l, mid_r, high_l, high_r;
+    float32x4_t low_l, low_r;          // final low band
+    float32x4_t mid_l, mid_r;          // final mid band
+    float32x4_t high_l, high_r;        // final high band
+    float32x4_t temp_l, temp_r;        // temporary for mid+high after first crossover
 
-    // First crossover: separate low from mid+high
-    float32x4_t temp_mid_high_l, temp_mid_high_r;
+    // ------------------------------------------------------------
+    // Stage 1: split low from (mid+high)
+    // ------------------------------------------------------------
     crossover_process(&mb->xover_low_mid, in_l, in_r,
-                      &low_l, &low_r,
-                      &temp_mid_high_l, &temp_mid_high_r,
-                      &mid_l, &mid_r,  // These will be overwritten
+                      &low_l, &low_r,                   // low output
+                      &temp_l, &temp_r,    // mid output (unused, we ignore it)
+                      &temp_l, &temp_r,  // high output = mid+high (we reuse the same variables)
                       mb->xover_low_freq, mb->sample_rate);
 
-    // Second crossover: separate mid from high - NOTE use temporary variables to avoid corrupting the bands
-    float32x4_t mid_tmp_l, mid_tmp_r;
-    crossover_process(&mb->xover_mid_high, temp_mid_high_l, temp_mid_high_r,
-                    &mid_l, &mid_r,
-                    &mid_tmp_l, &mid_tmp_r,
-                    &high_l, &high_r,
-                    mb->xover_high_freq, mb->sample_rate);
+    // At this point, temp_l, temp_r hold the high‑pass output (mid+high)
+
+    // ------------------------------------------------------------
+    // Stage 2: split (mid+high) into mid and high
+    // ------------------------------------------------------------
+    crossover_process(&mb->xover_mid_high, temp_l, temp_r,
+                      &mid_l, &mid_r,      // low output = mid band
+                      &temp_l, &temp_r,    // mid output (unused)
+                      &high_l, &high_r,                 // high output = high band
+                      mb->xover_high_freq, mb->sample_rate);
+
+    // ------------------------------------------------------------
+    // Now low_l, mid_l, high_l (and R) contain the three bands correctly.
+    // ------------------------------------------------------------
 
     // Calculate envelope for each band (using absolute value for peak detection)
     float32x4_t env_low = vabsq_f32(low_l);
@@ -173,13 +195,18 @@ fast_inline void multiband_process(multiband_t* mb,
                                     mb->bands[BAND_HIGH].ratio);
 
     // Smooth gain reduction (attack/release)
-    float attack_coeff = expf(-1.0f / (mb->bands[0].attack_ms * 0.001f * mb->sample_rate));
-    float release_coeff = expf(-1.0f / (mb->bands[0].release_ms * 0.001f * mb->sample_rate));
+    float attack_coeff = expf(-1.0f / (mb->bands[BAND_LOW].attack_ms * 0.001f * mb->sample_rate));
+    float release_coeff = expf(-1.0f / (mb->bands[BAND_LOW].release_ms * 0.001f * mb->sample_rate));
 
-    mb->gr_low = compressor_smooth(&mb->comp_low, low_gr, attack_coeff, release_coeff);
-    mb->gr_mid = compressor_smooth(&mb->comp_mid, mid_gr, attack_coeff, release_coeff);
-    mb->gr_high = compressor_smooth(&mb->comp_high, high_gr, attack_coeff, release_coeff);
-
+    mb->gr_low = compressor_smooth(&mb->comp_low, low_gr,
+                                    mb->bands[BAND_LOW].attack_coeff,
+                                    mb->bands[BAND_LOW].release_coeff);
+    mb->gr_mid = compressor_smooth(&mb->comp_mid, mid_gr,
+                                    mb->bands[BAND_MID].attack_coeff,
+                                    mb->bands[BAND_MID].release_coeff);
+    mb->gr_high = compressor_smooth(&mb->comp_high, high_gr,
+                                    mb->bands[BAND_HIGH].attack_coeff,
+                                    mb->bands[BAND_HIGH].release_coeff);
     // Convert gain reduction from dB to linear (ARMv7-compatible)
     float32x4_t low_gain = neon_expq_f32(vmulq_f32(mb->gr_low, vdupq_n_f32(0.115129f)));
     float32x4_t mid_gain = neon_expq_f32(vmulq_f32(mb->gr_mid, vdupq_n_f32(0.115129f)));
@@ -192,14 +219,14 @@ fast_inline void multiband_process(multiband_t* mb,
 
     // Apply mute/solo logic
     float32x4_t solo_any = vdupq_n_f32(0.0f);
-    if (mb->bands[0].solo > 0.0f || mb->bands[1].solo > 0.0f || mb->bands[2].solo > 0.0f) {
+    if (mb->bands[BAND_LOW].solo > 0.0f || mb->bands[BAND_MID].solo > 0.0f || mb->bands[BAND_HIGH].solo > 0.0f) {
         solo_any = vdupq_n_f32(1.0f);
     }
 
-    float32x4_t low_active = vbslq_f32(vdupq_n_u32(mb->bands[0].solo > 0.0f),
+    float32x4_t low_active = vbslq_f32(vdupq_n_u32(mb->bands[BAND_LOW].solo > 0.0f),
                                        vdupq_n_f32(1.0f),
-                                       vdupq_n_f32(mb->bands[0].mute > 0.0f ? 0.0f : 1.0f));
-    low_active = vbslq_f32(vdupq_n_u32(mb->bands[0].solo == 0.0f && vgetq_lane_f32(solo_any,0) > 0.0f),
+                                       vdupq_n_f32(mb->bands[BAND_LOW].mute > 0.0f ? 0.0f : 1.0f));
+    low_active = vbslq_f32(vdupq_n_u32(mb->bands[BAND_LOW].solo == 0.0f && vgetq_lane_f32(solo_any,0) > 0.0f),
                           vdupq_n_f32(0.0f), low_active);
 
     // Apply gains to each band
@@ -207,14 +234,14 @@ fast_inline void multiband_process(multiband_t* mb,
     float32x4_t out_low_r = vmulq_f32(vmulq_f32(low_r, low_gain), low_active);
 
     float32x4_t out_mid_l = vmulq_f32(vmulq_f32(mid_l, mid_gain),
-                                      vdupq_n_f32(mb->bands[1].mute > 0.0f ? 0.0f : 1.0f));
+                                      vdupq_n_f32(mb->bands[BAND_MID].mute > 0.0f ? 0.0f : 1.0f));
     float32x4_t out_mid_r = vmulq_f32(vmulq_f32(mid_r, mid_gain),
-                                      vdupq_n_f32(mb->bands[1].mute > 0.0f ? 0.0f : 1.0f));
+                                      vdupq_n_f32(mb->bands[BAND_MID].mute > 0.0f ? 0.0f : 1.0f));
 
     float32x4_t out_high_l = vmulq_f32(vmulq_f32(high_l, high_gain),
-                                       vdupq_n_f32(mb->bands[2].mute > 0.0f ? 0.0f : 1.0f));
+                                       vdupq_n_f32(mb->bands[BAND_HIGH].mute > 0.0f ? 0.0f : 1.0f));
     float32x4_t out_high_r = vmulq_f32(vmulq_f32(high_r, high_gain),
-                                       vdupq_n_f32(mb->bands[2].mute > 0.0f ? 0.0f : 1.0f));
+                                       vdupq_n_f32(mb->bands[BAND_HIGH].mute > 0.0f ? 0.0f : 1.0f));
 
     // Sum bands
     *out_l = vaddq_f32(vaddq_f32(out_low_l, out_mid_l), out_high_l);

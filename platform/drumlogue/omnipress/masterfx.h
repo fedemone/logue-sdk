@@ -34,7 +34,34 @@
 #include "multiband.h"
 
 // Parameter count must match header.c (params 0-16 = 17 total)
-#define NUM_PARAMS 17
+#define k_num_params 17
+enum parameters
+{
+    k_threhold,
+    k_ratio,
+    k_attack,
+    k_release,
+    k_makeup,
+    k_drive,
+    k_mix,
+    k_sc_hpf,
+    k_compressor_mode,
+    k_bass,
+    k_treble,
+    k_presence,
+    k_distressor_distortion_type,
+    k_distressor_ratio,
+    k_multiband_band_selection,
+    k_multiband_band_threshold,
+    k_multiband_band_ratio,
+    k_multiband_band_attack,
+    k_multiband_band_release,
+    k_multiband_band_makeup,
+    k_multiband_band_mute,
+    k_multiband_band_solo,
+
+    k_num_params,
+}
 
 class MasterFX {
 public:
@@ -57,7 +84,7 @@ public:
         gain_computer_init(&gain_comp_);
 
         // Clear parameter array
-        for (int i = 0; i < NUM_PARAMS; i++) {
+        for (int i = 0; i < k_num_params; i++) {
             raw_params_[i] = 0;
         }
     }
@@ -89,30 +116,58 @@ public:
         wavefolder_init(&wavefolder_);
         multiband_init(&multiband_, samplerate_);
         distressor_reset(&distressor_, samplerate_);
-        multiband_init(&multiband_, samplerate_);
         overlord_init(&overlord_, samplerate_);
         smoothing_init(&smoother_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
         gain_computer_init(&gain_comp_);
 
         // Set default parameters
-        setParameter(0, -200);  // Thresh: -20.0 dB
-        setParameter(1, 40);    // Ratio: 4.0
-        setParameter(2, 150);   // Attack: 15.0 ms
-        setParameter(3, 200);   // Release: 200 ms
-        setParameter(4, 0);     // Makeup: 0 dB
-        setParameter(5, 0);     // Drive: 0%
-        setParameter(6, 100);   // Mix: 100% wet
-        setParameter(7, 20);    // SC HPF: 20 Hz
-        setParameter(8, 0);     // COMP MODE: Standard
-        setParameter(9, 0);     // BAND SEL: Low
-        setParameter(10, -200); // L THRESH: -20.0 dB
-        setParameter(11, 40);   // L RATIO: 4.0
-        setParameter(12, 0);    // DSTR DIST: None
-        setParameter(13, 0);    // DSTR RATIO: Warm mode
-        setParameter(14, 0);    // BASS: bypass
-        setParameter(15, 0);    // TREBLE: bypass
-        setParameter(16, 0);    // PRESENCE: bypass
+        setParameter(k_threhold, -200); // Thresh: -20.0 dB
+        setParameter(k_ratio, 40);      // Ratio: 4.0
+        setParameter(k_attack, 150);    // Attack: 15.0 ms
+        setParameter(k_release, 200);   // Release: 200 ms
+        setParameter(k_makeup, 0);      // Makeup: 0 dB
+        setParameter(k_drive, 0);       // Drive: 0%
+        setParameter(k_mix, 100);       // Mix: 100% wet
+        setParameter(k_sc_hpf, 20);     // SC HPF: 20 Hz
+        setParameter(k_compressor_mode, 0);     // COMP MODE: Standard
+        setParameter(k_bass, 0);        // BASS: bypass
+        setParameter(k_treble, 0);      // TREBLE: bypass
+        setParameter(k_presence, -200); // PRESENCE: bypass
+        setParameter(k_distressor_distortion_type, 00); // DSTR DIST: None
+        setParameter(k_distressor_ratio, 0);            // DSTR RATIO: Warm mode
+        setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
+        setParameter(k_multiband_band_threshold, -200); // L THRESH: -20.0 dB
+        setParameter(k_multiband_band_ratio, 40);       // L RATIO: 4.0
+        setParameter(k_multiband_band_attack, 10);      // ATTACK 10 ms
+        setParameter(k_multiband_band_release, 10);     // RELEAE:  100 ms
+        setParameter(k_multiband_band_makeup, 0);       // MAKEUP: 0 dB
+        setParameter(k_multiband_band_mute, 0);         // MUTE off
+        setParameter(k_multiband_band_solo, 0);         // SOLO off
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         comp_mode_ = 0;
         band_select_ = 0;
@@ -226,6 +281,17 @@ private:
     /*===========================================================================*/
     /* Private Processing Methods */
     /*===========================================================================*/
+    fast_inline void handle_set_multiband_parameter(int p_id, float val) {
+        if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
+            multiband_set_param(&multiband_, BAND_LOW, p_id, val);
+        }
+        if (band_select_ == BAND_MID || band_select_ == BAND_LOW_MID || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
+            multiband_set_param(&multiband_, BAND_MID, p_id, val);
+        }
+        if (band_select_ == BAND_HIGH || band_select_ == BAND_LOW_HI || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
+            multiband_set_param(&multiband_, BAND_HIGH, p_id, val);
+        }
+    }
 
     /**
      * Process one block of 4 samples (all modes)
@@ -389,28 +455,26 @@ public:
     /*===========================================================================*/
 
     inline void setParameter(uint8_t index, int32_t value) {
-        // FIXED: Bounds check on parameter index
-        if (index >= NUM_PARAMS) return;
+        if (index >= k_num_params) return;
 
         raw_params_[index] = value;
 
         switch (index) {
-            case 0: // THRESH (-60.0 to 0.0 dB)
+            /*===========================================================================*/
+            /* General Parameters */
+            /*===========================================================================*/
+            case k_threhold: // THRESH (-60.0 to 0.0 dB)
                 thresh_db_ = value * 0.1f;
                 break;
 
-            case 1: // RATIO (1.0 to 20.0)
-                ratio_ = value * 0.1f;
-                break;
-
-            case 2: // ATTACK (0.1 to 100.0 ms)
+            case k_attack: // ATTACK (0.1 to 100.0 ms)
                 attack_ms_ = value * 0.1f;
                 attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
                 smoothing_set_times(&smoother_, attack_ms_, release_ms_);
                 break;
 
-            case 3: // RELEASE (10 to 2000 ms)
+            case k_release: // RELEASE (10 to 2000 ms)
                 release_ms_ = static_cast<float>(value);
                 release_coeff_ = expf(-1.0f / (release_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
@@ -421,57 +485,81 @@ public:
                 makeup_db_ = value * 0.1f;
                 break;
 
-            case 5: // DRIVE (0 to 100%)
+            case k_drive: // DRIVE (0 to 100%)
                 drive_ = value * 0.01f;
                 wavefolder_set_drive(&wavefolder_, value);
                 overlord_set_drive(&overlord_, value);
                 break;
 
-            case 6: // MIX (-100 to +100)
+            case k_mix: // MIX (-100 to +100)
                 mix_ = (value + 100.0f) * 0.005f; // Map to 0.0..1.0
                 break;
 
-            case 7: // SC HPF (20 to 500 Hz)
+            case k_sc_hpf: // SC HPF (20 to 500 Hz)
                 sc_hpf_hz_ = static_cast<float>(value);
                 sidechain_hpf_set_cutoff(&sc_hpf_, sc_hpf_hz_);
                 break;
 
-            case 8: // COMP MODE (0-2)
-                if (value >= 0 && value <= 2) {
-                    comp_mode_ = value;
-
-                    // Reset appropriate detectors for the mode
-                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                        // Distressor mode - faster attack by default
-                        attack_ms_ = fmaxf(attack_ms_, 0.05f);  // Cap to 0.05ms min
-                        attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
-                    }
-                }
-                break;
-
-            case 9: // BAND SEL (0-6) - for multiband mode
+            /*===========================================================================*/
+            /* Multiband Parameters */
+            /*===========================================================================*/
+            case k_multiband_band_selection: // BAND SEL (0-6) - for multiband mode
                 band_select_ = value;
                 break;
-
-            case 10: // L THRESH (multiband low threshold) - param_id=0
-            case 11: // L RATIO (multiband low ratio) - param_id=1
+            case k_multiband_band_threshold: // L THRESH (multiband low threshold) - param_id=0
             {
                 const float val = value * 0.1f;
-                const int p_id = index - 10;
-                if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
-                    multiband_set_param(&multiband_, BAND_LOW, p_id, val);
-                }
-                if (band_select_ == BAND_MID || band_select_ == BAND_LOW_MID || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
-                    multiband_set_param(&multiband_, BAND_MID, p_id, val);
-                }
-                if (band_select_ == BAND_HIGH || band_select_ == BAND_LOW_HI || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
-                    multiband_set_param(&multiband_, BAND_HIGH, p_id, val);
-                }
+                const int p_id = 0;
+                handle_set_multiband_parameter(p_id, val);
                 break;
             }
-
-            case 12: // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave)
-                if (value >= 0 && value <= 4) {
+            case k_multiband_band_ratio: // L RATIO (multiband low ratio) - param_id=1
+            {
+                const float val = value * 0.1f;
+                const int p_id = 1;
+                handle_set_multiband_parameter(p_id, val);
+                break;
+            }
+            case k_multiband_band_attack:  // BAND ATTACK
+            {
+                float val = value * 0.1f;   // raw is 1-1000 → 0.1-100 ms
+                const int p_id = 3;         // param_id 3 = attack_ms in multiband_set_param
+                handle_set_multiband_parameter(p_id, val);
+                break;
+            }
+            case k_multiband_band_release:  // BAND RELEASE
+            {
+                float val = value;          // raw ms
+                const int p_id = 4;         // param_id 4 = release_ms
+                handle_set_multiband_parameter(p_id, val);
+                break;
+            }
+            case k_multiband_band_makeup:   // BAND MAKEUP
+            {
+                float val = value * 0.1f;   // 0-240 → 0-24 dB
+                const int p_id = 2;         // param_id 2 = makeup_db
+                handle_set_multiband_parameter(p_id, val);
+                break;
+            }
+            case k_multiband_band_mute:  // BAND MUTE
+            {
+                float val = value != 0 ? 1.0f : 0.0f;
+                const int p_id = 5;         // param_id 5 = mute
+                handle_set_multiband_parameter(p_id, val);
+                break;
+            }
+            case k_multiband_band_solo:  // BAND SOLO
+            {
+                float val = value != 0 ? 1.0f : 0.0f;
+                const int p_id = 6;         // param_id 6 = solo
+                handle_set_multiband_parameter(p_id, val);
+                break;
+            }
+            /*===========================================================================*/
+            /* Distressor Parameters */
+            /*===========================================================================*/
+            case k_distressor_distortion_type: // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave)
+                if (value >= 0 && value <= DIST_MODE_TOTAL) {
                     distressor_.dist_mode = value;
 
                     // Enable/disable detector HPF based on mode
@@ -483,20 +571,22 @@ public:
                     }
                 }
                 break;
-
-            case 13: // DSTR RATIO
+            case k_distressor_ratio: // DSTR RATIO
                 distressor_set_ratio(&distressor_, value);
                 break;
 
-            case 14: // BASS (Operation Overlord EQ)
+            /*===========================================================================*/
+            /* Operation Overlord Distortion Emulation Parameters */
+            /*===========================================================================*/
+            case k_bass: // BASS (Operation Overlord EQ)
                 overlord_.bass = value / 100.0f;
                 break;
 
-            case 15: // TREBLE
+            case k_treble: // TREBLE
                 overlord_.treble = value / 100.0f;
                 break;
 
-            case 16: // PRESENCE
+            case k_presence: // PRESENCE
                 overlord_.presence = value / 100.0f;
                 break;
         }
@@ -504,7 +594,7 @@ public:
 
     inline int32_t getParameterValue(uint8_t index) const {
         // FIXED: Bounds check on parameter index
-        if (index < NUM_PARAMS) {
+        if (index < k_num_params) {
             return raw_params_[index];
         }
         return 0;
@@ -514,21 +604,30 @@ public:
         static char str_buf[16];
 
         switch (index) {
-            case 8: // COMP MODE
+            case k_compressor_mode: // COMP MODE
                 if (value >= 0 && value <= 2) {
-                    static const char* modes[] = {"Standard", "Distressor", "Multiband"};
+                    static const char* modes[] = {"Stndrd", "Dstrssr", "Mltibnd"};
+                    comp_mode_ = value;
+
+                    // TODO review if any reset should be done for multiband
+                    // Reset appropriate detectors for the mode
+                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                        // Distressor mode - faster attack by default
+                        attack_ms_ = fmaxf(attack_ms_, 0.05f);  // Cap to 0.05ms min
+                        attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
+                    }
                     return modes[value];
                 }
                 break;
 
-            case 9: // BAND SEL
+            case k_multiband_band_selection: // BAND SEL
                 if (value >= 0 && value <= 6) {
                     static const char* bands[] = {"Low", "Mid", "High", "LowMid", "LowHi", "MidHi", "All"};
                     return bands[value];
                 }
                 break;
 
-            case 1: // RATIO - show special cases
+            case k_ratio: // RATIO (1.0 to 20.0) - show special cases
                 {
                     float ratio = value * 0.1f;
                     if (fabsf(ratio - 20.0f) < 0.1f)
@@ -540,19 +639,19 @@ public:
                 }
                 break;
 
-            case 6: // MIX - show DRY/BAL/WET
+            case k_mix: // MIX - show DRY/BAL/WET
                 if (value <= -100) return "DRY";
                 if (value >= 100) return "WET";
                 if (abs(value) < 10) return "BAL";
                 break;
 
-            case 12: // DSTR MODE
-                if (value >= 0 && value <= 4) {
+            case k_compressor_mode: // DSTR MODE
+                if (value >= 0 && value <= DIST_MODE_TOTAL) {
                     return distressor_dist_strings[value];
                 }
                 break;
 
-            case 13: // DSTR RATIO
+            case k_distressor_ratio: // DSTR RATIO
                 if (value >= 0 && value <= 7) {
                     return distressor_ratio_strings[value];
                 }
@@ -580,7 +679,7 @@ private:
     float samplerate_;
     bool has_sidechain_;
 
-    int32_t raw_params_[NUM_PARAMS];
+    int32_t raw_params_[k_num_params]  __attribute__((aligned(16)));
 
     // Floating-point parameters
     float thresh_db_;
