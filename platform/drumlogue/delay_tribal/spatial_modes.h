@@ -10,5 +10,5 @@ typedef enum {
     MODE_TRIBAL   = 0,
     MODE_MILITARY = 1,
     MODE_ANGEL    = 2,
-    MODE_COUNT    = 3,
+    MODE_COUNT    = 3,  // marker only
 } spatial_mode_t;

@@ -59,6 +59,18 @@ typedef struct {
     uint64x2_t state1;
 } prng_t;
 
+enum params {
+    k_clones,
+    k_mode,
+    k_depth,
+    k_rate,
+    k_spread,
+    k_mix,
+    k_wobble,
+    k_attack_softening,
+    k_total,    // marker (count) same as header.c
+}
+
 /**
  * Main Enhanced Spatializer Class
  */
@@ -327,43 +339,39 @@ public:
     /*===========================================================================*/
 
     inline void setParameter(uint8_t index, int32_t value) {
-        if (index < 24) {
+        if (index < k_total) {
             params_[index] = value;
         }
 
         switch (index) {
-            case 0: // Clone Count
-                set_clone_count(value);
-                break;
-            case 1: // Mode
-                set_mode(static_cast<spatial_mode_t>(value));
-                break;
-            case 2: // Depth
+            case k_depth: // Depth
                 depth_ = value / 100.0f;
                 update_filter_params(&mode_filters_, depth_, 48); // 1ms ramp
                 break;
-            case 3: // Rate (LFO speed for pitch wobble)
+            case k_rate: // Rate (LFO speed for pitch wobble)
                 rate_ = 0.1f + (value / 100.0f) * 9.9f;
                 phase_inc_ = vdupq_n_f32(rate_ / sample_rate_);
                 break;
-            case 4: // Spread
+            case k_spread: // Spread
                 spread_ = value / 100.0f;
                 update_panning();
                 break;
-            case 5: // Mix
+            case k_mix: // Mix
                 mix_ = value / 100.0f;
                 break;
-            case 6: // Wobble Depth
+            case k_wobble: // Wobble Depth
                 wobble_depth_ = value / 100.0f;
                 break;
-            case 7: // Attack Softening
+            case k_attack_softening: // Attack Softening
                 attack_soften_ = value / 100.0f;
+                break;
+            default:
                 break;
         }
     }
 
     inline int32_t getParameterValue(uint8_t index) const {
-        if (index < 24) {
+        if (index < k_total) {
             return params_[index];
         }
         return 0;
@@ -374,10 +382,12 @@ public:
         static const char* clone_names[] = {"4", "8", "16"};
 
         switch (index) {
-            case 0:
+            case k_clones: // Clone Count
+                set_clone_count(value);
                 if (value >= 0 && value <= 2) return clone_names[value];
                 break;
-            case 1:
+            case k_mode: // Mode
+                set_mode(static_cast<spatial_mode_t>(value));
                 if (value >= 0 && value <= 2) return mode_names[value];
                 break;
             default:
@@ -723,7 +733,7 @@ private:
             }
 
             for (int i = 0; i < NEON_LANES; i++) {
-                int clone_idx = group * NEON_LANES + i;
+                uint32_t clone_idx = group * NEON_LANES + i;
                 if (clone_idx < clone_count_) {
                     float pos = (clone_count_ > 1) ?
                                 (float)clone_idx / (clone_count_ - 1) : 0.5f;
@@ -751,7 +761,7 @@ private:
             // Also update active mask
             uint32_t active_vals[NEON_LANES];
             for (int i = 0; i < NEON_LANES; i++) {
-                int clone_idx = group * NEON_LANES + i;
+                uint32_t clone_idx = group * NEON_LANES + i;
                 active_vals[i] = (clone_idx < clone_count_) ? 0xFFFFFFFFU : 0U;
             }
             g->active = vld1q_u32(active_vals);
@@ -796,7 +806,7 @@ private:
         float fade_in = 1.0f - fade_out;
 
         float32x4_t fade_in_vec = vdupq_n_f32(fade_in);
-        float32x4_t fade_out_vec = vdupq_n_f32(fade_out);
+        float32x4_t fade_out_vec = vdupq_n_f32(fade_out);   // TODO implement usage
 
         // For simplicity, we're just fading the current output
         // In a full implementation, you'd store the old mode's output separately
@@ -841,8 +851,8 @@ private:
     bool bypass_;
     bool initialized_;
 
-    int32_t params_[24];
-    int32_t last_params_[24];
+    int32_t params_[k_total];
+    int32_t last_params_[k_total];
 
     float32x4_t phase_inc_;
 
