@@ -289,7 +289,7 @@ private:
             float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_TWOPI));
 
             // Compute sin using NEON approximation
-            float32x4_t sin_vals = fast_sin_neon(angles);
+            float32x4_t sin_vals = sin_ps(angles);
 
 	    // Scale by modulation depth
             mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(modDepth * 100.0f));
@@ -369,20 +369,41 @@ private:
         float pole = diffusion * dampingCoeff;
         float oneminuspole = 1.0f - pole;
 
+        // Since the filter is recursive (each step depends on the previous output),
+        // the sequential dependency remains, but the scalar operations can be
+        // performed on register values.
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             // Extract inter-block carry: most recent output from the previous block
             float state = vgetq_lane_f32(lpfState[ch], 3);
 
-            float lanes[4];
-            vst1q_f32(lanes, signals[ch]);
+            // Load the 4 input values into a NEON vector
+            float32x4_t v = vld1q_f32(signals[ch]);
 
-            for (int s = 0; s < 4; s++) {
-                float y = lanes[s] * oneminuspole + state * pole;
-                lanes[s] = y;
-                state = y;
-            }
+            // Process each lane sequentially, building the result vector directly
+            float32x4_t result;
 
-            float32x4_t result = vld1q_f32(lanes);
+            // Lane 0
+            float y0 = vgetq_lane_f32(v, 0) * oneminuspole + state * pole;
+            result = vsetq_lane_f32(y0, result, 0);
+            state = y0;
+
+            // Lane 1
+            float y1 = vgetq_lane_f32(v, 1) * oneminuspole + state * pole;
+            result = vsetq_lane_f32(y1, result, 1);
+            state = y1;
+
+            // Lane 2
+            float y2 = vgetq_lane_f32(v, 2) * oneminuspole + state * pole;
+            result = vsetq_lane_f32(y2, result, 2);
+            state = y2;
+
+            // Lane 3
+            float y3 = vgetq_lane_f32(v, 3) * oneminuspole + state * pole;
+            result = vsetq_lane_f32(y3, result, 3);
+            state = y3;
+
+            // Now 'result' holds the filtered values, ready for further SIMD processing
+
             lpfState[ch] = result;
             signals[ch] = result;
         }
@@ -520,15 +541,13 @@ private:
 
             // 3. Calculate phase increments for 4 parallel samples
             float inc = M_TWOPI * shimmerFreq_ / sampleRate;
-            float32x4_t phaseVec = {
-                shimmerPhase_,
-                shimmerPhase_ + inc,
-                shimmerPhase_ + 2.0f * inc,
-                shimmerPhase_ + 3.0f * inc
-            };
+            float32x4_t phaseVec = vdupq_n_f32(shimmerPhase_);
+            phaseVec = vsetq_lane_f32(shimmerPhase_ + inc, phaseVec, 1);
+            phaseVec = vsetq_lane_f32(shimmerPhase_ + 2.0f * inc, phaseVec, 2);
+            phaseVec = vsetq_lane_f32(shimmerPhase_ + 3.0f * inc, phaseVec, 3);
 
             // 4. Generate 4 sine wave samples at once using your fast approximation
-            float32x4_t sinVec = fast_sin_neon(phaseVec);
+            float32x4_t sinVec = sin_ps(phaseVec);
 
             // 5. Calculate the ring-modulated shimmer signal (preview * sin * depth)
             float32x4_t shim = vmulq_f32(monoPreview,
@@ -762,19 +781,6 @@ private:
         wetR = mid - side * width;
     }
 
-    /*===========================================================================*/
-    /* Fast sine approximation (from float_math.h) */
-    /*===========================================================================*/
-    fast_inline float32x4_t fast_sin_neon(float32x4_t x) {
-        // Manually unrolled: vgetq_lane_f32 / vsetq_lane_f32 require constant
-        // lane indices; a loop variable is not accepted by the compiler.
-        float s0 = fastersinfullf(vgetq_lane_f32(x, 0));
-        float s1 = fastersinfullf(vgetq_lane_f32(x, 1));
-        float s2 = fastersinfullf(vgetq_lane_f32(x, 2));
-        float s3 = fastersinfullf(vgetq_lane_f32(x, 3));
-        float32x4_t result = {s0, s1, s2, s3};
-        return result;
-    }
 
     /*===========================================================================*/
     /* Initialization */

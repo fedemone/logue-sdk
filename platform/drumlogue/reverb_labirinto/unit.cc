@@ -53,7 +53,7 @@ enum parameterState {
   k_wide, k_comp, k_pill, k_shimmer_freq,
   k_pre_delay, k_total};
 
-static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0};
+static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0};
 static const int k_preset_number = 4;
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
                                                       "labirinto", "stellare"};
