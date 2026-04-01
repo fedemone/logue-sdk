@@ -801,17 +801,16 @@ private:
     fast_inline void apply_crossfade(float32x4_t* out_l, float32x4_t* out_r) {
         if (!crossfade_active_) return;
 
-        // Calculate fade factors (linear crossfade)
-        float fade_out = (float)crossfade_counter_ / CROSSFADE_SAMPLES;
-        float fade_in = 1.0f - fade_out;
+        // Calculate the crossfade ratio (1.0 to 0.0)
+        float fade = crossfade_counter_ / (float)CROSSFADE_SAMPLES;
 
-        float32x4_t fade_in_vec = vdupq_n_f32(fade_in);
-        float32x4_t fade_out_vec = vdupq_n_f32(fade_out);   // TODO implement usage
+        float32x4_t fade_out_vec = vdupq_n_f32(fade);
+        float32x4_t fade_in_vec = vdupq_n_f32(1.0f - fade);
 
-        // For simplicity, we're just fading the current output
-        // In a full implementation, you'd store the old mode's output separately
-        *out_l = vmulq_f32(*out_l, fade_in_vec);
-        *out_r = vmulq_f32(*out_r, fade_in_vec);
+        // Assuming 'dry_l' and 'dry_r' are available in your loop,
+        // smoothly crossfade from the dry signal to the newly calculated wet signal
+        *out_l = vaddq_f32(vmulq_f32(dry_l, fade_out_vec), vmulq_f32(*out_l, fade_in_vec));
+        *out_r = vaddq_f32(vmulq_f32(dry_r, fade_out_vec), vmulq_f32(*out_r, fade_in_vec));
 
         crossfade_counter_--;
         if (crossfade_counter_ == 0) {
@@ -827,16 +826,16 @@ private:
     uint32_t write_ptr_;
 
     clone_group_t clone_groups_[CLONE_GROUPS] __attribute__((aligned(CACHE_LINE_SIZE)));
-    mode_filters_t mode_filters_;
+    mode_filters_t mode_filters_  __attribute__((aligned(16)));
 
-    static float sin_table[360];
-    static float cos_table[360];
+    static float sin_table[360]  __attribute__((aligned(16)));
+    static float cos_table[360]  __attribute__((aligned(16)));
     static bool tables_initialized;
 
     prng_t prng_;
 
     // Attack softening filter states
-    float32x4_t filter_state_[CLONE_GROUPS] __attribute__((aligned(16)));
+    float32x4_t filter_state_[CLONE_GROUPS] __attribute__((aligned(CACHE_LINE_SIZE)));
 
     spatial_mode_t current_mode_;
     uint32_t clone_count_;
@@ -851,8 +850,8 @@ private:
     bool bypass_;
     bool initialized_;
 
-    int32_t params_[k_total];
-    int32_t last_params_[k_total];
+    int32_t params_[k_total]  __attribute__((aligned(16)));
+    int32_t last_params_[k_total] __attribute__((aligned(16)));
 
     float32x4_t phase_inc_;
 
