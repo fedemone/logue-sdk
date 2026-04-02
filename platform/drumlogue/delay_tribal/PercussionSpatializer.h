@@ -100,7 +100,7 @@ public:
         , flags_(0) {
 
         // Initialize phase increment vector
-        phase_inc_ = vdupq_n_f32(0.0f);
+        phase_inc_ = vdupq_n_u32(0.0f);
 
         // Initialize PRNG with a fixed seed
         prng_init(0x9E3779B97F4A7C15ULL);
@@ -344,29 +344,35 @@ public:
         }
 
         switch (index) {
-            case k_depth: // Depth
+            case k_clones: { // Clone Count
+                set_clone_count(value);
+            break;}
+            case k_mode: { // Mode
+                set_mode(static_cast<spatial_mode_t>(value));
+                break;}
+            case k_depth: {  // Depth
                 depth_ = value / 100.0f;
-                update_filter_params(&mode_filters_, depth_, 48); // 1ms ramp
-                break;
-            case k_rate: // Rate (LFO speed for pitch wobble)
+                update_filter_params(&mode_filters_, depth_, 48);  // 1ms ramp
+                break;}
+            case k_rate: {// Rate (LFO speed for pitch wobble)
                 rate_ = 0.1f + (value / 100.0f) * 9.9f;
                 // Convert to 32-bit fixed point: (rate / sr) * 2^32
                 uint32_t inc = (uint32_t)((rate_ / sample_rate_) * 4294967296.0f);
                 phase_inc_ = vdupq_n_u32(inc);
-                break;
-            case k_spread: // Spread
+                break;}
+            case k_spread: {// Spread
                 spread_ = value / 100.0f;
                 update_panning();
-                break;
-            case k_mix: // Mix
+                break;}
+            case k_mix: {// Mix
                 mix_ = value / 100.0f;
-                break;
-            case k_wobble: // Wobble Depth
+                break;}
+            case k_wobble: {// Wobble Depth
                 wobble_depth_ = value / 100.0f;
-                break;
-            case k_attack_softening: // Attack Softening
+                break;}
+            case k_attack_softening: {// Attack Softening
                 attack_soften_ = value / 100.0f;
-                break;
+                break;}
             default:
                 break;
         }
@@ -385,11 +391,9 @@ public:
 
         switch (index) {
             case k_clones: // Clone Count
-                set_clone_count(value);
                 if (value >= 0 && value <= 2) return clone_names[value];
                 break;
             case k_mode: // Mode
-                set_mode(static_cast<spatial_mode_t>(value));
                 if (value >= 0 && value <= 2) return mode_names[value];
                 break;
             default:
@@ -495,8 +499,8 @@ private:
 
             float base_delay = 5.0f + group * 5.0f; // 5ms, 10ms, 15ms, 20ms per group
             float offsets[NEON_LANES];
-            float phases[NEON_LANES];
             float pitch_mod[NEON_LANES];
+            uint32_t phases[NEON_LANES];
 
             for (int i = 0; i < NEON_LANES; i++) {
                 int clone_idx = group * NEON_LANES + i;
@@ -783,6 +787,7 @@ private:
     /**
      * Apply crossfade during mode switching
      */
+     /* - TODO comment it out for the moment and veriofy if we can removed the scalar crossfade at line 270 with this one
     fast_inline void apply_crossfade(float32x4_t* out_l, float32x4_t* out_r) {
         if (!crossfade_active_) return;
 
@@ -802,7 +807,7 @@ private:
             crossfade_active_ = false;
         }
     }
-
+*/
     /**
      * Fast NEON Gather & Interpolate for 4 clones simultaneously
      */

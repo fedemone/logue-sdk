@@ -16,7 +16,7 @@ PROJECT_TYPE := synth
 CSRC = header.c
 
 # C++ sources
-CXXSRC = unit.cc fm_presets.cpp
+CXXSRC = unit.cc fm_presets.cc
 
 
 ##############################################################################
