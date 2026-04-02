@@ -7,6 +7,9 @@ PROJECT_TYPE := synth
 
 ##############################################################################
 # Sources
+# List all your FM percussion synth source files
+# Note: If they are all headers, there's no need to list them in sources
+# They will be included via synth.h
 #
 
 # C sources
@@ -15,9 +18,6 @@ CSRC = header.c
 # C++ sources
 CXXSRC = unit.cc fm_presets.cpp
 
-# List all your FM percussion synth source files
-# Note: These are all headers, so no need to list them in sources
-# They will be included via synth.h
 
 ##############################################################################
 # Include Paths

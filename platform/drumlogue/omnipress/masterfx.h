@@ -132,7 +132,7 @@ public:
         setParameter(k_bass, 0);        // BASS: bypass
         setParameter(k_treble, 0);      // TREBLE: bypass
         setParameter(k_presence, -200); // PRESENCE: bypass
-        setParameter(k_distressor_distortion_type, 00); // DSTR DIST: None
+        setParameter(k_distressor_distortion_type, 0); // DSTR DIST: None
         setParameter(k_distressor_ratio, 0);            // DSTR RATIO: Warm mode
         setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
         setParameter(k_multiband_band_threshold, -200); // L THRESH: -20.0 dB

@@ -69,7 +69,7 @@ enum params {
     k_wobble,
     k_attack_softening,
     k_total,    // marker (count) same as header.c
-}
+};
 
 /**
  * Main Enhanced Spatializer Class
