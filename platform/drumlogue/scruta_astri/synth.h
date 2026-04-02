@@ -226,6 +226,10 @@ public:
 
         // preset will target different modulation
         int mod_target = m_params[k_paramProgram] % 24;
+        int buf_idx = 0;
+        float neon_buffer[4];
+        uint8_t out_idx_buffer[4];
+        const float dc_bias = 0.005f; // adjust to taste (0.001-0.01 works)
 
         // Grab Wavetables from UI
         osc1.current_table = SCRUTAASTRI_WAVETABLES[m_params[k_paramOsc1Wave]];
@@ -434,7 +438,6 @@ public:
             main_out[out_i * 2]     = master_out;
             main_out[out_i * 2 + 1] = master_out;
         }
-    }
     }
 
 private:

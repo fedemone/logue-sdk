@@ -13,6 +13,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstddef>
+#include <cstdio>
 #include "unit.h"
 #include "NeonAdvancedLabirinto.h"
 

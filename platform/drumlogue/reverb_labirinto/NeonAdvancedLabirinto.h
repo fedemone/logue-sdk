@@ -376,7 +376,7 @@ private:
             float state = vgetq_lane_f32(lpfState[ch], 3);
 
             // Load the 4 input values into a NEON vector
-            float32x4_t v = vld1q_f32(signals[ch]);
+            float32x4_t v = signals[ch];
 
             // Process each lane sequentially, building the result vector directly
             float32x4_t result;
