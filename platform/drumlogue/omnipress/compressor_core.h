@@ -50,10 +50,10 @@ fast_inline float32x4_t compressor_rms_process(compressor_t* comp,
 }
 
 // Gain computer with negative ratio support
-fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
-                                              float32x4_t envelope,
-                                              float thresh_db,
-                                              float ratio) {
+fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,    // TODO not used. Is missing some code or is it dead code?
+                                             float32x4_t envelope,
+                                             float thresh_db,
+                                             float ratio) {
     // Convert envelope to dB (20 * log10(envelope))
     // Using approximation: log10(x) ≈ log2(x) * 0.30103
     uint32x4_t exp_mask = vdupq_n_u32(0x7F800000);

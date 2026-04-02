@@ -668,7 +668,7 @@ public:
 
     inline void LoadPreset(uint8_t idx) { (void)idx; }
     inline uint8_t getPresetIndex() const { return 0; }
-    static inline const char* getPresetName(uint8_t idx) { return nullptr; }
+    static inline const char* getPresetName(uint8_t idx) { void(idx); return nullptr; }
 
 private:
     /*===========================================================================*/

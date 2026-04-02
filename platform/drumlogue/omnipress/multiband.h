@@ -176,6 +176,7 @@ fast_inline void multiband_process(multiband_t* mb,
     // Process each band through its compressor
     float32x4_t low_gr, mid_gr, high_gr;
 
+    // TODO: those xxx_db are not used. Review if some code is missing or it's simply dead code
     // Low band
     float32x4_t low_db = vdupq_n_f32(0.0f);  // Simplified - proper dB conversion
     low_gr = compressor_calc_gain(&mb->comp_low, env_low,

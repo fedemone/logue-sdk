@@ -150,7 +150,7 @@ fast_inline void envelope_set_attack_release(envelope_detector_t* env,
 
 // Process 4 samples through envelope detector
 fast_inline float32x4_t envelope_detect(envelope_detector_t* env,
-                                        float32x4_t in,
+                                        float32x4_t in, // TODO not used. Is missing some code or is it dead code?
                                         float32x4_t sidechain) {
     float32x4_t abs_in = vabsq_f32(sidechain);
     float32x4_t envelope;

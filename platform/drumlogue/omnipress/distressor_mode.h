@@ -166,10 +166,11 @@ fast_inline void distressor_set_ratio(distressor_t* d, uint8_t mode) {
 }
 
 // Generate 2nd/3rd harmonics (Dist 2 / Dist 3)
-fast_inline float32x4_t generate_harmonics(distressor_t* d,
+fast_inline float32x4_t generate_harmonics(distressor_t* d, // TODO not used. Is missing some code or is it dead code?
                                            float32x4_t in,
                                            uint8_t mode) {
     float32x4_t out = in;
+    // TOOD what's the use of these? Remove them?
     float32x4_t two = vdupq_n_f32(2.0f);
     float32x4_t three = vdupq_n_f32(3.0f);
     float32x4_t four = vdupq_n_f32(4.0f);
