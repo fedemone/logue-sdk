@@ -54,6 +54,11 @@ typedef struct {
     float sample_rate;
 } multiband_t;
 
+fast_inline void multiband_update_coeff(multiband_t* mb, int band) {
+    mb->bands[band].attack_coeff  = expf(-1.0f / (mb->bands[band].attack_ms * 0.001f * mb->sample_rate));
+    mb->bands[band].release_coeff = expf(-1.0f / (mb->bands[band].release_ms * 0.001f * mb->sample_rate));
+}
+
 // Initialize multiband compressor
 fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     mb->sample_rate = sample_rate;
@@ -104,11 +109,6 @@ fast_inline void multiband_set_crossover(multiband_t* mb,
     crossover_init(&mb->xover_mid_high, high_freq, mb->sample_rate);
 }
 
-fast_inline void multiband_update_coeff(multiband_t* mb, int band) {
-    mb->bands[band].attack_coeff  = expf(-1.0f / (mb->bands[band].attack_ms * 0.001f * mb->sample_rate));
-    mb->bands[band].release_coeff = expf(-1.0f / (mb->bands[band].release_ms * 0.001f * mb->sample_rate));
-}
-
 // Set band parameter
 fast_inline void multiband_set_param(multiband_t* mb,
                                      uint8_t band,
@@ -137,68 +137,50 @@ fast_inline void multiband_process(multiband_t* mb,
     float32x4_t low_l, low_r;          // final low band
     float32x4_t mid_l, mid_r;          // final mid band
     float32x4_t high_l, high_r;        // final high band
-    float32x4_t temp_l, temp_r;        // temporary for mid+high after first crossover
+    float32x4_t temp_l, temp_r;        // HP output of first crossover (mid+high)
+    float32x4_t unused_l, unused_r;    // unused mid output of first crossover
 
     // ------------------------------------------------------------
-    // Stage 1: split low from (mid+high)
+    // Stage 1: split input into low band and (mid+high) HP
     // ------------------------------------------------------------
     crossover_process(&mb->xover_low_mid, in_l, in_r,
-                      &low_l, &low_r,                   // low output
-                      &temp_l, &temp_r,    // mid output (unused, we ignore it)
-                      &temp_l, &temp_r,  // high output = mid+high (we reuse the same variables)
+                      &low_l, &low_r,        // LP output = low band
+                      &unused_l, &unused_r,  // mid complement (allpass - LP - HP), not used
+                      &temp_l, &temp_r,      // HP output = mid+high
                       mb->xover_low_freq, mb->sample_rate);
 
-    // At this point, temp_l, temp_r hold the high‑pass output (mid+high)
+    // temp_l/r now hold everything above xover_low_freq (mid+high)
 
     // ------------------------------------------------------------
     // Stage 2: split (mid+high) into mid and high
     // ------------------------------------------------------------
     crossover_process(&mb->xover_mid_high, temp_l, temp_r,
-                      &mid_l, &mid_r,      // low output = mid band
-                      &temp_l, &temp_r,    // mid output (unused)
-                      &high_l, &high_r,                 // high output = high band
+                      &mid_l, &mid_r,        // LP output = mid band
+                      &unused_l, &unused_r,  // mid complement, not used
+                      &high_l, &high_r,      // HP output = high band
                       mb->xover_high_freq, mb->sample_rate);
 
     // ------------------------------------------------------------
     // Now low_l, mid_l, high_l (and R) contain the three bands correctly.
     // ------------------------------------------------------------
 
-    // Calculate envelope for each band (using absolute value for peak detection)
-    float32x4_t env_low = vabsq_f32(low_l);
-    float32x4_t env_mid = vabsq_f32(mid_l);
+    // Calculate envelope for each band (absolute value for peak detection)
+    float32x4_t env_low  = vabsq_f32(low_l);
+    float32x4_t env_mid  = vabsq_f32(mid_l);
     float32x4_t env_high = vabsq_f32(high_l);
 
-    // Convert to dB (simplified approximation)
-    // log10(x) ≈ log2(x) * 0.30103
-    uint32x4_t exp_mask = vdupq_n_u32(0x7F800000);
-    uint32x4_t mant_mask = vdupq_n_u32(0x007FFFFF);
+    // Compute gain reduction for each band (compressor_calc_gain converts linear→dB internally)
+    float32x4_t low_gr  = compressor_calc_gain(&mb->comp_low,  env_low,
+                                                mb->bands[BAND_LOW].thresh_db,
+                                                mb->bands[BAND_LOW].ratio);
+    float32x4_t mid_gr  = compressor_calc_gain(&mb->comp_mid,  env_mid,
+                                                mb->bands[BAND_MID].thresh_db,
+                                                mb->bands[BAND_MID].ratio);
+    float32x4_t high_gr = compressor_calc_gain(&mb->comp_high, env_high,
+                                                mb->bands[BAND_HIGH].thresh_db,
+                                                mb->bands[BAND_HIGH].ratio);
 
-    // Process each band through its compressor
-    float32x4_t low_gr, mid_gr, high_gr;
-
-    // TODO: those xxx_db are not used. Review if some code is missing or it's simply dead code
-    // Low band
-    float32x4_t low_db = vdupq_n_f32(0.0f);  // Simplified - proper dB conversion
-    low_gr = compressor_calc_gain(&mb->comp_low, env_low,
-                                   mb->bands[BAND_LOW].thresh_db,
-                                   mb->bands[BAND_LOW].ratio);
-
-    // Mid band
-    float32x4_t mid_db = vdupq_n_f32(0.0f);
-    mid_gr = compressor_calc_gain(&mb->comp_mid, env_mid,
-                                   mb->bands[BAND_MID].thresh_db,
-                                   mb->bands[BAND_MID].ratio);
-
-    // High band
-    float32x4_t high_db = vdupq_n_f32(0.0f);
-    high_gr = compressor_calc_gain(&mb->comp_high, env_high,
-                                    mb->bands[BAND_HIGH].thresh_db,
-                                    mb->bands[BAND_HIGH].ratio);
-
-    // Smooth gain reduction (attack/release)
-    float attack_coeff = expf(-1.0f / (mb->bands[BAND_LOW].attack_ms * 0.001f * mb->sample_rate));
-    float release_coeff = expf(-1.0f / (mb->bands[BAND_LOW].release_ms * 0.001f * mb->sample_rate));
-
+    // Smooth gain reduction per band with individual attack/release coefficients
     mb->gr_low = compressor_smooth(&mb->comp_low, low_gr,
                                     mb->bands[BAND_LOW].attack_coeff,
                                     mb->bands[BAND_LOW].release_coeff);
@@ -219,30 +201,28 @@ fast_inline void multiband_process(multiband_t* mb,
     high_gain = vmulq_f32(high_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_HIGH].makeup_db / 20.0f)));
 
     // Apply mute/solo logic
-    float32x4_t solo_any = vdupq_n_f32(0.0f);
-    if (mb->bands[BAND_LOW].solo > 0.0f || mb->bands[BAND_MID].solo > 0.0f || mb->bands[BAND_HIGH].solo > 0.0f) {
-        solo_any = vdupq_n_f32(1.0f);
-    }
+    int any_solo = (mb->bands[BAND_LOW].solo > 0.0f ||
+                    mb->bands[BAND_MID].solo  > 0.0f ||
+                    mb->bands[BAND_HIGH].solo > 0.0f);
 
-    float32x4_t low_active = vbslq_f32(vdupq_n_u32(mb->bands[BAND_LOW].solo > 0.0f),
-                                       vdupq_n_f32(1.0f),
-                                       vdupq_n_f32(mb->bands[BAND_LOW].mute > 0.0f ? 0.0f : 1.0f));
-    low_active = vbslq_f32(vdupq_n_u32(mb->bands[BAND_LOW].solo == 0.0f && vgetq_lane_f32(solo_any,0) > 0.0f),
-                          vdupq_n_f32(0.0f), low_active);
+    // A band is active if: it is soloed, OR (no solo active AND it is not muted)
+    float low_active_f  = (mb->bands[BAND_LOW].solo  > 0.0f || (!any_solo && mb->bands[BAND_LOW].mute  == 0.0f)) ? 1.0f : 0.0f;
+    float mid_active_f  = (mb->bands[BAND_MID].solo  > 0.0f || (!any_solo && mb->bands[BAND_MID].mute  == 0.0f)) ? 1.0f : 0.0f;
+    float high_active_f = (mb->bands[BAND_HIGH].solo > 0.0f || (!any_solo && mb->bands[BAND_HIGH].mute == 0.0f)) ? 1.0f : 0.0f;
+
+    float32x4_t low_active  = vdupq_n_f32(low_active_f);
+    float32x4_t mid_active  = vdupq_n_f32(mid_active_f);
+    float32x4_t high_active = vdupq_n_f32(high_active_f);
 
     // Apply gains to each band
-    float32x4_t out_low_l = vmulq_f32(vmulq_f32(low_l, low_gain), low_active);
-    float32x4_t out_low_r = vmulq_f32(vmulq_f32(low_r, low_gain), low_active);
+    float32x4_t out_low_l  = vmulq_f32(vmulq_f32(low_l,  low_gain),  low_active);
+    float32x4_t out_low_r  = vmulq_f32(vmulq_f32(low_r,  low_gain),  low_active);
 
-    float32x4_t out_mid_l = vmulq_f32(vmulq_f32(mid_l, mid_gain),
-                                      vdupq_n_f32(mb->bands[BAND_MID].mute > 0.0f ? 0.0f : 1.0f));
-    float32x4_t out_mid_r = vmulq_f32(vmulq_f32(mid_r, mid_gain),
-                                      vdupq_n_f32(mb->bands[BAND_MID].mute > 0.0f ? 0.0f : 1.0f));
+    float32x4_t out_mid_l  = vmulq_f32(vmulq_f32(mid_l,  mid_gain),  mid_active);
+    float32x4_t out_mid_r  = vmulq_f32(vmulq_f32(mid_r,  mid_gain),  mid_active);
 
-    float32x4_t out_high_l = vmulq_f32(vmulq_f32(high_l, high_gain),
-                                       vdupq_n_f32(mb->bands[BAND_HIGH].mute > 0.0f ? 0.0f : 1.0f));
-    float32x4_t out_high_r = vmulq_f32(vmulq_f32(high_r, high_gain),
-                                       vdupq_n_f32(mb->bands[BAND_HIGH].mute > 0.0f ? 0.0f : 1.0f));
+    float32x4_t out_high_l = vmulq_f32(vmulq_f32(high_l, high_gain), high_active);
+    float32x4_t out_high_r = vmulq_f32(vmulq_f32(high_r, high_gain), high_active);
 
     // Sum bands
     *out_l = vaddq_f32(vaddq_f32(out_low_l, out_mid_l), out_high_l);

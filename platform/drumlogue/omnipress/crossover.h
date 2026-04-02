@@ -94,9 +94,14 @@ fast_inline float32x4_t biquad_process(float32x4_t in,
     float32x4_t a1 = vdupq_n_f32(coeffs[3]);
     float32x4_t a2 = vdupq_n_f32(coeffs[4]);
 
+    // Transposed Direct Form II:
+    //   y      = b0*x + z1
+    //   z1_new = b1*x - a1*y + z2
+    //   z2_new = b2*x - a2*y
     float32x4_t out = vaddq_f32(vmulq_f32(in, b0), *z1);
-    *z1 = vaddq_f32(vmlaq_f32(*z2, in, b1), vmulq_f32(out, a1));
-    *z2 = vaddq_f32(vmulq_f32(in, b2), vmulq_f32(out, a2));
+    *z1 = vmlaq_f32(*z2, in, b1);
+    *z1 = vmlsq_f32(*z1, out, a1);   // subtract a1*y
+    *z2 = vsubq_f32(vmulq_f32(in, b2), vmulq_f32(out, a2));  // subtract a2*y
 
     return out;
 }

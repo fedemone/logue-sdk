@@ -129,7 +129,7 @@ fast_inline float32x4_t distressor_detect(distressor_t* d,
     detected = vabsq_f32(detected);
 
     // 4. Distressor-specific envelope smoothing with faster attack
-    return envelope_detect(&d->distressor_env, detected, detected);
+    return envelope_detect(&d->distressor_env, detected);
 }
 
 fast_inline void distressor_reset(distressor_t* d, float sample_rate) {
@@ -166,14 +166,11 @@ fast_inline void distressor_set_ratio(distressor_t* d, uint8_t mode) {
 }
 
 // Generate 2nd/3rd harmonics (Dist 2 / Dist 3)
-fast_inline float32x4_t generate_harmonics(distressor_t* d, // TODO not used. Is missing some code or is it dead code?
+fast_inline float32x4_t generate_harmonics(distressor_t* d,
                                            float32x4_t in,
                                            uint8_t mode) {
+    (void)d;
     float32x4_t out = in;
-    // TOOD what's the use of these? Remove them?
-    float32x4_t two = vdupq_n_f32(2.0f);
-    float32x4_t three = vdupq_n_f32(3.0f);
-    float32x4_t four = vdupq_n_f32(4.0f);
 
     switch (mode) {
         case DIST_MODE_DIST2: {

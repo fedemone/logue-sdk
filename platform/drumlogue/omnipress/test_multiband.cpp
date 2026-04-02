@@ -64,3 +64,10 @@ static void test_per_band_attack_release() {
 
     printf("  PASS: per-band attack/release coefficients behave independently\n");
 }
+
+int main() {
+    printf("=== OmniPress multiband tests ===\n");
+    test_per_band_attack_release();
+    printf("\n=== ALL MULTIBAND TESTS PASSED ===\n");
+    return 0;
+}

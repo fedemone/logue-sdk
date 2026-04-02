@@ -33,8 +33,6 @@
 #include "distressor_mode.h"
 #include "multiband.h"
 
-// Parameter count must match header.c (params 0-16 = 17 total)
-#define k_num_params 17
 enum parameters
 {
     k_threhold,
@@ -61,7 +59,7 @@ enum parameters
     k_multiband_band_solo,
 
     k_num_params,
-}
+};
 
 class MasterFX {
 public:
@@ -324,7 +322,7 @@ private:
             float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
             envelope_db = linear_to_db(envelope);
         } else {
-            float32x4_t envelope = envelope_detect(&envelope_, main_l, sidechain);
+            float32x4_t envelope = envelope_detect(&envelope_, sidechain);
             envelope_db = linear_to_db(envelope);
         }
 
@@ -555,6 +553,17 @@ public:
                 handle_set_multiband_parameter(p_id, val);
                 break;
             }
+            case k_compressor_mode: // COMP MODE (0=Standard, 1=Distressor, 2=Multiband)
+                if (value >= 0 && value <= 2) {
+                    comp_mode_ = value;
+                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                        // Distressor expects at least 0.05ms attack
+                        attack_ms_ = fmaxf(attack_ms_, 0.05f);
+                        attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
+                    }
+                }
+                break;
+
             /*===========================================================================*/
             /* Distressor Parameters */
             /*===========================================================================*/
@@ -607,15 +616,6 @@ public:
             case k_compressor_mode: // COMP MODE
                 if (value >= 0 && value <= 2) {
                     static const char* modes[] = {"Stndrd", "Dstrssr", "Mltibnd"};
-                    comp_mode_ = value;
-
-                    // TODO review if any reset should be done for multiband
-                    // Reset appropriate detectors for the mode
-                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                        // Distressor mode - faster attack by default
-                        attack_ms_ = fmaxf(attack_ms_, 0.05f);  // Cap to 0.05ms min
-                        attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
-                    }
                     return modes[value];
                 }
                 break;
@@ -645,7 +645,7 @@ public:
                 if (abs(value) < 10) return "BAL";
                 break;
 
-            case k_compressor_mode: // DSTR MODE
+            case k_distressor_distortion_type: // DSTR MODE
                 if (value >= 0 && value <= DIST_MODE_TOTAL) {
                     return distressor_dist_strings[value];
                 }

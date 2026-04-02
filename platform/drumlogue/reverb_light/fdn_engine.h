@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <cmath>
 #include <cstring>
-#include <malloc.h>
 #include <algorithm>
 
 // Buffer size - must be power of 2 for efficient modulo
@@ -48,8 +47,7 @@ public:
         , sizeScale(1.0f)
         , colorLpfL(0.0f)
         , colorLpfR(0.0f)
-        , initialized(false)
-        , fdnMem(nullptr) {
+        , initialized(false) {
 
         // Initialize base delay times (prime-based, in seconds)
         static const float kBaseDelays[FDN_CHANNELS] = {
@@ -262,8 +260,10 @@ public:
         inMono = result;
 
         // =================================================================
-        // 1. Pre-Delay Write & Read (monoLanes already holds HPF output above)
+        // 1. Pre-Delay Write & Read
         // =================================================================
+        float monoLanes[4];
+        vst1q_f32(monoLanes, inMono);
         float delayedLanes[4];
         for (int s = 0; s < 4; s++) {
             preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];

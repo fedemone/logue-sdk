@@ -39,6 +39,11 @@
 #define TEST_SAMPLES   (TEST_SECONDS * (int)SAMPLE_RATE)
 #define EPSILON        1e-4f
 
+/* One-pole smoother: state = coeff*state + (1-coeff)*target */
+static float scalar_smooth(float state, float target, float coeff) {
+    return coeff * state + (1.0f - coeff) * target;
+}
+
 /* -------------------------------------------------------------------------
  * Scalar compressor (mirrors compressor_core.h logic, no NEON)
  * ---------------------------------------------------------------------- */
@@ -200,9 +205,11 @@ static void test_max_compression() {
 
     assert(nanCount == 0 && "NaN at max compression");
     assert(infCount == 0 && "Inf at max compression");
-    /* With 60 dB above thresh and 20:1 ratio: GR ≈ -57 dB.  After +24 dB makeup: -33 dBFS.
-     * That's about 0.022 linear. Allow generous margin for transients. */
-    assert(maxAbs < 4.0f && "Output unexpectedly large at max compression");
+    /* Steady-state with 60 dB above thresh and 20:1 ratio: GR ≈ -57 dB.
+     * After +24 dB makeup: -33 dBFS ≈ 0.022 linear.
+     * Initial transient (t=0, gain smoother at 0 dB): max output = 0.5 × 15.85 ≈ 7.9.
+     * Bound set to 10.0 to catch true divergence while allowing the startup transient. */
+    assert(maxAbs < 10.0f && "Output unexpectedly large at max compression");
 
     printf("  PASS: max compression + makeup stays bounded\n");
 }

@@ -15,7 +15,6 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
-#include <malloc.h>
 #include <float_math.h>
 #include <algorithm>
 
