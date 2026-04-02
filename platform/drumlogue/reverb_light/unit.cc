@@ -43,16 +43,16 @@ enum k_parameters {
 static const char* k_preset_names[num_of_presets] = {
     "StanzaNeon", // 0: Tight, bright, standard drum room
     "VicoBuio",   // 1: Long decay, heavy LPF, spooky
-    "Schiaffo",   // 2: High pre-delay, short decay, heavily modulated
-    "Abisso"      // 3: Massive size, max decay, floating
+    "Strobo",   // 2: High pre-delay, short decay, heavily modulated
+    "Bruciato"      // 3: Massive size, max decay, floating
 };
 
 // Values map to: { DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY }
 static const int32_t k_preset_values[num_of_presets][k_total] = {
     { 0, 40, 70, 30, 10,  5, 30,  5 },  // StanzaNeon
     { 1, 80, 20, 40, 80, 10, 60, 15 },  // VicoBuio
-    { 2, 20, 50, 40, 40, 40, 10, 80 },  // Schiaffo
-    { 3, 95, 40, 60, 30, 25, 90, 10 }   // Abisso
+    { 2, 20, 50, 40, 40, 40, 10, 80 },  // Strobo
+    { 3, 95, 40, 60, 30, 25, 90, 10 }   // Bruciato
 };
 
 static uint8_t s_current_preset = 0;

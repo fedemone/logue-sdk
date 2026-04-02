@@ -143,30 +143,6 @@ public:
         setParameter(k_multiband_band_mute, 0);         // MUTE off
         setParameter(k_multiband_band_solo, 0);         // SOLO off
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         comp_mode_ = 0;
         band_select_ = 0;
         use_external_sc_ = 0;
