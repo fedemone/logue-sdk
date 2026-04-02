@@ -175,22 +175,26 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov,
     float32x4_t dry_r = in_r;
 
     // 1. Tube saturation (dual stage)
-    float32x4_t tube1_l = tube_saturate(eq_l, ov->drive);
-    float32x4_t tube1_r = tube_saturate(eq_r, ov->drive);
+    float32x4_t tube1_l = tube_saturate(dry_l, ov->drive);
+    float32x4_t tube1_r = tube_saturate(dry_r, ov->drive);
 
     float32x4_t tube2_l = tube_saturate(tube1_l, ov->drive * 0.7f);
     float32x4_t tube2_r = tube_saturate(tube1_r, ov->drive * 0.7f);
 
     // 2. Post-drive EQ (bass/treble boost/cut) - after distortion to avoid boost going to consume all the saturation headroom
-    float32x4_t eq_l = baxandall_eq(in_l, &ov->bass_boost_l, &ov->treble_boost_l, ov->bass, ov->treble, sample_rate);
-    float32x4_t eq_r = baxandall_eq(in_r, &ov->bass_boost_r, &ov->treble_boost_r, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_l =
+        baxandall_eq(tube2_l, &ov->bass_boost_l, &ov->treble_boost_l, ov->bass,
+                     ov->treble, sample_rate);
+    float32x4_t eq_r =
+        baxandall_eq(tube2_r, &ov->bass_boost_r, &ov->treble_boost_r, ov->bass,
+                     ov->treble, sample_rate);
 
     // 3. Presence control (high shelf boost)
     float presence_gain = ov->presence * 12.0f;  // 0 to +12 dB
-    float32x4_t presence_l = high_shelf_filter(tube2_l, &ov->presence_l, 5000.0f,
-                                                presence_gain, 1.0f, sample_rate);
-    float32x4_t presence_r = high_shelf_filter(tube2_r, &ov->presence_r, 5000.0f,
-                                                presence_gain, 1.0f, sample_rate);
+    float32x4_t presence_l = high_shelf_filter(
+        eq_l, &ov->presence_l, 5000.0f, presence_gain, 1.0f, sample_rate);
+    float32x4_t presence_r = high_shelf_filter(
+        eq_r, &ov->presence_r, 5000.0f, presence_gain, 1.0f, sample_rate);
 
     // 4. Blend (parallel processing)
     float32x4_t wet_gain = vdupq_n_f32(ov->blend);
