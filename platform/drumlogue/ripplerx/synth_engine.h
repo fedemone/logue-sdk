@@ -742,6 +742,11 @@ public:
         state.next_voice_idx = (state.next_voice_idx + 1) % NUM_VOICES;
         VoiceState& v = state.voices[state.next_voice_idx];
 
+        // Capture before is_active is overwritten: only a previously-active voice
+        // has residual delay-line data that needs clearing on retrigger.
+        // A fresh slot (never used since Reset()) is already zero — skip the work.
+        const bool had_residual = v.is_active || v.is_releasing;
+
         // CRITICAL FIX 2: Ensure the voice actually turns on!
         v.is_active = true;
         v.is_releasing = false;
@@ -926,17 +931,34 @@ public:
         v.tone_lp = 0.0f;
 
         // Clear waveguide delay line, LP state, and write pointer.
-        // Without this, re-using a voice slot (round-robin after 4 notes) starts with
-        // residual oscillation from the previous note.  That residual is at an arbitrary
-        // phase relative to the new mallet impulse: destructive interference makes each
-        // successive press shorter and quieter until the note is completely silent.
-        // Reset() correctly zeros these on cold start; NoteOn must do the same.
-        memset(v.resA.buffer, 0, sizeof(v.resA.buffer));
-        memset(v.resB.buffer, 0, sizeof(v.resB.buffer));
-        v.resA.z1 = 0.0f;
-        v.resB.z1 = 0.0f;
+        //
+        // After write_ptr is reset to 0, the read position starts at
+        // (0 - delay_length) mod DELAY_BUFFER_SIZE ≈ (4096 - delay_length).
+        // The read pointer advances with the write pointer.  At sample delay_length,
+        // the read pointer reaches position 0, which was just written by this note —
+        // from that point forward every read is from freshly-computed data.
+        // Only the tail window [4096 - ceil(delay_length) - 1 … 4095] is ever read
+        // before new data covers it; clearing that window (typically 110–880 floats)
+        // is correct and 10–37× cheaper than zeroing the full 16 KB buffer.
+        //
+        // Skip entirely on a fresh (never-triggered) slot: Reset() already zeroed it.
         v.resA.write_ptr = 0;
         v.resB.write_ptr = 0;
+        v.resA.z1 = 0.0f;
+        v.resB.z1 = 0.0f;
+        if (had_residual) {
+            auto clear_tail = [](float* buf, float delay_len) {
+                uint32_t len = (uint32_t)ceilf(delay_len) + 2;  // +2: frac interp safety
+                if (len >= DELAY_BUFFER_SIZE) {
+                    // Delay longer than buffer (very low notes): clear everything.
+                    memset(buf, 0, DELAY_BUFFER_SIZE * sizeof(float));
+                } else {
+                    memset(&buf[DELAY_BUFFER_SIZE - len], 0, len * sizeof(float));
+                }
+            };
+            clear_tail(v.resA.buffer, v.resA.delay_length);
+            clear_tail(v.resB.buffer, v.resB.delay_length);
+        }
 
 #ifdef ENABLE_PHASE_6_FILTERS
         // Clear noise SVF delay states so rapid re-triggering doesn't produce
