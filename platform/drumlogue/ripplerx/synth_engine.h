@@ -313,12 +313,12 @@ public:
         //                            ÷10                           ÷10                                                              ÷10
             { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
             { 1,  60,   0,   1,   800,  175,  0,   0,     0, 6,  120,  -5,    0,   0,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — single resonator (Mdl=6 same-freq, Ptls→0)
-            { 2,  36,   0,   1,   100,   50,  0,   0,     2, 5,  105, -10,    0,  50, 15,    10,     1,   5, 150,    0, 300,  0,   100, 707}, // 2:  808 Sub    — membrane dual (Mdl=5, Ptls=2)
+            { 2,  36,   0,   0,   150,   30,  0,   0,     0, 3,  150,  -8,   -5,   0, 15,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 2:  808 Sub    — single resonator membrane (Ptls=0, Mdl=3): no coupling instability, no overdrive
             { 3,  38,   0,   1,   400,  300,  0,   0,     2, 5,   15,  15,    0,  50,  8,   500,    15,   5,  50,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mdl=5, Ptls=2)
             { 4,  72,   0,   1,   900,  500,  0,   0,     0, 7,  150,  30,    0,   0, 20,  1900,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — single resonator (Mdl=7 same-freq, Ptls→0)
             { 5,  40,   0,   1,   300,   50,  0,   0,     2, 3,  145,  -5,    0,  30, 15,    20,     1,   5,  30,    3, 300,  0,   500, 707}, // 5:  Timpani    — membrane dual (Mdl=3, Ptls=2)
             { 6,  48,   0,   1,   600,  200,  0,   0,     2, 5,   80,   5,    0,  50, 12,    50,     5,   5,  50,    5, 200,  0,   600, 707}, // 6:  Djambe     — membrane dual (Mdl=5, Ptls=2)
-            { 7,  36,   0,   1,   200,   80,  0,   0,     2, 5,  100, -10,    0,  50, 18,    10,     1,   5, 200,    0, 300,  0,   400, 707}, // 7:  Taiko      — membrane dual (Mdl=5, Ptls=2)
+            { 7,  36,   0,   1,   200,   80,  0,   0,     2, 5,  100, -10,    0,  50, 18,    10,     1,   5,  40,    0, 300,  0,   400, 707}, // 7:  Taiko      — membrane dual (Mdl=5, Ptls=2)
             { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,    8,  20,    0,  50,  3,   200,    25,   5,  80,   95, 150,  2,  1000, 707}, // 8:  MrchSnr    — membrane dual (Mdl=5, Ptls=2)
             { 9,  35,   0,   1,   100,  150,  0,   0,     0, 4,  180,  25,    0,   0, 20,  1800,     1,   5,  60,   10, 800,  0,   800, 707}, // 9:  Tam Tam    — single resonator (Mdl=4 same-freq, Ptls→0)
             {10,  72,   0,   1,   600,  280,  0,   0,     0, 0,  130,  10,    0,   0, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — single resonator (Ptls→0)
@@ -336,7 +336,7 @@ public:
             {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,  10,    0,  50,  3,   500,    40,   5,  50,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mdl=5, Ptls=2)
             {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  15,    0,  50,  2,   100,    80,   5,  20,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (Mdl=5, Ptls=2)
             {24,  72,   0,   1,   100,   50,  0,   0,     0, 7,   90,  -5,    0,   0, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute      — single resonator (Ptls→0)
-            {25,  60,   0,   1,   100,   50,  0,   0,     0, 8,   90,  -5,    0,   0, 12,     1,     1,   5,   0,   25, 800,  0,   600, 707}, // 25: Clarinet   — single resonator (Ptls→0)
+            {25,  72,   0,   0,    50,   20,  0,   0,     0, 8,  100,  -5,    0,   0, 15,     0,     1,   5,   0,   40, 800,  0,   800, 707}, // 25: Clarinet   — ClosedTube (phase_mult=-1); Note=72 so it resonates at C4 (octave-lower rule)
             {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
             {27,  76,   0,   1,   700,  350,  0,   0,     0, 4,  160,  25,    0,   0, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — single resonator (Ptls→0)
             // 28: Guitar String — Karplus-Strong reference for physical model validation.
@@ -480,6 +480,23 @@ public:
                 if (m_is_resonator_b)
                     m_model_b = value;
 #ifdef ENABLE_PHASE_7_MODELS
+                // Per-model baseline allpass dispersion — gives each physical model a
+                // distinct inharmonic character independently of the Inharm (ap_coeff) knob.
+                // Values calibrated to physical stiffness constants:
+                //   String≈0 (flexible), Beam≈0.06 (mild stiffness), Square≈0.12,
+                //   Membrane≈0.01 (nearly harmonic), Plate≈0.08, Drumhead≈0.02,
+                //   Marimba≈0.04 (tuned bar), OpenTube=0/ClosedTube=0 (perfectly harmonic).
+                static const float ap_base_by_model[] = {
+                    0.00f, // 0: String
+                    0.06f, // 1: Beam
+                    0.12f, // 2: Square plate
+                    0.01f, // 3: Membrane
+                    0.08f, // 4: Plate
+                    0.02f, // 5: Drumhead
+                    0.04f, // 6: Marimba bar
+                    0.00f, // 7: Open Tube
+                    0.00f, // 8: Closed Tube
+                };
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     if (m_model_a == 7 || m_model_a == 8) {
                         state.voices[i].resA.phase_mult = -1.0f;
@@ -491,6 +508,10 @@ public:
                     } else {
                         state.voices[i].resB.phase_mult = 1.0f;
                     }
+                    if (m_is_resonator_a && m_model_a < 9)
+                        state.voices[i].resA.model_ap_base = ap_base_by_model[m_model_a];
+                    if (m_is_resonator_b && m_model_b < 9)
+                        state.voices[i].resB.model_ap_base = ap_base_by_model[m_model_b];
                 }
 #endif
                 break;
@@ -1089,7 +1110,17 @@ public:
         // phase stretching acts on the full-amplitude signal, then LP applies loss.
         // With LP-first the AP acts on an already attenuated signal, reducing the
         // audible inharmonicity at high frequencies (wrong direction for stiff strings).
-        float ap_out = (wg.ap_coeff * delay_out) + wg.ap_x1 - (wg.ap_coeff * wg.ap_y1);
+        //
+        // model_ap_base: a per-model baseline dispersion coefficient that gives each
+        // physical model (Beam, Square, Plate, etc.) a distinct inharmonic character
+        // even when the user sets Inharm=0.  Summed with ap_coeff (from Inharm knob)
+        // and clamped to [0, 0.99) to prevent allpass instability.
+#ifdef ENABLE_PHASE_7_MODELS
+        float ap = fminf(0.99f, wg.ap_coeff + wg.model_ap_base);
+#else
+        float ap = wg.ap_coeff;
+#endif
+        float ap_out = (ap * delay_out) + wg.ap_x1 - (ap * wg.ap_y1);
         wg.ap_x1 = delay_out;
         wg.ap_y1 = ap_out;
 

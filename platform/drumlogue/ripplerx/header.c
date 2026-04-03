@@ -31,16 +31,16 @@ const __unit_header unit_header_t unit_header = {
         {0, 1000, 500, 500, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // Stored ÷10: range 10–500 represents 100–5000. Step of 10 on the encoder.
         // getParameterStrValue shows the real ×10 value (100–5000).
-        {10, 500, 25, 250, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
+        {10, 500, 25, 500, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
 
         // Page 3: Resonator I
         // 0-4 are the partials, value 5 means that next params dedicated to resonator are addressing
         // resonator A+B, value 6 is for resonator A only and 7 for resonator B only
-        {0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
+        {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
         // [0..8] String , Beam ,  Square , Membrn , Plate , Drumhd , Marmb , OpnTub , ClsTub
-        {0, 8, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
+        {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
         // Stored ÷10: range 0–200 represents 0–2000. Step of 10 on the encoder.
         // getParameterStrValue shows the real ×10 value (0–2000).
         {0, 200, 25, 25, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
@@ -53,7 +53,7 @@ const __unit_header unit_header_t unit_header = {
         {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // [0..1999] — stored value is multiplied by 10 in code (effective range 0–19990).
         // Using 10× coarser steps makes the encoder 10× faster to dial.
-        {0, 1999, 300, 300, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
+        {0, 1999, 300, 0, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
 
         // Page 5: Resonator III
         // [1..1999] — stored value is multiplied by 10 in code (effective 10–19990 Hz).
@@ -69,7 +69,7 @@ const __unit_header unit_header_t unit_header = {
         {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
         // Stored ÷10: range 2–2000 represents 20–20000 Hz. Step of 10 Hz on the encoder.
         // getParameterStrValue shows the real ×10 Hz/kHz value (same logic as LowCut).
-        {2, 2000, 1200, 2, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
+        {2, 2000, 1200, 1200, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
         {707, 4000, 0, 707, k_unit_param_type_none, 0, 0, 0, {"Resnc"}}
     }
 };
