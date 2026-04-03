@@ -234,7 +234,7 @@ public:
         float32x4_t v = inMono;
 
         // Process lanes sequentially, building the result vector directly
-        float32x4_t result;
+        float32x4_t result = vdupq_n_f32(0.0f);
 
         // Lane 0
         float f0 = vgetq_lane_f32(v, 0) - hpfStateL;

@@ -140,7 +140,8 @@ fast_inline void crossover_process(crossover_t* xover,
     *low_r  = lpf2_r;
     *high_l = hpf2_l;
     *high_r = hpf2_r;
+    // TODO - unused, dead code or feature to be implemented?
     // Mid = all-pass complement (input minus both band outputs)
-    *mid_l  = vsubq_f32(vsubq_f32(in_l, lpf2_l), hpf2_l);
-    *mid_r  = vsubq_f32(vsubq_f32(in_r, lpf2_r), hpf2_r);
+    // *mid_l  = vsubq_f32(vsubq_f32(in_l, lpf2_l), hpf2_l);
+    // *mid_r  = vsubq_f32(vsubq_f32(in_r, lpf2_r), hpf2_r);
 }
