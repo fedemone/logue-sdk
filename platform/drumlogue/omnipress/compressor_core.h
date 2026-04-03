@@ -80,22 +80,18 @@ fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
     // For negative ratios, this creates expansion or reverse compression
 
     float32x4_t thresh_vec = vdupq_n_f32(thresh_db);
-    float32x4_t ratio_vec = vdupq_n_f32(ratio);
-    float32x4_t one_vec = vdupq_n_f32(1.0f);
+    // FIX 2: Snap near-zero ratios to exactly 0.0f to trigger the hard-limit mask
+    // Prevents massive upward expansion explosions (e.g. +1000dB)
+    uint32x4_t near_zero = vcltq_f32(vabsq_f32(ratio_vec), vdupq_n_f32(0.01f));
+    ratio_vec = vbslq_f32(near_zero, vdupq_n_f32(0.0f), ratio_vec);
 
-    // Calculate excess above threshold
-    float32x4_t excess = vsubq_f32(thresh_vec, db_env);
-    excess = vmaxq_f32(excess, vdupq_n_f32(0.0f));  // Only above threshold
-
-    // Special case: ratio = 0 acts as hard limiter
-    uint32x4_t ratio_zero = vceqq_f32(ratio_vec, vdupq_n_f32(0.0f));
-
-    // gain_reduction = excess * (ratio - 1) / ratio
+    // Calculate ratio minus one for gain reduction
     float32x4_t ratio_minus_one = vsubq_f32(ratio_vec, one_vec);
     float32x4_t gain_red_num = vmulq_f32(excess, ratio_minus_one);
     float32x4_t gain_red = fast_div_neon(gain_red_num, ratio_vec);
 
     // For ratio=0, hard limit (infinite gain reduction above threshold)
+    uint32x4_t ratio_zero = vceqq_f32(ratio_vec, vdupq_n_f32(0.0f));
     gain_red = vbslq_f32(ratio_zero, vdupq_n_f32(-100.0f), gain_red);
 
     // For negative ratios, we get expansion (gain reduction becomes negative)

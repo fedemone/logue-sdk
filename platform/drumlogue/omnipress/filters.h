@@ -40,7 +40,8 @@ fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) 
     f->z2 = vdupq_n_f32(0.0f);
 
     // Pre-warp for bilinear transform
-    float w0 = 2.0f * M_PI * cutoff / sr;
+    float w0 = 2.0f * FILTER_PI * freq / sample_rate;
+    // FIX 1: Use standard math! Korg's fast math expects 0.0-1.0 phase, NOT radians!
     float cos_w0 = cosf(w0);
     float sin_w0 = sinf(w0);
     float Q = 0.5f;  // Bessel Q
