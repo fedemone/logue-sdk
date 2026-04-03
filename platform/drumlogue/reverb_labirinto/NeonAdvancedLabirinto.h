@@ -376,7 +376,7 @@ private:
             float state = vgetq_lane_f32(lpfState[ch], 3);
 
             // Load the 4 input values into a NEON vector
-            float32x4_t v = signals[ch];
+            float32x4_t v = vld1q_f32(signals[ch]);
 
             // Process each lane sequentially, building the result vector directly
             float32x4_t result = vdupq_n_f32(0.0f);
@@ -435,6 +435,13 @@ private:
     void process4Samples(const float* inL, const float* inR,
                          float* outL, float* outR) {
 
+                                    if (activeSampleCount <= 0) {
+            // Apply dry gain so volume stays constant when bypassed!
+            float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
+            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
+            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            return;
+        }
         // Load 4 input samples for L and R channels
         float32x4_t inL4 = vld1q_f32(inL);
         float32x4_t inR4 = vld1q_f32(inR);
@@ -483,8 +490,10 @@ private:
 
         // If counter has expired, bypass FDN processing to save cycles
         if (activeSampleCount <= 0) {
-            vst1q_f32(outL, inL4);
-            vst1q_f32(outR, inR4);
+            float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
+            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
+            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            writePos = (writePos + 4) & BUFFER_MASK;
             return;
         }
 
@@ -509,9 +518,11 @@ private:
         // balance controls while avoiding L/R stereo imbalance that would result
         // from applying different decay multipliers to the two channel groups.
         // =================================================================
-        float unifiedDecay = fminf(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
+        // FIX: Map 0.0-1.0 to 0.7-0.995 for realistic RT60 tails
+        float loopGain = 0.7f + (decay * 0.295f);
+        float unifiedDecay = fminf(0.995f, loopGain * fastersinfullf(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        float32x4_t feedback = vdupq_n_f32(1.0f - decay);
+        float32x4_t feedback = vdupq_n_f32(1.0f - decay); // Keep input injection balanced
 
         for (int i = 0; i < FDN_CHANNELS; i++) {
             mixed[i] = vmulq_f32(mixed[i], decayAll);
@@ -651,6 +662,12 @@ private:
     void processScalar(float input, float& wetL, float& wetR) {
         float delayOut[FDN_CHANNELS];
 
+        if (activeSampleCount <= 0) {
+            // Apply dry gain so volume stays constant when bypassed!
+            wetL = 0.0f; wetR = 0.0f;
+            return;
+        }
+
         // 1. Pre-Delay Write
         preDelayBuffer[preDelayWritePos] = input;
 
@@ -668,8 +685,9 @@ private:
 
         // Bypass if tail is dead
         if (activeSampleCount <= 0) {
-            wetL = input;
-            wetR = input;
+            wetL = 0.0f;
+            wetR = 0.0f;
+            writePos = (writePos + 1) & BUFFER_MASK;
             return;
         }
 
@@ -703,14 +721,15 @@ private:
         }
 
         // Frequency-dependent decay
-        // Frequency-dependent decay
         float mixed[FDN_CHANNELS];
+        float loopGain = 0.7f + (decay * 0.295f);
+        float dm = std::min(0.995f, loopGain * fastersinfullf(highDecayMult * lowDecayMult));
+
         for (int i = 0; i < FDN_CHANNELS; i++) {
             float sum = 0.0f;
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 sum += hadamard[i][j] * delayOut[j];
             }
-            float dm = std::min(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
             mixed[i] = sum * dm;
         }
 
@@ -723,7 +742,7 @@ private:
         // Shimmer (PILL=4): inject a small frequency-modulated copy of the
         // current wet signal back into channels 6 and 7 before writing.
         // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
-        // TO BE EVALUATED: introduce wavetable LFO for shimmer?
+        // TODO: introduce wavetable LFO for shimmer?
         if (shimmerDepth_ > 0.0f) {
             float previewL = 0.0f, previewR = 0.0f;
             for (int i = 0; i < 4; i++)            previewL += mixed[i];
@@ -780,13 +799,12 @@ private:
         wetR = mid - side * width;
     }
 
-
     /*===========================================================================*/
     /* Initialization */
     /*===========================================================================*/
 
     void initHadamardMatrix() {
-      float norm = 1.0f / sqrtf(8.0f);
+      float norm = 1.0f / sqrtf(8.0f);  // as init is not strictly real time dependent, keep the exact function
 
       // Store in row-major for scalar access
       for (int i = 0; i < FDN_CHANNELS; i++) {

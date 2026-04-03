@@ -23,11 +23,12 @@
 #include <algorithm>
 
 // Buffer size - must be power of 2 for efficient modulo
-#define FDN_BUFFER_SIZE 32768  // 2^15
+#define FDN_BUFFER_SIZE (32768)  // 2^15
 #define FDN_BUFFER_MASK (FDN_BUFFER_SIZE - 1)
-#define FDN_CHANNELS 8
+#define FDN_CHANNELS (8)
+#define NEON_LANES (4)
 // pre-delay buffers
-#define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
+#define PREDELAY_BUFFER_SIZE (16384)  // ~341ms at 48kHz
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 
 class FDNEngine {
@@ -192,7 +193,8 @@ public:
             }
 
             // COLOR: Polynomial Soft-Clipping Saturation inside the loop
-            float wet = sum * decay;
+            float loopGain = 0.7f + (decay * 0.295f);
+            float wet = sum * loopGain;
             float sat = wet - (wet * wet * wet) * 0.15f;
             // HARD CLAMP to prevent FDN blowup
             mixed[i] = std::max(-1.5f, std::min(1.5f, sat));
@@ -262,10 +264,10 @@ public:
         // =================================================================
         // 1. Pre-Delay Write & Read
         // =================================================================
-        float monoLanes[4];
+        float monoLanes[NEON_LANES];
         vst1q_f32(monoLanes, inMono);
-        float delayedLanes[4];
-        for (int s = 0; s < 4; s++) {
+        float delayedLanes[NEON_LANES];
+        for (int s = 0; s < NEON_LANES; s++) {
             preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
             int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
             delayedLanes[s] = preDelayBuffer[readPos];
@@ -285,30 +287,35 @@ public:
             // Wake up. Tail length tied to decay parameter.
             activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
         } else if (activeSampleCount > 0) {
-            activeSampleCount -= 4;
+            activeSampleCount -= NEON_LANES;
         }
 
         // Bypass everything if asleep
         if (activeSampleCount <= 0) {
-            vst1q_f32(outL, inL4);
-            vst1q_f32(outR, inR4);
+            // FIX 1: Apply dry mix properly during bypass so volume doesn't jump
+            float32x4_t dryGain = vdupq_n_f32(1.0f - glow);
+            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
+            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            // FIX 2: Keep advancing write position to prevent delay line freezing
+            writePos = (writePos + NEON_LANES) & FDN_BUFFER_MASK;
             return;
         }
 
         // =================================================================
         // Read from all 8 delay lines for 4 samples
         // =================================================================
-        float delayOut[FDN_CHANNELS][4];
+        float delayOut[FDN_CHANNELS][NEON_LANES];
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
 
-            // Calculate read positions for 4 samples
-            float readPos[4];
-            for (int s = 0; s < 4; s++) {
+            // Calculate read positions for NEON_LANES samples
+            float readPos[NEON_LANES];
+            float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 3.0f;
+            for (int s = 0; s < NEON_LANES; s++) {
                 // Max ±3 samples depth to avoid Doppler pitch shift exceeding decay rate
-                float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 3.0f;
                 float pos = (float)(writePos + s) - (delaySamples + mod);
+
                 while (pos < 0) pos += FDN_BUFFER_SIZE;
                 while (pos >= FDN_BUFFER_SIZE) pos -= FDN_BUFFER_SIZE;
                 readPos[s] = pos;
@@ -321,7 +328,7 @@ public:
             }
 
             // Linear interpolation for 4 samples
-            for (int s = 0; s < 4; s++) {
+            for (int s = 0; s < NEON_LANES; s++) {
                 int idx1 = (int)readPos[s];
                 int idx2 = (idx1 + 1) & FDN_BUFFER_MASK;
                 float frac = readPos[s] - idx1;
@@ -335,20 +342,18 @@ public:
         // =================================================================
         // Apply Hadamard mixing (Optimized: 4 time-samples in parallel)
         // =================================================================
-        float mixed[FDN_CHANNELS][4];
 
         // Load 4 time-samples for each channel
         float32x4_t v_delayOut[FDN_CHANNELS];
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            v_delayOut[ch] = vld1q_f32(delayOut[ch]);
-        }
-
         float32x4_t v_mixed[FDN_CHANNELS];
-        float32x4_t v_decay = vdupq_n_f32(decay);
+        // FIX 3: Map UI decay (0-1) to realistic loop gain (0.7-0.995)
+        float loopGain = 0.7f + (decay * 0.295f);
+        float32x4_t v_decay = vdupq_n_f32(loopGain);
 
         for (int i = 0; i < FDN_CHANNELS; i++) {
             v_mixed[i] = vdupq_n_f32(0.0f);
             for (int j = 0; j < FDN_CHANNELS; j++) {
+                v_delayOut[j] = vld1q_f32(delayOut[j]);
                 v_mixed[i] = vmlaq_f32(v_mixed[i], v_delayOut[j], vdupq_n_f32(hadamard[i][j]));
             }
             v_mixed[i] = vmulq_f32(v_mixed[i], v_decay);
@@ -366,19 +371,18 @@ public:
         float32x4_t v_feedback = vdupq_n_f32(1.0f - decay);
         v_mixed[0] = vaddq_f32(v_mixed[0], vmulq_f32(delayedMono, v_feedback));
 
-        // Spill back to the mixed array
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            vst1q_f32(mixed[ch], v_mixed[ch]);
-        }
 
         // =================================================================
         // Write back to delay lines and update state
         // =================================================================
+        float mixed[FDN_CHANNELS][NEON_LANES];
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            // Spill back to the mixed array
+            vst1q_f32(mixed[ch], v_mixed[ch]);
             float* delayLine = &fdnMem[ch * FDN_BUFFER_SIZE];
 
             // Write 4 consecutive samples
-            for (int s = 0; s < 4; s++) {
+            for (int s = 0; s < NEON_LANES; s++) {
                 delayLine[(writePos + s) & FDN_BUFFER_MASK] = mixed[ch][s];
             }
 
@@ -386,21 +390,21 @@ public:
             fdnState[ch] = mixed[ch][3];
         }
 
-        writePos = (writePos + 4) & FDN_BUFFER_MASK;
+        writePos = (writePos + NEON_LANES) & FDN_BUFFER_MASK;
 
         // =================================================================
         // Stereo downmix (channels 0-3 to left, 4-7 to right)
         // =================================================================
         // Spill stereo input vectors for variable-index access (same reason as inMono above)
-        float inLArr[4], inRArr[4];
+        float inLArr[NEON_LANES], inRArr[NEON_LANES];
         vst1q_f32(inLArr, inL4);
         vst1q_f32(inRArr, inR4);
 
-        for (int s = 0; s < 4; s++) {
+        for (int s = 0; s < NEON_LANES; s++) {
             float leftOut = 0.0f, rightOut = 0.0f;
-            for (int ch = 0; ch < 4; ch++) {
+            for (int ch = 0; ch < NEON_LANES; ch++) {
                 leftOut += mixed[ch][s];
-                rightOut += mixed[ch + 4][s];
+                rightOut += mixed[ch + NEON_LANES][s];
             }
             leftOut *= 0.25f;
             rightOut *= 0.25f;
@@ -446,12 +450,12 @@ public:
         // =================================================================
         // Process in blocks of 4 (vectorized path)
         // =================================================================
-        while (samplesProcessed + 4 <= numSamples) {
+        while (samplesProcessed + NEON_LANES <= numSamples) {
             process4Samples(inL + samplesProcessed,
                             inR + samplesProcessed,
                             outL + samplesProcessed,
                             outR + samplesProcessed);
-            samplesProcessed += 4;
+            samplesProcessed += NEON_LANES;
         }
 
         // =================================================================
@@ -478,19 +482,20 @@ public:
 
             // Bypass if asleep
             if (activeSampleCount <= 0) {
-                outL[i] = inL[i];
-                outR[i] = inR[i];
+                outL[i] = inL[i] * (1.0f - glow);
+                outR[i] = inR[i] * (1.0f - glow);
+                writePos = (writePos + 1) & FDN_BUFFER_MASK;
                 continue;
             }
 
             // Pass delayed input to your existing processScalar method
             processScalar(delayedInput);  // populates fdnState for stereo spread
 
-            // Simple stereo spread (channels 0-3 to left, 4-7 to right)
+            // Simple stereo spread (channels 0-3 to left, NEON_LANES-7 to right)
             float leftOut = 0.0f, rightOut = 0.0f;
-            for (int ch = 0; ch < 4; ch++) {
+            for (int ch = 0; ch < NEON_LANES; ch++) {
                 leftOut += fdnState[ch];
-                rightOut += fdnState[ch + 4];
+                rightOut += fdnState[ch + NEON_LANES];
             }
             leftOut *= 0.25f;
             rightOut *= 0.25f;
