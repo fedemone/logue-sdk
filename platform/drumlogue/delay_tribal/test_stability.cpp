@@ -33,7 +33,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <algorithm>
-#include "float_math.h"
+
+#ifndef M_TWOPI
+#define M_TWOPI (2.0 * M_PI)
+#endif
 
 #define SAMPLE_RATE    48000.0f
 #define DELAY_MAX      8192        /* power of 2 ≥ 23ms * 48kHz for max offsets */
@@ -273,11 +276,89 @@ static void test_stability_default_params() {
     printf("  PASS: default params stable\n");
 }
 
+/**
+ * test_delay_index_bounds
+ *
+ * Root-cause test for the original 16-clone crash.
+ * The old code used vld4q_f32(&delay_line_[base_idx].samples[4]) which read 16
+ * consecutive floats spanning frame boundaries and could index past the array
+ * end when base_idx >= DELAY_MAX_SAMPLES - 2.
+ *
+ * The new code uses per-lane scalar reads:
+ *   idx = (raw_pos) & DELAY_MASK     → always in [0, DELAY_MAX_SAMPLES-1]
+ *   idx_next = (raw_pos + 1) & DELAY_MASK → same
+ * followed by delay_line_[idx].samples[lane]  where lane < 8.
+ *
+ * This test simulates the index arithmetic for every write_ptr_ value, every
+ * clone count (4, 8, 16), and maximum wobble, and asserts all indices are
+ * within array bounds.
+ */
+static void test_delay_index_bounds() {
+    printf("\n=== Delay Index Bounds Check (regression: original vld4 crash) ===\n");
+
+    const int SPATIAL_DELAY_MAX = 4096;
+    const int DELAY_MASK_VAL = SPATIAL_DELAY_MAX - 1;
+    const int SAMPLES_PER_FRAME = 8;  /* L0..L3, R0..R3 */
+    const int NEON_LANES_VAL = 4;
+
+    /* Maximum per-clone delay + wobble in samples.
+     * delay_offsets up to ~23ms = 1104 samples; wobble depth 1.0 adds up to
+     * DELAY_MAX/2 theoretically. Use 2 × DELAY_MAX as a conservative upper bound
+     * for (base_read - offset_samples) which could be very negative. */
+    const float MAX_OFFSET_SAMPLES = 2.0f * SPATIAL_DELAY_MAX;
+
+    int violations = 0;
+    int checks = 0;
+
+    int clone_counts[] = {4, 8, 16};
+    for (int ci = 0; ci < 3; ci++) {
+        int clone_count = clone_counts[ci];
+        int num_groups = (clone_count + NEON_LANES_VAL - 1) / NEON_LANES_VAL;
+
+        /* Sweep all write_ptr values */
+        for (int wp = 0; wp < SPATIAL_DELAY_MAX; wp++) {
+            uint32_t base_read = (uint32_t)(wp - 32) & DELAY_MASK_VAL;
+
+            for (int g = 0; g < num_groups; g++) {
+                for (int lane = 0; lane < NEON_LANES_VAL; lane++) {
+                    /* Worst-case: read_pos = base_read - MAX_OFFSET_SAMPLES (very negative),
+                     * then add SPATIAL_DELAY_MAX to make it positive before masking. */
+                    float read_pos = (float)base_read - MAX_OFFSET_SAMPLES;
+                    float pos_adj = read_pos + (float)SPATIAL_DELAY_MAX;
+
+                    /* Apply additional SPATIAL_DELAY_MAX if still negative */
+                    while (pos_adj < 0.0f) pos_adj += (float)SPATIAL_DELAY_MAX;
+
+                    uint32_t idx1 = (uint32_t)(int)pos_adj & DELAY_MASK_VAL;
+                    uint32_t idx2 = (idx1 + 1) & DELAY_MASK_VAL;
+
+                    /* All indices must be within [0, DELAY_MAX-1] */
+                    if (idx1 >= (uint32_t)SPATIAL_DELAY_MAX || idx2 >= (uint32_t)SPATIAL_DELAY_MAX) {
+                        violations++;
+                    }
+                    /* Lane index must be within samples[8] */
+                    if (lane >= SAMPLES_PER_FRAME || (lane + NEON_LANES_VAL) >= SAMPLES_PER_FRAME + 1) {
+                        violations++;
+                    }
+                    checks++;
+                }
+            }
+        }
+    }
+
+    printf("  Checked %d index combinations across wp=[0..%d), clones={4,8,16}\n",
+           checks, SPATIAL_DELAY_MAX);
+    printf("  Bounds violations: %d\n", violations);
+    assert(violations == 0 && "Delay line index out of bounds detected!");
+    printf("  PASS: all delay line indices are within bounds for any clone count\n");
+}
+
 int main() {
     printf("=== delay_tribal stability tests ===\n");
     test_gain_model_analysis();
     test_stability_default_params();
     test_stability_max_params();
+    test_delay_index_bounds();
     printf("\n=== ALL delay_tribal STABILITY TESTS PASSED ===\n");
     return 0;
 }

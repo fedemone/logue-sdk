@@ -20,6 +20,7 @@
 /* -------------------------------------------------------------------------
  * Scalar compressor gain computer
  * Mirrors compressor_core.h compressor_calc_gain() using standard log10.
+ * TODO change this to call actual function, as any unpdate will be not reflected
  * -------------------------------------------------------------------- */
 
 /**
@@ -397,7 +398,7 @@ void test_sc_hpf_range() {
 }
 
 /* -------------------------------------------------------------------------
- * Test 11: NUM_PARAMS count matches expected (13 parameters)
+ * Test 11: k_num_params count matches expected (13 parameters)
  * ---------------------------------------------------------------------- */
 
 void test_param_count() {

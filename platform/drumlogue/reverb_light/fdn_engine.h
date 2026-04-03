@@ -20,13 +20,15 @@
 #include <cstdint>
 #include <cmath>
 #include <cstring>
-#include <malloc.h>
 #include <algorithm>
 
 // Buffer size - must be power of 2 for efficient modulo
 #define FDN_BUFFER_SIZE 32768  // 2^15
 #define FDN_BUFFER_MASK (FDN_BUFFER_SIZE - 1)
 #define FDN_CHANNELS 8
+// pre-delay buffers
+#define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
+#define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 
 class FDNEngine {
 public:
@@ -45,8 +47,7 @@ public:
         , sizeScale(1.0f)
         , colorLpfL(0.0f)
         , colorLpfR(0.0f)
-        , initialized(false)
-        , fdnMem(nullptr) {
+        , initialized(false) {
 
         // Initialize base delay times (prime-based, in seconds)
         static const float kBaseDelays[FDN_CHANNELS] = {
@@ -71,12 +72,7 @@ public:
         buildHadamard();
     }
 
-    ~FDNEngine() {
-        if (fdnMem != nullptr) {
-            free(fdnMem);
-            fdnMem = nullptr;
-        }
-    }
+    ~FDNEngine() {}
 
     /**
      * Initialize the FDN engine
@@ -85,20 +81,14 @@ public:
      */
     bool init(float sr) {
         sampleRate = sr;
+        if (initialized) return true;
 
-        if (initialized && fdnMem != nullptr) {
-            return true;
-        }
+        memset(fdnMem, 0, sizeof(fdnMem));
+        memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
 
-        // Allocate buffer
-        fdnMem = (float*)memalign(16, FDN_BUFFER_SIZE * FDN_CHANNELS * sizeof(float));
-        if (fdnMem == nullptr) {
-            initialized = false;
-            return false;
-        }
-
-        // Clear buffer
-        memset(fdnMem, 0, FDN_BUFFER_SIZE * FDN_CHANNELS * sizeof(float));
+        preDelayWritePos = 0;
+        preDelayOffsetSamples = 0;
+        activeSampleCount = 0;
 
         initialized = true;
         return true;
@@ -107,6 +97,10 @@ public:
     /*===========================================================================*/
     /* Parameter Setters */
     /*===========================================================================*/
+    void setPreDelay(float ms) {
+        float clampedMs = std::max(0.0f, std::min(340.0f, ms));
+        preDelayOffsetSamples = (int)(clampedMs * sampleRate / 1000.0f);
+    }
 
     void setDecay(float d) {
         decay = std::max(0.0f, std::min(0.99f, d));
@@ -138,13 +132,13 @@ public:
     /**
      * Brightness: high-frequency blend (BRIG parameter).
      * 0.0 = no HF content, 1.0 = full HF (bypasses LPF).
+     * Room size: scales all delay times (SIZE parameter).
      */
     void setBrightness(float b) {
         brightness = std::max(0.0f, std::min(1.0f, b));
     }
 
     /**
-     * Room size: scales all delay times (SIZE parameter).
      * 0.0 = tiny room, 1.0 = normal, 2.0 = large hall.
      */
     void setSize(float s) {
@@ -159,7 +153,7 @@ public:
     /* NEON Utilities */
     /*===========================================================================*/
 
-/*===========================================================================*/
+    /*===========================================================================*/
     /* Core Processing - Scalar (Single Sample) */
     /*===========================================================================*/
 
@@ -167,13 +161,11 @@ public:
      * Process one sample through FDN (scalar fallback)
      */
     float processScalar(float input) {
-        // Read delayed samples from each channel
         float delayOut[FDN_CHANNELS];
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
-            // Max ±3 samples depth to avoid Doppler pitch shift exceeding decay rate
-            float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 3.0f;
+            float mod = sinf(modPhases[ch] * 2.0f * (float)M_PI) * modulation * 3.0f;
             float readPos = (float)writePos - (delaySamples + mod);
 
             while (readPos < 0) readPos += FDN_BUFFER_SIZE;
@@ -188,37 +180,34 @@ public:
 
             delayOut[ch] = s1 + frac * (s2 - s1);
 
-            // Max 2 Hz LFO rate to avoid Doppler-induced energy accumulation
             modPhases[ch] += modulation * 2.0f / sampleRate;
             if (modPhases[ch] > 1.0f) modPhases[ch] -= 1.0f;
         }
 
-        // Apply Hadamard mixing matrix
         float mixed[FDN_CHANNELS];
         for (int i = 0; i < FDN_CHANNELS; i++) {
             float sum = 0.0f;
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 sum += hadamard[i][j] * delayOut[j];
             }
-            mixed[i] = sum * decay;
+
+            // COLOR: Polynomial Soft-Clipping Saturation inside the loop
+            float wet = sum * decay;
+            float sat = wet - (wet * wet * wet) * 0.15f;
+            // HARD CLAMP to prevent FDN blowup
+            mixed[i] = std::max(-1.5f, std::min(1.5f, sat));
         }
 
-        // Add input to first channel
         mixed[0] += input * (1.0f - decay);
 
-        // Write back to delay lines
+        float output = 0.0f;
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             fdnMem[ch * FDN_BUFFER_SIZE + writePos] = mixed[ch];
-            fdnState[ch] = mixed[ch];  // Save for output
+            fdnState[ch] = mixed[ch];
+            output += mixed[ch];
         }
 
         writePos = (writePos + 1) & FDN_BUFFER_MASK;
-
-        // Mix down to mono
-        float output = 0.0f;
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            output += mixed[i];
-        }
         return output / FDN_CHANNELS;
     }
 
@@ -232,12 +221,79 @@ public:
     void process4Samples(const float* inL, const float* inR,
                          float* outL, float* outR) {
 
-        // Load 4 input samples for L and R
         float32x4_t inL4 = vld1q_f32(inL);
         float32x4_t inR4 = vld1q_f32(inR);
 
-        // Convert to mono for FDN input (4 samples at once)
+        // Convert to mono
         float32x4_t inMono = vmulq_f32(vaddq_f32(inL4, inR4), vdupq_n_f32(0.5f));
+
+        // =================================================================
+        // THE HPF (Personality Injector) - Processed manually for 4 lanes
+        // =================================================================
+        // Load the input vector (already in a NEON register)
+        float32x4_t v = inMono;
+
+        // Process lanes sequentially, building the result vector directly
+        float32x4_t result = vdupq_n_f32(0.0f);
+
+        // Lane 0
+        float f0 = vgetq_lane_f32(v, 0) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 0) - hpfCoeff * f0;
+        result = vsetq_lane_f32(f0, result, 0);
+
+        // Lane 1
+        float f1 = vgetq_lane_f32(v, 1) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 1) - hpfCoeff * f1;
+        result = vsetq_lane_f32(f1, result, 1);
+
+        // Lane 2
+        float f2 = vgetq_lane_f32(v, 2) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 2) - hpfCoeff * f2;
+        result = vsetq_lane_f32(f2, result, 2);
+
+        // Lane 3
+        float f3 = vgetq_lane_f32(v, 3) - hpfStateL;
+        hpfStateL = vgetq_lane_f32(v, 3) - hpfCoeff * f3;
+        result = vsetq_lane_f32(f3, result, 3);
+
+        // Assign the filtered vector back to inMono
+        inMono = result;
+
+        // =================================================================
+        // 1. Pre-Delay Write & Read
+        // =================================================================
+        float monoLanes[4];
+        vst1q_f32(monoLanes, inMono);
+        float delayedLanes[4];
+        for (int s = 0; s < 4; s++) {
+            preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
+            int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
+            delayedLanes[s] = preDelayBuffer[readPos];
+        }
+
+        float32x4_t delayedMono = vld1q_f32(delayedLanes);
+        preDelayWritePos = (preDelayWritePos + 4) & PREDELAY_MASK;
+
+        // =================================================================
+        // 2. Active Partial Counting (APC)
+        // =================================================================
+        float32x4_t absIn = vabsq_f32(delayedMono);
+        float32x4_t max1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
+        float32x4_t max2 = vmaxq_f32(max1, vextq_f32(max1, max1, 1));
+
+        if (vgetq_lane_f32(max2, 0) > 1e-5f) {
+            // Wake up. Tail length tied to decay parameter.
+            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+        } else if (activeSampleCount > 0) {
+            activeSampleCount -= 4;
+        }
+
+        // Bypass everything if asleep
+        if (activeSampleCount <= 0) {
+            vst1q_f32(outL, inL4);
+            vst1q_f32(outR, inR4);
+            return;
+        }
 
         // =================================================================
         // Read from all 8 delay lines for 4 samples
@@ -277,89 +333,42 @@ public:
         }
 
         // =================================================================
-        // Apply Hadamard mixing (for 4 samples)
+        // Apply Hadamard mixing (Optimized: 4 time-samples in parallel)
         // =================================================================
         float mixed[FDN_CHANNELS][4];
 
-        // Spill inMono to a plain array before the loop: vgetq_lane_f32 requires
-        // a compile-time constant lane index; a loop variable is not accepted.
-        float inMonoArr[4];
-        vst1q_f32(inMonoArr, inMono);
+        // Load 4 time-samples for each channel
+        float32x4_t v_delayOut[FDN_CHANNELS];
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            v_delayOut[ch] = vld1q_f32(delayOut[ch]);
+        }
 
-        // For each sample position
-        for (int s = 0; s < 4; s++) {
-            // Load one sample from each channel into a vector
-            float32x4_t vec0 = vdupq_n_f32(delayOut[0][s]);
-            float32x4_t vec1 = vdupq_n_f32(delayOut[1][s]);
-            float32x4_t vec2 = vdupq_n_f32(delayOut[2][s]);
-            float32x4_t vec3 = vdupq_n_f32(delayOut[3][s]);
-            float32x4_t vec4 = vdupq_n_f32(delayOut[4][s]);
-            float32x4_t vec5 = vdupq_n_f32(delayOut[5][s]);
-            float32x4_t vec6 = vdupq_n_f32(delayOut[6][s]);
-            float32x4_t vec7 = vdupq_n_f32(delayOut[7][s]);
+        float32x4_t v_mixed[FDN_CHANNELS];
+        float32x4_t v_decay = vdupq_n_f32(decay);
 
-            // Hadamard rows as vectors
-            float32x4_t row0 = vld1q_f32(hadamard[0]);
-            float32x4_t row1 = vld1q_f32(hadamard[1]);
-            float32x4_t row2 = vld1q_f32(hadamard[2]);
-            float32x4_t row3 = vld1q_f32(hadamard[3]);
-            float32x4_t row4 = vld1q_f32(hadamard[4]);
-            float32x4_t row5 = vld1q_f32(hadamard[5]);
-            float32x4_t row6 = vld1q_f32(hadamard[6]);
-            float32x4_t row7 = vld1q_f32(hadamard[7]);
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            v_mixed[i] = vdupq_n_f32(0.0f);
+            for (int j = 0; j < FDN_CHANNELS; j++) {
+                v_mixed[i] = vmlaq_f32(v_mixed[i], v_delayOut[j], vdupq_n_f32(hadamard[i][j]));
+            }
+            v_mixed[i] = vmulq_f32(v_mixed[i], v_decay);
 
-            // Compute output channels 0-3: load first half of each Hadamard row
-            // total_lo[k] = sum_i(H[i][k] * in[i]) = out[k]  for k=0..3
-            float32x4_t res0 = vmulq_f32(row0, vec0);
-            float32x4_t res1 = vmulq_f32(row1, vec1);
-            float32x4_t res2 = vmulq_f32(row2, vec2);
-            float32x4_t res3 = vmulq_f32(row3, vec3);
-            float32x4_t res4 = vmulq_f32(row4, vec4);
-            float32x4_t res5 = vmulq_f32(row5, vec5);
-            float32x4_t res6 = vmulq_f32(row6, vec6);
-            float32x4_t res7 = vmulq_f32(row7, vec7);
+            // COLOR: NEON Polynomial Soft-Clipping Saturation
+            float32x4_t x2 = vmulq_f32(v_mixed[i], v_mixed[i]);
+            float32x4_t x3 = vmulq_f32(x2, v_mixed[i]);
+            float32x4_t sat = vsubq_f32(v_mixed[i], vmulq_f32(x3, vdupq_n_f32(0.15f)));
 
-            float32x4_t sum01 = vaddq_f32(res0, res1);
-            float32x4_t sum23 = vaddq_f32(res2, res3);
-            float32x4_t sum45 = vaddq_f32(res4, res5);
-            float32x4_t sum67 = vaddq_f32(res6, res7);
-            float32x4_t sum0123 = vaddq_f32(sum01, sum23);
-            float32x4_t sum4567 = vaddq_f32(sum45, sum67);
-            float32x4_t total_lo = vaddq_f32(sum0123, sum4567);
+            // HARD CLAMP NEON vectors to prevent FDN blowup
+            v_mixed[i] = vmaxq_f32(vminq_f32(sat, vdupq_n_f32(1.5f)), vdupq_n_f32(-1.5f));
+        }
 
-            // Compute output channels 4-7: load second half (elements [4..7]) of each row
-            // total_hi[k] = sum_i(H[i][k+4] * in[i]) = out[k+4]  for k=0..3
-            float32x4_t row0h = vld1q_f32(&hadamard[0][4]);
-            float32x4_t row1h = vld1q_f32(&hadamard[1][4]);
-            float32x4_t row2h = vld1q_f32(&hadamard[2][4]);
-            float32x4_t row3h = vld1q_f32(&hadamard[3][4]);
-            float32x4_t row4h = vld1q_f32(&hadamard[4][4]);
-            float32x4_t row5h = vld1q_f32(&hadamard[5][4]);
-            float32x4_t row6h = vld1q_f32(&hadamard[6][4]);
-            float32x4_t row7h = vld1q_f32(&hadamard[7][4]);
+        // Add delayed mono input to the first channel
+        float32x4_t v_feedback = vdupq_n_f32(1.0f - decay);
+        v_mixed[0] = vaddq_f32(v_mixed[0], vmulq_f32(delayedMono, v_feedback));
 
-            float32x4_t total_hi = vaddq_f32(
-                vaddq_f32(vaddq_f32(vmulq_f32(row0h, vec0), vmulq_f32(row1h, vec1)),
-                          vaddq_f32(vmulq_f32(row2h, vec2), vmulq_f32(row3h, vec3))),
-                vaddq_f32(vaddq_f32(vmulq_f32(row4h, vec4), vmulq_f32(row5h, vec5)),
-                          vaddq_f32(vmulq_f32(row6h, vec6), vmulq_f32(row7h, vec7))));
-
-            float32x4_t decay4 = vdupq_n_f32(decay);
-            total_lo = vmulq_f32(total_lo, decay4);
-            total_hi = vmulq_f32(total_hi, decay4);
-
-            // Store channels 0-3 (inject input into channel 0 only)
-            float inSample = inMonoArr[s]; // spilled above; variable index safe
-            mixed[0][s] = vgetq_lane_f32(total_lo, 0) + inSample * (1.0f - decay);
-            mixed[1][s] = vgetq_lane_f32(total_lo, 1);
-            mixed[2][s] = vgetq_lane_f32(total_lo, 2);
-            mixed[3][s] = vgetq_lane_f32(total_lo, 3);
-
-            // Store channels 4-7 using correctly computed second-half transform
-            mixed[4][s] = vgetq_lane_f32(total_hi, 0);
-            mixed[5][s] = vgetq_lane_f32(total_hi, 1);
-            mixed[6][s] = vgetq_lane_f32(total_hi, 2);
-            mixed[7][s] = vgetq_lane_f32(total_hi, 3);
+        // Spill back to the mixed array
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            vst1q_f32(mixed[ch], v_mixed[ch]);
         }
 
         // =================================================================
@@ -426,7 +435,7 @@ public:
                        int numSamples) {
 
         // Bypass if not initialized
-        if (!initialized || fdnMem == nullptr) {
+        if (!initialized) {
             memcpy(outL, inL, numSamples * sizeof(float));
             memcpy(outR, inR, numSamples * sizeof(float));
             return;
@@ -449,8 +458,33 @@ public:
         // Process remaining 1-3 samples (scalar fallback)
         // =================================================================
         for (int i = samplesProcessed; i < numSamples; i++) {
-            float monoIn = (inL[i] + inR[i]) * 0.5f;
-            processScalar(monoIn);  // populates fdnState for stereo spread
+            // Simple one-pole DC blocker / HPF
+            float currentL = (inL[i] + inR[i]) * 0.5f;
+            float filtered = currentL - hpfStateL;
+            hpfStateL = currentL - hpfCoeff * filtered;
+
+            // Pre-Delay
+            preDelayBuffer[preDelayWritePos] = filtered;
+            int readPos = (preDelayWritePos - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
+            float delayedInput = preDelayBuffer[readPos];
+            preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
+
+            // APC Check
+            if (std::abs(delayedInput) > 1e-5f) {
+                activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+            } else if (activeSampleCount > 0) {
+                activeSampleCount--;
+            }
+
+            // Bypass if asleep
+            if (activeSampleCount <= 0) {
+                outL[i] = inL[i];
+                outR[i] = inR[i];
+                continue;
+            }
+
+            // Pass delayed input to your existing processScalar method
+            processScalar(delayedInput);  // populates fdnState for stereo spread
 
             // Simple stereo spread (channels 0-3 to left, 4-7 to right)
             float leftOut = 0.0f, rightOut = 0.0f;
@@ -508,12 +542,21 @@ private:
     float colorLpfL;     // LPF state for left channel output
     float colorLpfR;     // LPF state for right channel output
 
-    bool initialized;
-    float* fdnMem;  // [FDN_CHANNELS][BUFFER_SIZE]
+    // High Pass filter
+    float hpfStateL = 0.0f;
+    // float hpfStateR = 0.0f;
+    float hpfCoeff = 0.85f; // Adjust between 0.0 (off) and 0.99 (heavy low cut)
 
+    bool initialized;
+    float fdnMem[FDN_CHANNELS * FDN_BUFFER_SIZE] __attribute__((aligned(16)));
     float baseDelayTimes[FDN_CHANNELS]; // unscaled delay times
     float delayTimes[FDN_CHANNELS];
     float modPhases[FDN_CHANNELS];
     float fdnState[FDN_CHANNELS];
-    float hadamard[FDN_CHANNELS][FDN_CHANNELS];
+    float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(16)));
+
+    float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
+    int preDelayWritePos;
+    int preDelayOffsetSamples;
+    int activeSampleCount;
 };

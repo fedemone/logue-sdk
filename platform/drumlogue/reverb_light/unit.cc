@@ -30,17 +30,45 @@ static FDNEngine s_fdn_engine;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
 static bool s_bypass = true;
+static const int num_of_presets = 4;
+enum k_parameters {
+    k_name, k_dark, k_bright, k_glow,
+    k_color, k_spark, k_size, k_pdly,
+    k_total
+};
+
+// ============================================================================
+// Presets
+// ============================================================================
+static const char* k_preset_names[num_of_presets] = {
+    "StanzaNeon", // 0: Tight, bright, standard drum room
+    "VicoBuio",   // 1: Long decay, heavy LPF, spooky
+    "Strobo",   // 2: High pre-delay, short decay, heavily modulated
+    "Bruciato"      // 3: Massive size, max decay, floating
+};
+
+// Values map to: { DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY }
+static const int32_t k_preset_values[num_of_presets][k_total] = {
+    { 0, 40, 70, 30, 10,  5, 30,  5 },  // StanzaNeon
+    { 1, 80, 20, 40, 80, 10, 60, 15 },  // VicoBuio
+    { 2, 20, 50, 40, 40, 40, 10, 80 },  // Strobo
+    { 3, 95, 40, 60, 30, 25, 90, 10 }   // Bruciato
+};
+
+static uint8_t s_current_preset = 0;
 
 // ============================================================================
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
-// ID 0: DARK  0..100 %  default 20
-// ID 1: BRIG  0..100 %  default 50
-// ID 2: GLOW  0..100 %  default 30
-// ID 3: COLR  0..100 %  default 10
-// ID 4: SPRK  0..100 %  default 5
-// ID 5: SIZE  0..100 %  default 50
-static int32_t s_params[6] = { 60, 50, 70, 10, 5, 50 };
+// ID 0: NAME  string   default 0
+// ID 1: DARK  0..100 %  default 20
+// ID 2: BRIG  0..100 %  default 50
+// ID 3: GLOW  0..100 %  default 30
+// ID 4: COLR  0..100 %  default 10
+// ID 5: SPRK  0..100 %  default 5
+// ID 6: SIZE  0..100 %  default 50
+// ID 7: PDLY  0..100 %  default 50
+static int32_t s_params[k_total] = { 0, 60, 50, 70, 10, 5, 50, 0 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -74,7 +102,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     s_bypass = false;
 
     // Apply default parameter values
-    for (uint8_t i = 0; i < 6; i++) {
+    for (uint8_t i = 0; i < k_total; i++) {
         unit_set_param_value(i, s_params[i]);
     }
 
@@ -135,29 +163,32 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
-    if (id >= 6) return;
+    if (id >= k_total) return;
     s_params[id] = value;
 
     const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
     switch (id) {
-        case 0: // DARK  decay/warmth  0-100% → decay 0.0..0.99
+        case k_dark: // DARK  decay/warmth  0-100% → decay 0.0..0.99
             s_fdn_engine.setDecay(norm * 0.99f);
             break;
-        case 1: // BRIG  brightness  0-100% → 0.0..1.0
+        case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
             s_fdn_engine.setBrightness(norm);
             break;
-        case 2: // GLOW  wet/dry mix  0-100% → 0.0..1.0
+        case k_glow: // GLOW  wet/dry mix  0-100% → 0.0..1.0
             s_fdn_engine.setGlow(norm);
             break;
-        case 3: // COLR  tone color (LPF)  0-100% → coeff 0.0..0.95
+        case k_color: // COLR  tone color (LPF)  0-100% → coeff 0.0..0.95
             s_fdn_engine.setColor(norm * 0.95f);
             break;
-        case 4: // SPRK  sparkle / modulation depth  0-100% → 0.0..1.0
+        case k_spark: // SPRK  sparkle / modulation depth  0-100% → 0.0..1.0
             s_fdn_engine.setModulation(norm);
             break;
-        case 5: // SIZE  room size  0-100% → scale 0.1..2.0
+        case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
             s_fdn_engine.setSize(0.1f + norm * 1.9f);
+            break;
+        case k_pdly: // PDLY pre delay
+            s_fdn_engine.setPreDelay(norm * 200.0f);
             break;
         default:
             break;
@@ -165,11 +196,14 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id >= 6) return 0;
+    if (id >= k_total) return 0;
     return s_params[id];
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
+    if ((id == k_name) && (value < num_of_presets)) {
+        return k_preset_names[value];
+    }
     (void)id;
     (void)value;
     return nullptr;
@@ -195,6 +229,24 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
     (void)aftertouch;
 }
 
-__unit_callback void unit_load_preset(uint8_t idx) { (void)idx; }
-__unit_callback uint8_t unit_get_preset_index() { return 0; }
-__unit_callback const char* unit_get_preset_name(uint8_t idx) { return nullptr; }
+__unit_callback uint8_t unit_get_preset_index() {
+    return s_current_preset;
+}
+
+__unit_callback const char* unit_get_preset_name(uint8_t idx) {
+    if (idx >= num_of_presets) return nullptr;
+    return k_preset_names[idx];
+}
+
+__unit_callback void unit_load_preset(uint8_t idx) {
+    if (idx >= num_of_presets) return;
+    s_current_preset = idx;
+
+    // Apply all parameter values from the preset
+    for (uint8_t p = 0; p < k_total; p++) {
+        // Update the internal state array
+        s_params[p] = k_preset_values[idx][p];
+        // Trigger the logic to update the FDN engine
+        unit_set_param_value(p, s_params[p]);
+    }
+}

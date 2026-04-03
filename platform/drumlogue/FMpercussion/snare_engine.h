@@ -101,10 +101,7 @@ fast_inline void snare_engine_set_note(snare_engine_t* snare,
     float32x4_t exponent = vmulq_f32(vsubq_f32(midi_notes, a4_midi), twelfth);
 
     // 2^x approximation
-    float32x4_t two_pow = vdupq_n_f32(1.0f);
-    float32x4_t x2 = vmulq_f32(exponent, exponent);
-    two_pow = vmlaq_f32(two_pow, exponent, vdupq_n_f32(0.693f));
-    two_pow = vmlaq_f32(two_pow, x2, vdupq_n_f32(0.24f));
+    float32x4_t two_pow = exp2_neon(exponent);
 
     float32x4_t base_freq = vmulq_f32(a4_freq, two_pow);
 
@@ -132,11 +129,13 @@ fast_inline float32x4_t snare_generate_noise(snare_engine_t* snare) {
                                   vdupq_n_f32(1.0f));
     white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f));
 
-    // Apply bandpass filtering (simplified)
-    float32x4_t hpf_out = one_pole_lpf(&snare->noise_hpf, white,
-                                       SNARE_NOISE_HPF_CUTOFF);
-    float32x4_t bpf_out = one_pole_lpf(&snare->noise_lpf, hpf_out,
-                                       SNARE_NOISE_LPF_CUTOFF);
+    // Generate the low-pass curve at 800Hz
+    float32x4_t lp_800 = one_pole_lpf(&snare->noise_hpf, white, SNARE_NOISE_HPF_CUTOFF);
+    // Subtract it from the original noise to get a High-Pass at 800Hz
+    float32x4_t hpf_out = vsubq_f32(white, lp_800);
+
+    // Now apply the 5000Hz Low-Pass to the High-Passed signal to create the Bandpass
+    float32x4_t bpf_out = one_pole_lpf(&snare->noise_lpf, hpf_out, SNARE_NOISE_LPF_CUTOFF);
 
     return bpf_out;
 }

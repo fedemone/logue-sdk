@@ -9,6 +9,8 @@
 // Local filter constants (FILTER_Q_BUTTERWORTH comes from constants.h)
 #define FILTER_SAMPLE_RATE 48000.0f
 #define FILTER_PI 3.141592653589793f
+#define NEON_LANES  (4)
+#define NUM_BIQUADS (4)
 
 /**
  * Biquad filter coefficients (Transposed Direct Form II)
@@ -42,7 +44,7 @@ typedef struct {
  */
 typedef struct {
     spatial_mode_t mode;
-    neon_biquad_t filters[CLONE_GROUPS * 4];
+    neon_biquad_t filters[CLONE_GROUPS * NUM_BIQUADS];
     float depth_param;
     float last_depth_param;
     uint32_t ramp_samples;
@@ -189,19 +191,21 @@ fast_inline void update_filter_params(
             ANGEL_DEFAULT_HIGH_CUT + depth * (ANGEL_MAX_HIGH_CUT - ANGEL_DEFAULT_HIGH_CUT),
             ANGEL_DEFAULT_Q);
         for (int g = 0; g < CLONE_GROUPS; g++) {
-            filters->filters[g * 4 + 0].coeffs = coeffs;    // L HPF
-            filters->filters[g * 4 + 1].coeffs = lpf_coeffs; // L LPF
-            filters->filters[g * 4 + 2].coeffs = coeffs;    // R HPF
-            filters->filters[g * 4 + 3].coeffs = lpf_coeffs; // R LPF
+            filters->filters[g * NUM_BIQUADS + 0].coeffs = coeffs;    // L HPF
+            filters->filters[g * NUM_BIQUADS + 1].coeffs = lpf_coeffs; // L LPF
+            filters->filters[g * NUM_BIQUADS + 2].coeffs = coeffs;    // R HPF
+            filters->filters[g * NUM_BIQUADS + 3].coeffs = lpf_coeffs; // R LPF
         }
         return;
       }
+      default:
+        break;
     }
 
     // Apply to all clone groups (L and R pre-filter slots; post unused for single-stage modes)
     for (int g = 0; g < CLONE_GROUPS; g++) {
       filters->filters[g * 4].coeffs = coeffs;      // L pre
-      filters->filters[g * 4 + 2].coeffs = coeffs;  // R pre
+      filters->filters[g * NUM_BIQUADS + 2].coeffs = coeffs;  // R pre
     }
   }
 }
@@ -216,7 +220,7 @@ fast_inline void init_mode_filters(
     filters->last_depth_param = depth;
     filters->ramp_samples = 0;
 
-    for (int i = 0; i < CLONE_GROUPS * 4; i++) {
+    for (int i = 0; i < CLONE_GROUPS * NUM_BIQUADS; i++) {
         biquad_init_state(&filters->filters[i].state);
     }
 
@@ -233,8 +237,8 @@ fast_inline void apply_mode_filters(
 ) {
     if (!filters) return;
 
-    const uint32_t base = group_idx * 4;
-
+    const uint32_t base = group_idx * NUM_BIQUADS;
+    if (base >= CLONE_GROUPS * NUM_BIQUADS) return;
     switch (filters->mode) {
         case MODE_TRIBAL:
         case MODE_MILITARY: {
@@ -262,5 +266,7 @@ fast_inline void apply_mode_filters(
                 &filters->filters[base + 3].coeffs, &filters->filters[base + 3].state);
             break;
         }
+        default:
+            break;
     }
 }

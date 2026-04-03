@@ -79,10 +79,7 @@ fast_inline void perc_engine_set_note(perc_engine_t* perc,
 
     float32x4_t exponent = vmulq_f32(vsubq_f32(midi_notes, a4_midi), twelfth);
 
-    float32x4_t two_pow = vdupq_n_f32(1.0f);
-    float32x4_t x2 = vmulq_f32(exponent, exponent);
-    two_pow = vmlaq_f32(two_pow, exponent, vdupq_n_f32(0.693f));
-    two_pow = vmlaq_f32(two_pow, x2, vdupq_n_f32(0.24f));
+    float32x4_t two_pow = exp2_neon(exponent);
 
     float32x4_t base_freq = vmulq_f32(a4_freq, two_pow);
 

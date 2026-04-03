@@ -7,7 +7,6 @@
  *  Version 1.0
  */
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -17,11 +16,17 @@
 #include "fm_presets.h"
 #include "constants.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 // defined in header.c
 extern const char* const lfo_shape_strings[9];
 extern const char* const lfo_target_strings[8];
 extern const char* const resonant_mode_strings[5];
 extern const char* const voice_alloc_strings[12];
+#ifdef __cplusplus
+}
+#endif
 
 class Synth {
 public:
@@ -29,7 +34,7 @@ public:
     /* Lifecycle Methods */
     /*===========================================================================*/
 
-    Synth(void) : sample_rate_(48000), active_voices_(0) {
+    Synth(void) : sample_rate_(48000) {
         fm_perc_synth_init(&synth_);
     }
 
@@ -57,7 +62,6 @@ public:
 
     inline void Reset() {
         fm_perc_synth_init(&synth_);
-        active_voices_ = 0;
     }
 
     inline void Resume() {}
@@ -68,18 +72,28 @@ public:
     /*===========================================================================*/
 
     fast_inline void Render(float* out, size_t frames) {
+        // Idle gate: if all 4 voice envelopes are in ENV_STATE_OFF, every call to
+        // fm_perc_synth_process() returns exactly 0.0, so skip the entire block.
+        // Horizontal AND of all 4 stage lanes (ARMv7-compatible):
+        uint32x4_t off_check = vceqq_u32(synth_.envelope.stage,
+                                          vdupq_n_u32(ENV_STATE_OFF));
+        uint32x2_t lo_hi = vand_u32(vget_low_u32(off_check),
+                                     vget_high_u32(off_check));
+        lo_hi = vpmin_u32(lo_hi, lo_hi);
+
+        if (vget_lane_u32(lo_hi, 0) == 0xFFFFFFFFu) {
+            // All voices idle — output silence without running synthesis
+            memset(out, 0, frames * 2 * sizeof(float));
+            return;
+        }
+
         float* __restrict out_p = out;
         const float* out_e = out_p + (frames << 1);  // Stereo output
 
-        // Process in blocks for efficiency
         while (out_p < out_e) {
-            // Generate mono sample from synth
             float sample = fm_perc_synth_process(&synth_);
-
-            // Output to both channels (stereo)
             out_p[0] = sample;
             out_p[1] = sample;
-
             out_p += 2;
         }
     }
@@ -90,16 +104,10 @@ public:
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         fm_perc_synth_note_on(&synth_, note, velocity);
-        active_voices_ = vgetq_lane_u32(synth_.voice_triggered, 0) |
-                        vgetq_lane_u32(synth_.voice_triggered, 1) |
-                        vgetq_lane_u32(synth_.voice_triggered, 2) |
-                        vgetq_lane_u32(synth_.voice_triggered, 3);
     }
 
     inline void NoteOff(uint8_t note) {
         fm_perc_synth_note_off(&synth_, note);
-        // Update active voices count
-        active_voices_ = 0;
     }
 
     inline void GateOn(uint8_t velocity) {
@@ -115,11 +123,9 @@ public:
     }
 
     inline void AllNoteOff() {
-        // Clear all active notes
         for (int i = 0; i < 128; i++) {
             fm_perc_synth_note_off(&synth_, i);
         }
-        active_voices_ = 0;
     }
 
     inline void PitchBend(uint16_t bend) {
@@ -144,7 +150,7 @@ public:
         if (index >= 24) return;
 
         // Store parameter value
-        synth_.params[index] = (uint8_t)value;
+        synth_.params[index] = (int8_t)value;
 
         // Update synth with new parameters
         fm_perc_synth_update_params(&synth_);
@@ -217,7 +223,5 @@ private:
 
     fm_perc_synth_t synth_;
     uint32_t sample_rate_;
-    uint32_t active_voices_;
     uint8_t current_preset_;
-    std::atomic_uint_fast32_t flags_;
 };

@@ -46,11 +46,11 @@ typedef struct {
  * Complete FM synthesis state
  */
 typedef struct {
-    fm_operators_t ops __attribute__((aligned(VECTOR_ALIGN)));
-    fm_voices_t voices __attribute__((aligned(VECTOR_ALIGN)));
-    float32x4_t lfo_phase[2] __attribute__((aligned(VECTOR_ALIGN)));
-    uint32x4_t prng_state[4] __attribute__((aligned(VECTOR_ALIGN)));
-    uint8_t params[24];
+    fm_operators_t  ops __attribute__((aligned(VECTOR_ALIGN)));
+    fm_voices_t     voices __attribute__((aligned(VECTOR_ALIGN)));
+    float32x4_t     lfo_phase[2] __attribute__((aligned(VECTOR_ALIGN)));
+    uint32x4_t      prng_state[4] __attribute__((aligned(VECTOR_ALIGN)));
+    int8_t          params[24];
 } fm_state_t;
 
 // Ensure proper alignment
@@ -58,22 +58,71 @@ static_assert(sizeof(fm_state_t) % VECTOR_ALIGN == 0,
               "fm_state_t must be 16-byte aligned for NEON");
 
 /**
- * Convert MIDI note to frequency using interval ratios
+ * High-precision NEON 2^x
+ * Adapted and optimized from Julien Pommier's neon_mathfun.h
+ * licensed under the zlib license
+ */
+fast_inline float32x4_t exp2_neon(float32x4_t x) {
+    // 1. Clamp to valid exponent range to prevent underflow/overflow
+    x = vmaxq_f32(x, vdupq_n_f32(-126.0f));
+    x = vminq_f32(x, vdupq_n_f32(126.0f));
+
+    // 2. Separate integer (n) and fractional (f) parts
+    // Add 0.5 to round to nearest integer
+    float32x4_t fx = vaddq_f32(x, vdupq_n_f32(0.5f));
+    int32x4_t n = vcvtq_s32_f32(fx); // Truncates towards zero
+    float32x4_t n_float = vcvtq_f32_s32(n);
+
+    // Fix truncation for negative numbers (Pommier's trick)
+    uint32x4_t mask = vcltq_f32(fx, n_float);
+    n = vaddq_s32(n, vreinterpretq_s32_u32(mask)); // mask is -1 where true
+    n_float = vcvtq_f32_s32(n);
+
+    // f is the fractional part, bound to [-0.5, 0.5]
+    float32x4_t f = vsubq_f32(x, n_float);
+
+    // 3. Compute e^(f * ln(2)) using Pommier's minimax polynomial
+    // Multiply by ln(2)
+    float32x4_t z = vmulq_f32(f, vdupq_n_f32(0.6931471805599453f));
+
+    // Horner evaluation of the polynomial
+    float32x4_t y = vdupq_n_f32(1.9875691500E-4f);
+    y = vmlaq_f32(vdupq_n_f32(1.3981999507E-3f), y, z);
+    y = vmlaq_f32(vdupq_n_f32(8.3334519073E-3f), y, z);
+    y = vmlaq_f32(vdupq_n_f32(4.1665795894E-2f), y, z);
+    y = vmlaq_f32(vdupq_n_f32(1.6666665459E-1f), y, z);
+    y = vmlaq_f32(vdupq_n_f32(5.0000001201E-1f), y, z);
+    y = vmlaq_f32(z, y, z);                 // y = z + y * z
+    y = vaddq_f32(y, vdupq_n_f32(1.0f));    // y = 1.0 + y
+
+    // 4. Compute 2^n by shifting into the IEEE-754 exponent field
+    n = vaddq_s32(n, vdupq_n_s32(127));     // Add float exponent bias
+    n = vshlq_n_s32(n, 23);                 // Shift to exponent bits
+    float32x4_t pow2n = vreinterpretq_f32_s32(n);
+
+    // 5. Final result: 2^n * 2^f
+    return vmulq_f32(y, pow2n);
+}
+
+/**
+ * Convert MIDI note to frequency using high-precision NEON Math
+ * Formula: Freq = A4_FREQ * 2 ^ ((MIDI - A4_MIDI) / 12)
  */
 fast_inline float32x4_t midi_to_freq_neon(uint32x4_t midi_notes) {
-    // This would use the interval ratios from constants.h
-    // to build frequencies efficiently
     float32x4_t a4_freq = vdupq_n_f32(A4_FREQ);
     float32x4_t a4_midi = vdupq_n_f32(A4_MIDI);
 
-    // Calculate semitone offset (TODO: use for full pitch calc; placeholder for now)
-    float32x4_t semitone_offset = vsubq_f32(vcvtq_f32_u32(midi_notes), a4_midi);
-    (void)semitone_offset;
+    // 1. Calculate semitone offset (MIDI - 69.0)
+    float32x4_t offset = vsubq_f32(vcvtq_f32_u32(midi_notes), a4_midi);
 
-    // 2^(offset/12) using approximation or table
-    // In practice, you'd use a fast approximation
+    // 2. Divide by 12.0 to get octaves
+    float32x4_t octaves = vmulq_f32(offset, vdupq_n_f32(1.0f / 12.0f));
 
-    return a4_freq; // Placeholder
+    // 3. Calculate 2^octaves using adapted Pommier math
+    float32x4_t pow2 = exp2_neon(octaves);
+
+    // 4. Multiply by base tuning (440.0 * 2^x)
+    return vmulq_f32(pow2, a4_freq);
 }
 
 /**

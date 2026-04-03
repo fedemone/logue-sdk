@@ -13,6 +13,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstddef>
+#include <cstdio>
 #include "unit.h"
 #include "NeonAdvancedLabirinto.h"
 
@@ -44,12 +46,16 @@ static bool s_bypass = true;
 // ID 6: WIDE   0..200 %           default 100
 // ID 7: COMP   0..1000 (x0.1%)    default 1000
 // ID 8: PILL   0..4               default 3
+// ID 9: PL4FRQ 0..100             default 35 (Hz)
+// ID 10: PDLY  0..100             default 0 (ms)
+
 enum parameterState {
   k_paramProgram = 0,
-  k_mix, k_time, k_low, k_high, k_damp, k_wide, k_comp, k_pill,
-  k_total};
+  k_mix, k_time, k_low, k_high, k_damp,
+  k_wide, k_comp, k_pill, k_shimmer_freq,
+  k_pre_delay, k_total};
 
-static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3};
+static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0};
 static const int k_preset_number = 4;
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
                                                       "labirinto", "stellare"};
@@ -60,14 +66,14 @@ static uint8_t s_current_preset = 0xFF; /* 0xFF = no preset loaded */
 // ============================================================================
 // Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
 static const int32_t k_presets[k_preset_number][k_total] = {
-    // 0: foresta – mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {0, 600, 40, 60, 40, 200, 80, 600, 3},
-    // 1: tempio  – sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {1, 700, 70, 80, 25, 130, 130, 800, 2},
-    // 2: labirinto – center values with ping-pong stereo bouncing
-    {2, 500, 50, 50, 50, 510, 100, 500, 1},
-    // 3: stellare – long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {3, 400, 90, 50, 80, 800, 180, 300, 4},
+    // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
+    {0, 600, 40, 60, 40, 200, 80, 600, 3, 0, 0},
+    // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
+    {1, 700, 70, 80, 25, 130, 130, 800, 2, 0, 0},
+    // 2: labirinto - center values with ping-pong stereo bouncing
+    {2, 500, 50, 50, 50, 510, 100, 500, 1, 0, 10},
+    // 3: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
+    {3, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20},
 };
 
 // ============================================================================
@@ -111,7 +117,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     s_bypass = false;
 
     // Apply default parameter values
-    for (uint8_t i = 0; i < 8; i++) {
+    for (uint8_t i = 0; i < k_total; i++) {
         unit_set_param_value(i, s_params[i]);
     }
 
@@ -178,9 +184,9 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
+    if (!s_reverb) return;
     if (id >= k_total) return;
     s_params[id] = value;
-    if (!s_reverb) return;
 
     switch (id) {
     case k_mix: // MIX  0..1000 → 0.0..1.0
@@ -204,9 +210,15 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case k_comp: // COMP  0..1000 → diffusion 0.0..1.0
       s_reverb->setDiffusion(value / 1000.0f);
       break;
-    case k_pill: // PILL  0..4  – pillar routing mode
+    case k_pill: // PILL  0..4  - pillar routing mode
       s_reverb->setPillar(value);
       break;
+    case k_shimmer_freq: // PL4FRQ  0..100  - shimmer frequency
+      s_reverb->setShimmerFreq(value);
+      break;
+    case k_pre_delay: // PDLY 0..200 ms
+        s_reverb->setPreDelay((float)value);
+        break;
     default:
       break;
     }
@@ -218,10 +230,19 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
-  if ((id == k_paramProgram) && (value < k_preset_number)) return k_preset_names[value];
-  (void)id;
-  (void)value;
-  return nullptr;
+  static char sf_buf[10];
+    if ((id == k_paramProgram) && (value < k_preset_number)) {
+        return k_preset_names[value];
+    }
+    (void)id;
+    (void)value;
+    if (id == k_shimmer_freq)
+    {
+        int32_t hz_x10 = (int32_t)(s_reverb->getShimmerFreq() * 10.0f);
+        snprintf(sf_buf, sizeof(sf_buf), "%d.%dHz", hz_x10 / 10, hz_x10 % 10);
+        return sf_buf;
+    }
+    return nullptr;
 }
 
 __unit_callback const uint8_t* unit_get_param_bmp_value(uint8_t id, int32_t value) {
@@ -245,20 +266,18 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 }
 
 __unit_callback void unit_load_preset(uint8_t idx) {
-  if (idx >= k_preset_number)
-    return;
-  s_current_preset = idx;
-  for (uint8_t i = 0; i < k_total; i++) {
-    unit_set_param_value(i, k_presets[idx][i]);
+    if (idx >= k_preset_number) return;
+    s_current_preset = idx;
+    for (uint8_t i = 0; i < k_total; i++) {
+        unit_set_param_value(i, k_presets[idx][i]);
     }
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
-  return (s_current_preset < k_preset_number) ? s_current_preset : 0;
+    return (s_current_preset < k_preset_number) ? s_current_preset : 0;
 }
 
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {
-  if (idx >= k_preset_number)
-    return nullptr;
-  return k_preset_names[idx];
+    if (idx >= k_preset_number) return nullptr;
+    return k_preset_names[idx];
 }

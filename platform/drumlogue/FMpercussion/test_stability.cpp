@@ -2,6 +2,8 @@
  * @file test_stability.cpp
  * @brief Stability test for FMpercussion DSP math at maximum parameter values.
  *
+ * Compile: g++ -std=c++14 -O2 -o test_stability test_stability.cpp -lm
+ *
  * FMpercussion uses ARM NEON intrinsics in its engine headers, so this test
  * validates the underlying DSP algorithms using scalar equivalents without
  * including arm_neon.h (making it compilable on x86).
@@ -34,6 +36,10 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
+
+#ifndef M_TWOPI
+#define M_TWOPI (2.0 * M_PI)
+#endif
 
 #define SAMPLE_RATE    48000.0f
 #define TEST_SECONDS   5

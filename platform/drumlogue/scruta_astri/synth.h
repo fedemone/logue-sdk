@@ -1,5 +1,7 @@
-#pragma once
+#ifndef A083A381_F7BC_4612_A4CB_962E406CD1FC
+#define A083A381_F7BC_4612_A4CB_962E406CD1FC
 #include <cstdint>
+#include <arm_neon.h>
 #include "float_math.h"
 #include "unit.h"
 
@@ -161,8 +163,6 @@ public:
         m_base_hz = 440.0f * fasterpow2f(((float)note - Mid_Note_Freq) / 12.0f);
         // Push immediate frequency updates to oscillators
         updateOscillators();
-        // Open the drone VCA
-        // m_drone_target = 1.0f;
     }
 
     inline void updateOscillators() {
@@ -190,20 +190,46 @@ public:
     }
 
     // The Drumlogue sends this when the sequencer stops!
-    inline void AllNoteOff() {
-        // m_drone_target = 0.0f; // Smoothly fade out the drone
-    }
+    inline void AllNoteOff() {}
 
     // Hard stop
-    inline void Suspend() {
-        // m_drone_target = 0.0f;
-        // m_drone_amp = 0.0f;
+    inline void Suspend() {}
+
+    /**
+     * Fast NEON hyperbolic tangent approximation.
+     * Uses the Padé approximant: x * (27 + x^2) / (27 + 9 * x^2)
+     * Clamped to [-3.0, 3.0] to guarantee stability.
+     * NOTE: clamping perfectly emulates an analog voltage rail
+     */
+    fast_inline float32x4_t fast_tanh_neon(float32x4_t x) {
+        // 1. Clamp to [-3.0, 3.0] to prevent polynomial divergence
+        float32x4_t clamped = vmaxq_f32(vminq_f32(x, vdupq_n_f32(3.0f)), vdupq_n_f32(-3.0f));
+
+        float32x4_t x2 = vmulq_f32(clamped, clamped);
+
+        // 2. Numerator = clamped * (27.0f + x2)
+        float32x4_t num = vmulq_f32(clamped, vaddq_f32(vdupq_n_f32(27.0f), x2));
+
+        // 3. Denominator = 27.0f + 9.0f * x2
+        float32x4_t den = vmlaq_f32(vdupq_n_f32(27.0f), x2, vdupq_n_f32(9.0f));
+
+        // 4. Fast division: num * (1.0f / den)
+        // We use 2 Newton-Raphson iterations for high audio fidelity
+        float32x4_t recip = vrecpeq_f32(den);
+        recip = vmulq_f32(vrecpsq_f32(den, recip), recip); // NR Step 1
+        recip = vmulq_f32(vrecpsq_f32(den, recip), recip); // NR Step 2
+
+        return vmulq_f32(num, recip);
     }
 
     inline void processBlock(float* __restrict main_out, size_t frames) {
 
         // preset will target different modulation
         int mod_target = m_params[k_paramProgram] % 24;
+        int buf_idx = 0;
+        float neon_buffer[4];
+        uint8_t out_idx_buffer[4];
+        const float dc_bias = 0.005f; // adjust to taste (0.001-0.01 works)
 
         // Grab Wavetables from UI
         osc1.current_table = SCRUTAASTRI_WAVETABLES[m_params[k_paramOsc1Wave]];
@@ -211,22 +237,12 @@ public:
 
         for (size_t i = 0; i < frames; ++i) {
 
-            // 1. HARDWARE DRONE GATE (Smooth ~2ms AR Envelope)
-            // m_drone_amp += (m_drone_target - m_drone_amp) * 0.01f;
-
-            // // 2. CPU SQUELCH: If the hardware is paused and faded out, output silence!
-            // if (m_drone_amp < 0.0001f && m_drone_target == 0.0f) {
-            //     main_out[i * 2] = 0.0f;
-            //     main_out[i * 2 + 1] = 0.0f;
-            //     continue; // Skip all DSP calculations for this frame!
-            // }
-
-            // 3. CORE MODULATION SIGNALS
+            // 1. CORE MODULATION SIGNALS
             float l1_val = lfo1.process() * m_lfo1_depth;
             float l2_val = lfo2.process() * m_lfo2_depth;
             float l3_val = lfo3.process() * m_lfo3_depth;
 
-            // 3.1 ZERO-CROSSING FREQUENCY UPDATES
+            // 2 ZERO-CROSSING FREQUENCY UPDATES
             // Store previous phase states
             float pre_phase1 = osc1.phase;
             float pre_phase2 = osc2.phase;
@@ -239,7 +255,7 @@ public:
                 osc2.set_frequency(m_osc2_target_hz * m_pitch_mod_multiplier, SAMPLE_RATE_F);
             }
 
-            // 3.2 ACTIVE PARTIAL COUNTING (APC) BLOCK
+            // 3 ACTIVE PARTIAL COUNTING (APC) BLOCK
             // Evaluate complex modulation targets only every 4 samples to save CPU cycles
             if (++m_apc_counter >= APC_FACTOR) {
                 m_apc_counter = 0;
@@ -303,7 +319,6 @@ public:
                 }
             }
 
-
             // 4. OSCILLATOR MIX
             // Advance oscillators
             float sig1 = osc1.process() * 0.5f;
@@ -362,21 +377,66 @@ public:
             mixed_sig = filter2.process(mixed_sig);
             mixed_sig *= m_sherman_makeup;
 
-            // 8. MASTER VCA & DISTORTION
+            // =================================================================
+            // 8. MASTER VCA & MICRO-BUFFER
+            // =================================================================
             if (mod_target == k_paramMastrVol || mod_target == k_paramProgram) {
                 mixed_sig *= (1.0f + l3_val);
             }
 
-            float dynamic_cmos = m_cmos_gain * m_cmos_mod_multiplier; // Apply APC multiplier
-            mixed_sig *= dynamic_cmos;
+            float dynamic_cmos = m_cmos_gain * m_cmos_mod_multiplier;
+            float pre_dist = mixed_sig * dynamic_cmos + dc_bias;
 
-            // Apply master vol first, then soft-clip so output stays within [-1, 1]
-            float scaled = mixed_sig * m_master_vol;
-            float master_out = scaled / (1.0f + fabsf(scaled));
-            // master_out *= m_drone_amp;
+            // Accumulate into the NEON buffer instead of calculating scalar tanh
+            neon_buffer[buf_idx] = pre_dist;
+            out_idx_buffer[buf_idx] = i; // Save the exact frame index
+            buf_idx++;
 
-            main_out[i * 2]     = master_out;
-            main_out[i * 2 + 1] = master_out;
+            // When buffer hits 4 samples, blast it through NEON FPU
+            if (buf_idx == 4) {
+                float32x4_t v_in = vld1q_f32(neon_buffer);
+
+                // NEON Double Tanh: distorted = fast_tanh( fast_tanh( distorted * 1.2f ) ) * 0.9f;
+                float32x4_t v_stage1 = fast_tanh_neon(vmulq_n_f32(v_in, 1.2f));
+                float32x4_t v_stage2 = fast_tanh_neon(v_stage1);
+                float32x4_t v_out = vmulq_n_f32(v_stage2, 0.9f);
+
+                // Remove DC bias
+                v_out = vsubq_f32(v_out, vdupq_n_f32(dc_bias * 0.9f));
+
+                // Apply master volume
+                v_out = vmulq_n_f32(v_out, m_master_vol);
+
+                // Extract back to memory
+                float out_arr[4];
+                vst1q_f32(out_arr, v_out);
+
+                // Write to the audio output interleaving
+                for(int b = 0; b < 4; b++) {
+                    size_t out_i = out_idx_buffer[b];
+                    main_out[out_i * 2]     = out_arr[b];
+                    main_out[out_i * 2 + 1] = out_arr[b];
+                }
+
+                buf_idx = 0; // Reset micro-buffer
+            }
+        }
+
+        // =================================================================
+        // 9. SCALAR TAIL (For frames not perfectly divisible by 4)
+        // =================================================================
+        for(uint8_t b = 0; b < buf_idx; b++) {
+            float distorted = neon_buffer[b];
+
+            // Use your existing scalar fast_tanh for the remainders
+            distorted = fast_tanh( fast_tanh( distorted * 1.2f ) ) * 0.9f;
+            distorted -= dc_bias * 0.9f;
+
+            float master_out = distorted * m_master_vol;
+            size_t out_i = out_idx_buffer[b];
+
+            main_out[out_i * 2]     = master_out;
+            main_out[out_i * 2 + 1] = master_out;
         }
     }
 
@@ -444,3 +504,6 @@ private:
     float m_osc1_dir = 1.0f;
     float m_osc2_dir = 1.0f;
 };
+
+
+#endif /* A083A381_F7BC_4612_A4CB_962E406CD1FC */

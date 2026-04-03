@@ -12,6 +12,7 @@
 
 #include <arm_neon.h>
 #include <stdint.h>
+#include "unit.h"  // For fast_inline
 #include "float_math.h"  // For M_* constants if needed
 #include "constants.h"
 

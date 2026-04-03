@@ -26,6 +26,10 @@
 #include <stdlib.h>
 #include <algorithm>
 
+#ifndef M_TWOPI
+#define M_TWOPI (2.0 * M_PI)
+#endif
+
 #define SAMPLE_RATE    48000.0f
 #define FDN_CH         8
 #define BUF_SIZE       32768      /* 2^15 – mirrors fdn_engine.h */

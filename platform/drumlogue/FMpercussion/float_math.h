@@ -1027,8 +1027,8 @@ float Q_rsqrt( float number )
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float eucDist1(const float x1, const float y1, const float x2, const float y2) {
-    auto dx = fabs(x2 - x1);
-    auto dy = fabs(y2 - y1);
+    float dx = fabs(x2 - x1);
+    float dy = fabs(y2 - y1);
     return sqrtsum2(dx, dy);
 }
 
@@ -1038,8 +1038,8 @@ float eucDist1(const float x1, const float y1, const float x2, const float y2) {
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float eucDist2(const float x1, const float y1, const float x2, const float y2) {
-    auto dx = fabs(x2 - x1);
-    auto dy = fabs(y2 - y1);
+    float dx = fabs(x2 - x1);
+    float dy = fabs(y2 - y1);
     return sqrtsum2acc(dx, dy);
 }
 
@@ -1050,8 +1050,8 @@ float eucDist2(const float x1, const float y1, const float x2, const float y2) {
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float eucDist2Bett(const float x1, const float y1, const float x2, const float y2) {
-    auto dx = fabs(x2 - x1);
-    auto dy = fabs(y2 - y1);
+    float dx = fabs(x2 - x1);
+    float dy = fabs(y2 - y1);
     return sqrtsum2bett(dx, dy);
 }
 
