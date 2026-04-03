@@ -1,5 +1,123 @@
 # Project Status Tracker
 
+## Phase 21: Voice Allocator Reset, Sample-Skip Bug, GtrStr Preset Fix [COMPLETED]
+
+Hardware re-test (Phase 20 build on RipplerX2 branch) still showed progressive silence.
+Root-cause: three separate bugs — two in the engine, one in the test harness.
+**82/82 tests pass.**
+
+### Hardware Symptoms (Phase 20 build, RipplerX2 branch)
+
+User's Phase 20 hardware test showed **identical behaviour** to Phase 19:
+- First 4 presses: synth voice + beating (possibly detuned delay lines)
+- Presses 5–8: only beating (getting **longer** each time), then silence
+
+Two clarifications from this report:
+1. "longer each time" (not shorter) suggests accumulating residual energy, consistent with the
+   delay buffer NOT being cleared on retrigger.
+2. User's RipplerX2 branch had the GateOff voice-reset fix but NOT Phase 20's memset.
+   Our branch had the memset but NOT the GateOff reset. Neither branch had both. Hardware
+   tested RipplerX2 (no memset) → still failed.
+
+### BUG 3 — CRITICAL: GateOff did not reset the voice allocator
+
+**Root cause:** `NoteOn()` pre-increments `next_voice_idx` before use. Without a reset on
+`GateOff()`, successive single-note gate presses cycle through all 4 voice slots (1→2→3→0→1…).
+For long-sustain presets (GtrStr T_60≈3.3 s), voices from presses 2, 3, 4 are still active
+and audible when press 5 fires — all at the same pitch but at different phases. Their
+superposition creates beats and interferes with the new excitation.
+
+**Fix (ported from user's RipplerX2 commit):** `GateOff()` now sets `state.next_voice_idx =
+NUM_VOICES - 1`. Because `NoteOn` pre-increments before use, the very next `NoteOn` wraps to
+index 0, so every gate press always starts at Voice 0. Concurrent notes within a single gate
+still allocate voices 0→1→2→3 correctly, since each `NoteOn` call still increments first.
+
+```cpp
+// In GateOff():
+state.next_voice_idx = NUM_VOICES - 1;
+```
+
+**Combined fix:** Both Bug 1 (memset in NoteOn) from Phase 20 AND Bug 3 (GateOff reset) are
+now active in our branch. Neither alone is sufficient for GtrStr's 3.3 s sustain.
+
+---
+
+### BUG 4 — CRITICAL (hardware-only): Smp=0 still loads PCM sample on real hardware
+
+**Root cause:** `NoteOn()` sample loading used a ternary fallthrough:
+```cpp
+size_t actualIndex = (m_sample_number > 0) ? (size_t)(m_sample_number - 1) : 0;
+```
+When `m_sample_number == 0` (preset `Smp=0`), this falls to `actualIndex = 0`, which then
+calls `m_get_sample(bank, 0)` and loads the **first PCM sample in the bank** — the same drum
+sample used by Init (Smp=1). On x86 unit tests, `mock_get_sample()` always returns `nullptr`
+so the bug is invisible. On ARM hardware, the real sample is returned and plays.
+
+**Effect:** Every preset including GtrStr (Smp=0) was playing the drum sample on every press.
+This was the source of the "~8 quick beats" heard with Init and all other presets.
+
+**Fix:**
+```cpp
+if (m_sample_number > 0 &&   // Smp=0 = "no sample", skip loading entirely
+    m_get_sample && ...) {
+    size_t actualIndex = (size_t)(m_sample_number - 1);  // now always valid
+    ...
+```
+
+**Convention:** `Smp` is 1-indexed. `Smp=1` → loads sample index 0; `Smp=2` → index 1; etc.
+`Smp=0` → no sample, mallet-only excitation.
+
+---
+
+### BUG 5 — GtrStr preset: HitPos=50 halved output when ResB is disabled
+
+**Root cause:** GtrStr had `Hit=50` (column 13) → `mix_ab = 0.5`. Voice output is:
+```cpp
+voice_out = (outA * (1 - mix_ab)) + (outB * mix_ab);
+```
+With ResB disabled (Ptls=0 → `m_active_partials = 4 < 16`), `outB = 0`. So
+`voice_out = outA * 0.5` — the guitar string signal was permanently attenuated by 6 dB.
+
+**Fix:** `Hit=0` in the GtrStr preset, giving full ResA output. Also set `InHm=0` (no allpass)
+for the cleanest possible Karplus-Strong reference.
+
+**Updated GtrStr:** `{28, 69, 0, 0, 800, 600, 0, 0, 0, 0, 195, 28, 0, 0, 15, 0, 1, 15, 0, 0, 300, 0, 1200, 707}`
+
+T_60 at A4: g = 0.85 + (195/200 × 0.149) = 0.9953. T_60 = 6.908/(440 × 0.00471) ≈ **3.3 s**.
+(Previous documentation stated 5.2 s, which assumed g=0.997 — corrected.)
+
+---
+
+### Test Changes
+
+**T7:** Loop bound changed from hardcoded `28` to `k_NumPrograms` (now 29 presets). Covers GtrStr.
+
+**T34:** Changed peak measurement from `ut_voice_out` (which tracks `next_voice_idx`, now reset
+to 3 after GateOff so it targets an inactive slot) to `buf[0]` (main audio output). All 8
+presses now correctly read ≈0.8377 with ratio = 0.9999. Both T34a and T34b pass.
+
+### T34 Results (Dkay=25, 8 presses with GateOff reset + memset)
+
+| Press | Peak   | Slot used | Cycle       |
+|-------|--------|-----------|-------------|
+| 1     | 0.8378 | voice 1   | first (fresh) |
+| 2     | 0.8377 | voice 0   | first (fresh) |
+| 3–8   | 0.8377 | voice 0   | second (cleared by memset) |
+
+Ratio second/first = 0.9999 (target ≥ 0.90). ✓
+
+### Hardware Validation Sequence (Flash Phase 21 build)
+
+Load preset 28 (GtrStr). For each press:
+1. **No beats** — Smp=0 fix means no drum sample. Pure string only.
+2. **Consistent amplitude** — all presses same volume (GateOff reset + memset).
+3. **Pitch ≈ A4 (440 Hz)** — verify with a tuner app.
+4. **Audible at 3 seconds** — T_60 ≈ 3.3 s at A4.
+
+If beats persist: confirms another source. If amplitude still degrades: additional voice leak.
+
+---
+
 ## Phase 20: Progressive Silence Bug, Allpass Formula Fix & Reference Preset [COMPLETED]
 
 Hardware test revealed two confirmed bugs causing progressive silence and pitch error.

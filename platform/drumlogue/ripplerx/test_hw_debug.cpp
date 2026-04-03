@@ -337,10 +337,10 @@ static void test_reset_then_gate_on() {
 //   AND zero mallet somehow), this catches it.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_all_presets_audible() {
-    std::cout << "\n── T7: All 28 presets produce nonzero audio ──\n";
+    std::cout << "\n── T7: All " << RipplerXWaveguide::k_NumPrograms << " presets produce nonzero audio ──\n";
 
     bool any_fail = false;
-    for (int p = 0; p < 28; ++p) {
+    for (int p = 0; p < RipplerXWaveguide::k_NumPrograms; ++p) {
         unit_runtime_desc_t desc = make_desc();
         RipplerXWaveguide s;
         s.Init(&desc);
@@ -355,7 +355,7 @@ static void test_all_presets_audible() {
             any_fail = true;
         }
     }
-    result("T7 all 28 presets audible on first GateOn", !any_fail,
+    result("T7 all presets audible on first GateOn", !any_fail,
            "one or more presets produce no audio - hardware would be silent on those presets");
 }
 
@@ -1588,13 +1588,16 @@ static void test_retrigger_consistency() {
         s.GateOn(127);
         s.GateOff();
 
-        // Measure peak over first 2400 frames (50 ms)
+        // Measure peak over first 2400 frames (50 ms).
+        // Use buf[0] (main audio output) rather than ut_voice_out, because
+        // GateOff resets state.next_voice_idx to (NUM_VOICES-1) so the per-voice
+        // probe would target an inactive slot and always read 0.
         float peak = 0.0f;
         float buf[2] = {};
         for (int i = 0; i < 2400; ++i) {
-            ut_voice_out = 0.0f;
+            buf[0] = buf[1] = 0.0f;
             s.processBlock(buf, 1);
-            float v = std::fabs(ut_voice_out);
+            float v = std::fabs(buf[0]);
             if (v > peak) peak = v;
         }
         // Advance an additional 7200 frames (150 ms) to let the voice mostly release

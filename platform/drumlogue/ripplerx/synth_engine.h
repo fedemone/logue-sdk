@@ -324,13 +324,15 @@ public:
             {26,  36,   0,   1,   600,  250,  0,   0,     3, 0,   85,  -8,    0,  20, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: Pluck Bass
             {27,  76,   0,   1,   700,  350,  0,   0,     3, 4,  160,  25,    0,  80, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: Glass Bowl
             // 28: Guitar String — Karplus-Strong reference for physical model validation.
-            // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.997 → T_60≈5.2 s.
+            // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
             // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
-            // Expected: bright attack (Mterl=28), gradual darkening, 5-second sustain.
-            // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 5 s;
-            //           (3) harmonic spectrum, no flutter/beating.
+            // Hit=0: full ResA output (HitPos=50 would halve the signal when ResB is disabled).
+            // InHm=0: pure Karplus-Strong, no allpass inharmonicity — cleanest reference.
+            // Expected: bright pluck attack, gradual spectral darkening, ~3-second sustain.
+            // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 3 s;
+            //           (3) no flutter/beating (one clean tone per press).
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,  50, 15,    50,     1,  15,   0,    0, 300,  0,  1200, 707}   // 28: Guitar String
+            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707}   // 28: Guitar String
         };
 
         if (idx >= k_NumPrograms) return;
@@ -733,10 +735,16 @@ public:
         v.exciter.sample_ptr = nullptr;
         v.exciter.sample_frames = 0;
 
-        // Then, try to load the new one just-in-time
-        if (m_get_sample && m_get_num_sample_banks_ptr && m_get_num_samples_for_bank_ptr) {
+        // Then, try to load the new one just-in-time.
+        // CRITICAL: m_sample_number == 0 means "no sample" (Smp=0 in the preset table).
+        // Without this guard, the ternary (m_sample_number > 0) ? ... : 0 falls through
+        // to actualIndex=0, which loads hardware bank 0 / sample 0 on EVERY preset —
+        // even those explicitly set to Smp=0 (e.g. GtrStr).  The unit tests hide this
+        // because mock_get_sample() always returns nullptr, masking the real hardware path.
+        if (m_sample_number > 0 &&
+            m_get_sample && m_get_num_sample_banks_ptr && m_get_num_samples_for_bank_ptr) {
             if (m_sample_bank < m_get_num_sample_banks_ptr()) {
-                size_t actualIndex = (m_sample_number > 0) ? (size_t)(m_sample_number - 1) : 0;
+                size_t actualIndex = (size_t)(m_sample_number - 1);  // 1-indexed: Smp=1→idx 0
                 if (actualIndex < m_get_num_samples_for_bank_ptr(m_sample_bank)) {
                     const sample_wrapper_t* wrapper = m_get_sample(m_sample_bank, actualIndex);
                     if (wrapper && wrapper->sample_ptr) {
@@ -958,6 +966,21 @@ public:
     inline void GateOff() {
         // The internal Drumlogue sequencer releases the UI note
         NoteOff(m_ui_note);
+
+        // Reset the voice allocator so the next strike starts at Voice 0.
+        // Because NoteOn pre-increments before use, setting to (NUM_VOICES - 1)
+        // means the very next NoteOn wraps to index 0.
+        //
+        // Without this reset: round-robin cycles through voices 1,2,3,0,1,2,3,0,...
+        // so each successive gate press uses a different slot.  When the note has a
+        // long T_60 (e.g. GtrStr ~5 s), four different voice slots accumulate residual
+        // energy at different phases, causing constructive/destructive interference
+        // ("beating") and progressive amplitude variation across presses.
+        //
+        // With this reset: every gate press always starts at Voice 0.  Concurrent
+        // notes within the same gate still allocate voices 0→1→2→3 correctly, because
+        // each NoteOn call still increments before use.
+        state.next_voice_idx = NUM_VOICES - 1;
     }
 
     inline void AllNoteOff() {
