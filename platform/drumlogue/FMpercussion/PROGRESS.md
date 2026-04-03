@@ -339,7 +339,7 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 // - Pre-calculate common denominators
 // - Use Newton-Raphson refinement
 
-void benchmark_resonant_ops() {
+void test_benchmark_resonant_ops() {
     // Measure cycles for vdivq_f32 vs reciprocal method
     // Target: < 15 cycles per sample for resonant engine
 }

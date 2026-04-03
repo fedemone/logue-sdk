@@ -1,4 +1,4 @@
 test_lfo
 test_stability
 test_alloc
-benchmark_resonant
+test_benchmark_resonant

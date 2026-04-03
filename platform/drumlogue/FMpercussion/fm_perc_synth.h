@@ -397,8 +397,8 @@ fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
     // Use the 'gate' mask from line 310 to conditionally update lanes.
     synth->voice_velocity = vbslq_f32(gate, new_velocities, synth->voice_velocity);
 
-    // Build voice mask from gate results
-    uint32_t mask = gate_bits;
+    // Build voice mask from gate results <== WRONG! we have separated the "Control/Routing" side (gate_bits) from the "Audio/DSP" side (gate)
+    // uint32_t mask = gate_bits;
 
     // Set note for each triggered voice based on its engine assignment
     float32x4_t midi_note = vdupq_n_f32(note);
@@ -430,10 +430,9 @@ fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
         }
     }
 
-    // Trigger envelope for active voices
-    synth->voice_triggered = vdupq_n_u32(mask);
+    synth->voice_triggered = gate;
     neon_envelope_trigger(&synth->envelope,
-                         vdupq_n_u32(mask),
+                         gate,
                          synth->current_env_shape);
 }
 
@@ -583,6 +582,10 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                 synth->engine_mask[ENGINE_PERC]);
     float32x4_t resonant_out = resonant_synth_process(&synth->resonant,
                                                        synth->engine_mask[ENGINE_RESONANT]);
+
+    // FIX: The resonant engine doesn't process the envelope internally like the FM engines do.
+    // We must manually scale its output by the envelope here before mixing!
+    resonant_out = vmulq_f32(resonant_out, env);
 
     // =================================================================
     // Mix all engines, then apply per-voice velocity scaling
