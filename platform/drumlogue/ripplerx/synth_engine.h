@@ -378,7 +378,7 @@ public:
 
     static inline const char * getPresetName(uint8_t idx) {
         static const char* const preset_names[] = {
-            "Init",    "Marmba", "808Sub", "AcSnre",
+            "InitDbg", "Marmba", "808Sub", "AcSnre",
             "TblrBel", "Timpni", "Djambe", "Taiko",
             "MrchSnr", "TamTam", "Koto",   "Vibrph",
             "Wodblk",  "Ac Tom", "Cymbal", "Gong",
