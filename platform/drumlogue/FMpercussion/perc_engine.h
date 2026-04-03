@@ -91,58 +91,44 @@ fast_inline void perc_engine_set_note(perc_engine_t* perc,
 /**
  * Process one sample of perc engine
  */
-fast_inline float32x4_t perc_engine_process(perc_engine_t* perc,
-                                            float32x4_t envelope,
-                                            uint32x4_t active_mask) {
-    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI / 48000.0f);
-    float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
+fast_inline float32x4_t perc_engine_process(perc_engine_t* perc, float32x4_t envelope, uint32x4_t active_mask) {
+    float32x4_t two_pi_over_sr = vdupq_n_f32(6.28318530718f / 48000.0f);
+    float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
 
-    // Calculate frequencies
-    float32x4_t carrier_freq = perc->freq_base;
-    float32x4_t mod1_freq = vmulq_f32(carrier_freq, perc->ratio_center);
+    // 1. Sharp envelopes for transient FM impact
+    float32x4_t env2 = vmulq_f32(envelope, envelope);
+    float32x4_t env4 = vmulq_f32(env2, env2);
 
-    // Modulator 2 frequency varies with envelope for dynamic timbre
-    float32x4_t mod2_ratio = vaddq_f32(perc->ratio_center,
-                                       vmulq_f32(perc->variation, envelope));
-    float32x4_t mod2_freq = vmulq_f32(carrier_freq, mod2_ratio);
+    // 2. Tom Pitch Sweep (controlled by 'variation' param)
+    float32x4_t sweep_octaves = vmulq_f32(perc->variation, env4);
+    float32x4_t pitch_mult = exp2_neon(sweep_octaves);
+    float32x4_t current_freq = vmulq_f32(perc->freq_base, pitch_mult);
 
-    // Phase increments
-    float32x4_t inc[3] = {
-        vmulq_f32(carrier_freq, two_pi_over_sr),
-        vmulq_f32(mod1_freq, two_pi_over_sr),
-        vmulq_f32(mod2_freq, two_pi_over_sr)
-    };
+    // 3. Advance Phases
+    float32x4_t freqs[3];
+    freqs[0] = current_freq;
+    freqs[1] = vmulq_f32(current_freq, perc->ratio_center);
+    freqs[2] = vmulq_f32(current_freq, vaddq_f32(perc->ratio_center, vdupq_n_f32(0.5f)));
 
-    // Update phases
     for (int i = 0; i < 3; i++) {
-        perc->phase[i] = vaddq_f32(perc->phase[i], inc[i]);
-
-        // Wrap
-        uint32x4_t wrap = vcgeq_f32(perc->phase[i], two_pi);
-        perc->phase[i] = vbslq_f32(wrap,
-                                   vsubq_f32(perc->phase[i], two_pi),
-                                   perc->phase[i]);
+        perc->phase[i] = vaddq_f32(perc->phase[i], vmulq_f32(freqs[i], two_pi_over_sr));
+        uint32x4_t wrap = vcgtq_f32(perc->phase[i], two_pi);
+        perc->phase[i] = vbslq_f32(wrap, vsubq_f32(perc->phase[i], two_pi), perc->phase[i]);
     }
 
-    // Generate modulator signals
+    // 4. Modulators decay rapidly (env2) so the tail is a pure sine wave (drum body)
     float32x4_t mod1 = neon_sin(perc->phase[1]);
     float32x4_t mod2 = neon_sin(perc->phase[2]);
 
-    // Complex modulation: carrier modulated by both modulators
-    float32x4_t modulation = vaddq_f32(vmulq_f32(mod1, envelope),
-                                       vmulq_f32(mod2, vmulq_f32(envelope, envelope)));
+    float32x4_t modulation = vaddq_f32(vmulq_f32(mod1, env2),
+                                       vmulq_f32(mod2, vmulq_f32(env4, perc->variation)));
 
-    float32x4_t modulated_phase = vaddq_f32(perc->phase[0],
-                                           vmulq_f32(modulation, envelope));
-
+    float32x4_t modulated_phase = vaddq_f32(perc->phase[0], vmulq_n_f32(modulation, 2.0f));
     float32x4_t output = neon_sin(modulated_phase);
 
-    // Apply envelope and mask
+    // Apply main envelope
     output = vmulq_f32(output, envelope);
-    output = vbslq_f32(active_mask,
-                       output, vdupq_n_f32(0.0f));
-
-    return output;
+    return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
 
 // ========== UNIT TEST ==========

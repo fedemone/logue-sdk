@@ -480,6 +480,50 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // =================================================================
     float32x4_t lfo1, lfo2;
     lfo_enhanced_process(&synth->lfo, &lfo1, &lfo2);
+    bool lfo_pitch_modulation = false;
+    // 2. Calculate LFO Modulations
+    float32x4_t pitch_octaves = vdupq_n_f32(0.0f);
+    float32x4_t index_add     = vdupq_n_f32(0.0f);
+
+    // =================================================================
+    // Apply LFO modulations to pitch (target 1)
+    // =================================================================
+    if (synth->lfo.target1 == LFO_TARGET_PITCH || synth->lfo.target2 == LFO_TARGET_PITCH) {
+        float32x4_t mod = (synth->lfo.target1 == LFO_TARGET_PITCH) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_PITCH) ? synth->lfo.depth1 : synth->lfo.depth2;
+        // +/- 2 Octaves maximum depth
+        pitch_octaves = vaddq_f32(pitch_octaves, vmulq_f32(mod, vmulq_n_f32(depth, 2.0f)));
+        lfo_pitch_modulation = true;
+    }
+    if (synth->lfo.target1 == LFO_TARGET_INDEX || synth->lfo.target2 == LFO_TARGET_INDEX) {
+        float32x4_t mod = (synth->lfo.target1 == LFO_TARGET_INDEX) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_INDEX) ? synth->lfo.depth1 : synth->lfo.depth2;
+        index_add = vaddq_f32(index_add, vmulq_f32(mod, depth));
+        lfo_pitch_modulation = true;
+    }
+    if (lfo_pitch_modulation) {
+        // 3. Inject Audio-Rate Pitch Modulation (Exponential)
+        // We base this on 'synth->voices.note_freq' so the base tuning never drifts
+        float32x4_t lfo_pitch_mult = exp2_neon(pitch_octaves);
+        float32x4_t modded_freq = vmulq_f32(synth->voices.note_freq, lfo_pitch_mult);
+
+        synth->kick.carrier_freq_base   = modded_freq;
+        synth->metal.carrier_freq_base  = modded_freq;
+        synth->snare.carrier_freq_base  = modded_freq;
+        synth->perc.freq_base           = modded_freq;
+        synth->resonant.f0              = modded_freq;
+
+        // 4. Inject Audio-Rate Index Modulation
+        // Add LFO to param2 (which controls index/decay universally) and clamp to [0,1]
+        float32x4_t modded_param2 = vaddq_f32(synth->voices.param2, index_add);
+        modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
+
+        // Update all engines with the modulated param2
+        kick_engine_update(&synth->kick, synth->voices.param1, modded_param2);
+        snare_engine_update(&synth->snare, synth->voices.param1, modded_param2);
+        metal_engine_update(&synth->metal, synth->voices.param1, modded_param2);
+        perc_engine_update(&synth->perc, synth->voices.param1, modded_param2);
+    }
 
     // =================================================================
     // Apply LFO modulations to envelope (target 3)
@@ -583,9 +627,11 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     float32x4_t resonant_out = resonant_synth_process(&synth->resonant,
                                                        synth->engine_mask[ENGINE_RESONANT]);
 
-    // FIX: The resonant engine doesn't process the envelope internally like the FM engines do.
+    // OLD: The resonant engine doesn't process the envelope internally like the FM engines do.
     // We must manually scale its output by the envelope here before mixing!
-    resonant_out = vmulq_f32(resonant_out, env);
+    // NEW: LINE DELETED so the filter's tail is not cut off, as we do use env
+    // directly for sound triggering in stead of continuous sine wave to be shaped by env
+    // resonant_out = vmulq_f32(resonant_out, env);
 
     // =================================================================
     // Mix all engines, then apply per-voice velocity scaling

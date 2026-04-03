@@ -109,81 +109,48 @@ fast_inline void metal_engine_set_note(metal_engine_t* metal,
 }
 
 /**
- * Process one sample of metal engine
- * All 4 operators modulate each other
+ * Process one sample of metal engine. All 4 operators modulate each other.
+ * Instead of mixing the operators together, this algorithm feeds them into each other
+ * in a chaotic cascade. Crucially, it applies staggered, progressively faster envelopes
+ * to the higher modulators so the initial metallic "clash" naturally decays into a smooth,
+ * ringing fundamental.
  */
-fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
-                                             float32x4_t envelope,
-                                             uint32x4_t active_mask) {
-    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI / 48000.0f);
-    float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
+fast_inline float32x4_t metal_engine_process(metal_engine_t* metal, float32x4_t envelope, uint32x4_t active_mask) {
+    float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
+    float32x4_t two_pi_over_sr = vdupq_n_f32(6.28318530718f / 48000.0f);
 
-    // Calculate frequencies for all operators
-    float32x4_t freq[4];
+    // 1. Advance all 4 phases using their inharmonic ratios
     for (int i = 0; i < 4; i++) {
-        freq[i] = vmulq_f32(metal->carrier_freq_base, metal->current_ratio[i]);
-    }
-
-    // Update phases
-    for (int i = 0; i < 4; i++) {
-        float32x4_t inc = vmulq_f32(freq[i], two_pi_over_sr);
+        float32x4_t freq = vmulq_f32(metal->carrier_freq_base, metal->current_ratio[i]);
+        float32x4_t inc = vmulq_f32(freq, two_pi_over_sr);
         metal->phase[i] = vaddq_f32(metal->phase[i], inc);
 
-        // Wrap
-        uint32x4_t wrap = vcgeq_f32(metal->phase[i], two_pi);
-        metal->phase[i] = vbslq_f32(wrap,
-                                    vsubq_f32(metal->phase[i], two_pi),
-                                    metal->phase[i]);
+        uint32x4_t wrap = vcgtq_f32(metal->phase[i], two_pi);
+        metal->phase[i] = vbslq_f32(wrap, vsubq_f32(metal->phase[i], two_pi), metal->phase[i]);
     }
 
-    // Complex modulation network:
-    // op1 out -> mod op2
-    // op2 out -> mod op3
-    // op3 out -> mod op4
-    // op4 out -> mod op1 (feedback)
+    // 2. Staggered envelopes for realistic cymbal decay
+    float32x4_t env2 = vmulq_f32(envelope, envelope);
+    float32x4_t env4 = vmulq_f32(env2, env2);
+    float32x4_t env8 = vmulq_f32(env4, env4); // Dies incredibly fast
 
-    float32x4_t op_out[4];
+    // 3. Cascaded FM (Op3 -> Op2 -> Op1 -> Carrier)
+    float32x4_t index = vmulq_n_f32(metal->brightness, 4.0f);
 
-    // First pass with initial phases
-    for (int i = 0; i < 4; i++) {
-        op_out[i] = neon_sin(metal->phase[i]);
-    }
+    float32x4_t op3 = neon_sin(metal->phase[3]);
+    float32x4_t mod3 = vmulq_f32(op3, vmulq_f32(index, env8));
 
-    // Apply modulation (simplified - just cross-modulate)
-    float32x4_t mod_index = vmulq_f32(envelope, metal->brightness);
+    float32x4_t op2 = neon_sin(vaddq_f32(metal->phase[2], mod3));
+    float32x4_t mod2 = vmulq_f32(op2, vmulq_f32(index, env4));
 
-    // Op1 modulated by Op4
-    float32x4_t phase1_mod = vaddq_f32(metal->phase[0],
-                                       vmulq_f32(op_out[3], mod_index));
-    op_out[0] = neon_sin(phase1_mod);
+    float32x4_t op1 = neon_sin(vaddq_f32(metal->phase[1], mod2));
+    float32x4_t mod1 = vmulq_f32(op1, vmulq_f32(index, env2));
 
-    // Op2 modulated by Op1
-    float32x4_t phase2_mod = vaddq_f32(metal->phase[1],
-                                       vmulq_f32(op_out[0], mod_index));
-    op_out[1] = neon_sin(phase2_mod);
+    float32x4_t op0 = neon_sin(vaddq_f32(metal->phase[0], mod1));
 
-    // Op3 modulated by Op2
-    float32x4_t phase3_mod = vaddq_f32(metal->phase[2],
-                                       vmulq_f32(op_out[1], mod_index));
-    op_out[2] = neon_sin(phase3_mod);
-
-    // Op4 modulated by Op3
-    float32x4_t phase4_mod = vaddq_f32(metal->phase[3],
-                                       vmulq_f32(op_out[2], mod_index));
-    op_out[3] = neon_sin(phase4_mod);
-
-    // Mix all operators (with brightness controlling high operators)
-    float32x4_t output = vmulq_f32(op_out[0], vdupq_n_f32(0.25f));
-    output = vmlaq_f32(output, op_out[1], vmulq_f32(metal->brightness, vdupq_n_f32(0.25f)));
-    output = vmlaq_f32(output, op_out[2], vmulq_f32(metal->brightness, vdupq_n_f32(0.3f)));
-    output = vmlaq_f32(output, op_out[3], vmulq_f32(metal->brightness, vdupq_n_f32(0.4f)));
-
-    // Apply envelope and mask
-    output = vmulq_f32(output, envelope);
-    output = vbslq_f32(active_mask,
-                       output, vdupq_n_f32(0.0f));
-
-    return output;
+    // 4. Output is the final carrier heavily enveloped
+    float32x4_t output = vmulq_f32(op0, envelope);
+    return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
 
 // ========== UNIT TEST ==========
