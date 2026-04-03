@@ -930,6 +930,11 @@ public:
     inline void GateOff() {
         // The internal Drumlogue sequencer releases the UI note
         NoteOff(m_ui_note);
+
+        // Reset the voice allocator so the next chord/strike starts at Voice 0.
+        // Because NoteOn pre-increments, setting it to (NUM_VOICES - 1) ensures
+        // the next NoteOn will wrap exactly to index 0.
+        state.next_voice_idx = NUM_VOICES - 1;
     }
 
     inline void AllNoteOff() {
