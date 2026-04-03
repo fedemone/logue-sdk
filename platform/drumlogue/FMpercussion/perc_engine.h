@@ -68,6 +68,21 @@ fast_inline void perc_engine_update(perc_engine_t* perc,
 }
 
 /**
+ * Update perc engine just second parameter
+ */
+fast_inline void perc_engine_update2(perc_engine_t* perc,
+                                     float32x4_t index_add,
+                                     float32x4_t param2) { // Variation
+
+    float32x4_t modded_param2 = vaddq_f32(perc->variation, index_add);
+    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
+    perc->var_param = modded_param2;
+
+    // Map param2 to variation amount
+    perc->variation = vmulq_f32(param2, vdupq_n_f32(PERC_VARIATION_MAX));
+}
+
+/**
  * Set MIDI note (tunable percussion)
  */
 fast_inline void perc_engine_set_note(perc_engine_t* perc,
@@ -92,7 +107,7 @@ fast_inline void perc_engine_set_note(perc_engine_t* perc,
  * Process one sample of perc engine
  */
 fast_inline float32x4_t perc_engine_process(perc_engine_t* perc, float32x4_t envelope, uint32x4_t active_mask) {
-    float32x4_t two_pi_over_sr = vdupq_n_f32(6.28318530718f / 48000.0f);
+    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
     float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
 
     // 1. Sharp envelopes for transient FM impact

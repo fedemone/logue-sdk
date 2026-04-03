@@ -87,6 +87,18 @@ fast_inline void metal_engine_update(metal_engine_t* metal,
 }
 
 /**
+ * Update metal engine second parameter
+ */
+fast_inline void metal_engine_update(metal_engine_t* metal,
+                                     float32x4_t index_add,
+                                     float32x4_t param2) { // Brightness
+
+    float32x4_t modded_param2 = vaddq_f32(metal->brightness, index_add);
+    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
+    metal->brightness = modded_param2;
+}
+
+/**
  * Set MIDI note (affects all operators proportionally)
  */
 fast_inline void metal_engine_set_note(metal_engine_t* metal,
@@ -117,7 +129,7 @@ fast_inline void metal_engine_set_note(metal_engine_t* metal,
  */
 fast_inline float32x4_t metal_engine_process(metal_engine_t* metal, float32x4_t envelope, uint32x4_t active_mask) {
     float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
-    float32x4_t two_pi_over_sr = vdupq_n_f32(6.28318530718f / 48000.0f);
+    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
 
     // 1. Advance all 4 phases using their inharmonic ratios
     for (int i = 0; i < 4; i++) {

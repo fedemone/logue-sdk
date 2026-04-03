@@ -76,7 +76,7 @@ typedef struct {
     uint8_t params[PARAM_TOTAL];
 
     // Voice allocation
-    uint8_t voice_engine[VOICE_ALLOC_MAX];        // Engine type for each voice (0-4)
+    uint8_t voice_engine[VOICE_ALLOC_MAX];  // Engine type for each voice (0-4)
     uint8_t allocation_idx;         // Current allocation (0-11)
 
     // Masks for efficient NEON processing
@@ -493,15 +493,6 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_PITCH) ? synth->lfo.depth1 : synth->lfo.depth2;
         // +/- 2 Octaves maximum depth
         pitch_octaves = vaddq_f32(pitch_octaves, vmulq_f32(mod, vmulq_n_f32(depth, 2.0f)));
-        lfo_pitch_modulation = true;
-    }
-    if (synth->lfo.target1 == LFO_TARGET_INDEX || synth->lfo.target2 == LFO_TARGET_INDEX) {
-        float32x4_t mod = (synth->lfo.target1 == LFO_TARGET_INDEX) ? lfo1 : lfo2;
-        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_INDEX) ? synth->lfo.depth1 : synth->lfo.depth2;
-        index_add = vaddq_f32(index_add, vmulq_f32(mod, depth));
-        lfo_pitch_modulation = true;
-    }
-    if (lfo_pitch_modulation) {
         // 3. Inject Audio-Rate Pitch Modulation (Exponential)
         // We base this on 'synth->voices.note_freq' so the base tuning never drifts
         float32x4_t lfo_pitch_mult = exp2_neon(pitch_octaves);
@@ -512,17 +503,19 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         synth->snare.carrier_freq_base  = modded_freq;
         synth->perc.freq_base           = modded_freq;
         synth->resonant.f0              = modded_freq;
+    }
+
+    if (synth->lfo.target1 == LFO_TARGET_INDEX || synth->lfo.target2 == LFO_TARGET_INDEX) {
+        float32x4_t mod = (synth->lfo.target1 == LFO_TARGET_INDEX) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_INDEX) ? synth->lfo.depth1 : synth->lfo.depth2;
+        index_add = vaddq_f32(index_add, vmulq_f32(mod, depth));
 
         // 4. Inject Audio-Rate Index Modulation
         // Add LFO to param2 (which controls index/decay universally) and clamp to [0,1]
-        float32x4_t modded_param2 = vaddq_f32(synth->voices.param2, index_add);
-        modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
-
-        // Update all engines with the modulated param2
-        kick_engine_update(&synth->kick, synth->voices.param1, modded_param2);
-        snare_engine_update(&synth->snare, synth->voices.param1, modded_param2);
-        metal_engine_update(&synth->metal, synth->voices.param1, modded_param2);
-        perc_engine_update(&synth->perc, synth->voices.param1, modded_param2);
+        kick_engine_update2(&synth->kick, index_add, modded_param2);
+        snare_engine_update2(&synth->snare, index_add, modded_param2);
+        metal_engine_update2(&synth->metal, index_add, modded_param2);
+        perc_engine_update2(&synth->perc, index_add, modded_param2);
     }
 
     // =================================================================
@@ -624,7 +617,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                   synth->engine_mask[ENGINE_METAL]);
     float32x4_t perc_out = perc_engine_process(&synth->perc, env,
                                                 synth->engine_mask[ENGINE_PERC]);
-    float32x4_t resonant_out = resonant_synth_process(&synth->resonant,
+    float32x4_t resonant_out = resonant_synth_process(&synth->resonant, env,
                                                        synth->engine_mask[ENGINE_RESONANT]);
 
     // OLD: The resonant engine doesn't process the envelope internally like the FM engines do.

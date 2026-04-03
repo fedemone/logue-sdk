@@ -61,6 +61,20 @@ fast_inline void kick_engine_update(kick_engine_t* kick,
 }
 
 /**
+ * Update kick engine parameters from UI
+ */
+fast_inline void kick_engine_update2(kick_engine_t* kick,
+                                     float32x4_t index_add,
+                                     float32x4_t param2) { // Decay shape
+                                        
+    float32x4_t modded_param2 = vaddq_f32(kick->decay_shape, index_add);
+    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
+
+    // Param2: 0-1 maps to decay curve (0=linear, 1=exponential)
+    kick->decay_shape = modded_param2;
+}
+
+/**
  * Set MIDI note for kick (all voices may have different notes)
  */
 fast_inline void kick_engine_set_note(kick_engine_t* kick,
@@ -113,7 +127,7 @@ fast_inline float32x4_t kick_engine_process(kick_engine_t* kick, float32x4_t env
     float32x4_t current_mod_freq = vmulq_f32(current_carrier_freq, kick->mod_ratio);
 
     // 3. Convert Hz to phase increments
-    float32x4_t two_pi_over_sr = vdupq_n_f32(6.28318530718f / 48000.0f);
+    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
     float32x4_t carrier_inc = vmulq_f32(current_carrier_freq, two_pi_over_sr);
     float32x4_t mod_inc     = vmulq_f32(current_mod_freq, two_pi_over_sr);
 

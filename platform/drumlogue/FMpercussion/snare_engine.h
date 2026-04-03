@@ -88,6 +88,17 @@ fast_inline void snare_engine_update(snare_engine_t* snare,
 }
 
 /**
+ * Update snare engine second parameter
+ */
+fast_inline void snare_engine_update(snare_engine_t* snare,
+                                     float32x4_t index_add,
+                                     float32x4_t param2) { // Body resonance
+    float32x4_t modded_param2 = vaddq_f32(metal->brightness, index_add);
+    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
+    snare->body_resonance = modded_param2;
+}
+
+/**
  * Set MIDI note for snare
  */
 fast_inline void snare_engine_set_note(snare_engine_t* snare,
@@ -143,7 +154,7 @@ fast_inline float32x4_t snare_generate_noise(snare_engine_t* snare) {
 /**
  * Process one sample of snare engine
  */
-fast_inline float32x4_t fast_inline float32x4_t snare_engine_process(snare_engine_t* snare, float32x4_t envelope, uint32x4_t active_mask) {
+fast_inline float32x4_t snare_engine_process(snare_engine_t* snare, float32x4_t envelope, uint32x4_t active_mask) {
     // 1. Differential Envelopes (Body decays faster than Noise)
     float32x4_t env2 = vmulq_f32(envelope, envelope);
     float32x4_t env4 = vmulq_f32(env2, env2);
@@ -156,7 +167,7 @@ fast_inline float32x4_t fast_inline float32x4_t snare_engine_process(snare_engin
     float32x4_t current_mod_freq = vmulq_f32(current_carrier_freq, snare->mod_ratio);
 
     // 3. Advance Phases
-    float32x4_t two_pi_over_sr = vdupq_n_f32(6.28318530718f / 48000.0f);
+    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
     float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
 
     snare->carrier_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(current_carrier_freq, two_pi_over_sr));
@@ -168,7 +179,7 @@ fast_inline float32x4_t fast_inline float32x4_t snare_engine_process(snare_engin
     snare->modulator_phase = vbslq_f32(wrap_m, vsubq_f32(snare->modulator_phase, two_pi), snare->modulator_phase);
 
     // 4. FM Synthesis (Index scales with fast env2 so harmonics die out)
-    float32x4_t index = vmulq_f32(snare->body_reso, vmulq_n_f32(env2, 4.0f));
+    float32x4_t index = vmulq_f32(snare->body_resonance, vmulq_n_f32(env2, 4.0f));
     float32x4_t modulator = neon_sin(snare->modulator_phase);
     float32x4_t modulated_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(modulator, index));
     float32x4_t tone = neon_sin(modulated_phase);
