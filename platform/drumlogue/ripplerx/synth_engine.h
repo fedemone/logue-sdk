@@ -295,7 +295,7 @@ public:
         static const int32_t presets[k_NumPrograms][k_lastParamIndex] = {
         //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
         //                            ÷10                           ÷10                                                              ÷10
-            { 0,  60,   0,   1,   500,  250,  0,   0,     3, 0,   25,  10,    0,  26, 10,   300,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0: Init
+            { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0: InitDbg — pure KS string, no coupling, no sample
             { 1,  60,   0,   1,   800,  175,  0,   0,     3, 6,  120,  -5,    0,  50,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1: Marimba
             { 2,  36,   0,   1,   100,   50,  0,   0,     3, 5,  105, -10,    0,  50, 15,    10,     1,   5, 150,    0, 300,  0,   100, 707}, // 2: 808 Sub
             { 3,  38,   0,   1,   400,  300,  0,   0,     3, 5,   15,  15,    0,  20,  8,   500,    15,   5,  50,   80, 500,  2,   800, 707}, // 3: Ac Snare       NzMix 800→80

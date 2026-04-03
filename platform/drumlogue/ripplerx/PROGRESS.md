@@ -1,5 +1,101 @@
 # Project Status Tracker
 
+---
+
+## TODO LIST
+
+### New presets (when physical model is stable and reliable)
+- **Gamelan** — inharmonic metallic bar, long sustain, multiple coupled overtones
+- **Bell** — high InHm, long Dkay, bright material (Mterl≈25), tight mallet
+- **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
+- **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
+- **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
+  *(user can supply parameter values from original RipplerX project)*
+
+### Project rename: RipplerX → Brachetti
+In honour of Italian performer Arturo Brachetti. When the model is settled:
+- Rename all files: `ripplerx*` → `brachetti*`
+- Rename project identifier in `config.mk`, `header.c`, `Makefile`
+- Rename the C++ class `RipplerXWaveguide` → `BrachettiWaveguide`
+- Update all comments and documentation
+- Create a new GitHub repo / branch named accordingly
+
+### Outstanding hardware investigations (deferred)
+- **Marimba audio crash** — one note plays then silence; likely energy runaway from
+  coupling + feedback gain combination. Investigate `feedback_gain` vs LP coeff stability.
+- **Release / HitPos no audible effect** — `k_paramRel` controls noise burst release only,
+  not the waveguide. `HitPos` (mix_ab) only matters when ResB is active. Both correct by
+  design but need clearer UI labels or documentation.
+- **PCM sample beats** — whether the remaining beat after Smp=0 fix comes from sample
+  content or another source; can wait until clean pure-waveguide sound is validated.
+
+---
+
+## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]
+
+Hardware test with Phase 21 build confirmed Phase 21 loaded ("InitDbg" shown).
+Beating root cause diagnosed from hardware observation. **82/82 tests pass.**
+
+### Hardware Observations (Phase 21 build)
+
+| Action | Result |
+|--------|--------|
+| InitDbg shown on display | Phase 21 build confirmed loaded ✓ |
+| 20 presses, same velocity | Consistent amplitude — progressive silence fixed ✓ |
+| Partls → 16 (Ptls=2) | Beating almost gone |
+| Partls → 8 or lower (Ptls=0/1) | Clean "stringy" Karplus-Strong sound ✓ |
+| Partls → 64 (Ptls=4) | Beating stronger and longer |
+| Changing sample | Little effect — sample contribution minor |
+| Model: open/closed tube | Phase inversion audible — working |
+| Other models | Subtle difference only |
+| Tone / noise parameters | Working correctly |
+| Marimba preset | One sound then silence (audio crash — TODO) |
+| Release / HitPos | No audible effect (TODO) |
+
+### Root Cause: Coupling Splits Normal Mode Frequencies
+
+**Physics:** `Partls` sets `coupling_depth = Ptls / 4.0`. When `coupling_depth > 0`, ResB
+receives `exciter + coupling × ResA_output`. Two coupled oscillators at the same nominal
+frequency f₀ split into two normal modes at `f₀ ± δf`, where δf ∝ coupling strength.
+This beat against each other at rate `2δf`.
+
+**Observation mapping:**
+- Ptls=0 (coupling=0.00): ResB disabled, pure single Karplus-Strong → no beating ✓
+- Ptls=1 (coupling=0.25): ResB enabled but low coupling → very slow beats
+- Ptls=2 (coupling=0.50): moderate coupling → "almost gone" beating ✓ (user observed)
+- Ptls=3 (coupling=0.75): Init preset — significant beating ✗
+- Ptls=4 (coupling=1.00): strong coupling → "longer and stronger" beating ✓ (user observed)
+
+**Design rule established:**
+- Single-resonator instruments (strings, tubes, bars): `Ptls=0`. Coupling=0. ResB disabled.
+- Dual-resonator instruments (membranes, bells): `Ptls≥2` AND ResA/ResB at *different*
+  delay lengths (different model types or explicit detuning). Coupling between different
+  frequencies is physically meaningful; coupling between identical frequencies is not.
+
+### Fix: InitDbg preset corrected to pure Karplus-Strong
+
+Changed Init (preset 0) to be a clean single-resonator reference:
+
+| Param | Old | New | Reason |
+|-------|-----|-----|--------|
+| Smp   |  1  |  0  | No PCM sample — pure waveguide only |
+| MlSt  | 250 | 500 | Max mallet stiffness → sharp, bright pluck |
+| Ptls  |  3  |  0  | Remove coupling; disable ResB |
+| Hit   | 26  |  0  | Full ResA output (HitPos=0 when ResB disabled) |
+| InHm  | 300 |  0  | No allpass inharmonicity — pure KS reference |
+
+Expected hardware result: clean plucked string at C4 (261 Hz), short decay (~190 ms),
+no beating, no sample sound. Every press identical amplitude.
+
+### Hardware Validation Sequence (Phase 22 build)
+
+1. **InitDbg** → press once → hear clean plucked "ting" at C4, ~190 ms, no beats
+2. **Change Partls to 3 (32 partials)** → beating should reappear (confirms diagnosis)
+3. **Change Partls back to 0** → beats disappear again
+4. **GtrStr (preset 28)** → A4 string, ~3.3 s sustain, no beats, no sample
+
+---
+
 ## Phase 21: Voice Allocator Reset, Sample-Skip Bug, GtrStr Preset Fix [COMPLETED]
 
 Hardware re-test (Phase 20 build on RipplerX2 branch) still showed progressive silence.
