@@ -127,41 +127,48 @@ fast_inline void metal_engine_set_note(metal_engine_t* metal,
  * to the higher modulators so the initial metallic "clash" naturally decays into a smooth,
  * ringing fundamental.
  */
-fast_inline float32x4_t metal_engine_process(metal_engine_t* metal, float32x4_t envelope, uint32x4_t active_mask) {
-    float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
+fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
+                                             float32x4_t envelope,
+                                             uint32x4_t active_mask,
+                                             float32x4_t lfo_pitch_mult,
+                                             float32x4_t lfo_index_add) {
     float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
+    float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
 
-    // 1. Advance all 4 phases using their inharmonic ratios
-    for (int i = 0; i < 4; i++) {
-        float32x4_t freq = vmulq_f32(metal->carrier_freq_base, metal->current_ratio[i]);
-        float32x4_t inc = vmulq_f32(freq, two_pi_over_sr);
-        metal->phase[i] = vaddq_f32(metal->phase[i], inc);
+    // 1. Apply LFO Pitch Modulation
+    float32x4_t base_freq = vmulq_f32(metal->carrier_freq_base, lfo_pitch_mult);
 
-        uint32x4_t wrap = vcgtq_f32(metal->phase[i], two_pi);
+    // 2. Advance all 4 phases
+    for (int i = 0; i < NEON_LANES; i++) {
+        float32x4_t freq = vmulq_f32(base_freq, metal->current_ratio[i]);
+        metal->phase[i] = vaddq_f32(metal->phase[i], vmulq_f32(freq, two_pi_over_sr));
+        uint32x4_t wrap = vcgeq_f32(metal->phase[i], two_pi);
         metal->phase[i] = vbslq_f32(wrap, vsubq_f32(metal->phase[i], two_pi), metal->phase[i]);
     }
 
-    // 2. Staggered envelopes for realistic cymbal decay
+    // 3. Staggered Envelopes for Acoustic Dissipation
     float32x4_t env2 = vmulq_f32(envelope, envelope);
     float32x4_t env4 = vmulq_f32(env2, env2);
-    float32x4_t env8 = vmulq_f32(env4, env4); // Dies incredibly fast
 
-    // 3. Cascaded FM (Op3 -> Op2 -> Op1 -> Carrier)
-    float32x4_t index = vmulq_n_f32(metal->brightness, 4.0f);
+    // 4. Cascaded FM Synthesis
+    float32x4_t base_index = vaddq_f32(metal->brightness, lfo_index_add);
+    float32x4_t index_high = vmulq_n_f32(base_index, 3.0f);
 
-    float32x4_t op3 = neon_sin(metal->phase[3]);
-    float32x4_t mod3 = vmulq_f32(op3, vmulq_f32(index, env8));
+    // Op4 -> Modulates Op3 (Dies very fast - env4)
+    float32x4_t op4 = neon_sin(metal->phase[3]);
+    float32x4_t phase3_mod = vaddq_f32(metal->phase[2], vmulq_f32(op4, vmulq_f32(index_high, env4)));
+    float32x4_t op3 = neon_sin(phase3_mod);
 
-    float32x4_t op2 = neon_sin(vaddq_f32(metal->phase[2], mod3));
-    float32x4_t mod2 = vmulq_f32(op2, vmulq_f32(index, env4));
+    // Op3 -> Modulates Op2 (Dies moderately fast - env2)
+    float32x4_t phase2_mod = vaddq_f32(metal->phase[1], vmulq_f32(op3, vmulq_f32(base_index, env2)));
+    float32x4_t op2 = neon_sin(phase2_mod);
 
-    float32x4_t op1 = neon_sin(vaddq_f32(metal->phase[1], mod2));
-    float32x4_t mod1 = vmulq_f32(op1, vmulq_f32(index, env2));
+    // Op2 -> Modulates Op1 (Sustains with normal envelope)
+    float32x4_t phase1_mod = vaddq_f32(metal->phase[0], vmulq_f32(op2, vmulq_f32(base_index, envelope)));
+    float32x4_t op1 = neon_sin(phase1_mod);
 
-    float32x4_t op0 = neon_sin(vaddq_f32(metal->phase[0], mod1));
-
-    // 4. Output is the final carrier heavily enveloped
-    float32x4_t output = vmulq_f32(op0, envelope);
+    // Output is purely the fundamental carrier (Op1) enveloped
+    float32x4_t output = vmulq_f32(op1, envelope);
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
 

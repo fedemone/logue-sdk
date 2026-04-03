@@ -66,7 +66,7 @@ fast_inline void kick_engine_update(kick_engine_t* kick,
 fast_inline void kick_engine_update2(kick_engine_t* kick,
                                      float32x4_t index_add,
                                      float32x4_t param2) { // Decay shape
-                                        
+
     float32x4_t modded_param2 = vaddq_f32(kick->decay_shape, index_add);
     modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
 
@@ -109,48 +109,48 @@ fast_inline void kick_engine_set_note(kick_engine_t* kick,
  * Process one sample of kick engine
  * Returns audio output for all 4 voices
  */
-fast_inline float32x4_t kick_engine_process(kick_engine_t* kick, float32x4_t envelope, uint32x4_t active_mask) {
-    // 1. Snappy exponential envelopes for the transient "Click/Thump"
-    // Squaring the envelope twice (env^4) creates a lightning-fast decay curve
-    float32x4_t sweep_env = vmulq_f32(envelope, envelope);
-    sweep_env = vmulq_f32(sweep_env, sweep_env);
+fast_inline float32x4_t kick_engine_process(kick_engine_t* kick,
+                                            float32x4_t envelope,
+                                            uint32x4_t active_mask,
+                                            float32x4_t lfo_pitch_mult,
+                                            float32x4_t lfo_index_add) {
+    // 1. Exponential fast-envelope for the pitch sweep (env^4)
+    float32x4_t env2 = vmulq_f32(envelope, envelope);
+    float32x4_t env4 = vmulq_f32(env2, env2);
 
-    // 2. Exponential Pitch Sweep (The "THUMP")
-    // sweep_depth controls how many octaves the pitch drops (up to 4 octaves)
-    float32x4_t sweep_octaves = vmulq_n_f32(kick->sweep_depth, 4.0f);
-    float32x4_t current_octaves = vmulq_f32(sweep_octaves, sweep_env);
-
+    // 2. The Pitch Drop: Starts HIGH and drops down to the base frequency.
+    // kick->sweep_depth controls how many octaves it drops.
+    float32x4_t sweep_octaves = vmulq_f32(kick->sweep_depth, vmulq_n_f32(env4, KICK_SWEEP_OCTAVES));
     // exp2_neon converts octaves into a frequency multiplier (e.g., 4 octaves = 16x frequency)
-    float32x4_t pitch_mult = exp2_neon(current_octaves);
+    float32x4_t pitch_drop_mult = exp2_neon(sweep_octaves);
 
-    float32x4_t current_carrier_freq = vmulq_f32(kick->carrier_freq_base, pitch_mult);
-    float32x4_t current_mod_freq = vmulq_f32(current_carrier_freq, kick->mod_ratio);
+    // Apply pitch drop AND the global LFO pitch modulation
+    float32x4_t total_pitch_mult = vmulq_f32(pitch_drop_mult, lfo_pitch_mult);
+    float32x4_t carrier_freq = vmulq_f32(kick->carrier_freq_base, total_pitch_mult);
+    float32x4_t mod_freq = vmulq_f32(carrier_freq, kick->mod_ratio);
 
-    // 3. Convert Hz to phase increments
+    // Convert Hz to phase increments
     float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
-    float32x4_t carrier_inc = vmulq_f32(current_carrier_freq, two_pi_over_sr);
-    float32x4_t mod_inc     = vmulq_f32(current_mod_freq, two_pi_over_sr);
+    kick->carrier_phase = vaddq_f32(kick->carrier_phase, vmulq_f32(carrier_freq, two_pi_over_sr));
+    kick->modulator_phase = vaddq_f32(kick->modulator_phase, vmulq_f32(mod_freq, two_pi_over_sr));
 
-    // 4. Update phases with wrapping
-    float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
+    // Wrap phases
+    float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
+    uint32x4_t c_wrap = vcgeq_f32(kick->carrier_phase, two_pi);
+    uint32x4_t m_wrap = vcgeq_f32(kick->modulator_phase, two_pi);
+    kick->carrier_phase = vbslq_f32(c_wrap, vsubq_f32(kick->carrier_phase, two_pi), kick->carrier_phase);
+    kick->modulator_phase = vbslq_f32(m_wrap, vsubq_f32(kick->modulator_phase, two_pi), kick->modulator_phase);
 
-    kick->carrier_phase = vaddq_f32(kick->carrier_phase, carrier_inc);
-    uint32x4_t wrap_c = vcgtq_f32(kick->carrier_phase, two_pi);
-    kick->carrier_phase = vbslq_f32(wrap_c, vsubq_f32(kick->carrier_phase, two_pi), kick->carrier_phase);
+    // FM Index with UI Decay Shape + LFO modulation
+    float32x4_t shape_factor = vmulq_f32(kick->decay_shape, envelope);
+    float32x4_t index = vmulq_f32(envelope, vaddq_f32(vdupq_n_f32(1.0f), shape_factor));
+    index = vaddq_f32(index, lfo_index_add); // Add LFO index mod
 
-    kick->modulator_phase = vaddq_f32(kick->modulator_phase, mod_inc);
-    uint32x4_t wrap_m = vcgtq_f32(kick->modulator_phase, two_pi);
-    kick->modulator_phase = vbslq_f32(wrap_m, vsubq_f32(kick->modulator_phase, two_pi), kick->modulator_phase);
-
-    // 5. Transient FM Index (Decay shape controls how long the FM click lasts)
-    float32x4_t index = vmulq_f32(kick->decay_shape, vmulq_n_f32(sweep_env, 5.0f));
-
-    // 6. Generate sine waves
     float32x4_t modulator = neon_sin(kick->modulator_phase);
     float32x4_t modulated_phase = vaddq_f32(kick->carrier_phase, vmulq_f32(modulator, index));
     float32x4_t output = neon_sin(modulated_phase);
 
-    // 7. Apply main amplitude envelope and gate mask
+    // Output
     output = vmulq_f32(output, envelope);
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }

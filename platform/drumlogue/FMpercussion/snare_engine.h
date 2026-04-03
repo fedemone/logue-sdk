@@ -67,7 +67,9 @@ fast_inline void snare_engine_init(snare_engine_t* snare) {
     snare->carrier_phase = vdupq_n_f32(0.0f);
     snare->modulator_phase = vdupq_n_f32(0.0f);
     snare->carrier_freq_base = vdupq_n_f32(SNARE_CARRIER_BASE);
-    snare->mod_ratio = vdupq_n_f32(2.0f);
+    // Change this from 2.0f (an octave) to 1.414f (square root of 2, a tritone)
+    // This creates dissonant, metallic bell-tones perfect for a snare shell!
+    snare->mod_ratio = vdupq_n_f32(1.414f);
 
     snare->noise_hpf.z1 = vdupq_n_f32(0.0f);
     snare->noise_lpf.z1 = vdupq_n_f32(0.0f);
@@ -154,47 +156,51 @@ fast_inline float32x4_t snare_generate_noise(snare_engine_t* snare) {
 /**
  * Process one sample of snare engine
  */
-fast_inline float32x4_t snare_engine_process(snare_engine_t* snare, float32x4_t envelope, uint32x4_t active_mask) {
-    // 1. Differential Envelopes (Body decays faster than Noise)
+fast_inline float32x4_t snare_engine_process(snare_engine_t* snare,
+                                             float32x4_t envelope,
+                                             uint32x4_t active_mask,
+                                             float32x4_t lfo_pitch_mult,
+                                             float32x4_t lfo_index_add) {
+    // 1. Staggered Envelopes (The Body must decay much faster than the Noise)
     float32x4_t env2 = vmulq_f32(envelope, envelope);
     float32x4_t env4 = vmulq_f32(env2, env2);
 
-    // 2. The "Crack" - 1.5 Octave fast pitch sweep for the stick impact
-    float32x4_t sweep_octaves = vmulq_n_f32(vdupq_n_f32(1.5f), env4);
-    float32x4_t pitch_mult = exp2_neon(sweep_octaves);
+    // 2. Apply LFO Pitch Modulation
+    float32x4_t carrier_freq = vmulq_f32(snare->carrier_freq_base, lfo_pitch_mult);
+    float32x4_t mod_freq = vmulq_f32(carrier_freq, snare->mod_ratio);
 
-    float32x4_t current_carrier_freq = vmulq_f32(snare->carrier_freq_base, pitch_mult);
-    float32x4_t current_mod_freq = vmulq_f32(current_carrier_freq, snare->mod_ratio);
-
-    // 3. Advance Phases
+    // 3. Phase increments & Wrapping
     float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
-    float32x4_t two_pi = vdupq_n_f32(6.28318530718f);
+    snare->carrier_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(carrier_freq, two_pi_over_sr));
+    snare->modulator_phase = vaddq_f32(snare->modulator_phase, vmulq_f32(mod_freq, two_pi_over_sr));
 
-    snare->carrier_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(current_carrier_freq, two_pi_over_sr));
-    uint32x4_t wrap_c = vcgtq_f32(snare->carrier_phase, two_pi);
-    snare->carrier_phase = vbslq_f32(wrap_c, vsubq_f32(snare->carrier_phase, two_pi), snare->carrier_phase);
+    float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
+    uint32x4_t c_wrap = vcgeq_f32(snare->carrier_phase, two_pi);
+    uint32x4_t m_wrap = vcgeq_f32(snare->modulator_phase, two_pi);
+    snare->carrier_phase = vbslq_f32(c_wrap, vsubq_f32(snare->carrier_phase, two_pi), snare->carrier_phase);
+    snare->modulator_phase = vbslq_f32(m_wrap, vsubq_f32(snare->modulator_phase, two_pi), snare->modulator_phase);
 
-    snare->modulator_phase = vaddq_f32(snare->modulator_phase, vmulq_f32(current_mod_freq, two_pi_over_sr));
-    uint32x4_t wrap_m = vcgtq_f32(snare->modulator_phase, two_pi);
-    snare->modulator_phase = vbslq_f32(wrap_m, vsubq_f32(snare->modulator_phase, two_pi), snare->modulator_phase);
-
-    // 4. FM Synthesis (Index scales with fast env2 so harmonics die out)
-    float32x4_t index = vmulq_f32(snare->body_resonance, vmulq_n_f32(env2, 4.0f));
+    // 4. FM Synthesis (The "Crack")
+    // Use env4 so the tonal resonance dies instantly like a real drum hit
+    float32x4_t index = vmulq_f32(env4, vaddq_f32(vdupq_n_f32(1.0f), vmulq_n_f32(snare->body_resonance, 3.0f)));
+    index = vaddq_f32(index, lfo_index_add); // Add LFO index mod
+    // 4.1 Generate sine waves
     float32x4_t modulator = neon_sin(snare->modulator_phase);
     float32x4_t modulated_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(modulator, index));
     float32x4_t tone = neon_sin(modulated_phase);
 
-    // 5. Noise Generation
+    // 5. Noise Generation (The "Sizzle")
     float32x4_t noise = snare_generate_noise(snare);
 
-    // 6. Mix: Tone uses fast env2, Noise uses standard envelope
+    // 6. Mix: Tone uses fast env4, Noise uses standard envelope
     float32x4_t one = vdupq_n_f32(1.0f);
     float32x4_t noise_gain = vmulq_f32(snare->noise_mix, envelope);
-    float32x4_t tone_gain = vmulq_f32(vsubq_f32(one, snare->noise_mix), env2);
-
+    float32x4_t tone_gain = vmulq_f32(vsubq_f32(one, snare->noise_mix), env4);
+    // 8. Apply main amplitude envelope and gate mask
     float32x4_t output = vaddq_f32(vmulq_f32(tone, tone_gain), vmulq_f32(noise, noise_gain));
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
+
 
 // ========== UNIT TEST ==========
 #ifdef TEST_SNARE

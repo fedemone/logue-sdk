@@ -174,7 +174,7 @@ fast_inline void apply_resonant_morph(resonant_synth_t * res, float morph, uint8
  * Update all parameters from UI
  */
 fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
-    uint8_t* p = synth->params;
+    int8_t* p = synth->params;
 
     // =================================================================
     // Update voice probabilities (Page 1, params 0-3)
@@ -237,8 +237,8 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // Update LFO (params 12-19)
     // =================================================================
     uint32x4_t all_voices = vdupq_n_u32(0xFFFFFFFF);
-    int8_t depth1 = (int8_t)(p[PARAM_LFO1_DEPTH] - 100);
-    int8_t depth2 = (int8_t)(p[PARAM_LFO2_DEPTH] - 100);
+    int8_t depth1 = p[PARAM_LFO1_DEPTH];
+    int8_t depth2 = p[PARAM_LFO2_DEPTH];
 
     lfo_smoother_set_rate(&synth->lfo_smooth, 0, p[PARAM_LFO1_RATE] / 100.0f, all_voices);
     lfo_smoother_set_rate(&synth->lfo_smooth, 1, p[PARAM_LFO2_RATE] / 100.0f, all_voices);
@@ -495,7 +495,10 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         pitch_octaves = vaddq_f32(pitch_octaves, vmulq_f32(mod, vmulq_n_f32(depth, 2.0f)));
         // 3. Inject Audio-Rate Pitch Modulation (Exponential)
         // We base this on 'synth->voices.note_freq' so the base tuning never drifts
-        float32x4_t lfo_pitch_mult = exp2_neon(pitch_octaves);
+        float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
+        if (lfo_pitch_modulation) {
+            lfo_pitch_mult = exp2_neon(pitch_octaves);
+        }
         float32x4_t modded_freq = vmulq_f32(synth->voices.note_freq, lfo_pitch_mult);
 
         synth->kick.carrier_freq_base   = modded_freq;
@@ -610,13 +613,17 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // Process each engine with its voice mask
     // =================================================================
     float32x4_t kick_out = kick_engine_process(&synth->kick, env,
-                                               synth->engine_mask[ENGINE_KICK]);
+                                               synth->engine_mask[ENGINE_KICK],
+                                               lfo_pitch_mult, index_add);
     float32x4_t snare_out = snare_engine_process(&synth->snare, env,
-                                                  synth->engine_mask[ENGINE_SNARE]);
+                                                  synth->engine_mask[ENGINE_SNARE],
+                                               lfo_pitch_mult, index_add);
     float32x4_t metal_out = metal_engine_process(&synth->metal, env,
-                                                  synth->engine_mask[ENGINE_METAL]);
+                                                 synth->engine_mask[ENGINE_METAL],
+                                                 index_add);
     float32x4_t perc_out = perc_engine_process(&synth->perc, env,
-                                                synth->engine_mask[ENGINE_PERC]);
+                                               synth->engine_mask[ENGINE_PERC],
+                                               lfo_pitch_mult);
     float32x4_t resonant_out = resonant_synth_process(&synth->resonant, env,
                                                        synth->engine_mask[ENGINE_RESONANT]);
 

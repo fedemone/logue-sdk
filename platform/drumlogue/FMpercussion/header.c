@@ -80,7 +80,7 @@ const __unit_header unit_header_t unit_header = {
         {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
 
         // Page 6: Envelope + Voice + Resonant
-        {0, 127, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}},
+        {0, 127, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}}, // 127 is the max for int8
         {0, 11, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"VoiceAlloc"}},
         {0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"ResMode"}},
         {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"ResMorph"}}

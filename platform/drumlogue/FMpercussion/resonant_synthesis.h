@@ -335,6 +335,11 @@ fast_inline float32x4_t resonant_synth_process(resonant_synth_t* rs,
     float32x4_t env4 = vmulq_f32(env2, env2);
     float32x4_t env8 = vmulq_f32(env4, env4);
 
+    // FIX: Instead of a high-pitch sine wave, we use the env8 transient
+    // directly as a raw DC impulse to "strike" the filter block.
+    // This removes the digital whistle and leaves only the pure wood/bass tone!
+    float32x4_t input_signal = env8;
+
     // Generate the raw signal burst
     float32x4_t click = neon_sin(vaddq_f32(rs->phase_f0, rs->phase_fc));
 
