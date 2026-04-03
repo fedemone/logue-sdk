@@ -169,6 +169,9 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
     switch (id) {
+        case k_paramProgram:
+            unit_load_preset(value);
+            break;
         case k_dark: // DARK  decay/warmth  0-100% → decay 0.0..0.99
             s_fdn_engine.setDecay(norm * 0.99f);
             break;
@@ -244,9 +247,8 @@ __unit_callback void unit_load_preset(uint8_t idx) {
 
     // Apply all parameter values from the preset
     for (uint8_t p = 0; p < k_total; p++) {
-        // Update the internal state array
-        s_params[p] = k_preset_values[idx][p];
+        if (idx == k_paramProgram) return;  // avoid recursion
         // Trigger the logic to update the FDN engine
-        unit_set_param_value(p, s_params[p]);
+        unit_set_param_value(p, k_preset_values[idx][p]);
     }
 }

@@ -189,6 +189,9 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     s_params[id] = value;
 
     switch (id) {
+    case k_paramProgram:
+        unit_load_preset(value);
+        break;
     case k_mix: // MIX  0..1000 → 0.0..1.0
       s_reverb->setMix(value / 1000.0f);
       break;
@@ -234,7 +237,6 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
     if ((id == k_paramProgram) && (value < k_preset_number)) {
         return k_preset_names[value];
     }
-    (void)id;
     (void)value;
     if (id == k_shimmer_freq)
     {
@@ -269,6 +271,7 @@ __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
     s_current_preset = idx;
     for (uint8_t i = 0; i < k_total; i++) {
+        if (idx == k_paramProgram) return;  // avoid recursion
         unit_set_param_value(i, k_presets[idx][i]);
     }
 }
