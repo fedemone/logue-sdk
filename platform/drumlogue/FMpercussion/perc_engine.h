@@ -24,7 +24,7 @@
 typedef struct {
     // Three operators
     float32x4_t phase[3];
-    float32x4_t freq_base;     // Carrier base frequency
+    float32x4_t carrier_freq_base;     // Carrier base frequency
     float32x4_t ratio_center;   // Main modulator ratio
     float32x4_t variation;       // Secondary modulation amount
 
@@ -41,7 +41,7 @@ fast_inline void perc_engine_init(perc_engine_t* perc) {
         perc->phase[i] = vdupq_n_f32(0.0f);
     }
 
-    perc->freq_base = vdupq_n_f32(200.0f);  // Mid tom default
+    perc->carrier_freq_base = vdupq_n_f32(200.0f);  // Mid tom default
     perc->ratio_center = vdupq_n_f32(2.0f);
     perc->variation = vdupq_n_f32(0.5f);
 
@@ -71,15 +71,14 @@ fast_inline void perc_engine_update(perc_engine_t* perc,
  * Update perc engine just second parameter
  */
 fast_inline void perc_engine_update2(perc_engine_t* perc,
-                                     float32x4_t index_add,
-                                     float32x4_t param2) { // Variation
+                                     float32x4_t index_add) { // Variation
 
     float32x4_t modded_param2 = vaddq_f32(perc->variation, index_add);
-    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
+    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
     perc->var_param = modded_param2;
 
     // Map param2 to variation amount
-    perc->variation = vmulq_f32(param2, vdupq_n_f32(PERC_VARIATION_MAX));
+    perc->variation = vmulq_f32(modded_param2, vdupq_n_f32(PERC_VARIATION_MAX));
 }
 
 /**
@@ -98,9 +97,9 @@ fast_inline void perc_engine_set_note(perc_engine_t* perc,
 
     float32x4_t base_freq = vmulq_f32(a4_freq, two_pow);
 
-    perc->freq_base = vbslq_f32(voice_mask,
+    perc->carrier_freq_base = vbslq_f32(voice_mask,
                                 base_freq,
-                                perc->freq_base);
+                                perc->carrier_freq_base);
 }
 
 /**
@@ -119,7 +118,7 @@ fast_inline float32x4_t perc_engine_process(perc_engine_t* perc,
     float32x4_t env4 = vmulq_f32(env2, env2);
 
     // 2. Apply LFO Pitch Modulation
-    float32x4_t carrier_freq = vmulq_f32(perc->freq_base, lfo_pitch_mult);
+    float32x4_t carrier_freq = vmulq_f32(perc->carrier_freq_base, lfo_pitch_mult);
     float32x4_t mod1_freq = vmulq_f32(carrier_freq, perc->ratio_center);
 
     // Mod2 shifts dynamically based on variation for a slight pitch-bend effect

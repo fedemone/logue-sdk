@@ -169,32 +169,32 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
     switch (id) {
-        case k_paramProgram:
-            unit_load_preset(value);
-            break;
-        case k_dark: // DARK  decay/warmth  0-100% → decay 0.0..0.99
-            s_fdn_engine.setDecay(norm * 0.99f);
-            break;
-        case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
-            s_fdn_engine.setBrightness(norm);
-            break;
-        case k_glow: // GLOW  wet/dry mix  0-100% → 0.0..1.0
-            s_fdn_engine.setGlow(norm);
-            break;
-        case k_color: // COLR  tone color (LPF)  0-100% → coeff 0.0..0.95
-            s_fdn_engine.setColor(norm * 0.95f);
-            break;
-        case k_spark: // SPRK  sparkle / modulation depth  0-100% → 0.0..1.0
-            s_fdn_engine.setModulation(norm);
-            break;
-        case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
-            s_fdn_engine.setSize(0.1f + norm * 1.9f);
-            break;
-        case k_pdly: // PDLY pre delay
-            s_fdn_engine.setPreDelay(norm * 200.0f);
-            break;
-        default:
-            break;
+    case k_name:
+      unit_load_preset(value);
+      break;
+    case k_dark: // DARK  decay/warmth  0-100% → decay 0.0..0.99
+      s_fdn_engine.setDecay(norm * 0.99f);
+      break;
+    case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
+      s_fdn_engine.setBrightness(norm);
+      break;
+    case k_glow: // GLOW  wet/dry mix  0-100% → 0.0..1.0
+      s_fdn_engine.setGlow(norm);
+      break;
+    case k_color: // COLR  tone color (LPF)  0-100% → coeff 0.0..0.95
+      s_fdn_engine.setColor(norm * 0.95f);
+      break;
+    case k_spark: // SPRK  sparkle / modulation depth  0-100% → 0.0..1.0
+      s_fdn_engine.setModulation(norm);
+      break;
+    case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
+      s_fdn_engine.setSize(0.1f + norm * 1.9f);
+      break;
+    case k_pdly: // PDLY pre delay
+      s_fdn_engine.setPreDelay(norm * 200.0f);
+      break;
+    default:
+      break;
     }
 }
 
@@ -247,7 +247,7 @@ __unit_callback void unit_load_preset(uint8_t idx) {
 
     // Apply all parameter values from the preset
     for (uint8_t p = 0; p < k_total; p++) {
-        if (idx == k_paramProgram) return;  // avoid recursion
+        if (idx == k_name) return;  // avoid recursion
         // Trigger the logic to update the FDN engine
         unit_set_param_value(p, k_preset_values[idx][p]);
     }

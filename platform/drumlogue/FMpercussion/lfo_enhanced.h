@@ -67,7 +67,7 @@ fast_inline void lfo_enhanced_init(lfo_enhanced_t* lfo) {
  * @param rate2_percent 0-100 LFO2 rate
  */
 fast_inline void lfo_enhanced_update(lfo_enhanced_t* lfo,
-                                     uint32_t shape_combo,
+                                     int32_t shape_combo,
                                      uint32_t target1,
                                      uint32_t target2,
                                      float depth1_value,  // -100 to +100

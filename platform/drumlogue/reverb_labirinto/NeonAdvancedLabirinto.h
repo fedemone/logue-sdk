@@ -376,7 +376,7 @@ private:
             float state = vgetq_lane_f32(lpfState[ch], 3);
 
             // Load the 4 input values into a NEON vector
-            float32x4_t v = vld1q_f32(signals[ch]);
+            float32x4_t v = signals[ch];
 
             // Process each lane sequentially, building the result vector directly
             float32x4_t result = vdupq_n_f32(0.0f);
@@ -435,16 +435,17 @@ private:
     void process4Samples(const float* inL, const float* inR,
                          float* outL, float* outR) {
 
-                                    if (activeSampleCount <= 0) {
+        // Load 4 input samples for L and R channels
+        float32x4_t inL4 = vld1q_f32(inL);
+        float32x4_t inR4 = vld1q_f32(inR);
+
+        if (activeSampleCount <= 0) {
             // Apply dry gain so volume stays constant when bypassed!
             float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
             vst1q_f32(outL, vmulq_f32(inL4, dryGain));
             vst1q_f32(outR, vmulq_f32(inR4, dryGain));
             return;
         }
-        // Load 4 input samples for L and R channels
-        float32x4_t inL4 = vld1q_f32(inL);
-        float32x4_t inR4 = vld1q_f32(inR);
 
         // Convert to mono for FDN input
         float32x4_t inMono = vmulq_f32(vaddq_f32(inL4, inR4), vdupq_n_f32(0.5f));

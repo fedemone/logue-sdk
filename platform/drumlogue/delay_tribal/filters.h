@@ -7,8 +7,8 @@
 #include "spatial_modes.h"
 
 // Local filter constants (FILTER_Q_BUTTERWORTH comes from constants.h)
-#define FILTER_SAMPLE_RATE 48000.0f
-#define FILTER_PI 3.141592653589793f
+#define FILTER_SAMPLE_RATE (48000.0f)
+#define FILTER_PI (3.141592653589793f)
 #define NEON_LANES  (4)
 #define NUM_BIQUADS (4)
 

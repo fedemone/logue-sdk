@@ -17,6 +17,10 @@
 #include <math.h>
 #include "float_math.h"
 
+#ifndef PI_F
+#define PI_F (3.14159265358979323846f)
+#endif
+
 /* ---------------------------------------------------------------------------
  * 1. SIDECHAIN HPF - 12dB/oct Bessel for clean sidechain
  * --------------------------------------------------------------------------- */
@@ -39,9 +43,8 @@ fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) 
     f->z1 = vdupq_n_f32(0.0f);
     f->z2 = vdupq_n_f32(0.0f);
 
-    // Pre-warp for bilinear transform
-    float w0 = 2.0f * FILTER_PI * freq / sample_rate;
-    // FIX 1: Use standard math! Korg's fast math expects 0.0-1.0 phase, NOT radians!
+    // Digital angular frequency for coefficient calculation
+    float w0 = 2.0f * PI_F * cutoff / sr;
     float cos_w0 = cosf(w0);
     float sin_w0 = sinf(w0);
     float Q = 0.5f;  // Bessel Q
@@ -410,11 +413,11 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
     if (fabsf(gain_db) < 0.01f) return in;
 
     // A = linear amplitude ratio = 10^(dBgain/40), per Audio EQ Cookbook
-    float A     = powf(10.0f, gain_db / 40.0f);
-    float sqrtA = sqrtf(A);
-    float w0    = 2.0f * M_PI * freq / sr;
-    float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);
+    float A      = fasterpowf(10.0f, gain_db / 40.0f);
+    float sqrtA  = fasterSqrt(A);
+    float w0     = 2.0f * PI_F * freq / sr;
+    float cos_w0 = fastercosfullf(w0);
+    float sin_w0 = fastersinfullf(w0);
 
     // alpha with shelf slope S=1: sin(w0)/sqrt(2), gain-independent (no div-by-zero)
     float alpha = sin_w0 * 0.70711f;  // sin(w0) / sqrt(2)

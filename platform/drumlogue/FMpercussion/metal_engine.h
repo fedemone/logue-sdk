@@ -89,12 +89,11 @@ fast_inline void metal_engine_update(metal_engine_t* metal,
 /**
  * Update metal engine second parameter
  */
-fast_inline void metal_engine_update(metal_engine_t* metal,
-                                     float32x4_t index_add,
-                                     float32x4_t param2) { // Brightness
+fast_inline void metal_engine_update2(metal_engine_t* metal,
+                                     float32x4_t index_add) { // Brightness
 
     float32x4_t modded_param2 = vaddq_f32(metal->brightness, index_add);
-    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
+    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
     metal->brightness = modded_param2;
 }
 

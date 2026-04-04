@@ -92,12 +92,11 @@ fast_inline void snare_engine_update(snare_engine_t* snare,
 /**
  * Update snare engine second parameter
  */
-fast_inline void snare_engine_update(snare_engine_t* snare,
-                                     float32x4_t index_add,
-                                     float32x4_t param2) { // Body resonance
-    float32x4_t modded_param2 = vaddq_f32(metal->brightness, index_add);
-    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f))
-    snare->body_resonance = modded_param2;
+fast_inline void snare_engine_update2(snare_engine_t* snare,
+                                     float32x4_t index_add) { // Body resonance
+  float32x4_t modded_param2 = vaddq_f32(snare->body_resonance, index_add);
+  modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
+  snare->body_resonance = modded_param2;
 }
 
 /**

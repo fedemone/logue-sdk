@@ -80,6 +80,13 @@ fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
     // For negative ratios, this creates expansion or reverse compression
 
     float32x4_t thresh_vec = vdupq_n_f32(thresh_db);
+    // Calculate excess above threshold
+    float32x4_t excess = vsubq_f32(thresh_vec, db_env);
+    excess = vmaxq_f32(excess, vdupq_n_f32(0.0f)); // Only above threshold
+
+    float32x4_t ratio_vec = vdupq_n_f32(ratio);
+    float32x4_t one_vec = vdupq_n_f32(1.0f);
+
     // FIX 2: Snap near-zero ratios to exactly 0.0f to trigger the hard-limit mask
     // Prevents massive upward expansion explosions (e.g. +1000dB)
     uint32x4_t near_zero = vcltq_f32(vabsq_f32(ratio_vec), vdupq_n_f32(0.01f));

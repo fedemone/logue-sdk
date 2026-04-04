@@ -344,7 +344,7 @@ fast_inline float32x4_t resonant_synth_process(resonant_synth_t* rs,
     float32x4_t click = neon_sin(vaddq_f32(rs->phase_f0, rs->phase_fc));
 
     // Instead of a continuous sine wave, our input is the short, hard click
-    float32x4_t input_signal = vmulq_f32(click, env8);
+    input_signal = vmulq_f32(click, env8);
 
     float32x4_t cos_fc = neon_cos(rs->phase_fc);
 
