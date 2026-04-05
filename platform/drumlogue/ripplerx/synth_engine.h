@@ -295,17 +295,15 @@ public:
         static const int32_t presets[k_NumPrograms][k_lastParamIndex] = {
         //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
         //
-        // COUPLING RULE (enforced from Phase 23):
-        //   Ptls encodes coupling_depth = Ptls/4.  Two resonators at the SAME frequency
-        //   plus coupling creates normal-mode splitting and beats (unphysical).  Worse:
-        //   when (coupling_depth × 0.5) > (1 − feedback_gain) the system is unstable and
-        //   amplitude grows to infinity — this caused the Marimba "audio crash".
+        // COUPLING RULE (Phase 25: dynamic clamp in render loop):
+        //   The render loop now dynamically clamps coupling injection to:
+        //     safe_coupling ≤ (1 − feedback_gain) × 0.8
+        //   This guarantees stability at ANY Partials/Decay combination.
+        //   High Decay (feedback_gain→1) → coupling nearly zero (self-limiting).
+        //   Low Decay (feedback_gain→0.85) → coupling up to ~0.12 (audible).
         //
-        //   SAFE:   Membrane models (Mdl=3 or Mdl=5) set ResB at 0.628× delay (different
-        //           frequency). Off-resonance coupling is physically meaningful and stable.
-        //           Use Ptls=2 (coupling_depth=0.5) for these.
-        //   UNSAFE: All other models set ResB at the SAME delay as ResA.  Use Ptls=0
-        //           (no coupling, ResB disabled).
+        //   ResB is micro-detuned by +0.3% (~5 cents) in NoteOn to break
+        //   mathematically perfect beating between matched resonators.
         //
         //   Hit (HitPos=mix_ab): only relevant when ResB is active (Ptls≥2, Mdl=3/5).
         //   Set Hit=0 for single-resonator presets so output is not halved.
@@ -314,17 +312,17 @@ public:
             { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
             { 1,  60,   0,   1,   800,  175,  0,   0,     0, 6,  120,  -5,    0,   0,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — single resonator (Mdl=6 same-freq, Ptls→0)
             { 2,  36,   0,   0,   150,   30,  0,   0,     0, 3,  150,  -8,   -5,   0, 15,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 2:  808 Sub    — single resonator membrane (Ptls=0, Mdl=3): no coupling instability, no overdrive
-            { 3,  38,   0,   1,   400,  300,  0,   0,     2, 5,   15,  15,    0,  50,  8,   500,    15,   5,  50,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mdl=5, Ptls=2)
-            { 4,  72,   0,   1,   900,  500,  0,   0,     0, 7,  150,  30,    0,   0, 20,  1900,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — single resonator (Mdl=7 same-freq, Ptls→0)
-            { 5,  40,   0,   1,   300,   50,  0,   0,     2, 3,  145,  -5,    0,  30, 15,    20,     1,   5,  30,    3, 300,  0,   500, 707}, // 5:  Timpani    — membrane dual (Mdl=3, Ptls=2)
-            { 6,  48,   0,   1,   600,  200,  0,   0,     2, 5,   80,   5,    0,  50, 12,    50,     5,   5,  50,    5, 200,  0,   600, 707}, // 6:  Djambe     — membrane dual (Mdl=5, Ptls=2)
+            { 3,  38,   0,   1,   400,  200,  0,   0,     2, 5,   15,  -2,    0,  50,  8,     0,     1,   5,  10,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mtr:-2 dark drum, InHm:0 clean, Gain:10 mild)
+            { 4,  72,   0,   1,   900,  500,  0,   0,     0, 7,  150,  25,    0,   0, 20,   600,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — single resonator (Mdl=7, InHm:600 bell-like)
+            { 5,  40,   0,   1,   300,   50,  0,   0,     2, 3,  145,  -5,    0,  30, 15,     0,     1,   5,  10,    3, 300,  0,   500, 707}, // 5:  Timpani    — membrane dual (Mdl=3, InHm:0 clean, Gain:10)
+            { 6,  48,   0,   1,   600,  200,  0,   0,     2, 5,   80,   0,    0,  50, 12,     0,     5,   5,  15,    5, 200,  0,   600, 707}, // 6:  Djambe     — membrane dual (Mtr:0 neutral, InHm:0, Gain:15)
             { 7,  36,   0,   1,   200,   80,  0,   0,     2, 5,  100, -10,    0,  50, 18,    10,     1,   5,  40,    0, 300,  0,   400, 707}, // 7:  Taiko      — membrane dual (Mdl=5, Ptls=2)
-            { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,    8,  20,    0,  50,  3,   200,    25,   5,  80,   95, 150,  2,  1000, 707}, // 8:  MrchSnr    — membrane dual (Mdl=5, Ptls=2)
+            { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,    8,   5,    0,  50,  3,     0,    25,   5,  20,   95, 150,  2,  1000, 707}, // 8:  MrchSnr    — membrane dual (Mtr:5 moderate, InHm:0, Gain:20)
             { 9,  35,   0,   1,   100,  150,  0,   0,     0, 4,  180,  25,    0,   0, 20,  1800,     1,   5,  60,   10, 800,  0,   800, 707}, // 9:  Tam Tam    — single resonator (Mdl=4 same-freq, Ptls→0)
             {10,  72,   0,   1,   600,  280,  0,   0,     0, 0,  130,  10,    0,   0, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — single resonator (Ptls→0)
             {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  120,  15,    0,   0, 18,     5,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — single resonator (Ptls→0)
             {12,  76,   0,   1,   800,  350,  0,   0,     0, 2,    5,  -8,    0,   0,  2,    80,     1,   5,   0,    0, 300,  0,   500, 707}, // 12: Wodblk     — single resonator (Ptls→0)
-            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,    30,     1,   5,  40,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (Mdl=5, Ptls=2)
+            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,  15,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (InHm:0, Gain:15)
             {14,  60,   0,   1,   800,  500,  0,   0,     0, 4,  140,  30,    0,   0, 18,  1950,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — single resonator (Ptls→0)
             {15,  36,   0,   1,   200,  200,  0,   0,     0, 4,  190,  20,    0,   0, 20,  1900,     1,   5,  40,   10, 800,  0,   600, 707}, // 15: Gong       — single resonator (Ptls→0)
             {16,  72,   0,   1,   700,  400,  0,   0,     0, 1,  140,  25,    0,   0,  5,     1,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba    — single resonator (Ptls→0)
@@ -332,9 +330,9 @@ public:
             {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — single resonator (Ptls→0)
             {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,   55,  25,    0,   0,  4,  1700,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — single resonator (Ptls→0)
             {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  165,  30,    0,   0, 15,  1990,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle   — single resonator (Ptls→0)
-            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,    20,     1,   5, 100,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane dual (Mdl=5, Ptls=2)
-            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,  10,    0,  50,  3,   500,    40,   5,  50,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mdl=5, Ptls=2)
-            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  15,    0,  50,  2,   100,    80,   5,  20,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (Mdl=5, Ptls=2)
+            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     0,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane dual (InHm:0, Gain:20)
+            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mtr:5, InHm:0, Gain:15)
+            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    80,   5,  10,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (InHm:0, Gain:10)
             {24,  72,   0,   1,   100,   50,  0,   0,     0, 7,   90,  -5,    0,   0, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute      — single resonator (Ptls→0)
             {25,  72,   0,   0,    50,   20,  0,   0,     0, 8,  100,  -5,    0,   0, 15,     0,     1,   5,   0,   40, 800,  0,   800, 707}, // 25: Clarinet   — ClosedTube (phase_mult=-1); Note=72 so it resonates at C4 (octave-lower rule)
             {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
@@ -362,8 +360,13 @@ public:
         m_is_resonator_b = false;
 
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
+        // Also skip Bank and Sample so the user's sample selection persists
+        // across preset changes (user reported: sample resets to bank 0, sample 1
+        // on every preset change).
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
+            if (param_id == k_paramBank) continue;
+            if (param_id == k_paramSample) continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -538,6 +541,11 @@ public:
                         // Always update regardless of which resonator is selected —
                         // master_env is voice-level, not per-resonator.
                         state.voices[i].exciter.master_env.release_rate = master_rate;
+                        // Auto-decay rate: 30% of release rate.  Ensures sounds
+                        // decay naturally even while the gate is held (percussion
+                        // on a drum machine should never sustain indefinitely).
+                        // NoteOff switches to the faster release_rate for a clean tail.
+                        state.voices[i].exciter.master_env.decay_rate = master_rate * 0.3f;
 #endif
                     }
                 }
@@ -878,6 +886,13 @@ public:
             // Standard matched resonators (Strings, Tubes, Bars)
             v.resB.delay_length = base_delay;
         }
+
+        // Micro-detune ResB by ~5 cents to break perfect mathematical beating.
+        // Two resonators at identical delay lengths create digitally-precise
+        // normal-mode splitting with metronomic amplitude modulation.  A real
+        // instrument always has slight manufacturing asymmetry between modes.
+        // 5 cents ≈ 0.3% — audible as warmth/chorus, not as out-of-tune.
+        v.resB.delay_length *= 1.003f;
 #else
         // Legacy fallback calculation
         // 1. Convert MIDI Note to Frequency (Hz)
@@ -993,14 +1008,17 @@ public:
 #ifdef ENABLE_PHASE_5_EXCITERS
         // Trigger the envelopes when a note hits
         v.exciter.noise_env.trigger();
-        // Configure master envelope as a fully-open gate (value=1.0, ENV_DECAY).
-        // Direct assignment avoids the  trigger() + process()  pattern that relied on
-        // the floating-point comparison  value >= 0.99f  after one multiply-add.
-        // ARM -ffast-math may emit an FMA whose rounding leaves value fractionally
-        // below 0.99f, keeping state in ENV_ATTACK and silencing the gate permanently.
-        // release_rate is already set for this voice by setParameter(k_paramDkay).
-        v.exciter.master_env.decay_rate = 0.0f;
-        v.exciter.master_env.sustain_level = 1.0f;
+        // Master envelope: auto-decay from 1.0 toward 0.0 at decay_rate.
+        // This ensures percussion sounds decay naturally even with gate held
+        // (the Drumlogue trigger button behaviour).  NoteOff switches to the
+        // faster release_rate for a clean tail-off.
+        //
+        // Direct assignment avoids the  trigger() + process()  pattern that
+        // relied on value >= 0.99f after one multiply-add.  ARM -ffast-math
+        // may emit an FMA whose rounding leaves value fractionally below 0.99f.
+        //
+        // decay_rate and release_rate are set by setParameter(k_paramDkay).
+        v.exciter.master_env.sustain_level = 0.0f;
         v.exciter.master_env.value = 1.0f;
         v.exciter.master_env.state = ENV_DECAY;
 #endif
@@ -1250,7 +1268,19 @@ public:
                 // ── Stage 2: Waveguide resonators ──────────────────────────
                 // If Stage 2 is silent but Stage 1 is not, the waveguide has
                 // zero delay_length or zero feedback_gain on this hardware.
-                float inputA = exciter_sig + (voice.resB_out_prev * m_coupling_depth * 0.5f);
+                //
+                // Dynamic coupling clamp: limit cross-resonator injection so
+                // the total energy input (feedback + coupling) stays below 1
+                // per round trip, preventing exponential energy growth at ANY
+                // Decay/Partials combination.  The formula:
+                //   safe_coupling ≤ (1 − feedback_gain) × safety_factor
+                // ensures the system has headroom for energy dissipation.
+                float safe_cpl_a = fminf(m_coupling_depth * 0.5f,
+                    (1.0f - voice.resA.feedback_gain) * 0.8f);
+                float safe_cpl_b = fminf(m_coupling_depth * 0.5f,
+                    (1.0f - voice.resB.feedback_gain) * 0.8f);
+
+                float inputA = exciter_sig + (voice.resB_out_prev * safe_cpl_a);
                 outA = process_waveguide(voice.resA, inputA);
                 float outB = 0.0f;
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
@@ -1267,7 +1297,7 @@ public:
                                     fabsf(voice.resB_out_prev) > 0.00003f);
 
                 if (resB_needed) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * m_coupling_depth * 0.5f);
+                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB); //
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1278,7 +1308,7 @@ public:
                 }
 #else
                 if (m_active_partials >= 16) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * m_coupling_depth * 0.5f);
+                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB);
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1300,9 +1330,18 @@ public:
                 voice.mag_env = (fabsf(voice_out) * alpha) + (voice.mag_env * limiter);
                 float damper_fade = voice.exciter.master_env.process();
                 voice_out *= damper_fade;
-                if (voice.is_releasing && voice.exciter.current_frame > kSquelchGuardSamples) {
-                    if (voice.mag_env < kSquelchThreshold ||
-                            voice.exciter.master_env.state == ENV_IDLE) {
+                if (voice.exciter.current_frame > kSquelchGuardSamples) {
+                    // Original squelch: deactivate released voices
+                    if (voice.is_releasing &&
+                        (voice.mag_env < kSquelchThreshold ||
+                         voice.exciter.master_env.state == ENV_IDLE)) {
+                        voice.is_active = false;
+                    }
+                    // Auto-decay squelch: deactivate voices whose master_env
+                    // has naturally decayed to ENV_IDLE even while gate is held.
+                    // This reclaims voice slots for percussion auto-decay.
+                    if (!voice.is_releasing &&
+                        voice.exciter.master_env.state == ENV_IDLE) {
                         voice.is_active = false;
                     }
                 }
