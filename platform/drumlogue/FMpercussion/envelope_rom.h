@@ -386,6 +386,32 @@ fast_inline void neon_envelope_process(neon_envelope_t* env) {
 }
 
 /**
+ * Trigger release stage for selected voices (MIDI note-off).
+ * Transitions from any active stage directly to release, starting from
+ * the current level so there is no level jump.
+ */
+fast_inline void neon_envelope_release(neon_envelope_t* env,
+                                       uint32x4_t voice_mask) {
+    // Only act on voices that are currently active (not already off)
+    uint32x4_t is_off = vceqq_u32(env->stage, vdupq_n_u32(ENV_STATE_OFF));
+    uint32x4_t trigger = vandq_u32(voice_mask, vmvnq_u32(is_off));
+
+    // Transition to release stage
+    env->stage = vbslq_u32(trigger, vdupq_n_u32(ENV_STAGE_RELEASE), env->stage);
+
+    // Samples left = release_samples
+    env->samples_left = vbslq_u32(trigger,
+                                   vcvtq_u32_f32(env->release_samples),
+                                   env->samples_left);
+
+    // Decrement = -(current_level / release_samples) so level reaches 0 smoothly.
+    // vrecpeq_f32 gives ~8-bit estimate; sufficient for a fade-to-zero.
+    float32x4_t release_inc = vnegq_f32(
+        vmulq_f32(env->level, vrecpeq_f32(env->release_samples)));
+    env->increment = vbslq_f32(trigger, release_inc, env->increment);
+}
+
+/**
  * Check if any voices are still active
  * @return Non-zero if at least one voice is active
  */

@@ -33,7 +33,11 @@ typedef struct {
 } one_pole_t;
 
 fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff) {
-    float32x4_t alpha = vdupq_n_f32(cutoff / (cutoff + 48000.0f));
+    // Matched-z transform: alpha = 2*pi*f / (2*pi*f + sr)
+    // e.g. 800 Hz  -> alpha ~0.095  (was ~0.016 with wrong formula)
+    //      5000 Hz -> alpha ~0.396  (was ~0.094)
+    const float two_pi_f = 2.0f * (float)M_PI * cutoff;
+    float32x4_t alpha = vdupq_n_f32(two_pi_f / (two_pi_f + SAMPLE_RATE));
     float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
                                 vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), alpha)));
     f->z1 = out;
@@ -73,7 +77,16 @@ fast_inline void snare_engine_init(snare_engine_t* snare) {
 
     snare->noise_hpf.z1 = vdupq_n_f32(0.0f);
     snare->noise_lpf.z1 = vdupq_n_f32(0.0f);
-    neon_prng_init(&snare->noise_prng, 0x87654321);
+    // Four completely independent seeds: neon_prng uses uint64x2_t (2 lanes),
+    // so state0 feeds voices 0&2 and state1 feeds voices 1&3.
+    // Using unrelated bit patterns rather than a single base seed prevents
+    // correlation between lanes when the snare restarts from init.
+    {
+        uint64_t s0[2] = { 0xDEADBEEFCAFEBABEULL, 0x0123456789ABCDEFULL };
+        uint64_t s1[2] = { 0xFEDCBA9876543210ULL, 0xA5A5A5A5B4B4B4B4ULL };
+        snare->noise_prng.state0 = vld1q_u64(s0);
+        snare->noise_prng.state1 = vld1q_u64(s1);
+    }
 
     snare->noise_mix = vdupq_n_f32(0.3f);
     snare->body_resonance = vdupq_n_f32(0.5f);
@@ -97,6 +110,16 @@ fast_inline void snare_engine_update2(snare_engine_t* snare,
   float32x4_t modded_param2 = vaddq_f32(snare->body_resonance, index_add);
   modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
   snare->body_resonance = modded_param2;
+}
+
+/**
+ * Apply LFO modulation to noise_mix (clamped in-place, restored by next param update)
+ */
+fast_inline void snare_engine_update_noise(snare_engine_t* snare,
+                                           float32x4_t noise_add) {
+    float32x4_t modded = vaddq_f32(snare->noise_mix, noise_add);
+    modded = vmaxq_f32(vminq_f32(modded, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
+    snare->noise_mix = modded;
 }
 
 /**

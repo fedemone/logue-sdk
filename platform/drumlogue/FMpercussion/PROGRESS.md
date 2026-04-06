@@ -892,3 +892,100 @@ The design is now perfectly balanced:
 - ✅ Combinatorial LFO control (135 possibilities)
 - ✅ Single-parameter envelope (128 shapes)
 - ✅ 3 expansion slots on Page 6 for future
+---
+
+## Session update — bug fixes, LFO expansion, routing, ducking, presets
+
+### Bug fixes applied
+- **Snare filter coefficient** (`snare_engine.h:one_pole_lpf`): `f/(f+48000)`
+  placed HPF at ~80 Hz / LPF at ~400 Hz instead of 800/5000 Hz. Fixed to
+  matched-z: `2πf / (2πf + sr)`.
+- **Snare PRNG seeds** (`snare_engine.h:snare_engine_init`): single base seed
+  caused correlated Xorshift128+ initial states. Replaced with four unrelated
+  64-bit constants written directly to the two `uint64x2_t` state words.
+- **Index modulation clamp** (`fm_perc_synth.h`): LFO→INDEX was unclamped;
+  FM index could exceed [0,1] → aliased noise. Clamped to [-1,1] before each
+  engine update call.
+
+### LFO improvements
+- **`LFO_TARGET_NOISE_MIX` (8)**: modulates snare noise/tone blend and metal
+  brightness. At slow rates it shapes the timbral arc of a hit; at fast rates
+  it creates AM noise shimmer. Helper `snare_engine_update_noise` added.
+- **`LFO_TARGET_RES_MORPH` (9)**: modulates the resonant filter morph parameter
+  (maps to fc / Q depending on mode). Creates auto-wah and filter-sweep effects.
+  `apply_resonant_morph` is called per-sample when this target is active.
+- **Trigger-phase sync**: LFO phases reset to 0 / LFO_PHASE_OFFSET on every
+  note-on. A ramp at 0.5 Hz is now effectively a 2-second one-shot envelope; a
+  triangle at 3 Hz gives a falling/rising pitch edge per percussion hit.
+- L1Dest / L2Dest parameter range extended from 0–7 to 0–9 in `header.c`.
+
+### Per-voice release tracking
+- `neon_envelope_release(env, voice_mask)` added to `envelope_rom.h`. Starts
+  release from the current level using `level / release_samples` decrement.
+- `fm_perc_synth_note_off` now builds a per-voice NEON mask from the MIDI note's
+  active-voice table and calls `neon_envelope_release`.
+
+### MIDI note routing
+- Note 36 → voice position 0 (kick slot); 38 → 1 (snare); 42 → 2 (metal);
+  45 → 3 (perc). Any other note triggers all voices.
+- `midi.active_notes[note]` is populated on note-on so note-off can identify
+  which voices to release.
+- Default note numbers live in `midi_handler_t` and can be changed at runtime.
+
+### Internal kick ducking
+- When kick envelope is active, non-kick voices are reduced by up to 30 %
+  (`KICK_DUCK_AMOUNT` constant in `fm_perc_synth.h`). Zero effect when kick
+  engine is not in the current voice allocation.
+
+### New presets (12–19)
+| # | Name | Key idea |
+|---|---|---|
+| 12 | SlwEnv | 0.5 Hz ramp→ENV swell (second envelope via LFO sync) |
+| 13 | WahDrum | 4 Hz triangle→RES_MORPH auto-wah, resonant on metal slot |
+| 14 | NoisSwp | 0.5 Hz ramp→NOISE_MIX; snare fades crack→hiss per hit |
+| 15 | FMBuzz | 15+20 Hz INDEX beating; 5 Hz tremolo from difference |
+| 16 | GhstSnr | 30 % snare probability + RES_MORPH colour variation |
+| 17 | RimPtch | Fast negative ramp on PITCH; falling edge per hit |
+| 18 | TomWah | 1 Hz RES_MORPH sweep on resonant tom (K-S-M-R allocation) |
+| 19 | Shaker | 10 Hz NOISE_MIX shimmer + chord PITCH arp |
+
+---
+
+## TODO / Future expansion
+
+### High priority
+- **Expose kick duck amount as a parameter**: add `PARAM_KICK_DUCK` (index 24) to
+  `constants.h`, increase `PARAM_TOTAL` to 25, add entry in `header.c`.
+  Currently hard-coded at 30 %; a parameter lets the user dial 0–100 %.
+
+- **Per-voice MIDI note mapping via parameters**: the four drum notes are
+  currently fixed in `midi_handler_init` (36/38/42/45). Exposing them as live
+  parameters or as a config page would allow re-mapping without recompiling.
+
+- **Open hi-hat / choke**: on note-off for the metal note, immediately call
+  `neon_envelope_release` on the metal/resonant voice before the decay completes.
+  Requires identifying the metal voice from `engine_mask[ENGINE_METAL]`.
+
+### Medium priority
+- **LFO amplitude modulation target**: add `LFO_TARGET_AMP` (10) — bipolar AM on
+  the final mixed signal. Useful for tremolo and gating without touching ENV.
+
+- **Envelope release precision**: `neon_envelope_release` uses `vrecpeq_f32`
+  (~8-bit). Add Newton–Raphson refinement (`vrecpsq_f32`) for accurate short
+  release slopes.
+
+- **Per-voice fully independent PRNG**: the current `neon_prng_t` uses two
+  `uint64x2_t` lanes (2 independent streams); voices 0+2 share one and 1+3 share
+  the other. Four scalar Xorshift64 states would give true independence.
+
+### Low priority / design notes
+- **Audio sidechain**: not possible in a drumlogue synth unit (no audio input from
+  other units). Internal kick ducking is the architectural ceiling for this.
+
+- **Per-voice polyphony**: all four voices share one `neon_envelope_t`. True
+  per-voice independent envelopes would require splitting into 4 scalar ADR
+  instances — significant architecture change.
+
+- **Exponential envelope stages**: the ROM processor uses linear increments;
+  percussive shaping is handled by each engine internally (env^2, env^4). Proper
+  exponential stages in the ROM processor would simplify engines.
