@@ -119,9 +119,12 @@ fast_inline void lfo_enhanced_update(lfo_enhanced_t* lfo,
     lfo->depth1 = vdupq_n_f32(depth1);
     lfo->depth2 = vdupq_n_f32(depth2);
 
-    // Convert rate percentage to phase increment (0.01 to 0.5 rad/sample)
-    float rate1 = 0.01f + (rate1_percent / 100.0f) * 0.49f;
-    float rate2 = 0.01f + (rate2_percent / 100.0f) * 0.49f;
+    // Convert rate percentage to phase increment (0.1 to 20 Hz LFO range)
+    // rate_hz / sample_rate gives the fraction of the cycle advanced per sample
+    float rate1_hz = 0.1f + (rate1_percent / 100.0f) * 19.9f;
+    float rate2_hz = 0.1f + (rate2_percent / 100.0f) * 19.9f;
+    float rate1 = rate1_hz / 48000.0f;
+    float rate2 = rate2_hz / 48000.0f;
 
     lfo->rate1 = vdupq_n_f32(rate1);
     lfo->rate2 = vdupq_n_f32(rate2);

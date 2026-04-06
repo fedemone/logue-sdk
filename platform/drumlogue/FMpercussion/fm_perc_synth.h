@@ -283,13 +283,13 @@ fast_inline void load_fm_preset(uint8_t idx, int8_t * params) {
     params[PARAM_LFO1_SHAPE] = p->lfo1_shape;
     params[PARAM_LFO1_RATE] = p->lfo1_rate;
     params[PARAM_LFO1_TARGET] = p->lfo1_target;
-    params[PARAM_LFO1_DEPTH] = (uint8_t)(p->lfo1_depth + 100);  // Convert -100..100 to 0..200
+    params[PARAM_LFO1_DEPTH] = p->lfo1_depth;  // -100..100, stored directly in int8_t
 
     // Page 5 (LFO2)
     params[PARAM_LFO2_SHAPE] = p->lfo2_shape;
     params[PARAM_LFO2_RATE] = p->lfo2_rate;
     params[PARAM_LFO2_TARGET] = p->lfo2_target;
-    params[PARAM_LFO2_DEPTH] = (uint8_t)(p->lfo2_depth + 100);
+    params[PARAM_LFO2_DEPTH] = p->lfo2_depth;  // -100..100, stored directly in int8_t
 
     // Page 6
     params[PARAM_ENV_SHAPE] = p->env_shape;
@@ -488,22 +488,18 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // Apply LFO modulations to pitch (target 1)
     // =================================================================
     if (synth->lfo.target1 == LFO_TARGET_PITCH || synth->lfo.target2 == LFO_TARGET_PITCH) {
-        float32x4_t mod = (synth->lfo.target1 == LFO_TARGET_PITCH) ? lfo1 : lfo2;
-        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_PITCH) ? synth->lfo.depth1 : synth->lfo.depth2;
-        // +/- 2 Octaves maximum depth
-        float32x4_t pitch_octaves = vaddq_f32(pitch_octaves, vmulq_f32(mod, vmulq_n_f32(depth, 2.0f)));
-        // 3. Inject Audio-Rate Pitch Modulation (Exponential)
-        // We base this on 'synth->voices.note_freq' so the base tuning never drifts
-        // WARNING!!! note_freq it's probably dead code from the unused fm_voices.h
-        // so the above comment from Gemini generated code is wrong! I suppose that carrier_freq_base is the correct values to be modulated. => TO BE REVIEWED
-        // IN case remove oboslete fm_voices.h
+        // Initialize to zero – both LFOs may contribute independently
+        float32x4_t pitch_octaves = vdupq_n_f32(0.0f);
+        // +/- 2 octaves maximum depth per LFO; sum both if both target pitch
+        if (synth->lfo.target1 == LFO_TARGET_PITCH)
+            pitch_octaves = vaddq_f32(pitch_octaves,
+                                      vmulq_f32(lfo1, vmulq_n_f32(synth->lfo.depth1, 2.0f)));
+        if (synth->lfo.target2 == LFO_TARGET_PITCH)
+            pitch_octaves = vaddq_f32(pitch_octaves,
+                                      vmulq_f32(lfo2, vmulq_n_f32(synth->lfo.depth2, 2.0f)));
+        // Exponential pitch multiplier passed to each engine's process(); do NOT
+        // write back into carrier_freq_base – that would permanently drift the tuning.
         lfo_pitch_mult = exp2_neon(pitch_octaves);
-
-        synth->kick.carrier_freq_base  = vmulq_f32(synth->kick.carrier_freq_base, lfo_pitch_mult);
-        synth->metal.carrier_freq_base = vmulq_f32(synth->metal.carrier_freq_base, lfo_pitch_mult);
-        synth->snare.carrier_freq_base = vmulq_f32(synth->snare.carrier_freq_base, lfo_pitch_mult);
-        synth->perc.carrier_freq_base  = vmulq_f32(synth->perc.carrier_freq_base, lfo_pitch_mult);
-        synth->resonant.f0             = vmulq_f32(synth->resonant.f0, lfo_pitch_mult);
     }
 
     if (synth->lfo.target1 == LFO_TARGET_INDEX || synth->lfo.target2 == LFO_TARGET_INDEX) {

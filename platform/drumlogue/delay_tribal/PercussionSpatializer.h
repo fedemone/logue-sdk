@@ -684,15 +684,16 @@ private:
             delayed_l = vmulq_f32(delayed_l, phase_scale);
             delayed_r = vmulq_f32(delayed_r, phase_scale);
 
-            // FIX 2: Constant-Power volume compensation to prevent 16-clone blowout
-            // 4 clones = 0.5x gain, 16 clones = 0.25x gain
-            float volume_comp = 1.0f / sqrtf((float)clone_count_);
-            *out_l = vmulq_n_f32(acc_l, volume_comp);
-            *out_r = vmulq_n_f32(acc_r, volume_comp);
+            // Accumulate into stereo mix with per-clone panning
+            acc_l = vaddq_f32(acc_l, vmulq_f32(delayed_l, group->left_gains));
+            acc_r = vaddq_f32(acc_r, vmulq_f32(delayed_r, group->right_gains));
         }
 
-        *out_l = acc_l;
-        *out_r = acc_r;
+        // Constant-power volume compensation after all groups are summed:
+        // 4 clones = 0.5x gain, 16 clones = 0.25x gain
+        float volume_comp = 1.0f / sqrtf((float)clone_count_);
+        *out_l = vmulq_n_f32(acc_l, volume_comp);
+        *out_r = vmulq_n_f32(acc_r, volume_comp);
     }
 
     /**
