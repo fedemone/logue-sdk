@@ -22,13 +22,13 @@ const __unit_header unit_header_t unit_header = {
 
         // ID 0: NAME  string
         { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NAME"} },
-        // ID 1: DARK  decay/warmth  0%-100%
+        // ID 1: DARK  sub octave  0%-100%
         { 0, 100, 50, 60, k_unit_param_type_percent, 0, 0, 0, {"DARK"} },
         // ID 2: BRIG  brightness (high-freq level)  0%-100%
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BRIG"} },
-        // ID 3: GLOW  wet/dry mix  0%-100%
+        // ID 3: GLOW  modulation  0%-100%
         { 0, 100, 50, 70, k_unit_param_type_percent, 0, 0, 0, {"GLOW"} },
-        // ID 4: COLR  tone color (LPF amount)  0%-100%
+        // ID 4: COLR  tone color (spectrum resonance)  0%-100%
         { 0, 100, 50, 10, k_unit_param_type_percent, 0, 0, 0, {"COLR"} },
 
         // Page 2

@@ -17,10 +17,6 @@
 #include <math.h>
 #include "float_math.h"
 
-#ifndef PI_F
-#define PI_F (3.14159265358979323846f)
-#endif
-
 /* ---------------------------------------------------------------------------
  * 1. SIDECHAIN HPF - 12dB/oct Bessel for clean sidechain
  * --------------------------------------------------------------------------- */
@@ -44,7 +40,7 @@ fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) 
     f->z2 = vdupq_n_f32(0.0f);
 
     // Digital angular frequency for coefficient calculation
-    float w0 = 2.0f * PI_F * cutoff / sr;
+    float w0 = 2.0f * M_PI * cutoff / sr;
     float cos_w0 = cosf(w0);
     float sin_w0 = sinf(w0);
     float Q = 0.5f;  // Bessel Q

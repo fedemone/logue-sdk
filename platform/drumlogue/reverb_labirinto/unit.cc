@@ -197,7 +197,7 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (!s_reverb) return;
     if (id >= k_total) return;
-    s_params[id] = value;
+    s_params[id] = value;   // store into local DB
 
     switch (id) {
     case k_paramProgram:

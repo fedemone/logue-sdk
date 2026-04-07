@@ -80,7 +80,7 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
 3. **NAME parameter (ID 0)** – the parameter shows the preset name as a string but
    does not trigger `unit_load_preset`. If the user increments NAME on the hardware
    knob, the sound won't change. Same issue as labirinto's PRESET param. Decision:
-   - Have `unit_set_param_value(k_name, v)` call `unit_load_preset(v)`, or
+   - Have `unit_set_param_value(k_paramProgram, v)` call `unit_load_preset(v)`, or
    - Document that preset selection must use the preset system, not the knob.
 
 4. **Modulation rate not parameterised** – `modPhases` increment by

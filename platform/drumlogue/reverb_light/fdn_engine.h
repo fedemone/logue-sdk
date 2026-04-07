@@ -1,528 +1,162 @@
 #pragma once
 
-/**
- * @file fdn_engine.h
- * @brief Feedback Delay Network (FDN) Reverb Engine
- *
- * Features:
- * - 8-channel FDN with Hadamard matrix
- * - NEON-optimized for ARMv7 (processes 4 samples at a time)
- * - Modulated delay lines for diffusion
- * - Stereo input/output
- *
- * OPTIMIZED:
- * - Vectorized processStereo for 4x performance
- * - NEON-accelerated delay line access
- * - Block processing (4 samples per call)
- */
-
 #include <arm_neon.h>
-#include <cstdint>
+#include <float_math.h>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
-#include <algorithm>
 
-// Buffer size - must be power of 2 for efficient modulo
-#define FDN_BUFFER_SIZE (32768)  // 2^15
+#define FDN_CHANNELS 8
+#define FDN_BUFFER_SIZE 32768
 #define FDN_BUFFER_MASK (FDN_BUFFER_SIZE - 1)
-#define FDN_CHANNELS (8)
-#define NEON_LANES (4)
-// pre-delay buffers
-#define PREDELAY_BUFFER_SIZE (16384)  // ~341ms at 48kHz
+#define PREDELAY_BUFFER_SIZE 16384
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
+#define SPARKLE_BUFFER_SIZE 4096
+#define NUM_RESONATORS (6)
+
+// Biquad definitions for the COLOR path
+typedef struct {
+    float b0, b1, b2, a1, a2;
+} biquad_coeffs_t;
+
+typedef struct {
+    float z1, z2;
+} biquad_state_t;
+
+fast_inline float process_biquad(float in, biquad_state_t* state, biquad_coeffs_t* c) {
+    float out = in * c->b0 + state->z1;
+    state->z1 = in * c->b1 - out * c->a1 + state->z2;
+    state->z2 = in * c->b2 - out * c->a2;
+    return out;
+}
 
 class FDNEngine {
 public:
-    /*===========================================================================*/
-    /* Lifecycle Methods */
-    /*===========================================================================*/
-
-    FDNEngine()
-        : sampleRate(48000.0f)
-        , writePos(0)
-        , decay(0.5f)
-        , modulation(0.05f)
-        , glow(0.3f)
-        , colorCoeff(0.5f)
-        , brightness(0.5f)
-        , sizeScale(1.0f)
-        , colorLpfL(0.0f)
-        , colorLpfR(0.0f)
-        , initialized(false) {
-
-        // Initialize base delay times (prime-based, in seconds)
-        static const float kBaseDelays[FDN_CHANNELS] = {
-            0.0421f, 0.0713f, 0.0987f, 0.1249f,
-            0.1571f, 0.1835f, 0.2127f, 0.2413f
-        };
-
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            baseDelayTimes[i] = kBaseDelays[i];
-            delayTimes[i] = kBaseDelays[i];
-        }
-
-        // Initialize modulation phases
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            modPhases[i] = 0.0f;
-        }
-
-        // Initialize state
-        memset(fdnState, 0, sizeof(fdnState));
-
-        // Build Hadamard matrix
-        buildHadamard();
+    FDNEngine() : sampleRate(48000.0f) {
+        initialized = false;
+        Reset();
     }
 
-    ~FDNEngine() {}
+    // ========================================================================
+    // NEW PARALLEL PARAMETERS
+    // ========================================================================
+    float dark_amt = 50.0f;
+    float glow_amt = 50.0f;
+    float bright_amt = 50.0f;
+    float color_amt = 50.0f;
+    float spark_amt = 50.0f;
 
-    /**
-     * Initialize the FDN engine
-     * @param sr Sample rate
-     * @return true if initialization successful, false if out of memory
-     */
-    bool init(float sr) {
+    float sizeScale = 1.0f;
+    float predelayScale = 0.0f;
+    float decay = 0.8f;
+
+    // ========================================================================
+    // STATE VARIABLES
+    // ========================================================================
+    // FDN Core
+    float fdnMem[FDN_CHANNELS * FDN_BUFFER_SIZE] __attribute__((aligned(16)));
+    float baseDelayTimes[FDN_CHANNELS];
+    float delayTimes[FDN_CHANNELS];
+    float fdnState[FDN_CHANNELS];
+    float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(16)));
+    int writePos = 0;
+
+    // Predelay
+    float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
+    int preDelayWritePos = 0;
+
+    // Path 1: Glow (Modulated Chamberlin SVF)
+    float glow_lfo_phase = 0.0f;
+    float glow_lp_l = 0.0f;
+    float glow_bp_l = 0.0f;
+    float glow_lp_r = 0.0f;
+    float glow_bp_r = 0.0f;
+
+    // Path 2: Dark (Mono Sub)
+    float dark_prev_sample = 0.0f;
+    int zero_cross_count = 0;
+    float sub_state = 1.0f;
+
+    // Path 3: Bright (Harmonic Exciter States)
+    biquad_state_t  bright_hpf_l;
+    biquad_state_t  bright_hpf_r;
+    biquad_coeffs_t bright_coeffs;
+
+    // Path 4: Color (6 Visual Spectrum Resonators)
+    biquad_state_t  color_filters_l[NUM_RESONATORS] __attribute__((aligned(16)));
+    biquad_state_t  color_filters_r[NUM_RESONATORS] __attribute__((aligned(16)));
+    biquad_coeffs_t color_coeffs[NUM_RESONATORS]    __attribute__((aligned(16)));
+
+    // Path 5: Sparkle (Stereo Granular S&H)
+    float sparkle_buffer_l[SPARKLE_BUFFER_SIZE];
+    float sparkle_buffer_r[SPARKLE_BUFFER_SIZE];
+    int spark_write = 0;
+    float spark_read = 0.0f;
+    float spark_speed = 2.0f;
+    float spark_pan_l = 0.5f;
+    float spark_pan_r = 0.5f;
+    int spark_countdown = 0;
+
+    float sampleRate;
+    bool initialized;
+
+    // ========================================================================
+    // INITIALIZATION & MATH
+    // ========================================================================
+    void Init(float sr) {
         sampleRate = sr;
-        if (initialized) return true;
+        generate_hadamard();
 
-        memset(fdnMem, 0, sizeof(fdnMem));
-        memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
+        // Base prime delay times for 8 channels
+        const float primes[FDN_CHANNELS] = {1103.0f, 1511.0f, 1999.0f, 2503.0f, 3011.0f, 3511.0f, 3989.0f, 4513.0f};
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            baseDelayTimes[i] = primes[i] * (sampleRate / 48000.0f);
+        }
 
-        preDelayWritePos = 0;
-        preDelayOffsetSamples = 0;
-        activeSampleCount = 0;
-
+        init_color_resonators();
+        initialize_brightness_harmonic_exciter();
+        Reset();
         initialized = true;
-        return true;
     }
 
-    /*===========================================================================*/
-    /* Parameter Setters */
-    /*===========================================================================*/
-    void setPreDelay(float ms) {
-        float clampedMs = std::max(0.0f, std::min(340.0f, ms));
-        preDelayOffsetSamples = (int)(clampedMs * sampleRate / 1000.0f);
-    }
+    void init_color_resonators() {
+        // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
+        const float freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f};
+        const float Q = 8.0f; // High Q for distinct ringing resonance
 
-    void setDecay(float d) {
-        decay = std::max(0.0f, std::min(0.99f, d));
-    }
+        for (int i = 0; i < NUM_RESONATORS; i++) {
+            // Constant Peak Gain Bandpass Biquad Math
+            float w0 = 2.0f * M_PI * freqs[i] / sampleRate;
+            float alpha = sinf(w0) / (2.0f * Q);
 
-    void setModulation(float m) {
-        modulation = std::max(0.0f, std::min(1.0f, m));
-    }
-
-    void setDelayTime(int channel, float timeSeconds) {
-        if (channel >= 0 && channel < FDN_CHANNELS) {
-            delayTimes[channel] = std::max(0.01f, std::min(2.0f, timeSeconds));
+            float a0 = 1.0f + alpha;
+            color_coeffs[i].b0 = alpha / a0;
+            color_coeffs[i].b1 = 0.0f;
+            color_coeffs[i].b2 = -alpha / a0;
+            color_coeffs[i].a1 = -2.0f * cosf(w0) / a0;
+            color_coeffs[i].a2 = (1.0f - alpha) / a0;
         }
     }
 
-    /** Wet/dry mix  0.0 = fully dry, 1.0 = fully wet (GLOW parameter) */
-    void setGlow(float g) {
-        glow = std::max(0.0f, std::min(1.0f, g));
+    // 5kHz Butterworth HPF
+    void initialize_brightness_harmonic_exciter() {
+        float w0_bright = 2.0f * M_PI * 5000.0f / sampleRate;
+        float alpha_bright = sinf(w0_bright) / (2.0f * 0.707f);
+        float a0_bright = 1.0f + alpha_bright;
+
+        bright_coeffs.b0 = ((1.0f + cosf(w0_bright)) / 2.0f) / a0_bright;
+        bright_coeffs.b1 = -(1.0f + cosf(w0_bright)) / a0_bright;
+        bright_coeffs.b2 = ((1.0f + cosf(w0_bright)) / 2.0f) / a0_bright;
+        bright_coeffs.a1 = (-2.0f * cosf(w0_bright)) / a0_bright;
+        bright_coeffs.a2 = (1.0f - alpha_bright) / a0_bright;
     }
 
-    /**
-     * Tone color: LPF coefficient (COLR parameter).
-     * 0.0 = open/bright, 1.0 = very dark/filtered.
-     */
-    void setColor(float c) {
-        colorCoeff = std::max(0.0f, std::min(0.95f, c));
-    }
-
-    /**
-     * Brightness: high-frequency blend (BRIG parameter).
-     * 0.0 = no HF content, 1.0 = full HF (bypasses LPF).
-     * Room size: scales all delay times (SIZE parameter).
-     */
-    void setBrightness(float b) {
-        brightness = std::max(0.0f, std::min(1.0f, b));
-    }
-
-    /**
-     * 0.0 = tiny room, 1.0 = normal, 2.0 = large hall.
-     */
-    void setSize(float s) {
-        sizeScale = std::max(0.1f, std::min(2.0f, s));
+    void generate_hadamard() {
+        float norm = 1.0f / sqrtf(FDN_CHANNELS);
         for (int i = 0; i < FDN_CHANNELS; i++) {
-            delayTimes[i] = std::min(baseDelayTimes[i] * sizeScale,
-                                     (float)(FDN_BUFFER_SIZE - 1) / sampleRate);
-        }
-    }
-
-    /*===========================================================================*/
-    /* NEON Utilities */
-    /*===========================================================================*/
-
-    /*===========================================================================*/
-    /* Core Processing - Scalar (Single Sample) */
-    /*===========================================================================*/
-
-    /**
-     * Process one sample through FDN (scalar fallback)
-     */
-    float processScalar(float input) {
-        float delayOut[FDN_CHANNELS];
-
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = sinf(modPhases[ch] * 2.0f * (float)M_PI) * modulation * 3.0f;
-            float readPos = (float)writePos - (delaySamples + mod);
-
-            while (readPos < 0) readPos += FDN_BUFFER_SIZE;
-            while (readPos >= FDN_BUFFER_SIZE) readPos -= FDN_BUFFER_SIZE;
-
-            int index1 = (int)readPos;
-            int index2 = (index1 + 1) & FDN_BUFFER_MASK;
-            float frac = readPos - index1;
-
-            float s1 = fdnMem[ch * FDN_BUFFER_SIZE + index1];
-            float s2 = fdnMem[ch * FDN_BUFFER_SIZE + index2];
-
-            delayOut[ch] = s1 + frac * (s2 - s1);
-
-            modPhases[ch] += modulation * 2.0f / sampleRate;
-            if (modPhases[ch] > 1.0f) modPhases[ch] -= 1.0f;
-        }
-
-        float mixed[FDN_CHANNELS];
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            float sum = 0.0f;
             for (int j = 0; j < FDN_CHANNELS; j++) {
-                sum += hadamard[i][j] * delayOut[j];
-            }
-
-            // COLOR: Polynomial Soft-Clipping Saturation inside the loop
-            float loopGain = 0.7f + (decay * 0.295f);
-            float wet = sum * loopGain;
-            float sat = wet - (wet * wet * wet) * 0.15f;
-            // HARD CLAMP to prevent FDN blowup
-            mixed[i] = std::max(-1.5f, std::min(1.5f, sat));
-        }
-
-        mixed[0] += input * (1.0f - decay);
-
-        float output = 0.0f;
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            fdnMem[ch * FDN_BUFFER_SIZE + writePos] = mixed[ch];
-            fdnState[ch] = mixed[ch];
-            output += mixed[ch];
-        }
-
-        writePos = (writePos + 1) & FDN_BUFFER_MASK;
-        return output / FDN_CHANNELS;
-    }
-
-    /*===========================================================================*/
-    /* NEON Vectorized Processing (4 Samples) */
-    /*===========================================================================*/
-
-    /**
-     * Process 4 samples in parallel using NEON
-     */
-    void process4Samples(const float* inL, const float* inR,
-                         float* outL, float* outR) {
-
-        float32x4_t inL4 = vld1q_f32(inL);
-        float32x4_t inR4 = vld1q_f32(inR);
-
-        // Convert to mono
-        float32x4_t inMono = vmulq_f32(vaddq_f32(inL4, inR4), vdupq_n_f32(0.5f));
-
-        // =================================================================
-        // THE HPF (Personality Injector) - Processed manually for 4 lanes
-        // =================================================================
-        // Load the input vector (already in a NEON register)
-        float32x4_t v = inMono;
-
-        // Process lanes sequentially, building the result vector directly
-        float32x4_t result = vdupq_n_f32(0.0f);
-
-        // Lane 0
-        float f0 = vgetq_lane_f32(v, 0) - hpfStateL;
-        hpfStateL = vgetq_lane_f32(v, 0) - hpfCoeff * f0;
-        result = vsetq_lane_f32(f0, result, 0);
-
-        // Lane 1
-        float f1 = vgetq_lane_f32(v, 1) - hpfStateL;
-        hpfStateL = vgetq_lane_f32(v, 1) - hpfCoeff * f1;
-        result = vsetq_lane_f32(f1, result, 1);
-
-        // Lane 2
-        float f2 = vgetq_lane_f32(v, 2) - hpfStateL;
-        hpfStateL = vgetq_lane_f32(v, 2) - hpfCoeff * f2;
-        result = vsetq_lane_f32(f2, result, 2);
-
-        // Lane 3
-        float f3 = vgetq_lane_f32(v, 3) - hpfStateL;
-        hpfStateL = vgetq_lane_f32(v, 3) - hpfCoeff * f3;
-        result = vsetq_lane_f32(f3, result, 3);
-
-        // Assign the filtered vector back to inMono
-        inMono = result;
-
-        // =================================================================
-        // 1. Pre-Delay Write & Read
-        // =================================================================
-        float monoLanes[NEON_LANES];
-        vst1q_f32(monoLanes, inMono);
-        float delayedLanes[NEON_LANES];
-        for (int s = 0; s < NEON_LANES; s++) {
-            preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
-            int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
-            delayedLanes[s] = preDelayBuffer[readPos];
-        }
-
-        float32x4_t delayedMono = vld1q_f32(delayedLanes);
-        preDelayWritePos = (preDelayWritePos + 4) & PREDELAY_MASK;
-
-        // =================================================================
-        // 2. Active Partial Counting (APC)
-        // =================================================================
-        float32x4_t absIn = vabsq_f32(delayedMono);
-        float32x4_t max1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
-        float32x4_t max2 = vmaxq_f32(max1, vextq_f32(max1, max1, 1));
-
-        if (vgetq_lane_f32(max2, 0) > 1e-5f) {
-            // Wake up. Tail length tied to decay parameter.
-            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
-        } else if (activeSampleCount > 0) {
-            activeSampleCount -= NEON_LANES;
-        }
-
-        // Bypass everything if asleep
-        if (activeSampleCount <= 0) {
-            // FIX 1: Apply dry mix properly during bypass so volume doesn't jump
-            float32x4_t dryGain = vdupq_n_f32(1.0f - glow);
-            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
-            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
-            // FIX 2: Keep advancing write position to prevent delay line freezing
-            writePos = (writePos + NEON_LANES) & FDN_BUFFER_MASK;
-            return;
-        }
-
-        // =================================================================
-        // Read from all 8 delay lines for 4 samples
-        // =================================================================
-        float delayOut[FDN_CHANNELS][NEON_LANES];
-
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float delaySamples = delayTimes[ch] * sampleRate;
-
-            // Calculate read positions for NEON_LANES samples
-            float readPos[NEON_LANES];
-            float mod = sinf(modPhases[ch] * 2.0f * M_PI) * modulation * 3.0f;
-            for (int s = 0; s < NEON_LANES; s++) {
-                // Max ±3 samples depth to avoid Doppler pitch shift exceeding decay rate
-                float pos = (float)(writePos + s) - (delaySamples + mod);
-
-                while (pos < 0) pos += FDN_BUFFER_SIZE;
-                while (pos >= FDN_BUFFER_SIZE) pos -= FDN_BUFFER_SIZE;
-                readPos[s] = pos;
-
-                // Update modulation phase (once per 4 samples, max 2 Hz LFO rate)
-                if (s == 3) {
-                    modPhases[ch] += modulation * 2.0f / sampleRate * 4.0f;
-                    if (modPhases[ch] > 1.0f) modPhases[ch] -= 1.0f;
-                }
-            }
-
-            // Linear interpolation for 4 samples
-            for (int s = 0; s < NEON_LANES; s++) {
-                int idx1 = (int)readPos[s];
-                int idx2 = (idx1 + 1) & FDN_BUFFER_MASK;
-                float frac = readPos[s] - idx1;
-
-                float s1 = fdnMem[ch * FDN_BUFFER_SIZE + idx1];
-                float s2 = fdnMem[ch * FDN_BUFFER_SIZE + idx2];
-                delayOut[ch][s] = s1 + frac * (s2 - s1);
-            }
-        }
-
-        // =================================================================
-        // Apply Hadamard mixing (Optimized: 4 time-samples in parallel)
-        // =================================================================
-
-        // Load 4 time-samples for each channel
-        float32x4_t v_delayOut[FDN_CHANNELS];
-        float32x4_t v_mixed[FDN_CHANNELS];
-        // FIX 3: Map UI decay (0-1) to realistic loop gain (0.7-0.995)
-        float loopGain = 0.7f + (decay * 0.295f);
-        float32x4_t v_decay = vdupq_n_f32(loopGain);
-
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            v_mixed[i] = vdupq_n_f32(0.0f);
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                v_delayOut[j] = vld1q_f32(delayOut[j]);
-                v_mixed[i] = vmlaq_f32(v_mixed[i], v_delayOut[j], vdupq_n_f32(hadamard[i][j]));
-            }
-            v_mixed[i] = vmulq_f32(v_mixed[i], v_decay);
-
-            // COLOR: NEON Polynomial Soft-Clipping Saturation
-            float32x4_t x2 = vmulq_f32(v_mixed[i], v_mixed[i]);
-            float32x4_t x3 = vmulq_f32(x2, v_mixed[i]);
-            float32x4_t sat = vsubq_f32(v_mixed[i], vmulq_f32(x3, vdupq_n_f32(0.15f)));
-
-            // HARD CLAMP NEON vectors to prevent FDN blowup
-            v_mixed[i] = vmaxq_f32(vminq_f32(sat, vdupq_n_f32(1.5f)), vdupq_n_f32(-1.5f));
-        }
-
-        // Add delayed mono input to the first channel
-        float32x4_t v_feedback = vdupq_n_f32(1.0f - decay);
-        v_mixed[0] = vaddq_f32(v_mixed[0], vmulq_f32(delayedMono, v_feedback));
-
-
-        // =================================================================
-        // Write back to delay lines and update state
-        // =================================================================
-        float mixed[FDN_CHANNELS][NEON_LANES];
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            // Spill back to the mixed array
-            vst1q_f32(mixed[ch], v_mixed[ch]);
-            float* delayLine = &fdnMem[ch * FDN_BUFFER_SIZE];
-
-            // Write 4 consecutive samples
-            for (int s = 0; s < NEON_LANES; s++) {
-                delayLine[(writePos + s) & FDN_BUFFER_MASK] = mixed[ch][s];
-            }
-
-            // Update fdnState (use last sample for next block)
-            fdnState[ch] = mixed[ch][3];
-        }
-
-        writePos = (writePos + NEON_LANES) & FDN_BUFFER_MASK;
-
-        // =================================================================
-        // Stereo downmix (channels 0-3 to left, 4-7 to right)
-        // =================================================================
-        // Spill stereo input vectors for variable-index access (same reason as inMono above)
-        float inLArr[NEON_LANES], inRArr[NEON_LANES];
-        vst1q_f32(inLArr, inL4);
-        vst1q_f32(inRArr, inR4);
-
-        for (int s = 0; s < NEON_LANES; s++) {
-            float leftOut = 0.0f, rightOut = 0.0f;
-            for (int ch = 0; ch < NEON_LANES; ch++) {
-                leftOut += mixed[ch][s];
-                rightOut += mixed[ch + NEON_LANES][s];
-            }
-            leftOut *= 0.25f;
-            rightOut *= 0.25f;
-
-            // Apply tone: LPF (color) blended with dry-wet mix
-            // LPF: y = colorCoeff*y_prev + (1-colorCoeff)*x
-            colorLpfL = colorCoeff * colorLpfL + (1.0f - colorCoeff) * leftOut;
-            colorLpfR = colorCoeff * colorLpfR + (1.0f - colorCoeff) * rightOut;
-
-            // Brightness: blend between lpf output and unfiltered
-            float wetL = colorLpfL + brightness * (leftOut  - colorLpfL);
-            float wetR = colorLpfR + brightness * (rightOut - colorLpfR);
-
-            float inLVal = inLArr[s];
-            float inRVal = inRArr[s];
-
-            outL[s] = inLVal * (1.0f - glow) + wetL * glow;
-            outR[s] = inRVal * (1.0f - glow) + wetR * glow;
-        }
-    }
-
-    /*===========================================================================*/
-    /* Main Processing Entry Point - Vectorized */
-    /*===========================================================================*/
-
-    /**
-     * Process stereo audio through FDN (vectorized)
-     * Handles both full blocks of 4 and remainder samples
-     */
-    void processStereo(const float* inL, const float* inR,
-                       float* outL, float* outR,
-                       int numSamples) {
-
-        // Bypass if not initialized
-        if (!initialized) {
-            memcpy(outL, inL, numSamples * sizeof(float));
-            memcpy(outR, inR, numSamples * sizeof(float));
-            return;
-        }
-
-        int samplesProcessed = 0;
-
-        // =================================================================
-        // Process in blocks of 4 (vectorized path)
-        // =================================================================
-        while (samplesProcessed + NEON_LANES <= numSamples) {
-            process4Samples(inL + samplesProcessed,
-                            inR + samplesProcessed,
-                            outL + samplesProcessed,
-                            outR + samplesProcessed);
-            samplesProcessed += NEON_LANES;
-        }
-
-        // =================================================================
-        // Process remaining 1-3 samples (scalar fallback)
-        // =================================================================
-        for (int i = samplesProcessed; i < numSamples; i++) {
-            // Simple one-pole DC blocker / HPF
-            float currentL = (inL[i] + inR[i]) * 0.5f;
-            float filtered = currentL - hpfStateL;
-            hpfStateL = currentL - hpfCoeff * filtered;
-
-            // Pre-Delay
-            preDelayBuffer[preDelayWritePos] = filtered;
-            int readPos = (preDelayWritePos - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
-            float delayedInput = preDelayBuffer[readPos];
-            preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
-
-            // APC Check
-            if (std::abs(delayedInput) > 1e-5f) {
-                activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
-            } else if (activeSampleCount > 0) {
-                activeSampleCount--;
-            }
-
-            // Bypass if asleep
-            if (activeSampleCount <= 0) {
-                outL[i] = inL[i] * (1.0f - glow);
-                outR[i] = inR[i] * (1.0f - glow);
-                writePos = (writePos + 1) & FDN_BUFFER_MASK;
-                continue;
-            }
-
-            // Pass delayed input to your existing processScalar method
-            processScalar(delayedInput);  // populates fdnState for stereo spread
-
-            // Simple stereo spread (channels 0-3 to left, NEON_LANES-7 to right)
-            float leftOut = 0.0f, rightOut = 0.0f;
-            for (int ch = 0; ch < NEON_LANES; ch++) {
-                leftOut += fdnState[ch];
-                rightOut += fdnState[ch + NEON_LANES];
-            }
-            leftOut *= 0.25f;
-            rightOut *= 0.25f;
-
-            // Apply tone (color LPF + brightness blend)
-            colorLpfL = colorCoeff * colorLpfL + (1.0f - colorCoeff) * leftOut;
-            colorLpfR = colorCoeff * colorLpfR + (1.0f - colorCoeff) * rightOut;
-            float wetL = colorLpfL + brightness * (leftOut  - colorLpfL);
-            float wetR = colorLpfR + brightness * (rightOut - colorLpfR);
-
-            outL[i] = inL[i] * (1.0f - glow) + wetL * glow;
-            outR[i] = inR[i] * (1.0f - glow) + wetR * glow;
-        }
-    }
-
-private:
-    /*===========================================================================*/
-    /* Private Methods */
-    /*===========================================================================*/
-
-    void buildHadamard() {
-        float norm = 1.0f / sqrtf(8.0f);
-
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
-                int bits = i & j;
                 int parity = 0;
+                int bits = i & j;
                 while (bits) {
                     parity ^= (bits & 1);
                     bits >>= 1;
@@ -532,36 +166,245 @@ private:
         }
     }
 
-    /*===========================================================================*/
-    /* Private Member Variables */
-    /*===========================================================================*/
+    void Reset() {
+        memset(fdnMem, 0, sizeof(fdnMem));
+        memset(fdnState, 0, sizeof(fdnState));
+        memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
+        memset(color_filters_l, 0, sizeof(color_filters_l));
+        memset(color_filters_r, 0, sizeof(color_filters_r));
+        memset(sparkle_buffer_l, 0, sizeof(sparkle_buffer_l));
+        memset(sparkle_buffer_r, 0, sizeof(sparkle_buffer_r));
+        writePos = 0;
+        preDelayWritePos = 0;
+        dark_prev_sample = 0.0f;
+        memset(&bright_hpf_l, 0, sizeof(biquad_state_t));
+        memset(&bright_hpf_r, 0, sizeof(biquad_state_t));
+        glow_lfo_phase = 0.0f;
+        glow_lp_l = 0.0f;
+        glow_bp_l = 0.0f;
+        glow_lp_r = 0.0f;
+        glow_bp_r = 0.0f;
+    }
 
-    float sampleRate;
-    int writePos;
-    float decay;
-    float modulation;
-    float glow;          // wet/dry mix  0..1
-    float colorCoeff;    // tone LPF coefficient  0..0.95
-    float brightness;    // HF blend  0..1
-    float sizeScale;     // room size scale  0.1..2.0
-    float colorLpfL;     // LPF state for left channel output
-    float colorLpfR;     // LPF state for right channel output
+    //==============
+    // Setters
+    //==============
+    void setDarkness(int32_t val) {
+        dark_amt = val;
+    }
+    void setBrightness(int32_t val) {
+        bright_amt = val;
+    }
+    void setGlow(int32_t val) {
+        glow_amt = val;
+    }
+    void setColor(int32_t val) {
+        color_amt = val;
+    }
+    void setSpark(int32_t val) {
+        spark_amt = val;
+    }
+    void setSize(int32_t val) {
+        sizeScale = fmaxf(0.1f, val * 2.0f);
+    }
+    void setPreDelay(int32_t val) {
+        predelayScale = val;
+    }
 
-    // High Pass filter
-    float hpfStateL = 0.0f;
-    // float hpfStateR = 0.0f;
-    float hpfCoeff = 0.85f; // Adjust between 0.0 (off) and 0.99 (heavy low cut)
+    // ========================================================================
+    // BAREBONES FDN STEP (Replaces old bloated FDN logic)
+    // ========================================================================
+    void step_core_fdn(float in_l, float in_r, float* out_l, float* out_r) {
+        float fdnOut[FDN_CHANNELS];
 
-    bool initialized;
-    float fdnMem[FDN_CHANNELS * FDN_BUFFER_SIZE] __attribute__((aligned(16)));
-    float baseDelayTimes[FDN_CHANNELS]; // unscaled delay times
-    float delayTimes[FDN_CHANNELS];
-    float modPhases[FDN_CHANNELS];
-    float fdnState[FDN_CHANNELS];
-    float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(16)));
+        // 1. Read from Delay Lines
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            float dt = baseDelayTimes[ch] * sizeScale;
+            float readPos = (float)writePos - dt;
+            if (readPos < 0.0f) readPos += FDN_BUFFER_SIZE;
 
-    float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
-    int preDelayWritePos;
-    int preDelayOffsetSamples;
-    int activeSampleCount;
+            int idx1 = (int)readPos;
+            int idx2 = (idx1 + 1) & FDN_BUFFER_MASK;
+            float frac = readPos - idx1;
+
+            float val1 = fdnMem[ch * FDN_BUFFER_SIZE + idx1];
+            float val2 = fdnMem[ch * FDN_BUFFER_SIZE + idx2];
+            fdnOut[ch] = val1 + frac * (val2 - val1);
+        }
+
+        // 2. Mixdown to Stereo Output
+        *out_l = fdnOut[0] + fdnOut[1] + fdnOut[2] + fdnOut[3];
+        *out_r = fdnOut[4] + fdnOut[5] + fdnOut[6] + fdnOut[7];
+
+        // 3. Hadamard Mixing & Feedback Writing
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            float sum = 0.0f;
+            for (int j = 0; j < FDN_CHANNELS; j++) {
+                sum += fdnOut[j] * hadamard[i][j];
+            }
+
+            // Inject Input: Left to channels 0-3, Right to 4-7
+            float input_inject = (i < 4) ? in_l : in_r;
+
+            // Pure delay network - no old LPFs, no old swirl, just decay and input
+            fdnMem[i * FDN_BUFFER_SIZE + writePos] = input_inject + (sum * decay);
+        }
+
+        writePos = (writePos + 1) & FDN_BUFFER_MASK;
+    }
+
+    // ========================================================================
+    // PARALLEL AUDIO BLOCK PROCESSOR
+    // ========================================================================
+    void processBlock(float* out, int num_samples) {
+        if (!initialized) return;
+
+        int preDelaySamps = (int)(predelayScale * 16000.0f); // Max ~330ms
+
+        float total_wet = (dark_amt + glow_amt + bright_amt + color_amt + spark_amt) / 5.0f;
+        float dry_mix = 1.0f - fminf(1.0f, total_wet);
+        float wet_normalize = total_wet > 0.0f ? (1.0f / fmaxf(1.0f, total_wet)) : 0.0f;
+
+        for (int i = 0; i < num_samples; i += 2) {
+            float in_l = out[i];
+            float in_r = out[i+1];
+
+            // PREDELAY
+            float mono_in = (in_l + in_r) * 0.5f;
+            preDelayBuffer[preDelayWritePos] = mono_in;
+            int pd_read = (preDelayWritePos - preDelaySamps + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
+            float pd_sig = preDelayBuffer[pd_read];
+            preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
+
+            // 1. CORE FDN (Pure acoustic delays)
+            float rev_l, rev_r;
+            step_core_fdn(pd_sig, pd_sig, &rev_l, &rev_r);
+
+            // Now 5 parallel paths to be summed up at the end
+{
+            // ==========================================
+            // PATH 1: GLOW (Stereo Swirling SVF)
+            // ==========================================
+            // LFO rate scales with the glow amount knob (e.g., 0.2Hz to ~1.5Hz)
+            // phase offset
+            float lfo_rate = (0.2f + (glow_amt * 1.3f)) / 48000.0f;
+            glow_lfo_phase += lfo_rate;
+            if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
+
+            // Left Channel: Modulate coefficient directly.
+            // f_coeff = 0.15 (~1000Hz base) +/- 0.10 (~800Hz sweep)
+            float lfo_val_l = fastersinfullf(glow_lfo_phase);
+            float f_coeff_l = 0.15f + (0.10f * lfo_val_l);
+            float q_coeff = 0.4f; // Mild resonance to accentuate the sweep
+
+            glow_lp_l += f_coeff_l * glow_bp_l;
+            glow_bp_l += f_coeff_l * (rev_l - glow_lp_l - q_coeff * glow_bp_l);
+            float glow_l = glow_lp_l; // Take the Low-Pass output for warmth
+
+            // Right Channel: 90-degree phase offset for stereo widening
+            float phase_r = glow_lfo_phase + 0.25f;
+            if (phase_r > 1.0f) phase_r -= 1.0f;
+
+            float lfo_val_r = fastersinfullf(phase_r);
+            float f_coeff_r = 0.15f + (0.10f * lfo_val_r);
+
+            glow_lp_r += f_coeff_r * glow_bp_r;
+            glow_bp_r += f_coeff_r * (rev_r - glow_lp_r - q_coeff * glow_bp_r);
+            float glow_r = glow_lp_r;
+}
+{
+            // PATH 2: DARK (Mono -2 Octave Sub)
+            float rev_mono = (rev_l + rev_r) * 0.5f;
+            if ((rev_mono > 0.0f && dark_prev_sample <= 0.0f) ||
+                (rev_mono < 0.0f && dark_prev_sample >= 0.0f)) {
+                zero_cross_count++;
+                if (zero_cross_count >= 4) {
+                    sub_state = -sub_state;
+                    zero_cross_count = 0;
+                }
+            }
+            dark_prev_sample = rev_mono;
+            float dark_sig = sub_state * fabsf(rev_mono) * 1.5f;
+}
+{
+            // ==========================================
+            // PATH 3: BRIGHT (Harmonic Exciter Air)
+            // ==========================================
+            // 1. Isolate the extreme highs using the 2nd-order Butterworth HPF
+            float hp_l = process_biquad(rev_l, &bright_hpf_l, &bright_coeffs);
+            float hp_r = process_biquad(rev_r, &bright_hpf_r, &bright_coeffs);
+
+            // 2. Drive the isolated highs to prepare for saturation
+            float drive_l = hp_l * 4.0f;
+            float drive_r = hp_r * 4.0f;
+
+            // Clamp to prevent polynomial foldback explosion
+            drive_l = fmaxf(-1.0f, fminf(1.0f, drive_l));
+            drive_r = fmaxf(-1.0f, fminf(1.0f, drive_r));
+
+            // 3. Polynomial soft-clipping (x - x^3/3)
+            // This squashes the peaks, synthesizing beautiful 2nd and 3rd order "sizzle"
+            float bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
+            float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
+}
+{
+            // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
+            float color_l = 0.0f;
+            float color_r = 0.0f;
+            for(int f=0; f<NUM_RESONATORS; f++) {
+                color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
+                color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
+            }
+            // Scale down since we are summing 6 high-Q resonant peaks
+            color_l *= 0.15f;
+            color_r *= 0.15f;
+}
+{
+            // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
+            sparkle_buffer_l[spark_write] = rev_l;
+            sparkle_buffer_r[spark_write] = rev_r;
+            spark_write = (spark_write + 1) & (SPARKLE_BUFFER_SIZE - 1);
+
+            float spark_l = 0.0f;
+            float spark_r = 0.0f;
+
+            if (spark_countdown > 0) {
+                int r_idx = (int)spark_read & (SPARKLE_BUFFER_SIZE - 1);
+                spark_l = sparkle_buffer_l[r_idx] * spark_pan_l;
+                spark_r = sparkle_buffer_r[r_idx] * spark_pan_r;
+                spark_read += spark_speed;
+                spark_countdown--;
+            } else {
+                // Xorshift inline PRNG
+                static uint32_t seed = 2463534242UL;
+                seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+                float rand_val = (float)seed / 4294967295.0f;
+
+                if (rand_val < (0.0001f + (spark_amt * 0.005f))) {
+                    spark_countdown = 500 + (seed % 1000); // 10-30ms grain
+                    spark_read = spark_write - spark_countdown;
+                    if(spark_read < 0) spark_read += SPARKLE_BUFFER_SIZE;
+                    spark_speed = (seed % 2 == 0) ? 2.0f : 4.0f; // +12 or +24 semitones
+
+                    spark_pan_l = (float)(seed % 100) / 100.0f;
+                    spark_pan_r = 1.0f - spark_pan_l;
+                }
+            }
+}
+            // ==========================================
+            // FINAL PARALLEL MIXDOWN
+            // ==========================================
+            float mix_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
+                          (color_l * color_amt) + (spark_l * spark_amt);
+
+            float mix_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
+                          (color_r * color_amt) + (spark_r * spark_amt);
+
+            mix_l *= wet_normalize;
+            mix_r *= wet_normalize;
+
+            out[i]   = (in_l * dry_mix) + mix_l;
+            out[i+1] = (in_r * dry_mix) + mix_r;
+        }
+    }
 };
