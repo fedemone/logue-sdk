@@ -32,6 +32,19 @@ typedef struct {
     float32x4_t z1;  // Delay element
 } one_pole_t;
 
+/**
+ * One-pole LPF using a precomputed alpha — avoids the division on every call.
+ * Use when the cutoff is fixed (e.g. per-engine band filters).
+ * alpha = 2*pi*f / (2*pi*f + SAMPLE_RATE)
+ */
+fast_inline float32x4_t one_pole_lpf_a(one_pole_t* f, float32x4_t in, float alpha) {
+    float32x4_t a   = vdupq_n_f32(alpha);
+    float32x4_t out = vaddq_f32(vmulq_f32(in, a),
+                                 vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), a)));
+    f->z1 = out;
+    return out;
+}
+
 fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff) {
     // Matched-z transform: alpha = 2*pi*f / (2*pi*f + sr)
     // e.g. 800 Hz  -> alpha ~0.095  (was ~0.016 with wrong formula)

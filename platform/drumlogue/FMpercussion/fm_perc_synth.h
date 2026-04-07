@@ -95,7 +95,27 @@ typedef struct {
 
     // Output gain
     float master_gain;
+
+    // Per-engine output band filters — keeps each engine in its natural frequency
+    // range so voices don't mask each other.  Each one_pole_t holds one float32x4_t
+    // state word (one state per NEON lane = per voice).
+    // Precomputed alpha = 2πf/(2πf+sr) — see constants below.
+    one_pole_t kick_out_lpf;   // LP 250 Hz  — keeps kick body, removes highs
+    one_pole_t snare_hpf;      // LP state for HP 100 Hz subtraction — removes kick rumble
+    one_pole_t snare_out_lpf;  // LP 7000 Hz — removes ultrasonic hash
+    one_pole_t metal_hpf;      // LP state for HP 800 Hz subtraction — removes lows
+    one_pole_t perc_hpf;       // LP state for HP 80 Hz subtraction  — removes sub rumble
+    one_pole_t perc_out_lpf;   // LP 3000 Hz — removes high-frequency clash with metal
 } fm_perc_synth_t;
+
+// Precomputed one-pole filter alpha values: 2πf / (2πf + 48000)
+// These are constant across the lifetime of the plugin so computing once is correct.
+static const float FILT_KICK_LP_A  = 1570.796f  / (1570.796f  + 48000.0f); // 250 Hz
+static const float FILT_SNARE_HP_A = 628.318f   / (628.318f   + 48000.0f); // 100 Hz
+static const float FILT_SNARE_LP_A = 43982.297f / (43982.297f + 48000.0f); // 7000 Hz
+static const float FILT_METAL_HP_A = 5026.548f  / (5026.548f  + 48000.0f); // 800 Hz
+static const float FILT_PERC_HP_A  = 502.655f   / (502.655f   + 48000.0f); // 80 Hz
+static const float FILT_PERC_LP_A  = 18849.556f / (18849.556f + 48000.0f); // 3000 Hz
 
 /**
  * Update voice allocation from param 21 (0-11)
@@ -317,6 +337,14 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     // Initialize PRNG and MIDI
     neon_prng_init(&synth->prng, RAND_DEFAULT_SEED);
     midi_handler_init(&synth->midi);
+
+    // Initialize per-engine band filter states
+    synth->kick_out_lpf.z1 = vdupq_n_f32(0.0f);
+    synth->snare_hpf.z1    = vdupq_n_f32(0.0f);
+    synth->snare_out_lpf.z1= vdupq_n_f32(0.0f);
+    synth->metal_hpf.z1    = vdupq_n_f32(0.0f);
+    synth->perc_hpf.z1     = vdupq_n_f32(0.0f);
+    synth->perc_out_lpf.z1 = vdupq_n_f32(0.0f);
 
     // Initialize parameters
     synth->voice_active = vdupq_n_f32(0.0f);
@@ -702,11 +730,38 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     float32x4_t resonant_out = resonant_synth_process(&synth->resonant, env,
                                                        synth->engine_mask[ENGINE_RESONANT]);
 
-    // OLD: The resonant engine doesn't process the envelope internally like the FM engines do.
-    // We must manually scale its output by the envelope here before mixing!
-    // NEW: LINE DELETED so the filter's tail is not cut off, as we do use env
-    // directly for sound triggering in stead of continuous sine wave to be shaped by env
-    // resonant_out = vmulq_f32(resonant_out, env);
+    // =================================================================
+    // Per-engine band filters — spectral band separation.
+    // Each engine is constrained to its natural frequency range so voices
+    // don't mask each other in the mix (kick rumble vs snare crack, etc.).
+    // HPF is implemented as: output = input - LPF(input, cutoff).
+    // All alphas are precomputed constants (no division per sample).
+    // =================================================================
+
+    // Kick: LP 250 Hz — preserves body, removes high-frequency clash
+    kick_out = one_pole_lpf_a(&synth->kick_out_lpf, kick_out, FILT_KICK_LP_A);
+
+    // Snare: HP 100 Hz (remove kick rumble) then LP 7000 Hz (remove hash)
+    {
+        float32x4_t snare_lp = one_pole_lpf_a(&synth->snare_hpf, snare_out, FILT_SNARE_HP_A);
+        snare_out = vsubq_f32(snare_out, snare_lp);           // HP at 100 Hz
+        snare_out = one_pole_lpf_a(&synth->snare_out_lpf, snare_out, FILT_SNARE_LP_A);
+    }
+
+    // Metal/cymbal: HP 800 Hz — removes lows, keeps shimmer
+    {
+        float32x4_t metal_lp = one_pole_lpf_a(&synth->metal_hpf, metal_out, FILT_METAL_HP_A);
+        metal_out = vsubq_f32(metal_out, metal_lp);           // HP at 800 Hz
+    }
+
+    // Perc/tom: HP 80 Hz (remove sub rumble) then LP 3000 Hz (remove clash with metal)
+    {
+        float32x4_t perc_lp = one_pole_lpf_a(&synth->perc_hpf, perc_out, FILT_PERC_HP_A);
+        perc_out = vsubq_f32(perc_out, perc_lp);              // HP at 80 Hz
+        perc_out = one_pole_lpf_a(&synth->perc_out_lpf, perc_out, FILT_PERC_LP_A);
+    }
+
+    // Resonant engine: full-range pass — it is already a filter
 
     // =================================================================
     // Mix all engines, then apply per-voice velocity scaling

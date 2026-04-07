@@ -159,15 +159,19 @@ fast_inline float32x4_t lfo_generate_shape(uint32_t shape, float32x4_t phase) {
         }
 
         case LFO_SHAPE_CHORD: {
-            // 3-step quantized: Root (0), 3rd (4 semitones), 5th (7 semitones)
+            // Steps through root → major-3rd → perfect-5th at equal time.
+            // Output is in octave-fraction units so that:
+            //   pitch_octaves = value * depth * 2  →  0, 4, 7 semitones at depth=1
+            // root=0, 3rd=4/24≈0.167, 5th=7/24≈0.292
             float32x4_t three = vdupq_n_f32(3.0f);
             int32x4_t step = vcvtq_s32_f32(vmulq_f32(phase, three));
+            // Clamp to [0,2]: guards against phase==1.0 before wrap
+            step = vmaxq_s32(vminq_s32(step, vdupq_n_s32(2)), vdupq_n_s32(0));
             float32x4_t step_f = vcvtq_f32_s32(step);
 
-            // Using central constants from constants.h
-            float32x4_t root = vdupq_n_f32(INTERVAL_UNISON);
-            float32x4_t third = vdupq_n_f32(INTERVAL_MAJOR_3RD);
-            float32x4_t fifth = vdupq_n_f32(INTERVAL_PERFECT_5TH);
+            float32x4_t root  = vdupq_n_f32(0.0f);           // 0 semitones
+            float32x4_t third = vdupq_n_f32(4.0f / 24.0f);   // 4 semitones
+            float32x4_t fifth = vdupq_n_f32(7.0f / 24.0f);   // 7 semitones
 
             return vbslq_f32(vceqq_f32(step_f, vdupq_n_f32(0.0f)), root,
                    vbslq_f32(vceqq_f32(step_f, vdupq_n_f32(1.0f)), third, fifth));
