@@ -35,7 +35,7 @@ the open design questions listed below before further work proceeds.
 - **Cross-channel feedback** (chaos scaled by PILL count)
 - **Randomised ping-pong** for PILL=1 (pseudo-random cyclic stereo map)
 - **Modulated diffusion** (xorshift LFO, speed = VIBR)
-- **Shimmer** (ring-mod on 8-ch mode, PILL=4) with sub-Hz freq control (`PL4FRQ`)
+- **Shimmer** (ring-mod on 8-ch mode, PILL=4) with sub-Hz freq control (`SHMR`)
 - **Coloured noise injection** (preset 3 "stellare"): brown/pink/grey/blue/violet
 
 ---
@@ -53,7 +53,7 @@ the open design questions listed below before further work proceeds.
 | 6 | WIDE | 0–200 | ÷100 → stereo width 0.0–2.0 |
 | 7 | COMP | 0–1000 | ÷1000 → diffusion 0.0–1.0 / noise colour |
 | 8 | PILL | 0–4 | routing: 2ch / 4ch / 6ch / 8ch / 8ch+shimmer |
-| 9 | PL4FRQ | 0–100 | shimmer frequency (3–55 Hz) |
+| 9 | SHMR | 0–100 | shimmer frequency (3–55 Hz) |
 | 10 | PDLY | 0–100 | pre-delay 0–340 ms |
 | 11 | VIBR | 0–100 | LFO speed 0.1–3.0 Hz |
 

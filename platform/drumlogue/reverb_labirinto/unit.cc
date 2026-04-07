@@ -37,44 +37,56 @@ static bool s_bypass = true;
 // ============================================================================
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
-// ID 0: PRESET 0..3               default 0 (foresta)
-// ID 1: MIX    0..1000 (x0.1%)    default 700 (70%)
-// ID 2: TIME   1..100             default 50
-// ID 3: LOW    1..100             default 50
-// ID 4: HIGH   1..100             default 70
-// ID 5: DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
-// ID 6: WIDE   0..200 %           default 100
-// ID 7: COMP   0..1000 (x0.1%)    default 1000
-// ID 8: PILL   0..4               default 3
-// ID 9: PL4FRQ 0..100             default 35 (Hz)
-// ID 10: PDLY  0..100             default 0 (ms)
+// ID 0:  PRESET 0..3               default 0 (foresta)
+// ID 1:  MIX    0..1000 (x0.1%)    default 700 (70%)
+// ID 2:  TIME   1..100             default 50
+// ID 3:  LOW    1..100             default 50
+// ID 4:  HIGH   1..100             default 70
+// ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
+// ID 6:  WIDE   0..200 %           default 100
+// ID 7:  COMP   0..1000 (x0.1%)    default 1000
+// ID 8:  PILL   0..4               default 3
+// ID 9:  SHMR 0..100             default 35 (Hz)
+// ID 10: PDLY   0..100             default 0 (ms)
 
 enum parameterState {
   k_paramProgram = 0,
   k_mix, k_time, k_low, k_high, k_damp,
   k_wide, k_comp, k_pill, k_shimmer_freq,
-  k_pre_delay, k_total};
+  k_pre_delay, k_vibr,
+  k_total
+};
 
-static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0};
-static const int k_preset_number = 4;
+static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0, 10};
+enum {
+    k_foresta,
+    k_tempio,
+    k_labirinto,
+    k_esotico,
+    k_stellare,
+    k_preset_number,
+}
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
-                                                      "labirinto", "stellare"};
-static uint8_t s_current_preset = 0xFF; /* 0xFF = no preset loaded */
-
+                                                      "labirinto", "esotico",
+                                                      "stellare"};
 // ============================================================================
 // Factory Presets
 // ============================================================================
-// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL}
+// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {0, 600, 40, 60, 40, 200, 80, 600, 3, 0, 0},
+    {k_foresta, 600, 40, 60, 40, 200, 80, 600, 3, 0, 0, 10},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {1, 700, 70, 80, 25, 130, 130, 800, 2, 0, 0},
-    // 2: labirinto - center values with ping-pong stereo bouncing
-    {2, 500, 50, 50, 50, 510, 100, 500, 1, 0, 10},
-    // 3: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {3, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20},
+    {k_tempio, 700, 70, 80, 25, 130, 130, 800, 2, 0, 0, 10},
+    // 2: labirinto - center values with random ping-pong stereo bouncing
+    {k_labirinto, 500, 60, 50, 50, 510, 100, 500, 1, 0, 10, 10},
+    // 3: esotico - microtonal echoes on non-Western scale
+    {k_esotico, 450, 40, 60, 80, 100, 100, 500, 4, 5, 5, 20},
+    // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
+    {k_stellare, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20, 10},
 };
+
+static uint8_t s_current_preset = 0;
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -115,11 +127,10 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
 
     s_initialized = true;
     s_bypass = false;
+    s_current_preset = 0;
 
     // Apply default parameter values
-    for (uint8_t i = 0; i < k_total; i++) {
-        unit_set_param_value(i, s_params[i]);
-    }
+    unit_set_param_value(k_paramProgram, s_current_preset);
 
     return k_unit_err_none;
 }
@@ -190,7 +201,12 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
 
     switch (id) {
     case k_paramProgram:
-        unit_load_preset(value);
+        s_current_preset = value;
+        s_reverb->setFilterType(value);
+        for (uint8_t i = 0; i < k_total; i++) {
+            if (value == k_paramProgram) continue;  // avoid recursion
+            unit_set_param_value(i, k_presets[value][i]);
+        }
         break;
     case k_mix: // MIX  0..1000 → 0.0..1.0
       s_reverb->setMix(value / 1000.0f);
@@ -216,11 +232,16 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case k_pill: // PILL  0..4  - pillar routing mode
       s_reverb->setPillar(value);
       break;
-    case k_shimmer_freq: // PL4FRQ  0..100  - shimmer frequency
+    case k_shimmer_freq: // SHMR  0..100  - shimmer frequency
       s_reverb->setShimmerFreq(value);
       break;
     case k_pre_delay: // PDLY 0..200 ms
         s_reverb->setPreDelay((float)value);
+        break;
+    case k_vibr:
+        // value 1..30 → 0.1..3.0 Hz
+        s_reverb->setLfoSpeed(value * 0.1f);
+        s_reverb->updateModRate();
         break;
     default:
       break;
@@ -237,6 +258,7 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
     if ((id == k_paramProgram) && (value < k_preset_number)) {
         return k_preset_names[value];
     }
+    (void)id;
     (void)value;
     if (id == k_shimmer_freq)
     {
@@ -269,11 +291,7 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 
 __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
-    s_current_preset = idx;
-    for (uint8_t i = 0; i < k_total; i++) {
-        if (idx == k_paramProgram) return;  // avoid recursion
-        unit_set_param_value(i, k_presets[idx][i]);
-    }
+    unit_set_param_value(k_paramProgram, idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {

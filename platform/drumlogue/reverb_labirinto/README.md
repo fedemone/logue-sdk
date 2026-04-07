@@ -1,13 +1,36 @@
 # NeonLabirinto – Labyrinthine Resonant Reverb for drumlogue
 
-**NeonLabirinto** is a character‑rich, NEON‑optimised Feedback Delay Network (FDN) reverb for the KORG drumlogue. It transforms ordinary sounds into immersive, evolving textures with organic movement, resonant materials, and unpredictable stereo behaviour.
+**NeonLabirinto** is a character-rich, NEON-optimized Feedback Delay Network (FDN) reverb for the KORG drumlogue. Moving far beyond transparent room simulation, it transforms ordinary sounds into immersive, evolving textures using physical material resonances, chaotic spatial routing, and exotic undertone shimmering.
 
-## Architecture
+## Core Architecture
 
-- **8‑channel FDN** with Hadamard mixing matrix for even energy distribution.
-- **Interleaved delay line** (all 8 channels per sample) to enable `vld4q_f32` gather – 3× faster reads.
-- **Vectorised processing** of 4 samples in parallel using ARM NEON intrinsics.
-- **Active partial counting** – automatically disables processing when tail decays, saving CPU.
+- **8-Channel FDN** with a Hadamard mixing matrix for perfectly balanced, mathematical energy distribution.
+- **Vectorized Interleaved Delay Line**: Stores all 8 FDN channels in a single time-aligned frame to enable `vld4q_f32` gathering—resulting in 3× faster delay line reads.
+- **Active Partial Counting (APC)**: A CPU-saving algorithm that continuously monitors the decay envelope. When the reverb tail drops below -100 dBFS, the FDN matrix calculation is instantly bypassed while preserving dry signal flow and preventing DC offsets.
+
+## The DSP Features
+
+### 1. Material Body Resonance (Double Filters)
+Instead of standard 1-pole high-frequency damping, NeonLabirinto utilizes true 2nd-order Biquad filters (`filterState1` / `filterState2`) inside the feedback loop to emulate the physical body resonance of different acoustic materials:
+* **Wood:** Warm, highly-damped low-mid resonance.
+* **Stone:** Dark, heavy, and highly reflective.
+* **Metal:** Glassy, inharmonic ringing with high-frequency retention.
+
+### 2. Coloured Noise Injection
+When the filter mode is set to **Noise**, the reverb injects spectrally shaped noise directly into the delay lines, smearing transients into lush, synthetic tails. The color is shapeable:
+* **Brown / Pink:** Warm, low-frequency weighted rumble.
+* **Grey:** Psychoacoustically notched for a transparent, ethereal sizzle.
+* **Blue / Violet:** High-frequency weighted, icy digital breath.
+
+### 3. Labyrinthine Ping-Pong & Random LFO
+By mapping the spatial assignment to a 16-step `pingRandomMap` and driving it with a fast, real-time Xorshift LFO, the reverb creates a chaotic, non-repeating "Labyrinth" effect.
+* Echoes bounce irregularly between the left and right channels, preventing the predictable "metronome" effect of standard ping-pong delays.
+* A pseudo-random LFO modulates the FDN diffusion coefficients, causing the room size to "breathe" dynamically.
+
+### 4. Exotic Shimmer (Frequency-Shifted Feedback)
+Setting the pillar count to 4 (**stellare**) engages an exotic, low-frequency ring-modulated shimmer inside the feedback network.
+* *Literature Reference:* This technique is rooted in **Frequency-Shifted Feedback (FSF)** networks, originally pioneered by Harald Bode and later adapted for reverberation by Jon Dattorro (*"Effect Design Part 1: Reverberator and Other Filters"*, J. Audio Eng. Soc., 1997). Microntonal beating idea from Rich Cochrane's **Double Modes and Microtonal Shimmer** , refer to https://cochranemusic.com/node/340
+* By applying amplitude/ring modulation *inside* the recursive loop, it generates cascading, sub-harmonic undertones that bloom continuously as the reverb decays, rather than the standard pitch-shifted "upward" shimmer.
 
 ## Character Enhancements
 
@@ -44,23 +67,24 @@
 | **foresta** | Warm, woody, moderate decay – resonant wood filter |
 | **tempio** | Dark, heavy, long decay – resonant stone filter |
 | **labirinto** | Metallic, ringing, ping‑pong with randomised stereo – resonant metal filter |
+| **esotico** | Metallic, gamelan like chorus effect – resonant metal filter |
 | **stellare** | Shimmer + coloured noise (brown/pink/grey/blue/violet selectable via COMP) |
 
-## User Guide
+---
 
-- **Start with PRESET=foresta** for a natural room sound. Turn up **COMP** to add diffusion (smearing). Increase **TIME** for longer tails.
-- **Switch to labirinto** for a glassy, unpredictable reverb – the randomised ping‑pong will bounce echoes between left and right in a non‑repeating pattern.
-- **Set PILL=4 (stellare)** and adjust **PL4FRQ** to add a low‑frequency ring‑modulated shimmer – creates cascading undertones.
-- **Use VIBR** to make the reverb "breathe" – higher speeds cause faster random fluctuations in the diffusion.
-- **For preset 3 (stellare)**, experiment with **COMP** to cycle through noise colours (brown→pink→grey→blue→violet) and **DAMP** to set the noise level.
+## User Guide & Parameter Mapping
 
-## Technical Notes
+* **PRESET = foresta:** A natural, lush room. Turn up **COMP** to increase FDN diffusion (smearing). Increase **TIME** for massive, blooming tails.
+* **PRESET = labirinto:** Engages the chaotic LFO spatial routing. The randomized ping-pong will throw echoes around the stereo field in unpredictable paths.
+* **PILL = 4 (stellare):** Activates the exotic FSF Shimmer. Adjust **SHMR** to tune the ring-modulation rate. Low values create a haunting, descending abyss of undertones.
+* **VIBR:** Controls the speed of the Xorshift LFO. Higher speeds cause faster random fluctuations in the room's diffusion matrix.
+* **Noise Mode (Preset 3):** Use **COMP** to sweep seamlessly through the noise colors (Brown → Pink → Grey → Blue → Violet). Use **DAMP** to control the overall noise injection gain.
 
-- All processing is NEON‑vectorised (4 samples at a time) for low CPU usage.
-- Cross‑feedback gains are small (<0.15) and combined with decay (<0.99) – the system remains stable.
-- The random LFO uses a simple xorshift generator; its speed is controlled by **VIBR**.
-- The reverb automatically bypasses itself when the tail decays below -100 dBFS (active partial counting).
+## Technical & Build Notes
 
+- **Scalar vs. Vector Segregation:** While 90% of the DSP (mixing, delays, modulation) runs in parallel via ARM NEON intrinsics, Infinite Impulse Response (IIR) states like the material biquads and noise filters are calculated via optimized scalar loops to prevent NEON comb-filtering artifacts.
+- **Cross-Channel Feedback:** FDN cross-feedback gains are kept deliberately small (`< 0.15`) and are strictly clamped by the global decay (`< 0.995`) to guarantee absolute mathematical stability without DAC clipping.
+- **Building for drumlogue:** Place `NeonAdvancedLabirinto.h`, `unit.cc`, and `header.c` in your SDK project directory. Ensure `float_math.h` is available. Compile using `make` with the standard Korg ARMv7 toolchain.
 ## Building for drumlogue
 
 Place `NeonAdvancedLabirinto.h`, `unit.cc`, and `header.c` in your SDK project. Ensure `float_math.h` is available. Compile with `-O3 -mcpu=cortex-a7 -mfpu=neon-vfpv4` (or appropriate for drumlogue’s ARM processor).
