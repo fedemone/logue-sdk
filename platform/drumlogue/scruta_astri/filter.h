@@ -23,8 +23,10 @@ inline float fast_tanh(float x) {
     // BUG-FIX: x^2 must be computed from the clamped value. Using the raw x makes
     // the polynomial return large negative outputs for |x| > 1.73, which flips the
     // sign of filter integrator increments and causes NaN within a few samples.
-    float cx = fmaxf(-1.5f, fminf(1.5f, x));
-    return cx * (1.0f - cx * cx * 0.33333f);
+    float cx = fmaxf(-1.0f, fminf(1.0f, x));
+    // Multiply by 1.5f so the output scales to a full [-1.0, 1.0] range
+    // instead of stopping at 0.666. This gives you maximum audio headroom.
+    return cx * (1.0f - cx * cx * 0.33333f) * 1.5f;
 }
 
 

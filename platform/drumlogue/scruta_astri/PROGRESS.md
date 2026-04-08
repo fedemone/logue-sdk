@@ -32,10 +32,12 @@
 
 ## Next Steps (Session 4: Wavetables & Hardware Deployment)
 - [ ] **Ingest New Wavetables:** Extract uncompressed `.wav` cycles for the target timbres (low hum of distant prop plane, AUM singing, trombone, hurdy-gurdy). For evolving sounds, slice multiple sequential cycles.
-- [ ] **Generate Headers:** Run the Python batch processor to convert the new `.wav` files into C-arrays and update `NUM_WAVETABLES`.
-- [ ] **Compile and Flash:** Build the `.drumlgunit` and flash it to the Drumlogue.
+- [ ] **Generate Headers:** Run the Python batch processor to convert the new `.wav` files into C-arrays and update `NUM_WAVETABLES` with new samples.
+- [x] **Compile and Flash:** Build the `.drumlgunit` and flash it to the Drumlogue. DONE: works almost flawlessly
 - [ ] **Calibrate the Morph Boundaries:** Test the `CLEAN_MOOG_BORDER` (33) and `MOOG_SHE_BORDER` (66) on the hardware encoders to ensure the distortion ramps musically.
 - [ ] **Verify LFO Curves:** Ensure the exponential mapping of the LFO rate knobs feels intuitive when sweeping from slow drones to audio-rate FM.
+- [ ] **Verify audio stepping:** Some parameters when change are doing a step in sound. While it's not crucial, a smooth transition would be preferable.
+- [ ] **LFO rate modulation:** Let's try the new features first and then we can create a new modulation target when LFO rate is addressed by preset choice.
 - [ ] **Check CPU Load:** Verify the Drumlogue ARM processor maintains thread execution time under the new load.
 
 ## Future Improvements / TODO
