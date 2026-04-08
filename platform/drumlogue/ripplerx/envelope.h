@@ -41,6 +41,13 @@ struct FastEnvelope {
                 break;
             case ENV_DECAY:
                 value += (sustain_level - value) * decay_rate;
+                // When sustain target is 0 (auto-decay mode), transition to
+                // IDLE once below audibility — same threshold as ENV_RELEASE.
+                // Without this, the voice stays active forever, consuming CPU.
+                if (sustain_level < 0.001f && value <= 0.001f) {
+                    value = 0.0f;
+                    state = ENV_IDLE;
+                }
                 break;
             case ENV_RELEASE:
                 value += (0.0f - value) * release_rate;

@@ -32,6 +32,9 @@ void run_active_test() {
     unit_runtime_desc_t desc = {0};
     desc.samplerate = 48000;
     desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     synth.Init(&desc);
 
     synth.LoadPreset(10);
@@ -101,6 +104,9 @@ void run_active_test2() {
     unit_runtime_desc_t desc = {0};
     desc.samplerate = 48000;
     desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     synth.Init(&desc);
 
     synth.LoadPreset(0);
@@ -136,6 +142,9 @@ static void test_nan_explosion_and_dc_offset() {
     std::cout << "\n--- T21b Output did not flatline into a DC offset (Silence Bug) START ---\n";
     // 1. Setup the test environment
     unit_runtime_desc_t desc = {0};
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     RipplerXWaveguide s;
     s.Init(&desc);
 
@@ -203,6 +212,9 @@ extern float ut_voice_out;
 static void test_denormal_stalls() {
     std::cout << "\n--- T22 Denormal/Subnormal Stall Prevention START ---\n";
     unit_runtime_desc_t desc = {0};
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     RipplerXWaveguide s;
     s.Init(&desc);
 
@@ -244,6 +256,9 @@ static void test_denormal_stalls() {
 static void test_stereo_phase_alignment() {
     std::cout << "\n--- T23 Stereo Phase Alignment START ---\n";
     unit_runtime_desc_t desc = {0};
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     RipplerXWaveguide s;
     s.Init(&desc);
 
@@ -285,6 +300,9 @@ static void test_stereo_phase_alignment() {
 static void test_delay_memory_leak() {
     std::cout << "\n--- T24 Delay Line Memory Leak on Reset START ---\n";
     unit_runtime_desc_t desc = {0};
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
     RipplerXWaveguide s;
     s.Init(&desc);
 

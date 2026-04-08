@@ -20,3 +20,23 @@ Phase Multiplier  : 1 (Should be 1.0 or -1.0)
 Buffer[0] Memory  : 3.7875 (If 0.0, the waveguide multiplied the Mallet by zero!)
 
 --- 2nd DIAGNOSTIC COMPLETE ---
+
+--- T21a No NaNs generated during heavy transient strike START ---
+
+--- T21b Output did not flatline into a DC offset (Silence Bug) START ---
+
+--- T21a No NaNs generated during heavy transient strike COMPLETE ---
+
+--- T21b Output did not flatline into a DC offset (Silence Bug) COMPLETE ---
+
+--- T22 Denormal/Subnormal Stall Prevention START ---
+
+--- T22 Denormal/Subnormal Stall Prevention COMPLETE ---
+
+--- T23 Stereo Phase Alignment START ---
+
+--- T23 Stereo Phase Alignment COMPLETE ---
+
+--- T24 Delay Line Memory Leak on Reset START ---
+qemu: uncaught target signal 11 (Segmentation fault) - core dumped
+Segmentation fault (core dumped)

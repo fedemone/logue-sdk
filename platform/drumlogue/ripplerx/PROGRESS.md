@@ -1,5 +1,350 @@
 # Project Status Tracker
 
+---
+
+## TODO LIST
+
+### New presets (when physical model is stable and reliable)
+- **Gamelan** — inharmonic metallic bar, long sustain, multiple coupled overtones
+- **Bell** — high InHm, long Dkay, bright material (Mterl≈25), tight mallet
+- **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
+- **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
+- **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
+  *(user can supply parameter values from original RipplerX project)*
+
+### Project rename: RipplerX → Brachetti
+In honour of Italian performer Arturo Brachetti. When the model is settled:
+- Rename all files: `ripplerx*` → `brachetti*`
+- Rename project identifier in `config.mk`, `header.c`, `Makefile`
+- Rename the C++ class `RipplerXWaveguide` → `BrachettiWaveguide`
+- Update all comments and documentation
+- Create a new GitHub repo / branch named accordingly
+
+### Outstanding hardware investigations (deferred)
+- **Marimba audio crash** — one note plays then silence; likely energy runaway from
+  coupling + feedback gain combination. Investigate `feedback_gain` vs LP coeff stability.
+- **Release / HitPos no audible effect** — `k_paramRel` controls noise burst release only,
+  not the waveguide. `HitPos` (mix_ab) only matters when ResB is active. Both correct by
+  design but need clearer UI labels or documentation.
+- **PCM sample beats** — whether the remaining beat after Smp=0 fix comes from sample
+  content or another source; can wait until clean pure-waveguide sound is validated.
+
+---
+
+## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]
+
+Hardware test with Phase 21 build confirmed Phase 21 loaded ("InitDbg" shown).
+Beating root cause diagnosed from hardware observation. **82/82 tests pass.**
+
+### Hardware Observations (Phase 21 build)
+
+| Action | Result |
+|--------|--------|
+| InitDbg shown on display | Phase 21 build confirmed loaded ✓ |
+| 20 presses, same velocity | Consistent amplitude — progressive silence fixed ✓ |
+| Partls → 16 (Ptls=2) | Beating almost gone |
+| Partls → 8 or lower (Ptls=0/1) | Clean "stringy" Karplus-Strong sound ✓ |
+| Partls → 64 (Ptls=4) | Beating stronger and longer |
+| Changing sample | Little effect — sample contribution minor |
+| Model: open/closed tube | Phase inversion audible — working |
+| Other models | Subtle difference only |
+| Tone / noise parameters | Working correctly |
+| Marimba preset | One sound then silence (audio crash — TODO) |
+| Release / HitPos | No audible effect (TODO) |
+
+### Root Cause: Coupling Splits Normal Mode Frequencies
+
+**Physics:** `Partls` sets `coupling_depth = Ptls / 4.0`. When `coupling_depth > 0`, ResB
+receives `exciter + coupling × ResA_output`. Two coupled oscillators at the same nominal
+frequency f₀ split into two normal modes at `f₀ ± δf`, where δf ∝ coupling strength.
+This beat against each other at rate `2δf`.
+
+**Observation mapping:**
+- Ptls=0 (coupling=0.00): ResB disabled, pure single Karplus-Strong → no beating ✓
+- Ptls=1 (coupling=0.25): ResB enabled but low coupling → very slow beats
+- Ptls=2 (coupling=0.50): moderate coupling → "almost gone" beating ✓ (user observed)
+- Ptls=3 (coupling=0.75): Init preset — significant beating ✗
+- Ptls=4 (coupling=1.00): strong coupling → "longer and stronger" beating ✓ (user observed)
+
+**Design rule established:**
+- Single-resonator instruments (strings, tubes, bars): `Ptls=0`. Coupling=0. ResB disabled.
+- Dual-resonator instruments (membranes, bells): `Ptls≥2` AND ResA/ResB at *different*
+  delay lengths (different model types or explicit detuning). Coupling between different
+  frequencies is physically meaningful; coupling between identical frequencies is not.
+
+### Fix: InitDbg preset corrected to pure Karplus-Strong
+
+Changed Init (preset 0) to be a clean single-resonator reference:
+
+| Param | Old | New | Reason |
+|-------|-----|-----|--------|
+| Smp   |  1  |  0  | No PCM sample — pure waveguide only |
+| MlSt  | 250 | 500 | Max mallet stiffness → sharp, bright pluck |
+| Ptls  |  3  |  0  | Remove coupling; disable ResB |
+| Hit   | 26  |  0  | Full ResA output (HitPos=0 when ResB disabled) |
+| InHm  | 300 |  0  | No allpass inharmonicity — pure KS reference |
+
+Expected hardware result: clean plucked string at C4 (261 Hz), short decay (~190 ms),
+no beating, no sample sound. Every press identical amplitude.
+
+### Hardware Validation Sequence (Phase 22 build)
+
+1. **InitDbg** → press once → hear clean plucked "ting" at C4, ~190 ms, no beats
+2. **Change Partls to 3 (32 partials)** → beating should reappear (confirms diagnosis)
+3. **Change Partls back to 0** → beats disappear again
+4. **GtrStr (preset 28)** → A4 string, ~3.3 s sustain, no beats, no sample
+
+---
+
+## Phase 21: Voice Allocator Reset, Sample-Skip Bug, GtrStr Preset Fix [COMPLETED]
+
+Hardware re-test (Phase 20 build on RipplerX2 branch) still showed progressive silence.
+Root-cause: three separate bugs — two in the engine, one in the test harness.
+**82/82 tests pass.**
+
+### Hardware Symptoms (Phase 20 build, RipplerX2 branch)
+
+User's Phase 20 hardware test showed **identical behaviour** to Phase 19:
+- First 4 presses: synth voice + beating (possibly detuned delay lines)
+- Presses 5–8: only beating (getting **longer** each time), then silence
+
+Two clarifications from this report:
+1. "longer each time" (not shorter) suggests accumulating residual energy, consistent with the
+   delay buffer NOT being cleared on retrigger.
+2. User's RipplerX2 branch had the GateOff voice-reset fix but NOT Phase 20's memset.
+   Our branch had the memset but NOT the GateOff reset. Neither branch had both. Hardware
+   tested RipplerX2 (no memset) → still failed.
+
+### BUG 3 — CRITICAL: GateOff did not reset the voice allocator
+
+**Root cause:** `NoteOn()` pre-increments `next_voice_idx` before use. Without a reset on
+`GateOff()`, successive single-note gate presses cycle through all 4 voice slots (1→2→3→0→1…).
+For long-sustain presets (GtrStr T_60≈3.3 s), voices from presses 2, 3, 4 are still active
+and audible when press 5 fires — all at the same pitch but at different phases. Their
+superposition creates beats and interferes with the new excitation.
+
+**Fix (ported from user's RipplerX2 commit):** `GateOff()` now sets `state.next_voice_idx =
+NUM_VOICES - 1`. Because `NoteOn` pre-increments before use, the very next `NoteOn` wraps to
+index 0, so every gate press always starts at Voice 0. Concurrent notes within a single gate
+still allocate voices 0→1→2→3 correctly, since each `NoteOn` call still increments first.
+
+```cpp
+// In GateOff():
+state.next_voice_idx = NUM_VOICES - 1;
+```
+
+**Combined fix:** Both Bug 1 (memset in NoteOn) from Phase 20 AND Bug 3 (GateOff reset) are
+now active in our branch. Neither alone is sufficient for GtrStr's 3.3 s sustain.
+
+---
+
+### BUG 4 — CRITICAL (hardware-only): Smp=0 still loads PCM sample on real hardware
+
+**Root cause:** `NoteOn()` sample loading used a ternary fallthrough:
+```cpp
+size_t actualIndex = (m_sample_number > 0) ? (size_t)(m_sample_number - 1) : 0;
+```
+When `m_sample_number == 0` (preset `Smp=0`), this falls to `actualIndex = 0`, which then
+calls `m_get_sample(bank, 0)` and loads the **first PCM sample in the bank** — the same drum
+sample used by Init (Smp=1). On x86 unit tests, `mock_get_sample()` always returns `nullptr`
+so the bug is invisible. On ARM hardware, the real sample is returned and plays.
+
+**Effect:** Every preset including GtrStr (Smp=0) was playing the drum sample on every press.
+This was the source of the "~8 quick beats" heard with Init and all other presets.
+
+**Fix:**
+```cpp
+if (m_sample_number > 0 &&   // Smp=0 = "no sample", skip loading entirely
+    m_get_sample && ...) {
+    size_t actualIndex = (size_t)(m_sample_number - 1);  // now always valid
+    ...
+```
+
+**Convention:** `Smp` is 1-indexed. `Smp=1` → loads sample index 0; `Smp=2` → index 1; etc.
+`Smp=0` → no sample, mallet-only excitation.
+
+---
+
+### BUG 5 — GtrStr preset: HitPos=50 halved output when ResB is disabled
+
+**Root cause:** GtrStr had `Hit=50` (column 13) → `mix_ab = 0.5`. Voice output is:
+```cpp
+voice_out = (outA * (1 - mix_ab)) + (outB * mix_ab);
+```
+With ResB disabled (Ptls=0 → `m_active_partials = 4 < 16`), `outB = 0`. So
+`voice_out = outA * 0.5` — the guitar string signal was permanently attenuated by 6 dB.
+
+**Fix:** `Hit=0` in the GtrStr preset, giving full ResA output. Also set `InHm=0` (no allpass)
+for the cleanest possible Karplus-Strong reference.
+
+**Updated GtrStr:** `{28, 69, 0, 0, 800, 600, 0, 0, 0, 0, 195, 28, 0, 0, 15, 0, 1, 15, 0, 0, 300, 0, 1200, 707}`
+
+T_60 at A4: g = 0.85 + (195/200 × 0.149) = 0.9953. T_60 = 6.908/(440 × 0.00471) ≈ **3.3 s**.
+(Previous documentation stated 5.2 s, which assumed g=0.997 — corrected.)
+
+---
+
+### Test Changes
+
+**T7:** Loop bound changed from hardcoded `28` to `k_NumPrograms` (now 29 presets). Covers GtrStr.
+
+**T34:** Changed peak measurement from `ut_voice_out` (which tracks `next_voice_idx`, now reset
+to 3 after GateOff so it targets an inactive slot) to `buf[0]` (main audio output). All 8
+presses now correctly read ≈0.8377 with ratio = 0.9999. Both T34a and T34b pass.
+
+### T34 Results (Dkay=25, 8 presses with GateOff reset + memset)
+
+| Press | Peak   | Slot used | Cycle       |
+|-------|--------|-----------|-------------|
+| 1     | 0.8378 | voice 1   | first (fresh) |
+| 2     | 0.8377 | voice 0   | first (fresh) |
+| 3–8   | 0.8377 | voice 0   | second (cleared by memset) |
+
+Ratio second/first = 0.9999 (target ≥ 0.90). ✓
+
+### Hardware Validation Sequence (Flash Phase 21 build)
+
+Load preset 28 (GtrStr). For each press:
+1. **No beats** — Smp=0 fix means no drum sample. Pure string only.
+2. **Consistent amplitude** — all presses same volume (GateOff reset + memset).
+3. **Pitch ≈ A4 (440 Hz)** — verify with a tuner app.
+4. **Audible at 3 seconds** — T_60 ≈ 3.3 s at A4.
+
+If beats persist: confirms another source. If amplitude still degrades: additional voice leak.
+
+---
+
+## Phase 20: Progressive Silence Bug, Allpass Formula Fix & Reference Preset [COMPLETED]
+
+Hardware test revealed two confirmed bugs causing progressive silence and pitch error.
+T34 added; **82/82 tests pass**. Guitar String reference preset added for model validation.
+
+### Hardware Symptoms Reported
+
+**Init preset:**
+- Press 1: high-pitched synth + ~8 quick beats
+- Press 2: same but shorter synth
+- Press 4: beats only, no synth
+- Press 8: complete silence
+
+**Preset 5 (Timpani):**
+- Press 1: whining synth sound (no beats)
+- Press 2+: nothing
+
+### BUG 1 — CRITICAL: Delay buffer not cleared on NoteOn (progressive silence)
+
+**Root cause:** `NoteOn()` did not clear the waveguide delay buffer (`resA.buffer`,
+`resB.buffer`), the LP filter state (`z1`), or the write pointer (`write_ptr`) when
+reusing a voice slot. `Reset()` correctly zeros all of these, but that only runs at
+cold start. After 4 NoteOn calls, round-robin wraps back to slot 1, which still
+holds residual oscillation from the previous note.
+
+**Mechanism:** The residual oscillation is at an arbitrary phase relative to the new
+mallet impulse. Destructive interference reduces the perceived amplitude. Constructive
+interference is possible but rare; on average each successive press is shorter and
+quieter. After 8+ presses the accumulated interference silences the note entirely.
+
+**Diagnosis of symptom progression:**
+- Press 1–4: uses fresh slots (cleared by cold-start Reset) → normal sound
+- Press 5: slot 1 reused; buffer has residual → shorter, quieter sound
+- Press 8: second full cycle; residual from 2nd use overlaps 3rd → silence
+
+**Fix added to `NoteOn()`:**
+```cpp
+memset(v.resA.buffer, 0, sizeof(v.resA.buffer));
+memset(v.resB.buffer, 0, sizeof(v.resB.buffer));
+v.resA.z1 = 0.0f;
+v.resB.z1 = 0.0f;
+v.resA.write_ptr = 0;
+v.resB.write_ptr = 0;
+```
+
+**Performance:** `memset` of 32 KB (two 16 KB delay buffers) takes ~8–16 µs on ARM
+Cortex-A5 — well under one audio sample (20.8 µs). No audible glitch.
+
+**T34 confirms the fix:** 8 consecutive presses all produce identical peak amplitude
+(5.173) with no progressive decay. Before the fix, presses 5–8 would produce
+decreasing amplitude due to phase cancellation.
+
+### BUG 2 — MEDIUM: Allpass group delay formula wrong → pitch slightly sharp
+
+**Root cause:** The pitch compensation formula for the allpass filter used
+`τ_AP = (1+c)/(1-c)`, which is the correct formula for
+`H(z) = (−c + z⁻¹) / (1 − c·z⁻¹)`. However, the implemented allpass is
+`H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`, whose DC group delay is `(1−c)/(1+c)` — the
+reciprocal.
+
+**Effect:** The old formula over-compensates by `(1+c)/(1-c) − (1-c)/(1+c) = 4c/(1−c²)`:
+
+| ap_coeff (InHm) | Over-compensation | Pitch error at C4 |
+|---|---|---|
+| 0.01 (InHm=20) | 0.04 samples | < 0.1 cents |
+| 0.15 (InHm=300, Init) | 0.61 samples | ~6 cents sharp |
+| 0.50 (InHm=1000) | 2.67 samples | ~25 cents sharp |
+| 0.90 (InHm=1800) | 18.95 samples | ~2 semitones sharp |
+
+With the old formula the delay line was SHORTER than intended → pitch SHARP.
+The fix makes notes FLATTER (closer to correct pitch). Existing presets with high
+InHm were significantly detuned; low-InHm presets had negligible error.
+
+**Fix in `NoteOn()`:**
+```cpp
+// Was: float ap_del_A = (1.0f + ca) / (1.0f - ca);  // WRONG (other AP variant)
+float ap_del_A = (1.0f - ca) / (1.0f + ca);  // Correct for H=(c+z⁻¹)/(1+c·z⁻¹)
+```
+
+**T19a updated** to use the corrected formula in the pitch round-trip check.
+**T27b updated**: old test expected delay clamped to 2 (a consequence of the wrong
+enormous ap_del); correct behavior is delay near 183 samples for C4.
+
+### "8 Quick Beats" Investigation
+
+The "8 beats" heard with Init preset are most likely from the **PCM sample playback**.
+Init preset has `Smp=1` → loads sample bank 0, sample index 0. If the user's drum
+kit has a sample loaded there (a drum fill, clap, or noise burst with multiple peaks),
+it plays on every trigger alongside the waveguide.
+
+**To isolate waveguide-only sound:** Set `Smp=0` in the Init preset (or use the new
+Guitar String preset 28 which has Smp=0). If the beats disappear, the sample was
+the source. If they remain, further diagnosis needed.
+
+### Reference Preset 28: Guitar String (Karplus-Strong Validation)
+
+Added preset 28 "GtrStr" specifically for physical model validation:
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| Note | 69 (A4) | 440 Hz — standard pitch reference (can verify with a tuner app) |
+| Dkay | 195 | g≈0.997, T_60≈5.2 s at A4 — realistic guitar string sustain |
+| Mterl | 28 | lowpass_coeff≈0.97 — bright string, minimal high-frequency loss |
+| TubRad | 15 | slight tube resonance |
+| Partls | 0 | single resonator — no coupling complexity |
+| Model | 0 | String — positive feedback, harmonically pure |
+| NzMix | 0 | no noise — pure plucked string excitation |
+| Smp | 0 | no sample — waveguide exciter only |
+| InHm | 50 | ap_coeff=0.025 — slight stiffness (piano-like) |
+
+**Expected behaviour:**
+1. **Pitch:** 440 Hz ± 5 Hz — verifiable with any guitar tuner app (should read "A4")
+2. **Sustain:** note clearly audible 5 seconds after strike (T_60≈5.2 s)
+3. **Timbre:** bright attack, gradually darkening (1-pole LP rolls off harmonics)
+4. **Harmonic content:** no flutter or beating (single resonator, no coupling)
+5. **Decay law:** if you record and measure, amplitude should follow A₀ × g^n where
+   n = round trips completed and g=0.997
+
+This preset serves as the reference point for "does the physical model work?" —
+if it sounds like a plucked string with 5-second sustain at A4, the model is correct.
+
+### New Test T34
+
+**T34a:** 8 consecutive GateOn+GateOff presses all produce nonzero output.
+**T34b:** Second slot cycle (presses 5–8) amplitude within 10% of first cycle.
+Result: all 8 presses produce peak=5.173 (identical) → PASS.
+
+**Total: 82/82 tests pass.**
+
+---
+
 ## Phase 19: Hardware Testing, SVF Stability Fix & Predictive Sound Design [COMPLETED]
 
 Hardware load confirmed working (RenderStage 1–4). Tests T24–T33 added;

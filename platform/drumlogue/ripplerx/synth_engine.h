@@ -118,7 +118,8 @@ public:
         k_Clarinet,         // 25
         k_PluckBass,        // 26
         k_GlassBowl,        // 27
-        k_NumPrograms       // 28 — marker (count)
+        k_GuitarStr,        // 28 — reference: Karplus-Strong string at A4 for model validation
+        k_NumPrograms       // 29 — marker (count)
     };
 
     SynthState state;
@@ -293,35 +294,59 @@ public:
         // setParameter multiplies them back by 10 so the encoder travels 10× fewer steps.
         static const int32_t presets[k_NumPrograms][k_lastParamIndex] = {
         //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+        //
+        // COUPLING RULE (Phase 25: dynamic clamp in render loop):
+        //   The render loop now dynamically clamps coupling injection to:
+        //     safe_coupling ≤ (1 − feedback_gain) × 0.8
+        //   This guarantees stability at ANY Partials/Decay combination.
+        //   High Decay (feedback_gain→1) → coupling nearly zero (self-limiting).
+        //   Low Decay (feedback_gain→0.85) → coupling up to ~0.12 (audible).
+        //
+        //   ResB is micro-detuned by +0.3% (~5 cents) in NoteOn to break
+        //   mathematically perfect beating between matched resonators.
+        //
+        //   Hit (HitPos=mix_ab): only relevant when ResB is active (Ptls≥2, Mdl=3/5).
+        //   Set Hit=0 for single-resonator presets so output is not halved.
+        //
         //                            ÷10                           ÷10                                                              ÷10
-            { 0,  60,   0,   1,   500,  250,  0,   0,     3, 0,   25,  10,    0,  26, 10,   300,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0: Init
-            { 1,  60,   0,   1,   800,  175,  0,   0,     3, 6,  120,  -5,    0,  50,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1: Marimba
-            { 2,  36,   0,   1,   100,   50,  0,   0,     3, 5,  105, -10,    0,  50, 15,    10,     1,   5, 150,    0, 300,  0,   100, 707}, // 2: 808 Sub
-            { 3,  38,   0,   1,   400,  300,  0,   0,     3, 5,   15,  15,    0,  20,  8,   500,    15,   5,  50,   80, 500,  2,   800, 707}, // 3: Ac Snare       NzMix 800→80
-            { 4,  72,   0,   1,   900,  500,  0,   0,     3, 7,  150,  30,    0,  10, 20,  1900,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4: Tubular Bell
-            { 5,  40,   0,   1,   300,   50,  0,   0,     3, 3,  145,  -5,    0,  30, 15,    20,     1,   5,  30,    3, 300,  0,   500, 707}, // 5: Timpani        NzMix 30→3
-            { 6,  48,   0,   1,   600,  200,  0,   0,     3, 5,   80,   5,    0,  10, 12,    50,     5,   5,  50,    5, 200,  0,   600, 707}, // 6: Djambe         NzMix 50→5
-            { 7,  36,   0,   1,   200,   80,  0,   0,     3, 5,  100, -10,    0,  50, 18,    10,     1,   5, 200,    0, 300,  0,   400, 707}, // 7: Taiko
-            { 8,  65,   0,   1,   700,  450,  0,   0,     3, 5,    8,  20,    0,  50,  3,   200,    25,   5,  80,   95, 150,  2,  1000, 707}, // 8: March Snare    NzMix 950→95
-            { 9,  35,   0,   1,   100,  150,  0,   0,     3, 4,  180,  25,    0,  25, 20,  1800,     1,   5,  60,   10, 800,  0,   800, 707}, // 9: Tam Tam        NzMix 100→10
-            {10,  72,   0,   1,   600,  280,  0,   0,     3, 0,  130,  10,    0,  80, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto
-            {11,  72,   0,   1,   500,  300,  0,   0,     3, 1,  120,  15,    0,  50, 18,     5,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibraphone
-            {12,  76,   0,   1,   800,  350,  0,   0,     3, 2,    5,  -8,    0,  50,  2,    80,     1,   5,   0,    0, 300,  0,   500, 707}, // 12: Woodblock
-            {13,  45,   0,   1,   400,  200,  0,   0,     3, 5,   80,  -2,    0,  50, 10,    30,     1,   5,  40,    2, 300,  0,   800, 707}, // 13: Acoustic Tom  NzMix 20→2
-            {14,  60,   0,   1,   800,  500,  0,   0,     3, 4,  140,  30,    0,  10, 18,  1950,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal        NzMix 600→60
-            {15,  36,   0,   1,   200,  200,  0,   0,     3, 4,  190,  20,    0,  50, 20,  1900,     1,   5,  40,   10, 800,  0,   600, 707}, // 15: Gong          NzMix 100→10
-            {16,  72,   0,   1,   700,  400,  0,   0,     3, 1,  140,  25,    0,  80,  5,     1,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba
-            {17,  60,   0,   1,   600,  350,  0,   0,     3, 4,  100,  20,    0,  30, 12,   800,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan
-            {18,  79,   0,   1,   900,  480,  0,   0,     3, 2,    3,   5,    0,  50,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves
-            {19,  67,   0,   1,   800,  450,  0,   0,     3, 4,   55,  25,    0,  20,  4,  1700,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell
-            {20,  84,   0,   1,   900,  500,  0,   0,     3, 1,  165,  30,    0,  10, 15,  1990,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle
-            {21,  36,   0,   1,   300,  150,  0,   0,     3, 5,   50,  -5,    0,  50,  6,    20,     1,   5, 100,    5, 200,  0,   300, 707}, // 21: Kick Drum     NzMix 50→5
-            {22,  60,   0,   1,   500,  300,  0,   0,     3, 5,    5,  10,    0,  50,  3,   500,    40,   5,  50,  100, 100,  2,  1000, 707}, // 22: Clap          NzMix 1000→100
-            {23,  72,   0,   1,   100,  400,  0,   0,     3, 5,    2,  15,    0,  50,  2,   100,    80,   5,  20,  100, 300,  2,  1200, 707}, // 23: Shaker        NzMix 1000→100
-            {24,  72,   0,   1,   100,   50,  0,   0,     3, 7,   90,  -5,    0,  10, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute         NzMix 0→35 (breath noise)
-            {25,  60,   0,   1,   100,   50,  0,   0,     3, 8,   90,  -5,    0,  10, 12,     1,     1,   5,   0,   25, 800,  0,   600, 707}, // 25: Clarinet      NzMix 0→25 (reed breath noise)
-            {26,  36,   0,   1,   600,  250,  0,   0,     3, 0,   85,  -8,    0,  20, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: Pluck Bass
-            {27,  76,   0,   1,   700,  350,  0,   0,     3, 4,  160,  25,    0,  80, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}  // 27: Glass Bowl
+            { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
+            { 1,  60,   0,   1,   800,  175,  0,   0,     0, 6,  120,  -5,    0,   0,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — single resonator (Mdl=6 same-freq, Ptls→0)
+            { 2,  36,   0,   0,   150,   30,  0,   0,     0, 3,  150,  -8,   -5,   0, 15,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 2:  808 Sub    — single resonator membrane (Ptls=0, Mdl=3): no coupling instability, no overdrive
+            { 3,  38,   0,   1,   400,  200,  0,   0,     2, 5,   15,  -2,    0,  50,  8,     0,     1,   5,  10,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mtr:-2 dark drum, InHm:0 clean, Gain:10 mild)
+            { 4,  72,   0,   1,   900,  500,  0,   0,     0, 7,  150,  25,    0,   0, 20,   600,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — single resonator (Mdl=7, InHm:600 bell-like)
+            { 5,  40,   0,   1,   300,   50,  0,   0,     2, 3,  145,  -5,    0,  30, 15,     0,     1,   5,  10,    3, 300,  0,   500, 707}, // 5:  Timpani    — membrane dual (Mdl=3, InHm:0 clean, Gain:10)
+            { 6,  48,   0,   1,   600,  200,  0,   0,     2, 5,   80,   0,    0,  50, 12,     0,     5,   5,  15,    5, 200,  0,   600, 707}, // 6:  Djambe     — membrane dual (Mtr:0 neutral, InHm:0, Gain:15)
+            { 7,  36,   0,   1,   200,   80,  0,   0,     2, 5,  100, -10,    0,  50, 18,    10,     1,   5,  40,    0, 300,  0,   400, 707}, // 7:  Taiko      — membrane dual (Mdl=5, Ptls=2)
+            { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,    8,   5,    0,  50,  3,     0,    25,   5,  20,   95, 150,  2,  1000, 707}, // 8:  MrchSnr    — membrane dual (Mtr:5 moderate, InHm:0, Gain:20)
+            { 9,  35,   0,   1,   100,  150,  0,   0,     0, 4,  180,  25,    0,   0, 20,  1800,     1,   5,  60,   10, 800,  0,   800, 707}, // 9:  Tam Tam    — single resonator (Mdl=4 same-freq, Ptls→0)
+            {10,  72,   0,   1,   600,  280,  0,   0,     0, 0,  130,  10,    0,   0, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — single resonator (Ptls→0)
+            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  120,  15,    0,   0, 18,     5,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — single resonator (Ptls→0)
+            {12,  76,   0,   1,   800,  350,  0,   0,     0, 2,    5,  -8,    0,   0,  2,    80,     1,   5,   0,    0, 300,  0,   500, 707}, // 12: Wodblk     — single resonator (Ptls→0)
+            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,  15,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (InHm:0, Gain:15)
+            {14,  60,   0,   1,   800,  500,  0,   0,     0, 4,  140,  30,    0,   0, 18,  1950,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — single resonator (Ptls→0)
+            {15,  36,   0,   1,   200,  200,  0,   0,     0, 4,  190,  20,    0,   0, 20,  1900,     1,   5,  40,   10, 800,  0,   600, 707}, // 15: Gong       — single resonator (Ptls→0)
+            {16,  72,   0,   1,   700,  400,  0,   0,     0, 1,  140,  25,    0,   0,  5,     1,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba    — single resonator (Ptls→0)
+            {17,  60,   0,   1,   600,  350,  0,   0,     0, 4,  100,  20,    0,   0, 12,   800,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan  — single resonator (Ptls→0)
+            {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — single resonator (Ptls→0)
+            {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,   55,  25,    0,   0,  4,  1700,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — single resonator (Ptls→0)
+            {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  165,  30,    0,   0, 15,  1990,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle   — single resonator (Ptls→0)
+            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     0,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane dual (InHm:0, Gain:20)
+            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mtr:5, InHm:0, Gain:15)
+            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    80,   5,  10,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (InHm:0, Gain:10)
+            {24,  72,   0,   1,   100,   50,  0,   0,     0, 7,   90,  -5,    0,   0, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute      — single resonator (Ptls→0)
+            {25,  72,   0,   0,    50,   20,  0,   0,     0, 8,  100,  -5,    0,   0, 15,     0,     1,   5,   0,   40, 800,  0,   800, 707}, // 25: Clarinet   — ClosedTube (phase_mult=-1); Note=72 so it resonates at C4 (octave-lower rule)
+            {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
+            {27,  76,   0,   1,   700,  350,  0,   0,     0, 4,  160,  25,    0,   0, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — single resonator (Ptls→0)
+            // 28: Guitar String — Karplus-Strong reference for physical model validation.
+            // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
+            // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
+            // Hit=0: full ResA output (HitPos=50 would halve the signal when ResB is disabled).
+            // InHm=0: pure Karplus-Strong, no allpass inharmonicity — cleanest reference.
+            // Expected: bright pluck attack, gradual spectral darkening, ~3-second sustain.
+            // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 3 s;
+            //           (3) no flutter/beating (one clean tone per press).
+            //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707}   // 28: Guitar String
         };
 
         if (idx >= k_NumPrograms) return;
@@ -335,8 +360,13 @@ public:
         m_is_resonator_b = false;
 
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
+        // Also skip Bank and Sample so the user's sample selection persists
+        // across preset changes (user reported: sample resets to bank 0, sample 1
+        // on every preset change).
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
+            if (param_id == k_paramBank) continue;
+            if (param_id == k_paramSample) continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -367,13 +397,14 @@ public:
 
     static inline const char * getPresetName(uint8_t idx) {
         static const char* const preset_names[] = {
-            "Init",    "Marmba", "808Sub", "AcSnre",
+            "InitDbg", "Marmba", "808Sub", "AcSnre",
             "TblrBel", "Timpni", "Djambe", "Taiko",
             "MrchSnr", "TamTam", "Koto",   "Vibrph",
             "Wodblk",  "Ac Tom", "Cymbal", "Gong",
             "Kalimba", "StelPan","Claves", "Cowbel",
             "Trngle",  "Kick",    "Clap",  "Shaker",
-            "Flute",   "Clrint", "PlkBss", "GlsBwl"
+            "Flute",   "Clrint", "PlkBss", "GlsBwl",
+            "GtrStr"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -452,6 +483,23 @@ public:
                 if (m_is_resonator_b)
                     m_model_b = value;
 #ifdef ENABLE_PHASE_7_MODELS
+                // Per-model baseline allpass dispersion — gives each physical model a
+                // distinct inharmonic character independently of the Inharm (ap_coeff) knob.
+                // Values calibrated to physical stiffness constants:
+                //   String≈0 (flexible), Beam≈0.06 (mild stiffness), Square≈0.12,
+                //   Membrane≈0.01 (nearly harmonic), Plate≈0.08, Drumhead≈0.02,
+                //   Marimba≈0.04 (tuned bar), OpenTube=0/ClosedTube=0 (perfectly harmonic).
+                static const float ap_base_by_model[] = {
+                    0.00f, // 0: String
+                    0.06f, // 1: Beam
+                    0.12f, // 2: Square plate
+                    0.01f, // 3: Membrane
+                    0.08f, // 4: Plate
+                    0.02f, // 5: Drumhead
+                    0.04f, // 6: Marimba bar
+                    0.00f, // 7: Open Tube
+                    0.00f, // 8: Closed Tube
+                };
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     if (m_model_a == 7 || m_model_a == 8) {
                         state.voices[i].resA.phase_mult = -1.0f;
@@ -463,6 +511,10 @@ public:
                     } else {
                         state.voices[i].resB.phase_mult = 1.0f;
                     }
+                    if (m_is_resonator_a && m_model_a < 9)
+                        state.voices[i].resA.model_ap_base = ap_base_by_model[m_model_a];
+                    if (m_is_resonator_b && m_model_b < 9)
+                        state.voices[i].resB.model_ap_base = ap_base_by_model[m_model_b];
                 }
 #endif
                 break;
@@ -489,6 +541,11 @@ public:
                         // Always update regardless of which resonator is selected —
                         // master_env is voice-level, not per-resonator.
                         state.voices[i].exciter.master_env.release_rate = master_rate;
+                        // Auto-decay rate: 30% of release rate.  Ensures sounds
+                        // decay naturally even while the gate is held (percussion
+                        // on a drum machine should never sustain indefinitely).
+                        // NoteOff switches to the faster release_rate for a clean tail.
+                        state.voices[i].exciter.master_env.decay_rate = master_rate * 0.3f;
 #endif
                     }
                 }
@@ -714,6 +771,11 @@ public:
         state.next_voice_idx = (state.next_voice_idx + 1) % NUM_VOICES;
         VoiceState& v = state.voices[state.next_voice_idx];
 
+        // Capture before is_active is overwritten: only a previously-active voice
+        // has residual delay-line data that needs clearing on retrigger.
+        // A fresh slot (never used since Reset()) is already zero — skip the work.
+        const bool had_residual = v.is_active || v.is_releasing;
+
         // CRITICAL FIX 2: Ensure the voice actually turns on!
         v.is_active = true;
         v.is_releasing = false;
@@ -723,10 +785,16 @@ public:
         v.exciter.sample_ptr = nullptr;
         v.exciter.sample_frames = 0;
 
-        // Then, try to load the new one just-in-time
-        if (m_get_sample && m_get_num_sample_banks_ptr && m_get_num_samples_for_bank_ptr) {
+        // Then, try to load the new one just-in-time.
+        // CRITICAL: m_sample_number == 0 means "no sample" (Smp=0 in the preset table).
+        // Without this guard, the ternary (m_sample_number > 0) ? ... : 0 falls through
+        // to actualIndex=0, which loads hardware bank 0 / sample 0 on EVERY preset —
+        // even those explicitly set to Smp=0 (e.g. GtrStr).  The unit tests hide this
+        // because mock_get_sample() always returns nullptr, masking the real hardware path.
+        if (m_sample_number > 0 &&
+            m_get_sample && m_get_num_sample_banks_ptr && m_get_num_samples_for_bank_ptr) {
             if (m_sample_bank < m_get_num_sample_banks_ptr()) {
-                size_t actualIndex = (m_sample_number > 0) ? (size_t)(m_sample_number - 1) : 0;
+                size_t actualIndex = (size_t)(m_sample_number - 1);  // 1-indexed: Smp=1→idx 0
                 if (actualIndex < m_get_num_samples_for_bank_ptr(m_sample_bank)) {
                     const sample_wrapper_t* wrapper = m_get_sample(m_sample_bank, actualIndex);
                     if (wrapper && wrapper->sample_ptr) {
@@ -818,6 +886,13 @@ public:
             // Standard matched resonators (Strings, Tubes, Bars)
             v.resB.delay_length = base_delay;
         }
+
+        // Micro-detune ResB by ~5 cents to break perfect mathematical beating.
+        // Two resonators at identical delay lengths create digitally-precise
+        // normal-mode splitting with metronomic amplitude modulation.  A real
+        // instrument always has slight manufacturing asymmetry between modes.
+        // 5 cents ≈ 0.3% — audible as warmth/chorus, not as out-of-tune.
+        v.resB.delay_length *= 1.003f;
 #else
         // Legacy fallback calculation
         // 1. Convert MIDI Note to Frequency (Hz)
@@ -837,30 +912,35 @@ public:
         // delay from the nominal delay line length so the loop oscillates at f₀.
         //
         // DC-limit approximations (valid for all MIDI notes at 48 kHz, ω₀ ≪ 1):
-        //   LP  H(z) = α/(1-pa·z⁻¹),  pole at pa=1-α  →  τ_LP = pa/(1-pa) = (1-α)/α
-        //   AP  H(z) = (c+z⁻¹)/(1+c·z⁻¹)              →  τ_AP = (1+c)/(1-c)
+        //   LP  H(z) = α/(1-pa·z⁻¹),  pole at pa=1-α  →  τ_LP = pa/(1-pa)
+        //   AP  H(z) = (c+z⁻¹)/(1+c·z⁻¹)              →  τ_AP = (1-c)/(1+c)
         //
         // Derivation (LP): phase φ = -arctan(pa·sinω/(1-pa·cosω))
         //   τ = -dφ/dω = pa·(cosω-pa)/(1-2pa·cosω+pa²)
         //   At DC: pa·(1-pa)/(1-pa)² = pa/(1-pa).
         //   Sanity: pa=0 (α=1, passthrough) → τ=0; pa→1 (dark) → τ→∞.  Both ✓
         //
-        // The AP formula (1+c)/(1-c) is the standard first-order allpass result; at
-        // c=0 (no dispersion) it reduces to 1 sample — the pure z⁻¹ delay built into
-        // the allpass recurrence.
+        // AP derivation: for H(z) = (c + z⁻¹) / (1 + c·z⁻¹):
+        //   Phase = arg(c + e^{-jω}) - arg(1 + c·e^{-jω})
+        //   τ = -dPhase/dω = (1-c²)/(1+c²+2c·cosω)
+        //   At DC (ω=0): τ_AP = (1-c²)/(1+c)² = (1-c)/(1+c).
+        //   At c=0: τ=1 (pure z⁻¹ delay). ✓
+        //   NOTE: The incorrect formula (1+c)/(1-c) over-compensates, making pitch sharp.
+        //   That formula applies to H(z) = (-c + z⁻¹)/(1 - c·z⁻¹), which has the
+        //   opposite dispersion direction and is NOT what this code implements.
         {
             // ResA
             float pa = 1.0f - v.resA.lowpass_coeff;          // LP pole
             float ca = v.resA.ap_coeff;                       // AP coefficient
             float lp_del_A = pa / (1.0f - pa);                // τ_LP: pa/(1-pa)
-            float ap_del_A = (1.0f + ca) / (1.0f - ca);      // τ_AP: (1+c)/(1-c) ≥ 1
+            float ap_del_A = (1.0f - ca) / (1.0f + ca);      // τ_AP: (1-c)/(1+c) ≤ 1
             v.resA.delay_length = fmaxf(2.0f, v.resA.delay_length - lp_del_A - ap_del_A);
 
             // ResB
             float pb = 1.0f - v.resB.lowpass_coeff;
             float cb = v.resB.ap_coeff;
             float lp_del_B = pb / (1.0f - pb);
-            float ap_del_B = (1.0f + cb) / (1.0f - cb);
+            float ap_del_B = (1.0f - cb) / (1.0f + cb);
             v.resB.delay_length = fmaxf(2.0f, v.resB.delay_length - lp_del_B - ap_del_B);
         }
 
@@ -886,6 +966,36 @@ public:
         v.resB_out_prev = 0.0f;
         v.tone_lp = 0.0f;
 
+        // Clear waveguide delay line, LP state, and write pointer.
+        //
+        // After write_ptr is reset to 0, the read position starts at
+        // (0 - delay_length) mod DELAY_BUFFER_SIZE ≈ (4096 - delay_length).
+        // The read pointer advances with the write pointer.  At sample delay_length,
+        // the read pointer reaches position 0, which was just written by this note —
+        // from that point forward every read is from freshly-computed data.
+        // Only the tail window [4096 - ceil(delay_length) - 1 … 4095] is ever read
+        // before new data covers it; clearing that window (typically 110–880 floats)
+        // is correct and 10–37× cheaper than zeroing the full 16 KB buffer.
+        //
+        // Skip entirely on a fresh (never-triggered) slot: Reset() already zeroed it.
+        v.resA.write_ptr = 0;
+        v.resB.write_ptr = 0;
+        v.resA.z1 = 0.0f;
+        v.resB.z1 = 0.0f;
+        if (had_residual) {
+            auto clear_tail = [](float* buf, float delay_len) {
+                uint32_t len = (uint32_t)ceilf(delay_len) + 2;  // +2: frac interp safety
+                if (len >= DELAY_BUFFER_SIZE) {
+                    // Delay longer than buffer (very low notes): clear everything.
+                    memset(buf, 0, DELAY_BUFFER_SIZE * sizeof(float));
+                } else {
+                    memset(&buf[DELAY_BUFFER_SIZE - len], 0, len * sizeof(float));
+                }
+            };
+            clear_tail(v.resA.buffer, v.resA.delay_length);
+            clear_tail(v.resB.buffer, v.resB.delay_length);
+        }
+
 #ifdef ENABLE_PHASE_6_FILTERS
         // Clear noise SVF delay states so rapid re-triggering doesn't produce
         // a click from residual filter memory.  set_coeffs() (called once from
@@ -898,14 +1008,17 @@ public:
 #ifdef ENABLE_PHASE_5_EXCITERS
         // Trigger the envelopes when a note hits
         v.exciter.noise_env.trigger();
-        // Configure master envelope as a fully-open gate (value=1.0, ENV_DECAY).
-        // Direct assignment avoids the  trigger() + process()  pattern that relied on
-        // the floating-point comparison  value >= 0.99f  after one multiply-add.
-        // ARM -ffast-math may emit an FMA whose rounding leaves value fractionally
-        // below 0.99f, keeping state in ENV_ATTACK and silencing the gate permanently.
-        // release_rate is already set for this voice by setParameter(k_paramDkay).
-        v.exciter.master_env.decay_rate = 0.0f;
-        v.exciter.master_env.sustain_level = 1.0f;
+        // Master envelope: auto-decay from 1.0 toward 0.0 at decay_rate.
+        // This ensures percussion sounds decay naturally even with gate held
+        // (the Drumlogue trigger button behaviour).  NoteOff switches to the
+        // faster release_rate for a clean tail-off.
+        //
+        // Direct assignment avoids the  trigger() + process()  pattern that
+        // relied on value >= 0.99f after one multiply-add.  ARM -ffast-math
+        // may emit an FMA whose rounding leaves value fractionally below 0.99f.
+        //
+        // decay_rate and release_rate are set by setParameter(k_paramDkay).
+        v.exciter.master_env.sustain_level = 0.0f;
         v.exciter.master_env.value = 1.0f;
         v.exciter.master_env.state = ENV_DECAY;
 #endif
@@ -931,9 +1044,19 @@ public:
         // The internal Drumlogue sequencer releases the UI note
         NoteOff(m_ui_note);
 
-        // Reset the voice allocator so the next chord/strike starts at Voice 0.
-        // Because NoteOn pre-increments, setting it to (NUM_VOICES - 1) ensures
-        // the next NoteOn will wrap exactly to index 0.
+        // Reset the voice allocator so the next strike starts at Voice 0.
+        // Because NoteOn pre-increments before use, setting to (NUM_VOICES - 1)
+        // means the very next NoteOn wraps to index 0.
+        //
+        // Without this reset: round-robin cycles through voices 1,2,3,0,1,2,3,0,...
+        // so each successive gate press uses a different slot.  When the note has a
+        // long T_60 (e.g. GtrStr ~5 s), four different voice slots accumulate residual
+        // energy at different phases, causing constructive/destructive interference
+        // ("beating") and progressive amplitude variation across presses.
+        //
+        // With this reset: every gate press always starts at Voice 0.  Concurrent
+        // notes within the same gate still allocate voices 0→1→2→3 correctly, because
+        // each NoteOn call still increments before use.
         state.next_voice_idx = NUM_VOICES - 1;
     }
 
@@ -1005,7 +1128,17 @@ public:
         // phase stretching acts on the full-amplitude signal, then LP applies loss.
         // With LP-first the AP acts on an already attenuated signal, reducing the
         // audible inharmonicity at high frequencies (wrong direction for stiff strings).
-        float ap_out = (wg.ap_coeff * delay_out) + wg.ap_x1 - (wg.ap_coeff * wg.ap_y1);
+        //
+        // model_ap_base: a per-model baseline dispersion coefficient that gives each
+        // physical model (Beam, Square, Plate, etc.) a distinct inharmonic character
+        // even when the user sets Inharm=0.  Summed with ap_coeff (from Inharm knob)
+        // and clamped to [0, 0.99) to prevent allpass instability.
+#ifdef ENABLE_PHASE_7_MODELS
+        float ap = fminf(0.99f, wg.ap_coeff + wg.model_ap_base);
+#else
+        float ap = wg.ap_coeff;
+#endif
+        float ap_out = (ap * delay_out) + wg.ap_x1 - (ap * wg.ap_y1);
         wg.ap_x1 = delay_out;
         wg.ap_y1 = ap_out;
 
@@ -1135,7 +1268,19 @@ public:
                 // ── Stage 2: Waveguide resonators ──────────────────────────
                 // If Stage 2 is silent but Stage 1 is not, the waveguide has
                 // zero delay_length or zero feedback_gain on this hardware.
-                float inputA = exciter_sig + (voice.resB_out_prev * m_coupling_depth * 0.5f);
+                //
+                // Dynamic coupling clamp: limit cross-resonator injection so
+                // the total energy input (feedback + coupling) stays below 1
+                // per round trip, preventing exponential energy growth at ANY
+                // Decay/Partials combination.  The formula:
+                //   safe_coupling ≤ (1 − feedback_gain) × safety_factor
+                // ensures the system has headroom for energy dissipation.
+                float safe_cpl_a = fminf(m_coupling_depth * 0.5f,
+                    (1.0f - voice.resA.feedback_gain) * 0.8f);
+                float safe_cpl_b = fminf(m_coupling_depth * 0.5f,
+                    (1.0f - voice.resB.feedback_gain) * 0.8f);
+
+                float inputA = exciter_sig + (voice.resB_out_prev * safe_cpl_a);
                 outA = process_waveguide(voice.resA, inputA);
                 float outB = 0.0f;
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
@@ -1152,7 +1297,7 @@ public:
                                     fabsf(voice.resB_out_prev) > 0.00003f);
 
                 if (resB_needed) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * m_coupling_depth * 0.5f);
+                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB); //
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1163,7 +1308,7 @@ public:
                 }
 #else
                 if (m_active_partials >= 16) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * m_coupling_depth * 0.5f);
+                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB);
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1185,9 +1330,18 @@ public:
                 voice.mag_env = (fabsf(voice_out) * alpha) + (voice.mag_env * limiter);
                 float damper_fade = voice.exciter.master_env.process();
                 voice_out *= damper_fade;
-                if (voice.is_releasing && voice.exciter.current_frame > kSquelchGuardSamples) {
-                    if (voice.mag_env < kSquelchThreshold ||
-                            voice.exciter.master_env.state == ENV_IDLE) {
+                if (voice.exciter.current_frame > kSquelchGuardSamples) {
+                    // Original squelch: deactivate released voices
+                    if (voice.is_releasing &&
+                        (voice.mag_env < kSquelchThreshold ||
+                         voice.exciter.master_env.state == ENV_IDLE)) {
+                        voice.is_active = false;
+                    }
+                    // Auto-decay squelch: deactivate voices whose master_env
+                    // has naturally decayed to ENV_IDLE even while gate is held.
+                    // This reclaims voice slots for percussion auto-decay.
+                    if (!voice.is_releasing &&
+                        voice.exciter.master_env.state == ENV_IDLE) {
                         voice.is_active = false;
                     }
                 }

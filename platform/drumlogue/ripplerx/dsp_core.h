@@ -104,6 +104,9 @@ struct WaveguideState {
 #ifdef ENABLE_PHASE_7_MODELS
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
     float phase_mult = 1.0f;
+    // Per-model baseline allpass dispersion (added to ap_coeff from Inharm parameter).
+    // Gives each physical model a distinct inharmonic character even when Inharm=0.
+    float model_ap_base = 0.0f;
 #endif
 };
 
