@@ -18,6 +18,7 @@
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 #define SPARKLE_BUFFER_SIZE 4096
 #define NUM_RESONATORS (6)
+#define SAMPLE_RATE (48000.0f)
 
 // Biquad definitions for the COLOR path
 typedef struct {
@@ -55,7 +56,7 @@ fast_inline float process_biquad(float in, biquad_state_t* state, biquad_coeffs_
 
 class FDNEngine {
 public:
-    FDNEngine() : sampleRate(48000.0f) {
+    FDNEngine() : sampleRate(SAMPLE_RATE) {
         initialized = false;
         Reset();
     }
@@ -134,7 +135,7 @@ public:
         // Base prime delay times for 8 channels
         const float primes[FDN_CHANNELS] = {1103.0f, 1511.0f, 1999.0f, 2503.0f, 3011.0f, 3511.0f, 3989.0f, 4513.0f};
         for (int i = 0; i < FDN_CHANNELS; i++) {
-            baseDelayTimes[i] = primes[i] * (sampleRate / 48000.0f);
+            baseDelayTimes[i] = primes[i] * (sampleRate / SAMPLE_RATE);
         }
 
         init_color_resonators();
@@ -177,13 +178,7 @@ public:
 
     void generate_hadamard() {
         float norm = 1.0f / sqrtf(FDN_CHANNELS);
-            baseDelayTimes[i] = primes[i] * (sampleRate / 48000.0f);
-        }
-
-        init_color_resonators();
-        initialize_brightness_harmonic_exciter();
-        Reset();
-        initialized = true;
+        baseDelayTimes[i] = primes[i] * (sampleRate / SAMPLE_RATE);
     }
 
     void init_color_resonators() {
@@ -234,15 +229,14 @@ public:
     }
 
     void Reset() {
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                int parity = 0;
-                int bits = i & j;
-                while (bits) {
-                    parity ^= (bits & 1);
-                    bits >>= 1;
-                }
-                hadamard[i][j] = parity ? -norm : norm;
+        for (int j = 0; j < FDN_CHANNELS; j++) {
+            int parity = 0;
+            int bits = i & j;
+            while (bits) {
+                parity ^= (bits & 1);
+                bits >>= 1;
             }
+            hadamard[i][j] = parity ? -norm : norm;
         }
     }
 
@@ -352,7 +346,6 @@ public:
             float sum = 0.0f;
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 sum += fdnOut[j] * hadamard[i][j];
-                sum += fdnOut[j] * hadamard[i][j];
             }
 
             // Inject Input: Left to channels 0-3, Right to 4-7
@@ -398,13 +391,14 @@ public:
             step_core_fdn(pd_sig, pd_sig, &rev_l, &rev_r);
 
             // Now 5 parallel paths to be summed up at the end
-{
+
+
             // ==========================================
             // PATH 1: GLOW (Stereo Swirling SVF)
             // ==========================================
             // LFO rate scales with the glow amount knob (e.g., 0.2Hz to ~1.5Hz)
             // phase offset
-            float lfo_rate = (0.2f + (glow_amt * 1.3f)) / 48000.0f;
+            float lfo_rate = (0.2f + (glow_amt * 1.3f)) / SAMPLE_RATE;
             glow_lfo_phase += lfo_rate;
             if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
 
@@ -428,8 +422,7 @@ public:
             glow_lp_r += f_coeff_r * glow_bp_r;
             glow_bp_r += f_coeff_r * (rev_r - glow_lp_r - q_coeff * glow_bp_r);
             float glow_r = glow_lp_r;
-}
-{
+
             // ==========================================
             // PATH 2: DARK (Organic Pitch-Shifted Sub-Bass)
             // ==========================================
@@ -470,8 +463,7 @@ public:
 
             // 7. Final output with makeup gain to compensate for the heavy filtering
             float dark_sig = dark_lpf_state * 2.5f;
-}
-{
+
             // ==========================================
             // PATH 3: BRIGHT (Harmonic Exciter Air)
             // ==========================================
@@ -491,8 +483,7 @@ public:
             // This squashes the peaks, synthesizing beautiful 2nd and 3rd order "sizzle"
             float bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
             float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
-}
-{
+
             // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
             float color_l = 0.0f;
             float color_r = 0.0f;
@@ -503,8 +494,7 @@ public:
             // Scale down since we are summing 6 high-Q resonant peaks
             color_l *= 0.15f;
             color_r *= 0.15f;
-}
-{
+
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
             sparkle_buffer_l[spark_write] = rev_l;
             sparkle_buffer_r[spark_write] = rev_r;
@@ -535,7 +525,7 @@ public:
                     spark_pan_r = 1.0f - spark_pan_l;
                 }
             }
-}
+
             // ==========================================
             // FINAL PARALLEL MIXDOWN
             // ==========================================

@@ -405,9 +405,12 @@ fast_inline void neon_envelope_release(neon_envelope_t* env,
                                    env->samples_left);
 
     // Decrement = -(current_level / release_samples) so level reaches 0 smoothly.
-    // vrecpeq_f32 gives ~8-bit estimate; sufficient for a fade-to-zero.
-    float32x4_t release_inc = vnegq_f32(
-        vmulq_f32(env->level, vrecpeq_f32(env->release_samples)));
+    // vrecpeq_f32 gives ~8-bit estimate; sufficient for a fade-to-zero and
+    //  add one Newton-Raphson refinement step using vrecpsq_f32 to achieve sufficient
+    // precision for audio applications.
+    float32x4_t rec = vrecpeq_f32(env->release_samples);
+    rec = vmulq_f32(rec, vrecpsq_f32(env->release_samples, rec));
+    float32x4_t release_inc = vnegq_f32(vmulq_f32(env->level, rec));
     env->increment = vbslq_f32(trigger, release_inc, env->increment);
 }
 

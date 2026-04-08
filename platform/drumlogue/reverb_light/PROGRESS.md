@@ -93,6 +93,12 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
    This is a static array in BSS; confirm that drumlogue's memory layout can
    accommodate it (SDRAM vs SRAM).
 
+6. **Colour modulation** –
+   ` freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f}`
+   This is a static array of frequencies in Hz that reflect the visual spectrum, even
+   if they are just mid values of a small range. COnsider the possibility to set a
+   +/- 20Hz offset, or modulate via LFO.
+
 ---
 
 ## Completed Work
@@ -108,12 +114,13 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
 - [x] SDK unit interface (init/render/set_param/presets)
 - [x] 4 factory presets
 
-## Pending
+## Pending TODOs
 
 - [ ] Resolve open design questions above
 - [ ] Add `FDNEngine::reset()` and wire it in `unit_reset()`
 - [ ] Investigate HPF coefficient (consider softening to 0.97+)
 - [ ] Decide NAME param → preset-load behaviour
 - [ ] Consider decoupling SPRK depth from LFO rate
+- [ ] Consider colour setting / modulation
 - [ ] Confirm memory budget with drumlogue SDRAM map
 - [ ] Build test on actual target (ARM cross-compile)

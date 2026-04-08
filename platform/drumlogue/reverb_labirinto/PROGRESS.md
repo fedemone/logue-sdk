@@ -98,6 +98,10 @@ the open design questions listed below before further work proceeds.
 5. **Stability at PILL=4 (shimmer)** – ring-mod feedback path not yet stress-tested
    at `TIME=100` + `COMP=1000`. `test_stability.cpp` covers PILL=3 only.
 
+6. **introduce wavetable LFO for shimmer** – since the shimmer reverberation is
+    simply static an LFO for the pitch can add movement at slow/medium rates.
+    An audio rate would give special effect?
+
 ---
 
 ## Completed Work
@@ -117,5 +121,6 @@ the open design questions listed below before further work proceeds.
 - [ ] Wire VIBR (ID 11) in unit_set_param_value
 - [ ] Clarify/implement coloured noise for stellare preset
 - [ ] Stress-test PILL=4 shimmer path
+- [ ] Introduce wavetable LFO for shimmer
 - [ ] Confirm memory budget with drumlogue SDRAM map
 - [ ] Build test on actual target (ARM cross-compile)

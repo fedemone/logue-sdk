@@ -31,6 +31,7 @@
 #define FREQ_MAX_DIV_MIN (18.333f)
 #define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
+#define NEON_LANES (4)
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -110,15 +111,16 @@ public:
      * @return true if initialization successful
      */
     bool init() {
-
-        initMicrotonalShimmer();
-
         // Initialize Hadamard mixing matrix BEFORE clearing/processing
         initHadamardMatrix();
 
         // Clear buffer
         clear();
 
+        // Initialize Cochrane Microtonal Shimmer (18-EDO Scale)
+        initMicrotonalShimmer();
+
+        // set state variables
         initialized = true;
         return true;
     }
@@ -160,6 +162,9 @@ public:
 
         // Reset pre delay line
         memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
+        memset(channelPhase_, 0, sizeof(channelPhase_));
+        memset(swirlRate_, 0, sizeof(swirlRate_));
+        memset(microtonalRate_, 0, sizeof(microtonalRate_));
         preDelayWritePos = 0;
         activeSampleCount = 0;
         // Reset LFO
@@ -539,9 +544,8 @@ private:
     /*===========================================================================*/
     /* OPTIMIZED: vld4-based delay line reading with vectorized interpolation */
     /*===========================================================================*/
-
     void readDelayLines4(float32x4_t* out) {
-        // Calculate read positions for all 8 channels × 4 samples
+        // Calculate base read positions for all 4 samples
         float32x4_t baseReadPos = {
             (float)writePos,
             (float)(writePos + 1),
@@ -549,42 +553,71 @@ private:
             (float)(writePos + 3)
         };
 
-        // Pre-calculate modulation for all channels (sin values for all 4 phases at once)
+        // ====================================================================
+        // DYNAMIC NEON MODULATION (SWIRL & COCHRANE SHIMMER)
+        // ====================================================================
         float32x4_t mods[FDN_CHANNELS];
+
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            // Get the 4 phases for this channel (one per sample)
-            float32x4_t phases = modPhaseVec[ch];
 
-            // Compute sin(2π * phase) for all 4 samples at once
-            // First scale to [0, 2π]
-            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_TWOPI));
+            // 1. Select Rate and Depth based on current Mode
+            float current_rate = 0.0f;
+            float current_depth = 0.0f;
 
-            // Compute sin using NEON approximation
+            if (currentPreset == k_esotico) {
+                // Cochrane 18-EDO Shimmer Mode
+                current_rate = microtonalRate_[ch];
+                current_depth = shimmerDepth_ * 45.0f; // Deep, slow microtonal stretch
+            } else {
+                // Standard Swirl / Chorus Mode
+                current_rate = swirlRate_[ch] * (1.0f + swirlSpeedKnb); // Scale with UI
+                current_depth = swirlDepth_ * 20.0f; // Standard subtle diffusion
+            }
+
+            // 2. Generate the 4 sequential phases for this NEON block
+            float base = channelPhase_[ch];
+            float32x4_t phase_offsets = { 0.0f, current_rate, current_rate * 2.0f, current_rate * 3.0f };
+            float32x4_t phases = vaddq_f32(vdupq_n_f32(base), phase_offsets);
+
+            // 3. Advance the stored scalar phase for the next audio block
+            float next_phase = base + (current_rate * 4.0f);
+            if (next_phase > 1.0f) next_phase -= 1.0f; // Wrap 0.0 to 1.0
+            channelPhase_[ch] = next_phase;
+
+            // 4. Convert normalized phase [0, 1] to Radians [0, 2π]
+            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_PI * 2.0f));
+
+            // 5. Compute NEON sine approximation
             float32x4_t sin_vals = sin_ps(angles);
 
-	    // Scale by modulation depth
-            mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(modDepth * 100.0f));
+            // 6. Scale by modulation depth (in samples)
+            mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(current_depth));
         }
 
-        // For each channel, calculate read positions
+        // ====================================================================
+        // DELAY READ POINTER CALCULATIONS
+        // ====================================================================
         float32x4_t readPositions[FDN_CHANNELS];
-        uint32_t baseIndices[FDN_CHANNELS][4];
-        float fracParts[FDN_CHANNELS][4];  // fractional parts for interpolation
+        uint32_t baseIndices[FDN_CHANNELS][NEON_LANES];
+        float fracParts[FDN_CHANNELS][NEON_LANES];
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
+
+            // Subtract delay length AND our new dynamic modulation
             readPositions[ch] = vsubq_f32(baseReadPos,
                 vaddq_f32(vdupq_n_f32(delaySamples), mods[ch]));
 
             // Wrap to [0, BUFFER_SIZE)
-            float pos_vals[4];
+            float pos_vals[NEON_LANES];
             vst1q_f32(pos_vals, readPositions[ch]);
 
-            for (int s = 0; s < 4; s++) {
-                // Manual wrap for each sample (safer than vectorized wrap)
+            for (int s = 0; s < NEON_LANES; s++) {
                 float pos = pos_vals[s];
+                // Safe scalar wrapping
                 while (pos < 0) pos += BUFFER_SIZE;
                 while (pos >= BUFFER_SIZE) pos -= BUFFER_SIZE;
+
                 uint32_t base = (uint32_t)pos;
                 baseIndices[ch][s] = base;
                 fracParts[ch][s] = pos - (float)base;  // true fractional part
@@ -595,9 +628,9 @@ private:
         // (baseIndices[ch][s]) so we cannot share a single vld4q_f32 across channels.
         // Scalar interpolation per channel avoids the previous cross-frame read bug.
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float out_lanes[4];
+            float out_lanes[NEON_LANES];
 
-            for (int s = 0; s < 4; s++) {
+            for (int s = 0; s < NEON_LANES; s++) {
                 uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
                 uint32_t idx1 = (idx0 + 1) & BUFFER_MASK;
                 float frac = fracParts[ch][s];
@@ -708,21 +741,6 @@ private:
             writePos = (writePos + 4) & BUFFER_MASK;
         }
 
-    // =================================================================
-    // COCHRANE SHIMMER: 18-EDO Microtonal Beating
-    // =================================================================
-    void writeExoticDelay() {
-        float current_delay = delayTimes[ch];
-        microtonalPhase_[ch] += microtonalRate_[ch];
-        if (microtonalPhase_[ch] > 1.0f) microtonalPhase_[ch] -= 1.0f;
-
-        // Apply deep, microtonally-tuned vibrato (Doppler pitch shift)
-        // We use fastercosfullf because it safely expects our 0.0 - 1.0 normalized phase - TODO review the approximation of the cos function for this purpose
-        float beating_mod = fastercosfullf(microtonalPhase_[ch]) * shimmerDepth_ * 45.0f;
-        current_delay += beating_mod;
-        // Ensure delay doesn't drop below minimum or exceed buffer
-        current_delay = fmaxf(1.0f, fminf(current_delay, (float)MAX_DELAY_SAMPLES - 2.0f));
-    }
 
     /*===========================================================================*/
     /* Main Processing Loop */
@@ -760,8 +778,8 @@ private:
         // =================================================================
         // 2. Pre-Delay Read
         // =================================================================
-        float delayedLanes[4];
-        for (int s = 0; s < 4; s++) {
+        float delayedLanes[NEON_LANES];
+        for (int s = 0; s < NEON_LANES; s++) {
             int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
             delayedLanes[s] = preDelayBuffer[readPos];
         }
@@ -854,20 +872,11 @@ private:
         // =================================================================
         // Write back to delay lines
         // =================================================================
-        // 7. Write to delay lines
-        if (currentPreset == k_esotico) {
-
-        }
-        else {
-            writeDelayLines4(mixed);
-        }
-
+        writeDelayLines4(mixed);
 
         // =================================================================
         // Mix down to stereo — routing depends on PILL value
         // =================================================================
-        float32x4_t leftMix, rightMix;
-
         // 8. Stereo mix‑down (with randomised ping‑pong if pillar==1)
         float32x4_t leftMix, rightMix;
         if (pingPong_) {
@@ -1027,7 +1036,6 @@ private:
         // Shimmer (PILL=4): inject a small frequency-modulated copy of the
         // current wet signal back into channels 6 and 7 before writing.
         // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
-        // TODO: introduce wavetable LFO for shimmer?
         if (shimmerDepth_ > 0.0f) {
             float previewL = 0.0f, previewR = 0.0f;
             for (int i = 0; i < 4; i++)            previewL += mixed[i];
@@ -1096,22 +1104,18 @@ private:
      * defines as true microtonal shimmer.*/
     void initMicrotonalShimmer()
     {
-        // Initialize Cochrane Microtonal Shimmer (18-EDO Scale)
-        // A base LFO of 0.5Hz is scaled by microtonal intervals to create constant beating
-        float base_lfo_hz = 0.5f;
+        // Set up standard swirl (e.g., random slow rates between 0.2Hz and 0.8Hz)
+        // Set up Cochrane 18-EDO rates (as discussed previously)
+        for(int i=0; i<FDN_CHANNELS; i++) {
+            channelPhase_[i] = (float)i / (float)FDN_CHANNELS; // Stagger phases 0.0 to 1.0
 
-        // Specific steps from the 18-EDO scale to create maximum inharmonic beating
-        float steps_18edo[8] = {0.0f, 1.0f, 3.0f, 4.0f, 6.0f, 7.0f, 9.0f, 10.0f};
+            // Example Swirl Rates (prime-ish relationships)
+            float s_hz = 0.2f + (0.1f * i);
+            swirlRate_[i] = s_hz / sampleRate;
 
-        for(int i = 0; i < FDN_CHANNELS; i++) {
-            // Stagger the starting phases so they don't all swing together
-            microtonalPhase_[i] = (float)i / (float)FDN_CHANNELS;
-
-            // Calculate the microtonally detuned frequency
-            float freq_hz = base_lfo_hz * powf(2.0f, steps_18edo[i] / 18.0f);
-
-            // Store as a normalized phase increment (0.0 to 1.0 per sample)
-            microtonalRate_[i] = freq_hz / sampleRate;
+            // 18-EDO Cochrane Rates (Base 0.5Hz)
+            float steps_18[8] = {0.0f, 1.0f, 3.0f, 4.0f, 6.0f, 7.0f, 9.0f, 10.0f};
+            microtonalRate_[i] = (0.5f * powf(2.0f, steps_18[i] / 18.0f)) / sampleRate; // at Init use accurate function
         }
     }
 
@@ -1163,9 +1167,6 @@ private:
     float shimmerDepth_;  /* re-injection gain for pillar_==4 */
     float shimmerPhase_;  /* LFO phase for shimmer (radians) */
     float shimmerFreq_; // Low audio rate for cascading undertones
-    // ADD these new Microtonal Beating variables:
-    float microtonalPhase_[FDN_CHANNELS] __attribute__((aligned(16)));
-    float microtonalRate_[FDN_CHANNELS]  __attribute__((aligned(16)));
 
     interleaved_frame_t delayLine[BUFFER_SIZE] __attribute__((aligned(64)));
 
@@ -1175,7 +1176,10 @@ private:
     // FIX: IIR filter states must be strictly scalar! 1 history sample per channel.
     float lpfState[FDN_CHANNELS] __attribute__((aligned(16)));
     float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(64)));
-
+    // Unified Phase Tracking for Delay Modulation
+    float channelPhase_[FDN_CHANNELS] __attribute__((aligned(16)));
+    float swirlRate_[FDN_CHANNELS] __attribute__((aligned(16)));
+    float microtonalRate_[FDN_CHANNELS] __attribute__((aligned(16)));
     float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
     int preDelayWritePos;
     int preDelayOffsetSamples;

@@ -204,7 +204,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         s_current_preset = value;
         s_reverb->setFilterType(value);
         for (uint8_t i = 0; i < k_total; i++) {
-            if (value == k_paramProgram) continue;  // avoid recursion
+            if (i == k_paramProgram) continue;  // avoid recursion
             unit_set_param_value(i, k_presets[value][i]);
         }
         break;
