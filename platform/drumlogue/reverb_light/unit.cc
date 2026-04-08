@@ -164,7 +164,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case k_paramProgram:
         s_current_preset = value;
         for (uint8_t i = 0; i < k_total; i++) {
-            if (value == k_paramProgram) continue;  // avoid recursion
+            if (i == k_paramProgram) continue;  // avoid recursion
             unit_set_param_value(i, k_presets[value][i]);
         }
       break;

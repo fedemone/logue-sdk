@@ -299,25 +299,13 @@ public:
     // ========================================================================
     void step_core_fdn(float in_l, float in_r, float* out_l, float* out_r) {
         float fdnOut[FDN_CHANNELS];
-    // ========================================================================
-    // BAREBONES FDN STEP (Replaces old bloated FDN logic)
-    // ========================================================================
-    void step_core_fdn(float in_l, float in_r, float* out_l, float* out_r) {
-        float fdnOut[FDN_CHANNELS];
 
-        // 1. Read from Delay Lines
         // 1. Read from Delay Lines
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float dt = baseDelayTimes[ch] * sizeScale;
             float readPos = (float)writePos - dt;
             if (readPos < 0.0f) readPos += FDN_BUFFER_SIZE;
-            float dt = baseDelayTimes[ch] * sizeScale;
-            float readPos = (float)writePos - dt;
-            if (readPos < 0.0f) readPos += FDN_BUFFER_SIZE;
 
-            int idx1 = (int)readPos;
-            int idx2 = (idx1 + 1) & FDN_BUFFER_MASK;
-            float frac = readPos - idx1;
             int idx1 = (int)readPos;
             int idx2 = (idx1 + 1) & FDN_BUFFER_MASK;
             float frac = readPos - idx1;
@@ -327,15 +315,6 @@ public:
             fdnOut[ch] = val1 + frac * (val2 - val1);
         }
 
-        // 2. Mixdown to Stereo Output
-        *out_l = fdnOut[0] + fdnOut[1] + fdnOut[2] + fdnOut[3];
-        *out_r = fdnOut[4] + fdnOut[5] + fdnOut[6] + fdnOut[7];
-
-        // 3. Hadamard Mixing & Feedback Writing
-            float val1 = fdnMem[ch * FDN_BUFFER_SIZE + idx1];
-            float val2 = fdnMem[ch * FDN_BUFFER_SIZE + idx2];
-            fdnOut[ch] = val1 + frac * (val2 - val1);
-        }
 
         // 2. Mixdown to Stereo Output
         *out_l = fdnOut[0] + fdnOut[1] + fdnOut[2] + fdnOut[3];
