@@ -42,6 +42,15 @@ typedef struct __attribute__((aligned(16))) {
     float samples[FDN_CHANNELS];  // All 8 channels at this time position
 } interleaved_frame_t;
 
+typedef enum {
+    k_foresta,
+    k_tempio,
+    k_labirinto,
+    k_esotico,
+    k_stellare,
+    k_preset_number,
+} preset_numer_t;
+
 class NeonAdvancedLabirinto {
 public:
     /*===========================================================================*/
@@ -306,7 +315,7 @@ public:
                 break;
         }
         baseFc = fc;
-        updateFilterCoeffs(baseFc);   // initial coefficients
+        updateFilterCoeffs();   // initial coefficients
     }
 
     /*===========================================================================*/
@@ -387,7 +396,8 @@ public:
         if (filterMode == kFilterNoise) return;
         float fc = baseFc + fcMod;
         fc = fmaxf(20.0f, fminf(sampleRate * 0.45f, fc));
-        updateFilterCoeffs(fc);
+        baseFc = fc;
+        updateFilterCoeffs();
 
         // ---------------------------------------------------------
         // PROPER SCALAR IIR BIQUAD PROCESSING (same as before, but using current coefficients)
@@ -641,8 +651,8 @@ private:
                 current_depth = shimmerDepth_ * 45.0f; // Deep, slow microtonal stretch
             } else {
                 // Standard Swirl / Chorus Mode
-                current_rate = swirlRate_[ch] * (1.0f + swirlSpeedKnb); // Scale with UI
-                current_depth = swirlDepth_ * 20.0f; // Standard subtle diffusion
+                current_rate = swirlRate_[ch] * (1.0f + modRate); // Scale with UI, where modRate is mapping of VIBR  LFO speed for random modulation
+                current_depth = modDepth * 20.0f; // Standard subtle diffusion
             }
 
             // 2. Generate the 4 sequential phases for this NEON block
@@ -691,6 +701,8 @@ private:
 
                 int32_t idx = (int32_t)safe_pos;
                 uint32_t base = idx & BUFFER_MASK;
+                // Store the wrapped index so we can read from it!
+                baseIndices[ch][s] = base;
                 fracParts[ch][s] = safe_pos - (float)idx;
             }
         }
@@ -810,7 +822,7 @@ private:
         // Spill all channel vectors once; index by sample position (variable s)
         // to avoid vgetq_lane_f32(v, variable) which requires a constant index.
         float ch_lanes[FDN_CHANNELS][4];
-        for (int ch = 0; ch < FDN_CHANNELS; ch++)
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             vst1q_f32(ch_lanes[ch], signals[ch]);
             // Being an IIR, we can process just one block at time
             for (int s = 0; s < 4; s++) {
@@ -820,7 +832,7 @@ private:
             }
             writePos = (writePos + 4) & BUFFER_MASK;
         }
-
+    }
 
     /*===========================================================================*/
     /* Main Processing Loop */
@@ -1159,7 +1171,6 @@ private:
         // Frequency-dependent decay
         float mixed[FDN_CHANNELS];
         float loopGain = 0.7f + (decay * 0.295f);
-        float dm = std::min(0.995f, loopGain * fastersinfullf(highDecayMult * lowDecayMult));
 
         applyHadamardScalar(delayOut, mixed);
 

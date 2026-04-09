@@ -536,10 +536,10 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                         synth->params[PARAM_LFO1_SHAPE],
                         vgetq_lane_u32(synth->lfo_smooth.current_target1, 0),
                         vgetq_lane_u32(synth->lfo_smooth.current_target2, 0),
-                        vgetq_lane_f32(synth->lfo_smooth.current_depth1, 0) * 100.0f,
-                        vgetq_lane_f32(synth->lfo_smooth.current_depth2, 0) * 100.0f,
-                        vgetq_lane_f32(synth->lfo_smooth.current_rate1, 0) * 100.0f,
-                        vgetq_lane_f32(synth->lfo_smooth.current_rate2, 0) * 100.0f);
+                        vgetq_lane_f32(synth->lfo_smooth.current_depth1,  0) * 100.0f,
+                        vgetq_lane_f32(synth->lfo_smooth.current_depth2,  0) * 100.0f,
+                        vgetq_lane_f32(synth->lfo_smooth.current_rate1,   0) * 100.0f,
+                        vgetq_lane_f32(synth->lfo_smooth.current_rate2,   0) * 100.0f);
 
     // =================================================================
     // Process envelope
@@ -553,7 +553,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     float32x4_t lfo1, lfo2;
     lfo_enhanced_process(&synth->lfo, &lfo1, &lfo2);
     // 2. Calculate LFO Modulations
-    float32x4_t index_add     = vdupq_n_f32(0.0f);
+    float32x4_t index_add      = vdupq_n_f32(0.0f);
     float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
 
     // =================================================================
@@ -672,6 +672,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         resonant_synth_apply_lfo_resonance(&synth->resonant, voice_mask, res_mod);
     }
 
+    float32x4_t noise_add;
     // =================================================================
     // LFO → NOISE_MIX (target 8): modulate snare noise/tone blend and metal brightness
     // =================================================================
@@ -681,11 +682,10 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_NOISE_MIX)
                             ? synth->lfo.depth1 : synth->lfo.depth2;
         // Bipolar LFO (-1..1) * depth as additive offset to noise_mix/brightness
-        float32x4_t noise_add = vmulq_f32(
+        noise_add = vmulq_f32(
             vsubq_f32(vmulq_f32(mod, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f)),
             depth);
-        snare_engine_update_noise(&synth->snare, noise_add);
-        metal_engine_update2(&synth->metal, noise_add);  // maps to brightness
+        // snare_engine_update_noise(&synth->snare, noise_add); // cannot add something noise, as this function is called per sample, and updating the value used for calculate the modulatio, creating an exploding feedback
     }
 
     // =================================================================
@@ -716,7 +716,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                lfo_pitch_mult, index_add);
     float32x4_t snare_out = snare_engine_process(&synth->snare, env,
                                                  synth->engine_mask[ENGINE_SNARE],
-                                                 lfo_pitch_mult, index_add);
+                                                 lfo_pitch_mult, index_add, noise_add);
     float32x4_t metal_out = metal_engine_process(&synth->metal, env,
                                                  synth->engine_mask[ENGINE_METAL],
                                                  lfo_pitch_mult, index_add);
@@ -763,9 +763,9 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // Mix all engines, then apply per-voice velocity scaling
     // =================================================================
     float32x4_t mixed = vaddq_f32(kick_out, snare_out);
-    mixed = vaddq_f32(mixed, metal_out);
-    mixed = vaddq_f32(mixed, perc_out);
-    mixed = vaddq_f32(mixed, resonant_out);
+                mixed = vaddq_f32(mixed, metal_out);
+                mixed = vaddq_f32(mixed, perc_out);
+                mixed = vaddq_f32(mixed, resonant_out);
 
     // Scale each voice lane by its stored velocity before summing
     mixed = vmulq_f32(mixed, synth->voice_velocity);

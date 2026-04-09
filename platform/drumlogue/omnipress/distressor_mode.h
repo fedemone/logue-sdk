@@ -41,10 +41,10 @@
 #define AUDIO_DIST3      (1 << 2)  // 3rd harmonic
 
 // Distressor Mode String Display
-static const char* distressor_mode_strings[6] = {
+static const char* distressor_dist_strings[5] = {
     "Off",      // 0 - Clean
-    "Dist 2",   // 1 - Tube-like 2nd harmonic
-    "Dist 3",   // 2 - Tape-like 3rd harmonic
+    "Dist2",    // 1 - Tube-like 2nd harmonic
+    "Dist3",    // 2 - Tape-like 3rd harmonic
     "Both",     // 3 - Combined harmonics
     "Wave",     // 4 - Wavefolder (new)
 };
@@ -54,9 +54,6 @@ static const char* distressor_ratio_strings[8] = {
     "1:1", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE"
 };
 
-static const char* distressor_dist_strings[5] = {
-    "Clean", "Dist2", "Dist3", "Both", "Wave"
-};
 
 // Distressor state structure
 typedef struct {

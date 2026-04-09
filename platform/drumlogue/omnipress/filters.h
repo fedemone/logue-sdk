@@ -411,7 +411,7 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
     // A = linear amplitude ratio = 10^(dBgain/40), per Audio EQ Cookbook
     float A      = fasterpowf(10.0f, gain_db / 40.0f);
     float sqrtA  = fasterSqrt(A);
-    float w0     = 2.0f * PI_F * freq / sr;
+    float w0     = 2.0f * M_PI * freq / sr;
     float cos_w0 = fastercosfullf(w0);
     float sin_w0 = fastersinfullf(w0);
 

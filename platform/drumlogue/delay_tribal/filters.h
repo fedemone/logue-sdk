@@ -233,7 +233,7 @@ fast_inline void apply_mode_filters(
     uint32_t group_idx,
     float32x4_t* samples_l,
     float32x4_t* samples_r,
-    float depth
+    float depth // TODO unused
 ) {
     if (!filters) return;
 

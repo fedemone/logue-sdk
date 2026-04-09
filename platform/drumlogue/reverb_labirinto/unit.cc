@@ -58,14 +58,6 @@ enum parameterState {
 };
 
 static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0, 10};
-enum {
-    k_foresta,
-    k_tempio,
-    k_labirinto,
-    k_esotico,
-    k_stellare,
-    k_preset_number,
-}
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
                                                       "labirinto", "esotico",
                                                       "stellare"};

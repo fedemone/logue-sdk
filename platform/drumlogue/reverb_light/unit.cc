@@ -37,13 +37,13 @@ enum k_parameters {
     k_total
 };
 
-enum {
+typedef enum {
     k_stanzaNeon,
     k_vicoBuio,
     k_strobo,
     k_bruciato,
     k_preset_number,
-};
+} preset_numer_t;
 
 // ============================================================================
 // Presets

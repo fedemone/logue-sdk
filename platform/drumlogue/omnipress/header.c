@@ -50,21 +50,21 @@ const __unit_header unit_header_t unit_header = {
         // ID 12: DSTR MODE  0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave
         { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrDIST"} },    // ID 13 - Distressor distortion type
         { 0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"DstrRATIO"} },   // ID 14 - Distressor ratio selection
-        // ID 15: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All
+        // ID 14: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All
         { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBand"} },
-        // ID 16: L THRESH  -60.0..0.0 dB  (per-band threshold)
+        // ID 15: L THRESH  -60.0..0.0 dB  (per-band threshold)
         { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"MBndThr"} },
 
 
         // Pages 5: blank padding to fill 24 slots
-        // ID 17: L RATIO   1.0..20.0:1
+        // ID 16: L RATIO   1.0..20.0:1
         { 10, 200, 10, 40, k_unit_param_type_none, 1, 1, 0, {"MBndRto"} },
-        { 1, 1000, 1, 150, k_unit_param_type_msec, 1, 1, 0, {"MBndAtk"} },      // ID 18
-        { 10, 2000, 10, 200, k_unit_param_type_msec, 0, 0, 0, {"MBndRtoRel"} }, // ID 19
-        { 0, 240, 0, 0, k_unit_param_type_db, 1, 1, 0, {"MBndMkp"} },           // ID 20
+        { 1, 1000, 1, 150, k_unit_param_type_msec, 1, 1, 0, {"MBndAtk"} },      // ID 17
+        { 10, 2000, 10, 200, k_unit_param_type_msec, 0, 0, 0, {"MBndRtoRel"} }, // ID 18
+        { 0, 240, 0, 0, k_unit_param_type_db, 1, 1, 0, {"MBndMkp"} },           // ID 19
         // Pages 6: blank padding to fill 24 slots
-        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndMut"} },           // ID 21
-        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndSOl"} },           // ID 22
+        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndMut"} },           // ID 20
+        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndSOl"} },           // ID 21
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
     }

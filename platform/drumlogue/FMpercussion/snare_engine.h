@@ -116,16 +116,6 @@ fast_inline void snare_engine_update(snare_engine_t* snare,
 }
 
 /**
- * Apply LFO modulation to noise_mix (clamped in-place, restored by next param update)
- */
-fast_inline void snare_engine_update_noise(snare_engine_t* snare,
-                                           float32x4_t noise_add) {
-    float32x4_t modded = vaddq_f32(snare->noise_mix, noise_add);
-    modded = vmaxq_f32(vminq_f32(modded, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
-    snare->noise_mix = modded;
-}
-
-/**
  * Set MIDI note for snare
  */
 fast_inline void snare_engine_set_note(snare_engine_t* snare,
@@ -185,7 +175,8 @@ fast_inline float32x4_t snare_engine_process(snare_engine_t* snare,
                                              float32x4_t envelope,
                                              uint32x4_t active_mask,
                                              float32x4_t lfo_pitch_mult,
-                                             float32x4_t lfo_index_add) {
+                                             float32x4_t lfo_index_add,
+                                             float32x4_t noise_add) {
     // 1. Staggered Envelopes (The Body must decay much faster than the Noise)
     float32x4_t env2 = vmulq_f32(envelope, envelope);
     float32x4_t env4 = vmulq_f32(env2, env2);
@@ -219,8 +210,9 @@ fast_inline float32x4_t snare_engine_process(snare_engine_t* snare,
 
     // 6. Mix: Tone uses fast env4, Noise uses standard envelope
     float32x4_t one = vdupq_n_f32(1.0f);
-    float32x4_t noise_gain = vmulq_f32(snare->noise_mix, envelope);
-    float32x4_t tone_gain = vmulq_f32(vsubq_f32(one, snare->noise_mix), env4);
+    float32x4_t noise_mix_mod = vaddq_f32(snare->noise_mix, noise_add);
+    float32x4_t noise_gain = vmulq_f32(noise_mix_mod, envelope);
+    float32x4_t tone_gain = vmulq_f32(vsubq_f32(one, noise_mix_mod), env4);
     // 8. Apply main amplitude envelope and gate mask
     float32x4_t output = vaddq_f32(vmulq_f32(tone, tone_gain), vmulq_f32(noise, noise_gain));
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
