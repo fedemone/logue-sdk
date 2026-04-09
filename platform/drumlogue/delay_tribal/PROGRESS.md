@@ -157,9 +157,10 @@ Let me perform a comprehensive optimization review of the `delay_tribal` project
 
 ### Research Queue (Post-Release)
 1. Study perceptual models for clone differentiation
-2. Investigate allpass filters for phase dispersion
-3. Explore wave digital filters for nonlinear effects
-4. Research multi-band processing for transient/resonant components
+2. Add new parameter for clone delay
+3. Investigate allpass filters for phase dispersion
+4. Explore wave digital filters for nonlinear effects
+5. Research multi-band processing for transient/resonant components
 
 ## ✅ Fixed Issues
 
