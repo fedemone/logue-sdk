@@ -701,7 +701,8 @@ private:
     */
     fast_inline float32x4_t apply_attack_softening(float32x4_t in, uint32_t group_idx) {
         // FIX 1: Use 1.0f so audio passes through perfectly when there is no transient!
-        float coeff = transient_detected_ ? attack_soften_ : 1.0f;
+        // Ensure non-zero to avoid division by zero
+        float coeff = transient_detected_ ? fmax(attack_soften_, 0.01f) : 1.0f;
 
         float32x4_t alpha = vdupq_n_f32(coeff);
         float32x4_t one_minus_alpha = vdupq_n_f32(1.0f - coeff);

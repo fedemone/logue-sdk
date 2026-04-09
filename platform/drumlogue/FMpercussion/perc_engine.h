@@ -24,13 +24,13 @@
 typedef struct {
     // Three operators
     float32x4_t phase[3];
-    float32x4_t carrier_freq_base;     // Carrier base frequency
-    float32x4_t ratio_center;   // Main modulator ratio
-    float32x4_t variation;       // Secondary modulation amount
+    float32x4_t carrier_freq_base;  // Carrier base frequency
+    float32x4_t ratio_center;       // Main modulator ratio
+    float32x4_t variation;          // Secondary modulation amount
 
     // Parameters
-    float32x4_t ratio_param;    // 0-1 mapped to ratio range
-    float32x4_t var_param;      // 0-1 mapped to variation range
+    float32x4_t ratio_param;        // 0-1 mapped to ratio range
+    float32x4_t var_param;          // 0-1 mapped to variation range
 } perc_engine_t;
 
 /**
@@ -53,10 +53,10 @@ fast_inline void perc_engine_init(perc_engine_t* perc) {
  * Update perc engine parameters
  */
 fast_inline void perc_engine_update(perc_engine_t* perc,
-                                    float32x4_t param1,  // Ratio center
+                                    float32x4_t param1,   // Ratio center
                                     float32x4_t param2) { // Variation
     perc->ratio_param = param1;
-    perc->var_param = param2;
+    perc->var_param = param2;       // TODO what's the use for???
 
     // Map param1 (0-1) to ratio range (1.0-3.0)
     float32x4_t ratio_range = vdupq_n_f32(PERC_RATIO_MAX - PERC_RATIO_MIN);
@@ -67,19 +67,6 @@ fast_inline void perc_engine_update(perc_engine_t* perc,
     perc->variation = vmulq_f32(param2, vdupq_n_f32(PERC_VARIATION_MAX));
 }
 
-/**
- * Update perc engine just second parameter
- */
-fast_inline void perc_engine_update2(perc_engine_t* perc,
-                                     float32x4_t index_add) { // Variation
-
-    float32x4_t modded_param2 = vaddq_f32(perc->variation, index_add);
-    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
-    perc->var_param = modded_param2;
-
-    // Map param2 to variation amount
-    perc->variation = vmulq_f32(modded_param2, vdupq_n_f32(PERC_VARIATION_MAX));
-}
 
 /**
  * Set MIDI note (tunable percussion)

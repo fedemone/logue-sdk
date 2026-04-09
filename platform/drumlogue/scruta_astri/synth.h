@@ -59,7 +59,7 @@ public:
         m_srr_hold_val = 0.0f;
     }
 
-    inline void getParameter(uint8_t id) {
+    inline int32_t  getParameter(uint8_t id) {
         if (id >= num_params) return 0;
         return s_synth.m_params[id];
     }
@@ -80,7 +80,7 @@ public:
                 m_lfo3_mod_val = 0.0f;
 
                 // preset will target different modulation
-                int mod_target = m_params[k_paramProgram] % num_params;
+                int32_t mod_target = m_params[k_paramProgram] % num_params;
                 // set here the targets addressed by ring_modulation and let the
                 // other to be processed runtime in processBlock() as they use directly
                 // the lfo values, that are not available here.
@@ -90,28 +90,28 @@ public:
                     case k_paramL2Wave: filter2.mode = (filter_mode)(m_params[k_paramL2Wave] % mode_last);
                         break;
 
-                    case k_paramL1Depth;
+                    case k_paramL1Depth:
                         m_lfo1_mod_val = m_lfo1_depth;
                         break;
 
-                    case k_paramL2Depth;
+                    case k_paramL2Depth:
                         m_lfo2_mod_val = m_lfo2_depth;
                         break;
 
-                    case k_paramL1Depth;
+                    case k_paramL3Depth:
                         m_lfo3_mod_val = m_lfo3_depth;
                         break;
-                    case k_paramO2SubOct;
+                    case k_paramO2SubOct:
                         m_lfo1_mod_val = m_lfo1_depth * 0.1f;
                         m_lfo2_mod_val = m_lfo2_depth;
                         m_lfo3_mod_val = m_lfo3_depth * 0.3f;
                         break;
-                    case k_paramL3Wave;
+                    case k_paramL3Wave:
                         m_lfo1_mod_val = m_lfo1_depth * 0.2f;
                         m_lfo2_mod_val = m_lfo2_depth * 0.3f;
                         m_lfo3_mod_val = m_lfo3_depth;
                         break;
-                    case k_paramBitRed;
+                    case k_paramBitRed:
                         m_lfo1_mod_val = m_lfo1_depth;
                         m_lfo2_mod_val = m_lfo2_depth;
                         m_lfo3_mod_val = m_lfo3_depth;
@@ -204,7 +204,7 @@ public:
             // -- Mixer
             case k_paramOsc2Mix: m_osc2_mix = (float)value / percent_normalizer; break;
             // FIX: 300% Volume Headroom!
-            case k_paramMastrVol: m_master_vol = ((float)value / percent_normalizer) * 3.0f; break;
+            case k_paramMastrVol: m_master_vol_base = ((float)value / percent_normalizer) * 3.0f; break;
             // FIX: Cutoff 10x Trick
             case k_paramF1Cutoff: m_f1_base_hz = (float)value * 10.0f; break;
             case k_paramF2Cutoff: m_f2_base_hz = (float)value * 10.0f; break;
@@ -214,7 +214,7 @@ public:
                 m_f1_q =Q_Limit + ((float)value / 25.0f);
                 filter1.set_coeffs(m_f1_base_hz, m_f1_q, Audio_Rate_Freq);
                 // BUT we also track a drive base for the LFO to modulate later
-                m_f1_drive_base = (val / percent_normalizer) * 5.0f;
+                m_f1_drive_base = (value / percent_normalizer) * 5.0f;
                 break;
             case k_paramF2Reso:
                 // We still set true resonance normally on knob turn (calculated once per block)
@@ -292,9 +292,9 @@ public:
 
     inline void ring_modulation(float& l1_val, float& l2_val, float& l3_val) {
         // 1. Get the raw bipolar output of all active LFOs
-        float l1_raw = lfo1.process()
-        float l2_raw = lfo2.process()
-        float l3_raw = lfo3.process()
+        float l1_raw = lfo1.process();
+        float l2_raw = lfo2.process();
+        float l3_raw = lfo3.process();
 
         // mod_val arrives as a bipolar signal (-1.0f to 1.0f)
         // We take the absolute value so it acts as a 0.0 to 1.0 crossfader
@@ -329,9 +329,9 @@ public:
         for (size_t i = 0; i < frames; ++i) {
 
             // 1. CORE MODULATION SIGNALS
-            // float l1_val = lfo1.process() * m_lfo1_depth;
-            // float l2_val = lfo2.process() * m_lfo2_depth;
-            // float l3_val = lfo3.process() * m_lfo3_depth;
+            float l1_val;
+            float l2_val;
+            float l3_val;
             ring_modulation(l1_val, l2_val, l3_val);
             // 2 ZERO-CROSSING FREQUENCY UPDATES
             // Store previous phase states
@@ -544,7 +544,7 @@ public:
                 v_out = vsubq_f32(v_out, vdupq_n_f32(dc_bias * 0.9f));
 
                 // Clamp between 0.0 (silence) and 1.0 (max volume)
-                m_master_vol = fmaxf(0.0f, fminf(1.0f, m_master_vol + m_volume_mod_multiplier));
+                m_master_vol = fmaxf(0.0f, fminf(1.0f, m_master_vol_base + m_volume_mod_multiplier));
                 // Apply master volume
                 v_out = vmulq_n_f32(v_out, m_master_vol);
 

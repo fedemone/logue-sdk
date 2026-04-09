@@ -28,14 +28,14 @@
 typedef struct {
     // Four operators
     float32x4_t phase[4];
-    float32x4_t base_ratio[4];  // Fixed ratios
+    float32x4_t base_ratio[4];    // Fixed ratios
     float32x4_t current_ratio[4]; // Modulated by inharmonicity
 
     // Carrier frequency (all derived from voice 0's carrier)
     float32x4_t carrier_freq_base;
 
     // Parameters
-    float32x4_t inharmonicity;  // 0-1
+    float32x4_t inharmonicity;   // 0-1
     float32x4_t brightness;      // 0-1
 } metal_engine_t;
 
@@ -84,17 +84,6 @@ fast_inline void metal_engine_update(metal_engine_t* metal,
         metal->current_ratio[i] = vaddq_f32(one,
                                            vmulq_f32(ratio_offset, spread_factor));
     }
-}
-
-/**
- * Update metal engine second parameter
- */
-fast_inline void metal_engine_update2(metal_engine_t* metal,
-                                     float32x4_t index_add) { // Brightness
-
-    float32x4_t modded_param2 = vaddq_f32(metal->brightness, index_add);
-    modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
-    metal->brightness = modded_param2;
 }
 
 /**

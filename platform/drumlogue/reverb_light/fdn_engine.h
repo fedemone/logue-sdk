@@ -176,10 +176,6 @@ public:
         bright_coeffs.a2 = (1.0f - alpha_bright) / a0_bright;
     }
 
-    void generate_hadamard() {
-        float norm = 1.0f / sqrtf(FDN_CHANNELS);
-        baseDelayTimes[i] = primes[i] * (sampleRate / SAMPLE_RATE);
-    }
 
     void init_color_resonators() {
         // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
@@ -200,19 +196,6 @@ public:
         }
     }
 
-    // 5kHz Butterworth HPF
-    void initialize_brightness_harmonic_exciter() {
-        float w0_bright = 2.0f * M_PI * 5000.0f / sampleRate;
-        float alpha_bright = sinf(w0_bright) / (2.0f * 0.707f);
-        float a0_bright = 1.0f + alpha_bright;
-
-        bright_coeffs.b0 = ((1.0f + cosf(w0_bright)) / 2.0f) / a0_bright;
-        bright_coeffs.b1 = -(1.0f + cosf(w0_bright)) / a0_bright;
-        bright_coeffs.b2 = ((1.0f + cosf(w0_bright)) / 2.0f) / a0_bright;
-        bright_coeffs.a1 = (-2.0f * cosf(w0_bright)) / a0_bright;
-        bright_coeffs.a2 = (1.0f - alpha_bright) / a0_bright;
-    }
-
     void generate_hadamard() {
         float norm = 1.0f / sqrtf(FDN_CHANNELS);
         for (int i = 0; i < FDN_CHANNELS; i++) {
@@ -225,18 +208,6 @@ public:
                 }
                 hadamard[i][j] = parity ? -norm : norm;
             }
-        }
-    }
-
-    void Reset() {
-        for (int j = 0; j < FDN_CHANNELS; j++) {
-            int parity = 0;
-            int bits = i & j;
-            while (bits) {
-                parity ^= (bits & 1);
-                bits >>= 1;
-            }
-            hadamard[i][j] = parity ? -norm : norm;
         }
     }
 
@@ -327,11 +298,6 @@ public:
                 sum += fdnOut[j] * hadamard[i][j];
             }
 
-            // Inject Input: Left to channels 0-3, Right to 4-7
-            float input_inject = (i < 4) ? in_l : in_r;
-
-            // Pure delay network - no old LPFs, no old swirl, just decay and input
-            fdnMem[i * FDN_BUFFER_SIZE + writePos] = input_inject + (sum * decay);
             // Inject Input: Left to channels 0-3, Right to 4-7
             float input_inject = (i < 4) ? in_l : in_r;
 

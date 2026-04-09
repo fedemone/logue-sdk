@@ -68,12 +68,12 @@ typedef struct {
     float32x4_t mod_ratio;
 
     // Noise section
-    one_pole_t noise_hpf;
-    one_pole_t noise_lpf;
-    neon_prng_t noise_prng;  // Separate PRNG for noise
+    one_pole_t  noise_hpf;
+    one_pole_t  noise_lpf;
+    neon_prng_t noise_prng;      // Separate PRNG for noise
 
     // Parameters
-    float32x4_t noise_mix;      // 0-1
+    float32x4_t noise_mix;       // 0-1
     float32x4_t body_resonance;  // 0-1
 } snare_engine_t;
 
@@ -113,16 +113,6 @@ fast_inline void snare_engine_update(snare_engine_t* snare,
                                      float32x4_t param2) { // Body resonance
     snare->noise_mix = param1;
     snare->body_resonance = param2;
-}
-
-/**
- * Update snare engine second parameter
- */
-fast_inline void snare_engine_update2(snare_engine_t* snare,
-                                     float32x4_t index_add) { // Body resonance
-  float32x4_t modded_param2 = vaddq_f32(snare->body_resonance, index_add);
-  modded_param2 = vmaxq_f32(vminq_f32(modded_param2, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
-  snare->body_resonance = modded_param2;
 }
 
 /**

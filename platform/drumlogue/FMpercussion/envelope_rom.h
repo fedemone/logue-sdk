@@ -232,14 +232,11 @@ fast_inline void neon_envelope_trigger(neon_envelope_t* env,
     get_envelope(shape_idx, &a_ms, &d_ms, &r_ms, &curve);
 
     // Convert ms to samples at 48kHz
-    float attack_samps = a_ms * 48.0f;
-    float decay_samps = d_ms * 48.0f * 4.0f;     // Massive boom!
-    float release_samps = r_ms * 48.0f * 4.0f;   // Smooth fade!
-
     // Ensure non-zero to avoid division by zero
-    if (attack_samps < 1.0f) attack_samps = 1.0f;
-    if (decay_samps < 1.0f) decay_samps = 1.0f;
-    if (release_samps < 1.0f) release_samps = 1.0f;
+    float attack_samps  = fmax(a_ms * 48.0f, 1.0f);
+    float decay_samps   = fmax(d_ms * 48.0f * 4.0f, 1.0f);  // Massive boom!
+    float release_samps = fmax(r_ms * 48.0f * 4.0f, 1.0f);  // Smooth fade!
+
 
     // Store pre-calculated stage lengths
     env->attack_samples = vbslq_f32(voice_mask,

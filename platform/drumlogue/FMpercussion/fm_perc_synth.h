@@ -582,10 +582,6 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         index_add = vmaxq_f32(vminq_f32(index_add, vdupq_n_f32(1.0f)), vdupq_n_f32(-1.0f));
 
         // Inject index modulation — each engine_update2 clamps internally to [0,1]
-        kick_engine_update2(&synth->kick, index_add);
-        snare_engine_update2(&synth->snare, index_add);
-        metal_engine_update2(&synth->metal, index_add);
-        perc_engine_update2(&synth->perc, index_add);
     }
 
     // =================================================================
