@@ -123,8 +123,7 @@ __unit_callback void unit_teardown() {
 }
 
 __unit_callback void unit_reset() {
-    // Reset FDN engine state if needed
-    // s_fdn_engine.reset(); // Would need a reset method
+    s_fdn_engine.reset();
 }
 
 __unit_callback void unit_resume() {}

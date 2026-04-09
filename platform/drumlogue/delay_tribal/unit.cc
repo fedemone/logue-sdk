@@ -74,3 +74,26 @@ __unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t val
     (void)value;
     return nullptr;
 }
+
+// ---- MIDI / Tempo stubs (not used by a delay effect) ----------------------
+__unit_callback void unit_set_tempo(uint32_t tempo) { (void)tempo; }
+__unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
+    (void)note; (void)velocity;
+}
+__unit_callback void unit_note_off(uint8_t note) { (void)note; }
+__unit_callback void unit_gate_on(uint8_t velocity) { (void)velocity; }
+__unit_callback void unit_gate_off() {}
+__unit_callback void unit_all_note_off() {}
+__unit_callback void unit_pitch_bend(uint16_t bend) { (void)bend; }
+__unit_callback void unit_channel_pressure(uint8_t pressure) { (void)pressure; }
+__unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
+    (void)note; (void)aftertouch;
+}
+
+// ---- Preset stubs (delay_tribal has no preset system) ---------------------
+__unit_callback void unit_load_preset(uint8_t idx) { (void)idx; }
+__unit_callback uint8_t unit_get_preset_index() { return 0; }
+__unit_callback const char* unit_get_preset_name(uint8_t idx) {
+    (void)idx;
+    return nullptr;
+}
