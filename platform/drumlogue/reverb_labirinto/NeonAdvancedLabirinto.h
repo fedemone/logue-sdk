@@ -71,10 +71,13 @@ public:
         , randomLfoValue(0.0f)
         , randomLfoCounter(0)
         , randomLfoPeriodSamples(48000)
-        , noiseSeed(123456789U)
+        , smoothedLfoValue(0.0f)
+        , noiseSeed(132465798U)
         , noiseColour(2.0f)
         , noiseGain(0.0f)
-        , noiseLpfState(0.0f)
+        , currentPreDelaySamples(0.0f)
+        , targetPreDelaySamples(0.0f)
+        , preDelayWritePos(0)
         , pingMapIndex(0) {
 
         // Initialize delay times (prime-based for smooth diffusion)
@@ -99,8 +102,6 @@ public:
         memset(lpfState, 0, sizeof(float) * FDN_CHANNELS);
         updateFilterCoeffs();
 
-        // Initialize Hadamard matrix
-        initHadamardMatrix();
     }
 
     ~NeonAdvancedLabirinto() {
@@ -111,8 +112,6 @@ public:
      * @return true if initialization successful
      */
     bool init() {
-        // Initialize Hadamard mixing matrix BEFORE clearing/processing
-        initHadamardMatrix();
 
         // Clear buffer
         clear();
@@ -232,7 +231,8 @@ public:
     float getShimmerFreq() { return shimmerFreq_; }
     void setPreDelay(float ms) {
         float clampedMs = fmaxf(0.0f, fminf(340.0f, ms));
-        preDelayOffsetSamples = (int)(clampedMs * sampleRate / 1000.0f);
+        // Convert milliseconds to samples and store it as our new float target
+        targetPreDelaySamples = (int)(clampedMs * sampleRate / 1000.0f);
     }
     void setDamping(float freqHz) {
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
@@ -565,6 +565,15 @@ public:
                  float* outL, float* outR,
                  int numSamples) {
 
+        // enable Flush-to-Zero (FTZ) and Default-NaN (DN) mode in the
+        // ARM Floating Point Status and Control Register (FPSCR)
+        #if defined(__arm__) || defined(__aarch64__)
+            uint32_t fpscr;
+            __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
+            fpscr |= (1 << 24) | (1 << 22); // Set FZ (bit 24) and DN (bit 22)
+            __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
+        #endif
+
 	    // Safety check
         if (!initialized) {
             memcpy(outL, inL, numSamples * sizeof(float));
@@ -675,14 +684,14 @@ private:
             vst1q_f32(pos_vals, readPositions[ch]);
 
             for (int s = 0; s < NEON_LANES; s++) {
+                // Adding a large multiple of BUFFER_SIZE guarantees the float is positive
+                // before casting to int, avoiding C++ negative-integer-truncation issues.
                 float pos = pos_vals[s];
-                // Safe scalar wrapping
-                while (pos < 0) pos += BUFFER_SIZE;
-                while (pos >= BUFFER_SIZE) pos -= BUFFER_SIZE;
+                float safe_pos = pos + (float)(BUFFER_SIZE * 4);
 
-                uint32_t base = (uint32_t)pos;
-                baseIndices[ch][s] = base;
-                fracParts[ch][s] = pos - (float)base;  // true fractional part
+                int32_t idx = (int32_t)safe_pos;
+                uint32_t base = idx & BUFFER_MASK;
+                fracParts[ch][s] = safe_pos - (float)idx;
             }
         }
 
@@ -710,15 +719,24 @@ private:
     /*===========================================================================*/
 
     void applyHadamard4(const float32x4_t* in, float32x4_t* out) {
-        // Standard matrix multiplication mapped across parallel time lanes
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            out[i] = vdupq_n_f32(0.0f);
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                // in[j] holds 4 time samples.
-                // hadamard[i][j] is the scalar mixing coefficient.
-                out[i] = vmlaq_f32(out[i], in[j], vdupq_n_f32(hadamard[i][j]));
-            }
-        }
+        // Pass 1: Mix pairs 4 channels apart (Reads directly from 'in')
+        float32x4_t t0 = vaddq_f32(in[0], in[4]); float32x4_t t4 = vsubq_f32(in[0], in[4]);
+        float32x4_t t1 = vaddq_f32(in[1], in[5]); float32x4_t t5 = vsubq_f32(in[1], in[5]);
+        float32x4_t t2 = vaddq_f32(in[2], in[6]); float32x4_t t6 = vsubq_f32(in[2], in[6]);
+        float32x4_t t3 = vaddq_f32(in[3], in[7]); float32x4_t t7 = vsubq_f32(in[3], in[7]);
+
+        // Pass 2: Mix pairs 2 channels apart
+        float32x4_t u0 = vaddq_f32(t0, t2); float32x4_t u2 = vsubq_f32(t0, t2);
+        float32x4_t u1 = vaddq_f32(t1, t3); float32x4_t u3 = vsubq_f32(t1, t3);
+        float32x4_t u4 = vaddq_f32(t4, t6); float32x4_t u6 = vsubq_f32(t4, t6);
+        float32x4_t u5 = vaddq_f32(t5, t7); float32x4_t u7 = vsubq_f32(t5, t7);
+
+        // Pass 3: Mix adjacent channels & scale (Writes directly to 'out')
+        float32x4_t scale = vdupq_n_f32(0.35355339f); // 1.0 / sqrt(8)
+        out[0] = vmulq_f32(vaddq_f32(u0, u1), scale); out[1] = vmulq_f32(vsubq_f32(u0, u1), scale);
+        out[2] = vmulq_f32(vaddq_f32(u2, u3), scale); out[3] = vmulq_f32(vsubq_f32(u2, u3), scale);
+        out[4] = vmulq_f32(vaddq_f32(u4, u5), scale); out[5] = vmulq_f32(vsubq_f32(u4, u5), scale);
+        out[6] = vmulq_f32(vaddq_f32(u6, u7), scale); out[7] = vmulq_f32(vsubq_f32(u6, u7), scale);
     }
 
     /**
@@ -827,26 +845,43 @@ private:
         float32x4_t inMono = vmulq_f32(vaddq_f32(inL4, inR4), vdupq_n_f32(0.5f));
 
         // =================================================================
-        // 1. Pre-Delay Write
+        // 1 & 2. PRE-DELAY (Smoothed, Interpolated, Write-Before-Read)
         // =================================================================
-        // TO BE EVALUATED: Add tape saturation to the pre-delay buffer?
         float monoLanes[4];
-        vst1q_f32(monoLanes, inMono);
+        vst1q_f32(monoLanes, inMono); // Unpack the NEON vector
+        float delayedLanes[4];
 
         for (int s = 0; s < 4; s++) {
-            preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
+            // 1. WRITE FIRST: Guarantees 0.0ms delay instantly reads this exact sample
+            preDelayBuffer[preDelayWritePos] = monoLanes[s];
+
+            // 2. Slew Limiter (1-Pole Low-Pass per sample)
+            currentPreDelaySamples += 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
+
+            // 3. Fractional Read Position
+            float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
+
+            // Branchless wrap
+            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+            int32_t pd_idx1 = (int32_t)safe_pd_pos;
+            int32_t pd_idx2 = pd_idx1 + 1;
+
+            // Mask to buffer size
+            uint32_t idx1 = pd_idx1 & PREDELAY_MASK;
+            uint32_t idx2 = pd_idx2 & PREDELAY_MASK;
+            float pd_frac = safe_pd_pos - (float)pd_idx1;
+
+            // 4. Linear Interpolation Read
+            float val1 = preDelayBuffer[idx1];
+            float val2 = preDelayBuffer[idx2];
+            delayedLanes[s] = val1 + pd_frac * (val2 - val1);
+
+            // 5. Advance write head for the NEXT sample inside the block
+            preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
         }
 
-        // =================================================================
-        // 2. Pre-Delay Read
-        // =================================================================
-        float delayedLanes[NEON_LANES];
-        for (int s = 0; s < NEON_LANES; s++) {
-            int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
-            delayedLanes[s] = preDelayBuffer[readPos];
-        }
+        // Repack into the NEON vector for the rest of the FDN engine
         float32x4_t delayedMono = vld1q_f32(delayedLanes);
-        preDelayWritePos = (preDelayWritePos + 4) & PREDELAY_MASK;
 
         // =================================================================
         // 3. Active Partial Counting (CPU Optimization)
@@ -1014,6 +1049,26 @@ private:
     /* Scalar Fallback for Remainder Samples (less complex than process4Samples  */
     /* as is process no more than 3 samples)                                     */
     /*===========================================================================*/
+    inline void applyHadamardScalar(const float* in, float* out) {
+        // Pass 1 (Reads directly from 'in')
+        float t0 = in[0] + in[4]; float t4 = in[0] - in[4];
+        float t1 = in[1] + in[5]; float t5 = in[1] - in[5];
+        float t2 = in[2] + in[6]; float t6 = in[2] - in[6];
+        float t3 = in[3] + in[7]; float t7 = in[3] - in[7];
+
+        // Pass 2
+        float u0 = t0 + t2; float u2 = t0 - t2;
+        float u1 = t1 + t3; float u3 = t1 - t3;
+        float u4 = t4 + t6; float u6 = t4 - t6;
+        float u5 = t5 + t7; float u7 = t5 - t7;
+
+        // Pass 3 (Writes directly to 'out' with scale applied)
+        float scale = 0.35355339f; // 1.0 / sqrt(8)
+        out[0] = (u0 + u1) * scale; out[1] = (u0 - u1) * scale;
+        out[2] = (u2 + u3) * scale; out[3] = (u2 - u3) * scale;
+        out[4] = (u4 + u5) * scale; out[5] = (u4 - u5) * scale;
+        out[6] = (u6 + u7) * scale; out[7] = (u6 - u7) * scale;
+    }
 
     void processScalar(float input, float& wetL, float& wetR) {
         float delayOut[FDN_CHANNELS];
@@ -1025,12 +1080,36 @@ private:
             return;
         }
 
-        // 1. Pre-Delay Write
+        // ==========================================
+        // SCALAR PREDELAY (Smoothed & Interpolated)
+        // ==========================================
+
+        // 1. WRITE FIRST: Guarantees that if Pre-Delay is 0.0ms,
+        // the read head instantly fetches the exact sample we just wrote.
         preDelayBuffer[preDelayWritePos] = input;
 
-        // 2. Pre-Delay Read
-        int readPos = (preDelayWritePos - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
-        float delayedInput = preDelayBuffer[readPos];
+        // 2. Slew Limiter Math (1-Pole Low-Pass)
+        currentPreDelaySamples += 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
+
+        // 3. Calculate fractional read position
+        float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
+
+        // Branchless wrap for safety
+        float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+        int32_t pd_idx1 = (int32_t)safe_pd_pos;
+        int32_t pd_idx2 = pd_idx1 + 1;
+
+        // Mask to buffer size
+        uint32_t idx1 = pd_idx1 & PREDELAY_MASK;
+        uint32_t idx2 = pd_idx2 & PREDELAY_MASK;
+        float pd_frac = safe_pd_pos - (float)pd_idx1;
+
+        // 4. Linear Interpolation Read
+        float val1 = preDelayBuffer[idx1];
+        float val2 = preDelayBuffer[idx2];
+        float delayedInput = val1 + pd_frac * (val2 - val1);
+
+        // 5. Advance write head for the NEXT sample
         preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
 
         // 3. Active Partial Counting
@@ -1082,13 +1161,7 @@ private:
         float loopGain = 0.7f + (decay * 0.295f);
         float dm = std::min(0.995f, loopGain * fastersinfullf(highDecayMult * lowDecayMult));
 
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            float sum = 0.0f;
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                sum += hadamard[i][j] * delayOut[j];
-            }
-            mixed[i] = sum * dm;
-        }
+        applyHadamardScalar(delayOut, mixed);
 
         // 4. Inject delayedInput instead of raw input
         mixed[0] += delayedInput * (1.0f - decay);
@@ -1178,34 +1251,8 @@ private:
 
             // 18-EDO Cochrane Rates (Base 0.5Hz)
             float steps_18[8] = {0.0f, 1.0f, 3.0f, 4.0f, 6.0f, 7.0f, 9.0f, 10.0f};
-            microtonalRate_[i] = (0.5f * powf(2.0f, steps_18[i] / 18.0f)) / sampleRate; // at Init use accurate function
+            microtonalRate_[i] = (0.5f * fasterpowf(2.0f, steps_18[i] / 18.0f)) / sampleRate; // at Init use accurate function
         }
-    }
-
-    void initHadamardMatrix() {
-      float norm = 1.0f / sqrtf(8.0f);  // as init is not strictly real time dependent, keep the exact function
-
-      // Store in row-major for scalar access
-      for (int i = 0; i < FDN_CHANNELS; i++) {
-        for (int j = 0; j < FDN_CHANNELS; j++) {
-          int bits = i & j;
-          int parity = 0;
-          while (bits) {
-            parity ^= (bits & 1);
-            bits >>= 1;
-          }
-          hadamard[i][j] = parity ? -norm : norm;
-        }
-      }
-
-      // Pre-transpose into column-major NEON-friendly format
-      for (int j = 0; j < FDN_CHANNELS; j++) {
-        for (int i = 0; i < FDN_CHANNELS; i += 4) {
-          float32x4_t col = {hadamard[i][j], hadamard[i + 1][j],
-                             hadamard[i + 2][j], hadamard[i + 3][j]};
-          hadamardCols[j][i / 4] = col;
-        }
-      }
     }
 
     /*===========================================================================*/
@@ -1238,14 +1285,15 @@ private:
     float32x4_t modPhaseVec[FDN_CHANNELS] __attribute__((aligned(16)));
     // FIX: IIR filter states must be strictly scalar! 1 history sample per channel.
     float lpfState[FDN_CHANNELS] __attribute__((aligned(16)));
-    float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(64)));
     // Unified Phase Tracking for Delay Modulation
     float channelPhase_[FDN_CHANNELS] __attribute__((aligned(16)));
     float swirlRate_[FDN_CHANNELS] __attribute__((aligned(16)));
     float microtonalRate_[FDN_CHANNELS] __attribute__((aligned(16)));
     float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
     int preDelayWritePos;
-    int preDelayOffsetSamples;
+    // Pre-delay Slew Limiter States
+    float currentPreDelaySamples;
+    float targetPreDelaySamples;
     int activeSampleCount; // Tracks tail for Active Partial Counting
 
     // ---------- New character features ----------
@@ -1254,7 +1302,7 @@ private:
     float randomLfoValue;              // current random output (-1..1)
     int randomLfoCounter;              // samples until next random update
     int randomLfoPeriodSamples;        // = sampleRate / lfoSpeed
-    float smoothedLfoValue = 0.0f;
+    float smoothedLfoValue;
 
     // Filter types (per channel, but we can use shared coeffs)
     enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterNoise };
