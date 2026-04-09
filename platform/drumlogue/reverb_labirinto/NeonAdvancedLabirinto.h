@@ -156,8 +156,8 @@ public:
         // Reset filter states
         memset(lpfState, 0, sizeof(float) * FDN_CHANNELS);
         for (int i = 0; i < FDN_CHANNELS; i++) {
-            filterState1[i] = zero;
-            filterState2[i] = zero;
+            filterState1[i] = 0.0f;
+            filterState2[i] = 0.0f;
         }
 
         // Reset pre delay line
@@ -438,16 +438,29 @@ public:
 
     void applyResonantFilter(float32x4_t* signals, int numChannels) {
         if (filterMode == kFilterNoise) return; // noise is added elsewhere
+
         for (int ch = 0; ch < numChannels; ch++) {
-            float32x4_t in = signals[ch];
-            float32x4_t out = vmulq_n_f32(in, biquadA0);
-            out = vmlaq_n_f32(out, filterState1[ch], biquadA1);
-            out = vmlaq_n_f32(out, filterState2[ch], biquadA2);
-            out = vmlsq_n_f32(out, filterState1[ch], biquadB1);
-            out = vmlsq_n_f32(out, filterState2[ch], biquadB2);
-            filterState2[ch] = filterState1[ch];
-            filterState1[ch] = in;
-            signals[ch] = out;
+            // 1. Unpack the NEON vector
+            float in_samps[4];
+            vst1q_f32(in_samps, signals[ch]);
+            float out_samps[4];
+
+            // 2. Process sequentially to maintain the IIR feedback loop
+            for (int s = 0; s < 4; s++) {
+                float in_val = in_samps[s];
+
+                // Direct Form II Transposed Biquad
+                float out_val = (in_val * biquadA0) + filterState1[ch];
+
+                // Update states for the NEXT sample using the CORRECT output feedback
+                filterState1[ch] = (in_val * biquadA1) - (out_val * biquadB1) + filterState2[ch];
+                filterState2[ch] = (in_val * biquadA2) - (out_val * biquadB2);
+
+                out_samps[s] = out_val;
+            }
+
+            // 3. Repack back into NEON vector
+            signals[ch] = vld1q_f32(out_samps);
         }
     }
 
