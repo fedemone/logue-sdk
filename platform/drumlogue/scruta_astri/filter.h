@@ -56,7 +56,7 @@ struct MorphingFilter {
 
         // Calculate frequency coefficient
         // (Using standard Chamberlin approx: 2 * sin(pi * f / fs))
-        f = 2.0f * sinf(M_PI * hz / sample_rate);
+        f = 2.0f * fastersinfullf(M_PI * hz / sample_rate);
 
         // Inverse Q for damping
         q = 1.0f / reso_q;
@@ -65,7 +65,7 @@ struct MorphingFilter {
         // At near-Nyquist with any resonance, f alone can approach 2.0 — the linear
         // (no-drive) SVF path has no integrator saturation to limit feedback, so it
         // explodes immediately. Clamp f to the max safe value for the current q.
-        float f_max = sqrtf(q * q + 4.0f) - q;
+        float f_max = fasterSqrt_15bits(q * q + 4.0f) - q;
         if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 
@@ -131,13 +131,13 @@ public:
         hz = fminf(hz, sample_rate * 0.45f);
 
         // Calculate frequency coefficient
-        f = 2.0f * sinf(M_PI * hz / sample_rate);
+        f = 2.0f * fastersinfullf(M_PI * hz / sample_rate);
 
         // Invert and scale Q to replicate the aggressive Polivoks resonance slope
         q = 1.0f / fmaxf(q_limit, reso_q);
 
         // 3. Euler-forward stability guard (same condition as MorphingFilter)
-        float f_max = sqrtf(q * q + 4.0f) - q;
+        float f_max = fasterSqrt_15bits(q * q + 4.0f) - q;
         if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 

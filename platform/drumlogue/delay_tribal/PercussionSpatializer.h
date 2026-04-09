@@ -19,6 +19,7 @@
 #include "unit.h"
 #include "spatial_modes.h"
 #include "filters.h"
+#include "float_math.h"
 
 extern float lfo_table[LFO_TABLE_SIZE] __attribute__((aligned(16)));
 
@@ -109,7 +110,7 @@ public:
         if (!tables_initialized) {
             for (int i = 0; i < 360; i++) {
                 float angle = i * 2.0f * M_PI / 360.0f;
-                sin_table[i] = sinf(angle);
+                sin_table[i] = sinf(angle); // at init no fast function needed
                 cos_table[i] = cosf(angle);
             }
             tables_initialized = true;
@@ -691,7 +692,7 @@ private:
 
         // Constant-power volume compensation after all groups are summed:
         // 4 clones = 0.5x gain, 16 clones = 0.25x gain
-        float volume_comp = 1.0f / sqrtf((float)clone_count_);
+        float volume_comp = 1.0f / fasterSqrt_15bits((float)clone_count_);
         *out_l = vmulq_n_f32(acc_l, volume_comp);
         *out_r = vmulq_n_f32(acc_r, volume_comp);
     }

@@ -61,7 +61,7 @@ public:
 
     inline int32_t  getParameter(uint8_t id) {
         if (id >= num_params) return 0;
-        return s_synth.m_params[id];
+        return m_params[id];
     }
 
     inline void setParameter(uint8_t index, int32_t value) {

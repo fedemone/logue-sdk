@@ -91,8 +91,8 @@ public:
         for (int i = 0; i < FDN_CHANNELS; i++) {
 	    // Initialize all 4 lanes to the same starting phase
             modPhaseVec[i] = vdupq_n_f32(0.0f);
-            filterState1[i] = vdupq_n_f32(0.0f);
-            filterState2[i] = vdupq_n_f32(0.0f);
+            filterState1[i] = 0.0f;
+            filterState2[i] = 0.0f;
         }
 
         // Initialize filter states
@@ -312,42 +312,75 @@ public:
     /*===========================================================================*/
     /* Advanced features */
     /*===========================================================================*/
-    void updateFilterCoeffs(float fc) {
-        // Compute biquad coefficients for given fc (same as before, using filterMode)
-        float omega = 2.0f * M_PI * fc / sampleRate;
-        float sn = sinf(omega);
-        float cs = cosf(omega);
-        float Q = (filterMode == kFilterMetal) ? 2.5f : (filterMode == kFilterStone) ? 1.5f : 1.2f;
-        float alpha = sn / (2.0f * Q);
-        float a0 = 1.0f + alpha;
+
+    void updateFilterCoeffs() {
+        // Calculate standard angular frequency
+        float w0 = 2.0f * M_PI * baseFc / sampleRate;
+        float cos_w0 = fastercosfullf(w0);
+        float sin_w0 = fastersinfullf(w0);
+
+        float alpha, b0, b1, b2, a0, a1, a2;
+
+        // peaking filter (band‑pass with gain)
+        // For simplicity, we'll use a standard biquad peaking:
+        // H(s) = (s^2 + s*(ω0/Q) + ω0^2) / (s^2 + s*(ω0/Q) + ω0^2)
+        // Actually we want a peaking EQ, but a simple 2‑pole band‑pass works well.
+        // We'll implement a classic band‑pass with gain at centre frequency.
+        // Coefficients from RBJ cookbook.
+        // standard Direct Form Biquad calculates its output using this mathematical formula:
+        // y[n] = (b0 * x[n]) + (b1 * x[n-1]) + (b2 * x[n-2]) - (a1 * y[n-1]) - (a2 * y[n-2])
         if (filterMode == kFilterMetal) {
-            // peaking filter (band‑pass with gain)
-            // For simplicity, we'll use a standard biquad peaking:
-            // H(s) = (s^2 + s*(ω0/Q) + ω0^2) / (s^2 + s*(ω0/Q) + ω0^2)
-            // Actually we want a peaking EQ, but a simple 2‑pole band‑pass works well.
-            // We'll implement a classic band‑pass with gain at centre frequency.
-            // Coefficients from RBJ cookbook.
-            float A = sqrtf(1.0f);  // unity gain at centre
-            biquadA0 = 1.0f + alpha;
-            biquadA1 = -2.0f * cs;
-            biquadA2 = 1.0f - alpha;
-            biquadB1 = -2.0f * cs;
-            biquadB2 = 1.0f - alpha;
-            // Normalise by a0
-            float invA0 = 1.0f / a0;
-            biquadA0 *= invA0;
-            biquadA1 *= invA0;
-            biquadA2 *= invA0;
-            biquadB1 *= -invA0;
-            biquadB2 *= -invA0;
-        } else {
-            // low‑pass
-            biquadA0 = (1.0f - cs) / 2.0f / a0;
-            biquadA1 = (1.0f - cs) / a0;
-            biquadA2 = biquadA0;
-            biquadB1 = -2.0f * cs / a0;
-            biquadB2 = (1.0f - alpha) / a0;
+            // METAL: High-Q Bandpass (Constant Peak Gain)
+            // Creates a glassy, inharmonic ringing resonance
+            float Q = 8.0f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = alpha;
+            b1 = 0.0f;
+            b2 = -alpha;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
         }
+        else if (filterMode == kFilterWood) {
+            // WOOD: Warm, highly damped Lowpass
+            float Q = 0.5f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = (1.0f - cos_w0) / 2.0f;
+            b1 = 1.0f - cos_w0;
+            b2 = (1.0f - cos_w0) / 2.0f;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+        else {
+            // STONE / DEFAULT: Heavier Butterworth Lowpass
+            float Q = 0.707f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = (1.0f - cos_w0) / 2.0f;
+            b1 = 1.0f - cos_w0;
+            b2 = (1.0f - cos_w0) / 2.0f;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+
+        // ==========================================================
+        // UNIFIED NORMALIZATION (Safely prepares coeffs for the DSP loop)
+        // ==========================================================
+        float invA0 = 1.0f / a0;
+
+        // Feed-forward coefficients
+        biquadA0 = b0 * invA0;
+        biquadA1 = b1 * invA0;
+        biquadA2 = b2 * invA0;
+
+        // Feedback coefficients - DO NOT NEGATE HERE!
+        // The DSP loop explicitly uses subtraction: `- (out * biquadB1)`
+        biquadB1 = a1 * invA0;
+        biquadB2 = a2 * invA0;
     }
 
     void applyResonantFilterModulated(float32x4_t* signals, int numChannels, float fcMod) {
@@ -356,17 +389,33 @@ public:
         fc = fmaxf(20.0f, fminf(sampleRate * 0.45f, fc));
         updateFilterCoeffs(fc);
 
-        // Apply biquad to each channel (same as before, but using current coefficients)
-        for (int ch = 0; ch < numChannels; ch++) {
-            float32x4_t in = signals[ch];
-            float32x4_t out = vmulq_n_f32(in, biquadA0);
-            out = vmlaq_n_f32(out, filterState1[ch], biquadA1);
-            out = vmlaq_n_f32(out, filterState2[ch], biquadA2);
-            out = vmlsq_n_f32(out, filterState1[ch], biquadB1);
-            out = vmlsq_n_f32(out, filterState2[ch], biquadB2);
-            filterState2[ch] = filterState1[ch];
-            filterState1[ch] = in;
-            signals[ch] = out;
+        // ---------------------------------------------------------
+        // PROPER SCALAR IIR BIQUAD PROCESSING (same as before, but using current coefficients)
+        // ---------------------------------------------------------
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+
+            // 1. Unpack the 4 consecutive samples from the NEON vector
+            float in_samps[4];
+            vst1q_f32(in_samps, signals[ch]);
+
+            float out_samps[4];
+
+            // 2. Process sequentially to maintain the IIR feedback loop
+            for (int s = 0; s < 4; s++) {
+                float in_val = in_samps[s];
+
+                // Direct Form II Transposed Biquad Math
+                float out_val = (in_val * biquadA0) + filterState1[ch];
+
+                // Update history states immediately for the next sample
+                filterState1[ch] = (in_val * biquadA1) - (out_val * biquadB1) + filterState2[ch];
+                filterState2[ch] = (in_val * biquadA2) - (out_val * biquadB2);
+
+                out_samps[s] = out_val;
+            }
+
+            // 3. Repack back into the NEON vector to continue the delay network
+            signals[ch] = vld1q_f32(out_samps);
         }
     }
 
@@ -854,7 +903,7 @@ private:
         // 4. Apply decay (using unified decay factor)
         // FIX: Map 0.0-1.0 to 0.7-0.995 for realistic RT60 tails
         float loopGain = 0.7f + (decay * 0.295f);
-        float unifiedDecay = fminf(0.995f, loopGain * fastersinfullf(highDecayMult * lowDecayMult));
+        float unifiedDecay = fminf(0.995f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
         float32x4_t feedback = vdupq_n_f32(1.0f - decay); // Keep input injection balanced
 
@@ -959,6 +1008,7 @@ private:
         if (activeSampleCount <= 0) {
             // Apply dry gain so volume stays constant when bypassed!
             wetL = 0.0f; wetR = 0.0f;
+            writePos = (writePos + 1) & BUFFER_MASK;    // mask prevents audible glitches when the reverb 'wakes up' from APC bypass
             return;
         }
 
@@ -990,7 +1040,7 @@ private:
             float phase = vgetq_lane_f32(modPhaseVec[ch], 0);
 
             float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = sinf(phase * M_TWOPI) * modDepth * 100.0f;
+            float mod = fastersinfullf(phase * M_TWOPI) * modDepth * 100.0f;
             float readPos = (float)writePos - (delaySamples + mod);
 
             while (readPos < 0) readPos += BUFFER_SIZE;
@@ -1197,15 +1247,15 @@ private:
     enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterNoise };
     FilterMode filterMode;
     float biquadA0, biquadA1, biquadA2, biquadB1, biquadB2; // shared coeffs
-    float32x4_t filterState1[FDN_CHANNELS];  // z^-1
-    float32x4_t filterState2[FDN_CHANNELS];  // z^-2
+    float filterState1[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-1
+    float filterState2[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-2
 
     // Noise generation
     uint32_t noiseSeed;
     float noiseColour;                 // 0=brown .. 4=violet
     float noiseGain;                   // from DAMP
-    float noiseStates[FDN_CHANNELS];  // z^-1 for noise filtering
-    float noiseStates2[FDN_CHANNELS]; // z^-2 for Grey noise notch
+    float noiseStates[FDN_CHANNELS];   // z^-1 for noise filtering
+    float noiseStates2[FDN_CHANNELS];  // z^-2 for Grey noise notch
 
     // Cross-feedback gains per pillar
     static const float crossGain[5];   // indexed by pillar_

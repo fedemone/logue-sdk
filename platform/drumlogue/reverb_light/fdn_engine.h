@@ -18,25 +18,6 @@
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 #define SPARKLE_BUFFER_SIZE 4096
 #define NUM_RESONATORS (6)
-#define SAMPLE_RATE (48000.0f)
-
-// Biquad definitions for the COLOR path
-typedef struct {
-    float b0, b1, b2, a1, a2;
-} biquad_coeffs_t;
-
-typedef struct {
-    float z1, z2;
-} biquad_state_t;
-
-fast_inline float process_biquad(float in, biquad_state_t* state, biquad_coeffs_t* c) {
-    float out = in * c->b0 + state->z1;
-    state->z1 = in * c->b1 - out * c->a1 + state->z2;
-    state->z2 = in * c->b2 - out * c->a2;
-    return out;
-}
-#define SPARKLE_BUFFER_SIZE 4096
-#define NUM_RESONATORS (6)
 
 // Biquad definitions for the COLOR path
 typedef struct {
@@ -144,29 +125,10 @@ public:
         initialized = true;
     }
 
-    void init_color_resonators() {
-        // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
-        const float freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f};
-        const float Q = 8.0f; // High Q for distinct ringing resonance
-
-        for (int i = 0; i < NUM_RESONATORS; i++) {
-            // Constant Peak Gain Bandpass Biquad Math
-            float w0 = 2.0f * M_PI * freqs[i] / sampleRate;
-            float alpha = sinf(w0) / (2.0f * Q);
-
-            float a0 = 1.0f + alpha;
-            color_coeffs[i].b0 = alpha / a0;
-            color_coeffs[i].b1 = 0.0f;
-            color_coeffs[i].b2 = -alpha / a0;
-            color_coeffs[i].a1 = -2.0f * cosf(w0) / a0;
-            color_coeffs[i].a2 = (1.0f - alpha) / a0;
-        }
-    }
-
     // 5kHz Butterworth HPF
     void initialize_brightness_harmonic_exciter() {
         float w0_bright = 2.0f * M_PI * 5000.0f / sampleRate;
-        float alpha_bright = sinf(w0_bright) / (2.0f * 0.707f);
+        float alpha_bright = sinf(w0_bright) / (2.0f * 0.707f); // at init no fast function
         float a0_bright = 1.0f + alpha_bright;
 
         bright_coeffs.b0 = ((1.0f + cosf(w0_bright)) / 2.0f) / a0_bright;
@@ -175,7 +137,6 @@ public:
         bright_coeffs.a1 = (-2.0f * cosf(w0_bright)) / a0_bright;
         bright_coeffs.a2 = (1.0f - alpha_bright) / a0_bright;
     }
-
 
     void init_color_resonators() {
         // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
@@ -197,7 +158,7 @@ public:
     }
 
     void generate_hadamard() {
-        float norm = 1.0f / sqrtf(FDN_CHANNELS);
+        float norm = 1.0f / sqrtf(FDN_CHANNELS);    // as init is not time strict, let's keep the original function
         for (int i = 0; i < FDN_CHANNELS; i++) {
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 int parity = 0;
