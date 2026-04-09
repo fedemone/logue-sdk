@@ -11,13 +11,17 @@
 #include "constants.h"
 #include "resonant_synthesis.h"
 
-// LFO target values (from lfo_enhanced.h)
+// LFO target values (from constants.h)
 #define LFO_TARGET_NONE       (0)
 #define LFO_TARGET_PITCH      (1)
 #define LFO_TARGET_INDEX      (2)
 #define LFO_TARGET_ENV        (3)
 #define LFO_TARGET_LFO2_PHASE (4)
 #define LFO_TARGET_LFO1_PHASE (5)
+#define LFO_TARGET_RES_FREQ   (6)
+#define LFO_TARGET_RESONANCE  (7)
+#define LFO_TARGET_NOISE_MIX  (8)
+#define LFO_TARGET_RES_MORPH  (9)
 
 // Engine modes
 #define ENGINE_KICK     (0)
@@ -27,7 +31,7 @@
 #define ENGINE_RESONANT (4)
 
 // from header.c
-#define NUM_OF_PRESETS (12)
+#define NUM_OF_PRESETS (20)
 #define NAME_LENGTH    (12)
 
 typedef enum {
@@ -43,6 +47,15 @@ typedef enum {
   RESOTOM,
   RESOSNARE,
   RESOMETAL,
+  // New presets exploiting LFO phase sync, NOISE_MIX and RES_MORPH targets
+  SLOW_ENV,      // 12: slow ramp LFO as second envelope
+  WAH_DRUM,      // 13: LFO→RES_MORPH for auto-wah filter sweep
+  NOISE_SWEEP,   // 14: LFO→NOISE_MIX for white-noise swell
+  FM_BUZZ,       // 15: near-audio-rate LFO→INDEX for AM/FM texture
+  GHOST_SNARE,   // 16: sparse ghostly snare hits with resonant filter
+  RIM_PITCH,     // 17: slow ramp pitch envelope on metal/perc
+  TOM_WAH,       // 18: resonant tom with filter morph sweep
+  SHAKER,        // 19: high-density rattling metal texture
   TOTAL_PRESETS = NUM_OF_PRESETS
 } preset_numer_t;
 

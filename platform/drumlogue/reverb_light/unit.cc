@@ -32,15 +32,23 @@ static bool s_initialized = false;
 static bool s_bypass = true;
 static const int num_of_presets = 4;
 enum k_parameters {
-    k_name, k_dark, k_bright, k_glow,
+    k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,
     k_total
+};
+
+enum {
+    k_stanzaNeon,
+    k_vicoBuio,
+    k_strobo,
+    k_bruciato,
+    k_preset_number,
 };
 
 // ============================================================================
 // Presets
 // ============================================================================
-static const char* k_preset_names[num_of_presets] = {
+static const char* k_preset_names[k_preset_number] = {
     "StanzaNeon", // 0: Tight, bright, standard drum room
     "VicoBuio",   // 1: Long decay, heavy LPF, spooky
     "Strobo",   // 2: High pre-delay, short decay, heavily modulated
@@ -48,11 +56,11 @@ static const char* k_preset_names[num_of_presets] = {
 };
 
 // Values map to: { DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY }
-static const int32_t k_preset_values[num_of_presets][k_total] = {
-    { 0, 40, 70, 30, 10,  5, 30,  5 },  // StanzaNeon
-    { 1, 80, 20, 40, 80, 10, 60, 15 },  // VicoBuio
-    { 2, 20, 50, 40, 40, 40, 10, 80 },  // Strobo
-    { 3, 95, 40, 60, 30, 25, 90, 10 }   // Bruciato
+static const int32_t k_presets[num_of_presets][k_total] = {
+    { k_stanzaNeon, 40, 70, 30, 10,  5, 30,  5 },  // StanzaNeon
+    { k_vicoBuio,   80, 20, 40, 80, 10, 60, 15 },  // VicoBuio
+    { k_strobo,     20, 50, 40, 40, 40, 10, 80 },  // Strobo
+    { k_bruciato,   95, 40, 60, 30, 25, 90, 10 }   // Bruciato
 };
 
 static uint8_t s_current_preset = 0;
@@ -100,11 +108,11 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
 
     s_initialized = true;
     s_bypass = false;
+    s_current_preset = 0;
 
     // Apply default parameter values
-    for (uint8_t i = 0; i < k_total; i++) {
-        unit_set_param_value(i, s_params[i]);
-    }
+    unit_set_param_value(k_paramProgram, s_current_preset);
+
 
     return k_unit_err_none;
 }
@@ -141,57 +149,48 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     }
 
     // ========================================================================
-    // Deinterleave input: [L,R,L,R,...] -> separate L and R buffers
-    // ========================================================================
-    for (uint32_t i = 0; i < frames; i++) {
-        s_inL[i] = in[i * 2];
-        s_inR[i] = in[i * 2 + 1];
-    }
-
-    // ========================================================================
     // Process through reverb engine (expects deinterleaved buffers)
     // ========================================================================
-    s_fdn_engine.processStereo(s_inL, s_inR, s_outL, s_outR, frames);
-
-    // ========================================================================
-    // Interleave output: separate L/R buffers -> [L,R,L,R,...]
-    // ========================================================================
-    for (uint32_t i = 0; i < frames; i++) {
-        out[i * 2] = s_outL[i];
-        out[i * 2 + 1] = s_outR[i];
-    }
+    s_fdn_engine.processBlock(in, out, frames);
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (id >= k_total) return;
-    s_params[id] = value;
+    s_params[id] = value;   // store into local DB
 
     const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
     switch (id) {
-        case k_dark: // DARK  decay/warmth  0-100% → decay 0.0..0.99
-            s_fdn_engine.setDecay(norm * 0.99f);
-            break;
-        case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
-            s_fdn_engine.setBrightness(norm);
-            break;
-        case k_glow: // GLOW  wet/dry mix  0-100% → 0.0..1.0
-            s_fdn_engine.setGlow(norm);
-            break;
-        case k_color: // COLR  tone color (LPF)  0-100% → coeff 0.0..0.95
-            s_fdn_engine.setColor(norm * 0.95f);
-            break;
-        case k_spark: // SPRK  sparkle / modulation depth  0-100% → 0.0..1.0
-            s_fdn_engine.setModulation(norm);
-            break;
-        case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
-            s_fdn_engine.setSize(0.1f + norm * 1.9f);
-            break;
-        case k_pdly: // PDLY pre delay
-            s_fdn_engine.setPreDelay(norm * 200.0f);
-            break;
-        default:
-            break;
+    case k_paramProgram:
+        s_current_preset = value;
+        for (uint8_t i = 0; i < k_total; i++) {
+            if (i == k_paramProgram) continue;  // avoid recursion
+            unit_set_param_value(i, k_presets[value][i]);
+        }
+      break;
+    case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99
+      s_fdn_engine.setDarkness(norm);
+      break;
+    case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
+      s_fdn_engine.setBrightness(norm);
+      break;
+    case k_glow: // GLOW  modulation  0-100% → 0.0..1.0
+      s_fdn_engine.setGlow(norm);
+      break;
+    case k_color: // COLR  tone color (spectrum resonance)  0-100% → coeff 0.0..0.95
+      s_fdn_engine.setColor(norm);
+      break;
+    case k_spark: // SPRK  sparkle S&H pops  0-100% → 0.0..1.0
+      s_fdn_engine.setSpark(norm);
+      break;
+    case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
+      s_fdn_engine.setSize(norm);
+      break;
+    case k_pdly: // PDLY pre delay
+      s_fdn_engine.setPreDelay(norm);
+      break;
+    default:
+      break;
     }
 }
 
@@ -201,7 +200,7 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
-    if ((id == k_name) && (value < num_of_presets)) {
+    if ((id == k_paramProgram) && (value < k_preset_number)) {
         return k_preset_names[value];
     }
     (void)id;
@@ -229,6 +228,11 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
     (void)aftertouch;
 }
 
+__unit_callback void unit_load_preset(uint8_t idx) {
+    if (idx >= k_preset_number) return;
+    unit_set_param_value(k_paramProgram, idx);
+}
+
 __unit_callback uint8_t unit_get_preset_index() {
     return s_current_preset;
 }
@@ -236,17 +240,4 @@ __unit_callback uint8_t unit_get_preset_index() {
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {
     if (idx >= num_of_presets) return nullptr;
     return k_preset_names[idx];
-}
-
-__unit_callback void unit_load_preset(uint8_t idx) {
-    if (idx >= num_of_presets) return;
-    s_current_preset = idx;
-
-    // Apply all parameter values from the preset
-    for (uint8_t p = 0; p < k_total; p++) {
-        // Update the internal state array
-        s_params[p] = k_preset_values[idx][p];
-        // Trigger the logic to update the FDN engine
-        unit_set_param_value(p, s_params[p]);
-    }
 }

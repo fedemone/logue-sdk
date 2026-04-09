@@ -73,10 +73,10 @@ typedef struct {
     midi_handler_t midi;
 
     // Current parameters (cached)
-    uint8_t params[PARAM_TOTAL];
+    int8_t params[PARAM_TOTAL];
 
     // Voice allocation
-    uint8_t voice_engine[VOICE_ALLOC_MAX];        // Engine type for each voice (0-4)
+    uint8_t voice_engine[VOICE_ALLOC_MAX];  // Engine type for each voice (0-4)
     uint8_t allocation_idx;         // Current allocation (0-11)
 
     // Masks for efficient NEON processing
@@ -95,7 +95,27 @@ typedef struct {
 
     // Output gain
     float master_gain;
+
+    // Per-engine output band filters — keeps each engine in its natural frequency
+    // range so voices don't mask each other.  Each one_pole_t holds one float32x4_t
+    // state word (one state per NEON lane = per voice).
+    // Precomputed alpha = 2πf/(2πf+sr) — see constants below.
+    one_pole_t kick_out_lpf;   // LP 250 Hz  — keeps kick body, removes highs
+    one_pole_t snare_hpf;      // LP state for HP 100 Hz subtraction — removes kick rumble
+    one_pole_t snare_out_lpf;  // LP 7000 Hz — removes ultrasonic hash
+    one_pole_t metal_hpf;      // LP state for HP 800 Hz subtraction — removes lows
+    one_pole_t perc_hpf;       // LP state for HP 80 Hz subtraction  — removes sub rumble
+    one_pole_t perc_out_lpf;   // LP 3000 Hz — removes high-frequency clash with metal
 } fm_perc_synth_t;
+
+// Precomputed one-pole filter alpha values: 2πf / (2πf + 48000)
+// These are constant across the lifetime of the plugin so computing once is correct.
+static const float FILT_KICK_LP_A  = 1570.796f  / (1570.796f  + 48000.0f); // 250 Hz
+static const float FILT_SNARE_HP_A = 628.318f   / (628.318f   + 48000.0f); // 100 Hz
+static const float FILT_SNARE_LP_A = 43982.297f / (43982.297f + 48000.0f); // 7000 Hz
+static const float FILT_METAL_HP_A = 5026.548f  / (5026.548f  + 48000.0f); // 800 Hz
+static const float FILT_PERC_HP_A  = 502.655f   / (502.655f   + 48000.0f); // 80 Hz
+static const float FILT_PERC_LP_A  = 18849.556f / (18849.556f + 48000.0f); // 3000 Hz
 
 /**
  * Update voice allocation from param 21 (0-11)
@@ -174,7 +194,7 @@ fast_inline void apply_resonant_morph(resonant_synth_t * res, float morph, uint8
  * Update all parameters from UI
  */
 fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
-    uint8_t* p = synth->params;
+    int8_t* p = synth->params;
 
     // =================================================================
     // Update voice probabilities (Page 1, params 0-3)
@@ -237,8 +257,8 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // Update LFO (params 12-19)
     // =================================================================
     uint32x4_t all_voices = vdupq_n_u32(0xFFFFFFFF);
-    int8_t depth1 = (int8_t)(p[PARAM_LFO1_DEPTH] - 100);
-    int8_t depth2 = (int8_t)(p[PARAM_LFO2_DEPTH] - 100);
+    int8_t depth1 = p[PARAM_LFO1_DEPTH];
+    int8_t depth2 = p[PARAM_LFO2_DEPTH];
 
     lfo_smoother_set_rate(&synth->lfo_smooth, 0, p[PARAM_LFO1_RATE] / 100.0f, all_voices);
     lfo_smoother_set_rate(&synth->lfo_smooth, 1, p[PARAM_LFO2_RATE] / 100.0f, all_voices);
@@ -256,7 +276,7 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
 /**
  * standalone function similar to load_preset
  */
-fast_inline void load_fm_preset(uint8_t idx, uint8_t * params) {
+fast_inline void load_fm_preset(uint8_t idx, int8_t * params) {
     if (idx >= NUM_OF_PRESETS) return;
 
     const fm_preset_t * p = &FM_PRESETS[idx];
@@ -283,13 +303,13 @@ fast_inline void load_fm_preset(uint8_t idx, uint8_t * params) {
     params[PARAM_LFO1_SHAPE] = p->lfo1_shape;
     params[PARAM_LFO1_RATE] = p->lfo1_rate;
     params[PARAM_LFO1_TARGET] = p->lfo1_target;
-    params[PARAM_LFO1_DEPTH] = (uint8_t)(p->lfo1_depth + 100);  // Convert -100..100 to 0..200
+    params[PARAM_LFO1_DEPTH] = p->lfo1_depth;  // -100..100, stored directly in int8_t
 
     // Page 5 (LFO2)
     params[PARAM_LFO2_SHAPE] = p->lfo2_shape;
     params[PARAM_LFO2_RATE] = p->lfo2_rate;
     params[PARAM_LFO2_TARGET] = p->lfo2_target;
-    params[PARAM_LFO2_DEPTH] = (uint8_t)(p->lfo2_depth + 100);
+    params[PARAM_LFO2_DEPTH] = p->lfo2_depth;  // -100..100, stored directly in int8_t
 
     // Page 6
     params[PARAM_ENV_SHAPE] = p->env_shape;
@@ -317,6 +337,14 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     // Initialize PRNG and MIDI
     neon_prng_init(&synth->prng, RAND_DEFAULT_SEED);
     midi_handler_init(&synth->midi);
+
+    // Initialize per-engine band filter states
+    synth->kick_out_lpf.z1 = vdupq_n_f32(0.0f);
+    synth->snare_hpf.z1    = vdupq_n_f32(0.0f);
+    synth->snare_out_lpf.z1= vdupq_n_f32(0.0f);
+    synth->metal_hpf.z1    = vdupq_n_f32(0.0f);
+    synth->perc_hpf.z1     = vdupq_n_f32(0.0f);
+    synth->perc_out_lpf.z1 = vdupq_n_f32(0.0f);
 
     // Initialize parameters
     synth->voice_active = vdupq_n_f32(0.0f);
@@ -370,85 +398,129 @@ fast_inline float neon_horizontal_sum_alt(float32x4_t v) {
 }
 
 /**
- * MIDI Note On handler with per-voice probability
+ * MIDI Note On handler with per-voice probability and note routing.
+ *
+ * Routing: each voice position has a dedicated drum note (kick=36, snare=38,
+ * metal=42, perc=45 by default in midi_handler).  A note matching one of those
+ * four only triggers voices at the matching position; any other note triggers
+ * all voices (general trigger / sequencer mode).
+ *
+ * LFO phase sync: phases are reset on every trigger so a one-shot ramp at
+ * slow rate acts as a secondary envelope.
  */
 fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
                                        uint8_t note,
                                        uint8_t velocity) {
-    // Generate probability gate for all 4 voices at once
+    // ---------------------------------------------------------------
+    // 1. MIDI note routing: build a position mask for this note.
+    //    Positions 0-3 map to kick/snare/metal/perc notes respectively.
+    //    Any non-drum note triggers all four positions.
+    // ---------------------------------------------------------------
+    uint32_t route_bits = 0xF;  // default: all voices eligible
+    if (note == synth->midi.kick_note)  route_bits = 0x1;
+    else if (note == synth->midi.snare_note) route_bits = 0x2;
+    else if (note == synth->midi.metal_note) route_bits = 0x4;
+    else if (note == synth->midi.perc_note)  route_bits = 0x8;
+
+    const uint32_t route_lanes[4] = {
+        (route_bits & 1) ? 0xFFFFFFFFU : 0U,
+        (route_bits & 2) ? 0xFFFFFFFFU : 0U,
+        (route_bits & 4) ? 0xFFFFFFFFU : 0U,
+        (route_bits & 8) ? 0xFFFFFFFFU : 0U,
+    };
+    uint32x4_t route_mask = vld1q_u32(route_lanes);
+
+    // ---------------------------------------------------------------
+    // 2. Probability gate, masked by routing
+    // ---------------------------------------------------------------
     uint32x4_t gate = probability_gate_neon(&synth->prng,
                                             synth->voice_probs[PARAM_VOICE1_PROB],
                                             synth->voice_probs[PARAM_VOICE2_PROB],
                                             synth->voice_probs[PARAM_VOICE3_PROB],
                                             synth->voice_probs[PARAM_VOICE4_PROB]);
+    gate = vandq_u32(gate, route_mask);
 
-    // Extract which voices triggered
     uint32_t gate_bits = 0;
     gate_bits |= (vgetq_lane_u32(gate, 0) ? 1 : 0) << 0;
     gate_bits |= (vgetq_lane_u32(gate, 1) ? 1 : 0) << 1;
     gate_bits |= (vgetq_lane_u32(gate, 2) ? 1 : 0) << 2;
     gate_bits |= (vgetq_lane_u32(gate, 3) ? 1 : 0) << 3;
 
-    if (gate_bits == 0) return;  // No voices triggered
+    if (gate_bits == 0) return;
 
-    // Store per-voice velocity (0-1) for triggered voices
+    // ---------------------------------------------------------------
+    // 3. Per-voice velocity
+    // ---------------------------------------------------------------
     float vel_scale = velocity / 127.0f;
-    float32x4_t new_velocities = vdupq_n_f32(vel_scale);
-    // Use the 'gate' mask from line 310 to conditionally update lanes.
-    synth->voice_velocity = vbslq_f32(gate, new_velocities, synth->voice_velocity);
+    synth->voice_velocity = vbslq_f32(gate,
+                                       vdupq_n_f32(vel_scale),
+                                       synth->voice_velocity);
 
-    // Build voice mask from gate results <== WRONG! we have separated the "Control/Routing" side (gate_bits) from the "Audio/DSP" side (gate)
-    // uint32_t mask = gate_bits;
-
-    // Set note for each triggered voice based on its engine assignment
-    float32x4_t midi_note = vdupq_n_f32(note);
+    // ---------------------------------------------------------------
+    // 4. Set engine note for each triggered voice
+    // ---------------------------------------------------------------
+    float32x4_t midi_note_v = vdupq_n_f32(note);
 
     for (int v = 0; v < VOICE_ALLOC_MAX; v++) {
         if (gate_bits & (1 << v)) {
-            // Per-lane mask: 0xFFFFFFFF for the triggered voice lane, 0 for others
-            // comparing a vector containing the current voice index v with a constant vector of indices {0, 1, 2, 3} by means of compound literal
-            uint32x4_t voice_mask = vceqq_u32(vdupq_n_u32(v), vld1q_u32((const uint32_t[]){0, 1, 2, 3}));
-            uint8_t engine = synth->voice_engine[v];
-
-            switch (engine) {
+            uint32x4_t voice_mask = vceqq_u32(vdupq_n_u32(v),
+                                               vld1q_u32((const uint32_t[]){0,1,2,3}));
+            switch (synth->voice_engine[v]) {
                 case ENGINE_KICK:
-                    kick_engine_set_note(&synth->kick, voice_mask, midi_note);
-                    break;
+                    kick_engine_set_note(&synth->kick, voice_mask, midi_note_v);    break;
                 case ENGINE_SNARE:
-                    snare_engine_set_note(&synth->snare, voice_mask, midi_note);
-                    break;
+                    snare_engine_set_note(&synth->snare, voice_mask, midi_note_v);  break;
                 case ENGINE_METAL:
-                    metal_engine_set_note(&synth->metal, voice_mask, midi_note);
-                    break;
+                    metal_engine_set_note(&synth->metal, voice_mask, midi_note_v);  break;
                 case ENGINE_PERC:
-                    perc_engine_set_note(&synth->perc, voice_mask, midi_note);
-                    break;
+                    perc_engine_set_note(&synth->perc, voice_mask, midi_note_v);    break;
                 case ENGINE_RESONANT:
-                    resonant_synth_set_f0(&synth->resonant, voice_mask, midi_note);
-                    break;
+                    resonant_synth_set_f0(&synth->resonant, voice_mask, midi_note_v); break;
             }
         }
     }
 
+    // ---------------------------------------------------------------
+    // 5. Track active notes for per-voice release
+    // ---------------------------------------------------------------
+    synth->midi.active_notes[note] |= (uint8_t)gate_bits;
+
+    // ---------------------------------------------------------------
+    // 6. LFO phase sync: reset both LFO phases on every trigger.
+    //    A slow ramp (0.5 Hz) now acts as a one-shot attack/decay shape.
+    // ---------------------------------------------------------------
+    synth->lfo.phase1 = vdupq_n_f32(0.0f);
+    synth->lfo.phase2 = vdupq_n_f32(LFO_PHASE_OFFSET);
+
+    // ---------------------------------------------------------------
+    // 7. Trigger envelope for gated voices
+    // ---------------------------------------------------------------
     synth->voice_triggered = gate;
-    neon_envelope_trigger(&synth->envelope,
-                         gate,
-                         synth->current_env_shape);
+    neon_envelope_trigger(&synth->envelope, gate, synth->current_env_shape);
 }
 
 /**
- * MIDI Note Off handler
+ * MIDI Note Off — triggers per-voice envelope release for voices that
+ * were triggered by this specific note.
  */
 fast_inline void fm_perc_synth_note_off(fm_perc_synth_t* synth, uint8_t note) {
     uint8_t releasing[4];
     uint32_t num_releasing = midi_note_off(&synth->midi, note, releasing);
 
-    // For now, envelope release is triggered when any voice releases
-    // In a more sophisticated version, we'd track per-voice release
-    if (num_releasing > 0) {
-        // Signal release stage
-        // This would need per-voice release tracking
-    }
+    if (num_releasing == 0) return;
+
+    // Build NEON voice mask for releasing voices
+    uint32_t rel_bits = 0;
+    for (uint32_t i = 0; i < num_releasing; i++)
+        rel_bits |= (1u << releasing[i]);
+
+    const uint32_t rel_lanes[4] = {
+        (rel_bits & 1) ? 0xFFFFFFFFU : 0U,
+        (rel_bits & 2) ? 0xFFFFFFFFU : 0U,
+        (rel_bits & 4) ? 0xFFFFFFFFU : 0U,
+        (rel_bits & 8) ? 0xFFFFFFFFU : 0U,
+    };
+    neon_envelope_release(&synth->envelope, vld1q_u32(rel_lanes));
 }
 
 /**
@@ -480,6 +552,37 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // =================================================================
     float32x4_t lfo1, lfo2;
     lfo_enhanced_process(&synth->lfo, &lfo1, &lfo2);
+    // 2. Calculate LFO Modulations
+    float32x4_t index_add     = vdupq_n_f32(0.0f);
+    float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
+
+    // =================================================================
+    // Apply LFO modulations to pitch (target 1)
+    // =================================================================
+    if (synth->lfo.target1 == LFO_TARGET_PITCH || synth->lfo.target2 == LFO_TARGET_PITCH) {
+        // Initialize to zero – both LFOs may contribute independently
+        float32x4_t pitch_octaves = vdupq_n_f32(0.0f);
+        // +/- 2 octaves maximum depth per LFO; sum both if both target pitch
+        if (synth->lfo.target1 == LFO_TARGET_PITCH)
+            pitch_octaves = vaddq_f32(pitch_octaves,
+                                      vmulq_f32(lfo1, vmulq_n_f32(synth->lfo.depth1, 2.0f)));
+        if (synth->lfo.target2 == LFO_TARGET_PITCH)
+            pitch_octaves = vaddq_f32(pitch_octaves,
+                                      vmulq_f32(lfo2, vmulq_n_f32(synth->lfo.depth2, 2.0f)));
+        // Exponential pitch multiplier passed to each engine's process(); do NOT
+        // write back into carrier_freq_base – that would permanently drift the tuning.
+        lfo_pitch_mult = exp2_neon(pitch_octaves);
+    }
+
+    if (synth->lfo.target1 == LFO_TARGET_INDEX || synth->lfo.target2 == LFO_TARGET_INDEX) {
+        float32x4_t mod = (synth->lfo.target1 == LFO_TARGET_INDEX) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_INDEX) ? synth->lfo.depth1 : synth->lfo.depth2;
+        index_add = vaddq_f32(index_add, vmulq_f32(mod, depth));
+        // Clamp so engines never receive an index outside [-1, 1]
+        index_add = vmaxq_f32(vminq_f32(index_add, vdupq_n_f32(1.0f)), vdupq_n_f32(-1.0f));
+
+        // Inject index modulation — each engine_update2 clamps internally to [0,1]
+    }
 
     // =================================================================
     // Apply LFO modulations to envelope (target 3)
@@ -570,22 +673,91 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     }
 
     // =================================================================
+    // LFO → NOISE_MIX (target 8): modulate snare noise/tone blend and metal brightness
+    // =================================================================
+    if (synth->lfo.target1 == LFO_TARGET_NOISE_MIX ||
+        synth->lfo.target2 == LFO_TARGET_NOISE_MIX) {
+        float32x4_t mod   = (synth->lfo.target1 == LFO_TARGET_NOISE_MIX) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_NOISE_MIX)
+                            ? synth->lfo.depth1 : synth->lfo.depth2;
+        // Bipolar LFO (-1..1) * depth as additive offset to noise_mix/brightness
+        float32x4_t noise_add = vmulq_f32(
+            vsubq_f32(vmulq_f32(mod, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f)),
+            depth);
+        snare_engine_update_noise(&synth->snare, noise_add);
+        metal_engine_update2(&synth->metal, noise_add);  // maps to brightness
+    }
+
+    // =================================================================
+    // LFO → RES_MORPH (target 9): sweep resonant filter morph each sample
+    // =================================================================
+    if (synth->lfo.target1 == LFO_TARGET_RES_MORPH ||
+        synth->lfo.target2 == LFO_TARGET_RES_MORPH) {
+        float32x4_t mod   = (synth->lfo.target1 == LFO_TARGET_RES_MORPH) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_RES_MORPH)
+                            ? synth->lfo.depth1 : synth->lfo.depth2;
+        // Bipolar offset on top of the static resonant_morph param
+        float lfo_bipolar = vgetq_lane_f32(
+            vsubq_f32(vmulq_f32(mod, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f)), 0);
+        float modulated_morph = synth->resonant_morph
+                                + lfo_bipolar * vgetq_lane_f32(depth, 0);
+        // Clamp to valid range
+        if (modulated_morph < 0.0f) modulated_morph = 0.0f;
+        if (modulated_morph > 1.0f) modulated_morph = 1.0f;
+        apply_resonant_morph(&synth->resonant, modulated_morph,
+                             synth->params[PARAM_RES_MODE]);
+    }
+
+    // =================================================================
     // Process each engine with its voice mask
     // =================================================================
     float32x4_t kick_out = kick_engine_process(&synth->kick, env,
-                                               synth->engine_mask[ENGINE_KICK]);
+                                               synth->engine_mask[ENGINE_KICK],
+                                               lfo_pitch_mult, index_add);
     float32x4_t snare_out = snare_engine_process(&synth->snare, env,
-                                                  synth->engine_mask[ENGINE_SNARE]);
+                                                 synth->engine_mask[ENGINE_SNARE],
+                                                 lfo_pitch_mult, index_add);
     float32x4_t metal_out = metal_engine_process(&synth->metal, env,
-                                                  synth->engine_mask[ENGINE_METAL]);
+                                                 synth->engine_mask[ENGINE_METAL],
+                                                 lfo_pitch_mult, index_add);
     float32x4_t perc_out = perc_engine_process(&synth->perc, env,
-                                                synth->engine_mask[ENGINE_PERC]);
-    float32x4_t resonant_out = resonant_synth_process(&synth->resonant,
+                                               synth->engine_mask[ENGINE_PERC],
+                                               lfo_pitch_mult, index_add);
+    float32x4_t resonant_out = resonant_synth_process(&synth->resonant, env,
                                                        synth->engine_mask[ENGINE_RESONANT]);
 
-    // FIX: The resonant engine doesn't process the envelope internally like the FM engines do.
-    // We must manually scale its output by the envelope here before mixing!
-    resonant_out = vmulq_f32(resonant_out, env);
+    // =================================================================
+    // Per-engine band filters — spectral band separation.
+    // Each engine is constrained to its natural frequency range so voices
+    // don't mask each other in the mix (kick rumble vs snare crack, etc.).
+    // HPF is implemented as: output = input - LPF(input, cutoff).
+    // All alphas are precomputed constants (no division per sample).
+    // =================================================================
+
+    // Kick: LP 250 Hz — preserves body, removes high-frequency clash
+    kick_out = one_pole_lpf_a(&synth->kick_out_lpf, kick_out, FILT_KICK_LP_A);
+
+    // Snare: HP 100 Hz (remove kick rumble) then LP 7000 Hz (remove hash)
+    {
+        float32x4_t snare_lp = one_pole_lpf_a(&synth->snare_hpf, snare_out, FILT_SNARE_HP_A);
+        snare_out = vsubq_f32(snare_out, snare_lp);           // HP at 100 Hz
+        snare_out = one_pole_lpf_a(&synth->snare_out_lpf, snare_out, FILT_SNARE_LP_A);
+    }
+
+    // Metal/cymbal: HP 800 Hz — removes lows, keeps shimmer
+    {
+        float32x4_t metal_lp = one_pole_lpf_a(&synth->metal_hpf, metal_out, FILT_METAL_HP_A);
+        metal_out = vsubq_f32(metal_out, metal_lp);           // HP at 800 Hz
+    }
+
+    // Perc/tom: HP 80 Hz (remove sub rumble) then LP 3000 Hz (remove clash with metal)
+    {
+        float32x4_t perc_lp = one_pole_lpf_a(&synth->perc_hpf, perc_out, FILT_PERC_HP_A);
+        perc_out = vsubq_f32(perc_out, perc_lp);              // HP at 80 Hz
+        perc_out = one_pole_lpf_a(&synth->perc_out_lpf, perc_out, FILT_PERC_LP_A);
+    }
+
+    // Resonant engine: full-range pass — it is already a filter
 
     // =================================================================
     // Mix all engines, then apply per-voice velocity scaling
@@ -598,9 +770,29 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // Scale each voice lane by its stored velocity before summing
     mixed = vmulq_f32(mixed, synth->voice_velocity);
 
+    // =================================================================
+    // Kick ducking: when kick fires, reduce non-kick voice gain by up to
+    // KICK_DUCK_AMOUNT so the kick punches through without muddiness.
+    // Zero effect when kick is not in the current voice allocation.
+    // Future: expose KICK_DUCK_AMOUNT as a parameter (see PROGRESS.md).
+    // =================================================================
+    static const float KICK_DUCK_AMOUNT = 0.30f;
+    {
+        // Select kick lane envelope levels; 0 everywhere else
+        float32x4_t kick_env = vbslq_f32(synth->engine_mask[ENGINE_KICK],
+                                          synth->envelope.level,
+                                          vdupq_n_f32(0.0f));
+        float kick_level = neon_horizontal_sum(kick_env);  // ≤1 voice active → scalar
+        float duck_gain  = 1.0f - KICK_DUCK_AMOUNT * kick_level;
+        // Apply duck_gain to non-kick lanes, 1.0 to the kick lane itself
+        float32x4_t duck_vec = vbslq_f32(vmvnq_u32(synth->engine_mask[ENGINE_KICK]),
+                                          vdupq_n_f32(duck_gain),
+                                          vdupq_n_f32(1.0f));
+        mixed = vmulq_f32(mixed, duck_vec);
+    }
 
     // =================================================================
-    // FIXED: Efficient horizontal sum using NEON vpadd
+    // Horizontal sum using NEON vpadd
     // =================================================================
     float sum = neon_horizontal_sum(mixed);
 

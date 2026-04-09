@@ -24,13 +24,13 @@
 typedef struct {
     // Three operators
     float32x4_t phase[3];
-    float32x4_t freq_base;     // Carrier base frequency
-    float32x4_t ratio_center;   // Main modulator ratio
-    float32x4_t variation;       // Secondary modulation amount
+    float32x4_t carrier_freq_base;  // Carrier base frequency
+    float32x4_t ratio_center;       // Main modulator ratio
+    float32x4_t variation;          // Secondary modulation amount
 
     // Parameters
-    float32x4_t ratio_param;    // 0-1 mapped to ratio range
-    float32x4_t var_param;      // 0-1 mapped to variation range
+    float32x4_t ratio_param;        // 0-1 mapped to ratio range
+    float32x4_t var_param;          // 0-1 mapped to variation range
 } perc_engine_t;
 
 /**
@@ -41,7 +41,7 @@ fast_inline void perc_engine_init(perc_engine_t* perc) {
         perc->phase[i] = vdupq_n_f32(0.0f);
     }
 
-    perc->freq_base = vdupq_n_f32(200.0f);  // Mid tom default
+    perc->carrier_freq_base = vdupq_n_f32(200.0f);  // Mid tom default
     perc->ratio_center = vdupq_n_f32(2.0f);
     perc->variation = vdupq_n_f32(0.5f);
 
@@ -53,10 +53,10 @@ fast_inline void perc_engine_init(perc_engine_t* perc) {
  * Update perc engine parameters
  */
 fast_inline void perc_engine_update(perc_engine_t* perc,
-                                    float32x4_t param1,  // Ratio center
+                                    float32x4_t param1,   // Ratio center
                                     float32x4_t param2) { // Variation
     perc->ratio_param = param1;
-    perc->var_param = param2;
+    perc->var_param = param2;       // TODO what's the use for???
 
     // Map param1 (0-1) to ratio range (1.0-3.0)
     float32x4_t ratio_range = vdupq_n_f32(PERC_RATIO_MAX - PERC_RATIO_MIN);
@@ -66,6 +66,7 @@ fast_inline void perc_engine_update(perc_engine_t* perc,
     // Map param2 to variation amount
     perc->variation = vmulq_f32(param2, vdupq_n_f32(PERC_VARIATION_MAX));
 }
+
 
 /**
  * Set MIDI note (tunable percussion)
@@ -83,9 +84,9 @@ fast_inline void perc_engine_set_note(perc_engine_t* perc,
 
     float32x4_t base_freq = vmulq_f32(a4_freq, two_pow);
 
-    perc->freq_base = vbslq_f32(voice_mask,
+    perc->carrier_freq_base = vbslq_f32(voice_mask,
                                 base_freq,
-                                perc->freq_base);
+                                perc->carrier_freq_base);
 }
 
 /**
@@ -93,56 +94,46 @@ fast_inline void perc_engine_set_note(perc_engine_t* perc,
  */
 fast_inline float32x4_t perc_engine_process(perc_engine_t* perc,
                                             float32x4_t envelope,
-                                            uint32x4_t active_mask) {
-    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI / 48000.0f);
+                                            uint32x4_t active_mask,
+                                            float32x4_t lfo_pitch_mult,
+                                            float32x4_t lfo_index_add) {
+    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
     float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
 
-    // Calculate frequencies
-    float32x4_t carrier_freq = perc->freq_base;
+    // 1. Transient Envelope for the "Thwack"
+    float32x4_t env2 = vmulq_f32(envelope, envelope);
+    float32x4_t env4 = vmulq_f32(env2, env2);
+
+    // 2. Apply LFO Pitch Modulation
+    float32x4_t carrier_freq = vmulq_f32(perc->carrier_freq_base, lfo_pitch_mult);
     float32x4_t mod1_freq = vmulq_f32(carrier_freq, perc->ratio_center);
 
-    // Modulator 2 frequency varies with envelope for dynamic timbre
-    float32x4_t mod2_ratio = vaddq_f32(perc->ratio_center,
-                                       vmulq_f32(perc->variation, envelope));
+    // Mod2 shifts dynamically based on variation for a slight pitch-bend effect
+    float32x4_t mod2_ratio = vaddq_f32(perc->ratio_center, vmulq_f32(perc->variation, env2));
     float32x4_t mod2_freq = vmulq_f32(carrier_freq, mod2_ratio);
 
-    // Phase increments
-    float32x4_t inc[3] = {
-        vmulq_f32(carrier_freq, two_pi_over_sr),
-        vmulq_f32(mod1_freq, two_pi_over_sr),
-        vmulq_f32(mod2_freq, two_pi_over_sr)
-    };
-
-    // Update phases
+    // 3. Update Phases
+    float32x4_t freqs[3] = {carrier_freq, mod1_freq, mod2_freq};
     for (int i = 0; i < 3; i++) {
-        perc->phase[i] = vaddq_f32(perc->phase[i], inc[i]);
-
-        // Wrap
+        perc->phase[i] = vaddq_f32(perc->phase[i], vmulq_f32(freqs[i], two_pi_over_sr));
         uint32x4_t wrap = vcgeq_f32(perc->phase[i], two_pi);
-        perc->phase[i] = vbslq_f32(wrap,
-                                   vsubq_f32(perc->phase[i], two_pi),
-                                   perc->phase[i]);
+        perc->phase[i] = vbslq_f32(wrap, vsubq_f32(perc->phase[i], two_pi), perc->phase[i]);
     }
 
-    // Generate modulator signals
+    // 4. FM Synthesis
     float32x4_t mod1 = neon_sin(perc->phase[1]);
     float32x4_t mod2 = neon_sin(perc->phase[2]);
 
-    // Complex modulation: carrier modulated by both modulators
-    float32x4_t modulation = vaddq_f32(vmulq_f32(mod1, envelope),
-                                       vmulq_f32(mod2, vmulq_f32(envelope, envelope)));
+    // Force modulators to decay rapidly (env4) so it isn't "melodic"
+    float32x4_t index = vaddq_f32(perc->variation, lfo_index_add); // Base index + LFO
+    float32x4_t modulation = vaddq_f32(vmulq_f32(mod1, env2), vmulq_f32(mod2, vmulq_f32(index, env4)));
 
-    float32x4_t modulated_phase = vaddq_f32(perc->phase[0],
-                                           vmulq_f32(modulation, envelope));
-
+    float32x4_t modulated_phase = vaddq_f32(perc->phase[0], vmulq_n_f32(modulation, 2.0f));
     float32x4_t output = neon_sin(modulated_phase);
 
-    // Apply envelope and mask
+    // Apply main envelope
     output = vmulq_f32(output, envelope);
-    output = vbslq_f32(active_mask,
-                       output, vdupq_n_f32(0.0f));
-
-    return output;
+    return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
 
 // ========== UNIT TEST ==========

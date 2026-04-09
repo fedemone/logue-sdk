@@ -19,6 +19,7 @@
 #include "unit.h"
 #include "spatial_modes.h"
 #include "filters.h"
+#include "float_math.h"
 
 extern float lfo_table[LFO_TABLE_SIZE] __attribute__((aligned(16)));
 
@@ -109,7 +110,7 @@ public:
         if (!tables_initialized) {
             for (int i = 0; i < 360; i++) {
                 float angle = i * 2.0f * M_PI / 360.0f;
-                sin_table[i] = sinf(angle);
+                sin_table[i] = sinf(angle); // at init no fast function needed
                 cos_table[i] = cosf(angle);
             }
             tables_initialized = true;
@@ -352,7 +353,8 @@ public:
                 break;}
             case k_depth: {  // Depth
                 depth_ = value / 100.0f;
-                update_filter_params(&mode_filters_, depth_, 48);  // 1ms ramp
+                // FIX 3: Pass 0 to force instant coefficient calculation in the UI thread!
+                update_filter_params(&mode_filters_, depth_, 0);
                 break;}
             case k_rate: {// Rate (LFO speed for pitch wobble)
                 rate_ = 0.1f + (value / 100.0f) * 9.9f;
@@ -683,20 +685,26 @@ private:
             delayed_l = vmulq_f32(delayed_l, phase_scale);
             delayed_r = vmulq_f32(delayed_r, phase_scale);
 
-            // Accumulate to wet mix
-            acc_l = vmlaq_f32(acc_l, delayed_l, group->left_gains);
-            acc_r = vmlaq_f32(acc_r, delayed_r, group->right_gains);
+            // Accumulate into stereo mix with per-clone panning
+            acc_l = vaddq_f32(acc_l, vmulq_f32(delayed_l, group->left_gains));
+            acc_r = vaddq_f32(acc_r, vmulq_f32(delayed_r, group->right_gains));
         }
 
-        *out_l = acc_l;
-        *out_r = acc_r;
+        // Constant-power volume compensation after all groups are summed:
+        // 4 clones = 0.5x gain, 16 clones = 0.25x gain
+        float volume_comp = 1.0f / fasterSqrt_15bits((float)clone_count_);
+        *out_l = vmulq_n_f32(acc_l, volume_comp);
+        *out_r = vmulq_n_f32(acc_r, volume_comp);
     }
 
     /**
     * Attack softening filter using NEON
     */
     fast_inline float32x4_t apply_attack_softening(float32x4_t in, uint32_t group_idx) {
-        float coeff = transient_detected_ ? attack_soften_ : 0.0f;
+        // FIX 1: Use 1.0f so audio passes through perfectly when there is no transient!
+        // Ensure non-zero to avoid division by zero
+        float coeff = transient_detected_ ? fmax(attack_soften_, 0.01f) : 1.0f;
+
         float32x4_t alpha = vdupq_n_f32(coeff);
         float32x4_t one_minus_alpha = vdupq_n_f32(1.0f - coeff);
 

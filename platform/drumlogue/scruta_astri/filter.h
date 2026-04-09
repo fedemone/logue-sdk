@@ -23,8 +23,10 @@ inline float fast_tanh(float x) {
     // BUG-FIX: x^2 must be computed from the clamped value. Using the raw x makes
     // the polynomial return large negative outputs for |x| > 1.73, which flips the
     // sign of filter integrator increments and causes NaN within a few samples.
-    float cx = fmaxf(-1.5f, fminf(1.5f, x));
-    return cx * (1.0f - cx * cx * 0.33333f);
+    float cx = fmaxf(-1.0f, fminf(1.0f, x));
+    // Multiply by 1.5f so the output scales to a full [-1.0, 1.0] range
+    // instead of stopping at 0.666. This gives you maximum audio headroom.
+    return cx * (1.0f - cx * cx * 0.33333f) * 1.5f;
 }
 
 
@@ -54,7 +56,7 @@ struct MorphingFilter {
 
         // Calculate frequency coefficient
         // (Using standard Chamberlin approx: 2 * sin(pi * f / fs))
-        f = 2.0f * sinf(M_PI * hz / sample_rate);
+        f = 2.0f * fastersinfullf(M_PI * hz / sample_rate);
 
         // Inverse Q for damping
         q = 1.0f / reso_q;
@@ -63,7 +65,7 @@ struct MorphingFilter {
         // At near-Nyquist with any resonance, f alone can approach 2.0 — the linear
         // (no-drive) SVF path has no integrator saturation to limit feedback, so it
         // explodes immediately. Clamp f to the max safe value for the current q.
-        float f_max = sqrtf(q * q + 4.0f) - q;
+        float f_max = fasterSqrt_15bits(q * q + 4.0f) - q;
         if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 
@@ -129,13 +131,13 @@ public:
         hz = fminf(hz, sample_rate * 0.45f);
 
         // Calculate frequency coefficient
-        f = 2.0f * sinf(M_PI * hz / sample_rate);
+        f = 2.0f * fastersinfullf(M_PI * hz / sample_rate);
 
         // Invert and scale Q to replicate the aggressive Polivoks resonance slope
         q = 1.0f / fmaxf(q_limit, reso_q);
 
         // 3. Euler-forward stability guard (same condition as MorphingFilter)
-        float f_max = sqrtf(q * q + 4.0f) - q;
+        float f_max = fasterSqrt_15bits(q * q + 4.0f) - q;
         if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 

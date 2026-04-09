@@ -129,9 +129,9 @@ public:
         setParameter(k_mix, 100);       // Mix: 100% wet
         setParameter(k_sc_hpf, 20);     // SC HPF: 20 Hz
         setParameter(k_compressor_mode, 0);     // COMP MODE: Standard
-        setParameter(k_bass, 0);        // BASS: bypass
-        setParameter(k_treble, 0);      // TREBLE: bypass
-        setParameter(k_presence, -200); // PRESENCE: bypass
+        setParameter(k_bass, 50);       // BASS: flat (matches header.c init)
+        setParameter(k_treble, 50);     // TREBLE: flat (matches header.c init)
+        setParameter(k_presence, 50);   // PRESENCE: centre (matches header.c init)
         setParameter(k_distressor_distortion_type, 0); // DSTR DIST: None
         setParameter(k_distressor_ratio, 0);            // DSTR RATIO: Warm mode
         setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
@@ -439,6 +439,10 @@ public:
             /*===========================================================================*/
             case k_threhold: // THRESH (-60.0 to 0.0 dB)
                 thresh_db_ = value * 0.1f;
+                break;
+
+            case k_ratio: // RATIO (10..200, x0.1 → 1.0..20.0)
+                ratio_ = value * 0.1f;
                 break;
 
             case k_attack: // ATTACK (0.1 to 100.0 ms)

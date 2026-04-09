@@ -249,10 +249,11 @@ fast_inline void resonant_synth_apply_morph(resonant_synth_t* rs,
 }
 
 /**
- * Process one sample of resonant synthesis with LFO modulation
+ * Process one sample of resonant synthesis with LFO modulation and physical impulse
  */
 fast_inline float32x4_t resonant_synth_process(resonant_synth_t* rs,
-                                               uint32x4_t voice_mask) {
+                                               float32x4_t envelope,
+                                               uint32x4_t active_mask) {
     // =================================================================
     // 1. Smooth parameters (prevent zipper noise)
     // =================================================================
@@ -327,9 +328,24 @@ fast_inline float32x4_t resonant_synth_process(resonant_synth_t* rs,
                               rs->phase_fc);
 
     // =================================================================
-    // 4. Generate carrier and modulator signals using modulated parameters
+    // 4. Generate the Physical Impulse "Click"
     // =================================================================
-    float32x4_t sin_f0 = neon_sin(rs->phase_f0);
+    // Square the envelope repeatedly to create a microscopic, aggressive spike
+    float32x4_t env2 = vmulq_f32(envelope, envelope);
+    float32x4_t env4 = vmulq_f32(env2, env2);
+    float32x4_t env8 = vmulq_f32(env4, env4);
+
+    // FIX: Instead of a high-pitch sine wave, we use the env8 transient
+    // directly as a raw DC impulse to "strike" the filter block.
+    // This removes the digital whistle and leaves only the pure wood/bass tone!
+    float32x4_t input_signal = env8;
+
+    // Generate the raw signal burst
+    float32x4_t click = neon_sin(vaddq_f32(rs->phase_f0, rs->phase_fc));
+
+    // Instead of a continuous sine wave, our input is the short, hard click
+    input_signal = vmulq_f32(click, env8);
+
     float32x4_t cos_fc = neon_cos(rs->phase_fc);
 
     // =================================================================
@@ -345,11 +361,11 @@ fast_inline float32x4_t resonant_synth_process(resonant_synth_t* rs,
     // Protect against division by zero
     denom = vmaxq_f32(denom, rs->epsilon);
 
-    // Single-sided (low-pass) component
-    float32x4_t low_pass = fast_div_neon(sin_f0, denom);
+    // Single-sided (low-pass) component (Excited by the short impulse)
+    float32x4_t low_pass = fast_div_neon(input_signal, denom);
 
-    // Double-sided (band-pass) component
-    float32x4_t band_pass = fast_div_neon(vmulq_f32(vsubq_f32(rs->one, a_sq), sin_f0), denom);
+    // Double-sided (band-pass) component (Excited by the short impulse)
+    float32x4_t band_pass = fast_div_neon(vmulq_f32(vsubq_f32(rs->one, a_sq), input_signal), denom);
 
     // =================================================================
     // 6. Apply mode-specific transformations
@@ -391,10 +407,9 @@ fast_inline float32x4_t resonant_synth_process(resonant_synth_t* rs,
             scale = rs->one;
     }
 
-    // Apply scaling and voice mask
+    // Apply scaling and active hardware mask.
+    // Crucially, we DO NOT multiply by the envelope here,
+    // which allows the resonant body to physically "ring out" into the tail.
     output = vmulq_f32(output, scale);
-    output = vbslq_f32(voice_mask,
-                       output, vdupq_n_f32(0.0f));
-
-    return output;
+    return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }

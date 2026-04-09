@@ -32,8 +32,25 @@ typedef struct {
     float32x4_t z1;  // Delay element
 } one_pole_t;
 
+/**
+ * One-pole LPF using a precomputed alpha — avoids the division on every call.
+ * Use when the cutoff is fixed (e.g. per-engine band filters).
+ * alpha = 2*pi*f / (2*pi*f + SAMPLE_RATE)
+ */
+fast_inline float32x4_t one_pole_lpf_a(one_pole_t* f, float32x4_t in, float alpha) {
+    float32x4_t a   = vdupq_n_f32(alpha);
+    float32x4_t out = vaddq_f32(vmulq_f32(in, a),
+                                 vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), a)));
+    f->z1 = out;
+    return out;
+}
+
 fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff) {
-    float32x4_t alpha = vdupq_n_f32(cutoff / (cutoff + 48000.0f));
+    // Matched-z transform: alpha = 2*pi*f / (2*pi*f + sr)
+    // e.g. 800 Hz  -> alpha ~0.095  (was ~0.016 with wrong formula)
+    //      5000 Hz -> alpha ~0.396  (was ~0.094)
+    const float two_pi_f = 2.0f * (float)M_PI * cutoff;
+    float32x4_t alpha = vdupq_n_f32(two_pi_f / (two_pi_f + SAMPLE_RATE));
     float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
                                 vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), alpha)));
     f->z1 = out;
@@ -51,12 +68,12 @@ typedef struct {
     float32x4_t mod_ratio;
 
     // Noise section
-    one_pole_t noise_hpf;
-    one_pole_t noise_lpf;
-    neon_prng_t noise_prng;  // Separate PRNG for noise
+    one_pole_t  noise_hpf;
+    one_pole_t  noise_lpf;
+    neon_prng_t noise_prng;      // Separate PRNG for noise
 
     // Parameters
-    float32x4_t noise_mix;      // 0-1
+    float32x4_t noise_mix;       // 0-1
     float32x4_t body_resonance;  // 0-1
 } snare_engine_t;
 
@@ -67,11 +84,22 @@ fast_inline void snare_engine_init(snare_engine_t* snare) {
     snare->carrier_phase = vdupq_n_f32(0.0f);
     snare->modulator_phase = vdupq_n_f32(0.0f);
     snare->carrier_freq_base = vdupq_n_f32(SNARE_CARRIER_BASE);
-    snare->mod_ratio = vdupq_n_f32(2.0f);
+    // Change this from 2.0f (an octave) to 1.414f (square root of 2, a tritone)
+    // This creates dissonant, metallic bell-tones perfect for a snare shell!
+    snare->mod_ratio = vdupq_n_f32(1.414f);
 
     snare->noise_hpf.z1 = vdupq_n_f32(0.0f);
     snare->noise_lpf.z1 = vdupq_n_f32(0.0f);
-    neon_prng_init(&snare->noise_prng, 0x87654321);
+    // Four completely independent seeds: neon_prng uses uint64x2_t (2 lanes),
+    // so state0 feeds voices 0&2 and state1 feeds voices 1&3.
+    // Using unrelated bit patterns rather than a single base seed prevents
+    // correlation between lanes when the snare restarts from init.
+    {
+        uint64_t s0[2] = { 0xDEADBEEFCAFEBABEULL, 0x0123456789ABCDEFULL };
+        uint64_t s1[2] = { 0xFEDCBA9876543210ULL, 0xA5A5A5A5B4B4B4B4ULL };
+        snare->noise_prng.state0 = vld1q_u64(s0);
+        snare->noise_prng.state1 = vld1q_u64(s1);
+    }
 
     snare->noise_mix = vdupq_n_f32(0.3f);
     snare->body_resonance = vdupq_n_f32(0.5f);
@@ -85,6 +113,16 @@ fast_inline void snare_engine_update(snare_engine_t* snare,
                                      float32x4_t param2) { // Body resonance
     snare->noise_mix = param1;
     snare->body_resonance = param2;
+}
+
+/**
+ * Apply LFO modulation to noise_mix (clamped in-place, restored by next param update)
+ */
+fast_inline void snare_engine_update_noise(snare_engine_t* snare,
+                                           float32x4_t noise_add) {
+    float32x4_t modded = vaddq_f32(snare->noise_mix, noise_add);
+    modded = vmaxq_f32(vminq_f32(modded, vdupq_n_f32(1.0f)), vdupq_n_f32(0.0f));
+    snare->noise_mix = modded;
 }
 
 /**
@@ -145,64 +183,49 @@ fast_inline float32x4_t snare_generate_noise(snare_engine_t* snare) {
  */
 fast_inline float32x4_t snare_engine_process(snare_engine_t* snare,
                                              float32x4_t envelope,
-                                             uint32x4_t active_mask) {
-    // Calculate frequencies
-    float32x4_t carrier_freq = snare->carrier_freq_base;
+                                             uint32x4_t active_mask,
+                                             float32x4_t lfo_pitch_mult,
+                                             float32x4_t lfo_index_add) {
+    // 1. Staggered Envelopes (The Body must decay much faster than the Noise)
+    float32x4_t env2 = vmulq_f32(envelope, envelope);
+    float32x4_t env4 = vmulq_f32(env2, env2);
+
+    // 2. Apply LFO Pitch Modulation
+    float32x4_t carrier_freq = vmulq_f32(snare->carrier_freq_base, lfo_pitch_mult);
     float32x4_t mod_freq = vmulq_f32(carrier_freq, snare->mod_ratio);
 
-    // Phase increments
-    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI / 48000.0f);
-    float32x4_t carrier_inc = vmulq_f32(carrier_freq, two_pi_over_sr);
-    float32x4_t mod_inc = vmulq_f32(mod_freq, two_pi_over_sr);
+    // 3. Phase increments & Wrapping
+    float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
+    snare->carrier_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(carrier_freq, two_pi_over_sr));
+    snare->modulator_phase = vaddq_f32(snare->modulator_phase, vmulq_f32(mod_freq, two_pi_over_sr));
 
-    // Update phases
-    snare->carrier_phase = vaddq_f32(snare->carrier_phase, carrier_inc);
-    snare->modulator_phase = vaddq_f32(snare->modulator_phase, mod_inc);
-
-    // Wrap phases
     float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
-    uint32x4_t carrier_wrap = vcgeq_f32(snare->carrier_phase, two_pi);
-    uint32x4_t mod_wrap = vcgeq_f32(snare->modulator_phase, two_pi);
+    uint32x4_t c_wrap = vcgeq_f32(snare->carrier_phase, two_pi);
+    uint32x4_t m_wrap = vcgeq_f32(snare->modulator_phase, two_pi);
+    snare->carrier_phase = vbslq_f32(c_wrap, vsubq_f32(snare->carrier_phase, two_pi), snare->carrier_phase);
+    snare->modulator_phase = vbslq_f32(m_wrap, vsubq_f32(snare->modulator_phase, two_pi), snare->modulator_phase);
 
-    snare->carrier_phase = vbslq_f32(carrier_wrap,
-                                     vsubq_f32(snare->carrier_phase, two_pi),
-                                     snare->carrier_phase);
-    snare->modulator_phase = vbslq_f32(mod_wrap,
-                                       vsubq_f32(snare->modulator_phase, two_pi),
-                                       snare->modulator_phase);
-
-    // FM synthesis
+    // 4. FM Synthesis (The "Crack")
+    // Use env4 so the tonal resonance dies instantly like a real drum hit
+    float32x4_t index = vmulq_f32(env4, vaddq_f32(vdupq_n_f32(1.0f), vmulq_n_f32(snare->body_resonance, 3.0f)));
+    index = vaddq_f32(index, lfo_index_add); // Add LFO index mod
+    // 4.1 Generate sine waves
     float32x4_t modulator = neon_sin(snare->modulator_phase);
-
-    // Modulation index with body resonance
-    // resonance boosts certain frequencies
-    float32x4_t index = vmulq_f32(envelope,
-                                  vaddq_f32(vdupq_n_f32(1.0f),
-                                           vmulq_f32(snare->body_resonance,
-                                                    envelope)));
-
-    float32x4_t modulated_phase = vaddq_f32(snare->carrier_phase,
-                                           vmulq_f32(modulator, index));
+    float32x4_t modulated_phase = vaddq_f32(snare->carrier_phase, vmulq_f32(modulator, index));
     float32x4_t tone = neon_sin(modulated_phase);
 
-    // Noise generation
+    // 5. Noise Generation (The "Sizzle")
     float32x4_t noise = snare_generate_noise(snare);
 
-    // Mix tone and noise
+    // 6. Mix: Tone uses fast env4, Noise uses standard envelope
     float32x4_t one = vdupq_n_f32(1.0f);
     float32x4_t noise_gain = vmulq_f32(snare->noise_mix, envelope);
-    float32x4_t tone_gain = vsubq_f32(one, snare->noise_mix);
-
-    float32x4_t output = vaddq_f32(vmulq_f32(tone, tone_gain),
-                                   vmulq_f32(noise, noise_gain));
-
-    // Apply envelope and mask
-    output = vmulq_f32(output, envelope);
-    output = vbslq_f32(active_mask,
-                       output, vdupq_n_f32(0.0f));
-
-    return output;
+    float32x4_t tone_gain = vmulq_f32(vsubq_f32(one, snare->noise_mix), env4);
+    // 8. Apply main amplitude envelope and gate mask
+    float32x4_t output = vaddq_f32(vmulq_f32(tone, tone_gain), vmulq_f32(noise, noise_gain));
+    return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
+
 
 // ========== UNIT TEST ==========
 #ifdef TEST_SNARE

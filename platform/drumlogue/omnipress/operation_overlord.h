@@ -162,7 +162,7 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov,
     if (ov->drive < active_threshold &&
         fabsf(ov->bass - 0.5f) < active_threshold &&  // 0.5 = flat
         fabsf(ov->treble - 0.5f) < active_threshold &&
-        ov->blend < active_threshold) {
+        fabsf(ov->presence) < active_threshold) {
         // Bypass - return dry signal
         float32x4x2_t bypass;
         bypass.val[0] = in_l;

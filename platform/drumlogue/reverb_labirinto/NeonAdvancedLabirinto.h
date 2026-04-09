@@ -31,6 +31,7 @@
 #define FREQ_MAX_DIV_MIN (18.333f)
 #define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
+#define NEON_LANES (4)
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -64,7 +65,20 @@ public:
         , pingPong_(false)
         , shimmerDepth_(0.0f)
         , shimmerPhase_(0.0f)
-        , shimmerFreq_ (35.0f) {
+        , shimmerFreq_ (35.0f)
+        , currentPreset(0)
+        , lfoSpeed(1.0f)
+        , randomLfoValue(0.0f)
+        , randomLfoCounter(0)
+        , randomLfoPeriodSamples(48000)
+        , smoothedLfoValue(0.0f)
+        , noiseSeed(132465798U)
+        , noiseColour(2.0f)
+        , noiseGain(0.0f)
+        , currentPreDelaySamples(0.0f)
+        , targetPreDelaySamples(0.0f)
+        , preDelayWritePos(0)
+        , pingMapIndex(0) {
 
         // Initialize delay times (prime-based for smooth diffusion)
         float baseDelays[FDN_CHANNELS] = {
@@ -80,15 +94,14 @@ public:
         for (int i = 0; i < FDN_CHANNELS; i++) {
 	    // Initialize all 4 lanes to the same starting phase
             modPhaseVec[i] = vdupq_n_f32(0.0f);
+            filterState1[i] = 0.0f;
+            filterState2[i] = 0.0f;
         }
 
         // Initialize filter states
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            lpfState[i] = vdupq_n_f32(0.0f);
-        }
+        memset(lpfState, 0, sizeof(float) * FDN_CHANNELS);
+        updateFilterCoeffs();
 
-        // Initialize Hadamard matrix
-        initHadamardMatrix();
     }
 
     ~NeonAdvancedLabirinto() {
@@ -99,12 +112,14 @@ public:
      * @return true if initialization successful
      */
     bool init() {
-        // Initialize Hadamard mixing matrix BEFORE clearing/processing
-        initHadamardMatrix();
 
         // Clear buffer
         clear();
 
+        // Initialize Cochrane Microtonal Shimmer (18-EDO Scale)
+        initMicrotonalShimmer();
+
+        // set state variables
         initialized = true;
         return true;
     }
@@ -138,14 +153,29 @@ public:
         }
 
         // Reset filter states
+        memset(lpfState, 0, sizeof(float) * FDN_CHANNELS);
         for (int i = 0; i < FDN_CHANNELS; i++) {
-            lpfState[i] = zero;
+            filterState1[i] = 0.0f;
+            filterState2[i] = 0.0f;
         }
 
         // Reset pre delay line
         memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
+        memset(channelPhase_, 0, sizeof(channelPhase_));
+        memset(swirlRate_, 0, sizeof(swirlRate_));
+        memset(microtonalRate_, 0, sizeof(microtonalRate_));
         preDelayWritePos = 0;
         activeSampleCount = 0;
+        // Reset LFO
+        randomLfoCounter = 0;
+        randomLfoValue = 0.0f;
+        pingMapIndex = 0;
+
+        // Reset noise
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            noiseStates[i] = 0.0f;
+            noiseStates2[i] = 0.0f;
+        }
     }
 
     /*===========================================================================*/
@@ -153,7 +183,16 @@ public:
     /*===========================================================================*/
 
     void setDecay(float d) { decay = fmaxf(0.0f, fminf(0.99f, d)); }
-    void setDiffusion(float d) { diffusion = fmaxf(0.0f, fminf(1.0f, d)); }
+    void setDiffusion(float d) {
+        diffusion = fmaxf(0.0f, fminf(1.0f, d));
+        if (filterMode == kFilterNoise) {
+            // Map to 0=Brown, 1=Pink, 2=White, 3=Blue, 4=Violet, 5=Grey
+            noiseColour = diffusion * 5.999f;
+        }
+        // Modulation depth depends on pillar (as before) and COMP (diffusion)
+        setModDepth(((pillar_ == 0) ? 0.6f : (pillar_ == 1) ? 0.4f :
+                        (pillar_ == 2) ? 0.2f : 0.1f) * diffusion);
+    }
 
     /**
      * Set pillar count / routing mode.
@@ -167,13 +206,18 @@ public:
     void setPillar(int value) {
         pillar_       = std::max(0, std::min(value, 4));
         pingPong_     = (pillar_ == 1);
-        shimmerDepth_ = (pillar_ == 4) ? 0.04f : 0.0f;
+        shimmerDepth_ = (pillar_ == 4) ? 0.4f * modDepth : 0.0f;
         shimmerPhase_ = 0.0f;
+        // Modulation depth depends on pillar (as before) and COMP (diffusion)
+        setModDepth(((pillar_ == 0) ? 0.6f : (pillar_ == 1) ? 0.4f :
+                        (pillar_ == 2) ? 0.2f : 0.1f) * diffusion);
+        updateModRate();
     }
     void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
     void setModRate(float r) { modRate = fmaxf(0.1f, fminf(10.0f, r)); }
+    void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, modRate * lfoSpeed * modDepth)); }
     void setMix(float m) { mix = fmaxf(0.0f, fminf(1.0f, m)); }
-    void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); }
+    void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); } // UNUSED
     // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
     void setShimmerFreq(float value) {
@@ -187,13 +231,19 @@ public:
     float getShimmerFreq() { return shimmerFreq_; }
     void setPreDelay(float ms) {
         float clampedMs = fmaxf(0.0f, fminf(340.0f, ms));
-        preDelayOffsetSamples = (int)(clampedMs * sampleRate / 1000.0f);
+        // Convert milliseconds to samples and store it as our new float target
+        targetPreDelaySamples = (int)(clampedMs * sampleRate / 1000.0f);
     }
     void setDamping(float freqHz) {
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
 	    // omega = 2π * fc / fs;  coeff ≈ 1 - omega  (first-order approx)
         float omega = 2.0f * (float)M_PI * freqHz / sampleRate;
         dampingCoeff = e_expff(-omega);
+        updateFilterCoeffs();   // recalc wood/stone/metal filters
+        updateBaseFc();
+        if (filterMode == kFilterNoise) {
+            noiseGain = diffusion * dampingCoeff;
+        }
     }
 
     /**
@@ -214,6 +264,295 @@ public:
         highDecayMult = 0.1f + (value / 100.0f) * 0.9f;
     }
 
+    /**
+     * @brief Set the Lfo Speed object for modulation 0.1Hz -> 3Hz
+     *
+     * @param speedHz
+     */
+    void setLfoSpeed(float speedHz) {
+        lfoSpeed = fmaxf(0.1f, fminf(3.0f, speedHz));
+        randomLfoPeriodSamples = (int)(sampleRate / lfoSpeed);
+        if (randomLfoPeriodSamples < 1) randomLfoPeriodSamples = 1;
+    }
+
+    void setFilterType(int preset) {
+        // map preset to filterMode
+        switch (preset) {
+            case 0: filterMode = kFilterWood; break;
+            case 1: filterMode = kFilterStone; break;
+            case 2: filterMode = kFilterMetal; break;
+            case 3: filterMode = kFilterMetal; break;
+            case 4: filterMode = kFilterNoise; break;
+            default: filterMode = kFilterWood; break;
+        }
+        updateBaseFc();
+    }
+
+    void updateBaseFc() {
+        // compute base cutoff frequency from preset and dampingCoeff
+        float fc;
+        switch (filterMode) {
+            case kFilterWood:
+                fc = 200.0f + dampingCoeff * 800.0f;   // 200..1000 Hz
+                break;
+            case kFilterStone:
+                fc = 80.0f + dampingCoeff * 420.0f;    // 80..500 Hz
+                break;
+            case kFilterMetal:
+                fc = 800.0f + dampingCoeff * 3200.0f;  // 800..4000 Hz
+                break;
+            default:
+                fc = 1000.0f;
+                break;
+        }
+        baseFc = fc;
+        updateFilterCoeffs(baseFc);   // initial coefficients
+    }
+
+    /*===========================================================================*/
+    /* Advanced features */
+    /*===========================================================================*/
+
+    void updateFilterCoeffs() {
+        // Calculate standard angular frequency
+        float w0 = 2.0f * M_PI * baseFc / sampleRate;
+        float cos_w0 = fastercosfullf(w0);
+        float sin_w0 = fastersinfullf(w0);
+
+        float alpha, b0, b1, b2, a0, a1, a2;
+
+        // peaking filter (band‑pass with gain)
+        // For simplicity, we'll use a standard biquad peaking:
+        // H(s) = (s^2 + s*(ω0/Q) + ω0^2) / (s^2 + s*(ω0/Q) + ω0^2)
+        // Actually we want a peaking EQ, but a simple 2‑pole band‑pass works well.
+        // We'll implement a classic band‑pass with gain at centre frequency.
+        // Coefficients from RBJ cookbook.
+        // standard Direct Form Biquad calculates its output using this mathematical formula:
+        // y[n] = (b0 * x[n]) + (b1 * x[n-1]) + (b2 * x[n-2]) - (a1 * y[n-1]) - (a2 * y[n-2])
+        if (filterMode == kFilterMetal) {
+            // METAL: High-Q Bandpass (Constant Peak Gain)
+            // Creates a glassy, inharmonic ringing resonance
+            float Q = 8.0f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = alpha;
+            b1 = 0.0f;
+            b2 = -alpha;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+        else if (filterMode == kFilterWood) {
+            // WOOD: Warm, highly damped Lowpass
+            float Q = 0.5f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = (1.0f - cos_w0) / 2.0f;
+            b1 = 1.0f - cos_w0;
+            b2 = (1.0f - cos_w0) / 2.0f;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+        else {
+            // STONE / DEFAULT: Heavier Butterworth Lowpass
+            float Q = 0.707f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = (1.0f - cos_w0) / 2.0f;
+            b1 = 1.0f - cos_w0;
+            b2 = (1.0f - cos_w0) / 2.0f;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+
+        // ==========================================================
+        // UNIFIED NORMALIZATION (Safely prepares coeffs for the DSP loop)
+        // ==========================================================
+        float invA0 = 1.0f / a0;
+
+        // Feed-forward coefficients
+        biquadA0 = b0 * invA0;
+        biquadA1 = b1 * invA0;
+        biquadA2 = b2 * invA0;
+
+        // Feedback coefficients - DO NOT NEGATE HERE!
+        // The DSP loop explicitly uses subtraction: `- (out * biquadB1)`
+        biquadB1 = a1 * invA0;
+        biquadB2 = a2 * invA0;
+    }
+
+    void applyResonantFilterModulated(float32x4_t* signals, int numChannels, float fcMod) {
+        if (filterMode == kFilterNoise) return;
+        float fc = baseFc + fcMod;
+        fc = fmaxf(20.0f, fminf(sampleRate * 0.45f, fc));
+        updateFilterCoeffs(fc);
+
+        // ---------------------------------------------------------
+        // PROPER SCALAR IIR BIQUAD PROCESSING (same as before, but using current coefficients)
+        // ---------------------------------------------------------
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+
+            // 1. Unpack the 4 consecutive samples from the NEON vector
+            float in_samps[4];
+            vst1q_f32(in_samps, signals[ch]);
+
+            float out_samps[4];
+
+            // 2. Process sequentially to maintain the IIR feedback loop
+            for (int s = 0; s < 4; s++) {
+                float in_val = in_samps[s];
+
+                // Direct Form II Transposed Biquad Math
+                float out_val = (in_val * biquadA0) + filterState1[ch];
+
+                // Update history states immediately for the next sample
+                filterState1[ch] = (in_val * biquadA1) - (out_val * biquadB1) + filterState2[ch];
+                filterState2[ch] = (in_val * biquadA2) - (out_val * biquadB2);
+
+                out_samps[s] = out_val;
+            }
+
+            // 3. Repack back into the NEON vector to continue the delay network
+            signals[ch] = vld1q_f32(out_samps);
+        }
+    }
+
+    void updateRandomLfo() {
+        if (--randomLfoCounter <= 0) {
+            randomLfoCounter = randomLfoPeriodSamples;
+            randomLfoValue = randomFloat() * 2.0f - 1.0f;
+        }
+        // One-pole smoothing (~10Hz glide) to prevent filter pops
+        smoothedLfoValue += 0.001f * (randomLfoValue - smoothedLfoValue);
+    }
+
+    // basic cyclic pseudo-random values
+    float randomFloat() {
+        noiseSeed ^= noiseSeed << 13;
+        noiseSeed ^= noiseSeed >> 17;
+        noiseSeed ^= noiseSeed << 5;
+        return (float)noiseSeed / (float)0xFFFFFFFFU;
+    }
+
+    void applyResonantFilter(float32x4_t* signals, int numChannels) {
+        if (filterMode == kFilterNoise) return; // noise is added elsewhere
+
+        for (int ch = 0; ch < numChannels; ch++) {
+            // 1. Unpack the NEON vector
+            float in_samps[4];
+            vst1q_f32(in_samps, signals[ch]);
+            float out_samps[4];
+
+            // 2. Process sequentially to maintain the IIR feedback loop
+            for (int s = 0; s < 4; s++) {
+                float in_val = in_samps[s];
+
+                // Direct Form II Transposed Biquad
+                float out_val = (in_val * biquadA0) + filterState1[ch];
+
+                // Update states for the NEXT sample using the CORRECT output feedback
+                filterState1[ch] = (in_val * biquadA1) - (out_val * biquadB1) + filterState2[ch];
+                filterState2[ch] = (in_val * biquadA2) - (out_val * biquadB2);
+
+                out_samps[s] = out_val;
+            }
+
+            // 3. Repack back into NEON vector
+            signals[ch] = vld1q_f32(out_samps);
+        }
+    }
+
+    void addColouredNoise(float32x4_t* signals, int numChannels) {
+        if (filterMode != kFilterNoise || noiseGain < 0.001f) return;
+
+        for (int ch = 0; ch < numChannels; ch++) {
+            float n_out[4];
+            for (int i = 0; i < 4; i++) {
+                float n = randomFloat() * 2.0f - 1.0f; // Raw white noise
+
+                if (noiseColour < 0.5f) {
+                    // 0: Brown (Heavy LPF)
+                    noiseStates[ch] = 0.95f * noiseStates[ch] + 0.05f * n;
+                    n_out[i] = noiseStates[ch];
+                } else if (noiseColour < 1.5f) {
+                    // 1: Pink (Mild LPF Approximation)
+                    noiseStates[ch] = 0.5f * noiseStates[ch] + 0.5f * n;
+                    n_out[i] = noiseStates[ch] * 1.5f; // Gain makeup
+                } else if (noiseColour < 2.5f) {
+                    // 2: White (Flat)
+                    n_out[i] = n;
+                } else if (noiseColour < 3.5f) {
+                    // 3: Blue (Mild HPF - difference of mild LPF)
+                    float diff = n - noiseStates[ch];
+                    noiseStates[ch] = 0.5f * noiseStates[ch] + 0.5f * n;
+                    n_out[i] = diff * 0.8f;
+                } else if (noiseColour < 4.5f) {
+                    // 4: Violet (Heavy HPF - pure derivative)
+                    float diff = n - noiseStates[ch];
+                    noiseStates[ch] = n;
+                    n_out[i] = diff * 0.5f;
+                } else {
+                    // 5: Grey (Notch filter around 2kHz using z^-2)
+                    // y[n] = x[n] + x[n-2] creates a comb notch
+                    n_out[i] = (n + noiseStates2[ch]) * 0.707f;
+                    noiseStates2[ch] = noiseStates[ch];
+                    noiseStates[ch] = n;
+                }
+            }
+            // Inject the colored noise into the FDN channel
+            float32x4_t noise = vld1q_f32(n_out);
+            signals[ch] = vmlaq_n_f32(signals[ch], noise, noiseGain);
+        }
+    }
+
+    void applyCrossFeedback(float32x4_t* signals) {
+        float gain = crossGain[pillar_];
+        if (gain < 0.001f) return;
+        switch (pillar_) {
+            case 0: // 2 channels
+                signals[0] = vaddq_f32(signals[0], vmulq_n_f32(signals[1], gain));
+                signals[1] = vaddq_f32(signals[1], vmulq_n_f32(signals[0], gain));
+                break;
+            case 1: // 4 channels (random ping‑pong)
+                for (int i = 0; i < 4; i += 2) {
+                    signals[i]   = vaddq_f32(signals[i],   vmulq_n_f32(signals[i+1], gain));
+                    signals[i+1] = vaddq_f32(signals[i+1], vmulq_n_f32(signals[i], gain));
+                }
+                break;
+            case 2: // 6 channels
+                for (int i = 0; i < 6; i += 3) {
+                    signals[i]   = vaddq_f32(signals[i],   vmulq_n_f32(signals[i+1], gain));
+                    signals[i+1] = vaddq_f32(signals[i+1], vmulq_n_f32(signals[i+2], gain));
+                    signals[i+2] = vaddq_f32(signals[i+2], vmulq_n_f32(signals[i], gain));
+                }
+                break;
+            default: // 8 channels
+                for (int i = 0; i < 8; i += 4) {
+                    signals[i]   = vaddq_f32(signals[i],   vmulq_n_f32(signals[i+2], gain));
+                    signals[i+2] = vaddq_f32(signals[i+2], vmulq_n_f32(signals[i], gain));
+                    signals[i+1] = vaddq_f32(signals[i+1], vmulq_n_f32(signals[i+3], gain));
+                    signals[i+3] = vaddq_f32(signals[i+3], vmulq_n_f32(signals[i+1], gain));
+                }
+                break;
+        }
+    }
+
+    void applyRandomizedPingPongMix(const float32x4_t* mixed,
+                                                        float32x4_t& left, float32x4_t& right) {
+        const uint8_t* map = pingRandomMap[pingMapIndex];
+        pingMapIndex = (pingMapIndex + 1) & 15;
+        float32x4_t sumL = vdupq_n_f32(0.0f);
+        float32x4_t sumR = vdupq_n_f32(0.0f);
+        for (int i = 0; i < 4; i++) {
+            if (map[i]) sumL = vaddq_f32(sumL, mixed[i]);
+            else        sumR = vaddq_f32(sumR, mixed[i]);
+        }
+        left = vmulq_n_f32(sumL, 0.5f);
+        right = vmulq_n_f32(sumR, 0.5f);
+    }
+
     /*===========================================================================*/
     /* Core Processing - Fully NEON Vectorized */
     /*===========================================================================*/
@@ -225,6 +564,15 @@ public:
     void process(const float* inL, const float* inR,
                  float* outL, float* outR,
                  int numSamples) {
+
+        // enable Flush-to-Zero (FTZ) and Default-NaN (DN) mode in the
+        // ARM Floating Point Status and Control Register (FPSCR)
+        #if defined(__arm__) || defined(__aarch64__)
+            uint32_t fpscr;
+            __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
+            fpscr |= (1 << 24) | (1 << 22); // Set FZ (bit 24) and DN (bit 22)
+            __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
+        #endif
 
 	    // Safety check
         if (!initialized) {
@@ -267,9 +615,8 @@ private:
     /*===========================================================================*/
     /* OPTIMIZED: vld4-based delay line reading with vectorized interpolation */
     /*===========================================================================*/
-
     void readDelayLines4(float32x4_t* out) {
-        // Calculate read positions for all 8 channels × 4 samples
+        // Calculate base read positions for all 4 samples
         float32x4_t baseReadPos = {
             (float)writePos,
             (float)(writePos + 1),
@@ -277,45 +624,74 @@ private:
             (float)(writePos + 3)
         };
 
-        // Pre-calculate modulation for all channels (sin values for all 4 phases at once)
+        // ====================================================================
+        // DYNAMIC NEON MODULATION (SWIRL & COCHRANE SHIMMER)
+        // ====================================================================
         float32x4_t mods[FDN_CHANNELS];
+
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            // Get the 4 phases for this channel (one per sample)
-            float32x4_t phases = modPhaseVec[ch];
 
-            // Compute sin(2π * phase) for all 4 samples at once
-            // First scale to [0, 2π]
-            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_TWOPI));
+            // 1. Select Rate and Depth based on current Mode
+            float current_rate = 0.0f;
+            float current_depth = 0.0f;
 
-            // Compute sin using NEON approximation
+            if (currentPreset == k_esotico) {
+                // Cochrane 18-EDO Shimmer Mode
+                current_rate = microtonalRate_[ch];
+                current_depth = shimmerDepth_ * 45.0f; // Deep, slow microtonal stretch
+            } else {
+                // Standard Swirl / Chorus Mode
+                current_rate = swirlRate_[ch] * (1.0f + swirlSpeedKnb); // Scale with UI
+                current_depth = swirlDepth_ * 20.0f; // Standard subtle diffusion
+            }
+
+            // 2. Generate the 4 sequential phases for this NEON block
+            float base = channelPhase_[ch];
+            float32x4_t phase_offsets = { 0.0f, current_rate, current_rate * 2.0f, current_rate * 3.0f };
+            float32x4_t phases = vaddq_f32(vdupq_n_f32(base), phase_offsets);
+
+            // 3. Advance the stored scalar phase for the next audio block
+            float next_phase = base + (current_rate * 4.0f);
+            if (next_phase > 1.0f) next_phase -= 1.0f; // Wrap 0.0 to 1.0
+            channelPhase_[ch] = next_phase;
+
+            // 4. Convert normalized phase [0, 1] to Radians [0, 2π]
+            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_PI * 2.0f));
+
+            // 5. Compute NEON sine approximation
             float32x4_t sin_vals = sin_ps(angles);
 
-	    // Scale by modulation depth
-            mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(modDepth * 100.0f));
+            // 6. Scale by modulation depth (in samples)
+            mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(current_depth));
         }
 
-        // For each channel, calculate read positions
+        // ====================================================================
+        // DELAY READ POINTER CALCULATIONS
+        // ====================================================================
         float32x4_t readPositions[FDN_CHANNELS];
-        uint32_t baseIndices[FDN_CHANNELS][4];
-        float fracParts[FDN_CHANNELS][4];  // fractional parts for interpolation
+        uint32_t baseIndices[FDN_CHANNELS][NEON_LANES];
+        float fracParts[FDN_CHANNELS][NEON_LANES];
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
+
+            // Subtract delay length AND our new dynamic modulation
             readPositions[ch] = vsubq_f32(baseReadPos,
                 vaddq_f32(vdupq_n_f32(delaySamples), mods[ch]));
 
             // Wrap to [0, BUFFER_SIZE)
-            float pos_vals[4];
+            float pos_vals[NEON_LANES];
             vst1q_f32(pos_vals, readPositions[ch]);
 
-            for (int s = 0; s < 4; s++) {
-                // Manual wrap for each sample (safer than vectorized wrap)
+            for (int s = 0; s < NEON_LANES; s++) {
+                // Adding a large multiple of BUFFER_SIZE guarantees the float is positive
+                // before casting to int, avoiding C++ negative-integer-truncation issues.
                 float pos = pos_vals[s];
-                while (pos < 0) pos += BUFFER_SIZE;
-                while (pos >= BUFFER_SIZE) pos -= BUFFER_SIZE;
-                uint32_t base = (uint32_t)pos;
-                baseIndices[ch][s] = base;
-                fracParts[ch][s] = pos - (float)base;  // true fractional part
+                float safe_pos = pos + (float)(BUFFER_SIZE * 4);
+
+                int32_t idx = (int32_t)safe_pos;
+                uint32_t base = idx & BUFFER_MASK;
+                fracParts[ch][s] = safe_pos - (float)idx;
             }
         }
 
@@ -323,9 +699,9 @@ private:
         // (baseIndices[ch][s]) so we cannot share a single vld4q_f32 across channels.
         // Scalar interpolation per channel avoids the previous cross-frame read bug.
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float out_lanes[4];
+            float out_lanes[NEON_LANES];
 
-            for (int s = 0; s < 4; s++) {
+            for (int s = 0; s < NEON_LANES; s++) {
                 uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
                 uint32_t idx1 = (idx0 + 1) & BUFFER_MASK;
                 float frac = fracParts[ch][s];
@@ -343,90 +719,108 @@ private:
     /*===========================================================================*/
 
     void applyHadamard4(const float32x4_t* in, float32x4_t* out) {
-        // Standard matrix multiplication mapped across parallel time lanes
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            out[i] = vdupq_n_f32(0.0f);
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                // in[j] holds 4 time samples.
-                // hadamard[i][j] is the scalar mixing coefficient.
-                out[i] = vmlaq_f32(out[i], in[j], vdupq_n_f32(hadamard[i][j]));
+        // Pass 1: Mix pairs 4 channels apart (Reads directly from 'in')
+        float32x4_t t0 = vaddq_f32(in[0], in[4]); float32x4_t t4 = vsubq_f32(in[0], in[4]);
+        float32x4_t t1 = vaddq_f32(in[1], in[5]); float32x4_t t5 = vsubq_f32(in[1], in[5]);
+        float32x4_t t2 = vaddq_f32(in[2], in[6]); float32x4_t t6 = vsubq_f32(in[2], in[6]);
+        float32x4_t t3 = vaddq_f32(in[3], in[7]); float32x4_t t7 = vsubq_f32(in[3], in[7]);
+
+        // Pass 2: Mix pairs 2 channels apart
+        float32x4_t u0 = vaddq_f32(t0, t2); float32x4_t u2 = vsubq_f32(t0, t2);
+        float32x4_t u1 = vaddq_f32(t1, t3); float32x4_t u3 = vsubq_f32(t1, t3);
+        float32x4_t u4 = vaddq_f32(t4, t6); float32x4_t u6 = vsubq_f32(t4, t6);
+        float32x4_t u5 = vaddq_f32(t5, t7); float32x4_t u7 = vsubq_f32(t5, t7);
+
+        // Pass 3: Mix adjacent channels & scale (Writes directly to 'out')
+        float32x4_t scale = vdupq_n_f32(0.35355339f); // 1.0 / sqrt(8)
+        out[0] = vmulq_f32(vaddq_f32(u0, u1), scale); out[1] = vmulq_f32(vsubq_f32(u0, u1), scale);
+        out[2] = vmulq_f32(vaddq_f32(u2, u3), scale); out[3] = vmulq_f32(vsubq_f32(u2, u3), scale);
+        out[4] = vmulq_f32(vaddq_f32(u4, u5), scale); out[5] = vmulq_f32(vsubq_f32(u4, u5), scale);
+        out[6] = vmulq_f32(vaddq_f32(u6, u7), scale); out[7] = vmulq_f32(vsubq_f32(u6, u7), scale);
+    }
+
+    /**
+     * @brief add natural "air absorption" back into the delay lines.
+     * By placing it inside the feedback loop alongside the resonant biquads,
+     * the biquads provide the macro "character" (Wood/Stone/Metal),
+     * while the 1-pole filter provides the natural high-frequency darkening as the tail decays.
+     *
+     * @param signals
+     */
+    void applyHighFreqDamping4(float32x4_t* signals) {
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            // 1. Get the mixed audio for this channel (4 samples)
+            float mixed_samps[4];
+            vst1q_f32(mixed_samps, signals[ch]);
+
+            // 2. Process the sequential IIR Low-Pass Filter for Damping
+            // dampingCoeff is calculated from UI (e.g., 0.1 to 0.95)
+            for(int s = 0; s < 4; s++) {
+                float filtered = (mixed_samps[s] * (1.0f - dampingCoeff)) + (lpfState[ch] * dampingCoeff);
+                lpfState[ch] = filtered; // Save state for next immediate sample
+                mixed_samps[s] = filtered;
             }
+
+            // 3. Load it back into a NEON vector to write to the delay line
+            signals[ch] = vld1q_f32(mixed_samps);
         }
     }
 
-    /*===========================================================================*/
-    /* Vectorized Filter Application */
-    /*===========================================================================*/
-    /**
-     * NEON one-pole LPF per channel.
-     */
-    void applyDiffusion4(float32x4_t* signals) {
-        // Causal one-pole LPF per channel.
-        // The 4 lanes of signals[ch] hold 4 consecutive TIME samples for channel ch.
-        // We must process them in order, carrying the filter state sample-to-sample.
-        // State carried across blocks = lane 3 of the previous block's output.
-        float pole = diffusion * dampingCoeff;
-        float oneminuspole = 1.0f - pole;
+    void applyExoticShimmer(float32x4_t* mixed) {
+        if (shimmerDepth_ > 0.0f) {
+            // 1. Sum channels 0-3 (Left) and 4-7 (Right)
+            float32x4_t sumL = vaddq_f32(vaddq_f32(mixed[0], mixed[1]),
+                                         vaddq_f32(mixed[2], mixed[3]));
+            float32x4_t sumR = vaddq_f32(vaddq_f32(mixed[4], mixed[5]),
+                                         vaddq_f32(mixed[6], mixed[7]));
 
-        // Since the filter is recursive (each step depends on the previous output),
-        // the sequential dependency remains, but the scalar operations can be
-        // performed on register values.
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            // Extract inter-block carry: most recent output from the previous block
-            float state = vgetq_lane_f32(lpfState[ch], 3);
+            // 2. Mix them down to a mono preview and scale by 0.125 (1/8)
+            float32x4_t monoPreview = vmulq_f32(vaddq_f32(sumL, sumR), vdupq_n_f32(0.125f));
 
-            // Load the 4 input values into a NEON vector
-            float32x4_t v = signals[ch];
+            // 3. Calculate phase increments for 4 parallel samples
+            float inc = M_TWOPI * shimmerFreq_ / sampleRate;
+            float32x4_t phaseVec = {
+                shimmerPhase_,
+                shimmerPhase_ + inc,
+                shimmerPhase_ + 2.0f * inc,
+                shimmerPhase_ + 3.0f * inc
+            };
 
-            // Process each lane sequentially, building the result vector directly
-            float32x4_t result = vdupq_n_f32(0.0f);
+            // 4. Generate 4 sine wave samples at once using your fast approximation
+            float32x4_t sinVec = sin_ps(phaseVec);
 
-            // Lane 0
-            float y0 = vgetq_lane_f32(v, 0) * oneminuspole + state * pole;
-            result = vsetq_lane_f32(y0, result, 0);
-            state = y0;
+            // 5. Calculate the ring-modulated shimmer signal (preview * sin * depth)
+            float32x4_t shim = vmulq_f32(monoPreview,
+                                         vmulq_f32(sinVec, vdupq_n_f32(shimmerDepth_)));
 
-            // Lane 1
-            float y1 = vgetq_lane_f32(v, 1) * oneminuspole + state * pole;
-            result = vsetq_lane_f32(y1, result, 1);
-            state = y1;
+            // 6. Inject the shimmer back into channels 6 and 7 with inverted phase
+            mixed[FDN_CHANNELS - 2] = vaddq_f32(mixed[FDN_CHANNELS - 2], shim);
+            mixed[FDN_CHANNELS - 1] = vsubq_f32(mixed[FDN_CHANNELS - 1], shim);
 
-            // Lane 2
-            float y2 = vgetq_lane_f32(v, 2) * oneminuspole + state * pole;
-            result = vsetq_lane_f32(y2, result, 2);
-            state = y2;
-
-            // Lane 3
-            float y3 = vgetq_lane_f32(v, 3) * oneminuspole + state * pole;
-            result = vsetq_lane_f32(y3, result, 3);
-            state = y3;
-
-            // Now 'result' holds the filtered values, ready for further SIMD processing
-
-            lpfState[ch] = result;
-            signals[ch] = result;
+            // 7. Advance the master scalar phase for the next block of 4 samples
+            shimmerPhase_ += 4.0f * inc;
+            while (shimmerPhase_ >= M_TWOPI) { shimmerPhase_ -= M_TWOPI; }
         }
     }
 
     /*===========================================================================*/
     /* Vectorized Delay Line Write */
     /*===========================================================================*/
-
     void writeDelayLines4(const float32x4_t* signals) {
         // Spill all channel vectors once; index by sample position (variable s)
         // to avoid vgetq_lane_f32(v, variable) which requires a constant index.
         float ch_lanes[FDN_CHANNELS][4];
         for (int ch = 0; ch < FDN_CHANNELS; ch++)
             vst1q_f32(ch_lanes[ch], signals[ch]);
-
-        for (int s = 0; s < 4; s++) {
+            // Being an IIR, we can process just one block at time
+            for (int s = 0; s < 4; s++) {
             uint32_t pos = (writePos + s) & BUFFER_MASK;
             for (int ch = 0; ch < FDN_CHANNELS; ch++)
                 delayLine[pos].samples[ch] = ch_lanes[ch][s];
+            }
+            writePos = (writePos + 4) & BUFFER_MASK;
         }
 
-        writePos = (writePos + 4) & BUFFER_MASK;
-    }
 
     /*===========================================================================*/
     /* Main Processing Loop */
@@ -439,30 +833,55 @@ private:
         float32x4_t inL4 = vld1q_f32(inL);
         float32x4_t inR4 = vld1q_f32(inR);
 
+        if (activeSampleCount <= 0) {
+            // Apply dry gain so volume stays constant when bypassed!
+            float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
+            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
+            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            return;
+        }
+
         // Convert to mono for FDN input
         float32x4_t inMono = vmulq_f32(vaddq_f32(inL4, inR4), vdupq_n_f32(0.5f));
 
         // =================================================================
-        // 1. Pre-Delay Write
+        // 1 & 2. PRE-DELAY (Smoothed, Interpolated, Write-Before-Read)
         // =================================================================
-        // TO BE EVALUATED: Add tape saturation to the pre-delay buffer?
         float monoLanes[4];
-        vst1q_f32(monoLanes, inMono);
-
-        for (int s = 0; s < 4; s++) {
-            preDelayBuffer[(preDelayWritePos + s) & PREDELAY_MASK] = monoLanes[s];
-        }
-
-        // =================================================================
-        // 2. Pre-Delay Read
-        // =================================================================
+        vst1q_f32(monoLanes, inMono); // Unpack the NEON vector
         float delayedLanes[4];
+
         for (int s = 0; s < 4; s++) {
-            int readPos = (preDelayWritePos + s - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
-            delayedLanes[s] = preDelayBuffer[readPos];
+            // 1. WRITE FIRST: Guarantees 0.0ms delay instantly reads this exact sample
+            preDelayBuffer[preDelayWritePos] = monoLanes[s];
+
+            // 2. Slew Limiter (1-Pole Low-Pass per sample)
+            currentPreDelaySamples += 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
+
+            // 3. Fractional Read Position
+            float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
+
+            // Branchless wrap
+            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+            int32_t pd_idx1 = (int32_t)safe_pd_pos;
+            int32_t pd_idx2 = pd_idx1 + 1;
+
+            // Mask to buffer size
+            uint32_t idx1 = pd_idx1 & PREDELAY_MASK;
+            uint32_t idx2 = pd_idx2 & PREDELAY_MASK;
+            float pd_frac = safe_pd_pos - (float)pd_idx1;
+
+            // 4. Linear Interpolation Read
+            float val1 = preDelayBuffer[idx1];
+            float val2 = preDelayBuffer[idx2];
+            delayedLanes[s] = val1 + pd_frac * (val2 - val1);
+
+            // 5. Advance write head for the NEXT sample inside the block
+            preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
         }
+
+        // Repack into the NEON vector for the rest of the FDN engine
         float32x4_t delayedMono = vld1q_f32(delayedLanes);
-        preDelayWritePos = (preDelayWritePos + 4) & PREDELAY_MASK;
 
         // =================================================================
         // 3. Active Partial Counting (CPU Optimization)
@@ -483,8 +902,10 @@ private:
 
         // If counter has expired, bypass FDN processing to save cycles
         if (activeSampleCount <= 0) {
-            vst1q_f32(outL, inL4);
-            vst1q_f32(outR, inR4);
+            float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
+            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
+            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            writePos = (writePos + 4) & BUFFER_MASK;
             return;
         }
 
@@ -494,8 +915,14 @@ private:
         float32x4_t delayOut[FDN_CHANNELS];
         readDelayLines4(delayOut);
 
+        // =================================================================
         // Advance modulation phases for the next block (after read so phases aren't clobbered)
+        // =================================================================
         updateModulation4();
+        updateRandomLfo();
+
+        float modAmount = diffusion * modDepth;   // diffusion is COMP (0..1)
+        float fcMod = smoothedLfoValue * modAmount * 500.0f;  // ± up to 500 Hz
 
         // =================================================================
         // Apply Hadamard mixing matrix (vectorized)
@@ -503,63 +930,41 @@ private:
         float32x4_t mixed[FDN_CHANNELS];
         applyHadamard4(delayOut, mixed);
 
+        // 1. Natural Air Absorption (old applyDiffusion4)
+        applyHighFreqDamping4(mixed);
+
+        // 2. Character Body Resonance (Wood, Stone, Metal)
+        applyResonantFilterModulated(mixed, FDN_CHANNELS, fcMod);
+
+        // 3. Inject Environmental Noise (Brown, Pink, White, Blue, Violet, Grey)
+        addColouredNoise(mixed, FDN_CHANNELS);
+
+        // 4. Apply cross‑channel feedback
+        applyCrossFeedback(mixed);
+
         // =================================================================
         // Apply decay uniformly to all channels using the geometric mean of
         // highDecayMult and lowDecayMult. This preserves the warmth/brightness
         // balance controls while avoiding L/R stereo imbalance that would result
         // from applying different decay multipliers to the two channel groups.
         // =================================================================
-        float unifiedDecay = fminf(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
+        // 4. Apply decay (using unified decay factor)
+        // FIX: Map 0.0-1.0 to 0.7-0.995 for realistic RT60 tails
+        float loopGain = 0.7f + (decay * 0.295f);
+        float unifiedDecay = fminf(0.995f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        float32x4_t feedback = vdupq_n_f32(1.0f - decay);
+        float32x4_t feedback = vdupq_n_f32(1.0f - decay); // Keep input injection balanced
 
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            mixed[i] = vmulq_f32(mixed[i], decayAll);
-        }
+        for (int i = 0; i < FDN_CHANNELS; i++) mixed[i] = vmulq_f32(mixed[i], decayAll);
 
-        // Add input to first channel (with feedback control)
+        // 5. Add input (feedback)
         mixed[0] = vaddq_f32(mixed[0], vmulq_f32(delayedMono, feedback));
 
-        // =================================================================
-        // Apply DAMP (dampingCoeff) + COMP (diffusion) filters
-        // =================================================================
-        applyDiffusion4(mixed);
 
         // =================================================================
         // Exotic Low-Pitching Shimmer (PILL=4) - NEON Vectorized
         // =================================================================
-        if (shimmerDepth_ > 0.0f) {
-            // 1. Sum channels 0-3 (Left) and 4-7 (Right)
-            float32x4_t sumL = vaddq_f32(vaddq_f32(mixed[0], mixed[1]),
-                                         vaddq_f32(mixed[2], mixed[3]));
-            float32x4_t sumR = vaddq_f32(vaddq_f32(mixed[4], mixed[5]),
-                                         vaddq_f32(mixed[6], mixed[7]));
-
-            // 2. Mix them down to a mono preview and scale by 0.125 (1/8)
-            float32x4_t monoPreview = vmulq_f32(vaddq_f32(sumL, sumR), vdupq_n_f32(0.125f));
-
-            // 3. Calculate phase increments for 4 parallel samples
-            float inc = M_TWOPI * shimmerFreq_ / sampleRate;
-            float32x4_t phaseVec = vdupq_n_f32(shimmerPhase_);
-            phaseVec = vsetq_lane_f32(shimmerPhase_ + inc, phaseVec, 1);
-            phaseVec = vsetq_lane_f32(shimmerPhase_ + 2.0f * inc, phaseVec, 2);
-            phaseVec = vsetq_lane_f32(shimmerPhase_ + 3.0f * inc, phaseVec, 3);
-
-            // 4. Generate 4 sine wave samples at once using your fast approximation
-            float32x4_t sinVec = sin_ps(phaseVec);
-
-            // 5. Calculate the ring-modulated shimmer signal (preview * sin * depth)
-            float32x4_t shim = vmulq_f32(monoPreview,
-                                         vmulq_f32(sinVec, vdupq_n_f32(shimmerDepth_)));
-
-            // 6. Inject the shimmer back into channels 6 and 7 with inverted phase
-            mixed[FDN_CHANNELS - 2] = vaddq_f32(mixed[FDN_CHANNELS - 2], shim);
-            mixed[FDN_CHANNELS - 1] = vsubq_f32(mixed[FDN_CHANNELS - 1], shim);
-
-            // 7. Advance the master scalar phase for the next block of 4 samples
-            shimmerPhase_ += 4.0f * inc;
-            while (shimmerPhase_ >= M_TWOPI) { shimmerPhase_ -= M_TWOPI; }
-        }
+        applyExoticShimmer(mixed);
 
         // =================================================================
         // Write back to delay lines
@@ -569,14 +974,10 @@ private:
         // =================================================================
         // Mix down to stereo — routing depends on PILL value
         // =================================================================
+        // 8. Stereo mix‑down (with randomised ping‑pong if pillar==1)
         float32x4_t leftMix, rightMix;
-
         if (pingPong_) {
-            // PILL=1: alternating channels — ch 0,2 → L; ch 1,3 → R
-            float32x4_t pingL = vaddq_f32(mixed[0], mixed[2]);
-            float32x4_t pingR = vaddq_f32(mixed[1], mixed[3]);
-            leftMix  = vmulq_f32(pingL, vdupq_n_f32(0.5f));
-            rightMix = vmulq_f32(pingR, vdupq_n_f32(0.5f));
+            applyRandomizedPingPongMix(mixed, leftMix, rightMix);
         } else {
             int activeCh;
             switch (pillar_) {
@@ -645,18 +1046,70 @@ private:
     }
 
     /*===========================================================================*/
-    /* Scalar Fallback for Remainder Samples */
+    /* Scalar Fallback for Remainder Samples (less complex than process4Samples  */
+    /* as is process no more than 3 samples)                                     */
     /*===========================================================================*/
+    inline void applyHadamardScalar(const float* in, float* out) {
+        // Pass 1 (Reads directly from 'in')
+        float t0 = in[0] + in[4]; float t4 = in[0] - in[4];
+        float t1 = in[1] + in[5]; float t5 = in[1] - in[5];
+        float t2 = in[2] + in[6]; float t6 = in[2] - in[6];
+        float t3 = in[3] + in[7]; float t7 = in[3] - in[7];
+
+        // Pass 2
+        float u0 = t0 + t2; float u2 = t0 - t2;
+        float u1 = t1 + t3; float u3 = t1 - t3;
+        float u4 = t4 + t6; float u6 = t4 - t6;
+        float u5 = t5 + t7; float u7 = t5 - t7;
+
+        // Pass 3 (Writes directly to 'out' with scale applied)
+        float scale = 0.35355339f; // 1.0 / sqrt(8)
+        out[0] = (u0 + u1) * scale; out[1] = (u0 - u1) * scale;
+        out[2] = (u2 + u3) * scale; out[3] = (u2 - u3) * scale;
+        out[4] = (u4 + u5) * scale; out[5] = (u4 - u5) * scale;
+        out[6] = (u6 + u7) * scale; out[7] = (u6 - u7) * scale;
+    }
 
     void processScalar(float input, float& wetL, float& wetR) {
         float delayOut[FDN_CHANNELS];
 
-        // 1. Pre-Delay Write
+        if (activeSampleCount <= 0) {
+            // Apply dry gain so volume stays constant when bypassed!
+            wetL = 0.0f; wetR = 0.0f;
+            writePos = (writePos + 1) & BUFFER_MASK;    // mask prevents audible glitches when the reverb 'wakes up' from APC bypass
+            return;
+        }
+
+        // ==========================================
+        // SCALAR PREDELAY (Smoothed & Interpolated)
+        // ==========================================
+
+        // 1. WRITE FIRST: Guarantees that if Pre-Delay is 0.0ms,
+        // the read head instantly fetches the exact sample we just wrote.
         preDelayBuffer[preDelayWritePos] = input;
 
-        // 2. Pre-Delay Read
-        int readPos = (preDelayWritePos - preDelayOffsetSamples + PREDELAY_BUFFER_SIZE) & PREDELAY_MASK;
-        float delayedInput = preDelayBuffer[readPos];
+        // 2. Slew Limiter Math (1-Pole Low-Pass)
+        currentPreDelaySamples += 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
+
+        // 3. Calculate fractional read position
+        float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
+
+        // Branchless wrap for safety
+        float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+        int32_t pd_idx1 = (int32_t)safe_pd_pos;
+        int32_t pd_idx2 = pd_idx1 + 1;
+
+        // Mask to buffer size
+        uint32_t idx1 = pd_idx1 & PREDELAY_MASK;
+        uint32_t idx2 = pd_idx2 & PREDELAY_MASK;
+        float pd_frac = safe_pd_pos - (float)pd_idx1;
+
+        // 4. Linear Interpolation Read
+        float val1 = preDelayBuffer[idx1];
+        float val2 = preDelayBuffer[idx2];
+        float delayedInput = val1 + pd_frac * (val2 - val1);
+
+        // 5. Advance write head for the NEXT sample
         preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
 
         // 3. Active Partial Counting
@@ -668,8 +1121,9 @@ private:
 
         // Bypass if tail is dead
         if (activeSampleCount <= 0) {
-            wetL = input;
-            wetR = input;
+            wetL = 0.0f;
+            wetR = 0.0f;
+            writePos = (writePos + 1) & BUFFER_MASK;
             return;
         }
 
@@ -678,7 +1132,7 @@ private:
             float phase = vgetq_lane_f32(modPhaseVec[ch], 0);
 
             float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = sinf(phase * M_TWOPI) * modDepth * 100.0f;
+            float mod = fastersinfullf(phase * M_TWOPI) * modDepth * 100.0f;
             float readPos = (float)writePos - (delaySamples + mod);
 
             while (readPos < 0) readPos += BUFFER_SIZE;
@@ -703,16 +1157,11 @@ private:
         }
 
         // Frequency-dependent decay
-        // Frequency-dependent decay
         float mixed[FDN_CHANNELS];
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            float sum = 0.0f;
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                sum += hadamard[i][j] * delayOut[j];
-            }
-            float dm = std::min(0.99f, decay * sqrtf(highDecayMult * lowDecayMult));
-            mixed[i] = sum * dm;
-        }
+        float loopGain = 0.7f + (decay * 0.295f);
+        float dm = std::min(0.995f, loopGain * fastersinfullf(highDecayMult * lowDecayMult));
+
+        applyHadamardScalar(delayOut, mixed);
 
         // 4. Inject delayedInput instead of raw input
         mixed[0] += delayedInput * (1.0f - decay);
@@ -723,7 +1172,6 @@ private:
         // Shimmer (PILL=4): inject a small frequency-modulated copy of the
         // current wet signal back into channels 6 and 7 before writing.
         // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
-        // TO BE EVALUATED: introduce wavetable LFO for shimmer?
         if (shimmerDepth_ > 0.0f) {
             float previewL = 0.0f, previewR = 0.0f;
             for (int i = 0; i < 4; i++)            previewL += mixed[i];
@@ -780,35 +1228,31 @@ private:
         wetR = mid - side * width;
     }
 
-
     /*===========================================================================*/
     /* Initialization */
     /*===========================================================================*/
+    /** use the 18-EDO Equal Division of the Octave) math formula ($2^{n/18}$)
+     * to perfectly space the LFO frequencies into a microtonal scale.
+     * By applying 8 independent, slow Doppler pitch-shifts to the delay lines—tuned
+     * exactly to microtonal intervals—the 8 echoes will physically rub against each
+     * other inside the Hadamard matrix. This creates the dense,
+     * acoustic "beating" and complex harmonic interference that Cochrane
+     * defines as true microtonal shimmer.*/
+    void initMicrotonalShimmer()
+    {
+        // Set up standard swirl (e.g., random slow rates between 0.2Hz and 0.8Hz)
+        // Set up Cochrane 18-EDO rates (as discussed previously)
+        for(int i=0; i<FDN_CHANNELS; i++) {
+            channelPhase_[i] = (float)i / (float)FDN_CHANNELS; // Stagger phases 0.0 to 1.0
 
-    void initHadamardMatrix() {
-      float norm = 1.0f / sqrtf(8.0f);
+            // Example Swirl Rates (prime-ish relationships)
+            float s_hz = 0.2f + (0.1f * i);
+            swirlRate_[i] = s_hz / sampleRate;
 
-      // Store in row-major for scalar access
-      for (int i = 0; i < FDN_CHANNELS; i++) {
-        for (int j = 0; j < FDN_CHANNELS; j++) {
-          int bits = i & j;
-          int parity = 0;
-          while (bits) {
-            parity ^= (bits & 1);
-            bits >>= 1;
-          }
-          hadamard[i][j] = parity ? -norm : norm;
+            // 18-EDO Cochrane Rates (Base 0.5Hz)
+            float steps_18[8] = {0.0f, 1.0f, 3.0f, 4.0f, 6.0f, 7.0f, 9.0f, 10.0f};
+            microtonalRate_[i] = (0.5f * fasterpowf(2.0f, steps_18[i] / 18.0f)) / sampleRate; // at Init use accurate function
         }
-      }
-
-      // Pre-transpose into column-major NEON-friendly format
-      for (int j = 0; j < FDN_CHANNELS; j++) {
-        for (int i = 0; i < FDN_CHANNELS; i += 4) {
-          float32x4_t col = {hadamard[i][j], hadamard[i + 1][j],
-                             hadamard[i + 2][j], hadamard[i + 3][j]};
-          hadamardCols[j][i / 4] = col;
-        }
-      }
     }
 
     /*===========================================================================*/
@@ -839,11 +1283,58 @@ private:
     float32x4_t hadamardCols[FDN_CHANNELS][FDN_CHANNELS/4] __attribute__((aligned(16)));  // Column-major for NEON
     float delayTimes[FDN_CHANNELS] __attribute__((aligned(16)));
     float32x4_t modPhaseVec[FDN_CHANNELS] __attribute__((aligned(16)));
-    float32x4_t lpfState[FDN_CHANNELS] __attribute__((aligned(16)));
-    float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(64)));
-
+    // FIX: IIR filter states must be strictly scalar! 1 history sample per channel.
+    float lpfState[FDN_CHANNELS] __attribute__((aligned(16)));
+    // Unified Phase Tracking for Delay Modulation
+    float channelPhase_[FDN_CHANNELS] __attribute__((aligned(16)));
+    float swirlRate_[FDN_CHANNELS] __attribute__((aligned(16)));
+    float microtonalRate_[FDN_CHANNELS] __attribute__((aligned(16)));
     float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
     int preDelayWritePos;
-    int preDelayOffsetSamples;
+    // Pre-delay Slew Limiter States
+    float currentPreDelaySamples;
+    float targetPreDelaySamples;
     int activeSampleCount; // Tracks tail for Active Partial Counting
+
+    // ---------- New character features ----------
+    int currentPreset;                 // 0..3
+    float lfoSpeed;                    // Hz (0.1..3.0)
+    float randomLfoValue;              // current random output (-1..1)
+    int randomLfoCounter;              // samples until next random update
+    int randomLfoPeriodSamples;        // = sampleRate / lfoSpeed
+    float smoothedLfoValue;
+
+    // Filter types (per channel, but we can use shared coeffs)
+    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterNoise };
+    FilterMode filterMode;
+    float biquadA0, biquadA1, biquadA2, biquadB1, biquadB2; // shared coeffs
+    float filterState1[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-1
+    float filterState2[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-2
+
+    // Noise generation
+    uint32_t noiseSeed;
+    float noiseColour;                 // 0=brown .. 4=violet
+    float noiseGain;                   // from DAMP
+    float noiseStates[FDN_CHANNELS];   // z^-1 for noise filtering
+    float noiseStates2[FDN_CHANNELS];  // z^-2 for Grey noise notch
+
+    // Cross-feedback gains per pillar
+    static const float crossGain[5];   // indexed by pillar_
+
+    // Randomized ping-pong map (for PILL=1)
+    static const uint8_t pingRandomMap[16][4]; // 16 steps, 4 channels each
+    int pingMapIndex;
+
+    float baseFc;                   // base cutoff frequency (Hz) for current preset/damping
+    float filterModRange;           // max modulation range (Hz) derived from COMP and pillar
+};
+
+const float NeonAdvancedLabirinto::crossGain[5] = {0.15f, 0.10f, 0.07f, 0.04f, 0.04f};
+
+// Pre-computed random map for ping-pong (fixed seed for reproducibility)
+const uint8_t NeonAdvancedLabirinto::pingRandomMap[16][4] = {
+    {1,0,1,0}, {0,1,0,1}, {1,1,0,0}, {0,0,1,1},
+    {1,0,0,1}, {0,1,1,0}, {1,1,1,0}, {0,1,1,1},
+    {1,0,1,1}, {0,1,0,0}, {1,0,0,0}, {0,0,0,1},
+    {1,1,0,1}, {0,0,1,0}, {1,1,1,1}, {0,0,0,0}
 };

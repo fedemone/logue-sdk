@@ -456,15 +456,16 @@ bool test_perc_engine(void) {
     float32x4_t param1 = vdupq_n_f32(0.0f);  // Min ratio
     float32x4_t param2 = vdupq_n_f32(0.5f);
     perc_engine_update(&perc, param1, param2);
-
-    float32x4_t out = perc_engine_process(&perc, env, mask);
+    // TODO create new test with lfo modulation
+    float32x4_t out = perc_engine_process(&perc, env, mask, vdupq_n_f32(1.0f), vdupq_n_f32(0.0f));
     float sample_min = vgetq_lane_f32(out, 0);
     bool passed = (sample_min >= -1.0f && sample_min <= 1.0f);
 
     // Compare with max ratio
     param1 = vdupq_n_f32(1.0f);  // Max ratio
     perc_engine_update(&perc, param1, param2);
-    out = perc_engine_process(&perc, env, mask);
+    // TODO create new test with lfo modulation
+    out = perc_engine_process(&perc, env, mask, vdupq_n_f32(1.0f), vdupq_n_f32(0.0f));
     float sample_max = vgetq_lane_f32(out, 0);
 
     if (sample_min == sample_max) {

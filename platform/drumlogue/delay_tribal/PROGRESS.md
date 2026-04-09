@@ -148,6 +148,13 @@ Let me perform a comprehensive optimization review of the `delay_tribal` project
    - State Variable Filters for simultaneous outputs
    - Warped filters for better low-frequency resolution
 
+4. **Introduce the apply_crossfade function now commented out**
+    - it's vectorial version of the scalar one at line 270
+
+5. **Check if dead code or not**
+    - found unused line `Mid = all-pass complement (input minus both band outputs)`
+    - is it obsolete to be removed or a feature to be implemented?
+
 ### Research Queue (Post-Release)
 1. Study perceptual models for clone differentiation
 2. Investigate allpass filters for phase dispersion

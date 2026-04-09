@@ -21,8 +21,16 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     s_synth.setParameter(id, value);
 }
 
+__unit_callback void unit_load_preset(uint8_t idx) {
+  return s_synth.setParameter(k_paramProgram, idx);
+}
+
+__unit_callback uint8_t unit_get_preset_index() {
+  return s_synth.getParameter(k_paramProgram);
+}
+
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    return 0; // Handled by OS cache
+    return s_synth.getParameter(id);
 }
 
 __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value) {

@@ -21,7 +21,15 @@ const char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
     "ResKick",
     "ResTom",
     "ResSnr",
-    "ResMtl"
+    "ResMtl",
+    "SlwEnv",
+    "WahDrum",
+    "NoisSwp",
+    "FMBuzz",
+    "GhstSnr",
+    "RimPtch",
+    "TomWah",
+    "Shaker"
 };
 
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
@@ -169,5 +177,120 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         10, 2,
         RESONANT_MODE_PEAK, 20, 80, 80,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_RESONANT, ENGINE_PERC}
+    },
+
+    // ===== NEW PRESETS (exploiting phase sync, NOISE_MIX, RES_MORPH) =====
+
+    // Preset 12: "SlwEnv" - Slow ramp LFO (0.5 Hz) on ENV as a secondary
+    // envelope shaper: the kick swells in, the snare gets a slow fade-in.
+    // Because LFO phase resets on each trigger, this is one-shot per hit.
+    {
+        "SlwEnv", 100, 80, 0, 0,
+        70, 60, 20, 40,
+        0, 0, 0, 0,
+        1, 5, LFO_TARGET_ENV, 60,      // LFO1: 0.5 Hz ramp → ENV swell
+        0, 0, LFO_TARGET_NONE, 0,
+        30, 0,
+        RESONANT_MODE_LOWPASS, 20, 30, 15,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
+    },
+
+    // Preset 13: "WahDrum" - LFO→RES_MORPH creates auto-wah filter sweep.
+    // Resonant is on voice 2 (metal slot).  Medium rate (4 Hz) triangle
+    // gives a fast wah on every hit; synced to trigger so it starts fresh.
+    {
+        "WahDrum", 80, 60, 0, 70,
+        60, 50, 30, 40,
+        0, 0, 60, 50,
+        0, 35, LFO_TARGET_RES_MORPH, 80,  // LFO1: triangle 4 Hz → filter morph
+        1, 10, LFO_TARGET_PITCH, 20,       // LFO2: slow pitch drift
+        25, 2,
+        RESONANT_MODE_BANDPASS, 50, 70, 40,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_RESONANT, ENGINE_PERC}
+    },
+
+    // Preset 14: "NoisSwp" - LFO→NOISE_MIX sweeps snare from pure tone to
+    // full noise and back over 2 seconds (0.5 Hz).  Interesting on slow
+    // patterns: each snare hit starts with crack, fades to hiss.
+    {
+        "NoisSwp", 40, 100, 0, 50,
+        30, 50, 50, 60,
+        50, 60, 0, 0,
+        1, 5, LFO_TARGET_NOISE_MIX, 90,  // LFO1: slow ramp → noise blend
+        0, 20, LFO_TARGET_PITCH, -20,     // LFO2: slight negative pitch wobble
+        20, 0,
+        RESONANT_MODE_HIGHPASS, 30, 50, 45,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
+    },
+
+    // Preset 15: "FMBuzz" - Both LFOs near audio rate targeting INDEX.
+    // LFO1 at ~15 Hz and LFO2 at ~20 Hz create amplitude/FM beating.
+    // The difference frequency (5 Hz) causes a slow tremolo on top.
+    {
+        "FMBuzz", 90, 60, 80, 60,
+        50, 40, 40, 60,
+        70, 80, 50, 50,
+        0, 82, LFO_TARGET_INDEX, 70,   // LFO1: ~15 Hz triangle → FM index buzz
+        0, 100, LFO_TARGET_INDEX, 50,  // LFO2: ~20 Hz triangle → beating
+        15, 0,
+        RESONANT_MODE_PEAK, 60, 60, 50,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
+    },
+
+    // Preset 16: "GhstSnr" - Ghost snare: low probability (30%), gentle
+    // RES_MORPH sweep on the resonant filter gives each ghost hit a slightly
+    // different tonal colour.  Voice alloc K-S-M-R.
+    {
+        "GhstSnr", 70, 30, 50, 40,
+        40, 40, 70, 50,
+        40, 50, 0, 0,
+        0, 18, LFO_TARGET_RES_MORPH, 60,  // LFO1: 2 Hz triangle → filter colour
+        1, 8,  LFO_TARGET_PITCH, -30,      // LFO2: slow negative drift
+        35, 1,
+        RESONANT_MODE_BANDPASS, 40, 65, 35,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_RESONANT}
+    },
+
+    // Preset 17: "RimPtch" - Ramp LFO on pitch creates a falling tone edge
+    // (rim-shot / stick click character) on metal and perc voices.
+    // Short env (tight), medium ramp rate (3 Hz → 333 ms period, plenty
+    // for a single hit since LFO resets on trigger).
+    {
+        "RimPtch", 50, 60, 80, 70,
+        20, 30, 40, 50,
+        60, 70, 50, 40,
+        1, 25, LFO_TARGET_PITCH, -70,  // LFO1: ramp, negative → falling pitch
+        0, 0,  LFO_TARGET_NONE, 0,
+        10, 0,
+        RESONANT_MODE_HIGHPASS, 70, 40, 60,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
+    },
+
+    // Preset 18: "TomWah" - Resonant tom with RES_MORPH modulated by a slow
+    // triangle (1 Hz).  Each tom hit sweeps the filter from low to high and
+    // back, giving a pitch/wah character.  Voice alloc K-S-M-R.
+    {
+        "TomWah", 0, 0, 0, 100,
+        50, 60, 0, 0,
+        0, 0, 60, 60,
+        0, 10, LFO_TARGET_RES_MORPH, 100, // LFO1: 1 Hz triangle → full morph sweep
+        1, 5,  LFO_TARGET_PITCH, 20,       // LFO2: subtle pitch rise
+        40, 1,
+        RESONANT_MODE_LOWPASS, 30, 75, 30,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_RESONANT}
+    },
+
+    // Preset 19: "Shaker" - High density rattling: all four voices active,
+    // low probabilities for irregular hitting, high metal brightness, fast
+    // near-audio LFO on NOISE_MIX for textured shimmer.
+    {
+        "Shaker", 60, 50, 90, 70,
+        20, 40, 80, 70,
+        80, 90, 60, 70,
+        0, 75, LFO_TARGET_NOISE_MIX, 80,  // LFO1: ~10 Hz triangle → noise shimmer
+        4, 50, LFO_TARGET_PITCH, 15,       // LFO2: Chord shape, slow pitch arp
+        8, 0,
+        RESONANT_MODE_HIGHPASS, 80, 50, 70,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     }
 };

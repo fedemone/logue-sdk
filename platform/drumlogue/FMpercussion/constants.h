@@ -119,7 +119,9 @@ constexpr int LFO_TARGET_LFO2_PHASE = 4;
 constexpr int LFO_TARGET_LFO1_PHASE = 5;
 constexpr int LFO_TARGET_RES_FREQ = 6;
 constexpr int LFO_TARGET_RESONANCE = 7;
-constexpr int LFO_TARGET_COUNT = 8;
+constexpr int LFO_TARGET_NOISE_MIX = 8;  // Snare noise/tone blend; metal brightness
+constexpr int LFO_TARGET_RES_MORPH = 9;  // Resonant filter morph (fc / Q sweep)
+constexpr int LFO_TARGET_COUNT = 10;
 
 // ============================================================================
 // LFO Shape Constants

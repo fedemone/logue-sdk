@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00010000U,   // v1.0.0
     .name        = "NeonLabirinto",
     .num_presets = 4,
-    .num_params  = 11,
+    .num_params  = 12,
     .params = {
         // Page 1: Main reverb controls
         // ID 0: Preset name
@@ -41,10 +41,12 @@ const __unit_header unit_header_t unit_header = {
         // Page 3:
         // ID 8: PILL pillar count index  0=sparse(2ch), 1=ping-pong(4ch), 2=stone(6ch), 3=full(8ch), 4=shimmer(8ch+)
         { 0, 4, 3, 3, k_unit_param_type_none, 0, 0, 0, {"PILL"} },
-        // ID 9: PL4FRQ shimmer frequency for microtonal low pitch shimmer
-        { 0, 100, 50, 35, k_unit_param_type_strings, 0, 0, 0, {"PL4FRQ"} },
+        // ID 9: SHMR shimmer frequency for microtonal low pitch shimmer
+        { 0, 100, 50, 35, k_unit_param_type_strings, 0, 0, 0, {"SHMR"} },
         // ID 10: PDLY  pre-delay time 0..200 ms
         { 0, 200, 0, 0, k_unit_param_type_none, 0, 0, 0, {"PDLY"} },
+        // ID 11: VIBR  LFO speed for random modulation (0.1-3.0 Hz, stored as 1-30)
+        { 1, 30, 10, 10, k_unit_param_type_none, 0, 0, 0, {"VIBR"} },
         // Pages 4-6: blank
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },

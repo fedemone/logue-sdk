@@ -232,14 +232,11 @@ fast_inline void neon_envelope_trigger(neon_envelope_t* env,
     get_envelope(shape_idx, &a_ms, &d_ms, &r_ms, &curve);
 
     // Convert ms to samples at 48kHz
-    float attack_samps = a_ms * 48.0f;
-    float decay_samps = d_ms * 48.0f;
-    float release_samps = r_ms * 48.0f;
-
     // Ensure non-zero to avoid division by zero
-    if (attack_samps < 1.0f) attack_samps = 1.0f;
-    if (decay_samps < 1.0f) decay_samps = 1.0f;
-    if (release_samps < 1.0f) release_samps = 1.0f;
+    float attack_samps  = fmax(a_ms * 48.0f, 1.0f);
+    float decay_samps   = fmax(d_ms * 48.0f * 4.0f, 1.0f);  // Massive boom!
+    float release_samps = fmax(r_ms * 48.0f * 4.0f, 1.0f);  // Smooth fade!
+
 
     // Store pre-calculated stage lengths
     env->attack_samples = vbslq_f32(voice_mask,
@@ -383,6 +380,35 @@ fast_inline void neon_envelope_process(neon_envelope_t* env) {
     // -----------------------------------------------------------------
     env->level = vmaxq_f32(vdupq_n_f32(0.0f),
                            vminq_f32(vdupq_n_f32(1.0f), env->level));
+}
+
+/**
+ * Trigger release stage for selected voices (MIDI note-off).
+ * Transitions from any active stage directly to release, starting from
+ * the current level so there is no level jump.
+ */
+fast_inline void neon_envelope_release(neon_envelope_t* env,
+                                       uint32x4_t voice_mask) {
+    // Only act on voices that are currently active (not already off)
+    uint32x4_t is_off = vceqq_u32(env->stage, vdupq_n_u32(ENV_STATE_OFF));
+    uint32x4_t trigger = vandq_u32(voice_mask, vmvnq_u32(is_off));
+
+    // Transition to release stage
+    env->stage = vbslq_u32(trigger, vdupq_n_u32(ENV_STAGE_RELEASE), env->stage);
+
+    // Samples left = release_samples
+    env->samples_left = vbslq_u32(trigger,
+                                   vcvtq_u32_f32(env->release_samples),
+                                   env->samples_left);
+
+    // Decrement = -(current_level / release_samples) so level reaches 0 smoothly.
+    // vrecpeq_f32 gives ~8-bit estimate; sufficient for a fade-to-zero and
+    //  add one Newton-Raphson refinement step using vrecpsq_f32 to achieve sufficient
+    // precision for audio applications.
+    float32x4_t rec = vrecpeq_f32(env->release_samples);
+    rec = vmulq_f32(rec, vrecpsq_f32(env->release_samples, rec));
+    float32x4_t release_inc = vnegq_f32(vmulq_f32(env->level, rec));
+    env->increment = vbslq_f32(trigger, release_inc, env->increment);
 }
 
 /**

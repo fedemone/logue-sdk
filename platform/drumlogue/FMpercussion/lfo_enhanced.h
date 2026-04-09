@@ -67,7 +67,7 @@ fast_inline void lfo_enhanced_init(lfo_enhanced_t* lfo) {
  * @param rate2_percent 0-100 LFO2 rate
  */
 fast_inline void lfo_enhanced_update(lfo_enhanced_t* lfo,
-                                     uint32_t shape_combo,
+                                     int32_t shape_combo,
                                      uint32_t target1,
                                      uint32_t target2,
                                      float depth1_value,  // -100 to +100
@@ -119,9 +119,12 @@ fast_inline void lfo_enhanced_update(lfo_enhanced_t* lfo,
     lfo->depth1 = vdupq_n_f32(depth1);
     lfo->depth2 = vdupq_n_f32(depth2);
 
-    // Convert rate percentage to phase increment (0.01 to 0.5 rad/sample)
-    float rate1 = 0.01f + (rate1_percent / 100.0f) * 0.49f;
-    float rate2 = 0.01f + (rate2_percent / 100.0f) * 0.49f;
+    // Convert rate percentage to phase increment (0.1 to 20 Hz LFO range)
+    // rate_hz / sample_rate gives the fraction of the cycle advanced per sample
+    float rate1_hz = 0.1f + (rate1_percent / 100.0f) * 19.9f;
+    float rate2_hz = 0.1f + (rate2_percent / 100.0f) * 19.9f;
+    float rate1 = rate1_hz / 48000.0f;
+    float rate2 = rate2_hz / 48000.0f;
 
     lfo->rate1 = vdupq_n_f32(rate1);
     lfo->rate2 = vdupq_n_f32(rate2);
@@ -156,15 +159,19 @@ fast_inline float32x4_t lfo_generate_shape(uint32_t shape, float32x4_t phase) {
         }
 
         case LFO_SHAPE_CHORD: {
-            // 3-step quantized: Root (0), 3rd (4 semitones), 5th (7 semitones)
+            // Steps through root → major-3rd → perfect-5th at equal time.
+            // Output is in octave-fraction units so that:
+            //   pitch_octaves = value * depth * 2  →  0, 4, 7 semitones at depth=1
+            // root=0, 3rd=4/24≈0.167, 5th=7/24≈0.292
             float32x4_t three = vdupq_n_f32(3.0f);
             int32x4_t step = vcvtq_s32_f32(vmulq_f32(phase, three));
+            // Clamp to [0,2]: guards against phase==1.0 before wrap
+            step = vmaxq_s32(vminq_s32(step, vdupq_n_s32(2)), vdupq_n_s32(0));
             float32x4_t step_f = vcvtq_f32_s32(step);
 
-            // Using central constants from constants.h
-            float32x4_t root = vdupq_n_f32(INTERVAL_UNISON);
-            float32x4_t third = vdupq_n_f32(INTERVAL_MAJOR_3RD);
-            float32x4_t fifth = vdupq_n_f32(INTERVAL_PERFECT_5TH);
+            float32x4_t root  = vdupq_n_f32(0.0f);           // 0 semitones
+            float32x4_t third = vdupq_n_f32(4.0f / 24.0f);   // 4 semitones
+            float32x4_t fifth = vdupq_n_f32(7.0f / 24.0f);   // 7 semitones
 
             return vbslq_f32(vceqq_f32(step_f, vdupq_n_f32(0.0f)), root,
                    vbslq_f32(vceqq_f32(step_f, vdupq_n_f32(1.0f)), third, fifth));

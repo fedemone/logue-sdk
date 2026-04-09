@@ -39,7 +39,7 @@ typedef struct {
 fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_rate) {
     float w0 = 2.0f * M_PI * freq_hz / sample_rate;
     float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);
+    float sin_w0 = sinf(w0);    // at init no fast function
     float Q = 0.707f;  // Butterworth Q for Linkwitz-Riley
 
     float alpha = sin_w0 / (2.0f * Q);

@@ -7,8 +7,8 @@
 #include "spatial_modes.h"
 
 // Local filter constants (FILTER_Q_BUTTERWORTH comes from constants.h)
-#define FILTER_SAMPLE_RATE 48000.0f
-#define FILTER_PI 3.141592653589793f
+#define FILTER_SAMPLE_RATE (48000.0f)
+#define FILTER_PI (3.141592653589793f)
 #define NEON_LANES  (4)
 #define NUM_BIQUADS (4)
 
@@ -88,8 +88,8 @@ fast_inline void calculate_bandpass_coeffs(
     float q_factor
 ) {
     float w0 = 2.0f * FILTER_PI * center_freq / FILTER_SAMPLE_RATE;
-    float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);
+    float cos_w0 = fastercosfullf(w0);
+    float sin_w0 = fastersinfullf(w0);
     float alpha = sin_w0 / (2.0f * q_factor);
 
     float b0 = alpha;
@@ -113,8 +113,8 @@ fast_inline void calculate_highpass_coeffs(
     float q_factor
 ) {
     float w0 = 2.0f * FILTER_PI * cutoff_freq / FILTER_SAMPLE_RATE;
-    float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);
+    float cos_w0 = fastercosfullf(w0);
+    float sin_w0 = fastersinfullf(w0);
     float alpha = sin_w0 / (2.0f * q_factor);
 
     float b0 = (1.0f + cos_w0) / 2.0f;
@@ -138,8 +138,8 @@ fast_inline void calculate_lowpass_coeffs(
     float q_factor
 ) {
     float w0 = 2.0f * FILTER_PI * cutoff_freq / FILTER_SAMPLE_RATE;
-    float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);
+    float cos_w0 = fastercosfullf(w0);
+    float sin_w0 = fastersinfullf(w0);
     float alpha = sin_w0 / (2.0f * q_factor);
 
     float b0 = (1.0f - cos_w0) / 2.0f;
