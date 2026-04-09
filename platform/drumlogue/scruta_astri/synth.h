@@ -221,7 +221,7 @@ public:
                 m_f2_q =Q_Limit + ((float)value / 25.0f);
                 filter2.set_coeffs(m_f2_base_hz, m_f2_q, Audio_Rate_Freq);
                 // BUT we also track a drive base for the LFO to modulate later
-                m_f2_drive_base = (val / percent_normalizer) * 5.0f;
+                m_f2_drive_base = (value / percent_normalizer) * 5.0f;
                 break;
         }
     }
