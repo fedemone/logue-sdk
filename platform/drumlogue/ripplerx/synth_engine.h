@@ -1252,6 +1252,37 @@ public:
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
 
+            // Pre-compute model-aware coupling clamps once per block.
+            // feedback_gain is constant during audio rendering, so this runs once per voice
+            // per processBlock() call instead of once per sample — saves ~128 fminf() calls.
+            //
+            // Different-frequency resonator pairs (membrane/drumhead, ResB tuned to the Bessel
+            // (1,1) mode ratio 0.628× base pitch) are phase-incoherent: coupling energy from
+            // ResB arrives at a different phase on every round trip, partially cancelling rather
+            // than always constructively adding.  This allows a 3× more permissive clamp (K=2.5
+            // vs K=0.8) so the Partials knob remains audible at high Decay values without
+            // the exponential explosion that full coupling causes for same-frequency pairs.
+            //
+            // Stability check (Timpani worst case: g=0.958, Ptls=2, diff_freq):
+            //   safe_cpl = min(0.25, 0.042 × 2.5) = min(0.25, 0.105) = 0.105
+            // vs old value: min(0.25, 0.034) = 0.034 (below audibility).
+            float v_safe_cpl_a = 0.0f, v_safe_cpl_b = 0.0f;
+            if (m_active_partials >= 16) {
+                float half_depth = m_coupling_depth * 0.5f;
+                float delay_ratio_diff = (voice.resA.delay_length > 0.001f)
+                    ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
+                    : 0.0f;
+                if (delay_ratio_diff > 0.05f) {
+                    // Incoherent (different-pitch) pair: 3× more coupling headroom
+                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 2.5f);
+                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 2.5f);
+                } else {
+                    // Coherent (same-pitch) pair: conservative stability clamp
+                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
+                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
+                }
+            }
+
             for (size_t i = 0; i < frames; ++i) {
 
                 // ── Stage 1: Raw exciter (always executes) ─────────────────
@@ -1269,16 +1300,11 @@ public:
                 // If Stage 2 is silent but Stage 1 is not, the waveguide has
                 // zero delay_length or zero feedback_gain on this hardware.
                 //
-                // Dynamic coupling clamp: limit cross-resonator injection so
-                // the total energy input (feedback + coupling) stays below 1
-                // per round trip, preventing exponential energy growth at ANY
-                // Decay/Partials combination.  The formula:
-                //   safe_coupling ≤ (1 − feedback_gain) × safety_factor
-                // ensures the system has headroom for energy dissipation.
-                float safe_cpl_a = fminf(m_coupling_depth * 0.5f,
-                    (1.0f - voice.resA.feedback_gain) * 0.8f);
-                float safe_cpl_b = fminf(m_coupling_depth * 0.5f,
-                    (1.0f - voice.resB.feedback_gain) * 0.8f);
+                // Model-aware coupling clamps are pre-computed once per block above.
+                // Diff-frequency pairs (membrane/drumhead) use K=2.5 so Partials
+                // remains audible at high Decay; same-frequency pairs use K=0.8.
+                float safe_cpl_a = v_safe_cpl_a;
+                float safe_cpl_b = v_safe_cpl_b;
 
                 float inputA = exciter_sig + (voice.resB_out_prev * safe_cpl_a);
                 outA = process_waveguide(voice.resA, inputA);
