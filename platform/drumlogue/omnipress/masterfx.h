@@ -410,6 +410,7 @@ private:
 
         switch (distressor_.dist_mode) {
             case DIST_MODE_WAVE: {
+                // Wavefolder operates post-compression for dynamics control
                 float32x4x2_t folded = wavefolder_process(&wavefolder_, comp_l, comp_r, drive_);
                 *out_l = folded.val[0];
                 *out_r = folded.val[1];
@@ -417,10 +418,17 @@ private:
             }
             case DIST_MODE_DIST2:
             case DIST_MODE_DIST3:
-            case DIST_MODE_BOTH:
-                *out_l = generate_harmonics(&distressor_, comp_l, distressor_.dist_mode);
-                *out_r = generate_harmonics(&distressor_, comp_r, distressor_.dist_mode);
+            case DIST_MODE_BOTH: {
+                // Apply harmonics BEFORE compression: x^2 and x^3 terms are
+                // imperceptibly small on the already-attenuated compressed signal.
+                // Distorting the full-level input then compressing gives audible
+                // harmonic content, emulating "drive into compressor" signal chain.
+                float32x4_t harm_l = generate_harmonics(&distressor_, main_l, distressor_.dist_mode);
+                float32x4_t harm_r = generate_harmonics(&distressor_, main_r, distressor_.dist_mode);
+                *out_l = vmulq_f32(harm_l, gain_lin);
+                *out_r = vmulq_f32(harm_r, gain_lin);
                 break;
+            }
             case DIST_MODE_CLEAN:
             default:
                 *out_l = comp_l;
