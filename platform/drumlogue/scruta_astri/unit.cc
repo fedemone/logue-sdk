@@ -22,11 +22,11 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
 }
 
 __unit_callback void unit_load_preset(uint8_t idx) {
-  return s_synth.setParameter(k_paramProgram, idx);
+  return s_synth.setParameter(ScrutaAstri::k_paramProgram, idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
-  return s_synth.getParameter(k_paramProgram);
+  return s_synth.getParameter(ScrutaAstri::k_paramProgram);
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {

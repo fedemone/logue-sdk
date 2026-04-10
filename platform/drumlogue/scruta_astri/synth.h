@@ -364,6 +364,7 @@ public:
                 m_drv2_mod_multiplier = 0.0f;
                 m_mix1_mod_offset = 0.0f;
 
+                int32_t mod_target = m_params[k_paramProgram] % num_params;
                 // note some missing modes are addressed directly in setParameters()
                 // are they are used in above ring_modulation(), so cannot be placed
                 // right here

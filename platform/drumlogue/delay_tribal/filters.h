@@ -5,6 +5,7 @@
 #include <math.h>
 #include "constants.h"
 #include "spatial_modes.h"
+#include "float_math.h"
 
 // Local filter constants (FILTER_Q_BUTTERWORTH comes from constants.h)
 #define FILTER_SAMPLE_RATE (48000.0f)

@@ -150,7 +150,7 @@ export MSYS_NO_PATHCONV=1
 
 docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it ${IMAGE_NAME}:${IMAGE_VERSION} /app/interactive_entry 2>&1 | tee ${PLATFORM_MOUNT}/build_effects.log
 
-mkdir -p "builds"
+rm -rf "builds" && mkdir "builds"
 
 find "${PLATFORM_MOUNT}/drumlogue" -name "*.drmlgunit" -exec cp {} "builds" \;
 

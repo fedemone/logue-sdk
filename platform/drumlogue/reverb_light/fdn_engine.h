@@ -13,6 +13,7 @@
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 #define SPARKLE_BUFFER_SIZE 4096
 #define NUM_RESONATORS (6)
+#define SAMPLE_RATE (48000.0f)
 
 // Biquad definitions for the COLOR path
 typedef struct {
