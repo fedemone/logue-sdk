@@ -1269,7 +1269,7 @@ public:
             float v_safe_cpl_a = 0.0f, v_safe_cpl_b = 0.0f;
             if (m_active_partials >= 16) {
                 float half_depth = m_coupling_depth * 0.5f;
-                float delay_ratio_diff = (voice.resA.delay_length > 0.001f)
+                float delay_ratio_diff = (voice.resA.delay_length > 0.1f)
                     ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
                     : 0.0f;
                 if (delay_ratio_diff > 0.05f) {
