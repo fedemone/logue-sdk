@@ -310,33 +310,33 @@ public:
         //
         //                            ÷10                           ÷10                                                              ÷10
             { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
-            { 1,  60,   0,   1,   800,  175,  0,   0,     0, 6,  120,  -5,    0,   0,  5,   150,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — single resonator (Mdl=6 same-freq, Ptls→0)
+            { 1,  60,   0,   1,   800,  175,  0,   0,     0, 6,  198,  -5,    0,   0,  5,     0,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — ref: decay=9.96s→Dkay198; inharm=0.0001→InHm0; damp=-0.54→Mterl-5
             { 2,  36,   0,   0,   150,   30,  0,   0,     0, 3,  150,  -8,   -5,   0, 15,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 2:  808 Sub    — single resonator membrane (Ptls=0, Mdl=3): no coupling instability, no overdrive
             { 3,  38,   0,   1,   400,  200,  0,   0,     2, 5,   15,  -2,    0,  50,  8,     0,     1,   5,  10,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mtr:-2 dark drum, InHm:0 clean, Gain:10 mild)
-            { 4,  72,   0,   1,   900,  500,  0,   0,     0, 7,  150,  25,    0,   0, 20,   600,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — single resonator (Mdl=7, InHm:600 bell-like)
+            { 4,  72,   0,   1,   900,  500,  0,   0,     0, 1,  197,  -5,    0,   0, 20,     5,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — ref Bells: Mdl1(Beam), decay=10.78s→Dkay197, inharm≈0→InHm5, damp=-0.62→Mterl-5
             { 5,  40,   0,   1,   300,   50,  0,   0,     2, 3,  145,  -5,    0,  30, 15,     0,     1,   5,  10,    3, 300,  0,   500, 707}, // 5:  Timpani    — membrane dual (Mdl=3, InHm:0 clean, Gain:10)
             { 6,  48,   0,   1,   600,  200,  0,   0,     2, 5,   80,   0,    0,  50, 12,     0,     5,   5,  15,    5, 200,  0,   600, 707}, // 6:  Djambe     — membrane dual (Mtr:0 neutral, InHm:0, Gain:15)
             { 7,  36,   0,   1,   200,   80,  0,   0,     2, 5,  100, -10,    0,  50, 18,    10,     1,   5,  40,    0, 300,  0,   400, 707}, // 7:  Taiko      — membrane dual (Mdl=5, Ptls=2)
             { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,    8,   5,    0,  50,  3,     0,    25,   5,  20,   95, 150,  2,  1000, 707}, // 8:  MrchSnr    — membrane dual (Mtr:5 moderate, InHm:0, Gain:20)
-            { 9,  35,   0,   1,   100,  150,  0,   0,     0, 4,  180,  25,    0,   0, 20,  1800,     1,   5,  60,   10, 800,  0,   800, 707}, // 9:  Tam Tam    — single resonator (Mdl=4 same-freq, Ptls→0)
-            {10,  72,   0,   1,   600,  280,  0,   0,     0, 0,  130,  10,    0,   0, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — single resonator (Ptls→0)
-            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  120,  15,    0,   0, 18,     5,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — single resonator (Ptls→0)
+            { 9,  35,   0,   1,   100,  150,  0,   0,     0, 4,  199,  -8,    0,   0, 20,     4,     1,   5,  30,   10, 800,  0,   800, 707}, // 9:  Tam Tam    — ref Bong: decay=17.17s→Dkay199, inharm=0.0021→InHm4, damp=-0.76→Mterl-8, Gain:60→30
+            {10,  72,   0,   1,   600,  280,  0,   0,     0, 0,  193,  10,    0,   0, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — Dkay:130→193 for ~5s ring at note 72
+            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  193,  -4,    0,   0, 18,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — ref Vibes: decay=4.08s→Dkay193, inharm≈0→InHm0, damp=-0.42→Mterl-4
             {12,  76,   0,   1,   800,  350,  0,   0,     0, 2,    5,  -8,    0,   0,  2,    80,     1,   5,   0,    0, 300,  0,   500, 707}, // 12: Wodblk     — single resonator (Ptls→0)
             {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,  15,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (InHm:0, Gain:15)
-            {14,  60,   0,   1,   800,  500,  0,   0,     0, 4,  140,  30,    0,   0, 18,  1950,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — single resonator (Ptls→0)
-            {15,  36,   0,   1,   200,  200,  0,   0,     0, 4,  190,  20,    0,   0, 20,  1900,     1,   5,  40,   10, 800,  0,   600, 707}, // 15: Gong       — single resonator (Ptls→0)
-            {16,  72,   0,   1,   700,  400,  0,   0,     0, 1,  140,  25,    0,   0,  5,     1,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba    — single resonator (Ptls→0)
-            {17,  60,   0,   1,   600,  350,  0,   0,     0, 4,  100,  20,    0,   0, 12,   800,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan  — single resonator (Ptls→0)
+            {14,  60,   0,   1,   800,  500,  0,   0,     0, 4,  197,  15,    0,   0, 18,     7,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — ref Crash: Dkay:140→197 (10s); inharm=0.0021→InHm7; Mterl:30→15
+            {15,  36,   0,   1,   200,  200,  0,   0,     0, 4,  199,  -8,    0,   0, 20,     4,     1,   5,  20,   10, 800,  0,   600, 707}, // 15: Gong       — ref Gong: decay=17.17s→Dkay199, inharm=0.0021→InHm4, damp=-0.76→Mterl-8, Gain:40→20
+            {16,  72,   0,   1,   700,  400,  0,   0,     0, 1,  199,  -1,    0,   0,  5,    18,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba    — ref Kalimba: decay=11.99s→Dkay199, inharm=0.0089→InHm18, damp=-0.24→Mterl-1
+            {17,  60,   0,   1,   600,  350,  0,   0,     0, 4,  185,  10,    0,   0, 12,    50,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan  — Dkay:100→185 (~4s); InHm:800→50 (mild plate dispersion)
             {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — single resonator (Ptls→0)
-            {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,   55,  25,    0,   0,  4,  1700,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — single resonator (Ptls→0)
-            {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  165,  30,    0,   0, 15,  1990,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle   — single resonator (Ptls→0)
+            {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
+            {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,  25,    0,   0, 15,    10,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle   — Dkay:165→199 (~8s bright ring); InHm:1990→10 (Beam model, nearly harmonic)
             {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     0,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane dual (InHm:0, Gain:20)
             {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mtr:5, InHm:0, Gain:15)
             {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    80,   5,  10,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (InHm:0, Gain:10)
             {24,  72,   0,   1,   100,   50,  0,   0,     0, 7,   90,  -5,    0,   0, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute      — single resonator (Ptls→0)
             {25,  72,   0,   0,    50,   20,  0,   0,     0, 8,  100,  -5,    0,   0, 15,     0,     1,   5,   0,   40, 800,  0,   800, 707}, // 25: Clarinet   — ClosedTube (phase_mult=-1); Note=72 so it resonates at C4 (octave-lower rule)
             {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
-            {27,  76,   0,   1,   700,  350,  0,   0,     0, 4,  160,  25,    0,   0, 18,  1200,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — single resonator (Ptls→0)
+            {27,  76,   0,   1,   700,  350,  0,   0,     0, 4,  199,  20,    0,   0, 18,    10,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — Dkay:160→199 (~10s singing bowl ring); InHm:1200→10 (plate, nearly harmonic)
             // 28: Guitar String — Karplus-Strong reference for physical model validation.
             // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
             // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
@@ -1252,6 +1252,37 @@ public:
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
 
+            // Pre-compute model-aware coupling clamps once per block.
+            // feedback_gain is constant during audio rendering, so this runs once per voice
+            // per processBlock() call instead of once per sample — saves ~128 fminf() calls.
+            //
+            // Different-frequency resonator pairs (membrane/drumhead, ResB tuned to the Bessel
+            // (1,1) mode ratio 0.628× base pitch) are phase-incoherent: coupling energy from
+            // ResB arrives at a different phase on every round trip, partially cancelling rather
+            // than always constructively adding.  This allows a 3× more permissive clamp (K=2.5
+            // vs K=0.8) so the Partials knob remains audible at high Decay values without
+            // the exponential explosion that full coupling causes for same-frequency pairs.
+            //
+            // Stability check (Timpani worst case: g=0.958, Ptls=2, diff_freq):
+            //   safe_cpl = min(0.25, 0.042 × 2.5) = min(0.25, 0.105) = 0.105
+            // vs old value: min(0.25, 0.034) = 0.034 (below audibility).
+            float v_safe_cpl_a = 0.0f, v_safe_cpl_b = 0.0f;
+            if (m_active_partials >= 16) {
+                float half_depth = m_coupling_depth * 0.5f;
+                float delay_ratio_diff = (voice.resA.delay_length > 0.1f)
+                    ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
+                    : 0.0f;
+                if (delay_ratio_diff > 0.05f) {
+                    // Incoherent (different-pitch) pair: 3× more coupling headroom
+                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 2.5f);
+                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 2.5f);
+                } else {
+                    // Coherent (same-pitch) pair: conservative stability clamp
+                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
+                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
+                }
+            }
+
             for (size_t i = 0; i < frames; ++i) {
 
                 // ── Stage 1: Raw exciter (always executes) ─────────────────
@@ -1269,16 +1300,11 @@ public:
                 // If Stage 2 is silent but Stage 1 is not, the waveguide has
                 // zero delay_length or zero feedback_gain on this hardware.
                 //
-                // Dynamic coupling clamp: limit cross-resonator injection so
-                // the total energy input (feedback + coupling) stays below 1
-                // per round trip, preventing exponential energy growth at ANY
-                // Decay/Partials combination.  The formula:
-                //   safe_coupling ≤ (1 − feedback_gain) × safety_factor
-                // ensures the system has headroom for energy dissipation.
-                float safe_cpl_a = fminf(m_coupling_depth * 0.5f,
-                    (1.0f - voice.resA.feedback_gain) * 0.8f);
-                float safe_cpl_b = fminf(m_coupling_depth * 0.5f,
-                    (1.0f - voice.resB.feedback_gain) * 0.8f);
+                // Model-aware coupling clamps are pre-computed once per block above.
+                // Diff-frequency pairs (membrane/drumhead) use K=2.5 so Partials
+                // remains audible at high Decay; same-frequency pairs use K=0.8.
+                float safe_cpl_a = v_safe_cpl_a;
+                float safe_cpl_b = v_safe_cpl_b;
 
                 float inputA = exciter_sig + (voice.resB_out_prev * safe_cpl_a);
                 outA = process_waveguide(voice.resA, inputA);
