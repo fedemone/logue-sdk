@@ -224,7 +224,10 @@ public:
     }
     void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
     void setModRate(float r) { modRate = fmaxf(0.1f, fminf(10.0f, r)); }
-    void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, modRate * lfoSpeed * modDepth)); }
+    // Recomputes modRate from scratch using current lfoSpeed and modDepth.
+    // Uses a fixed base rate of 1.0 Hz so the result is always deterministic
+    // regardless of how many times this is called.
+    void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, lfoSpeed * modDepth)); }
     void setMix(float m) { mix = fmaxf(0.0f, fminf(1.0f, m)); }
     void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); } // UNUSED
     // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.

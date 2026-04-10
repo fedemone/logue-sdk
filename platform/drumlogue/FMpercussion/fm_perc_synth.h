@@ -672,7 +672,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         resonant_synth_apply_lfo_resonance(&synth->resonant, voice_mask, res_mod);
     }
 
-    float32x4_t noise_add;
+    float32x4_t noise_add = vdupq_n_f32(0.0f);
     // =================================================================
     // LFO → NOISE_MIX (target 8): modulate snare noise/tone blend and metal brightness
     // =================================================================

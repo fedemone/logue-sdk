@@ -64,3 +64,15 @@ __unit_callback void unit_all_note_off() { }
 __unit_callback void unit_pitch_bend(uint16_t bend) { }
 __unit_callback void unit_channel_pressure(uint8_t pressure) { }
 __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) { }
+
+__unit_callback void unit_set_tempo(uint32_t tempo) { (void)tempo; }
+
+__unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t value) {
+    (void)id; (void)value;
+    return nullptr;
+}
+
+__unit_callback const char * unit_get_preset_name(uint8_t idx) {
+    (void)idx;
+    return nullptr;
+}

@@ -2,18 +2,13 @@
 
 #include <arm_neon.h>
 #include <float_math.h>
-#include <float_math.h>
 #include <cmath>
-#include <cstdlib>
 #include <cstdlib>
 #include <cstring>
 
 #define FDN_CHANNELS 8
 #define FDN_BUFFER_SIZE 32768
-#define FDN_CHANNELS 8
-#define FDN_BUFFER_SIZE 32768
 #define FDN_BUFFER_MASK (FDN_BUFFER_SIZE - 1)
-#define PREDELAY_BUFFER_SIZE 16384
 #define PREDELAY_BUFFER_SIZE 16384
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
 #define SPARKLE_BUFFER_SIZE 4096
@@ -109,7 +104,7 @@ public:
     // ========================================================================
     // INITIALIZATION & MATH
     // ========================================================================
-    void Init(float sr) {
+    bool init(float sr) {
         sampleRate = sr;
         generate_hadamard();
 
@@ -123,6 +118,7 @@ public:
         initialize_brightness_harmonic_exciter();
         Reset();
         initialized = true;
+        return true;
     }
 
     // 5kHz Butterworth HPF
@@ -172,16 +168,13 @@ public:
         }
     }
 
+    // Public reset — called by unit_reset()
+    void reset() { Reset(); }
+
     void Reset() {
         memset(fdnMem, 0, sizeof(fdnMem));
         memset(fdnState, 0, sizeof(fdnState));
-        memset(fdnState, 0, sizeof(fdnState));
         memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
-        memset(color_filters_l, 0, sizeof(color_filters_l));
-        memset(color_filters_r, 0, sizeof(color_filters_r));
-        memset(sparkle_buffer_l, 0, sizeof(sparkle_buffer_l));
-        memset(sparkle_buffer_r, 0, sizeof(sparkle_buffer_r));
-        writePos = 0;
         memset(color_filters_l, 0, sizeof(color_filters_l));
         memset(color_filters_r, 0, sizeof(color_filters_r));
         memset(sparkle_buffer_l, 0, sizeof(sparkle_buffer_l));
@@ -202,27 +195,29 @@ public:
     }
 
     //==============
-    // Setters
+    // Setters  (all take normalised float 0.0–1.0)
     //==============
-    void setDarkness(int32_t val) {
+    void setDarkness(float val) {
         dark_amt = val;
     }
-    void setBrightness(int32_t val) {
+    void setBrightness(float val) {
         bright_amt = val;
     }
-    void setGlow(int32_t val) {
+    void setGlow(float val) {
         glow_amt = val;
     }
-    void setColor(int32_t val) {
+    void setColor(float val) {
         color_amt = val;
     }
-    void setSpark(int32_t val) {
+    void setSpark(float val) {
         spark_amt = val;
     }
-    void setSize(int32_t val) {
-        sizeScale = fmaxf(0.1f, val * 2.0f);
+    // val is normalised 0.0–1.0; mapped to sizeScale 0.1–2.0
+    void setSize(float val) {
+        sizeScale = 0.1f + val * 1.9f;
     }
-    void setPreDelay(int32_t val) {
+    // val is normalised 0.0–1.0; mapped to up to ~330ms pre-delay
+    void setPreDelay(float val) {
         predelayScale = val;
     }
 
@@ -272,7 +267,7 @@ public:
     // ========================================================================
     // PARALLEL AUDIO BLOCK PROCESSOR
     // ========================================================================
-    void processBlock(float* out, int num_samples) {
+    void processBlock(const float* in, float* out, int num_samples) {
         if (!initialized) return;
 
         int preDelaySamps = (int)(predelayScale * 16000.0f); // Max ~330ms
@@ -282,8 +277,8 @@ public:
         float wet_normalize = total_wet > 0.0f ? (1.0f / fmaxf(1.0f, total_wet)) : 0.0f;
 
         for (int i = 0; i < num_samples; i += 2) {
-            float in_l = out[i];
-            float in_r = out[i+1];
+            float in_l = in[i];
+            float in_r = in[i+1];
 
             // PREDELAY
             float mono_in = (in_l + in_r) * 0.5f;

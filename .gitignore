@@ -69,7 +69,11 @@ platform/drumlogue/FMpercussion/test_voice
 platform/drumlogue/delay_tribal/test_biquad
 platform/drumlogue/omnipress/test_compressor
 platform/drumlogue/reverb_labirinto/test_hadamard
+platform/drumlogue/reverb_labirinto/test_modrate
+platform/drumlogue/reverb_labirinto/test_stability
 platform/drumlogue/reverb_light/test_reverb_light
+platform/drumlogue/reverb_light/test_api
+platform/drumlogue/reverb_light/test_stability
 platform/drumlogue/scruta_astri/test_dsp
 
 # VS Code config
