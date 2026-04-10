@@ -179,21 +179,17 @@ public:
             case k_paramCMOSDist: {
                 if (value <= CLEAN_MOOG_BORDER) {
                     m_cmos_gain = 1.0f + ((float)value / (float)CLEAN_MOOG_BORDER);
-                    filter1.drive = 0.0f;
-                    filter2.drive = 0.0f;
-                    m_sherman_asym_base = 0.0f; // Update base
+                    m_cmos_filter_drive = 0.0f;  // Store for APC to pick up
+                    m_sherman_asym_base = 0.0f;
                     m_sherman_makeup = 1.0f;
                 } else if (value <= MOOG_SHERMAN_BORDER) {
                     m_cmos_gain = 2.0f;
-                    float moog_drive = ((float)(value - CLEAN_MOOG_BORDER) / (float)(MOOG_SHERMAN_BORDER - CLEAN_MOOG_BORDER)) * 2.0f;
-                    filter1.drive = moog_drive;
-                    filter2.drive = moog_drive;
-                    m_sherman_asym_base = 0.0f; // Update base
+                    m_cmos_filter_drive = ((float)(value - CLEAN_MOOG_BORDER) / (float)(MOOG_SHERMAN_BORDER - CLEAN_MOOG_BORDER)) * 2.0f;
+                    m_sherman_asym_base = 0.0f;
                     m_sherman_makeup = 1.0f;
                 } else {
                     m_cmos_gain = 2.0f;
-                    filter1.drive = 2.0f;
-                    filter2.drive = 2.0f;
+                    m_cmos_filter_drive = 2.0f;
                     // Update base with the parameter calculation
                     m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) / (percent_normalizer - MOOG_SHERMAN_BORDER)) * 2.0f;
                     m_sherman_makeup = 1.0f + m_sherman_asym_base * 0.5f;
@@ -355,6 +351,8 @@ public:
                 m_pitch_mod_multiplier = 1.0f;
                 m_f1_mod_multiplier = 1.0f;
                 m_f2_mod_multiplier = 1.0f;
+                m_f1_lfo_mult = 1.0f;   // Reset: no filter LFO unless preset targets it
+                m_f2_lfo_mult = 1.0f;
                 m_cmos_mod_multiplier = 1.0f;
                 m_srr_mod_offset = 0.0f;
                 m_mix2_mod_offset = 0.0f;
@@ -374,9 +372,11 @@ public:
                         m_pitch_mod_multiplier = fasterpow2f(l1_val);
                         break;
                     case k_paramF1Cutoff:
+                        m_f1_lfo_mult = fasterpow2f(l1_val * 3.0f);
                         m_f1_mod_multiplier = fasterpow2f(l2_val * 4.0f);
                         break;
                     case k_paramF2Cutoff:
+                        m_f2_lfo_mult = fasterpow2f(l2_val * 3.0f);
                         m_f2_mod_multiplier = fasterpow2f(l1_val * 4.0f);
                         break;
                     case k_paramCMOSDist:
@@ -476,7 +476,9 @@ public:
             }
 
             // 5. FILTER 1
-            float f1_mod_hz = m_f1_base_hz * fasterpow2f(l1_val * 3.0f);
+            // m_f1_lfo_mult is only set when the preset targets F1 cutoff;
+            // otherwise it holds 1.0f so the base cutoff is unaffected.
+            float f1_mod_hz = m_f1_base_hz * m_f1_lfo_mult;
             f1_mod_hz *= m_f1_mod_multiplier;
 
             filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
@@ -490,7 +492,9 @@ public:
             // Instead of calling sinf() and sqrtf() to modulate Q,
             // we modulate the Sherman Drive. This pushes the filter into
             // aggressive screaming/squelching territory safely!
-            filter1.drive = fmaxf(0.0f, fminf(5.0f, m_f1_drive_base + (m_drv1_mod_multiplier * 5.0f)));
+            // Combine CMOS drive (from k_paramCMOSDist) with resonance drive and LFO drive.
+            // m_cmos_filter_drive is the only source that survives across APC cycles.
+            filter1.drive = fmaxf(0.0f, fminf(5.0f, m_cmos_filter_drive + m_f1_drive_base + (m_drv1_mod_multiplier * 5.0f)));
             mixed_sig = filter1.process(mixed_sig, l3_val);
 
             // 6. THE CRUSH SANDWICH
@@ -509,15 +513,12 @@ public:
             }
 
             // 7. FILTER 2 - Polivoks
-            float f2_mod_hz = m_f2_base_hz * fasterpow2f(l2_val * 3.0f);
+            // m_f2_lfo_mult is only set when the preset targets F2 cutoff
+            float f2_mod_hz = m_f2_base_hz * m_f2_lfo_mult;
             f2_mod_hz *= m_f2_mod_multiplier; // Apply APC multiplier
 
             filter2.set_coeffs(f2_mod_hz, m_f2_q, SAMPLE_RATE_F);
-            filter2.drive = filter1.drive;
-            // Instead of calling sinf() and sqrtf() to modulate Q,
-            // we modulate the Polivoks Drive. This pushes the filter into
-            // aggressive screaming/squelching territory safely!
-            filter2.drive = fmaxf(0.0f, fminf(5.0f, m_f2_drive_base + (m_drv2_mod_multiplier * 5.0f)));
+            filter2.drive = fmaxf(0.0f, fminf(5.0f, m_cmos_filter_drive + m_f2_drive_base + (m_drv2_mod_multiplier * 5.0f)));
             mixed_sig = filter2.process(mixed_sig);
             mixed_sig *= m_sherman_makeup;
 
@@ -641,6 +642,9 @@ private:
     // Held Modulation State
     float m_f1_mod_multiplier = 1.0f;
     float m_f2_mod_multiplier = 1.0f;
+    float m_f1_lfo_mult = 1.0f;    // APC-gated: only set when preset targets F1 cutoff
+    float m_f2_lfo_mult = 1.0f;    // APC-gated: only set when preset targets F2 cutoff
+    float m_cmos_filter_drive = 0.0f; // Drive set by k_paramCMOSDist; persists across APC cycles
     float m_cmos_mod_multiplier = 1.0f;
     float m_srr_mod_offset = 0.0f;
     float m_mix1_mod_offset = 0.0f;

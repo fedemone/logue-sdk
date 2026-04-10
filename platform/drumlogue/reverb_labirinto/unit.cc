@@ -29,7 +29,8 @@ constexpr uint32_t kMaxFrames = 256;
 // Static Instances
 // ============================================================================
 
-static NeonAdvancedLabirinto* s_reverb = nullptr;
+static NeonAdvancedLabirinto s_reverb_instance;
+static NeonAdvancedLabirinto* s_reverb = &s_reverb_instance;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
 static bool s_bypass = true;
@@ -100,18 +101,8 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
 
     s_runtime_desc = *desc;
 
-    // Create reverb instance
-    s_reverb = new NeonAdvancedLabirinto();
-    if (!s_reverb) {
-        s_initialized = false;
-        s_bypass = true;
-        return k_unit_err_memory;
-    }
-
-    // Initialize with memory allocation
+    // Initialize the reverb (clears delay lines and sets up shimmer tables)
     if (!s_reverb->init()) {
-        delete s_reverb;
-        s_reverb = nullptr;
         s_initialized = false;
         s_bypass = true;
         return k_unit_err_memory;
@@ -128,10 +119,6 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
 }
 
 __unit_callback void unit_teardown() {
-    if (s_reverb) {
-        delete s_reverb;
-        s_reverb = nullptr;
-    }
     s_initialized = false;
     s_bypass = true;
 }

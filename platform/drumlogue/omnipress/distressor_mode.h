@@ -245,7 +245,7 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
             gain_db = vmulq_f32(excess, vdupq_n_f32(0.95f));
             break;
 
-        case DIST_RATIO_NUKE:
+        case DIST_RATIO_NUKE: {
             // Brick-wall limiting - infinite compression above threshold [citation:3]
             // Maps excess to very high gain reduction
             uint32x4_t above_thresh = vcgtq_f32(envelope_db, thresh);
@@ -253,6 +253,7 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
                                 vdupq_n_f32(-40.0f),  // 40dB reduction when triggered
                                 vdupq_n_f32(0.0f));
             break;
+        }
     }
 
     return vnegq_f32(gain_db);  // Return negative dB for gain reduction

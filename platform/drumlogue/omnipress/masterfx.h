@@ -392,10 +392,16 @@ private:
         float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
                                                                detected_db, thresh_db_);
 
+        // Opto mode slows release by raising the coefficient to 1/mult power,
+        // which is equivalent to multiplying the release time constant by mult
+        // while keeping the coefficient safely in (0,1).
+        float opto_coeff = (distressor_.opto_release_mult > 1.0f)
+            ? powf(release_coeff_, 1.0f / distressor_.opto_release_mult)
+            : release_coeff_;
         float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
                                                           target_gain_db,
                                                           attack_coeff_,
-                                                          release_coeff_ * distressor_.opto_release_mult);
+                                                          opto_coeff);
 
         float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db, vdupq_n_f32(0.115129f)));
 
