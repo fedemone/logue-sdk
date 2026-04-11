@@ -1,7 +1,24 @@
-# Analysis of Current State
-# TODO - OmniPress v2.0
-## Summary of Changes
 # OmniPress - Implementation Status
+
+## Hardware Bugs Fixed
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| **Opto mode crash** | `release_coeff * 5.7 > 1.0` → IIR coefficient diverges exponentially | `powf(release_coeff, 1/opto_mult)` keeps coefficient in (0,1) |
+| **NUKE mode UB** | Variable declaration in `switch` case without braces → undefined behaviour | Added `{ }` around NUKE case body |
+| **Dist2/Dist3 inaudible** | Harmonics applied post-compression where x²/x³ ≪ x | Moved harmonic generation to pre-compression signal |
+| **Wave mode output +14 dB** | Auto-makeup at drive=0: `1/(0.2+0)=5×` gain | Corrected to `1/(1+drive*2)` → 1.0× at drive=0 |
+| **Multiband acts as expander** | `compressor_calc_gain` excess = `thresh − env` (inverted) → compresses quiet, ignores loud | Fixed to `excess = env − thresh`; also fixed ratio=0 polarity |
+
+## Open TODOs
+
+- [ ] Multiband default threshold is −20 dB; consider raising to −10 dB for more
+      musical compression at typical drum bus levels
+- [ ] Output soft-clipping protection (limiter at final stage)
+- [ ] Real-time crossover frequency updates without re-init
+- [ ] Per-band attack/release UI parameters (currently set programmatically only)
+
+---
 
 ## ✅ Completed Core
 - [x] NEON-optimized compressor core

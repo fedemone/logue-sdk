@@ -1,4 +1,23 @@
-# Percussion Spatializer - Enhancement Implementation Status
+# Percussion Spatializer / delay_tribal
+
+## Pre-Hardware Bugs Fixed (not yet tested on HW)
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| **NEON uninitialized registers** | `float32x4_t s1, s2` passed to `vsetq_lane_f32` — ARM NEON reads the destination register before writing the lane | `s1 = vdupq_n_f32(0.0f); s2 = vdupq_n_f32(0.0f)` in `PercussionSpatializer.h` |
+| **Filter div-by-zero** | `q_factor` could reach 0 → `alpha = sin_w0/(2*0) = inf` → `a0 = 1 + inf` → coefficient NaN | Added `if (q_factor < 0.01f) q_factor = 0.01f` guard in all three coefficient functions in `filters.h` |
+
+## Open TODOs
+
+- [ ] Hardware testing — unit has NOT yet been tested on physical drumlogue
+- [ ] Verify all three spatial modes (Tribal/Military/Angel) produce correct
+      filter character at both extremes of the Depth parameter
+- [ ] Check ramp_samples parameter path: `update_filter_params` only applies
+      coefficients immediately when `ramp_time == 0`; the ramped path is a stub
+
+---
+
+# Enhancement Implementation Status
 
 ## ✅ Implemented Enhancements
 

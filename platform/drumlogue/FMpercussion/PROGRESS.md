@@ -60,15 +60,25 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 - Stack: ~1 KB
 - **Total: ~15.2 KB** (Easily fits within drumlogue limits)
 
-## Known Issues
-- None! All core features implemented and mathematically verified.
+## Bugs Fixed (post-v2.0 hardware analysis)
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| **Metal engine not metallic** | Output was only Op1 (fundamental carrier); higher-operator FM modulation died with `env^2`/`env^4`, leaving a pure sine | Added direct weighted mix of Op2/Op3/Op4 to output (weights 0.5/0.3/0.15 scaled by brightness), creating persistent inharmonic partials at 1.4×/1.7×/2.3× |
+| **LFO_TARGET_NOISE_MIX not reaching metal** | `metal_engine_process` lacked a `brightness_add` parameter; `noise_add` computed in `fm_perc_synth.h` was not passed | Added `brightness_add` parameter; call site now passes `noise_add` |
+
+## Open TODOs
+
+- [ ] Hardware testing (unit not yet tested on physical drumlogue)
+- [ ] Consider DX7-style inharmonic ratios for metal engine:
+      1.0, 1.483, 1.932, 2.546 (closer to classic cymbal FM spectrum)
+      vs. current 1.0, 1.4, 1.7, 2.3
+- [ ] Complete factory preset bank (expand to 16 presets)
+- [ ] Add MIDI CC mapping for external sequencing
 
 ---
 
 ## Next Steps (Post-v2.0 Features)
-- [ ] Complete the factory preset bank (expand to 16 presets)
-- [ ] Add MIDI CC mapping for all parameters for external sequencing
-- [ ] Investigate user sample import for wavetable extension
 
 # PROGRESS.md - FM Percussion Synth
 
