@@ -34,6 +34,7 @@ static const int num_of_presets = 4;
 enum k_parameters {
     k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,
+    k_decay, k_bass,
     k_total
 };
 
@@ -55,12 +56,13 @@ static const char* k_preset_names[k_preset_number] = {
     "Bruciato"      // 3: Massive size, max decay, floating
 };
 
-// Values map to: { DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY }
+// Values: { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS }
 static const int32_t k_presets[num_of_presets][k_total] = {
-    { k_stanzaNeon, 40, 70, 30, 10,  5, 30,  5 },  // StanzaNeon
-    { k_vicoBuio,   80, 20, 40, 80, 10, 60, 15 },  // VicoBuio
-    { k_strobo,     20, 50, 40, 40, 40, 10, 80 },  // Strobo
-    { k_bruciato,   95, 40, 60, 30, 25, 90, 10 }   // Bruciato
+    //                                                              DCAY BASS
+    { k_stanzaNeon, 40, 70, 30, 10,  5, 30,  5,  65,  30 },  // StanzaNeon: medium decay, light bass cut
+    { k_vicoBuio,   80, 20, 40, 80, 10, 60, 15,  85,  10 },  // VicoBuio:   long dark decay, minimal bass cut
+    { k_strobo,     20, 50, 40, 40, 40, 10, 80,  45,  50 },  // Strobo:     short tight decay, moderate bass cut
+    { k_bruciato,   95, 40, 60, 30, 25, 90, 10,  95,  20 }   // Bruciato:   near-infinite decay, subtle bass cut
 };
 
 static uint8_t s_current_preset = 0;
@@ -76,7 +78,7 @@ static uint8_t s_current_preset = 0;
 // ID 5: SPRK  0..100 %  default 5
 // ID 6: SIZE  0..100 %  default 50
 // ID 7: PDLY  0..100 %  default 50
-static int32_t s_params[k_total] = { 0, 60, 50, 70, 10, 5, 50, 0 };
+static int32_t s_params[k_total] = { 0, 60, 50, 70, 10, 5, 50, 0, 65, 30 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -187,6 +189,12 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
       break;
     case k_pdly: // PDLY pre delay
       s_fdn_engine.setPreDelay(norm);
+      break;
+    case k_decay: // DCAY  FDN feedback gain  0-100% → 0.1..0.98
+      s_fdn_engine.setDecay(norm);
+      break;
+    case k_bass: // BASS  per-channel HPF in FDN loop  0-100% → coeff 0.99..0.85
+      s_fdn_engine.setHpfCoeff(norm);
       break;
     default:
       break;

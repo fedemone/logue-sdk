@@ -49,7 +49,8 @@ public:
 
     float sizeScale = 1.0f;
     float predelayScale = 0.0f;
-    float decay = 0.8f;
+    float decay = 0.8f;         // Feedback gain: 0.1 (short) .. 0.98 (infinite)
+    float hpf_coeff = 0.95f;    // Per-channel one-pole HPF coefficient: 0.85..0.99
 
     // ========================================================================
     // STATE VARIABLES
@@ -61,6 +62,10 @@ public:
     float fdnState[FDN_CHANNELS];
     float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(16)));
     int writePos = 0;
+
+    // Per-channel one-pole HPF states (applied to each delay output to cut bass buildup)
+    float hpf_x_prev[FDN_CHANNELS];   // previous input sample
+    float hpf_y_prev[FDN_CHANNELS];   // previous output sample
 
     // Predelay
     float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
@@ -193,6 +198,8 @@ public:
         glow_bp_l = 0.0f;
         glow_lp_r = 0.0f;
         glow_bp_r = 0.0f;
+        memset(hpf_x_prev, 0, sizeof(hpf_x_prev));
+        memset(hpf_y_prev, 0, sizeof(hpf_y_prev));
     }
 
     //==============
@@ -221,6 +228,18 @@ public:
     void setPreDelay(float val) {
         predelayScale = val;
     }
+    // val normalised 0.0–1.0; maps to feedback gain 0.1..0.98 (short to near-infinite)
+    void setDecay(float val) {
+        decay = 0.1f + val * 0.88f;
+    }
+    // val normalised 0.0–1.0; maps HPF cutoff from minimal (0.99) to moderate (0.85).
+    // The one-pole HPF formula is: y[n] = x[n] - x[n-1] + coeff * y[n-1]
+    // coeff = 0.99 → fc ≈ 76 Hz (just DC blocking)
+    // coeff = 0.85 → fc ≈ 1146 Hz (removes bass buildup in dense reverb tails)
+    // Higher knob value = more bass removed from the reverb tail.
+    void setHpfCoeff(float val) {
+        hpf_coeff = 0.99f - (val * 0.14f);
+    }
 
     // ========================================================================
     // BAREBONES FDN STEP (Replaces old bloated FDN logic)
@@ -244,11 +263,21 @@ public:
         }
 
 
-        // 2. Mixdown to Stereo Output
+        // 2. Apply per-channel one-pole HPF to kill DC and bass buildup in the tail.
+        //    Formula: y[n] = x[n] - x[n-1] + hpf_coeff * y[n-1]
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            float x = fdnOut[ch];
+            float y = x - hpf_x_prev[ch] + hpf_coeff * hpf_y_prev[ch];
+            hpf_x_prev[ch] = x;
+            hpf_y_prev[ch] = y;
+            fdnOut[ch] = y;
+        }
+
+        // 3. Mixdown to Stereo Output
         *out_l = fdnOut[0] + fdnOut[1] + fdnOut[2] + fdnOut[3];
         *out_r = fdnOut[4] + fdnOut[5] + fdnOut[6] + fdnOut[7];
 
-        // 3. Hadamard Mixing & Feedback Writing
+        // 4. Hadamard Mixing & Feedback Writing
         for (int i = 0; i < FDN_CHANNELS; i++) {
             float sum = 0.0f;
             for (int j = 0; j < FDN_CHANNELS; j++) {

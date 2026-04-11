@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00010000U,   // v1.0.0
     .name        = "LuceAlNeon",
     .num_presets = 4,
-    .num_params  = 8,
+    .num_params  = 10,
     .params = {
         // Page 1
 
@@ -39,7 +39,13 @@ const __unit_header unit_header_t unit_header = {
         // ID 7: PDLY  pre-delay time 0-100% (mapped to 0-200ms)
         { 0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"PDLY"} },
 
-        // Pages 3-6: blank
+        // Page 3
+        // ID 8: DCAY  FDN feedback (decay length)  0%-100%
+        { 0, 100, 50, 65, k_unit_param_type_percent, 0, 0, 0, {"DCAY"} },
+        // ID 9: BASS  per-channel HPF in FDN loop (bass cut in tail)  0%=flat 100%=max cut
+        { 0, 100, 30, 30, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },
+
+        // Pages 4-6: blank
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },

@@ -288,14 +288,14 @@ public:
     }
 
     void setFilterType(int preset) {
-        // map preset to filterMode
+        currentPreset = preset;   // Fix: currentPreset must track the active preset
         switch (preset) {
-            case 0: filterMode = kFilterWood; break;
-            case 1: filterMode = kFilterStone; break;
-            case 2: filterMode = kFilterMetal; break;
-            case 3: filterMode = kFilterMetal; break;
-            case 4: filterMode = kFilterNoise; break;
-            default: filterMode = kFilterWood; break;
+            case k_foresta:    filterMode = kFilterWood;    break;
+            case k_tempio:     filterMode = kFilterStone;   break;
+            case k_labirinto:  filterMode = kFilterMetal;   break;  // glassy high-Q bandpass
+            case k_esotico:    filterMode = kFilterCrystal; break;  // bright allpass-like shimmer
+            case k_stellare:   filterMode = kFilterNoise;   break;
+            default:           filterMode = kFilterWood;    break;
         }
         updateBaseFc();
     }
@@ -311,7 +311,10 @@ public:
                 fc = 80.0f + dampingCoeff * 420.0f;    // 80..500 Hz
                 break;
             case kFilterMetal:
-                fc = 800.0f + dampingCoeff * 3200.0f;  // 800..4000 Hz
+                fc = 800.0f + dampingCoeff * 3200.0f;  // 800..4000 Hz  (glassy high-Q ringing)
+                break;
+            case kFilterCrystal:
+                fc = 2000.0f + dampingCoeff * 5000.0f; // 2000..7000 Hz (bright shimmer for esotico)
                 break;
             default:
                 fc = 1000.0f;
@@ -343,8 +346,23 @@ public:
         // y[n] = (b0 * x[n]) + (b1 * x[n-1]) + (b2 * x[n-2]) - (a1 * y[n-1]) - (a2 * y[n-2])
         if (filterMode == kFilterMetal) {
             // METAL: High-Q Bandpass (Constant Peak Gain)
-            // Creates a glassy, inharmonic ringing resonance
+            // Creates a glassy, inharmonic ringing resonance — used by labirinto
             float Q = 8.0f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = alpha;
+            b1 = 0.0f;
+            b2 = -alpha;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+        else if (filterMode == kFilterCrystal) {
+            // CRYSTAL: Medium-Q Bandpass at higher frequencies — used by esotico.
+            // Q=3 gives a broader peak than METAL, suitable for microtonal shimmer.
+            // The higher fc range (2-7 kHz) keeps the tail bright and airy without
+            // the harsh metallic ring, blending with the microtonal modulation path.
+            float Q = 3.0f;
             alpha = sin_w0 / (2.0f * Q);
 
             b0 = alpha;
@@ -1319,7 +1337,9 @@ private:
     float smoothedLfoValue;
 
     // Filter types (per channel, but we can use shared coeffs)
-    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterNoise };
+    // kFilterCrystal: bright allpass-like character for esotico (medium-Q bandpass
+    // centred higher than metal, giving a shimmering/glassy microtonal colour)
+    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterCrystal, kFilterNoise };
     FilterMode filterMode;
     float biquadA0, biquadA1, biquadA2, biquadB1, biquadB2; // shared coeffs
     float filterState1[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-1

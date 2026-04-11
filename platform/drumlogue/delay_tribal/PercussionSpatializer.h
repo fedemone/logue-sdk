@@ -832,7 +832,8 @@ private:
 
         // 2. "Software Gather" directly into NEON registers lane-by-lane
         // This avoids writing to intermediate arrays and keeps data in the FPU
-        float32x4_t s1, s2;
+        float32x4_t s1 = vdupq_n_f32(0.0f);
+        float32x4_t s2 = vdupq_n_f32(0.0f);
         s1 = vsetq_lane_f32(delay_line[i1[0]], s1, 0);
         s1 = vsetq_lane_f32(delay_line[i1[1]], s1, 1);
         s1 = vsetq_lane_f32(delay_line[i1[2]], s1, 2);
