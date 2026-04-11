@@ -719,7 +719,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                  lfo_pitch_mult, index_add, noise_add);
     float32x4_t metal_out = metal_engine_process(&synth->metal, env,
                                                  synth->engine_mask[ENGINE_METAL],
-                                                 lfo_pitch_mult, index_add);
+                                                 lfo_pitch_mult, index_add, noise_add);
     float32x4_t perc_out = perc_engine_process(&synth->perc, env,
                                                synth->engine_mask[ENGINE_PERC],
                                                lfo_pitch_mult, index_add);

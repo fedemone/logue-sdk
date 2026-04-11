@@ -119,7 +119,8 @@ fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
                                              float32x4_t envelope,
                                              uint32x4_t active_mask,
                                              float32x4_t lfo_pitch_mult,
-                                             float32x4_t lfo_index_add) {
+                                             float32x4_t lfo_index_add,
+                                             float32x4_t brightness_add) {
     float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
     float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
 
@@ -139,7 +140,7 @@ fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
     float32x4_t env4 = vmulq_f32(env2, env2);
 
     // 4. Cascaded FM Synthesis
-    float32x4_t base_index = vaddq_f32(metal->brightness, lfo_index_add);
+    float32x4_t base_index = vaddq_f32(vaddq_f32(metal->brightness, lfo_index_add), brightness_add);
     float32x4_t index_high = vmulq_n_f32(base_index, 3.0f);
 
     // Op4 -> Modulates Op3 (Dies very fast - env4)
@@ -155,8 +156,20 @@ fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
     float32x4_t phase1_mod = vaddq_f32(metal->phase[0], vmulq_f32(op2, vmulq_f32(base_index, envelope)));
     float32x4_t op1 = neon_sin(phase1_mod);
 
-    // Output is purely the fundamental carrier (Op1) enveloped
-    float32x4_t output = vmulq_f32(op1, envelope);
+    // Mix all operators for metallic/cymbal character.
+    // Adding inharmonic partials from Op2/3/4 directly to the output creates
+    // the spectral density needed for metallic timbre; brightness controls blend.
+    // Weights (0.5, 0.3, 0.15) are chosen so peak amplitude ≈ 2x at brightness=1,
+    // acceptable for transient-heavy percussion.
+    float32x4_t bright_w2 = vmulq_f32(metal->brightness, vdupq_n_f32(0.5f));
+    float32x4_t bright_w3 = vmulq_f32(metal->brightness, vdupq_n_f32(0.3f));
+    float32x4_t bright_w4 = vmulq_f32(metal->brightness, vdupq_n_f32(0.15f));
+
+    float32x4_t harmonics = vaddq_f32(
+        vaddq_f32(vmulq_f32(op2, bright_w2), vmulq_f32(op3, bright_w3)),
+        vmulq_f32(op4, bright_w4)
+    );
+    float32x4_t output = vmulq_f32(vaddq_f32(op1, harmonics), envelope);
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
 
