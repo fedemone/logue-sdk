@@ -119,9 +119,13 @@ constexpr int LFO_TARGET_LFO2_PHASE = 4;
 constexpr int LFO_TARGET_LFO1_PHASE = 5;
 constexpr int LFO_TARGET_RES_FREQ = 6;
 constexpr int LFO_TARGET_RESONANCE = 7;
-constexpr int LFO_TARGET_NOISE_MIX = 8;  // Snare noise/tone blend; metal brightness
-constexpr int LFO_TARGET_RES_MORPH = 9;  // Resonant filter morph (fc / Q sweep)
-constexpr int LFO_TARGET_COUNT = 10;
+constexpr int LFO_TARGET_NOISE_MIX = 8;   // Snare noise/tone blend; metal brightness
+constexpr int LFO_TARGET_RES_MORPH = 9;   // Resonant filter morph (fc / Q sweep)
+constexpr int LFO_TARGET_METAL_GATE = 10; // Metal engine amplitude gate (open/closed hi-hat)
+                                           // Use with Ramp shape + positive depth:
+                                           //   rate=high → fast gate close → closed hi-hat
+                                           //   rate=low  → slow gate close → open hi-hat
+constexpr int LFO_TARGET_COUNT = 11;
 
 // ============================================================================
 // LFO Shape Constants

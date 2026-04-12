@@ -12,10 +12,10 @@ const char* lfo_shape_strings[9] = {
     "Ramp+Chord", "Chord+Tri", "Chord+Ramp"
 };
 
-const char* lfo_target_strings[10] = {
+const char* lfo_target_strings[11] = {
     "None", "Pitch", "ModIdx", "Env",
     "LFO2Ph", "LFO1Ph", "ResFreq", "Resonance",
-    "NoiseMx", "ResMrph"
+    "NoiseMx", "ResMrph", "MetalGate"
 };
 
 const char* resonant_mode_strings[5] = {
@@ -71,13 +71,13 @@ const __unit_header unit_header_t unit_header = {
         // Page 4: LFO1
         {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Shape"}},
         {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L1Rate"}},
-        {0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Dest"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Dest"}},
         {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L1Depth"}},
 
         // Page 5: LFO2
         {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Shape"}},
         {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L2Rate"}},
-        {0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Dest"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Dest"}},
         {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
 
         // Page 6: Envelope + Voice + Resonant

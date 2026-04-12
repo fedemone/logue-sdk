@@ -573,6 +573,9 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     //   NOISE_MIX(8) Modulates snare noise/tone balance AND metal FM index depth.
     //               Both wired: snare via additive offset in process(), metal via
     //               brightness_add parameter.
+    //   METAL_GATE(10) Per-sample amplitude gate on metal engine only. Use with
+    //               Ramp shape + positive depth for open/closed hi-hat effect.
+    //               LFO phase resets on trigger, so Ramp acts as one-shot gate.
     float32x4_t index_add      = vdupq_n_f32(0.0f);
     float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
 
@@ -734,6 +737,35 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     }
 
     // =================================================================
+    // LFO → METAL_GATE (target 10): open/closed hi-hat amplitude gate
+    // Inspired by the TR-909: same oscillator bank, two different VCA
+    // decay times. Here the LFO provides the variable-length gate.
+    //
+    // Usage: set L1Shape=Ramp, L1Target=MetalGate, L1Depth=+50..+100%.
+    //   L1Rate high → gate closes fast → closed hi-hat character.
+    //   L1Rate low  → gate closes slowly → open hi-hat character.
+    //   L1Depth 0%  → metal_gate = 1.0 always (gate disabled, fully open).
+    //   L1Depth negative → no effect (same as depth 0%).
+    //
+    // Because LFO phase resets on every trigger (fm_perc_synth_note_on),
+    // the Ramp starts from 0.0 on each hit, acting as a one-shot decay gate.
+    // =================================================================
+    float32x4_t metal_gate = vdupq_n_f32(1.0f);  // Default: fully open (no gating)
+    if (synth->lfo.target1 == LFO_TARGET_METAL_GATE ||
+        synth->lfo.target2 == LFO_TARGET_METAL_GATE) {
+        float32x4_t mod   = (synth->lfo.target1 == LFO_TARGET_METAL_GATE) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_METAL_GATE)
+                            ? synth->lfo.depth1 : synth->lfo.depth2;
+        // gate = clamp(1.0 - lfo * depth, 0, 1)
+        // Ramp LFO: 0 at trigger → 1 at end of period.
+        // Positive depth: 1.0 at trigger → 0.0 as lfo reaches 1/depth.
+        // Negative depth: no effect (gate stays ≥1.0, clamped to 1.0).
+        float32x4_t raw = vsubq_f32(vdupq_n_f32(1.0f), vmulq_f32(mod, depth));
+        metal_gate = vmaxq_f32(vmaxq_f32(raw, vdupq_n_f32(0.0f)), vdupq_n_f32(0.0f));
+        metal_gate = vminq_f32(metal_gate, vdupq_n_f32(1.0f));
+    }
+
+    // =================================================================
     // Process each engine with its voice mask
     // =================================================================
     float32x4_t kick_out = kick_engine_process(&synth->kick, env,
@@ -744,7 +776,8 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                  lfo_pitch_mult, index_add, noise_add);
     float32x4_t metal_out = metal_engine_process(&synth->metal, env,
                                                  synth->engine_mask[ENGINE_METAL],
-                                                 lfo_pitch_mult, index_add, noise_add);
+                                                 lfo_pitch_mult, index_add, noise_add,
+                                                 metal_gate);
     float32x4_t perc_out = perc_engine_process(&synth->perc, env,
                                                synth->engine_mask[ENGINE_PERC],
                                                lfo_pitch_mult, index_add);

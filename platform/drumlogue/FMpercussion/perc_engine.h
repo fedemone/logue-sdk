@@ -25,12 +25,10 @@ typedef struct {
     // Three operators
     float32x4_t phase[3];
     float32x4_t carrier_freq_base;  // Carrier base frequency
-    float32x4_t ratio_center;       // Main modulator ratio
-    float32x4_t variation;          // Secondary modulation amount
-
-    // Parameters
-    float32x4_t ratio_param;        // 0-1 mapped to ratio range
-    float32x4_t var_param;          // 0-1 mapped to variation range
+    float32x4_t ratio_center;       // Main modulator ratio (mod1 freq = carrier * ratio_center)
+    float32x4_t variation;          // Secondary modulation: mod2 offset + transient pitch bend depth
+                                    // (0-1 maps to 0-PERC_VARIATION_MAX via perc_engine_update)
+    float32x4_t ratio_param;        // 0-1 stored for reference; drives ratio_center
 } perc_engine_t;
 
 /**
@@ -44,26 +42,26 @@ fast_inline void perc_engine_init(perc_engine_t* perc) {
     perc->carrier_freq_base = vdupq_n_f32(200.0f);  // Mid tom default
     perc->ratio_center = vdupq_n_f32(2.0f);
     perc->variation = vdupq_n_f32(0.5f);
-
     perc->ratio_param = vdupq_n_f32(0.5f);
-    perc->var_param = vdupq_n_f32(0.5f);
 }
 
 /**
  * Update perc engine parameters
  */
 fast_inline void perc_engine_update(perc_engine_t* perc,
-                                    float32x4_t param1,   // Ratio center
-                                    float32x4_t param2) { // Variation
+                                    float32x4_t param1,   // Ratio center (PRatio)
+                                    float32x4_t param2) { // Variation (PVar)
     perc->ratio_param = param1;
-    perc->var_param = param2;       // TODO what's the use for???
 
-    // Map param1 (0-1) to ratio range (1.0-3.0)
+    // Map param1 (0-1) to FM modulator ratio range (1.0-3.0)
     float32x4_t ratio_range = vdupq_n_f32(PERC_RATIO_MAX - PERC_RATIO_MIN);
     perc->ratio_center = vaddq_f32(vdupq_n_f32(PERC_RATIO_MIN),
                                    vmulq_f32(param1, ratio_range));
 
-    // Map param2 to variation amount
+    // Map param2 (0-1) to variation depth (0-PERC_VARIATION_MAX).
+    // variation controls: (a) mod2 ratio offset (static timbral shift) and
+    // (b) the transient pitch-bend depth on mod2 (env^2-weighted), which adds a
+    // short downward-pitched "thwack" on each hit, similar to conga body flex.
     perc->variation = vmulq_f32(param2, vdupq_n_f32(PERC_VARIATION_MAX));
 }
 

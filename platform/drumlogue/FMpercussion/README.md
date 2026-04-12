@@ -106,7 +106,7 @@ Where:
 
 Maps 0-100% to **50 Hz - 8000 Hz** center frequency for the resonant peak.
 
-## LFO Targets (0–9)
+## LFO Targets (0–10)
 
 | Value | Display | Target | Percussion Character |
 |-------|---------|--------|----------------------|
@@ -120,8 +120,11 @@ Maps 0-100% to **50 Hz - 8000 Hz** center frequency for the resonant peak.
 | 7 | Resonance | Resonant engine Q amount | Silent unless a Resonant voice is active in VoiceAlloc |
 | 8 | NoiseMx | Snare noise mix (additive offset); Metal brightness_add | Percussive — adds texture sweep to snare and metal |
 | 9 | ResMrph | Resonant engine morph (crossfade between filter modes) | Silent unless a Resonant voice is active in VoiceAlloc |
+| 10 | MetalGate | Metal engine amplitude gate — open/closed hi-hat control | Fully open (no effect) at depth 0%; positive depth + Ramp shape = hi-hat gate |
 
 > **Note**: LFO targets 6, 7, and 9 are silent when no Resonant voice is active in the current VoiceAlloc setting. This is by design — use them with VoiceAlloc values 1–11.
+
+> **Open/Closed Hi-Hat** (target 10 MetalGate): Set L1Shape = Ramp+Ramp, L1Target = MetalGate, L1Depth = +50% to +100%. LFO phase resets on every trigger, so the ramp fires once per hit. High L1Rate → gate closes fast → **closed hi-hat** character. Low L1Rate → gate closes slowly → **open hi-hat** character. L1Depth = 0% disables the gate entirely (fully open).
 
 ## Metal Engine Character System
 
@@ -175,11 +178,11 @@ The **MInharm** parameter (0–100%) spreads the ratios away from unison: at 0% 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    LFO MODULATION MATRIX (Pages 4-5)                 │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ LFO1: Shape(0-8) + Rate + Target(0-9) + Depth(-100-100)    │   │
-│  │ LFO2: Shape(0-8) + Rate + Target(0-9) + Depth(-100-100)    │   │
+│  │ LFO1: Shape(0-8) + Rate + Target(0-10) + Depth(-100-100)    │   │
+│  │ LFO2: Shape(0-8) + Rate + Target(0-10) + Depth(-100-100)    │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │         ↓            ↓            ↓            ↓            ↓       │
-│    Pitch Mod  Index Mod   Env Mod  Res Freq/Res/Morph  NoiseMx     │
+│    Pitch Mod  Index Mod   Env Mod  Res/NoiseMx  MetalGate          │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -234,7 +237,7 @@ your_project/
 ├── snare_engine.h        # Snare engine
 ├── metal_engine.h        # Metal engine
 ├── perc_engine.h         # Perc engine
-├── lfo_enhanced.h        # LFO system with 10 targets (0-9)
+├── lfo_enhanced.h        # LFO system with 10 targets (0-10)
 ├── envelope_rom.h        # 128 envelope shapes
 ├── prng.h                # NEON PRNG
 ├── sine_neon.h           # NEON sine approximation

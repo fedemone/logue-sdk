@@ -17,6 +17,39 @@
     constexpr int MAX_OPERATORS = 4;
 
 /**
+ * Simple one-pole filter state.
+ * Shared by snare (noise shaping) and metal (cymbal noise HPF).
+ */
+typedef struct {
+    float32x4_t z1;  // Delay element (one state per NEON lane = per voice)
+} one_pole_t;
+
+/**
+ * One-pole LPF with precomputed alpha — no per-call division.
+ * alpha = 2*pi*f / (2*pi*f + SAMPLE_RATE)
+ */
+fast_inline float32x4_t one_pole_lpf_a(one_pole_t* f, float32x4_t in, float alpha) {
+    float32x4_t a   = vdupq_n_f32(alpha);
+    float32x4_t out = vaddq_f32(vmulq_f32(in, a),
+                                 vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), a)));
+    f->z1 = out;
+    return out;
+}
+
+/**
+ * One-pole LPF with runtime cutoff frequency (Hz).
+ * Matched-z: alpha = 2*pi*f / (2*pi*f + sr)
+ */
+fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff) {
+    const float two_pi_f = 2.0f * (float)M_PI * cutoff;
+    float32x4_t alpha = vdupq_n_f32(two_pi_f / (two_pi_f + SAMPLE_RATE));
+    float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
+                                vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), alpha)));
+    f->z1 = out;
+    return out;
+}
+
+/**
  * Operator data for 4 voices (SoA format)
  */
 typedef struct {

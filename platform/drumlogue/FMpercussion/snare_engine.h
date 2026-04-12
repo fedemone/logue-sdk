@@ -19,43 +19,12 @@
 #include "prng.h"
 
 // Snare engine constants
+// one_pole_t and one_pole_lpf_a/one_pole_lpf are now in fm_voices.h
 #define SNARE_CARRIER_BASE 200.0f    // Base frequency
 #define SNARE_MOD_RATIO_MIN 1.5f
 #define SNARE_MOD_RATIO_MAX 2.5f
 #define SNARE_NOISE_HPF_CUTOFF 800.0f   // High-pass for noise
 #define SNARE_NOISE_LPF_CUTOFF 5000.0f  // Low-pass for noise
-
-/**
- * Simple one-pole filter for noise shaping
- */
-typedef struct {
-    float32x4_t z1;  // Delay element
-} one_pole_t;
-
-/**
- * One-pole LPF using a precomputed alpha — avoids the division on every call.
- * Use when the cutoff is fixed (e.g. per-engine band filters).
- * alpha = 2*pi*f / (2*pi*f + SAMPLE_RATE)
- */
-fast_inline float32x4_t one_pole_lpf_a(one_pole_t* f, float32x4_t in, float alpha) {
-    float32x4_t a   = vdupq_n_f32(alpha);
-    float32x4_t out = vaddq_f32(vmulq_f32(in, a),
-                                 vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), a)));
-    f->z1 = out;
-    return out;
-}
-
-fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff) {
-    // Matched-z transform: alpha = 2*pi*f / (2*pi*f + sr)
-    // e.g. 800 Hz  -> alpha ~0.095  (was ~0.016 with wrong formula)
-    //      5000 Hz -> alpha ~0.396  (was ~0.094)
-    const float two_pi_f = 2.0f * (float)M_PI * cutoff;
-    float32x4_t alpha = vdupq_n_f32(two_pi_f / (two_pi_f + SAMPLE_RATE));
-    float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
-                                vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), alpha)));
-    f->z1 = out;
-    return out;
-}
 
 /**
  * Snare engine state
