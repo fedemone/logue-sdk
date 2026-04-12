@@ -2,11 +2,13 @@
  *  @file metal_engine.h
  *  @brief 4-operator FM metal/cymbal engine
  *
- *  Operators: All modulating each other in a cluster
- *  Fixed ratios: 1.0, 1.4, 1.7, 2.3 (inharmonic)
+ *  Operators: All modulating each other in a cascaded cluster (Op4→Op3→Op2→Op1)
+ *  Character 0 (Cymbal/DX7): ratios 1.0 / 1.483 / 1.932 / 2.546
+ *  Character 1 (Gong):       ratios 1.0 / 2.756 / 3.752 / 5.404
+ *  Character selected by EnvShape parameter bit 7 (0=Cymbal, 1=Gong).
  *  Parameters:
- *    Param1: Inharmonicity (0-100%) - spreads ratios
- *    Param2: Brightness (0-100%) - controls high-frequency content
+ *    Param1: Inharmonicity (0-100%) — spreads ratios from base; 0=all unison
+ *    Param2: Brightness (0-100%)   — harmonic blend (Op2/3/4 contribution)
  */
 
 #pragma once
@@ -15,11 +17,17 @@
 #include "fm_voices.h"
 #include "sine_neon.h"
 
-// Base ratios for metal (inharmonic)
+// Character 0 — DX7-style cymbal (hi-hat/crash FM classic)
 #define METAL_RATIO1 1.0f
-#define METAL_RATIO2 1.4f
-#define METAL_RATIO3 1.7f
-#define METAL_RATIO4 2.3f
+#define METAL_RATIO2 1.483f
+#define METAL_RATIO3 1.932f
+#define METAL_RATIO4 2.546f
+
+// Character 1 — Gong/tam-tam (widely-spaced inharmonic partials)
+#define METAL_GONG_RATIO1 1.0f
+#define METAL_GONG_RATIO2 2.756f
+#define METAL_GONG_RATIO3 3.752f
+#define METAL_GONG_RATIO4 5.404f
 
 // Ratio spread range for inharmonicity parameter
 #define METAL_SPREAD_MIN 1.0f
@@ -37,6 +45,10 @@ typedef struct {
     // Parameters
     float32x4_t inharmonicity;   // 0-1
     float32x4_t brightness;      // 0-1
+
+    // Character variant (set from EnvShape bit 7)
+    // 0 = Cymbal/DX7 (default), 1 = Gong/tam-tam
+    uint32_t char_select;
 } metal_engine_t;
 
 /**
@@ -60,6 +72,33 @@ fast_inline void metal_engine_init(metal_engine_t* metal) {
     metal->carrier_freq_base = vdupq_n_f32(1000.0f);  // Mid-range default
     metal->inharmonicity = vdupq_n_f32(0.5f);
     metal->brightness = vdupq_n_f32(0.5f);
+    metal->char_select = 0;
+}
+
+/**
+ * Select metal engine character (ratio set).
+ * Called when EnvShape parameter changes (bit 7 = character).
+ *   0 = Cymbal / DX7-style  (EnvShape 0-127)
+ *   1 = Gong  / tam-tam     (EnvShape 128-255)
+ */
+fast_inline void metal_engine_set_character(metal_engine_t* metal, uint32_t character) {
+    if (character == metal->char_select) return;
+    metal->char_select = character;
+    if (character == 0) {
+        metal->base_ratio[0] = vdupq_n_f32(METAL_RATIO1);
+        metal->base_ratio[1] = vdupq_n_f32(METAL_RATIO2);
+        metal->base_ratio[2] = vdupq_n_f32(METAL_RATIO3);
+        metal->base_ratio[3] = vdupq_n_f32(METAL_RATIO4);
+    } else {
+        metal->base_ratio[0] = vdupq_n_f32(METAL_GONG_RATIO1);
+        metal->base_ratio[1] = vdupq_n_f32(METAL_GONG_RATIO2);
+        metal->base_ratio[2] = vdupq_n_f32(METAL_GONG_RATIO3);
+        metal->base_ratio[3] = vdupq_n_f32(METAL_GONG_RATIO4);
+    }
+    // Reset current_ratio so engine_update picks up new base on next call
+    for (int i = 0; i < 4; i++) {
+        metal->current_ratio[i] = metal->base_ratio[i];
+    }
 }
 
 /**

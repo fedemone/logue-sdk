@@ -46,7 +46,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x02U,
     .version = 0x00020000U,
     .name = "FMPerc",
-    .num_presets = 20,
+    .num_presets = 23,
     .num_params = 24,
 
     .params = {
@@ -81,7 +81,11 @@ const __unit_header unit_header_t unit_header = {
         {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
 
         // Page 6: Envelope + Voice + Resonant
-        {0, 127, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}}, // 127 is the max for int8
+        // EnvShape: bit 7 selects metal character (0=Cymbal/DX7, 1=Gong),
+        //           bits[6:0] select envelope ROM curve 0-127.
+        //   0-127: Cymbal character + envelope 0-127
+        //   128-255: Gong character + envelope 0-127
+        {0, 255, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}},
         {0, 11, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"VoiceAlloc"}},
         {0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"ResMode"}},
         {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"ResMorph"}}

@@ -29,7 +29,11 @@ const char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
     "GhstSnr",
     "RimPtch",
     "TomWah",
-    "Shaker"
+    "Shaker",
+    // Gong character (EnvShape bit 7 set)
+    "GongHit",
+    "TmplBell",
+    "MetlGong"
 };
 
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
@@ -282,7 +286,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 19: "Shaker" - High density rattling: all four voices active,
     // low probabilities for irregular hitting, high metal brightness, fast
-    // near-audio LFO on NOISE_MIX for textured shimmer.
+    // near-audio LFO on NOISE_MIX for textured shimmer (metal and snare).
     {
         "Shaker", 60, 50, 90, 70,
         20, 40, 80, 70,
@@ -291,6 +295,52 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         4, 50, LFO_TARGET_PITCH, 15,       // LFO2: Chord shape, slow pitch arp
         8, 0,
         RESONANT_MODE_HIGHPASS, 80, 50, 70,
+        {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
+    },
+
+    // ===== CHARACTER 1 (GONG) PRESETS — EnvShape = 128+index =====
+    // EnvShape bit 7 = 1 selects gong ratios (1.0, 2.756, 3.752, 5.404)
+    // which produce widely-spaced inharmonic partials vs. the DX7 cymbal cluster.
+
+    // Preset 20: "GongHit" - Single gong strike with long resonant tail.
+    // Metal engine only (all voices routed to metal), high inharmonicity for
+    // rich gong spectrum, slow LFO pitch sag (gong pitch drops after strike).
+    {
+        "GongHit", 0, 0, 100, 0,
+        0, 0, 0, 0,
+        70, 60, 0, 0,
+        1, 8,  LFO_TARGET_PITCH, -40,  // LFO1: slow ramp → pitch sag after hit
+        0, 0,  LFO_TARGET_NONE, 0,
+        128 + 110, 0,                  // EnvShape: char=1(Gong) + env=110 (long decay)
+        RESONANT_MODE_PEAK, 0, 0, 0,
+        {ENGINE_METAL, ENGINE_METAL, ENGINE_METAL, ENGINE_METAL}
+    },
+
+    // Preset 21: "TmplBell" - Temple bell: low inharmonicity (partials less
+    // spread) gives a clearer pitch centre; LFO index sweep brightens the
+    // attack transient then softens.  Long decay envelope.
+    {
+        "TmplBell", 0, 0, 100, 0,
+        0, 0, 0, 0,
+        20, 80, 0, 0,
+        0, 12, LFO_TARGET_INDEX, 60,   // LFO1: slow ramp → brightness decay
+        0, 0,  LFO_TARGET_NONE, 0,
+        128 + 100, 0,                  // EnvShape: char=1(Gong) + env=100 (long)
+        RESONANT_MODE_LOWPASS, 0, 0, 0,
+        {ENGINE_METAL, ENGINE_METAL, ENGINE_METAL, ENGINE_METAL}
+    },
+
+    // Preset 22: "MetlGong" - Hybrid: kick gives low body, metal uses gong
+    // character.  LFO NOISE_MIX on both snare and metal creates evolving
+    // texture.  Medium decay, mid-range voices active.
+    {
+        "MetlGong", 60, 30, 80, 0,
+        50, 40, 20, 30,
+        60, 70, 0, 0,
+        0, 40, LFO_TARGET_NOISE_MIX, 70, // LFO1: triangle → noise texture
+        1, 6,  LFO_TARGET_PITCH, -20,     // LFO2: slow pitch drop
+        128 + 60, 0,                      // EnvShape: char=1(Gong) + env=60 (medium)
+        RESONANT_MODE_BANDPASS, 0, 0, 0,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     }
 };

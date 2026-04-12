@@ -268,9 +268,13 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     lfo_smoother_set_target(&synth->lfo_smooth, 1, p[PARAM_LFO2_TARGET], all_voices);
 
     // =================================================================
-    // Update envelope shape (param 20)
+    // Update envelope shape and metal character (param 20)
+    // EnvShape encoding: bit 7 = metal character (0=Cymbal, 1=Gong)
+    //                    bits[6:0] = envelope ROM index (0-127)
     // =================================================================
-    synth->current_env_shape = p[PARAM_ENV_SHAPE];
+    synth->current_env_shape = (uint8_t)p[PARAM_ENV_SHAPE];
+    metal_engine_set_character(&synth->metal,
+                               (uint32_t)(synth->current_env_shape >> 7));
 }
 
 /**
@@ -496,7 +500,9 @@ fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
     // 7. Trigger envelope for gated voices
     // ---------------------------------------------------------------
     synth->voice_triggered = gate;
-    neon_envelope_trigger(&synth->envelope, gate, synth->current_env_shape);
+    // Mask to lower 7 bits: bit 7 encodes metal character, not envelope index
+    neon_envelope_trigger(&synth->envelope, gate,
+                          synth->current_env_shape & 0x7Fu);
 }
 
 /**
@@ -552,7 +558,21 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // =================================================================
     float32x4_t lfo1, lfo2;
     lfo_enhanced_process(&synth->lfo, &lfo1, &lfo2);
-    // 2. Calculate LFO Modulations
+    // LFO target guide — all targets wired; character notes:
+    //   PITCH(1)    Purely percussive: pitch sweep / flam tuning at slow rate,
+    //               vibrato at medium rate, FM-pitch crunch at near-audio rate.
+    //   INDEX(2)    Percussive: brightness / spectral density modulation.
+    //               High depth causes AM beating when both LFOs target INDEX.
+    //   ENV(3)      Can shift toward synth/melodic: acts as amplitude envelope
+    //               re-shaper — slow rates create dynamic variation per hit,
+    //               fast rates create tremolo, very fast = AM synth character.
+    //   LFO2_PHASE(4)/LFO1_PHASE(5)  LFO cross-modulation (frequency FM between
+    //               the two LFOs). Keeps percussive but adds movement to sweep.
+    //   RES_FREQ(6)/RESONANCE(7)/RES_MORPH(9)  Only affect the resonant engine;
+    //               silent when voice allocation has no resonant engine active.
+    //   NOISE_MIX(8) Modulates snare noise/tone balance AND metal FM index depth.
+    //               Both wired: snare via additive offset in process(), metal via
+    //               brightness_add parameter.
     float32x4_t index_add      = vdupq_n_f32(0.0f);
     float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
 
@@ -685,7 +705,12 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         noise_add = vmulq_f32(
             vsubq_f32(vmulq_f32(mod, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f)),
             depth);
-        // snare_engine_update_noise(&synth->snare, noise_add); // cannot add something noise, as this function is called per sample, and updating the value used for calculate the modulatio, creating an exploding feedback
+        // noise_add is applied in:
+        //   snare_engine_process (line ~213): noise_mix_mod = noise_mix + noise_add
+        //   metal_engine_process (brightness_add param): base_index += brightness_add
+        // NOTE: snare_engine_update_noise() is intentionally NOT called here —
+        //       it writes to snare->noise_mix which is used as a base level,
+        //       and calling it per-sample would cause exploding feedback.
     }
 
     // =================================================================

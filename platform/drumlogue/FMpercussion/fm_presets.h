@@ -31,7 +31,7 @@
 #define ENGINE_RESONANT (4)
 
 // from header.c
-#define NUM_OF_PRESETS (20)
+#define NUM_OF_PRESETS (23)
 #define NAME_LENGTH    (12)
 
 typedef enum {
@@ -50,12 +50,16 @@ typedef enum {
   // New presets exploiting LFO phase sync, NOISE_MIX and RES_MORPH targets
   SLOW_ENV,      // 12: slow ramp LFO as second envelope
   WAH_DRUM,      // 13: LFO→RES_MORPH for auto-wah filter sweep
-  NOISE_SWEEP,   // 14: LFO→NOISE_MIX for white-noise swell
+  NOISE_SWEEP,   // 14: LFO→NOISE_MIX for snare/metal texture sweep
   FM_BUZZ,       // 15: near-audio-rate LFO→INDEX for AM/FM texture
   GHOST_SNARE,   // 16: sparse ghostly snare hits with resonant filter
   RIM_PITCH,     // 17: slow ramp pitch envelope on metal/perc
   TOM_WAH,       // 18: resonant tom with filter morph sweep
   SHAKER,        // 19: high-density rattling metal texture
+  // Character 1 (Gong) presets — EnvShape bit 7 set (128+env_index)
+  GONG_HIT,      // 20: pure gong strike, long resonant tail
+  TEMPLE_BELL,   // 21: temple bell, bright ring with slow LFO sweep
+  METAL_GONG,    // 22: metal/gong hybrid, fast LFO index buzz
   TOTAL_PRESETS = NUM_OF_PRESETS
 } preset_numer_t;
 
@@ -93,7 +97,7 @@ typedef struct {
   int8_t lfo2_depth;    // -100 to 100
 
   // Page 6: Envelope
-  uint8_t env_shape;    // 0-127
+  uint8_t env_shape;    // 0-255: bit7=metal character (0=Cymbal, 1=Gong), bits[6:0]=envelope index 0-127
   uint8_t voice_index;  // 0-VOICE_ALLOC_COUNT
 
   // NEW: Resonant parameters (using params 21-23)
