@@ -28,6 +28,13 @@ By analyzing the original Teensy Audio patches from the hardware's source code, 
 ## The Drone / Sequencer Concept
 Unlike typical drumlogue synthesizers, ScrutaAstri operates in **Infinite Sustain** mode. The audio thread continuously calculates and outputs the drone. The step sequencer is primarily used for **Motion Sequencing**—automating LFO rates, filters, and distortion parameters per step while the drone screams continuously in the background.
 
+## Hardware Bug Fixes Applied
+
+| Bug | Symptom | Fix |
+|-----|---------|-----|
+| CMOS dead zone | `CMOSDist` values 1–32 produced no output change — the SVF `f` coefficient mapped to a range that left the filter frozen | Dead zone removed; coefficient mapping now covers the full meaningful range continuously from 0 through to Sherman chaos territory |
+| LFO always modulating filter | Filter 1 was being modulated by LFO 1 every render call regardless of the LFO target assignment | LFO application is now gated on target — only applied when LFO target is `Filter1` or equivalent; LFO3 (Master VCA tremolo) remains unconditional as designed |
+
 ## The Modulation Matrix & Operational Quirks
 ScrutaAstri utilizes a heavily optimized Active Partial Counting matrix to route modulations without exhausting the Drumlogue's CPU. The modulation target is defined by the active preset: `Target = Program % 24`.
 

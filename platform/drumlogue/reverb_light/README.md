@@ -25,7 +25,7 @@ A dedicated 100ms micro-buffer continuously records the reverb tail. Based on a 
 
 ## User Guide
 
-LuceAlNeon operates using a parallel mixing philosophy. A value of `0%` on any of the five main effect knobs completely mutes that specific characteristic, leaving the dry drum signal and the other parallel paths untouched.
+LuceAlNeon operates using a parallel mixing philosophy. A value of `0%` on any of the five main effect knobs completely mutes that specific characteristic, leaving the dry drum signal and the other parallel paths untouched. It has **10 parameters** across 3 pages.
 
 ### Parameters
 
@@ -39,7 +39,20 @@ LuceAlNeon operates using a parallel mixing philosophy. A value of `0%` on any o
 * **COLR (4):** Blends in the 6 high-Q visual-spectrum resonators. Higher values make the reverb sound more synthetic and ringing.
 * **SPRK (5):** Controls the density of the granular Sample & Hold. Higher values lower the probability threshold, resulting in a dense shower of pitched-up, auto-panned bubbles.
 * **SIZE (6):** Scales the FDN delay lines (0.1x to 2.0x) to change the physical size of the acoustic space.
-* **PDLY (7):** Pre-delay time (0 to ~330ms). Separates the dry drum transient from the onset of the neon reverb explosion.
+* **PDLY (7):** Pre-delay time (0 to 200ms). Separates the dry drum transient from the onset of the neon reverb explosion.
+
+**Page 3: Decay**
+* **DCAY (8):** FDN feedback coefficient controlling overall decay length (tail length / RT60). Low values yield a tight, short reverb; high values yield a long, dense wash.
+* **BASS (9):** Per-channel HPF inside the FDN feedback loop. Controls how much low-frequency energy is preserved in the tail. Low values keep the bass full; high values thin out the tail, preventing muddiness on kicks and toms.
+
+### Factory Presets
+
+| # | Name | Character |
+|---|------|-----------|
+| 0 | StanzaNeon | Balanced, medium room with gentle resonators |
+| 1 | VicoBuio | Dark, long decay — heavy DARK sub-harmonic |
+| 2 | Strobo | Bright, short, heavily sparkled |
+| 3 | Bruciato | Dense, saturated with maximum COLOR resonators |
 
 ## Technical Notes & Building
 * **CPU Optimization:** NEON intrinsics are used wherever vectorization across channels is mathematically possible. IIR filters (like the Color Biquads and Bright Exciter) are strictly executed in scalar loops to prevent the comb-filtering artifacts inherent in vectorized feedback topologies.

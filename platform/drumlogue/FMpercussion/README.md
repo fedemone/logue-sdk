@@ -9,8 +9,9 @@ A **4-voice FM percussion synthesizer** for KORG drumlogue with **5 synthesis en
 - **5 Synthesis Engines**: Kick, Snare, Metal, Perc, and Resonant
 - **Voice Allocation**: Single-parameter control for which voice uses resonant synthesis
 - **Resonant Modes**: Low-pass, Band-pass, High-pass, Notch, Peak
-- **LFO Targets**: Expanded to 8 targets including resonant parameters
+- **LFO Targets**: 10 targets including resonant parameters, noise mix, and cross-LFO modulation
 - **Envelope ROM**: 128 ADR curves optimized for percussion
+- **Metal Character System**: EnvShape selects between DX7-style cymbal (ratios 1.0/1.483/1.932/2.546) and Gong/tam-tam character (ratios 1.0/2.756/3.752/5.404) via bit 7
 - **NEON Optimization**: Fully vectorized for ARMv7
 
 ## Parameter Page Layout (v2.0)
@@ -49,13 +50,14 @@ Page 5: LFO2
 Page 6: Envelope + Voice + Resonant
 ┌─────────────┬─────────────┬─────────────┬─────────────┐
 │  EnvShape   │  VoiceAlloc │  ResMode    │  ResMorph   │
-│   (0-127)   │   (0-11)    │   (0-4)     │   (0-100%)  │
+│   (0-255)   │   (0-11)    │   (0-4)     │   (0-100%)  │
 └─────────────┴─────────────┴─────────────┴─────────────┘
+EnvShape encoding: bit 7 = metal character (0=Cymbal/DX7, 1=Gong), bits[6:0] = envelope curve 0-127
 ```
 
 ## Voice Allocation (Param 21)
 
-Single parameter controls which instrument gets resonant treatment:
+Single parameter controls the engine assignment for all four voices. R = Resonant engine.
 
 | Value | Display | Voice 0 | Voice 1 | Voice 2 | Voice 3 |
 |-------|---------|---------|---------|---------|---------|
@@ -64,8 +66,15 @@ Single parameter controls which instrument gets resonant treatment:
 | 2 | "K-S-R-P" | Kick | Snare | **Resonant** | Perc |
 | 3 | "K-R-M-P" | Kick | **Resonant** | Metal | Perc |
 | 4 | "R-S-M-P" | **Resonant** | Snare | Metal | Perc |
+| 5 | "K-S-R-M" | Kick | Snare | **Resonant** | Metal |
+| 6 | "K-R-S-P" | Kick | **Resonant** | Snare | Perc |
+| 7 | "R-K-M-P" | **Resonant** | Kick | Metal | Perc |
+| 8 | "R-S-K-P" | **Resonant** | Snare | Kick | Perc |
+| 9 | "M-R-K-P" | Metal | **Resonant** | Kick | Perc |
+| 10 | "P-R-K-M" | Perc | **Resonant** | Kick | Metal |
+| 11 | "M-P-R-K" | Metal | Perc | **Resonant** | Kick |
 
-**Design Philosophy**: Only one voice can be resonant at a time, keeping the UI intuitive while adding significant sonic variety.
+**Design Philosophy**: At most one voice is Resonant at a time. Values 5–11 also shift the non-resonant engine assignments, enabling unusual layering combinations.
 
 ## Resonant Synthesis Engine
 
@@ -97,18 +106,35 @@ Where:
 
 Maps 0-100% to **50 Hz - 8000 Hz** center frequency for the resonant peak.
 
-## LFO Targets (Expanded to 0-7)
+## LFO Targets (0–9)
 
-| Value | Target | Description |
-|-------|--------|-------------|
-| 0 | None | LFO disabled |
-| 1 | Pitch | Modulate oscillator frequency |
-| 2 | Modulation Index | Modulate FM amount |
-| 3 | Envelope | Modulate envelope shape/level |
-| 4 | LFO2 Phase | LFO1 modulates LFO2's phase |
-| 5 | LFO1 Phase | LFO2 modulates LFO1's phase |
-| **6** | **Res Freq** | **NEW: Modulate resonant center frequency** |
-| **7** | **Resonance** | **NEW: Modulate resonance amount** |
+| Value | Display | Target | Percussion Character |
+|-------|---------|--------|----------------------|
+| 0 | None | LFO disabled | — |
+| 1 | Pitch | Oscillator frequency | Percussive at any rate (pitch sweep, vibrato, FM crunch) |
+| 2 | ModIdx | FM modulation index / brightness | Percussive — controls spectral density |
+| 3 | Env | Envelope shape / level | Percussive at fast rates (tremolo/AM); can shift toward melodic synth at slow rates |
+| 4 | LFO2Ph | LFO1 modulates LFO2's phase increment | Meta-modulation — character depends on both LFOs |
+| 5 | LFO1Ph | LFO2 modulates LFO1's phase increment | Meta-modulation — character depends on both LFOs |
+| 6 | ResFreq | Resonant engine center frequency | Silent unless a Resonant voice is active in VoiceAlloc |
+| 7 | Resonance | Resonant engine Q amount | Silent unless a Resonant voice is active in VoiceAlloc |
+| 8 | NoiseMx | Snare noise mix (additive offset); Metal brightness_add | Percussive — adds texture sweep to snare and metal |
+| 9 | ResMrph | Resonant engine morph (crossfade between filter modes) | Silent unless a Resonant voice is active in VoiceAlloc |
+
+> **Note**: LFO targets 6, 7, and 9 are silent when no Resonant voice is active in the current VoiceAlloc setting. This is by design — use them with VoiceAlloc values 1–11.
+
+## Metal Engine Character System
+
+The **EnvShape** parameter (0–255) encodes two independent values:
+- **Bit 7** (value ≥ 128): selects metal oscillator character
+- **Bits 6:0** (value & 0x7F): selects envelope ROM curve (0–127)
+
+| EnvShape Range | Metal Character | Ratios Used |
+|----------------|-----------------|-------------|
+| 0–127 | Cymbal / DX7-style | 1.0 / 1.483 / 1.932 / 2.546 — classic hi-hat / crash FM spectrum |
+| 128–255 | Gong / tam-tam | 1.0 / 2.756 / 3.752 / 5.404 — widely-spaced inharmonic partials |
+
+The **MInharm** parameter (0–100%) spreads the ratios away from unison: at 0% all operators play the same frequency; at 100% they spread to full ratio separation. The **MBrght** parameter controls how much of the higher operators (Op2/3/4) mix into the output — low brightness yields a clean fundamental; high brightness yields a dense metallic cluster.
 
 ## Architecture (Updated with Resonant Mode)
 
@@ -149,11 +175,11 @@ Maps 0-100% to **50 Hz - 8000 Hz** center frequency for the resonant peak.
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    LFO MODULATION MATRIX (Pages 4-5)                 │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │ LFO1: Shape(0-8) + Rate + Target(0-7) + Depth(-100-100)    │   │
-│  │ LFO2: Shape(0-8) + Rate + Target(0-7) + Depth(-100-100)    │   │
+│  │ LFO1: Shape(0-8) + Rate + Target(0-9) + Depth(-100-100)    │   │
+│  │ LFO2: Shape(0-8) + Rate + Target(0-9) + Depth(-100-100)    │   │
 │  └─────────────────────────────────────────────────────────────┘   │
-│         ↓            ↓            ↓            ↓                    │
-│    Pitch Mod    Index Mod     Env Mod     Res Freq/Res              │
+│         ↓            ↓            ↓            ↓            ↓       │
+│    Pitch Mod  Index Mod   Env Mod  Res Freq/Res/Morph  NoiseMx     │
 └─────────────────────────────────┬───────────────────────────────────┘
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -202,13 +228,13 @@ your_project/
 ├── synth.h               # Integration class
 ├── config.mk             # NEON compiler flags
 ├── fm_perc_synth.h       # Main synth with voice allocation
-├── fm_presets.h          # 12 presets (8 original + 4 resonant)
+├── fm_presets.h          # 23 presets (8 original + 4 resonant + 7 LFO-feature + 3 Gong-character)
 ├── resonant_synthesis.h  # NEW: Resonant engine
 ├── kick_engine.h         # Kick engine
 ├── snare_engine.h        # Snare engine
 ├── metal_engine.h        # Metal engine
 ├── perc_engine.h         # Perc engine
-├── lfo_enhanced.h        # LFO system with 8 targets
+├── lfo_enhanced.h        # LFO system with 10 targets (0-9)
 ├── envelope_rom.h        # 128 envelope shapes
 ├── prng.h                # NEON PRNG
 ├── sine_neon.h           # NEON sine approximation

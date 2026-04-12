@@ -109,6 +109,28 @@ Building on the spatial positioning, each mode now includes **mode-specific filt
 | **Zero scalar extraction** | Maintains SIMD pipeline efficiency | ARM Optimization Guides |
 | **Mode-specific filtering** | Enhances perceptual separation of clones | Blauert, "Spatial Hearing" |
 
+## Parameter Reference
+
+PercSpatial has **8 parameters** across 2 pages.
+
+### Page 1: Core
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 0 | Clones | 0–2 | Number of spatial clones: 0=4 clones, 1=8 clones, 2=16 clones |
+| 1 | Mode | 0–2 | Spatial character: 0=Tribal (circular, warm BPF), 1=Military (linear, bright HPF), 2=Angel (diffuse, BPF+LPF) |
+| 2 | Depth | 0–100% | Modulation depth — how far apart the clones are spaced spatially |
+| 3 | Rate | 0.0–10.0 Hz | LFO rate for vibrato-based clone differentiation |
+
+### Page 2: Output & Texture
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 4 | Spread | 0–100% | Stereo pan spread of the clone array |
+| 5 | Mix | 0–100% | Wet/dry blend |
+| 6 | Wobble | 0–100% | Pitch wobble depth — adds slight detuning to each clone for ensemble thickness |
+| 7 | SoftAtk | 0–100% | Attack softening — applies an amplitude ramp at clone onset to smooth harsh transients |
+
 ## Literature References
 
 1. **ARM NEON Optimization**
