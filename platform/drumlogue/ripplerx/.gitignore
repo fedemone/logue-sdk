@@ -11,3 +11,7 @@ test_stubs/
 *.elf
 *.map
 build/
+
+# Python cache
+__pycache__/
+*.pyc
