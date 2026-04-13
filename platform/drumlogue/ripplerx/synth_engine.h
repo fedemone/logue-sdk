@@ -119,7 +119,13 @@ public:
         k_PluckBass,        // 26
         k_GlassBowl,        // 27
         k_GuitarStr,        // 28 — reference: Karplus-Strong string at A4 for model validation
-        k_NumPrograms       // 29 — marker (count)
+        k_HiHatClosed,      // 29
+        k_HiHatOpen,        // 30
+        k_Conga,            // 31
+        k_Handpan,          // 32
+        k_BellTree,         // 33
+        k_SlitDrum,         // 34
+        k_NumPrograms       // 35 — marker (count)
     };
 
     SynthState state;
@@ -320,23 +326,23 @@ public:
             { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,   86,  -1,    0,  50,  3,    15,    25,   5,  20,   50, 150,  2,  1000, 707}, // 8:  MrchSnr    — sample: T60=0.22s→Dkay86; B=0.0065→InHm15; Mterl-1 (slope corr); NzMix50
             { 9,  41,   0,   1,   100,  150,  0,   0,     0, 4,  162,  -3,    0,   0, 20,     7,     1,   5,  30,   15, 800,  0,   800, 707}, // 9:  Tam Tam    — sample: F2/2.64s→Dkay162; B=0.0035→InHm7; Mterl-3; NzMix15; Note35→41
             {10,  60,   0,   1,   600,  395,  0,   0,     0, 0,  185,  -6,    0,   0, 12,     3,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — sample: C4/1.78s→Dkay185; B=0.0015→InHm3; centroid→Mterl-6; Note72→60
-            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  193,  -4,    0,   0, 18,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — ref Vibes: decay=4.08s→Dkay193, inharm≈0→InHm0, damp=-0.42→Mterl-4
+            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  197,  -4,    0,   0, 18,     1,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — metal bar: T60=4.0s@C5→Dkay197; B=0.0005→InHm1; Beam model
             {12,  48,   0,   1,   800,  269,  0,   0,     0, 2,  158,   7,    0,   0,  2,    10,     1,   5,   0,   62, 300,  0,   500, 707}, // 12: Wodblk     — sample: C3/1.6s→Dkay158; B=0.005→InHm10; Mterl7 (slope corr); NzMix62
             {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,  15,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (InHm:0, Gain:15)
             {14,  60,   0,   1,   800,  500,  0,   0,     0, 4,  197,  15,    0,   0, 18,     7,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — ref Crash: Dkay:140→197 (10s); inharm=0.0021→InHm7; Mterl:30→15
             {15,  50,   0,   1,   200,   10,  0,   0,     0, 4,  188,  -8,    0,   0, 20,     8,     1,   5,  20,    4, 800,  0,   600, 707}, // 15: Gong       — sample: D3/4.64s→Dkay188; B=0.004→InHm8; NzMix4; Note36→50; soft mallet
             {16,  65,   0,   1,   700,  491,  0,   0,     0, 1,  194,  -6,    0,   0,  5,     6,     1,   5,  10,   11, 300,  0,  1000, 707}, // 16: Kalimba    — sample: F4/3.8s→Dkay194; B=0.003→InHm6; Mterl-6; NzMix11; Note72→65
-            {17,  60,   0,   1,   600,  350,  0,   0,     0, 4,  185,  10,    0,   0, 12,    50,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan  — Dkay:100→185 (~4s); InHm:800→50 (mild plate dispersion)
-            {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — single resonator (Ptls→0)
+            {17,  60,   0,   1,   600,  350,  0,   0,     0, 4,  185,  10,    0,   0, 12,     5,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: StelPan    — Plate model, T60≈2.2s@C4; InHm:50→5 (carefully tuned, B≈0.0025, near-harmonic)
+            {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,     6,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — wooden sticks: T60≈0.055s@G5; InHm:20→6 (wood B≈0.003, Sqr-plate base already stiff)
             {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,  -8,    0,   0, 15,    58,    80,   5,   0,    3, 300,  0,  1500, 707}, // 20: Triangle   — sample avg: Dkay199; InHm58 (B≈0.029, avg C#8+F5); Mterl-8; NzMix3
-            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     0,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane dual (InHm:0, Gain:20)
-            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mtr:5, InHm:0, Gain:15)
+            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     4,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane: T60≈0.88s@C2; InHm:0→4 (circular membrane B≈0.002)
+            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,   600, 707}, // 22: Clap       — noise burst: HP at 6kHz (NzFrq:1000→600); short KS transient
             {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    80,   5,  10,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (InHm:0, Gain:10)
             {24,  72,   0,   1,   100,  162,  0,   0,     0, 7,  191,  -5,    0,   0, 12,     1,     1,   5,   0,   10, 950,  0,   400, 707}, // 24: Flute      — sample: D5/1.53s→Dkay191; MlltStif162; NzMix10 subtle breath; NzRes950
             {25,  72,   0,   0,    50,   10,  0,   0,     0, 8,  180,  -8,    0,   0, 15,     9,     1,   5,   0,   12, 950,  0,   600, 707}, // 25: Clarinet   — sample: C5/0.82s→Dkay180; B=0.0045→InHm9; Mterl-8; MlltStif10; NzMix12
             {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
-            {27,  76,   0,   1,   700,  350,  0,   0,     0, 4,  199,  20,    0,   0, 18,    10,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — Dkay:160→199 (~10s singing bowl ring); InHm:1200→10 (plate, nearly harmonic)
+            {27,  76,   0,   1,   700,  200,  0,   0,     0, 4,  199,  10,    0,   0, 18,     2,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — singing bowl: T60≈17s@E5; InHm:10→2 (B≈0.001, near-harmonic); Mterl:20→10 (warm)
             // 28: Guitar String — Karplus-Strong reference for physical model validation.
             // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
             // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
@@ -346,7 +352,15 @@ public:
             // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 3 s;
             //           (3) no flutter/beating (one clean tone per press).
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707}   // 28: Guitar String
+            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
+            // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+            //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,   43,  25,    0,   0,  2,    30,    20,   5,   0,   70, 200,  2,   600, 707},  // 29: HHat-C  — closed hi-hat: Plate, T60=0.07s@G5→Dkay43; Mterl25 bright; NzMix70 metallic; HP@6kHz
+            {30,  79,   0,   1,   900,  480,  0,   0,     0, 4,  192,  25,    0,   0, 15,    30,    20,   5,   0,   60, 200,  2,   600, 707},  // 30: HHat-O  — open hi-hat: same model, T60=1.2s→Dkay192; longer release
+            {31,  62,   0,   1,   600,  350,  0,   0,     1, 5,  149,   0,    0,   0, 10,    10,     2,   5,   0,   30, 300,  0,   800, 707},  // 31: Conga   — Drumhd, T60=0.6s@D4→Dkay149; InHm10 (B≈0.005); NzMix30 skin noise
+            {32,  62,   0,   1,   700,  300,  0,   0,     0, 4,  198,   5,    0,   0, 20,     2,     5,   5,   0,    5, 300,  0,  1000, 707},  // 32: Handpn  — Plate, T60≈10s@D4→Dkay198; InHm2 (B≈0.001, near-harmonic); warm metallic
+            {33,  84,   0,   1,   900,  450,  0,   0,     0, 1,  193,  20,    0,   0,  8,    10,    10,   5,   0,    5, 300,  0,  1200, 707},  // 33: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
+            {34,  60,   0,   1,   700,  300,  0,   0,     0, 6,  167,   8,    0,   0, 10,     6,     2,   5,   0,   10, 300,  0,   800, 707}   // 34: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
         };
 
         if (idx >= k_NumPrograms) return;
@@ -404,7 +418,9 @@ public:
             "Kalimba", "StelPan","Claves", "Cowbel",
             "Trngle",  "Kick",    "Clap",  "Shaker",
             "Flute",   "Clrint", "PlkBss", "GlsBwl",
-            "GtrStr"
+            "GtrStr",
+            "HHat-C",  "HHat-O", "Conga",  "Handpn",
+            "BelTre",  "SltDrm"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
