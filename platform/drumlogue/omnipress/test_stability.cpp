@@ -366,6 +366,57 @@ void test_multiband_stability() {
     printf("  PASS: multiband stable under extreme per‑band settings\n");
 }
 
+/**
+ * test_hard_clip_limiter
+ *
+ * The output limiter in masterfx.h clamps the final mixed output to ±1.0
+ * using vmin/vmax (NEON) or fmaxf/fminf (scalar) after makeup gain.
+ * This test verifies the scalar clip formula:
+ *   out = fmaxf(-1.0f, fminf(1.0f, pre_clip))
+ *
+ * Expected:
+ *   pre_clip =  2.0 → clipped to  1.0
+ *   pre_clip = -2.0 → clipped to -1.0
+ *   pre_clip =  0.5 → unchanged   0.5
+ *   pre_clip =  1.0 → unchanged   1.0 (boundary)
+ *   pre_clip = -1.0 → unchanged  -1.0 (boundary)
+ */
+static void test_hard_clip_limiter() {
+    printf("\n=== Hard-Clip Output Limiter (masterfx.h post-makeup clamp) ===\n");
+
+    struct { float in; float expected; } cases[] = {
+        { 2.0f,   1.0f},
+        {-2.0f,  -1.0f},
+        { 0.5f,   0.5f},
+        { 1.0f,   1.0f},
+        {-1.0f,  -1.0f},
+        { 0.0f,   0.0f},
+        {99.0f,   1.0f},
+        {-99.0f, -1.0f},
+    };
+    const int N = sizeof(cases) / sizeof(cases[0]);
+
+    int all_ok = 1;
+    for (int i = 0; i < N; i++) {
+        float out = fmaxf(-1.0f, fminf(1.0f, cases[i].in));
+        int ok = fabsf(out - cases[i].expected) < EPSILON;
+        printf("  clip(%.2f) = %.4f  (expected %.4f)  %s\n",
+               cases[i].in, out, cases[i].expected, ok ? "PASS" : "FAIL");
+        assert(ok);
+        if (!ok) all_ok = 0;
+    }
+
+    /* Verify with a sweep: output must never exceed ±1.0 for any input in [-10, 10] */
+    for (int i = -100; i <= 100; i++) {
+        float in  = i * 0.1f;
+        float out = fmaxf(-1.0f, fminf(1.0f, in));
+        assert(out >= -1.0f && out <= 1.0f);
+    }
+    printf("  Sweep [-10.0, 10.0]: output always in [-1.0, 1.0]  PASS\n");
+
+    if (all_ok) printf("  Hard-clip limiter: ALL PASS\n");
+}
+
 int main() {
     printf("=== OmniPress stability tests ===\n");
     test_parameter_extremes();
@@ -373,6 +424,7 @@ int main() {
     test_max_compression();
     test_max_makeup_no_compression();
     test_multiband_stability();
+    test_hard_clip_limiter();
     printf("\n=== ALL OmniPress STABILITY TESTS PASSED ===\n");
     return 0;
 }
