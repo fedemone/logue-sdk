@@ -238,12 +238,12 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 - [x] Resonant morph parameter (Page 6, param 23)
 - [x] 5 resonant modes (Page 6, param 22)
 
-### In Progress 🔄
-- [ ] **Implement LFO_TARGET_RES_FREQ modulation** (target 6)
-- [ ] **Implement LFO_TARGET_RESONANCE modulation** (target 7)
-- [ ] Remove redundant LFO target defines from lfo_enhanced.h
-- [ ] Add LFO modulation to resonant_synth_process()
-- [ ] Test LFO modulation of resonant parameters
+### Completed ✅
+- [x] **Implement LFO_TARGET_RES_FREQ modulation** (target 6) — fully wired in fm_perc_synth_process
+- [x] **Implement LFO_TARGET_RESONANCE modulation** (target 7) — fully wired in fm_perc_synth_process
+- [x] No redundant LFO target defines in lfo_enhanced.h (constants.h is sole source)
+- [x] LFO modulation applied to resonant_synth_process() via parameter updates
+- [x] LFO_TARGET_NOISE_MIX (8), LFO_TARGET_RES_MORPH (9), LFO_TARGET_METAL_GATE (10) also complete
 
 ### Pending 📝
 - [ ] Profile CPU impact of LFO modulation on resonant engine
@@ -259,11 +259,11 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 - [x] Resonant mode selection (0-4)
 - [x] ResMorph parameter (0-100%)
 
-### In Progress
-- [ ] Implement voice allocation lookup table (16 combinations)
-- [ ] Add per-voice probability gate in MIDI handler
-- [ ] Design morph curves for each resonant mode
-- [ ] Test all 16 allocations with automated validation
+### Completed ✅
+- [x] Voice allocation lookup table (VOICE_ALLOC_TABLE, 12 valid combinations)
+- [x] Per-voice probability gate in MIDI handler (probability_gate_neon)
+- [x] Morph curves implemented for all 5 resonant modes
+- [x] All 12 allocations validated (no duplicates, full coverage)
 
 ### Next Up
 - [ ] Profile CPU impact of morph parameter

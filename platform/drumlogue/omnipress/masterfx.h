@@ -135,7 +135,7 @@ public:
         setParameter(k_distressor_distortion_type, 0); // DSTR DIST: None
         setParameter(k_distressor_ratio, 0);            // DSTR RATIO: Warm mode
         setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
-        setParameter(k_multiband_band_threshold, -200); // L THRESH: -20.0 dB
+        setParameter(k_multiband_band_threshold, -100); // L THRESH: -10.0 dB
         setParameter(k_multiband_band_ratio, 40);       // L RATIO: 4.0
         setParameter(k_multiband_band_attack, 10);      // ATTACK 10 ms
         setParameter(k_multiband_band_release, 10);     // RELEAE:  100 ms
@@ -211,6 +211,14 @@ public:
             mixed.val[0] = vmulq_f32(mixed.val[0], makeup_lin);
             mixed.val[1] = vmulq_f32(mixed.val[1], makeup_lin);
 
+            // Output limiter: hard clip to ±1.0 to prevent DAC overflow.
+            // The compressor should keep levels below this under normal use;
+            // this is a safety net for extreme makeup gain settings.
+            const float32x4_t clip_pos = vdupq_n_f32(1.0f);
+            const float32x4_t clip_neg = vdupq_n_f32(-1.0f);
+            mixed.val[0] = vmaxq_f32(vminq_f32(mixed.val[0], clip_pos), clip_neg);
+            mixed.val[1] = vmaxq_f32(vminq_f32(mixed.val[1], clip_pos), clip_neg);
+
             // Store results
             vst2q_f32(out_p, mixed);
 
@@ -241,10 +249,13 @@ public:
                 vdupq_n_f32(sc_l),   vdupq_n_f32(sc_r));
 
             float makeup_lin_scalar = powf(10.0f, makeup_db_ / 20.0f);
-            out_p[0] = (dry_l * (1.0f - mix_) + vgetq_lane_f32(processed.val[0], 0) * mix_)
-                       * makeup_lin_scalar;
-            out_p[1] = (dry_r * (1.0f - mix_) + vgetq_lane_f32(processed.val[1], 0) * mix_)
-                       * makeup_lin_scalar;
+            float out_l_s = (dry_l * (1.0f - mix_) + vgetq_lane_f32(processed.val[0], 0) * mix_)
+                            * makeup_lin_scalar;
+            float out_r_s = (dry_r * (1.0f - mix_) + vgetq_lane_f32(processed.val[1], 0) * mix_)
+                            * makeup_lin_scalar;
+            // Output limiter (scalar path)
+            out_p[0] = fmaxf(-1.0f, fminf(1.0f, out_l_s));
+            out_p[1] = fmaxf(-1.0f, fminf(1.0f, out_r_s));
 
             out_p += 2;
             frames_remaining--;

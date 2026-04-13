@@ -267,16 +267,16 @@ public:
             float32x4_t wet_l4 = vld1q_f32(wet_l_arr);
             float32x4_t wet_r4 = vld1q_f32(wet_r_arr);
 
-            // --- Apply mode crossfade (scalar: counter changes each frame) ---
+            // --- Apply mode crossfade (NEON: 4 frames per iteration) ---
+            // Fade-in the new mode's wet signal from 0→1 over CROSSFADE_SAMPLES frames.
+            // Counter decrements by 4 per NEON iteration; granularity is ±4/480 ≈ 0.8%
+            // per block, perceptually indistinguishable from per-sample interpolation.
             if (crossfade_active_) {
-                for (int f = 0; f < 4; f++) {
-                    float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
-                    wet_l_arr[f] *= fade_in;
-                    wet_r_arr[f] *= fade_in;
-                    if (--crossfade_counter_ == 0) { crossfade_active_ = false; break; }
-                }
-                wet_l4 = vld1q_f32(wet_l_arr);
-                wet_r4 = vld1q_f32(wet_r_arr);
+                float fade_in = 1.0f - (float)crossfade_counter_ / CROSSFADE_SAMPLES;
+                wet_l4 = vmulq_n_f32(wet_l4, fade_in);
+                wet_r4 = vmulq_n_f32(wet_r4, fade_in);
+                crossfade_counter_ = (crossfade_counter_ > 4) ? crossfade_counter_ - 4 : 0;
+                if (crossfade_counter_ == 0) crossfade_active_ = false;
             }
 
             // --- Wet/dry mix using NEON ---
@@ -792,30 +792,8 @@ private:
         update_panning(); // Update phase inversion for Angel mode
     }
 
-    /**
-     * Apply crossfade during mode switching
-     */
-     /* - TODO comment it out for the moment and veriofy if we can removed the scalar crossfade at line 270 with this one
-    fast_inline void apply_crossfade(float32x4_t* out_l, float32x4_t* out_r) {
-        if (!crossfade_active_) return;
-
-        // Calculate the crossfade ratio (1.0 to 0.0)
-        float fade = crossfade_counter_ / (float)CROSSFADE_SAMPLES;
-
-        float32x4_t fade_out_vec = vdupq_n_f32(fade);
-        float32x4_t fade_in_vec = vdupq_n_f32(1.0f - fade);
-
-        // Assuming 'dry_l' and 'dry_r' are available in your loop,
-        // smoothly crossfade from the dry signal to the newly calculated wet signal
-        *out_l = vaddq_f32(vmulq_f32(dry_l, fade_out_vec), vmulq_f32(*out_l, fade_in_vec));
-        *out_r = vaddq_f32(vmulq_f32(dry_r, fade_out_vec), vmulq_f32(*out_r, fade_in_vec));
-
-        crossfade_counter_--;
-        if (crossfade_counter_ == 0) {
-            crossfade_active_ = false;
-        }
-    }
-*/
+    // Crossfade is applied inline in Process() using vmulq_n_f32 on the wet
+    // signal. No separate function needed — see the NEON crossfade block above.
     /**
      * Fast NEON Gather & Interpolate for 4 clones simultaneously
      */

@@ -78,7 +78,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
 
     // Default band parameters
     for (int i = 0; i < NUM_OF_BANDS; i++) {
-        mb->bands[i].thresh_db = -20.0f;
+        mb->bands[i].thresh_db = -10.0f;
         mb->bands[i].ratio = 4.0f;
         mb->bands[i].makeup_db = 0.0f;
         mb->bands[i].attack_ms = 10.0f;

@@ -58,7 +58,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x02U,
     .version = 0x00020000U,
     .name = "FMPerc",
-    .num_presets = 23,
+    .num_presets = 26,
     .num_params = 24,
 
     .params = {

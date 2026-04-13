@@ -22,6 +22,7 @@
 #define LFO_TARGET_RESONANCE  (7)
 #define LFO_TARGET_NOISE_MIX  (8)
 #define LFO_TARGET_RES_MORPH  (9)
+#define LFO_TARGET_METAL_GATE (10)
 
 // Engine modes
 #define ENGINE_KICK     (0)
@@ -31,7 +32,7 @@
 #define ENGINE_RESONANT (4)
 
 // from header.c
-#define NUM_OF_PRESETS (23)
+#define NUM_OF_PRESETS (26)
 #define NAME_LENGTH    (12)
 
 typedef enum {
@@ -60,6 +61,10 @@ typedef enum {
   GONG_HIT,      // 20: pure gong strike, long resonant tail
   TEMPLE_BELL,   // 21: temple bell, bright ring with slow LFO sweep
   METAL_GONG,    // 22: metal/gong hybrid, fast LFO index buzz
+  // Euclidean tuning + MetalGate showcase presets
+  DIM_KIT,       // 23: EuclTun=Dim7 [0,3,6,9] — all-voice dim7 chord spread
+  WHOLE_PERC,    // 24: EuclTun=Whole [0,2,4,6] — whole-tone pitched perc
+  HIHAT_SWITCH,  // 25: MetalGate LFO → open/closed hi-hat gate
   TOTAL_PRESETS = NUM_OF_PRESETS
 } preset_numer_t;
 
@@ -90,10 +95,13 @@ typedef struct {
   uint8_t lfo1_target;  // 0-5
   int8_t lfo1_depth;    // -100 to 100
 
-  // Page 5: LFO2
-  uint8_t lfo2_shape;   // 0-8
+  // Page 5: EuclTun + LFO2
+  // lfo2_shape is repurposed as EuclTun (Euclidean voice tuning spread).
+  // 0=Off (all voices same pitch), 1-8=Euclidean spread modes (see EUCLID_MODE_*).
+  // lfo2_rate/target/depth remain active LFO2 parameters.
+  uint8_t lfo2_shape;   // 0-8 → EuclTun mode (EUCLID_MODE_*)
   uint8_t lfo2_rate;    // 0-100
-  uint8_t lfo2_target;  // 0-5
+  uint8_t lfo2_target;  // 0-10
   int8_t lfo2_depth;    // -100 to 100
 
   // Page 6: Envelope

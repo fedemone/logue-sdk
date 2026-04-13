@@ -116,8 +116,8 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
 
 ## Pending TODOs
 
-- [ ] Add `FDNEngine::reset()` and wire it in `unit_reset()` — currently stale
-      data is retained in delay buffers after a host reset call
+- [x] Add `FDNEngine::reset()` and wire it in `unit_reset()` — implemented:
+      `void reset() { Reset(); }` at line 178, called by `unit_reset()` in unit.cc
 - [ ] Decide NAME param → preset-load behaviour: currently incrementing the NAME
       knob does not trigger `unit_load_preset()`; document or fix
 - [ ] Decouple SPRK LFO rate from depth — currently more modulation = faster
