@@ -327,16 +327,17 @@ public:
             // ==========================================
             // PATH 1: GLOW (Stereo Swirling SVF)
             // ==========================================
-            // LFO rate scales with the glow amount knob (e.g., 0.2Hz to ~1.5Hz)
-            // phase offset
-            float lfo_rate = (0.2f + (glow_amt * 1.3f)) / SAMPLE_RATE;
-            glow_lfo_phase += lfo_rate;
+            // LFO rate: fixed base 0.4 Hz (period ~2.5 s) — slow chorus-like sweep.
+            // Depth scales with glow_amt so GLOW=0 → no filter modulation.
+            // (Rate is very slow: 0.4/48000 ≈ 0.4 Hz, well below audible pitch artefact range)
+            constexpr float GLOW_LFO_RATE = 0.4f / SAMPLE_RATE;
+            glow_lfo_phase += GLOW_LFO_RATE;
             if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
 
             // Left Channel: Modulate coefficient directly.
-            // f_coeff = 0.15 (~1000Hz base) +/- 0.10 (~800Hz sweep)
+            // f_coeff = 0.15 (~1150Hz base) +/- (0.10 * glow_amt) depth
             float lfo_val_l = fastersinfullf(glow_lfo_phase);
-            float f_coeff_l = 0.15f + (0.10f * lfo_val_l);
+            float f_coeff_l = 0.15f + (0.10f * glow_amt * lfo_val_l);
             float q_coeff = 0.4f; // Mild resonance to accentuate the sweep
 
             glow_lp_l += f_coeff_l * glow_bp_l;
@@ -348,7 +349,7 @@ public:
             if (phase_r > 1.0f) phase_r -= 1.0f;
 
             float lfo_val_r = fastersinfullf(phase_r);
-            float f_coeff_r = 0.15f + (0.10f * lfo_val_r);
+            float f_coeff_r = 0.15f + (0.10f * glow_amt * lfo_val_r);
 
             glow_lp_r += f_coeff_r * glow_bp_r;
             glow_bp_r += f_coeff_r * (rev_r - glow_lp_r - q_coeff * glow_bp_r);

@@ -122,9 +122,9 @@ Let me perform a comprehensive optimization review of the `delay_tribal` project
    - Document optimal settings per instrument
 
 ### TODOs (Short-term - Week 2)
-1. **Add smooth parameter ramping**
-   - Prevent zipper noise on parameter changes
-   - Use linear interpolation over 1ms
+1. ~~**Add smooth parameter ramping**~~ **DONE** — mix_, wobble_depth_, attack_soften_
+   now use a 480-sample (10ms) linear ramp at block entry in Process(). Targets set
+   in setParameter(), ramp advances 4 steps per NEON block. Depth_ already had ramping.
 
 2. **Implement bypass optimization**
    - Zero CPU when effect disabled

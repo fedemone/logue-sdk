@@ -96,6 +96,12 @@ public:
         , mix_(0.5f)
         , wobble_depth_(0.3f)
         , attack_soften_(0.2f)
+        , target_mix_(0.5f)
+        , target_wobble_(0.3f)
+        , target_attack_(0.2f)
+        , mix_ramp_samples_(0)
+        , wobble_ramp_samples_(0)
+        , attack_ramp_samples_(0)
         , crossfade_counter_(0)
         , crossfade_active_(false)
         , flags_(0) {
@@ -202,6 +208,30 @@ public:
 
         const float* in_p = in;
         float*       out_p = out;
+
+        // --- Advance smooth ramps for mix/wobble/attack (block-rate, 4 steps) ---
+        // Each ramp uses the same linear-interpolation pattern as the depth ramp.
+        if (mix_ramp_samples_ > 0) {
+            uint32_t steps = (mix_ramp_samples_ >= 4) ? 4u : mix_ramp_samples_;
+            float step = (target_mix_ - mix_) / (float)mix_ramp_samples_;
+            mix_ += step * (float)steps;
+            mix_ramp_samples_ -= steps;
+            if (mix_ramp_samples_ == 0) mix_ = target_mix_;
+        }
+        if (wobble_ramp_samples_ > 0) {
+            uint32_t steps = (wobble_ramp_samples_ >= 4) ? 4u : wobble_ramp_samples_;
+            float step = (target_wobble_ - wobble_depth_) / (float)wobble_ramp_samples_;
+            wobble_depth_ += step * (float)steps;
+            wobble_ramp_samples_ -= steps;
+            if (wobble_ramp_samples_ == 0) wobble_depth_ = target_wobble_;
+        }
+        if (attack_ramp_samples_ > 0) {
+            uint32_t steps = (attack_ramp_samples_ >= 4) ? 4u : attack_ramp_samples_;
+            float step = (target_attack_ - attack_soften_) / (float)attack_ramp_samples_;
+            attack_soften_ += step * (float)steps;
+            attack_ramp_samples_ -= steps;
+            if (attack_ramp_samples_ == 0) attack_soften_ = target_attack_;
+        }
 
         // Determine starting filter depth for ramping
         float current_depth = mode_filters_.last_depth_param;
@@ -366,14 +396,17 @@ public:
                 spread_ = value / 100.0f;
                 update_panning();
                 break;}
-            case k_mix: {// Mix
-                mix_ = value / 100.0f;
+            case k_mix: {// Mix — ramp to new target over ~10ms to avoid zipper noise
+                target_mix_ = value / 100.0f;
+                mix_ramp_samples_ = 480;
                 break;}
             case k_wobble: {// Wobble Depth
-                wobble_depth_ = value / 100.0f;
+                target_wobble_ = value / 100.0f;
+                wobble_ramp_samples_ = 480;
                 break;}
             case k_attack_softening: {// Attack Softening
-                attack_soften_ = value / 100.0f;
+                target_attack_ = value / 100.0f;
+                attack_ramp_samples_ = 480;
                 break;}
             default:
                 break;
@@ -855,6 +888,14 @@ private:
     float mix_;
     float wobble_depth_;
     float attack_soften_;
+
+    // Smooth ramping targets for mix/wobble/attack (avoids zipper noise on knob turns)
+    float target_mix_;
+    float target_wobble_;
+    float target_attack_;
+    uint32_t mix_ramp_samples_;
+    uint32_t wobble_ramp_samples_;
+    uint32_t attack_ramp_samples_;
 
     uint32_t sample_rate_;
     bool bypass_;

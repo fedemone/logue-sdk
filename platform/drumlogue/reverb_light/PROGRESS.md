@@ -83,10 +83,9 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
    - Have `unit_set_param_value(k_paramProgram, v)` call `unit_load_preset(v)`, or
    - Document that preset selection must use the preset system, not the knob.
 
-4. **Modulation rate not parameterised** – `modPhases` increment by
-   `modulation * 2.0 / sampleRate * 4.0`. The LFO rate is coupled to SPRK depth,
-   meaning more modulation = faster sweep. This can cause audible pitch artefacts
-   at SPRK > 50. Consider separating rate from depth.
+4. ~~**Modulation rate not parameterised**~~ **RESOLVED** – GLOW LFO rate fixed at
+   0.4 Hz (`GLOW_LFO_RATE` constant in `fdn_engine.h`); depth now scales with
+   `glow_amt` so GLOW=0 → no filter modulation. Rate/depth are fully decoupled.
 
 5. **Memory footprint** –
    `fdnMem[8 × 32768]` = 1 MB + `preDelayBuffer[16384]` = 64 KB → ~1.06 MB total.
@@ -120,8 +119,8 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
       `void reset() { Reset(); }` at line 178, called by `unit_reset()` in unit.cc
 - [ ] Decide NAME param → preset-load behaviour: currently incrementing the NAME
       knob does not trigger `unit_load_preset()`; document or fix
-- [ ] Decouple SPRK LFO rate from depth — currently more modulation = faster
-      sweep, which causes pitch artefacts at SPRK > 50
+- [x] Decouple GLOW LFO rate from depth — fixed rate at 0.4 Hz, depth now
+      scales with glow_amt (GLOW=0 → flat SVF, no pitch artefacts)
 - [ ] Consider COLR modulation (+/−20 Hz offset on resonator frequencies)
 - [ ] Confirm memory budget: fdnMem[8×32768] + preDelayBuffer[16384] ≈ 1.06 MB
       static BSS — verify drumlogue SDRAM layout supports this
