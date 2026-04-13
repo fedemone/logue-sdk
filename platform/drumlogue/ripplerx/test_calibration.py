@@ -52,6 +52,16 @@ SAMPLE_TO_PRESET = {
     "Clarinet-C-minor.wav":                    ("Clarinet", 25,  72),
     "Tabla-Drum-Hit-D4_.wav":                  ("Djambe",    6,  48),
     "percussion-one-shot-tabla-3_C_major.wav": ("Djambe",    6,  48),
+    # New samples (added in second sample commit)
+    "cymbal-Crash16Inch.wav":                  ("Cymbal",   14,  60),
+    "cymbal-Ride18Inch.wav":                   ("Ride",     35,  57),
+    "cymbal-RideBell20InchSabian.wav":         ("RideBel",  36,  60),
+    # Singing bowl (three filenames map to the same audio — use first only;
+    # the other two are duplicate uploads, same file content)
+    "glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav": ("GlsBwl", 27, 76),
+    "steel-pan-Nova Drum Real C 432.wav":      ("StelPan",  17,  60),
+    "steel-pan-PERCY-C4-SHort.wav":            ("StelPan",  17,  60),
+    "steel-pan-yudin C3.wav":                  ("StelPan",  17,  60),
 }
 
 # ── parse preset table from synth_engine.h ───────────────────────────────────
