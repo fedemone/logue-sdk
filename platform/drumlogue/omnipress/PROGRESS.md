@@ -12,10 +12,11 @@
 
 ## Open TODOs
 
-- [ ] Multiband default threshold is −20 dB; consider raising to −10 dB for more
-      musical compression at typical drum bus levels
-- [ ] Output soft-clipping protection (limiter at final stage)
-- [ ] Real-time crossover frequency updates without re-init
+- [x] Multiband default threshold raised from −20 dB to −10 dB (multiband.h:81)
+- [x] Output hard-clip limiter added at masterfx.h output (NEON vmin/vmax ±1.0)
+- [x] Real-time crossover frequency updates: crossover_update_coeffs() in crossover.h
+      updates biquad coefficients without zeroing filter states; multiband_set_crossover()
+      now calls this instead of crossover_init() to avoid audible clicks at runtime
 - [ ] Per-band attack/release UI parameters (currently set programmatically only)
 
 ---
@@ -37,8 +38,8 @@
 ## 🔧 In Progress
 - [x] Integrate Overlord fully into signal chain
 - [x] Parameter smoothing (ramping) to eliminate zipper noise
-- [ ] Output soft-clipping protection
-- [ ] Real-time multiband crossover frequency updates
+- [x] Output hard-clip protection (masterfx.h: NEON vmin/vmax at ±1.0)
+- [x] Real-time multiband crossover frequency updates (crossover_update_coeffs)
 - [ ] Distressor Opto release curve
 
 ## 📝 To Do

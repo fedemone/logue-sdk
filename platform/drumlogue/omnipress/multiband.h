@@ -97,16 +97,17 @@ fast_inline void multiband_reset(multiband_t* m) {
     multiband_init(m, m->sample_rate);
 }
 
-// Set crossover frequencies
+// Set crossover frequencies — updates coefficients without resetting filter states.
+// This avoids the audible click/pop that zeroing the biquad delay lines would cause.
 fast_inline void multiband_set_crossover(multiband_t* mb,
                                          float low_freq,
                                          float high_freq) {
     mb->xover_low_freq  = low_freq;
     mb->xover_high_freq = high_freq;
 
-    // Reinitialize crossovers
-    crossover_init(&mb->xover_low_mid, low_freq, mb->sample_rate);
-    crossover_init(&mb->xover_mid_high, high_freq, mb->sample_rate);
+    // Coefficient-only update: preserves filter state continuity at runtime
+    crossover_update_coeffs(&mb->xover_low_mid,   low_freq,  mb->sample_rate);
+    crossover_update_coeffs(&mb->xover_mid_high,  high_freq, mb->sample_rate);
 }
 
 // Set band parameter
