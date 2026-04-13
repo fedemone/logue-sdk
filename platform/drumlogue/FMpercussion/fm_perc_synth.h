@@ -30,6 +30,21 @@
 #include "midi_handler.h"
 #include "fm_presets.h"
 
+// Euclidean tuning offset table
+// offsets[mode][voice] = semitones above root for that voice.
+// Derived from E(4,n): position[i] = floor(i * n / 4), i = 0..3.
+static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][4] = {
+    { 0.f,  0.f,  0.f,  0.f},  // 0: Off         — all unison
+    { 0.f,  1.f,  2.f,  3.f},  // 1: E(4,4)  [0,1,2,3]  chromatic cluster
+    { 0.f,  1.f,  3.f,  4.f},  // 2: E(4,6)  [0,1,3,4]  minor 3rd pairs
+    { 0.f,  1.f,  3.f,  5.f},  // 3: E(4,7)  [0,1,3,5]  diatonic cluster
+    { 0.f,  2.f,  4.f,  6.f},  // 4: E(4,8)  [0,2,4,6]  whole tone
+    { 0.f,  2.f,  5.f,  7.f},  // 5: E(4,10) [0,2,5,7]  pentatonic/5th
+    { 0.f,  3.f,  6.f,  9.f},  // 6: E(4,12) [0,3,6,9]  diminished 7th
+    { 0.f,  4.f,  8.f, 12.f},  // 7: E(4,16) [0,4,8,12] augmented + octave
+    { 0.f,  6.f, 12.f, 18.f},  // 8: E(4,24) [0,6,12,18] tritone spread
+};
+
 // Voice allocation table - 12 combinations (no duplicates)
 // Format: [voice0, voice1, voice2, voice3] engine assignments
 static const uint8_t VOICE_ALLOC_TABLE[VOICE_ALLOC_COUNT][VOICE_ALLOC_MAX] = {
@@ -92,6 +107,10 @@ typedef struct {
 
     // Per-voice velocity (set on note-on, persists until next trigger)
     float32x4_t voice_velocity;      // 0-1 per lane
+
+    // Euclidean tuning: per-voice semitone offsets applied at note-on.
+    // Loaded from EUCLID_OFFSETS[EuclTun] in update_params; [0,0,0,0] when mode=Off.
+    float32x4_t euclid_offsets;
 
     // Output gain
     float master_gain;
@@ -275,6 +294,18 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     synth->current_env_shape = (uint8_t)p[PARAM_ENV_SHAPE];
     metal_engine_set_character(&synth->metal,
                                (uint32_t)(synth->current_env_shape >> 7));
+
+    // =================================================================
+    // Update Euclidean tuning offsets (param 16 / EuclTun)
+    // Loads the per-voice semitone offset vector from the static lookup
+    // table.  Applied at note-on so each voice plays a different pitch
+    // derived from E(4,n): position[i] = floor(i * n / 4).
+    // =================================================================
+    {
+        uint8_t mode = (uint8_t)p[PARAM_LFO2_SHAPE];
+        if (mode >= EUCLID_MODE_COUNT) mode = 0;
+        synth->euclid_offsets = vld1q_f32(EUCLID_OFFSETS[mode]);
+    }
 }
 
 /**
@@ -354,6 +385,7 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     synth->voice_active = vdupq_n_f32(0.0f);
     synth->voice_triggered = vdupq_n_u32(0);
     synth->voice_velocity = vdupq_n_f32(1.0f);
+    synth->euclid_offsets = vdupq_n_f32(0.0f);  // Off: all voices unison
     synth->master_gain = 0.25f;
     synth->current_env_shape = 40;
     synth->resonant_morph = 0.5f;
@@ -461,9 +493,13 @@ fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
                                        synth->voice_velocity);
 
     // ---------------------------------------------------------------
-    // 4. Set engine note for each triggered voice
+    // 4. Set engine note for each triggered voice.
+    //    Apply Euclidean tuning: voice i gets note + euclid_offsets[i]
+    //    so the 4 voices are spread across a Euclidean pitch distribution.
+    //    When EuclTun=Off, euclid_offsets = [0,0,0,0] (no change).
     // ---------------------------------------------------------------
-    float32x4_t midi_note_v = vdupq_n_f32(note);
+    float32x4_t midi_note_v = vaddq_f32(vdupq_n_f32((float)note),
+                                         synth->euclid_offsets);
 
     for (int v = 0; v < VOICE_ALLOC_MAX; v++) {
         if (gate_bits & (1 << v)) {

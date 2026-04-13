@@ -212,6 +212,24 @@ constexpr int ENV_CURVE_LINEAR = 0;
 constexpr int ENV_CURVE_EXPONENTIAL = 1;
 
 // ============================================================================
+// Euclidean Tuning Mode Constants
+// ============================================================================
+// Each mode assigns per-voice semitone offsets using E(4,n):
+//   position[i] = floor(i * n / 4) for voices i = 0..3
+// Voice 0 always plays the root (offset = 0); voices 1-3 get spread.
+// ============================================================================
+constexpr int EUCLID_MODE_OFF   = 0;  // Off: [0, 0, 0, 0]  — all voices unison
+constexpr int EUCLID_MODE_CLSTR = 1;  // E(4,4):  [0, 1, 2, 3]  chromatic cluster
+constexpr int EUCLID_MODE_MINOR = 2;  // E(4,6):  [0, 1, 3, 4]  minor 3rd pairs
+constexpr int EUCLID_MODE_DIATN = 3;  // E(4,7):  [0, 1, 3, 5]  diatonic cluster
+constexpr int EUCLID_MODE_WHOLE = 4;  // E(4,8):  [0, 2, 4, 6]  whole tone
+constexpr int EUCLID_MODE_PENTA = 5;  // E(4,10): [0, 2, 5, 7]  pentatonic/5th
+constexpr int EUCLID_MODE_DIM7  = 6;  // E(4,12): [0, 3, 6, 9]  diminished 7th
+constexpr int EUCLID_MODE_AUG8  = 7;  // E(4,16): [0, 4, 8, 12] augmented + octave
+constexpr int EUCLID_MODE_TRIT  = 8;  // E(4,24): [0, 6, 12, 18] tritone spread
+constexpr int EUCLID_MODE_COUNT = 9;
+
+// ============================================================================
 // PRNG (Pseudo-Random Number Generator) Constants
 // ============================================================================
 constexpr uint32_t PRNG_DEFAULT_SEED = 0x9E3779B9;  // Golden ratio constant
