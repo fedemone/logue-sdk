@@ -117,8 +117,9 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
 
 - [x] Add `FDNEngine::reset()` and wire it in `unit_reset()` — implemented:
       `void reset() { Reset(); }` at line 178, called by `unit_reset()` in unit.cc
-- [ ] Decide NAME param → preset-load behaviour: currently incrementing the NAME
-      knob does not trigger `unit_load_preset()`; document or fix
+- [x] NAME param → preset-load: `unit_set_param_value(k_paramProgram, v)` already
+      loads all preset parameters via the loop at unit.cc:167-170; `unit_load_preset`
+      calls the same path. Turning the NAME knob correctly loads the preset.
 - [x] Decouple GLOW LFO rate from depth — fixed rate at 0.4 Hz, depth now
       scales with glow_amt (GLOW=0 → flat SVF, no pitch artefacts)
 - [ ] Consider COLR modulation (+/−20 Hz offset on resonator frequencies)

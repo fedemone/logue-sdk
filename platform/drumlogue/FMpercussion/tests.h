@@ -644,6 +644,74 @@ bool test_euclidean_mode_off_no_spread(void) {
 }
 
 // ============================================================================
+// PART 1c: EXTREME LFO BOUNDARY TEST
+// ============================================================================
+
+/**
+ * test_lfo_extreme_boundaries
+ *
+ * Verifies that maximum LFO depth (±100%) does not produce NaN, Inf, or
+ * out-of-range output values regardless of LFO target.
+ *
+ * This exercises the clipping behavior described in PROGRESS.md:
+ * "Extreme modulation at boundaries (clipping behavior)".
+ *
+ * Each LFO target is tested with a note-on + 480-sample render (10ms).
+ * Output must stay in [-1.0, 1.0] and be free of NaN/Inf.
+ */
+bool test_lfo_extreme_boundaries(void) {
+    const int N_SAMPLES = 480;
+    const int N_TARGETS = 11;  // LFO_TARGET_NONE through LFO_TARGET_METAL_GATE
+    bool all_ok = true;
+    int nan_total = 0, inf_total = 0, range_total = 0;
+
+    for (int target = 0; target < N_TARGETS; target++) {
+        fm_perc_synth_t synth;
+        fm_perc_synth_init(&synth);
+
+        // LFO1: max positive depth, max rate, current target
+        synth.params[PARAM_LFO1_SHAPE]  = 0;    // Tri+Tri
+        synth.params[PARAM_LFO1_RATE]   = 100;  // max rate
+        synth.params[PARAM_LFO1_TARGET] = target;
+        synth.params[PARAM_LFO1_DEPTH]  = 100;  // max positive depth
+
+        // LFO2: max negative depth, same target
+        synth.params[PARAM_LFO2_RATE]   = 100;
+        synth.params[PARAM_LFO2_TARGET] = target;
+        synth.params[PARAM_LFO2_DEPTH]  = -100; // max negative depth
+
+        fm_perc_synth_update_params(&synth);
+        fm_perc_synth_note_on(&synth, 60, 127);
+
+        int nan_count = 0, inf_count = 0, range_count = 0;
+        for (int n = 0; n < N_SAMPLES; n++) {
+            float out = fm_perc_synth_process(&synth);
+            if (isnan(out)) nan_count++;
+            if (isinf(out)) inf_count++;
+            if (out < -1.001f || out > 1.001f) range_count++;
+        }
+
+        bool ok = (nan_count == 0 && inf_count == 0 && range_count == 0);
+        if (!ok) {
+            all_ok = false;
+            printf("  LFO target %2d: NaN=%d Inf=%d OutOfRange=%d  FAIL\n",
+                   target, nan_count, inf_count, range_count);
+        }
+        nan_total   += nan_count;
+        inf_total   += inf_count;
+        range_total += range_count;
+    }
+
+    printf("  All %d LFO targets at max depth: NaN=%d Inf=%d OutOfRange=%d  %s\n",
+           N_TARGETS, nan_total, inf_total, range_total, all_ok ? "PASS" : "FAIL");
+
+    register_test("LFO extreme boundaries (all targets, max depth)",
+                  all_ok, 0,
+                  all_ok ? NULL : "NaN/Inf/range violation at max LFO depth");
+    return all_ok;
+}
+
+// ============================================================================
 // PART 2: INTEGRATION TESTS
 // ============================================================================
 
@@ -916,6 +984,12 @@ bool run_all_tests(void) {
     test_euclidean_all_modes_monotonic();
     test_euclidean_note_spread();
     test_euclidean_mode_off_no_spread();
+
+    // PART 1c: Extreme LFO Boundaries
+    printf("\n📋 PART 1c: EXTREME LFO BOUNDARIES\n");
+    printf("----------------------------------------\n");
+
+    test_lfo_extreme_boundaries();
 
     // PART 2: Integration Tests
     printf("\n📋 PART 2: INTEGRATION\n");
