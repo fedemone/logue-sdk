@@ -127,7 +127,10 @@ public:
         k_SlitDrum,         // 34
         k_Ride,             // 35
         k_RideBell,         // 36
-        k_NumPrograms       // 37 — marker (count)
+        k_Bongo,            // 37
+        k_GlassBottle,      // 38
+        k_Tick,             // 39
+        k_NumPrograms       // 40 — marker (count)
     };
 
     SynthState state;
@@ -357,14 +360,17 @@ public:
             {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,   43,  25,    0,   0,  2,    30,    20,   5,   0,   70, 200,  2,   600, 707},  // 29: HHat-C  — closed hi-hat: Plate, T60=0.07s@G5→Dkay43; Mterl25 bright; NzMix70 metallic; HP@6kHz
-            {30,  79,   0,   1,   900,  480,  0,   0,     0, 4,  192,  25,    0,   0, 15,    30,    20,   5,   0,   60, 200,  2,   600, 707},  // 30: HHat-O  — open hi-hat: same model, T60=1.2s→Dkay192; longer release
+            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,  119,  25,    0,   0,  2,    14,    20,   5,   0,   70, 200,  2,   600, 707},  // 29: HHat-C  — avg(HatClosedLive3 T60=0.22s→149, TightClosedHat T60=0.10s→89)@G5=119; InHm14; HP@6kHz
+            {30,  79,   0,   1,   900,  480,  0,   0,     0, 4,  169,  25,    0,   0, 15,     9,    20,   5,   0,   60, 200,  2,   600, 707},  // 30: HHat-O  — OpenHatBig T60=0.37s@G5→Dkay169; InHm9; longer release vs closed
             {31,  62,   0,   1,   600,  350,  0,   0,     1, 5,  149,   0,    0,   0, 10,    10,     2,   5,   0,   30, 300,  0,   800, 707},  // 31: Conga   — Drumhd, T60=0.6s@D4→Dkay149; InHm10 (B≈0.005); NzMix30 skin noise
             {32,  62,   0,   1,   700,  300,  0,   0,     0, 4,  198,   5,    0,   0, 20,     2,     5,   5,   0,    5, 300,  0,  1000, 707},  // 32: Handpn  — Plate, T60≈10s@D4→Dkay198; InHm2 (B≈0.001, near-harmonic); warm metallic
             {33,  84,   0,   1,   900,  450,  0,   0,     0, 1,  193,  20,    0,   0,  8,    10,    10,   5,   0,    5, 300,  0,  1200, 707},  // 33: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
             {34,  60,   0,   1,   700,  300,  0,   0,     0, 6,  167,   8,    0,   0, 10,     6,     2,   5,   0,   10, 300,  0,   800, 707},  // 34: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
             {35,  57,   0,   1,   900,  491,  0,   0,     0, 4,  192,   7,    0,   0, 18,    34,    20,   5,   0,   47, 200,  2,   600, 707},  // 35: Ride    — ride sample: T60=4.69s@A3→Dkay192; Mterl7 (slope-corr); InHm34; NzMix47 metallic; HP@6kHz
-            {36,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,    20,   5,   0,   60, 200,  2,   700, 707}   // 36: RidBel  — ride-bell sample: T60=2.03s@C4→Dkay184; Mterl20 (slope-corr); InHm15; NzMix60; HP@7kHz
+            {36,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,    20,   5,   0,   60, 200,  2,   700, 707},  // 36: RidBel  — ride-bell sample: T60=2.03s@C4→Dkay184; Mterl20 (slope-corr); InHm15; NzMix60; HP@7kHz
+            {37,  57,   0,   1,   600,  457,  0,   0,     1, 5,   94,   0,    0,   0,  8,     8,     2,   5,   0,    6, 300,  0,   800, 707},  // 37: Bongo   — Bongo_Conga2: Drumhd, T60=0.38s@A3→Dkay94; Mterl0 neutral; InHm8 (B≈0.004); NzMix6
+            {38,  88,   0,   1,   100,  480,  0,   0,     0, 7,  181,  -8,    0,   0,  5,     0,     2,   5,   0,   85, 200,  0,   500, 707},  // 38: GlsBotl — OpenTube (Mdl7): T60=0.34s@E6→Dkay181; Mterl-8 dark; NzMix85 (breath noise dominates)
+            {39,  49,   0,   1,   900,  445,  0,   0,     0, 4,   64,  13,    0,   0,  3,    16,     5,   5,   0,   29, 150,  2,   400, 707}   // 39: Tick    — avg(one-tic T60=0.33s→13, ordinary T60=0.74s→114)@C#3→Dkay64; Plate; InHm16; HP@4kHz; NzMix29
         };
 
         if (idx >= k_NumPrograms) return;
@@ -425,7 +431,8 @@ public:
             "GtrStr",
             "HHat-C",  "HHat-O", "Conga",  "Handpn",
             "BelTre",  "SltDrm",
-            "Ride",    "RidBel"
+            "Ride",    "RidBel",
+            "Bongo",   "GlsBotl", "Tick"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";

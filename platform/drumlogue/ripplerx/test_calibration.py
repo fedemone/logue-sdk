@@ -62,6 +62,21 @@ SAMPLE_TO_PRESET = {
     "steel-pan-Nova Drum Real C 432.wav":      ("StelPan",  17,  60),
     "steel-pan-PERCY-C4-SHort.wav":            ("StelPan",  17,  60),
     "steel-pan-yudin C3.wav":                  ("StelPan",  17,  60),
+    # Tubular bells (3 real + 1 church clock bell — all confirm TblrBel Dkay≈197)
+    "tubular-bells.wav":                       ("TblrBel",   4,  72),
+    "tubular-bells-phased.wav":                ("TblrBel",   4,  72),
+    "tubular-bells-71571.wav":                 ("TblrBel",   4,  72),
+    "high-church-clock-fx_100bpm.wav":         ("TblrBel",   4,  72),
+    # Hi-hat samples (closed: HatClosedLive3+TightClosedHat; open: OpenHatBig)
+    "HatClosedLive3.wav":                      ("HHat-C",   29,  79),
+    "TightClosedHat.wav":                      ("HHat-C",   29,  79),
+    "OpenHatBig.wav":                          ("HHat-O",   30,  79),
+    # New preset samples
+    "Bongo_Conga2.wav":                        ("Bongo",    37,  57),
+    "GlassBottle.wav":                         ("GlsBotl",  38,  88),
+    "one-tic-clock.wav":                       ("Tick",     39,  49),
+    "ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav":
+                                               ("Tick",     39,  49),
 }
 
 # ── parse preset table from synth_engine.h ───────────────────────────────────
