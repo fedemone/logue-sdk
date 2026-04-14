@@ -323,27 +323,27 @@ public:
             { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
             { 1,  72,   0,   1,   800,  130,  0,   0,     0, 6,  184,  -9,    0,   0,  5,    15,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
             { 2,  36,   0,   0,   150,   30,  0,   0,     0, 3,  150,  -8,   -5,   0, 15,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 2:  808 Sub    — single resonator membrane (Ptls=0, Mdl=3): no coupling instability, no overdrive
-            { 3,  38,   0,   1,   400,  200,  0,   0,     2, 5,   15,  -2,    0,  50,  8,     0,     1,   5,  10,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mtr:-2 dark drum, InHm:0 clean, Gain:10 mild)
+            { 3,  38,   0,   1,   400,  200,  0,   0,     2, 5,   15,  -2,    0,  50,  8,     0,     1,   5,   5,   40, 500,  2,   100, 707}, // 3:  Ac Snare   — Gain5 (was 10); NzMix40 (parallel noise now audible); HP@1kHz (was 8kHz)
             { 4,  72,   0,   1,   900,  500,  0,   0,     0, 1,  197,  -5,    0,   0, 20,     5,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — ref Bells: Mdl1(Beam), decay=10.78s→Dkay197, inharm≈0→InHm5, damp=-0.62→Mterl-5
-            { 5,  40,   0,   1,   300,  440,  0,   0,     2, 3,  145,   1,    0,  30, 15,     6,     1,   5,  10,    3, 300,  0,   500, 707}, // 5:  Timpani    — sample: T60=1.88s→Dkay145; B=0.003→InHm6; centroid→Mterl1; fast mallet
-            { 6,  48,   0,   1,   600,  360,  0,   0,     2, 5,  107,   0,    0,  50, 12,    21,     5,   5,  15,   33, 200,  0,   600, 707}, // 6:  Djambe     — sample avg: T60→Dkay107; B=0.01→InHm21; NzMix33 (noisy skin)
-            { 7,  41,   0,   1,   200,  387,  0,   0,     2, 5,  173,   8,    0,  50, 18,    38,     1,   5,  40,   11, 300,  0,   400, 707}, // 7:  Taiko      — sample: F2/3.7s→Dkay173; B=0.019→InHm38; Mterl8; NzMix11; Note36→41
-            { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,   86,  -1,    0,  50,  3,    15,    25,   5,  20,   50, 150,  2,  1000, 707}, // 8:  MrchSnr    — sample: T60=0.22s→Dkay86; B=0.0065→InHm15; Mterl-1 (slope corr); NzMix50
-            { 9,  41,   0,   1,   100,  150,  0,   0,     0, 4,  162,  -3,    0,   0, 20,     7,     1,   5,  30,   15, 800,  0,   800, 707}, // 9:  Tam Tam    — sample: F2/2.64s→Dkay162; B=0.0035→InHm7; Mterl-3; NzMix15; Note35→41
+            { 5,  40,   0,   1,   300,  440,  0,   0,     2, 3,  145,   1,    0,  30, 15,     6,     1,   5,   3,    2, 300,  0,   500, 707}, // 5:  Timpani    — Gain3 (was 10); NzMix2 (was 3)
+            { 6,  48,   0,   1,   600,  360,  0,   0,     2, 5,  107,   0,    0,  50, 12,    21,     5,   5,   5,   15, 400,  0,   600, 707}, // 6:  Djambe     — Gain5 (was 15); NzMix15 (was 33 — parallel noise now audible); NzRes400
+            { 7,  41,   0,   1,   200,  387,  0,   0,     2, 5,  173,   8,    0,  50, 18,    38,     1,   5,   5,    5, 400,  0,   400, 707}, // 7:  Taiko      — Gain5 (was 40 — was fully saturated); NzMix5 (was 11)
+            { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,   86,  -1,    0,  50,  3,    15,    25,   5,   5,   25, 500,  2,   100, 707}, // 8:  MrchSnr    — Gain5 (was 20); NzMix25 (was 50); HP@1kHz (was 10kHz); NzRes500
+            { 9,  41,   0,   1,   100,  150,  0,   0,     0, 4,  162,  -3,    0,   0, 20,     7,     1,   5,   5,    5, 800,  0,   800, 707}, // 9:  Tam Tam    — Gain5 (was 30); NzMix5 (was 15)
             {10,  60,   0,   1,   600,  395,  0,   0,     0, 0,  185,  -6,    0,   0, 12,     3,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — sample: C4/1.78s→Dkay185; B=0.0015→InHm3; centroid→Mterl-6; Note72→60
             {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  197,  -4,    0,   0, 18,     1,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — metal bar: T60=4.0s@C5→Dkay197; B=0.0005→InHm1; Beam model
-            {12,  48,   0,   1,   800,  269,  0,   0,     0, 2,  158,   7,    0,   0,  2,    10,     1,   5,   0,   62, 300,  0,   500, 707}, // 12: Wodblk     — sample: C3/1.6s→Dkay158; B=0.005→InHm10; Mterl7 (slope corr); NzMix62
-            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,  15,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (InHm:0, Gain:15)
-            {14,  60,   0,   1,   800,  425,  0,   0,     0, 4,  176,  20,    0,   0, 18,     9,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — crash sample: T60=1.39s@C4→Dkay176; Mterl20 (slope-corr); InHm9; NzMix60
+            {12,  48,   0,   1,   800,  269,  0,   0,     0, 2,  158,   7,    0,   0,  2,    10,     1,   5,   0,   15, 300,  0,   500, 707}, // 12: Wodblk     — NzMix15 (was 62 — parallel noise now audible, woodblock is mostly resonator)
+            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,   5,    2, 300,  0,   800, 707}, // 13: Ac Tom     — Gain5 (was 15)
+            {14,  60,   0,   1,   800,  425,  0,   0,     0, 4,  176,  20,    0,   0, 18,     9,     5,   5,   5,   15, 600,  2,   200, 707}, // 14: Cymbal     — Gain5 (was 20); NzMix15 (was 60); HP@2kHz (was 14kHz!); LwCt5 (was 40)
             {15,  50,   0,   1,   200,   10,  0,   0,     0, 4,  188,  -8,    0,   0, 20,     8,     1,   5,  20,    4, 800,  0,   600, 707}, // 15: Gong       — sample: D3/4.64s→Dkay188; B=0.004→InHm8; NzMix4; Note36→50; soft mallet
-            {16,  65,   0,   1,   700,  491,  0,   0,     0, 1,  194,  -6,    0,   0,  5,     6,     1,   5,  10,   11, 300,  0,  1000, 707}, // 16: Kalimba    — sample: F4/3.8s→Dkay194; B=0.003→InHm6; Mterl-6; NzMix11; Note72→65
-            {17,  60,   0,   1,   600,  484,  0,   0,     0, 4,  194,  -7,    0,   0, 12,     0,    10,   5,  20,    1, 300,  0,  1000, 707}, // 17: StelPan    — avg 3 samples: T60≈4s@C4→Dkay194; Mterl-7 (dark, centroid≈640Hz); InHm0 (near-harmonic)
+            {16,  65,   0,   1,   700,  491,  0,   0,     0, 1,  194,  -6,    0,   0,  5,     6,     1,   5,   3,    5, 300,  0,  1000, 707}, // 16: Kalimba    — Gain3 (was 10); NzMix5 (was 11)
+            {17,  60,   0,   1,   600,  484,  0,   0,     0, 4,  194,  -7,    0,   0, 12,     0,     3,   5,   5,    0, 300,  0,  1000, 707}, // 17: StelPan    — Gain5 (was 20); NzMix0 (was 1 — no noise, pure resonator); LwCt3
             {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,     6,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — wooden sticks: T60≈0.055s@G5; InHm:20→6 (wood B≈0.003, Sqr-plate base already stiff)
             {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,  -8,    0,   0, 15,    58,    80,   5,   0,    3, 300,  0,  1500, 707}, // 20: Triangle   — sample avg: Dkay199; InHm58 (B≈0.029, avg C#8+F5); Mterl-8; NzMix3
-            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     4,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane: T60≈0.88s@C2; InHm:0→4 (circular membrane B≈0.002)
-            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,   600, 707}, // 22: Clap       — noise burst: HP at 6kHz (NzFrq:1000→600); short KS transient
-            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    80,   5,  10,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (InHm:0, Gain:10)
+            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     4,     1,   5,   5,    3, 200,  0,   300, 707}, // 21: Kick Drum  — Gain5 (was 20); NzMix3 (was 5)
+            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    10,   5,   5,  100, 600,  2,   600, 707}, // 22: Clap       — Gain5, LwCt10 (was 40); NzRes600 (was 100 — very short); pure noise char.
+            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    20,   5,   3,  100, 900,  2,   800, 707}, // 23: Shaker     — Gain3; LwCt20 (was 80); NzRes900 (was 300→~240ms noise); HP@8kHz
             {24,  72,   0,   1,   100,  162,  0,   0,     0, 7,  191,  -5,    0,   0, 12,     1,     1,   5,   0,   10, 950,  0,   400, 707}, // 24: Flute      — sample: D5/1.53s→Dkay191; MlltStif162; NzMix10 subtle breath; NzRes950
             {25,  72,   0,   0,    50,   10,  0,   0,     0, 8,  180,  -8,    0,   0, 15,     9,     1,   5,   0,   12, 950,  0,   600, 707}, // 25: Clarinet   — sample: C5/0.82s→Dkay180; B=0.0045→InHm9; Mterl-8; MlltStif10; NzMix12
             {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
@@ -360,15 +360,15 @@ public:
             {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,  119,  25,    0,   0,  2,    14,    20,   5,   0,   70, 200,  2,   600, 707},  // 29: HHat-C  — avg(HatClosedLive3 T60=0.22s→149, TightClosedHat T60=0.10s→89)@G5=119; InHm14; HP@6kHz
-            {30,  79,   0,   1,   900,  480,  0,   0,     0, 4,  169,  25,    0,   0, 15,     9,    20,   5,   0,   60, 200,  2,   600, 707},  // 30: HHat-O  — OpenHatBig T60=0.37s@G5→Dkay169; InHm9; longer release vs closed
-            {31,  62,   0,   1,   600,  350,  0,   0,     1, 5,  149,   0,    0,   0, 10,    10,     2,   5,   0,   30, 300,  0,   800, 707},  // 31: Conga   — Drumhd, T60=0.6s@D4→Dkay149; InHm10 (B≈0.005); NzMix30 skin noise
+            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,  119,  25,    0,   0,  2,    14,     5,   5,   0,   50, 600,  2,   600, 707},  // 29: HHat-C  — LwCt5 (was 20); NzMix50 (was 70); NzRes600 (was 200→longer noise burst)
+            {30,  79,   0,   1,   900,  480,  0,   0,     0, 4,  169,  25,    0,   0, 15,     9,     5,   5,   0,   40, 920,  2,   600, 707},  // 30: HHat-O  — LwCt5; NzMix40 (was 60); NzRes920 (was 200→~400ms noise for open hat)
+            {31,  62,   0,   1,   600,  350,  0,   0,     1, 5,  149,   0,    0,   0, 10,    10,     2,   5,   0,   12, 500,  0,   800, 707},  // 31: Conga   — NzMix12 (was 30); NzRes500
             {32,  62,   0,   1,   700,  300,  0,   0,     0, 4,  198,   5,    0,   0, 20,     2,     5,   5,   0,    5, 300,  0,  1000, 707},  // 32: Handpn  — Plate, T60≈10s@D4→Dkay198; InHm2 (B≈0.001, near-harmonic); warm metallic
             {33,  84,   0,   1,   900,  450,  0,   0,     0, 1,  193,  20,    0,   0,  8,    10,    10,   5,   0,    5, 300,  0,  1200, 707},  // 33: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
             {34,  60,   0,   1,   700,  300,  0,   0,     0, 6,  167,   8,    0,   0, 10,     6,     2,   5,   0,   10, 300,  0,   800, 707},  // 34: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
-            {35,  57,   0,   1,   900,  491,  0,   0,     0, 4,  192,   7,    0,   0, 18,    34,    20,   5,   0,   47, 200,  2,   600, 707},  // 35: Ride    — ride sample: T60=4.69s@A3→Dkay192; Mterl7 (slope-corr); InHm34; NzMix47 metallic; HP@6kHz
-            {36,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,    20,   5,   0,   60, 200,  2,   700, 707},  // 36: RidBel  — ride-bell sample: T60=2.03s@C4→Dkay184; Mterl20 (slope-corr); InHm15; NzMix60; HP@7kHz
-            {37,  57,   0,   1,   600,  457,  0,   0,     1, 5,   94,   0,    0,   0,  8,     8,     2,   5,   0,    6, 300,  0,   800, 707},  // 37: Bongo   — Bongo_Conga2: Drumhd, T60=0.38s@A3→Dkay94; Mterl0 neutral; InHm8 (B≈0.004); NzMix6
+            {35,  57,   0,   1,   900,  491,  0,   0,     0, 4,  192,   7,    0,   0, 18,    34,     5,   5,   0,   20, 700,  2,   600, 707},  // 35: Ride    — LwCt5 (was 20); NzMix20 (was 47); NzRes700 (longer noise)
+            {36,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,     5,   5,   0,   20, 600,  2,   700, 707},  // 36: RidBel  — LwCt5 (was 20); NzMix20 (was 60); NzRes600
+            {37,  57,   0,   1,   600,  457,  0,   0,     1, 5,   94,   0,    0,   0,  8,     8,     2,   5,   0,    5, 500,  0,   800, 707},  // 37: Bongo   — NzMix5 (was 6); NzRes500
             {38,  88,   0,   1,   100,  480,  0,   0,     0, 7,  181,  -8,    0,   0,  5,     0,     2,   5,   0,   85, 200,  0,   500, 707},  // 38: GlsBotl — OpenTube (Mdl7): T60=0.34s@E6→Dkay181; Mterl-8 dark; NzMix85 (breath noise dominates)
             {39,  49,   0,   1,   900,  445,  0,   0,     0, 4,   64,  13,    0,   0,  3,    16,     5,   5,   0,   29, 150,  2,   400, 707}   // 39: Tick    — avg(one-tic T60=0.33s→13, ordinary T60=0.74s→114)@C#3→Dkay64; Plate; InHm16; HP@4kHz; NzMix29
         };
@@ -1206,13 +1206,20 @@ public:
         }
 
 #ifdef ENABLE_PHASE_5_EXCITERS
+        // Noise: computed but NOT fed into the waveguide here.
+        // Storing in noise_out_sample separates percussion broadband texture
+        // (snare buzz, cymbal wash) from the pitched resonator ring.
+        // processBlock mixes it in parallel with the resonator output.
+        // Exception: tube models (phase_mult=-1) also receive noise into the waveguide
+        // to sustain the oscillation — that injection happens in processBlock.
+        ex.noise_out_sample = 0.0f;
         float noise_env_val = ex.noise_env.process();
         if (noise_env_val > 0.001f) {
             float raw_noise = ex.noise_gen.process();
 #ifdef ENABLE_PHASE_6_FILTERS
             raw_noise = ex.noise_filter.process(raw_noise);
 #endif
-            out += raw_noise * noise_env_val * ex.noise_decay_coeff;
+            ex.noise_out_sample = raw_noise * noise_env_val * ex.noise_decay_coeff;
         }
 #endif
 
@@ -1224,11 +1231,15 @@ public:
         // decayed.  Without this gate the filters run for the full voice lifetime, leaking
         // CPU every sample and risking denormal (subnormal) values on non-FTZ hardware.
         // Threshold 1e-6f is well above the sub-normal range (~1.2e-38f) and inaudible.
+        //
+        // NzMix blend: mallet scales inversely with noise_decay_coeff so NzMix acts as a
+        // true crossfade — NzMix=0 → full mallet (string/bar), NzMix=100 → silent mallet
+        // (pure noise). At intermediate values both contribute proportionally.
         if (ex.current_frame == 0 || ex.mallet_lp2 > 1e-6f) {
             float mallet_impulse = (ex.current_frame == 0) ? 1.0f : 0.0f;
             ex.mallet_lp  = (mallet_impulse * ex.mallet_stiffness) + (ex.mallet_lp  * (1.0f - ex.mallet_stiffness));
             ex.mallet_lp2 = (ex.mallet_lp   * ex.mallet_res_coeff) + (ex.mallet_lp2 * (1.0f - ex.mallet_res_coeff));
-            out += ex.mallet_lp2 * 15.0f;
+            out += ex.mallet_lp2 * 15.0f * (1.0f - ex.noise_decay_coeff);
         }
 
         // CRITICAL FIX: Increment time AT THE VERY END so Frame 0 actually triggers
@@ -1334,7 +1345,17 @@ public:
                 float safe_cpl_a = v_safe_cpl_a;
                 float safe_cpl_b = v_safe_cpl_b;
 
-                float inputA = exciter_sig + (voice.resB_out_prev * safe_cpl_a);
+                // Tube models (OpenTube=7, ClosedTube=8, phase_mult=-1) need noise fed
+                // into the waveguide so breath continuously excites the tube resonance
+                // (physically correct for flute/clarinet).  Percussion models do NOT get
+                // noise in the waveguide — it would be pitch-filtered into a tonal ring.
+#if defined(ENABLE_PHASE_5_EXCITERS) && defined(ENABLE_PHASE_7_MODELS)
+                float tube_noise_A = (voice.resA.phase_mult < 0.0f)
+                                     ? voice.exciter.noise_out_sample : 0.0f;
+#else
+                float tube_noise_A = 0.0f;
+#endif
+                float inputA = exciter_sig + tube_noise_A + (voice.resB_out_prev * safe_cpl_a);
                 outA = process_waveguide(voice.resA, inputA);
                 float outB = 0.0f;
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
@@ -1351,7 +1372,13 @@ public:
                                     fabsf(voice.resB_out_prev) > 0.00003f);
 
                 if (resB_needed) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
+#if defined(ENABLE_PHASE_5_EXCITERS) && defined(ENABLE_PHASE_7_MODELS)
+                    float tube_noise_B = (voice.resB.phase_mult < 0.0f)
+                                         ? voice.exciter.noise_out_sample : 0.0f;
+#else
+                    float tube_noise_B = 0.0f;
+#endif
+                    float inputB = exciter_sig + tube_noise_B + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB); //
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1362,7 +1389,13 @@ public:
                 }
 #else
                 if (m_active_partials >= 16) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
+#if defined(ENABLE_PHASE_5_EXCITERS) && defined(ENABLE_PHASE_7_MODELS)
+                    float tube_noise_B = (voice.resB.phase_mult < 0.0f)
+                                         ? voice.exciter.noise_out_sample : 0.0f;
+#else
+                    float tube_noise_B = 0.0f;
+#endif
+                    float inputB = exciter_sig + tube_noise_B + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB);
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1373,6 +1406,15 @@ public:
 #endif
                 voice_out = ((outA * (1.0f - state.mix_ab)) + (outB * state.mix_ab))
                             * voice.current_velocity;
+
+#ifdef ENABLE_PHASE_5_EXCITERS
+                // Parallel noise path: noise bypasses the waveguide and mixes directly
+                // into the voice output.  This preserves the broadband character that the
+                // resonator would otherwise pitch-filter away (snare buzz, cymbal wash,
+                // hi-hat hiss, shaker rattle).  The ×5 factor brings noise amplitude into
+                // the same ballpark as the resonator output driven by the ×15 mallet.
+                voice_out += voice.exciter.noise_out_sample * 5.0f * voice.current_velocity;
+#endif
 #endif // RENDER_STAGE >= 2
 
 #if RENDER_STAGE >= 3

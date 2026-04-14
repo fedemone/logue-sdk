@@ -70,6 +70,13 @@ struct ExciterState {
     float noise_decay_coeff = 0.0f;
     float current_noise_env = 0.0f;
 
+    // Computed each sample by process_exciter; read by processBlock.
+    // Noise is NOT injected into the waveguide (which would tonalize it).
+    // Instead the render loop mixes it directly into the voice output (parallel path).
+    // Exception: tube models (OpenTube=7, ClosedTube=8) also receive noise into their
+    // waveguide for physically correct sustained breath excitation (flute, clarinet).
+    float noise_out_sample = 0.0f;
+
     float mallet_lp = 0.0f;
     float mallet_lp2 = 0.0f;       // Second LP pole state (MlltRes)
     float mallet_stiffness = 0.5f;
