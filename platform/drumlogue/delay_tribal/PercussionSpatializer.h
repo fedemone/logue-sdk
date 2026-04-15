@@ -529,10 +529,22 @@ private:
     void init_clone_parameters() {
         if (!initialized_) return;
 
+        // Mode-specific delay constellations give each mode a distinct ensemble feel:
+        //   Tribal  : 8, 14, 20, 26 ms groups — deliberate, spaced ethnic drum echoes
+        //   Military: 1,  2,  3,  4 ms groups — tight machine-gun double-strokes
+        //   Angel   : 15, 27, 39, 51 ms groups — wide, dreamy, ethereal cloud
+        float base_delay, group_step, lane_step;
+        switch (current_mode_) {
+            case MODE_TRIBAL:   base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
+            case MODE_MILITARY: base_delay = 1.0f;  group_step = 1.0f;  lane_step = 0.3f;  break;
+            case MODE_ANGEL:    base_delay = 15.0f; group_step = 12.0f; lane_step = 2.0f;  break;
+            default:            base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
+        }
+
         for (int group = 0; group < CLONE_GROUPS; group++) {
             clone_group_t* g = &clone_groups_[group];
 
-            float base_delay = 5.0f + group * 5.0f; // 5ms, 10ms, 15ms, 20ms per group
+            float base = base_delay + group * group_step;
             float offsets[NEON_LANES];
             float pitch_mod[NEON_LANES];
             uint32_t phases[NEON_LANES];
@@ -540,9 +552,7 @@ private:
             for (int i = 0; i < NEON_LANES; i++) {
                 int clone_idx = group * NEON_LANES + i;
 
-                // Chorus micro-delays: 5–23 ms range (multiplied by 48 → samples)
-                // group 0: 5,6,7,8 ms  group 1: 10,11,12,13 ms  etc.
-                offsets[i] = base_delay + (i * 1.0f);
+                offsets[i] = base + (i * lane_step);
                 // Convert 0.0-1.0 phase to 32-bit fixed point
                 phases[i] = (uint32_t)(((float)clone_idx / 16.0f) * 4294967296.0f);
                 pitch_mod[i] = 0.1f + (i * 0.05f);
@@ -708,7 +718,10 @@ private:
                 delayed_r = apply_attack_softening(delayed_r, g);
             }
 
-            apply_mode_filters(&mode_filters_, g, &delayed_l, &delayed_r, filter_depth);
+            // Mode identity is expressed via delay time patterns (see init_clone_parameters).
+            // Applying per-clone biquad filters (bandpass/HPF) destroys the drum transient
+            // character and creates a reverb-like tail — exactly the wrong behaviour.
+            // apply_mode_filters(&mode_filters_, g, &delayed_l, &delayed_r, filter_depth);
 
             uint32x4_t invert = group->phase_flags;
             float32x4_t neg_one = vdupq_n_f32(-1.0f);
@@ -767,10 +780,13 @@ private:
                 if (clone_idx < clone_count_) {
                     float pos = (clone_count_ > 1) ?
                                 (float)clone_idx / (clone_count_ - 1) : 0.5f;
-                    int angle_idx = (int)(pos * 359);
-
-                    left_vals[i] = sin_table[angle_idx] * spread_;
-                    right_vals[i] = cos_table[angle_idx] * spread_;
+                    // Clamp to the first quadrant (0-89°) so all clones contribute
+                    // positive energy. Using 0-359° was causing L-channel cancellation
+                    // (clones at 120° and 240° have equal and opposite sin values).
+                    // cos(0°)=1,sin(0°)=0 → hard left; cos(89°)≈0,sin(89°)≈1 → hard right.
+                    int angle_idx = (int)(pos * 89);
+                    left_vals[i] = cos_table[angle_idx] * spread_;
+                    right_vals[i] = sin_table[angle_idx] * spread_;
 
                     // Randomize phase inversion for Angel mode
                     if (current_mode_ == MODE_ANGEL) {
@@ -814,15 +830,13 @@ private:
     void set_mode(spatial_mode_t new_mode) {
         if (new_mode == current_mode_) return;
 
-        // Store current output for crossfade
-        // In a real implementation, you'd capture the last output samples
         crossfade_counter_ = CROSSFADE_SAMPLES;
         crossfade_active_ = true;
 
-        init_mode_filters(&mode_filters_, new_mode, depth_);
-
         current_mode_ = new_mode;
-        update_panning(); // Update phase inversion for Angel mode
+        init_mode_filters(&mode_filters_, new_mode, depth_);
+        init_clone_parameters();  // Update delay constellation for new mode
+        update_panning();         // Update panning / phase inversion for Angel mode
     }
 
     // Crossfade is applied inline in Process() using vmulq_n_f32 on the wet

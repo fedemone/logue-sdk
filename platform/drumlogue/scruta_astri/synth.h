@@ -178,8 +178,10 @@ public:
             // FIX: The Sherman Destruction Boost
             case k_paramCMOSDist: {
                 if (value <= CLEAN_MOOG_BORDER) {
-                    m_cmos_gain = 1.0f + ((float)value / (float)CLEAN_MOOG_BORDER);
-                    m_cmos_filter_drive = 0.0f;  // Store for APC to pick up
+                    float t = (float)value / (float)CLEAN_MOOG_BORDER;
+                    m_cmos_gain = 1.0f + t;  // 1.0→2.0
+                    // Gentle drive even in the "clean" zone so 1-32% isn't a dead zone
+                    m_cmos_filter_drive = t * 0.5f;  // 0.0→0.5
                     m_sherman_asym_base = 0.0f;
                     m_sherman_makeup = 1.0f;
                 } else if (value <= MOOG_SHERMAN_BORDER) {
@@ -356,7 +358,8 @@ public:
                 m_cmos_mod_multiplier = 1.0f;
                 m_srr_mod_offset = 0.0f;
                 m_mix2_mod_offset = 0.0f;
-                m_osc2_target_hz = 0.0f;
+                // NOTE: m_osc2_target_hz is NOT reset here — it is set once by
+                // setParameter(k_paramOsc2Pitch) and must persist across APC cycles.
                 m_volume_mod_multiplier = 0.0f;
                 m_drv1_mod_multiplier = 0.0f;
                 m_drv2_mod_multiplier = 0.0f;

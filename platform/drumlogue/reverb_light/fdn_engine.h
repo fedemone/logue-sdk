@@ -103,6 +103,7 @@ public:
     float spark_pan_l = 0.5f;
     float spark_pan_r = 0.5f;
     int spark_countdown = 0;
+    int spark_duration = 0;   // total grain length for envelope computation
 
     float sampleRate;
     bool initialized;
@@ -143,7 +144,7 @@ public:
     void init_color_resonators() {
         // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
         const float freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f};
-        const float Q = 8.0f; // High Q for distinct ringing resonance
+        const float Q = 4.0f; // Moderate Q — wider peaks, more audible ring from input signal
 
         for (int i = 0; i < NUM_RESONATORS; i++) {
             // Constant Peak Gain Bandpass Biquad Math
@@ -417,15 +418,18 @@ public:
             float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
 
             // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
+            // Drive from the dry input so transients excite the resonators —
+            // the reverb tail has negligible energy above 4 kHz after FDN LPF.
             float color_l = 0.0f;
             float color_r = 0.0f;
             for(int f=0; f<NUM_RESONATORS; f++) {
-                color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
-                color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
+                color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
+                color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
             }
-            // Scale down since we are summing 6 high-Q resonant peaks
-            color_l *= 0.15f;
-            color_r *= 0.15f;
+            // Scale down since we are summing 6 high-Q resonant peaks.
+            // Raised from 0.15 — resonators now get full-energy input signal.
+            color_l *= 0.30f;
+            color_r *= 0.30f;
 
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
             sparkle_buffer_l[spark_write] = rev_l;
@@ -437,8 +441,12 @@ public:
 
             if (spark_countdown > 0) {
                 int r_idx = (int)spark_read & (SPARKLE_BUFFER_SIZE - 1);
-                spark_l = sparkle_buffer_l[r_idx] * spark_pan_l;
-                spark_r = sparkle_buffer_r[r_idx] * spark_pan_r;
+                // Parabolic envelope: rises and falls over the grain duration.
+                // env = 4 * pos * (1 - pos)  where pos runs 0→1 over the grain.
+                float pos = 1.0f - (float)spark_countdown / (float)spark_duration;
+                float env = 4.0f * pos * (1.0f - pos);
+                spark_l = sparkle_buffer_l[r_idx] * spark_pan_l * env;
+                spark_r = sparkle_buffer_r[r_idx] * spark_pan_r * env;
                 spark_read += spark_speed;
                 spark_countdown--;
             } else {
@@ -448,10 +456,14 @@ public:
                 float rand_val = (float)seed / 4294967295.0f;
 
                 if (rand_val < (0.0001f + (spark_amt * 0.005f))) {
-                    spark_countdown = 500 + (seed % 1000); // 10-30ms grain
-                    spark_read = spark_write - spark_countdown;
-                    if(spark_read < 0) spark_read += SPARKLE_BUFFER_SIZE;
-                    spark_speed = (seed % 2 == 0) ? 2.0f : 4.0f; // +12 or +24 semitones
+                    // Halved grain duration: 5–15 ms (was 10–30 ms)
+                    spark_duration = 250 + (int)(seed % 500);
+                    spark_countdown = spark_duration;
+                    spark_read = (float)spark_write - (float)spark_countdown;
+                    if(spark_read < 0.0f) spark_read += (float)SPARKLE_BUFFER_SIZE;
+                    // More varied pitch ratios: +5, +7, +12, +19, +24 semitones
+                    static const float kSpeeds[5] = {1.41f, 1.68f, 2.0f, 2.83f, 4.0f};
+                    spark_speed = kSpeeds[seed % 5];
 
                     spark_pan_l = (float)(seed % 100) / 100.0f;
                     spark_pan_r = 1.0f - spark_pan_l;

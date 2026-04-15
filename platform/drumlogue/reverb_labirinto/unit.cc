@@ -39,7 +39,7 @@ static bool s_bypass = true;
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
 // ID 0:  PRESET 0..3               default 0 (foresta)
-// ID 1:  MIX    0..1000 (x0.1%)    default 700 (70%)
+// ID 1:  MIX    0..100 %            default 70 (70%)
 // ID 2:  TIME   1..100             default 50
 // ID 3:  LOW    1..100             default 50
 // ID 4:  HIGH   1..100             default 70
@@ -58,7 +58,7 @@ enum parameterState {
   k_total
 };
 
-static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0, 10};
+static int32_t s_params[k_total] = {0, 70, 50, 50, 70, 250, 100, 100, 3, 0, 0, 10};
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
                                                       "labirinto", "esotico",
                                                       "stellare"};
@@ -68,15 +68,15 @@ static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
 // Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {k_foresta, 600, 40, 60, 40, 200, 80, 600, 3, 0, 0, 10},
+    {k_foresta, 60, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {k_tempio, 700, 70, 80, 25, 130, 130, 800, 2, 0, 0, 10},
+    {k_tempio, 70, 70, 80, 25, 130, 130, 80, 2, 0, 0, 10},
     // 2: labirinto - center values with random ping-pong stereo bouncing
-    {k_labirinto, 500, 60, 50, 50, 510, 100, 500, 1, 0, 10, 10},
+    {k_labirinto, 50, 60, 50, 50, 510, 100, 50, 1, 0, 10, 10},
     // 3: esotico - microtonal echoes on non-Western scale
-    {k_esotico, 450, 40, 60, 80, 100, 100, 500, 4, 5, 5, 20},
+    {k_esotico, 45, 40, 60, 80, 100, 100, 50, 4, 5, 5, 20},
     // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {k_stellare, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20, 10},
+    {k_stellare, 40, 90, 50, 80, 800, 180, 30, 4, 35, 20, 10},
 };
 
 static uint8_t s_current_preset = 0;
@@ -187,8 +187,8 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
             unit_set_param_value(i, k_presets[value][i]);
         }
         break;
-    case k_mix: // MIX  0..1000 → 0.0..1.0
-      s_reverb->setMix(value / 1000.0f);
+    case k_mix: // MIX  0..100 → 0.0..1.0
+      s_reverb->setMix(value / 100.0f);
       break;
     case k_time: // TIME  1..100 → decay 0.01..0.99
       s_reverb->setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
@@ -205,8 +205,8 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
       s_reverb->setWidth(value / 100.0f);
       break;
-    case k_comp: // COMP  0..1000 → diffusion 0.0..1.0
-      s_reverb->setDiffusion(value / 1000.0f);
+    case k_comp: // COMP  0..100 → diffusion 0.0..1.0
+      s_reverb->setDiffusion(value / 100.0f);
       break;
     case k_pill: // PILL  0..4  - pillar routing mode
       s_reverb->setPillar(value);
