@@ -52,17 +52,17 @@ typedef enum {
 static const char* k_preset_names[k_preset_number] = {
     "StanzaNeon", // 0: Tight, bright, standard drum room
     "VicoBuio",   // 1: Long decay, heavy LPF, spooky
-    "Strobo",   // 2: High pre-delay, short decay, heavily modulated
-    "Bruciato"      // 3: Massive size, max decay, floating
+    "Strobo",     // 2: High pre-delay, short decay, heavily modulated
+    "Bruciato"    // 3: Massive size, max decay, floating
 };
 
-// Values: { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS }
+// Values:
+//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS }
 static const int32_t k_presets[num_of_presets][k_total] = {
-    //                                                              DCAY BASS
-    { k_stanzaNeon, 40, 70, 30, 10,  5, 30,  5,  65,  30 },  // StanzaNeon: medium decay, light bass cut
-    { k_vicoBuio,   80, 20, 40, 80, 10, 60, 15,  85,  10 },  // VicoBuio:   long dark decay, minimal bass cut
-    { k_strobo,     20, 50, 40, 40, 40, 10, 80,  45,  50 },  // Strobo:     short tight decay, moderate bass cut
-    { k_bruciato,   95, 40, 60, 30, 25, 90, 10,  95,  20 }   // Bruciato:   near-infinite decay, subtle bass cut
+    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30 },  // StanzaNeon: medium decay, light bass cut
+    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10 },  // VicoBuio:   long dark decay, minimal bass cut
+    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50 },  // Strobo:     short tight decay, moderate bass cut
+    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20 }   // Bruciato:   near-infinite decay, subtle bass cut
 };
 
 static uint8_t s_current_preset = 0;
@@ -78,7 +78,7 @@ static uint8_t s_current_preset = 0;
 // ID 5: SPRK  0..100 %  default 5
 // ID 6: SIZE  0..100 %  default 50
 // ID 7: PDLY  0..100 %  default 50
-static int32_t s_params[k_total] = { 0, 60, 50, 70, 10, 5, 50, 0, 65, 30 };
+static int32_t s_params[k_total] = { 0, 10, 10, 10, 10, 10, 50, 0, 65, 30 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -167,6 +167,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         for (uint8_t i = 0; i < k_total; i++) {
             if (i == k_paramProgram) continue;  // avoid recursion
             unit_set_param_value(i, k_presets[value][i]);
+            unit_get_param_value(i);    // update the interface
         }
       break;
     case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99

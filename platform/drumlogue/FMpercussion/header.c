@@ -7,15 +7,15 @@
 
 // String tables
 const char* lfo_shape_strings[9] = {
-    "Tri+Tri", "Ramp+Ramp", "Chord+Chord",
-    "Tri+Ramp", "Tri+Chord", "Ramp+Tri",
-    "Ramp+Chord", "Chord+Tri", "Chord+Ramp"
+    "Tri+Tri", "Rmp+Rmp", "Chd+Chd",
+    "Tri+Rmp", "Tri+Chd", "Rmp+Tri",
+    "Rmp+Chd", "Chd+Tri", "Chd+Rmp"
 };
 
 const char* lfo_target_strings[11] = {
     "None", "Pitch", "ModIdx", "Env",
-    "LFO2Ph", "LFO1Ph", "ResFreq", "Resonance",
-    "NoiseMx", "ResMrph", "MetalGate"
+    "LFO2Ph", "LFO1Ph", "ResFrq", "Reson",
+    "NoizMx", "ResMrph", "MtlGate"
 };
 
 const char* euclidean_mode_strings[9] = {
@@ -31,7 +31,7 @@ const char* euclidean_mode_strings[9] = {
 };
 
 const char* resonant_mode_strings[5] = {
-    "LowPass", "BandPass", "HighPass", "Notch", "Peak"
+    "LwPas", "BdPas", "HiPas", "Notch", "Peak"
 };
 
 // Voice allocation - 12 valid combinations (no duplicates)

@@ -48,7 +48,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         40, 50, 50, 40,
         0, 20, LFO_TARGET_PITCH, 30,
         0, 5, LFO_TARGET_INDEX, 20,   // EuclTun=0 (Off)
-        20, 0,
+        20, 0,  // env_shape, voice_index
         RESONANT_MODE_BANDPASS, 2, 50, 30,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
