@@ -190,7 +190,58 @@ public:
     /*===========================================================================*/
     /* Parameter Setters */
     /*===========================================================================*/
+    inline void setParameter(uint8_t index, int32_t value) {
+        if (id >= k_total) return;
+        params_[index] = value;   // store into local DB
 
+        switch (id) {
+        case k_paramProgram:
+            current_preset_ = value;
+            setFilterType(value);
+            for (uint8_t i = 0; i < k_total; i++) {
+                if (i == k_paramProgram) continue;  // avoid recursion
+                setParameter(i, k_presets[value][i]);
+            }
+            break;
+        case k_mix: // MIX  0..100 → 0.0..1.0
+        setMix(value / 100.0f);
+        break;
+        case k_time: // TIME  1..100 → decay 0.01..0.99
+        setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
+        break;
+        case k_low: // LOW  1..100 → low-freq decay multiplier
+        setLowDecay((float)value);
+        break;
+        case k_high: // HIGH  1..100 → high-freq decay multiplier
+        setHighDecay((float)value);
+        break;
+        case k_damp: // DAMP  20..1000 (×10 → 200..10000 Hz)
+        setDamping((float)value * 10.0f);
+        break;
+        case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
+        setWidth(value / 100.0f);
+        break;
+        case k_comp: // COMP  0..100 → diffusion 0.0..1.0
+        setDiffusion(value / 100.0f);
+        break;
+        case k_pill: // PILL  0..4  - pillar routing mode
+        setPillar(value);
+        break;
+        case k_shimmer_freq: // SHMR  0..100  - shimmer frequency
+        setShimmerFreq(value);
+        break;
+        case k_pre_delay: // PDLY 0..200 ms
+            setPreDelay((float)value);
+            break;
+        case k_vibr:
+            // value 1..30 → 0.1..3.0 Hz
+            setLfoSpeed(value * 0.1f);
+            updateModRate();
+            break;
+        default:
+        break;
+        }
+    }
     void setDecay(float d) { decay = fmaxf(0.0f, fminf(0.99f, d)); }
     void setDiffusion(float d) {
         diffusion = fmaxf(0.0f, fminf(1.0f, d));
@@ -1290,6 +1341,8 @@ private:
     /*===========================================================================*/
     /* Private Member Variables */
     /*===========================================================================*/
+    int32_t params_[k_total]  __attribute__((aligned(16)));
+    int32_t current_preset_ = 0;
 
     float sampleRate;
     int writePos;

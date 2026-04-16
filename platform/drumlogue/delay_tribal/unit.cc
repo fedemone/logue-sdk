@@ -19,7 +19,7 @@ static PercussionSpatializer s_delay_instance;
 static unit_runtime_desc_t s_runtime_desc;
 
 // Parameter state (IDs 0-7, mirrors header.c defaults)
-static int32_t s_params[8] = { 0, 0, 50, 30, 80, 50, 30, 20 };
+static int32_t s_params[k_total] = { 0, 0, 50, 30, 80, 50, 30, 20 };
 
 __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     if (!desc) return k_unit_err_undef;
@@ -46,12 +46,12 @@ __unit_callback void unit_render(const float * in, float * out, uint32_t frames)
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
-    if (id < 8) s_params[id] = value;
+    if (id < k_total) s_params[id] = value;
     s_delay_instance.setParameter(id, value);
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id < 8) return s_params[id];
+    if (id < k_total) return s_params[id];
     return 0;
 }
 

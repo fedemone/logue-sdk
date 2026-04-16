@@ -63,6 +63,10 @@ public:
     float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(16)));
     int writePos = 0;
 
+    // internal parameters
+    int32_t params_[k_total]  __attribute__((aligned(16)));
+    int32_t current_preset_ = 0;
+
     // Per-channel one-pole HPF states (applied to each delay output to cut bass buildup)
     float hpf_x_prev[FDN_CHANNELS];   // previous input sample
     float hpf_y_prev[FDN_CHANNELS];   // previous output sample
@@ -201,6 +205,55 @@ public:
         glow_bp_r = 0.0f;
         memset(hpf_x_prev, 0, sizeof(hpf_x_prev));
         memset(hpf_y_prev, 0, sizeof(hpf_y_prev));
+    }
+        /*===========================================================================*/
+    /* Parameter Interface */
+    /*===========================================================================*/
+
+    inline void setParameter(uint8_t index, int32_t value) {
+        if (id >= k_total) return;
+        params_[index] = value;   // store into local DB
+
+        const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
+
+        switch (id) {
+        case k_paramProgram:
+            current_preset_ = value;
+            for (uint8_t i = 0; i < k_total; i++) {
+                if (i == k_paramProgram) continue;  // avoid recursion
+                setParameter(i, k_presets[value][i]);
+            }
+        break;
+        case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99
+        s_fdn_engine.setDarkness(norm);
+        break;
+        case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
+        s_fdn_engine.setBrightness(norm);
+        break;
+        case k_glow: // GLOW  modulation  0-100% → 0.0..1.0
+        s_fdn_engine.setGlow(norm);
+        break;
+        case k_color: // COLR  tone color (spectrum resonance)  0-100% → coeff 0.0..0.95
+        s_fdn_engine.setColor(norm);
+        break;
+        case k_spark: // SPRK  sparkle S&H pops  0-100% → 0.0..1.0
+        s_fdn_engine.setSpark(norm);
+        break;
+        case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
+        s_fdn_engine.setSize(norm);
+        break;
+        case k_pdly: // PDLY pre delay
+        s_fdn_engine.setPreDelay(norm);
+        break;
+        case k_decay: // DCAY  FDN feedback gain  0-100% → 0.1..0.98
+        s_fdn_engine.setDecay(norm);
+        break;
+        case k_bass: // BASS  per-channel HPF in FDN loop  0-100% → coeff 0.99..0.85
+        s_fdn_engine.setHpfCoeff(norm);
+        break;
+        default:
+        break;
+        }
     }
 
     //==============

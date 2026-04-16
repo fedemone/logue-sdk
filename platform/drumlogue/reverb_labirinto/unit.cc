@@ -35,21 +35,6 @@ static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
 static bool s_bypass = true;
 
-// ============================================================================
-// Parameter State (mirrors header.c defaults)
-// ============================================================================
-// ID 0:  PRESET 0..3               default 0 (foresta)
-// ID 1:  MIX    0..100 %            default 70 (70%)
-// ID 2:  TIME   1..100             default 50
-// ID 3:  LOW    1..100             default 50
-// ID 4:  HIGH   1..100             default 70
-// ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
-// ID 6:  WIDE   0..200 %           default 100
-// ID 7:  COMP   0..1000 (x0.1%)    default 1000
-// ID 8:  PILL   0..4               default 3
-// ID 9:  SHMR 0..100             default 35 (Hz)
-// ID 10: PDLY   0..100             default 0 (ms)
-
 enum parameterState {
   k_paramProgram = 0,
   k_mix, k_time, k_low, k_high, k_damp,
@@ -58,9 +43,8 @@ enum parameterState {
   k_total
 };
 
-static int32_t s_params[k_total] = {0, 70, 50, 50, 70, 250, 100, 100, 3, 0, 0, 10};
 static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
-                                                      "labirinto", "esotico",
+    "labirinto", "esotico",
                                                       "stellare"};
 // ============================================================================
 // Factory Presets
@@ -80,6 +64,22 @@ static const int32_t k_presets[k_preset_number][k_total] = {
 };
 
 static uint8_t s_current_preset = 0;
+
+// ============================================================================
+// Parameter State (mirrors header.c defaults)
+// ============================================================================
+// ID 0:  PRESET 0..3               default 0 (foresta)
+// ID 1:  MIX    0..100 %            default 70 (70%)
+// ID 2:  TIME   1..100             default 50
+// ID 3:  LOW    1..100             default 50
+// ID 4:  HIGH   1..100             default 70
+// ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
+// ID 6:  WIDE   0..200 %           default 100
+// ID 7:  COMP   0..1000 (x0.1%)    default 1000
+// ID 8:  PILL   0..4               default 3
+// ID 9:  SHMR 0..100             default 35 (Hz)
+// ID 10: PDLY   0..100             default 0 (ms)
+static int32_t s_params[k_total] = {0, 70, 50, 50, 70, 250, 100, 100, 3, 0, 0, 10};
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -113,7 +113,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     s_current_preset = 0;
 
     // Apply default parameter values
-    unit_set_param_value(k_paramProgram, s_current_preset);
+    s_reverb.setParameter(k_paramProgram, s_current_preset);
 
     return k_unit_err_none;
 }
@@ -177,55 +177,10 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (!s_reverb) return;
     if (id >= k_total) return;
     s_params[id] = value;   // store into local DB
-
-    switch (id) {
-    case k_paramProgram:
-        s_current_preset = value;
-        s_reverb->setFilterType(value);
-        for (uint8_t i = 0; i < k_total; i++) {
-            if (i == k_paramProgram) continue;  // avoid recursion
-            unit_set_param_value(i, k_presets[value][i]);
-        }
-        break;
-    case k_mix: // MIX  0..100 → 0.0..1.0
-      s_reverb->setMix(value / 100.0f);
-      break;
-    case k_time: // TIME  1..100 → decay 0.01..0.99
-      s_reverb->setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
-      break;
-    case k_low: // LOW  1..100 → low-freq decay multiplier
-      s_reverb->setLowDecay((float)value);
-      break;
-    case k_high: // HIGH  1..100 → high-freq decay multiplier
-      s_reverb->setHighDecay((float)value);
-      break;
-    case k_damp: // DAMP  20..1000 (×10 → 200..10000 Hz)
-      s_reverb->setDamping((float)value * 10.0f);
-      break;
-    case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
-      s_reverb->setWidth(value / 100.0f);
-      break;
-    case k_comp: // COMP  0..100 → diffusion 0.0..1.0
-      s_reverb->setDiffusion(value / 100.0f);
-      break;
-    case k_pill: // PILL  0..4  - pillar routing mode
-      s_reverb->setPillar(value);
-      break;
-    case k_shimmer_freq: // SHMR  0..100  - shimmer frequency
-      s_reverb->setShimmerFreq(value);
-      break;
-    case k_pre_delay: // PDLY 0..200 ms
-        s_reverb->setPreDelay((float)value);
-        break;
-    case k_vibr:
-        // value 1..30 → 0.1..3.0 Hz
-        s_reverb->setLfoSpeed(value * 0.1f);
-        s_reverb->updateModRate();
-        break;
-    default:
-      break;
-    }
+    if (id == k_paramProgram) s_current_preset = s_params[k_paramProgram];
+    s_reverb.setParameter(id, value);
 }
+
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
     if (id >= k_total) return 0;
@@ -270,7 +225,7 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 
 __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
-    unit_set_param_value(k_paramProgram, idx);
+    s_reverb.setParameter(k_paramProgram, idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
