@@ -85,7 +85,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     s_current_preset = 0;
 
     // Apply default parameter values
-    s_reverb.setParameter(k_paramProgram, s_current_preset);
+    s_reverb->setParameter(k_paramProgram, s_current_preset);
 
     return k_unit_err_none;
 }
@@ -150,7 +150,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (id >= k_total) return;
     s_params[id] = value;   // store into local DB
     if (id == k_paramProgram) s_current_preset = s_params[k_paramProgram];
-    s_reverb.setParameter(id, value);
+    s_reverb->setParameter(id, value);
 }
 
 
@@ -197,7 +197,7 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 
 __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
-    s_reverb.setParameter(k_paramProgram, idx);
+    s_reverb->setParameter(k_paramProgram, idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {

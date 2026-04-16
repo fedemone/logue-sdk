@@ -28,10 +28,10 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 10, 50, k_unit_param_type_percent, 0, 0, 0, {"BRIG"} },
         // ID 3: GLOW  modulation  0%-100%
         { 0, 100, 10, 70, k_unit_param_type_percent, 0, 0, 0, {"GLOW"} },
-        // ID 4: COLR  tone color (spectrum resonance)  0%-100%
-        { 0, 100, 10, 10, k_unit_param_type_percent, 0, 0, 0, {"COLR"} },
 
         // Page 2
+        // ID 4: COLR  tone color (spectrum resonance)  0%-100%
+        { 0, 100, 10, 10, k_unit_param_type_percent, 0, 0, 0, {"COLR"} },
         // ID 5: SPRK  sparkle / modulation depth  0%-100%
         { 0, 100, 10, 5, k_unit_param_type_percent, 0, 0, 0, {"SPRK"} },
         // ID 6: SIZE  room size (delay scale)  0%-100%
@@ -44,21 +44,20 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 50, 65, k_unit_param_type_percent, 0, 0, 0, {"DCAY"} },
         // ID 9: BASS  per-channel HPF in FDN loop (bass cut in tail)  0%=flat 100%=max cut
         { 0, 100, 30, 30, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },
+        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
 
         // Pages 4-6: blank
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },

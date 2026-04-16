@@ -31,7 +31,6 @@ fast_inline float process_biquad(float in, biquad_state_t* state, biquad_coeffs_
     return out;
 }
 
-static const int k_preset_number = 4;
 enum k_parameters {
     k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,

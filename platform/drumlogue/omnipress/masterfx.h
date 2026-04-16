@@ -402,13 +402,13 @@ private:
         }
 
         float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
-                                                               detected_db, thresh_db_);
-
+                                                              detected_db,
+                                                              thresh_db_);
 
         float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
-                                                          target_gain_db,
-                                                          attack_coeff_,
-                                                          opto_coeff);
+                                                         target_gain_db,
+                                                         attack_coeff_,
+                                                         distressor_.opto_coeff);
 
         float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db, vdupq_n_f32(0.115129f)));
 
