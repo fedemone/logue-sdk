@@ -797,7 +797,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         // Positive depth: 1.0 at trigger → 0.0 as lfo reaches 1/depth.
         // Negative depth: no effect (gate stays ≥1.0, clamped to 1.0).
         float32x4_t raw = vsubq_f32(vdupq_n_f32(1.0f), vmulq_f32(mod, depth));
-        metal_gate = vmaxq_f32(vmaxq_f32(raw, vdupq_n_f32(0.0f)), vdupq_n_f32(0.0f));
+        metal_gate = vmaxq_f32(raw, vdupq_n_f32(0.0f));
         metal_gate = vminq_f32(metal_gate, vdupq_n_f32(1.0f));
     }
 

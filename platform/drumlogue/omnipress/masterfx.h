@@ -163,7 +163,7 @@ public:
         size_t frames_remaining = frames;
 
         // Pre-calculate makeup gain (linear)
-        float32x4_t makeup_lin = vdupq_n_f32(powf(10.0f, makeup_db_ / 20.0f));
+        float32x4_t makeup_lin = vdupq_n_f32(fasterpowf(10.0f, makeup_db_ / 20.0f));
 
         // Pre-calculate mix balance
         float32x4_t wet_gain = vdupq_n_f32(mix_);
@@ -248,7 +248,7 @@ public:
                 vdupq_n_f32(main_l), vdupq_n_f32(main_r),
                 vdupq_n_f32(sc_l),   vdupq_n_f32(sc_r));
 
-            float makeup_lin_scalar = powf(10.0f, makeup_db_ / 20.0f);
+            float makeup_lin_scalar = fasterpowf(10.0f, makeup_db_ / 20.0f);
             float out_l_s = (dry_l * (1.0f - mix_) + vgetq_lane_f32(processed.val[0], 0) * mix_)
                             * makeup_lin_scalar;
             float out_r_s = (dry_r * (1.0f - mix_) + vgetq_lane_f32(processed.val[1], 0) * mix_)
@@ -403,12 +403,7 @@ private:
         float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
                                                                detected_db, thresh_db_);
 
-        // Opto mode slows release by raising the coefficient to 1/mult power,
-        // which is equivalent to multiplying the release time constant by mult
-        // while keeping the coefficient safely in (0,1).
-        float opto_coeff = (distressor_.opto_release_mult > 1.0f)
-            ? powf(release_coeff_, 1.0f / distressor_.opto_release_mult)
-            : release_coeff_;
+
         float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
                                                           target_gain_db,
                                                           attack_coeff_,
@@ -472,16 +467,17 @@ public:
 
             case k_attack: // ATTACK (0.1 to 100.0 ms)
                 attack_ms_ = value * 0.1f;
-                attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
+                attack_coeff_ = fasterexpf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
                 smoothing_set_times(&smoother_, attack_ms_, release_ms_);
                 break;
 
             case k_release: // RELEASE (10 to 2000 ms)
                 release_ms_ = static_cast<float>(value);
-                release_coeff_ = expf(-1.0f / (release_ms_ * 0.001f * samplerate_));
+                release_coeff_ = fasterexpf(-1.0f / (release_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
                 smoothing_set_times(&smoother_, attack_ms_, release_ms_);
+                update_opto_coeff(distressor_);
                 break;
 
             case 4: // MAKEUP (0.0 to 24.0 dB)
@@ -564,7 +560,7 @@ public:
                     if (comp_mode_ == COMP_MODE_DISTRESSOR) {
                         // Distressor expects at least 0.05ms attack
                         attack_ms_ = fmaxf(attack_ms_, 0.05f);
-                        attack_coeff_ = expf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
+                        attack_coeff_ = fasterexpf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
                     }
                 }
                 break;

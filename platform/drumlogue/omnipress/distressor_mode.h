@@ -74,6 +74,7 @@ typedef struct {
 
     // Opto mode state (slow release simulation)
     float opto_release_mult;  // Up to 20s in opto mode
+    float opto_coeff ;        // deduced from above
 
     // NEW: Distressor-specific detector components
     sidechain_hpf_t detect_hpf;     // 100 Hz HPF for detector
@@ -82,6 +83,14 @@ typedef struct {
     float32x4_t detector_state;
 
 } distressor_t;
+
+fast_inline void update_opto_coeff(distressor_t* d) {
+    // Opto mode slows release by raising the coefficient to 1/mult power,
+    // which is equivalent to multiplying the release time constant by mult
+    // while keeping the coefficient safely in (0,1).
+    d->opto_coeff = (d->opto_release_mult > 1.0f)
+        ? fasterpowf(release_coeff_, 1.0f / d->opto_release_mult): release_coeff_;
+}
 
 // Initialize Distressor with detector
 fast_inline void distressor_init(distressor_t* d, float sample_rate) {
@@ -96,6 +105,8 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     d->last_input = vdupq_n_f32(0.0f);
     d->opto_release_mult = 1.0f;
     d->detector_state = vdupq_n_f32(0.0f);
+
+    update_opto_coeff(d);
 
     // Initialize detector HPF at 100 Hz (removes low-end pumping)
     sidechain_hpf_init(&d->detect_hpf, 100.0f, sample_rate);
@@ -160,6 +171,7 @@ fast_inline void distressor_set_ratio(distressor_t* d, uint8_t mode) {
     } else {
         d->opto_release_mult = 1.0f;
     }
+    update_opto_coeff(d);
 }
 
 // Generate 2nd/3rd harmonics (Dist 2 / Dist 3)

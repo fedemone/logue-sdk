@@ -197,9 +197,9 @@ fast_inline void multiband_process(multiband_t* mb,
     float32x4_t high_gain = neon_expq_f32(vmulq_f32(mb->gr_high, vdupq_n_f32(0.115129f)));
 
     // Apply makeup gain
-    low_gain = vmulq_f32(low_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_LOW].makeup_db / 20.0f)));
-    mid_gain = vmulq_f32(mid_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_MID].makeup_db / 20.0f)));
-    high_gain = vmulq_f32(high_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_HIGH].makeup_db / 20.0f)));
+    low_gain = vmulq_f32(low_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_LOW].makeup_db / 20.0f)));
+    mid_gain = vmulq_f32(mid_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_MID].makeup_db / 20.0f)));
+    high_gain = vmulq_f32(high_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_HIGH].makeup_db / 20.0f)));
 
     // Apply mute/solo logic
     int any_solo = (mb->bands[BAND_LOW].solo > 0.0f ||
