@@ -13,9 +13,9 @@ Building on the spatial positioning, each mode now includes **mode-specific filt
 
 | Mode | Spatial Character | Filter Type | Target Instruments | Psychoacoustic Goal |
 |------|-------------------|-------------|-------------------|---------------------|
-| **Tribal** | Circular (360°) | Bandpass (80-800 Hz) | Bass drums, toms, congas | Emphasize warmth and "earthiness" of tribal percussion |
-| **Military** | Linear array | Highpass (1 kHz+) | Snares, tambourines, claps | Enhance attack and "snap" for regimented feel |
-| **Angel** | Stochastic/diffuse | Bandpass + gentle lowpass | Cymbals, bells, synth pads | Create ethereal, "heavenly" character |
+| **Sussurro** | Circular (360°) | Bandpass (80-800 Hz) | Bass drums, toms, congas | Emphasize warmth and "earthiness" of sussurro percussion |
+| **Ricordo** | Linear array | Highpass (1 kHz+) | Snares, tambourines, claps | Enhance attack and "snap" for regimented feel |
+| **Ninfa** | Stochastic/diffuse | Bandpass + gentle lowpass | Cymbals, bells, synth pads | Create ethereal, "heavenly" character |
 
 ## Design Philosophy
 
@@ -62,7 +62,7 @@ Building on the spatial positioning, each mode now includes **mode-specific filt
 │ ┌─────────────────────────────────────────────────────────┐     │
 │ │                     MODE SELECTOR                       │     │
 │ │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐      │     │
-│ │ │   Tribal     │ │  Military    │ │     Angel    │      │     │
+│ │ │   Sussurro     │ │  Ricordo    │ │     Ninfa    │      │     │
 │ │ │ (Circular)   │ │ (Linear)     │ │ (Stochastic) │      │     │
 │ │ └──────────────┘ └──────────────┘ └──────────────┘      │     │
 │ │                                                         │     │
@@ -76,7 +76,7 @@ Building on the spatial positioning, each mode now includes **mode-specific filt
 │                       (Mode-Specific Filters)                   │
 │                                                                 │
 │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐              │
-│ │ Tribal BPF   │ │ Military HPF │ │ Angel BPF+LPF│              │
+│ │ Sussurro BPF   │ │ Ricordo HPF │ │ Ninfa BPF+LPF│              │
 │ │ 80-800 Hz    │ │ 1 kHz+       │ │ 500 Hz-4 kHz │              │
 │ │ NEON Biquad  │ │ NEON Biquad  │ │ NEON Biquad  │              │
 │ └──────────────┘ └──────────────┘ └──────────────┘              │
@@ -111,14 +111,14 @@ Building on the spatial positioning, each mode now includes **mode-specific filt
 
 ## Parameter Reference
 
-PercSpatial has **8 parameters** across 2 pages.
+Sussurro has **8 parameters** across 2 pages.
 
 ### Page 1: Core
 
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 0 | Clones | 0–2 | Number of spatial clones: 0=4 clones, 1=8 clones, 2=16 clones |
-| 1 | Mode | 0–2 | Spatial character: 0=Tribal (circular, warm BPF), 1=Military (linear, bright HPF), 2=Angel (diffuse, BPF+LPF) |
+| 1 | Mode | 0–2 | Spatial character: 0=Sussurro (circular, warm BPF), 1=Ricordo (linear, bright HPF), 2=Ninfa (diffuse, BPF+LPF) |
 | 2 | Depth | 0–100% | Modulation depth — how far apart the clones are spaced spatially |
 | 3 | Rate | 0.0–10.0 Hz | LFO rate for vibrato-based clone differentiation |
 
@@ -160,5 +160,4 @@ PercSpatial has **8 parameters** across 2 pages.
 7. **Filter Design for NEON**
    - Datta, L., et al. "Efficient Implementation of IIR Filters on ARM Cortex-A Processors using NEON." International Conference on Signal Processing, 2014.
    - **Key insight**: 4th-order IIR filters can process 4 channels in parallel with 2.5x speedup
-   
-   
+

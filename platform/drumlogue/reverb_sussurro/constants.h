@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file constants.h
- * @brief Central constants for the delay_tribal effect.
+ * @brief Central constants for the reverb_sussurro effect.
  *
  * Single source of truth for all magic numbers.
  */
@@ -27,26 +27,26 @@ constexpr int LFO_TABLE_SIZE = 256;
 constexpr float LFO_MIN_RATE = 0.1f;
 constexpr float LFO_MAX_RATE = 10.0f;
 
-// Filter configuration - TRIBAL MODE
-constexpr float TRIBAL_MIN_FREQ = 80.0f;
-constexpr float TRIBAL_MAX_FREQ = 800.0f;
-constexpr float TRIBAL_DEFAULT_FREQ = 200.0f;
-constexpr float TRIBAL_DEFAULT_Q = 2.0f;
+// Filter configuration - SUSSURRO MODE
+constexpr float SUSSURRO_MIN_FREQ = 80.0f;
+constexpr float SUSSURRO_MAX_FREQ = 800.0f;
+constexpr float SUSSURRO_DEFAULT_FREQ = 200.0f;
+constexpr float SUSSURRO_DEFAULT_Q = 2.0f;
 
-// Filter configuration - MILITARY MODE
-constexpr float MILITARY_MIN_FREQ = 1000.0f;
-constexpr float MILITARY_MAX_FREQ = 8000.0f;
-constexpr float MILITARY_DEFAULT_FREQ = 1000.0f;
-constexpr float MILITARY_DEFAULT_Q = 0.707f;
+// Filter configuration - RICORDO MODE
+constexpr float RICORDO_MIN_FREQ = 1000.0f;
+constexpr float RICORDO_MAX_FREQ = 8000.0f;
+constexpr float RICORDO_DEFAULT_FREQ = 1000.0f;
+constexpr float RICORDO_DEFAULT_Q = 0.707f;
 
-// Filter configuration - ANGEL MODE
-constexpr float ANGEL_MIN_LOW_CUT = 200.0f;
-constexpr float ANGEL_MAX_LOW_CUT = 1000.0f;
-constexpr float ANGEL_MIN_HIGH_CUT = 2000.0f;
-constexpr float ANGEL_MAX_HIGH_CUT = 6000.0f;
-constexpr float ANGEL_DEFAULT_LOW_CUT = 500.0f;
-constexpr float ANGEL_DEFAULT_HIGH_CUT = 4000.0f;
-constexpr float ANGEL_DEFAULT_Q = 1.0f;
+// Filter configuration - NINFA MODE
+constexpr float NINFA_MIN_LOW_CUT = 200.0f;
+constexpr float NINFA_MAX_LOW_CUT = 1000.0f;
+constexpr float NINFA_MIN_HIGH_CUT = 2000.0f;
+constexpr float NINFA_MAX_HIGH_CUT = 6000.0f;
+constexpr float NINFA_DEFAULT_LOW_CUT = 500.0f;
+constexpr float NINFA_DEFAULT_HIGH_CUT = 4000.0f;
+constexpr float NINFA_DEFAULT_Q = 1.0f;
 
 // Filter quality factors
 constexpr float FILTER_Q_BUTTERWORTH = 0.707f;

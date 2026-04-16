@@ -2,7 +2,7 @@
 # Configuration for Makefile
 #
 
-PROJECT := delay_tribal
+PROJECT := reverb_sussurro
 PROJECT_TYPE := delfx
 
 ##############################################################################
@@ -13,7 +13,7 @@ PROJECT_TYPE := delfx
 CSRC = header.c
 
 # C++ sources
-CXXSRC = unit.cc PercussionSpatializer.cc
+CXXSRC = unit.cc Sussurro.cc
 
 # List ASM source files here
 ASMSRC =

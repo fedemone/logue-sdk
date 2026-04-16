@@ -1,8 +1,8 @@
 /**
  * @file test_stability.cpp
- * @brief Stability test for delay_tribal (PercussionSpatializer) at max params.
+ * @brief Stability test for reverb_sussurro (Sussurro) at max params.
  *
- * The PercussionSpatializer is a PURE DELAY effect (no feedback). It reads
+ * The Sussurro is a PURE DELAY effect (no feedback). It reads
  * past samples from a delay buffer and applies panning/velocity gains.
  * Without feedback, output is always a bounded weighted sum of past inputs.
  *
@@ -15,7 +15,7 @@
  *   Wobble=100 → wobble_depth_=1.0
  *   Depth=100  → filter depth=1.0
  *   Rate=100   → rate=10 Hz (max LFO rate)
- *   SoftAtk=100, Mode=0 (Tribal)
+ *   SoftAtk=100, Mode=0 (Sussurro)
  *
  * Even in worst case, the sum of 16 clone gains cannot exceed 16 × spread.
  * Because they span a full circle (0°…360°), the actual sum of sin/cos values
@@ -48,7 +48,7 @@
 
 /* -------------------------------------------------------------------------
  * Scalar delay-only spatializer
- * Mirrors PercussionSpatializer generate_clones + panning logic
+ * Mirrors Sussurro generate_clones + panning logic
  * ---------------------------------------------------------------------- */
 typedef struct {
     float bufL[DELAY_MAX];
@@ -356,7 +356,7 @@ static void test_delay_index_bounds() {
 /**
  * test_smooth_param_ramp
  *
- * PercussionSpatializer now ramps mix_, wobble_depth_, and attack_soften_
+ * Sussurro now ramps mix_, wobble_depth_, and attack_soften_
  * over 480 samples (10 ms at 48 kHz) when a parameter changes.
  *
  * This test models the ramp arithmetic exactly as implemented in Process():
@@ -432,12 +432,12 @@ static void test_smooth_param_ramp() {
 }
 
 int main() {
-    printf("=== delay_tribal stability tests ===\n");
+    printf("=== reverb_sussurro stability tests ===\n");
     test_gain_model_analysis();
     test_stability_default_params();
     test_stability_max_params();
     test_delay_index_bounds();
     test_smooth_param_ramp();
-    printf("\n=== ALL delay_tribal STABILITY TESTS PASSED ===\n");
+    printf("\n=== ALL reverb_sussurro STABILITY TESTS PASSED ===\n");
     return 0;
 }

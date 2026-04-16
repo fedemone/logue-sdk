@@ -14,7 +14,7 @@ const __unit_header unit_header_t unit_header = {
     .dev_id      = 0x46654465U,   // 'FeDe' - https://github.com/fedemone/logue-sdk
     .unit_id     = 0x01U,
     .version     = 0x00020000U,   // v2.0.0
-    .name        = "PercSpatial",
+    .name        = "Sussurro",
     .num_presets = 0,
     .num_params  = 8,
 
@@ -22,7 +22,7 @@ const __unit_header unit_header_t unit_header = {
         // Page 1
         // ID 0: Clones  0=4, 1=8, 2=16
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Clones"} },
-        // ID 1: Mode  0=Tribal, 1=Military, 2=Angel
+        // ID 1: Mode  0=Sussurro, 1=Ricordo, 2=Ninfa
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode"} },
         // ID 2: Depth  0-100%
         { 0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"Depth"} },

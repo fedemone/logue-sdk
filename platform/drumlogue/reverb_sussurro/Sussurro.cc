@@ -1,5 +1,5 @@
 // PercussionSpatializerTables.cpp
-#include "PercussionSpatializer.h"
+#include "Sussurro.h"
 
 // Single definition of global tables
 float lfo_table[LFO_TABLE_SIZE] __attribute__((aligned(16)));

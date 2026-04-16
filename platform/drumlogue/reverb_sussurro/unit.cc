@@ -4,18 +4,18 @@
  */
 
 #include "unit.h"
-#include "PercussionSpatializer.h"
+#include "Sussurro.h"
 
 // String tables for enum params
 static const char* s_clone_strings[3] = { "4", "8", "16" };
-static const char* s_mode_strings[3]  = { "Tribal", "Military", "Angel" };
+static const char* s_mode_strings[3]  = { "Sussurro", "Ricordo", "Ninfa" };
 
 // Definition and initialization of static class members
-float PercussionSpatializer::sin_table[360] = {0};
-float PercussionSpatializer::cos_table[360] = {0};
-bool  PercussionSpatializer::tables_initialized = false;
+float Sussurro::sin_table[360] = {0};
+float Sussurro::cos_table[360] = {0};
+bool  Sussurro::tables_initialized = false;
 
-static PercussionSpatializer s_delay_instance;
+static Sussurro s_delay_instance;
 static unit_runtime_desc_t s_runtime_desc;
 
 // Parameter state (IDs 0-7, mirrors header.c defaults)
@@ -90,7 +90,7 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
     (void)note; (void)aftertouch;
 }
 
-// ---- Preset stubs (delay_tribal has no preset system) ---------------------
+// ---- Preset stubs (reverb_sussurro has no preset system) ---------------------
 __unit_callback void unit_load_preset(uint8_t idx) { (void)idx; }
 __unit_callback uint8_t unit_get_preset_index() { return 0; }
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {

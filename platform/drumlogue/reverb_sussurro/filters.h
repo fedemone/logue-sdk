@@ -38,8 +38,8 @@ typedef struct {
 /**
  * Mode filter state with multiple biquads.
  * 4 biquads per clone group (indices g*4+0..g*4+3):
- *   g*4+0 = L pre  (HPF for Angel, single-stage for Tribal/Military)
- *   g*4+1 = L post (LPF for Angel, unused for Tribal/Military)
+ *   g*4+0 = L pre  (HPF for Ninfa, single-stage for Sussurro/Ricordo)
+ *   g*4+1 = L post (LPF for Ninfa, unused for Sussurro/Ricordo)
  *   g*4+2 = R pre
  *   g*4+3 = R post
  */
@@ -176,24 +176,24 @@ fast_inline void update_filter_params(
     biquad_coeffs_t coeffs;
 
     switch (filters->mode) {
-      case MODE_TRIBAL: {
+      case MODE_SUSSURRO: {
         float freq = 80.0f + depth * (800.0f - 80.0f);
         calculate_bandpass_coeffs(&coeffs, freq, 2.0f);
         break;
       }
-      case MODE_MILITARY: {
+      case MODE_RICORDO: {
         float freq = 1000.0f + depth * (8000.0f - 1000.0f);
         calculate_highpass_coeffs(&coeffs, freq, 0.707f);
         break;
       }
-      case MODE_ANGEL: {
+      case MODE_NINFA: {
         // Pre-compute HPF (pre) and LPF (post) coefficients once here —
         // avoids calling cosf/sinf per sample in apply_mode_filters.
         biquad_coeffs_t lpf_coeffs;
-        calculate_highpass_coeffs(&coeffs, ANGEL_DEFAULT_LOW_CUT, ANGEL_DEFAULT_Q);
+        calculate_highpass_coeffs(&coeffs, NINFA_DEFAULT_LOW_CUT, NINFA_DEFAULT_Q);
         calculate_lowpass_coeffs(&lpf_coeffs,
-            ANGEL_DEFAULT_HIGH_CUT + depth * (ANGEL_MAX_HIGH_CUT - ANGEL_DEFAULT_HIGH_CUT),
-            ANGEL_DEFAULT_Q);
+            NINFA_DEFAULT_HIGH_CUT + depth * (NINFA_MAX_HIGH_CUT - NINFA_DEFAULT_HIGH_CUT),
+            NINFA_DEFAULT_Q);
         for (int g = 0; g < CLONE_GROUPS; g++) {
             filters->filters[g * NUM_BIQUADS + 0].coeffs = coeffs;    // L HPF
             filters->filters[g * NUM_BIQUADS + 1].coeffs = lpf_coeffs; // L LPF
@@ -244,8 +244,8 @@ fast_inline void apply_mode_filters(
     const uint32_t base = group_idx * NUM_BIQUADS;
     if (base >= CLONE_GROUPS * NUM_BIQUADS) return;
     switch (filters->mode) {
-        case MODE_TRIBAL:
-        case MODE_MILITARY: {
+        case MODE_SUSSURRO:
+        case MODE_RICORDO: {
             // Single-stage filter: L uses slot base+0, R uses slot base+2
             *samples_l = biquad_process(*samples_l,
                 &filters->filters[base].coeffs,
@@ -256,8 +256,8 @@ fast_inline void apply_mode_filters(
             break;
         }
 
-        case MODE_ANGEL: {
-            // Angel: HPF (base+0/2) + LPF (base+1/3) in series.
+        case MODE_NINFA: {
+            // Ninfa: HPF (base+0/2) + LPF (base+1/3) in series.
             // Coefficients are pre-computed in update_filter_params — no cosf/sinf here.
             *samples_l = biquad_process(*samples_l,
                 &filters->filters[base].coeffs,     &filters->filters[base].state);

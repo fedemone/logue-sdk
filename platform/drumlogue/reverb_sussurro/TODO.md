@@ -1,16 +1,16 @@
-# Percussion Spatializer / delay_tribal
+# Percussion Spatializer / reverb_sussurro
 
 ## Pre-Hardware Bugs Fixed (not yet tested on HW)
 
 | Bug | Root cause | Fix |
 |-----|-----------|-----|
-| **NEON uninitialized registers** | `float32x4_t s1, s2` passed to `vsetq_lane_f32` — ARM NEON reads the destination register before writing the lane | `s1 = vdupq_n_f32(0.0f); s2 = vdupq_n_f32(0.0f)` in `PercussionSpatializer.h` |
+| **NEON uninitialized registers** | `float32x4_t s1, s2` passed to `vsetq_lane_f32` — ARM NEON reads the destination register before writing the lane | `s1 = vdupq_n_f32(0.0f); s2 = vdupq_n_f32(0.0f)` in `Sussurro.h` |
 | **Filter div-by-zero** | `q_factor` could reach 0 → `alpha = sin_w0/(2*0) = inf` → `a0 = 1 + inf` → coefficient NaN | Added `if (q_factor < 0.01f) q_factor = 0.01f` guard in all three coefficient functions in `filters.h` |
 
 ## Open TODOs
 
 - [ ] Hardware testing — unit has NOT yet been tested on physical drumlogue
-- [ ] Verify all three spatial modes (Tribal/Military/Angel) produce correct
+- [ ] Verify all three spatial modes (Sussurro/Ricordo/Ninfa) produce correct
       filter character at both extremes of the Depth parameter
 - [ ] Check ramp_samples parameter path: `update_filter_params` only applies
       coefficients immediately when `ramp_time == 0`; the ramped path is a stub
@@ -92,19 +92,19 @@ The Percussion Spatializer now delivers a **highly realistic drum ensemble simul
 # NEW
 ## 🔧 Technical Details - Filter Implementation
 
-### Tribal Mode (Bandpass)
+### Sussurro Mode (Bandpass)
 - **Center Frequency**: 80-800 Hz (controlled by Depth param)
 - **Q Factor**: 2.0 (musical resonance)
 - **Transfer Function**: H(s) = (s/Q) / (s² + s/Q + 1)
-- **Psychoacoustic Goal**: Emphasize warmth and "earthiness" of tribal percussion
+- **Psychoacoustic Goal**: Emphasize warmth and "earthiness" of sussurro percussion
 
-### Military Mode (Highpass)
+### Ricordo Mode (Highpass)
 - **Cutoff Frequency**: 1 kHz - 8 kHz (controlled by Depth param)
 - **Q Factor**: 0.707 (Butterworth - maximally flat)
 - **Transfer Function**: H(s) = s² / (s² + s/Q + 1)
 - **Psychoacoustic Goal**: Enhance attack and "snap" for snares/tambourines
 
-### Angel Mode (Dual-band)
+### Ninfa Mode (Dual-band)
 - **Highpass Filter**: 500 Hz (removes low-end rumble)
 - **Lowpass Filter**: 4 kHz (ethereal smoothing)
 - **Q Factor**: 1.0 (gentle resonance)
@@ -114,6 +114,6 @@ The Percussion Spatializer now delivers a **highly realistic drum ensemble simul
 
 | Mode | Operations | CPU Increase | Memory |
 |------|------------|--------------|--------|
-| Tribal | 2 biquads | +5% | 128 bytes |
-| Military | 2 biquads | +5% | 128 bytes |
-| Angel | 2 biquads | +5% | 128 bytes |
+| Sussurro | 2 biquads | +5% | 128 bytes |
+| Ricordo | 2 biquads | +5% | 128 bytes |
+| Ninfa | 2 biquads | +5% | 128 bytes |

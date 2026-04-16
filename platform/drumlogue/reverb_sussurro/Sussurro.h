@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file PercussionSpatializer.h
+ * @file Sussurro.h
  * @brief Enhanced Percussion Spatializer with realistic ensemble modeling
  *
  * COMPLETED IMPLEMENTATION:
@@ -75,16 +75,16 @@ enum params {
 /**
  * Main Enhanced Spatializer Class
  */
-class PercussionSpatializer {
+class Sussurro {
 public:
     /*===========================================================================*/
     /* Lifecycle Methods */
     /*===========================================================================*/
 
-    PercussionSpatializer()
+    Sussurro()
         : write_ptr_(0)
         , clone_count_(4)
-        , current_mode_(MODE_TRIBAL)
+        , current_mode_(MODE_SUSSURRO)
         , bypass_(true)
         , initialized_(false)
         , sample_rate_(48000)
@@ -147,7 +147,7 @@ public:
         memset(old_mode_buffer_, 0, sizeof(old_mode_buffer_));
     }
 
-    ~PercussionSpatializer() {
+    ~Sussurro() {
     }
 
     inline int8_t Init(const unit_runtime_desc_t* desc) {
@@ -421,7 +421,7 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
-        static const char* mode_names[] = {"Tribal", "Military", "Angel"};
+        static const char* mode_names[] = {"Sussurro", "Ricordo", "Ninfa"};
         static const char* clone_names[] = {"4", "8", "16"};
 
         switch (index) {
@@ -530,14 +530,14 @@ private:
         if (!initialized_) return;
 
         // Mode-specific delay constellations give each mode a distinct ensemble feel:
-        //   Tribal  : 8, 14, 20, 26 ms groups — deliberate, spaced ethnic drum echoes
-        //   Military: 1,  2,  3,  4 ms groups — tight machine-gun double-strokes
-        //   Angel   : 15, 27, 39, 51 ms groups — wide, dreamy, ethereal cloud
+        //   Sussurro  : 8, 14, 20, 26 ms groups — deliberate, spaced ethnic drum echoes
+        //   Ricordo: 1,  2,  3,  4 ms groups — tight machine-gun double-strokes
+        //   Ninfa   : 15, 27, 39, 51 ms groups — wide, dreamy, ethereal cloud
         float base_delay, group_step, lane_step;
         switch (current_mode_) {
-            case MODE_TRIBAL:   base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
-            case MODE_MILITARY: base_delay = 1.0f;  group_step = 1.0f;  lane_step = 0.3f;  break;
-            case MODE_ANGEL:    base_delay = 15.0f; group_step = 12.0f; lane_step = 2.0f;  break;
+            case MODE_SUSSURRO:   base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
+            case MODE_RICORDO: base_delay = 1.0f;  group_step = 1.0f;  lane_step = 0.3f;  break;
+            case MODE_NINFA:    base_delay = 15.0f; group_step = 12.0f; lane_step = 2.0f;  break;
             default:            base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
         }
 
@@ -788,8 +788,8 @@ private:
                     left_vals[i] = cos_table[angle_idx] * spread_;
                     right_vals[i] = sin_table[angle_idx] * spread_;
 
-                    // Randomize phase inversion for Angel mode
-                    if (current_mode_ == MODE_ANGEL) {
+                    // Randomize phase inversion for Ninfa mode
+                    if (current_mode_ == MODE_NINFA) {
                         uint32_t rand_bits[NEON_LANES];
                         vst1q_u32(rand_bits, vandq_u32(prng_rand_u32(), vdupq_n_u32(1)));
                         uint32_t flags[NEON_LANES];
@@ -836,7 +836,7 @@ private:
         current_mode_ = new_mode;
         init_mode_filters(&mode_filters_, new_mode, depth_);
         init_clone_parameters();  // Update delay constellation for new mode
-        update_panning();         // Update panning / phase inversion for Angel mode
+        update_panning();         // Update panning / phase inversion for Ninfa mode
     }
 
     // Crossfade is applied inline in Process() using vmulq_n_f32 on the wet

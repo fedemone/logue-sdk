@@ -1,3 +1,6 @@
+# My comments after testing on HW.
+- Since we are struggling to have a chorus effect, but it's a really nice reverb, let's rename and change it's assignment.
+
 # Project Progress - Percussion Spatializer
 
 ## Project Timeline
@@ -28,23 +31,23 @@
 - [x] Optimize gather operations (partial - vld4 pending)
 
 ### Phase 3: Spatial Modes (100% Complete)
-- [x] Tribal mode (circular panning matrix) - fully vectorized
-- [x] Military mode (linear array) - fully vectorized
-- [x] Angel mode (stochastic PRNG) - 2.2 GB/s NEON PRNG
+- [x] Sussurro mode (circular panning matrix) - fully vectorized
+- [x] Ricordo mode (linear array) - fully vectorized
+- [x] Ninfa mode (stochastic PRNG) - 2.2 GB/s NEON PRNG
 - [x] Smooth mode switching framework
 - [x] Mode-specific parameter structures
 
 ### Phase 4: Timbral Shaping (100% Complete)
 - [x] NEON-optimized biquad filter structure
-- [x] Tribal bandpass (80-800 Hz center)
-- [x] Military highpass (1 kHz+ cutoff)
-- [x] Angel dual-band processor (HPF + LPF)
+- [x] Sussurro bandpass (80-800 Hz center)
+- [x] Ricordo highpass (1 kHz+ cutoff)
+- [x] Ninfa dual-band processor (HPF + LPF)
 - [x] Vectorized coefficient calculation
 - [x] Filter state management for 4 clone groups
 
 # Phase 5 Optimization - Percussion Spatializer
 
-Let me perform a comprehensive optimization review of the `delay_tribal` project. Based on the code we've seen, here's the optimization plan:
+Let me perform a comprehensive optimization review of the `reverb_sussurro` project. Based on the code we've seen, here's the optimization plan:
 
 ## Performance Comparison
 
@@ -96,9 +99,9 @@ Let me perform a comprehensive optimization review of the `delay_tribal` project
    - Phase wrapping with compare/bit-select
 
 3. **Spatial Modes**
-   - Tribal: Circular panning with vector sin/cos
-   - Military: Linear array with progressive delays
-   - Angel: NEON PRNG (2.2 GB/s) for stochastic positioning
+   - Sussurro: Circular panning with vector sin/cos
+   - Ricordo: Linear array with progressive delays
+   - Ninfa: NEON PRNG (2.2 GB/s) for stochastic positioning
 
 4. **Timbral Shaping**
    - 4-parallel biquad filters
@@ -212,9 +215,9 @@ All three known issues have been successfully resolved! The spatializer is now p
 #  NEW
 ### Phase 4: Timbral Shaping (100% Complete) ✓
 - [x] NEON-optimized biquad filter structure
-- [x] Tribal bandpass (80-800 Hz center, Q=2.0)
-- [x] Military highpass (1 kHz+ cutoff, Butterworth response)
-- [x] Angel dual-band processor (HPF 500 Hz + LPF 4 kHz)
+- [x] Sussurro bandpass (80-800 Hz center, Q=2.0)
+- [x] Ricordo highpass (1 kHz+ cutoff, Butterworth response)
+- [x] Ninfa dual-band processor (HPF 500 Hz + LPF 4 kHz)
 - [x] Vectorized coefficient calculation
 - [x] Filter state management for 4 clone groups
 - [x] Mode-specific filter initialization
