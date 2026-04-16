@@ -17,8 +17,8 @@
 #include <stdint.h>
 #include "float_math.h"
 
-// Drive modes
-#define DRIVE_MODE_SOFT_CLIP   0
+// Drive modes - TODO should be enum
+#define DRIVE_MODE_SOFT_CLIP    0
 #define DRIVE_MODE_HARD_CLIP    1
 #define DRIVE_MODE_TRIANGLE     2
 #define DRIVE_MODE_SINE         3
@@ -84,6 +84,12 @@ fast_inline void wavefolder_init(wavefolder_t* wf) {
     prng_simple_init(&wf->prng, 0x9E3779B9);
 }
 
+/**
+ * Set drive type
+ */
+fast_inline void wavefolder_set_drive_type(wavefolder_t* wf, int mode) {
+    if (mode <= DRIVE_MODE_SUBOCTAVE) wf->mode = mode;
+}
 /**
  * Set drive amount (0-100%)
  */

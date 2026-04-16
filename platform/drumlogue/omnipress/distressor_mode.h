@@ -54,6 +54,11 @@ static const char* distressor_ratio_strings[8] = {
     "1:1", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE"
 };
 
+// Display strings for UI
+static const char* distressor_wave_type[5] = {
+    "Soft", "Hard", "Trg", "Sine", "SubOct"
+};
+
 
 // Distressor state structure
 typedef struct {

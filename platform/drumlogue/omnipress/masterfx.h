@@ -49,6 +49,7 @@ enum parameters
     k_presence,
     k_distressor_distortion_type,
     k_distressor_ratio,
+    k_distressor_drive_wave_mode,
     k_multiband_band_selection,
     k_multiband_band_threshold,
     k_multiband_band_ratio,
@@ -135,6 +136,7 @@ public:
         setParameter(k_presence, 50);   // PRESENCE: centre (matches header.c init)
         setParameter(k_distressor_distortion_type, 0); // DSTR DIST: None
         setParameter(k_distressor_ratio, 0);            // DSTR RATIO: Warm mode
+        setParameter(k_distressor_drive_wave_mode, 0);  // DSTR WAVE: DRIVE_MODE_SOFT_CLIP
         setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
         setParameter(k_multiband_band_threshold, -100); // L THRESH: -10.0 dB
         setParameter(k_multiband_band_ratio, 40);       // L RATIO: 4.0
@@ -230,6 +232,7 @@ public:
         // =================================================================
         // Process remaining samples (0-3) individually
         // =================================================================
+        float makeup_lin_scalar = fasterpowf(10.0f, makeup_db_ / 20.0f);
         while (frames_remaining > 0) {
             float main_l, main_r, sc_l, sc_r;
             if (has_sidechain_) {
@@ -249,7 +252,6 @@ public:
                 vdupq_n_f32(main_l), vdupq_n_f32(main_r),
                 vdupq_n_f32(sc_l),   vdupq_n_f32(sc_r));
 
-            float makeup_lin_scalar = fasterpowf(10.0f, makeup_db_ / 20.0f);
             float out_l_s = (dry_l * (1.0f - mix_) + vgetq_lane_f32(processed.val[0], 0) * mix_)
                             * makeup_lin_scalar;
             float out_r_s = (dry_r * (1.0f - mix_) + vgetq_lane_f32(processed.val[1], 0) * mix_)
@@ -586,7 +588,9 @@ public:
                 distressor_set_ratio(&distressor_, value);  // this updates opto_release_mult
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
-
+            case k_distressor_drive_wave_mode: // DSTR WAVE
+                if (value <= DRIVE_MODE_SUBOCTAVE) wavefolder_set_drive_type(&wavefolder_, value);
+                break;
             /*===========================================================================*/
             /* Operation Overlord Distortion Emulation Parameters */
             /*===========================================================================*/
@@ -649,14 +653,20 @@ public:
                 break;
 
             case k_distressor_distortion_type: // DSTR MODE
-                if (value >= 0 && value <= DIST_MODE_TOTAL) {
+                if (value >= DIST_MODE_CLEAN && value <= DIST_MODE_TOTAL) {
                     return distressor_dist_strings[value];
                 }
                 break;
 
             case k_distressor_ratio: // DSTR RATIO
-                if (value >= 0 && value <= 7) {
+                if (value >= DIST_RATIO_1_1 && value <= DIST_RATIO_NUKE) {
                     return distressor_ratio_strings[value];
+                }
+                break;
+
+            case k_distressor_drive_wave_mode: // DSTR RATIO
+                if (value <= DRIVE_MODE_SUBOCTAVE) {
+                    return distressor_wave_type[value];
                 }
                 break;
         }

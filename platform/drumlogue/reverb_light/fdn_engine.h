@@ -147,6 +147,7 @@ public:
     int spark_duration = 0;   // total grain length for envelope computation
 
     float sampleRate;
+    const float glowLfoRate = 0.0f;
     bool initialized;
 
     // ========================================================================
@@ -161,6 +162,11 @@ public:
         for (int i = 0; i < FDN_CHANNELS; i++) {
             baseDelayTimes[i] = primes[i] * (sampleRate / SAMPLE_RATE);
         }
+
+        // LFO rate: fixed base 0.4 Hz (period ~2.5 s) — slow chorus-like sweep.
+        // Depth scales with glow_amt so GLOW=0 → no filter modulation.
+        // (Rate is very slow: 0.4/48000 ≈ 0.4 Hz, well below audible pitch artefact range)
+        glowLfoRate = 0.4f / sampleRate;    // TODO create new parameters for this
 
         init_color_resonators();
         initialize_brightness_harmonic_exciter();
@@ -243,7 +249,8 @@ public:
         memset(hpf_x_prev, 0, sizeof(hpf_x_prev));
         memset(hpf_y_prev, 0, sizeof(hpf_y_prev));
     }
-        /*===========================================================================*/
+
+    /*===========================================================================*/
     /* Parameter Interface */
     /*===========================================================================*/
 
@@ -418,11 +425,8 @@ public:
             // ==========================================
             // PATH 1: GLOW (Stereo Swirling SVF)
             // ==========================================
-            // LFO rate: fixed base 0.4 Hz (period ~2.5 s) — slow chorus-like sweep.
-            // Depth scales with glow_amt so GLOW=0 → no filter modulation.
-            // (Rate is very slow: 0.4/48000 ≈ 0.4 Hz, well below audible pitch artefact range)
-            const float GLOW_LFO_RATE = 0.4f / sampleRate;
-            glow_lfo_phase += GLOW_LFO_RATE;
+
+            glow_lfo_phase += glowLfoRate;
             if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
 
             // Left Channel: Modulate coefficient directly.
@@ -507,7 +511,9 @@ public:
             float bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
             float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
 
+            // ==========================================
             // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
+            // ==========================================
             // Drive from the dry input so transients excite the resonators —
             // the reverb tail has negligible energy above 4 kHz after FDN LPF.
             float color_l = 0.0f;
@@ -520,8 +526,10 @@ public:
             // Raised from 0.15 — resonators now get full-energy input signal.
             color_l *= 0.30f;
             color_r *= 0.30f;
-
+            
+            // ==========================================
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
+            // ==========================================
             sparkle_buffer_l[spark_write] = rev_l;
             sparkle_buffer_r[spark_write] = rev_r;
             spark_write = (spark_write + 1) & (SPARKLE_BUFFER_SIZE - 1);

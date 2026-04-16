@@ -122,6 +122,7 @@ public:
             tables_initialized = true;
         }
 
+        // TODO introduce different LFO shapes 
         // Initialize LFO table (triangle wave) here to ensure it runs on drumlogue
         // (attribute((constructor)) is unreliable in shared libs)
         for (int i = 0; i < LFO_TABLE_SIZE; i++) {
@@ -530,13 +531,13 @@ private:
         if (!initialized_) return;
 
         // Mode-specific delay constellations give each mode a distinct ensemble feel:
-        //   Sussurro  : 8, 14, 20, 26 ms groups — deliberate, spaced ethnic drum echoes
-        //   Ricordo: 1,  2,  3,  4 ms groups — tight machine-gun double-strokes
-        //   Ninfa   : 15, 27, 39, 51 ms groups — wide, dreamy, ethereal cloud
+        //   Sussurro: 8, 14, 20, 26 ms groups — deliberate, spaced ethnic drum echoes
+        //   Ricordo:  1,  2,  3,  4 ms groups — tight machine-gun double-strokes
+        //   Ninfa  : 15, 27, 39, 51 ms groups — wide, dreamy, ethereal cloud
         float base_delay, group_step, lane_step;
         switch (current_mode_) {
-            case MODE_SUSSURRO:   base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
-            case MODE_RICORDO: base_delay = 1.0f;  group_step = 1.0f;  lane_step = 0.3f;  break;
+            case MODE_SUSSURRO: base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
+            case MODE_RICORDO:  base_delay = 1.0f;  group_step = 1.0f;  lane_step = 0.3f;  break;
             case MODE_NINFA:    base_delay = 15.0f; group_step = 12.0f; lane_step = 2.0f;  break;
             default:            base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
         }
