@@ -31,6 +31,44 @@ fast_inline float process_biquad(float in, biquad_state_t* state, biquad_coeffs_
     return out;
 }
 
+static const int k_preset_number = 4;
+enum k_parameters {
+    k_paramProgram, k_dark, k_bright, k_glow,
+    k_color, k_spark, k_size, k_pdly,
+    k_decay, k_bass,
+    k_total
+};
+
+typedef enum {
+    k_stanzaNeon,
+    k_vicoBuio,
+    k_strobo,
+    k_bruciato,
+    k_preset_number,
+} preset_numer_t;
+
+// ============================================================================
+// Presets
+// ============================================================================
+static const char* k_preset_names[k_preset_number] = {
+    "StanzaNeon", // 0: Tight, bright, standard drum room
+    "VicoBuio",   // 1: Long decay, heavy LPF, spooky
+    "Strobo",     // 2: High pre-delay, short decay, heavily modulated
+    "Bruciato"    // 3: Massive size, max decay, floating
+};
+
+// Values:
+//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS }
+static const int32_t k_presets[k_preset_number][k_total] = {
+    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30 },  // StanzaNeon: medium decay, light bass cut
+    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10 },  // VicoBuio:   long dark decay, minimal bass cut
+    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50 },  // Strobo:     short tight decay, moderate bass cut
+    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20 }   // Bruciato:   near-infinite decay, subtle bass cut
+};
+
+// ============================================================================
+// Main Class
+// ============================================================================
 class FDNEngine {
 public:
     FDNEngine() : sampleRate(SAMPLE_RATE) {
@@ -211,12 +249,12 @@ public:
     /*===========================================================================*/
 
     inline void setParameter(uint8_t index, int32_t value) {
-        if (id >= k_total) return;
+        if (index >= k_total) return;
         params_[index] = value;   // store into local DB
 
         const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
-        switch (id) {
+        switch (index) {
         case k_paramProgram:
             current_preset_ = value;
             for (uint8_t i = 0; i < k_total; i++) {
@@ -225,32 +263,32 @@ public:
             }
         break;
         case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99
-        s_fdn_engine.setDarkness(norm);
-        break;
+            setDarkness(norm);
+            break;
         case k_bright: // BRIG  brightness  0-100% → 0.0..1.0
-        s_fdn_engine.setBrightness(norm);
-        break;
+            setBrightness(norm);
+            break;
         case k_glow: // GLOW  modulation  0-100% → 0.0..1.0
-        s_fdn_engine.setGlow(norm);
-        break;
+            setGlow(norm);
+            break;
         case k_color: // COLR  tone color (spectrum resonance)  0-100% → coeff 0.0..0.95
-        s_fdn_engine.setColor(norm);
-        break;
+            setColor(norm);
+            break;
         case k_spark: // SPRK  sparkle S&H pops  0-100% → 0.0..1.0
-        s_fdn_engine.setSpark(norm);
-        break;
+            setSpark(norm);
+            break;
         case k_size: // SIZE  room size  0-100% → scale 0.1..2.0
-        s_fdn_engine.setSize(norm);
-        break;
+            setSize(norm);
+            break;
         case k_pdly: // PDLY pre delay
-        s_fdn_engine.setPreDelay(norm);
-        break;
+            setPreDelay(norm);
+            break;
         case k_decay: // DCAY  FDN feedback gain  0-100% → 0.1..0.98
-        s_fdn_engine.setDecay(norm);
-        break;
+            setDecay(norm);
+            break;
         case k_bass: // BASS  per-channel HPF in FDN loop  0-100% → coeff 0.99..0.85
-        s_fdn_engine.setHpfCoeff(norm);
-        break;
+            setHpfCoeff(norm);
+            break;
         default:
         break;
         }
@@ -384,7 +422,7 @@ public:
             // LFO rate: fixed base 0.4 Hz (period ~2.5 s) — slow chorus-like sweep.
             // Depth scales with glow_amt so GLOW=0 → no filter modulation.
             // (Rate is very slow: 0.4/48000 ≈ 0.4 Hz, well below audible pitch artefact range)
-            constexpr float GLOW_LFO_RATE = 0.4f / SAMPLE_RATE;
+            const float GLOW_LFO_RATE = 0.4f / sampleRate;
             glow_lfo_phase += GLOW_LFO_RATE;
             if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
 

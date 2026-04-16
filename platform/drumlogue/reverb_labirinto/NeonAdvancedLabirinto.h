@@ -51,6 +51,39 @@ typedef enum {
     k_preset_number,
 } preset_numer_t;
 
+
+enum parameterState {
+  k_paramProgram = 0,
+  k_mix, k_time, k_low, k_high, k_damp,
+  k_wide, k_comp, k_pill, k_shimmer_freq,
+  k_pre_delay, k_vibr,
+  k_total
+};
+
+static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
+    "labirinto", "esotico",
+                                                      "stellare"};
+// ============================================================================
+// Factory Presets
+// ============================================================================
+// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
+static const int32_t k_presets[k_preset_number][k_total] = {
+    // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
+    {k_foresta, 60, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
+    // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
+    {k_tempio, 70, 70, 80, 25, 130, 130, 80, 2, 0, 0, 10},
+    // 2: labirinto - center values with random ping-pong stereo bouncing
+    {k_labirinto, 50, 60, 50, 50, 510, 100, 50, 1, 0, 10, 10},
+    // 3: esotico - microtonal echoes on non-Western scale
+    {k_esotico, 45, 40, 60, 80, 100, 100, 50, 4, 5, 5, 20},
+    // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
+    {k_stellare, 40, 90, 50, 80, 800, 180, 30, 4, 35, 20, 10},
+};
+
+// ============================================================================
+// Main Class
+// ============================================================================
+
 class NeonAdvancedLabirinto {
 public:
     /*===========================================================================*/
@@ -191,12 +224,12 @@ public:
     /* Parameter Setters */
     /*===========================================================================*/
     inline void setParameter(uint8_t index, int32_t value) {
-        if (id >= k_total) return;
+        if (index >= k_total) return;
         params_[index] = value;   // store into local DB
 
-        switch (id) {
+        switch (index) {
         case k_paramProgram:
-            current_preset_ = value;
+            currentPreset= value;
             setFilterType(value);
             for (uint8_t i = 0; i < k_total; i++) {
                 if (i == k_paramProgram) continue;  // avoid recursion
@@ -204,32 +237,32 @@ public:
             }
             break;
         case k_mix: // MIX  0..100 → 0.0..1.0
-        setMix(value / 100.0f);
-        break;
+            setMix(value / 100.0f);
+            break;
         case k_time: // TIME  1..100 → decay 0.01..0.99
-        setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
-        break;
+            setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
+            break;
         case k_low: // LOW  1..100 → low-freq decay multiplier
-        setLowDecay((float)value);
-        break;
+            setLowDecay((float)value);
+            break;
         case k_high: // HIGH  1..100 → high-freq decay multiplier
-        setHighDecay((float)value);
-        break;
+            setHighDecay((float)value);
+            break;
         case k_damp: // DAMP  20..1000 (×10 → 200..10000 Hz)
-        setDamping((float)value * 10.0f);
-        break;
+            setDamping((float)value * 10.0f);
+            break;
         case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
-        setWidth(value / 100.0f);
-        break;
+            setWidth(value / 100.0f);
+            break;
         case k_comp: // COMP  0..100 → diffusion 0.0..1.0
-        setDiffusion(value / 100.0f);
-        break;
+            setDiffusion(value / 100.0f);
+            break;
         case k_pill: // PILL  0..4  - pillar routing mode
-        setPillar(value);
-        break;
+            setPillar(value);
+            break;
         case k_shimmer_freq: // SHMR  0..100  - shimmer frequency
-        setShimmerFreq(value);
-        break;
+            setShimmerFreq(value);
+            break;
         case k_pre_delay: // PDLY 0..200 ms
             setPreDelay((float)value);
             break;
@@ -1342,7 +1375,6 @@ private:
     /* Private Member Variables */
     /*===========================================================================*/
     int32_t params_[k_total]  __attribute__((aligned(16)));
-    int32_t current_preset_ = 0;
 
     float sampleRate;
     int writePos;

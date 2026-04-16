@@ -35,34 +35,6 @@ static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
 static bool s_bypass = true;
 
-enum parameterState {
-  k_paramProgram = 0,
-  k_mix, k_time, k_low, k_high, k_damp,
-  k_wide, k_comp, k_pill, k_shimmer_freq,
-  k_pre_delay, k_vibr,
-  k_total
-};
-
-static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
-    "labirinto", "esotico",
-                                                      "stellare"};
-// ============================================================================
-// Factory Presets
-// ============================================================================
-// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
-static const int32_t k_presets[k_preset_number][k_total] = {
-    // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {k_foresta, 60, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
-    // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {k_tempio, 70, 70, 80, 25, 130, 130, 80, 2, 0, 0, 10},
-    // 2: labirinto - center values with random ping-pong stereo bouncing
-    {k_labirinto, 50, 60, 50, 50, 510, 100, 50, 1, 0, 10, 10},
-    // 3: esotico - microtonal echoes on non-Western scale
-    {k_esotico, 45, 40, 60, 80, 100, 100, 50, 4, 5, 5, 20},
-    // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {k_stellare, 40, 90, 50, 80, 800, 180, 30, 4, 35, 20, 10},
-};
-
 static uint8_t s_current_preset = 0;
 
 // ============================================================================

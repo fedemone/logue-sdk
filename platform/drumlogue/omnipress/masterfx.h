@@ -114,6 +114,7 @@ public:
         wavefolder_init(&wavefolder_);
         multiband_init(&multiband_, samplerate_);
         distressor_reset(&distressor_, samplerate_);
+        update_opto_coeff(&distressor_, release_coeff_);
         overlord_init(&overlord_, samplerate_);
         smoothing_init(&smoother_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
@@ -477,7 +478,7 @@ public:
                 release_coeff_ = fasterexpf(-1.0f / (release_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
                 smoothing_set_times(&smoother_, attack_ms_, release_ms_);
-                update_opto_coeff(distressor_);
+                update_opto_coeff(&distressor_, release_coeff_);
                 break;
 
             case 4: // MAKEUP (0.0 to 24.0 dB)
@@ -582,7 +583,8 @@ public:
                 }
                 break;
             case k_distressor_ratio: // DSTR RATIO
-                distressor_set_ratio(&distressor_, value);
+                distressor_set_ratio(&distressor_, value);  // this updates opto_release_mult
+                update_opto_coeff(&distressor_, release_coeff_);
                 break;
 
             /*===========================================================================*/

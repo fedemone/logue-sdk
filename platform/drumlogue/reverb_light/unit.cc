@@ -30,40 +30,6 @@ static FDNEngine s_fdn_engine;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
 static bool s_bypass = true;
-static const int k_preset_number = 4;
-enum k_parameters {
-    k_paramProgram, k_dark, k_bright, k_glow,
-    k_color, k_spark, k_size, k_pdly,
-    k_decay, k_bass,
-    k_total
-};
-
-typedef enum {
-    k_stanzaNeon,
-    k_vicoBuio,
-    k_strobo,
-    k_bruciato,
-    k_preset_number,
-} preset_numer_t;
-
-// ============================================================================
-// Presets
-// ============================================================================
-static const char* k_preset_names[k_preset_number] = {
-    "StanzaNeon", // 0: Tight, bright, standard drum room
-    "VicoBuio",   // 1: Long decay, heavy LPF, spooky
-    "Strobo",     // 2: High pre-delay, short decay, heavily modulated
-    "Bruciato"    // 3: Massive size, max decay, floating
-};
-
-// Values:
-//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS }
-static const int32_t k_presets[k_preset_number][k_total] = {
-    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30 },  // StanzaNeon: medium decay, light bass cut
-    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10 },  // VicoBuio:   long dark decay, minimal bass cut
-    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50 },  // Strobo:     short tight decay, moderate bass cut
-    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20 }   // Bruciato:   near-infinite decay, subtle bass cut
-};
 
 static uint8_t s_current_preset = 0;
 
