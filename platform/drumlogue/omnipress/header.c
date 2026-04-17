@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00020000U,   // v2.0.0
     .name        = "OmniPress",
     .num_presets = 0,
-    .num_params  = 22,
+    .num_params  = 23,
 
     .params = {
         // Page 1: Core Dynamics

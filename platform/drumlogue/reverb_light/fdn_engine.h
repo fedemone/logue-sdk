@@ -147,7 +147,7 @@ public:
     int spark_duration = 0;   // total grain length for envelope computation
 
     float sampleRate;
-    const float glowLfoRate = 0.0f;
+    float glowLfoRate = 0.0f;
     bool initialized;
 
     // ========================================================================
@@ -526,7 +526,7 @@ public:
             // Raised from 0.15 — resonators now get full-energy input signal.
             color_l *= 0.30f;
             color_r *= 0.30f;
-            
+
             // ==========================================
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
             // ==========================================

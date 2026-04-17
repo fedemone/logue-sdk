@@ -145,7 +145,7 @@ typedef enum {
     DETECT_MODE_RMS,
     DETECT_MODE_BLEND,
     DETECT_MODE_TOTAL,
-} Detectio Mode;
+} DetectionMode;
 
 // ============================================================================
 // Knee Type IDs
