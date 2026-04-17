@@ -35,7 +35,7 @@ constexpr float FILTER_Q_LINKWITZ_RILEY = 0.5f; // Linkwitz-Riley (cascaded)
 // Page 1: Core Dynamics
 constexpr int THRESH_MIN = -600;      // -60.0 dB
 constexpr int THRESH_MAX = 0;          // 0 dB
-constexpr int THRESH_DEFAULT = -200;   // -20.0 dB
+constexpr int THRESH_DEFAULT = -100;   // -10.0 dB
 
 constexpr int RATIO_MIN = 10;          // 1.0:1
 constexpr int RATIO_MAX = 200;         // 20.0:1
@@ -77,7 +77,7 @@ constexpr int BAND_SEL_DEFAULT = 0;     // Low band
 
 constexpr int BAND_THRESH_MIN = -600;   // -60.0 dB
 constexpr int BAND_THRESH_MAX = 0;      // 0 dB
-constexpr int BAND_THRESH_DEFAULT = -100; // -10.0 dB
+constexpr int BAND_THRESH_DEFAULT = -200; // -20.0 dB
 
 constexpr int BAND_RATIO_MIN = 10;      // 1.0:1
 constexpr int BAND_RATIO_MAX = 200;     // 20.0:1

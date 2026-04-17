@@ -122,34 +122,32 @@ public:
         gain_computer_init(&gain_comp_);
 
         // Set default parameters
-        setParameter(k_threhold, -100); // Thresh: -10.0 dB
-        setParameter(k_ratio, 40);      // Ratio: 4.0
-        setParameter(k_attack, 150);    // Attack: 15.0 ms
-        setParameter(k_release, 200);   // Release: 200 ms
-        setParameter(k_makeup, 0);      // Makeup: 0 dB
-        setParameter(k_drive, 0);       // Drive: 0%
-        setParameter(k_mix, 100);       // Mix: 100% wet
-        setParameter(k_sc_hpf, 20);     // SC HPF: 20 Hz
-        setParameter(k_compressor_mode, 0);     // COMP MODE: Standard
+        setParameter(k_threhold, THRESH_DEFAULT);   // Thresh: -10.0 dB
+        setParameter(k_ratio, RATIO_DEFAULT);       // Ratio: 4.0
+        setParameter(k_attack, ATTACK_DEFAULT);     // Attack: 15.0 ms
+        setParameter(k_release, RELEASE_DEFAULT);   // Release: 200 ms
+        setParameter(k_makeup, MAKEUP_DEFAULT);     // Makeup: 0 dB
+        setParameter(k_drive, DRIVE_DEFAULT);       // Drive: 0%
+        setParameter(k_mix, MIX_DEFAULT);           // Mix: 100% wet
+        setParameter(k_sc_hpf, SC_HPF_DEFAULT);     // SC HPF: 20 Hz
+        setParameter(k_compressor_mode, COMP_MODE_STANDARD);         // COMP MODE: Standard
         setParameter(k_bass, 50);       // BASS: flat (matches header.c init)
         setParameter(k_treble, 50);     // TREBLE: flat (matches header.c init)
         setParameter(k_presence, 50);   // PRESENCE: centre (matches header.c init)
-        setParameter(k_distressor_distortion_type, 0); // DSTR DIST: None
-        setParameter(k_distressor_ratio, 0);            // DSTR RATIO: Warm mode
-        setParameter(k_distressor_drive_wave_mode, 0);  // DSTR WAVE: DRIVE_MODE_SOFT_CLIP
-        setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
-        setParameter(k_multiband_band_threshold, -100); // L THRESH: -10.0 dB
-        setParameter(k_multiband_band_ratio, 40);       // L RATIO: 4.0
-        setParameter(k_multiband_band_attack, 10);      // ATTACK: 10 ms
-        setParameter(k_multiband_band_release, 10);     // RELEASE: 100 ms
-        setParameter(k_multiband_band_makeup, 0);       // MAKEUP: 0 dB
-        setParameter(k_multiband_band_mute, 0);         // MUTE off
-        setParameter(k_multiband_band_solo, 0);         // SOLO off
+        setParameter(k_distressor_distortion_type, DIST_MODE_CLEAN); // DSTR DIST: None
+        setParameter(k_distressor_ratio, DIST_RATIO_1_1);            // DSTR RATIO: Warm mode
+        setParameter(k_distressor_drive_wave_mode, DRIVE_MODE_SOFT_CLIP);  // DSTR WAVE: DRIVE_MODE_SOFT_CLIP
+        setParameter(k_multiband_band_selection, BAND_LOW);          // BAND SEL: Low
+        setParameter(k_multiband_band_threshold, THRESH_DEFAULT);    // L THRESH: -10.0 dB
+        setParameter(k_multiband_band_ratio, RATIO_DEFAULT);         // L RATIO: 4.0
+        setParameter(k_multiband_band_attack, 10);                   // ATTACK: 10 ms
+        setParameter(k_multiband_band_release, 10);                  // RELEASE: 100 ms
+        setParameter(k_multiband_band_makeup, MAKEUP_DEFAULT);       // MAKEUP: 0 dB
+        setParameter(k_multiband_band_mute, 0);                      // MUTE off
+        setParameter(k_multiband_band_solo, 0);                      // SOLO off
 
-        comp_mode_ = 0;
-        band_select_ = 0;
-        use_external_sc_ = 0;
-        detection_mode_ = DETECT_MODE_PEAK;
+        use_external_sc_ = 0;   // We do not have sidechain...
+        detection_mode_ = DETECT_MODE_PEAK;  // TODO - this is never updated! Missing feature! Luckily we have a spare parameter to use
         envelope_.mode = detection_mode_;  // propagate to detector
     }
 
@@ -550,14 +548,14 @@ public:
                 handle_set_multiband_parameter(p_id, val);
                 break;
             }
-            case k_multiband_band_mute:  // BAND MUTE
+            case k_multiband_band_mute:     // BAND MUTE
             {
                 float val = value != 0 ? 1.0f : 0.0f;
                 const int p_id = 5;         // param_id 5 = mute
                 handle_set_multiband_parameter(p_id, val);
                 break;
             }
-            case k_multiband_band_solo:  // BAND SOLO
+            case k_multiband_band_solo:     // BAND SOLO
             {
                 float val = value != 0 ? 1.0f : 0.0f;
                 const int p_id = 6;         // param_id 6 = solo
@@ -565,21 +563,22 @@ public:
                 break;
             }
             case k_compressor_mode: // COMP MODE (0=Standard, 1=Distressor, 2=Multiband)
-                if (value >= 0 && value <= 2) {
-                    comp_mode_ = value;
-                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                        // Distressor expects at least 0.05ms attack
-                        attack_ms_ = fmaxf(attack_ms_, 0.05f);
-                        attack_coeff_ = fasterexpf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
-                    }
+              if (value >= COMP_MODE_STANDARD && value < COMP_MODE_TOTAL) {
+                comp_mode_ = value;
+                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                  // Distressor expects at least 0.05ms attack
+                  attack_ms_ = fmaxf(attack_ms_, 0.05f);
+                  attack_coeff_ =
+                      fasterexpf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
                 }
+              }
                 break;
 
             /*===========================================================================*/
             /* Distressor Parameters */
             /*===========================================================================*/
             case k_distressor_distortion_type: // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave)
-                if (value >= 0 && value <= DIST_MODE_TOTAL) {
+                if (value >= 0 && value < DIST_MODE_TOTAL) {
                     distressor_.dist_mode = value;
 
                     // Enable/disable detector HPF based on mode
@@ -596,8 +595,9 @@ public:
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
             case k_distressor_drive_wave_mode: // DSTR WAVE
-                if (value <= DRIVE_MODE_SUBOCTAVE) wavefolder_set_drive_type(&wavefolder_, value);
-                break;
+              if (value < DRIVE_MODE_TOTAL)
+                wavefolder_set_drive_type(&wavefolder_, value);
+              break;
             /*===========================================================================*/
             /* Operation Overlord Distortion Emulation Parameters */
             /*===========================================================================*/
@@ -628,17 +628,18 @@ public:
 
         switch (index) {
             case k_compressor_mode: // COMP MODE
-                if (value >= 0 && value <= 2) {
-                    static const char* modes[] = {"Stndrd", "Dstrssr", "Mltibnd"};
-                    return modes[value];
-                }
+              if (value >= COMP_MODE_STANDARD && value < COMP_MODE_TOTAL) {
+                static const char *modes[] = {"Stndrd", "Dstrssr", "Mltibnd"};
+                return modes[value];
+              }
                 break;
 
             case k_multiband_band_selection: // BAND SEL
-                if (value >= 0 && value <= 6) {
-                    static const char* bands[] = {"Low", "Mid", "High", "LowMid", "LowHi", "MidHi", "All"};
-                    return bands[value];
-                }
+              if (value >= 0 && value < BAND_TOTAL) {
+                static const char *bands[] = {
+                    "Low", "Mid", "High", "LowMid", "LowHi", "MidHi", "All"};
+                return bands[value];
+              }
                 break;
 
             case k_ratio: // RATIO (1.0 to 20.0) - show special cases
@@ -660,21 +661,21 @@ public:
                 break;
 
             case k_distressor_distortion_type: // DSTR MODE
-                if (value >= DIST_MODE_CLEAN && value <= DIST_MODE_TOTAL) {
+                if (value >= DIST_MODE_CLEAN && value < DIST_MODE_TOTAL) {
                     return distressor_dist_strings[value];
                 }
                 break;
 
             case k_distressor_ratio: // DSTR RATIO
-                if (value >= DIST_RATIO_1_1 && value <= DIST_RATIO_NUKE) {
-                    return distressor_ratio_strings[value];
-                }
+              if (value >= DIST_RATIO_1_1 && value < DIST_RATIO_TOTAL) {
+                return distressor_ratio_strings[value];
+              }
                 break;
 
             case k_distressor_drive_wave_mode: // DSTR RATIO
-                if (value <= DRIVE_MODE_SUBOCTAVE) {
-                    return distressor_wave_type[value];
-                }
+              if (value < DRIVE_MODE_TOTAL) {
+                return distressor_wave_type[value];
+              }
                 break;
         }
         return nullptr;

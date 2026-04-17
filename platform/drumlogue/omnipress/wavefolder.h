@@ -16,13 +16,7 @@
 #include <math.h>
 #include <stdint.h>
 #include "float_math.h"
-
-// Drive modes - TODO should be enum
-#define DRIVE_MODE_SOFT_CLIP    0
-#define DRIVE_MODE_HARD_CLIP    1
-#define DRIVE_MODE_TRIANGLE     2
-#define DRIVE_MODE_SINE         3
-#define DRIVE_MODE_SUBOCTAVE    4
+#include "constants.h"
 
 /**
  * Simple Xorshift PRNG for real-time use
@@ -88,7 +82,8 @@ fast_inline void wavefolder_init(wavefolder_t* wf) {
  * Set drive type
  */
 fast_inline void wavefolder_set_drive_type(wavefolder_t* wf, int mode) {
-    if (mode <= DRIVE_MODE_SUBOCTAVE) wf->mode = mode;
+  if (mode < DRIVE_MODE_TOTAL)
+    wf->mode = mode;
 }
 /**
  * Set drive amount (0-100%)
