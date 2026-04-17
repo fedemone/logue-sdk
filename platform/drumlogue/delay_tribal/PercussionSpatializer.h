@@ -30,11 +30,11 @@ typedef struct __attribute__((aligned(CACHE_LINE_SIZE))) {
     float32x4_t delay_offsets;    // Micro-delay for vibrato (4 clones)
     float32x4_t left_gains;       // Left channel pan (4 clones)
     float32x4_t right_gains;      // Right channel pan (4 clones)
-    uint32x4_t mod_phases;        // Fixed-point phase (0 to 0xFFFFFFFF)
+    uint32x4_t  mod_phases;       // Fixed-point phase (0 to 0xFFFFFFFF)
     float32x4_t pitch_mod;        // Pitch modulation depth (tape wobble)
     float32x4_t velocity;         // Random velocity per hit (0.7-1.0)
-    uint32x4_t phase_flags;       // Phase inversion flags
-    uint32x4_t active;            // Which clones are active
+    uint32x4_t  phase_flags;      // Phase inversion flags
+    uint32x4_t  active;           // Which clones are active
 } clone_group_t;
 
 static_assert(sizeof(clone_group_t) % CACHE_LINE_SIZE == 0,
@@ -86,6 +86,7 @@ public:
         , clone_count_(4)
         , current_mode_(MODE_TRIBAL)
         , initialized_(false)
+        , is_mono_(false)
         , sample_rate_(48000)
         , transient_detected_(false)
         , transient_energy_(0.0f)
@@ -152,9 +153,11 @@ public:
 
     inline int8_t Init(const unit_runtime_desc_t* desc) {
         if (desc->samplerate != 48000) return k_unit_err_samplerate;
-        // remove the check for debugging the effect not applied to sound
-        // if (desc->input_channels != 2 || desc->output_channels != 2)
-        //     return k_unit_err_geometry;
+        if (desc->input_channels != 1 || desc->output_channels != 1) {
+            // Accept mono input/output - duplicate to stereo internally
+            is_mono_ = true   // TODO - added to check if number of channel is preventig the effect to be correctly instantiated. In case, add mono handling
+        } else if (desc->input_channels != 2 || desc->output_channels != 2)
+            return k_unit_err_geometry;
 
         sample_rate_ = desc->samplerate;
 
@@ -913,6 +916,7 @@ private:
 
     uint32_t sample_rate_;
     bool initialized_;
+    bool is_mono_;
 
     int32_t params_[k_total]  __attribute__((aligned(16)));
     int32_t last_params_[k_total] __attribute__((aligned(16)));
