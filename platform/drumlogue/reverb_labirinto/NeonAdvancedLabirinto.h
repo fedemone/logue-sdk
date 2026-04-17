@@ -234,7 +234,7 @@ public:
         }
     }
 
-    inline int32 getParameterValue(uint8_t index) {
+    inline int32_t getParameterValue(uint8_t index) {
         if (index >= k_total) return -1;    // invalid value
         return params_[index];
     }

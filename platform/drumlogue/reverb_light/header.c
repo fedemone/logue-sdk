@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00010000U,   // v1.0.0
     .name        = "LuceAlNeon",
     .num_presets = 4,
-    .num_params  = 10,
+    .num_params  = 11,
     .params = {
         // Page 1
 
@@ -44,7 +44,8 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 50, 65, k_unit_param_type_percent, 0, 0, 0, {"DCAY"} },
         // ID 9: BASS  per-channel HPF in FDN loop (bass cut in tail)  0%=flat 100%=max cut
         { 0, 100, 30, 30, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // ID 10: CLRQ  tone color shift  -100%-100%
+        { -100, 100, 10, 10, k_unit_param_type_percent, 0, 0, 0, {"CLRQ"} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
 
         // Pages 4-6: blank

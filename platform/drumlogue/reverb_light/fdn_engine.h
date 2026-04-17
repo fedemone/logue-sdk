@@ -34,7 +34,7 @@ fast_inline float process_biquad(float in, biquad_state_t* state, biquad_coeffs_
 enum k_parameters {
     k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,
-    k_decay, k_bass,
+    k_decay, k_bass, k_color_shift,
     k_total
 };
 
@@ -78,11 +78,11 @@ public:
     // ========================================================================
     // NEW PARALLEL PARAMETERS
     // ========================================================================
-    float dark_amt = 50.0f;
-    float glow_amt = 50.0f;
-    float bright_amt = 50.0f;
-    float color_amt = 50.0f;
-    float spark_amt = 50.0f;
+    float dark_amt = 10.0f;
+    float glow_amt = 10.0f;
+    float bright_amt = 10.0f;
+    float color_amt = 10.0f;
+    float spark_amt = 10.0f;
 
     float sizeScale = 1.0f;
     float predelayScale = 0.0f;
@@ -118,6 +118,10 @@ public:
     float glow_bp_l = 0.0f;
     float glow_lp_r = 0.0f;
     float glow_bp_r = 0.0f;
+    float glow_hpf_state_l = 0.0f;
+    float glow_hpf_state_r = 0.0f;
+    float glow_lpf_state_l = 0.0f;
+    float glow_lpf_state_r = 0.0f;
 
     // Path 2: Dark (Organic Granular Sub-Octave)
     float dark_buffer[4096];
@@ -168,7 +172,7 @@ public:
         // (Rate is very slow: 0.4/48000 ≈ 0.4 Hz, well below audible pitch artefact range)
         glowLfoRate = 0.4f / sampleRate;    // TODO create new parameters for this
 
-        init_color_resonators();
+        update_color_resonators(1.0f);
         initialize_brightness_harmonic_exciter();
         Reset();
         initialized = true;
@@ -188,14 +192,24 @@ public:
         bright_coeffs.a2 = (1.0f - alpha_bright) / a0_bright;
     }
 
-    void init_color_resonators() {
+    // TODO - possibly use LFO for this?
+    // shift_factor from the UI: e.g., 0.5f to 2.0f (-1 octave to +1 octave)
+    void update_color_resonators(float shift_factor) {
         // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
-        const float freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f};
-        const float Q = 4.0f; // Moderate Q — wider peaks, more audible ring from input signal
+        const float base_freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f};
+
+        // INCREASED Q: 12.0f (from 4.0 - possible adjustment need or even new parameter) makes them "ring" like physical modal resonators.
+        // 4.0f is too wide/damped to sound like a distinct pitch.
+        const float Q = 12.0f;
 
         for (int i = 0; i < NUM_RESONATORS; i++) {
+            // Apply the UI shift
+            float hz = base_freqs[i] * shift_factor;
+
+            // Safety Clamp: Prevent high frequencies from crashing the filter near Nyquist
+            if (hz > sampleRate * 0.45f) hz = sampleRate * 0.45f;
             // Constant Peak Gain Bandpass Biquad Math
-            float w0 = 2.0f * M_PI * freqs[i] / sampleRate;
+            float w0 = 2.0f * M_PI * hz / sampleRate;
             float alpha = sinf(w0) / (2.0f * Q);
 
             float a0 = 1.0f + alpha;
@@ -246,6 +260,10 @@ public:
         glow_bp_l = 0.0f;
         glow_lp_r = 0.0f;
         glow_bp_r = 0.0f;
+        glow_hpf_state_l = 0.0f;
+        glow_hpf_state_r = 0.0f;
+        glow_lpf_state_l = 0.0f;
+        glow_lpf_state_r = 0.0f;
         memset(hpf_x_prev, 0, sizeof(hpf_x_prev));
         memset(hpf_y_prev, 0, sizeof(hpf_y_prev));
     }
@@ -305,13 +323,22 @@ public:
         case k_bass: // BASS  per-channel HPF in FDN loop  0-100% → coeff 0.99..0.85
             setHpfCoeff(norm);
             break;
+        case k_color_shift: // CLRQ shift of the colour frequency
+            {
+            // Base-2 exponential mapping: 2^val
+            // val = -1.0  -> 0.5x multiplier (-1 Octave)
+            // val =  0.0  -> 1.0x multiplier (No shift)
+            // val = +1.0  -> 2.0x multiplier (+1 Octave)
+            float shift = fasterpow2f(norm);
+            update_color_resonators(shift);
+        }
         default:
         break;
         }
     }
 
     //==============
-    // Setters  (all take normalised float 0.0–1.0)
+    // Setters  (all take normalised float 0.0-1.0)
     //==============
     void setDarkness(float val) {
         dark_amt = val;
@@ -328,19 +355,19 @@ public:
     void setSpark(float val) {
         spark_amt = val;
     }
-    // val is normalised 0.0–1.0; mapped to sizeScale 0.1–2.0
+    // val is normalised 0.0-1.0; mapped to sizeScale 0.1-2.0
     void setSize(float val) {
         sizeScale = 0.1f + val * 1.9f;
     }
-    // val is normalised 0.0–1.0; mapped to up to ~330ms pre-delay
+    // val is normalised 0.0-1.0; mapped to up to ~330ms pre-delay
     void setPreDelay(float val) {
         predelayScale = val;
     }
-    // val normalised 0.0–1.0; maps to feedback gain 0.1..0.98 (short to near-infinite)
+    // val normalised 0.0-1.0; maps to feedback gain 0.1..0.98 (short to near-infinite)
     void setDecay(float val) {
         decay = 0.1f + val * 0.88f;
     }
-    // val normalised 0.0–1.0; maps HPF cutoff from minimal (0.99) to moderate (0.85).
+    // val normalised 0.0-1.0; maps HPF cutoff from minimal (0.99) to moderate (0.85).
     // The one-pole HPF formula is: y[n] = x[n] - x[n-1] + coeff * y[n-1]
     // coeff = 0.99 → fc ≈ 76 Hz (just DC blocking)
     // coeff = 0.85 → fc ≈ 1146 Hz (removes bass buildup in dense reverb tails)
@@ -441,9 +468,11 @@ public:
 
             // Left Channel: Modulate coefficient directly.
             // f_coeff = 0.15 (~1150Hz base) +/- (0.10 * glow_amt) depth
+            // 2. Shift the sweep up slightly:
+            // Base 0.18 +/- 0.08 keeps the sweep entirely out of the muddy bass frequencies
             float lfo_val_l = fastersinfullf(glow_lfo_phase);
-            float f_coeff_l = 0.15f + (0.10f * glow_amt * lfo_val_l);
-            float q_coeff = 0.4f; // Mild resonance to accentuate the sweep
+            float f_coeff_l = 0.18f + (0.08f * glow_amt * lfo_val_l);
+            float q_coeff   = 0.8f; // Mild resonance to accentuate the sweep
 
             glow_lp_l += f_coeff_l * glow_bp_l;
             glow_bp_l += f_coeff_l * (rev_l - glow_lp_l - q_coeff * glow_bp_l);
@@ -564,7 +593,7 @@ public:
                 float rand_val = (float)seed / 4294967295.0f;
 
                 if (rand_val < (0.0001f + (spark_amt * 0.005f))) {
-                    // Halved grain duration: 5–15 ms (was 10–30 ms)
+                    // Halved grain duration: 5-15 ms (was 10-30 ms)
                     spark_duration = 250 + (int)(seed % 500);
                     spark_countdown = spark_duration;
                     spark_read = (float)spark_write - (float)spark_countdown;
