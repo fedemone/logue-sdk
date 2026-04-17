@@ -30,8 +30,6 @@ static FDNEngine s_fdn_engine;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
 
-static uint8_t s_current_preset = 0;
-
 // ============================================================================
 // Parameter State (mirrors header.c defaults)
 // ============================================================================
@@ -43,7 +41,6 @@ static uint8_t s_current_preset = 0;
 // ID 5: SPRK  0..100 %  default 5
 // ID 6: SIZE  0..100 %  default 50
 // ID 7: PDLY  0..100 %  default 50
-static int32_t s_params[k_total] = { 0, 10, 10, 10, 10, 10, 50, 0, 65, 30 };
 
 // ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
@@ -73,10 +70,9 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     }
 
     s_initialized = true;
-    s_current_preset = 0;
 
     // Apply default parameter values
-    s_fdn_engine.setParameter(k_paramProgram, s_current_preset);
+    s_fdn_engine.loadPreset(0);
 
     return k_unit_err_none;
 }
@@ -118,15 +114,12 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
-    if (id < k_total) s_params[id] = value;
-    if (id == k_paramProgram) s_current_preset = s_params[k_paramProgram];
     s_fdn_engine.setParameter(id, value);
 }
 
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id >= k_total) return 0;
-    return s_params[id];
+    return s_fdn_engine.getParameterValue(id);
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
@@ -160,11 +153,11 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 
 __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
-    s_fdn_engine.setParameter(k_paramProgram, idx);
+    s_fdn_engine.loadPreset(idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
-    return s_current_preset;
+    return s_fdn_engine.getPreset();
 }
 
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {

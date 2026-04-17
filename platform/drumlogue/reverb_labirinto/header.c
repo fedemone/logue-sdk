@@ -15,7 +15,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id     = 0x00010000U,
     .version     = 0x00010000U,   // v1.0.0
     .name        = "NeonLabirinto",
-    .num_presets = 4,
+    .num_presets = 5,
     .num_params  = 12,
     .params = {
         // Page 1: Main reverb controls

@@ -37,22 +37,6 @@ static bool s_initialized = false;
 static uint8_t s_current_preset = 0;
 
 // ============================================================================
-// Parameter State (mirrors header.c defaults)
-// ============================================================================
-// ID 0:  PRESET 0..3               default 0 (foresta)
-// ID 1:  MIX    0..100 %            default 70 (70%)
-// ID 2:  TIME   1..100             default 50
-// ID 3:  LOW    1..100             default 50
-// ID 4:  HIGH   1..100             default 70
-// ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
-// ID 6:  WIDE   0..200 %           default 100
-// ID 7:  COMP   0..1000 (x0.1%)    default 1000
-// ID 8:  PILL   0..4               default 3
-// ID 9:  SHMR 0..100             default 35 (Hz)
-// ID 10: PDLY   0..100             default 0 (ms)
-static int32_t s_params[k_total] = {0, 70, 50, 50, 70, 250, 100, 100, 3, 0, 0, 10};
-
-// ============================================================================
 // Static Buffers (Safe - allocated in BSS, not on stack)
 // ============================================================================
 
@@ -79,10 +63,9 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     }
 
     s_initialized = true;
-    s_current_preset = 0;
 
     // Apply default parameter values
-    s_reverb->setParameter(k_paramProgram, s_current_preset);
+    s_reverb->loadPreset(0);
 
     return k_unit_err_none;
 }
@@ -144,15 +127,12 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (!s_reverb) return;
     if (id >= k_total) return;
-    s_params[id] = value;   // store into local DB
-    if (id == k_paramProgram) s_current_preset = value;
     s_reverb->setParameter(id, value);
 }
 
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    if (id >= k_total) return 0;
-    return s_params[id];
+    return s_reverb->getParameterValue(id);
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
@@ -193,11 +173,11 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 
 __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
-    s_reverb->setParameter(k_paramProgram, idx);
+    s_reverb->loadPreset(idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
-    return (s_current_preset < k_preset_number) ? s_current_preset : 0;
+    return s_reverb->getPreset();
 }
 
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {

@@ -85,7 +85,6 @@ public:
         : write_ptr_(0)
         , clone_count_(4)
         , current_mode_(MODE_TRIBAL)
-        , bypass_(true)
         , initialized_(false)
         , sample_rate_(48000)
         , transient_detected_(false)
@@ -107,7 +106,7 @@ public:
         , flags_(0) {
 
         // Initialize phase increment vector
-        phase_inc_ = vdupq_n_u32(0.0f);
+        phase_inc_ = vdupq_n_u32(0);
 
         // Initialize PRNG with a fixed seed
         prng_init(0x9E3779B97F4A7C15ULL);
@@ -153,13 +152,13 @@ public:
 
     inline int8_t Init(const unit_runtime_desc_t* desc) {
         if (desc->samplerate != 48000) return k_unit_err_samplerate;
-        if (desc->input_channels != 2 || desc->output_channels != 2)
-            return k_unit_err_geometry;
+        // remove the check for debugging the effect not applied to sound
+        // if (desc->input_channels != 2 || desc->output_channels != 2)
+        //     return k_unit_err_geometry;
 
         sample_rate_ = desc->samplerate;
 
         initialized_ = true;
-        bypass_ = false;
 
         Reset();
         return k_unit_err_none;
@@ -169,7 +168,6 @@ public:
 
     inline void Reset() {
         if (!initialized_) {
-            bypass_ = true;
             return;
         }
 
@@ -189,7 +187,7 @@ public:
 
         // Reset clone parameters
         init_clone_parameters();
-
+        transient_energy_ = 0.0f;
         crossfade_counter_ = 0;
         crossfade_active_ = false;
     }
@@ -202,7 +200,7 @@ public:
     /*===========================================================================*/
 
     fast_inline void Process(const float* in, float* out, size_t frames) {
-        if (bypass_ || !initialized_) {
+        if (!initialized_) {
             memcpy(out, in, frames * 2 * sizeof(float));
             return;
         }
@@ -423,11 +421,11 @@ public:
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
         static const char* mode_names[] = {"Tribal", "Military", "Angel"};
-        static const char* clone_names[] = {"4", "8", "16"};
+        static const char* clone_names[] = {"4", "8", "12", "16"};
 
         switch (index) {
             case k_clones: // Clone Count
-                if (value >= 0 && value <= 2) return clone_names[value];
+                if (value >= 0 && value <= 3) return clone_names[value];
                 break;
             case k_mode: // Mode
                 if (value >= 0 && value <= 2) return mode_names[value];
@@ -819,7 +817,8 @@ private:
         switch (value) {
             case 0: clone_count_ = 4; break;
             case 1: clone_count_ = 8; break;
-            case 2: clone_count_ = 16; break;
+            case 2: clone_count_ = 12; break;
+            case 3: clone_count_ = 16; break;
             default: clone_count_ = 4;
         }
         update_panning();
@@ -852,7 +851,7 @@ private:
         float32x4_t frac_vec)
     {
         // 1. Extract indices to scalar for memory access (unavoidable on ARMv7)
-        uint32_t i1[4], i2[4];
+        uint32_t i1[NEON_LANES], i2[NEON_LANES];
         vst1q_u32(i1, idx1_vec);
         vst1q_u32(i2, idx2_vec);
 
@@ -913,7 +912,6 @@ private:
     uint32_t attack_ramp_samples_;
 
     uint32_t sample_rate_;
-    bool bypass_;
     bool initialized_;
 
     int32_t params_[k_total]  __attribute__((aligned(16)));

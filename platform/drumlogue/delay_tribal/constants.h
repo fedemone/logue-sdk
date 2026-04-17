@@ -54,7 +54,7 @@ constexpr float FILTER_Q_BESSEL = 0.5f;
 
 // Parameter ranges (as per header.c)
 constexpr int PARAM_CLONES_MIN = 0;
-constexpr int PARAM_CLONES_MAX = 2;
+constexpr int PARAM_CLONES_MAX = 3;
 constexpr int PARAM_MODE_MIN = 0;
 constexpr int PARAM_MODE_MAX = 2;
 constexpr int PARAM_DEPTH_MIN = 0;

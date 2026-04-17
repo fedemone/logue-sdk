@@ -16,7 +16,6 @@ constexpr float Mid_Note_Freq = 69.0f;
 constexpr float Audio_Rate_Freq = 100000.0f;
 constexpr float percent_normalizer = 100.0f;
 constexpr int neon_lanes = 4;
-constexpr int num_params = 24;
 
 
 
@@ -29,7 +28,7 @@ public:
         k_paramL1Wave, k_paramL1Rate, k_paramL1Depth, k_paramL2Wave,
         k_paramL2Rate, k_paramL2Depth, k_paramL3Wave, k_paramL3Rate,
         k_paramL3Depth, k_paramSampRed, k_paramBitRed, k_paramCMOSDist,
-        k_paramLast // this one is just a marker
+        k_paramLast // this one is just a marker - same value as header.c
     };
 
     // Constant Borders
@@ -60,7 +59,7 @@ public:
     }
 
     inline int32_t  getParameter(uint8_t id) {
-        if (id >= num_params) return 0;
+        if (id >= k_paramLast) return 0;
         return m_params[id];
     }
 
@@ -80,7 +79,7 @@ public:
                 m_lfo3_mod_val = 0.0f;
 
                 // preset will target different modulation
-                int32_t mod_target = m_params[k_paramProgram] % num_params;
+                int32_t mod_target = m_params[k_paramProgram] % k_paramLast;
                 // set here the targets addressed by ring_modulation and let the
                 // other to be processed runtime in processBlock() as they use directly
                 // the lfo values, that are not available here.
@@ -125,8 +124,8 @@ public:
                 // 48-71: Osc 2 Reversed
                 // 72-95: Both Reversed
                 int preset = value % 96;
-                m_osc1_dir = (preset >= num_params && preset < 2*num_params) || (preset >= 3*num_params) ? -1.0f : 1.0f;
-                m_osc2_dir = (preset >= 2*num_params) ? -1.0f : 1.0f;
+                m_osc1_dir = (preset >= k_paramLast && preset < 2*k_paramLast) || (preset >= 3*k_paramLast) ? -1.0f : 1.0f;
+                m_osc2_dir = (preset >= 2*k_paramLast) ? -1.0f : 1.0f;
 
                 // Force frequency target updates
                 updateOscillators();
@@ -365,7 +364,7 @@ public:
                 m_drv2_mod_multiplier = 0.0f;
                 m_mix1_mod_offset = 0.0f;
 
-                int32_t mod_target = m_params[k_paramProgram] % num_params;
+                int32_t mod_target = m_params[k_paramProgram] % k_paramLast;
                 // note some missing modes are addressed directly in setParameters()
                 // are they are used in above ring_modulation(), so cannot be placed
                 // right here
@@ -587,7 +586,7 @@ public:
     }
 
 private:
-    int32_t m_params[num_params] = {0};
+    int32_t m_params[k_paramLast] = {0};
 
     // Core Engine Instances
     WavetableOsc osc1;

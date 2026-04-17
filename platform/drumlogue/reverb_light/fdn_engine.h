@@ -254,6 +254,23 @@ public:
     /* Parameter Interface */
     /*===========================================================================*/
 
+    inline void loadPreset(uint8_t index) {
+        if (index >= k_preset_number) return;
+        current_preset_ = index;
+        for (uint8_t i = 0; i < k_total; i++) {
+            setParameter(i, k_presets[index][i]);
+        }
+    }
+
+    inline int32_t getPreset() {
+        return current_preset_;
+    }
+
+    inline int32_t getParameterValue(uint8_t index) {
+        if (index >= k_total) return -1;    // invalid value
+        return  params_[index];
+    }
+
     inline void setParameter(uint8_t index, int32_t value) {
         if (index >= k_total) return;
         params_[index] = value;   // store into local DB
@@ -261,13 +278,6 @@ public:
         const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
         switch (index) {
-        case k_paramProgram:
-            current_preset_ = value;
-            for (uint8_t i = 0; i < k_total; i++) {
-                if (i == k_paramProgram) continue;  // avoid recursion
-                setParameter(i, k_presets[value][i]);
-            }
-        break;
         case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99
             setDarkness(norm);
             break;

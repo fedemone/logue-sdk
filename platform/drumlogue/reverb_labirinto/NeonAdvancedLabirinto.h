@@ -60,9 +60,8 @@ enum parameterState {
   k_total
 };
 
-static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
-    "labirinto", "esotico",
-                                                      "stellare"};
+static const char *k_preset_names[k_preset_number] =
+    {"foresta", "tempio", "labirinto", "esotico", "stellare"};
 // ============================================================================
 // Factory Presets
 // ============================================================================
@@ -221,21 +220,30 @@ public:
     }
 
     /*===========================================================================*/
-    /* Parameter Setters */
+    /* Parameter Setters/Getters */
     /*===========================================================================*/
+    inline int getPreset() {
+        return currentPreset;
+    }
+
+    inline void loadPreset(int32_t value) {
+        currentPreset = value;
+        setFilterType(value);
+        for (uint8_t i = 0; i < k_total; i++) {
+            setParameter(i, k_presets[value][i]);
+        }
+    }
+
+    inline int32 getParameterValue(uint8_t index) {
+        if (index >= k_total) return -1;    // invalid value
+        return params_[index];
+    }
+
     inline void setParameter(uint8_t index, int32_t value) {
         if (index >= k_total) return;
         params_[index] = value;   // store into local DB
 
         switch (index) {
-        case k_paramProgram:
-            currentPreset= value;
-            setFilterType(value);
-            for (uint8_t i = 0; i < k_total; i++) {
-                if (i == k_paramProgram) continue;  // avoid recursion
-                setParameter(i, k_presets[value][i]);
-            }
-            break;
         case k_mix: // MIX  0..100 → 0.0..1.0
             setMix(value / 100.0f);
             break;
@@ -1374,6 +1382,21 @@ private:
     /*===========================================================================*/
     /* Private Member Variables */
     /*===========================================================================*/
+
+    // ============================================================================
+    // Parameter State (mirrors header.c defaults)
+    // ============================================================================
+    // ID 0:  PRESET 0..3               default 0 (foresta)
+    // ID 1:  MIX    0..100 %           default 70 (70%)
+    // ID 2:  TIME   1..100             default 50
+    // ID 3:  LOW    1..100             default 50
+    // ID 4:  HIGH   1..100             default 70
+    // ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
+    // ID 6:  WIDE   0..200 %           default 100
+    // ID 7:  COMP   0..1000 (x0.1%)    default 1000
+    // ID 8:  PILL   0..4               default 3
+    // ID 9:  SHMR 0..100               default 35 (Hz)
+    // ID 10: PDLY   0..100             default 0 (ms)
     int32_t params_[k_total]  __attribute__((aligned(16)));
 
     float sampleRate;
