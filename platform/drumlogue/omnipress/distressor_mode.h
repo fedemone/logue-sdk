@@ -9,24 +9,7 @@
 #include <arm_neon.h>
 #include <math.h>
 #include "filters.h"
-
-// Distressor ratio modes (8 total)
-#define DIST_RATIO_1_1   0  // Warm mode - no compression, just harmonics
-#define DIST_RATIO_2_1   1  // Mild compression
-#define DIST_RATIO_3_1   2  // Mild compression
-#define DIST_RATIO_4_1   3  // Medium compression
-#define DIST_RATIO_6_1   4  // Medium compression
-#define DIST_RATIO_10_1  5  // "Opto" mode - optical emulation, slow release
-#define DIST_RATIO_20_1  6  // Hard limiting
-#define DIST_RATIO_NUKE  7  // Brick-wall limiting
-
-// Distortion modes (5 modes - wavefolder added as 4)
-#define DIST_MODE_CLEAN  0  // No harmonics
-#define DIST_MODE_DIST2  1  // 2nd harmonic emphasis (tube-like)
-#define DIST_MODE_DIST3  2  // 3rd harmonic emphasis (tape-like)
-#define DIST_MODE_BOTH   3  // Both harmonics
-#define DIST_MODE_WAVE   4  // Wavefolder
-#define DIST_MODE_TOTAL  4  // Counter
+#include "constants.h"
 
 // Detector modes (bit flags)
 #define DETECT_NONE      0
@@ -226,7 +209,7 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
     switch (d->ratio_mode) {
         case DIST_RATIO_1_1:
             // 1:1 - no compression, just harmonics
-            gain_db = vdupq_n_f32(0.0f);
+            // gain_db = vdupq_n_f32(0.0f); // avoid unnecessary operations
             break;
 
         case DIST_RATIO_2_1:

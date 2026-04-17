@@ -33,7 +33,6 @@ static NeonAdvancedLabirinto s_reverb_instance;
 static NeonAdvancedLabirinto* s_reverb = &s_reverb_instance;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
-static bool s_bypass = true;
 
 static uint8_t s_current_preset = 0;
 
@@ -76,12 +75,10 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     // Initialize the reverb (clears delay lines and sets up shimmer tables)
     if (!s_reverb->init()) {
         s_initialized = false;
-        s_bypass = true;
         return k_unit_err_memory;
     }
 
     s_initialized = true;
-    s_bypass = false;
     s_current_preset = 0;
 
     // Apply default parameter values
@@ -92,7 +89,6 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
 
 __unit_callback void unit_teardown() {
     s_initialized = false;
-    s_bypass = true;
 }
 
 __unit_callback void unit_reset() {
@@ -103,13 +99,13 @@ __unit_callback void unit_reset() {
 }
 
 __unit_callback void unit_resume() {}
-__unit_callback void unit_suspend() {}
+__unit_callback void unit_suspend() { s_reverb->clear(); } // Good practice to clear the delay lines
 
 __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     // ========================================================================
     // Safety Check: Bypass if not initialized
     // ========================================================================
-    if (!s_initialized || !s_reverb || s_bypass) {
+    if (!s_initialized || !s_reverb) {
         memcpy(out, in, frames * 2 * sizeof(float));
         return;
     }
@@ -149,7 +145,7 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (!s_reverb) return;
     if (id >= k_total) return;
     s_params[id] = value;   // store into local DB
-    if (id == k_paramProgram) s_current_preset = s_params[k_paramProgram];
+    if (id == k_paramProgram) s_current_preset = value;
     s_reverb->setParameter(id, value);
 }
 

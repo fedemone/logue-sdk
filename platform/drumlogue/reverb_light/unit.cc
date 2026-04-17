@@ -29,7 +29,6 @@ constexpr uint32_t kMaxFrames = 256;
 static FDNEngine s_fdn_engine;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
-static bool s_bypass = true;
 
 static uint8_t s_current_preset = 0;
 
@@ -70,12 +69,10 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     if (!s_fdn_engine.init(desc->samplerate)) {
         // Allocation failed within FDN engine - unit will bypass
         s_initialized = false;
-        s_bypass = true;
         return k_unit_err_memory;
     }
 
     s_initialized = true;
-    s_bypass = false;
     s_current_preset = 0;
 
     // Apply default parameter values
@@ -94,13 +91,13 @@ __unit_callback void unit_reset() {
 }
 
 __unit_callback void unit_resume() {}
-__unit_callback void unit_suspend() {}
+__unit_callback void unit_suspend() { s_fdn_engine.reset(); }
 
 __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     // ========================================================================
     // Safety Check: Bypass if not initialized
     // ========================================================================
-    if (!s_initialized || s_bypass) {
+    if (!s_initialized) {
         memcpy(out, in, frames * 2 * sizeof(float));
         return;
     }

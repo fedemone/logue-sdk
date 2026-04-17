@@ -77,7 +77,7 @@ constexpr int BAND_SEL_DEFAULT = 0;     // Low band
 
 constexpr int BAND_THRESH_MIN = -600;   // -60.0 dB
 constexpr int BAND_THRESH_MAX = 0;      // 0 dB
-constexpr int BAND_THRESH_DEFAULT = -200; // -20.0 dB
+constexpr int BAND_THRESH_DEFAULT = -100; // -10.0 dB
 
 constexpr int BAND_RATIO_MIN = 10;      // 1.0:1
 constexpr int BAND_RATIO_MAX = 200;     // 20.0:1
@@ -91,71 +91,87 @@ constexpr int DSTR_MODE_DEFAULT = 0;    // No harmonics
 // ============================================================================
 // Compression Mode IDs
 // ============================================================================
-
-constexpr uint8_t COMP_MODE_STANDARD = 0;
-constexpr uint8_t COMP_MODE_DISTRESSOR = 1;
-constexpr uint8_t COMP_MODE_MULTIBAND = 2;
+typedef enum {
+    COMP_MODE_STANDARD = 0,
+    COMP_MODE_DISTRESSOR  ,
+    COMP_MODE_MULTIBAND   ,
+    COMP_MODE_TOTAL
+} CompMode;
 
 // ============================================================================
 // Band Selection IDs
 // ============================================================================
 
 // Band selection for parameters
-constexpr uint8_t BAND_LOW       = 0;
-constexpr uint8_t BAND_MID       = 1;
-constexpr uint8_t BAND_HIGH      = 2;
-constexpr uint8_t BAND_LOW_MID   = 3;
-constexpr uint8_t BAND_LOW_HI    = 4;
-constexpr uint8_t BAND_MID_HI    = 5;
-constexpr uint8_t BAND_ALL       = 6;
+typedef enum {
+    BAND_LOW    ,
+    BAND_MID    ,
+    BAND_HIGH   ,
+    BAND_LOW_MID,
+    BAND_LOW_HI ,
+    BAND_MID_HI ,
+    BAND_ALL    ,
+    BAND_TOTAL  ,
+}   BandSelection;
 
 // ============================================================================
 // Distressor Mode IDs
 // ============================================================================
-
-constexpr uint8_t DSTR_HARMONICS_NONE = 0;
-constexpr uint8_t DSTR_HARMONICS_2ND = 1;   // Dist 2
-constexpr uint8_t DSTR_HARMONICS_3RD = 2;   // Dist 3
-constexpr uint8_t DSTR_HARMONICS_BOTH = 3;  // Both
-
+typedef enum {
+    DIST_MODE_CLEAN,
+    DIST_MODE_DIST2,
+    DIST_MODE_DIST3,
+    DIST_MODE_BOTH ,
+    DIST_MODE_WAVE ,
+    DIST_MODE_TOTAL,
+}   DistressorMode;
 // ============================================================================
 // Drive/Wavefolder Mode IDs
 // ============================================================================
-
-constexpr uint8_t DRIVE_MODE_SOFT_CLIP = 0;
-constexpr uint8_t DRIVE_MODE_HARD_CLIP = 1;
-constexpr uint8_t DRIVE_MODE_TRIANGLE = 2;
-constexpr uint8_t DRIVE_MODE_SINE = 3;
-constexpr uint8_t DRIVE_MODE_SUBOCTAVE = 4;
+typedef enum {
+    DRIVE_MODE_SOFT_CLIP,
+    DRIVE_MODE_HARD_CLIP,
+    DRIVE_MODE_TRIANGLE,
+    DRIVE_MODE_SINE,
+    DRIVE_MODE_SUBOCTAVE,
+    DRIVE_MODE_TOTAL,
+} WavefolderMode;
 
 // ============================================================================
 // Detection Mode IDs
 // ============================================================================
-
-constexpr uint8_t DETECT_MODE_PEAK = 0;
-constexpr uint8_t DETECT_MODE_RMS = 1;
-constexpr uint8_t DETECT_MODE_BLEND = 2;
+typedef enum {
+    DETECT_MODE_PEAK,
+    DETECT_MODE_RMS,
+    DETECT_MODE_BLEND,
+    DETECT_MODE_TOTAL,
+} Detectio Mode;
 
 // ============================================================================
 // Knee Type IDs
 // ============================================================================
 
-constexpr uint8_t KNEE_HARD = 0;
-constexpr uint8_t KNEE_SOFT = 1;
-constexpr uint8_t KNEE_MEDIUM = 2;
+typedef enum {
+    KNEE_HARD,
+    KNEE_SOFT,
+    KNEE_MEDIUM,
+    KNEE_TOTAL,
+} KneeType;
 
 // ============================================================================
 // Distressor Ratio IDs
 // ============================================================================
-
-constexpr uint8_t DIST_RATIO_1_1 = 0;    // Warm mode
-constexpr uint8_t DIST_RATIO_2_1 = 1;
-constexpr uint8_t DIST_RATIO_3_1 = 2;
-constexpr uint8_t DIST_RATIO_4_1 = 3;
-constexpr uint8_t DIST_RATIO_6_1 = 4;
-constexpr uint8_t DIST_RATIO_10_1 = 5;   // Opto mode
-constexpr uint8_t DIST_RATIO_20_1 = 6;
-constexpr uint8_t DIST_RATIO_NUKE = 7;   // Brick-wall
+typedef enum {
+    DIST_RATIO_1_1,    // Warm mode
+    DIST_RATIO_2_1,
+    DIST_RATIO_3_1,
+    DIST_RATIO_4_1,
+    DIST_RATIO_6_1,
+    DIST_RATIO_10_1,   // Opto mode
+    DIST_RATIO_20_1,
+    DIST_RATIO_NUKE ,  // Brick-wall
+    DIST_RATIO_TOTAL, // marker
+} DistressorRatio;
 
 // ============================================================================
 // Multiband Crossover Frequencies
@@ -210,29 +226,3 @@ constexpr int VECTOR_ALIGN = 16;                    // 16-byte alignment
 constexpr float EPSILON = 1e-12f;                   // Prevent denormals
 constexpr float DB_COEFF = 8.65617f;                 // 20 / ln(10)
 constexpr float INV_DB_COEFF = 0.115129f;            // ln(10) / 20
-
-// ============================================================================
-// Parameter Indexes (for code clarity)
-// ============================================================================
-
-// Page 1
-constexpr uint8_t PARAM_THRESH = 0;
-constexpr uint8_t PARAM_RATIO = 1;
-constexpr uint8_t PARAM_ATTACK = 2;
-constexpr uint8_t PARAM_RELEASE = 3;
-
-// Page 2
-constexpr uint8_t PARAM_MAKEUP = 4;
-constexpr uint8_t PARAM_DRIVE = 5;
-constexpr uint8_t PARAM_MIX = 6;
-constexpr uint8_t PARAM_SC_HPF = 7;
-
-// Page 3
-constexpr uint8_t PARAM_COMP_MODE = 8;
-constexpr uint8_t PARAM_BAND_SEL = 9;
-constexpr uint8_t PARAM_BAND_THRESH = 10;
-constexpr uint8_t PARAM_BAND_RATIO = 11;
-
-// Page 4
-constexpr uint8_t PARAM_DSTR_MODE = 12;
-// ... 13-23 reserved

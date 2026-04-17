@@ -122,7 +122,7 @@ public:
         gain_computer_init(&gain_comp_);
 
         // Set default parameters
-        setParameter(k_threhold, -200); // Thresh: -20.0 dB
+        setParameter(k_threhold, -100); // Thresh: -10.0 dB
         setParameter(k_ratio, 40);      // Ratio: 4.0
         setParameter(k_attack, 150);    // Attack: 15.0 ms
         setParameter(k_release, 200);   // Release: 200 ms
@@ -140,8 +140,8 @@ public:
         setParameter(k_multiband_band_selection, 0);    // BAND SEL: Low
         setParameter(k_multiband_band_threshold, -100); // L THRESH: -10.0 dB
         setParameter(k_multiband_band_ratio, 40);       // L RATIO: 4.0
-        setParameter(k_multiband_band_attack, 10);      // ATTACK 10 ms
-        setParameter(k_multiband_band_release, 10);     // RELEAE:  100 ms
+        setParameter(k_multiband_band_attack, 10);      // ATTACK: 10 ms
+        setParameter(k_multiband_band_release, 10);     // RELEASE: 100 ms
         setParameter(k_multiband_band_makeup, 0);       // MAKEUP: 0 dB
         setParameter(k_multiband_band_mute, 0);         // MUTE off
         setParameter(k_multiband_band_solo, 0);         // SOLO off
@@ -308,6 +308,10 @@ private:
         // 3. ENVELOPE DETECTION (mode-specific)
         // =================================================================
         float32x4_t envelope_db;
+        // TODO - it's not clear the usage of DETECT_BAND_EMPH and DETECT_LINK.
+        // I would expect that else branch to be for the non-COMP_MODE_DISTRESSOR mode,
+        // but this code handles everything is same manner, making no distinction of the
+        // other two detection modes. Are they not implemented?
         if (comp_mode_ == COMP_MODE_DISTRESSOR && (distressor_.detector_mode & DETECT_HPF)) {
             float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
             envelope_db = linear_to_db(envelope);
@@ -436,6 +440,9 @@ private:
                 float32x4_t harm_r = generate_harmonics(&distressor_, main_r, distressor_.dist_mode);
                 *out_l = vmulq_f32(harm_l, gain_lin);
                 *out_r = vmulq_f32(harm_r, gain_lin);
+                // TODO - there's something that I'm missing here. This stage is written AFTER compression
+                // see lines 417..418 and yet not using comp_l, comp_r values.
+                // Comment on line 431 puzzles me, is this sequence correct?
                 break;
             }
             case DIST_MODE_CLEAN:
@@ -483,7 +490,7 @@ public:
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
 
-            case 4: // MAKEUP (0.0 to 24.0 dB)
+            case k_makeup: // MAKEUP (0.0 to 24.0 dB)
                 makeup_db_ = value * 0.1f;
                 break;
 
