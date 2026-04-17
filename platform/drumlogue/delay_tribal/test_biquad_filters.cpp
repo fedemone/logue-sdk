@@ -1,6 +1,6 @@
 /**
  * @file test_biquad_filters.cpp
- * @brief x86-compilable unit tests for reverb_sussurro biquad filter DSP math.
+ * @brief x86-compilable unit tests for delay_tribal biquad filter DSP math.
  *
  * Tests biquad coefficient calculation and Transposed DF-II processing using
  * scalar equivalents of the NEON operations in filters.h.
@@ -116,7 +116,7 @@ static float measure_gain_db(const scalar_coeffs_t* c, float freq_hz, int N) {
 }
 
 /* -------------------------------------------------------------------------
- * Test 1: Bandpass coefficient constraints (Sussurro mode)
+ * Test 1: Bandpass coefficient constraints (Tribal mode)
  * ---------------------------------------------------------------------- */
 
 void test_bandpass_coefficients() {
@@ -136,7 +136,7 @@ void test_bandpass_coefficients() {
 }
 
 /* -------------------------------------------------------------------------
- * Test 2: Highpass coefficient constraints (Ricordo mode)
+ * Test 2: Highpass coefficient constraints (Military mode)
  * ---------------------------------------------------------------------- */
 
 void test_highpass_coefficients() {
@@ -157,7 +157,7 @@ void test_highpass_coefficients() {
 }
 
 /* -------------------------------------------------------------------------
- * Test 3: Lowpass coefficient constraints (Ninfa mode LPF)
+ * Test 3: Lowpass coefficient constraints (Angel mode LPF)
  * ---------------------------------------------------------------------- */
 
 void test_lowpass_coefficients() {
@@ -295,12 +295,12 @@ void test_lowpass_frequency_response() {
 }
 
 /* -------------------------------------------------------------------------
- * Test 8: Ninfa mode – separate L/R states (no crosstalk)
+ * Test 8: Angel mode – separate L/R states (no crosstalk)
  * Apply different signals on L and R, verify outputs are independent.
  * ---------------------------------------------------------------------- */
 
-void test_ninfa_mode_independent_lr_states() {
-    printf("\n=== Test 8: Ninfa Mode - Separate L/R Filter States ===\n");
+void test_angel_mode_independent_lr_states() {
+    printf("\n=== Test 8: Angel Mode - Separate L/R Filter States ===\n");
 
     scalar_coeffs_t hpf, lpf;
     calc_highpass(&hpf, 500.0f,  1.0f);
@@ -382,39 +382,39 @@ void test_filter_stability() {
 void test_mode_frequency_ranges() {
     printf("\n=== Test 10: Mode Frequency Range Constants ===\n");
 
-    /* Sussurro: bandpass 80-800 Hz */
-    float sussurro_min = 80.0f, sussurro_max = 800.0f;
-    /* Ricordo: highpass 1k-8k Hz */
+    /* Tribal: bandpass 80-800 Hz */
+    float tribal_min = 80.0f, tribal_max = 800.0f;
+    /* Military: highpass 1k-8k Hz */
     float mil_min = 1000.0f, mil_max = 8000.0f;
-    /* Ninfa: HPF at 500 Hz, LPF at 4k-6k Hz */
-    float ninfa_hpf = 500.0f;
-    float ninfa_lpf_min = 4000.0f, ninfa_lpf_max = 6000.0f;
+    /* Angel: HPF at 500 Hz, LPF at 4k-6k Hz */
+    float angel_hpf = 500.0f;
+    float angel_lpf_min = 4000.0f, angel_lpf_max = 6000.0f;
 
-    /* Sussurro: freq at depth=0 and depth=1 */
+    /* Tribal: freq at depth=0 and depth=1 */
     float depth0 = 0.0f, depth1 = 1.0f;
-    float sussurro_f0 = sussurro_min + depth0 * (sussurro_max - sussurro_min);
-    float sussurro_f1 = sussurro_min + depth1 * (sussurro_max - sussurro_min);
+    float tribal_f0 = tribal_min + depth0 * (tribal_max - tribal_min);
+    float tribal_f1 = tribal_min + depth1 * (tribal_max - tribal_min);
 
-    /* Ricordo: same */
+    /* Military: same */
     float mil_f0 = mil_min + depth0 * (mil_max - mil_min);
     float mil_f1 = mil_min + depth1 * (mil_max - mil_min);
 
-    /* Ninfa LPF: 4000 + depth * 2000 */
-    float ninfa_f0 = 4000.0f + depth0 * 2000.0f;
-    float ninfa_f1 = 4000.0f + depth1 * 2000.0f;
+    /* Angel LPF: 4000 + depth * 2000 */
+    float angel_f0 = 4000.0f + depth0 * 2000.0f;
+    float angel_f1 = 4000.0f + depth1 * 2000.0f;
 
     int ok =
-        (fabsf(sussurro_f0 - 80.0f)   < 1.0f) &&
-        (fabsf(sussurro_f1 - 800.0f)  < 1.0f) &&
+        (fabsf(tribal_f0 - 80.0f)   < 1.0f) &&
+        (fabsf(tribal_f1 - 800.0f)  < 1.0f) &&
         (fabsf(mil_f0 - 1000.0f)    < 1.0f) &&
         (fabsf(mil_f1 - 8000.0f)    < 1.0f) &&
-        (fabsf(ninfa_hpf - 500.0f)  < 1.0f) &&
-        (fabsf(ninfa_f0 - 4000.0f)  < 1.0f) &&
-        (fabsf(ninfa_f1 - 6000.0f)  < 1.0f);
+        (fabsf(angel_hpf - 500.0f)  < 1.0f) &&
+        (fabsf(angel_f0 - 4000.0f)  < 1.0f) &&
+        (fabsf(angel_f1 - 6000.0f)  < 1.0f);
 
-    printf("  Sussurro:   depth=0 → %g Hz, depth=1 → %g Hz\n", sussurro_f0, sussurro_f1);
-    printf("  Ricordo: depth=0 → %g Hz, depth=1 → %g Hz\n", mil_f0,    mil_f1);
-    printf("  Ninfa HPF: %g Hz, LPF range: %g - %g Hz\n", ninfa_hpf, ninfa_f0, ninfa_f1);
+    printf("  Tribal:   depth=0 → %g Hz, depth=1 → %g Hz\n", tribal_f0, tribal_f1);
+    printf("  Military: depth=0 → %g Hz, depth=1 → %g Hz\n", mil_f0,    mil_f1);
+    printf("  Angel HPF: %g Hz, LPF range: %g - %g Hz\n", angel_hpf, angel_f0, angel_f1);
     printf("  %s\n", ok ? "PASS" : "FAIL");
     assert(ok);
 }
@@ -425,7 +425,7 @@ void test_mode_frequency_ranges() {
 
 int main(void) {
     printf("==========================================\n");
-    printf("reverb_sussurro – Biquad Filter Test Suite\n");
+    printf("delay_tribal – Biquad Filter Test Suite\n");
     printf("==========================================\n");
 
     test_bandpass_coefficients();
@@ -435,7 +435,7 @@ int main(void) {
     test_bandpass_frequency_response();
     test_highpass_frequency_response();
     test_lowpass_frequency_response();
-    test_ninfa_mode_independent_lr_states();
+    test_angel_mode_independent_lr_states();
     test_filter_stability();
     test_mode_frequency_ranges();
 

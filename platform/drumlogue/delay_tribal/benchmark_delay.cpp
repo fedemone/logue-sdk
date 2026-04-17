@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
-#include "Sussurro.h"
+#include "PercussionSpatializer.h"
 
 // ARM cycle counter
 static inline uint32_t read_cycle_counter(void) {
@@ -19,7 +19,7 @@ void benchmark_delay_line_access() {
     printf("\n=== Benchmark: Delay Line Access ===\n");
 
     const int ITERATIONS = 100000;
-    Sussurro spatializer;
+    PercussionSpatializer spatializer;
 
     // Initialize with dummy data
     unit_runtime_desc_t desc;
