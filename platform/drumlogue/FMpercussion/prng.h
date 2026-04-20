@@ -18,6 +18,11 @@
 #include <stdint.h>
 #include <math.h>
 
+// Ensure fast_inline is defined for standalone use of this header
+#ifndef fast_inline
+#define fast_inline static inline __attribute__((always_inline))
+#endif
+
 /**
  * 4 independent PRNG streams using Xorshift128+
  * Each stream maintains 2x 64-bit state = 128-bit state per voice
@@ -205,6 +210,40 @@ fast_inline uint32x4_t probability_gate_neon(neon_prng_t* rng,
  */
 fast_inline uint32x4_t neon_prng_rand(neon_prng_t* rng) {
     return neon_prng_rand_u32(rng);
+}
+
+/**
+ * Correctly generate a random float in [0, 1) range using bit manipulation
+ */
+fast_inline float32x4_t neon_generate_float_rand_0_1(neon_prng_t * rng) {
+  uint32x4_t r = neon_prng_rand_u32(rng);
+  uint32x4_t masked = vandq_u32(r, vdupq_n_u32(0x7FFFFF));
+  uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000));
+  return vsubq_f32(vreinterpretq_f32_u32(float_bits), vdupq_n_f32(1.0f));
+}
+
+/**
+ * Generate a tiny random float in [0, 0.0009765625) range (roughly 0.1%).
+ * Useful for subtle jitter/instability without requiring an explicit multiplication.
+ * Range is [2^-10, 2^-9) before subtracting the 2^-10 offset.
+ */
+fast_inline float32x4_t neon_generate_float_rand_tiny(neon_prng_t * rng) {
+  uint32x4_t r = neon_prng_rand_u32(rng);
+  uint32x4_t masked = vandq_u32(r, vdupq_n_u32(0x7FFFFF));
+  uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3A800000));
+  return vsubq_f32(vreinterpretq_f32_u32(float_bits), vdupq_n_f32(0.0009765625f));
+}
+
+/**
+ * Generate a white noise float
+ */
+fast_inline float32x4_t neon_generate_float_white_noise(neon_prng_t * rng) {
+  uint32x4_t rand = neon_prng_rand_u32(rng);
+  // Float conversion: mask to 23-bit mantissa, add 1.0 bias, subtract 1.0 → [0,1)
+  uint32x4_t masked = vandq_u32(rand, vdupq_n_u32(0x7FFFFF));
+  uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000));
+  float32x4_t white = vsubq_f32(vreinterpretq_f32_u32(float_bits), vdupq_n_f32(1.0f));
+  return vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f));  // [0,1)→[-1,1)
 }
 
 // ========== UNIT TEST ==========
