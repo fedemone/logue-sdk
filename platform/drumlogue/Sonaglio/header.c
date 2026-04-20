@@ -1,73 +1,81 @@
 /**
- *  @file header.c
- *  @brief drumlogue SDK unit header
- *
- *  Copyright (c) 2020-2022 KORG Inc. All rights reserved.
- *
+ * @file header.c
+ * @brief FM Percussion Synth - One instance per instrument
  */
 
-#include "unit.h"  // Note: Include common definitions for all units
+#include "unit.h"
 
-// ---- Unit header definition  --------------------------------------------------------------------
+// String tables
+const char* lfo_shape_strings[9] = {
+    "Tri+Tri", "Rmp+Rmp", "Chd+Chd",
+    "Tri+Rmp", "Tri+Chd", "Rmp+Tri",
+    "Rmp+Chd", "Chd+Tri", "Chd+Rmp"
+};
+
+const char* lfo_target_strings[11] = {
+    "None", "Pitch", "ModIdx", "Env",
+    "LFO2Ph", "LFO1Ph", "ResFrq", "Reson",
+    "NoizMx", "ResMrph", "MtlGate"
+};
+
+const char* euclidean_mode_strings[9] = {
+    "Off",    // 0: disabled — all voices same pitch
+    "Clstr",  // 1: E(4,4)  = [0, 1, 2, 3]  chromatic cluster
+    "Minor",  // 2: E(4,6)  = [0, 1, 3, 4]  minor 3rd pairs
+    "Diatn",  // 3: E(4,7)  = [0, 1, 3, 5]  diatonic cluster
+    "Whole",  // 4: E(4,8)  = [0, 2, 4, 6]  whole tone
+    "Penta",  // 5: E(4,10) = [0, 2, 5, 7]  pentatonic / 5th
+    "Dim7",   // 6: E(4,12) = [0, 3, 6, 9]  diminished 7th
+    "Aug8",   // 7: E(4,16) = [0, 4, 8, 12] augmented + octave
+    "Trit"    // 8: E(4,24) = [0, 6, 12, 18] tritone spread
+};
 
 const __unit_header unit_header_t unit_header = {
-    .header_size = sizeof(unit_header_t),                  // leave as is, size of this header
-    .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,  // target platform and module for this unit
-    .api = UNIT_API_VERSION,                               // logue sdk API version against which unit was built
-    .dev_id = 0x0U,                                        // developer identifier
-    .unit_id = 0x0U,                                       // Id for this unit, should be unique within the scope of a given dev_id
-    .version = 0x00010000U,                                // This unit's version: major.minor.patch (major<<16 minor<<8 patch).
-    .name = "sonaglio",                                    // Name for this unit, will be displayed on device
-    .num_presets = 0,                                      // Number of internal presets this unit has
-    .num_params = 6,                                       // Number of parameters for this unit, max 24
+    .header_size = sizeof(unit_header_t),
+    .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,
+    .api = UNIT_API_VERSION,
+    .dev_id = 0x46654465U,   // 'FeDe' - https://github.com/fedemone/logue-sdk
+    .unit_id = 0x02U,
+    .version = 0x00020000U,
+    .name = "FMPerc",
+    .num_presets = 26,
+    .num_params = 24,
+
     .params = {
-        // Format: min, max, center, default, type, fractional, frac. type, <reserved>, name
+        // Page 1: Engine probabilities
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"KProb"}},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"SProb"}},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"MProb"}},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"PProb"}},
 
-        // See common/runtime.h for type enum and unit_param_t structure
+        // Page 2: Kick + Snare
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"KAtk"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"KBody"}},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"SAtk"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"SBody"}},
 
-        // Page 1
-        // percent param with .5 precision e.g.: "25.0%", "50.5%"
-        {0, (100 << 1), 0, (25 << 1), k_unit_param_type_percent, 1, 0, 0, {"PARAM1"}},
-        // untyped bipolar parameter centered at 0 e.g.: "-5", "0", "2"
-        {-5, 5, 0, 0, k_unit_param_type_none, 0, 0, 0, {"PARAM2"}},
-        // pan parameter e.g.: "L50", "C", "R100"
-        {-100, 100, 0, 0, k_unit_param_type_pan, 0, 0, 0, {"PARAM3"}},
-        // blank parameter, leaves that parameter slot blank in UI. Use when
-        // want to align some params to next page
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        // Page 3: Metal + Perc
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"MAtk"}},
+        {0, 100, 0, 70, k_unit_param_type_percent, 0, 0, 0, {"MBody"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"PAtk"}},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"PBody"}},
 
-        // Page 2
-        // string enum parameter, unit_get_param_str_value will be called with
-        // numerical value to obtain string to display
-        {0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"PARAM4"}},
-        // bitmap enum parameter, unit_get_param_bmp_value will be called with
-        // numerical value to obtain the bitmap to display
-        // Note: bitmap specifications not final yet, and not implemented yet in
-        // UI
-        {0, 9, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"PARAM5"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        // Page 4: LFO1
+        {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Shape"}},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L1Rate"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Dest"}},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L1Depth"}},
 
-        // Page 3
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        // Page 5: LFO2 + Euclidean Tuning
+        {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"EuclTun"}},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L2Rate"}},
+        {0, 10, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Dest"}},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
 
-        // Page 4
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-
-        // Page 5
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-
-        // Page 6
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}}};
+        // Page 6: Envelope + Global shaping
+        {0, 255, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"HitShp"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"BodyTilt"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"Drive"}}
+    }
+};

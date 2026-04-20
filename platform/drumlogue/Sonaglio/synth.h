@@ -23,10 +23,12 @@
  * - deterministic real-time safe behavior
  */
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <arm_neon.h>
-#include <stdint.h>
-#include <stddef.h>
 
+#include "unit.h"
 #include "constants.h"
 #include "prng.h"
 #include "midi_handler.h"
@@ -45,338 +47,229 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-// -----------------------------------------------------------------------------
-// Fixed instrument layout
-// -----------------------------------------------------------------------------
-
-typedef enum {
-    ENGINE_KICK = 0,
-    ENGINE_SNARE = 1,
-    ENGINE_METAL = 2,
-    ENGINE_PERC  = 3,
-    ENGINE_RESONANT = 4,  // kept for future use; not called in current instrument path
-    ENGINE_COUNT
-} engine_type_t;
-
-// Four voices, fixed positions.
-// Voice allocation is removed from the UI/control budget.
-//
-typedef enum {
-    VOICE_KICK = 0,
-    VOICE_SNARE = 1,
-    VOICE_METAL = 2,
-    VOICE_PERC = 3,
-    VOICE_COUNT = 4
-} voice_pos_t;
-
-// -----------------------------------------------------------------------------
-// User parameters
-// -----------------------------------------------------------------------------
-
-// Active instrument controls (8 total)
-// 2 per engine: Kick/Snare/Metal/Perc
-//
-// Reclaimed globals (3 total)
-// - HitShape
-// - BodyTilt
-// - Drive
-//
-// Existing support controls remain here only if still useful in the host UI:
-// - velocity/probability routing
-// - euclidean tuning mode
-// - LFO routing and envelope shape selection
-
-typedef enum {
-    PARAM_KICK_ATK = 0,
-    PARAM_KICK_BODY,
-    PARAM_SNARE_ATK,
-    PARAM_SNARE_BODY,
-    PARAM_METAL_ATK,
-    PARAM_METAL_BODY,
-    PARAM_PERC_ATK,
-    PARAM_PERC_BODY,
-
-    PARAM_HIT_SHAPE,   // global transient character
-    PARAM_BODY_TILT,   // global low-mid weight
-    PARAM_DRIVE,       // global nonlinear aggression
-
-    // Optional retained controls (if UI needs them)
-    PARAM_VOICE1_PROB,
-    PARAM_VOICE2_PROB,
-    PARAM_VOICE3_PROB,
-    PARAM_VOICE4_PROB,
-    PARAM_LFO1_RATE,
-    PARAM_LFO1_DEPTH,
-    PARAM_LFO1_TARGET,
-    PARAM_LFO1_SHAPE,
-    PARAM_LFO2_RATE,
-    PARAM_LFO2_DEPTH,
-    PARAM_LFO2_TARGET,
-    PARAM_LFO2_SHAPE,
-    PARAM_ENV_SHAPE,
-    PARAM_PRESET,
-    PARAM_NOTE_MODE,
-
-    PARAM_TOTAL
-} synth_param_id_t;
-
-// -----------------------------------------------------------------------------
-// Main synth state
-// -----------------------------------------------------------------------------
-
-typedef struct {
-    // Engines
-    kick_engine_t kick;
-    snare_engine_t snare;
-    metal_engine_t metal;
-    perc_engine_t perc;
-    resonant_synth_t resonant; // retained but unused in the active path
-
-    // Control / timing
-    neon_prng_t prng;
-    midi_handler_t midi;
-    neon_envelope_t envelope;
-    lfo_enhanced_t lfo;
-    lfo_smoother_t lfo_smooth;
-
-    // Parameter cache (normalized UI values stored as integers where useful)
-    int8_t params[PARAM_TOTAL];
-
-    // Fixed voice layout: no runtime allocation table in this version.
-    uint32x4_t voice_mask[VOICE_COUNT];
-
-    // Voice probability and triggering
-    uint32_t voice_probs[VOICE_COUNT];
-    float32x4_t voice_velocity;
-    uint32x4_t voice_triggered;
-
-    // Global macros derived from current parameters.
-    // These are the single source of truth for engine mapping.
-    fm_engine_macros_t macros;
-
-    // LFO outputs (smoothed)
-    float32x4_t lfo_pitch_mult;
-    float32x4_t lfo_index_add;
-
-    // Envelope mode
-    uint8_t current_env_shape;
-
-    // Master gain
-    float master_gain;
-
-    // Runtime note assignment / tuning
-    float32x4_t euclid_offsets;
-
-    // Optional active mode flags
-    uint8_t note_mode;
-    uint8_t preset_index;
-} fm_perc_synth_t;
-
-// -----------------------------------------------------------------------------
-// Small helpers
-// -----------------------------------------------------------------------------
-
-fast_inline static float clampf01(float x) {
-    return (x < 0.0f) ? 0.0f : ((x > 1.0f) ? 1.0f : x);
-}
-
-fast_inline static float param_to_norm(int8_t v) {
-    // user-facing params are typically stored as -100..100 or 0..100 depending on control
-    // normalize defensively.
-    return clampf01((float)v / 100.0f);
-}
-
-fast_inline static uint32x4_t all_voices_mask(void) {
-    return vdupq_n_u32(0xFFFFFFFFu);
-}
-
-// -----------------------------------------------------------------------------
-// Mapping layer refresh
-// -----------------------------------------------------------------------------
-
-fast_inline void fm_perc_synth_refresh_mapping(fm_perc_synth_t *synth) {
-    fm_engine_macros_t m = fm_engine_macros_default();
-
-    const float kick_atk  = param_to_norm(synth->params[PARAM_KICK_ATK]);
-    const float kick_body = param_to_norm(synth->params[PARAM_KICK_BODY]);
-    const float snr_atk   = param_to_norm(synth->params[PARAM_SNARE_ATK]);
-    const float snr_body  = param_to_norm(synth->params[PARAM_SNARE_BODY]);
-    const float mtl_atk   = param_to_norm(synth->params[PARAM_METAL_ATK]);
-    const float mtl_body  = param_to_norm(synth->params[PARAM_METAL_BODY]);
-    const float prc_atk   = param_to_norm(synth->params[PARAM_PERC_ATK]);
-    const float prc_body  = param_to_norm(synth->params[PARAM_PERC_BODY]);
-
-    const float hit_shape = param_to_norm(synth->params[PARAM_HIT_SHAPE]);
-    const float body_tilt = param_to_norm(synth->params[PARAM_BODY_TILT]);
-    const float drive     = param_to_norm(synth->params[PARAM_DRIVE]);
-
-    fm_engine_macros_set_global(&m, hit_shape, body_tilt, drive);
-
-    fm_engine_macros_set_kick(&m,  kick_atk, kick_body, synth->voice_velocity);
-    fm_engine_macros_set_snare(&m, snr_atk, snr_body, synth->voice_velocity);
-    fm_engine_macros_set_metal(&m, mtl_atk, mtl_body, synth->voice_velocity);
-    fm_engine_macros_set_perc(&m,  prc_atk, prc_body, synth->voice_velocity);
-
-    synth->macros = m;
-}
-
-// -----------------------------------------------------------------------------
-// Presets
-// -----------------------------------------------------------------------------
-
-fast_inline void fm_perc_synth_load_preset(fm_perc_synth_t *synth, uint8_t index) {
-    if (index >= NUM_OF_PRESETS) {
-        index = 0;
-    }
-
-    synth->preset_index = index;
-    load_fm_preset(index, synth->params);
-    fm_perc_synth_refresh_mapping(synth);
-}
-
-// -----------------------------------------------------------------------------
-// Initialization
-// -----------------------------------------------------------------------------
-
-fast_inline void fm_perc_synth_init(fm_perc_synth_t *synth) {
-    kick_engine_init(&synth->kick);
-    snare_engine_init(&synth->snare);
-    metal_engine_init(&synth->metal);
-    perc_engine_init(&synth->perc);
-    resonant_synth_init(&synth->resonant);
-
-    neon_prng_init(&synth->prng, RAND_DEFAULT_SEED);
-    midi_handler_init(&synth->midi);
-    neon_envelope_init(&synth->envelope);
-    lfo_enhanced_init(&synth->lfo);
-    lfo_smoother_init(&synth->lfo_smooth);
-
-    for (int i = 0; i < PARAM_TOTAL; ++i) {
-        synth->params[i] = 0;
-    }
-
-    synth->master_gain = 0.25f;
-    synth->current_env_shape = 0;
-    synth->note_mode = 0;
-    synth->preset_index = 0;
-    synth->voice_velocity = vdupq_n_f32(1.0f);
-    synth->voice_triggered = vdupq_n_u32(0);
-    synth->euclid_offsets = vdupq_n_f32(0.0f);
-
-    for (int i = 0; i < VOICE_COUNT; ++i) {
-        synth->voice_mask[i] = vdupq_n_u32((i < VOICE_COUNT) ? 0xFFFFFFFFu : 0u);
-    }
-
-    // Default probabilities and defaults for the new macros.
-    for (int i = 0; i < VOICE_COUNT; ++i) {
-        synth->voice_probs[i] = 100;
-    }
-
-    fm_perc_synth_load_preset(synth, 0);
-}
-
-// -----------------------------------------------------------------------------
-// Parameter entry point
-// -----------------------------------------------------------------------------
-
-fast_inline void fm_perc_synth_setParameter(fm_perc_synth_t *synth,
-                                            synth_param_id_t id,
-                                            int8_t value) {
-    if ((unsigned)id >= (unsigned)PARAM_TOTAL) {
-        return;
-    }
-
-    synth->params[id] = value;
-
-    // Keep this function as a routing/state function only.
-    // Sound math happens in engine_mapping.h and the engines themselves.
-    switch (id) {
-        case PARAM_PRESET:
-            fm_perc_synth_load_preset(synth, (uint8_t)value);
-            break;
-
-        case PARAM_ENV_SHAPE:
-            synth->current_env_shape = (uint8_t)value;
-            break;
-
-        case PARAM_NOTE_MODE:
-            synth->note_mode = (uint8_t)value;
-            break;
-
-        default:
-            fm_perc_synth_refresh_mapping(synth);
-            break;
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Note handling
-// -----------------------------------------------------------------------------
-
-fast_inline void fm_perc_synth_note_on(fm_perc_synth_t *synth,
-                                       uint8_t note,
-                                       uint8_t velocity) {
-    (void)note;
-    synth->voice_velocity = vdupq_n_f32((float)velocity / 127.0f);
-
-    // The existing MIDI routing and per-voice probability policy can stay here.
-    // NOTE: allocation is fixed now, so no voice remapping is needed.
-    // TODO: apply Euclidean tuning offsets and fixed voice-note routing here.
-    (void)synth;
-}
-
-fast_inline void fm_perc_synth_note_off(fm_perc_synth_t *synth,
-                                        uint8_t note,
-                                        uint8_t velocity) {
-    (void)synth;
-    (void)note;
-    (void)velocity;
-    // Intentionally empty for now.
-    // Sustain/release policies will be designed per envelope family.
-}
-
-// -----------------------------------------------------------------------------
-// Per-sample process
-// -----------------------------------------------------------------------------
-
-fast_inline float32x4_t fm_perc_synth_process(fm_perc_synth_t *synth) {
-    // This is the orchestration layer only.
-    // Engines consume the mapped macros and return 4-lane audio.
-
-    // TODO:
-    // - advance envelope
-    // - advance LFOs
-    // - apply transient/body/tail macro mapping
-    // - call active engines
-    // - sum outputs
-    // - apply bus drive / final gain
-
-    (void)synth;
-    return vdupq_n_f32(0.0f);
-}
-
-// -----------------------------------------------------------------------------
-// Placeholder / legacy functions intentionally kept empty or minimal
-// -----------------------------------------------------------------------------
-
-fast_inline void fm_perc_synth_update_params(fm_perc_synth_t *synth) {
-    fm_perc_synth_refresh_mapping(synth);
-}
-
-fast_inline void fm_perc_synth_set_preset(fm_perc_synth_t *synth, uint8_t index) {
-    fm_perc_synth_load_preset(synth, index);
-}
-
-fast_inline void fm_perc_synth_set_master_gain(fm_perc_synth_t *synth, float gain) {
-    if (gain < 0.0f) gain = 0.0f;
-    synth->master_gain = gain;
-}
-
-fast_inline void fm_perc_synth_reset(fm_perc_synth_t *synth) {
-    fm_perc_synth_init(synth);
-}
-
+// defined in header.c
+extern const char* const lfo_shape_strings[9];
+extern const char* const lfo_target_strings[11];
+extern const char* const euclidean_mode_strings[9];
 #ifdef __cplusplus
 }
 #endif
+
+class Synth {
+public:
+    /*===========================================================================*/
+    /* Parameter contract                                                         */
+    /*===========================================================================*/
+
+    enum ParamId : uint8_t {
+        // Per-engine probabilities
+        PARAM_KPROB = 0,
+        PARAM_SPROB,
+        PARAM_MPROB,
+        PARAM_PPROB,
+
+        // Kick + Snare
+        PARAM_KICK_ATK,
+        PARAM_KICK_BODY,
+        PARAM_SNARE_ATK,
+        PARAM_SNARE_BODY,
+
+        // Metal + Perc
+        PARAM_METAL_ATK,
+        PARAM_METAL_BODY,
+        PARAM_PERC_ATK,
+        PARAM_PERC_BODY,
+
+        // LFO1
+        PARAM_LFO1_SHAPE,
+        PARAM_LFO1_RATE,
+        PARAM_LFO1_TARGET,
+        PARAM_LFO1_DEPTH,
+
+        // Euclidean tuning + LFO2
+        PARAM_EUCL_TUN,
+        PARAM_LFO2_RATE,
+        PARAM_LFO2_TARGET,
+        PARAM_LFO2_DEPTH,
+
+        // Envelope + global shaping
+        PARAM_ENV_SHAPE,
+        PARAM_HIT_SHAPE,
+        PARAM_BODY_TILT,
+        PARAM_DRIVE,
+
+        PARAM_TOTAL = 24
+    };
+
+    /*===========================================================================*/
+    /* Lifecycle Methods                                                          */
+    /*===========================================================================*/
+
+    Synth(void) : sample_rate_(48000), current_preset_(0) {
+        fm_perc_synth_init(&synth_);
+    }
+
+    ~Synth(void) {}
+
+    inline int8_t Init(const unit_runtime_desc_t* desc) {
+        if (desc->samplerate != 48000)
+            return k_unit_err_samplerate;
+
+        if (desc->output_channels != 2)
+            return k_unit_err_geometry;
+
+        sample_rate_ = desc->samplerate;
+        fm_perc_synth_init(&synth_);
+        return k_unit_err_none;
+    }
+
+    inline void Teardown() {}
+    inline void Resume() {}
+    inline void Suspend() {}
+
+    inline void Reset() {
+        fm_perc_synth_init(&synth_);
+        load_preset(current_preset_);
+    }
+
+    /*===========================================================================*/
+    /* Audio Render                                                               */
+    /*===========================================================================*/
+
+    fast_inline void Render(float* out, size_t frames) {
+        uint32x4_t off_check = vceqq_u32(synth_.envelope.stage,
+                                         vdupq_n_u32(ENV_STATE_OFF));
+        uint32x2_t lo_hi = vand_u32(vget_low_u32(off_check),
+                                    vget_high_u32(off_check));
+        lo_hi = vpmin_u32(lo_hi, lo_hi);
+
+        if (vget_lane_u32(lo_hi, 0) == 0xFFFFFFFFu) {
+            std::memset(out, 0, frames * 2 * sizeof(float));
+            return;
+        }
+
+        float* __restrict out_p = out;
+        const float* out_e = out_p + (frames << 1);
+
+        while (out_p < out_e) {
+            const float sample = fm_perc_synth_process(&synth_);
+            out_p[0] = sample;
+            out_p[1] = sample;
+            out_p += 2;
+        }
+    }
+
+    /*===========================================================================*/
+    /* MIDI Handlers                                                              */
+    /*===========================================================================*/
+
+    inline void NoteOn(uint8_t note, uint8_t velocity) {
+        fm_perc_synth_note_on(&synth_, note, velocity);
+    }
+
+    inline void NoteOff(uint8_t note) {
+        fm_perc_synth_note_off(&synth_, note);
+    }
+
+    inline void GateOn(uint8_t velocity) {
+        NoteOn(36, velocity);
+        NoteOn(38, velocity);
+        NoteOn(42, velocity);
+        NoteOn(45, velocity);
+    }
+
+    inline void GateOff() {
+        AllNoteOff();
+    }
+
+    inline void AllNoteOff() {
+        for (int i = 0; i < 128; ++i) {
+            fm_perc_synth_note_off(&synth_, static_cast<uint8_t>(i));
+        }
+    }
+
+    inline void PitchBend(uint16_t bend) { (void)bend; }
+    inline void ChannelPressure(uint8_t pressure) { (void)pressure; }
+    inline void Aftertouch(uint8_t note, uint8_t aftertouch) {
+        (void)note;
+        (void)aftertouch;
+    }
+
+    /*===========================================================================*/
+    /* Parameter Interface                                                        */
+    /*===========================================================================*/
+
+    inline void setParameter(uint8_t index, int32_t value) {
+        if (index >= PARAM_TOTAL) return;
+
+        synth_.params[index] = static_cast<int8_t>(value);
+        fm_perc_synth_update_params(&synth_);
+    }
+
+    inline int32_t getParameterValue(uint8_t index) const {
+        if (index >= PARAM_TOTAL) return 0;
+        return synth_.params[index];
+    }
+
+    inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
+        switch (index) {
+            case PARAM_LFO1_SHAPE:
+                if (value >= 0 && value <= 8) return lfo_shape_strings[value];
+                break;
+            case PARAM_LFO1_TARGET:
+            case PARAM_LFO2_TARGET:
+                if (value >= 0 && value <= 10) return lfo_target_strings[value];
+                break;
+            case PARAM_EUCL_TUN:
+                if (value >= 0 && value <= 8) return euclidean_mode_strings[value];
+                break;
+            default:
+                break;
+        }
+        return nullptr;
+    }
+
+    inline const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const {
+        (void)index;
+        (void)value;
+        return nullptr;
+    }
+
+    /*===========================================================================*/
+    /* Preset Management                                                          */
+    /*===========================================================================*/
+
+    inline void LoadPreset(uint8_t idx) {
+        load_preset(idx);
+    }
+
+    inline uint8_t getPresetIndex() const {
+        return current_preset_;
+    }
+
+    static inline const char* getPresetName(uint8_t idx) {
+        if (idx < NUM_OF_PRESETS) {
+            return FM_PRESETS[idx].name;
+        }
+        return nullptr;
+    }
+
+private:
+    /*===========================================================================*/
+    /* Private Methods                                                            */
+    /*===========================================================================*/
+
+    inline void load_preset(uint8_t idx) {
+        load_fm_preset(idx, synth_.params);
+        fm_perc_synth_update_params(&synth_);
+        current_preset_ = idx;
+    }
+
+    /*===========================================================================*/
+    /* Private Member Variables                                                   */
+    /*===========================================================================*/
+
+    fm_perc_synth_t synth_;
+    uint32_t sample_rate_;
+    uint8_t current_preset_;
+};
