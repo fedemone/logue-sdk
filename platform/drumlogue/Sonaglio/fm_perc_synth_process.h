@@ -9,7 +9,6 @@
  * - 4 voices, each with unique instrument (no duplicates)
  * - 12 valid allocations encoded in VoiceAlloc param
  * - Per-voice probability triggering
- * - Resonant morph parameter for expressive control
  * - Enhanced LFO system with bipolar modulation
  * - Envelope ROM
  * - Parameter smoothing
@@ -55,12 +54,14 @@ static const uint8_t VOICE_ALLOC_TABLE[VOICE_ALLOC_COUNT][VOICE_ALLOC_MAX] = {
  * Complete synthesizer state
  */
 typedef struct {
+    // Probability PRNG (4 independent streams)
+    neon_prng_t prng;
+
     // FM Engines (5 total)
-    kick_engine_t kick;
+    kick_engine_t  kick;
     snare_engine_t snare;
     metal_engine_t metal;
-    perc_engine_t perc;
-    resonant_synth_t resonant;
+    perc_engine_t  perc;
 
     // LFO System
     lfo_enhanced_t lfo;
@@ -70,26 +71,28 @@ typedef struct {
     neon_envelope_t envelope;
     uint8_t current_env_shape;
 
-    // Probability PRNG (4 independent streams)
-    neon_prng_t prng;
+    // shared variables among engines
+    float32x4_t hit_shape;
+    float32x4_t body_tilt;
+    float32x4_t drive;
 
     // MIDI handler
     midi_handler_t midi;
 
     // Current parameters (cached)
-    int8_t params[PARAM_TOTAL];
+    int8_t      params[PARAM_TOTAL];
 
     // Voice allocation
-    uint8_t voice_engine[VOICE_ALLOC_MAX];  // Engine type for each voice (0-4)
-    uint8_t allocation_idx;         // Current allocation (0-11)
+    uint8_t     voice_engine[VOICE_ALLOC_MAX];  // Engine type for each voice (0-4)
+    uint8_t     allocation_idx;         // Current allocation (0-11)
 
     // Masks for efficient NEON processing
-    uint32x4_t engine_mask[ENGINE_COUNT];
+    uint32x4_t  engine_mask[ENGINE_COUNT];
 
     // Voice activity and probabilities
     float32x4_t voice_active;
-    uint32x4_t voice_triggered;
-    uint32_t voice_probs[VOICE_ALLOC_MAX];         // Per-voice probabilities (0-100)
+    uint32x4_t  voice_triggered;
+    uint32_t    voice_probs[VOICE_ALLOC_MAX];         // Per-voice probabilities (0-100)
 
     // Per-voice velocity (set on note-on, persists until next trigger)
     float32x4_t voice_velocity;      // 0-1 per lane
@@ -194,22 +197,26 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // Kick engine: param1 = sweep depth (0-1), param2 = decay shape (0-1)
     kick_engine_update(&synth->kick,
                         vdupq_n_f32(p[PARAM_KICK_ATTACK] / 100.0f),   // Kick sweep
-                        vdupq_n_f32(p[PARAM_KICK_BODY] / 100.0f));  // Kick decay
+                        vdupq_n_f32(p[PARAM_KICK_BODY] / 100.0f),
+                        voice_velocity);  // Kick decay
 
     // Snare engine: param1 = noise mix (0-1), param2 = body resonance (0-1)
     snare_engine_update(&synth->snare,
                         vdupq_n_f32(p[PARAM_SNARE_ATTACK] / 100.0f),  // Snare noise mix
-                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f));  // Snare body resonance
+                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f),
+                        voice_velocity);  // Snare body resonance
 
     // Metal engine: param1 = inharmonicity (0-1), param2 = brightness (0-1)
     metal_engine_update(&synth->metal,
                         vdupq_n_f32(p[PARAM_METAL_ATTACK] / 100.0f),   // Metal inharmonicity
-                        vdupq_n_f32(p[PARAM_METAL_BODY] / 100.0f));  // Metal brightness
+                        vdupq_n_f32(p[PARAM_METAL_BODY] / 100.0f),
+                        voice_velocity);  // Metal brightness
 
     // Perc engine: param1 = ratio center (0-1), param2 = variation (0-1)
     perc_engine_update(&synth->perc,
                         vdupq_n_f32(p[PARAM_PERC_ATTACK] / 100.0f),  // Perc ratio center
-                        vdupq_n_f32(p[PARAM_PERC_BODY] / 100.0f));   // Perc variation
+                        vdupq_n_f32(p[PARAM_PERC_BODY] / 100.0f),
+                        voice_velocity);   // Perc variation
 
     // =================================================================
     // Update resonant base parameters (mode from param 22)
@@ -297,8 +304,8 @@ fast_inline void load_fm_preset(uint8_t idx, int8_t * params) {
     // Page 6
     params[PARAM_ENV_SHAPE]      = p->env_shape;
     params[PARAM_VOICE_HIT_SHAPE]= p->hit_shape;
-    params[PARAM_RES_BODY_TILT]  = p->body_tilt;
-    params[PARAM_RES_MORPH]      = p->drive;
+    params[PARAM_BODY_TILT]      = p->body_tilt;
+    params[PARAM_DRIVE]          = p->drive;
 }
 
 /**
@@ -336,11 +343,11 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     synth->perc_out_lpf.z1 = vdupq_n_f32(0.0f);
 
     // Initialize parameters
-    synth->voice_active = vdupq_n_f32(0.0f);
+    synth->voice_active    = vdupq_n_f32(0.0f);
     synth->voice_triggered = vdupq_n_u32(0);
-    synth->voice_velocity = vdupq_n_f32(1.0f);
-    synth->euclid_offsets = vdupq_n_f32(0.0f);  // Off: all voices unison
-    synth->master_gain = 0.25f;
+    synth->voice_velocity  = vdupq_n_f32(1.0f);
+    synth->euclid_offsets  = vdupq_n_f32(0.0f);  // Off: all voices unison
+    synth->master_gain     = 0.25f;
     synth->current_env_shape = 40;
 
     // Default probabilities (all 30%)
@@ -609,14 +616,14 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                  active_mask,
                                                  lfo_pitch_mult,
                                                  vaddq_f32(lfo_index_add, lfo_noise_add),
-                                                 synth->macros.snare.noise_amount + lfo_noise_add);
+                                                 synth->snare.noise_amount + lfo_noise_add);
 
     float32x4_t metal_out = metal_engine_process(&synth->metal,
                                                  envelope,
                                                  active_mask,
                                                  lfo_pitch_mult,
                                                  lfo_index_add,
-                                                 synth->macros.metal.attack_brightness,
+                                                 synth->metal.attack_brightness,
                                                  lfo_metal_gate);
 
     float32x4_t perc_out = perc_engine_process(&synth->perc,
@@ -634,7 +641,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
 
     // Global drive from the new control model.
     float32x4_t drive = vaddq_f32(vdupq_n_f32(1.0f),
-                                  vmulq_f32(synth->macros.drive,
+                                  vmulq_f32(params[PARAM_DRIVE],
                                             vdupq_n_f32(0.85f)));
     mix = vmulq_f32(mix, drive);
 
