@@ -357,6 +357,7 @@ public:
                 m_cmos_mod_multiplier = 1.0f;
                 m_srr_mod_offset = 0.0f;
                 m_mix2_mod_offset = 0.0f;
+                m_osc2_fm_mult = 1.0f;
                 // NOTE: m_osc2_target_hz is NOT reset here — it is set once by
                 // setParameter(k_paramOsc2Pitch) and must persist across APC cycles.
                 m_volume_mod_multiplier = 0.0f;
@@ -391,8 +392,9 @@ public:
                         m_mix2_mod_offset = l2_val; // Crossfade modulation
                         break;
                     case k_paramO2Detune:
-                        // Apply FM via LFO1 to the Target Hz evaluated in the zero-crossing block
-                        m_osc2_target_hz *= fasterpow2f(l2_val * 2.0f);
+                        // FM modulation: compute multiplier from LFO; applied at zero-crossing.
+                        // Do NOT accumulate into m_osc2_target_hz — it would grow to Inf.
+                        m_osc2_fm_mult = fasterpow2f(l2_val * 2.0f);
                         break;
                     case k_paramL1Wave: filter1.mode = (filter_mode)(m_params[k_paramL1Wave] % mode_last);
                         break;
@@ -474,7 +476,7 @@ public:
 
             bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
             if (osc2_wrapped) {
-                osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
+                osc2.set_frequency(m_osc2_target_hz * m_osc2_fm_mult, SAMPLE_RATE_F);
             }
 
             // 5. FILTER 1
@@ -652,6 +654,7 @@ private:
     float m_mix1_mod_offset = 0.0f;
     float m_mix2_mod_offset = 0.0f;
     float m_pitch_mod_multiplier = 1.0f;
+    float m_osc2_fm_mult = 1.0f;        // FM via LFO for k_paramO2Detune preset
     float m_volume_mod_multiplier = 1.0f;
     // float m_lfo1_rate_mod_multiplier = 1.0f; // TODO
     float m_drv1_mod_multiplier = 1.0f;

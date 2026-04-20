@@ -153,9 +153,8 @@ public:
 
     inline int8_t Init(const unit_runtime_desc_t* desc) {
         if (desc->samplerate != 48000) return k_unit_err_samplerate;
-        if (desc->input_channels != 1 || desc->output_channels != 1) {
-            // Accept mono input/output - duplicate to stereo internally
-            is_mono_ = true   // TODO - added to check if number of channel is preventig the effect to be correctly instantiated. In case, add mono handling
+        if (desc->input_channels == 1 && desc->output_channels == 1) {
+            is_mono_ = true;
         } else if (desc->input_channels != 2 || desc->output_channels != 2)
             return k_unit_err_geometry;
 

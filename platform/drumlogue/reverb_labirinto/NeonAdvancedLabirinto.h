@@ -932,19 +932,18 @@ private:
     /* Vectorized Delay Line Write */
     /*===========================================================================*/
     void writeDelayLines4(const float32x4_t* signals) {
-        // Spill all channel vectors once; index by sample position (variable s)
+        // Spill all channel vectors; index by sample position (variable s)
         // to avoid vgetq_lane_f32(v, variable) which requires a constant index.
         float ch_lanes[FDN_CHANNELS][4];
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+        for (int ch = 0; ch < FDN_CHANNELS; ch++)
             vst1q_f32(ch_lanes[ch], signals[ch]);
-            // Being an IIR, we can process just one block at time
-            for (int s = 0; s < 4; s++) {
+
+        for (int s = 0; s < 4; s++) {
             uint32_t pos = (writePos + s) & BUFFER_MASK;
             for (int ch = 0; ch < FDN_CHANNELS; ch++)
                 delayLine[pos].samples[ch] = ch_lanes[ch][s];
-            }
-            writePos = (writePos + 4) & BUFFER_MASK;
         }
+        writePos = (writePos + 4) & BUFFER_MASK;
     }
 
     /*===========================================================================*/

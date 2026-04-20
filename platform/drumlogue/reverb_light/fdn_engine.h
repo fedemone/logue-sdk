@@ -323,13 +323,13 @@ public:
         case k_bass: // BASS  per-channel HPF in FDN loop  0-100% → coeff 0.99..0.85
             setHpfCoeff(norm);
             break;
-        case k_color_shift: // CLRQ shift of the colour frequency
-            // Base-2 exponential mapping: 2^val
+        case k_color_shift: // CLRQ shift of the colour frequency (-100..100 → -1..+1 octave)
+            // Base-2 exponential mapping: 2^val where val = value * 0.01
             // val = -1.0  -> 0.5x multiplier (-1 Octave)
             // val =  0.0  -> 1.0x multiplier (No shift)
             // val = +1.0  -> 2.0x multiplier (+1 Octave)
-            float shift = fasterpow2f(val);
-            update_color_resonators(shift);
+            update_color_resonators(fasterpow2f(value * 0.01f));
+            break;
         default:
         break;
         }
