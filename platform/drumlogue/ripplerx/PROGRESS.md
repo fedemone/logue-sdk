@@ -31,6 +31,35 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 
 ---
 
+## Phase 23: Percussive Rebalance — First Batch (Marimba/Timpani/Djambe/Taiko/Woodblock/Conga/Bongo) [IN PROGRESS]
+
+Goal of this batch is to reduce the "all presets sound string-like" issue by pushing
+selected drum/bar presets toward **shorter-decay, higher-transient** behaviour.
+
+### Batch-1 parameter strategy
+
+- **Shorter resonator decay (`Dkay`)** on percussive voices to avoid guitar-like sustain tails.
+- **Higher mallet stiffness (`MlSt`)** to increase attack sharpness.
+- **Moderate noise injection (`NzMix`, `NzRes`)** to emphasize strike transients.
+- Keep existing model topology and safety guards unchanged (no DSP-path rewrite in this pass).
+
+### Presets updated in this batch
+
+- `1 Marimba`: tightened decay and increased mallet attack.
+- `5 Timpani`: lower sustain, stronger membrane transient.
+- `6 Djambe`: lower sustain, more exciter presence.
+- `7 Taiko`: reduced ring, stronger impact onset.
+- `12 Wodblk`: moved to short click-like decay.
+- `31 Conga`: reduced sustain and more onset definition.
+- `37 Bongo`: reduced ring and brighter knock transient.
+
+### Next step after this commit
+
+Run an automated render+analysis sweep and quantify movement against reference WAVs
+for this subset before touching remaining presets.
+
+---
+
 ## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]
 
 Hardware test with Phase 21 build confirmed Phase 21 loaded ("InitDbg" shown).
