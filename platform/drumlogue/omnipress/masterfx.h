@@ -49,7 +49,7 @@ enum parameters
     k_presence,
     k_distressor_distortion_type,
     k_distressor_ratio,
-    k_distressor_drive_wave_mode,
+    k_distressor_drive_wave_mode,  // wavefolder character (soft/hard/tri/sine/suboctave)
     k_multiband_band_selection,
     k_multiband_band_threshold,
     k_multiband_band_ratio,
@@ -58,6 +58,7 @@ enum parameters
     k_multiband_band_makeup,
     k_multiband_band_mute,
     k_multiband_band_solo,
+    k_detection_mode,              // envelope detector type: 0=Peak, 1=RMS, 2=Blend
 
     k_num_params,
 };
@@ -136,7 +137,7 @@ public:
         setParameter(k_presence, 50);   // PRESENCE: centre (matches header.c init)
         setParameter(k_distressor_distortion_type, DIST_MODE_CLEAN); // DSTR DIST: None
         setParameter(k_distressor_ratio, DIST_RATIO_1_1);            // DSTR RATIO: Warm mode
-        setParameter(k_distressor_drive_wave_mode, DRIVE_MODE_SOFT_CLIP);  // DSTR WAVE: DRIVE_MODE_SOFT_CLIP
+        setParameter(k_distressor_drive_wave_mode, DRIVE_MODE_SOFT_CLIP); // DSTR WAVE: Soft Clip
         setParameter(k_multiband_band_selection, BAND_LOW);          // BAND SEL: Low
         setParameter(k_multiband_band_threshold, THRESH_DEFAULT);    // L THRESH: -10.0 dB
         setParameter(k_multiband_band_ratio, RATIO_DEFAULT);         // L RATIO: 4.0
@@ -145,10 +146,9 @@ public:
         setParameter(k_multiband_band_makeup, MAKEUP_DEFAULT);       // MAKEUP: 0 dB
         setParameter(k_multiband_band_mute, 0);                      // MUTE off
         setParameter(k_multiband_band_solo, 0);                      // SOLO off
+        setParameter(k_detection_mode, 0);                           // Detection: Peak
 
-        use_external_sc_ = 0;   // We do not have sidechain...
-        detection_mode_ = DETECT_MODE_PEAK;  // TODO - this is never updated! Missing feature! Luckily we have a spare parameter to use
-        envelope_.mode = detection_mode_;  // propagate to detector
+        use_external_sc_ = 0;
     }
 
     inline void Resume() {}
@@ -594,10 +594,11 @@ public:
                 distressor_set_ratio(&distressor_, value);  // this updates opto_release_mult
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
-            case k_distressor_drive_wave_mode: // DSTR WAVE
-              if (value < DRIVE_MODE_TOTAL)
-                wavefolder_set_drive_type(&wavefolder_, value);
-              break;
+            case k_distressor_drive_wave_mode: // DSTR WAVE (0=SoftClip, 1=HardClip, 2=Tri, 3=Sine, 4=SubOct)
+                if (value < DRIVE_MODE_TOTAL)
+                    wavefolder_set_drive_type(&wavefolder_, value);
+                break;
+
             /*===========================================================================*/
             /* Operation Overlord Distortion Emulation Parameters */
             /*===========================================================================*/
@@ -611,6 +612,13 @@ public:
 
             case k_presence: // PRESENCE
                 overlord_.presence = value / 100.0f;
+                break;
+
+            case k_detection_mode: // DETECT MODE (0=Peak, 1=RMS, 2=Blend)
+                if (value >= 0 && value <= 2) {
+                    detection_mode_ = value;
+                    envelope_.mode = detection_mode_;
+                }
                 break;
         }
     }
@@ -672,10 +680,16 @@ public:
               }
                 break;
 
-            case k_distressor_drive_wave_mode: // DSTR RATIO
-              if (value < DRIVE_MODE_TOTAL) {
-                return distressor_wave_type[value];
-              }
+            case k_distressor_drive_wave_mode: // DSTR WAVE
+                if (value < DRIVE_MODE_TOTAL)
+                    return distressor_wave_type[value];
+                break;
+
+            case k_detection_mode: // DETECT MODE
+                {
+                    static const char* detect_modes[] = {"Peak", "RMS", "Blend"};
+                    if (value >= 0 && value <= 2) return detect_modes[value];
+                }
                 break;
         }
         return nullptr;

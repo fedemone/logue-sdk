@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00020000U,   // v2.0.0
     .name        = "OmniPress",
     .num_presets = 0,
-    .num_params  = 23,
+    .num_params  = 24,
 
     .params = {
         // Page 1: Core Dynamics
@@ -42,30 +42,32 @@ const __unit_header unit_header_t unit_header = {
         // Page 3: Mode Selection
         // ID 8: COMP MODE  0=Standard, 1=Distressor, 2=Multiband
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"COMP MODE"} },
-        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },     // ID 10 - Overlord
-        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"TREBLE"} },   // ID 11 - Overlord
-        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"PRESENCE"} }, // ID 12 - Overlord
+        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },     // ID 9  - Overlord
+        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"TREBLE"} },   // ID 10 - Overlord
+        { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"PRESENCE"} }, // ID 11 - Overlord
 
         // Page 4: Multiband / Distressor Parameters
-        // ID 12: DSTR MODE  0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave
-        { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrDIST"} },    // ID 13 - Distressor distortion type
-        { 0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"DstrRATIO"} },   // ID 14 - Distressor ratio selection
-        { 0, 4, 0, 2, k_unit_param_type_strings, 0, 0, 0, {"DstrWAVE"} },    // ID 15 - Distressor wave drive type
-        // ID 16: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All
-        { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBand"} },
+        // ID 12: DSTR DIST  0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=Wave
+        { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrDIST"} },    // ID 12 - Distressor distortion type
+        { 0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"DstrRATIO"} },   // ID 13 - Distressor ratio selection
+        // ID 14: DSTR WAVE  0=Soft, 1=Hard, 2=Tri, 3=Sine, 4=SubOct
+        { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrWAVE"} },   // ID 14 - Wavefolder drive type
+        // ID 15: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All
+        { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBand"} },       // ID 15
 
-
-        // Pages 5: blank padding to fill 24 slots
-        // ID 17: L THRESH  -60.0..0.0 dB  (per-band threshold)
+        // Page 5: Multiband per-band parameters
+        // ID 16: BAND THRESH  -60.0..0.0 dB  (per-band threshold)
         { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"MBndThr"} },
-        // ID 18: L RATIO   1.0..20.0:1
+        // ID 17: BAND RATIO   1.0..20.0:1
         { 10, 200, 10, 40, k_unit_param_type_none, 1, 1, 0, {"MBndRto"} },
-        { 1, 1000, 1, 150, k_unit_param_type_msec, 1, 1, 0, {"MBndAtk"} },      // ID 17
-        { 10, 2000, 10, 200, k_unit_param_type_msec, 0, 0, 0, {"MBndRtoRel"} }, // ID 18
-        // Pages 6: blank padding to fill 24 slots
-        { 0, 240, 0, 0, k_unit_param_type_db, 1, 1, 0, {"MBndMkp"} },           // ID 19
-        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndMut"} },           // ID 20
-        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndSOl"} },           // ID 21
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        { 1, 1000, 1, 150, k_unit_param_type_msec, 1, 1, 0, {"MBndAtk"} },      // ID 18
+        { 10, 2000, 10, 200, k_unit_param_type_msec, 0, 0, 0, {"MBndRtoRel"} }, // ID 19
+
+        // Page 6:
+        { 0, 240, 0, 0, k_unit_param_type_db, 1, 1, 0, {"MBndMkp"} },           // ID 20
+        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndMut"} },           // ID 21
+        { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndSOl"} },           // ID 22
+        // ID 23: DETECT MODE  0=Peak, 1=RMS, 2=Blend
+        { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DtctMOD"} },        // ID 23
     }
 };
