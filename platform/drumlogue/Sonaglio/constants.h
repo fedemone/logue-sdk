@@ -1,23 +1,12 @@
+#pragma once
 
 /**
  * @file constants.h
- * @brief Central constants for FM Percussion Synth
+ * @brief Active constants for Sonaglio
  *
- * Version 2.0 - Complete and fixed with all necessary constants
- *
- * This file serves as the single source of truth for all
- * magic numbers used throughout the FM Percussion Synth project.
- *
- * Includes:
- * - NEON optimization constants
- * - Audio and MIDI conversion constants
- * - Parameter indexes (24 parameters across 6 pages)
- * - Voice allocation constants (12 valid combinations)
- * - LFO target constants (0-6)
- * - FM engine parameter ranges
- * - Envelope ROM constants
+ * Trimmed to the fixed 4-engine instrument model.
+ * Legacy aliases are kept where useful to ease incremental cleanup.
  */
-
 
 #ifdef __cplusplus
 #include <cstdint>
@@ -28,240 +17,168 @@
 #define constexpr static const
 #endif
 
-// ============================================================================
-// NEON Optimization Constants
-// ============================================================================
-constexpr int NEON_LANES = 4;           // 4x32-bit floats per NEON register
-constexpr int VECTOR_ALIGN = 16;         // 16-byte alignment for NEON
-constexpr int CACHE_LINE_SIZE = 64;      // ARM Cortex-A9 cache line size
+#ifndef fast_inline
+#define fast_inline inline __attribute__((always_inline))
+#endif
 
 // ============================================================================
-// Audio System Constants
+// Core audio constants
 // ============================================================================
-constexpr float SAMPLE_RATE = 48000.0f;      // Fixed sample rate for drumlogue
+constexpr int   NEON_LANES     = 4;
+constexpr int   VECTOR_ALIGN    = 16;
+constexpr int   CACHE_LINE_SIZE = 64;
+constexpr float SAMPLE_RATE     = 48000.0f;
 constexpr float INV_SAMPLE_RATE = 1.0f / SAMPLE_RATE;
-constexpr float NYQUIST_FREQ = SAMPLE_RATE / 2.0f;
+constexpr float NYQUIST_FREQ    = SAMPLE_RATE * 0.5f;
 
 // ============================================================================
-// MIDI Note to Frequency Conversion
+// MIDI / tuning constants
 // ============================================================================
-constexpr float A4_FREQ = 440.0f;            // A4 reference frequency
-constexpr int   A4_MIDI = 69;                // A4 MIDI note number
-constexpr float SEMITONE_RATIO = 1.0594630943592953f;  // 2^(1/12)
-
-// Pre-calculated interval ratios for common intervals
-constexpr float INTERVAL_UNISON      = 1.0f;             // 0 semitones
-constexpr float INTERVAL_MINOR_2ND   = 1.059463094f;     // 1 semitone
-constexpr float INTERVAL_MAJOR_2ND   = 1.122462048f;     // 2 semitones
-constexpr float INTERVAL_MINOR_3RD   = 1.189207115f;     // 3 semitones
-constexpr float INTERVAL_MAJOR_3RD   = 1.259921050f;     // 4 semitones (2^(4/12))
-constexpr float INTERVAL_PERFECT_4TH = 1.334839854f;     // 5 semitones
-constexpr float INTERVAL_TRITONE     = 1.414213562f;     // 6 semitones
-constexpr float INTERVAL_PERFECT_5TH = 1.498307077f;     // 7 semitones (2^(7/12))
-constexpr float INTERVAL_MINOR_6TH   = 1.587401052f;     // 8 semitones
-constexpr float INTERVAL_MAJOR_6TH   = 1.681792830f;     // 9 semitones
-constexpr float INTERVAL_MINOR_7TH   = 1.781797436f;     // 10 semitones
-constexpr float INTERVAL_MAJOR_7TH   = 1.887748625f;     // 11 semitones
-constexpr float INTERVAL_OCTAVE      = 2.0f;             // 12 semitones
-
-// ============================================================================
-// Parameter Indexes - 24 parameters across 6 pages
-// ============================================================================
-
-// Page 1: Voice Probabilities (4 params)
-constexpr uint8_t PARAM_VOICE1_PROB = 0;     // Voice 0 probability (0-100%)
-constexpr uint8_t PARAM_VOICE2_PROB = 1;     // Voice 1 probability (0-100%)
-constexpr uint8_t PARAM_VOICE3_PROB = 2;     // Voice 2 probability (0-100%)
-constexpr uint8_t PARAM_VOICE4_PROB = 3;     // Voice 3 probability (0-100%)
-
-// Page 2: Kick + Snare Parameters (4 params)
-constexpr uint8_t PARAM_KICK_ATTACK = 4;     // Kick sweep depth (0-100%)
-constexpr uint8_t PARAM_KICK_BODY = 5;       // Kick decay shape (0-100%)
-constexpr uint8_t PARAM_SNARE_ATTACK = 6;    // Snare noise mix (0-100%)
-constexpr uint8_t PARAM_SNARE_BODY = 7;      // Snare body resonance (0-100%)
-
-// Page 3: Metal + Perc Parameters (4 params)
-constexpr uint8_t PARAM_METAL_ATTACK = 8;    // Metal inharmonicity (0-100%)
-constexpr uint8_t PARAM_METAL_BODY = 9;    // Metal brightness (0-100%)
-constexpr uint8_t PARAM_PERC_ATTACK = 10;     // Perc ratio center (0-100%)
-constexpr uint8_t PARAM_PERC_BODY = 11;       // Perc variation (0-100%)
-
-// Page 4: LFO1 Configuration (4 params)
-constexpr uint8_t PARAM_LFO1_SHAPE = 12;     // LFO1 shape combo (0-8)
-constexpr uint8_t PARAM_LFO1_RATE = 13;      // LFO1 rate (0-100%)
-constexpr uint8_t PARAM_LFO1_TARGET = 14;    // LFO1 target (0-7)
-constexpr uint8_t PARAM_LFO1_DEPTH = 15;     // LFO1 depth (0-100%, stored as 0-200 for bipolar)
-
-// Page 5: LFO2 Configuration (4 params)
-constexpr uint8_t PARAM_EUCLIDEAN_TUNE = 16;     // Euclidean tuning mode (0-8)
-constexpr uint8_t PARAM_LFO2_RATE = 17;      // LFO2 rate (0-100%)
-constexpr uint8_t PARAM_LFO2_TARGET = 18;    // LFO2 target (0-7)
-constexpr uint8_t PARAM_LFO2_DEPTH = 19;     // LFO2 depth (0-100%, stored as 0-200 for bipolar)
-
-// Page 6: Envelope + Global shaping (4 params)
-constexpr uint8_t PARAM_ENV_SHAPE = 20;      // Envelope shape (0-127)
-constexpr uint8_t PARAM_VOICE_HIT_SHAPE = 21;    // Legacy placeholder / global shaping
-constexpr uint8_t PARAM_RES_BODY_TILT = 22;       // Legacy placeholder / global shaping
-constexpr uint8_t PARAM_RES_MORPH = 23;      // Legacy placeholder / global shaping
-
-// ---------------------------------------------------------------------------
-// Fixed-4-engine aliases (preferred names for Sonaglio)
-// ---------------------------------------------------------------------------
-constexpr uint8_t PARAM_KPROB = PARAM_VOICE1_PROB;
-constexpr uint8_t PARAM_SPROB = PARAM_VOICE2_PROB;
-constexpr uint8_t PARAM_MPROB = PARAM_VOICE3_PROB;
-constexpr uint8_t PARAM_PPROB = PARAM_VOICE4_PROB;
-
-constexpr uint8_t PARAM_KICK_ATK = PARAM_KICK_ATTACK;
-constexpr uint8_t PARAM_KICK_BODY = PARAM_KICK_BODY;
-constexpr uint8_t PARAM_SNARE_ATK = PARAM_SNARE_ATTACK;
-constexpr uint8_t PARAM_SNARE_BODY = PARAM_SNARE_BODY;
-constexpr uint8_t PARAM_METAL_ATK = PARAM_METAL_ATTACK;
-constexpr uint8_t PARAM_METAL_BODY = PARAM_METAL_BODY;
-constexpr uint8_t PARAM_PERC_ATK = PARAM_PERC_ATTACK;
-constexpr uint8_t PARAM_PERC_BODY = PARAM_PERC_BODY;
-
-constexpr uint8_t PARAM_EUCL_TUN = PARAM_EUCLIDEAN_TUNE;
-constexpr uint8_t PARAM_HIT_SHAPE = PARAM_VOICE_HIT_SHAPE;
-constexpr uint8_t PARAM_BODY_TILT = PARAM_RES_BODY_TILT;
-constexpr uint8_t PARAM_DRIVE = PARAM_RES_MORPH;
-
-// marker for end of user editable parameters
-constexpr uint8_t PARAM_TOTAL = 24;          // For maintenace
-
-// ============================================================================
-// LFO Target Constants
-// ============================================================================
-
-constexpr int LFO_TARGET_NONE = 0;
-constexpr int LFO_TARGET_PITCH = 1;
-constexpr int LFO_TARGET_INDEX = 2;
-constexpr int LFO_TARGET_ENV = 3;
-constexpr int LFO_TARGET_LFO2_PHASE = 4;
-constexpr int LFO_TARGET_LFO1_PHASE = 5;
-constexpr int LFO_TARGET_RES_FREQ = 6;
-constexpr int LFO_TARGET_RESONANCE = 7;
-constexpr int LFO_TARGET_NOISE_MIX = 8;   // Snare noise/tone blend; metal brightness
-constexpr int LFO_TARGET_RES_MORPH = 9;   // Resonant filter morph (fc / Q sweep)
-constexpr int LFO_TARGET_METAL_GATE = 10; // Metal engine amplitude gate (open/closed hi-hat)
-                                           // Use with Ramp shape + positive depth:
-                                           //   rate=high → fast gate close → closed hi-hat
-                                           //   rate=low  → slow gate close → open hi-hat
-constexpr int LFO_TARGET_COUNT = 11;
-
-// ============================================================================
-// LFO Shape Constants
-// ============================================================================
-constexpr int LFO_SHAPE_TRIANGLE = 0;
-constexpr int LFO_SHAPE_RAMP = 1;
-constexpr int LFO_SHAPE_CHORD = 2;
-constexpr int LFO_SHAPE_COMBO_COUNT = 9;       // 3×3 = 9 combinations
-
-// Phase offset to prevent cancellation (90° = 0.25 cycle)
+constexpr float A4_FREQ = 440.0f;
+constexpr int   A4_MIDI  = 69;
+constexpr float SEMITONE_RATIO = 1.0594630943592953f;
 constexpr float LFO_PHASE_OFFSET = 0.25f;
 
 // ============================================================================
-// Voice Allocation Constants
+// Parameter indexes — 24 controls
 // ============================================================================
-constexpr int VOICE_ALLOC_COUNT = 12;        // 12 valid allocations
-constexpr int VOICE_ALLOC_MIN = 0;
-constexpr int VOICE_ALLOC_MAX = 4;
+constexpr uint8_t PARAM_KPROB = 0;
+constexpr uint8_t PARAM_SPROB = 1;
+constexpr uint8_t PARAM_MPROB = 2;
+constexpr uint8_t PARAM_PPROB = 3;
+
+constexpr uint8_t PARAM_KICK_ATK  = 4;
+constexpr uint8_t PARAM_KICK_BODY = 5;
+constexpr uint8_t PARAM_SNARE_ATK = 6;
+constexpr uint8_t PARAM_SNARE_BODY = 7;
+constexpr uint8_t PARAM_METAL_ATK  = 8;
+constexpr uint8_t PARAM_METAL_BODY = 9;
+constexpr uint8_t PARAM_PERC_ATK   = 10;
+constexpr uint8_t PARAM_PERC_BODY  = 11;
+
+constexpr uint8_t PARAM_LFO1_SHAPE  = 12;
+constexpr uint8_t PARAM_LFO1_RATE   = 13;
+constexpr uint8_t PARAM_LFO1_TARGET = 14;
+constexpr uint8_t PARAM_LFO1_DEPTH  = 15;
+
+constexpr uint8_t PARAM_EUCL_TUN    = 16;
+constexpr uint8_t PARAM_LFO2_RATE   = 17;
+constexpr uint8_t PARAM_LFO2_TARGET = 18;
+constexpr uint8_t PARAM_LFO2_DEPTH  = 19;
+
+constexpr uint8_t PARAM_ENV_SHAPE   = 20;
+constexpr uint8_t PARAM_HIT_SHAPE   = 21;
+constexpr uint8_t PARAM_BODY_TILT   = 22;
+constexpr uint8_t PARAM_DRIVE       = 23;
+constexpr uint8_t PARAM_TOTAL       = 24;
+
+// Legacy aliases kept for compatibility with older branches / labels.
+constexpr uint8_t PARAM_VOICE1_PROB     = PARAM_KPROB;
+constexpr uint8_t PARAM_VOICE2_PROB     = PARAM_SPROB;
+constexpr uint8_t PARAM_VOICE3_PROB     = PARAM_MPROB;
+constexpr uint8_t PARAM_VOICE4_PROB     = PARAM_PPROB;
+constexpr uint8_t PARAM_KICK_ATTACK     = PARAM_KICK_ATK;
+constexpr uint8_t PARAM_SNARE_ATTACK    = PARAM_SNARE_ATK;
+constexpr uint8_t PARAM_METAL_ATTACK    = PARAM_METAL_ATK;
+constexpr uint8_t PARAM_PERC_ATTACK     = PARAM_PERC_ATK;
+constexpr uint8_t PARAM_EUCLIDEAN_TUNE  = PARAM_EUCL_TUN;
+constexpr uint8_t PARAM_VOICE_HIT_SHAPE = PARAM_HIT_SHAPE;
+constexpr uint8_t PARAM_RES_BODY_TILT   = PARAM_BODY_TILT;
+constexpr uint8_t PARAM_RES_MORPH       = PARAM_DRIVE;
 
 // ============================================================================
-// Engine Mode Constants
+// LFO targets
+// ============================================================================
+constexpr int LFO_TARGET_NONE       = 0;
+constexpr int LFO_TARGET_PITCH      = 1;
+constexpr int LFO_TARGET_INDEX      = 2;
+constexpr int LFO_TARGET_ENV        = 3;
+constexpr int LFO_TARGET_LFO2_PHASE = 4;
+constexpr int LFO_TARGET_LFO1_PHASE = 5;
+constexpr int LFO_TARGET_RES_FREQ   = 6;
+constexpr int LFO_TARGET_RESONANCE  = 7;
+constexpr int LFO_TARGET_NOISE_MIX  = 8;
+constexpr int LFO_TARGET_RES_MORPH  = 9;
+constexpr int LFO_TARGET_METAL_GATE = 10;
+constexpr int LFO_TARGET_COUNT      = 11;
+
+// ============================================================================
+// LFO shapes
+// ============================================================================
+constexpr int LFO_SHAPE_TRIANGLE = 0;
+constexpr int LFO_SHAPE_RAMP     = 1;
+constexpr int LFO_SHAPE_CHORD    = 2;
+constexpr int LFO_SHAPE_COMBO_COUNT = 9;
+
+// ============================================================================
+// Euclidean tuning
+// ============================================================================
+constexpr int EUCLID_MODE_OFF   = 0;
+constexpr int EUCLID_MODE_CLSTR = 1;
+constexpr int EUCLID_MODE_MINOR = 2;
+constexpr int EUCLID_MODE_DIATN = 3;
+constexpr int EUCLID_MODE_WHOLE = 4;
+constexpr int EUCLID_MODE_PENTA = 5;
+constexpr int EUCLID_MODE_DIM7  = 6;
+constexpr int EUCLID_MODE_AUG8  = 7;
+constexpr int EUCLID_MODE_TRIT  = 8;
+constexpr int EUCLID_MODE_COUNT = 9;
+
+// ============================================================================
+// Envelope ROM / states
+// ============================================================================
+constexpr int ENV_SHAPE_MIN     = 0;
+constexpr int ENV_SHAPE_MAX     = 127;
+constexpr int ENV_SHAPE_DEFAULT = 40;
+constexpr int ENV_ROM_SIZE      = 128;
+constexpr int ENV_STAGE_ATTACK  = 0;
+constexpr int ENV_STAGE_DECAY   = 1;
+constexpr int ENV_STAGE_RELEASE = 2;
+constexpr int ENV_STATE_OFF     = 3;
+constexpr int ENV_CURVE_LINEAR  = 0;
+constexpr int ENV_CURVE_EXPONENTIAL = 1;
+
+// ============================================================================
+// PRNG / presets / smoothing
+// ============================================================================
+constexpr uint32_t PRNG_DEFAULT_SEED = 0x9E3779B9u;
+constexpr uint32_t RAND_DEFAULT_SEED = 0x12345678u;
+constexpr int NUM_OF_PRESETS = 26;
+constexpr int NAME_LENGTH = 12;
+constexpr int SMOOTH_FRAMES = 48;
+
+// ============================================================================
+// Engine identifiers
 // ============================================================================
 constexpr int ENGINE_KICK = 0;
 constexpr int ENGINE_SNARE = 1;
 constexpr int ENGINE_METAL = 2;
 constexpr int ENGINE_PERC = 3;
-constexpr int ENGINE_RESONANT = 4;
-constexpr int ENGINE_COUNT = 5;  // Total number of engines
+constexpr int ENGINE_RESONANT = 4; // retained for future / legacy compatibility
+constexpr int ENGINE_COUNT = 4;     // active instrument engines
 
 // ============================================================================
-// Resonant Synthesis Constants
+// Legacy resonant constants retained for future work
 // ============================================================================
+constexpr int RES_MODE_LOWPASS  = 0;
+constexpr int RES_MODE_BANDPASS = 1;
+constexpr int RES_MODE_HIGHPASS = 2;
+constexpr int RES_MODE_NOTCH    = 3;
+constexpr int RES_MODE_PEAK     = 4;
+constexpr int RES_MODE_COUNT    = 5;
+constexpr float RES_FC_MIN = 50.0f;
+constexpr float RES_FC_MAX = 8000.0f;
+constexpr float RESONANT_DENOM_EPSILON = 1e-6f;
 
-// Resonant mode types (0-4)
-constexpr int RES_MODE_LOWPASS = 0;             // Single-sided low-pass
-constexpr int RES_MODE_BANDPASS = 1;            // Double-sided band-pass
-constexpr int RES_MODE_HIGHPASS = 2;            // Derived high-pass
-constexpr int RES_MODE_NOTCH = 3;                // Notch filter
-constexpr int RES_MODE_PEAK = 4;                 // Peak filter
-constexpr int RES_MODE_COUNT = 5;                 // Total resonant modes
-
-// Resonant parameter ranges
-constexpr float RES_FC_MIN = 50.0f;               // Minimum center frequency (Hz)
-constexpr float RES_FC_MAX = 8000.0f;             // Maximum center frequency (Hz)
-constexpr float RES_FC_DEFAULT = 1000.0f;         // Default center frequency
-
-constexpr float RES_RESONANCE_MIN = 0.1f;         // Minimum resonance (a parameter)
-constexpr float RES_RESONANCE_MAX = 0.9f;         // Maximum resonance (a parameter)
-constexpr float RES_RESONANCE_DEFAULT = 0.5f;
-
-constexpr float RES_GAIN_MIN = 1.0f;              // Minimum gain for peak mode
-constexpr float RES_GAIN_MAX = 4.0f;              // Maximum gain for peak mode
-constexpr float RES_GAIN_DEFAULT = 1.0f;
-
-constexpr float RESONANT_DENOM_EPSILON = 1e-6f;   // Denominator protection
-
-// ============================================================================
-// PRNG (Pseudo-Random Number Generator) Constants
-// ============================================================================
-constexpr uint32_t PRNG_DEFAULT_SEED = 0x9E3779B9;  // Golden ratio constant
-constexpr uint32_t RAND_DEFAULT_SEED = 0x12345678;  // Trivial
-
-// ============================================================================
-// Parameter Smoothing Constants
-// ============================================================================
-constexpr int   SMOOTH_FRAMES = 48;                 // 1ms ramp at 48kHz
-constexpr float SMOOTH_COEFF_MIN = 0.001f;
-constexpr float SMOOTH_COEFF_MAX = 0.5f;
-
-// ============================================================================
-// Delay Line Constants (for Percussion Spatializer)
-// ============================================================================
-constexpr int DELAY_MAX_MS = 500;                  // Maximum delay in milliseconds
-constexpr int DELAY_MAX_SAMPLES = DELAY_MAX_MS * 48;  // 24000 samples @48kHz
-constexpr int DELAY_MASK = DELAY_MAX_SAMPLES - 1;
-
-// ============================================================================
-// LFO Table Constants (for Percussion Spatializer)
-// ============================================================================
-constexpr int LFO_TABLE_SIZE = 256;                // Size of LFO wavetable
-constexpr int LFO_TABLE_MASK = LFO_TABLE_SIZE - 1;
-
-// ============================================================================
-// Filter Constants (for filters.h)
-// ============================================================================
-constexpr float FILTER_Q_BESSEL = 0.5f;            // Bessel response
-constexpr float FILTER_Q_BUTTERWORTH = 0.707f;     // Butterworth response
-constexpr float FILTER_Q_LINKWITZ_RILEY = 0.5f;    // Linkwitz-Riley (cascaded)
-
-// ============================================================================
-// Utility Functions (compile-time)
-// ============================================================================
-
-/**
- * Compile-time calculation of 2^(n/12) for any n
- * Can be used to generate interval ratios at compile time
- */
+// Utility helpers
 static inline float interval_ratio(int semitones) {
     return powf(2.0f, semitones / 12.0f);
 }
 
-/**
- * Convert dB to linear amplitude
- */
 static inline float db_to_linear(float db) {
     return powf(10.0f, db / 20.0f);
 }
 
-/**
- * Convert linear amplitude to dB
- */
 static inline float linear_to_db(float linear) {
     return 20.0f * log10f(linear);
 }
-
-
-#endif /* EDCFE0AD_2A46_441E_B3E7_219586F50AC9 */
