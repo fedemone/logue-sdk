@@ -65,24 +65,90 @@ constexpr float INTERVAL_MAJOR_7TH   = 1.887748625f;     // 11 semitones
 constexpr float INTERVAL_OCTAVE      = 2.0f;             // 12 semitones
 
 // ============================================================================
+// Parameter Indexes - 24 parameters across 6 pages
+// ============================================================================
+
+// Page 1: Voice Probabilities (4 params)
+constexpr uint8_t PARAM_VOICE1_PROB = 0;     // Voice 0 probability (0-100%)
+constexpr uint8_t PARAM_VOICE2_PROB = 1;     // Voice 1 probability (0-100%)
+constexpr uint8_t PARAM_VOICE3_PROB = 2;     // Voice 2 probability (0-100%)
+constexpr uint8_t PARAM_VOICE4_PROB = 3;     // Voice 3 probability (0-100%)
+
+// Page 2: Kick + Snare Parameters (4 params)
+constexpr uint8_t PARAM_KICK_ATTACK = 4;     // Kick sweep depth (0-100%)
+constexpr uint8_t PARAM_KICK_BODY = 5;       // Kick decay shape (0-100%)
+constexpr uint8_t PARAM_SNARE_ATTACK = 6;    // Snare noise mix (0-100%)
+constexpr uint8_t PARAM_SNARE_BODY = 7;      // Snare body resonance (0-100%)
+
+// Page 3: Metal + Perc Parameters (4 params)
+constexpr uint8_t PARAM_METAL_ATTACK = 8;    // Metal inharmonicity (0-100%)
+constexpr uint8_t PARAM_METAL_BODY = 9;    // Metal brightness (0-100%)
+constexpr uint8_t PARAM_PERC_ATTACK = 10;     // Perc ratio center (0-100%)
+constexpr uint8_t PARAM_PERC_BODY = 11;       // Perc variation (0-100%)
+
+// Page 4: LFO1 Configuration (4 params)
+constexpr uint8_t PARAM_LFO1_SHAPE = 12;     // LFO1 shape combo (0-8)
+constexpr uint8_t PARAM_LFO1_RATE = 13;      // LFO1 rate (0-100%)
+constexpr uint8_t PARAM_LFO1_TARGET = 14;    // LFO1 target (0-7)
+constexpr uint8_t PARAM_LFO1_DEPTH = 15;     // LFO1 depth (0-100%, stored as 0-200 for bipolar)
+
+// Page 5: LFO2 Configuration (4 params)
+constexpr uint8_t PARAM_EUCLIDEAN_TUNE = 16;     // Euclidean tuning mode (0-8)
+constexpr uint8_t PARAM_LFO2_RATE = 17;      // LFO2 rate (0-100%)
+constexpr uint8_t PARAM_LFO2_TARGET = 18;    // LFO2 target (0-7)
+constexpr uint8_t PARAM_LFO2_DEPTH = 19;     // LFO2 depth (0-100%, stored as 0-200 for bipolar)
+
+// Page 6: Envelope + Global shaping (4 params)
+constexpr uint8_t PARAM_ENV_SHAPE = 20;      // Envelope shape (0-127)
+constexpr uint8_t PARAM_VOICE_HIT_SHAPE = 21;    // Legacy placeholder / global shaping
+constexpr uint8_t PARAM_RES_BODY_TILT = 22;       // Legacy placeholder / global shaping
+constexpr uint8_t PARAM_RES_MORPH = 23;      // Legacy placeholder / global shaping
+
+// ---------------------------------------------------------------------------
+// Fixed-4-engine aliases (preferred names for Sonaglio)
+// ---------------------------------------------------------------------------
+constexpr uint8_t PARAM_KPROB = PARAM_VOICE1_PROB;
+constexpr uint8_t PARAM_SPROB = PARAM_VOICE2_PROB;
+constexpr uint8_t PARAM_MPROB = PARAM_VOICE3_PROB;
+constexpr uint8_t PARAM_PPROB = PARAM_VOICE4_PROB;
+
+constexpr uint8_t PARAM_KICK_ATK = PARAM_KICK_ATTACK;
+constexpr uint8_t PARAM_KICK_BODY = PARAM_KICK_BODY;
+constexpr uint8_t PARAM_SNARE_ATK = PARAM_SNARE_ATTACK;
+constexpr uint8_t PARAM_SNARE_BODY = PARAM_SNARE_BODY;
+constexpr uint8_t PARAM_METAL_ATK = PARAM_METAL_ATTACK;
+constexpr uint8_t PARAM_METAL_BODY = PARAM_METAL_BODY;
+constexpr uint8_t PARAM_PERC_ATK = PARAM_PERC_ATTACK;
+constexpr uint8_t PARAM_PERC_BODY = PARAM_PERC_BODY;
+
+constexpr uint8_t PARAM_EUCL_TUN = PARAM_EUCLIDEAN_TUNE;
+constexpr uint8_t PARAM_HIT_SHAPE = PARAM_VOICE_HIT_SHAPE;
+constexpr uint8_t PARAM_BODY_TILT = PARAM_RES_BODY_TILT;
+constexpr uint8_t PARAM_DRIVE = PARAM_RES_MORPH;
+
+// marker for end of user editable parameters
+constexpr uint8_t PARAM_TOTAL = 24;          // For maintenace
+
+// ============================================================================
 // LFO Target Constants
 // ============================================================================
 
-enum {  LFO_TARGET_NONE,
-        LFO_TARGET_PITCH,
-        LFO_TARGET_INDEX,
-        LFO_TARGET_ENV,
-        LFO_TARGET_LFO2_PHASE,
-        LFO_TARGET_LFO1_PHASE,
-        LFO_TARGET_RES_FREQ,
-        LFO_TARGET_RESONANCE,
-        LFO_TARGET_NOISE_MIX , // Snare noise/tone blend; metal brightness
-        LFO_TARGET_METAL_GATE, // Metal engine amplitude gate (open/closed hi-hat)
-                               // Use with Ramp shape + positive depth:
-                               //   rate=high → fast gate close → closed hi-hat
-                               //   rate=low  → slow gate close → open hi-hat
-        LFO_TARGET_COUNT,
-};
+constexpr int LFO_TARGET_NONE = 0;
+constexpr int LFO_TARGET_PITCH = 1;
+constexpr int LFO_TARGET_INDEX = 2;
+constexpr int LFO_TARGET_ENV = 3;
+constexpr int LFO_TARGET_LFO2_PHASE = 4;
+constexpr int LFO_TARGET_LFO1_PHASE = 5;
+constexpr int LFO_TARGET_RES_FREQ = 6;
+constexpr int LFO_TARGET_RESONANCE = 7;
+constexpr int LFO_TARGET_NOISE_MIX = 8;   // Snare noise/tone blend; metal brightness
+constexpr int LFO_TARGET_RES_MORPH = 9;   // Resonant filter morph (fc / Q sweep)
+constexpr int LFO_TARGET_METAL_GATE = 10; // Metal engine amplitude gate (open/closed hi-hat)
+                                           // Use with Ramp shape + positive depth:
+                                           //   rate=high → fast gate close → closed hi-hat
+                                           //   rate=low  → slow gate close → open hi-hat
+constexpr int LFO_TARGET_COUNT = 11;
+
 // ============================================================================
 // LFO Shape Constants
 // ============================================================================
@@ -94,74 +160,49 @@ constexpr int LFO_SHAPE_COMBO_COUNT = 9;       // 3×3 = 9 combinations
 // Phase offset to prevent cancellation (90° = 0.25 cycle)
 constexpr float LFO_PHASE_OFFSET = 0.25f;
 
+// ============================================================================
+// Voice Allocation Constants
+// ============================================================================
+constexpr int VOICE_ALLOC_COUNT = 12;        // 12 valid allocations
+constexpr int VOICE_ALLOC_MIN = 0;
+constexpr int VOICE_ALLOC_MAX = 4;
 
 // ============================================================================
 // Engine Mode Constants
 // ============================================================================
-enum {  ENGINE_KICK,
-        ENGINE_SNARE,
-        ENGINE_METAL,
-        ENGINE_PERC,
-        ENGINE_COUNT,  // Total number of engines
-};
+constexpr int ENGINE_KICK = 0;
+constexpr int ENGINE_SNARE = 1;
+constexpr int ENGINE_METAL = 2;
+constexpr int ENGINE_PERC = 3;
+constexpr int ENGINE_RESONANT = 4;
+constexpr int ENGINE_COUNT = 5;  // Total number of engines
+
 // ============================================================================
 // Resonant Synthesis Constants
 // ============================================================================
 
 // Resonant mode types (0-4)
-enum {  RES_MODE_LOWPASS,             // Single-sided low-pass
-        RES_MODE_BANDPASS,            // Double-sided band-pass
-        RES_MODE_HIGHPASS,            // Derived high-pass
-        RES_MODE_NOTCH,                // Notch filter
-        RES_MODE_PEAK,                 // Peak filter
-        RES_MODE_COUNT,                 // Total resonant modes
-};
+constexpr int RES_MODE_LOWPASS = 0;             // Single-sided low-pass
+constexpr int RES_MODE_BANDPASS = 1;            // Double-sided band-pass
+constexpr int RES_MODE_HIGHPASS = 2;            // Derived high-pass
+constexpr int RES_MODE_NOTCH = 3;                // Notch filter
+constexpr int RES_MODE_PEAK = 4;                 // Peak filter
+constexpr int RES_MODE_COUNT = 5;                 // Total resonant modes
 
+// Resonant parameter ranges
+constexpr float RES_FC_MIN = 50.0f;               // Minimum center frequency (Hz)
+constexpr float RES_FC_MAX = 8000.0f;             // Maximum center frequency (Hz)
+constexpr float RES_FC_DEFAULT = 1000.0f;         // Default center frequency
 
-// LFO Depth range (bipolar)
-constexpr int LFO_DEPTH_MIN = -100;
-constexpr int LFO_DEPTH_MAX = 100;
-constexpr int LFO_DEPTH_DEFAULT = 50;  // +50% modulation
+constexpr float RES_RESONANCE_MIN = 0.1f;         // Minimum resonance (a parameter)
+constexpr float RES_RESONANCE_MAX = 0.9f;         // Maximum resonance (a parameter)
+constexpr float RES_RESONANCE_DEFAULT = 0.5f;
 
-// LFO Rate range (unipolar)
-constexpr int LFO_RATE_MIN = 0;
-constexpr int LFO_RATE_MAX = 100;
-constexpr int LFO_RATE_DEFAULT = 30;
-// ============================================================================
-// Envelope ROM Constants
-// ============================================================================
-constexpr int ENV_SHAPE_MIN = 0;
-constexpr int ENV_SHAPE_MAX = 127;
-constexpr int ENV_SHAPE_DEFAULT = 40;
-constexpr int ENV_ROM_SIZE = 128;                // 128 predefined envelope shapes
+constexpr float RES_GAIN_MIN = 1.0f;              // Minimum gain for peak mode
+constexpr float RES_GAIN_MAX = 4.0f;              // Maximum gain for peak mode
+constexpr float RES_GAIN_DEFAULT = 1.0f;
 
-// Envelope stages
-constexpr int ENV_STAGE_ATTACK = 0;
-constexpr int ENV_STAGE_DECAY = 1;
-constexpr int ENV_STAGE_RELEASE = 2;
-constexpr int ENV_STATE_OFF = 3;
-
-// Envelope curve types
-constexpr int ENV_CURVE_LINEAR = 0;
-constexpr int ENV_CURVE_EXPONENTIAL = 1;
-
-// ============================================================================
-// Euclidean Tuning Mode Constants
-// ============================================================================
-// Each mode assigns per-voice semitone offsets using E(4,n):
-//   position[i] = floor(i * n / 4) for voices i = 0..3
-// Voice 0 always plays the root (offset = 0); voices 1-3 get spread.
-// ============================================================================
-constexpr int EUCLID_MODE_OFF   = 0;  // Off: [0, 0, 0, 0]  — all voices unison
-constexpr int EUCLID_MODE_CLSTR = 1;  // E(4,4):  [0, 1, 2, 3]  chromatic cluster
-constexpr int EUCLID_MODE_MINOR = 2;  // E(4,6):  [0, 1, 3, 4]  minor 3rd pairs
-constexpr int EUCLID_MODE_DIATN = 3;  // E(4,7):  [0, 1, 3, 5]  diatonic cluster
-constexpr int EUCLID_MODE_WHOLE = 4;  // E(4,8):  [0, 2, 4, 6]  whole tone
-constexpr int EUCLID_MODE_PENTA = 5;  // E(4,10): [0, 2, 5, 7]  pentatonic/5th
-constexpr int EUCLID_MODE_DIM7  = 6;  // E(4,12): [0, 3, 6, 9]  diminished 7th
-constexpr int EUCLID_MODE_AUG8  = 7;  // E(4,16): [0, 4, 8, 12] augmented + octave
-constexpr int EUCLID_MODE_TRIT  = 8;  // E(4,24): [0, 6, 12, 18] tritone spread
-constexpr int EUCLID_MODE_COUNT = 9;
+constexpr float RESONANT_DENOM_EPSILON = 1e-6f;   // Denominator protection
 
 // ============================================================================
 // PRNG (Pseudo-Random Number Generator) Constants
