@@ -57,12 +57,12 @@ static const char* k_preset_names[k_preset_number] = {
 };
 
 // Values:
-//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS }
+//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ }
 static const int32_t k_presets[k_preset_number][k_total] = {
-    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30 },  // StanzaNeon: medium decay, light bass cut
-    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10 },  // VicoBuio:   long dark decay, minimal bass cut
-    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50 },  // Strobo:     short tight decay, moderate bass cut
-    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20 }   // Bruciato:   near-infinite decay, subtle bass cut
+    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30,  0 },  // StanzaNeon: medium decay, light bass cut
+    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0 },  // VicoBuio:   long dark decay, minimal bass cut
+    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50,  0 },  // Strobo:     short tight decay, moderate bass cut
+    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0 }   // Bruciato:   near-infinite decay, subtle bass cut
 };
 
 // ============================================================================
@@ -296,6 +296,9 @@ public:
         const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
 
         switch (index) {
+        case k_paramProgram: // NAME  preset selector — load preset when the user scrolls
+            if ((uint8_t)value < k_preset_number) loadPreset((uint8_t)value);
+            break;
         case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99
             setDarkness(norm);
             break;
@@ -551,16 +554,19 @@ public:
             // ==========================================
             // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
             // ==========================================
-            // Drive from the dry input so transients excite the resonators —
-            // the reverb tail has negligible energy above 4 kHz after FDN LPF.
+            // Drive from the FDN reverb output so the resonators colour the
+            // reverb tail rather than the dry signal.  Driving from in_l/in_r
+            // produced no audible effect for low-mid drum content because those
+            // signals carry negligible energy in the 4–7 kHz resonator band.
+            // The reverb tail has broad-band content and reliably excites the
+            // high-Q resonators, creating a metallic / spring-like colouring.
             float color_l = 0.0f;
             float color_r = 0.0f;
             for(int f=0; f<NUM_RESONATORS; f++) {
-                color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
-                color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
+                color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
+                color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
             }
             // Scale down since we are summing 6 high-Q resonant peaks.
-            // Raised from 0.15 — resonators now get full-energy input signal.
             color_l *= 0.30f;
             color_r *= 0.30f;
 
