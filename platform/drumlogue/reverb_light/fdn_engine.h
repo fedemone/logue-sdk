@@ -208,9 +208,9 @@ public:
         // EXACT VISUAL SPECTRUM FREQUENCIES (in Hz)
         const float base_freqs[NUM_RESONATORS] = {4100.0f, 5000.0f, 5200.0f, 5800.0f, 6600.0f, 7200.0f};
 
-        // INCREASED Q: 12.0f (from 4.0 - possible adjustment need or even new parameter) makes them "ring" like physical modal resonators.
-        // 4.0f is too wide/damped to sound like a distinct pitch.
-        const float Q = 12.0f;
+        // Try possibly a value of Q: 8.0f to makes them "ring" like physical modal resonators.
+        // In case 4.0f is too wide/damped to sound like a distinct pitch.
+        const float Q = 4.0f;
 
         for (int i = 0; i < NUM_RESONATORS; i++) {
             // Apply the UI shift
@@ -307,7 +307,7 @@ public:
         if (index >= k_total) return;
         params_[index] = value;   // store into local DB
 
-        const float norm = value / 100.0f;  // 0..100 → 0.0..1.0
+        const float norm = value * 0.100f;  // 0..100 → 0.0..1.0
 
         switch (index) {
         case k_paramProgram: // NAME  preset selector — load preset when the user scrolls
@@ -341,11 +341,11 @@ public:
             setHpfCoeff(norm);
             break;
         case k_color_shift: // CLRQ shift of the colour frequency (-100..100 → -1..+1 octave)
-            // Base-2 exponential mapping: 2^val where val = value * 0.01
+            // Base-2 exponential mapping: 2^norm
             // val = -1.0  -> 0.5x multiplier (-1 Octave)
             // val =  0.0  -> 1.0x multiplier (No shift)
             // val = +1.0  -> 2.0x multiplier (+1 Octave)
-            update_color_resonators(fasterpow2f(value * 0.01f));
+            update_color_resonators(fasterpow2f(norm));
             break;
         case k_mix: // MIX  global wet/dry  0-100% → 0.0..1.0
             setMixLevel(norm);
@@ -603,8 +603,8 @@ public:
             float color_l = 0.0f;
             float color_r = 0.0f;
             for(int f=0; f<NUM_RESONATORS; f++) {
-                color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
-                color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
+                color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
+                color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
             }
             // Scale down since we are summing 6 high-Q resonant peaks.
             color_l *= 0.30f;

@@ -326,7 +326,7 @@ public:
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
     void setShimmerFreq(float value) {
         // Normalize UI value to 0.0 -> 1.0
-        float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+        float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.100f));
 
         // Exponential mapping: min * (max/min)^norm
         // 3.0f * (55.0 / 3.0)^norm

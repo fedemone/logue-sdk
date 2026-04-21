@@ -436,9 +436,6 @@ private:
                 float32x4_t harm_r = generate_harmonics(&distressor_, main_r, distressor_.dist_mode);
                 *out_l = vmulq_f32(harm_l, gain_lin);
                 *out_r = vmulq_f32(harm_r, gain_lin);
-                // TODO - there's something that I'm missing here. This stage is written AFTER compression
-                // see lines 417..418 and yet not using comp_l, comp_r values.
-                // Comment on line 431 puzzles me, is this sequence correct?
                 break;
             }
             case DIST_MODE_CLEAN:

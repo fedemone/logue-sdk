@@ -215,6 +215,7 @@ public:
         // ramp completes in ~10ms regardless of block size.  The step is recomputed
         // from (target - current) / remaining every call so mid-ramp parameter
         // changes re-aim smoothly without a pre-calculated stale slope.
+        // The guard that handles the final short block (>= 4 ? 4 : remaining) already works correctly when generalized
         if (mix_ramp_samples_ > 0) {
             uint32_t steps = (mix_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : mix_ramp_samples_;
             float step = (target_mix_ - mix_) / (float)mix_ramp_samples_;
