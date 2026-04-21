@@ -35,6 +35,7 @@ enum k_parameters {
     k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,
     k_decay, k_bass, k_color_shift,
+    k_mix, k_rate, k_shim, k_wdth,
     k_total
 };
 
@@ -57,12 +58,12 @@ static const char* k_preset_names[k_preset_number] = {
 };
 
 // Values:
-//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ }
+//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ, MIX, RATE, SHIM, WDTH }
 static const int32_t k_presets[k_preset_number][k_total] = {
-    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30,  0 },  // StanzaNeon: medium decay, light bass cut
-    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0 },  // VicoBuio:   long dark decay, minimal bass cut
-    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50,  0 },  // Strobo:     short tight decay, moderate bass cut
-    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0 }   // Bruciato:   near-infinite decay, subtle bass cut
+    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30,  0,  50, 20,  0, 70 },  // StanzaNeon: medium decay, wide
+    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0,  70, 10, 15, 50 },  // VicoBuio:   long dark, shimmer
+    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50,  0,  50, 40,  0,100 },  // Strobo:     short, fast LFO, wide
+    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0,  80, 15, 30, 60 }   // Bruciato:   massive, shimmer
 };
 
 // ============================================================================
@@ -152,7 +153,17 @@ public:
 
     float sampleRate;
     float glowLfoRate = 0.0f;
+    float mix_level = 0.5f;
+    float glow_rate_hz = 0.4f;
+    float shim_amt = 0.0f;
+    float width_amt = 1.0f;
     bool initialized;
+
+    // Path 6: Shimmer (Granular Octave-Up)
+    float shimmer_buffer[4096];
+    int shimmer_write = 0;
+    float shimmer_phase = 0.0f;
+    float shimmer_lpf = 0.0f;
 
     // ========================================================================
     // INITIALIZATION & MATH
@@ -167,10 +178,9 @@ public:
             baseDelayTimes[i] = primes[i] * (sampleRate / SAMPLE_RATE);
         }
 
-        // LFO rate: fixed base 0.4 Hz (period ~2.5 s) — slow chorus-like sweep.
+        // LFO rate: controlled by RATE parameter (default 0.4 Hz).
         // Depth scales with glow_amt so GLOW=0 → no filter modulation.
-        // (Rate is very slow: 0.4/48000 ≈ 0.4 Hz, well below audible pitch artefact range)
-        glowLfoRate = 0.4f / sampleRate;    // TODO create new parameters for this
+        glowLfoRate = glow_rate_hz / sampleRate;
 
         update_color_resonators(1.0f);
         initialize_brightness_harmonic_exciter();
@@ -266,6 +276,10 @@ public:
         glow_lpf_state_r = 0.0f;
         memset(hpf_x_prev, 0, sizeof(hpf_x_prev));
         memset(hpf_y_prev, 0, sizeof(hpf_y_prev));
+        memset(shimmer_buffer, 0, sizeof(shimmer_buffer));
+        shimmer_write = 0;
+        shimmer_phase = 0.0f;
+        shimmer_lpf = 0.0f;
     }
 
     /*===========================================================================*/
@@ -333,6 +347,18 @@ public:
             // val = +1.0  -> 2.0x multiplier (+1 Octave)
             update_color_resonators(fasterpow2f(value * 0.01f));
             break;
+        case k_mix: // MIX  global wet/dry  0-100% → 0.0..1.0
+            setMixLevel(norm);
+            break;
+        case k_rate: // RATE  glow LFO speed  0-100% → 0.05..4.0 Hz (exponential)
+            setRate(norm);
+            break;
+        case k_shim: // SHIM  shimmer amount  0-100% → 0.0..1.0
+            setShimmer(norm);
+            break;
+        case k_wdth: // WDTH  stereo width  0-100% → 0.0..2.0
+            setWidth(norm);
+            break;
         default:
         break;
         }
@@ -375,6 +401,21 @@ public:
     // Higher knob value = more bass removed from the reverb tail.
     void setHpfCoeff(float val) {
         hpf_coeff = 0.99f - (val * 0.14f);
+    }
+    void setMixLevel(float val) {
+        mix_level = val;
+    }
+    // 0.0..1.0 → 0.05..4.0 Hz via 2^(val*6)*0.05 (exponential for musical feel)
+    void setRate(float val) {
+        glow_rate_hz = 0.05f * fasterpow2f(val * 6.0f);
+        glowLfoRate = glow_rate_hz / sampleRate;
+    }
+    void setShimmer(float val) {
+        shim_amt = val;
+    }
+    // 0.0..1.0 → 0.0..2.0 (0=mono, 1=unity, 2=extra wide)
+    void setWidth(float val) {
+        width_amt = val * 2.0f;
     }
 
     // ========================================================================
@@ -438,9 +479,8 @@ public:
 
         int preDelaySamps = (int)(predelayScale * 16000.0f); // Max ~330ms
 
-        float total_wet = (dark_amt + glow_amt + bright_amt + color_amt + spark_amt) / 5.0f;
-        float dry_mix = 1.0f - fminf(1.0f, total_wet);
-        float wet_normalize = total_wet > 0.0f ? (1.0f / fmaxf(1.0f, total_wet)) : 0.0f;
+        float path_sum = dark_amt + glow_amt + bright_amt + color_amt + spark_amt + shim_amt;
+        float path_norm = path_sum > 0.0f ? (1.0f / fmaxf(1.0f, path_sum)) : 0.0f;
 
         for (int i = 0; i < num_samples; i += 2) {
             float in_l = in[i];
@@ -612,19 +652,57 @@ public:
             }
 
             // ==========================================
+            // PATH 6: SHIMMER (Granular Octave-Up of reverb tail)
+            // ==========================================
+            float shim_l = 0.0f;
+            float shim_r = 0.0f;
+            if (shim_amt > 0.0f) {
+                float shim_mono = (rev_l + rev_r) * 0.5f;
+                shimmer_buffer[shimmer_write] = shim_mono;
+                shimmer_write = (shimmer_write + 1) & 4095;
+
+                shimmer_phase += 2.0f;  // octave up: phase advances at 2x
+                if (shimmer_phase >= 2048.0f) shimmer_phase -= 2048.0f;
+
+                float rs1 = (float)shimmer_write - shimmer_phase;
+                if (rs1 < 0.0f) rs1 += 4096.0f;
+                int is1 = (int)rs1;
+                float fs1 = rs1 - is1;
+                float so1 = shimmer_buffer[is1 & 4095] + fs1 * (shimmer_buffer[(is1+1) & 4095] - shimmer_buffer[is1 & 4095]);
+
+                float phase_b = shimmer_phase + 1024.0f;
+                if (phase_b >= 2048.0f) phase_b -= 2048.0f;
+                float rs2 = (float)shimmer_write - phase_b;
+                if (rs2 < 0.0f) rs2 += 4096.0f;
+                int is2 = (int)rs2;
+                float fs2 = rs2 - is2;
+                float so2 = shimmer_buffer[is2 & 4095] + fs2 * (shimmer_buffer[(is2+1) & 4095] - shimmer_buffer[is2 & 4095]);
+
+                float sfade = 1.0f - fabsf((shimmer_phase - 1024.0f) / 1024.0f);
+                float shimmer_sig = so1 * sfade + so2 * (1.0f - sfade);
+                shimmer_lpf += 0.15f * (shimmer_sig - shimmer_lpf);
+                shim_l = shimmer_lpf;
+                shim_r = shimmer_lpf;
+            }
+
+            // ==========================================
             // FINAL PARALLEL MIXDOWN
             // ==========================================
             float mix_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
-                          (color_l * color_amt) + (spark_l * spark_amt);
+                          (color_l * color_amt) + (spark_l * spark_amt) + (shim_l * shim_amt);
 
             float mix_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
-                          (color_r * color_amt) + (spark_r * spark_amt);
+                          (color_r * color_amt) + (spark_r * spark_amt) + (shim_r * shim_amt);
 
-            mix_l *= wet_normalize;
-            mix_r *= wet_normalize;
+            mix_l *= path_norm;
+            mix_r *= path_norm;
 
-            out[i]   = (in_l * dry_mix) + mix_l;
-            out[i+1] = (in_r * dry_mix) + mix_r;
+            // Mid-side stereo width on wet signal
+            float mid  = (mix_l + mix_r) * 0.5f;
+            float side = (mix_l - mix_r) * 0.5f * width_amt;
+
+            out[i]   = in_l * (1.0f - mix_level) + (mid + side) * mix_level;
+            out[i+1] = in_r * (1.0f - mix_level) + (mid - side) * mix_level;
         }
     }
 };
