@@ -957,6 +957,21 @@ private:
         float32x4_t inL4 = vld1q_f32(inL);
         float32x4_t inR4 = vld1q_f32(inR);
 
+        // APC WAKE-UP: check raw input BEFORE the bypass guard.
+        // activeSampleCount starts at 0 after clear(); the code that resets it
+        // from the delayed signal is after the pre-delay write, which is itself
+        // gated by this guard — so without a raw-input check here the reverb
+        // would never activate from bypass.
+        {
+            float32x4_t absL = vabsq_f32(inL4);
+            float32x4_t absR = vabsq_f32(inR4);
+            float32x4_t absIn = vmaxq_f32(absL, absR);
+            float32x4_t mx1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
+            float mx = vgetq_lane_f32(vmaxq_f32(mx1, vextq_f32(mx1, mx1, 1)), 0);
+            if (mx > 1e-5f)
+                activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+        }
+
         if (activeSampleCount <= 0) {
             // Apply dry gain so volume stays constant when bypassed!
             float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
@@ -1196,6 +1211,10 @@ private:
 
     void processScalar(float input, float& wetL, float& wetR) {
         float delayOut[FDN_CHANNELS];
+
+        // APC WAKE-UP: check raw input before bypass guard (same reason as process4Samples).
+        if (fabsf(input) > 1e-5f)
+            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
 
         if (activeSampleCount <= 0) {
             // Apply dry gain so volume stays constant when bypassed!
