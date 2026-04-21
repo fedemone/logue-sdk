@@ -21,7 +21,6 @@
 #include "snare_engine.h"
 #include "metal_engine.h"
 #include "perc_engine.h"
-#include "resonant_synthesis.h"
 #include "lfo_enhanced.h"
 #include "lfo_smoothing.h"
 #include "envelope_rom.h"
@@ -42,12 +41,6 @@ static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][4] = {
     { 0.f,  3.f,  6.f,  9.f},  // 6: E(4,12) [0,3,6,9]  diminished 7th
     { 0.f,  4.f,  8.f, 12.f},  // 7: E(4,16) [0,4,8,12] augmented + octave
     { 0.f,  6.f, 12.f, 18.f},  // 8: E(4,24) [0,6,12,18] tritone spread
-};
-
-// Voice allocation table - 12 combinations (no duplicates)
-// Format: [voice0, voice1, voice2, voice3] engine assignments
-static const uint8_t VOICE_ALLOC_TABLE[VOICE_ALLOC_COUNT][VOICE_ALLOC_MAX] = {
-    {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC},     // 0: K-S-M-P (no resonant)
 };
 
 /**
@@ -83,7 +76,7 @@ typedef struct {
     int8_t      params[PARAM_TOTAL];
 
     // Voice allocation
-    uint8_t     voice_engine[VOICE_ALLOC_MAX];  // Engine type for each voice (0-4)
+    uint8_t     voice_engine[ENGINE_COUNT];  // Engine type for each voice (0-4)
     uint8_t     allocation_idx;         // Current allocation (0-11)
 
     // Masks for efficient NEON processing
@@ -92,7 +85,7 @@ typedef struct {
     // Voice activity and probabilities
     float32x4_t voice_active;
     uint32x4_t  voice_triggered;
-    uint32_t    voice_probs[VOICE_ALLOC_MAX];         // Per-voice probabilities (0-100)
+    uint32_t    voice_probs[ENGINE_COUNT];         // Per-voice probabilities (0-100)
 
     // Per-voice velocity (set on note-on, persists until next trigger)
     float32x4_t voice_velocity;      // 0-1 per lane
@@ -196,27 +189,23 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
 
     // Kick engine: param1 = sweep depth (0-1), param2 = decay shape (0-1)
     kick_engine_update(&synth->kick,
-                        vdupq_n_f32(p[PARAM_KICK_ATTACK] / 100.0f),   // Kick sweep
-                        vdupq_n_f32(p[PARAM_KICK_BODY] / 100.0f),
-                        voice_velocity);  // Kick decay
+                        vdupq_n_f32(p[PARAM_KICK_ATK] / 100.0f),   // Kick sweep
+                        vdupq_n_f32(p[PARAM_KICK_BODY] / 100.0f));  // Kick decay
 
     // Snare engine: param1 = noise mix (0-1), param2 = body resonance (0-1)
     snare_engine_update(&synth->snare,
-                        vdupq_n_f32(p[PARAM_SNARE_ATTACK] / 100.0f),  // Snare noise mix
-                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f),
-                        voice_velocity);  // Snare body resonance
+                        vdupq_n_f32(p[PARAM_SNARE_ATK] / 100.0f),  // Snare noise mix
+                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f));  // Snare body resonance
 
     // Metal engine: param1 = inharmonicity (0-1), param2 = brightness (0-1)
     metal_engine_update(&synth->metal,
-                        vdupq_n_f32(p[PARAM_METAL_ATTACK] / 100.0f),   // Metal inharmonicity
-                        vdupq_n_f32(p[PARAM_METAL_BODY] / 100.0f),
-                        voice_velocity);  // Metal brightness
+                        vdupq_n_f32(p[PARAM_METAL_ATK] / 100.0f),   // Metal inharmonicity
+                        vdupq_n_f32(p[PARAM_METAL_BODY] / 100.0f));  // Metal brightness
 
     // Perc engine: param1 = ratio center (0-1), param2 = variation (0-1)
     perc_engine_update(&synth->perc,
-                        vdupq_n_f32(p[PARAM_PERC_ATTACK] / 100.0f),  // Perc ratio center
-                        vdupq_n_f32(p[PARAM_PERC_BODY] / 100.0f),
-                        voice_velocity);   // Perc variation
+                        vdupq_n_f32(p[PARAM_PERC_ATK] / 100.0f),  // Perc ratio center
+                        vdupq_n_f32(p[PARAM_PERC_BODY] / 100.0f));   // Perc variation
 
     // =================================================================
     // Update resonant base parameters (mode from param 22)
@@ -255,7 +244,7 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // derived from E(4,n): position[i] = floor(i * n / 4).
     // =================================================================
     {
-        uint8_t mode = (uint8_t)p[PARAM_EUCLIDEAN_TUNE];
+        uint8_t mode = (uint8_t)p[PARAM_EUCL_TUN];
         if (mode >= EUCLID_MODE_COUNT) mode = 0;
         synth->euclid_offsets = vld1q_f32(EUCLID_OFFSETS[mode]);
     }
@@ -272,40 +261,40 @@ fast_inline void load_fm_preset(uint8_t idx, int8_t * params) {
     const fm_preset_t * p = &FM_PRESETS[idx];
 
     // Page 1
-    params[PARAM_VOICE1_PROB]    = p->prob_kick;
-    params[PARAM_VOICE2_PROB]    = p->prob_snare;
-    params[PARAM_VOICE3_PROB]    = p->prob_metal;
-    params[PARAM_VOICE4_PROB]    = p->prob_perc;
+    params[PARAM_KPROB]       = p->prob_kick;
+    params[PARAM_SPROB]       = p->prob_snare;
+    params[PARAM_MPROB]       = p->prob_metal;
+    params[PARAM_PPROB]       = p->prob_perc;
 
     // Page 2
-    params[PARAM_KICK_ATTACK]    = p->kick_sweep;
-    params[PARAM_KICK_BODY]      = p->kick_decay;
-    params[PARAM_SNARE_ATTACK]   = p->snare_noise;
-    params[PARAM_SNARE_BODY]     = p->snare_body;
+    params[PARAM_KICK_ATK]    = p->kick_sweep;
+    params[PARAM_KICK_BODY]   = p->kick_decay;
+    params[PARAM_SNARE_ATK]   = p->snare_noise;
+    params[PARAM_SNARE_BODY]  = p->snare_body;
 
     // Page 3
-    params[PARAM_METAL_ATTACK]   = p->metal_inharm;
-    params[PARAM_METAL_BODY]     = p->metal_bright;
-    params[PARAM_PERC_ATTACK]    = p->perc_ratio;
-    params[PARAM_PERC_BODY]      = p->perc_var;
+    params[PARAM_METAL_ATK]   = p->metal_inharm;
+    params[PARAM_METAL_BODY]  = p->metal_bright;
+    params[PARAM_PERC_ATK]    = p->perc_ratio;
+    params[PARAM_PERC_BODY]   = p->perc_var;
 
     // Page 4 (LFO1)
-    params[PARAM_LFO1_SHAPE]     = p->lfo1_shape;
-    params[PARAM_LFO1_RATE]      = p->lfo1_rate;
-    params[PARAM_LFO1_TARGET]    = p->lfo1_target;
-    params[PARAM_LFO1_DEPTH]     = p->lfo1_depth;  // -100..100, stored directly in int8_t
+    params[PARAM_LFO1_SHAPE]  = p->lfo1_shape;
+    params[PARAM_LFO1_RATE]   = p->lfo1_rate;
+    params[PARAM_LFO1_TARGET] = p->lfo1_target;
+    params[PARAM_LFO1_DEPTH]  = p->lfo1_depth;  // -100..100, stored directly in int8_t
 
     // Page 5 (LFO2)
-    params[PARAM_EUCLIDEAN_TUNE] = p->lfo2_shape;
-    params[PARAM_LFO2_RATE]      = p->lfo2_rate;
-    params[PARAM_LFO2_TARGET]    = p->lfo2_target;
-    params[PARAM_LFO2_DEPTH]     = p->lfo2_depth;  // -100..100, stored directly in int8_t
+    params[PARAM_EUCL_TUN]    = p->lfo2_shape;
+    params[PARAM_LFO2_RATE]   = p->lfo2_rate;
+    params[PARAM_LFO2_TARGET] = p->lfo2_target;
+    params[PARAM_LFO2_DEPTH]  = p->lfo2_depth;  // -100..100, stored directly in int8_t
 
     // Page 6
-    params[PARAM_ENV_SHAPE]      = p->env_shape;
-    params[PARAM_VOICE_HIT_SHAPE]= p->hit_shape;
-    params[PARAM_BODY_TILT]      = p->body_tilt;
-    params[PARAM_DRIVE]          = p->drive;
+    params[PARAM_ENV_SHAPE]   = p->env_shape;
+    params[PARAM_HIT_SHAPE]   = p->hit_shape;
+    params[PARAM_BODY_TILT]   = p->body_tilt;
+    params[PARAM_DRIVE]       = p->drive;
 }
 
 /**
@@ -314,8 +303,8 @@ fast_inline void load_fm_preset(uint8_t idx, int8_t * params) {
 fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     // Copy allocation to voice_engine array
     // now static, as only 4 engines are designed
-    for (int v = 0; v < VOICE_ALLOC_MAX; v++) {
-        synth->voice_engine[v] = VOICE_ALLOC_TABLE[alloc_idx][v];
+    for (int v = 0; v < ENGINE_COUNT; v++) {
+        synth->voice_engine[v] = v;
     }
 
     // Initialize all engines
@@ -345,13 +334,13 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     // Initialize parameters
     synth->voice_active    = vdupq_n_f32(0.0f);
     synth->voice_triggered = vdupq_n_u32(0);
-    synth->voice_velocity  = vdupq_n_f32(1.0f);
+    synth->voice_velocity  = vdupq_n_f32(1.0f);  // TODO not used
     synth->euclid_offsets  = vdupq_n_f32(0.0f);  // Off: all voices unison
     synth->master_gain     = 0.25f;
     synth->current_env_shape = 40;
 
     // Default probabilities (all 30%)
-    for (int i = 0; i < VOICE_ALLOC_MAX; i++) {
+    for (int i = 0; i < ENGINE_COUNT; i++) {
       synth->voice_probs[i] = 30;
     }
 
@@ -404,7 +393,7 @@ fast_inline float neon_horizontal_sum_alt(float32x4_t v) {
  * LFO phase sync: phases are reset on every trigger so a one-shot ramp at
  * slow rate acts as a secondary envelope.
  */
-fast_inline void fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
+fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
                                        uint8_t note,
                                        uint8_t velocity) {
     // Normalize velocity once.

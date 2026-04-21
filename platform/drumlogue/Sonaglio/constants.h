@@ -13,8 +13,7 @@
  * - Audio and MIDI conversion constants
  * - Parameter indexes (24 parameters across 6 pages)
  * - Voice allocation constants (12 valid combinations)
- * - Resonant synthesis constants (modes, morph ranges)
- * - LFO target constants (0-7 including resonant)
+ * - LFO target constants (0-6)
  * - FM engine parameter ranges
  * - Envelope ROM constants
  */
@@ -47,43 +46,43 @@ constexpr float NYQUIST_FREQ = SAMPLE_RATE / 2.0f;
 // MIDI Note to Frequency Conversion
 // ============================================================================
 constexpr float A4_FREQ = 440.0f;            // A4 reference frequency
-constexpr int A4_MIDI = 69;                   // A4 MIDI note number
+constexpr int   A4_MIDI = 69;                // A4 MIDI note number
 constexpr float SEMITONE_RATIO = 1.0594630943592953f;  // 2^(1/12)
 
 // Pre-calculated interval ratios for common intervals
-constexpr float INTERVAL_UNISON    = 1.0f;               // 0 semitones
-constexpr float INTERVAL_MINOR_2ND = 1.059463094f;       // 1 semitone
-constexpr float INTERVAL_MAJOR_2ND = 1.122462048f;       // 2 semitones
-constexpr float INTERVAL_MINOR_3RD = 1.189207115f;       // 3 semitones
-constexpr float INTERVAL_MAJOR_3RD = 1.259921050f;       // 4 semitones (2^(4/12))
+constexpr float INTERVAL_UNISON      = 1.0f;             // 0 semitones
+constexpr float INTERVAL_MINOR_2ND   = 1.059463094f;     // 1 semitone
+constexpr float INTERVAL_MAJOR_2ND   = 1.122462048f;     // 2 semitones
+constexpr float INTERVAL_MINOR_3RD   = 1.189207115f;     // 3 semitones
+constexpr float INTERVAL_MAJOR_3RD   = 1.259921050f;     // 4 semitones (2^(4/12))
 constexpr float INTERVAL_PERFECT_4TH = 1.334839854f;     // 5 semitones
-constexpr float INTERVAL_TRITONE    = 1.414213562f;      // 6 semitones
+constexpr float INTERVAL_TRITONE     = 1.414213562f;     // 6 semitones
 constexpr float INTERVAL_PERFECT_5TH = 1.498307077f;     // 7 semitones (2^(7/12))
-constexpr float INTERVAL_MINOR_6TH = 1.587401052f;       // 8 semitones
-constexpr float INTERVAL_MAJOR_6TH = 1.681792830f;       // 9 semitones
-constexpr float INTERVAL_MINOR_7TH = 1.781797436f;       // 10 semitones
-constexpr float INTERVAL_MAJOR_7TH = 1.887748625f;       // 11 semitones
-constexpr float INTERVAL_OCTAVE    = 2.0f;               // 12 semitones
+constexpr float INTERVAL_MINOR_6TH   = 1.587401052f;     // 8 semitones
+constexpr float INTERVAL_MAJOR_6TH   = 1.681792830f;     // 9 semitones
+constexpr float INTERVAL_MINOR_7TH   = 1.781797436f;     // 10 semitones
+constexpr float INTERVAL_MAJOR_7TH   = 1.887748625f;     // 11 semitones
+constexpr float INTERVAL_OCTAVE      = 2.0f;             // 12 semitones
 
 // ============================================================================
 // LFO Target Constants
 // ============================================================================
-constexpr int LFO_TARGET_NONE = 0;
-constexpr int LFO_TARGET_PITCH = 1;
-constexpr int LFO_TARGET_INDEX = 2;
-constexpr int LFO_TARGET_ENV = 3;
-constexpr int LFO_TARGET_LFO2_PHASE = 4;
-constexpr int LFO_TARGET_LFO1_PHASE = 5;
-constexpr int LFO_TARGET_RES_FREQ = 6;
-constexpr int LFO_TARGET_RESONANCE = 7;
-constexpr int LFO_TARGET_NOISE_MIX = 8;   // Snare noise/tone blend; metal brightness
-constexpr int LFO_TARGET_RES_MORPH = 9;   // Resonant filter morph (fc / Q sweep)
-constexpr int LFO_TARGET_METAL_GATE = 10; // Metal engine amplitude gate (open/closed hi-hat)
-                                           // Use with Ramp shape + positive depth:
-                                           //   rate=high → fast gate close → closed hi-hat
-                                           //   rate=low  → slow gate close → open hi-hat
-constexpr int LFO_TARGET_COUNT = 11;
 
+enum {  LFO_TARGET_NONE,
+        LFO_TARGET_PITCH,
+        LFO_TARGET_INDEX,
+        LFO_TARGET_ENV,
+        LFO_TARGET_LFO2_PHASE,
+        LFO_TARGET_LFO1_PHASE,
+        LFO_TARGET_RES_FREQ,
+        LFO_TARGET_RESONANCE,
+        LFO_TARGET_NOISE_MIX , // Snare noise/tone blend; metal brightness
+        LFO_TARGET_METAL_GATE, // Metal engine amplitude gate (open/closed hi-hat)
+                               // Use with Ramp shape + positive depth:
+                               //   rate=high → fast gate close → closed hi-hat
+                               //   rate=low  → slow gate close → open hi-hat
+        LFO_TARGET_COUNT,
+};
 // ============================================================================
 // LFO Shape Constants
 // ============================================================================
@@ -95,50 +94,28 @@ constexpr int LFO_SHAPE_COMBO_COUNT = 9;       // 3×3 = 9 combinations
 // Phase offset to prevent cancellation (90° = 0.25 cycle)
 constexpr float LFO_PHASE_OFFSET = 0.25f;
 
-// ============================================================================
-// Voice Allocation Constants
-// ============================================================================
-constexpr int VOICE_ALLOC_COUNT = 12;        // 12 valid allocations
-constexpr int VOICE_ALLOC_MIN = 0;
-constexpr int VOICE_ALLOC_MAX = 4;
 
 // ============================================================================
 // Engine Mode Constants
 // ============================================================================
-constexpr int ENGINE_KICK = 0;
-constexpr int ENGINE_SNARE = 1;
-constexpr int ENGINE_METAL = 2;
-constexpr int ENGINE_PERC = 3;
-constexpr int ENGINE_RESONANT = 4;
-constexpr int ENGINE_COUNT = 5;  // Total number of engines
-
+enum {  ENGINE_KICK,
+        ENGINE_SNARE,
+        ENGINE_METAL,
+        ENGINE_PERC,
+        ENGINE_COUNT,  // Total number of engines
+};
 // ============================================================================
 // Resonant Synthesis Constants
 // ============================================================================
 
 // Resonant mode types (0-4)
-constexpr int RES_MODE_LOWPASS = 0;             // Single-sided low-pass
-constexpr int RES_MODE_BANDPASS = 1;            // Double-sided band-pass
-constexpr int RES_MODE_HIGHPASS = 2;            // Derived high-pass
-constexpr int RES_MODE_NOTCH = 3;                // Notch filter
-constexpr int RES_MODE_PEAK = 4;                 // Peak filter
-constexpr int RES_MODE_COUNT = 5;                 // Total resonant modes
-
-// Resonant parameter ranges
-constexpr float RES_FC_MIN = 50.0f;               // Minimum center frequency (Hz)
-constexpr float RES_FC_MAX = 8000.0f;             // Maximum center frequency (Hz)
-constexpr float RES_FC_DEFAULT = 1000.0f;         // Default center frequency
-
-constexpr float RES_RESONANCE_MIN = 0.1f;         // Minimum resonance (a parameter)
-constexpr float RES_RESONANCE_MAX = 0.9f;         // Maximum resonance (a parameter)
-constexpr float RES_RESONANCE_DEFAULT = 0.5f;
-
-constexpr float RES_GAIN_MIN = 1.0f;              // Minimum gain for peak mode
-constexpr float RES_GAIN_MAX = 4.0f;              // Maximum gain for peak mode
-constexpr float RES_GAIN_DEFAULT = 1.0f;
-
-// Safety epsilon to prevent division by zero
-constexpr float RESONANT_DENOM_EPSILON = 0.0001f;
+enum {  RES_MODE_LOWPASS,             // Single-sided low-pass
+        RES_MODE_BANDPASS,            // Double-sided band-pass
+        RES_MODE_HIGHPASS,            // Derived high-pass
+        RES_MODE_NOTCH,                // Notch filter
+        RES_MODE_PEAK,                 // Peak filter
+        RES_MODE_COUNT,                 // Total resonant modes
+};
 
 
 // LFO Depth range (bipolar)
@@ -195,7 +172,7 @@ constexpr uint32_t RAND_DEFAULT_SEED = 0x12345678;  // Trivial
 // ============================================================================
 // Parameter Smoothing Constants
 // ============================================================================
-constexpr int SMOOTH_FRAMES = 48;                  // 1ms ramp at 48kHz
+constexpr int   SMOOTH_FRAMES = 48;                 // 1ms ramp at 48kHz
 constexpr float SMOOTH_COEFF_MIN = 0.001f;
 constexpr float SMOOTH_COEFF_MAX = 0.5f;
 

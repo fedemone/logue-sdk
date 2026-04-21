@@ -37,12 +37,12 @@
 #include "lfo_smoothing.h"
 #include "fm_presets.h"
 #include "engine_mapping.h"
+#include "fm_perc_synth_process.h"
 
 #include "kick_engine.h"
 #include "snare_engine.h"
 #include "metal_engine.h"
 #include "perc_engine.h"
-#include "resonant_synthesis.h"   // kept in code, not part of the active 4-engine path
 
 #ifdef __cplusplus
 extern "C" {

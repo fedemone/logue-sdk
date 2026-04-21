@@ -18,18 +18,6 @@
 #define NUM_OF_PRESETS (26)
 #define NAME_LENGTH    (12)
 
-// LFO target values (from constants.h)
-#define LFO_TARGET_NONE       (0)
-#define LFO_TARGET_PITCH      (1)
-#define LFO_TARGET_INDEX      (2)
-#define LFO_TARGET_ENV        (3)
-#define LFO_TARGET_LFO2_PHASE (4)
-#define LFO_TARGET_LFO1_PHASE (5)
-#define LFO_TARGET_RES_FREQ   (6)
-#define LFO_TARGET_RESONANCE  (7)
-#define LFO_TARGET_NOISE_MIX  (8)
-#define LFO_TARGET_RES_MORPH  (9)
-#define LFO_TARGET_METAL_GATE (10)
 
 
 // Parameter indices matching the fixed 24-parameter synth contract.
