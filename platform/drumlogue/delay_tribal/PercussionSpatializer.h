@@ -210,24 +210,27 @@ public:
         const float* in_p = in;
         float*       out_p = out;
 
-        // --- Advance smooth ramps for mix/wobble/attack (block-rate, 4 steps) ---
-        // Each ramp uses the same linear-interpolation pattern as the depth ramp.
+        // --- Advance smooth ramps for mix/wobble/attack by the actual frame count ---
+        // Each ramp advances by `frames` samples per render call so a 480-sample
+        // ramp completes in ~10ms regardless of block size.  The step is recomputed
+        // from (target - current) / remaining every call so mid-ramp parameter
+        // changes re-aim smoothly without a pre-calculated stale slope.
         if (mix_ramp_samples_ > 0) {
-            uint32_t steps = (mix_ramp_samples_ >= 4) ? 4u : mix_ramp_samples_;
+            uint32_t steps = (mix_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : mix_ramp_samples_;
             float step = (target_mix_ - mix_) / (float)mix_ramp_samples_;
             mix_ += step * (float)steps;
             mix_ramp_samples_ -= steps;
             if (mix_ramp_samples_ == 0) mix_ = target_mix_;
         }
         if (wobble_ramp_samples_ > 0) {
-            uint32_t steps = (wobble_ramp_samples_ >= 4) ? 4u : wobble_ramp_samples_;
+            uint32_t steps = (wobble_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : wobble_ramp_samples_;
             float step = (target_wobble_ - wobble_depth_) / (float)wobble_ramp_samples_;
             wobble_depth_ += step * (float)steps;
             wobble_ramp_samples_ -= steps;
             if (wobble_ramp_samples_ == 0) wobble_depth_ = target_wobble_;
         }
         if (attack_ramp_samples_ > 0) {
-            uint32_t steps = (attack_ramp_samples_ >= 4) ? 4u : attack_ramp_samples_;
+            uint32_t steps = (attack_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : attack_ramp_samples_;
             float step = (target_attack_ - attack_soften_) / (float)attack_ramp_samples_;
             attack_soften_ += step * (float)steps;
             attack_ramp_samples_ -= steps;
