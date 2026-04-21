@@ -306,12 +306,17 @@ private:
         // 3. ENVELOPE DETECTION (mode-specific)
         // =================================================================
         float32x4_t envelope_db;
-        // TODO - it's not clear the usage of DETECT_BAND_EMPH and DETECT_LINK.
-        // I would expect that else branch to be for the non-COMP_MODE_DISTRESSOR mode,
-        // but this code handles everything is same manner, making no distinction of the
-        // other two detection modes. Are they not implemented?
-        if (comp_mode_ == COMP_MODE_DISTRESSOR && (distressor_.detector_mode & DETECT_HPF)) {
-            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
+        if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+            float32x4_t envelope;
+            if (distressor_.detector_mode & DETECT_LINK) {
+                // Stereo link: detect L and R independently, gain follows the louder channel.
+                // Bypass sc_hpf_ (mono filter) and let distressor_detect_stereo apply its own HPF.
+                float32x4_t raw_l = (has_sidechain_ && use_external_sc_) ? sc_l : main_l;
+                float32x4_t raw_r = (has_sidechain_ && use_external_sc_) ? sc_r : main_r;
+                envelope = distressor_detect_stereo(&distressor_, raw_l, raw_r, samplerate_);
+            } else {
+                envelope = distressor_detect(&distressor_, sidechain, samplerate_);
+            }
             envelope_db = linear_to_db(envelope);
         } else {
             float32x4_t envelope = envelope_detect(&envelope_, sidechain);
@@ -396,17 +401,10 @@ private:
                                         float32x4_t envelope_db,
                                         float32x4_t* out_l,
                                         float32x4_t* out_r) {
-        float32x4_t detected_db;
-        if (distressor_.detector_mode & DETECT_HPF) {
-            float32x4_t sidechain = vaddq_f32(main_l, main_r);
-            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
-            detected_db = linear_to_db(envelope);
-        } else {
-            detected_db = envelope_db;
-        }
-
+        // Detection is fully handled in process_block() before this call;
+        // envelope_db already reflects HPF, EMPH, and LINK flags.
         float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
-                                                              detected_db,
+                                                              envelope_db,
                                                               thresh_db_);
 
         float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
@@ -614,10 +612,19 @@ public:
                 overlord_.presence = value / 100.0f;
                 break;
 
-            case k_detection_mode: // DETECT MODE (0=Peak, 1=RMS, 2=Blend)
-                if (value >= 0 && value <= 2) {
-                    detection_mode_ = value;
-                    envelope_.mode = detection_mode_;
+            case k_detection_mode:
+                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                    // Distressor detector flags bitmask: 0=Basic, 1=Emph, 2=Link, 3=Emph+Link
+                    // Preserve DETECT_HPF — it is set separately by k_distressor_distortion_type.
+                    distressor_.detector_mode &= DETECT_HPF;
+                    if (value & 1) distressor_.detector_mode |= DETECT_BAND_EMPH;
+                    if (value & 2) distressor_.detector_mode |= DETECT_LINK;
+                } else {
+                    // Standard / multiband: Peak=0, RMS=1, Blend=2
+                    if (value >= 0 && value <= 2) {
+                        detection_mode_ = value;
+                        envelope_.mode = detection_mode_;
+                    }
                 }
                 break;
         }
@@ -685,10 +692,13 @@ public:
                     return distressor_wave_type[value];
                 break;
 
-            case k_detection_mode: // DETECT MODE
-                {
-                    static const char* detect_modes[] = {"Peak", "RMS", "Blend"};
-                    if (value >= 0 && value <= 2) return detect_modes[value];
+            case k_detection_mode:
+                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                    static const char* dst_det[] = {"Basic", "Emph", "Link", "Emph+Lnk"};
+                    if (value >= 0 && value <= 3) return dst_det[value];
+                } else {
+                    static const char* std_det[] = {"Peak", "RMS", "Blend"};
+                    if (value >= 0 && value <= 2) return std_det[value];
                 }
                 break;
         }

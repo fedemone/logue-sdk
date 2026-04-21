@@ -67,7 +67,9 @@ const __unit_header unit_header_t unit_header = {
         { 0, 240, 0, 0, k_unit_param_type_db, 1, 1, 0, {"MBndMkp"} },           // ID 20
         { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndMut"} },           // ID 21
         { 0, 1, 0, 0, k_unit_param_type_none, 0, 0, 0, {"MBndSOl"} },           // ID 22
-        // ID 23: DETECT MODE  0=Peak, 1=RMS, 2=Blend
-        { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DtctMOD"} },        // ID 23
+        // ID 23: DETECT MODE
+        //   Standard/Multiband: 0=Peak, 1=RMS, 2=Blend
+        //   Distressor:         0=Basic, 1=Emph, 2=Link, 3=Emph+Link
+        { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DtctMOD"} },        // ID 23
     }
 };
