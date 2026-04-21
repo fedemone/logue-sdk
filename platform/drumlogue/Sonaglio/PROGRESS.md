@@ -30,11 +30,12 @@ The resonant engine is **kept in code only** for the moment, but it is not part 
   - preset loading
   - note handling
   - render entry point
-- still needs the final wiring from the new global controls into the actual processing path
+- `HitShape`, `BodyTilt`, and `Drive` remain stored in `params[]`
+- those three globals are now intended to be read directly during processing
 
 #### `header.c`
 - moved to the fixed 4-engine naming model
-- the intended UI parameter names are now:
+- UI parameter names are now intended to be:
   - `KProb`, `SProb`, `MProb`, `PProb`
   - `KAtk`, `KBody`, `SAtk`, `SBody`
   - `MAtk`, `MBody`, `PAtk`, `PBody`
@@ -42,33 +43,35 @@ The resonant engine is **kept in code only** for the moment, but it is not part 
 - voice allocation has been removed from the UI budget
 
 #### `engine_mapping.h`
-- new control semantics layer
-- maps UI parameters into macro targets such as:
-  - excitation gain
-  - attack click
-  - attack brightness
-  - pitch drop depth
-  - FM index attack/body
-  - noise amount
-  - decay scale
-  - stability
-  - dynamic filter open
-  - drive amount
-  - ratio bias
-  - variation bias
-- this is now the main reference for the redesigned instrument behavior
+- simplified stateless mapping layer
+- no nested macro cache
+- `HitShape`, `BodyTilt`, and `Drive` are read from `params[]`
+- provides helpers for:
+  - transient shaping
+  - body shaping
+  - drive gain
+  - soft clipping
+  - direct parameter normalization
 
 ---
 
-### 2) DSP / voice files already present
+### 2) DSP / voice files
 
+#### Rewritten
 - `kick_engine.h`
 - `snare_engine.h`
 - `metal_engine.h`
 - `perc_engine.h`
+
+These now interpret their parameters as:
+
+- **Param1 = Attack / Energy / Brightness**
+- **Param2 = Body / Decay / Stability**
+
+#### Still in code
 - `resonant_synthesis.h`
 
-These engines are still in the codebase, but their internal behavior is not yet fully aligned to the new parameter semantics.
+This remains available but is not part of the active 4-engine instrument path.
 
 ---
 
@@ -92,12 +95,13 @@ These engines are still in the codebase, but their internal behavior is not yet 
 
 ---
 
-### 5) Preset files present
+### 5) Preset files
 
 - `fm_presets.h`
 - `fm_presets.cc`
 
-These still reflect the older architecture and must be revised to match the new 4-engine model.
+These have been rewritten around the new 4-engine model and new parameter meaning.
+The old resonant / voice-allocation data has been removed from the active preset model.
 
 ---
 
@@ -111,147 +115,103 @@ The new controls:
 - `BodyTilt`
 - `Drive`
 
-are defined in the control model, but they still need to be fully propagated into the actual render path.
+must be fully consumed by the live render path.
 
 The missing step is to make them influence:
 
-- per-engine macro values
 - transient shape
 - body weight
-- bus saturation / glue
+- final bus drive / soft clipping
 - the final behavior of `fm_perc_synth_process`
-
----
 
 ### 2) Final `fm_perc_synth_process` integration
 
-The processing function still needs to be completed so it:
+The processing function still needs to be finalized so it:
 
-- advances the envelope
-- advances LFOs
-- applies the mapping layer
+- advances the shared envelope
+- advances / smooths the LFOs
+- reads the mapped control values
 - runs the active engines
-- mixes them consistently
-- applies global saturation / gain
-- returns a mono sample
+- applies global transient/body/drive shaping
+- returns the final mono output
 
----
+### 3) Engine consistency pass
 
-### 3) `setParameter()` final behavior
+The four engines have been rewritten, but they still need a consistency pass after the control path is fully locked.
 
-`setParameter()` now stores values, but it still needs the complete update path so that the new globals and engine mappings are reflected immediately in the processing state.
+This pass should verify:
+- the new control semantics are audible
+- transient/body behavior is consistent across engines
+- parameter ranges behave monotonically
 
-At the moment, the control model exists, but `HitShape`, `BodyTilt`, and `Drive` are not yet fully connected into the audio path.
+### 4) Test update and execution
 
----
+The current tests were written for the old model and need to be updated.
 
-### 4) Engine re-desing
+The new tests should validate:
+- parameter monotonicity
+- transient/body consistency
+- safe output range / no NaNs
+- preset-family coherence
+- note-trigger consistency with probability gating and Euclidean tuning
 
-complete new design of the `snare_engine.h`, `kick_engine.h`, `metal_engine.h`, `perc_engine.h` based on both original files and some ideas borrowed from these other open source projects:
-- https://github.com/ryukau/UhhyouWebSynthesizers
-- https://github.com/copych/ESP32-S3_FM_Drum_Synth?tab=readme-ov-file
-- https://github.com/ngeiswei/deicsonze
-- https://github.com/reales/retromulator (For the Yamaha FM synth but also for Nord Lead synth which has been said to have great drum synthesis)
+### 5) Reference tuning pass
 
+After the redesign stabilizes, the next useful step is to compare rendered results against a small set of reference families and tune the presets toward those behaviors.
 
----
+Good reference sources can be:
+- Nord Drum 2 factory / signature bank families
+- other FM drum synth reference tones
+- classic tuned percussion / synthetic drum reference sets
 
-### 5) Preset redesign
-
-`fm_presets.h` and `fm_presets.cc` still need to be refactored away from:
-
-- voice allocation
-- resonant mode / morph focus
-- old 5-engine thinking
-
-and rebuilt around the new perceptual families:
-
-- Tight
-- Heavy
-- Crunchy
-- Metallic
-- Dry
-- Industrial
-- Body-rich
-- Digital
-
----
-
-### 6) Legacy architecture cleanup
-
-The older architecture still leaves behind references that should be removed or minimized:
-
-- voice allocation as a user control
-- resonant mode / resonant morph as active parameters
-- old naming based on `Voice1/2/3/4`
-
-The new naming should stay:
-- `Kick`
-- `Snare`
-- `Metal`
-- `Perc`
-
-with the three reclaimed globals.
-
----
-
-## What Is Already Decided
-
-### Keep
-- 4 fixed engines
-- fixed voice positions
-- probability triggering
-- Euclidean tuning
-- NEON-first implementation
-- resonant engine in code only for now
-
-### Remove from the active UI
-- voice allocation control
-- resonant mode control
-- resonant morph control
-
-### Add / keep as active controls
-- `HitShape`
-- `BodyTilt`
-- `Drive`
+The goal is not exact cloning. The goal is to tune:
+- attack hardness
+- body weight
+- decay character
+- brightness / aggression
+- preset family separation
 
 ---
 
 ## Next Steps
 
-### Step 1
-Wire `HitShape`, `BodyTilt`, and `Drive` from `setParameter()` into runtime mapping and audio processing.
+### Step 1 — Final wiring of globals
+Wire `HitShape`, `BodyTilt`, and `Drive` into:
+- `fm_perc_synth_process()`
+- the final mix / saturation stage
 
-### Step 2
-Finish `fm_perc_synth_process` so it consumes the macro targets and returns a consistent mono output.
+### Step 2 — Keep engines stable while wiring
+Do **not** redesign the engines again immediately.
 
-### Step 3
-Rewrite `fm_presets.cc` and `fm_presets.h` around the new 4-engine behavior families.
+The goal is to first confirm the control path:
+- Parameters → Behavior → Processing
 
-### Step 4
-Remove remaining voice-allocation UI logic and legacy resonant control assumptions from the active path.
+### Step 3 — Preset rewrite is done
+The preset bank has been rebuilt around the new parameter meaning.
 
-### Step 5
-Add consistency tests for:
-- monotonic behavior of the new controls
-- transient/body response
-- preset coherence
-- output stability
+### Step 4 — Test suite update
+Rewrite the tests around the new control model and run them.
+
+### Step 5 — Reference tuning pass
+Use curated reference families to tune the presets and validate the sonic direction.
 
 ---
 
-## Working Principle
+## Design Rule for the Refactor
 
-The parameter model is now the design anchor.
+For a constrained system like this, the correct flow is:
 
-The order of work is:
+> **Parameters → Behavior → Engine implementation**
 
-1. parameter semantics
-2. mapping layer
-3. engine behavior
-4. process integration
-5. presets
-6. tests
+That means parameter design must come first, then engine behavior must follow the mapped controls.
 
-That sequence keeps the instrument coherent under the 24-parameter limit.
+---
 
+## Current Priority Order
+
+1. Punch
+2. Body
+3. Aggression
+4. Variety
+
+Variety remains optional and should not weaken the core instrument identity.

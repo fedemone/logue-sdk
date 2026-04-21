@@ -66,49 +66,6 @@ constexpr float INTERVAL_MAJOR_7TH = 1.887748625f;       // 11 semitones
 constexpr float INTERVAL_OCTAVE    = 2.0f;               // 12 semitones
 
 // ============================================================================
-// Parameter Indexes - 24 parameters across 6 pages
-// ============================================================================
-
-// Page 1: Voice Probabilities (4 params)
-constexpr uint8_t PARAM_VOICE1_PROB = 0;     // Voice 0 probability (0-100%)
-constexpr uint8_t PARAM_VOICE2_PROB = 1;     // Voice 1 probability (0-100%)
-constexpr uint8_t PARAM_VOICE3_PROB = 2;     // Voice 2 probability (0-100%)
-constexpr uint8_t PARAM_VOICE4_PROB = 3;     // Voice 3 probability (0-100%)
-
-// Page 2: Kick + Snare Parameters (4 params)
-constexpr uint8_t PARAM_KICK_ATTACK = 4;     // Kick sweep depth (0-100%)
-constexpr uint8_t PARAM_KICK_BODY = 5;       // Kick decay shape (0-100%)
-constexpr uint8_t PARAM_SNARE_ATTACK = 6;    // Snare noise mix (0-100%)
-constexpr uint8_t PARAM_SNARE_BODY = 7;      // Snare body resonance (0-100%)
-
-// Page 3: Metal + Perc Parameters (4 params)
-constexpr uint8_t PARAM_METAL_ATTACK = 8;    // Metal inharmonicity (0-100%)
-constexpr uint8_t PARAM_METAL_BODY = 9;    // Metal brightness (0-100%)
-constexpr uint8_t PARAM_PERC_ATTACK = 10;     // Perc ratio center (0-100%)
-constexpr uint8_t PARAM_PERC_BODY = 11;       // Perc variation (0-100%)
-
-// Page 4: LFO1 Configuration (4 params)
-constexpr uint8_t PARAM_LFO1_SHAPE = 12;     // LFO1 shape combo (0-8)
-constexpr uint8_t PARAM_LFO1_RATE = 13;      // LFO1 rate (0-100%)
-constexpr uint8_t PARAM_LFO1_TARGET = 14;    // LFO1 target (0-7)
-constexpr uint8_t PARAM_LFO1_DEPTH = 15;     // LFO1 depth (0-100%, stored as 0-200 for bipolar)
-
-// Page 5: LFO2 Configuration (4 params)
-constexpr uint8_t PARAM_EUCLIDEAN_TUNE = 16;     // LFO2 shape combo (0-8)
-constexpr uint8_t PARAM_LFO2_RATE = 17;      // LFO2 rate (0-100%)
-constexpr uint8_t PARAM_LFO2_TARGET = 18;    // LFO2 target (0-7)
-constexpr uint8_t PARAM_LFO2_DEPTH = 19;     // LFO2 depth (0-100%, stored as 0-200 for bipolar)
-
-// Page 6: Envelope + Voice + Resonant (4 params)
-constexpr uint8_t PARAM_ENV_SHAPE = 20;      // Envelope shape (0-127)
-constexpr uint8_t PARAM_VOICE_HIT_SHAPE = 21;    // Voice allocation (0-11)
-constexpr uint8_t PARAM_BODY_TILT = 22;       // Resonant mode (0-4)
-constexpr uint8_t PARAM_DRIVE = 23;      // Resonant morph (0-100%)
-
-// marker for end of user editable parameters
-constexpr uint8_t PARAM_TOTAL = 24;          // For maintenace
-
-// ============================================================================
 // LFO Target Constants
 // ============================================================================
 constexpr int LFO_TARGET_NONE = 0;

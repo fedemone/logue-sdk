@@ -223,7 +223,7 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // =================================================================
     resonant_synth_set_mode(&synth->resonant,
                             vdupq_n_u32(0xFFFFFFFF),
-                            (resonant_mode_t)(p[PARAM_RES_BODY_TILT] % 5));
+                            (resonant_mode_t)(p[PARAM_BODY_TILT] % 5));
 
     // =================================================================
     // Update LFO (params 12-19)
@@ -404,101 +404,93 @@ fast_inline float neon_horizontal_sum_alt(float32x4_t v) {
  * LFO phase sync: phases are reset on every trigger so a one-shot ramp at
  * slow rate acts as a secondary envelope.
  */
-fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
+fast_inline void fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
                                        uint8_t note,
                                        uint8_t velocity) {
-    // ---------------------------------------------------------------
-    // 1. MIDI note routing: build a position mask for this note.
-    //    Positions 0-3 map to kick/snare/metal/perc notes respectively.
-    //    Any non-drum note triggers all four positions.
-    // ---------------------------------------------------------------
-    uint32_t route_bits = 0xF;  // default: all voices eligible
-    if (note == synth->midi.kick_note)  route_bits = 0x1;
-    else if (note == synth->midi.snare_note) route_bits = 0x2;
-    else if (note == synth->midi.metal_note) route_bits = 0x4;
-    else if (note == synth->midi.perc_note)  route_bits = 0x8;
+    // Normalize velocity once.
+    const float32x4_t vel = vdupq_n_f32((float)velocity / 127.0f);
+    synth->voice_velocity = vel;
 
-    const uint32_t route_lanes[4] = {
-        (route_bits & 1) ? 0xFFFFFFFFU : 0U,
-        (route_bits & 2) ? 0xFFFFFFFFU : 0U,
-        (route_bits & 4) ? 0xFFFFFFFFU : 0U,
-        (route_bits & 8) ? 0xFFFFFFFFU : 0U,
-    };
-    uint32x4_t route_mask = vld1q_u32(route_lanes);
-
-    // ---------------------------------------------------------------
-    // 2. Probability gate, masked by routing
-    // ---------------------------------------------------------------
-    uint32x4_t gate = probability_gate_neon(&synth->prng,
-                                            synth->voice_probs[PARAM_VOICE1_PROB],
-                                            synth->voice_probs[PARAM_VOICE2_PROB],
-                                            synth->voice_probs[PARAM_VOICE3_PROB],
-                                            synth->voice_probs[PARAM_VOICE4_PROB]);
-    gate = vandq_u32(gate, route_mask);
-
-    uint32_t gate_bits = 0;
-    gate_bits |= (vgetq_lane_u32(gate, 0) ? 1 : 0) << 0;
-    gate_bits |= (vgetq_lane_u32(gate, 1) ? 1 : 0) << 1;
-    gate_bits |= (vgetq_lane_u32(gate, 2) ? 1 : 0) << 2;
-    gate_bits |= (vgetq_lane_u32(gate, 3) ? 1 : 0) << 3;
-
-    if (gate_bits == 0) return;
-
-    // ---------------------------------------------------------------
-    // 3. Per-voice velocity
-    // ---------------------------------------------------------------
-    float vel_scale = velocity / 127.0f;
-    synth->voice_velocity = vbslq_f32(gate,
-                                       vdupq_n_f32(vel_scale),
-                                       synth->voice_velocity);
-
-    // ---------------------------------------------------------------
-    // 4. Set engine note for each triggered voice.
-    //    Apply Euclidean tuning: voice i gets note + euclid_offsets[i]
-    //    so the 4 voices are spread across a Euclidean pitch distribution.
-    //    When EuclTun=Off, euclid_offsets = [0,0,0,0] (no change).
-    // ---------------------------------------------------------------
-    float32x4_t midi_note_v = vaddq_f32(vdupq_n_f32((float)note),
-                                         synth->euclid_offsets);
-
-    for (int v = 0; v < VOICE_ALLOC_MAX; v++) {
-        if (gate_bits & (1 << v)) {
-            uint32x4_t voice_mask = vceqq_u32(vdupq_n_u32(v),
-                                               vld1q_u32((const uint32_t[]){0,1,2,3}));
-            switch (synth->voice_engine[v]) {
-                case ENGINE_KICK:
-                    kick_engine_set_note(&synth->kick, voice_mask, midi_note_v);    break;
-                case ENGINE_SNARE:
-                    snare_engine_set_note(&synth->snare, voice_mask, midi_note_v);  break;
-                case ENGINE_METAL:
-                    metal_engine_set_note(&synth->metal, voice_mask, midi_note_v);  break;
-                case ENGINE_PERC:
-                    perc_engine_set_note(&synth->perc, voice_mask, midi_note_v);    break;
-                case ENGINE_RESONANT:
-                    resonant_synth_set_f0(&synth->resonant, voice_mask, midi_note_v); break;
-            }
-        }
+    // Decide which voices are eligible.
+    // Dedicated drum-note routing:
+    //   kick  = 36 (C2)
+    //   snare = 38 (D2)
+    //   metal = 42 (F#2)
+    //   perc  = 45 (A2)
+    //
+    // Any other note acts as a "global trigger" and can excite all voices.
+    uint32_t route_bits = 0xF;
+    if (note == synth->midi.kick_note) {
+        route_bits = 0x1;
+    } else if (note == synth->midi.snare_note) {
+        route_bits = 0x2;
+    } else if (note == synth->midi.metal_note) {
+        route_bits = 0x4;
+    } else if (note == synth->midi.perc_note) {
+        route_bits = 0x8;
     }
 
-    // ---------------------------------------------------------------
-    // 5. Track active notes for per-voice release
-    // ---------------------------------------------------------------
-    synth->midi.active_notes[note] |= (uint8_t)gate_bits;
+    const uint32_t route_lanes[4] = {
+        (route_bits & 0x1) ? 0xFFFFFFFFu : 0u,
+        (route_bits & 0x2) ? 0xFFFFFFFFu : 0u,
+        (route_bits & 0x4) ? 0xFFFFFFFFu : 0u,
+        (route_bits & 0x8) ? 0xFFFFFFFFu : 0u
+    };
+    const uint32x4_t route_mask = vld1q_u32(route_lanes);
 
-    // ---------------------------------------------------------------
-    // 6. LFO phase sync: reset both LFO phases on every trigger.
-    //    A slow ramp (0.5 Hz) now acts as a one-shot attack/decay shape.
-    // ---------------------------------------------------------------
-    synth->lfo.phase1 = vdupq_n_f32(0.0f);
-    synth->lfo.phase2 = vdupq_n_f32(LFO_PHASE_OFFSET);
+    // Probability gate per voice.
+    // Each lane is kept only if the random draw is <= configured probability.
+    uint32x4_t gate = probability_gate_neon(&synth->prng,
+                                            synth->voice_probs[0],
+                                            synth->voice_probs[1],
+                                            synth->voice_probs[2],
+                                            synth->voice_probs[3]);
 
-    // ---------------------------------------------------------------
-    // 7. Trigger envelope for gated voices
-    // ---------------------------------------------------------------
+    gate = vandq_u32(gate, route_mask);
+
+    // Store a compact triggered mask for diagnostics / future use.
     synth->voice_triggered = gate;
-    // Mask to lower 7 bits: bit 7 encodes metal character, not envelope index
-    neon_envelope_trigger(&synth->envelope, gate,
-                          synth->current_env_shape & 0x7Fu);
+
+    // Build a per-voice note vector with Euclidean spread.
+    // Offsets are in semitones and are applied on top of the incoming note.
+    float32x4_t base_note = vdupq_n_f32((float)note);
+    float32x4_t tuned_note = vaddq_f32(base_note, synth->euclid_offsets);
+
+    // Route note to engines by fixed voice position.
+    // No allocation table is needed anymore.
+    if (vgetq_lane_u32(gate, 0)) {
+        uint32x4_t lane0 = vdupq_n_u32(0u);
+        lane0 = vsetq_lane_u32(0xFFFFFFFFu, lane0, 0);
+        kick_engine_set_note(&synth->kick, lane0, tuned_note);
+    }
+
+    if (vgetq_lane_u32(gate, 1)) {
+        uint32x4_t lane1 = vdupq_n_u32(0u);
+        lane1 = vsetq_lane_u32(0xFFFFFFFFu, lane1, 1);
+        snare_engine_set_note(&synth->snare, lane1, tuned_note);
+    }
+
+    if (vgetq_lane_u32(gate, 2)) {
+        uint32x4_t lane2 = vdupq_n_u32(0u);
+        lane2 = vsetq_lane_u32(0xFFFFFFFFu, lane2, 2);
+        metal_engine_set_note(&synth->metal, lane2, tuned_note);
+    }
+
+    if (vgetq_lane_u32(gate, 3)) {
+        uint32x4_t lane3 = vdupq_n_u32(0u);
+        lane3 = vsetq_lane_u32(0xFFFFFFFFu, lane3, 3);
+        perc_engine_set_note(&synth->perc, lane3, tuned_note);
+    }
+
+    // Reset the envelope on any successful trigger.
+    // If your envelope helper exposes a different trigger function name,
+    // replace this single call accordingly.
+    if (vgetq_lane_u32(gate, 0) ||
+        vgetq_lane_u32(gate, 1) ||
+        vgetq_lane_u32(gate, 2) ||
+        vgetq_lane_u32(gate, 3)) {
+        neon_envelope_trigger(&synth->envelope, synth->current_env_shape);
+    }
 }
 
 /**
@@ -529,7 +521,7 @@ fast_inline void fm_perc_synth_note_off(fm_perc_synth_t* synth, uint8_t note) {
   * Process one audio sample with full LFO modulation support
  */
 fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
-    // Advance smoothing first, then copy smoothed values into the active LFO.
+    // Advance LFO smoothing and mirror smoothed routing into the live LFO state.
     lfo_smoother_process(&synth->lfo_smooth);
 
     synth->lfo.shape_combo = static_cast<uint32_t>(synth->params[Synth::PARAM_LFO1_SHAPE]);
@@ -540,15 +532,16 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     synth->lfo.rate1   = synth->lfo_smooth.current_rate1;
     synth->lfo.rate2   = synth->lfo_smooth.current_rate2;
 
-    // Advance the LFOs.
+    // Advance LFO waveforms.
     float32x4_t lfo1 = vdupq_n_f32(0.0f);
     float32x4_t lfo2 = vdupq_n_f32(0.0f);
     lfo_enhanced_process(&synth->lfo, &lfo1, &lfo2);
 
-    // Shared envelope.
-    float32x4_t envelope = neon_envelope_process(&synth->envelope);
+    // Advance envelope and read its current level.
+    neon_envelope_process(&synth->envelope);
+    float32x4_t envelope = synth->envelope.level;
 
-    // Start from a plain pitch multiplier and index add.
+    // LFO accumulators.
     float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
     float32x4_t lfo_index_add  = vdupq_n_f32(0.0f);
     float32x4_t lfo_noise_add  = vdupq_n_f32(0.0f);
@@ -557,100 +550,122 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
 
     const uint32_t t1 = synth->lfo.target1;
     const uint32_t t2 = synth->lfo.target2;
-
     const float32x4_t d1 = synth->lfo.depth1;
     const float32x4_t d2 = synth->lfo.depth2;
 
-    auto apply_target = [&](uint32_t target, float32x4_t lfo_val, float32x4_t depth) {
-        switch (target) {
-            case LFO_TARGET_PITCH:
-                lfo_pitch_mult = vaddq_f32(lfo_pitch_mult, vmulq_f32(lfo_val, depth));
-                break;
-            case LFO_TARGET_INDEX:
-                lfo_index_add = vaddq_f32(lfo_index_add,
-                                          vmulq_f32(vmulq_f32(lfo_val, depth),
-                                                    vdupq_n_f32(0.25f)));
-                break;
-            case LFO_TARGET_ENV:
-                lfo_env_mult = vaddq_f32(lfo_env_mult, vmulq_f32(lfo_val, depth));
-                break;
-            case LFO_TARGET_NOISE_MIX:
-                lfo_noise_add = vaddq_f32(lfo_noise_add,
-                                          vmulq_f32(vmulq_f32(lfo_val, depth),
-                                                    vdupq_n_f32(0.15f)));
-                break;
-            case LFO_TARGET_METAL_GATE:
-                // Map bipolar LFO to [0,1], then apply depth softly.
-                lfo_metal_gate = vaddq_f32(vdupq_n_f32(0.5f),
-                                           vmulq_f32(vmulq_f32(lfo_val, depth),
-                                                     vdupq_n_f32(0.5f)));
-                lfo_metal_gate = fm_vclamp01(lfo_metal_gate);
-                break;
-            default:
-                break;
-        }
-    };
+    switch (t1) {
+        case LFO_TARGET_PITCH:
+            lfo_pitch_mult = vaddq_f32(lfo_pitch_mult, vmulq_f32(lfo1, d1));
+            break;
+        case LFO_TARGET_INDEX:
+            lfo_index_add = vaddq_f32(lfo_index_add,
+                                      vmulq_f32(vmulq_f32(lfo1, d1), vdupq_n_f32(0.25f)));
+            break;
+        case LFO_TARGET_ENV:
+            lfo_env_mult = vaddq_f32(lfo_env_mult, vmulq_f32(lfo1, d1));
+            break;
+        case LFO_TARGET_NOISE_MIX:
+            lfo_noise_add = vaddq_f32(lfo_noise_add,
+                                      vmulq_f32(vmulq_f32(lfo1, d1), vdupq_n_f32(0.15f)));
+            break;
+        case LFO_TARGET_METAL_GATE:
+            lfo_metal_gate = vaddq_f32(vdupq_n_f32(0.5f),
+                                       vmulq_f32(vmulq_f32(lfo1, d1), vdupq_n_f32(0.5f)));
+            lfo_metal_gate = fm_vclamp01(lfo_metal_gate);
+            break;
+        default:
+            break;
+    }
 
-    apply_target(t1, lfo1, d1);
-    apply_target(t2, lfo2, d2);
+    switch (t2) {
+        case LFO_TARGET_PITCH:
+            lfo_pitch_mult = vaddq_f32(lfo_pitch_mult, vmulq_f32(lfo2, d2));
+            break;
+        case LFO_TARGET_INDEX:
+            lfo_index_add = vaddq_f32(lfo_index_add,
+                                      vmulq_f32(vmulq_f32(lfo2, d2), vdupq_n_f32(0.25f)));
+            break;
+        case LFO_TARGET_ENV:
+            lfo_env_mult = vaddq_f32(lfo_env_mult, vmulq_f32(lfo2, d2));
+            break;
+        case LFO_TARGET_NOISE_MIX:
+            lfo_noise_add = vaddq_f32(lfo_noise_add,
+                                      vmulq_f32(vmulq_f32(lfo2, d2), vdupq_n_f32(0.15f)));
+            break;
+        case LFO_TARGET_METAL_GATE:
+            lfo_metal_gate = vaddq_f32(vdupq_n_f32(0.5f),
+                                       vmulq_f32(vmulq_f32(lfo2, d2), vdupq_n_f32(0.5f)));
+            lfo_metal_gate = fm_vclamp01(lfo_metal_gate);
+            break;
+        default:
+            break;
+    }
 
-    // Keep pitch sane.
     lfo_pitch_mult = vmaxq_f32(lfo_pitch_mult, vdupq_n_f32(0.125f));
-
-    // Envelope modulation stays gentle.
     envelope = vmulq_f32(envelope, fm_vclamp01(lfo_env_mult));
 
-    // Active mask from envelope state.
+    // Active mask: everything that is not OFF.
     uint32x4_t active_mask = vmvnq_u32(vceqq_u32(synth->envelope.stage,
                                                  vdupq_n_u32(ENV_STATE_OFF)));
 
+    // Global controls stay in params[].
+    const float32x4_t hit_shape = vdupq_n_f32(
+        synth->params[Synth::PARAM_HIT_SHAPE] / 100.0f);
+
+    const float32x4_t body_tilt = vdupq_n_f32(
+        synth->params[Synth::PARAM_BODY_TILT] / 100.0f);
+
+    const float32x4_t drive = vdupq_n_f32(
+        synth->params[Synth::PARAM_DRIVE] / 100.0f);
+
+    // Transient and body shaping before the engines run.
+    float32x4_t transient_env = fm_make_transient_env(envelope, hit_shape);
+    float32x4_t body_env = fm_make_body_env(envelope, body_tilt);
+
     // Engine outputs.
     float32x4_t kick_out = kick_engine_process(&synth->kick,
-                                               envelope,
+                                               transient_env,
                                                active_mask,
                                                lfo_pitch_mult,
                                                lfo_index_add);
 
     float32x4_t snare_out = snare_engine_process(&synth->snare,
-                                                 envelope,
+                                                 transient_env,
                                                  active_mask,
                                                  lfo_pitch_mult,
                                                  vaddq_f32(lfo_index_add, lfo_noise_add),
-                                                 synth->snare.noise_amount + lfo_noise_add);
+                                                 vaddq_f32(synth->snare.noise_mix, lfo_noise_add));
 
     float32x4_t metal_out = metal_engine_process(&synth->metal,
-                                                 envelope,
+                                                 body_env,
                                                  active_mask,
                                                  lfo_pitch_mult,
                                                  lfo_index_add,
-                                                 synth->metal.attack_brightness,
+                                                 synth->metal.brightness,
                                                  lfo_metal_gate);
 
     float32x4_t perc_out = perc_engine_process(&synth->perc,
-                                               envelope,
+                                               body_env,
                                                active_mask,
                                                lfo_pitch_mult,
                                                lfo_index_add);
 
-    // Simple bus glue: keep body a little stronger than edge.
+    // Mix. Kick and Snare stay more transient; Metal and Perc lean more body-weighted.
     float32x4_t mix = vdupq_n_f32(0.0f);
     mix = vaddq_f32(mix, vmulq_n_f32(kick_out,  0.28f));
     mix = vaddq_f32(mix, vmulq_n_f32(snare_out, 0.24f));
     mix = vaddq_f32(mix, vmulq_n_f32(metal_out, 0.22f));
     mix = vaddq_f32(mix, vmulq_n_f32(perc_out,  0.26f));
 
-    // Global drive from the new control model.
-    float32x4_t drive = vaddq_f32(vdupq_n_f32(1.0f),
-                                  vmulq_f32(params[PARAM_DRIVE],
-                                            vdupq_n_f32(0.85f)));
-    mix = vmulq_f32(mix, drive);
+    // Global drive from params[].
+    float32x4_t drive_gain = fm_make_drive_gain(drive);
+    mix = vmulq_f32(mix, drive_gain);
 
-    // Soft saturation for punch and glue.
-    mix = vdivq_f32(mix, vaddq_f32(vdupq_n_f32(1.0f), vabsq_f32(mix)));
+    // Soft clip for punch and glue.
+    mix = fm_soft_clip(mix);
 
     // Master gain.
     mix = vmulq_n_f32(mix, synth->master_gain);
 
-    // Mono output.
     return neon_horizontal_sum_alt(mix);
 }
