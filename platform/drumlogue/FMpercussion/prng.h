@@ -207,6 +207,41 @@ fast_inline uint32x4_t neon_prng_rand(neon_prng_t* rng) {
     return neon_prng_rand_u32(rng);
 }
 
+/**
+ * @brief very cheap NEON noise
+ *
+ * @param state
+ * @return fast_inline
+ */
+fast_inline float32x4_t noise4(float32x4_t *state) {
+    // Xorshift-like (fast, good enough for audio)
+    *state = vaddq_f32(*state, vdupq_n_f32(1.61803398875f));
+    float32x4_t s = *state;
+
+    return vsubq_f32(vmulq_f32(vfractq_f32(vmulq_n_f32(s, 12.9898f)),
+                               vdupq_n_f32(2.0f)),
+                     vdupq_n_f32(1.0f));
+}
+
+
+/**
+ * @brief returning a value between 0 and 1 for different sources
+ *
+ * @param rng
+ * @return fast_inline
+ */
+fast_inline float32x4_t white_noise(neon_prng_t* rng) {
+    uint32x4_t rand = neon_prng_rand_u32(rng);
+    uint32x4_t masked = vandq_u32(rand, vdupq_n_u32(0x7FFFFF)); // 23 ones, discarding the top 9 bits of your random number
+    uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000)); // exact hexadecimal representation of the float 1.0f
+    // Shift down to 0.0 to 1.0
+    float32x4_t white = vsubq_f32(vreinterpretq_f32_u32(float_bits),
+                                    vdupq_n_f32(1.0f));
+    white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)),
+                        vdupq_n_f32(1.0f));
+    return white;
+}
+
 // ========== UNIT TEST ==========
 #ifdef TEST_PRNG
 
