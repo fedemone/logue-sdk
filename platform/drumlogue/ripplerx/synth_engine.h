@@ -336,22 +336,22 @@ public:
             { 7,  41,   0,   1,   200,  387,  0,   0,     2, 5,  173,   8,    0,  50, 18,    38,     1,   5,   5,    5, 400,  0,   400, 707}, // 7:  Taiko      — Gain5 (was 40 — was fully saturated); NzMix5 (was 11)
             { 8,  65,   0,   1,   700,  450,  0,   0,     1, 5,   86,  -1,    0,  50,  3,    15,    25,   5,   5,   25, 500,  2,   100, 707}, // 8:  MrchSnr    — Ptls1 (was 2): disables ResB so ResA+ResB coupling doesn't extend T60 from 0.21s→0.55s; single membrane resonator
             { 9,  41,   0,   1,   100,  150,  0,   0,     0, 4,  162,  -3,    0,   0, 20,     7,     1,   5,   5,    5, 800,  0,    40, 707}, // 9:  Tam Tam    — NzFq40=400Hz (was 800=8kHz): 8kHz noise was dominating spectral centroid, pulling it 7× above reference
-            {10,  60,   0,   1,   600,  395,  0,   0,     0, 0,  185,  28,    0,   0, 12,     3,     1,  15,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — c=0.98@262Hz (Mterl28+TubRad15); all harmonics T60≈2.2s (ref 3.47s; ratio≥0.63)
+            {10,  60,   0,   1,   600,  295,  0,   0,     0, 0,  195,  28,    0,   0, 12,     3,     1,  15,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — MlltStif395→295 (centroid×1.65→1.0); Dkay185→195 (T60×0.90→≈ref)
             {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  197,  -4,    0,   0, 18,     1,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — metal bar: T60=4.0s@C5→Dkay197; B=0.0005→InHm1; Beam model
-            {12,  48,   0,   1,   900,  430,  0,   0,     0, 2,   82,   9,    0,   0,  2,    12,     1,   5,   0,   18, 450,  0,   700, 707}, // 12: Wodblk     — Phase-23 pilot: short wood click (faster decay + harder mallet + stronger transient noise)
+            {12,  81,   0,   1,   900,  430,  0,   0,     0, 2,  150,  28,    0,   0,  2,    12,     1,   5,   0,   45, 450,  0,   700, 707}, // 12: Wodblk     — Note81(A5=880Hz); Mterl28; Dkay150→T60≈200ms; NzMix45 (flatness↑ toward ref 0.36)
             {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,   5,    2, 300,  0,   800, 707}, // 13: Ac Tom     — Gain5 (was 15)
             {14,  60,   0,   1,   800,  425,  0,   0,     0, 4,  176,  20,    0,   0, 18,     9,     5,   5,   5,   15, 600,  2,   400, 707}, // 14: Cymbal     — NzFq400=4kHz (was 200=2kHz): shifting noise from 2→4kHz raises centroid from ×0.34 toward ×0.65 vs reference
             {15,  50,   0,   1,   200,   10,  0,   0,     0, 4,  188,  -8,    0,   0, 20,     8,     1,   5,  20,    4, 800,  0,    30, 707}, // 15: Gong       — NzFq30=300Hz (was 600=6kHz): 6kHz noise was pulling centroid 3× above reference; B=0.004→InHm8
             {16,  65,   0,   1,   700,  491,  0,   0,     0, 1,  194,  28,    0,   0,  5,     6,     1,  15,   3,    5, 300,  0,  1000, 707}, // 16: Kalimba    — c=0.98@392Hz (Mterl28+TubRad15); all harmonics T60≈3.2s (ref 3.80s; ratio≥0.84)
-            {17,  60,   0,   1,   600,  150,  0,   0,     0, 4,  194,  28,    0,   0, 12,     0,     3,  15,   5,    0, 300,  0,  1000, 707}, // 17: StelPan    — c=0.98@262Hz (Mterl28+TubRad15); MlltStif150; T60≈4.8s (ref 5.39s; ratio≥0.89)
+            {17,  60,   0,   1,   600,   50,  0,   0,     0, 4,  195,  28,    0,   0, 12,     0,     3,  15,   5,    0, 300,  0,  1000, 707}, // 17: StelPan    — MlltStif150→50 (centroid×4.77→~1.0); Dkay194→195 (T60 marginal)
             {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,     6,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — wooden sticks: T60≈0.055s@G5; InHm:20→6 (wood B≈0.003, Sqr-plate base already stiff)
             {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,  -8,    0,   0, 15,    58,    80,   5,   0,    8, 300,  0,  1500, 707}, // 20: Triangle   — NzMix8 (was 3): more 15kHz noise raises centroid from ×0.34 toward ×0.50 vs reference
             {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     4,     1,   5,   5,    3, 200,  0,   300, 707}, // 21: Kick Drum  — Gain5 (was 20); NzMix3 (was 5)
             {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    10,   5,   5,  100, 600,  2,   600, 707}, // 22: Clap       — Gain5, LwCt10 (was 40); NzRes600 (was 100 — very short); pure noise char.
             {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    20,   5,   3,  100, 900,  2,   800, 707}, // 23: Shaker     — Gain3; LwCt20 (was 80); NzRes900 (was 300→~240ms noise); HP@8kHz
-            {24,  72,   0,   1,   100,  162,  0,   0,     0, 7,  191,  -5,    0,   0, 12,     1,     1,   5,   0,   10, 950,  0,   400, 707}, // 24: Flute      — sample: D5/1.53s→Dkay191; MlltStif162; NzMix10 subtle breath; NzRes950
-            {25,  72,   0,   0,    50,   10,  0,   0,     0, 8,  180,  -8,    0,   0, 15,     9,     1,   5,   0,   12, 950,  0,   600, 707}, // 25: Clarinet   — sample: C5/0.82s→Dkay180; B=0.0045→InHm9; Mterl-8; MlltStif10; NzMix12
+            {24,  72,   0,   1,   100,  162,  0,   0,     0, 7,  191,  28,    0,   0, 12,     1,     1,   5,   0,   10, 950,  0,   400, 707}, // 24: Flute      — tube pitch fix (N÷2→523Hz); Mterl-5→28→c=0.98→T60≈0.87s (ratio×0.51)
+            {25,  72,   0,   0,    50,   10,  0,   0,     0, 8,  200,  28,    0,   0, 15,     9,     1,   5,   0,   12, 950,  0,   600, 707}, // 25: Clarinet   — tube pitch fix (N÷2→523Hz); Dkay200+Mterl28→c=0.96→T60≈6s (ratio×0.45)
             {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
             {27,  76,   0,   1,   700,   50,  0,   0,     0, 4,  200,  28,    0,   0, 18,     7,    10,  20,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — c=0.98@659Hz (Mterl28+TubRad20); MlltStif50 (very soft rubber mallet, nearly pure fundamental → measured T60 tracks fundamental ~6.3s ≥ ref12.5s/2)
             // 28: Guitar String — Karplus-Strong reference for physical model validation.
@@ -375,7 +375,7 @@ public:
             {35,  57,   0,   1,   900,  491,  0,   0,     0, 4,  192,  28,    0,   0, 18,    34,     5,  15,   0,   20, 700,  2,   600, 707},  // 35: Ride    — c=0.98@370Hz (Mterl28+TubRad15); T60≈3.1s (ref 4.69s; ratio≥0.66)
             {36,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,     5,   5,   0,   20, 600,  2,   700, 707},  // 36: RidBel  — LwCt5 (was 20); NzMix20 (was 60); NzRes600
             {37,  57,   0,   1,   600,  457,  0,   0,     1, 5,   94,   0,    0,   0,  8,     8,     2,   5,   0,    5, 500,  0,    50, 707},  // 37: Bongo   — NzFq50=500Hz (was 800=8kHz): 8kHz noise was pulling centroid 3.75× above reference; NzRes500
-            {38,  88,   0,   1,   100,  480,  0,   0,     0, 7,  181,   5,    0,   0,  5,     0,     2,   5,   0,   85, 200,  0,   500, 707},  // 38: GlsBotl — LP-corrected: c=0.505@1047Hz→H_lp=0.982→T60≈0.197s (ref 0.34s/2=0.17s floor); Mterl-8→5
+            {38,  88,   0,   1,   100,  480,  0,   0,     0, 7,  181,  28,    0,   0,  5,     0,     2,   5,   0,   85, 200,  0,   500, 707},  // 38: GlsBotl — tube pitch fix (N÷2→1319Hz); Mterl5→28→c=0.98→T60≈0.17s (ratio×0.49)
             {39,  49,   0,   1,   900,  445,  0,   0,     0, 4,  100,  13,    0,   0,  3,    16,     5,   5,   0,   29, 150,  2,   400, 707}   // 39: Tick    — Dkay100: combined T60≈0.34s; wg T60=0.40s, master t_s=0.71s; ratio=0.64 vs ref 0.54s
         };
 
@@ -895,6 +895,12 @@ public:
         // 2. Structural Routing: each resonator uses its own model for inharmonic offset.
         // ResA: Membrane/Drumhead models use standard pitch (resA is always the root).
         v.resA.delay_length = base_delay;
+        // Tube models (OpenTube=7, ClosedTube=8) use phase_mult=-1 (inverted feedback),
+        // which doubles the resonance period to T=2N, halving the resonant frequency.
+        // Halve the delay here to compensate so the pitch matches the MIDI note.
+        if (m_model_a == 7 || m_model_a == 8) {
+            v.resA.delay_length *= 0.5f;
+        }
         // ResB: its own model (m_model_b) determines whether it tracks an irrational offset.
         if (m_model_b == 3 || m_model_b == 5) {
 #ifndef ENABLE_PHASE_8_2D_DRUMHEAD
@@ -919,6 +925,9 @@ public:
         } else {
             // Standard matched resonators (Strings, Tubes, Bars)
             v.resB.delay_length = base_delay;
+        }
+        if (m_model_b == 7 || m_model_b == 8) {
+            v.resB.delay_length *= 0.5f;
         }
 
         // Micro-detune ResB by ~5 cents to break perfect mathematical beating.

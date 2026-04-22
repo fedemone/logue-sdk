@@ -150,7 +150,7 @@ int main(int argc, char** argv) {
         { 9,  41, 6.0f, "TamTam"   },
         {10,  60, 6.0f, "Koto"     },
         {11,  72, 6.0f, "Vibrph"   },
-        {12,  48, 3.0f, "Wodblk"   },
+        {12,  81, 2.0f, "Wodblk"   },
         {13,  45, 2.0f, "AcTom"    },
         {14,  60, 4.0f, "Cymbal"   },
         {15,  50, 6.0f, "Gong"     },
