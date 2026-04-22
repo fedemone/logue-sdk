@@ -10,7 +10,15 @@
 - **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
 - **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
 - **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
-  *(user can supply parameter values from original RipplerX project)*
+- **crunch**
+- **bottle pop**
+- **glass bottle**
+- **kalimba**
+- **maracas**
+- **Chacha nut**
+- **Guiro**
+- **Clock**
+*(user can supply wave files for reference)*
 
 ### Project rename: RipplerX → Brachetti
 In honour of Italian performer Arturo Brachetti. When the model is settled:
@@ -28,6 +36,73 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
   design but need clearer UI labels or documentation.
 - **PCM sample beats** — whether the remaining beat after Smp=0 fix comes from sample
   content or another source; can wait until clean pure-waveguide sound is validated.
+
+---
+## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
+
+Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
+that can be validated quickly on hardware before scaling to the rest of the kit.
+
+### Pilot strategy
+
+- Keep prior table values for most presets.
+- Tune only `12 Wodblk` toward a more percussive profile:
+  - lower `Dkay` (shorter ring),
+  - higher `MlSt` (harder strike),
+  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
+
+### Why this narrower scope
+
+- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
+  unavailable and package install blocked), and Docker toolchain is not present here.
+- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
+  across many programs without objective render metrics.
+
+### Next step after this commit
+
+Hardware A/B for preset 12 (`Wodblk`), then either:
+1. keep and propagate the same tuning pattern to adjacent percussive presets, or
+2. rollback/retune based on the measured transient/decay behaviour.
+
+### Added pre-HW analysis harness
+
+- Added `pre_hw_analysis.py` to compare rendered audio vs reference samples using
+  both time-domain and spectral metrics without external Python dependencies.
+- Metrics include: attack time, T60 estimate (Schroeder integration), autocorrelation F0,
+  spectral centroid/rolloff/flatness/flux, inharmonicity deviation, and multi-resolution
+  log-STFT distance.
+- Output is a JSON report with per-pair metrics + a weighted scalar score to rank
+  closeness before hardware flashing.
+
+### Added batch runner for convergence workflow
+
+- Added `batch_tune_runner.py` to automate:
+  1. sample discovery and sample→preset mapping from filenames (+ override map),
+  2. rendered/reference file coupling by preset index/name,
+  3. batch comparison with `pre_hw_analysis.py`,
+  4. tuning hints and estimated runs-to-target scoring.
+- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
+  ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
+- Added built-in helper output to the runner:
+  - `--helper` prints the full workflow guide,
+  - `--write-helper <path>` saves the guide as markdown.
+- Helper now includes WSL/QEMU commands used for ARM-side testing.
+- Added `run_tuning.sh` wrapper to execute common checks in sequence
+  (`py_compile`, helper preview/export, `git diff --check`) with clear step logs.
+- `run_tuning.sh` also reads `batch_tuning_report.json` when present and prints
+  whether another render+compare iteration is recommended based on a configurable
+  delta threshold.
+- The runner emits:
+  - `batch_tuning_report.json` (full metrics + suggestions),
+  - `batch_tuning_report.csv` (sortable table),
+  - `batch_tuning_progress.md` (human-readable progress notes).
+- Convergence estimate currently uses an exponential model
+  (`score_next = score_now * assumed_improvement`) with tunable target score and
+  improvement factor, so expected run count can be revised as real run history is collected.
+- Pre-HW comparison now includes pitch-normalized spectral deltas (centroid/rolloff
+  normalized by detected F0), reducing false mismatch when sample and rendered notes differ.
+- Added optional `--auto-note-align` mode to use pitch-aligned MR-STFT distance
+  (simple resampling alignment) when rendered and sample notes are not the same.
 
 ---
 
