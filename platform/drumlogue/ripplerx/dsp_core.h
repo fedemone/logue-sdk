@@ -37,6 +37,13 @@
 // #define ENABLE_PHASE_8_2D_DRUMHEAD 1
 // =================================================================
 
+// =================================================================
+// STAGE-2 PILOT: simple 2-mode modal bank (single-preset, compile-time guarded)
+#ifndef ENABLE_STAGE2_MODAL_PILOT
+#define ENABLE_STAGE2_MODAL_PILOT 1
+#endif
+// =================================================================
+
 
 
 /** Because we are optimizing for bare-metal, notice there are no virtual functions,
@@ -76,6 +83,8 @@ struct ExciterState {
     // Exception: tube models (OpenTube=7, ClosedTube=8) also receive noise into their
     // waveguide for physically correct sustained breath excitation (flute, clarinet).
     float noise_out_sample = 0.0f;
+    float noise_lp_state = 0.0f;   // stage-1 dual-band noise shaper LP state
+    float noise_band_mix = 0.5f;   // 0=mostly low thump, 1=mostly high click
 
     float mallet_lp = 0.0f;
     float mallet_lp2 = 0.0f;       // Second LP pole state (MlltRes)
@@ -150,6 +159,41 @@ struct VoiceState {
     // not RMS.  For the −80 dB silence gate both are equivalent in practice.
     // Smoothing: α=0.01 → τ ≈ 100 samples ≈ 2 ms at 48 kHz.
     float mag_env = 0.0f;
+
+    // Stage-1 transient complexity boost (short post-strike modulation window).
+    uint32_t transient_frames_left = 0;
+    uint32_t transient_frames_total = 0;
+    float transient_inv_total = 0.0f; // 1 / transient_frames_total (cached)
+    float transient_lp_jitter = 0.0f;
+    float transient_ap_jitter = 0.0f;
+    // Unmodulated per-voice coefficient anchors (set by UI/NoteOn).
+    // Transient modulation is always applied relative to these bases.
+    float transient_lp_base_a = 1.0f;
+    float transient_lp_base_b = 1.0f;
+    float transient_ap_base_a = 0.0f;
+    float transient_ap_base_b = 0.0f;
+
+#if ENABLE_STAGE2_MODAL_PILOT
+    // Stage-2 pilot modal-bank path (2 modes) for single-preset A/B.
+    bool modal_pilot_enabled = false;
+    float modal_phase_1 = 0.0f;
+    float modal_phase_2 = 0.0f;
+    float modal_inc_1 = 0.0f;
+    float modal_inc_2 = 0.0f;
+    float modal_sin_1 = 0.0f;
+    float modal_sin_2 = 0.0f;
+    float modal_cos_1 = 1.0f;
+    float modal_cos_2 = 1.0f;
+    float modal_rot_cos_1 = 1.0f;
+    float modal_rot_cos_2 = 1.0f;
+    float modal_rot_sin_1 = 0.0f;
+    float modal_rot_sin_2 = 0.0f;
+    float modal_env_1 = 0.0f;
+    float modal_env_2 = 0.0f;
+    float modal_decay_1 = 0.9990f;
+    float modal_decay_2 = 0.9985f;
+    float modal_mix = 0.0f;
+#endif
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)
