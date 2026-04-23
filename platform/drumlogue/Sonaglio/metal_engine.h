@@ -238,14 +238,8 @@ fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
 
     // Broadband noise layer for the bright transient.
     {
-        uint32x4_t rand = neon_prng_rand_u32(&metal->noise_prng);
-        uint32x4_t masked = vandq_u32(rand, vdupq_n_u32(0x7FFFFF));
-        uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000));
 
-        float32x4_t white = vsubq_f32(vreinterpretq_f32_u32(float_bits),
-                                      vdupq_n_f32(1.0f));
-        white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)),
-                          vdupq_n_f32(1.0f));
+        float32x4_t white = white_noise(&metal->noise_prng);
 
         float32x4_t lp = one_pole_lpf_a(&metal->noise_hpf, white, METAL_NOISE_HP_A);
         float32x4_t noise_hp = vsubq_f32(white, lp);

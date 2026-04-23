@@ -1,217 +1,171 @@
-# FM Percussion Synth — Progress Report
+# Sonaglio — Progress and Design Roadmap
 
-## Current Direction
+## Current status
 
-The project has been refocused from a 5-engine / voice-allocation instrument into a **fixed 4-engine percussion synth** with a clearer performance-oriented control model.
+The project has moved from a 5-engine / allocation-driven layout to a **fixed 4-engine FM percussion instrument**.
 
-Current instrument identity:
+What is already in place:
 
-- **4 fixed engines**: Kick, Snare, Metal, Perc
-- **2 controls per engine**: Attack / Body
-- **3 reclaimed globals**: HitShape / BodyTilt / Drive
-- **Probability-triggered voices**
-- **Euclidean tuning support**
-- **ARM NEON first**
-- **No heap allocation**
+- 4 fixed engines: Kick, Snare, Metal, Perc
+- New parameter contract in `header.c`
+- `synth.h` control-layer rewrite
+- `engine_mapping.h` for parameter projection
+- rewritten engine files for the current 4-engine model
+- preset data rebuilt around the new parameter language
+- resonant engine retained in code, but not active in the main instrument path
 
-The resonant engine is **kept in code only** for the moment, but it is not part of the active performance path.
-
----
-
-## What We Have Now
-
-### 1) Control layer
-
-#### `synth.h`
-- rewritten as the top-level control / routing layer
-- contains the new 24-parameter contract
-- keeps:
-  - `setParameter()`
-  - preset loading
-  - note handling
-  - render entry point
-- `HitShape`, `BodyTilt`, and `Drive` remain stored in `params[]`
-- those three globals are now intended to be read directly during processing
-
-#### `header.c`
-- moved to the fixed 4-engine naming model
-- UI parameter names are now intended to be:
-  - `KProb`, `SProb`, `MProb`, `PProb`
-  - `KAtk`, `KBody`, `SAtk`, `SBody`
-  - `MAtk`, `MBody`, `PAtk`, `PBody`
-  - `HitShp`, `BodyTilt`, `Drive`
-- voice allocation has been removed from the UI budget
-
-#### `engine_mapping.h`
-- simplified stateless mapping layer
-- no nested macro cache
-- `HitShape`, `BodyTilt`, and `Drive` are read from `params[]`
-- provides helpers for:
-  - transient shaping
-  - body shaping
-  - drive gain
-  - soft clipping
-  - direct parameter normalization
+The current design is now much closer to a stable instrument identity rather than a collection of loosely related synth modes.
 
 ---
 
-### 2) DSP / voice files
+## What is still being stabilized
 
-#### Rewritten
-- `kick_engine.h`
-- `snare_engine.h`
-- `metal_engine.h`
-- `perc_engine.h`
+### 1. Final runtime wiring
+The control model is defined, but the last pass of runtime validation is still needed to confirm that:
 
-These now interpret their parameters as:
+- `HitShape` affects transient behavior in the render path
+- `BodyTilt` affects body and low-mid weight in the render path
+- `Drive` affects saturation / bus push in the render path
 
-- **Param1 = Attack / Energy / Brightness**
-- **Param2 = Body / Decay / Stability**
+### 2. Engine behavior review
+The engine rewrites are in place, but they still need listening and test-based confirmation to verify:
 
-#### Still in code
-- `resonant_synthesis.h`
+- punch consistency
+- body consistency
+- output balance between engines
+- how far each engine can reach within the current parameter range
 
-This remains available but is not part of the active 4-engine instrument path.
+### 3. Preset tuning
+The presets are structurally correct, but they are still provisional.
+They should be tuned after the core behavior is confirmed, not before.
 
----
-
-### 3) Shared helper files present
-
-- `envelope_rom.h`
-- `lfo_enhanced.h`
-- `lfo_smoothing.h`
-- `fm_voices.h`
-- `constants.h`
-- `float_math.h`
-- `prng.h` via the included engine files / synth layer
+### 4. Test suite refresh
+The old tests were tied to the previous architecture and must be replaced with tests that validate the new behavior model.
 
 ---
 
-### 4) Runtime entry point
+## Important design choices already made
 
-- `unit.cc`
-  - still serves as the Drumlogue SDK bridge
-  - routes parameter changes and rendering into `Synth`
+### Fixed engine identity
+The project now assumes:
 
----
+- Kick = low-end strike
+- Snare = crack + shell + noise
+- Metal = inharmonic metallic energy
+- Perc = flexible percussion / block / tom / wood / digital percussion
 
-### 5) Preset files
+### No voice allocation in the UI
+The instrument no longer spends parameter budget on engine allocation.
+This makes the sound design more direct and easier to preset.
 
-- `fm_presets.h`
-- `fm_presets.cc`
-
-These have been rewritten around the new 4-engine model and new parameter meaning.
-The old resonant / voice-allocation data has been removed from the active preset model.
-
----
-
-## What Is Still Missing
-
-### 1) Final wiring of the three global controls
-
-The new controls:
+### Global shaping controls
+The three reclaimed global controls are now part of the instrument identity:
 
 - `HitShape`
 - `BodyTilt`
 - `Drive`
 
-must be fully consumed by the live render path.
+These are currently kept in `params[]` and should remain there.
 
-The missing step is to make them influence:
-
-- transient shape
-- body weight
-- final bus drive / soft clipping
-- the final behavior of `fm_perc_synth_process`
-
-### 2) Final `fm_perc_synth_process` integration
-
-The processing function still needs to be finalized so it:
-
-- advances the shared envelope
-- advances / smooths the LFOs
-- reads the mapped control values
-- runs the active engines
-- applies global transient/body/drive shaping
-- returns the final mono output
-
-### 3) Engine consistency pass
-
-The four engines have been rewritten, but they still need a consistency pass after the control path is fully locked.
-
-This pass should verify:
-- the new control semantics are audible
-- transient/body behavior is consistent across engines
-- parameter ranges behave monotonically
-
-### 4) Test update and execution
-
-The current tests were written for the old model and need to be updated.
-
-The new tests should validate:
-- parameter monotonicity
-- transient/body consistency
-- safe output range / no NaNs
-- preset-family coherence
-- note-trigger consistency with probability gating and Euclidean tuning
-
-### 5) Reference tuning pass
-
-After the redesign stabilizes, the next useful step is to compare rendered results against a small set of reference families and tune the presets toward those behaviors.
-
-Good reference sources can be:
-- Nord Drum 2 factory / signature bank families
-- other FM drum synth reference tones
-- classic tuned percussion / synthetic drum reference sets
-
-The goal is not exact cloning. The goal is to tune:
-- attack hardness
-- body weight
-- decay character
-- brightness / aggression
-- preset family separation
+### Resonant engine policy
+The resonant engine remains in the codebase for possible future use, but it is not part of the active instrument.
 
 ---
 
-## Next Steps
+## Open design questions
 
-### Step 1 — Final wiring of globals
-Wire `HitShape`, `BodyTilt`, and `Drive` into:
-- `fm_perc_synth_process()`
-- the final mix / saturation stage
+### Velocity
+Velocity exists as a possible runtime factor, but it is still undecided whether it should remain.
 
-### Step 2 — Keep engines stable while wiring
-Do **not** redesign the engines again immediately.
+Possible uses:
+- transient drive
+- attack brightness
+- body emphasis
+- saturation amount
 
-The goal is to first confirm the control path:
-- Parameters → Behavior → Processing
+If it does not produce a clearly audible benefit, it should be removed.
 
-### Step 3 — Preset rewrite is done
-The preset bank has been rebuilt around the new parameter meaning.
+### Parameter polarity
+Most parameters are currently unipolar (`0..100`).
 
-### Step 4 — Test suite update
-Rewrite the tests around the new control model and run them.
+Possible later extension:
+- bipolar values (`-100..100`) for specific controls that benefit from a two-sided meaning
 
-### Step 5 — Reference tuning pass
-Use curated reference families to tune the presets and validate the sonic direction.
+Potential candidates:
+- modulation polarity
+- spectral tilt
+- detune spread direction
+- transient emphasis vs suppression
+- body bias toward thin or heavy behavior
+
+This should wait until the current version is stable.
+
+### Reference tuning
+Reference-based tuning is useful, but only after the engine behavior is stable.
+Potential references include:
+- Nord Drum / Nord Drum 2
+- DX7-style percussion behavior
+- Model:Cycles-style digital percussion behavior
+
+These references are best used as listening targets, not as direct architecture templates.
 
 ---
 
-## Design Rule for the Refactor
+## Future implementation ideas
 
-For a constrained system like this, the correct flow is:
+### Short term
+- verify the new render path
+- confirm the final parameter wiring
+- remove any leftover legacy references
+- tighten preset families
+- add tests for monotonic parameter behavior
+- add tests for output bounds and stability
 
-> **Parameters → Behavior → Engine implementation**
+### Medium term
+- tune engine response curves
+- refine preset families by sound character
+- decide whether velocity becomes a real sound-control source
+- decide whether any controls should become bipolar
 
-That means parameter design must come first, then engine behavior must follow the mapped controls.
+### Long term
+- possible second project using the same 4-voice probability framework
+- resonant / modal / tonal percussion engine family
+- alternate instrument identity with shared platform basics
 
 ---
 
-## Current Priority Order
+## What should not be expanded too early
 
-1. Punch
-2. Body
-3. Aggression
-4. Variety
+The following should remain intentionally limited until the instrument is stable:
 
-Variety remains optional and should not weaken the core instrument identity.
+- number of user parameters
+- number of engine families
+- parameter polarity changes
+- advanced routing controls
+- experimental modulation features
+
+The instrument should first prove that the new 4-engine model is strong, coherent, and playable.
+
+---
+
+## Next steps
+
+1. Final runtime validation
+2. Listening and tuning pass
+3. Preset refinement
+4. Test rewrite and execution
+5. Decide on velocity and future bipolar controls
+6. Optional reference-matching pass
+
+---
+
+## Definition of done for the current stage
+
+The current stage is complete when:
+
+- the instrument produces stable audio
+- the new parameter model feels consistent across engines
+- presets are meaningfully distinct
+- the three global controls clearly affect sound
+- the test suite confirms the expected control behavior
+

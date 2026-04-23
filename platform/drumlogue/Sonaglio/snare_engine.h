@@ -110,14 +110,8 @@ fast_inline void snare_engine_set_note(snare_engine_t* snare,
  * Generate bandpassed noise sample for all 4 voices
  */
 fast_inline float32x4_t snare_generate_noise(snare_engine_t* snare) {
-    uint32x4_t rand = neon_prng_rand_u32(&snare->noise_prng);
-
-    uint32x4_t masked = vandq_u32(rand, vdupq_n_u32(0x7FFFFF));
-    uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000));
-    float32x4_t white = vsubq_f32(vreinterpretq_f32_u32(float_bits),
-                                  vdupq_n_f32(1.0f));
-    white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)),
-                      vdupq_n_f32(1.0f));
+    
+    float32x4_t white = white_noise(&snare->noise_prng);
 
     float32x4_t lp_800 = one_pole_lpf(&snare->noise_hpf, white, SNARE_NOISE_HPF_CUTOFF);
     float32x4_t hpf_out = vsubq_f32(white, lp_800);

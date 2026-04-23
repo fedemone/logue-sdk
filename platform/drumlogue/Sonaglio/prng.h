@@ -209,6 +209,24 @@ fast_inline uint32x4_t neon_prng_rand(neon_prng_t* rng) {
     return neon_prng_rand_u32(rng);
 }
 
+
+/**
+ * @brief generate white noise for different sources
+ *
+ * @param rng
+ * @return fast_inline
+ */
+fast_inline float32x4_t white_noise(neon_prng_t* rng) {
+    uint32x4_t rand = neon_prng_rand_u32(rng);
+    uint32x4_t masked = vandq_u32(rand, vdupq_n_u32(0x7FFFFF));
+    uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000));
+
+    float32x4_t white = vsubq_f32(vreinterpretq_f32_u32(float_bits),
+                                    vdupq_n_f32(1.0f));
+    white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)),
+                        vdupq_n_f32(1.0f));
+}
+
 // ========== UNIT TEST ==========
 #ifdef TEST_PRNG
 
