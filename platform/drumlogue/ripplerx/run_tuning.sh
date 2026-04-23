@@ -6,9 +6,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${ROOT_DIR}/../../.." && pwd)"
-REPORT_JSON="${REPORT_JSON:-${REPO_ROOT}/batch_reports/batch_tuning_report.json}"
+REPORT_JSON="${REPORT_JSON:-${ROOT_DIR}/batch_reports/batch_tuning_report.json}"
 DELTA_THRESHOLD="${DELTA_THRESHOLD:-20}"
-HELPER="${HELPER:-${REPO_ROOT}/batch_tuning_helper.md}"
+HELPER="${HELPER:-${ROOT_DIR}/batch_tuning_helper.md}"
 
 step() {
   echo
