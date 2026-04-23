@@ -89,7 +89,7 @@ fast_inline void wavefolder_set_drive_type(wavefolder_t* wf, int mode) {
  * Set drive amount (0-100%)
  */
 fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
-    float drive = drive_percent / 100.0f;
+    float drive = drive_percent * 0.01f;
     wf->drive = vdupq_n_f32(drive);
 
     // Makeup gain compensates for the pre-gain (1 + drive*2) applied in

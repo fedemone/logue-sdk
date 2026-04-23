@@ -36,7 +36,7 @@ fast_inline void smoother_init(param_smoother_t* sm, const uint8_t* params) {
         float values[4];
         for (int i = 0; i < 4; i++) {
             // Convert from 0-100 to 0-1 range
-            values[i] = params[page * 4 + i] / 100.0f;
+            values[i] = params[page * 4 + i] * 0.01f;
         }
 
         // Initialize all vectors
@@ -64,7 +64,7 @@ fast_inline void smoother_set_target(param_smoother_t* sm,
     if (page > 5 || param > 3) return;
 
     // Convert new value to 0-1 range
-    float new_target = new_value / 100.0f;
+    float new_target = new_value * 0.01f;
 
     // Extract current target vector
     float targets[4];
@@ -244,7 +244,7 @@ void test_smoothing_initialization() {
         vst1q_f32(current, sm.current[page]);
 
         for (int param = 0; param < 4; param++) {
-            float expected = params[page * 4 + param] / 100.0f;
+            float expected = params[page * 4 + param] * 0.01f;
             assert(fabsf(current[param] - expected) < 0.001f);
         }
 

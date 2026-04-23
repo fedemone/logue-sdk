@@ -49,7 +49,7 @@ enum parameters
     k_presence,
     k_distressor_distortion_type,
     k_distressor_ratio,
-    k_distressor_drive_wave_mode,
+    k_distressor_drive_wave_mode,  // wavefolder character (soft/hard/tri/sine/suboctave)
     k_multiband_band_selection,
     k_multiband_band_threshold,
     k_multiband_band_ratio,
@@ -58,6 +58,7 @@ enum parameters
     k_multiband_band_makeup,
     k_multiband_band_mute,
     k_multiband_band_solo,
+    k_detection_mode,              // envelope detector type: 0=Peak, 1=RMS, 2=Blend
 
     k_num_params,
 };
@@ -136,7 +137,7 @@ public:
         setParameter(k_presence, 50);   // PRESENCE: centre (matches header.c init)
         setParameter(k_distressor_distortion_type, DIST_MODE_CLEAN); // DSTR DIST: None
         setParameter(k_distressor_ratio, DIST_RATIO_1_1);            // DSTR RATIO: Warm mode
-        setParameter(k_distressor_drive_wave_mode, DRIVE_MODE_SOFT_CLIP);  // DSTR WAVE: DRIVE_MODE_SOFT_CLIP
+        setParameter(k_distressor_drive_wave_mode, DRIVE_MODE_SOFT_CLIP); // DSTR WAVE: Soft Clip
         setParameter(k_multiband_band_selection, BAND_LOW);          // BAND SEL: Low
         setParameter(k_multiband_band_threshold, THRESH_DEFAULT);    // L THRESH: -10.0 dB
         setParameter(k_multiband_band_ratio, RATIO_DEFAULT);         // L RATIO: 4.0
@@ -145,10 +146,9 @@ public:
         setParameter(k_multiband_band_makeup, MAKEUP_DEFAULT);       // MAKEUP: 0 dB
         setParameter(k_multiband_band_mute, 0);                      // MUTE off
         setParameter(k_multiband_band_solo, 0);                      // SOLO off
+        setParameter(k_detection_mode, 0);                           // Detection: Peak
 
-        use_external_sc_ = 0;   // We do not have sidechain...
-        detection_mode_ = DETECT_MODE_PEAK;  // TODO - this is never updated! Missing feature! Luckily we have a spare parameter to use
-        envelope_.mode = detection_mode_;  // propagate to detector
+        use_external_sc_ = 0;
     }
 
     inline void Resume() {}
@@ -306,12 +306,17 @@ private:
         // 3. ENVELOPE DETECTION (mode-specific)
         // =================================================================
         float32x4_t envelope_db;
-        // TODO - it's not clear the usage of DETECT_BAND_EMPH and DETECT_LINK.
-        // I would expect that else branch to be for the non-COMP_MODE_DISTRESSOR mode,
-        // but this code handles everything is same manner, making no distinction of the
-        // other two detection modes. Are they not implemented?
-        if (comp_mode_ == COMP_MODE_DISTRESSOR && (distressor_.detector_mode & DETECT_HPF)) {
-            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
+        if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+            float32x4_t envelope;
+            if (distressor_.detector_mode & DETECT_LINK) {
+                // Stereo link: detect L and R independently, gain follows the louder channel.
+                // Bypass sc_hpf_ (mono filter) and let distressor_detect_stereo apply its own HPF.
+                float32x4_t raw_l = (has_sidechain_ && use_external_sc_) ? sc_l : main_l;
+                float32x4_t raw_r = (has_sidechain_ && use_external_sc_) ? sc_r : main_r;
+                envelope = distressor_detect_stereo(&distressor_, raw_l, raw_r, samplerate_);
+            } else {
+                envelope = distressor_detect(&distressor_, sidechain, samplerate_);
+            }
             envelope_db = linear_to_db(envelope);
         } else {
             float32x4_t envelope = envelope_detect(&envelope_, sidechain);
@@ -396,17 +401,10 @@ private:
                                         float32x4_t envelope_db,
                                         float32x4_t* out_l,
                                         float32x4_t* out_r) {
-        float32x4_t detected_db;
-        if (distressor_.detector_mode & DETECT_HPF) {
-            float32x4_t sidechain = vaddq_f32(main_l, main_r);
-            float32x4_t envelope = distressor_detect(&distressor_, sidechain, samplerate_);
-            detected_db = linear_to_db(envelope);
-        } else {
-            detected_db = envelope_db;
-        }
-
+        // Detection is fully handled in process_block() before this call;
+        // envelope_db already reflects HPF, EMPH, and LINK flags.
         float32x4_t target_gain_db = distressor_gain_computer(&distressor_,
-                                                              detected_db,
+                                                              envelope_db,
                                                               thresh_db_);
 
         float32x4_t smoothed_gain_db = distressor_smooth(&distressor_,
@@ -438,9 +436,6 @@ private:
                 float32x4_t harm_r = generate_harmonics(&distressor_, main_r, distressor_.dist_mode);
                 *out_l = vmulq_f32(harm_l, gain_lin);
                 *out_r = vmulq_f32(harm_r, gain_lin);
-                // TODO - there's something that I'm missing here. This stage is written AFTER compression
-                // see lines 417..418 and yet not using comp_l, comp_r values.
-                // Comment on line 431 puzzles me, is this sequence correct?
                 break;
             }
             case DIST_MODE_CLEAN:
@@ -594,23 +589,40 @@ public:
                 distressor_set_ratio(&distressor_, value);  // this updates opto_release_mult
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
-            case k_distressor_drive_wave_mode: // DSTR WAVE
-              if (value < DRIVE_MODE_TOTAL)
-                wavefolder_set_drive_type(&wavefolder_, value);
-              break;
+            case k_distressor_drive_wave_mode: // DSTR WAVE (0=SoftClip, 1=HardClip, 2=Tri, 3=Sine, 4=SubOct)
+                if (value < DRIVE_MODE_TOTAL)
+                    wavefolder_set_drive_type(&wavefolder_, value);
+                break;
+
             /*===========================================================================*/
             /* Operation Overlord Distortion Emulation Parameters */
             /*===========================================================================*/
             case k_bass: // BASS (Operation Overlord EQ)
-                overlord_.bass = value / 100.0f;
+                overlord_.bass = value * 0.01f;
                 break;
 
             case k_treble: // TREBLE
-                overlord_.treble = value / 100.0f;
+                overlord_.treble = value * 0.01f;
                 break;
 
             case k_presence: // PRESENCE
-                overlord_.presence = value / 100.0f;
+                overlord_.presence = value * 0.01f;
+                break;
+
+            case k_detection_mode:
+                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                    // Distressor detector flags bitmask: 0=Basic, 1=Emph, 2=Link, 3=Emph+Link
+                    // Preserve DETECT_HPF — it is set separately by k_distressor_distortion_type.
+                    distressor_.detector_mode &= DETECT_HPF;
+                    if (value & 1) distressor_.detector_mode |= DETECT_BAND_EMPH;
+                    if (value & 2) distressor_.detector_mode |= DETECT_LINK;
+                } else {
+                    // Standard / multiband: Peak=0, RMS=1, Blend=2
+                    if (value >= 0 && value <= 2) {
+                        detection_mode_ = value;
+                        envelope_.mode = detection_mode_;
+                    }
+                }
                 break;
         }
     }
@@ -672,10 +684,19 @@ public:
               }
                 break;
 
-            case k_distressor_drive_wave_mode: // DSTR RATIO
-              if (value < DRIVE_MODE_TOTAL) {
-                return distressor_wave_type[value];
-              }
+            case k_distressor_drive_wave_mode: // DSTR WAVE
+                if (value < DRIVE_MODE_TOTAL)
+                    return distressor_wave_type[value];
+                break;
+
+            case k_detection_mode:
+                if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+                    static const char* dst_det[] = {"Basic", "Emph", "Link", "Emph+Lnk"};
+                    if (value >= 0 && value <= 3) return dst_det[value];
+                } else {
+                    static const char* std_det[] = {"Peak", "RMS", "Blend"};
+                    if (value >= 0 && value <= 2) return std_det[value];
+                }
                 break;
         }
         return nullptr;

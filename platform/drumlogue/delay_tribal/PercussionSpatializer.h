@@ -153,9 +153,8 @@ public:
 
     inline int8_t Init(const unit_runtime_desc_t* desc) {
         if (desc->samplerate != 48000) return k_unit_err_samplerate;
-        if (desc->input_channels != 1 || desc->output_channels != 1) {
-            // Accept mono input/output - duplicate to stereo internally
-            is_mono_ = true;   // TODO - added to check if number of channel is preventig the effect to be correctly instantiated. In case, add mono handling
+        if (desc->input_channels == 1 && desc->output_channels == 1) {
+            is_mono_ = true;
         } else if (desc->input_channels != 2 || desc->output_channels != 2)
             return k_unit_err_geometry;
 
@@ -211,24 +210,28 @@ public:
         const float* in_p = in;
         float*       out_p = out;
 
-        // --- Advance smooth ramps for mix/wobble/attack (block-rate, 4 steps) ---
-        // Each ramp uses the same linear-interpolation pattern as the depth ramp.
+        // --- Advance smooth ramps for mix/wobble/attack by the actual frame count ---
+        // Each ramp advances by `frames` samples per render call so a 480-sample
+        // ramp completes in ~10ms regardless of block size.  The step is recomputed
+        // from (target - current) / remaining every call so mid-ramp parameter
+        // changes re-aim smoothly without a pre-calculated stale slope.
+        // The guard that handles the final short block (>= 4 ? 4 : remaining) already works correctly when generalized
         if (mix_ramp_samples_ > 0) {
-            uint32_t steps = (mix_ramp_samples_ >= 4) ? 4u : mix_ramp_samples_;
+            uint32_t steps = (mix_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : mix_ramp_samples_;
             float step = (target_mix_ - mix_) / (float)mix_ramp_samples_;
             mix_ += step * (float)steps;
             mix_ramp_samples_ -= steps;
             if (mix_ramp_samples_ == 0) mix_ = target_mix_;
         }
         if (wobble_ramp_samples_ > 0) {
-            uint32_t steps = (wobble_ramp_samples_ >= 4) ? 4u : wobble_ramp_samples_;
+            uint32_t steps = (wobble_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : wobble_ramp_samples_;
             float step = (target_wobble_ - wobble_depth_) / (float)wobble_ramp_samples_;
             wobble_depth_ += step * (float)steps;
             wobble_ramp_samples_ -= steps;
             if (wobble_ramp_samples_ == 0) wobble_depth_ = target_wobble_;
         }
         if (attack_ramp_samples_ > 0) {
-            uint32_t steps = (attack_ramp_samples_ >= 4) ? 4u : attack_ramp_samples_;
+            uint32_t steps = (attack_ramp_samples_ >= (uint32_t)frames) ? (uint32_t)frames : attack_ramp_samples_;
             float step = (target_attack_ - attack_soften_) / (float)attack_ramp_samples_;
             attack_soften_ += step * (float)steps;
             attack_ramp_samples_ -= steps;
@@ -375,7 +378,7 @@ public:
         if (index < k_total) {
             params_[index] = value;
         }
-
+        float norm = value * 0.01f;
         switch (index) {
             case k_clones: { // Clone Count
                 set_clone_count(value);
@@ -384,30 +387,30 @@ public:
                 set_mode(static_cast<spatial_mode_t>(value));
                 break;}
             case k_depth: {  // Depth
-                depth_ = value / 100.0f;
+                depth_ = norm;
                 // FIX 3: Pass 0 to force instant coefficient calculation in the UI thread!
                 update_filter_params(&mode_filters_, depth_, 0);
                 break;}
             case k_rate: {// Rate (LFO speed for pitch wobble)
-                rate_ = 0.1f + (value / 100.0f) * 9.9f;
+                rate_ = 0.1f + norm * 9.9f;
                 // Convert to 32-bit fixed point: (rate / sr) * 2^32
                 uint32_t inc = (uint32_t)((rate_ / sample_rate_) * 4294967296.0f);
                 phase_inc_ = vdupq_n_u32(inc);
                 break;}
             case k_spread: {// Spread
-                spread_ = value / 100.0f;
+                spread_ = norm;
                 update_panning();
                 break;}
             case k_mix: {// Mix — ramp to new target over ~10ms to avoid zipper noise
-                target_mix_ = value / 100.0f;
+                target_mix_ = norm;
                 mix_ramp_samples_ = 480;
                 break;}
             case k_wobble: {// Wobble Depth
-                target_wobble_ = value / 100.0f;
+                target_wobble_ = norm;
                 wobble_ramp_samples_ = 480;
                 break;}
             case k_attack_softening: {// Attack Softening
-                target_attack_ = value / 100.0f;
+                target_attack_ = norm;
                 attack_ramp_samples_ = 480;
                 break;}
             default:

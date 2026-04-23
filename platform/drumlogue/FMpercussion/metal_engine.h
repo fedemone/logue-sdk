@@ -199,6 +199,22 @@ fast_inline float32x4_t metal_engine_process(metal_engine_t* metal,
                                              float32x4_t lfo_index_add,
                                              float32x4_t brightness_add,
                                              float32x4_t metal_gate) {
+
+    // APC BAILOUT: Check if all 4 voices are dead
+    // Extract the max value across the 4 lanes of the mask
+    #if defined(__aarch64__)
+        uint32_t max_mask = vmaxvq_u32(active_mask);
+    #else
+        // 32-bit ARM fallback for vector max
+        uint32x4_t max_half = vmax_u32(vget_low_u32(active_mask), vget_high_u32(active_mask));
+        uint32_t max_mask = vget_lane_u32(vpmax_u32(max_half, max_half), 0);
+    #endif
+
+    // If the mask is zero across all lanes, SKIP THE MATH!
+    if (max_mask == 0) {
+        return vdupq_n_u32(0.0f);
+    }
+
     float32x4_t two_pi_over_sr = vdupq_n_f32(2.0f * M_PI * INV_SAMPLE_RATE);
     float32x4_t two_pi = vdupq_n_f32(2.0f * M_PI);
     float32x4_t one = vdupq_n_f32(1.0f);

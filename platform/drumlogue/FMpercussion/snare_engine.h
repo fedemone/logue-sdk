@@ -115,36 +115,29 @@ fast_inline void snare_engine_set_note(snare_engine_t* snare,
 /**
  * Generate noise sample for all 4 voices
  */
-fast_inline float32x4_t snare_generate_noise(snare_engine_t * snare, float32x4_t env2) {
-  // Generate 4 random values
-  uint32x4_t rand = neon_prng_rand_u32(&snare->noise_prng);
+fast_inline float32x4_t snare_generate_noise(snare_engine_t* snare) {
+    // Generate 4 random values
+    float32x4_t white = neon_generate_float_white_noise(&snare->noise_prng);
 
-  // Convert to float in [-1, 1]
-  uint32x4_t masked = vandq_u32(rand, vdupq_n_u32(0x7FFFFF));
-  uint32x4_t float_bits = vorrq_u32(masked, vdupq_n_u32(0x3F800000));
-  float32x4_t white = vsubq_f32(vreinterpretq_f32_u32(float_bits),
-                                vdupq_n_f32(1.0f));
-  white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f));
+    // Generate the low-pass curve at 800Hz
+    // float32x4_t lp_800 = one_pole_lpf(&snare->noise_hpf, white, SNARE_NOISE_HPF_CUTOFF);
+    // Envelope-dependent bandwidth => attack = bright, wide
+    float32x4_t cutoff_hp =
+        vaddq_f32(vdupq_n_f32(600.0f),
+                  vmulq_n_f32(env2, 2000.0f));
+    float32x4_t lp_800 = one_pole_lpf(&snare->noise_hpf, white, cutoff_hp);
+    // Subtract it from the original noise to get a High-Pass at 800Hz
+    float32x4_t hpf_out = vsubq_f32(white, lp_800);
 
-  // Generate the low-pass curve at 800Hz
-  // float32x4_t lp_800 = one_pole_lpf(&snare->noise_hpf, white, SNARE_NOISE_HPF_CUTOFF);
-  // Envelope-dependent bandwidth => attack = bright, wide
-  float32x4_t cutoff_hp =
-      vaddq_f32(vdupq_n_f32(600.0f),
-                vmulq_n_f32(env2, 2000.0f));
-  float32x4_t lp_800 = one_pole_lpf(&snare->noise_hpf, white, cutoff_hp);
-  // Subtract it from the original noise to get a High-Pass at 800Hz
-  float32x4_t hpf_out = vsubq_f32(white, lp_800);
+    // Now apply the 5000Hz Low-Pass to the High-Passed signal to create the Bandpass
+    // float32x4_t bpf_out = one_pole_lpf(&snare->noise_lpf, hpf_out, SNARE_NOISE_LPF_CUTOFF);
+    // Envelope-dependent bandwidth => tail = dull, narrow
+    float32x4_t cutoff_lp =
+        vaddq_f32(vdupq_n_f32(3000.0f),
+                  vmulq_n_f32(env2, 6000.0f));
+    float32x4_t bpf_out = one_pole_lpf(&snare->noise_lpf, hpf_out, cutoff_lp);
 
-  // Now apply the 5000Hz Low-Pass to the High-Passed signal to create the Bandpass
-  // float32x4_t bpf_out = one_pole_lpf(&snare->noise_lpf, hpf_out, SNARE_NOISE_LPF_CUTOFF);
-  // Envelope-dependent bandwidth => tail = dull, narrow
-  float32x4_t cutoff_lp =
-      vaddq_f32(vdupq_n_f32(3000.0f),
-                vmulq_n_f32(env2, 6000.0f));
-  float32x4_t bpf_out = one_pole_lpf(&snare->noise_lpf, hpf_out, cutoff_lp);
-
-  return bpf_out;
+    return bpf_out;
 }
 
 /**
@@ -156,6 +149,22 @@ fast_inline float32x4_t snare_engine_process(snare_engine_t* snare,
                                              float32x4_t lfo_pitch_mult,
                                              float32x4_t lfo_index_add,
                                              float32x4_t noise_add) {
+
+    // APC BAILOUT: Check if all 4 voices are dead
+    // Extract the max value across the 4 lanes of the mask
+    #if defined(__aarch64__)
+        uint32_t max_mask = vmaxvq_u32(active_mask);
+    #else
+        // 32-bit ARM fallback for vector max
+        uint32x4_t max_half = vmax_u32(vget_low_u32(active_mask), vget_high_u32(active_mask));
+        uint32_t max_mask = vget_lane_u32(vpmax_u32(max_half, max_half), 0);
+    #endif
+
+    // If the mask is zero across all lanes, SKIP THE MATH!
+    if (max_mask == 0) {
+        return vdupq_n_u32(0.0f);
+    }
+
     // 1. Staggered Envelopes (The Body must decay much faster than the Noise)
     float32x4_t env2 = vmulq_f32(envelope, envelope);
     float32x4_t env4 = vmulq_f32(env2, env2);

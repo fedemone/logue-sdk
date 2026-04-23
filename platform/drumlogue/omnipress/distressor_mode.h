@@ -65,8 +65,10 @@ typedef struct {
     float opto_coeff ;        // deduced from above
 
     // NEW: Distressor-specific detector components
-    sidechain_hpf_t detect_hpf;     // 100 Hz HPF for detector
-    sidechain_hpf_t detect_emph;    // 6 kHz emphasis for detector
+    sidechain_hpf_t detect_hpf;      // 100 Hz HPF for detector (mono / L channel)
+    sidechain_hpf_t detect_emph;     // 6 kHz emphasis for detector (mono / L channel)
+    sidechain_hpf_t detect_hpf_r;   // 100 Hz HPF — R channel (DETECT_LINK only)
+    sidechain_hpf_t detect_emph_r;  // 6 kHz emphasis — R channel (DETECT_LINK only)
     envelope_detector_t distressor_env;  // Dedicated envelope detector
     float32x4_t detector_state;
 
@@ -95,10 +97,12 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     d->detector_state = vdupq_n_f32(0.0f);
 
     // Initialize detector HPF at 100 Hz (removes low-end pumping)
-    sidechain_hpf_init(&d->detect_hpf, 100.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_hpf,   100.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_hpf_r, 100.0f, sample_rate);
 
     // Initialize emphasis filter at 6 kHz (boosts transients)
-    sidechain_hpf_init(&d->detect_emph, 6000.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_emph,   6000.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_emph_r, 6000.0f, sample_rate);
 
     // Initialize distressor envelope detector
     envelope_detector_init(&d->distressor_env, sample_rate);
@@ -107,23 +111,51 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     envelope_set_attack_release(&d->distressor_env, d->attack_ms, d->release_ms);
 }
 
-// Distressor-specific envelope detector (called in masterfx.h)
+// Distressor-specific mono/summed envelope detector.
+// DETECT_HPF and DETECT_BAND_EMPH flags are evaluated here so the caller
+// does not need to know which filters are active.
 fast_inline float32x4_t distressor_detect(distressor_t* d,
                                            float32x4_t sidechain,
                                            float sample_rate) {
     (void)sample_rate;
+    float32x4_t detected = sidechain;
 
-    // 1. Apply detector HPF at 100 Hz (less low-end pumping)
-    float32x4_t detected = sidechain_hpf_process(&d->detect_hpf, sidechain);
+    // 1. Optional 100 Hz HPF (DETECT_HPF): removes low-end pumping
+    if (d->detector_mode & DETECT_HPF)
+        detected = sidechain_hpf_process(&d->detect_hpf, detected);
 
-    // 2. Apply 6 kHz boost for detector (more sensitivity to transients)
-    detected = sidechain_hpf_process(&d->detect_emph, detected);
+    // 2. Optional 6 kHz emphasis (DETECT_BAND_EMPH): increases transient sensitivity
+    if (d->detector_mode & DETECT_BAND_EMPH)
+        detected = sidechain_hpf_process(&d->detect_emph, detected);
 
-    // 3. Full-wave rectification (like Distressor's detector)
+    // 3. Full-wave rectification
     detected = vabsq_f32(detected);
 
-    // 4. Distressor-specific envelope smoothing with faster attack
+    // 4. Distressor-specific envelope smoothing
     return envelope_detect(&d->distressor_env, detected);
+}
+
+// Stereo-linked envelope detector (DETECT_LINK).
+// Processes L and R through independent filter chains, then takes the
+// per-sample maximum so the loudest channel drives gain reduction on both.
+fast_inline float32x4_t distressor_detect_stereo(distressor_t* d,
+                                                   float32x4_t sc_l,
+                                                   float32x4_t sc_r,
+                                                   float sample_rate) {
+    (void)sample_rate;
+
+    if (d->detector_mode & DETECT_HPF) {
+        sc_l = sidechain_hpf_process(&d->detect_hpf,   sc_l);
+        sc_r = sidechain_hpf_process(&d->detect_hpf_r, sc_r);
+    }
+    if (d->detector_mode & DETECT_BAND_EMPH) {
+        sc_l = sidechain_hpf_process(&d->detect_emph,   sc_l);
+        sc_r = sidechain_hpf_process(&d->detect_emph_r, sc_r);
+    }
+
+    // Per-sample max of absolute values — the louder channel controls GR
+    float32x4_t linked = vmaxq_f32(vabsq_f32(sc_l), vabsq_f32(sc_r));
+    return envelope_detect(&d->distressor_env, linked);
 }
 
 fast_inline void distressor_reset(distressor_t* d, float sample_rate) {

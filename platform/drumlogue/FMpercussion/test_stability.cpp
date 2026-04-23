@@ -101,7 +101,7 @@ static void test_kick_sweep_convergence() {
      * At max KSweep=100 → largest freq deviation. */
     float start_freq = 200.0f;
     float end_freq   = 50.0f;
-    float decay_ms   = 1000.0f * 100.0f / 100.0f;  /* 1000 ms at max */
+    float decay_ms   = 1000.0f * 100.0f * 0.01f;  /* 1000 ms at max */
     float sweep_rate = logf(start_freq / end_freq) / (decay_ms * 0.001f * SAMPLE_RATE);
 
     float phase    = 0.0f;

@@ -246,6 +246,34 @@ fast_inline float32x4_t neon_generate_float_white_noise(neon_prng_t * rng) {
   return vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f));  // [0,1)→[-1,1)
 }
 
+// Compute fractional part for each element in a float32x4_t vector
+static inline float32x4_t vfractq_f32(float32x4_t v) {
+  // Convert to int32 (truncates toward zero)
+  int32x4_t v_int = vcvtq_s32_f32(v);
+  // Convert back to float
+  float32x4_t v_trunc = vcvtq_f32_s32(v_int);
+  // Subtract integer part from original
+  return vsubq_f32(v, v_trunc);
+}
+
+/**
+ * @brief very cheap NEON noise
+ *
+ * @param state
+ * @return fast_inline
+ */
+fast_inline float32x4_t noise4(float32x4_t *state) {
+    // Xorshift-like (fast, good enough for audio)
+    *state = vaddq_f32(*state, vdupq_n_f32(1.61803398875f));
+    float32x4_t s = *state;
+
+    return vsubq_f32(vmulq_f32(vfractq_f32(vmulq_n_f32(s, 12.9898f)),
+                               vdupq_n_f32(2.0f)),
+                     vdupq_n_f32(1.0f));
+}
+
+
+
 // ========== UNIT TEST ==========
 #ifdef TEST_PRNG
 

@@ -107,8 +107,8 @@ fast_inline void lfo_enhanced_update(lfo_enhanced_t* lfo,
     //   50   →  0.5 (half positive)
     //  100   →  1.0 (full positive)
     // =================================================================
-    float depth1 = depth1_value / 100.0f;
-    float depth2 = depth2_value / 100.0f;
+    float depth1 = depth1_value * 0.01f;
+    float depth2 = depth2_value * 0.01f;
 
     // Clamp to ensure valid range (safety)
     if (depth1 < -1.0f) depth1 = -1.0f;
@@ -121,8 +121,8 @@ fast_inline void lfo_enhanced_update(lfo_enhanced_t* lfo,
 
     // Convert rate percentage to phase increment (0.1 to 20 Hz LFO range)
     // rate_hz / sample_rate gives the fraction of the cycle advanced per sample
-    float rate1_hz = 0.1f + (rate1_percent / 100.0f) * 19.9f;
-    float rate2_hz = 0.1f + (rate2_percent / 100.0f) * 19.9f;
+    float rate1_hz = 0.1f + (rate1_percent * 0.01f) * 19.9f;
+    float rate2_hz = 0.1f + (rate2_percent * 0.01f) * 19.9f;
     float rate1 = rate1_hz / 48000.0f;
     float rate2 = rate2_hz / 48000.0f;
 
