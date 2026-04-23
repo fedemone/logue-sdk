@@ -213,6 +213,12 @@ public:
             state.voices[i].mag_env = 0.0f;
             state.voices[i].base_delay_A = 0.0f;
             state.voices[i].base_delay_B = 0.0f;
+            state.voices[i].transient_frames_left = 0;
+            state.voices[i].transient_frames_total = 0;
+            state.voices[i].transient_lp_jitter = 0.0f;
+            state.voices[i].transient_ap_jitter = 0.0f;
+            state.voices[i].exciter.noise_lp_state = 0.0f;
+            state.voices[i].exciter.noise_band_mix = 0.5f;
 
 #ifdef ENABLE_PHASE_6_FILTERS
             // Noise filter defaults to LP mode, fully open (12 kHz)
@@ -332,7 +338,7 @@ public:
             { 9,  41,   0,   1,   100,  150,  0,   0,     0, 4,  162,  -3,    0,   0, 20,     7,     1,   5,   5,    5, 800,  0,    40, 707}, // 9:  Tam Tam    — NzFq40=400Hz (was 800=8kHz): 8kHz noise was dominating spectral centroid, pulling it 7× above reference
             {10,  60,   0,   1,   600,  395,  0,   0,     0, 0,  185,  28,    0,   0, 12,     3,     1,  15,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — c=0.98@262Hz (Mterl28+TubRad15); all harmonics T60≈2.2s (ref 3.47s; ratio≥0.63)
             {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  197,  -4,    0,   0, 18,     1,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — metal bar: T60=4.0s@C5→Dkay197; B=0.0005→InHm1; Beam model
-            {12,  48,   0,   1,   800,  269,  0,   0,     0, 2,  158,   7,    0,   0,  2,    10,     1,   5,   0,   15, 300,  0,   500, 707}, // 12: Wodblk     — NzMix15 (was 62 — parallel noise now audible, woodblock is mostly resonator)
+            {12,  48,   0,   1,   900,  430,  0,   0,     0, 2,   82,   9,    0,   0,  2,    12,     1,   5,   0,   18, 450,  0,   700, 707}, // 12: Wodblk     — Phase-23 pilot: short wood click (faster decay + harder mallet + stronger transient noise)
             {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,   5,    2, 300,  0,   800, 707}, // 13: Ac Tom     — Gain5 (was 15)
             {14,  60,   0,   1,   800,  425,  0,   0,     0, 4,  176,  20,    0,   0, 18,     9,     5,   5,   5,   15, 600,  2,   400, 707}, // 14: Cymbal     — NzFq400=4kHz (was 200=2kHz): shifting noise from 2→4kHz raises centroid from ×0.34 toward ×0.65 vs reference
             {15,  50,   0,   1,   200,   10,  0,   0,     0, 4,  188,  -8,    0,   0, 20,     8,     1,   5,  20,    4, 800,  0,    30, 707}, // 15: Gong       — NzFq30=300Hz (was 600=6kHz): 6kHz noise was pulling centroid 3× above reference; B=0.004→InHm8
@@ -993,6 +999,12 @@ public:
         v.resA_out_prev = 0.0f;
         v.resB_out_prev = 0.0f;
         v.tone_lp = 0.0f;
+        v.transient_frames_left = 0;
+        v.transient_frames_total = 0;
+        v.transient_lp_jitter = 0.0f;
+        v.transient_ap_jitter = 0.0f;
+        v.exciter.noise_lp_state = 0.0f;
+        v.exciter.noise_band_mix = 0.5f;
 
         // Clear waveguide delay line, LP state, and write pointer.
         //
@@ -1050,6 +1062,41 @@ public:
         v.exciter.master_env.value = 1.0f;
         v.exciter.master_env.state = ENV_DECAY;
 #endif
+
+        // Stage-1 transient complexity: short coefficient modulation window.
+        // Deterministic per-hit micro-randomization from note/voice/velocity.
+        float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity / 127.0f));
+        uint32_t seed = (uint32_t)note * 1103515245u
+                      ^ (uint32_t)state.next_voice_idx * 12345u
+                      ^ (uint32_t)velocity * 2654435761u;
+        float r = ((float)((seed >> 8) & 0xFFFFu) / 32767.5f) - 1.0f; // [-1, +1]
+        v.transient_frames_total = (uint32_t)(default_sample_rate * 0.035f); // 35 ms
+        v.transient_frames_left = v.transient_frames_total;
+        v.transient_lp_jitter = fmaxf(-0.08f, fminf(0.08f, (0.05f * vel_norm) + (0.02f * r)));
+        v.transient_ap_jitter = fmaxf(-0.03f, fminf(0.03f, (0.015f * vel_norm) - (0.01f * r)));
+
+        // Stage-1 model-specific transient presets.
+        // Simple profile map: percussion gets longer/stronger transient modulation.
+        uint8_t model_profile = m_model_a;
+        bool percussion_model = (model_profile == 2 || model_profile == 3 ||
+                                 model_profile == 4 || model_profile == 5 ||
+                                 model_profile == 6);
+        bool tube_model = (model_profile == 7 || model_profile == 8);
+        if (percussion_model) {
+            v.transient_frames_total = (uint32_t)(default_sample_rate * 0.045f); // 45 ms
+            v.transient_frames_left = v.transient_frames_total;
+            v.transient_lp_jitter = fmaxf(-0.10f, fminf(0.10f, v.transient_lp_jitter * 1.25f));
+            v.transient_ap_jitter = fmaxf(-0.04f, fminf(0.04f, v.transient_ap_jitter * 1.20f));
+            v.exciter.noise_band_mix = 0.70f;
+        } else if (tube_model) {
+            v.transient_frames_total = (uint32_t)(default_sample_rate * 0.020f); // 20 ms
+            v.transient_frames_left = v.transient_frames_total;
+            v.transient_lp_jitter *= 0.6f;
+            v.transient_ap_jitter *= 0.6f;
+            v.exciter.noise_band_mix = 0.35f;
+        } else {
+            v.exciter.noise_band_mix = 0.50f;
+        }
     }
 
     inline void NoteOff(uint8_t note) {
@@ -1219,6 +1266,11 @@ public:
 #ifdef ENABLE_PHASE_6_FILTERS
             raw_noise = ex.noise_filter.process(raw_noise);
 #endif
+            // Stage-1 dual-band shaper: blend low knock and high click.
+            ex.noise_lp_state += 0.15f * (raw_noise - ex.noise_lp_state);
+            float high = raw_noise - ex.noise_lp_state;
+            float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
+            raw_noise = (ex.noise_lp_state * (1.0f - mix)) + (high * mix * 1.5f);
             ex.noise_out_sample = raw_noise * noise_env_val * ex.noise_decay_coeff;
         }
 #endif
@@ -1322,6 +1374,13 @@ public:
                 }
             }
 
+            // Stage-1 transient modulation: keep a baseline copy and apply a short
+            // decaying coefficient offset after each strike.
+            const float lpA_base = voice.resA.lowpass_coeff;
+            const float lpB_base = voice.resB.lowpass_coeff;
+            const float apA_base = voice.resA.ap_coeff;
+            const float apB_base = voice.resB.ap_coeff;
+
             for (size_t i = 0; i < frames; ++i) {
 
                 // ── Stage 1: Raw exciter (always executes) ─────────────────
@@ -1333,6 +1392,26 @@ public:
 
                 // outA kept at 0 here so the debug probe below always compiles.
                 float outA = 0.0f;
+
+                if (voice.transient_frames_left > 0 && voice.transient_frames_total > 0) {
+                    float t = (float)voice.transient_frames_left / (float)voice.transient_frames_total;
+                    float decay = t * t; // smoother fade-out
+                    float lp_off = voice.transient_lp_jitter * decay;
+                    float ap_off = voice.transient_ap_jitter * decay;
+                    voice.resA.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, lpA_base + lp_off));
+                    voice.resB.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, lpB_base + lp_off));
+                    // Keep AP modulation symmetric around 0 so transient jitter can push
+                    // either toward positive or negative dispersion.
+                    // NOTE: Waveguide allpass explicitly supports [-0.99, +0.99].
+                    voice.resA.ap_coeff = fmaxf(-0.99f, fminf(0.99f, apA_base + ap_off));
+                    voice.resB.ap_coeff = fmaxf(-0.99f, fminf(0.99f, apB_base + ap_off));
+                    voice.transient_frames_left--;
+                } else {
+                    voice.resA.lowpass_coeff = lpA_base;
+                    voice.resB.lowpass_coeff = lpB_base;
+                    voice.resA.ap_coeff = apA_base;
+                    voice.resB.ap_coeff = apB_base;
+                }
 
 #if RENDER_STAGE >= 2
                 // ── Stage 2: Waveguide resonators ──────────────────────────

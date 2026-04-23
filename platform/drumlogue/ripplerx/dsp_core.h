@@ -76,6 +76,8 @@ struct ExciterState {
     // Exception: tube models (OpenTube=7, ClosedTube=8) also receive noise into their
     // waveguide for physically correct sustained breath excitation (flute, clarinet).
     float noise_out_sample = 0.0f;
+    float noise_lp_state = 0.0f;   // stage-1 dual-band noise shaper LP state
+    float noise_band_mix = 0.5f;   // 0=mostly low thump, 1=mostly high click
 
     float mallet_lp = 0.0f;
     float mallet_lp2 = 0.0f;       // Second LP pole state (MlltRes)
@@ -150,6 +152,12 @@ struct VoiceState {
     // not RMS.  For the −80 dB silence gate both are equivalent in practice.
     // Smoothing: α=0.01 → τ ≈ 100 samples ≈ 2 ms at 48 kHz.
     float mag_env = 0.0f;
+
+    // Stage-1 transient complexity boost (short post-strike modulation window).
+    uint32_t transient_frames_left = 0;
+    uint32_t transient_frames_total = 0;
+    float transient_lp_jitter = 0.0f;
+    float transient_ap_jitter = 0.0f;
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)
