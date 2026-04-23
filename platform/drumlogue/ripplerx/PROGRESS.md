@@ -12,7 +12,6 @@
 - **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
 - **crunch**
 - **bottle pop**
-- **glass bottle**
 - **kalimba**
 - **maracas**
 - **Chacha nut**
@@ -38,6 +37,153 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
   content or another source; can wait until clean pure-waveguide sound is validated.
 
 ---
+
+## Phase 24 Planning: Model Weakness Review + Two-Stage Upgrade Path [PLANNED]
+
+This section records a model-by-model weakness audit and an implementation roadmap.
+Goal: improve transient complexity (Flux) and spectral texture (Flatness) while preserving
+RT safety on Drumlogue.
+
+### Current model set (from `k_paramModel`)
+
+- 0: String
+- 1: Beam
+- 2: Square plate
+- 3: Membrane
+- 4: Plate
+- 5: Drumhead
+- 6: Marimba bar
+- 7: Open tube
+- 8: Closed tube
+
+All models currently share the same core waveguide loop:
+- fractional delay read + interpolation
+- one allpass dispersion stage
+- one 1-pole lowpass loss stage
+- scalar feedback gain
+- optional dual-resonator coupling
+
+This is efficient, but some timbral limits are structural (especially for wood/percussion):
+single-loop + single-loss topology under-represents micro-chaotic partial motion.
+
+### Model weakness audit (practical)
+
+#### 0 String
+- Strength: stable harmonic decay and pluck behavior.
+- Weakness: can sound too "clean/synthetic" at high velocities due to low nonlinear content.
+
+#### 1 Beam / 2 Square / 4 Plate / 6 Marimba
+- Strength: baseline inharmonicity from model AP offsets works well for static metallic/wood modes.
+- Weakness: overtones are mostly static over time; real bars/plates show stronger time-varying
+  mode-energy exchange.
+
+#### 3 Membrane / 5 Drumhead
+- Strength: ResB mode ratio logic and coupling clamp improve stability and "drum-like" body.
+- Weakness: impact/noise complexity still not deep enough for realistic strike roughness;
+  flux remains low compared to real recordings.
+
+#### 7 Open tube / 8 Closed tube
+- Strength: tube-specific phase handling + noise injection into loop is physically sensible.
+- Weakness: expressive turbulence/reed-edge nonlinearities are minimal; timbre dynamics can feel flat.
+
+### Stage 1 (minimal / low risk): "Complexity Boost Without Topology Rewrite"
+
+Scope: additive improvements that keep current architecture and parameter model.
+
+1. **Transient-only coefficient modulation (first 10–50 ms)**
+   - Briefly modulate LP/AP coefficients post-attack.
+   - Expected impact: higher flux and more realistic attack evolution.
+   - Risk: low-medium (needs bounds and clamping).
+
+2. **Velocity-dependent micro-randomization**
+   - Add tiny per-hit jitter to selected coefficients/delay (bounded, deterministic seed option).
+   - Expected impact: less machine-like repeatability, better realism in repeated hits.
+   - Risk: low (if kept <1% and clamped).
+
+3. **Dual-band exciter noise shaping**
+   - Add simple two-band blend (e.g., low knock + high click) before current path routing.
+   - Expected impact: better flatness matching for wooden/percussive onsets.
+   - Risk: low-medium.
+
+4. **Model-specific transient envelope presets**
+   - Keep same knobs but set model-local defaults/scales for attack/decay in exciter path.
+   - Expected impact: less cross-model parameter fighting during tuning.
+   - Risk: low.
+
+5. **Batch metrics objective update**
+   - Increase weighting of Flux/Flatness for percussion classes in tuning reports.
+   - Expected impact: optimization is steered toward perceived complexity, not just pitch/T60.
+   - Risk: low.
+
+**Estimated impact of Stage 1:** medium (useful uplift, probably not full parity with hardest
+real woodblock/cymbal samples).
+**Expected implementation effort:** low-medium.
+
+### Stage 2 (optional / radical): "Topology Upgrade"
+
+Scope: structural redesign for richer physical behavior.
+
+1. **Multi-mode resonator bank (2–6 modes)**
+   - Replace single loop per resonator with modal parallel bank for percussion models.
+   - Expected impact: major improvement in flux/flatness realism and mode interactions.
+   - Risk: medium-high (CPU + parameter mapping complexity).
+
+2. **Nonlinear contact model at strike**
+   - Introduce a simple nonlinear impact function (soft/hard collision behavior).
+   - Expected impact: more realistic high-frequency burst and dynamic timbre.
+   - Risk: medium.
+
+3. **Cross-mode energy transfer matrix (sparse)**
+   - Low-rank coupling among modes instead of only A/B scalar coupling.
+   - Expected impact: realistic time-varying spectral rebalancing.
+   - Risk: high (stability tuning required).
+
+4. **Hybrid residual path**
+   - Keep physical core + add short stochastic residual shaped by model context.
+   - Expected impact: closes final realism gap for "messy" transients.
+   - Risk: medium-high.
+
+5. **Class-specific objective functions**
+   - Separate optimization criteria for pitched vs percussive vs noisy metallic classes.
+   - Expected impact: better convergence and fewer bad local minima.
+   - Risk: low-medium.
+
+**Estimated impact of Stage 2:** high (best chance to match complex real references).
+**Expected implementation effort:** high.
+
+### Suggested execution order
+
+1. Implement Stage 1 items 1+2+5 first (fastest measurable gain).
+2. Re-run 5–10 tuning iterations on Wodblk and one membrane preset.
+3. If Flux/Flatness gap remains structurally large, proceed with Stage 2 item 1 (modal bank pilot).
+4. Keep old topology behind a compile flag for A/B and CPU budget tracking.
+
+---
+
+## Phase 24a: Stage-1 Minimal Improvements [IN PROGRESS]
+
+Implemented first-pass Stage-1 changes:
+
+1. **Transient-only coefficient modulation (implemented)**
+   - Added a short post-strike modulation window (~35 ms) that perturbs LP/AP
+     coefficients and decays quickly.
+   - Purpose: increase attack-time spectral movement (Flux) without altering long-tail stability.
+
+2. **Velocity-dependent micro-randomization (implemented)**
+   - Added deterministic per-hit jitter (derived from note/voice/velocity seed)
+     to avoid machine-identical repeated strikes.
+   - Purpose: improve realism and reduce static timbre repetition.
+
+3. **Batch objective steering for percussion (implemented)**
+   - Batch score now adds extra emphasis on Flatness/Flux for percussion-class presets.
+   - Purpose: ensure optimization pressure targets the known structural gaps.
+
+Stage-1 items still pending from plan:
+- dual-band exciter noise shaping,
+- model-specific transient envelope presets.
+
+---
+
 ## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
 
 Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
