@@ -31,32 +31,31 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 
 ---
 
-## Phase 23: Percussive Rebalance — First Batch (Marimba/Timpani/Djambe/Taiko/Woodblock/Conga/Bongo) [IN PROGRESS]
+## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
 
-Goal of this batch is to reduce the "all presets sound string-like" issue by pushing
-selected drum/bar presets toward **shorter-decay, higher-transient** behaviour.
+Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
+that can be validated quickly on hardware before scaling to the rest of the kit.
 
-### Batch-1 parameter strategy
+### Pilot strategy
 
-- **Shorter resonator decay (`Dkay`)** on percussive voices to avoid guitar-like sustain tails.
-- **Higher mallet stiffness (`MlSt`)** to increase attack sharpness.
-- **Moderate noise injection (`NzMix`, `NzRes`)** to emphasize strike transients.
-- Keep existing model topology and safety guards unchanged (no DSP-path rewrite in this pass).
+- Keep prior table values for most presets.
+- Tune only `12 Wodblk` toward a more percussive profile:
+  - lower `Dkay` (shorter ring),
+  - higher `MlSt` (harder strike),
+  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
 
-### Presets updated in this batch
+### Why this narrower scope
 
-- `1 Marimba`: tightened decay and increased mallet attack.
-- `5 Timpani`: lower sustain, stronger membrane transient.
-- `6 Djambe`: lower sustain, more exciter presence.
-- `7 Taiko`: reduced ring, stronger impact onset.
-- `12 Wodblk`: moved to short click-like decay.
-- `31 Conga`: reduced sustain and more onset definition.
-- `37 Bongo`: reduced ring and brighter knock transient.
+- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
+  unavailable and package install blocked), and Docker toolchain is not present here.
+- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
+  across many programs without objective render metrics.
 
 ### Next step after this commit
 
-Run an automated render+analysis sweep and quantify movement against reference WAVs
-for this subset before touching remaining presets.
+Hardware A/B for preset 12 (`Wodblk`), then either:
+1. keep and propagate the same tuning pattern to adjacent percussive presets, or
+2. rollback/retune based on the measured transient/decay behaviour.
 
 ---
 
