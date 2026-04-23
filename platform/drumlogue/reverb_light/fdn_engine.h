@@ -311,7 +311,7 @@ public:
 
         switch (index) {
         case k_paramProgram: // NAME  preset selector — load preset when the user scrolls
-            if ((uint8_t)value < k_preset_number) loadPreset((uint8_t)value);
+            // do nothing to avoid recursion
             break;
         case k_dark: // DARK  decay suboctaves  0-100% → decay 0.0..0.99
             setDarkness(norm);
