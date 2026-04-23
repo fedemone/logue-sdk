@@ -598,15 +598,15 @@ public:
             /* Operation Overlord Distortion Emulation Parameters */
             /*===========================================================================*/
             case k_bass: // BASS (Operation Overlord EQ)
-                overlord_.bass = value / 100.0f;
+                overlord_.bass = value * 0.01f;
                 break;
 
             case k_treble: // TREBLE
-                overlord_.treble = value / 100.0f;
+                overlord_.treble = value * 0.01f;
                 break;
 
             case k_presence: // PRESENCE
-                overlord_.presence = value / 100.0f;
+                overlord_.presence = value * 0.01f;
                 break;
 
             case k_detection_mode:

@@ -245,7 +245,7 @@ public:
 
         switch (index) {
         case k_mix: // MIX  0..100 → 0.0..1.0
-            setMix(value / 100.0f);
+            setMix(value * 0.01f);
             break;
         case k_time: // TIME  1..100 → decay 0.01..0.99
             setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
@@ -260,10 +260,10 @@ public:
             setDamping((float)value * 10.0f);
             break;
         case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
-            setWidth(value / 100.0f);
+            setWidth(value * 0.01f);
             break;
         case k_comp: // COMP  0..100 → diffusion 0.0..1.0
-            setDiffusion(value / 100.0f);
+            setDiffusion(value * 0.01f);
             break;
         case k_pill: // PILL  0..4  - pillar routing mode
             setPillar(value);
@@ -326,7 +326,7 @@ public:
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
     void setShimmerFreq(float value) {
         // Normalize UI value to 0.0 -> 1.0
-        float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.100f));
+        float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
 
         // Exponential mapping: min * (max/min)^norm
         // 3.0f * (55.0 / 3.0)^norm
@@ -356,7 +356,7 @@ public:
      */
     void setLowDecay(float value) {
         // value 1-100; map to a per-channel decay multiplier 0.9..1.5
-        lowDecayMult = 0.9f + (value / 100.0f) * 0.6f;
+        lowDecayMult = 0.9f + (value * 0.01f) * 0.6f;
     }
 
     /**
@@ -365,7 +365,7 @@ public:
      */
     void setHighDecay(float value) {
         // value 1-100; higher value = brighter (less high-freq damping)
-        highDecayMult = 0.1f + (value / 100.0f) * 0.9f;
+        highDecayMult = 0.1f + (value * 0.01f) * 0.9f;
     }
 
     /**

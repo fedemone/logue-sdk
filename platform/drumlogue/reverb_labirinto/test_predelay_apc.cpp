@@ -96,8 +96,8 @@ static void lab_set_params(ScalarLabirinto *s,
     s->modDepth  = fmaxf(0.0f, fminf(1.0f, modDepth));
     s->modRate   = fmaxf(0.1f, fminf(10.0f, modRate));
     s->width     = fmaxf(0.0f, fminf(2.0f, width));
-    s->lowDecayMult  = 0.9f + (lowDecay  / 100.0f) * 0.6f;
-    s->highDecayMult = 0.1f + (highDecay / 100.0f) * 0.9f;
+    s->lowDecayMult  = 0.9f + (lowDecay  * 0.01f) * 0.6f;
+    s->highDecayMult = 0.1f + (highDecay * 0.01f) * 0.9f;
 
     float clampedMs = fmaxf(0.0f, fminf(340.0f, predelayMs));
     s->preDelayOffsetSamples = (int)(clampedMs * s->sampleRate / 1000.0f);

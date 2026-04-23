@@ -378,7 +378,7 @@ public:
         if (index < k_total) {
             params_[index] = value;
         }
-
+        float norm = value * 0.01f;
         switch (index) {
             case k_clones: { // Clone Count
                 set_clone_count(value);
@@ -387,30 +387,30 @@ public:
                 set_mode(static_cast<spatial_mode_t>(value));
                 break;}
             case k_depth: {  // Depth
-                depth_ = value / 100.0f;
+                depth_ = norm;
                 // FIX 3: Pass 0 to force instant coefficient calculation in the UI thread!
                 update_filter_params(&mode_filters_, depth_, 0);
                 break;}
             case k_rate: {// Rate (LFO speed for pitch wobble)
-                rate_ = 0.1f + (value / 100.0f) * 9.9f;
+                rate_ = 0.1f + norm * 9.9f;
                 // Convert to 32-bit fixed point: (rate / sr) * 2^32
                 uint32_t inc = (uint32_t)((rate_ / sample_rate_) * 4294967296.0f);
                 phase_inc_ = vdupq_n_u32(inc);
                 break;}
             case k_spread: {// Spread
-                spread_ = value / 100.0f;
+                spread_ = norm;
                 update_panning();
                 break;}
             case k_mix: {// Mix — ramp to new target over ~10ms to avoid zipper noise
-                target_mix_ = value / 100.0f;
+                target_mix_ = norm;
                 mix_ramp_samples_ = 480;
                 break;}
             case k_wobble: {// Wobble Depth
-                target_wobble_ = value / 100.0f;
+                target_wobble_ = norm;
                 wobble_ramp_samples_ = 480;
                 break;}
             case k_attack_softening: {// Attack Softening
-                target_attack_ = value / 100.0f;
+                target_attack_ = norm;
                 attack_ramp_samples_ = 480;
                 break;}
             default:

@@ -210,7 +210,7 @@ static void test_stability_max_params() {
     float lowDecayMult  = 0.9f + (100/100.0f)*0.6f;   /* 1.5 */
     float highDecayMult = 0.1f + (100/100.0f)*0.9f;   /* 1.0 */
     float dampingFreqHz = 1000 * 10.0f;               /* 10000 Hz */
-    float width         = 200 / 100.0f;               /* 2.0 */
+    float width         = 200 * 0.01f;               /* 2.0 */
     float diffusion     = 1000 / 1000.0f;             /* 1.0 */
     lab_set_params(&lab, mix, decay, lowDecayMult, highDecayMult,
                    dampingFreqHz, width, diffusion, 0.1f, 0.5f);
@@ -261,7 +261,7 @@ static void test_stability_default_params() {
     float lowDecayMult  = 0.9f + (50/100.0f)*0.6f;    /* 1.2 */
     float highDecayMult = 0.1f + (70/100.0f)*0.9f;    /* 0.73 */
     float dampingFreqHz = 250 * 10.0f;                /* 2500 Hz */
-    float width         = 100 / 100.0f;               /* 1.0 */
+    float width         = 100 * 0.01f;               /* 1.0 */
     float diffusion     = 1000 / 1000.0f;             /* 1.0 */
     lab_set_params(&lab, mix, decay, lowDecayMult, highDecayMult,
                    dampingFreqHz, width, diffusion, 0.1f, 0.5f);

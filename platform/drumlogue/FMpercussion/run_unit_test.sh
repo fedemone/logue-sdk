@@ -244,7 +244,7 @@ void test_multiple_voices() {
 
     for (int v = 0; v < 4; v++) {
         float actual = (float)counts[v] / samples;
-        float expected = probs[v] / 100.0f;
+        float expected = probs[v] * 0.01f;
         float error = fabsf(actual - expected);
 
         printf("Voice %d: %3d%% → actual %5.2f%% (error %5.2f%%) %s\n",

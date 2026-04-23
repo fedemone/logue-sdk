@@ -131,7 +131,7 @@ fast_inline void resonant_synth_set_resonance(resonant_synth_t* rs,
                                               uint32x4_t voice_mask,
                                               float resonance_percent) {
     // Map 0-100% to 0-0.99 (a must be < 1)
-    float r = (resonance_percent / 100.0f) * 0.99f;
+    float r = (resonance_percent * 0.01f) * 0.99f;
     rs->target_resonance = vbslq_f32(voice_mask,
                                       vdupq_n_f32(r),
                                       rs->target_resonance);

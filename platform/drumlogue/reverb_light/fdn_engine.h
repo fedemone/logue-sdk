@@ -307,7 +307,7 @@ public:
         if (index >= k_total) return;
         params_[index] = value;   // store into local DB
 
-        const float norm = value * 0.100f;  // 0..100 → 0.0..1.0
+        const float norm = value * 0.01f;  // 0..100 → 0.0..1.0
 
         switch (index) {
         case k_paramProgram: // NAME  preset selector — load preset when the user scrolls
@@ -503,188 +503,192 @@ public:
             // ==========================================
             // PATH 1: GLOW (Stereo Swirling SVF)
             // ==========================================
+            if (glow_amt > 0.0f) {
+                glow_lfo_phase += glowLfoRate;
+                if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
 
-            glow_lfo_phase += glowLfoRate;
-            if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
+                // Left Channel: Modulate coefficient directly.
+                // f_coeff = 0.15 (~1150Hz base) +/- (0.10 * glow_amt) depth
+                // 2. Shift the sweep up slightly:
+                // Base 0.18 +/- 0.08 keeps the sweep entirely out of the muddy bass frequencies
+                float lfo_val_l = fastersinfullf(glow_lfo_phase);
+                float f_coeff_l = 0.18f + (0.08f * glow_amt * lfo_val_l);
+                float q_coeff   = 0.8f; // Mild resonance to accentuate the sweep
 
-            // Left Channel: Modulate coefficient directly.
-            // f_coeff = 0.15 (~1150Hz base) +/- (0.10 * glow_amt) depth
-            // 2. Shift the sweep up slightly:
-            // Base 0.18 +/- 0.08 keeps the sweep entirely out of the muddy bass frequencies
-            float lfo_val_l = fastersinfullf(glow_lfo_phase);
-            float f_coeff_l = 0.18f + (0.08f * glow_amt * lfo_val_l);
-            float q_coeff   = 0.8f; // Mild resonance to accentuate the sweep
+                glow_lp_l += f_coeff_l * glow_bp_l;
+                glow_bp_l += f_coeff_l * (rev_l - glow_lp_l - q_coeff * glow_bp_l);
+                float glow_l = glow_lp_l; // Take the Low-Pass output for warmth
 
-            glow_lp_l += f_coeff_l * glow_bp_l;
-            glow_bp_l += f_coeff_l * (rev_l - glow_lp_l - q_coeff * glow_bp_l);
-            float glow_l = glow_lp_l; // Take the Low-Pass output for warmth
+                // Right Channel: 90-degree phase offset for stereo widening
+                float phase_r = glow_lfo_phase + 0.25f;
+                if (phase_r > 1.0f) phase_r -= 1.0f;
 
-            // Right Channel: 90-degree phase offset for stereo widening
-            float phase_r = glow_lfo_phase + 0.25f;
-            if (phase_r > 1.0f) phase_r -= 1.0f;
+                float lfo_val_r = fastersinfullf(phase_r);
+                float f_coeff_r = 0.15f + (0.10f * glow_amt * lfo_val_r);
 
-            float lfo_val_r = fastersinfullf(phase_r);
-            float f_coeff_r = 0.15f + (0.10f * glow_amt * lfo_val_r);
-
-            glow_lp_r += f_coeff_r * glow_bp_r;
-            glow_bp_r += f_coeff_r * (rev_r - glow_lp_r - q_coeff * glow_bp_r);
-            float glow_r = glow_lp_r;
-
+                glow_lp_r += f_coeff_r * glow_bp_r;
+                glow_bp_r += f_coeff_r * (rev_r - glow_lp_r - q_coeff * glow_bp_r);
+                float glow_r = glow_lp_r;
+            }
             // ==========================================
             // PATH 2: DARK (Organic Pitch-Shifted Sub-Bass)
             // ==========================================
             float rev_mono = (rev_l + rev_r) * 0.5f;
+            if (dark_amt > 0.0f) {
+                // 1. Write the mono reverb tail to the dark buffer
+                dark_buffer[dark_write] = rev_mono;
+                dark_write = (dark_write + 1) & 4095;
 
-            // 1. Write the mono reverb tail to the dark buffer
-            dark_buffer[dark_write] = rev_mono;
-            dark_write = (dark_write + 1) & 4095;
+                // 2. Advance the pitch shift phase (0.5 = exactly 1 octave down)
+                dark_phase += 0.5f;
+                if (dark_phase >= 2048.0f) dark_phase -= 2048.0f; // 42ms grain window
 
-            // 2. Advance the pitch shift phase (0.5 = exactly 1 octave down)
-            dark_phase += 0.5f;
-            if (dark_phase >= 2048.0f) dark_phase -= 2048.0f; // 42ms grain window
+                // 3. Read Head 1 (Calculates interpolated audio)
+                float r1 = (float)dark_write - dark_phase;
+                if (r1 < 0.0f) r1 += 4096.0f;
+                int i1 = (int)r1;
+                float f1 = r1 - i1;
+                float out1 = dark_buffer[i1 & 4095] + f1 * (dark_buffer[(i1 + 1) & 4095] - dark_buffer[i1 & 4095]);
 
-            // 3. Read Head 1 (Calculates interpolated audio)
-            float r1 = (float)dark_write - dark_phase;
-            if (r1 < 0.0f) r1 += 4096.0f;
-            int i1 = (int)r1;
-            float f1 = r1 - i1;
-            float out1 = dark_buffer[i1 & 4095] + f1 * (dark_buffer[(i1 + 1) & 4095] - dark_buffer[i1 & 4095]);
+                // 4. Read Head 2 (Offset by exactly half the window to hide the looping click)
+                float r2 = (float)dark_write - fmodf(dark_phase + 1024.0f, 2048.0f);
+                if (r2 < 0.0f) r2 += 4096.0f;
+                int i2 = (int)r2;
+                float f2 = r2 - i2;
+                float out2 = dark_buffer[i2 & 4095] + f2 * (dark_buffer[(i2 + 1) & 4095] - dark_buffer[i2 & 4095]);
 
-            // 4. Read Head 2 (Offset by exactly half the window to hide the looping click)
-            float r2 = (float)dark_write - fmodf(dark_phase + 1024.0f, 2048.0f);
-            if (r2 < 0.0f) r2 += 4096.0f;
-            int i2 = (int)r2;
-            float f2 = r2 - i2;
-            float out2 = dark_buffer[i2 & 4095] + f2 * (dark_buffer[(i2 + 1) & 4095] - dark_buffer[i2 & 4095]);
+                // 5. Crossfade Envelope (Triangle wave tracking the phase)
+                // Head 1 is at maximum volume halfway through its window, and muted when it snaps back.
+                float fade1 = 1.0f - fabsf((dark_phase - 1024.0f) / 1024.0f);
+                float fade2 = 1.0f - fade1;
 
-            // 5. Crossfade Envelope (Triangle wave tracking the phase)
-            // Head 1 is at maximum volume halfway through its window, and muted when it snaps back.
-            float fade1 = 1.0f - fabsf((dark_phase - 1024.0f) / 1024.0f);
-            float fade2 = 1.0f - fade1;
+                float pitched_down = (out1 * fade1) + (out2 * fade2);
 
-            float pitched_down = (out1 * fade1) + (out2 * fade2);
+                // 6. Smooth Low-Pass Filter (Removes any granular artifacts and leaves pure, deep sub)
+                // A coefficient of 0.05f creates a heavy low-pass around ~300Hz
+                dark_lpf_state += 0.05f * (pitched_down - dark_lpf_state);
 
-            // 6. Smooth Low-Pass Filter (Removes any granular artifacts and leaves pure, deep sub)
-            // A coefficient of 0.05f creates a heavy low-pass around ~300Hz
-            dark_lpf_state += 0.05f * (pitched_down - dark_lpf_state);
-
-            // 7. Final output with makeup gain to compensate for the heavy filtering
-            float dark_sig = dark_lpf_state * 2.5f;
-
+                // 7. Final output with makeup gain to compensate for the heavy filtering
+                float dark_sig = dark_lpf_state * 2.5f;
+            }
             // ==========================================
             // PATH 3: BRIGHT (Harmonic Exciter Air)
             // ==========================================
-            // 1. Isolate the extreme highs using the 2nd-order Butterworth HPF
-            float hp_l = process_biquad(rev_l, &bright_hpf_l, &bright_coeffs);
-            float hp_r = process_biquad(rev_r, &bright_hpf_r, &bright_coeffs);
+            if (bright_amt > 0.0f) {
+                // 1. Isolate the extreme highs using the 2nd-order Butterworth HPF
+                float hp_l = process_biquad(rev_l, &bright_hpf_l, &bright_coeffs);
+                float hp_r = process_biquad(rev_r, &bright_hpf_r, &bright_coeffs);
 
-            // 2. Drive the isolated highs to prepare for saturation
-            float drive_l = hp_l * 4.0f;
-            float drive_r = hp_r * 4.0f;
+                // 2. Drive the isolated highs to prepare for saturation
+                float drive_l = hp_l * 4.0f;
+                float drive_r = hp_r * 4.0f;
 
-            // Clamp to prevent polynomial foldback explosion
-            drive_l = fmaxf(-1.0f, fminf(1.0f, drive_l));
-            drive_r = fmaxf(-1.0f, fminf(1.0f, drive_r));
+                // Clamp to prevent polynomial foldback explosion
+                drive_l = fmaxf(-1.0f, fminf(1.0f, drive_l));
+                drive_r = fmaxf(-1.0f, fminf(1.0f, drive_r));
 
-            // 3. Polynomial soft-clipping (x - x^3/3)
-            // This squashes the peaks, synthesizing beautiful 2nd and 3rd order "sizzle"
-            float bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
-            float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
-
+                // 3. Polynomial soft-clipping (x - x^3/3)
+                // This squashes the peaks, synthesizing beautiful 2nd and 3rd order "sizzle"
+                float bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
+                float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
+            }
             // ==========================================
             // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
             // ==========================================
             // Drive from the FDN reverb output so the resonators colour the
             // reverb tail rather than the dry signal.  Driving from in_l/in_r
             // produced no audible effect for low-mid drum content because those
-            // signals carry negligible energy in the 4–7 kHz resonator band.
+            // signals carry negligible energy in the 4-7 kHz resonator band.
             // The reverb tail has broad-band content and reliably excites the
             // high-Q resonators, creating a metallic / spring-like colouring.
-            float color_l = 0.0f;
-            float color_r = 0.0f;
-            for(int f=0; f<NUM_RESONATORS; f++) {
-                color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
-                color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
+            if (color_amt > 0.0f) {
+                float color_l = 0.0f;
+                float color_r = 0.0f;
+                for(int f=0; f<NUM_RESONATORS; f++) {
+                    color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
+                    color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
+                }
+                // Scale down since we are summing 6 high-Q resonant peaks.
+                color_l *= 0.30f;
+                color_r *= 0.30f;
             }
-            // Scale down since we are summing 6 high-Q resonant peaks.
-            color_l *= 0.30f;
-            color_r *= 0.30f;
-
             // ==========================================
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
             // ==========================================
-            sparkle_buffer_l[spark_write] = rev_l;
-            sparkle_buffer_r[spark_write] = rev_r;
-            spark_write = (spark_write + 1) & (SPARKLE_BUFFER_SIZE - 1);
+            if (spark_amt > 0.0f) {
+                sparkle_buffer_l[spark_write] = rev_l;
+                sparkle_buffer_r[spark_write] = rev_r;
+                spark_write = (spark_write + 1) & (SPARKLE_BUFFER_SIZE - 1);
 
-            float spark_l = 0.0f;
-            float spark_r = 0.0f;
+                float spark_l = 0.0f;
+                float spark_r = 0.0f;
 
-            if (spark_countdown > 0) {
-                int r_idx = (int)spark_read & (SPARKLE_BUFFER_SIZE - 1);
-                // Parabolic envelope: rises and falls over the grain duration.
-                // env = 4 * pos * (1 - pos)  where pos runs 0→1 over the grain.
-                float pos = 1.0f - (float)spark_countdown / (float)spark_duration;
-                float env = 4.0f * pos * (1.0f - pos);
-                spark_l = sparkle_buffer_l[r_idx] * spark_pan_l * env;
-                spark_r = sparkle_buffer_r[r_idx] * spark_pan_r * env;
-                spark_read += spark_speed;
-                spark_countdown--;
-            } else {
-                // Xorshift inline PRNG
-                static uint32_t seed = 2463534242UL;
-                seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
-                float rand_val = (float)seed / 4294967295.0f;
+                if (spark_countdown > 0) {
+                    int r_idx = (int)spark_read & (SPARKLE_BUFFER_SIZE - 1);
+                    // Parabolic envelope: rises and falls over the grain duration.
+                    // env = 4 * pos * (1 - pos)  where pos runs 0→1 over the grain.
+                    float pos = 1.0f - (float)spark_countdown / (float)spark_duration;
+                    float env = 4.0f * pos * (1.0f - pos);
+                    spark_l = sparkle_buffer_l[r_idx] * spark_pan_l * env;
+                    spark_r = sparkle_buffer_r[r_idx] * spark_pan_r * env;
+                    spark_read += spark_speed;
+                    spark_countdown--;
+                } else {
+                    // Xorshift inline PRNG
+                    static uint32_t seed = 2463534242UL;
+                    seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+                    float rand_val = (float)seed / 4294967295.0f;
 
-                if (rand_val < (0.0001f + (spark_amt * 0.005f))) {
-                    // Halved grain duration: 5-15 ms (was 10-30 ms)
-                    spark_duration = 250 + (int)(seed % 500);
-                    spark_countdown = spark_duration;
-                    spark_read = (float)spark_write - (float)spark_countdown;
-                    if(spark_read < 0.0f) spark_read += (float)SPARKLE_BUFFER_SIZE;
-                    // More varied pitch ratios: +5, +7, +12, +19, +24 semitones
-                    static const float kSpeeds[5] = {1.41f, 1.68f, 2.0f, 2.83f, 4.0f};
-                    spark_speed = kSpeeds[seed % 5];
+                    if (rand_val < (0.0001f + (spark_amt * 0.005f))) {
+                        // Halved grain duration: 5-15 ms (was 10-30 ms)
+                        spark_duration = 250 + (int)(seed % 500);
+                        spark_countdown = spark_duration;
+                        spark_read = (float)spark_write - (float)spark_countdown;
+                        if(spark_read < 0.0f) spark_read += (float)SPARKLE_BUFFER_SIZE;
+                        // More varied pitch ratios: +5, +7, +12, +19, +24 semitones
+                        static const float kSpeeds[5] = {1.41f, 1.68f, 2.0f, 2.83f, 4.0f};
+                        spark_speed = kSpeeds[seed % 5];
 
-                    spark_pan_l = (float)(seed % 100) / 100.0f;
-                    spark_pan_r = 1.0f - spark_pan_l;
+                        spark_pan_l = (float)(seed % 100) * 0.01f;
+                        spark_pan_r = 1.0f - spark_pan_l;
+                    }
                 }
             }
-
             // ==========================================
             // PATH 6: SHIMMER (Granular Octave-Up of reverb tail)
             // ==========================================
-            float shim_l = 0.0f;
-            float shim_r = 0.0f;
             if (shim_amt > 0.0f) {
-                float shim_mono = (rev_l + rev_r) * 0.5f;
-                shimmer_buffer[shimmer_write] = shim_mono;
-                shimmer_write = (shimmer_write + 1) & 4095;
+                float shim_l = 0.0f;
+                float shim_r = 0.0f;
+                if (shim_amt > 0.0f) {
+                    float shim_mono = (rev_l + rev_r) * 0.5f;
+                    shimmer_buffer[shimmer_write] = shim_mono;
+                    shimmer_write = (shimmer_write + 1) & 4095;
 
-                shimmer_phase += 2.0f;  // octave up: phase advances at 2x
-                if (shimmer_phase >= 2048.0f) shimmer_phase -= 2048.0f;
+                    shimmer_phase += 2.0f;  // octave up: phase advances at 2x
+                    if (shimmer_phase >= 2048.0f) shimmer_phase -= 2048.0f;
 
-                float rs1 = (float)shimmer_write - shimmer_phase;
-                if (rs1 < 0.0f) rs1 += 4096.0f;
-                int is1 = (int)rs1;
-                float fs1 = rs1 - is1;
-                float so1 = shimmer_buffer[is1 & 4095] + fs1 * (shimmer_buffer[(is1+1) & 4095] - shimmer_buffer[is1 & 4095]);
+                    float rs1 = (float)shimmer_write - shimmer_phase;
+                    if (rs1 < 0.0f) rs1 += 4096.0f;
+                    int is1 = (int)rs1;
+                    float fs1 = rs1 - is1;
+                    float so1 = shimmer_buffer[is1 & 4095] + fs1 * (shimmer_buffer[(is1+1) & 4095] - shimmer_buffer[is1 & 4095]);
 
-                float phase_b = shimmer_phase + 1024.0f;
-                if (phase_b >= 2048.0f) phase_b -= 2048.0f;
-                float rs2 = (float)shimmer_write - phase_b;
-                if (rs2 < 0.0f) rs2 += 4096.0f;
-                int is2 = (int)rs2;
-                float fs2 = rs2 - is2;
-                float so2 = shimmer_buffer[is2 & 4095] + fs2 * (shimmer_buffer[(is2+1) & 4095] - shimmer_buffer[is2 & 4095]);
+                    float phase_b = shimmer_phase + 1024.0f;
+                    if (phase_b >= 2048.0f) phase_b -= 2048.0f;
+                    float rs2 = (float)shimmer_write - phase_b;
+                    if (rs2 < 0.0f) rs2 += 4096.0f;
+                    int is2 = (int)rs2;
+                    float fs2 = rs2 - is2;
+                    float so2 = shimmer_buffer[is2 & 4095] + fs2 * (shimmer_buffer[(is2+1) & 4095] - shimmer_buffer[is2 & 4095]);
 
-                float sfade = 1.0f - fabsf((shimmer_phase - 1024.0f) / 1024.0f);
-                float shimmer_sig = so1 * sfade + so2 * (1.0f - sfade);
-                shimmer_lpf += 0.15f * (shimmer_sig - shimmer_lpf);
-                shim_l = shimmer_lpf;
-                shim_r = shimmer_lpf;
+                    float sfade = 1.0f - fabsf((shimmer_phase - 1024.0f) / 1024.0f);
+                    float shimmer_sig = so1 * sfade + so2 * (1.0f - sfade);
+                    shimmer_lpf += 0.15f * (shimmer_sig - shimmer_lpf);
+                    shim_l = shimmer_lpf;
+                    shim_r = shimmer_lpf;
+                }
             }
-
             // ==========================================
             // FINAL PARALLEL MIXDOWN
             // ==========================================

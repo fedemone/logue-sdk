@@ -320,7 +320,7 @@ void test_wetdry_mix() {
     float dry = 0.7f, wet_signal = 0.3f;
     int all_ok = 1;
     for (int i = 0; i < 4; i++) {
-        float mix = cases[i].raw / 100.0f;
+        float mix = cases[i].raw * 0.01f;
         /* out = dry*(1 - |mix|) + wet_signal*|mix| when mix>=0
          * For negative mix, the same math applies symmetrically.
          * Simple test: at mix=1, out==wet; at mix=-1, result uses -1 factor */

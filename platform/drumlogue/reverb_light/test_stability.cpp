@@ -184,12 +184,12 @@ static void test_stability_max_params() {
     fdn_init(&fdn);
 
     /* Max parameter values (mirrors unit_set_param_value mappings) */
-    float decay      = 100 / 100.0f * 0.99f;     /* 0.99 */
-    float brightness = 100 / 100.0f;              /* 1.0  */
-    float glow       = 100 / 100.0f;              /* 1.0  */
-    float colorCoeff = 100 / 100.0f * 0.95f;      /* 0.95 */
-    float modulation = 100 / 100.0f;              /* 1.0  */
-    float sizeScale  = 0.1f + (100 / 100.0f) * 1.9f; /* 2.0 */
+    float decay      = 100 * 0.01f * 0.99f;     /* 0.99 */
+    float brightness = 100 * 0.01f;              /* 1.0  */
+    float glow       = 100 * 0.01f;              /* 1.0  */
+    float colorCoeff = 100 * 0.01f * 0.95f;      /* 0.95 */
+    float modulation = 100 * 0.01f;              /* 1.0  */
+    float sizeScale  = 0.1f + (100 * 0.01f) * 1.9f; /* 2.0 */
     fdn_set_params(&fdn, decay, brightness, glow, colorCoeff, modulation, sizeScale);
 
     float maxAbs = 0.0f;
@@ -230,12 +230,12 @@ static void test_stability_default_params() {
     fdn_init(&fdn);
 
     /* Default values from header.c */
-    float decay      = 60  / 100.0f * 0.99f;   /* 0.5940 */
-    float brightness = 50  / 100.0f;            /* 0.50   */
-    float glow       = 70  / 100.0f;            /* 0.70   */
-    float colorCoeff = 10  / 100.0f * 0.95f;   /* 0.095  */
-    float modulation = 5   / 100.0f;            /* 0.05   */
-    float sizeScale  = 0.1f + (50 / 100.0f) * 1.9f; /* 1.05 */
+    float decay      = 60  * 0.01f * 0.99f;   /* 0.5940 */
+    float brightness = 50  * 0.01f;            /* 0.50   */
+    float glow       = 70  * 0.01f;            /* 0.70   */
+    float colorCoeff = 10  * 0.01f * 0.95f;   /* 0.095  */
+    float modulation = 5   * 0.01f;            /* 0.05   */
+    float sizeScale  = 0.1f + (50 * 0.01f) * 1.9f; /* 1.05 */
     fdn_set_params(&fdn, decay, brightness, glow, colorCoeff, modulation, sizeScale);
 
     /* Feed impulse then silence; reverb tail must stay bounded */

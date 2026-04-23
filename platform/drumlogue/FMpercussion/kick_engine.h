@@ -111,16 +111,16 @@ fast_inline float32x4_t kick_engine_process(kick_engine_t* kick,
     // APC BAILOUT: Check if all 4 voices are dead
     // Extract the max value across the 4 lanes of the mask
     #if defined(__aarch64__)
-        float max_mask = vmaxvq_f32(active_mask);
+        uint32_t max_mask = vmaxvq_u32(active_mask);
     #else
         // 32-bit ARM fallback for vector max
-        float32x2_t max_half = vmax_f32(vget_low_f32(active_mask), vget_high_f32(active_mask));
-        float max_mask = vget_lane_f32(vpmax_f32(max_half, max_half), 0);
+        uint32x4_t max_half = vmax_u32(vget_low_u32(active_mask), vget_high_u32(active_mask));
+        uint32_t max_mask = vget_lane_u32(vpmax_u32(max_half, max_half), 0);
     #endif
 
     // If the mask is zero across all lanes, SKIP THE MATH!
-    if (max_mask == 0.0f) {
-        return vdupq_n_f32(0.0f);
+    if (max_mask == 0) {
+        return vdupq_n_u32(0.0f);
     }
 
     // 1. Staggered envelopes for pitch and click layers

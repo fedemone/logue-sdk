@@ -133,7 +133,7 @@ static void compute_wet_dry(const ParamAmounts *p,
  * Test 9: int32_t truncation regression
  *
  * The original setters took int32_t; unit.cc called them with
- *   norm = value / 100.0f   (e.g. 0.6f for value=60)
+ *   norm = value * 0.01f   (e.g. 0.6f for value=60)
  * C++ truncates float→int32_t, so norm=0.6 → 0.  All *_amt become 0,
  * total_wet=0, wet_normalize=0 → pure dry passthrough.
  *
@@ -146,11 +146,11 @@ static void test_int32_truncation_regression() {
     printf("\n=== Test 9: int32_t truncation regression ===\n");
 
     /* (a) Demonstrate the truncation */
-    float norm60  = 60  / 100.0f;   /* 0.60 */
-    float norm50  = 50  / 100.0f;   /* 0.50 */
-    float norm5   = 5   / 100.0f;   /* 0.05 */
-    float norm10  = 10  / 100.0f;   /* 0.10 */
-    float norm70  = 70  / 100.0f;   /* 0.70 */
+    float norm60  = 60  * 0.01f;   /* 0.60 */
+    float norm50  = 50  * 0.01f;   /* 0.50 */
+    float norm5   = 5   * 0.01f;   /* 0.05 */
+    float norm10  = 10  * 0.01f;   /* 0.10 */
+    float norm70  = 70  * 0.01f;   /* 0.70 */
 
     int32_t bug_dark   = (int32_t)norm60;  /* = 0 */
     int32_t bug_bright = (int32_t)norm50;  /* = 0 */
@@ -297,11 +297,11 @@ static void test_preset_stanzaneon_wet_ratio() {
     printf("\n=== Test 12: Preset 0 (StanzaNeon) Wet Ratio ===\n");
 
     ParamAmounts p = {
-        40 / 100.0f,   /* dark  = 0.40 */
-        30 / 100.0f,   /* glow  = 0.30 */
-        70 / 100.0f,   /* bright= 0.70 */
-        10 / 100.0f,   /* color = 0.10 */
-         5 / 100.0f    /* spark = 0.05 */
+        40 * 0.01f,   /* dark  = 0.40 */
+        30 * 0.01f,   /* glow  = 0.30 */
+        70 * 0.01f,   /* bright= 0.70 */
+        10 * 0.01f,   /* color = 0.10 */
+         5 * 0.01f    /* spark = 0.05 */
     };
 
     float total_wet, dry_mix, wet_normalize;

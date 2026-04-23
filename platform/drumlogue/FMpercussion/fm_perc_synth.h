@@ -235,7 +235,7 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // =================================================================
     // Update resonant morph (param 23)
     // =================================================================
-    synth->resonant_morph = p[PARAM_RES_MORPH] / 100.0f;
+    synth->resonant_morph = p[PARAM_RES_MORPH] * 0.01f;
 
     // Apply morph to resonant parameters
     // Morph controls multiple parameters: mode, frequency, resonance
@@ -247,23 +247,23 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
 
     // Kick engine: param1 = sweep depth (0-1), param2 = decay shape (0-1)
     kick_engine_update(&synth->kick,
-                        vdupq_n_f32(p[PARAM_KICK_SWEEP] / 100.0f),   // Kick sweep
-                        vdupq_n_f32(p[PARAM_KICK_DECAY] / 100.0f));  // Kick decay
+                        vdupq_n_f32(p[PARAM_KICK_SWEEP] * 0.01f),   // Kick sweep
+                        vdupq_n_f32(p[PARAM_KICK_DECAY] * 0.01f));  // Kick decay
 
     // Snare engine: param1 = noise mix (0-1), param2 = body resonance (0-1)
     snare_engine_update(&synth->snare,
-                        vdupq_n_f32(p[PARAM_SNARE_NOISE] / 100.0f),  // Snare noise mix
-                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f));  // Snare body resonance
+                        vdupq_n_f32(p[PARAM_SNARE_NOISE] * 0.01f),  // Snare noise mix
+                        vdupq_n_f32(p[PARAM_SNARE_BODY] * 0.01f));  // Snare body resonance
 
     // Metal engine: param1 = inharmonicity (0-1), param2 = brightness (0-1)
     metal_engine_update(&synth->metal,
-                        vdupq_n_f32(p[PARAM_METAL_INHARM] / 100.0f),   // Metal inharmonicity
-                        vdupq_n_f32(p[PARAM_METAL_BRIGHT] / 100.0f));  // Metal brightness
+                        vdupq_n_f32(p[PARAM_METAL_INHARM] * 0.01f),   // Metal inharmonicity
+                        vdupq_n_f32(p[PARAM_METAL_BRIGHT] * 0.01f));  // Metal brightness
 
     // Perc engine: param1 = ratio center (0-1), param2 = variation (0-1)
     perc_engine_update(&synth->perc,
-                        vdupq_n_f32(p[PARAM_PERC_RATIO] / 100.0f),  // Perc ratio center
-                        vdupq_n_f32(p[PARAM_PERC_VAR] / 100.0f));   // Perc variation
+                        vdupq_n_f32(p[PARAM_PERC_RATIO] * 0.01f),  // Perc ratio center
+                        vdupq_n_f32(p[PARAM_PERC_VAR] * 0.01f));   // Perc variation
 
     // =================================================================
     // Update resonant base parameters (mode from param 22)
@@ -279,10 +279,10 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     int8_t depth1 = p[PARAM_LFO1_DEPTH];
     int8_t depth2 = p[PARAM_LFO2_DEPTH];
 
-    lfo_smoother_set_rate(&synth->lfo_smooth, 0, p[PARAM_LFO1_RATE] / 100.0f, all_voices);
-    lfo_smoother_set_rate(&synth->lfo_smooth, 1, p[PARAM_LFO2_RATE] / 100.0f, all_voices);
-    lfo_smoother_set_depth(&synth->lfo_smooth, 0, depth1 / 100.0f, all_voices);
-    lfo_smoother_set_depth(&synth->lfo_smooth, 1, depth2 / 100.0f, all_voices);
+    lfo_smoother_set_rate(&synth->lfo_smooth, 0, p[PARAM_LFO1_RATE] * 0.01f, all_voices);
+    lfo_smoother_set_rate(&synth->lfo_smooth, 1, p[PARAM_LFO2_RATE] * 0.01f, all_voices);
+    lfo_smoother_set_depth(&synth->lfo_smooth, 0, depth1 * 0.01f, all_voices);
+    lfo_smoother_set_depth(&synth->lfo_smooth, 1, depth2 * 0.01f, all_voices);
     lfo_smoother_set_target(&synth->lfo_smooth, 0, p[PARAM_LFO1_TARGET], all_voices);
     lfo_smoother_set_target(&synth->lfo_smooth, 1, p[PARAM_LFO2_TARGET], all_voices);
 

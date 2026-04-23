@@ -38,17 +38,17 @@ static void build_hadamard(float H[FDN_CHANNELS][FDN_CHANNELS]) {
  * ---------------------------------------------------------------------- */
 
 /* DARK  (id 0): 0..100 → decay 0.0..0.99 */
-static float map_dark(int32_t v)       { return (v / 100.0f) * 0.99f; }
+static float map_dark(int32_t v)       { return (v * 0.01f) * 0.99f; }
 /* BRIG  (id 1): 0..100 → brightness 0.0..1.0 */
-static float map_brig(int32_t v)       { return v / 100.0f; }
+static float map_brig(int32_t v)       { return v * 0.01f; }
 /* GLOW  (id 2): 0..100 → glow 0.0..1.0 */
-static float map_glow(int32_t v)       { return v / 100.0f; }
+static float map_glow(int32_t v)       { return v * 0.01f; }
 /* COLR  (id 3): 0..100 → colorCoeff 0.0..0.95 */
-static float map_colr(int32_t v)       { return (v / 100.0f) * 0.95f; }
+static float map_colr(int32_t v)       { return (v * 0.01f) * 0.95f; }
 /* SPRK  (id 4): 0..100 → modulation 0.0..1.0 */
-static float map_sprk(int32_t v)       { return v / 100.0f; }
+static float map_sprk(int32_t v)       { return v * 0.01f; }
 /* SIZE  (id 5): 0..100 → sizeScale 0.1..2.0 */
-static float map_size(int32_t v)       { return 0.1f + (v / 100.0f) * 1.9f; }
+static float map_size(int32_t v)       { return 0.1f + (v * 0.01f) * 1.9f; }
 
 /* -------------------------------------------------------------------------
  * Test 1: Parameter mapping correctness
