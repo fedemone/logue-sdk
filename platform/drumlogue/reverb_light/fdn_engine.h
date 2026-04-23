@@ -477,6 +477,13 @@ public:
     void processBlock(const float* in, float* out, int num_samples) {
         if (!initialized) return;
 
+        #if defined(__arm__) || defined(__aarch64__)
+            uint32_t fpscr;
+            __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
+            fpscr |= (1 << 24) | (1 << 22); // Enable Flush-to-Zero
+            __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
+        #endif
+
         int preDelaySamps = (int)(predelayScale * 16000.0f); // Max ~330ms
 
         float path_sum = dark_amt + glow_amt + bright_amt + color_amt + spark_amt + shim_amt;
