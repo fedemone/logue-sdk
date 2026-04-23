@@ -38,6 +38,74 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 
 ---
 
+## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
+
+Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
+that can be validated quickly on hardware before scaling to the rest of the kit.
+
+### Pilot strategy
+
+- Keep prior table values for most presets.
+- Tune only `12 Wodblk` toward a more percussive profile:
+  - lower `Dkay` (shorter ring),
+  - higher `MlSt` (harder strike),
+  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
+
+### Why this narrower scope
+
+- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
+  unavailable and package install blocked), and Docker toolchain is not present here.
+- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
+  across many programs without objective render metrics.
+
+### Next step after this commit
+
+Hardware A/B for preset 12 (`Wodblk`), then either:
+1. keep and propagate the same tuning pattern to adjacent percussive presets, or
+2. rollback/retune based on the measured transient/decay behaviour.
+
+### Added pre-HW analysis harness
+
+- Added `pre_hw_analysis.py` to compare rendered audio vs reference samples using
+  both time-domain and spectral metrics without external Python dependencies.
+- Metrics include: attack time, T60 estimate (Schroeder integration), autocorrelation F0,
+  spectral centroid/rolloff/flatness/flux, inharmonicity deviation, and multi-resolution
+  log-STFT distance.
+- Output is a JSON report with per-pair metrics + a weighted scalar score to rank
+  closeness before hardware flashing.
+
+### Added batch runner for convergence workflow
+
+- Added `batch_tune_runner.py` to automate:
+  1. sample discovery and sample→preset mapping from filenames (+ override map),
+  2. rendered/reference file coupling by preset index/name,
+  3. batch comparison with `pre_hw_analysis.py`,
+  4. tuning hints and estimated runs-to-target scoring.
+- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
+  ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
+- Added built-in helper output to the runner:
+  - `--helper` prints the full workflow guide,
+  - `--write-helper <path>` saves the guide as markdown.
+- Helper now includes WSL/QEMU commands used for ARM-side testing.
+- Added `run_tuning.sh` wrapper to execute common checks in sequence
+  (`py_compile`, helper preview/export, `git diff --check`) with clear step logs.
+- `run_tuning.sh` also reads `batch_tuning_report.json` when present and prints
+  whether another render+compare iteration is recommended based on a configurable
+  delta threshold.
+- The runner emits:
+  - `batch_tuning_report.json` (full metrics + suggestions),
+  - `batch_tuning_report.csv` (sortable table),
+  - `batch_tuning_progress.md` (human-readable progress notes).
+- Convergence estimate currently uses an exponential model
+  (`score_next = score_now * assumed_improvement`) with tunable target score and
+  improvement factor, so expected run count can be revised as real run history is collected.
+- Pre-HW comparison now includes pitch-normalized spectral deltas (centroid/rolloff
+  normalized by detected F0), reducing false mismatch when sample and rendered notes differ.
+- Added optional `--auto-note-align` mode to use pitch-aligned MR-STFT distance
+  (simple resampling alignment) when rendered and sample notes are not the same.
+
+---
+
 ## Phase 24 Planning: Model Weakness Review + Two-Stage Upgrade Path [PLANNED]
 
 This section records a model-by-model weakness audit and an implementation roadmap.
@@ -178,77 +246,23 @@ Implemented first-pass Stage-1 changes:
    - Batch score now adds extra emphasis on Flatness/Flux for percussion-class presets.
    - Purpose: ensure optimization pressure targets the known structural gaps.
 
-Stage-1 items still pending from plan:
-- dual-band exciter noise shaping,
-- model-specific transient envelope presets.
+Additional Stage-1 items now implemented:
 
----
+4. **Dual-band exciter noise shaping (implemented)**
+   - Added low/high split blend in the noise path to better approximate wooden/percussive
+     attack texture.
 
-## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
+5. **Model-specific transient presets (implemented)**
+   - Added simple per-model profile scaling for transient window and noise-band mix
+     (percussion vs tube vs default classes).
 
-Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
-that can be validated quickly on hardware before scaling to the rest of the kit.
+Stage-1 status: core items complete; iterate with hardware + batch metrics before Stage-2.
 
-### Pilot strategy
+Stage-1 correction (2026-04-23):
 
-- Keep prior table values for most presets.
-- Tune only `12 Wodblk` toward a more percussive profile:
-  - lower `Dkay` (shorter ring),
-  - higher `MlSt` (harder strike),
-  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
-
-### Why this narrower scope
-
-- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
-  unavailable and package install blocked), and Docker toolchain is not present here.
-- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
-  across many programs without objective render metrics.
-
-### Next step after this commit
-
-Hardware A/B for preset 12 (`Wodblk`), then either:
-1. keep and propagate the same tuning pattern to adjacent percussive presets, or
-2. rollback/retune based on the measured transient/decay behaviour.
-
-### Added pre-HW analysis harness
-
-- Added `pre_hw_analysis.py` to compare rendered audio vs reference samples using
-  both time-domain and spectral metrics without external Python dependencies.
-- Metrics include: attack time, T60 estimate (Schroeder integration), autocorrelation F0,
-  spectral centroid/rolloff/flatness/flux, inharmonicity deviation, and multi-resolution
-  log-STFT distance.
-- Output is a JSON report with per-pair metrics + a weighted scalar score to rank
-  closeness before hardware flashing.
-
-### Added batch runner for convergence workflow
-
-- Added `batch_tune_runner.py` to automate:
-  1. sample discovery and sample→preset mapping from filenames (+ override map),
-  2. rendered/reference file coupling by preset index/name,
-  3. batch comparison with `pre_hw_analysis.py`,
-  4. tuning hints and estimated runs-to-target scoring.
-- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
-  ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
-- Added built-in helper output to the runner:
-  - `--helper` prints the full workflow guide,
-  - `--write-helper <path>` saves the guide as markdown.
-- Helper now includes WSL/QEMU commands used for ARM-side testing.
-- Added `run_tuning.sh` wrapper to execute common checks in sequence
-  (`py_compile`, helper preview/export, `git diff --check`) with clear step logs.
-- `run_tuning.sh` also reads `batch_tuning_report.json` when present and prints
-  whether another render+compare iteration is recommended based on a configurable
-  delta threshold.
-- The runner emits:
-  - `batch_tuning_report.json` (full metrics + suggestions),
-  - `batch_tuning_report.csv` (sortable table),
-  - `batch_tuning_progress.md` (human-readable progress notes).
-- Convergence estimate currently uses an exponential model
-  (`score_next = score_now * assumed_improvement`) with tunable target score and
-  improvement factor, so expected run count can be revised as real run history is collected.
-- Pre-HW comparison now includes pitch-normalized spectral deltas (centroid/rolloff
-  normalized by detected F0), reducing false mismatch when sample and rendered notes differ.
-- Added optional `--auto-note-align` mode to use pitch-aligned MR-STFT distance
-  (simple resampling alignment) when rendered and sample notes are not the same.
+- Fixed transient allpass jitter clamp to preserve the full supported range `[-0.99, +0.99]`.
+- Previous clamp `[0, 0.99]` accidentally removed negative AP modulation, reducing per-hit dispersion variation for models using near-zero/negative AP trajectories.
+- Verified by re-running local batch iteration harness (`batch_tune_runner.py --auto-note-align --run-render --preset-filter Wodblk ...`) to ensure report generation path remains healthy after DSP-side fix.
 
 ---
 
