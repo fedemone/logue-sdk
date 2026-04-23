@@ -137,6 +137,12 @@ RENDER_PRESET_NAMES = {
     "Tick": "Tick",
 }
 
+PERCUSSIVE_PRESETS = {
+    "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "TamTam", "Wodblk",
+    "Ac Tom", "AcTom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
+    "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
+}
+
 
 @dataclass
 class PresetRow:
@@ -347,6 +353,15 @@ def suggest_tuning(metrics: Dict[str, float], preset_values: List[int]) -> List[
     return hints
 
 
+def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str, float]) -> float:
+    score = base_score
+    if preset_name in PERCUSSIVE_PRESETS:
+        # Stage-1 metric steering: prioritize transient complexity for percussion.
+        score += 0.12 * metrics.get("flatness_pct", 0.0)
+        score += 0.12 * metrics.get("flux_pct", 0.0)
+    return score
+
+
 def estimate_runs_needed(current_score: float, target_score: float = 12.0, assumed_improvement: float = 0.72) -> int:
     """Estimate runs using exponential convergence model:
     score_next = score_now * assumed_improvement.
@@ -454,6 +469,8 @@ def main() -> int:
         comp["preset"] = preset.name
         comp["preset_idx"] = preset.idx
         comp["sample"] = sample.name
+        comp["raw_score"] = comp["score"]
+        comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"])
         comp["suggestions"] = suggest_tuning(comp["metrics"], preset.values)
         comp["estimated_runs_to_target"] = estimate_runs_needed(
             comp["score"],

@@ -150,6 +150,12 @@ struct VoiceState {
     // not RMS.  For the −80 dB silence gate both are equivalent in practice.
     // Smoothing: α=0.01 → τ ≈ 100 samples ≈ 2 ms at 48 kHz.
     float mag_env = 0.0f;
+    
+    // Stage-1 transient complexity boost (short post-strike modulation window).
+    uint32_t transient_frames_left = 0;
+    uint32_t transient_frames_total = 0;
+    float transient_lp_jitter = 0.0f;
+    float transient_ap_jitter = 0.0f;
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)

@@ -213,6 +213,10 @@ public:
             state.voices[i].mag_env = 0.0f;
             state.voices[i].base_delay_A = 0.0f;
             state.voices[i].base_delay_B = 0.0f;
+            state.voices[i].transient_frames_left = 0;
+            state.voices[i].transient_frames_total = 0;
+            state.voices[i].transient_lp_jitter = 0.0f;
+            state.voices[i].transient_ap_jitter = 0.0f;
 
 #ifdef ENABLE_PHASE_6_FILTERS
             // Noise filter defaults to LP mode, fully open (12 kHz)
@@ -1002,6 +1006,10 @@ public:
         v.resA_out_prev = 0.0f;
         v.resB_out_prev = 0.0f;
         v.tone_lp = 0.0f;
+        v.transient_frames_left = 0;
+        v.transient_frames_total = 0;
+        v.transient_lp_jitter = 0.0f;
+        v.transient_ap_jitter = 0.0f;
 
         // Clear waveguide delay line, LP state, and write pointer.
         //
@@ -1059,6 +1067,18 @@ public:
         v.exciter.master_env.value = 1.0f;
         v.exciter.master_env.state = ENV_DECAY;
 #endif
+
+        // Stage-1 transient complexity: short coefficient modulation window.
+        // Deterministic per-hit micro-randomization from note/voice/velocity.
+        float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity / 127.0f));
+        uint32_t seed = (uint32_t)note * 1103515245u
+                      ^ (uint32_t)state.next_voice_idx * 12345u
+                      ^ (uint32_t)velocity * 2654435761u;
+        float r = ((float)((seed >> 8) & 0xFFFFu) / 32767.5f) - 1.0f; // [-1, +1]
+        v.transient_frames_total = (uint32_t)(default_sample_rate * 0.035f); // 35 ms
+        v.transient_frames_left = v.transient_frames_total;
+        v.transient_lp_jitter = fmaxf(-0.08f, fminf(0.08f, (0.05f * vel_norm) + (0.02f * r)));
+        v.transient_ap_jitter = fmaxf(-0.03f, fminf(0.03f, (0.015f * vel_norm) - (0.01f * r)));
     }
 
     inline void NoteOff(uint8_t note) {
@@ -1331,6 +1351,13 @@ public:
                 }
             }
 
+            // Stage-1 transient modulation: keep a baseline copy and apply a short
+            // decaying coefficient offset after each strike.
+            const float lpA_base = voice.resA.lowpass_coeff;
+            const float lpB_base = voice.resB.lowpass_coeff;
+            const float apA_base = voice.resA.ap_coeff;
+            const float apB_base = voice.resB.ap_coeff;
+
             for (size_t i = 0; i < frames; ++i) {
 
                 // ── Stage 1: Raw exciter (always executes) ─────────────────
@@ -1342,6 +1369,23 @@ public:
 
                 // outA kept at 0 here so the debug probe below always compiles.
                 float outA = 0.0f;
+
+                if (voice.transient_frames_left > 0 && voice.transient_frames_total > 0) {
+                    float t = (float)voice.transient_frames_left / (float)voice.transient_frames_total;
+                    float decay = t * t; // smoother fade-out
+                    float lp_off = voice.transient_lp_jitter * decay;
+                    float ap_off = voice.transient_ap_jitter * decay;
+                    voice.resA.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, lpA_base + lp_off));
+                    voice.resB.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, lpB_base + lp_off));
+                    voice.resA.ap_coeff = fmaxf(0.0f, fminf(0.99f, apA_base + ap_off));
+                    voice.resB.ap_coeff = fmaxf(0.0f, fminf(0.99f, apB_base + ap_off));
+                    voice.transient_frames_left--;
+                } else {
+                    voice.resA.lowpass_coeff = lpA_base;
+                    voice.resB.lowpass_coeff = lpB_base;
+                    voice.resA.ap_coeff = apA_base;
+                    voice.resB.ap_coeff = apB_base;
+                }
 
 #if RENDER_STAGE >= 2
                 // ── Stage 2: Waveguide resonators ──────────────────────────
