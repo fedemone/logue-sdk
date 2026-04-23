@@ -5,7 +5,9 @@
 #include <cstdio>
 #include <cstring>
 
+#if defined(__arm__) || defined(__aarch64__)
 #include <arm_neon.h>
+#endif
 #include <float_math.h>
 #include "../common/runtime.h" // Drumlogue OS functions
 #include "unit.h"
@@ -221,7 +223,7 @@ public:
             state.voices[i].transient_lp_base_b = 1.0f;
             state.voices[i].transient_ap_base_a = 0.0f;
             state.voices[i].transient_ap_base_b = 0.0f;
-#ifdef ENABLE_STAGE2_MODAL_PILOT
+#if ENABLE_STAGE2_MODAL_PILOT
             state.voices[i].modal_pilot_enabled = false;
             state.voices[i].modal_phase_1 = 0.0f;
             state.voices[i].modal_phase_2 = 0.0f;
@@ -1031,7 +1033,7 @@ public:
         v.transient_lp_base_b = v.resB.lowpass_coeff;
         v.transient_ap_base_a = v.resA.ap_coeff;
         v.transient_ap_base_b = v.resB.ap_coeff;
-#ifdef ENABLE_STAGE2_MODAL_PILOT
+#if ENABLE_STAGE2_MODAL_PILOT
         v.modal_pilot_enabled = false;
         v.modal_phase_1 = 0.0f;
         v.modal_phase_2 = 0.0f;
@@ -1138,7 +1140,7 @@ public:
             v.exciter.noise_band_mix = 0.50f;
         }
 
-#ifdef ENABLE_STAGE2_MODAL_PILOT
+#if ENABLE_STAGE2_MODAL_PILOT
         // Stage-2 single-model pilot (preset 12 / Wodblk): add a small 2-mode bank
         // in parallel to the existing waveguide path for richer transient spectral motion.
         // Compile-time guarded for safe A/B against legacy behavior.
@@ -1548,7 +1550,7 @@ public:
                 // the same ballpark as the resonator output driven by the ×15 mallet.
                 voice_out += voice.exciter.noise_out_sample * 5.0f * voice.current_velocity;
 #endif
-#ifdef ENABLE_STAGE2_MODAL_PILOT
+#if ENABLE_STAGE2_MODAL_PILOT
                 if (voice.modal_pilot_enabled) {
                     float m1 = sinf(voice.modal_phase_1) * voice.modal_env_1;
                     float m2 = sinf(voice.modal_phase_2) * voice.modal_env_2;

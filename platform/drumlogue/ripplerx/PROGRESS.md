@@ -299,6 +299,16 @@ Next measurement step:
   - mean score deltas on the same sample subset,
   - and CPU cost from hardware runtime counters.
 
+Initial local host-render A/B snapshot (Wodblk, pilot OFF vs ON):
+- Flatness error improved slightly (3.68% → 3.19%).
+- Flux error improved slightly (99.40% → 99.06%).
+- Overall weighted score worsened (72.47 → 74.33), so pilot is not yet net-positive.
+- Host-side render runtime overhead is modest (~+4.7% mean over 20 runs).
+
+Conclusion for now:
+- Keep Stage-2 pilot behind compile flag.
+- Continue tuning modal mix/ratios/decays before broader rollout.
+
 ---
 
 ## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]

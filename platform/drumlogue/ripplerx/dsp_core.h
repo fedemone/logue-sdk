@@ -39,7 +39,9 @@
 
 // =================================================================
 // STAGE-2 PILOT: simple 2-mode modal bank (single-preset, compile-time guarded)
+#ifndef ENABLE_STAGE2_MODAL_PILOT
 #define ENABLE_STAGE2_MODAL_PILOT 1
+#endif
 // =================================================================
 
 
@@ -170,7 +172,7 @@ struct VoiceState {
     float transient_ap_base_a = 0.0f;
     float transient_ap_base_b = 0.0f;
 
-#ifdef ENABLE_STAGE2_MODAL_PILOT
+#if ENABLE_STAGE2_MODAL_PILOT
     // Stage-2 pilot modal-bank path (2 modes) for single-preset A/B.
     bool modal_pilot_enabled = false;
     float modal_phase_1 = 0.0f;
