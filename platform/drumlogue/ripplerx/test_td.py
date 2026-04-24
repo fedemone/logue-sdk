@@ -45,35 +45,37 @@ NOISE_ZC_HZ   = 5000   # zero-crossing rate threshold for "noise dominant" chara
 # Columns: Note, Dkay, NzMix
 # Only columns needed for acoustic validation are listed here.
 # Index = preset index.
+# Mirrored from synth_engine.h m_factory_presets[]. TamTam removed; all
+# indices from 9 onward shifted. Note = preset's native pitch; Dkay/NzMix
+# from the preset row (fields [10] and [19]).
 PRESETS = [
     #  Note  Dkay NzMix  Name
     (  60,   25,    0,  "InitDbg"),
     (  72,  184,    0,  "Marimba"),
-    (  36,  150,    0,  "808Sub"),
+    (  36,  170,    0,  "808Sub"),
     (  38,   15,   40,  "AcSnre"),
     (  72,  199,    0,  "TblrBel"),
     (  40,  145,    2,  "Timpani"),
     (  48,  107,   15,  "Djambe"),
     (  41,  173,    5,  "Taiko"),
     (  65,   86,   25,  "MrchSnr"),
-    (  41,  162,    5,  "TamTam"),
-    (  60,  195,    0,  "Koto"),
-    (  72,  197,    0,  "Vibrph"),
-    (  81,  150,   25,  "Wodblk"),
+    (  60,  185,    0,  "Koto"),
+    (  72,  199,    0,  "Vibrph"),
+    (  48,   82,   18,  "Wodblk"),
     (  45,   80,    2,  "AcTom"),
     (  60,  176,   15,  "Cymbal"),
     (  50,  188,    4,  "Gong"),
     (  65,  194,    5,  "Kalimba"),
-    (  60,  195,    0,  "StelPan"),
+    (  60,  194,    0,  "StelPan"),
     (  79,    3,    0,  "Claves"),
     (  67,  175,    0,  "Cowbel"),
     (  84,  199,    8,  "Triangle"),
-    (  36,   50,    3,  "Kick"),
+    (  36,   70,    3,  "Kick"),
     (  60,    5,  100,  "Clap"),
     (  72,    2,  100,  "Shaker"),
     (  72,  191,   10,  "Flute"),
-    (  72,  200,   12,  "Clarinet"),
-    (  36,   85,    0,  "PlkBss"),
+    (  72,  145,    8,  "Clarinet"),
+    (  36,   95,    0,  "PlkBss"),
     (  76,  200,    0,  "GlsBwl"),
     (  69,  195,    0,  "GtrStr"),
     (  79,  119,   50,  "HHat-C"),
@@ -85,7 +87,7 @@ PRESETS = [
     (  57,  192,   20,  "Ride"),
     (  60,  184,   20,  "RidBel"),
     (  57,   94,    5,  "Bongo"),
-    (  88,  181,   85,  "GlsBotl"),
+    (  88,  175,   55,  "GlsBotl"),
     (  49,  100,   29,  "Tick"),
 ]
 

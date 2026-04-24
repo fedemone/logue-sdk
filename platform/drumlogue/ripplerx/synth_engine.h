@@ -1191,7 +1191,7 @@ public:
         // in parallel to the existing waveguide path for richer transient spectral motion.
         // Compile-time guarded for safe A/B against legacy behavior.
         if ((uint8_t)m_params[k_paramProgram] == 12) {
-            float base_f = 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);  // fasterpowf for the pilot oscillator's base frequency introduces a systematic pitch error of approximately 50 cents.
+            float base_f = 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
             if (base_f < 20.0f) base_f = 20.0f;
             float f1 = fminf(base_f, 0.45f * default_sample_rate);
             float f2 = fminf(base_f * STAGE2_MODAL_RATIO_2, 0.45f * default_sample_rate);
@@ -1200,8 +1200,6 @@ public:
             v.modal_pilot_enabled = true;
             v.modal_k_1 = 2.0f * cosf(w1);
             v.modal_k_2 = 2.0f * cosf(w2);
-            // Recursive oscillator init: y[n] = k*y[n-1] - y[n-2]
-            // choose y[-1]=0, y[0]=sin(w) for deterministic phase.
             v.modal_y2_1 = 0.0f;
             v.modal_y1_1 = sinf(w1);
             v.modal_y2_2 = 0.0f;
@@ -1209,8 +1207,6 @@ public:
             v.modal_norm_count = 0;
             v.modal_env_1 = STAGE2_MODAL_ENV1 * v.current_velocity;
             v.modal_env_2 = STAGE2_MODAL_ENV2 * v.current_velocity;
-            // Convert T60 (ms) to per-sample decay:
-            // decay = exp(ln(0.001) / (T60_s * Fs)).
             float t60_1_s = 0.001f * STAGE2_MODAL_T60_1_MS;
             float t60_2_s = 0.001f * STAGE2_MODAL_T60_2_MS;
             v.modal_decay_1 = (t60_1_s > 0.0f) ? expf(logf(0.001f) / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
@@ -1485,22 +1481,20 @@ public:
                     ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
                     : 0.0f;
                 if (delay_ratio_diff > 0.05f) {
-                    // Incoherent (different-pitch) pair: 3× more coupling headroom
-                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 2.5f);
-                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 2.5f);
+                    // Incoherent (different-pitch) pair.
+                    // Phase incoherence reduces average coupling energy, but the worst-case
+                    // beat alignment still satisfies G + C ≤ 1 only when C ≤ 1-G.
+                    // K=2.5 violated this (G+C = 2.5 - 1.5G > 1 for all G < 1), causing
+                    // exponential amplitude growth in long-decay presets (Timpani, Djambe).
+                    // Use the same K=0.8 as same-pitch pairs to guarantee stability.
+                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
+                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
                 } else {
                     // Coherent (same-pitch) pair: conservative stability clamp
                     v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
                     v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
                 }
             }
-
-            // Stage-1 transient modulation: keep a baseline copy and apply a short
-            // decaying coefficient offset after each strike.
-            const float lpA_base = voice.resA.lowpass_coeff;
-            const float lpB_base = voice.resB.lowpass_coeff;
-            const float apA_base = voice.resA.ap_coeff;
-            const float apB_base = voice.resB.ap_coeff;
 
             for (size_t i = 0; i < frames; ++i) {
 
@@ -1540,8 +1534,8 @@ public:
                 // zero delay_length or zero feedback_gain on this hardware.
                 //
                 // Model-aware coupling clamps are pre-computed once per block above.
-                // Diff-frequency pairs (membrane/drumhead) use K=2.5 so Partials
-                // remains audible at high Decay; same-frequency pairs use K=0.8.
+                // Both diff-frequency and same-frequency pairs use K=0.8 to guarantee
+                // G+C < 1 (coupled stability) across all Dkay settings.
                 float safe_cpl_a = v_safe_cpl_a;
                 float safe_cpl_b = v_safe_cpl_b;
 
