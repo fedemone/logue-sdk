@@ -6,9 +6,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${ROOT_DIR}/../../.." && pwd)"
-REPORT_JSON="${REPORT_JSON:-${REPO_ROOT}/batch_reports/batch_tuning_report.json}"
+REPORT_JSON="${REPORT_JSON:-${ROOT_DIR}/batch_reports/batch_tuning_report.json}"
 DELTA_THRESHOLD="${DELTA_THRESHOLD:-20}"
-HELPER="${HELPER:-${REPO_ROOT}/batch_tuning_helper.md}"
+HELPER="${HELPER:-${ROOT_DIR}/batch_tuning_helper.md}"
 
 step() {
   echo
@@ -26,9 +26,9 @@ echo "[run_tuning] ==============================================="
 
 cd "${REPO_ROOT}"
 
-batch_runner="$(find . -name 'batch_tune_runner.py' | head -n 1)"
-if [[ -z "${batch_runner}" ]]; then
-  echo "[run_tuning] ❌ Could not locate batch_tune_runner.py from ${REPO_ROOT}" >&2
+batch_runner="${ROOT_DIR}/batch_tune_runner.py"
+if [[ ! -f "${batch_runner}" ]]; then
+  echo "[run_tuning] ❌ Could not locate batch_tune_runner.py at ${batch_runner}" >&2
   exit 1
 fi
 echo "[run_tuning] batch_runner=${batch_runner}"
@@ -95,4 +95,3 @@ echo
 echo "[run_tuning] ==============================================="
 echo "[run_tuning] Completed successfully"
 echo "[run_tuning] ==============================================="
-

@@ -38,6 +38,74 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 
 ---
 
+## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
+
+Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
+that can be validated quickly on hardware before scaling to the rest of the kit.
+
+### Pilot strategy
+
+- Keep prior table values for most presets.
+- Tune only `12 Wodblk` toward a more percussive profile:
+  - lower `Dkay` (shorter ring),
+  - higher `MlSt` (harder strike),
+  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
+
+### Why this narrower scope
+
+- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
+  unavailable and package install blocked), and Docker toolchain is not present here.
+- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
+  across many programs without objective render metrics.
+
+### Next step after this commit
+
+Hardware A/B for preset 12 (`Wodblk`), then either:
+1. keep and propagate the same tuning pattern to adjacent percussive presets, or
+2. rollback/retune based on the measured transient/decay behaviour.
+
+### Added pre-HW analysis harness
+
+- Added `pre_hw_analysis.py` to compare rendered audio vs reference samples using
+  both time-domain and spectral metrics without external Python dependencies.
+- Metrics include: attack time, T60 estimate (Schroeder integration), autocorrelation F0,
+  spectral centroid/rolloff/flatness/flux, inharmonicity deviation, and multi-resolution
+  log-STFT distance.
+- Output is a JSON report with per-pair metrics + a weighted scalar score to rank
+  closeness before hardware flashing.
+
+### Added batch runner for convergence workflow
+
+- Added `batch_tune_runner.py` to automate:
+  1. sample discovery and sample→preset mapping from filenames (+ override map),
+  2. rendered/reference file coupling by preset index/name,
+  3. batch comparison with `pre_hw_analysis.py`,
+  4. tuning hints and estimated runs-to-target scoring.
+- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
+  ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
+- Added built-in helper output to the runner:
+  - `--helper` prints the full workflow guide,
+  - `--write-helper <path>` saves the guide as markdown.
+- Helper now includes WSL/QEMU commands used for ARM-side testing.
+- Added `run_tuning.sh` wrapper to execute common checks in sequence
+  (`py_compile`, helper preview/export, `git diff --check`) with clear step logs.
+- `run_tuning.sh` also reads `batch_tuning_report.json` when present and prints
+  whether another render+compare iteration is recommended based on a configurable
+  delta threshold.
+- The runner emits:
+  - `batch_tuning_report.json` (full metrics + suggestions),
+  - `batch_tuning_report.csv` (sortable table),
+  - `batch_tuning_progress.md` (human-readable progress notes).
+- Convergence estimate currently uses an exponential model
+  (`score_next = score_now * assumed_improvement`) with tunable target score and
+  improvement factor, so expected run count can be revised as real run history is collected.
+- Pre-HW comparison now includes pitch-normalized spectral deltas (centroid/rolloff
+  normalized by detected F0), reducing false mismatch when sample and rendered notes differ.
+- Added optional `--auto-note-align` mode to use pitch-aligned MR-STFT distance
+  (simple resampling alignment) when rendered and sample notes are not the same.
+
+---
+
 ## Phase 24 Planning: Model Weakness Review + Two-Stage Upgrade Path [PLANNED]
 
 This section records a model-by-model weakness audit and an implementation roadmap.
@@ -178,77 +246,184 @@ Implemented first-pass Stage-1 changes:
    - Batch score now adds extra emphasis on Flatness/Flux for percussion-class presets.
    - Purpose: ensure optimization pressure targets the known structural gaps.
 
-Stage-1 items still pending from plan:
-- dual-band exciter noise shaping,
-- model-specific transient envelope presets.
+Additional Stage-1 items now implemented:
+
+4. **Dual-band exciter noise shaping (implemented)**
+   - Added low/high split blend in the noise path to better approximate wooden/percussive
+     attack texture.
+
+5. **Model-specific transient presets (implemented)**
+   - Added simple per-model profile scaling for transient window and noise-band mix
+     (percussion vs tube vs default classes).
+
+Stage-1 status: core items complete; iterate with hardware + batch metrics before Stage-2.
+
+Stage-1 correction (2026-04-23):
+
+- Fixed transient allpass jitter clamp to preserve the full supported range `[-0.99, +0.99]`.
+- Previous clamp `[0, 0.99]` accidentally removed negative AP modulation, reducing per-hit dispersion variation for models using near-zero/negative AP trajectories.
+- Verified by re-running local batch iteration harness (`batch_tune_runner.py --auto-note-align --run-render --preset-filter Wodblk ...`) to ensure report generation path remains healthy after DSP-side fix.
+- Fixed `run_tuning.sh` default report/helper paths to point at the RipplerX tool directory (`platform/drumlogue/ripplerx`) so generated `batch_reports/*` are detected by the wrapper without extra env overrides.
+- Added multi-iteration support to `batch_tune_runner.py` via `--iterations N` so 5–10-pass convergence checks (as planned) can run in one command and emit `batch_tuning_history.json/.md`.
+- Transient modulation now references dedicated unmodulated base coefficients stored in `VoiceState` (set by UI/NoteOn), avoiding cross-block drift when transient windows span multiple process blocks.
+- `pre_hw_analysis.py` decimation now applies a simple moving-average anti-alias prefilter before downsampling to reduce spectral-metric bias from alias foldback.
 
 ---
 
-## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
+## Phase 24b: Final Stage-1 Tuning Pass + Stage-2 Pilot Gate [IN PROGRESS]
 
-Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
-that can be validated quickly on hardware before scaling to the rest of the kit.
+Final Stage-1 preset adjustments were applied for known structural edge cases:
 
-### Pilot strategy
+- **Clarinet (25)**: reduced decay/noise tail to limit tube-model over-sustain.
+- **Vibrph (11), 808Sub (2), Triangle (20), Kick (21)**: adjusted decay/loss profile to
+  compensate practical under-decay from loop lowpass losses vs theoretical T60.
+- **Claves (18)**: reduced inharm amount to lower audible beating.
+- **PlkBss (26)**: reduced drive and re-balanced strike/decay for cleaner pluck body.
+- **GlsBotl (38)**: reduced parallel noise dominance so bottle resonance remains audible.
 
-- Keep prior table values for most presets.
-- Tune only `12 Wodblk` toward a more percussive profile:
-  - lower `Dkay` (shorter ring),
-  - higher `MlSt` (harder strike),
-  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
+### Stage-2 pilot decision gate
 
-### Why this narrower scope
+If the next hardware-backed 5–10 iteration batch run still plateaus above target,
+begin Stage-2 with a **single-model pilot**:
 
-- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
-  unavailable and package install blocked), and Docker toolchain is not present here.
-- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
-  across many programs without objective render metrics.
+1. Add a compile-time guarded modal-bank path (2–3 modes) for one percussion preset
+   (`Wodblk` or `Claves`) and keep legacy loop as fallback.
+2. Add per-mode damping/weight controls internally (not exposed to UI yet).
+3. Re-run objective loop and compare Flux/Flatness uplift vs CPU cost.
+4. Only then consider broader Stage-2 rollout to membrane/cymbal families.
 
-### Next step after this commit
+### Stage-2 pilot implementation started (single model)
 
-Hardware A/B for preset 12 (`Wodblk`), then either:
-1. keep and propagate the same tuning pattern to adjacent percussive presets, or
-2. rollback/retune based on the measured transient/decay behaviour.
+- Added compile-time guarded Stage-2 modal-bank pilot path (`ENABLE_STAGE2_MODAL_PILOT`).
+- Current pilot scope is intentionally narrow: preset `12 Wodblk` only.
+- Implemented a lightweight 2-mode decaying oscillator bank in parallel with the existing
+  waveguide output to increase transient Flux/Flatness without replacing legacy topology.
+- Legacy path remains the default reference for A/B and rollback.
 
-### Added pre-HW analysis harness
+Next measurement step:
+- Run matched render sweeps with pilot OFF vs ON and compare:
+  - objective Flux/Flatness deltas,
+  - mean score deltas on the same sample subset,
+  - and CPU cost from hardware runtime counters.
 
-- Added `pre_hw_analysis.py` to compare rendered audio vs reference samples using
-  both time-domain and spectral metrics without external Python dependencies.
-- Metrics include: attack time, T60 estimate (Schroeder integration), autocorrelation F0,
-  spectral centroid/rolloff/flatness/flux, inharmonicity deviation, and multi-resolution
-  log-STFT distance.
-- Output is a JSON report with per-pair metrics + a weighted scalar score to rank
-  closeness before hardware flashing.
+Initial local host-render A/B snapshot (Wodblk, pilot OFF vs ON) was mixed:
+- Flatness error improved slightly (3.68% → 3.19%).
+- Flux error improved slightly (99.40% → 99.06%).
+- Overall weighted score worsened (72.47 → 74.33), so first pilot constants were not net-positive.
 
-### Added batch runner for convergence workflow
+Stage-2 pilot tuning sweep (10 runs, compile-time parameter overrides):
+- Swept `STAGE2_MODAL_RATIO_2`, `STAGE2_MODAL_MIX`, `STAGE2_MODAL_DECAY1`, `STAGE2_MODAL_DECAY2`.
+- Best run selected: `ratio2=2.80`, `mix=0.08`, `decay1=0.99905`, `decay2=0.99810`.
+- Updated these as new Stage-2 pilot defaults in `synth_engine.h`.
 
-- Added `batch_tune_runner.py` to automate:
-  1. sample discovery and sample→preset mapping from filenames (+ override map),
-  2. rendered/reference file coupling by preset index/name,
-  3. batch comparison with `pre_hw_analysis.py`,
-  4. tuning hints and estimated runs-to-target scoring.
-- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
-  ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
-- Added built-in helper output to the runner:
-  - `--helper` prints the full workflow guide,
-  - `--write-helper <path>` saves the guide as markdown.
-- Helper now includes WSL/QEMU commands used for ARM-side testing.
-- Added `run_tuning.sh` wrapper to execute common checks in sequence
-  (`py_compile`, helper preview/export, `git diff --check`) with clear step logs.
-- `run_tuning.sh` also reads `batch_tuning_report.json` when present and prints
-  whether another render+compare iteration is recommended based on a configurable
-  delta threshold.
-- The runner emits:
-  - `batch_tuning_report.json` (full metrics + suggestions),
-  - `batch_tuning_report.csv` (sortable table),
-  - `batch_tuning_progress.md` (human-readable progress notes).
-- Convergence estimate currently uses an exponential model
-  (`score_next = score_now * assumed_improvement`) with tunable target score and
-  improvement factor, so expected run count can be revised as real run history is collected.
-- Pre-HW comparison now includes pitch-normalized spectral deltas (centroid/rolloff
-  normalized by detected F0), reducing false mismatch when sample and rendered notes differ.
-- Added optional `--auto-note-align` mode to use pitch-aligned MR-STFT distance
-  (simple resampling alignment) when rendered and sample notes are not the same.
+Post-sweep OFF vs ON (new defaults):
+- Weighted score improved (72.47 → 70.55).
+- Flux error improved slightly (99.40% → 99.32).
+- Flatness moved slightly worse (3.68% → 3.83), but net score improvement indicates better overall fit under current weighting.
+- Host-side runtime difference remained small (same order; no prohibitive CPU signal in local host test).
+
+Stage-2 runtime/codepath optimizations applied:
+- Transient decay factor now uses cached reciprocal (`1/transient_frames_total`) in NoteOn,
+  removing per-sample division in the hot loop.
+- Modal-bank oscillators now use recursive rotation update (sin/cos state + precomputed
+  per-note rotators) instead of calling `sinf` twice per sample.
+- `pre_hw_analysis.py` STFT now caches DFT basis tables per `n_fft` (twiddle precompute),
+  avoiding repeated `sin/cos` evaluation in the innermost loop.
+
+10-iteration Stage-2 tuning run (`Wodblk`, host renderer, auto-note-align):
+- Mean score plateaued at 74.022 for all 10 iterations.
+- This indicates current Stage-2 constants still need retuning against the full mapped subset
+  (especially mismatch dominated pairs), despite single-pair A/B gains.
+
+Conclusion for now:
+- Stage-2 pilot now shows net objective improvement for Wodblk in local A/B.
+- Keep compile-guard and continue targeted tuning + hardware CPU counters before broader rollout.
+
+---
+
+## Phase 24c: Document-Driven Integration Plan [IN PROGRESS]
+
+This section starts integration from the newly provided references into tooling and
+Stage-2 development priorities.
+
+### Integrated now (tooling)
+
+1. **Automatic instrument classification literature (Scarano, UPF)**
+   - Added classifier-style low-level descriptors to `pre_hw_analysis.py`:
+     - spectral crest factor,
+     - zero-crossing rate (ZCR).
+   - Purpose: enrich timbre separability beyond centroid/flatness/flux.
+
+2. **Free-vibration decay parameter estimation (ISMA/ISAAC)**
+   - Added lightweight damping-ratio estimate (`damping_ratio_logdec`) from
+     peak log decrement in decay history.
+   - Purpose: provide physically meaningful decay mismatch metric (not only T60 slope).
+
+3. **Spatial/multichannel impact references (game audio thesis)**
+   - Added simple spatial proxy in WAV ingest:
+     - stereo side/mid RMS ratio (`spatial_width`).
+   - Purpose: preserve basic image-width information before mono fold-down so
+     future multichannel pilot scoring can include spatial coherence.
+
+### Next development steps (planned)
+
+1. **Score calibration pass**
+   - Rebalance metric weights with new terms (`crest`, `zcr`, `damping_ratio`, `spatial_width`)
+     on a fixed validation set.
+
+2. **Stage-2 modal law update**
+   - Move from fixed 2-mode decay constants toward compact frequency-dependent
+     damping law (`tau(f)`), fit against measured mode decays.
+
+3. **Multichannel pilot**
+   - Extend host renderer path for stereo/multichannel output and add
+     inter-channel consistency checks in batch reports.
+
+4. **Per-family objective profiles**
+   - Build class-specific scoring templates (wood/metal/membrane/tube),
+     reusing classification descriptors as priors.
+
+### Additional document-driven extensions (current pass)
+
+1. **Automatic classification / timbre representation docs**
+   - Added lightweight mel-domain descriptor (`mel_entropy`) and a compact
+     descriptor-vector cosine distance (`timbre_vec_cosdist`) to improve
+     timbre similarity sensitivity beyond single scalar features.
+
+2. **Mood-recognition feature engineering inspiration**
+   - Extended objective with richer low-level descriptors (crest, zcr, mel entropy)
+     that are commonly used in supervised audio models, while keeping runtime
+     dependency-free and interpretable.
+
+3. **Wooden plate FRF prediction paper (model extension target)**
+   - Planned Stage-2b surrogate: fit a small parameter→modal-response predictor
+     (`material, geometry -> mode frequencies/decays`) for offline initialization
+     of preset modal constants before final ear/metric refinement.
+   - This is not yet in DSP runtime path; it is planned for tooling-side model
+     initialization to speed convergence.
+
+4. **Current tooling update from timbre/damping literature**
+   - Added a normalized centroid decay trajectory descriptor (`centroid_decay_slope`)
+     so comparisons are less dependent on static spectrum snapshots.
+   - Added a lightweight three-segment decay surrogate (`mode_tau1..3`, `mode_e1..3`)
+     to approximate unequal modal energies/reverberation times in pre-HW scoring.
+   - Added centroid-trajectory correlation distance (`centroid_corr_dist`) to track
+     brightness-shape agreement over time, not just frame-averaged centroid.
+   - Added discrete-time damping proxy comparison using equivalent pole radii
+     (`mode_r1..3_pct`) derived from mode time constants, inspired by digital
+     instrument modeling formulations.
+   - Batch tuner suggestions now surface these mismatches explicitly to guide
+     damping/noise/transient adjustments in faster tuning loops.
+
+5. **Stage-2 modal pilot recursion/decay refinement**
+   - Replaced per-sample complex rotator state with a 2nd-order harmonic
+     recursion (`y[n]=k*y[n-1]-y[n-2]`, `k=2*cos(w)`), reducing state and
+     making the oscillator path align with standard digital resonator forms.
+   - Added lightweight periodic normalization guard on recursion states to
+     reduce drift risk over long decays.
+   - Modal decay now derives from T60-style parameters (`STAGE2_MODAL_T60_*_MS`)
+     converted to per-sample coefficients, while keeping legacy decay macros as
+     fallback constants.
 
 ---
 
@@ -1381,3 +1556,205 @@ replaced spaces with camelCase, added commas, renamed the count marker from
 - [x] Fix: Partls values 5/6 showing "---" — now "-> ResA" / "-> ResB".
 - [x] Fix: getParameterStrValue used state vars instead of value arg (Bank, NzFltr, Program, Partls).
 - [x] Fix: k_paramLowCut dropped /1000.0f for Q — SVF near-unstable. Restored.
+
+---
+
+## Phase 24e: Priority-family follow-up tuning snapshot (host) [CURRENT]
+
+Run executed with:
+- `batch_tune_runner.py --samples-dir ./samples --run-render ...`
+- preset focus: `Bongo,Djambe,Taiko,Kalimba,Marimba,Wodblk`
+- `--iterations 15 --early-stop-stable-runs 3 --stable-eps 0.20`
+- family thresholds: `membranes:10, mallets:5, wood:5`
+
+Artifacts:
+- `/tmp/batch_reports_followup/iter_04/batch_tuning_report.json`
+- `/tmp/batch_reports_followup/batch_tuning_history.json`
+
+### Results so far (iteration 4, early-stop plateau)
+
+- Pairs compared: `10`
+- Mean score: `106.302`
+- Early stop: triggered at iter 4 after 3 stable deltas (`Δ mean = 0.0000`)
+
+#### Family-level pitch mismatch vs target
+
+| Family | Count | f0_pct mean | f0_pct max | Target | Met |
+|---|---:|---:|---:|---:|:---:|
+| membranes | 6 | 76.23 | 98.81 | 10.00 | no |
+| mallets | 2 | 55.45 | 62.30 | 5.00 | no |
+| wood | 2 | 86.62 | 88.10 | 5.00 | no |
+
+#### Best / worst sample deltas (score-sorted)
+
+- Best observed pair: `Marmba` vs `marimba-hit-c4_C_minor.wav`
+  - score `62.31`, f0 `48.60%`, t60 `4.95%`, centroid `46.97%`
+- Worst observed pair: `Djambe` vs `percussion-one-shot-tabla-3_C_major.wav`
+  - score `138.75`, f0 `86.22%`, t60 `75.03%`, centroid `81.67%`
+
+### Current weaknesses
+
+1. **Pitch mismatch dominates** across all focused families; this alone keeps targets out of reach.
+2. **Membrane decay/brightness mismatch** remains high on Djambe/Taiko subsets.
+3. **Wood block consistency gap** between `WoodBlock1.wav` and `Woodblock.wav` suggests
+   model/preset captures only one sub-variant well.
+4. **Local minimum plateau** after stable-run stop indicates current parameter-only loop
+   is not finding a better basin without structural changes.
+
+### Possible improvements (next pass)
+
+1. Add **per-family note calibration offsets** in runner/renderer loop so reference-note
+   mismatch is reduced before other metrics are weighted.
+2. Split membrane tuning into **subfamilies** (`Djambe`, `Taiko`, `Bongo`) instead of one
+   coarse profile to avoid conflicting updates.
+3. Introduce a **score gate** that rejects candidates if `f0_pct` exceeds family threshold,
+   forcing pitch alignment before timbre optimization.
+4. Expand Stage-2 pilot from single preset to a **small family pilot set** (e.g. Wodblk +
+   one membrane + one mallet) to test whether modal/damping controls help break plateau.
+
+---
+
+## Phase 24f: Broader mapped-set tuning pass (all currently mapped presets) [CURRENT]
+
+Run executed with:
+- no preset filter (all currently mapped sample→preset pairs)
+- `--iterations 15 --early-stop-stable-runs 3 --stable-eps 0.20`
+- auto-note-align enabled
+
+Artifacts:
+- `/tmp/batch_reports_all_followup/iter_04/batch_tuning_report.json`
+- `/tmp/batch_reports_all_followup/batch_tuning_history.json`
+
+### Snapshot (iteration 4, early-stop plateau)
+
+- Pairs compared: `41`
+- Unique presets compared: `23`
+- Mean score: `91.371`
+- Early stop: 3 stable runs (`Δ mean = 0.0000`)
+
+### Coverage / presets left to tune
+
+- Total presets in table: `40`
+- Presets with current sample mappings and comparison data: `23`
+- Presets without mapped comparison samples yet: `17`
+  - These 17 are effectively "left to tune" only after we add/reference suitable samples.
+
+### Goal framing from current data
+
+- Current runner default target score (`12`) is too aggressive for the present metric scale.
+- Practical staged goal proposal:
+  1. **Near-term:** bring mapped-set mean score under `80`
+  2. **Mid-term:** under `60`
+  3. **Long-term:** only then chase low-20/teens range
+- Family pitch-threshold compliance (membranes 10%, mallets 5%, wood 5%) is currently
+  `0 / 23` presets meeting threshold on average, so pitch alignment should be treated
+  as the first gate before micro-timbre optimization.
+
+---
+
+## Phase 24g: Note-aware rendering pass for mapped presets [CURRENT]
+
+Refinement applied in tooling:
+- Batch renderer now infers a best-effort MIDI note from sample filename and renders
+  per unique `(preset, note)` pair instead of always rendering note 60.
+- This reduces artificial pitch-delta inflation when references are recorded at
+  notes different from C4.
+
+Run snapshot (`/tmp/batch_reports_noteaware/iter_03/batch_tuning_report.json`):
+- Pairs compared: `41`
+- Mean score: `90.599`
+- Previous broad pass mean (24f): `91.371`
+- **Delta vs previous pass:** `-0.772` (improvement)
+
+Family-level change vs Phase 24f:
+- Membranes f0 mean: `73.89% -> 62.85%` (about `-11.04 pp`)
+- Mallets and wood remain largely unchanged due missing/ambiguous note tags in current filenames.
+
+### Remaining weaknesses
+
+1. File-name note inference still misses some cases (e.g. ambiguous names), so
+   pitch deltas can remain inflated.
+2. Some families are mapped as `other` due coarse family map; threshold gating
+   is incomplete for those presets.
+3. Even with note-aware rendering, many presets are still far from family thresholds
+   (10% / 5% / 5%), indicating model/preset changes are still required.
+
+### Next improvements
+
+1. Add a small explicit `sample -> forced MIDI note` override table for ambiguous files.
+2. Expand family mapping coverage for all mapped presets.
+3. Add a hard optimization gate: reject candidates if family pitch threshold is violated
+   before spending iterations on timbre-only metrics.
+
+---
+
+## What is left to do (actionable checklist)
+
+### 1) Data coverage (highest priority)
+- Add/collect reference WAVs for the `17` presets that currently have no mapped sample.
+- Add explicit sample-note overrides for ambiguous filenames (where note inference is wrong).
+
+### 2) Metric gating and objective cleanup
+- Make family pitch-threshold gating mandatory in tuning loops:
+  - membranes <= 10%
+  - mallets <= 10%
+  - wood <= 10%
+- Only optimize timbre metrics after pitch is within threshold.
+
+### 3) Per-family tuning passes
+- Run isolated passes for `Djambe`, `Taiko`, `Bongo` (avoid conflicting membrane updates).
+- Run isolated passes for `Marmba/Kalimba/Wodblk` with updated render-note mapping.
+- Record per-preset before/after deltas (f0, t60, centroid, MR-STFT) each pass.
+
+### 4) Stage-2 rollout decisions
+- Keep Stage-2 pilot on Wodblk until at least one membrane + one mallet also show
+  consistent improvements under the same objective.
+- If not reproducible, prefer freezing Stage-2 and continue Stage-1 parameter refinement.
+
+### 5) Hardware validation gate
+- Flash only candidates that pass pre-HW pitch gate and show stable iteration history.
+- Then run hardware A/B for: onset realism, decay naturalness, repeated-hit consistency.
+
+---
+
+## Phase 24h: 10% universal pitch threshold + staged family tuning order [CURRENT]
+
+Policy update applied:
+- Pitch threshold is now **10% for every tuned family** (`membranes`, `mallets`, `wood`)
+  in the batch-runner defaults.
+
+Execution order requested:
+1. membranes first
+2. mallet/wood after
+
+### Pass A — membranes (`Bongo,Conga,Djambe,Taiko`)
+
+Run:
+- `/tmp/batch_reports_membranes/iter_04/batch_tuning_report.json`
+- iterations requested 15; early-stopped at iteration 4 (3 stable runs)
+
+Snapshot:
+- Pairs compared: `7`
+- Mean score: `111.556`
+- Family pitch summary:
+  - membranes f0 mean `62.85%`, max `98.81%`, target `10%` -> **not met**
+
+### Pass B — mallet/wood (`Marmba,Kalimba,Wodblk`)
+
+Run:
+- `/tmp/batch_reports_malletwood/iter_04/batch_tuning_report.json`
+- iterations requested 15; early-stopped at iteration 4 (3 stable runs)
+
+Snapshot:
+- Pairs compared: `4`
+- Mean score: `79.925`
+- Family pitch summary:
+  - mallets f0 mean `55.45%`, max `62.30%`, target `10%` -> **not met**
+  - wood f0 mean `86.62%`, max `88.10%`, target `10%` -> **not met**
+
+### Interpretation
+
+- Staged order is in place and reproducible.
+- Membranes remain the largest blocker in pitch terms.
+- Mallet/wood score is lower than membranes but still fails pitch gate.
+- Next tactical step remains explicit per-sample note overrides + per-preset note calibration.

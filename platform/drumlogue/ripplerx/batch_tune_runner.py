@@ -14,7 +14,7 @@ Pipeline:
 Quick start:
   python3 batch_tune_runner.py --helper
   python3 batch_tune_runner.py --write-helper batch_tuning_helper.md
-  python3 batch_tune_runner.py --run-render --render-cmd "qemu-arm ./run_test_render --preset {preset_idx} --name {preset_name} --out {output_wav}"
+  python3 batch_tune_runner.py --run-render --render-cmd "qemu-arm ./run_test_render --preset {preset_idx} --note {note} --name \"{preset_name}\" --out \"{output_wav}\""
 """
 
 from __future__ import annotations
@@ -93,6 +93,14 @@ KEYWORD_TO_PRESET = {
     "bottle": "GlsBotl",
 }
 
+# Canonical -> current synth table aliases/typos.
+PRESET_NAME_ALIASES = {
+    "Marimba": "Marmba",
+    "Timpani": "Timpni",
+    "AcSnare": "AcSnre",
+    "AcTom": "Ac Tom",
+}
+
 # Render file aliases used by render_presets.cpp naming convention.
 RENDER_PRESET_NAMES = {
     "InitDbg": "InitDbg",
@@ -143,6 +151,30 @@ PERCUSSIVE_PRESETS = {
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
+PRESET_TO_FAMILY = {
+    # membranes
+    "Bongo": "membranes",
+    "Conga": "membranes",
+    "Djambe": "membranes",
+    "Taiko": "membranes",
+    # mallets
+    "Marimba": "mallets",
+    "Marmba": "mallets",  # table alias
+    "Kalimba": "mallets",
+    "Vibrph": "mallets",
+    "Timpani": "mallets",
+    "Timpni": "mallets",  # table alias
+    # wood / wood blocks
+    "Wodblk": "wood",
+    "Claves": "wood",
+}
+
+DEFAULT_FAMILY_PITCH_THRESHOLDS = {
+    "membranes": 10.0,
+    "mallets": 10.0,
+    "wood": 10.0,
+}
+
 
 @dataclass
 class PresetRow:
@@ -173,6 +205,7 @@ From `{REPO_DIR}`:
 python3 batch_tune_runner.py \\
   --render-dir rendered_batch \\
   --out-dir batch_reports \\
+  --iterations 5 \\
   --target-score 12 \\
   --assumed-improvement 0.72
 ```
@@ -182,7 +215,7 @@ If an ARM renderer is available:
 ```bash
 python3 batch_tune_runner.py \\
   --run-render \\
-  --render-cmd "qemu-arm ./run_test_render --preset {{preset_idx}} --name {{preset_name}} --out {{output_wav}}" \\
+  --render-cmd "qemu-arm ./run_test_render --preset {{preset_idx}} --note {{note}} --name {{preset_name}} --out {{output_wav}}" \\
   --render-dir rendered_batch \\
   --out-dir batch_reports
 ```
@@ -240,6 +273,8 @@ Tune `--target-score` and `--assumed-improvement` as empirical history grows.
 4. Re-render and re-run batch.
 5. Track score trend in `batch_tuning_progress.md`.
 6. Flash only when pre-HW score trend is clearly improving.
+7. For repeated passes in one command, use `--iterations N`; a
+   `batch_tuning_history.json/.md` trend summary is generated.
 
 Tip: pass `--auto-note-align` when sample note and rendered note may differ.
 """
@@ -254,7 +289,7 @@ def parse_presets(path: Path) -> Dict[str, PresetRow]:
         for token in re.findall(r'"([^"]+)"', names_block.group(1)):
             names.append(token)
 
-    table = re.search(r"static const int32_t presets\[k_NumPrograms\]\[k_lastParamIndex\]\s*=\s*\{(.*?)\n\s*\};", txt, re.S)
+    table = re.search(r"static\\s+const\\s+int32_t\\s+presets\\s*\\[\\s*k_NumPrograms\\s*\\]\\s*\\[\\s*k_lastParamIndex\\s*\\]\\s*=\\s*\\{(.*?)\\s*\\};", txt, re.S)
     if not table:
         raise RuntimeError("Could not parse presets table")
 
@@ -276,16 +311,66 @@ def normalize_key(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", s.lower())
 
 
+NOTE_TO_SEMITONE = {
+    "c": 0, "c#": 1, "db": 1,
+    "d": 2, "d#": 3, "eb": 3,
+    "e": 4,
+    "f": 5, "f#": 6, "gb": 6,
+    "g": 7, "g#": 8, "ab": 8,
+    "a": 9, "a#": 10, "bb": 10,
+    "b": 11,
+}
+
+
+def midi_from_note_name(note: str, octave: int) -> int:
+    key = note.lower()
+    if key not in NOTE_TO_SEMITONE:
+        return 60
+    midi = 12 * (octave + 1) + NOTE_TO_SEMITONE[key]
+    return max(0, min(127, midi))
+
+
+def infer_midi_note_from_sample_name(sample: Path, fallback: int = 60) -> int:
+    """Best-effort pitch extraction from filename tokens (e.g. B3, C#4, Eb2)."""
+    stem = sample.stem
+    m = re.search(r"(?<![A-Za-z0-9])([A-Ga-g])([#b]?)[ _-]?(-?\d)(?![A-Za-z0-9])", stem)
+    if not m:
+        m = re.search(r"([A-Ga-g])([#b]?)(-?\d)", stem)
+    if not m:
+        return fallback
+    note = f"{m.group(1)}{m.group(2)}"
+    octave = int(m.group(3))
+    return midi_from_note_name(note, octave)
+
+
+def resolve_preset_name(name: str, presets: Dict[str, PresetRow]) -> str | None:
+    if name in presets:
+        return name
+    alias = PRESET_NAME_ALIASES.get(name)
+    if alias and alias in presets:
+        return alias
+    # Also allow reverse lookup when user passes table name directly.
+    for canonical, table_name in PRESET_NAME_ALIASES.items():
+        if name == table_name and table_name in presets:
+            return table_name
+        if name == canonical and table_name in presets:
+            return table_name
+    return None
+
+
 def map_sample_to_preset(sample: Path, presets: Dict[str, PresetRow]) -> str | None:
     if sample.name in MANUAL_SAMPLE_TO_PRESET:
         p = MANUAL_SAMPLE_TO_PRESET[sample.name]
-        if p in presets:
-            return p
+        resolved = resolve_preset_name(p, presets)
+        if resolved is not None:
+            return resolved
 
     key = normalize_key(sample.stem)
     for kw, preset in KEYWORD_TO_PRESET.items():
-        if kw in key and preset in presets:
-            return preset
+        if kw in key:
+            resolved = resolve_preset_name(preset, presets)
+            if resolved is not None:
+                return resolved
 
     # Fallback by fuzzy inclusion on normalized preset names.
     preset_keys = {normalize_key(p): p for p in presets}
@@ -296,13 +381,15 @@ def map_sample_to_preset(sample: Path, presets: Dict[str, PresetRow]) -> str | N
     return None
 
 
-def render_filename_for_preset(preset_name: str, idx: int) -> str:
+def render_filename_for_preset(preset_name: str, idx: int, note: int | None = None) -> str:
     alias = RENDER_PRESET_NAMES.get(preset_name, preset_name)
-    return f"{idx:02d}_{alias}.wav"
+    if note is None:
+        return f"{idx:02d}_{alias}.wav"
+    return f"{idx:02d}_{alias}_n{int(note):03d}.wav"
 
 
-def find_render_for_preset(render_dir: Path, preset: PresetRow) -> Path | None:
-    candidate = render_dir / render_filename_for_preset(preset.name, preset.idx)
+def find_render_for_preset(render_dir: Path, preset: PresetRow, note: int | None = None) -> Path | None:
+    candidate = render_dir / render_filename_for_preset(preset.name, preset.idx, note=note)
     if candidate.exists():
         return candidate
     # loose fallback by idx prefix.
@@ -338,6 +425,21 @@ def suggest_tuning(metrics: Dict[str, float], preset_values: List[int]) -> List[
     if metrics["flatness_pct"] > 35 or metrics["flux_pct"] > 35:
         hints.append(f"Adjust NzMix around {nzmx} by ±5..15 for noise/transient texture.")
 
+    if metrics.get("mel_entropy_pct", 0.0) > 25:
+        hints.append("Mel-band entropy mismatch; rebalance exciter/noise mix and model brightness together.")
+
+    if metrics.get("centroid_decay_slope_pct", 0.0) > 35:
+        hints.append("Brightness decay trajectory mismatch; adjust transient LP/AP depth or early damping behavior.")
+
+    if metrics.get("mode_tau2_pct", 0.0) > 35 or metrics.get("mode_tau3_pct", 0.0) > 35:
+        hints.append("Late decay modes mismatch; refine Dkay and modal damping constants (if Stage-2 pilot is enabled).")
+
+    if metrics.get("mode_r2_pct", 0.0) > 20 or metrics.get("mode_r3_pct", 0.0) > 20:
+        hints.append("Discrete-time damping pole mismatch; reduce/raise modal feedback decay carefully to keep stable tail character.")
+
+    if metrics.get("centroid_corr_dist", 0.0) > 0.35:
+        hints.append("Brightness trajectory correlation is low; tune attack/transient filters rather than static brightness only.")
+
     if metrics["f0_pct"] > 5:
         hints.append(
             f"Pitch mismatch detected ({metrics.get('note_offset_semitones', 0.0):+.2f} st); "
@@ -368,16 +470,25 @@ def estimate_runs_needed(current_score: float, target_score: float = 12.0, assum
     """
     if current_score <= target_score:
         return 0
+    # Guard against invalid convergence factors.
+    # Expected range is strictly (0, 1):
+    #   - <= 0 or == 1 are invalid for log-based estimate.
+    #   - > 1 implies divergence, so treat as "no finite estimate".
+    if assumed_improvement <= 0.0 or assumed_improvement == 1.0:
+        return 0
+    if assumed_improvement > 1.0:
+        return 0
     n = math.log(target_score / current_score) / math.log(assumed_improvement)
     return max(1, math.ceil(n))
 
 
-def run_renderer_for_preset(render_cmd: str, render_dir: Path, preset: PresetRow) -> Path:
+def run_renderer_for_preset(render_cmd: str, render_dir: Path, preset: PresetRow, note: int = 60) -> Path:
     render_dir.mkdir(parents=True, exist_ok=True)
-    out = render_dir / render_filename_for_preset(preset.name, preset.idx)
+    out = render_dir / render_filename_for_preset(preset.name, preset.idx, note=note)
     fmt = {
         "preset_idx": str(preset.idx),
         "preset_name": preset.name,
+        "note": str(int(note)),
         "output_wav": str(out),
     }
     cmd = render_cmd.format(**fmt)
@@ -395,8 +506,8 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="",
         help=(
-            "Renderer command template with placeholders: {preset_idx}, {preset_name}, {output_wav}. "
-            "Example: \"qemu-arm ./run_test_render --preset {preset_idx} --name {preset_name} --out {output_wav}\""
+            "Renderer command template with placeholders: {preset_idx}, {preset_name}, {note}, {output_wav}. "
+            "Example: \"qemu-arm ./run_test_render --preset {preset_idx} --note {note} --name {preset_name} --out {output_wav}\""
         ),
     )
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
@@ -411,31 +522,72 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--helper", action="store_true", help="Print detailed workflow helper and exit")
     p.add_argument("--write-helper", type=Path, default=None, help="Write detailed workflow helper markdown and exit")
+    p.add_argument(
+        "--iterations",
+        type=int,
+        default=1,
+        help="Number of consecutive tuning iterations to run (default: 1).",
+    )
+    p.add_argument(
+        "--early-stop-stable-runs",
+        type=int,
+        default=0,
+        help="Stop early once this many consecutive iterations are stable (0 disables).",
+    )
+    p.add_argument(
+        "--stable-eps",
+        type=float,
+        default=0.20,
+        help="Absolute mean-score delta threshold used to count an iteration as stable.",
+    )
+    p.add_argument(
+        "--family-pitch-thresholds",
+        type=str,
+        default="",
+        help=(
+            "Optional family pitch mismatch thresholds in percent, format "
+            "'membranes:10,mallets:10,wood:10'. Defaults are applied when omitted."
+        ),
+    )
     return p.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def parse_family_pitch_thresholds(raw: str) -> Dict[str, float]:
+    out = dict(DEFAULT_FAMILY_PITCH_THRESHOLDS)
+    if not raw.strip():
+        return out
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if ":" not in token:
+            raise SystemExit(f"Invalid family threshold token: {token}")
+        fam, val = token.split(":", 1)
+        fam = fam.strip().lower()
+        try:
+            out[fam] = float(val.strip())
+        except ValueError as e:
+            raise SystemExit(f"Invalid threshold value in token: {token}") from e
+    return out
 
-    if args.helper or args.write_helper is not None:
-        helper = build_helper_text()
-        if args.helper:
-            print(helper)
-        if args.write_helper is not None:
-            args.write_helper.parent.mkdir(parents=True, exist_ok=True)
-            args.write_helper.write_text(helper)
-            print(f"Wrote helper: {args.write_helper}")
-        return 0
 
+def run_one_iteration(
+    args: argparse.Namespace,
+    iteration_idx: int,
+    out_dir: Path,
+) -> Dict[str, object]:
     presets = parse_presets(SYNTH_ENGINE)
     selected_presets = None
     if args.preset_filter.strip():
-        selected_presets = {x.strip() for x in args.preset_filter.split(",") if x.strip()}
+        selected_presets = set()
+        for raw in (x.strip() for x in args.preset_filter.split(",") if x.strip()):
+            resolved = resolve_preset_name(raw, presets)
+            selected_presets.add(resolved if resolved is not None else raw)
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     sample_files = sorted(args.samples_dir.glob("*.wav"))
 
-    mapped: List[Tuple[Path, PresetRow]] = []
+    mapped: List[Tuple[Path, PresetRow, int]] = []
     unmapped: List[str] = []
 
     for s in sample_files:
@@ -445,29 +597,34 @@ def main() -> int:
             continue
         if selected_presets is not None and pname not in selected_presets:
             continue
-        mapped.append((s, presets[pname]))
+        render_note = infer_midi_note_from_sample_name(s, fallback=60)
+        mapped.append((s, presets[pname], render_note))
 
     if args.run_render:
         if not args.render_cmd.strip():
             raise SystemExit("--run-render requires --render-cmd")
-        # Render each preset once even if multiple samples map to it.
-        unique_presets = {}
-        for _sample, preset in mapped:
-            unique_presets[preset.name] = preset
-        for preset in unique_presets.values():
-            run_renderer_for_preset(args.render_cmd, args.render_dir, preset)
+        # Render each unique (preset, inferred-note) pair once.
+        unique_jobs = {}
+        for _sample, preset, render_note in mapped:
+            unique_jobs[(preset.name, render_note)] = (preset, render_note)
+        for preset, render_note in unique_jobs.values():
+            run_renderer_for_preset(args.render_cmd, args.render_dir, preset, note=render_note)
 
+    family_thresholds = parse_family_pitch_thresholds(args.family_pitch_thresholds)
     results = []
     by_preset = defaultdict(list)
+    by_family = defaultdict(list)
 
-    for sample, preset in mapped:
-        render_wav = find_render_for_preset(args.render_dir, preset)
+    for sample, preset, render_note in mapped:
+        render_wav = find_render_for_preset(args.render_dir, preset, note=render_note)
         if not render_wav:
             continue
 
         comp = compare_pair(sample, render_wav, auto_note_align=args.auto_note_align)
         comp["preset"] = preset.name
+        comp["family"] = PRESET_TO_FAMILY.get(preset.name, "other")
         comp["preset_idx"] = preset.idx
+        comp["render_note"] = render_note
         comp["sample"] = sample.name
         comp["raw_score"] = comp["score"]
         comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"])
@@ -479,8 +636,23 @@ def main() -> int:
         )
         results.append(comp)
         by_preset[preset.name].append(comp)
+        by_family[comp["family"]].append(comp)
+
+    family_summary = {}
+    for family, items in by_family.items():
+        f0_vals = [float(x["metrics"]["f0_pct"]) for x in items]
+        thr = family_thresholds.get(family)
+        meets = (max(f0_vals) <= thr) if (thr is not None and f0_vals) else None
+        family_summary[family] = {
+            "count": len(items),
+            "f0_pct_mean": (sum(f0_vals) / len(f0_vals)) if f0_vals else None,
+            "f0_pct_max": max(f0_vals) if f0_vals else None,
+            "pitch_threshold_pct": thr,
+            "pitch_threshold_met": meets,
+        }
 
     summary = {
+        "iteration": iteration_idx,
         "samples_total": len(sample_files),
         "samples_mapped": len(mapped),
         "samples_unmapped": unmapped,
@@ -488,21 +660,26 @@ def main() -> int:
         "mean_score": (sum(r["score"] for r in results) / len(results)) if results else None,
         "target_score": args.target_score,
         "assumed_improvement": args.assumed_improvement,
+        "family_pitch_thresholds": family_thresholds,
+        "family_summary": family_summary,
         "results": sorted(results, key=lambda r: r["score"]),
     }
 
-    json_path = args.out_dir / "batch_tuning_report.json"
+    json_path = out_dir / "batch_tuning_report.json"
     json_path.write_text(json.dumps(summary, indent=2))
 
-    csv_path = args.out_dir / "batch_tuning_report.csv"
+    csv_path = out_dir / "batch_tuning_report.csv"
     with csv_path.open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow([
             "preset",
             "preset_idx",
             "sample",
+            "render_note",
             "score",
             "estimated_runs_to_target",
+            "family",
+            "f0_threshold_met",
             "f0_pct",
             "f0_ratio",
             "note_offset_semitones",
@@ -520,12 +697,18 @@ def main() -> int:
         ])
         for r in summary["results"]:
             m = r["metrics"]
+            fam = r.get("family", "other")
+            fam_thr = family_thresholds.get(fam)
+            fam_ok = (m["f0_pct"] <= fam_thr) if fam_thr is not None else ""
             w.writerow([
                 r["preset"],
                 r["preset_idx"],
                 r["sample"],
+                r.get("render_note", 60),
                 f"{r['score']:.4f}",
                 r["estimated_runs_to_target"],
+                fam,
+                fam_ok,
                 f"{m['f0_pct']:.4f}",
                 f"{m['f0_ratio']:.6f}",
                 f"{m['note_offset_semitones']:.4f}",
@@ -542,7 +725,7 @@ def main() -> int:
                 f"{m['note_aligned_mrstft_log_l1']:.6f}",
             ])
 
-    md_path = args.out_dir / "batch_tuning_progress.md"
+    md_path = out_dir / "batch_tuning_progress.md"
     with md_path.open("w") as f:
         f.write("# Batch Tuning Progress\n\n")
         f.write(f"- Samples discovered: {len(sample_files)}\n")
@@ -553,6 +736,26 @@ def main() -> int:
         f.write(f"- Target score: {args.target_score}\n")
         f.write(f"- Assumed improvement/run: {args.assumed_improvement:.2f}\n\n")
         f.write(f"- Auto note align: {args.auto_note_align}\n\n")
+        if family_thresholds:
+            f.write("## Family pitch thresholds\n\n")
+            for fam, thr in sorted(family_thresholds.items()):
+                f.write(f"- {fam}: {thr:.2f}%\n")
+            f.write("\n")
+        if family_summary:
+            f.write("## Family pitch summary\n\n")
+            f.write("| Family | Count | f0% mean | f0% max | Target % | Met |\n")
+            f.write("|---|---:|---:|---:|---:|:---:|\n")
+            for fam, fs in sorted(family_summary.items()):
+                mean = fs["f0_pct_mean"]
+                mx = fs["f0_pct_max"]
+                thr = fs["pitch_threshold_pct"]
+                met = fs["pitch_threshold_met"]
+                mean_txt = "n/a" if mean is None else f"{mean:.2f}"
+                max_txt = "n/a" if mx is None else f"{mx:.2f}"
+                thr_txt = "n/a" if thr is None else f"{thr:.2f}"
+                met_txt = "n/a" if met is None else ("yes" if met else "no")
+                f.write(f"| {fam} | {fs['count']} | {mean_txt} | {max_txt} | {thr_txt} | {met_txt} |\n")
+            f.write("\n")
 
         if unmapped:
             f.write("## Unmapped samples\n\n")
@@ -576,6 +779,100 @@ def main() -> int:
     print(f"Wrote: {md_path}")
     if unmapped:
         print(f"Unmapped samples: {len(unmapped)}")
+
+    return summary
+
+
+def main() -> int:
+    args = parse_args()
+
+    if args.helper or args.write_helper is not None:
+        helper = build_helper_text()
+        if args.helper:
+            print(helper)
+        if args.write_helper is not None:
+            args.write_helper.parent.mkdir(parents=True, exist_ok=True)
+            args.write_helper.write_text(helper)
+            print(f"Wrote helper: {args.write_helper}")
+        return 0
+
+    if args.iterations < 1:
+        raise SystemExit("--iterations must be >= 1")
+
+    run_summaries: List[Dict[str, object]] = []
+    stable_streak = 0
+    stopped_early = False
+    stop_reason = ""
+    for it in range(1, args.iterations + 1):
+        iter_dir = args.out_dir if args.iterations == 1 else (args.out_dir / f"iter_{it:02d}")
+        print(f"[iter {it}/{args.iterations}] running...")
+        summary = run_one_iteration(args, it, iter_dir)
+        run_summaries.append(summary)
+        if args.early_stop_stable_runs > 0 and len(run_summaries) >= 2:
+            prev = run_summaries[-2].get("mean_score")
+            cur = run_summaries[-1].get("mean_score")
+            if prev is not None and cur is not None:
+                delta = abs(float(cur) - float(prev))
+                if delta <= args.stable_eps:
+                    stable_streak += 1
+                else:
+                    stable_streak = 0
+                print(
+                    f"[iter {it}] mean-score delta={delta:.4f} "
+                    f"(stable<= {args.stable_eps:.4f}), streak={stable_streak}/{args.early_stop_stable_runs}"
+                )
+                if stable_streak >= args.early_stop_stable_runs:
+                    stopped_early = True
+                    stop_reason = (
+                        f"Reached max-reachable plateau: {stable_streak} stable runs "
+                        f"(delta <= {args.stable_eps:.4f})."
+                    )
+                    print(f"[iter {it}] early stop: {stop_reason}")
+                    break
+
+    if args.iterations > 1:
+        history_path = args.out_dir / "batch_tuning_history.json"
+        history_payload = {
+            "iterations": args.iterations,
+            "iterations_executed": len(run_summaries),
+            "target_score": args.target_score,
+            "assumed_improvement": args.assumed_improvement,
+            "early_stop_stable_runs": args.early_stop_stable_runs,
+            "stable_eps": args.stable_eps,
+            "stopped_early": stopped_early,
+            "stop_reason": stop_reason,
+            "runs": [
+                {
+                    "iteration": s["iteration"],
+                    "pairs_compared": s["pairs_compared"],
+                    "mean_score": s["mean_score"],
+                }
+                for s in run_summaries
+            ],
+        }
+        history_path.write_text(json.dumps(history_payload, indent=2))
+        print(f"Wrote: {history_path}")
+
+        md_history_path = args.out_dir / "batch_tuning_history.md"
+        with md_history_path.open("w") as f:
+            f.write("# Batch Tuning Iteration History\n\n")
+            f.write(f"- Iterations: {args.iterations}\n")
+            f.write(f"- Iterations executed: {len(run_summaries)}\n")
+            f.write(f"- Target score: {args.target_score}\n")
+            f.write(f"- Assumed improvement/run: {args.assumed_improvement:.2f}\n\n")
+            if args.early_stop_stable_runs > 0:
+                f.write(f"- Stable-run early-stop: {args.early_stop_stable_runs}\n")
+                f.write(f"- Stability epsilon: {args.stable_eps:.4f}\n")
+            if stopped_early and stop_reason:
+                f.write(f"- Stop reason: {stop_reason}\n")
+            f.write("\n")
+            f.write("| Iteration | Pairs compared | Mean score |\n")
+            f.write("|---:|---:|---:|\n")
+            for s in run_summaries:
+                mean = s["mean_score"]
+                mean_txt = "n/a" if mean is None else f"{float(mean):.3f}"
+                f.write(f"| {s['iteration']} | {s['pairs_compared']} | {mean_txt} |\n")
+        print(f"Wrote: {md_history_path}")
 
     return 0
 
