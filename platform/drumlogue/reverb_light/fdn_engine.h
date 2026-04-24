@@ -289,7 +289,7 @@ public:
     inline void loadPreset(uint8_t index) {
         if (index >= k_preset_number) return;
         current_preset_ = index;
-        for (uint8_t i = 0; i < k_total; i++) {
+        for (uint8_t i = 1; i < k_total; i++) {  // skip i=0 (k_paramProgram) — already set above
             setParameter(i, k_presets[index][i]);
         }
     }

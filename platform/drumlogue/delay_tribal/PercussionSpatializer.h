@@ -534,22 +534,32 @@ private:
     void init_clone_parameters() {
         if (!initialized_) return;
 
-        // Mode-specific delay constellations give each mode a distinct ensemble feel:
-        //   Tribal  : 8, 14, 20, 26 ms groups — deliberate, spaced ethnic drum echoes
-        //   Military: 1,  2,  3,  4 ms groups — tight machine-gun double-strokes
-        //   Angel   : 15, 27, 39, 51 ms groups — wide, dreamy, ethereal cloud
-        float base_delay, group_step, lane_step;
-        switch (current_mode_) {
-            case MODE_TRIBAL:   base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
-            case MODE_MILITARY: base_delay = 1.0f;  group_step = 1.0f;  lane_step = 0.3f;  break;
-            case MODE_ANGEL:    base_delay = 15.0f; group_step = 12.0f; lane_step = 2.0f;  break;
-            default:            base_delay = 8.0f;  group_step = 6.0f;  lane_step = 1.0f;  break;
-        }
+        // Mode-specific delay constellations — all delays > 25ms for perceptible echoes.
+        // Each group has 4 lanes spaced by lane_step ms.
+        // pitch_mod values (ms) drive LFO wobble for audible detuning/chorus.
+        //   Tribal  : 22, 42, 62, 76 ms groups — 4ms spread, ethnic ensemble spacing
+        //   Military: 15, 28, 45, 65 ms groups — 3ms spread, tight double-stroke rolls
+        //   Angel   : 25, 48, 68, 78 ms groups — 2.5ms spread, wide chorus cloud
+        static const float group_bases[3][CLONE_GROUPS] = {
+            { 22.0f, 42.0f, 62.0f, 71.0f },  // TRIBAL
+            { 15.0f, 28.0f, 45.0f, 65.0f },  // MILITARY
+            { 25.0f, 48.0f, 68.0f, 75.0f },  // ANGEL
+        };
+        static const float lane_steps[3]     = { 4.0f,  3.0f,  2.5f };
+        // pitch_mod[lane] in ms — large enough for audible chorus/detuning (~10-30 cents)
+        static const float pitch_mods[3][NEON_LANES] = {
+            { 1.0f, 1.5f, 2.0f, 2.5f },  // TRIBAL: pronounced wobble
+            { 0.5f, 0.7f, 0.9f, 1.2f },  // MILITARY: subtle tightness
+            { 2.0f, 2.5f, 3.0f, 3.5f },  // ANGEL: deep lush chorus
+        };
+
+        int mode_idx = (current_mode_ < 3) ? (int)current_mode_ : 0;
 
         for (int group = 0; group < CLONE_GROUPS; group++) {
             clone_group_t* g = &clone_groups_[group];
 
-            float base = base_delay + group * group_step;
+            float base = group_bases[mode_idx][group];
+            float lane_step = lane_steps[mode_idx];
             float offsets[NEON_LANES];
             float pitch_mod[NEON_LANES];
             uint32_t phases[NEON_LANES];
@@ -560,7 +570,7 @@ private:
                 offsets[i] = base + (i * lane_step);
                 // Convert 0.0-1.0 phase to 32-bit fixed point
                 phases[i] = (uint32_t)(((float)clone_idx / 16.0f) * 4294967296.0f);
-                pitch_mod[i] = 0.1f + (i * 0.05f);
+                pitch_mod[i] = pitch_mods[mode_idx][i];
             }
 
             g->delay_offsets = vld1q_f32(offsets);
