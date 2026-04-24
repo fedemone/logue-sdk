@@ -121,46 +121,45 @@ public:
     };
     enum ProgramIndex {
         k_Init = 0,         // 0
-        k_Marimba,          // 1
+        k_Marimba,          // 1 -sample: marimba-hit-c4_C_minor.wav
         k_808Sub,           // 2
-        k_AcSnare,          // 3
-        k_TubularBell,      // 4
-        k_Timpani,          // 5
-        k_Djambe,           // 6
-        k_Taiko,            // 7
-        k_MarchSnare,       // 8
-        k_TamTam,           // 9
-        k_Koto,             // 10
-        k_Vibraphone,       // 11
-        k_Woodblock,        // 12
-        k_AcousticTom,      // 13
-        k_Cymbal,           // 14
-        k_Gong,             // 15
-        k_Kalimba,          // 16
-        k_SteelPan,         // 17
-        k_Claves,           // 18
-        k_Cowbell,          // 19
-        k_Triangle,         // 20
-        k_KickDrum,         // 21
-        k_Clap,             // 22
-        k_Shaker,           // 23
-        k_Flute,            // 24
-        k_Clarinet,         // 25
-        k_PluckBass,        // 26
-        k_GlassBowl,        // 27
-        k_GuitarStr,        // 28 — reference: Karplus-Strong string at A4 for model validation
-        k_HiHatClosed,      // 29
-        k_HiHatOpen,        // 30
-        k_Conga,            // 31
-        k_Handpan,          // 32
-        k_BellTree,         // 33
-        k_SlitDrum,         // 34
-        k_Ride,             // 35
-        k_RideBell,         // 36
-        k_Bongo,            // 37
-        k_GlassBottle,      // 38
-        k_Tick,             // 39
-        k_NumPrograms       // 40 — marker (count)
+        k_AcSnare,          // 3  -sample: acoustic-snare.wav, snare heavy.wav
+        k_TubularBell,      // 4  -samples: tubular-bell*.wav
+        k_Timpani,          // 5  -sample: Orchestral-Timpani-C.wav
+        k_Djambe,           // 6  -samples: Djambe-B3.wav, Djambe-A3.wav
+        k_Taiko,            // 7  -sample: Taiko-Hit.wav
+        k_MarchSnare,       // 8  -sample: Marching-Snare-Drum-A#-minor
+        k_Koto,             // 9  -sample: Koto-B5.wav, Koto-B5.wav, Koto-Stab-F#.wav
+        k_Vibraphone,       // 10  -sample: vibraphone_C_major.wav, vibraphone_C_major1.wav
+        k_Woodblock,        // 11  -sample: Woodblock.wav, Woodblock1.wav
+        k_AcousticTom,      // 12  -sample: Tom1-001-CloseRoom.wav, Tom2-004-CloseRoom.wav
+        k_Cymbal,           // 13  -sample: cymbal-Crash16Inch.wav
+        k_Gong,             // 14  -sample: Chinese-Gong.wav, Gong-long-G#.wav
+        k_Kalimba,          // 15  -sample: kalimba-e_E.wav
+        k_SteelPan,         // 16  -sample: steel-pan-Nova Drum Real C 432.wav, steel-pan-PERCY-C4-SHort.wav, steel-pan-yudin C3.wav
+        k_Claves,           // 17  -sample: percussion-clave-like-hit-107112.mp3, wetclave.wav
+        k_Cowbell,          // 18  -sample: cowbell_2.wav
+        k_Triangle,         // 19  -sample: Triangle-Bell_F5.wav, Triangle-Bell_F5.wav,
+        k_KickDrum,         // 20  -sample: KickA-Hard-012-CloseRoom.wav
+        k_Clap,             // 21  -sample: handclap.wav
+        k_Shaker,           // 22  -sample: MaracasPair.wav
+        k_Flute,            // 23  -sample: Flute-A2.wav, Flute-D3.wav
+        k_Clarinet,         // 24  -sample: Clarinet-A-minor.wav, Clarinet-C-minor.wav
+        k_PluckBass,        // 25  -sample:
+        k_GlassBowl,        // 26  -sample: glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav, glass-singing-bowl_23042017-01-raw-71015.wav
+        k_GuitarStr,        // 27 — reference: Karplus-Strong string at A4 for model validation
+        k_HiHatClosed,      // 28  -sample: HatClosedLive3.wav, OpenHatBig.wav
+        k_HiHatOpen,        // 29  -sample: TightClosedHat.wav
+        k_Conga,            // 30  -sample: Bongo_Conga2.wav
+        k_Handpan,          // 31  -sample: Tabla-Drum-Hit-D4_.wav, percussion-one-shot-tabla-3_C_major.wav
+        k_BellTree,         // 32  -sample:
+        k_SlitDrum,         // 33  -sample:
+        k_Ride,             // 34  -sample: cymbal-Ride18Inch.wav
+        k_RideBell,         // 35  -sample: cymbal-RideBell20InchSabian.wav
+        k_Bongo,            // 36  -sample: Bongo_Conga_Mute4.wav
+        k_GlassBottle,      // 37  -sample: GlassBottle.wav
+        k_Tick,             // 38  -sample: one-tic-clock.wav,ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav, high-church-clock-fx_100bpm.wav
+        k_NumPrograms       // 39 — marker (count)
     };
 
     SynthState state;
@@ -385,26 +384,25 @@ public:
             { 6,  48,   0,   1,   600,  360,  0,   0,     2, 5,  107,   0,    0,  50, 12,    21,     5,   5,   5,   15, 400,  0,   600, 707}, // 6:  Djambe     — Gain5 (was 15); NzMix15 (was 33 — parallel noise now audible); NzRes400
             { 7,  41,   0,   1,   200,  387,  0,   0,     2, 5,  173,   8,    0,  50, 18,    38,     1,   5,   5,    5, 400,  0,   400, 707}, // 7:  Taiko      — Gain5 (was 40 — was fully saturated); NzMix5 (was 11)
             { 8,  65,   0,   1,   700,  450,  0,   0,     1, 5,   86,  -1,    0,  50,  3,    15,    25,   5,   5,   25, 500,  2,   100, 707}, // 8:  MrchSnr    — Ptls1 (was 2): disables ResB so ResA+ResB coupling doesn't extend T60 from 0.21s→0.55s; single membrane resonator
-            { 9,  41,   0,   1,   100,  150,  0,   0,     0, 4,  162,  -3,    0,   0, 20,     7,     1,   5,   5,    5, 800,  0,    40, 707}, // 9:  Tam Tam    — NzFq40=400Hz (was 800=8kHz): 8kHz noise was dominating spectral centroid, pulling it 7× above reference
-            {10,  60,   0,   1,   600,  395,  0,   0,     0, 0,  185,  28,    0,   0, 12,     3,     1,  15,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — c=0.98@262Hz (Mterl28+TubRad15); all harmonics T60≈2.2s (ref 3.47s; ratio≥0.63)
-            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  199,   2,    0,   0, 18,     1,     1,  10,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
-            {12,  48,   0,   1,   900,  430,  0,   0,     0, 2,   82,   9,    0,   0,  2,    12,     1,   5,   0,   18, 450,  0,   700, 707}, // 12: Wodblk     — Phase-23 pilot: short wood click (faster decay + harder mallet + stronger transient noise)
-            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,   5,    2, 300,  0,   800, 707}, // 13: Ac Tom     — Gain5 (was 15)
-            {14,  60,   0,   1,   800,  425,  0,   0,     0, 4,  176,  20,    0,   0, 18,     9,     5,   5,   5,   15, 600,  2,   400, 707}, // 14: Cymbal     — NzFq400=4kHz (was 200=2kHz): shifting noise from 2→4kHz raises centroid from ×0.34 toward ×0.65 vs reference
-            {15,  50,   0,   1,   200,   10,  0,   0,     0, 4,  188,  -8,    0,   0, 20,     8,     1,   5,  20,    4, 800,  0,    30, 707}, // 15: Gong       — NzFq30=300Hz (was 600=6kHz): 6kHz noise was pulling centroid 3× above reference; B=0.004→InHm8
-            {16,  65,   0,   1,   700,  491,  0,   0,     0, 1,  194,  28,    0,   0,  5,     6,     1,  15,   3,    5, 300,  0,  1000, 707}, // 16: Kalimba    — c=0.98@392Hz (Mterl28+TubRad15); all harmonics T60≈3.2s (ref 3.80s; ratio≥0.84)
-            {17,  60,   0,   1,   600,  150,  0,   0,     0, 4,  194,  28,    0,   0, 12,     0,     3,  15,   5,    0, 300,  0,  1000, 707}, // 17: StelPan    — c=0.98@262Hz (Mterl28+TubRad15); MlltStif150; T60≈4.8s (ref 5.39s; ratio≥0.89)
-            {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,     3,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
-            {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
-            {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,   2,    0,   0, 15,    58,    80,  15,   0,    8, 300,  0,  1500, 707}, // 20: Triangle   — final Stage-1: Mterl2/TubRad15 maximize practical sustain at Dkay ceiling
-            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   70,  -3,    0,  50,  6,     4,     1,   5,   5,    3, 200,  0,   300, 707}, // 21: Kick Drum  — final Stage-1: Dkay70/Mterl-3 to recover tail shortened by LP loss
-            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    10,   5,   5,  100, 600,  2,   600, 707}, // 22: Clap       — Gain5, LwCt10 (was 40); NzRes600 (was 100 — very short); pure noise char.
-            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    20,   5,   3,  100, 900,  2,   800, 707}, // 23: Shaker     — Gain3; LwCt20 (was 80); NzRes900 (was 300→~240ms noise); HP@8kHz
-            {24,  72,   0,   1,   100,  162,  0,   0,     0, 7,  191,  -5,    0,   0, 12,     1,     1,   5,   0,   10, 950,  0,   400, 707}, // 24: Flute      — sample: D5/1.53s→Dkay191; MlltStif162; NzMix10 subtle breath; NzRes950
-            {25,  72,   0,   0,    50,   10,  0,   0,     0, 8,  145,  -8,    0,   0, 12,     9,     1,   5,   0,    8, 850,  0,   600, 707}, // 25: Clarinet   — final Stage-1: shorter Dkay and lower NzMix/NzRes to tame tube-model over-long sustain
-            {26,  36,   0,   1,   600,  280,  0,   0,     0, 0,   95,  -6,    0,   0, 10,     0,     1,   5,  40,    0, 300,  0,   500, 707}, // 26: PlkBass    — final Stage-1: less drive + harder mallet / slightly longer decay for cleaner pluck body
-            {27,  76,   0,   1,   700,   50,  0,   0,     0, 4,  200,  28,    0,   0, 18,     7,    10,  20,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — c=0.98@659Hz (Mterl28+TubRad20); MlltStif50 (very soft rubber mallet, nearly pure fundamental → measured T60 tracks fundamental ~6.3s ≥ ref12.5s/2)
-            // 28: Guitar String — Karplus-Strong reference for physical model validation.
+            { 9,  60,   0,   1,   600,  395,  0,   0,     0, 0,  185,  28,    0,   0, 12,     3,     1,  15,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — c=0.98@262Hz (Mterl28+TubRad15); all harmonics T60≈2.2s (ref 3.47s; ratio≥0.63)
+            {10,  72,   0,   1,   500,  300,  0,   0,     0, 1,  199,   2,    0,   0, 18,     1,     1,  10,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
+            {11,  48,   0,   1,   900,  430,  0,   0,     0, 2,   82,   9,    0,   0,  2,    12,     1,   5,   0,   18, 450,  0,   700, 707}, // 12: Wodblk     — Phase-23 pilot: short wood click (faster decay + harder mallet + stronger transient noise)
+            {12,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,   5,    2, 300,  0,   800, 707}, // 13: Ac Tom     — Gain5 (was 15)
+            {13,  60,   0,   1,   800,  425,  0,   0,     0, 4,  176,  20,    0,   0, 18,     9,     5,   5,   5,   15, 600,  2,   400, 707}, // 14: Cymbal     — NzFq400=4kHz (was 200=2kHz): shifting noise from 2→4kHz raises centroid from ×0.34 toward ×0.65 vs reference
+            {14,  50,   0,   1,   200,   10,  0,   0,     0, 4,  188,  -8,    0,   0, 20,     8,     1,   5,  20,    4, 800,  0,    30, 707}, // 15: Gong       — NzFq30=300Hz (was 600=6kHz): 6kHz noise was pulling centroid 3× above reference; B=0.004→InHm8
+            {15,  65,   0,   1,   700,  491,  0,   0,     0, 1,  194,  28,    0,   0,  5,     6,     1,  15,   3,    5, 300,  0,  1000, 707}, // 16: Kalimba    — c=0.98@392Hz (Mterl28+TubRad15); all harmonics T60≈3.2s (ref 3.80s; ratio≥0.84)
+            {16,  60,   0,   1,   600,  150,  0,   0,     0, 4,  194,  28,    0,   0, 12,     0,     3,  15,   5,    0, 300,  0,  1000, 707}, // 17: StelPan    — c=0.98@262Hz (Mterl28+TubRad15); MlltStif150; T60≈4.8s (ref 5.39s; ratio≥0.89)
+            {17,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,     3,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
+            {18,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
+            {19,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,   2,    0,   0, 15,    58,    80,  15,   0,    8, 300,  0,  1500, 707}, // 20: Triangle   — final Stage-1: Mterl2/TubRad15 maximize practical sustain at Dkay ceiling
+            {20,  36,   0,   1,   300,  150,  0,   0,     2, 5,   70,  -3,    0,  50,  6,     4,     1,   5,   5,    3, 200,  0,   300, 707}, // 21: Kick Drum  — final Stage-1: Dkay70/Mterl-3 to recover tail shortened by LP loss
+            {21,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    10,   5,   5,  100, 600,  2,   600, 707}, // 22: Clap       — Gain5, LwCt10 (was 40); NzRes600 (was 100 — very short); pure noise char.
+            {22,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    20,   5,   3,  100, 900,  2,   800, 707}, // 23: Shaker     — Gain3; LwCt20 (was 80); NzRes900 (was 300→~240ms noise); HP@8kHz
+            {23,  72,   0,   1,   100,  162,  0,   0,     0, 7,  191,  -5,    0,   0, 12,     1,     1,   5,   0,   10, 950,  0,   400, 707}, // 24: Flute      — sample: D5/1.53s→Dkay191; MlltStif162; NzMix10 subtle breath; NzRes950
+            {24,  72,   0,   0,    50,   10,  0,   0,     0, 8,  145,  -8,    0,   0, 12,     9,     1,   5,   0,    8, 850,  0,   600, 707}, // 25: Clarinet   — final Stage-1: shorter Dkay and lower NzMix/NzRes to tame tube-model over-long sustain
+            {25,  36,   0,   1,   600,  280,  0,   0,     0, 0,   95,  -6,    0,   0, 10,     0,     1,   5,  40,    0, 300,  0,   500, 707}, // 26: PlkBass    — final Stage-1: less drive + harder mallet / slightly longer decay for cleaner pluck body
+            {26,  76,   0,   1,   700,   50,  0,   0,     0, 4,  200,  28,    0,   0, 18,     7,    10,  20,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — c=0.98@659Hz (Mterl28+TubRad20); MlltStif50 (very soft rubber mallet, nearly pure fundamental → measured T60 tracks fundamental ~6.3s ≥ ref12.5s/2)
+            // 27: Guitar String — Karplus-Strong reference for physical model validation.
             // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
             // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
             // Hit=0: full ResA output (HitPos=50 would halve the signal when ResB is disabled).
@@ -413,20 +411,20 @@ public:
             // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 3 s;
             //           (3) no flutter/beating (one clean tone per press).
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
+            {27,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,  119,  25,    0,   0,  2,    14,     5,   5,   0,   50, 600,  2,   600, 707},  // 29: HHat-C  — LwCt5 (was 20); NzMix50 (was 70); NzRes600 (was 200→longer noise burst)
-            {30,  79,   0,   1,   900,  480,  0,   0,     0, 4,  169,  25,    0,   0, 15,     9,     5,   5,   0,   40, 920,  2,   600, 707},  // 30: HHat-O  — LwCt5; NzMix40 (was 60); NzRes920 (was 200→~400ms noise for open hat)
-            {31,  62,   0,   1,   600,  350,  0,   0,     1, 5,  149,   0,    0,   0, 10,    10,     2,   5,   0,   12, 500,  0,   800, 707},  // 31: Conga   — NzMix12 (was 30); NzRes500
-            {32,  62,   0,   1,   700,  300,  0,   0,     0, 4,  198,   5,    0,   0, 20,     2,     5,   5,   0,    5, 300,  0,  1000, 707},  // 32: Handpn  — Plate, T60≈10s@D4→Dkay198; InHm2 (B≈0.001, near-harmonic); warm metallic
-            {33,  84,   0,   1,   900,  450,  0,   0,     0, 1,  193,  20,    0,   0,  8,    10,    10,   5,   0,    5, 300,  0,  1200, 707},  // 33: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
-            {34,  60,   0,   1,   700,  300,  0,   0,     0, 6,  167,   8,    0,   0, 10,     6,     2,   5,   0,   10, 300,  0,   800, 707},  // 34: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
-            {35,  57,   0,   1,   900,  491,  0,   0,     0, 4,  192,  28,    0,   0, 18,    34,     5,  15,   0,   20, 700,  2,   600, 707},  // 35: Ride    — c=0.98@370Hz (Mterl28+TubRad15); T60≈3.1s (ref 4.69s; ratio≥0.66)
-            {36,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,     5,   5,   0,   20, 600,  2,   700, 707},  // 36: RidBel  — LwCt5 (was 20); NzMix20 (was 60); NzRes600
-            {37,  57,   0,   1,   600,  457,  0,   0,     1, 5,   94,   0,    0,   0,  8,     8,     2,   5,   0,    5, 500,  0,    50, 707},  // 37: Bongo   — NzFq50=500Hz (was 800=8kHz): 8kHz noise was pulling centroid 3.75× above reference; NzRes500
-            {38,  88,   0,   1,   100,  480,  0,   0,     0, 7,  175,   5,    0,   0,  5,     0,     2,   5,   0,   55, 150,  0,   450, 707},  // 38: GlsBotl — final Stage-1: reduced noise dominance (NzMix55/NzRes150/NzFq450) for cleaner bottle resonance
-            {39,  49,   0,   1,   900,  445,  0,   0,     0, 4,  100,  13,    0,   0,  3,    16,     5,   5,   0,   29, 150,  2,   400, 707}   // 39: Tick    — Dkay100: combined T60≈0.34s; wg T60=0.40s, master t_s=0.71s; ratio=0.64 vs ref 0.54s
+            {28,  79,   0,   1,   900,  480,  0,   0,     0, 4,  119,  25,    0,   0,  2,    14,     5,   5,   0,   50, 600,  2,   600, 707},  // 29: HHat-C  — LwCt5 (was 20); NzMix50 (was 70); NzRes600 (was 200→longer noise burst)
+            {29,  79,   0,   1,   900,  480,  0,   0,     0, 4,  169,  25,    0,   0, 15,     9,     5,   5,   0,   40, 920,  2,   600, 707},  // 30: HHat-O  — LwCt5; NzMix40 (was 60); NzRes920 (was 200→~400ms noise for open hat)
+            {30,  62,   0,   1,   600,  350,  0,   0,     1, 5,  149,   0,    0,   0, 10,    10,     2,   5,   0,   12, 500,  0,   800, 707},  // 31: Conga   — NzMix12 (was 30); NzRes500
+            {31,  62,   0,   1,   700,  300,  0,   0,     0, 4,  198,   5,    0,   0, 20,     2,     5,   5,   0,    5, 300,  0,  1000, 707},  // 32: Handpn  — Plate, T60≈10s@D4→Dkay198; InHm2 (B≈0.001, near-harmonic); warm metallic
+            {32,  84,   0,   1,   900,  450,  0,   0,     0, 1,  193,  20,    0,   0,  8,    10,    10,   5,   0,    5, 300,  0,  1200, 707},  // 33: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
+            {33,  60,   0,   1,   700,  300,  0,   0,     0, 6,  167,   8,    0,   0, 10,     6,     2,   5,   0,   10, 300,  0,   800, 707},  // 34: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
+            {34,  57,   0,   1,   900,  491,  0,   0,     0, 4,  192,  28,    0,   0, 18,    34,     5,  15,   0,   20, 700,  2,   600, 707},  // 35: Ride    — c=0.98@370Hz (Mterl28+TubRad15); T60≈3.1s (ref 4.69s; ratio≥0.66)
+            {35,  60,   0,   1,   900,  491,  0,   0,     0, 4,  184,  20,    0,   0,  8,    15,     5,   5,   0,   20, 600,  2,   700, 707},  // 36: RidBel  — LwCt5 (was 20); NzMix20 (was 60); NzRes600
+            {36,  57,   0,   1,   600,  457,  0,   0,     1, 5,   94,   0,    0,   0,  8,     8,     2,   5,   0,    5, 500,  0,    50, 707},  // 37: Bongo   — NzFq50=500Hz (was 800=8kHz): 8kHz noise was pulling centroid 3.75× above reference; NzRes500
+            {37,  88,   0,   1,   100,  480,  0,   0,     0, 7,  175,   5,    0,   0,  5,     0,     2,   5,   0,   55, 150,  0,   450, 707},  // 38: GlsBotl — final Stage-1: reduced noise dominance (NzMix55/NzRes150/NzFq450) for cleaner bottle resonance
+            {38,  49,   0,   1,   900,  445,  0,   0,     0, 4,  100,  13,    0,   0,  3,    16,     5,   5,   0,   29, 150,  2,   400, 707}   // 39: Tick    — Dkay100: combined T60≈0.34s; wg T60=0.40s, master t_s=0.71s; ratio=0.64 vs ref 0.54s
         };
 
         if (idx >= k_NumPrograms) return;
@@ -1193,7 +1191,7 @@ public:
         // in parallel to the existing waveguide path for richer transient spectral motion.
         // Compile-time guarded for safe A/B against legacy behavior.
         if ((uint8_t)m_params[k_paramProgram] == 12) {
-            float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) / 12.0f);
+            float base_f = 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);  // fasterpowf for the pilot oscillator's base frequency introduces a systematic pitch error of approximately 50 cents.
             if (base_f < 20.0f) base_f = 20.0f;
             float f1 = fminf(base_f, 0.45f * default_sample_rate);
             float f2 = fminf(base_f * STAGE2_MODAL_RATIO_2, 0.45f * default_sample_rate);
