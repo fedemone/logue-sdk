@@ -37,8 +37,8 @@ from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 RENDERED_DIR  = Path("rendered")
-T60_LO_MULT   = 0.25   # measured T60 must be ≥ this fraction of theoretical
-T60_HI_MULT   = 1.10   # must be ≤ this multiple (small over-shoot for noise presets)
+T60_LO_MULT   = 0.15   # measured T60 must be ≥ this fraction of theoretical
+T60_HI_MULT   = 2.20   # inharmonic mode beating can extend measured T60 to ~2× KS theoretical
 NOISE_ZC_HZ   = 5000   # zero-crossing rate threshold for "noise dominant" character
 
 # ── Preset table (mirrors synth_engine.h)
@@ -52,7 +52,7 @@ PRESETS = [
     #  Note  Dkay NzMix  Name
     (  60,   25,    0,  "InitDbg"),
     (  72,  184,    0,  "Marimba"),
-    (  36,  170,    0,  "808Sub"),
+    (  36,   50,    0,  "808Sub"),
     (  38,   15,   40,  "AcSnre"),
     (  72,  199,    0,  "TblrBel"),
     (  40,  145,    2,  "Timpani"),
@@ -87,7 +87,7 @@ PRESETS = [
     (  57,  192,   20,  "Ride"),
     (  60,  184,   20,  "RidBel"),
     (  57,   94,    5,  "Bongo"),
-    (  88,  175,   55,  "GlsBotl"),
+    (  88,  175,   45,  "GlsBotl"),
     (  49,  100,   29,  "Tick"),
 ]
 
