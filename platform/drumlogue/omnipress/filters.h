@@ -42,8 +42,8 @@ fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) 
 
     // Digital angular frequency for coefficient calculation
     float w0 = 2.0f * M_PI * cutoff / sr;
-    float cos_w0 = fastercosf(w0);
-    float sin_w0 = fastersinf(w0);
+    float cos_w0 = cosf(w0);
+    float sin_w0 = sinf(w0);
     float Q = 0.5f;  // Bessel Q
 
     // Calculate alpha
