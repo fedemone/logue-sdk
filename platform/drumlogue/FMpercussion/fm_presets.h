@@ -93,7 +93,7 @@ typedef struct {
   uint8_t lfo1_shape;   // 0-8
   uint8_t lfo1_rate;    // 0-100
   uint8_t lfo1_target;  // 0-5
-  int8_t lfo1_depth;    // -100 to 100
+  int8_t  lfo1_depth;    // -100 to 100
 
   // Page 5: EuclTun + LFO2
   // lfo2_shape is repurposed as EuclTun (Euclidean voice tuning spread).
@@ -102,17 +102,17 @@ typedef struct {
   uint8_t lfo2_shape;   // 0-8 → EuclTun mode (EUCLID_MODE_*)
   uint8_t lfo2_rate;    // 0-100
   uint8_t lfo2_target;  // 0-10
-  int8_t lfo2_depth;    // -100 to 100
+  int8_t  lfo2_depth;    // -100 to 100
 
   // Page 6: Envelope
   uint8_t env_shape;    // 0-255: bit7=metal character (0=Cymbal, 1=Gong), bits[6:0]=envelope index 0-127
   uint8_t voice_index;  // 0-VOICE_ALLOC_COUNT
 
   // NEW: Resonant parameters (using params 21-23)
-  uint8_t resonant_mode;    // 0-4 (LP, BP, HP, Notch, Peak)
-  uint8_t resonant_morph;   // 0-100
-  uint8_t resonant_res;     // 0-100
-  uint8_t resonant_center;  // 0-100 (maps to 50-8000 Hz)
+//   uint8_t resonant_mode;    // 0-4 (LP, BP, HP, Notch, Peak)
+//   uint8_t resonant_morph;   // 0-100
+//   uint8_t resonant_res;     // 0-100
+//   uint8_t resonant_center;  // 0-100 (maps to 50-8000 Hz)
   uint8_t engine_map[4];    // Which engine each voice uses
 } fm_preset_t;
 

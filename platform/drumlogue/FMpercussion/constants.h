@@ -66,7 +66,7 @@ constexpr float INTERVAL_MAJOR_7TH = 1.887748625f;       // 11 semitones
 constexpr float INTERVAL_OCTAVE    = 2.0f;               // 12 semitones
 
 // ============================================================================
-// Parameter Indexes - 24 parameters across 6 pages
+// Parameter Indexes - 24 parameters across 6 pages - TODO enum
 // ============================================================================
 
 // Page 1: Voice Probabilities (4 params)
@@ -109,7 +109,7 @@ constexpr uint8_t PARAM_RES_MORPH = 23;      // Resonant morph (0-100%)
 constexpr uint8_t PARAM_TOTAL = 24;          // For maintenace
 
 // ============================================================================
-// LFO Target Constants
+// LFO Target Constants - TODO enum
 // ============================================================================
 constexpr int LFO_TARGET_NONE = 0;
 constexpr int LFO_TARGET_PITCH = 1;

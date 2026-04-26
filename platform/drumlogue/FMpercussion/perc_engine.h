@@ -16,6 +16,7 @@
 #include <arm_neon.h>
 #include "sine_neon.h"
 #include "fm_voices.h"
+#include "float_math.h"
 #include "prng.h"
 
 #define PERC_RATIO_MIN 1.0f
@@ -50,7 +51,7 @@ fast_inline void perc_engine_init(perc_engine_t* perc) {
     perc->ratio_param = vdupq_n_f32(0.5f);
     perc->click_phase = vdupq_n_f32(0.0f);
     float A[] = {63.1402,2.316,385.002,24.948}; // array with 4 elements
-    perc->noise_state = vld1_f32(A);            // load four random numbers
+    perc->noise_state = vld1q_f32(A);            // load four random numbers
 }
 
 /**
@@ -110,13 +111,13 @@ fast_inline float32x4_t perc_engine_process(perc_engine_t* perc,
         uint32_t max_mask = vmaxvq_u32(active_mask);
     #else
         // 32-bit ARM fallback for vector max
-        uint32x4_t max_half = vmax_u32(vget_low_u32(active_mask), vget_high_u32(active_mask));
+        uint32x2_t max_half = vmax_u32(vget_low_u32(active_mask), vget_high_u32(active_mask));
         uint32_t max_mask = vget_lane_u32(vpmax_u32(max_half, max_half), 0);
     #endif
 
     // If the mask is zero across all lanes, SKIP THE MATH!
     if (max_mask == 0) {
-        return vdupq_n_u32(0.0f);
+        return vdupq_n_f32(0.0f);
     }
 
 
@@ -170,7 +171,7 @@ fast_inline float32x4_t perc_engine_process(perc_engine_t* perc,
     output = vmulq_f32(output, envelope);
 
     // Add a noise burst for impact
-    float32x4_t noise = noise4(perc->noise_state);
+    float32x4_t noise = noise4(&perc->noise_state);
     float32x4_t attack_noise = vmulq_f32(noise, env4);
     // Click generator
     float32x4_t click = neon_sin(perc->click_phase);
@@ -182,7 +183,7 @@ fast_inline float32x4_t perc_engine_process(perc_engine_t* perc,
     output = vaddq_f32(output, exciter);
 
     // Soft saturation/Nonlinearity (perceived weight)
-    output = vdivq_f32(output, vaddq_f32(vdupq_n_f32(1.0f), vabsq_f32(output)));
+    output = fast_div_neon(output, vaddq_f32(vdupq_n_f32(1.0f), vabsq_f32(output)));
 
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }

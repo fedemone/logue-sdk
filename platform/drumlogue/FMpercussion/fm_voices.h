@@ -12,6 +12,7 @@
 #include "constants.h"
 #include "envelope_rom.h"
 #include "lfo_enhanced.h"
+#include "float_math.h"
 
     // Maximum operators per voice
     constexpr int MAX_OPERATORS = 4;
@@ -49,19 +50,17 @@ fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff
     return out;
 }
 
-/**
- * Fast NEON division for ARMv7
- * Uses reciprocal estimate + 1 Newton-Raphson iteration.
- * Accuracy is ~10^-7, which is plenty for audio saturation/mixing.
- */
-fast_inline float32x4_t fast_div_neon(float32x4_t num, float32x4_t den) {
-    // Get initial 8-bit precision estimate
-    float32x4_t recip = vrecpeq_f32(den);
-    // Refine to full float precision using Newton-Raphson step: x = x * (2 - d * x)
-    // vrecpsq_f32(den, recip) calculates (2.0f - den * recip)
-    recip = vmulq_f32(vrecpsq_f32(den, recip), recip);
-    return vmulq_f32(num, recip);
+// overload function
+fast_inline float32x4_t one_pole_lpf(one_pole_t * f, float32x4_t in, float32x4_t cutoff) {
+  const float32x4_t two_pi_f = vmulq_n_f32(cutoff, 2.0f * (float)M_PI);
+  const float32x4_t two_pi_s_f = vmulq_n_f32(cutoff, 2.0f * (float)M_PI + SAMPLE_RATE);
+  float32x4_t alpha = fast_div_neon(two_pi_f, two_pi_s_f);
+  float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
+                              vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), alpha)));
+  f->z1 = out;
+  return out;
 }
+
 
 /**
  * Operator data for 4 voices (SoA format)
