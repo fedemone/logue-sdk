@@ -1092,7 +1092,7 @@ private:
         float loopGain = 0.7f + (decay * 0.295f);
         float unifiedDecay = fminf(0.995f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        float32x4_t feedback = vdupq_n_f32(1.0f - decay); // Keep input injection balanced
+        float32x4_t feedback = vdupq_n_f32(1.0f - decay);
 
         for (int i = 0; i < FDN_CHANNELS; i++) mixed[i] = vmulq_f32(mixed[i], decayAll);
 
@@ -1305,7 +1305,6 @@ private:
 
         applyHadamardScalar(delayOut, mixed);
 
-        // 4. Inject delayedInput instead of raw input
         mixed[0] += delayedInput * (1.0f - decay);
 
         // Exotic "Low Pitching" Shimmer (PILL=4)

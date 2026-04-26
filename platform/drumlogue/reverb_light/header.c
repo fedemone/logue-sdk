@@ -46,7 +46,6 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 30, 30, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },
         // ID 10: CLRQ  tone color shift  -100%-100%
         { -100, 100, 10, 10, k_unit_param_type_percent, 0, 0, 0, {"CLRQ"} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
 
         // Page 4
         // ID 11: MIX  global wet/dry  0%-100%
@@ -64,6 +63,7 @@ const __unit_header unit_header_t unit_header = {
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
 
+        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
