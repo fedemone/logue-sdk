@@ -161,7 +161,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 6: "ResoKick" - Resonant kick drum
     {
-        "ResoKick", 100, 0, 0, 0,
+        "ResoKick",
+        100, 0, 0, 0,               //  probability
         70, 60, 0, 0,
         0, 0, 0, 0,
         0, 10, LFO_TARGET_PITCH, 20,
@@ -173,7 +174,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 7: "ResoTom" - Resonant tom
     {
-        "ResoTom", 0, 0, 0, 100,
+        "ResoTom",
+        0, 0, 0, 100,               //  probability
         50, 50, 0, 0,
         0, 0, 50, 50,
         1, 15, LFO_TARGET_PITCH, 30,
@@ -185,7 +187,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 8: "ResoSnare" - Resonant snare
     {
-        "ResoSnare", 0, 100, 0, 0,
+        "ResoSnare",
+        0, 100, 0, 0,               //  probability
         0, 0, 50, 50,
         0, 0, 0, 0,
         2, 20, LFO_TARGET_PITCH, 40,
@@ -197,7 +200,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
 
     // Preset 9: "ResoMetal" - Resonant metal/cymbal
     {
-        "ResoMetal", 0, 0, 100, 0,
+        "ResoMetal",
+        0, 0, 100, 0,               //  probability
         0, 0, 0, 0,
         70, 80, 0, 0,
         8, 30, LFO_TARGET_PITCH, 50,
@@ -213,7 +217,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // envelope shaper: the kick swells in, the snare gets a slow fade-in.
     // Because LFO phase resets on each trigger, this is one-shot per hit.
     {
-        "SlwEnv", 100, 80, 0, 0,
+        "SlwEnv",
+        100, 80, 0, 0,              //  probability
         70, 60, 20, 40,
         0, 0, 0, 0,
         1, 5, LFO_TARGET_ENV, 60,      // LFO1: 0.5 Hz ramp → ENV swell
@@ -227,7 +232,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // Resonant is on voice 2 (metal slot).  Medium rate (4 Hz) triangle
     // gives a fast wah on every hit; synced to trigger so it starts fresh.
     {
-        "WahDrum", 80, 60, 0, 70,
+        "WahDrum",
+        80, 60, 0, 70,              //  probability
         60, 50, 30, 40,
         0, 0, 60, 50,
         0, 35, LFO_TARGET_RES_MORPH, 80,  // LFO1: triangle 4 Hz → filter morph
@@ -241,7 +247,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // full noise and back over 2 seconds (0.5 Hz).  Interesting on slow
     // patterns: each snare hit starts with crack, fades to hiss.
     {
-        "NoisSwp", 40, 100, 0, 50,
+        "NoisSwp",
+        40, 100, 0, 50,             //  probability
         30, 50, 50, 60,
         50, 60, 0, 0,
         1, 5, LFO_TARGET_NOISE_MIX, 90,  // LFO1: slow ramp → noise blend
@@ -255,7 +262,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // LFO1 at ~15 Hz and LFO2 at ~20 Hz create amplitude/FM beating.
     // The difference frequency (5 Hz) causes a slow tremolo on top.
     {
-        "FMBuzz", 90, 60, 80, 60,
+        "FMBuzz",
+        90, 60, 80, 60,             //  probability
         50, 40, 40, 60,
         70, 80, 50, 50,
         0, 82, LFO_TARGET_INDEX, 70,   // LFO1: ~15 Hz triangle → FM index buzz
@@ -269,7 +277,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // RES_MORPH sweep on the resonant filter gives each ghost hit a slightly
     // different tonal colour.  Voice alloc K-S-M-R.
     {
-        "GhstSnr", 70, 30, 50, 40,
+        "GhstSnr",
+        70, 30, 50, 40,             //  probability
         40, 40, 70, 50,
         40, 50, 0, 0,
         0, 18, LFO_TARGET_RES_MORPH, 60,  // LFO1: 2 Hz triangle → filter colour
@@ -284,7 +293,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // Short env (tight), medium ramp rate (3 Hz → 333 ms period, plenty
     // for a single hit since LFO resets on trigger).
     {
-        "RimPtch", 50, 60, 80, 70,
+        "RimPtch",
+        50, 60, 80, 70,             //  probability
         20, 30, 40, 50,
         60, 70, 50, 40,
         1, 25, LFO_TARGET_PITCH, -70,  // LFO1: ramp, negative → falling pitch
@@ -298,7 +308,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // triangle (1 Hz).  Each tom hit sweeps the filter from low to high and
     // back, giving a pitch/wah character.  Voice alloc K-S-M-R.
     {
-        "TomWah", 0, 0, 0, 100,
+        "TomWah",
+        0, 0, 0, 100,               //  probability
         50, 60, 0, 0,
         0, 0, 60, 60,
         0, 10, LFO_TARGET_RES_MORPH, 100, // LFO1: 1 Hz triangle → full morph sweep
@@ -312,7 +323,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // low probabilities for irregular hitting, high metal brightness, fast
     // near-audio LFO on NOISE_MIX for textured shimmer (metal and snare).
     {
-        "Shaker", 60, 50, 90, 70,
+        "Shaker",
+        60, 50, 90, 70,             //  probability
         20, 40, 80, 70,
         80, 90, 60, 70,
         0, 75, LFO_TARGET_NOISE_MIX, 80,  // LFO1: ~10 Hz triangle → noise shimmer
@@ -330,7 +342,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // Metal engine only (all voices routed to metal), high inharmonicity for
     // rich gong spectrum, slow LFO pitch sag (gong pitch drops after strike).
     {
-        "GongHit", 0, 0, 100, 0,
+        "GongHit",
+        0, 0, 100, 0,               //  probability
         0, 0, 0, 0,
         70, 60, 0, 0,
         1, 8,  LFO_TARGET_PITCH, -40,  // LFO1: slow ramp → pitch sag after hit
@@ -344,7 +357,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // spread) gives a clearer pitch centre; LFO index sweep brightens the
     // attack transient then softens.  Long decay envelope.
     {
-        "TmplBell", 0, 0, 100, 0,
+        "TmplBell",
+        0, 0, 100, 0,               //  probability
         0, 0, 0, 0,
         20, 80, 0, 0,
         0, 12, LFO_TARGET_INDEX, 60,   // LFO1: slow ramp → brightness decay
@@ -358,10 +372,11 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // character.  LFO NOISE_MIX on both snare and metal creates evolving
     // texture.  Medium decay, mid-range voices active.
     {
-        "MetlGong", 60, 30, 80, 0,
+        "MetlGong",
+        60, 30, 80, 0,              //  probability
         50, 40, 20, 30,
         60, 70, 0, 0,
-        0, 40, LFO_TARGET_NOISE_MIX, 70,  // LFO1: triangle → noise texture
+        0, 40, LFO_TARGET_NOISE_MIX, 70, // LFO1: triangle → noise texture
         0, 6,  LFO_TARGET_PITCH, -20,     // LFO2: slow pitch drop; EuclTun=0
         128 + 60, 0,                      // EnvShape: char=1(Gong) + env=60 (medium)
         RESONANT_MODE_BANDPASS, 0, 0, 0,
@@ -378,7 +393,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // Metal +6st, Perc +9st.  Every trigger fires a diminished 7th chord of
     // percussion.  Slow ramp LFO→Pitch adds a falling pitch tail to each hit.
     {
-        "DimKit", 100, 90, 80, 100,
+        "DimKit",
+        100, 90, 80, 100,               //  probability
         60, 50, 25, 55,
         50, 65, 55, 35,
         1, 12, LFO_TARGET_PITCH, -30,  // LFO1: slow ramp → falling pitch tail
@@ -393,7 +409,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // scale (0,2,4,6 semitones from the incoming note).  Low kick/snare so the
     // tuned perc and metal voices dominate.  Short env for staccato character.
     {
-        "WholPrc", 40, 30, 70, 100,
+        "WholPrc",
+        40, 30, 70, 100,                //  probability
         30, 40, 15, 35,
         35, 55, 70, 45,
         1, 18, LFO_TARGET_PITCH, -20,  // LFO1: ramp → slight pitch drop after hit
@@ -409,7 +426,8 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // over the LFO period.  Rate=30 (~3 Hz period=330ms) → medium-length open hat.
     // Increase rate for closed hat, decrease for longer open shimmer.
     {
-        "HiHatSw", 70, 50, 100, 0,
+        "HiHatSw",
+        70, 50, 100, 0,             //  probability
         25, 45, 40, 45,
         55, 90, 0, 0,
         1, 30, LFO_TARGET_METAL_GATE, 90,  // LFO1: Ramp → open→closed gate
