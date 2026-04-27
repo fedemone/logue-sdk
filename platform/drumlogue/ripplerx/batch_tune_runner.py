@@ -63,6 +63,27 @@ MANUAL_SAMPLE_TO_PRESET = {
     "Koto-Pluck-C-Major.wav": "Koto",
     "Tabla-Drum-Hit-D4_.wav": "Djambe",
     "percussion-one-shot-tabla-3_C_major.wav": "Djambe",
+    # New samples added after initial batch run
+    "CrashA-001-CloseRoom.wav": "Cymbal",
+    "KickA-Hard-012-CloseRoom.wav": "Kick",
+    "Tom1-001-CloseRoom.wav": "AcTom",
+    "Tom2-004-CloseRoom.wav": "AcTom",
+    "acoustic-snare.wav": "AcSnre",
+    "snare heavy.wav": "AcSnre",
+    "vibraphone_C_major.wav": "Vibrph",
+    "vibraphone_C_major1.wav": "Vibrph",
+    "wetclave.wav": "Claves",
+    "percussion-clave-like-hit-107112.mp3": "Claves",
+    # Previously unmapped samples with known targets (use exact getPresetName strings)
+    "Triangle-Bell-C#.wav": "Trngle",
+    "Triangle-Bell_F5.wav": "Trngle",
+    "glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav": "GlsBwl",
+    "glass-singing-bowl_23042017-01-raw-71015.wav": "GlsBwl",
+    "marimba-hit-c4_C_minor.wav": "Marmba",
+    "TightClosedHat.wav": "HHat-C",
+    "BottlePop1.wav": "GlsBotl",
+    "one-tic-clock.wav": "Tick",
+    "ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav": "Tick",
 }
 
 KEYWORD_TO_PRESET = {
@@ -71,7 +92,6 @@ KEYWORD_TO_PRESET = {
     "kalimba": "Kalimba",
     "koto": "Koto",
     "gong": "Gong",
-    "tam": "TamTam",
     "djambe": "Djambe",
     "tabla": "Djambe",
     "taiko": "Taiko",
@@ -289,7 +309,7 @@ def parse_presets(path: Path) -> Dict[str, PresetRow]:
         for token in re.findall(r'"([^"]+)"', names_block.group(1)):
             names.append(token)
 
-    table = re.search(r"static\\s+const\\s+int32_t\\s+presets\\s*\\[\\s*k_NumPrograms\\s*\\]\\s*\\[\\s*k_lastParamIndex\\s*\\]\\s*=\\s*\\{(.*?)\\s*\\};", txt, re.S)
+    table = re.search(r"static\s+const\s+int32_t\s+presets\s*\[\s*k_NumPrograms\s*\]\s*\[\s*k_lastParamIndex\s*\]\s*=\s*\{(.*?)\s*\};", txt, re.S)
     if not table:
         raise RuntimeError("Could not parse presets table")
 

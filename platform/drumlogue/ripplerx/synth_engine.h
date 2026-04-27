@@ -477,7 +477,7 @@ public:
         static const char* const preset_names[] = {
             "InitDbg", "Marmba", "808Sub", "AcSnre",
             "TblrBel", "Timpni", "Djambe", "Taiko",
-            "MrchSnr", "TamTam", "Koto",   "Vibrph",
+            "MrchSnr", "Koto",   "Vibrph",
             "Wodblk",  "Ac Tom", "Cymbal", "Gong",
             "Kalimba", "StelPan","Claves", "Cowbel",
             "Trngle",  "Kick",    "Clap",  "Shaker",
