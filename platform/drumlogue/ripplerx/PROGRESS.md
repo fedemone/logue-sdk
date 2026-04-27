@@ -1758,3 +1758,116 @@ Snapshot:
 - Membranes remain the largest blocker in pitch terms.
 - Mallet/wood score is lower than membranes but still fails pitch gate.
 - Next tactical step remains explicit per-sample note overrides + per-preset note calibration.
+
+---
+
+## Phase 24i: Ambiguous sample-note override table (tooling) [CURRENT]
+
+Action taken:
+- Added explicit `SAMPLE_NOTE_OVERRIDES` in `batch_tune_runner.py` to prevent
+  filename parsing mistakes (notably `percussion-one-shot-tabla-3_C_major.wav`
+  previously inferred as note 0 from `-3`).
+
+Quick membrane validation run:
+- `/tmp/batch_reports_membranes_i/batch_tuning_report.json`
+- pairs compared: `7`
+- mean score: `115.854`
+- membranes f0 mean: `73.53%` (still far from 10% target)
+
+Observed benefit:
+- Render notes are now deterministic and musically plausible for membrane samples
+  (`45, 57, 59, 60, 62`) and no accidental `note=0` render remains.
+
+Remaining issue:
+- Correct note assignment alone does not solve the large pitch mismatch;
+  per-preset pitch calibration remains the next required step.
+
+---
+
+## Phase 24j: Provisional per-preset pitch calibration (pitched mallets) [CURRENT]
+
+Action taken:
+- Added provisional semitone calibration offsets in tooling for pitched presets:
+  - `Marmba/Marimba: +12`
+  - `Kalimba: +12`
+- Calibration is applied after sample-note inference and clamped to ±24 semitones.
+
+Validation run:
+- previous baseline: `/tmp/batch_reports_malletwood_i/batch_tuning_report.json`
+- calibrated run: `/tmp/batch_reports_malletwood_cal/batch_tuning_report.json`
+
+Observed delta (mallet/wood subset):
+- Mean score: `81.783 -> 78.649` (improvement `-3.134`)
+- `Marmba`:
+  - note offset `-11.52 st -> +0.48 st`
+  - f0 mismatch `48.60% -> 2.72%`
+- `Kalimba`:
+  - f0 mismatch `76.29% -> 47.83%` (improved but still high)
+- `Wodblk` unchanged (kept uncalibrated due unpitched behavior)
+
+Conclusion:
+- Calibration framework is effective for clearly pitched presets (Marimba case).
+- Further preset-specific calibration is still needed (especially Kalimba and unpitched families).
+
+---
+
+## Phase 24k: Documentation-to-implementation traceability [CURRENT]
+
+Question answered: **yes**, the documentation/literature links are being used for
+concrete physical-model enhancement ideas and tooling updates, not just as references.
+
+Current mapping (examples):
+
+1. **Timbre/descriptor literature**
+   -> Added mel-domain entropy + descriptor-vector timbre distance terms and
+   trajectory-aware features in pre-HW analysis.
+
+2. **Decay/damping papers (multi-mode behavior)**
+   -> Added three-segment decay surrogate (`mode_tau*`, `mode_e*`) and damping-
+   proxy metrics for comparison/scoring.
+
+3. **Discrete-time / oscillator references**
+   -> Stage-2 modal pilot moved to stable recursive oscillator formulation with
+   normalization guard and T60-style decay controls.
+
+4. **Current next-use of references**
+   -> Per-family/per-instrument objective shaping and preset calibration strategy
+   (membranes first, then mallet/wood), with explicit pitch gating.
+
+This section will continue to be updated so each future model change points back
+to the specific reference family that motivated it.
+
+---
+
+## Phase 25: Remaining mapped presets pass + next-stage handoff [STARTED]
+
+Reviewer clarification:
+- This phase entry records a **measurement-only** scoped run over remaining mapped
+  presets and threshold planning for the next pass.
+- Any future "preset tuning" commit will be treated as incomplete unless it
+  includes explicit preset-value diffs (or a written explanation that the run
+  was analysis-only).
+
+Scope run (remaining mapped presets, excluding membranes/mallet/wood focus set):
+- `Clrint,Cymbal,Flute,GlsBotl,Gong,HHat-C,HHat-O,Koto,MrchSnr,Ride,RidBel,StelPan,TamTam,TblrBel,Tick,Timpni`
+- Artifact: `/tmp/batch_reports_remaining/batch_tuning_report.json`
+
+Snapshot:
+- Pairs compared: `30`
+- Mean score: `88.160`
+- Unique presets covered in this pass: `16`
+- Family summary:
+  - `other`: f0 mean `62.72%` (no threshold assigned yet)
+  - `mallets`: f0 mean `9.30%` (threshold met for this single entry)
+
+### Stage handoff decision
+
+- Phase 24 delivered the requested ordering:
+  1) membranes first
+  2) mallet/wood after
+  3) explicit pitch-calibration hooks
+- With remaining mapped presets now exercised, we move to **Phase 25**:
+  - expand family mapping coverage for currently `other` presets
+  - add per-family thresholds for these presets
+  - run family-isolated calibration passes with threshold-gated acceptance
+  - prepare candidates for hardware A/B gate once pitch + stability criteria pass

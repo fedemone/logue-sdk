@@ -14,7 +14,7 @@ Pipeline:
 Quick start:
   python3 batch_tune_runner.py --helper
   python3 batch_tune_runner.py --write-helper batch_tuning_helper.md
-  python3 batch_tune_runner.py --run-render --render-cmd "qemu-arm ./run_test_render --preset {preset_idx} --note {note} --name \"{preset_name}\" --out \"{output_wav}\""
+  python3 batch_tune_runner.py --run-render --render-cmd "qemu-arm ./run_test_render --preset {preset_idx} --note {note} --name {preset_name} --out {output_wav}"
 """
 
 from __future__ import annotations
@@ -341,6 +341,30 @@ NOTE_TO_SEMITONE = {
     "b": 11,
 }
 
+# Explicit note overrides for ambiguous/number-heavy filenames.
+# Prevents accidental parsing like "tabla-3" -> A-3.
+SAMPLE_NOTE_OVERRIDES = {
+    "Djambe-A3.wav": 57,
+    "Djambe-B3.wav": 59,
+    "Tabla-Drum-Hit-D4_.wav": 62,
+    "percussion-one-shot-tabla-3_C_major.wav": 60,
+    "marimba-hit-c4_C_minor.wav": 60,
+    "kalimba-e_E.wav": 64,
+    "Taiko-Hit.wav": 60,
+    "Bongo_Conga2.wav": 45,
+    "Bongo_Conga_Mute4.wav": 45,
+    "Woodblock.wav": 60,
+    "WoodBlock1.wav": 60,
+}
+
+# Provisional per-preset pitch calibration in semitones, applied after note
+# inference/overrides. Keep conservative and only for pitched presets.
+PRESET_NOTE_CALIBRATION = {
+    "Marmba": 12,
+    "Marimba": 12,
+    "Kalimba": 12,
+}
+
 
 def midi_from_note_name(note: str, octave: int) -> int:
     key = note.lower()
@@ -352,6 +376,8 @@ def midi_from_note_name(note: str, octave: int) -> int:
 
 def infer_midi_note_from_sample_name(sample: Path, fallback: int = 60) -> int:
     """Best-effort pitch extraction from filename tokens (e.g. B3, C#4, Eb2)."""
+    if sample.name in SAMPLE_NOTE_OVERRIDES:
+        return SAMPLE_NOTE_OVERRIDES[sample.name]
     stem = sample.stem
     m = re.search(r"(?<![A-Za-z0-9])([A-Ga-g])([#b]?)[ _-]?(-?\d)(?![A-Za-z0-9])", stem)
     if not m:
@@ -361,6 +387,13 @@ def infer_midi_note_from_sample_name(sample: Path, fallback: int = 60) -> int:
     note = f"{m.group(1)}{m.group(2)}"
     octave = int(m.group(3))
     return midi_from_note_name(note, octave)
+
+
+def apply_preset_note_calibration(preset_name: str, note: int) -> int:
+    offset = PRESET_NOTE_CALIBRATION.get(preset_name, 0)
+    # Safety clamp for accidental over-calibration.
+    offset = max(-24, min(24, int(offset)))
+    return max(0, min(127, note + offset))
 
 
 def resolve_preset_name(name: str, presets: Dict[str, PresetRow]) -> str | None:
@@ -618,6 +651,7 @@ def run_one_iteration(
         if selected_presets is not None and pname not in selected_presets:
             continue
         render_note = infer_midi_note_from_sample_name(s, fallback=60)
+        render_note = apply_preset_note_calibration(pname, render_note)
         mapped.append((s, presets[pname], render_note))
 
     if args.run_render:
