@@ -36,14 +36,12 @@
 #define NAME_LENGTH    (12)
 
 typedef enum {
-  DEEP_TRIBAL = 0,
-  METAL_STORM,
-  CHORDAL_PERC,
-  PHASE_DANCE,
-  BIPOLAR_BASS,
-  SNARE_ROLL,
-  AMBIENT_METL,
-  POLYRHYTHM,
+  TR_808 = 0,
+  TR_909,
+  DX7_FM,
+  CR_78,
+  Techno1,
+  Indstrl1,
   RESOKICK,
   RESOTOM,
   RESOSNARE,
@@ -63,8 +61,10 @@ typedef enum {
   METAL_GONG,    // 22: metal/gong hybrid, fast LFO index buzz
   // Euclidean tuning + MetalGate showcase presets
   DIM_KIT,       // 23: EuclTun=Dim7 [0,3,6,9] — all-voice dim7 chord spread
-  WHOLE_PERC,    // 24: EuclTun=Whole [0,2,4,6] — whole-tone pitched perc
-  HIHAT_SWITCH,  // 25: MetalGate LFO → open/closed hi-hat gate
+  WHOLE_PERC,
+  HIHAT_SWITCH,
+  WHOLE_TONE,    // 24: EuclTun=Whole [0,2,4,6] — whole-tone pitched perc
+  METAL_GATE,    // 25: MetalGate LFO → open/closed hi-hat gate
   TOTAL_PRESETS = NUM_OF_PRESETS
 } preset_numer_t;
 
