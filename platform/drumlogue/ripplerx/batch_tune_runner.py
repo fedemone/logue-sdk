@@ -82,8 +82,6 @@ MANUAL_SAMPLE_TO_PRESET = {
     "marimba-hit-c4_C_minor.wav": "Marmba",
     "TightClosedHat.wav": "HHat-C",
     "BottlePop1.wav": "GlsBotl",
-    "one-tic-clock.wav": "Tick",
-    "ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav": "Tick",
 }
 
 KEYWORD_TO_PRESET = {
@@ -171,6 +169,12 @@ PERCUSSIVE_PRESETS = {
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
+UNPITCHED_FOCUS_PRESETS = {
+    # First-batch focus where autocorrelation pitch is frequently unstable and
+    # should not dominate acceptance.
+    "Taiko", "Bongo", "Wodblk", "Conga", "Djambe",
+}
+
 PRESET_TO_FAMILY = {
     # membranes
     "Bongo": "membranes",
@@ -193,6 +197,14 @@ DEFAULT_FAMILY_PITCH_THRESHOLDS = {
     "membranes": 10.0,
     "mallets": 10.0,
     "wood": 10.0,
+}
+
+PRESET_GROUPS = {
+    "first_batch": ["Djambe", "Taiko", "Bongo", "Conga", "Marimba", "Kalimba", "Wodblk", "Timpani"],
+    "remaining_batch": [
+        "Clrint", "Cymbal", "Flute", "GlsBotl", "Gong", "HHat-C", "HHat-O", "Koto",
+        "MrchSnr", "Ride", "RidBel", "StelPan", "TamTam", "TblrBel", "Tick", "Timpani",
+    ],
 }
 
 
@@ -297,6 +309,8 @@ Tune `--target-score` and `--assumed-improvement` as empirical history grows.
    `batch_tuning_history.json/.md` trend summary is generated.
 
 Tip: pass `--auto-note-align` when sample note and rendered note may differ.
+Use `--preset-group first_batch` to keep focusing on the initial gate set.
+Use `--preset-group remaining_batch` to run the next staged scope.
 """
 
 
@@ -309,7 +323,7 @@ def parse_presets(path: Path) -> Dict[str, PresetRow]:
         for token in re.findall(r'"([^"]+)"', names_block.group(1)):
             names.append(token)
 
-    table = re.search(r"static\s+const\s+int32_t\s+presets\s*\[\s*k_NumPrograms\s*\]\s*\[\s*k_lastParamIndex\s*\]\s*=\s*\{(.*?)\s*\};", txt, re.S)
+    table = re.search(r"static const int32_t presets\[k_NumPrograms\]\[k_lastParamIndex\]\s*=\s*\{(.*?)\n\s*\};", txt, re.S)
     if not table:
         raise RuntimeError("Could not parse presets table")
 
@@ -363,6 +377,13 @@ PRESET_NOTE_CALIBRATION = {
     "Marmba": 12,
     "Marimba": 12,
     "Kalimba": 12,
+    # First-batch pilot: only retain offsets that improved aggregate score.
+    "Djambe": -12,
+    "Conga": 19,
+    # Remaining-batch pilot calibration (Phase 30): reduce large persistent
+    # note offsets before applying deeper preset retuning.
+    "Gong": 12,
+    "MrchSnr": 24,
 }
 
 
@@ -510,10 +531,21 @@ def suggest_tuning(metrics: Dict[str, float], preset_values: List[int]) -> List[
 
 def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str, float]) -> float:
     score = base_score
+    family = PRESET_TO_FAMILY.get(preset_name, "other")
+
     if preset_name in PERCUSSIVE_PRESETS:
         # Stage-1 metric steering: prioritize transient complexity for percussion.
         score += 0.12 * metrics.get("flatness_pct", 0.0)
         score += 0.12 * metrics.get("flux_pct", 0.0)
+
+    # Per-family weighting: for membranes/wood-like instruments, reduce
+    # pitch-dominance when f0 tracking is unstable and reward timbre trajectory.
+    if family in {"membranes", "wood"} or preset_name in UNPITCHED_FOCUS_PRESETS:
+        score -= 0.10 * metrics.get("f0_pct", 0.0)
+        score -= 0.20 * abs(metrics.get("note_offset_semitones", 0.0))
+        score -= 6.0 * metrics.get("timbre_vec_cosdist", 0.0)
+        score -= 2.0 * metrics.get("centroid_corr_dist", 0.0)
+
     return score
 
 
@@ -567,6 +599,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--target-score", type=float, default=12.0)
     p.add_argument("--assumed-improvement", type=float, default=0.72)
     p.add_argument("--auto-note-align", action="store_true", help="Enable pitch-aligned MR-STFT term in comparisons")
+    p.add_argument(
+        "--preset-group",
+        choices=["all", "first_batch", "remaining_batch"],
+        default="all",
+        help="Optional preset group selector. Use with/without --preset-filter.",
+    )
     p.add_argument(
         "--preset-filter",
         type=str,
@@ -631,8 +669,15 @@ def run_one_iteration(
 ) -> Dict[str, object]:
     presets = parse_presets(SYNTH_ENGINE)
     selected_presets = None
-    if args.preset_filter.strip():
+    if args.preset_group != "all":
         selected_presets = set()
+        for raw in PRESET_GROUPS.get(args.preset_group, []):
+            resolved = resolve_preset_name(raw, presets)
+            if resolved is not None:
+                selected_presets.add(resolved)
+    if args.preset_filter.strip():
+        if selected_presets is None:
+            selected_presets = set()
         for raw in (x.strip() for x in args.preset_filter.split(",") if x.strip()):
             resolved = resolve_preset_name(raw, presets)
             selected_presets.add(resolved if resolved is not None else raw)
