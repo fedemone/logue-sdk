@@ -52,8 +52,8 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"MIX"} },
         // ID 12: RATE  glow LFO speed  0%-100% (mapped to 0.05-4.0 Hz exponential)
         { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"RATE"} },
-        // ID 13: SHIM  shimmer (octave-up granular)  0%-100%
-        { 0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"SHIM"} },
+        // ID 13: IRID  iridiscence (saturated optical halo)  0%-100%
+        { 0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"IRID"} },
         // ID 14: WDTH  stereo width  0%-100% (0=mono, 50=unity, 100=extra wide)
         { 0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"WDTH"} },
 

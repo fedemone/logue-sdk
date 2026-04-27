@@ -53,7 +53,7 @@ fast_inline float32x4_t one_pole_lpf(one_pole_t* f, float32x4_t in, float cutoff
 // overload function
 fast_inline float32x4_t one_pole_lpf(one_pole_t * f, float32x4_t in, float32x4_t cutoff) {
   const float32x4_t two_pi_f = vmulq_n_f32(cutoff, 2.0f * (float)M_PI);
-  const float32x4_t two_pi_s_f = vmulq_n_f32(cutoff, 2.0f * (float)M_PI + SAMPLE_RATE);
+  const float32x4_t two_pi_s_f = vaddq_f32(two_pi_f, vdupq_n_f32(SAMPLE_RATE));
   float32x4_t alpha = fast_div_neon(two_pi_f, two_pi_s_f);
   float32x4_t out = vaddq_f32(vmulq_f32(in, alpha),
                               vmulq_f32(f->z1, vsubq_f32(vdupq_n_f32(1.0f), alpha)));

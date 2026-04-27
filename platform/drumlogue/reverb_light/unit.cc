@@ -83,7 +83,7 @@ __unit_callback void unit_teardown() {
 }
 
 __unit_callback void unit_reset() {
-    s_fdn_engine.reset();
+    s_fdn_engine.reset();   // defined at line 250 of fdn_engine
 }
 
 __unit_callback void unit_resume() {}

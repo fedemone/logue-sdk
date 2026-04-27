@@ -350,10 +350,10 @@ static void test_hardware_init_sequence() {
     struct ParamSlot { int min, max, init; };
     ParamSlot buggy_header[k_num_params] = {
         {0,3,0}, {0,100,60}, {0,100,50}, {0,100,70}, /* IDs 0-3 */
-        {0,100,10},{0,100,5},{0,100,50},{0,100,0},    /* IDs 4-7 */
-        {0,100,65},{0,100,30},{-100,100,10},           /* IDs 8-10 */
-        {0,0,0},                                       /* ID 11: BLANK — init=0! */
-        {0,100,50},{0,100,20},{0,100,0},               /* IDs 12-14: MIX RATE SHIM */
+        {0,100,10},{0,100,5},{0,100,50},{0,100,0},   /* IDs 4-7 */
+        {0,100,65},{0,100,30},{-100,100,10},         /* IDs 8-10 */
+        {0,0,0},                                     /* ID 11: BLANK — init=0! */
+        {0,100,50},{0,100,20},{0,100,0},             /* IDs 12-14: MIX RATE IRID */
     };
 
     float buggy_mix = 0.5f; /* any non-zero starting value */
@@ -368,10 +368,10 @@ static void test_hardware_init_sequence() {
     /* ----- FIXED layout: blank removed, MIX at position 11 (init=50) ----- */
     ParamSlot fixed_header[k_num_params] = {
         {0,3,0}, {0,100,60}, {0,100,50}, {0,100,70}, /* IDs 0-3 */
-        {0,100,10},{0,100,5},{0,100,50},{0,100,0},    /* IDs 4-7 */
-        {0,100,65},{0,100,30},{-100,100,10},           /* IDs 8-10 */
-        {0,100,50},                                    /* ID 11: MIX  init=50 */
-        {0,100,20},{0,100,0},{0,100,50},               /* IDs 12-14: RATE SHIM WDTH */
+        {0,100,10},{0,100,5},{0,100,50},{0,100,0},   /* IDs 4-7 */
+        {0,100,65},{0,100,30},{-100,100,10},         /* IDs 8-10 */
+        {0,100,50},                                  /* ID 11: MIX  init=50 */
+        {0,100,20},{0,100,0},{0,100,50},             /* IDs 12-14: RATE IRID WDTH */
     };
 
     float fixed_mix = 0.0f;

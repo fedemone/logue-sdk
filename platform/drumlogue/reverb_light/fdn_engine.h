@@ -35,7 +35,7 @@ enum k_parameters {
     k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,
     k_decay, k_bass, k_color_shift,
-    k_mix, k_rate, k_shim, k_wdth,
+    k_mix, k_rate, k_irid, k_wdth,
     k_total
 };
 
@@ -58,12 +58,12 @@ static const char* k_preset_names[k_preset_number] = {
 };
 
 // Values:
-//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ, MIX, RATE, SHIM, WDTH }
+//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ, MIX, RATE, IRID, WDTH }
 static const int32_t k_presets[k_preset_number][k_total] = {
     { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30,  0,  50, 20,  0, 70 },  // StanzaNeon: medium decay, wide
-    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0,  70, 10, 15, 50 },  // VicoBuio:   long dark, shimmer
+    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0,  70, 10, 15, 50 },  // VicoBuio:   long dark, iridiscence
     { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50,  0,  50, 40,  0,100 },  // Strobo:     short, fast LFO, wide
-    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0,  80, 15, 30, 60 }   // Bruciato:   massive, shimmer
+    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0,  80, 15, 30, 60 }   // Bruciato:   massive, iridiscence
 };
 
 // ============================================================================
@@ -155,15 +155,16 @@ public:
     float glowLfoRate = 0.0f;
     float mix_level = 0.5f;
     float glow_rate_hz = 0.4f;
-    float shim_amt = 0.0f;
+    float irid_amt = 0.0f;
     float width_amt = 1.0f;
     bool initialized;
 
-    // Path 6: Shimmer (Granular Octave-Up)
-    float shimmer_buffer[4096];
-    int shimmer_write = 0;
-    float shimmer_phase = 0.0f;
-    float shimmer_lpf = 0.0f;
+    // Path 6: iridiscence (Granular Octave-Up)
+    float iridiscensce_buffer[4096];
+    int   iridiscensce_write = 0;
+    float irid_phase = 0.0f;
+    float irid_lpf_l = 0.0f;
+    float irid_lpf_r = 0.0f;
 
     // ========================================================================
     // INITIALIZATION & MATH
@@ -276,10 +277,11 @@ public:
         glow_lpf_state_r = 0.0f;
         memset(hpf_x_prev, 0, sizeof(hpf_x_prev));
         memset(hpf_y_prev, 0, sizeof(hpf_y_prev));
-        memset(shimmer_buffer, 0, sizeof(shimmer_buffer));
-        shimmer_write = 0;
-        shimmer_phase = 0.0f;
-        shimmer_lpf = 0.0f;
+        memset(iridiscensce_buffer, 0, sizeof(iridiscensce_buffer));
+        iridiscensce_write = 0;
+        irid_phase = 0.0f;
+        irid_lpf_l = 0.0f;
+        irid_lpf_r = 0.0f;
     }
 
     /*===========================================================================*/
@@ -353,8 +355,8 @@ public:
         case k_rate: // RATE  glow LFO speed  0-100% → 0.05..4.0 Hz (exponential)
             setRate(norm);
             break;
-        case k_shim: // SHIM  shimmer amount  0-100% → 0.0..1.0
-            setShimmer(norm);
+        case k_irid: // IRID  iridiscence amount  0-100% → 0.0..1.0
+            setIridiscence(norm);
             break;
         case k_wdth: // WDTH  stereo width  0-100% → 0.0..2.0
             setWidth(norm);
@@ -410,8 +412,8 @@ public:
         glow_rate_hz = 0.05f * fasterpow2f(val * 6.0f);
         glowLfoRate = glow_rate_hz / sampleRate;
     }
-    void setShimmer(float val) {
-        shim_amt = val;
+    void setIridiscence(float val) {
+        irid_amt = val;
     }
     // 0.0..1.0 → 0.0..2.0 (0=mono, 1=unity, 2=extra wide)
     void setWidth(float val) {
@@ -486,7 +488,7 @@ public:
 
         int preDelaySamps = (int)(predelayScale * 16000.0f); // Max ~330ms
 
-        float path_sum = dark_amt + glow_amt + bright_amt + color_amt + spark_amt + shim_amt;
+        float path_sum = dark_amt + glow_amt + bright_amt + color_amt + spark_amt + irid_amt;
         float path_norm = path_sum > 0.0f ? (1.0f / fmaxf(1.0f, path_sum)) : 0.0f;
 
         for (int i = 0; i < num_samples; i += 2) {
@@ -510,6 +512,8 @@ public:
             // ==========================================
             // PATH 1: GLOW (Stereo Swirling SVF)
             // ==========================================
+            float glow_l = 0.0f;
+            float glow_r = 0.0f;
             if (glow_amt > 0.0f) {
                 glow_lfo_phase += glowLfoRate;
                 if (glow_lfo_phase > 1.0f) glow_lfo_phase -= 1.0f;
@@ -524,7 +528,7 @@ public:
 
                 glow_lp_l += f_coeff_l * glow_bp_l;
                 glow_bp_l += f_coeff_l * (rev_l - glow_lp_l - q_coeff * glow_bp_l);
-                float glow_l = glow_lp_l; // Take the Low-Pass output for warmth
+                glow_l = glow_lp_l; // Take the Low-Pass output for warmth
 
                 // Right Channel: 90-degree phase offset for stereo widening
                 float phase_r = glow_lfo_phase + 0.25f;
@@ -535,11 +539,12 @@ public:
 
                 glow_lp_r += f_coeff_r * glow_bp_r;
                 glow_bp_r += f_coeff_r * (rev_r - glow_lp_r - q_coeff * glow_bp_r);
-                float glow_r = glow_lp_r;
+                glow_r = glow_lp_r;
             }
             // ==========================================
-            // PATH 2: DARK (Organic Pitch-Shifted Sub-Bass)
+            // PATH 2: DARK (Organic Pitch-Shifted Mono Sub-Bass)
             // ==========================================
+            float dark_sig = 0.0f;
             float rev_mono = (rev_l + rev_r) * 0.5f;
             if (dark_amt > 0.0f) {
                 // 1. Write the mono reverb tail to the dark buffer
@@ -576,11 +581,13 @@ public:
                 dark_lpf_state += 0.05f * (pitched_down - dark_lpf_state);
 
                 // 7. Final output with makeup gain to compensate for the heavy filtering
-                float dark_sig = dark_lpf_state * 2.5f;
+                dark_sig = dark_lpf_state * 2.5f;
             }
             // ==========================================
             // PATH 3: BRIGHT (Harmonic Exciter Air)
             // ==========================================
+            float bright_l = 0.0f;
+            float bright_r = 0.0f;
             if (bright_amt > 0.0f) {
                 // 1. Isolate the extreme highs using the 2nd-order Butterworth HPF
                 float hp_l = process_biquad(rev_l, &bright_hpf_l, &bright_coeffs);
@@ -596,8 +603,8 @@ public:
 
                 // 3. Polynomial soft-clipping (x - x^3/3)
                 // This squashes the peaks, synthesizing beautiful 2nd and 3rd order "sizzle"
-                float bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
-                float bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
+                bright_l = drive_l * (1.0f - (drive_l * drive_l * 0.33333f));
+                bright_r = drive_r * (1.0f - (drive_r * drive_r * 0.33333f));
             }
             // ==========================================
             // PATH 4: COLOR (Stereo Visual Spectrum Resonators)
@@ -608,9 +615,9 @@ public:
             // signals carry negligible energy in the 4-7 kHz resonator band.
             // The reverb tail has broad-band content and reliably excites the
             // high-Q resonators, creating a metallic / spring-like colouring.
+            float color_l = 0.0f;
+            float color_r = 0.0f;
             if (color_amt > 0.0f) {
-                float color_l = 0.0f;
-                float color_r = 0.0f;
                 for(int f=0; f<NUM_RESONATORS; f++) {
                     color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
                     color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
@@ -622,13 +629,12 @@ public:
             // ==========================================
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
             // ==========================================
+            float spark_l = 0.0f;
+            float spark_r = 0.0f;
             if (spark_amt > 0.0f) {
                 sparkle_buffer_l[spark_write] = rev_l;
                 sparkle_buffer_r[spark_write] = rev_r;
                 spark_write = (spark_write + 1) & (SPARKLE_BUFFER_SIZE - 1);
-
-                float spark_l = 0.0f;
-                float spark_r = 0.0f;
 
                 if (spark_countdown > 0) {
                     int r_idx = (int)spark_read & (SPARKLE_BUFFER_SIZE - 1);
@@ -642,7 +648,7 @@ public:
                     spark_countdown--;
                 } else {
                     // Xorshift inline PRNG
-                    static uint32_t seed = 2463534242UL;
+                    static uint32_t seed = 2463574242UL;
                     seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
                     float rand_val = (float)seed / 4294967295.0f;
 
@@ -662,48 +668,68 @@ public:
                 }
             }
             // ==========================================
-            // PATH 6: SHIMMER (Granular Octave-Up of reverb tail)
+            // PATH 6: IRIDESCENZA (Formerly iridiscence)
             // ==========================================
-            if (shim_amt > 0.0f) {
-                float shim_l = 0.0f;
-                float shim_r = 0.0f;
-                if (shim_amt > 0.0f) {
-                    float shim_mono = (rev_l + rev_r) * 0.5f;
-                    shimmer_buffer[shimmer_write] = shim_mono;
-                    shimmer_write = (shimmer_write + 1) & 4095;
+            // A swirling, stereo-panning, saturated optical halo.
+            float irid_l = 0.0f;
+            float irid_r = 0.0f;
+            if (irid_amt > 0.0f) {
+                if (irid_amt > 0.0f) {
+                    // 1. Refraction: Speed wobbles microscopically around 2.0x
+                    // Assuming you have an LFO available (like the one used in GLOW)
+                    float irid_speed = 2.0f + (fastersinfullf(glow_lfo_phase * 0.5f) * 0.015f);
+                    irid_phase += irid_speed;
+                    if (irid_phase >= 2048.0f) irid_phase -= 2048.0f;
+                    float irid_mono = (rev_l + rev_r) * 0.5f;
 
-                    shimmer_phase += 2.0f;  // octave up: phase advances at 2x
-                    if (shimmer_phase >= 2048.0f) shimmer_phase -= 2048.0f;
-
-                    float rs1 = (float)shimmer_write - shimmer_phase;
+                    iridiscensce_buffer[iridiscensce_write] = irid_mono;
+                    iridiscensce_write = (iridiscensce_write + 1) & 4095;
+                    float rs1 = (float)iridiscensce_write - irid_phase;
                     if (rs1 < 0.0f) rs1 += 4096.0f;
                     int is1 = (int)rs1;
                     float fs1 = rs1 - is1;
-                    float so1 = shimmer_buffer[is1 & 4095] + fs1 * (shimmer_buffer[(is1+1) & 4095] - shimmer_buffer[is1 & 4095]);
+                    float so1 = iridiscensce_buffer[is1 & 4095] + fs1 * (iridiscensce_buffer[(is1+1) & 4095] - iridiscensce_buffer[is1 & 4095]);
 
-                    float phase_b = shimmer_phase + 1024.0f;
+                    float phase_b = irid_phase + 1024.0f;
                     if (phase_b >= 2048.0f) phase_b -= 2048.0f;
-                    float rs2 = (float)shimmer_write - phase_b;
+                    float rs2 = (float)iridiscensce_write - phase_b;
                     if (rs2 < 0.0f) rs2 += 4096.0f;
                     int is2 = (int)rs2;
                     float fs2 = rs2 - is2;
-                    float so2 = shimmer_buffer[is2 & 4095] + fs2 * (shimmer_buffer[(is2+1) & 4095] - shimmer_buffer[is2 & 4095]);
+                    float so2 = iridiscensce_buffer[is2 & 4095] + fs2 * (iridiscensce_buffer[(is2+1) & 4095] - iridiscensce_buffer[is2 & 4095]);
 
-                    float sfade = 1.0f - fabsf((shimmer_phase - 1024.0f) / 1024.0f);
-                    float shimmer_sig = so1 * sfade + so2 * (1.0f - sfade);
-                    shimmer_lpf += 0.15f * (shimmer_sig - shimmer_lpf);
-                    shim_l = shimmer_lpf;
-                    shim_r = shimmer_lpf;
+                    // 2. The "Holo-Fade"
+                    float fade = 1.0f - fabsf((irid_phase - 1024.0f) / 1024.0f);
+
+                    // 3. Chromatic Aberration (Stereo Splitting)
+                    // Instead of summing to mono, Head 1 favors Left and Head 2 favors Right!
+                    // As they fade in and out, the iridiscence swirls across the stereo image.
+                    float irid_raw_l = (so1 * fade) + (so2 * (1.0f - fade) * 0.3f);
+                    float irid_raw_r = (so2 * fade) + (so1 * (1.0f - fade) * 0.3f);
+
+                    // 4. Luminescence (Soft Saturation)
+                    // Pushing it into a fast_tanh creates high-frequency density ("glow")
+                    // Asymmetric drive for harmonic stereo widening
+                    irid_raw_l = fast_tanh(irid_raw_l * 1.359f);
+                    irid_raw_r = fast_tanh(irid_raw_r * 1.703f);
+
+                    // 5. Taming the harshness (Stereo LPF)
+                    // Asymmetric filtering: Right side is brighter and fizzier
+                    irid_lpf_l += 0.1359f * (irid_raw_l - irid_lpf_l);
+                    irid_lpf_r += 0.1703f * (irid_raw_r - irid_lpf_r);
+
+                    irid_l = irid_lpf_l;
+                    irid_r = irid_lpf_r;
                 }
             }
             // ==========================================
             // FINAL PARALLEL MIXDOWN
             // ==========================================
             float mix_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
-                          (color_l * color_amt) + (spark_l * spark_amt) + (shim_l * shim_amt);
+                          (color_l * color_amt) + (spark_l * spark_amt) + (irid_l * irid_amt);
 
             float mix_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
-                          (color_r * color_amt) + (spark_r * spark_amt) + (shim_r * shim_amt);
+                          (color_r * color_amt) + (spark_r * spark_amt) + (irid_r * irid_amt);
 
             mix_l *= path_norm;
             mix_r *= path_norm;

@@ -31,7 +31,8 @@
 #define FREQ_MAX_DIV_MIN (18.333f)
 #define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
-#define NEON_LANES (4)
+#define NEON_LANES  (4)
+#define MAX_PILLARS (16)
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -244,6 +245,9 @@ public:
         params_[index] = value;   // store into local DB
 
         switch (index) {
+        case k_paramProgram:
+            // do nothing to avoid recursion
+            break;
         case k_mix: // MIX  0..100 → 0.0..1.0
             setMix(value * 0.01f);
             break;
@@ -875,12 +879,12 @@ private:
     void applyHighFreqDamping4(float32x4_t* signals) {
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             // 1. Get the mixed audio for this channel (4 samples)
-            float mixed_samps[4];
+            float mixed_samps[NEON_LANES];
             vst1q_f32(mixed_samps, signals[ch]);
 
             // 2. Process the sequential IIR Low-Pass Filter for Damping
             // dampingCoeff is calculated from UI (e.g., 0.1 to 0.95)
-            for(int s = 0; s < 4; s++) {
+            for(int s = 0; s < NEON_LANES; s++) {
                 float filtered = (mixed_samps[s] * (1.0f - dampingCoeff)) + (lpfState[ch] * dampingCoeff);
                 lpfState[ch] = filtered; // Save state for next immediate sample
                 mixed_samps[s] = filtered;
@@ -934,16 +938,16 @@ private:
     void writeDelayLines4(const float32x4_t* signals) {
         // Spill all channel vectors; index by sample position (variable s)
         // to avoid vgetq_lane_f32(v, variable) which requires a constant index.
-        float ch_lanes[FDN_CHANNELS][4];
+        float ch_lanes[FDN_CHANNELS][NEON_LANES];
         for (int ch = 0; ch < FDN_CHANNELS; ch++)
             vst1q_f32(ch_lanes[ch], signals[ch]);
 
-        for (int s = 0; s < 4; s++) {
+        for (int s = 0; s < NEON_LANES; s++) {
             uint32_t pos = (writePos + s) & BUFFER_MASK;
             for (int ch = 0; ch < FDN_CHANNELS; ch++)
                 delayLine[pos].samples[ch] = ch_lanes[ch][s];
         }
-        writePos = (writePos + 4) & BUFFER_MASK;
+        writePos = (writePos + NEON_LANES) & BUFFER_MASK;
     }
 
     /*===========================================================================*/
@@ -986,11 +990,11 @@ private:
         // =================================================================
         // 1 & 2. PRE-DELAY (Smoothed, Interpolated, Write-Before-Read)
         // =================================================================
-        float monoLanes[4];
+        float monoLanes[NEON_LANES];
         vst1q_f32(monoLanes, inMono); // Unpack the NEON vector
-        float delayedLanes[4];
+        float delayedLanes[NEON_LANES];
 
-        for (int s = 0; s < 4; s++) {
+        for (int s = 0; s < NEON_LANES; s++) {
             // 1. WRITE FIRST: Guarantees 0.0ms delay instantly reads this exact sample
             preDelayBuffer[preDelayWritePos] = monoLanes[s];
 
@@ -1001,7 +1005,7 @@ private:
             float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
 
             // Branchless wrap
-            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * NEON_LANES);
             int32_t pd_idx1 = (int32_t)safe_pd_pos;
             int32_t pd_idx2 = pd_idx1 + 1;
 
@@ -1036,7 +1040,7 @@ private:
             activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
         } else if (activeSampleCount > 0) {
             // Signal absent: decrement counter
-            activeSampleCount -= 4;
+            activeSampleCount -= NEON_LANES;
         }
 
         // If counter has expired, bypass FDN processing to save cycles
@@ -1044,7 +1048,7 @@ private:
             float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
             vst1q_f32(outL, vmulq_f32(inL4, dryGain));
             vst1q_f32(outR, vmulq_f32(inR4, dryGain));
-            writePos = (writePos + 4) & BUFFER_MASK;
+            writePos = (writePos + NEON_LANES) & BUFFER_MASK;
             return;
         }
 
@@ -1481,7 +1485,7 @@ private:
     static const float crossGain[5];   // indexed by pillar_
 
     // Randomized ping-pong map (for PILL=1)
-    static const uint8_t pingRandomMap[16][4]; // 16 steps, 4 channels each
+    static const uint8_t pingRandomMap[MAX_PILLARS][NEON_LANES]; // 16 steps, 4 channels each
     int pingMapIndex;
 
     float baseFc;                   // base cutoff frequency (Hz) for current preset/damping
@@ -1491,7 +1495,7 @@ private:
 const float NeonAdvancedLabirinto::crossGain[5] = {0.15f, 0.10f, 0.07f, 0.04f, 0.04f};
 
 // Pre-computed random map for ping-pong (fixed seed for reproducibility)
-const uint8_t NeonAdvancedLabirinto::pingRandomMap[16][4] = {
+const uint8_t NeonAdvancedLabirinto::pingRandomMap[MAX_PILLARS][NEON_LANES] = {
     {1,0,1,0}, {0,1,0,1}, {1,1,0,0}, {0,0,1,1},
     {1,0,0,1}, {0,1,1,0}, {1,1,1,0}, {0,1,1,1},
     {1,0,1,1}, {0,1,0,0}, {1,0,0,0}, {0,0,0,1},

@@ -20,7 +20,7 @@ const __unit_header unit_header_t unit_header = {
     .params = {
         // Page 1: Main reverb controls
         // ID 0: Preset name
-        { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Preset"} },
+        { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Preset"} },
         // ID 1: MIX  wet/dry blend  0%-100%
         { 0, 100, 50, 70, k_unit_param_type_percent, 0, 0, 0, {"MIX"} },
         // ID 2: TIME mid RT60 x0.1 s  (1=0.1s .. 100=10.0s)

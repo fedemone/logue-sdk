@@ -94,6 +94,7 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     d->harmonic_state = vdupq_n_f32(0.0f);
     d->last_input = vdupq_n_f32(0.0f);
     d->opto_release_mult = 1.0f;
+    d->opto_coeff = 0.0f;   // to be updated according to opto_release_mult
     d->detector_state = vdupq_n_f32(0.0f);
 
     // Initialize detector HPF at 100 Hz (removes low-end pumping)

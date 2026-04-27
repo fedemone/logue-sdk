@@ -109,19 +109,6 @@ public:
     inline void Teardown() {}
 
     inline void Reset() {
-        // Reset all components
-        compressor_reset(&comp_);
-        sc_hpf_hz_ = 80.0f;
-        sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
-        wavefolder_init(&wavefolder_);
-        multiband_init(&multiband_, samplerate_);
-        distressor_reset(&distressor_, samplerate_);
-        update_opto_coeff(&distressor_, release_coeff_);
-        overlord_init(&overlord_, samplerate_);
-        smoothing_init(&smoother_, samplerate_);
-        envelope_detector_init(&envelope_, samplerate_);
-        gain_computer_init(&gain_comp_);
-
         // Set default parameters
         setParameter(k_threhold, THRESH_DEFAULT);   // Thresh: -10.0 dB
         setParameter(k_ratio, RATIO_DEFAULT);       // Ratio: 4.0
@@ -147,6 +134,19 @@ public:
         setParameter(k_multiband_band_mute, 0);                      // MUTE off
         setParameter(k_multiband_band_solo, 0);                      // SOLO off
         setParameter(k_detection_mode, 0);                           // Detection: Peak
+
+        // Reset all components
+        compressor_reset(&comp_);
+        sc_hpf_hz_ = 80.0f;
+        sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
+        wavefolder_init(&wavefolder_);
+        multiband_init(&multiband_, samplerate_);
+        distressor_reset(&distressor_, samplerate_);
+        update_opto_coeff(&distressor_, release_coeff_);
+        overlord_init(&overlord_, samplerate_);
+        smoothing_init(&smoother_, samplerate_);
+        envelope_detector_init(&envelope_, samplerate_);
+        gain_computer_init(&gain_comp_);
 
         use_external_sc_ = 0;
     }
