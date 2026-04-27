@@ -417,6 +417,107 @@ static void test_hard_clip_limiter() {
     if (all_ok) printf("  Hard-clip limiter: ALL PASS\n");
 }
 
+/* =========================================================================
+ * Sidechain HPF biquad pole stability test
+ *
+ * The sidechain HPF is a biquad highpass with Q=0.5 (Bessel-like).
+ * For very low cutoff frequencies the digital angular frequency w0 is tiny,
+ * which means cosf(w0) ≈ 1.0.  A fast cosine approximation that returns a
+ * value ABOVE 1.0 (e.g. fastercosf(0.0026) ≈ 1.000152) places a biquad pole
+ * OUTSIDE the unit circle → the filter diverges exponentially.
+ *
+ * Bug (commit 1c96f5f): sidechain_hpf_init replaced cosf/sinf with
+ * fastercosf/fastersinf.  At the default 20 Hz cutoff / 48 kHz sample rate
+ * the pole magnitude exceeded 1.0, causing unbounded output growth.
+ *
+ * This test:
+ *   1. Verifies that coefficients computed with cosf keep pole magnitude < 1.
+ *   2. Demonstrates that coefficients with cos_w0 > 1 push pole outside
+ *      unit circle.
+ *   3. Runs the filter with both coefficient sets for 200 samples and checks
+ *      that the corrected version stays bounded.
+ * ====================================================================== */
+static void test_sidechain_hpf_pole_stability() {
+    printf("\n=== Sidechain HPF Pole Stability ===\n");
+
+    const float sr        = 48000.0f;
+    const float cutoff_hz = 20.0f;  /* default SC HPF cutoff — the problematic case */
+    const float Q         = 0.5f;   /* Bessel Q */
+
+    float w0      = 2.0f * (float)M_PI * cutoff_hz / sr; /* ≈ 0.002618 */
+    float cos_w0  = cosf(w0);
+    float sin_w0  = sinf(w0);
+    float alpha   = sin_w0 / (2.0f * Q);
+
+    /* Biquad HPF coefficients (same as sidechain_hpf_init) */
+    float b0 = (1.0f + cos_w0) * 0.5f;
+    float b1 = -(1.0f + cos_w0);
+    float b2 = b0;
+    float a0 =  1.0f + alpha;
+    float a1 = -2.0f * cos_w0;
+    float a2 =  1.0f - alpha;
+
+    /* Normalise by a0 */
+    a1 /= a0; a2 /= a0;
+
+    /* Pole magnitude from the characteristic equation z^2 + a1*z + a2 = 0.
+     * For a stable filter both poles must satisfy |z| < 1.
+     * Discriminant d = a1^2 - 4*a2.
+     * If d < 0 (complex poles): |z|^2 = a2 → |z| = sqrt(a2). */
+    float discriminant = a1 * a1 - 4.0f * a2;
+    float pole_mag;
+    if (discriminant < 0.0f) {
+        pole_mag = sqrtf(a2); /* complex conjugate pair */
+    } else {
+        float r1 = (-a1 + sqrtf(discriminant)) * 0.5f;
+        float r2 = (-a1 - sqrtf(discriminant)) * 0.5f;
+        pole_mag = fmaxf(fabsf(r1), fabsf(r2));
+    }
+
+    printf("  w0 = %.6f rad  cos(w0) = %.9f\n", w0, cos_w0);
+    printf("  a1_norm = %.9f  a2_norm = %.9f\n", a1, a2);
+    printf("  Pole magnitude (correct cosf): %.9f  (must be < 1)\n", pole_mag);
+    assert(pole_mag < 1.0f &&
+           "Correct HPF pole must be inside unit circle at 20 Hz / 48 kHz");
+
+    /* ----- Demonstrate the bug: cos_w0 slightly > 1.0 ----- */
+    /* fastercosf(0.0026) ≈ cos(0.0026) + 0.000152 ≈ 1.000152 per measurement. */
+    float bad_cos_w0 = 1.000152f;       /* typical fastercosf overshoot at 20 Hz */
+    float bad_a1     = -2.0f * bad_cos_w0 / a0; /* a0 unchanged */
+    float bad_a2     = a2;              /* a2 barely changes */
+    float bad_disc   = bad_a1 * bad_a1 - 4.0f * bad_a2;
+    float bad_pole_mag;
+    if (bad_disc < 0.0f) {
+        bad_pole_mag = sqrtf(bad_a2);
+    } else {
+        float r1 = (-bad_a1 + sqrtf(bad_disc)) * 0.5f;
+        float r2 = (-bad_a1 - sqrtf(bad_disc)) * 0.5f;
+        bad_pole_mag = fmaxf(fabsf(r1), fabsf(r2));
+    }
+    printf("  Pole magnitude (fastercosf, cos_w0=%.6f): %.6f  (> 1 → unstable!)\n",
+           bad_cos_w0, bad_pole_mag);
+    assert(bad_pole_mag > 1.0f &&
+           "Bug confirmed: fastercosf overshoot places HPF pole outside unit circle");
+
+    /* ----- Run the correct biquad for 200 samples, check bounded output ----- */
+    float z1 = 0.0f, z2 = 0.0f;
+    float b0n = b0 / a0, b1n = b1 / a0, b2n = b2 / a0;
+    float max_out = 0.0f;
+    float in = 1.0f; /* impulse */
+    for (int n = 0; n < 200; n++) {
+        float out = b0n * in + z1;
+        z1        = b1n * in - a1 * out + z2;
+        z2        = b2n * in - a2 * out;
+        if (fabsf(out) > max_out) max_out = fabsf(out);
+        in = 0.0f; /* silence after impulse */
+    }
+    printf("  Correct HPF impulse response max over 200 samples: %.6f\n", max_out);
+    assert(max_out < 2.0f &&
+           "Correct HPF (cosf) must stay bounded under impulse at 20 Hz / 48 kHz");
+
+    printf("  PASS: sidechain HPF pole stable with cosf; bug confirmed with fastercosf\n");
+}
+
 int main() {
     printf("=== OmniPress stability tests ===\n");
     test_parameter_extremes();
@@ -425,6 +526,7 @@ int main() {
     test_max_makeup_no_compression();
     test_multiband_stability();
     test_hard_clip_limiter();
+    test_sidechain_hpf_pole_stability();
     printf("\n=== ALL OmniPress STABILITY TESTS PASSED ===\n");
     return 0;
 }

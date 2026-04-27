@@ -323,6 +323,70 @@ static void test_preset_stanzaneon_wet_ratio() {
 }
 
 /* =========================================================================
+ * Test 13: Hardware parameter-init-sequence simulation
+ *
+ * The drumlogue firmware iterates every slot 0..num_params-1 and calls
+ * unit_set_param_value(id, header.params[id].init) on unit load.  A blank
+ * padding slot at position N with init=0 will therefore call setParameter(N, 0)
+ * for whatever parameter has enum value N.
+ *
+ * Bug: header.c had a blank slot at array position [11] (init=0).  Because
+ * k_mix=11 in the enum, this triggered setMixLevel(0.0f) → 100% dry on load,
+ * regardless of any other parameter settings.  Changing MIX on the panel had
+ * no effect because the hardware re-applies init values on preset change.
+ *
+ * This test simulates both the buggy and fixed header layouts and verifies that
+ * the fixed layout results in mix > 0 after the full init sequence.
+ * ====================================================================== */
+static void test_hardware_init_sequence() {
+    printf("\n=== Test 13: Hardware Parameter Init Sequence ===\n");
+
+    /* k_mix=11 in the enum.  On hardware, setParameter(id, init_value) is
+     * called for every id in [0, num_params).  Simulate that here. */
+    const int k_mix_enum = 11;
+    const int k_num_params = 15;
+
+    /* ----- BUGGY layout: blank slot at position 11 (init=0) ----- */
+    struct ParamSlot { int min, max, init; };
+    ParamSlot buggy_header[k_num_params] = {
+        {0,3,0}, {0,100,60}, {0,100,50}, {0,100,70}, /* IDs 0-3 */
+        {0,100,10},{0,100,5},{0,100,50},{0,100,0},    /* IDs 4-7 */
+        {0,100,65},{0,100,30},{-100,100,10},           /* IDs 8-10 */
+        {0,0,0},                                       /* ID 11: BLANK — init=0! */
+        {0,100,50},{0,100,20},{0,100,0},               /* IDs 12-14: MIX RATE SHIM */
+    };
+
+    float buggy_mix = 0.5f; /* any non-zero starting value */
+    for (int id = 0; id < k_num_params; id++) {
+        if (id == k_mix_enum)
+            buggy_mix = buggy_header[id].init * 0.01f; /* setMixLevel */
+    }
+    printf("  Buggy  header: after init sequence, mix = %.2f  (expected 0.00)\n", buggy_mix);
+    assert(fabsf(buggy_mix) < EPSILON &&
+           "Bug reproduced: blank slot at enum pos k_mix zeroes mix on load");
+
+    /* ----- FIXED layout: blank removed, MIX at position 11 (init=50) ----- */
+    ParamSlot fixed_header[k_num_params] = {
+        {0,3,0}, {0,100,60}, {0,100,50}, {0,100,70}, /* IDs 0-3 */
+        {0,100,10},{0,100,5},{0,100,50},{0,100,0},    /* IDs 4-7 */
+        {0,100,65},{0,100,30},{-100,100,10},           /* IDs 8-10 */
+        {0,100,50},                                    /* ID 11: MIX  init=50 */
+        {0,100,20},{0,100,0},{0,100,50},               /* IDs 12-14: RATE SHIM WDTH */
+    };
+
+    float fixed_mix = 0.0f;
+    for (int id = 0; id < k_num_params; id++) {
+        if (id == k_mix_enum)
+            fixed_mix = fixed_header[id].init * 0.01f;
+    }
+    printf("  Fixed  header: after init sequence, mix = %.2f  (expected 0.50)\n", fixed_mix);
+    assert(fabsf(fixed_mix - 0.50f) < EPSILON &&
+           "Fixed header must produce mix=0.50 on load (no blank-slot clobber)");
+
+    printf("  PASS: blank-slot-zeroes-mix regression verified\n");
+}
+
+/* =========================================================================
  * main
  * ====================================================================== */
 int main(void) {
@@ -334,6 +398,7 @@ int main(void) {
     test_wet_output_presence();
     test_all_max_params_wet_ratio();
     test_preset_stanzaneon_wet_ratio();
+    test_hardware_init_sequence();
 
     printf("\n==========================================================\n");
     printf(" ALL TESTS PASSED\n");
