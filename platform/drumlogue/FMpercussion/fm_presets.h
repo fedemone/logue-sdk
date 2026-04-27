@@ -109,10 +109,8 @@ typedef struct {
   uint8_t voice_index;  // 0-VOICE_ALLOC_COUNT
 
   // NEW: Resonant parameters (using params 21-23)
-  uint8_t resonant_mode;    // 0-4 (LP, BP, HP, Notch, Peak)
+  uint8_t resonant_mode;    // 0-4 (LP, BP, HP, Notch, Peak). This sets both center and resonance. TODO new values?
   uint8_t resonant_morph;   // 0-100
-  uint8_t resonant_res;     // 0-100
-  uint8_t resonant_center;  // 0-100 (maps to 50-8000 Hz) - TODO unused and not mapped by UI
   uint8_t engine_map[4];    // Which engine each voice uses
 } fm_preset_t;
 

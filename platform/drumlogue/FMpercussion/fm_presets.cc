@@ -11,40 +11,36 @@
 const char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
 {
     // Iconic Drum Machines
-    "TR-808 Kit",
-    "TR-909 Kit",
-    "DX7 FM Kit",
-    "CR-78 Kit",
-
+    "TR-808",
+    "TR-909",
+    "DX7 FM",
+    "CR-78",
     // Modern / Genre
-    "Techno 1",
-    "Indstrl 1",
-    "AmbientKit",
-    "Synthwave",
-
-    // Engine Showcases
-    "Deep Kick",
-    "Rattle Snr",
-    "Crash Ride",
-    "Gong Hit",
-    "FM Tom",
-    "Conga Roll",
-    "Noise Swp",
-    "Laser Zap",
-
+    "Techno1",
+    "Indstrl1",
     // Resonant Showcases
-    "Reso Kick",
-    "Reso Tom",
-    "Reso Snare",
-    "Reso Metal",
-
+    "ResoKick",
+    "ResoTom",
+    "ResoSnare",
+    "ResoMetal",
+    // Engine Showcases
+    "SlwEnv",
+    "WahDrum",
+    "NoisSwp",
+    "FMBuzz",
+    "GhstSnr",
+    "RimPtch",
+    "TomWah",
+    "Shaker",
+    "GongHit",
+    "TmplBell",
+    "MetlGong",
     // Euclidean / Advanced
-    "Euclid Tom",
+    "DimKit",
+    "WholPrc",
+    "HiHatSw",
     "WholTone",
-    "Diminish",
-    "MetalGate",
-    "Polyrhythm",
-    "RandomKit"
+    "MetalGate"
 };
 
 // ---------------------------------------------------------
@@ -56,8 +52,8 @@ const char preset_names[NUM_OF_PRESETS][NAME_LENGTH] =
 // Page 3: metal_inharm, metal_bright, perc_ratio, perc_var
 // Page 4: lfo1_shape, lfo1_rate, lfo1_target, lfo1_depth
 // Page 5: lfo2_shape (Eucl), lfo2_rate, lfo2_target, lfo2_depth
-// Page 6: env_shape (bit7=Gong), voice_index, res_mode, resonant_morph, res_res
-// not mapped: res_center
+// Page 6: env_shape (bit7=Gong), voice_index, resonant_mode, resonant_morph
+// not mapped: resonant_res, resonant_center
 // aligned to to voice index: voice_engines[4]
 
 const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
@@ -76,7 +72,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         40, 60, 20, 10,          // Metal: Clean cymbal. Perc: Low ratio tom (1.2)
         0, 0, LFO_TARGET_NONE, 0,
         0, 0, LFO_TARGET_NONE, 0,   // EuclTun=0 (Off)
-        0, 0, 0, 100, 0, 0,         // env_shape 0 = Cymbal character
+        0, 0, 0, 100,               // env_shape 0 = Cymbal character
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -91,7 +87,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         60, 80, 35, 20,          // Metal: Inharmonic crash. Perc: Mid tom
         0, 0, LFO_TARGET_NONE, 0,
         0, 0, LFO_TARGET_NONE, 0,   // EuclTun=0 (Off)
-        0, 0, 0, 100, 0, 0,         // env_shape 0 = Cymbal character
+        0, 0, 0, 100,               // env_shape 0 = Cymbal character
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -106,7 +102,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         80, 90, 70, 80,          // Metal: Highly inharmonic. Perc: Bell ratio
         0, 0, LFO_TARGET_NONE, 0,
         0, 0, LFO_TARGET_NONE, 0,   // EuclTun=0 (Off)
-        128, 0,  0, 100, 0, 0,      // env_shape 128 = GONG character!
+        128, 0,  0, 100,            // env_shape 128 = GONG character!
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -120,7 +116,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         20, 40, 80, 0,           // Metal: Simple closed hat. Perc: Woodblock (high ratio, no var)
         0, 0, LFO_TARGET_NONE, 0,
         0, 0, LFO_TARGET_NONE, 0,   // EuclTun=0 (Off)
-        0, 0, 0, 100, 0, 0,
+        0, 0, 0, 100,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -128,31 +124,31 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 2. MODERN & GENRE
     // =====================================================================
 
-    // Preset 4: "Techno 1"
+    // Preset 4: "Techno1"
     // Huge distorted kick, rattling snare.
     {
-        "Techno 1",
+        "Techno1",
         60, 90, 60, 90,
         100, 60,                 // Kick: Massive transient
         60, 60,                  // Snare: Balanced
         80, 100, 15, 30,         // Metal: Bright. Perc: Low rumble tom
         1, 10, LFO_TARGET_PITCH, -10, // LFO: Slight pitch drop
         0, 0, LFO_TARGET_NONE, 0,     // EuclTun=0 (Off)
-        0, 0, 0, 100, 0, 0,
+        0, 0, 0, 100,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
-    // Preset 5: "Indstrl 1"
+    // Preset 5: "Indstrl1"
     // Industrial. Heavy modulation, gong metal, high variation percs.
     {
-        "Indstrl 1",
+        "Indstrl1",
         40, 95, 40, 95,
         80, 50,                  // Kick: Hard punch
         100, 80,                 // Snare: White noise blast
         100, 100, 50, 100,       // Metal: Chaotic bright gong. Perc: High variance fm
         5, 80, LFO_TARGET_INDEX, 50, // LFO: Fast S&H on FM Index!
         0, 0, LFO_TARGET_NONE, 0,   // EuclTun=0 (Off)
-        128, 0, 0, 100, 0, 0,       // env_shape 128 = GONG character
+        128, 0, 0, 100,             // env_shape 128 = GONG character
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -168,7 +164,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 10, LFO_TARGET_PITCH, 20,
         0, 5, LFO_TARGET_NONE, 0,   // EuclTun=0 (Off)
         25, 8,
-        RESONANT_MODE_LOWPASS, 20, 40, 15,
+        RESONANT_MODE_LOWPASS, 20,
         {ENGINE_RESONANT, ENGINE_SNARE, ENGINE_KICK, ENGINE_PERC}
     },
 
@@ -181,7 +177,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 15, LFO_TARGET_PITCH, 30,
         0, 8, LFO_TARGET_INDEX, 20,  // EuclTun=0 (Off)
         35, 1,
-        RESONANT_MODE_BANDPASS, 20, 60, 25,
+        RESONANT_MODE_BANDPASS, 20,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_RESONANT}
     },
 
@@ -194,7 +190,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         2, 20, LFO_TARGET_PITCH, 40,
         0, 10, LFO_TARGET_INDEX, 30,  // EuclTun=0 (Off)
         20, 3,
-        RESONANT_MODE_HIGHPASS, 20, 50, 45,
+        RESONANT_MODE_HIGHPASS, 20,
         {ENGINE_KICK, ENGINE_RESONANT, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -207,7 +203,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         8, 30, LFO_TARGET_PITCH, 50,
         0, 40, LFO_TARGET_INDEX, 40,  // EuclTun=0 (Off)
         10, 2,
-        RESONANT_MODE_PEAK, 20, 80, 80,
+        RESONANT_MODE_PEAK, 20,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_RESONANT, ENGINE_PERC}
     },
 
@@ -224,7 +220,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 5, LFO_TARGET_ENV, 60,      // LFO1: 0.5 Hz ramp → ENV swell
         0, 0, LFO_TARGET_NONE, 0,      // EuclTun=0 (Off)
         30, 0,
-        RESONANT_MODE_LOWPASS, 20, 30, 15,
+        RESONANT_MODE_LOWPASS, 20,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -239,7 +235,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 35, LFO_TARGET_RES_MORPH, 80,  // LFO1: triangle 4 Hz → filter morph
         0, 10, LFO_TARGET_PITCH, 20,      // LFO2: slow pitch drift; EuclTun=0
         25, 2,
-        RESONANT_MODE_BANDPASS, 50, 70, 40,
+        RESONANT_MODE_BANDPASS, 50,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_RESONANT, ENGINE_PERC}
     },
 
@@ -269,7 +265,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 82, LFO_TARGET_INDEX, 70,   // LFO1: ~15 Hz triangle → FM index buzz
         0, 100, LFO_TARGET_INDEX, 50,  // LFO2: ~20 Hz triangle → beating
         15, 0,
-        RESONANT_MODE_PEAK, 60, 60, 50,
+        RESONANT_MODE_PEAK, 60,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -284,7 +280,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 18, LFO_TARGET_RES_MORPH, 60,  // LFO1: 2 Hz triangle → filter colour
         0, 8,  LFO_TARGET_PITCH, -30,     // LFO2: slow negative drift; EuclTun=0
         35, 1,
-        RESONANT_MODE_BANDPASS, 40, 65, 35,
+        RESONANT_MODE_BANDPASS, 40,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_RESONANT}
     },
 
@@ -300,7 +296,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 25, LFO_TARGET_PITCH, -70,  // LFO1: ramp, negative → falling pitch
         0, 0,  LFO_TARGET_NONE, 0,     // EuclTun=0 (Off)
         10, 0,
-        RESONANT_MODE_HIGHPASS, 70, 40, 60,
+        RESONANT_MODE_HIGHPASS, 70,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -315,7 +311,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 10, LFO_TARGET_RES_MORPH, 100, // LFO1: 1 Hz triangle → full morph sweep
         0, 5,  LFO_TARGET_PITCH, 20,      // LFO2: subtle pitch rise; EuclTun=0
         40, 1,
-        RESONANT_MODE_LOWPASS, 30, 75, 30,
+        RESONANT_MODE_LOWPASS, 30,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_RESONANT}
     },
 
@@ -330,7 +326,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 75, LFO_TARGET_NOISE_MIX, 80,  // LFO1: ~10 Hz triangle → noise shimmer
         0, 50, LFO_TARGET_PITCH, 15,      // LFO2: slow pitch arp; EuclTun=0
         8, 0,
-        RESONANT_MODE_HIGHPASS, 80, 50, 70,
+        RESONANT_MODE_HIGHPASS, 80,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -349,7 +345,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 8,  LFO_TARGET_PITCH, -40,  // LFO1: slow ramp → pitch sag after hit
         0, 0,  LFO_TARGET_NONE, 0,
         128 + 110, 0,                  // EnvShape: char=1(Gong) + env=110 (long decay)
-        RESONANT_MODE_PEAK, 0, 0, 0,
+        RESONANT_MODE_PEAK, 0,
         {ENGINE_METAL, ENGINE_METAL, ENGINE_METAL, ENGINE_METAL}
     },
 
@@ -364,7 +360,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 12, LFO_TARGET_INDEX, 60,   // LFO1: slow ramp → brightness decay
         0, 0,  LFO_TARGET_NONE, 0,     // EuclTun=0 (Off)
         128 + 100, 0,                  // EnvShape: char=1(Gong) + env=100 (long)
-        RESONANT_MODE_LOWPASS, 0, 0, 0,
+        RESONANT_MODE_LOWPASS, 0,
         {ENGINE_METAL, ENGINE_METAL, ENGINE_METAL, ENGINE_METAL}
     },
 
@@ -379,7 +375,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         0, 40, LFO_TARGET_NOISE_MIX, 70, // LFO1: triangle → noise texture
         0, 6,  LFO_TARGET_PITCH, -20,     // LFO2: slow pitch drop; EuclTun=0
         128 + 60, 0,                      // EnvShape: char=1(Gong) + env=60 (medium)
-        RESONANT_MODE_BANDPASS, 0, 0, 0,
+        RESONANT_MODE_BANDPASS, 0,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -400,7 +396,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 12, LFO_TARGET_PITCH, -30,  // LFO1: slow ramp → falling pitch tail
         6, 0,  LFO_TARGET_NONE, 0,     // EuclTun=6 (Dim7 [0,3,6,9])
         30, 0,
-        RESONANT_MODE_LOWPASS, 30, 40, 20,
+        RESONANT_MODE_LOWPASS, 30,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -416,7 +412,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 18, LFO_TARGET_PITCH, -20,  // LFO1: ramp → slight pitch drop after hit
         4, 0,  LFO_TARGET_NONE, 0,     // EuclTun=4 (Whole [0,2,4,6])
         22, 0,
-        RESONANT_MODE_LOWPASS, 20, 35, 15,
+        RESONANT_MODE_LOWPASS, 20,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -433,7 +429,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         1, 30, LFO_TARGET_METAL_GATE, 90,  // LFO1: Ramp → open→closed gate
         0, 0,  LFO_TARGET_NONE, 0,         // EuclTun=0 (Off)
         10, 0,
-        RESONANT_MODE_HIGHPASS, 20, 50, 40,
+        RESONANT_MODE_HIGHPASS, 20,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     }
 
@@ -448,7 +444,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         35, 55, 70, 45,          // Perc is highly tuned
         1, 18, LFO_TARGET_PITCH, -10,
         4, 0,  LFO_TARGET_NONE, 0, // EuclTun = 4 (Whole Tone spread across 4 voices)
-        0, 0, 0, 100, 0, 0,
+        0, 0, 0, 100,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     },
 
@@ -462,7 +458,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         50, 80, 30, 20,          // Metal is bright
         3, 60, LFO_TARGET_METAL_GATE, 100, // LFO1: Square wave gating the Metal engine!
         0, 0, LFO_TARGET_NONE, 0,
-        0, 0, 0, 100, 0, 0,
+        0, 0, 0, 100,
         {ENGINE_KICK, ENGINE_SNARE, ENGINE_METAL, ENGINE_PERC}
     }
 };
