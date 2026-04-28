@@ -7,6 +7,7 @@
  * - clone placement
  * - pan law
  * - stereo scatter
+ * - Scatter: detachment / chaos / looseness of the ensemble
  *
  * The goal is to make the effect feel like multiple players rather than
  * a chorus or a smeared delay cloud.
@@ -14,13 +15,12 @@
 
 #include <arm_neon.h>
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <vector>
-
+#include "constants.h"
 #include "unit.h"
 #include "spatial_modes.h"
 
@@ -90,14 +90,15 @@ typedef struct {
 } clone_t;
 
 enum params {
-    k_clones = 0,              // 2..6 effective clones
+    k_clones = 0,              // 2,4,6,8,10 effective clones
     k_mode,                    // Tribal / Military / Angel
-    k_depth,                   // spread between arrivals
+    k_depth,                   // time spread between arrivals
     k_rate,                    // wobble rate
-    k_spread,                  // stereo spread
+    k_spread,                  // stereo width
     k_mix,                     // wet/dry
     k_wobble,                  // detune / timing wobble depth
-    k_attack_softening,        // soften followers
+    k_scatter,                 // looseness / detachment / chaos
+    k_attack_softening,        // soften later clones
     k_total,
 };
 
@@ -120,18 +121,19 @@ public:
     inline void Render(const float* in, float* out, size_t frames);
 
 private:
-    static constexpr int kMaxClones = CLONE_MAX;
+    static constexpr int kMaxClones = MAX_CLONES;
     static constexpr int kCrossfadeSamples = 128;
 
     void rebuild_profile();
     void randomize_hit();
-    void set_clone_count(int value);
+    void set_clone_count_index(int index);
     void set_mode(spatial_mode_t mode);
     void set_depth(float norm);
     void set_rate(float norm);
     void set_spread(float norm);
     void set_mix(float norm);
     void set_wobble(float norm);
+    void set_scatter(float norm);
     void set_attack_softening(float norm);
 
     float process_one(float in_l, float in_r, float& out_l, float& out_r);
@@ -147,6 +149,7 @@ private:
     bool is_mono_ = false;
 
     spatial_mode_t mode_ = MODE_TRIBAL;
+    int clone_set_index_ = CLONE_SET_4;
     int clone_count_ = CLONE_DEFAULT;
 
     int8_t params_[k_total] = {};
@@ -157,6 +160,7 @@ private:
     float spread_ = 0.80f;
     float mix_ = 0.35f;
     float wobble_ = 0.25f;
+    float scatter_ = 0.20f;
     float soft_atk_ = 0.20f;
 
     clone_t clones_[kMaxClones]{};
@@ -167,4 +171,5 @@ private:
 
     uint32_t rng_state_ = 0x9E3779B9u;
     float hit_jitter_ms_ = 0.0f;
+    bool pending_profile_rebuild_ = true;
 };

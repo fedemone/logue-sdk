@@ -3,14 +3,14 @@
  * @file spatial_modes.h
  * @brief Spatial mode definitions for the percussion ensemble spatializer.
  *
- * The effect is intentionally not a classic chorus. It is a micro-ensemble
- * model that turns one percussion hit into a small group of staggered players.
+ * This effect is deliberately not a chorus. It is a micro-ensemble model:
+ * one leader hit plus staggered, darker, quieter followers.
  *
- * Each mode defines:
- * - clone placement
- * - pan law
- * - stereo scatter behavior
- * - spectral profile
+ * Clone counts are quantized to a five-step family:
+ *   2, 4, 6, 8, 10
+ *
+ * Scatter is a dedicated detachment control:
+ * it increases time jitter, spatial randomness, and follower looseness.
  */
 
 #include <cstdint>
@@ -28,27 +28,32 @@ typedef enum {
     PAN_MODEL_SCATTER = 2,
 } pan_model_t;
 
+static constexpr int kCloneValues[5] = { 2, 4, 6, 8, 10 };
+
 enum {
-    CLONE_MIN = 2,
-    CLONE_MAX = 6,
-    CLONE_DEFAULT = 4,
+    CLONE_SET_2   = 0,
+    CLONE_SET_4   = 1,
+    CLONE_SET_6   = 2,
+    CLONE_SET_8   = 3,
+    CLONE_SET_10  = 4,
+    CLONE_SET_CNT = 5,
 };
 
 typedef struct {
-    float delay_ms[CLONE_MAX];      // base onset for each follower
-    float gain[CLONE_MAX];          // per-clone level
-    float pan_x[CLONE_MAX];         // pan positions in [-1,1]
-    float pan_l[CLONE_MAX];         // per-clone left gain
-    float pan_r[CLONE_MAX];         // per-clone right gain
-    float hp_hz;                    // mode low-cut floor
-    float lp_hz;                    // mode high-cut ceiling
-    float jitter_ms;                // per-hit random timing variation
-    float attack_soften;            // 0..1 softens later clones
-    float spread;                   // stereo width 0..1
-    float wobble_ms;                // micro detune / timing wobble
-    float pan_exponent;             // mode-specific pan law
-    float scatter_amount;           // mode-specific spatial randomness
-    pan_model_t pan_model;          // circle / line / scatter
+    float delay_ms[10];
+    float gain[10];
+    float pan_x[10];
+    float pan_l[10];
+    float pan_r[10];
+    float hp_hz;
+    float lp_hz;
+    float jitter_ms;
+    float attack_soften;
+    float spread;
+    float wobble_ms;
+    float pan_exponent;
+    float scatter_amount;
+    pan_model_t pan_model;
 } spatial_profile_t;
 
 static inline float clamp01f(float x) {
@@ -57,8 +62,4 @@ static inline float clamp01f(float x) {
 
 static inline float clampf(float x, float lo, float hi) {
     return x < lo ? lo : (x > hi ? hi : x);
-}
-
-static inline float signf(float x) {
-    return (x > 0.0f) - (x < 0.0f);
 }

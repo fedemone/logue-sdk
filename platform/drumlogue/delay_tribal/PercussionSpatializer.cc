@@ -45,6 +45,8 @@ static inline float32x4_t fast_sqrtq(float32x4_t x) {
 PercussionSpatializer::PercussionSpatializer() {
     std::memset(params_, 0, sizeof(params_));
     std::memset(last_params_, 0, sizeof(last_params_));
+    clone_set_index_ = CLONE_SET_4;
+    clone_count_ = 4;
     rebuild_profile();
 }
 
@@ -75,20 +77,21 @@ inline void PercussionSpatializer::Reset() {
     rebuild_profile();
 }
 
-void PercussionSpatializer::set_clone_count(int value) {
-    clone_count_ = fmax(CLONE_MIN, fmin(CLONE_MAX, value));
-    rebuild_profile();
+void PercussionSpatializer::set_clone_count_index(int index) {
+    clone_set_index_ = fmax(0, fmin(CLONE_SET_CNT - 1, index));
+    clone_count_ = kCloneValues[clone_set_index_];
+    pending_profile_rebuild_ = true;
 }
 
 void PercussionSpatializer::set_mode(spatial_mode_t mode) {
     if (mode < MODE_TRIBAL || mode >= MODE_COUNT) mode = MODE_TRIBAL;
     mode_ = mode;
-    rebuild_profile();
+    pending_profile_rebuild_ = true;
 }
 
 void PercussionSpatializer::set_depth(float norm) {
     depth_ = clamp01(norm);
-    rebuild_profile();
+    pending_profile_rebuild_ = true;
 }
 
 void PercussionSpatializer::set_rate(float norm) {
@@ -97,7 +100,7 @@ void PercussionSpatializer::set_rate(float norm) {
 
 void PercussionSpatializer::set_spread(float norm) {
     spread_ = clamp01(norm);
-    rebuild_profile();
+    pending_profile_rebuild_ = true;
 }
 
 void PercussionSpatializer::set_mix(float norm) {
@@ -106,12 +109,17 @@ void PercussionSpatializer::set_mix(float norm) {
 
 void PercussionSpatializer::set_wobble(float norm) {
     wobble_ = clamp01(norm);
-    rebuild_profile();
+    pending_profile_rebuild_ = true;
+}
+
+void PercussionSpatializer::set_scatter(float norm) {
+    scatter_ = clamp01(norm);
+    pending_profile_rebuild_ = true;
 }
 
 void PercussionSpatializer::set_attack_softening(float norm) {
     soft_atk_ = clamp01(norm);
-    rebuild_profile();
+    pending_profile_rebuild_ = true;
 }
 
 void PercussionSpatializer::randomize_hit() {
@@ -125,17 +133,26 @@ void PercussionSpatializer::randomize_hit() {
 
 static float mode_pan_exponent(spatial_mode_t mode) {
     switch (mode) {
-        case MODE_TRIBAL:   return 0.92f;
+        case MODE_TRIBAL:   return 0.90f;
         case MODE_MILITARY: return 1.12f;
         case MODE_ANGEL:    return 0.78f;
-        default:            return 0.95f;
+        default:            return 0.96f;
+    }
+}
+
+static pan_model_t mode_pan_model(spatial_mode_t mode) {
+    switch (mode) {
+        case MODE_TRIBAL:   return PAN_MODEL_CIRCLE;
+        case MODE_MILITARY: return PAN_MODEL_LINE;
+        case MODE_ANGEL:    return PAN_MODEL_SCATTER;
+        default:            return PAN_MODEL_CIRCLE;
     }
 }
 
 void PercussionSpatializer::rebuild_profile() {
-    static const float tribal[CLONE_MAX]   = { 18.f, 24.f, 31.f, 39.f, 48.f, 58.f };
-    static const float military[CLONE_MAX] = { 12.f, 16.f, 21.f, 27.f, 34.f, 42.f };
-    static const float angel[CLONE_MAX]    = { 16.f, 23.f, 31.f, 40.f, 50.f, 61.f };
+    static const float tribal[MAX_CLONES]   = { 18.f, 24.f, 31.f, 39.f, 48.f, 58.f, 67.f, 77.f, 88.f, 100.f };
+    static const float military[MAX_CLONES] = { 12.f, 16.f, 21.f, 27.f, 34.f, 42.f, 51.f, 61.f, 72.f, 84.f };
+    static const float angel[MAX_CLONES]    = { 16.f, 23.f, 31.f, 40.f, 50.f, 61.f, 73.f, 86.f, 100.f, 115.f };
 
     const float* base = tribal;
     if (mode_ == MODE_MILITARY) base = military;
@@ -146,10 +163,8 @@ void PercussionSpatializer::rebuild_profile() {
     profile_.jitter_ms = 0.8f + depth_ * 3.2f;
     profile_.attack_soften = soft_atk_;
     profile_.pan_exponent = mode_pan_exponent(mode_);
-    profile_.pan_model = (mode_ == MODE_TRIBAL) ? PAN_MODEL_CIRCLE
-                        : (mode_ == MODE_MILITARY) ? PAN_MODEL_LINE
-                                                   : PAN_MODEL_SCATTER;
-    profile_.scatter_amount = (mode_ == MODE_ANGEL) ? 0.42f : (mode_ == MODE_TRIBAL ? 0.15f : 0.08f);
+    profile_.pan_model = mode_pan_model(mode_);
+    profile_.scatter_amount = (mode_ == MODE_ANGEL ? 0.30f : 0.10f) + scatter_ * (mode_ == MODE_ANGEL ? 0.70f : 0.40f);
 
     if (mode_ == MODE_TRIBAL) {
         profile_.hp_hz = 60.0f;
@@ -165,17 +180,17 @@ void PercussionSpatializer::rebuild_profile() {
     for (int i = 0; i < clone_count_; ++i) {
         const float t = (clone_count_ <= 1) ? 0.0f : (float)i / (float)(clone_count_ - 1);
 
-        clones_[i].delay_ms = base[i] + (depth_ * 26.0f * t);
+        clones_[i].delay_ms = base[i] * (0.65f + 0.55f * depth_) + (depth_ * 22.0f * t);
         clones_[i].gain = 1.0f - 0.12f * (float)i;
         clones_[i].gain *= (i == 0) ? 1.0f : (0.72f + 0.28f * (1.0f - soft_atk_));
-        clones_[i].wobble_depth_ms = profile_.wobble_ms * (0.25f + 0.25f * t);
-        clones_[i].jitter_ms = profile_.jitter_ms * (0.20f + 0.15f * t);
+        clones_[i].wobble_depth_ms = profile_.wobble_ms * (0.20f + 0.30f * t);
+        clones_[i].jitter_ms = profile_.jitter_ms * (0.15f + 0.25f * t);
         clones_[i].active = true;
 
         float base_x = 0.0f;
         switch (profile_.pan_model) {
             case PAN_MODEL_CIRCLE: {
-                float arc = (t * 2.0f - 1.0f) * 1.57079632679f;
+                float arc = t * M_PI - 1.57079632679f;  // -pi/2, +pi/2
                 base_x = fastersinfullf(arc);
                 break;
             }
@@ -237,17 +252,19 @@ void PercussionSpatializer::rebuild_profile() {
         clones_[i].hp_coeff = hp;
         clones_[i].lp_coeff = lp;
     }
+
+    pending_profile_rebuild_ = false;
 }
 
 inline void PercussionSpatializer::setParameter(uint8_t index, int32_t value) {
     if (index >= k_total) return;
     params_[index] = (int8_t)value;
 
-    const float norm = clamp01((float)value / 100.0f);
+    const float norm = clamp01((float)value * 0.01f);
 
     switch (index) {
         case k_clones:
-            set_clone_count(CLONE_MIN + fmax(0, fmin(CLONE_MAX - CLONE_MIN, value)));
+            set_clone_count_index(fmax(0, fmin(CLONE_SET_CNT - 1, value)));
             break;
         case k_mode:
             set_mode((spatial_mode_t)fmax(0, fmin((int)MODE_COUNT - 1, value)));
@@ -267,6 +284,9 @@ inline void PercussionSpatializer::setParameter(uint8_t index, int32_t value) {
         case k_wobble:
             set_wobble(norm);
             break;
+        case k_scatter:
+            set_scatter(norm);
+            break;
         case k_attack_softening:
             set_attack_softening(norm);
             break;
@@ -281,10 +301,15 @@ inline int32_t PercussionSpatializer::getParameterValue(uint8_t index) const {
 }
 
 inline const char* PercussionSpatializer::getParameterStrValue(uint8_t index, int32_t value) const {
-    static const char* mode_names[] = { "Tribal", "Military", "Angel" };
+    static const char* mode_names[] = { "Tribale", "Militare", "Angeli" };
+    static const char* clone_names[] = { "2cloni", "4cloni", "6cloni", "8cloni", "10cloni" };
+
     switch (index) {
         case k_mode:
             if (value >= 0 && value < MODE_COUNT) return mode_names[value];
+            break;
+        case k_clones:
+            if (value >= 0 && value < CLONE_SET_CNT) return clone_names[value];
             break;
         default:
             break;
@@ -297,6 +322,8 @@ inline const uint8_t* PercussionSpatializer::getParameterBmpValue(uint8_t, int32
 }
 
 float PercussionSpatializer::process_one(float in_l, float in_r, float& out_l, float& out_r) {
+    if (pending_profile_rebuild_) rebuild_profile();
+
     delay_.push(in_l, in_r);
 
     const float leader_l = in_l;
@@ -398,6 +425,9 @@ float PercussionSpatializer::process_one(float in_l, float in_r, float& out_l, f
             dms += wobble;
         }
 
+        float scatter_jit = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * (profile_.scatter_amount * 2.4f) * (0.25f + 0.75f * (float)i / fmax(1, clone_count_ - 1));
+        dms += scatter_jit;
+
         float delay_samples = dms * (float)sample_rate_ * 0.001f;
         float dl = 0.0f, dr = 0.0f;
         delay_.read_delay(delay_samples, dl, dr);
@@ -412,9 +442,15 @@ float PercussionSpatializer::process_one(float in_l, float in_r, float& out_l, f
         float hp_mix = 1.0f / (1.0f + hp * 0.0012f);
         float lp_mix = 1.0f - fmin(0.85f, lp / 12000.0f);
 
-        float follower_gain = c.gain * soft * hp_mix * lp_mix;
-        wet_l += dl * follower_gain * c.pan_l;
-        wet_r += dr * follower_gain * c.pan_r;
+        float detachment = 1.0f - profile_.scatter_amount * (0.10f + 0.35f * follower);
+        detachment = fmax(0.35f, detachment);
+
+        float follower_gain = c.gain * soft * detachment;
+        float follower_l = dl * follower_gain * hp_mix * lp_mix;
+        float follower_r = dr * follower_gain * hp_mix * lp_mix;
+
+        wet_l += follower_l * c.pan_l;
+        wet_r += follower_r * c.pan_r;
     }
 
     out_l = leader_l * (1.0f - mix_) + wet_l * mix_;

@@ -15,20 +15,29 @@ This prevents the sound from collapsing into muddy chorus smear.
 
 ### Clone philosophy
 
-The current design uses a **maximum of 6 clones**, but the effective number of audible players is usually smaller. Six is the upper limit, not the default texture. For percussion, the ear reads onset spacing and spectral thinning more strongly than dense modulation.
+The current design uses a **five-step clone family**:
+
+- 2
+- 4
+- 6
+- 8
+- 10
+
+Ten is the upper density limit, not the default texture. For percussion, the ear reads onset spacing and spectral thinning more strongly than dense modulation.
 
 ### Parameter table
 
 | ID | Name | Range | Role |
 |----|------|-------|------|
-| 0 | Clones | 2-6 | Number of ensemble followers |
+| 0 | Clones | 0-4 | Selects 2 / 4 / 6 / 8 / 10 clones |
 | 1 | Mode | 0-2 | 0=Tribal, 1=Military, 2=Angel |
 | 2 | Depth | 0-100% | Arrival-time spread between clones |
 | 3 | Rate | 0.0-10.0 Hz | Wobble rate / decorrelation motion |
 | 4 | Spread | 0-100% | Stereo width of the ensemble |
 | 5 | Mix | 0-100% | Wet/dry blend |
 | 6 | Wobble | 0-100% | Micro detune / timing wobble depth |
-| 7 | SoftAtk | 0-100% | Softens later clone attacks |
+| 7 | Scatter | 0-100% | Detachment / chaos / ensemble looseness |
+| 8 | SoftAtk | 0-100% | Softens later clone attacks |
 
 ### Mode behavior
 
@@ -54,6 +63,18 @@ Each mode controls three things at once:
    - Tribal adds gentle motion
    - Military keeps scatter minimal
    - Angel injects stronger random spatial variation
+
+### Scatter control
+
+Scatter is the new detachment parameter.
+
+It increases:
+- time jitter
+- spatial randomness
+- follower looseness
+- perceived distance between the players
+
+It is the control that turns a tight flam into a more chaotic crowd-like drumming feel.
 
 ### Why it works
 

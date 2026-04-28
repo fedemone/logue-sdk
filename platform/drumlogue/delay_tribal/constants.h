@@ -8,7 +8,7 @@
 
 // Constants for NEON vectorization
 constexpr int NEON_LANES = 4;
-constexpr int MAX_CLONES = 16;
+constexpr int MAX_CLONES = 10;
 constexpr int CLONE_GROUPS = MAX_CLONES / NEON_LANES;
 constexpr int CROSSFADE_SAMPLES = 480;  // 10ms @ 48kHz
 
@@ -54,7 +54,7 @@ constexpr float FILTER_Q_BESSEL = 0.5f;
 
 // Parameter ranges (as per header.c)
 constexpr int PARAM_CLONES_MIN = 0;
-constexpr int PARAM_CLONES_MAX = 3;
+constexpr int PARAM_CLONES_MAX = 5;
 constexpr int PARAM_MODE_MIN = 0;
 constexpr int PARAM_MODE_MAX = 2;
 constexpr int PARAM_DEPTH_MIN = 0;
