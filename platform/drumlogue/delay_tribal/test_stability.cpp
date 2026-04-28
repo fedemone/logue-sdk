@@ -41,7 +41,7 @@
 #define SAMPLE_RATE    48000.0f
 #define DELAY_MAX      8192        /* power of 2 ≥ 23ms * 48kHz for max offsets */
 #define DELAY_MASK     (DELAY_MAX - 1)
-#define MAX_CLONES     16
+#define MAX_CLONES     10
 #define CLONE_GROUPS   4           /* NEON_LANES=4, groups = MAX_CLONES/4 */
 #define TEST_SECONDS   10
 #define TEST_SAMPLES   (TEST_SECONDS * (int)SAMPLE_RATE)

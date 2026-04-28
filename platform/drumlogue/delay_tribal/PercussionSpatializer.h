@@ -1,16 +1,18 @@
 #pragma once
 /**
- * @file PercussionSpatializer.h
- * @brief Percussion micro-ensemble effect for Korg Drumlogue.
+ * PercussionSpatializer.h
  *
- * This version explicitly separates the three spatial concepts:
- * - clone placement
- * - pan law
- * - stereo scatter
- * - Scatter: detachment / chaos / looseness of the ensemble
+ * Percussion micro-ensemble effect for Korg Drumlogue.
  *
- * The goal is to make the effect feel like multiple players rather than
- * a chorus or a smeared delay cloud.
+ * Main ideas:
+ * - clone family: 2, 4, 6, 8, 10
+ * - three modes: Tribal / Military / Angel
+ * - Scatter controls looseness, detachment, and chaos
+ * - NEON batches process clones in x4, with x2 / scalar tail
+ * - render loop can be unrolled by 4 frames if desired at call site
+ *
+ * The effect is intentionally not a chorus. It is a leader + followers
+ * ensemble model where later clones are darker, softer, and more detached.
  */
 
 #include <arm_neon.h>
@@ -20,9 +22,11 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
 #include "constants.h"
 #include "unit.h"
 #include "spatial_modes.h"
+#include "float_math.h"
 
 #ifndef fast_inline
 #define fast_inline inline __attribute__((always_inline))
@@ -81,8 +85,8 @@ typedef struct {
     float pan_x;
     float pan_l;
     float pan_r;
-    float hp_coeff;
-    float lp_coeff;
+    float hp_hz;
+    float lp_hz;
     float wobble_phase;
     float wobble_depth_ms;
     float jitter_ms;
@@ -90,15 +94,15 @@ typedef struct {
 } clone_t;
 
 enum params {
-    k_clones = 0,              // 2,4,6,8,10 effective clones
+    k_clones = 0,              // 0..4 -> 2/4/6/8/10
     k_mode,                    // Tribal / Military / Angel
-    k_depth,                   // time spread between arrivals
+    k_depth,                   // arrival-time spread
     k_rate,                    // wobble rate
     k_spread,                  // stereo width
     k_mix,                     // wet/dry
     k_wobble,                  // detune / timing wobble depth
     k_scatter,                 // looseness / detachment / chaos
-    k_attack_softening,        // soften later clones
+    k_attack_softening,        // softens later clones
     k_total,
 };
 
@@ -122,7 +126,6 @@ public:
 
 private:
     static constexpr int kMaxClones = MAX_CLONES;
-    static constexpr int kCrossfadeSamples = 128;
 
     void rebuild_profile();
     void randomize_hit();
@@ -136,11 +139,9 @@ private:
     void set_scatter(float norm);
     void set_attack_softening(float norm);
 
-    float process_one(float in_l, float in_r, float& out_l, float& out_r);
+    float process_frame(float in_l, float in_r, float& out_l, float& out_r);
 
     static fast_inline float clamp01(float x) { return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x); }
-    static fast_inline float eqpow_l(float x) { return fastercosfullf(x * 1.57079632679f); }
-    static fast_inline float eqpow_r(float x) { return fastersinfullf(x * 1.57079632679f); }
 
 private:
     delay_line_t delay_;
@@ -150,7 +151,7 @@ private:
 
     spatial_mode_t mode_ = MODE_TRIBAL;
     int clone_set_index_ = CLONE_SET_4;
-    int clone_count_ = CLONE_DEFAULT;
+    int clone_count_ = 4;
 
     int8_t params_[k_total] = {};
     int8_t last_params_[k_total] = {};
@@ -166,10 +167,23 @@ private:
     clone_t clones_[kMaxClones]{};
     spatial_profile_t profile_{};
 
-    float state_l_ = 0.0f;
-    float state_r_ = 0.0f;
-
     uint32_t rng_state_ = 0x9E3779B9u;
     float hit_jitter_ms_ = 0.0f;
     bool pending_profile_rebuild_ = true;
+    float prev_mag_ = 0.0f;
 };
+
+static fast_inline float horizontal_sum4(float32x4_t v) {
+#if defined(__aarch64__)
+    return vaddvq_f32(v);
+#else
+    float32x2_t s0 = vpadd_f32(vget_low_f32(v), vget_high_f32(v));
+    float32x2_t s1 = vpadd_f32(s0, s0);
+    return vget_lane_f32(s1, 0);
+#endif
+}
+
+static fast_inline float horizontal_sum2(float32x2_t v) {
+    float32x2_t s = vpadd_f32(v, v);
+    return vget_lane_f32(s, 0);
+}

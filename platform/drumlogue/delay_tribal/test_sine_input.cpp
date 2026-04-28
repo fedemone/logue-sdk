@@ -35,7 +35,7 @@
 #define SAMPLE_RATE_F    48000.0f
 #define DELAY_MAX        4096       // DELAY_MAX_SAMPLES in constants.h
 #define DELAY_MASK       (DELAY_MAX - 1)
-#define MAX_CLONES       16
+#define MAX_CLONES       10
 #define CLONE_GROUPS     4
 #define NEON_LANES       4
 #define READ_OFFSET      32         // base_read = write_ptr - 32
