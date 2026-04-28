@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .version     = 0x00030000U,   // v3.0.0 - new design
     .name        = "Tribale",
     .num_presets = 0,
-    .num_params  = 8,
+    .num_params  = 9,
 
     .params = {
         // Page 1

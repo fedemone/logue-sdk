@@ -51,6 +51,7 @@ inline void PercussionSpatializer::Reset() {
     delay_.clear();
     rng_state_ = 0x9E3729B9u;
     prev_mag_ = 0.0f;
+    smoothing_remaining_ = 0;
     randomize_hit();
     rebuild_profile();
 }
@@ -73,7 +74,8 @@ void PercussionSpatializer::set_depth(float norm) {
 }
 
 void PercussionSpatializer::set_rate(float norm) {
-    rate_ = 0.05f + clamp01(norm) * 9.95f;
+    rate_target_ = 0.05f + clamp01(norm) * 9.95f;
+    smoothing_remaining_ = kSmoothFrames;
 }
 
 void PercussionSpatializer::set_spread(float norm) {
@@ -82,21 +84,48 @@ void PercussionSpatializer::set_spread(float norm) {
 }
 
 void PercussionSpatializer::set_mix(float norm) {
-    mix_ = clamp01(norm);
+    mix_target_ = clamp01(norm);
+    smoothing_remaining_ = kSmoothFrames;
 }
 
 void PercussionSpatializer::set_wobble(float norm) {
-    wobble_ = clamp01(norm);
-    pending_profile_rebuild_ = true;
+    wobble_target_ = clamp01(norm);
+    smoothing_remaining_ = kSmoothFrames;
 }
 
 void PercussionSpatializer::set_scatter(float norm) {
-    scatter_ = clamp01(norm);
-    pending_profile_rebuild_ = true;
+    scatter_target_ = clamp01(norm);
+    smoothing_remaining_ = kSmoothFrames;
 }
 
 void PercussionSpatializer::set_attack_softening(float norm) {
-    soft_atk_ = clamp01(norm);
+    soft_atk_target_ = clamp01(norm);
+    smoothing_remaining_ = kSmoothFrames;
+}
+
+void PercussionSpatializer::advance_smoothing() {
+    if (smoothing_remaining_ == 0) return;
+
+    auto step = [this](float& cur, float tgt) {
+        cur += (tgt - cur) / (float)fmax<uint32_t>(1, smoothing_remaining_);
+    };
+
+    step(rate_, rate_target_);
+    step(mix_, mix_target_);
+    step(wobble_, wobble_target_);
+    step(scatter_, scatter_target_);
+    step(soft_atk_, soft_atk_target_);
+
+    --smoothing_remaining_;
+
+    if (smoothing_remaining_ == 0) {
+        rate_ = rate_target_;
+        mix_ = mix_target_;
+        wobble_ = wobble_target_;
+        scatter_ = scatter_target_;
+        soft_atk_ = soft_atk_target_;
+    }
+
     pending_profile_rebuild_ = true;
 }
 
@@ -285,9 +314,9 @@ static fast_inline void mix_clone_batch4(const clone_t* clones,
                                          uint32_t& rng_state,
                                          float& wet_l,
                                          float& wet_r) {
-    alignas(16) float dl[4], dr[4], gain[4], pan_l[4], pan_r[4], hp_mix[4], lp_mix[4], soft[4];
+    alignas(16) float dl[NEON_LANES], dr[NEON_LANES], gain[NEON_LANES], pan_l[NEON_LANES], pan_r[NEON_LANES], hp_mix[NEON_LANES], lp_mix[NEON_LANES];
 
-    for (int lane = 0; lane < 4; ++lane) {
+    for (int lane = 0; lane < NEON_LANES; ++lane) {
         const clone_t& c = clones[base + lane];
         float dms = c.delay_ms + hit_jitter_ms;
         if (base + lane > 0) {
@@ -313,10 +342,9 @@ static fast_inline void mix_clone_batch4(const clone_t* clones,
     float32x4_t vpr = vld1q_f32(pan_r);
     float32x4_t vhp = vld1q_f32(hp_mix);
     float32x4_t vlp = vld1q_f32(lp_mix);
-    float32x4_t vsof = vld1q_f32(soft);
 
-    float32x4_t vl = vmulq_f32(vmulq_f32(vdl, vgain), vmulq_f32(vpl, vmulq_f32(vhp, vmulq_f32(vlp, vsof))));
-    float32x4_t vr = vmulq_f32(vmulq_f32(vdr, vgain), vmulq_f32(vpr, vmulq_f32(vhp, vmulq_f32(vlp, vsof))));
+    float32x4_t vl = vmulq_f32(vmulq_f32(vdl, vgain), vmulq_f32(vpl, vmulq_f32(vhp, vlp)));
+    float32x4_t vr = vmulq_f32(vmulq_f32(vdr, vgain), vmulq_f32(vpr, vmulq_f32(vhp, vlp)));
 
     wet_l += horizontal_sum4(vl);
     wet_r += horizontal_sum4(vr);
@@ -332,9 +360,9 @@ static fast_inline void mix_clone_batch2(const clone_t* clones,
                                          uint32_t& rng_state,
                                          float& wet_l,
                                          float& wet_r) {
-    alignas(16) float dl[2], dr[2], gain[2], pan_l[2], pan_r[2], hp_mix[2], lp_mix[2], soft[2];
+    alignas(16) float dl[HALF_LANES], dr[HALF_LANES], gain[HALF_LANES], pan_l[HALF_LANES], pan_r[HALF_LANES], hp_mix[HALF_LANES], lp_mix[HALF_LANES];
 
-    for (int lane = 0; lane < 2; ++lane) {
+    for (int lane = 0; lane < HALF_LANES; ++lane) {
         const clone_t& c = clones[base + lane];
         float dms = c.delay_ms + hit_jitter_ms;
         if (base + lane > 0) {
@@ -360,23 +388,22 @@ static fast_inline void mix_clone_batch2(const clone_t* clones,
     float32x2_t vpr = vld1_f32(pan_r);
     float32x2_t vhp = vld1_f32(hp_mix);
     float32x2_t vlp = vld1_f32(lp_mix);
-    float32x2_t vsof = vld1_f32(soft);
 
-    float32x2_t vl = vmul_f32(vmul_f32(vdl, vgain), vmul_f32(vpl, vmul_f32(vhp, vmul_f32(vlp, vsof))));
-    float32x2_t vr = vmul_f32(vmul_f32(vdr, vgain), vmul_f32(vpr, vmul_f32(vhp, vmul_f32(vlp, vsof))));
+    float32x2_t vl = vmul_f32(vmul_f32(vdl, vgain), vmul_f32(vpl, vmul_f32(vhp, vlp)));
+    float32x2_t vr = vmul_f32(vmul_f32(vdr, vgain), vmul_f32(vpr, vmul_f32(vhp, vlp)));
 
     wet_l += horizontal_sum2(vl);
     wet_r += horizontal_sum2(vr);
 }
 
 float PercussionSpatializer::process_frame(float in_l, float in_r, float& out_l, float& out_r) {
+    advance_smoothing();
     if (pending_profile_rebuild_) rebuild_profile();
 
     delay_.push(in_l, in_r);
 
     float wet_l = 0.0f;
     float wet_r = 0.0f;
-    const float inv_12000 = 1.0f / 12000.0f;
     int i = 0;
 
     for (; i + 3 < clone_count_; i += 4) {
@@ -398,11 +425,11 @@ float PercussionSpatializer::process_frame(float in_l, float in_r, float& out_l,
         delay_.read_delay(dms * (float)sample_rate_ * 0.001f, dl, dr);
 
         const float follower = (float)i / (float)fmax(1, clone_count_ - 1);
-        float soft = 1.0f - profile_.attack_soften * (0.35f + 0.65f * follower);
+        float soft = 1.0f - soft_atk_ * (0.35f + 0.65f * follower);
         soft = fmax(0.08f, soft);
         float hp_mix = 1.0f / (1.0f + c.hp_hz * 0.0012f);
         float lp_mix = 1.0f - fmin(0.85f, c.lp_hz * inv_12000);
-        float detachment = fmax(0.35f, 1.0f - profile_.scatter_amount * (0.10f + 0.35f * follower));
+        float detachment = fmax(0.35f, 1.0f - scatter_ * (0.10f + 0.35f * follower));
         float follower_gain = c.gain * soft * detachment;
         wet_l += dl * follower_gain * hp_mix * lp_mix * c.pan_l;
         wet_r += dr * follower_gain * hp_mix * lp_mix * c.pan_r;

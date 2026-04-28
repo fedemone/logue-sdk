@@ -8,6 +8,7 @@
 
 // Constants for NEON vectorization
 constexpr int NEON_LANES = 4;
+constexpr int HALF_LANES = 2;
 constexpr int MAX_CLONES = 10;
 constexpr int CLONE_GROUPS = MAX_CLONES / NEON_LANES;
 constexpr int CROSSFADE_SAMPLES = 480;  // 10ms @ 48kHz
@@ -69,3 +70,5 @@ constexpr int PARAM_WOBBLE_MIN = 0;
 constexpr int PARAM_WOBBLE_MAX = 100;
 constexpr int PARAM_SOFTEN_MIN = 0;
 constexpr int PARAM_SOFTEN_MAX = 100;
+
+const float inv_12000 = 1.0f / 12000.0f;

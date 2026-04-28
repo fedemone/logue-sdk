@@ -126,6 +126,8 @@ public:
 
 private:
     static constexpr int kMaxClones = MAX_CLONES;
+    static constexpr int kCrossfadeSamples = 128;
+    static constexpr uint32_t kSmoothFrames = 480;
 
     void rebuild_profile();
     void randomize_hit();
@@ -139,6 +141,7 @@ private:
     void set_scatter(float norm);
     void set_attack_softening(float norm);
 
+    void advance_smoothing();
     float process_frame(float in_l, float in_r, float& out_l, float& out_r);
 
     static fast_inline float clamp01(float x) { return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x); }
@@ -157,12 +160,15 @@ private:
     int8_t last_params_[k_total] = {};
 
     float depth_ = 0.50f;
-    float rate_ = 1.00f;
     float spread_ = 0.80f;
-    float mix_ = 0.35f;
-    float wobble_ = 0.25f;
-    float scatter_ = 0.20f;
-    float soft_atk_ = 0.20f;
+
+    float rate_ = 1.00f;       float rate_target_ = 1.00f;
+    float mix_ = 0.35f;        float mix_target_ = 0.35f;
+    float wobble_ = 0.25f;     float wobble_target_ = 0.25f;
+    float scatter_ = 0.20f;    float scatter_target_ = 0.20f;
+    float soft_atk_ = 0.20f;   float soft_atk_target_ = 0.20f;
+
+    uint32_t smoothing_remaining_ = 0;
 
     clone_t clones_[kMaxClones]{};
     spatial_profile_t profile_{};
@@ -173,6 +179,7 @@ private:
     float prev_mag_ = 0.0f;
 };
 
+// ---- inline helpers for batched mixing ----
 static fast_inline float horizontal_sum4(float32x4_t v) {
 #if defined(__aarch64__)
     return vaddvq_f32(v);
