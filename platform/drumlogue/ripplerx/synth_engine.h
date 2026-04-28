@@ -55,6 +55,7 @@ static constexpr float limiter = 0.99f;
 static constexpr int kSquelchGuardSamples = 1000; // ~20 ms
 static constexpr float kSquelchThreshold = 0.0001f; // -80 dB
 static constexpr float k_log_2_of_200 = 7.643856f;
+static constexpr float k_log_0001 = -6.907755279f; // logf(0.001f) — T60→decay coefficient
 static constexpr float stage2_modal_amp_ratio_2 = 0.6f;
 static constexpr float silence_threshold = 1e-5f;
 
@@ -844,7 +845,7 @@ public:
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
-                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
+                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
             } else {
                 snprintf(nf_buf, sizeof(nf_buf), "%dHz", hz);
             }
@@ -855,7 +856,7 @@ public:
             int32_t hz = value * 10;
             if (hz >= 1000) {
                 // Show as kHz with one decimal place: 1000→"1.0kHz", 15000→"15.0kHz"
-                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
+                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
             } else {
                 snprintf(lc_buf, sizeof(lc_buf), "%dHz", hz);
             }
@@ -1213,7 +1214,7 @@ public:
         // - Kick pitch-envelope (delay-length sweep)
         // - Clarinet reed nonlinearity in exciter path
         auto init_modal_2mode = [&](float ratio2, float t60_1_ms, float t60_2_ms, float mix, float env1, float env2) {
-            float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f);    // approx 1 7 12
+            float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
             if (base_f < 20.0f) base_f = 20.0f;
             float f1 = fminf(base_f, 0.45f * default_sample_rate);
             float f2 = fminf(base_f * ratio2, 0.45f * default_sample_rate);
@@ -1222,15 +1223,15 @@ public:
             v.modal_pilot_enabled = true;
             v.modal_k_1 = 2.0f * cosf(w1);
             v.modal_k_2 = 2.0f * cosf(w2);
-            v.modal_y2_1 = 0.0f; v.modal_y1_1 = sinf(w1);    // TODO use flot_math.h approximation? fastersinfullf
-            v.modal_y2_2 = 0.0f; v.modal_y1_2 = sinf(w2);
+            v.modal_y2_1 = 0.0f; v.modal_y1_1 = fastersinfullf(w1);
+            v.modal_y2_2 = 0.0f; v.modal_y1_2 = fastersinfullf(w2);
             v.modal_norm_count = 0;
             v.modal_env_1 = env1 * v.current_velocity;
             v.modal_env_2 = env2 * v.current_velocity;
             float t60_1_s = 0.001f * t60_1_ms;
             float t60_2_s = 0.001f * t60_2_ms;
-            v.modal_decay_1 = (t60_1_s > 0.0f) ? expf(logf(0.001f) / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;    // TODO use flot_math.h approximation? fasterlogf, fasterexpf
-            v.modal_decay_2 = (t60_2_s > 0.0f) ? expf(logf(0.001f) / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+            v.modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
+            v.modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
             v.modal_mix = mix;
         };
 
@@ -1254,7 +1255,7 @@ public:
             v.reed_nl_drive = 1.8f;
         }
 #endif
-     }
+    }
 
     inline void NoteOff(uint8_t note) {
         for (int i = 0; i < NUM_VOICES; ++i) {
@@ -1552,7 +1553,7 @@ public:
                 if (voice.reed_nl_enabled) {
                     // Lightweight asymmetric waveshaper to emulate reed contact.
                     float x = exciter_sig * voice.reed_nl_drive;
-                    float y = (x >= 0.0f) ? tanhf(x) : (0.6f * tanhf(1.6f * x));    // TODO use float_math.h? fastertanhf?
+                    float y = (x >= 0.0f) ? fastertanhf(x) : (0.6f * fastertanhf(1.6f * x));
                     exciter_sig = (0.65f * exciter_sig) + (0.35f * y);
                 }
 #endif
