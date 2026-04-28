@@ -70,6 +70,7 @@ struct ExciterState {
 #ifdef ENABLE_PHASE_5_EXCITERS
     FastNoise noise_gen;
     FastEnvelope noise_env;
+    FastEnvelope noise_env_hi; // short high-band burst for snare/hat click
     FastEnvelope master_env; // Optional: To choke the whole voice on GateOff
 #endif
 
@@ -191,6 +192,12 @@ struct VoiceState {
     float modal_decay_1 = 0.9990f;
     float modal_decay_2 = 0.9985f;
     float modal_mix = 0.0f;
+    // Stage-2 kick pitch-envelope (delay sweep) and clarinet reed nonlinearity.
+    float pitch_env = 0.0f;
+    float pitch_env_decay = 1.0f;
+    float pitch_env_amt = 0.0f;
+    bool  reed_nl_enabled = false;
+    float reed_nl_drive = 1.0f;
 #endif
 };
 

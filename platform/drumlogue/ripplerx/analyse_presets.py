@@ -271,7 +271,7 @@ def t60_to_dkay(f0_hz, t60_target_s):
     log10g = -3.0 * N / (48000.0 * t60_target_s)
     g = 10.0 ** log10g
     # g = 0.85 + (Dkay/200)*0.149
-    dkay = (g - 0.85) / 0.149 * 200.0
+    dkay = (g - 0.85) / 0.149 * 200.0   # NOTE same as synth_engine.h, in case k_paramDkay. BE SURE IT'S ALIGNED
     return dkay, g
 
 

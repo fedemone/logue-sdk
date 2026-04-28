@@ -1844,6 +1844,9 @@ to the specific reference family that motivated it.
 Reviewer clarification:
 - This phase entry records a **measurement-only** scoped run over remaining mapped
   presets and threshold planning for the next pass.
+- In the corresponding commit (`c13a89e`), **no preset table constants were
+  changed** in `synth_engine.h`; only this progress log was updated with run
+  artifacts and handoff notes.
 - Any future "preset tuning" commit will be treated as incomplete unless it
   includes explicit preset-value diffs (or a written explanation that the run
   was analysis-only).
@@ -1871,3 +1874,212 @@ Snapshot:
   - add per-family thresholds for these presets
   - run family-isolated calibration passes with threshold-gated acceptance
   - prepare candidates for hardware A/B gate once pitch + stability criteria pass
+
+---
+
+## Phase 26: First-batch resemblance check (requested) [CURRENT]
+
+Goal:
+- Explicitly test whether the **first tuning batch** can be improved in a
+  measurable way (instead of assuming we must accept poor resemblance).
+
+Scope:
+- `Djambe,Taiko,Bongo,Conga,Marimba,Kalimba,Wodblk,Timpani`
+- Command used:
+  - `python3 batch_tune_runner.py --run-render --render-cmd "./run_test_render --preset {preset_idx} --note {note} --name {preset_name} --out {output_wav}" --preset-filter "Djambe,Taiko,Bongo,Conga,Marimba,Kalimba,Wodblk,Timpani" --auto-note-align ...`
+
+Change tested:
+- Added provisional per-preset note calibration for two first-batch presets in
+  tooling (not DSP constants):
+  - `Djambe: -12 st`
+  - `Conga: +19 st`
+
+Result:
+- Mean batch score improved from `100.824` -> `91.405` (`-9.419`).
+- Biggest gains were in Djambe/Conga sample pairs; several highly unpitched
+  samples (`Taiko`, `Bongo`, one `Wodblk`) remain difficult under current
+  pitch-sensitive metrics.
+
+Interpretation:
+- We are **not** forced to accept "non-physical" output as-is: even a limited,
+  reproducible tuning pass improved first-batch resemblance.
+- But we still need the next step for unpitched instruments: either
+  per-family metric weighting (reduce pitch dominance for noisy/transient
+  samples) and/or targeted DSP/preset edits for those specific presets.
+
+---
+
+## Phase 27: Per-family weighting + targeted preset DSP edits [CURRENT]
+
+Requested follow-up:
+- Update the presets themselves and apply per-family weighting for first-batch
+  unpitched instruments (`Taiko`, `Bongo`, `Wodblk`, membranes subset).
+
+Implemented changes:
+- Tooling (`batch_tune_runner.py`):
+  - Added explicit unpitched focus set and family-aware score shaping that
+    de-emphasizes unstable pitch terms and rewards timbre-trajectory agreement.
+- Presets (`synth_engine.h`) tuned for first-batch targets:
+  - `Djambe`, `Taiko`, `Wodblk`, `Conga`, `Bongo`
+  - Edits focused on attack/body balance, decay control, and noise-band
+    placement rather than global model changes.
+
+Validation run (same first-batch scope as Phase 26):
+- Baseline for comparison: `/tmp/batch_first_tuned2/batch_tuning_report.json`
+- Updated run: `/tmp/batch_first_familydsp/batch_tuning_report.json`
+
+Observed delta:
+- Mean **raw** score: `79.922` -> `75.928` (`-3.994`)
+- Mean **weighted** score: `91.405` -> `75.535` (`-15.870`)
+- Largest improvements were observed on:
+  - `Taiko-Hit.wav`
+  - `Woodblock.wav` / `WoodBlock1.wav`
+  - `Bongo_Conga_Mute4.wav`
+
+Conclusion:
+- Yes, the first batch can be moved toward better resemblance with concrete
+  preset edits + family-aware scoring; we are not blocked to a fixed
+  "non-physical" outcome.
+
+---
+
+## Phase 28: What to tune next (decision) [CURRENT]
+
+Decision:
+- **Do both, but sequentially**:
+  1) keep refining first-batch presets until they pass a stable gate,
+  2) then run the same iterative loop on the remaining mapped presets.
+
+Reasoning:
+- First-batch now has momentum and measurable score improvements, so it should
+  be brought to a stable accept/reject gate before broadening scope.
+- Expanding too early risks losing a clean baseline and mixes regressions from
+  two fronts.
+
+Operational update:
+- Added `--preset-group first_batch` to `batch_tune_runner.py` so the first
+  stage can be run consistently without hand-editing filters each time.
+- After first-batch gate stability, run remaining presets with either explicit
+  `--preset-filter` lists or no group filter.
+
+---
+
+## Phase 29: Remaining-batch iterative pass kickoff [CURRENT]
+
+Action taken:
+- Added `--preset-group remaining_batch` in tooling to formalize the second
+  stage scope.
+- Executed staged run:
+  - `python3 batch_tune_runner.py --run-render --preset-group remaining_batch --auto-note-align ...`
+  - artifacts:
+    - `/tmp/batch_remaining_stage29/batch_tuning_report.json`
+    - `/tmp/batch_remaining_stage29/batch_tuning_report.csv`
+
+Snapshot:
+- Pairs compared: `30`
+- Mean score: `88.160`
+- Family summary:
+  - `other`: f0 mean `62.72%` (threshold not assigned yet)
+  - `mallets`: f0 mean `9.30%` (threshold met)
+
+Current worst offenders to target next:
+- `Gong` (both mapped references)
+- `MrchSnr`
+- `Clrint`
+- `Ride`
+
+Next concrete tuning move:
+- Apply the same iterative process used on first-batch, but now for this
+  remaining scope with family-specific weighting/thresholds for `other`
+  sub-families (metal/bell, winds, cymbals, snares) so pitch does not dominate
+  unpitched comparisons.
+
+---
+
+## Phase 30: Actual iterative preset tuning (remaining batch) [CURRENT]
+
+Request addressed:
+- Performed an actual iterative pass that changes preset/calibration values and
+  re-renders to move outputs closer to mapped references.
+
+Changes applied:
+- `batch_tune_runner.py`
+  - Added provisional remaining-batch pitch calibration:
+    - `Gong: +12`
+    - `MrchSnr: +24`
+- `synth_engine.h`
+  - Tuned preset 8 (`MrchSnr`) for longer/brighter/noisier snare body:
+    - `Dkay 86 -> 130`
+    - `Mterl -1 -> 8`
+    - `NzMix 25 -> 35`
+    - `NzRes 500 -> 650`
+    - `NzFrq 100 -> 400`
+    - plus moderate mallet/body adjustments.
+
+A/B run comparison:
+- Baseline: `/tmp/batch_remaining_stage29/batch_tuning_report.json`
+- Iterative tuned run: `/tmp/batch_remaining_stage30b/batch_tuning_report.json`
+
+Observed improvement:
+- Mean **weighted** score: `88.160 -> 86.691` (`-1.468`)
+- Mean **raw** score: `81.544 -> 80.505` (`-1.039`)
+- Largest gains:
+  - `Gong-long-G#.wav`: `126.11 -> 102.25`
+  - `Chinese-Gong.wav`: `115.16 -> 101.36`
+  - `MrchSnr` references: both improved moderately
+
+Notes:
+- `Clrint` and `Ride` were not improved in this pass and are left for a
+  separate focused iteration to avoid regressing the gains above.
+
+---
+
+## Phase 31: Stage-2 model improvements (CPU-efficient) [CURRENT]
+
+Requested direction:
+- Add Stage-2 model improvements for cases where Stage-1 tuning is structurally
+  insufficient (`Gong`, `Cymbal`, `Kick`, `Clarinet`).
+
+Implemented (compile-guarded, low-cost):
+- Extended Stage-2 modal pilot usage beyond Wodblk:
+  - `Cymbal` and `Gong` now initialize preset-specific 2-mode modal banks
+    (different ratio/T60/mix) for metallic shimmer/plate-like tails.
+- Added a kick pitch-envelope path:
+  - short delay-length sweep on note start (`pitch_env`) to create downward
+    pitch slide without adding heavy DSP blocks.
+- Added lightweight clarinet reed nonlinearity:
+  - asymmetric exciter waveshaper (`reed_nl_enabled`) to emulate reed contact
+    behavior with minimal CPU overhead.
+
+Quick scoped run:
+- Command: `batch_tune_runner.py --preset-filter "Gong,Cymbal,Clrint,Kick" --run-render --auto-note-align ...`
+- Artifact: `/tmp/batch_stage2_model31/batch_tuning_report.json`
+- Snapshot (`pairs=4`, `mean=106.386`):
+  - `Gong-long-G#.wav`: `102.98`
+  - `Chinese-Gong.wav`: `95.05`
+  - `cymbal-Crash16Inch.wav`: `109.21`
+  - `Clarinet-C-minor.wav`: `118.31`
+
+---
+
+## Phase 32: Dual-noise-burst architecture [CURRENT]
+
+Question addressed:
+- Yes, we now have an explicit dual-noise-burst path suitable for
+  snare/shaker/hi-hat style transients:
+  - **low band**: filtered component with slower envelope/body
+  - **high band**: unfiltered component with faster click/hiss envelope
+
+Implementation notes:
+- Added second noise envelope state (`noise_env_hi`) per voice.
+- `process_exciter()` now mixes:
+  - `low_part = lowpass(raw_noise) * noise_env_low`
+  - `high_part = raw_noise * noise_env_high`
+  - blend controlled by existing `noise_band_mix`.
+- Parameter mapping keeps high-band burst shorter/faster than low-band
+  (`NzRes` and `Rel` now update both low/high burst envelopes with separate
+  time constants).
+
+Next pass:
+- Per-preset Stage-2 constant sweeps (modal ratios/mix/T60 and kick sweep depth)
+  to tune these new model paths now that the topology hooks are in place.

@@ -22,6 +22,8 @@ from typing import Dict, List, Tuple
 
 
 EPS = 1e-12
+# Avoid amplifying near-silence during normalization. 1e-5 ~= -100 dBFS.
+NORMALIZE_MIN_PEAK = 1e-5
 _DFT_BASIS_CACHE: Dict[int, Tuple[List[List[float]], List[List[float]]]] = {}
 
 
@@ -39,7 +41,7 @@ def rms(buf: List[float]) -> float:
 
 def normalize(buf: List[float]) -> List[float]:
     peak = max((abs(x) for x in buf), default=0.0)
-    if peak < EPS:
+    if peak < max(EPS, NORMALIZE_MIN_PEAK):
         return buf[:]
     return [x / peak for x in buf]
 

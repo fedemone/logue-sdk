@@ -55,6 +55,8 @@ static constexpr float limiter = 0.99f;
 static constexpr int kSquelchGuardSamples = 1000; // ~20 ms
 static constexpr float kSquelchThreshold = 0.0001f; // -80 dB
 static constexpr float k_log_2_of_200 = 7.643856f;
+static constexpr float stage2_modal_amp_ratio_2 = 0.6f;
+static constexpr float silence_threshold = 1e-5f;
 
 #if ENABLE_STAGE2_MODAL_PILOT
 // Stage-2 pilot defaults (override-able at compile time for quick sweeps).
@@ -265,6 +267,11 @@ public:
             state.voices[i].modal_decay_1 = 0.9990f;
             state.voices[i].modal_decay_2 = 0.9985f;
             state.voices[i].modal_mix = 0.0f;
+            state.voices[i].pitch_env = 0.0f;
+            state.voices[i].pitch_env_decay = 1.0f;
+            state.voices[i].pitch_env_amt = 0.0f;
+            state.voices[i].reed_nl_enabled = false;
+            state.voices[i].reed_nl_drive = 1.0f;
 #endif
             state.voices[i].exciter.noise_lp_state = 0.0f;
             state.voices[i].exciter.noise_band_mix = 0.5f;
@@ -518,7 +525,7 @@ public:
                 break;
             case k_paramMlltStif: {
                 // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
-                float norm = fmaxf(0.01f, fminf(1.0f, (float)value / 500.0f));
+                float norm = fmaxf(0.01f, fminf(1.0f, (float)value * 0.002f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.mallet_stiffness = norm;
                 }
@@ -529,7 +536,7 @@ public:
                 // UI range 0-1000 (displays with 1 decimal via frac_type=1).
                 // Maps to a second 1-pole LP coefficient stacked after mallet_stiffness LP.
                 // Low value → darker/softer mallet body. High value → brighter/sharper.
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 1000.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.001f));
                 float coeff = 0.01f + (norm * 0.99f);
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.mallet_res_coeff = coeff;
@@ -550,7 +557,7 @@ public:
                     m_active_partials = partial_counts[value];
                     // Store coupling depth from UI index so Partls=5/6
                     // (editor-select modes) never overwrite this.
-                    m_coupling_depth = (float)value / 4.0f;
+                    m_coupling_depth = (float)value * 0.25f;
                 } else {
                     // resonators can be coupled or indipendent
                     m_is_resonator_a = (value == 5) || (value == 6);
@@ -606,7 +613,7 @@ public:
                 // 0.85 = instant dead thud. 0.999 = rings for ~5 seconds.
                 // Stored ÷10 (0-200 represents 0-2000). Divide by 200 (new max).
                 if (value <= 200) {
-                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 200.0f));
+                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.005f));
                     float g = 0.85f + (norm * 0.149f);
                     // master_env gate: exponential 50ms (Decay=0) → 10s (Decay=200).
                     // Decay is the primary sustain control; Rel only gates the noise
@@ -638,8 +645,8 @@ public:
             case k_paramTubRad: {
                 // Combine Material (-10 to 30) and Tube Radius (0 to 20).
                 // Either parameter changing recalculates the coefficient from both stored values.
-                float mterl_norm = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) / 40.0f;
-                float tubrad_norm = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) / 20.0f;
+                float mterl_norm = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
+                float tubrad_norm = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
                 // Base material loss (0.01 = dull wood to 1.0 = lossless metal)
                 float coeff = 0.01f + (mterl_norm * 0.99f);
                 // Wider tube pulls the coefficient towards 1.0 (less high-frequency loss)
@@ -665,12 +672,12 @@ public:
             }
 
             case k_paramHitPos: {
-                state.mix_ab = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+                state.mix_ab = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
                 break;
             }
 
             case k_paramRel: {
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 20.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.05f));
                 // Rel controls only the noise burst release time (0→fast snap,
                 // 20→slow noise tail).  master_env gate is tied to Decay instead,
                 // so the waveguide resonance isn't prematurely killed by a short Rel.
@@ -678,6 +685,8 @@ public:
                 for (int i = 0; i < NUM_VOICES; ++i) {
 #ifdef ENABLE_PHASE_5_EXCITERS
                     state.voices[i].exciter.noise_env.release_rate = rel_rate;
+                    // High band should decay faster than low-band body.
+                    state.voices[i].exciter.noise_env_hi.release_rate = fminf(0.99f, rel_rate * 2.5f);
 #endif
                 }
                 break;
@@ -686,7 +695,7 @@ public:
             case k_paramInharm: {
                 if (value <= 1999) {
                     // Stored 0-1999; effective range 0-19990 (×10). Divide by 2000 to normalise.
-                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 2000.0f));
+                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.0005f));
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a) {
                             state.voices[i].resA.ap_coeff = norm;
@@ -705,13 +714,13 @@ public:
                 // Stored 1-1999; effective range 10-19990 Hz (×10 scaling).
                 m_master_cutoff = (float)value * 10.0f;
                 // Divide by 1000: UI stores 707-4000, filter needs 0.707-4.0
-                float res_val = fmaxf(0.707f, (float)m_params[k_paramResnc] / 1000.0f);
+                float res_val = fmaxf(0.707f, (float)m_params[k_paramResnc] * 0.001f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
 #endif
                 break;
             }
             case k_paramGain: {
-                float norm = fmaxf(0.0f, (float)value / 100.0f);
+                float norm = fmaxf(0.0f, (float)value * 0.01f);
                 state.master_drive = 1.0f + (norm * 20.0f);
                 break;
             }
@@ -720,7 +729,7 @@ public:
             case k_paramNzMix: {
                 // Updated for the new 0-100 header.c range
 #ifdef ENABLE_PHASE_5_EXCITERS
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_decay_coeff = norm;
                 }
@@ -731,11 +740,14 @@ public:
             case k_paramNzRes: {
 #ifdef ENABLE_PHASE_5_EXCITERS
                 // Leaving this at the old 0-1000 scale
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 1000.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.001f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_env.attack_rate = 0.9f - (norm * 0.8f);
                     // Slower decay so the noise actually injects energy into the tube
                     state.voices[i].exciter.noise_env.decay_rate = 0.0001f + ((1.0f - norm) * 0.005f);
+                    // High-band click: very fast attack + faster decay.
+                    state.voices[i].exciter.noise_env_hi.attack_rate = fminf(0.99f, (0.95f - (norm * 0.3f)));
+                    state.voices[i].exciter.noise_env_hi.decay_rate = 0.003f + ((1.0f - norm) * 0.015f);
                 }
 #endif
                 break;
@@ -743,7 +755,7 @@ public:
             case k_paramResnc: {
 #ifdef ENABLE_PHASE_6_FILTERS
                 // UI passes 707 to 4000. Divide by 1000 to get a Q factor of 0.707 to 4.0
-                float res_val = fmaxf(0.707f, (float)value / 1000.0f);
+                float res_val = fmaxf(0.707f, (float)value * 0.001f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
 #endif
                 break;
@@ -832,7 +844,7 @@ public:
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
-                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
+                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
             } else {
                 snprintf(nf_buf, sizeof(nf_buf), "%dHz", hz);
             }
@@ -843,7 +855,7 @@ public:
             int32_t hz = value * 10;
             if (hz >= 1000) {
                 // Show as kHz with one decimal place: 1000→"1.0kHz", 15000→"15.0kHz"
-                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
+                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
             } else {
                 snprintf(lc_buf, sizeof(lc_buf), "%dHz", hz);
             }
@@ -898,11 +910,11 @@ public:
         // --- End Sample Loading ---
 
         v.current_note = note;
-        v.current_velocity = (float)velocity / 127.0f;
+        v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
         // --- 2D DRUMHEAD STRIKE PHYSICS ---
         // 1. Calculate the physical strike location once for the entire voice
-        float hit_x = (float)m_params[k_paramHitPos] / 100.0f;
+        float hit_x = (float)m_params[k_paramHitPos] * 0.01f;
         float hit_y = (1.0f - v.current_velocity) * hit_x * 0.5f;
 
         // Use our fast-math approximation to find distance from center (0.0 to 1.0)
@@ -915,8 +927,8 @@ public:
         // Override the global mallet_stiffness on this specific voice only,
         // so soft hits are round and hard hits are sharp without changing other voices.
         {
-            float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] / 500.0f));
-            float stif_mod   = (float)m_params[k_paramVlMllStf] / 100.0f; // -1.0 to +1.0
+            float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            float stif_mod   = (float)m_params[k_paramVlMllStf] * 0.01f; // -1.0 to +1.0
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
             // Add up to a 50% stiffness boost when striking at the absolute edge
             float rim_stiffness_boost = radius * 0.5f;
@@ -928,9 +940,9 @@ public:
         // VlMllRes: harder hit → faster noise attack (sharper transient).
         // Override the noise_env attack_rate on this voice so it responds to accents.
         {
-            float base_nz     = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] / 1000.0f));
+            float base_nz     = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] * 0.001f));
             float base_attack = 0.9f - (base_nz * 0.8f);
-            float res_mod     = (float)m_params[k_paramVlMllRes] / 100.0f; // -1.0 to +1.0
+            float res_mod     = (float)m_params[k_paramVlMllRes] * 0.01f; // -1.0 to +1.0
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
         // Add up to a 10% speed boost to the attack rate for extreme rim hits
             float rim_snap_boost = radius * 0.1f;
@@ -941,6 +953,9 @@ public:
             v.exciter.noise_env.attack_rate = fmaxf(0.01f, fminf(0.99f,
                 base_attack + res_mod * v.current_velocity * 0.5f));
 #endif
+            // High-band burst should stay snappier than low-band burst.
+            v.exciter.noise_env_hi.attack_rate = fmaxf(0.05f, fminf(0.99f,
+                v.exciter.noise_env.attack_rate * 1.25f));
         }
 
         // --- THE PHYSICS OF PITCH ---
@@ -995,7 +1010,7 @@ public:
 #else
         // Legacy fallback calculation
         // 1. Convert MIDI Note to Frequency (Hz)
-        float freq = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) / 12.0f);
+        float freq = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f)* 0.08333333333f); // approx 1 / 12
         // [UT2: DELAY BOUNDS FIX]
         if (freq < 12.0f) freq = 12.0f;
         // 2. Convert Frequency to Delay Line Length (Samples)
@@ -1087,6 +1102,11 @@ public:
         v.modal_decay_1 = 0.9990f;
         v.modal_decay_2 = 0.9985f;
         v.modal_mix = 0.0f;
+        v.pitch_env = 0.0f;
+        v.pitch_env_decay = 1.0f;
+        v.pitch_env_amt = 0.0f;
+        v.reed_nl_enabled = false;
+        v.reed_nl_drive = 1.0f;
 #endif
         v.exciter.noise_lp_state = 0.0f;
         v.exciter.noise_band_mix = 0.5f;
@@ -1099,8 +1119,8 @@ public:
         // the read pointer reaches position 0, which was just written by this note —
         // from that point forward every read is from freshly-computed data.
         // Only the tail window [4096 - ceil(delay_length) - 1 … 4095] is ever read
-        // before new data covers it; clearing that window (typically 110–880 floats)
-        // is correct and 10–37× cheaper than zeroing the full 16 KB buffer.
+        // before new data covers it; clearing that window (typically 110-880 floats)
+        // is correct and 10-37× cheaper than zeroing the full 16 KB buffer.
         //
         // Skip entirely on a fresh (never-triggered) slot: Reset() already zeroed it.
         v.resA.write_ptr = 0;
@@ -1133,6 +1153,7 @@ public:
 #ifdef ENABLE_PHASE_5_EXCITERS
         // Trigger the envelopes when a note hits
         v.exciter.noise_env.trigger();
+        v.exciter.noise_env_hi.trigger();
         // Master envelope: auto-decay from 1.0 toward 0.0 at decay_rate.
         // This ensures percussion sounds decay naturally even with gate held
         // (the Drumlogue trigger button behaviour).  NoteOff switches to the
@@ -1150,7 +1171,7 @@ public:
 
         // Stage-1 transient complexity: short coefficient modulation window.
         // Deterministic per-hit micro-randomization from note/voice/velocity.
-        float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity / 127.0f));
+        float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity  * 0.007874015f));    // approx 1 / 127
         uint32_t seed = (uint32_t)note * 1103515245u
                       ^ (uint32_t)state.next_voice_idx * 12345u
                       ^ (uint32_t)velocity * 2654435761u;
@@ -1187,34 +1208,53 @@ public:
         }
 
 #if ENABLE_STAGE2_MODAL_PILOT
-        // Stage-2 single-model pilot (preset 12 / Wodblk): add a small 2-mode bank
-        // in parallel to the existing waveguide path for richer transient spectral motion.
-        // Compile-time guarded for safe A/B against legacy behavior.
-        if ((uint8_t)m_params[k_paramProgram] == 12) {
-            float base_f = 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
+        // Stage-2 pilot extensions (CPU-light):
+        // - Modal bank for complex metallic presets (Wodblk/Gong/Cymbal)
+        // - Kick pitch-envelope (delay-length sweep)
+        // - Clarinet reed nonlinearity in exciter path
+        auto init_modal_2mode = [&](float ratio2, float t60_1_ms, float t60_2_ms, float mix, float env1, float env2) {
+            float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f);    // approx 1 7 12
             if (base_f < 20.0f) base_f = 20.0f;
             float f1 = fminf(base_f, 0.45f * default_sample_rate);
-            float f2 = fminf(base_f * STAGE2_MODAL_RATIO_2, 0.45f * default_sample_rate);
+            float f2 = fminf(base_f * ratio2, 0.45f * default_sample_rate);
             float w1 = (2.0f * M_PI * f1) / default_sample_rate;
             float w2 = (2.0f * M_PI * f2) / default_sample_rate;
             v.modal_pilot_enabled = true;
             v.modal_k_1 = 2.0f * cosf(w1);
             v.modal_k_2 = 2.0f * cosf(w2);
-            v.modal_y2_1 = 0.0f;
-            v.modal_y1_1 = sinf(w1);
-            v.modal_y2_2 = 0.0f;
-            v.modal_y1_2 = sinf(w2);
+            v.modal_y2_1 = 0.0f; v.modal_y1_1 = sinf(w1);    // TODO use flot_math.h approximation? fastersinfullf
+            v.modal_y2_2 = 0.0f; v.modal_y1_2 = sinf(w2);
             v.modal_norm_count = 0;
-            v.modal_env_1 = STAGE2_MODAL_ENV1 * v.current_velocity;
-            v.modal_env_2 = STAGE2_MODAL_ENV2 * v.current_velocity;
-            float t60_1_s = 0.001f * STAGE2_MODAL_T60_1_MS;
-            float t60_2_s = 0.001f * STAGE2_MODAL_T60_2_MS;
-            v.modal_decay_1 = (t60_1_s > 0.0f) ? expf(logf(0.001f) / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
+            v.modal_env_1 = env1 * v.current_velocity;
+            v.modal_env_2 = env2 * v.current_velocity;
+            float t60_1_s = 0.001f * t60_1_ms;
+            float t60_2_s = 0.001f * t60_2_ms;
+            v.modal_decay_1 = (t60_1_s > 0.0f) ? expf(logf(0.001f) / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;    // TODO use flot_math.h approximation? fasterlogf, fasterexpf
             v.modal_decay_2 = (t60_2_s > 0.0f) ? expf(logf(0.001f) / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-            v.modal_mix = STAGE2_MODAL_MIX;
+            v.modal_mix = mix;
+        };
+
+        uint8_t program = (uint8_t)m_params[k_paramProgram];
+        if (program == 12) {         // Wodblk pilot
+            init_modal_2mode(STAGE2_MODAL_RATIO_2, STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS,
+                             STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2);
+        } else if (program == 14) {  // Cymbal: richer metallic shimmer
+            init_modal_2mode(2.45f, 140.0f, 260.0f, 0.10f, 0.75f, 0.60f);
+        } else if (program == 15) {  // Gong: lower/longer metallic modes
+            init_modal_2mode(1.78f, 220.0f, 420.0f, 0.14f, 0.85f, 0.70f);
+        }
+
+        if (program == 21) {         // Kick: downward pitch sweep (portamento-like)
+            v.pitch_env = 1.0f;
+            v.pitch_env_decay = 0.9989f;
+            v.pitch_env_amt = 0.45f;
+        }
+        if (program == 25) {         // Clarinet: lightweight reed nonlinearity
+            v.reed_nl_enabled = true;
+            v.reed_nl_drive = 1.8f;
         }
 #endif
-    }
+     }
 
     inline void NoteOff(uint8_t note) {
         for (int i = 0; i < NUM_VOICES; ++i) {
@@ -1276,7 +1316,7 @@ public:
         } else {
             float semitones = (float)(bend - pitch_centre) * (2.0f / (float)pitch_centre);
             // A higher pitch requires a shorter delay line → negate the exponent.
-            m_pitch_bend_mult = powf(2.0f, -semitones / 12.0f);
+            m_pitch_bend_mult = powf(2.0f, -semitones* 0.08333333333f); // approx 1 / 12
         }
 
         // Apply immediately to every active voice.
@@ -1377,18 +1417,23 @@ public:
         // Exception: tube models (phase_mult=-1) also receive noise into the waveguide
         // to sustain the oscillation — that injection happens in processBlock.
         ex.noise_out_sample = 0.0f;
-        float noise_env_val = ex.noise_env.process();
-        if (noise_env_val > 0.001f) {
-            float raw_noise = ex.noise_gen.process();
-#ifdef ENABLE_PHASE_6_FILTERS
-            raw_noise = ex.noise_filter.process(raw_noise);
-#endif
-            // Stage-1 dual-band shaper: blend low knock and high click.
+        float noise_env_low = ex.noise_env.process();
+        float noise_env_high = ex.noise_env_hi.process();
+        if (noise_env_low > 0.001f || noise_env_high > 0.001f) {
+             float raw_noise = ex.noise_gen.process();
+ #ifdef ENABLE_PHASE_6_FILTERS
+             raw_noise = ex.noise_filter.process(raw_noise);
+ #endif
+            // Dual-noise-burst architecture:
+            //   - low band: filtered (body/snap tail)
+            //   - high band: unfiltered (fast click/hiss burst)
             ex.noise_lp_state += 0.15f * (raw_noise - ex.noise_lp_state);
-            float high = raw_noise - ex.noise_lp_state;
+            float low = ex.noise_lp_state;
+            float high = raw_noise;
             float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
-            raw_noise = (ex.noise_lp_state * (1.0f - mix)) + (high * mix * 1.5f);
-            ex.noise_out_sample = raw_noise * noise_env_val * ex.noise_decay_coeff;
+            float low_part = low * (1.0f - mix) * noise_env_low;
+            float high_part = high * mix * 1.35f * noise_env_high;
+            ex.noise_out_sample = (low_part + high_part) * ex.noise_decay_coeff;
         }
 #endif
 
@@ -1503,6 +1548,14 @@ public:
                 // possible.  If Stage 1 is silent, the voice is never activated
                 // or unit_gate_on / unit_render are not being called.
                 float exciter_sig = process_exciter(voice.exciter);
+#if ENABLE_STAGE2_MODAL_PILOT
+                if (voice.reed_nl_enabled) {
+                    // Lightweight asymmetric waveshaper to emulate reed contact.
+                    float x = exciter_sig * voice.reed_nl_drive;
+                    float y = (x >= 0.0f) ? tanhf(x) : (0.6f * tanhf(1.6f * x));    // TODO use float_math.h? fastertanhf?
+                    exciter_sig = (0.65f * exciter_sig) + (0.35f * y);
+                }
+#endif
                 float voice_out   = exciter_sig * voice.current_velocity;
 
                 // outA kept at 0 here so the debug probe below always compiles.
@@ -1538,6 +1591,16 @@ public:
                 // G+C < 1 (coupled stability) across all Dkay settings.
                 float safe_cpl_a = v_safe_cpl_a;
                 float safe_cpl_b = v_safe_cpl_b;
+#if ENABLE_STAGE2_MODAL_PILOT
+                if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
+                    float sweep_scale = fmaxf(0.35f, 1.0f - (voice.pitch_env_amt * voice.pitch_env));
+                    voice.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
+                                                                 voice.base_delay_A * m_pitch_bend_mult * sweep_scale));
+                    voice.resB.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
+                                                                 voice.base_delay_B * m_pitch_bend_mult * sweep_scale));
+                    voice.pitch_env *= voice.pitch_env_decay;
+                }
+#endif
 
                 // Tube models (OpenTube=7, ClosedTube=8, phase_mult=-1) need noise fed
                 // into the waveguide so breath continuously excites the tube resonance
@@ -1636,8 +1699,8 @@ public:
                     float m2 = voice.modal_y1_2 * voice.modal_env_2;
                     voice.modal_env_1 *= voice.modal_decay_1;
                     voice.modal_env_2 *= voice.modal_decay_2;
-                    voice_out += (m1 + (0.6f * m2)) * voice.modal_mix;
-                    if (voice.modal_env_1 < 1e-5f && voice.modal_env_2 < 1e-5f) {
+                    voice_out += (m1 + (stage2_modal_amp_ratio_2 * m2)) * voice.modal_mix;
+                    if (voice.modal_env_1 < silence_threshold && voice.modal_env_2 < silence_threshold) {
                         voice.modal_pilot_enabled = false;
                     }
                 }
@@ -1702,7 +1765,8 @@ public:
 #ifdef ENABLE_PHASE_5_EXCITERS
                 if (voice.is_releasing &&
                         voice.exciter.mallet_lp2 < 1e-6f &&
-                        voice.exciter.noise_env.state == ENV_IDLE) {
+                        voice.exciter.noise_env.state == ENV_IDLE &&
+                        voice.exciter.noise_env_hi.state == ENV_IDLE) {
                     voice.is_active = false;
                 }
 #else
