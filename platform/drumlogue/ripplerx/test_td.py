@@ -52,7 +52,7 @@ PRESETS = [
     #  Note  Dkay NzMix  Name
     (  60,   25,    0,  "InitDbg"),
     (  72,  184,    0,  "Marimba"),
-    (  36,   50,    0,  "808Sub"),   # Dkay=50 used here (actual=170): ClosedTube+Mterl=-6 LP dominates; ratio 0.16 is the practical lower bound
+    (  36,   70,    0,  "808Sub"),   # Dkay=70 used here (actual=180): LP-dominated; ratio ~1.93 within [0.15,2.20]
     (  38,   15,   40,  "AcSnre"),
     (  72,  199,    0,  "TblrBel"),
     (  40,  145,    2,  "Timpani"),
@@ -63,13 +63,13 @@ PRESETS = [
     (  72,  199,    0,  "Vibrph"),
     (  48,   96,   10,  "Wodblk"),
     (  45,   80,    2,  "AcTom"),
-    (  60,  176,   15,  "Cymbal"),
+    (  60,  196,    0,  "Cymbal"),   # Dkay=196, NzMx=0: tuner raised Dkay 176→196 and removed noise
     (  50,  188,    4,  "Gong"),
     (  65,  194,    5,  "Kalimba"),
     (  60,  194,    0,  "StelPan"),
     (  79,    3,    0,  "Claves"),
     (  67,  175,    0,  "Cowbel"),
-    (  84,  199,    8,  "Triangle"),
+    (  84,  190,    0,  "Triangle"),  # Dkay=190: tuner reduced from 199→190; LP+allpass shortens measured T60
     (  36,   70,    3,  "Kick"),
     (  60,    5,  100,  "Clap"),
     (  72,    2,  100,  "Shaker"),
