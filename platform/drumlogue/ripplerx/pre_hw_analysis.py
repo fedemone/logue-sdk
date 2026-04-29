@@ -20,6 +20,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+try:
+    import numpy as _np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
+
 
 EPS = 1e-12
 # Avoid amplifying near-silence during normalization. 1e-5 ~= -100 dBFS.
@@ -427,25 +433,35 @@ def autocorr_f0(sig: List[float], sr: int, fmin: float = 50.0, fmax: float = 400
     if not sig:
         return 0.0
     window = sig[: min(len(sig), int(0.35 * sr))]
-    if not window:
+    N = len(window)
+    if N < 2:
         return 0.0
-    lo = int(sr / fmax)
-    hi = int(sr / fmin)
-    hi = min(hi, len(window) // 2)
+    lo = max(1, int(sr / fmax))
+    hi = min(int(sr / fmin), N // 2)
     if hi <= lo:
         return 0.0
-    best_lag = lo
-    best = -1.0
-    for lag in range(lo, hi):
-        s = 0.0
-        for i in range(len(window) - lag):
-            s += window[i] * window[i + lag]
-        if s > best:
-            best = s
-            best_lag = lag
+    if _HAS_NUMPY:
+        # FFT-based autocorrelation: O(N log N) vs O(N²) for the pure-Python fallback.
+        arr = _np.asarray(window, dtype=_np.float32)
+        fft_size = 1
+        while fft_size < 2 * N:
+            fft_size <<= 1
+        F = _np.fft.rfft(arr, n=fft_size)
+        acf = _np.fft.irfft(F * _np.conj(F))[:N].real
+        best_lag = int(_np.argmax(acf[lo : hi + 1])) + lo
+    else:
+        best_lag = lo
+        best = -1.0
+        for lag in range(lo, hi):
+            s = 0.0
+            for i in range(N - lag):
+                s += window[i] * window[i + lag]
+            if s > best:
+                best = s
+                best_lag = lag
     if best_lag <= 0:
         return 0.0
-    return sr / best_lag
+    return float(sr) / best_lag
 
 
 def inharmonicity_ratio(sig: List[float], sr: int, f0: float, n_partials: int = 6) -> float:
