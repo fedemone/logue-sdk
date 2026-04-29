@@ -22,3 +22,7 @@ build/
 # Python cache
 __pycache__/
 *.pyc
+
+# auto_tune runtime outputs
+auto_tune_run.log
+batch_reports/
