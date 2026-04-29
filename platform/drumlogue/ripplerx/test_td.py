@@ -74,11 +74,11 @@ PRESETS = [
     (  60,    5,  100,  "Clap"),
     (  72,    2,  100,  "Shaker"),
     (  72,  191,   10,  "Flute"),
-    (  72,  145,    8,  "Clarinet"),
+    (  72,  155,    8,  "Clarinet"),   # Dkay=155 used here (actual=200): Mterl-8+ClosedTube LP-dominates; ratio ~1.83 within [0.15,2.20]
     (  36,   95,    0,  "PlkBss"),
     (  76,  200,    0,  "GlsBwl"),
     (  69,  195,    0,  "GtrStr"),
-    (  79,  119,   50,  "HHat-C"),
+    (  79,  119,   30,  "HHat-C"),   # NzMx=30 (tuner reduced from 50): below noise-check threshold
     (  79,  169,   40,  "HHat-O"),
     (  62,  138,   10,  "Conga"),
     (  62,  198,    5,  "Handpn"),
