@@ -9,24 +9,7 @@
 #include <arm_neon.h>
 #include <math.h>
 #include "filters.h"
-
-// Distressor ratio modes (8 total)
-#define DIST_RATIO_1_1   0  // Warm mode - no compression, just harmonics
-#define DIST_RATIO_2_1   1  // Mild compression
-#define DIST_RATIO_3_1   2  // Mild compression
-#define DIST_RATIO_4_1   3  // Medium compression
-#define DIST_RATIO_6_1   4  // Medium compression
-#define DIST_RATIO_10_1  5  // "Opto" mode - optical emulation, slow release
-#define DIST_RATIO_20_1  6  // Hard limiting
-#define DIST_RATIO_NUKE  7  // Brick-wall limiting
-
-// Distortion modes (5 modes - wavefolder added as 4)
-#define DIST_MODE_CLEAN  0  // No harmonics
-#define DIST_MODE_DIST2  1  // 2nd harmonic emphasis (tube-like)
-#define DIST_MODE_DIST3  2  // 3rd harmonic emphasis (tape-like)
-#define DIST_MODE_BOTH   3  // Both harmonics
-#define DIST_MODE_WAVE   4  // Wavefolder
-#define DIST_MODE_TOTAL  4  // Counter
+#include "constants.h"
 
 // Detector modes (bit flags)
 #define DETECT_NONE      0
@@ -54,6 +37,11 @@ static const char* distressor_ratio_strings[8] = {
     "1:1", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE"
 };
 
+// Display strings for UI
+static const char* distressor_wave_type[5] = {
+    "Soft", "Hard", "Trg", "Sine", "SubOct"
+};
+
 
 // Distressor state structure
 typedef struct {
@@ -74,14 +62,25 @@ typedef struct {
 
     // Opto mode state (slow release simulation)
     float opto_release_mult;  // Up to 20s in opto mode
+    float opto_coeff ;        // deduced from above
 
     // NEW: Distressor-specific detector components
-    sidechain_hpf_t detect_hpf;     // 100 Hz HPF for detector
-    sidechain_hpf_t detect_emph;    // 6 kHz emphasis for detector
+    sidechain_hpf_t detect_hpf;      // 100 Hz HPF for detector (mono / L channel)
+    sidechain_hpf_t detect_emph;     // 6 kHz emphasis for detector (mono / L channel)
+    sidechain_hpf_t detect_hpf_r;   // 100 Hz HPF — R channel (DETECT_LINK only)
+    sidechain_hpf_t detect_emph_r;  // 6 kHz emphasis — R channel (DETECT_LINK only)
     envelope_detector_t distressor_env;  // Dedicated envelope detector
     float32x4_t detector_state;
 
 } distressor_t;
+
+fast_inline void update_opto_coeff(distressor_t* d, float release_coeff_) {
+    // Opto mode slows release by raising the coefficient to 1/mult power,
+    // which is equivalent to multiplying the release time constant by mult
+    // while keeping the coefficient safely in (0,1).
+    d->opto_coeff = (d->opto_release_mult > 1.0f)
+        ? fasterpowf(release_coeff_, 1.0f / d->opto_release_mult): release_coeff_;
+}
 
 // Initialize Distressor with detector
 fast_inline void distressor_init(distressor_t* d, float sample_rate) {
@@ -95,13 +94,16 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     d->harmonic_state = vdupq_n_f32(0.0f);
     d->last_input = vdupq_n_f32(0.0f);
     d->opto_release_mult = 1.0f;
+    d->opto_coeff = 0.0f;   // to be updated according to opto_release_mult
     d->detector_state = vdupq_n_f32(0.0f);
 
     // Initialize detector HPF at 100 Hz (removes low-end pumping)
-    sidechain_hpf_init(&d->detect_hpf, 100.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_hpf,   100.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_hpf_r, 100.0f, sample_rate);
 
     // Initialize emphasis filter at 6 kHz (boosts transients)
-    sidechain_hpf_init(&d->detect_emph, 6000.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_emph,   6000.0f, sample_rate);
+    sidechain_hpf_init(&d->detect_emph_r, 6000.0f, sample_rate);
 
     // Initialize distressor envelope detector
     envelope_detector_init(&d->distressor_env, sample_rate);
@@ -110,23 +112,51 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     envelope_set_attack_release(&d->distressor_env, d->attack_ms, d->release_ms);
 }
 
-// Distressor-specific envelope detector (called in masterfx.h)
+// Distressor-specific mono/summed envelope detector.
+// DETECT_HPF and DETECT_BAND_EMPH flags are evaluated here so the caller
+// does not need to know which filters are active.
 fast_inline float32x4_t distressor_detect(distressor_t* d,
                                            float32x4_t sidechain,
                                            float sample_rate) {
     (void)sample_rate;
+    float32x4_t detected = sidechain;
 
-    // 1. Apply detector HPF at 100 Hz (less low-end pumping)
-    float32x4_t detected = sidechain_hpf_process(&d->detect_hpf, sidechain);
+    // 1. Optional 100 Hz HPF (DETECT_HPF): removes low-end pumping
+    if (d->detector_mode & DETECT_HPF)
+        detected = sidechain_hpf_process(&d->detect_hpf, detected);
 
-    // 2. Apply 6 kHz boost for detector (more sensitivity to transients)
-    detected = sidechain_hpf_process(&d->detect_emph, detected);
+    // 2. Optional 6 kHz emphasis (DETECT_BAND_EMPH): increases transient sensitivity
+    if (d->detector_mode & DETECT_BAND_EMPH)
+        detected = sidechain_hpf_process(&d->detect_emph, detected);
 
-    // 3. Full-wave rectification (like Distressor's detector)
+    // 3. Full-wave rectification
     detected = vabsq_f32(detected);
 
-    // 4. Distressor-specific envelope smoothing with faster attack
+    // 4. Distressor-specific envelope smoothing
     return envelope_detect(&d->distressor_env, detected);
+}
+
+// Stereo-linked envelope detector (DETECT_LINK).
+// Processes L and R through independent filter chains, then takes the
+// per-sample maximum so the loudest channel drives gain reduction on both.
+fast_inline float32x4_t distressor_detect_stereo(distressor_t* d,
+                                                   float32x4_t sc_l,
+                                                   float32x4_t sc_r,
+                                                   float sample_rate) {
+    (void)sample_rate;
+
+    if (d->detector_mode & DETECT_HPF) {
+        sc_l = sidechain_hpf_process(&d->detect_hpf,   sc_l);
+        sc_r = sidechain_hpf_process(&d->detect_hpf_r, sc_r);
+    }
+    if (d->detector_mode & DETECT_BAND_EMPH) {
+        sc_l = sidechain_hpf_process(&d->detect_emph,   sc_l);
+        sc_r = sidechain_hpf_process(&d->detect_emph_r, sc_r);
+    }
+
+    // Per-sample max of absolute values — the louder channel controls GR
+    float32x4_t linked = vmaxq_f32(vabsq_f32(sc_l), vabsq_f32(sc_r));
+    return envelope_detect(&d->distressor_env, linked);
 }
 
 fast_inline void distressor_reset(distressor_t* d, float sample_rate) {
@@ -212,7 +242,7 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
     switch (d->ratio_mode) {
         case DIST_RATIO_1_1:
             // 1:1 - no compression, just harmonics
-            gain_db = vdupq_n_f32(0.0f);
+            // gain_db = vdupq_n_f32(0.0f); // avoid unnecessary operations
             break;
 
         case DIST_RATIO_2_1:
@@ -245,14 +275,15 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
             gain_db = vmulq_f32(excess, vdupq_n_f32(0.95f));
             break;
 
-        case DIST_RATIO_NUKE:
-            // Brick-wall limiting - infinite compression above threshold [citation:3]
-            // Maps excess to very high gain reduction
+        case DIST_RATIO_NUKE: {
+            // Brick-wall limiting - infinite compression above threshold
+            // gain_db is POSITIVE here (reduction amount), vnegq_f32 at end makes it negative
             uint32x4_t above_thresh = vcgtq_f32(envelope_db, thresh);
             gain_db = vbslq_f32(above_thresh,
-                                vdupq_n_f32(-40.0f),  // 40dB reduction when triggered
+                                vdupq_n_f32(40.0f),   // 40dB reduction when triggered
                                 vdupq_n_f32(0.0f));
             break;
+        }
     }
 
     return vnegq_f32(gain_db);  // Return negative dB for gain reduction

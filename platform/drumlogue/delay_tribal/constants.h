@@ -8,7 +8,8 @@
 
 // Constants for NEON vectorization
 constexpr int NEON_LANES = 4;
-constexpr int MAX_CLONES = 16;
+constexpr int HALF_LANES = 2;
+constexpr int MAX_CLONES = 10;
 constexpr int CLONE_GROUPS = MAX_CLONES / NEON_LANES;
 constexpr int CROSSFADE_SAMPLES = 480;  // 10ms @ 48kHz
 
@@ -18,7 +19,7 @@ constexpr int PREFETCH_DISTANCE = 4;  // Prefetch 4 samples ahead
 
 // Delay line configuration (48kHz sample rate)
 // Must be a power of 2 so DELAY_MASK = DELAY_MAX_SAMPLES - 1 works as a modulo mask.
-// Actual delays are 5-23ms (240-1136 samples); 4096 (~85ms) gives ample headroom.
+// Actual delays are 15-84ms (720-4032 samples); 4096 (~85ms) gives minimal headroom.
 constexpr int DELAY_MAX_SAMPLES = 4096;  // 2^12
 constexpr int DELAY_MASK = DELAY_MAX_SAMPLES - 1;  // 0x0FFF
 
@@ -54,7 +55,7 @@ constexpr float FILTER_Q_BESSEL = 0.5f;
 
 // Parameter ranges (as per header.c)
 constexpr int PARAM_CLONES_MIN = 0;
-constexpr int PARAM_CLONES_MAX = 2;
+constexpr int PARAM_CLONES_MAX = 5;
 constexpr int PARAM_MODE_MIN = 0;
 constexpr int PARAM_MODE_MAX = 2;
 constexpr int PARAM_DEPTH_MIN = 0;
@@ -69,3 +70,5 @@ constexpr int PARAM_WOBBLE_MIN = 0;
 constexpr int PARAM_WOBBLE_MAX = 100;
 constexpr int PARAM_SOFTEN_MIN = 0;
 constexpr int PARAM_SOFTEN_MAX = 100;
+
+const float inv_12000 = 1.0f / 12000.0f;

@@ -21,9 +21,10 @@ extern "C" {
 #endif
 // defined in header.c
 extern const char* const lfo_shape_strings[9];
-extern const char* const lfo_target_strings[8];
+extern const char* const lfo_target_strings[11];
 extern const char* const resonant_mode_strings[5];
 extern const char* const voice_alloc_strings[12];
+extern const char* const euclidean_mode_strings[9];
 #ifdef __cplusplus
 }
 #endif
@@ -164,11 +165,14 @@ public:
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
 
         switch (index) {
-            case 12: case 16:  // LFO1 Shape and LFO2 Shape
+            case 12:  // LFO1 Shape (shape_combo: encodes both LFO1+LFO2 shapes)
                 if (value >= 0 && value <= 8) return lfo_shape_strings[value];
                 break;
+            case 16:  // EuclTun — Euclidean per-voice pitch spread
+                if (value >= 0 && value < 9) return euclidean_mode_strings[value];
+                break;
             case 14: case 18:  // LFO1 Dest and LFO2 Dest
-                if (value >= 0 && value <= 7) return lfo_target_strings[value];
+                if (value >= 0 && value <= 10) return lfo_target_strings[value];
                 break;
             case 21:  // Voice Alloc
                 if (value >= 0 && value <= 11) return voice_alloc_strings[value];

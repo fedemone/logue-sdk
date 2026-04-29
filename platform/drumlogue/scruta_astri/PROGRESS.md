@@ -30,6 +30,13 @@
 - [x] **Filter Hardening:** Implement bounds clamping and fast non-linear integrators in both SVF and Polivoks filters.
 - [x] **Reverse Wavetables UI:** Update `header.c` `Program` max limit to `95` to expose reverse playback modes.
 
+## Hardware Bugs Fixed
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| **CMOS knob dead zone 73–90%** | APC block overwrote `filter1.drive` every 4 samples with a resonance-derived value, discarding the CMOS parameter | Added `m_cmos_filter_drive` persistent member; APC now sums `m_cmos_filter_drive + m_f1_drive_base + m_drv1_mod_multiplier×5` |
+| **LFO always sweeping filter** | `fasterpow2f(l1_val * 3.0f)` applied unconditionally to filter cutoff regardless of preset's LFO target | Replaced with gated `m_f1_lfo_mult` / `m_f2_lfo_mult` (default 1.0); only set ≠1.0 when the active preset targets F1/F2 cutoff |
+
 ## Next Steps (Session 4: Wavetables & Hardware Deployment)
 - [ ] **Ingest New Wavetables:** Extract uncompressed `.wav` cycles for the target timbres (low hum of distant prop plane, AUM singing, trombone, hurdy-gurdy). For evolving sounds, slice multiple sequential cycles.
 - [ ] **Generate Headers:** Run the Python batch processor to convert the new `.wav` files into C-arrays and update `NUM_WAVETABLES` with new samples.

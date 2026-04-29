@@ -24,8 +24,8 @@
 
 typedef struct {
     uint8_t attack_ms;    // 0-50ms
-    uint16_t decay_ms;     // 20-500ms
-    uint16_t release_ms;   // 10-500ms
+    uint16_t decay_ms;    // 20-500ms
+    uint16_t release_ms;  // 10-500ms
     uint8_t curve_type;   // 0=linear, 1=exponential
 } env_curve_t;
 
@@ -233,9 +233,11 @@ fast_inline void neon_envelope_trigger(neon_envelope_t* env,
 
     // Convert ms to samples at 48kHz
     // Ensure non-zero to avoid division by zero
+    // do not add any corrective factor here, just select the correct envelope
+    // from all the presets!
     float attack_samps  = fmax(a_ms * 48.0f, 1.0f);
-    float decay_samps   = fmax(d_ms * 48.0f * 4.0f, 1.0f);  // Massive boom!
-    float release_samps = fmax(r_ms * 48.0f * 4.0f, 1.0f);  // Smooth fade!
+    float decay_samps   = fmax(d_ms * 48.0f, 1.0f);
+    float release_samps = fmax(r_ms * 48.0f, 1.0f);
 
 
     // Store pre-calculated stage lengths

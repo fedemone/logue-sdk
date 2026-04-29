@@ -1043,6 +1043,37 @@ float Q_rsqrt( float number )
 	return y;
 }
 
+// improved version from:
+// https://gist.github.com/amacgillivray/5adfeb70a194e0c458d4f54f2f3bbd87
+static inline __attribute__((optimize("Ofast"), always_inline))
+float my_sqrt_f(float x) {
+    // Handle edge cases for negative numbers or zero
+    if (x <= 0.0f) return 0.0f;
+
+    // Bit-level manipulation using a union for type-punning
+    union {
+        float f;
+        uint32_t i;
+    } conv;
+
+    conv.f = x;
+    // Kadlec's magic number bit-shift to get an initial 1/sqrt(x) guess
+    conv.i = 0x5F1FFFF9 - (conv.i >> 1);
+
+    float yf = conv.f;
+
+    // Initial approximation using Kadlec's refined constants
+    float z = 0.703952253f * yf * (2.38924456f - x * yf * yf);
+
+    // Two iterations of Newton's method to refine the reciprocal
+    // Result z is approximately 1/sqrt(x)
+    z = z * (1.5f - (0.5f * x * z * z));
+    z = z * (1.5f - (0.5f * x * z * z));
+
+    // Return the reciprocal to get the actual square root
+    return 1.0f / z;
+}
+
 
 /** Fast but imprecise approximation for the euclidean distance
  * given carthesian coordinates for two points (x1,y1) and (x2,y2)
@@ -1127,6 +1158,7 @@ typedef int32x4_t v4si;  // vector of 4 uint32
 /* natural logarithm computed for 4 simultaneous float
    return NaN for x <= 0
 */
+static inline __attribute__((optimize("Ofast"), always_inline))
 v4sf log_ps(v4sf x) {
   v4sf one = vdupq_n_f32(1);
 
@@ -1212,6 +1244,7 @@ v4sf log_ps(v4sf x) {
 #define c_cephes_exp_p5 5.0000001201E-1
 
 /* exp() computed for 4 float at once */
+static inline __attribute__((optimize("Ofast"), always_inline))
 v4sf exp_ps(v4sf x) {
   v4sf tmp, fx;
 
@@ -1298,7 +1331,7 @@ v4sf exp_ps(v4sf x) {
    almost no extra price so both sin_ps and cos_ps make use of
    sincos_ps..
   */
-void sincos_ps(v4sf x, v4sf *ysin, v4sf *ycos) { // any x
+static inline __attribute__((optimize("Ofast"), always_inline)) void sincos_ps(v4sf x, v4sf * ysin, v4sf * ycos) {  // any x
   v4sf xmm1, xmm2, xmm3, y;
 
   v4su emm2;
@@ -1365,12 +1398,14 @@ void sincos_ps(v4sf x, v4sf *ysin, v4sf *ycos) { // any x
   *ycos = vbslq_f32(sign_mask_cos, yc, vnegq_f32(yc));
 }
 
+static inline __attribute__((optimize("Ofast"), always_inline))
 v4sf sin_ps(v4sf x) {
   v4sf ysin, ycos;
   sincos_ps(x, &ysin, &ycos);
   return ysin;
 }
 
+static inline __attribute__((optimize("Ofast"), always_inline))
 v4sf cos_ps(v4sf x) {
   v4sf ysin, ycos;
   sincos_ps(x, &ysin, &ycos);

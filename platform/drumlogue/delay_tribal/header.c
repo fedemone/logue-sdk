@@ -13,15 +13,15 @@ const __unit_header unit_header_t unit_header = {
     .api         = UNIT_API_VERSION,
     .dev_id      = 0x46654465U,   // 'FeDe' - https://github.com/fedemone/logue-sdk
     .unit_id     = 0x01U,
-    .version     = 0x00020000U,   // v2.0.0
-    .name        = "PercSpatial",
+    .version     = 0x00030000U,   // v3.0.0 - new design
+    .name        = "Tribale",
     .num_presets = 0,
-    .num_params  = 8,
+    .num_params  = 9,
 
     .params = {
         // Page 1
-        // ID 0: Clones  0=4, 1=8, 2=16
-        { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Clones"} },
+        // ID 0: Clones  0=2, 1=4, 2=6, 3=8, 4=10
+        { 0, 5, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Clones"} },
         // ID 1: Mode  0=Tribal, 1=Military, 2=Angel
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode"} },
         // ID 2: Depth  0-100%
@@ -36,11 +36,12 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"Mix"} },
         // ID 6: Wobble (Pitch Wobble Depth)  0-100%
         { 0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"Wobble"} },
-        // ID 7: SoftAtk (Attack Softening)  0-100%
-        { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"SoftAtk"} },
+        // ID 7: Scatter (ensemble looseness)  0-100%
+        { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"Scatter"} },
 
         // Pages 3-6: blank padding to fill 24 slots
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // ID 8: SoftAtk (Attack Softening)  0-100%
+        { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"SoftAtk"} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },

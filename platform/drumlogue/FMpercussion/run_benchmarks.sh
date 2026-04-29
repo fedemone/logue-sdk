@@ -74,6 +74,7 @@ run_division_benchmark() {
 #include <arm_neon.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "float_math.h"
 
 // Read CPU cycle counter (ARM Cortex-A9)
 static inline uint32_t read_cycle_counter(void) {
@@ -97,14 +98,14 @@ int main() {
     printf("\nDivision Operation Benchmarks (4-way SIMD):\n");
     printf("--------------------------------------------\n");
 
-    // Benchmark 1: Direct division (vdivq_f32)
+    // Benchmark 1: Direct division (fast_div_neon)
     uint32_t start = read_cycle_counter();
     for (int i = 0; i < ITERATIONS; i++) {
-        result = vdivq_f32(a, b);
+        result = fast_div_neon(a, b);
     }
     uint32_t end = read_cycle_counter();
     uint32_t div_cycles = (end - start) / ITERATIONS;
-    printf("vdivq_f32 (direct):    %4d cycles/4 values → %4.1f cycles/value\n",
+    printf("fast_div_neon (direct):    %4d cycles/4 values → %4.1f cycles/value\n",
            div_cycles, div_cycles / 4.0f);
 
     // Benchmark 2: Reciprocal + multiply

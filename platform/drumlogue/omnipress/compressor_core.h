@@ -75,14 +75,14 @@ fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
     // Convert to dB: 20 * log10(envelope) = 20 * log2(envelope) * log10(2)
     float32x4_t db_env = vmulq_f32(log2_env, vdupq_n_f32(6.0206f));  // 20 * log10(2)
 
-    // Compute gain reduction
-    // GR = (threshold - envelope) * (ratio - 1) / ratio
-    // For negative ratios, this creates expansion or reverse compression
+    // Compute gain reduction (standard compressor formula)
+    // GR_dB = -(excess * (ratio - 1) / ratio), where excess = env_dB - threshold_dB
+    // For negative ratios, this creates upward expansion (Omnipressor-style)
 
     float32x4_t thresh_vec = vdupq_n_f32(thresh_db);
-    // Calculate excess above threshold
-    float32x4_t excess = vsubq_f32(thresh_vec, db_env);
-    excess = vmaxq_f32(excess, vdupq_n_f32(0.0f)); // Only above threshold
+    // Calculate excess above threshold (positive when signal exceeds threshold)
+    float32x4_t excess = vsubq_f32(db_env, thresh_vec);
+    excess = vmaxq_f32(excess, vdupq_n_f32(0.0f)); // Clamp: only act above threshold
 
     float32x4_t ratio_vec = vdupq_n_f32(ratio);
     float32x4_t one_vec = vdupq_n_f32(1.0f);
@@ -98,8 +98,9 @@ fast_inline float32x4_t compressor_calc_gain(compressor_t* comp,
     float32x4_t gain_red = fast_div_neon(gain_red_num, ratio_vec);
 
     // For ratio=0, hard limit (infinite gain reduction above threshold)
+    // gain_red is negated on return, so +100 here → -100 dB (silence above threshold)
     uint32x4_t ratio_zero = vceqq_f32(ratio_vec, vdupq_n_f32(0.0f));
-    gain_red = vbslq_f32(ratio_zero, vdupq_n_f32(-100.0f), gain_red);
+    gain_red = vbslq_f32(ratio_zero, vdupq_n_f32(100.0f), gain_red);
 
     // For negative ratios, we get expansion (gain reduction becomes negative)
     // which actually increases gain - this is the Omnipressor magic

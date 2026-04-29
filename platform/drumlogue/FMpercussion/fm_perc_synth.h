@@ -30,6 +30,21 @@
 #include "midi_handler.h"
 #include "fm_presets.h"
 
+// Euclidean tuning offset table
+// offsets[mode][voice] = semitones above root for that voice.
+// Derived from E(4,n): position[i] = floor(i * n / 4), i = 0..3.
+static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][4] = {
+    { 0.f,  0.f,  0.f,  0.f},  // 0: Off         — all unison
+    { 0.f,  1.f,  2.f,  3.f},  // 1: E(4,4)  [0,1,2,3]  chromatic cluster
+    { 0.f,  1.f,  3.f,  4.f},  // 2: E(4,6)  [0,1,3,4]  minor 3rd pairs
+    { 0.f,  1.f,  3.f,  5.f},  // 3: E(4,7)  [0,1,3,5]  diatonic cluster
+    { 0.f,  2.f,  4.f,  6.f},  // 4: E(4,8)  [0,2,4,6]  whole tone
+    { 0.f,  2.f,  5.f,  7.f},  // 5: E(4,10) [0,2,5,7]  pentatonic/5th
+    { 0.f,  3.f,  6.f,  9.f},  // 6: E(4,12) [0,3,6,9]  diminished 7th
+    { 0.f,  4.f,  8.f, 12.f},  // 7: E(4,16) [0,4,8,12] augmented + octave
+    { 0.f,  6.f, 12.f, 18.f},  // 8: E(4,24) [0,6,12,18] tritone spread
+};
+
 // Voice allocation table - 12 combinations (no duplicates)
 // Format: [voice0, voice1, voice2, voice3] engine assignments
 static const uint8_t VOICE_ALLOC_TABLE[VOICE_ALLOC_COUNT][VOICE_ALLOC_MAX] = {
@@ -92,6 +107,10 @@ typedef struct {
 
     // Per-voice velocity (set on note-on, persists until next trigger)
     float32x4_t voice_velocity;      // 0-1 per lane
+
+    // Euclidean tuning: per-voice semitone offsets applied at note-on.
+    // Loaded from EUCLID_OFFSETS[EuclTun] in update_params; [0,0,0,0] when mode=Off.
+    float32x4_t euclid_offsets;
 
     // Output gain
     float master_gain;
@@ -216,7 +235,7 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     // =================================================================
     // Update resonant morph (param 23)
     // =================================================================
-    synth->resonant_morph = p[PARAM_RES_MORPH] / 100.0f;
+    synth->resonant_morph = p[PARAM_RES_MORPH] * 0.01f;
 
     // Apply morph to resonant parameters
     // Morph controls multiple parameters: mode, frequency, resonance
@@ -228,23 +247,23 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
 
     // Kick engine: param1 = sweep depth (0-1), param2 = decay shape (0-1)
     kick_engine_update(&synth->kick,
-                        vdupq_n_f32(p[PARAM_KICK_SWEEP] / 100.0f),   // Kick sweep
-                        vdupq_n_f32(p[PARAM_KICK_DECAY] / 100.0f));  // Kick decay
+                        vdupq_n_f32(p[PARAM_KICK_SWEEP] * 0.01f),   // Kick sweep
+                        vdupq_n_f32(p[PARAM_KICK_DECAY] * 0.01f));  // Kick decay
 
     // Snare engine: param1 = noise mix (0-1), param2 = body resonance (0-1)
     snare_engine_update(&synth->snare,
-                        vdupq_n_f32(p[PARAM_SNARE_NOISE] / 100.0f),  // Snare noise mix
-                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f));  // Snare body resonance
+                        vdupq_n_f32(p[PARAM_SNARE_NOISE] * 0.01f),  // Snare noise mix
+                        vdupq_n_f32(p[PARAM_SNARE_BODY] * 0.01f));  // Snare body resonance
 
     // Metal engine: param1 = inharmonicity (0-1), param2 = brightness (0-1)
     metal_engine_update(&synth->metal,
-                        vdupq_n_f32(p[PARAM_METAL_INHARM] / 100.0f),   // Metal inharmonicity
-                        vdupq_n_f32(p[PARAM_METAL_BRIGHT] / 100.0f));  // Metal brightness
+                        vdupq_n_f32(p[PARAM_METAL_INHARM] * 0.01f),   // Metal inharmonicity
+                        vdupq_n_f32(p[PARAM_METAL_BRIGHT] * 0.01f));  // Metal brightness
 
     // Perc engine: param1 = ratio center (0-1), param2 = variation (0-1)
     perc_engine_update(&synth->perc,
-                        vdupq_n_f32(p[PARAM_PERC_RATIO] / 100.0f),  // Perc ratio center
-                        vdupq_n_f32(p[PARAM_PERC_VAR] / 100.0f));   // Perc variation
+                        vdupq_n_f32(p[PARAM_PERC_RATIO] * 0.01f),  // Perc ratio center
+                        vdupq_n_f32(p[PARAM_PERC_VAR] * 0.01f));   // Perc variation
 
     // =================================================================
     // Update resonant base parameters (mode from param 22)
@@ -260,17 +279,33 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     int8_t depth1 = p[PARAM_LFO1_DEPTH];
     int8_t depth2 = p[PARAM_LFO2_DEPTH];
 
-    lfo_smoother_set_rate(&synth->lfo_smooth, 0, p[PARAM_LFO1_RATE] / 100.0f, all_voices);
-    lfo_smoother_set_rate(&synth->lfo_smooth, 1, p[PARAM_LFO2_RATE] / 100.0f, all_voices);
-    lfo_smoother_set_depth(&synth->lfo_smooth, 0, depth1 / 100.0f, all_voices);
-    lfo_smoother_set_depth(&synth->lfo_smooth, 1, depth2 / 100.0f, all_voices);
+    lfo_smoother_set_rate(&synth->lfo_smooth, 0, p[PARAM_LFO1_RATE] * 0.01f, all_voices);
+    lfo_smoother_set_rate(&synth->lfo_smooth, 1, p[PARAM_LFO2_RATE] * 0.01f, all_voices);
+    lfo_smoother_set_depth(&synth->lfo_smooth, 0, depth1 * 0.01f, all_voices);
+    lfo_smoother_set_depth(&synth->lfo_smooth, 1, depth2 * 0.01f, all_voices);
     lfo_smoother_set_target(&synth->lfo_smooth, 0, p[PARAM_LFO1_TARGET], all_voices);
     lfo_smoother_set_target(&synth->lfo_smooth, 1, p[PARAM_LFO2_TARGET], all_voices);
 
     // =================================================================
-    // Update envelope shape (param 20)
+    // Update envelope shape and metal character (param 20)
+    // EnvShape encoding: bit 7 = metal character (0=Cymbal, 1=Gong)
+    //                    bits[6:0] = envelope ROM index (0-127)
     // =================================================================
-    synth->current_env_shape = p[PARAM_ENV_SHAPE];
+    synth->current_env_shape = (uint8_t)p[PARAM_ENV_SHAPE];
+    metal_engine_set_character(&synth->metal,
+                               (uint32_t)(synth->current_env_shape >> 7));
+
+    // =================================================================
+    // Update Euclidean tuning offsets (param 16 / EuclTun)
+    // Loads the per-voice semitone offset vector from the static lookup
+    // table.  Applied at note-on so each voice plays a different pitch
+    // derived from E(4,n): position[i] = floor(i * n / 4).
+    // =================================================================
+    {
+        uint8_t mode = (uint8_t)p[PARAM_LFO2_SHAPE];
+        if (mode >= EUCLID_MODE_COUNT) mode = 0;
+        synth->euclid_offsets = vld1q_f32(EUCLID_OFFSETS[mode]);
+    }
 }
 
 /**
@@ -350,6 +385,7 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t * synth) {
     synth->voice_active = vdupq_n_f32(0.0f);
     synth->voice_triggered = vdupq_n_u32(0);
     synth->voice_velocity = vdupq_n_f32(1.0f);
+    synth->euclid_offsets = vdupq_n_f32(0.0f);  // Off: all voices unison
     synth->master_gain = 0.25f;
     synth->current_env_shape = 40;
     synth->resonant_morph = 0.5f;
@@ -457,9 +493,13 @@ fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
                                        synth->voice_velocity);
 
     // ---------------------------------------------------------------
-    // 4. Set engine note for each triggered voice
+    // 4. Set engine note for each triggered voice.
+    //    Apply Euclidean tuning: voice i gets note + euclid_offsets[i]
+    //    so the 4 voices are spread across a Euclidean pitch distribution.
+    //    When EuclTun=Off, euclid_offsets = [0,0,0,0] (no change).
     // ---------------------------------------------------------------
-    float32x4_t midi_note_v = vdupq_n_f32(note);
+    float32x4_t midi_note_v = vaddq_f32(vdupq_n_f32((float)note),
+                                         synth->euclid_offsets);
 
     for (int v = 0; v < VOICE_ALLOC_MAX; v++) {
         if (gate_bits & (1 << v)) {
@@ -496,7 +536,9 @@ fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
     // 7. Trigger envelope for gated voices
     // ---------------------------------------------------------------
     synth->voice_triggered = gate;
-    neon_envelope_trigger(&synth->envelope, gate, synth->current_env_shape);
+    // Mask to lower 7 bits: bit 7 encodes metal character, not envelope index
+    neon_envelope_trigger(&synth->envelope, gate,
+                          synth->current_env_shape & 0x7Fu);
 }
 
 /**
@@ -552,7 +594,24 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     // =================================================================
     float32x4_t lfo1, lfo2;
     lfo_enhanced_process(&synth->lfo, &lfo1, &lfo2);
-    // 2. Calculate LFO Modulations
+    // LFO target guide — all targets wired; character notes:
+    //   PITCH(1)    Purely percussive: pitch sweep / flam tuning at slow rate,
+    //               vibrato at medium rate, FM-pitch crunch at near-audio rate.
+    //   INDEX(2)    Percussive: brightness / spectral density modulation.
+    //               High depth causes AM beating when both LFOs target INDEX.
+    //   ENV(3)      Can shift toward synth/melodic: acts as amplitude envelope
+    //               re-shaper — slow rates create dynamic variation per hit,
+    //               fast rates create tremolo, very fast = AM synth character.
+    //   LFO2_PHASE(4)/LFO1_PHASE(5)  LFO cross-modulation (frequency FM between
+    //               the two LFOs). Keeps percussive but adds movement to sweep.
+    //   RES_FREQ(6)/RESONANCE(7)/RES_MORPH(9)  Only affect the resonant engine;
+    //               silent when voice allocation has no resonant engine active.
+    //   NOISE_MIX(8) Modulates snare noise/tone balance AND metal FM index depth.
+    //               Both wired: snare via additive offset in process(), metal via
+    //               brightness_add parameter.
+    //   METAL_GATE(10) Per-sample amplitude gate on metal engine only. Use with
+    //               Ramp shape + positive depth for open/closed hi-hat effect.
+    //               LFO phase resets on trigger, so Ramp acts as one-shot gate.
     float32x4_t index_add      = vdupq_n_f32(0.0f);
     float32x4_t lfo_pitch_mult = vdupq_n_f32(1.0f);
 
@@ -685,7 +744,12 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
         noise_add = vmulq_f32(
             vsubq_f32(vmulq_f32(mod, vdupq_n_f32(2.0f)), vdupq_n_f32(1.0f)),
             depth);
-        // snare_engine_update_noise(&synth->snare, noise_add); // cannot add something noise, as this function is called per sample, and updating the value used for calculate the modulatio, creating an exploding feedback
+        // noise_add is applied in:
+        //   snare_engine_process (line ~213): noise_mix_mod = noise_mix + noise_add
+        //   metal_engine_process (brightness_add param): base_index += brightness_add
+        // NOTE: snare_engine_update_noise() is intentionally NOT called here —
+        //       it writes to snare->noise_mix which is used as a base level,
+        //       and calling it per-sample would cause exploding feedback.
     }
 
     // =================================================================
@@ -709,6 +773,35 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     }
 
     // =================================================================
+    // LFO → METAL_GATE (target 10): open/closed hi-hat amplitude gate
+    // Inspired by the TR-909: same oscillator bank, two different VCA
+    // decay times. Here the LFO provides the variable-length gate.
+    //
+    // Usage: set L1Shape=Ramp, L1Target=MetalGate, L1Depth=+50..+100%.
+    //   L1Rate high → gate closes fast → closed hi-hat character.
+    //   L1Rate low  → gate closes slowly → open hi-hat character.
+    //   L1Depth 0%  → metal_gate = 1.0 always (gate disabled, fully open).
+    //   L1Depth negative → no effect (same as depth 0%).
+    //
+    // Because LFO phase resets on every trigger (fm_perc_synth_note_on),
+    // the Ramp starts from 0.0 on each hit, acting as a one-shot decay gate.
+    // =================================================================
+    float32x4_t metal_gate = vdupq_n_f32(1.0f);  // Default: fully open (no gating)
+    if (synth->lfo.target1 == LFO_TARGET_METAL_GATE ||
+        synth->lfo.target2 == LFO_TARGET_METAL_GATE) {
+        float32x4_t mod   = (synth->lfo.target1 == LFO_TARGET_METAL_GATE) ? lfo1 : lfo2;
+        float32x4_t depth = (synth->lfo.target1 == LFO_TARGET_METAL_GATE)
+                            ? synth->lfo.depth1 : synth->lfo.depth2;
+        // gate = clamp(1.0 - lfo * depth, 0, 1)
+        // Ramp LFO: 0 at trigger → 1 at end of period.
+        // Positive depth: 1.0 at trigger → 0.0 as lfo reaches 1/depth.
+        // Negative depth: no effect (gate stays ≥1.0, clamped to 1.0).
+        float32x4_t raw = vsubq_f32(vdupq_n_f32(1.0f), vmulq_f32(mod, depth));
+        metal_gate = vmaxq_f32(raw, vdupq_n_f32(0.0f));
+        metal_gate = vminq_f32(metal_gate, vdupq_n_f32(1.0f));
+    }
+
+    // =================================================================
     // Process each engine with its voice mask
     // =================================================================
     float32x4_t kick_out = kick_engine_process(&synth->kick, env,
@@ -719,7 +812,8 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
                                                  lfo_pitch_mult, index_add, noise_add);
     float32x4_t metal_out = metal_engine_process(&synth->metal, env,
                                                  synth->engine_mask[ENGINE_METAL],
-                                                 lfo_pitch_mult, index_add);
+                                                 lfo_pitch_mult, index_add, noise_add,
+                                                 metal_gate);
     float32x4_t perc_out = perc_engine_process(&synth->perc, env,
                                                synth->engine_mask[ENGINE_PERC],
                                                lfo_pitch_mult, index_add);

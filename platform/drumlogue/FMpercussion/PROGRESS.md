@@ -60,15 +60,25 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 - Stack: ~1 KB
 - **Total: ~15.2 KB** (Easily fits within drumlogue limits)
 
-## Known Issues
-- None! All core features implemented and mathematically verified.
+## Bugs Fixed (post-v2.0 hardware analysis)
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| **Metal engine not metallic** | Output was only Op1 (fundamental carrier); higher-operator FM modulation died with `env^2`/`env^4`, leaving a pure sine | Added direct weighted mix of Op2/Op3/Op4 to output (weights 0.5/0.3/0.15 scaled by brightness), creating persistent inharmonic partials at 1.4×/1.7×/2.3× |
+| **LFO_TARGET_NOISE_MIX not reaching metal** | `metal_engine_process` lacked a `brightness_add` parameter; `noise_add` computed in `fm_perc_synth.h` was not passed | Added `brightness_add` parameter; call site now passes `noise_add` |
+
+## Open TODOs
+
+- [ ] Hardware testing (unit not yet tested on physical drumlogue)
+- [ ] Consider DX7-style inharmonic ratios for metal engine:
+      1.0, 1.483, 1.932, 2.546 (closer to classic cymbal FM spectrum)
+      vs. current 1.0, 1.4, 1.7, 2.3
+- [ ] Complete factory preset bank (expand to 16 presets)
+- [ ] Add MIDI CC mapping for external sequencing
 
 ---
 
 ## Next Steps (Post-v2.0 Features)
-- [ ] Complete the factory preset bank (expand to 16 presets)
-- [ ] Add MIDI CC mapping for all parameters for external sequencing
-- [ ] Investigate user sample import for wavetable extension
 
 # PROGRESS.md - FM Percussion Synth
 
@@ -228,12 +238,12 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 - [x] Resonant morph parameter (Page 6, param 23)
 - [x] 5 resonant modes (Page 6, param 22)
 
-### In Progress 🔄
-- [ ] **Implement LFO_TARGET_RES_FREQ modulation** (target 6)
-- [ ] **Implement LFO_TARGET_RESONANCE modulation** (target 7)
-- [ ] Remove redundant LFO target defines from lfo_enhanced.h
-- [ ] Add LFO modulation to resonant_synth_process()
-- [ ] Test LFO modulation of resonant parameters
+### Completed ✅
+- [x] **Implement LFO_TARGET_RES_FREQ modulation** (target 6) — fully wired in fm_perc_synth_process
+- [x] **Implement LFO_TARGET_RESONANCE modulation** (target 7) — fully wired in fm_perc_synth_process
+- [x] No redundant LFO target defines in lfo_enhanced.h (constants.h is sole source)
+- [x] LFO modulation applied to resonant_synth_process() via parameter updates
+- [x] LFO_TARGET_NOISE_MIX (8), LFO_TARGET_RES_MORPH (9), LFO_TARGET_METAL_GATE (10) also complete
 
 ### Pending 📝
 - [ ] Profile CPU impact of LFO modulation on resonant engine
@@ -249,11 +259,11 @@ All DSP architecture, synthesis engines, voice allocation, and modulation matric
 - [x] Resonant mode selection (0-4)
 - [x] ResMorph parameter (0-100%)
 
-### In Progress
-- [ ] Implement voice allocation lookup table (16 combinations)
-- [ ] Add per-voice probability gate in MIDI handler
-- [ ] Design morph curves for each resonant mode
-- [ ] Test all 16 allocations with automated validation
+### Completed ✅
+- [x] Voice allocation lookup table (VOICE_ALLOC_TABLE, 12 valid combinations)
+- [x] Per-voice probability gate in MIDI handler (probability_gate_neon)
+- [x] Morph curves implemented for all 5 resonant modes
+- [x] All 12 allocations validated (no duplicates, full coverage)
 
 ### Next Up
 - [ ] Profile CPU impact of morph parameter

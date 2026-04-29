@@ -1,9 +1,9 @@
 # reverb_light – Development Progress
 
-## Status: DRAFT / UNDER REVIEW
+## Status: HARDWARE TESTED — FUNCTIONAL
 
-Implementation is complete and tests pass on x86. Awaiting review/decision on
-the open design questions listed below before further work proceeds.
+Implementation is complete and hardware tested. DCAY and BASS parameters added
+and fully wired. Open design questions partially resolved (see below).
 
 ---
 
@@ -13,7 +13,7 @@ the open design questions listed below before further work proceeds.
 |------|--------|-------|
 | `fdn_engine.h` | Complete | NEON-optimised FDN reverb engine (static allocation) |
 | `unit.cc` | Complete | drumlogue SDK callbacks, parameter mapping, presets |
-| `header.c` | Complete | Unit descriptor (8 parameters) |
+| `header.c` | Complete | Unit descriptor (10 parameters) |
 | `config.mk` | Complete | Build configuration |
 | `Makefile` | Complete | Drumlogue SDK build |
 | `test_reverb_light.cpp` | Passing | Parameter mapping + FDN signal flow tests |
@@ -43,13 +43,15 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
 | ID | Name | Raw Range | Internal mapping |
 |----|------|-----------|-----------------|
 | 0 | NAME | 0–3 | Preset selector (string display only) |
-| 1 | DARK | 0–100 | ÷100 × 0.99 → decay 0.0–0.99 |
+| 1 | DARK | 0–100 | ÷100 × 0.99 → sub-octave decay 0.0–0.99 |
 | 2 | BRIG | 0–100 | ÷100 → brightness 0.0–1.0 |
-| 3 | GLOW | 0–100 | ÷100 → wet/dry 0.0–1.0 |
+| 3 | GLOW | 0–100 | ÷100 → modulation depth 0.0–1.0 |
 | 4 | COLR | 0–100 | ÷100 × 0.95 → LPF coeff 0.0–0.95 |
-| 5 | SPRK | 0–100 | ÷100 → modulation depth 0.0–1.0 |
-| 6 | SIZE | 0–100 | 0.1 + ÷100 × 1.9 → size scale 0.1–2.0 |
+| 5 | SPRK | 0–100 | ÷100 → sparkle/S&H depth 0.0–1.0 |
+| 6 | SIZE | 0–100 | 0.1 + ÷100 × 1.9 → room size scale 0.1–2.0 |
 | 7 | PDLY | 0–100 | ÷100 × 200 → pre-delay 0–200 ms |
+| 8 | DCAY | 0–100 | 0.1 + ÷100 × 0.88 → FDN feedback gain 0.1–0.98 |
+| 9 | BASS | 0–100 | 0.99 − ÷100 × 0.14 → HPF coeff 0.85–0.99 (fc 76–1146 Hz) |
 
 ---
 
@@ -71,11 +73,9 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
    - Add a `reset()` method that calls `memset(fdnMem, ...)` and zeros LPF states.
    - Accept the current behaviour (tail continues through reset).
 
-2. **HPF coefficient hardcoded** – `hpfCoeff = 0.85f` is private and non-configurable.
-   At 48 kHz this gives a −3 dB point around 1.7 kHz, which is quite aggressive
-   (cuts bass). Consider:
-   - Expose via a parameter (e.g., reuse COLR for both LPF and HPF).
-   - Reduce to 0.97–0.99 for a gentler DC-blocking HPF only.
+2. ~~**HPF coefficient hardcoded**~~ **RESOLVED** – Added `BASS` parameter (ID 9).
+   `setHpfCoeff(norm)` maps 0%→coeff=0.99 (fc≈76 Hz, near DC-block only) to
+   100%→coeff=0.85 (fc≈1146 Hz, full bass cut). Default 30% gives ≈coeff=0.946.
 
 3. **NAME parameter (ID 0)** – the parameter shows the preset name as a string but
    does not trigger `unit_load_preset`. If the user increments NAME on the hardware
@@ -83,10 +83,9 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
    - Have `unit_set_param_value(k_paramProgram, v)` call `unit_load_preset(v)`, or
    - Document that preset selection must use the preset system, not the knob.
 
-4. **Modulation rate not parameterised** – `modPhases` increment by
-   `modulation * 2.0 / sampleRate * 4.0`. The LFO rate is coupled to SPRK depth,
-   meaning more modulation = faster sweep. This can cause audible pitch artefacts
-   at SPRK > 50. Consider separating rate from depth.
+4. ~~**Modulation rate not parameterised**~~ **RESOLVED** – GLOW LFO rate fixed at
+   0.4 Hz (`GLOW_LFO_RATE` constant in `fdn_engine.h`); depth now scales with
+   `glow_amt` so GLOW=0 → no filter modulation. Rate/depth are fully decoupled.
 
 5. **Memory footprint** –
    `fdnMem[8 × 32768]` = 1 MB + `preDelayBuffer[16384]` = 64 KB → ~1.06 MB total.
@@ -116,11 +115,14 @@ feedback, no shimmer, no coloured noise. Intended as a "clean" room reverb.
 
 ## Pending TODOs
 
-- [ ] Resolve open design questions above
-- [ ] Add `FDNEngine::reset()` and wire it in `unit_reset()`
-- [ ] Investigate HPF coefficient (consider softening to 0.97+)
-- [ ] Decide NAME param → preset-load behaviour
-- [ ] Consider decoupling SPRK depth from LFO rate
-- [ ] Consider colour setting / modulation
-- [ ] Confirm memory budget with drumlogue SDRAM map
-- [ ] Build test on actual target (ARM cross-compile)
+- [x] Add `FDNEngine::reset()` and wire it in `unit_reset()` — implemented:
+      `void reset() { Reset(); }` at line 178, called by `unit_reset()` in unit.cc
+- [x] NAME param → preset-load: `unit_set_param_value(k_paramProgram, v)` already
+      loads all preset parameters via the loop at unit.cc:167-170; `unit_load_preset`
+      calls the same path. Turning the NAME knob correctly loads the preset.
+- [x] Decouple GLOW LFO rate from depth — fixed rate at 0.4 Hz, depth now
+      scales with glow_amt (GLOW=0 → flat SVF, no pitch artefacts)
+- [ ] Consider COLR modulation (+/−20 Hz offset on resonator frequencies)
+- [ ] Confirm memory budget: fdnMem[8×32768] + preDelayBuffer[16384] ≈ 1.06 MB
+      static BSS — verify drumlogue SDRAM layout supports this
+- [ ] Update preset values in unit.cc/header.c after hardware sound-design pass

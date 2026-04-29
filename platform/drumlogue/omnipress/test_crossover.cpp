@@ -294,12 +294,95 @@ static void test_3band_energy_conservation() {
     printf("  PASS: 3-band energy sum within expected range\n");
 }
 
+/* --------------------------------------------------------------------------
+ * Test 5: Real-time crossover frequency update (no state reset)
+ *
+ * crossover_update_coeffs() replaces crossover_init() for runtime frequency
+ * changes.  The key invariant: filter delay-line state is NOT zeroed, so
+ * there is no discontinuity (click) in the output when the frequency changes.
+ *
+ * This test verifies two things:
+ *   (a) After crossover_update_coeffs, the biquad state is still non-zero
+ *       (i.e., the state was not zeroed as crossover_init would have done).
+ *   (b) After the frequency update, the filter exhibits the new crossover
+ *       frequency: a tone that was below the old LP cutoff is now above the
+ *       new (lower) cutoff and should appear more in the HP output.
+ * -------------------------------------------------------------------------- */
+static void test_realtime_crossover_update() {
+    printf("\n=== Test 5: Real-time crossover update preserves filter state ===\n");
+
+    /* Phase 1: init at 2000 Hz, warm up with 500 Hz sine (well below xover → mostly LP) */
+    XoverCoeffs x;
+    xover_coeffs(&x, 2000.0f, SAMPLE_RATE);
+
+    LR24 lpf = {{0},{0}}, hpf = {{0},{0}};
+    int warmup = (int)(SAMPLE_RATE * 0.05f);  /* 50 ms */
+    float tone_hz = 500.0f;
+
+    for (int n = 0; n < warmup; n++) {
+        float in = sinf(2.0f * M_PI_F * tone_hz * n / SAMPLE_RATE);
+        lr24_process(&lpf, in, x.lpf);
+        lr24_process(&hpf, in, x.hpf);
+    }
+
+    /* Record state magnitudes after warm-up (must be non-zero) */
+    float state_before = fabsf(lpf.s1.z1) + fabsf(lpf.s1.z2)
+                       + fabsf(lpf.s2.z1) + fabsf(lpf.s2.z2);
+    printf("  Filter state sum after warm-up (2000 Hz): %.6f (must be > 0)\n", state_before);
+    assert(state_before > 0.001f && "Filter did not build up state during warm-up");
+
+    /* Phase 2: update frequency to 200 Hz (WITHOUT resetting states).
+     * Scalar equivalent of crossover_update_coeffs: just recompute coeffs. */
+    xover_coeffs(&x, 200.0f, SAMPLE_RATE);
+    /* Do NOT memset lpf/hpf — this is the non-resetting path */
+
+    float state_after = fabsf(lpf.s1.z1) + fabsf(lpf.s1.z2)
+                      + fabsf(lpf.s2.z1) + fabsf(lpf.s2.z2);
+    printf("  Filter state sum after freq update (200 Hz, no reset): %.6f (must still be > 0)\n",
+           state_after);
+    assert(state_after > 0.001f && "State was zeroed by frequency update — click-inducing reset bug!");
+
+    /* Phase 3: process more audio at the new crossover (200 Hz).
+     * 500 Hz is now ABOVE the 200 Hz crossover → HP output should dominate.
+     * Allow 500 ms of settling after the coefficient update before measuring,
+     * since the biquad state decays toward the new steady-state response
+     * at the filter's own pole rate (not instantaneously). */
+    int settle = (int)(SAMPLE_RATE * 0.5f);  /* 500 ms settling */
+    for (int n = 0; n < settle; n++) {
+        float in = sinf(2.0f * M_PI_F * tone_hz * (warmup + n) / SAMPLE_RATE);
+        lr24_process(&lpf, in, x.lpf);
+        lr24_process(&hpf, in, x.hpf);
+    }
+
+    float max_lp_new = 0.0f, max_hp_new = 0.0f;
+    int measure = (int)(SAMPLE_RATE * 0.1f);  /* 100 ms measurement window after settling */
+
+    for (int n = 0; n < measure; n++) {
+        float in = sinf(2.0f * M_PI_F * tone_hz * (warmup + settle + n) / SAMPLE_RATE);
+        float lp = lr24_process(&lpf, in, x.lpf);
+        float hp = lr24_process(&hpf, in, x.hpf);
+        if (fabsf(lp) > max_lp_new) max_lp_new = fabsf(lp);
+        if (fabsf(hp) > max_hp_new) max_hp_new = fabsf(hp);
+    }
+
+    printf("  After update to 200 Hz — 500 Hz tone: LP peak=%.4f  HP peak=%.4f\n",
+           max_lp_new, max_hp_new);
+    printf("  (HP should dominate since 500 Hz > 200 Hz cutoff)\n");
+    /* After settling, HP should dominate (500 Hz >> 200 Hz cutoff).
+     * Allow generous threshold to account for the filter settling transient. */
+    assert(max_hp_new > max_lp_new * 2.0f &&
+           "HP should dominate after lowering crossover below the tone frequency");
+
+    printf("  PASS: real-time frequency update preserved state and applied new coefficients\n");
+}
+
 int main() {
     printf("=== OmniPress crossover tests ===\n");
     test_lr_state_independence();
     test_per_instance_freq();
     test_frequency_splitting();
     test_3band_energy_conservation();
+    test_realtime_crossover_update();
     printf("\n=== ALL CROSSOVER TESTS PASSED ===\n");
     return 0;
 }

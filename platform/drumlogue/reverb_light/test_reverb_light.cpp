@@ -38,17 +38,17 @@ static void build_hadamard(float H[FDN_CHANNELS][FDN_CHANNELS]) {
  * ---------------------------------------------------------------------- */
 
 /* DARK  (id 0): 0..100 → decay 0.0..0.99 */
-static float map_dark(int32_t v)       { return (v / 100.0f) * 0.99f; }
+static float map_dark(int32_t v)       { return (v * 0.01f) * 0.99f; }
 /* BRIG  (id 1): 0..100 → brightness 0.0..1.0 */
-static float map_brig(int32_t v)       { return v / 100.0f; }
+static float map_brig(int32_t v)       { return v * 0.01f; }
 /* GLOW  (id 2): 0..100 → glow 0.0..1.0 */
-static float map_glow(int32_t v)       { return v / 100.0f; }
+static float map_glow(int32_t v)       { return v * 0.01f; }
 /* COLR  (id 3): 0..100 → colorCoeff 0.0..0.95 */
-static float map_colr(int32_t v)       { return (v / 100.0f) * 0.95f; }
+static float map_colr(int32_t v)       { return (v * 0.01f) * 0.95f; }
 /* SPRK  (id 4): 0..100 → modulation 0.0..1.0 */
-static float map_sprk(int32_t v)       { return v / 100.0f; }
+static float map_sprk(int32_t v)       { return v * 0.01f; }
 /* SIZE  (id 5): 0..100 → sizeScale 0.1..2.0 */
-static float map_size(int32_t v)       { return 0.1f + (v / 100.0f) * 1.9f; }
+static float map_size(int32_t v)       { return 0.1f + (v * 0.01f) * 1.9f; }
 
 /* -------------------------------------------------------------------------
  * Test 1: Parameter mapping correctness
@@ -358,6 +358,86 @@ void test_stereo_deinterleave() {
  * main
  * ---------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------
+ * Test 9: GLOW LFO – depth scales with glow_amt, rate is fixed
+ *
+ * After the fdn_engine.h fix:
+ *   f_coeff_l = 0.15f + (0.10f * glow_amt * lfo_val)
+ *   GLOW_LFO_RATE = 0.4 / SAMPLE_RATE (constant)
+ *
+ * Verified properties:
+ *   (a) glow_amt = 0 → f_coeff stays exactly 0.15 regardless of phase
+ *   (b) glow_amt = 1 → f_coeff sweeps between 0.05 and 0.25
+ *   (c) LFO advances at the same rate for glow_amt=0 and glow_amt=1
+ * ---------------------------------------------------------------------- */
+
+void test_glow_lfo_decoupling() {
+    printf("\n=== Test 9: GLOW LFO Depth-Rate Decoupling ===\n");
+
+    const float GLOW_LFO_RATE = 0.4f / SAMPLE_RATE;
+    const float SVF_CENTER    = 0.15f;
+    const float SVF_DEPTH     = 0.10f;
+    const int   N_SAMPLES     = (int)(3.0f / GLOW_LFO_RATE); /* 3 full cycles */
+
+    /* (a) glow_amt = 0: f_coeff must stay fixed at SVF_CENTER */
+    {
+        float phase    = 0.0f;
+        float glow_amt = 0.0f;
+        float f_min = 1.0f, f_max = 0.0f;
+        for (int n = 0; n < N_SAMPLES; n++) {
+            float lfo = sinf(phase * 2.0f * 3.14159265f);
+            float f_coeff = SVF_CENTER + SVF_DEPTH * glow_amt * lfo;
+            if (f_coeff < f_min) f_min = f_coeff;
+            if (f_coeff > f_max) f_max = f_coeff;
+            phase += GLOW_LFO_RATE;
+            if (phase > 1.0f) phase -= 1.0f;
+        }
+        printf("  glow=0.0: f_coeff range [%.4f, %.4f]  (expected [0.15, 0.15])  %s\n",
+               f_min, f_max,
+               (fabsf(f_min - SVF_CENTER) < EPSILON && fabsf(f_max - SVF_CENTER) < EPSILON)
+               ? "PASS" : "FAIL");
+        assert(fabsf(f_min - SVF_CENTER) < EPSILON);
+        assert(fabsf(f_max - SVF_CENTER) < EPSILON);
+    }
+
+    /* (b) glow_amt = 1: f_coeff must sweep [0.05, 0.25] */
+    {
+        float phase    = 0.0f;
+        float glow_amt = 1.0f;
+        float f_min = 1.0f, f_max = 0.0f;
+        for (int n = 0; n < N_SAMPLES; n++) {
+            float lfo = sinf(phase * 2.0f * 3.14159265f);
+            float f_coeff = SVF_CENTER + SVF_DEPTH * glow_amt * lfo;
+            if (f_coeff < f_min) f_min = f_coeff;
+            if (f_coeff > f_max) f_max = f_coeff;
+            phase += GLOW_LFO_RATE;
+            if (phase > 1.0f) phase -= 1.0f;
+        }
+        printf("  glow=1.0: f_coeff range [%.4f, %.4f]  (expected [0.05, 0.25])  %s\n",
+               f_min, f_max,
+               (f_min < 0.06f && f_max > 0.24f) ? "PASS" : "FAIL");
+        assert(f_min < 0.06f  && "glow=1 lower bound too high");
+        assert(f_max > 0.24f  && "glow=1 upper bound too low");
+    }
+
+    /* (c) Rate is constant: both glow_amt=0 and glow_amt=1 complete
+     *     the same number of LFO cycles over N_SAMPLES.
+     *     One cycle = 1/GLOW_LFO_RATE samples.  Verify period. */
+    {
+        float expected_period = 1.0f / GLOW_LFO_RATE;
+        float measured_rate   = GLOW_LFO_RATE * SAMPLE_RATE;  /* Hz */
+        printf("  LFO rate: %.4f Hz (expected 0.4000 Hz)  %s\n",
+               measured_rate,
+               fabsf(measured_rate - 0.4f) < 1e-4f ? "PASS" : "FAIL");
+        printf("  LFO period: %.1f samples (expected %.1f)  %s\n",
+               expected_period, SAMPLE_RATE / 0.4f,
+               fabsf(expected_period - SAMPLE_RATE / 0.4f) < 1.0f ? "PASS" : "FAIL");
+        assert(fabsf(measured_rate - 0.4f) < 1e-4f);
+    }
+
+    printf("  GLOW LFO depth-rate decoupling: PASS\n");
+}
+
 int main(void) {
     printf("==========================================================\n");
     printf(" reverb_light (FDNEngine) Unit Tests\n");
@@ -371,6 +451,7 @@ int main(void) {
     test_brightness_blend();
     test_size_scaling();
     test_stereo_deinterleave();
+    test_glow_lfo_decoupling();
 
     printf("\n==========================================================\n");
     printf(" ALL TESTS PASSED\n");

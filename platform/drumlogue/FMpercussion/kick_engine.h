@@ -95,19 +95,45 @@ fast_inline void kick_engine_set_note(kick_engine_t* kick,
 /**
  * Process one sample of kick engine
  * Returns audio output for all 4 voices
+ *
+ * TR-808 click inspiration: the 808 bridged-T circuit produces a metallic
+ * transient "click" at note onset because the VCA attacks instantly into a
+ * resonating circuit. We approximate this by adding an env^8 weighted FM
+ * index boost at onset — it decays to <10% in the first ~20% of the envelope,
+ * adding high-harmonic content only at the very start of the hit.
  */
 fast_inline float32x4_t kick_engine_process(kick_engine_t* kick,
                                             float32x4_t envelope,
                                             uint32x4_t active_mask,
                                             float32x4_t lfo_pitch_mult,
                                             float32x4_t lfo_index_add) {
-    // 1. Exponential fast-envelope for the pitch sweep (env^4)
+
+    // APC BAILOUT: Check if all 4 voices are dead
+    // Extract the max value across the 4 lanes of the mask
+    #if defined(__aarch64__)
+        uint32_t max_mask = vmaxvq_u32(active_mask);
+    #else
+        // 32-bit ARM fallback for vector max
+        uint32x2_t max_half = vmax_u32(vget_low_u32(active_mask), vget_high_u32(active_mask));
+        uint32_t max_mask = vget_lane_u32(vpmax_u32(max_half, max_half), 0);
+    #endif
+
+    // If the mask is zero across all lanes, SKIP THE MATH!
+    if (max_mask == 0) {
+        return vdupq_n_f32(0.0f);
+    }
+
+    // 1. Staggered envelopes for pitch and click layers
     float32x4_t env2 = vmulq_f32(envelope, envelope);
     float32x4_t env4 = vmulq_f32(env2, env2);
+    // env^8: at env=1.0 → 1.0; at env=0.9 → 0.43; at env=0.75 → 0.10; essentially
+    // gone by the first 30% of decay — produces the short attack click only.
+    float32x4_t env8 = vmulq_f32(env4, env4);
 
     // 2. The Pitch Drop: Starts HIGH and drops down to the base frequency.
     // kick->sweep_depth controls how many octaves it drops.
-    float32x4_t sweep_octaves = vmulq_f32(kick->sweep_depth, vmulq_n_f32(env4, KICK_SWEEP_OCTAVES));
+    // use env2 instead of env4 to have more "thump" and less "laser zap"
+    float32x4_t sweep_octaves = vmulq_f32(kick->sweep_depth, vmulq_n_f32(env2, KICK_SWEEP_OCTAVES));
     // exp2_neon converts octaves into a frequency multiplier (e.g., 4 octaves = 16x frequency)
     float32x4_t pitch_drop_mult = exp2_neon(sweep_octaves);
 
@@ -128,14 +154,33 @@ fast_inline float32x4_t kick_engine_process(kick_engine_t* kick,
     kick->carrier_phase = vbslq_f32(c_wrap, vsubq_f32(kick->carrier_phase, two_pi), kick->carrier_phase);
     kick->modulator_phase = vbslq_f32(m_wrap, vsubq_f32(kick->modulator_phase, two_pi), kick->modulator_phase);
 
-    // FM Index with UI Decay Shape + LFO modulation
+    // 3. FM Index: base (decay-shaped) + LFO + TR-808-inspired click boost
     float32x4_t shape_factor = vmulq_f32(kick->decay_shape, envelope);
-    float32x4_t index = vmulq_f32(envelope, vaddq_f32(vdupq_n_f32(1.0f), shape_factor));
-    index = vaddq_f32(index, lfo_index_add); // Add LFO index mod
+    // index frequency dependent: cleaner low kick, aggressive high kick
+    float32x4_t freq_norm = vmulq_n_f32(carrier_freq, 1.0f / 100.0f);
+    float32x4_t index = vmulq_f32(env4, vaddq_f32(vdupq_n_f32(2.0f), freq_norm));
+    // Click boost: env^8 * sweep_depth * 4.0 — proportional to sweep depth
+    // so a "hard" punchy kick (high sweep) also gets a hard click, while a
+    // "smooth/sub" kick (low sweep) stays clean.
+    // now even low sweep have a click
+    float32x4_t click_boost = vmulq_f32(env8,
+                                        vaddq_f32(
+                                            vmulq_n_f32(kick->sweep_depth, 3.0f),
+                                            vdupq_n_f32(1.0f)));
+    index = vaddq_f32(vaddq_f32(index, lfo_index_add), click_boost);
 
     float32x4_t modulator = neon_sin(kick->modulator_phase);
     float32x4_t modulated_phase = vaddq_f32(kick->carrier_phase, vmulq_f32(modulator, index));
-    float32x4_t output = neon_sin(modulated_phase);
+    // pure parallel carrier
+    float32x4_t clean = neon_sin(kick->carrier_phase);
+
+    // dynamico weight: more attack at beginning, more body later
+    float32x4_t body_gain = vsubq_f32(vdupq_n_f32(1.0f), env4);
+    float32x4_t attack_gain = env4;
+
+    float32x4_t output = vaddq_f32(
+        vmulq_f32(clean, body_gain),
+        vmulq_f32(neon_sin(modulated_phase), attack_gain));
 
     // Output
     output = vmulq_f32(output, envelope);

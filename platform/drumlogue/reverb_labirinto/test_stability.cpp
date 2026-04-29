@@ -61,6 +61,7 @@ typedef struct {
     float lpfState[FDN_CH];   /* one-pole LPF state per channel */
     float modPhase[FDN_CH];   /* LFO phase per channel (0..2π) */
     int   writePos;
+    int   activeSampleCount;  /* APC tail counter — 0 means bypass */
     /* parameters */
     float decay;              /* clamped to ≤0.99 */
     float lowDecayMult;       /* 0.9..1.5 */
@@ -90,8 +91,9 @@ static void lab_init(ScalarLabirinto *lab) {
     lab->dampingCoeff  = expf(-omega);
     lab->modDepth      = 0.1f;
     lab->modRate       = 0.5f;
-    lab->mix           = 0.3f;
-    lab->width         = 1.0f;
+    lab->mix               = 0.3f;
+    lab->width             = 1.0f;
+    lab->activeSampleCount = 0;   /* cold start — matches hardware power-on */
     /* modPhase: spread phases across channels */
     for (int i = 0; i < FDN_CH; i++)
         lab->modPhase[i] = i * (M_TWOPI / FDN_CH);
@@ -117,6 +119,19 @@ static void lab_set_params(ScalarLabirinto *lab,
 static void lab_process_sample(ScalarLabirinto *lab, float inL, float inR,
                                 float *outL, float *outR) {
     float input = (inL + inR) * 0.5f;
+
+    /* APC: raw-input wake-up (must come before bypass guard). */
+    if (fabsf(input) > 1e-5f)
+        lab->activeSampleCount = (int)(SAMPLE_RATE * (1.0f + lab->decay * 5.0f));
+
+    /* Bypass when tail is exhausted — output dry signal only. */
+    if (lab->activeSampleCount <= 0) {
+        *outL = inL * (1.0f - lab->mix);
+        *outR = inR * (1.0f - lab->mix);
+        lab->writePos = (lab->writePos + 1) & BUF_MASK;
+        return;
+    }
+    lab->activeSampleCount--;
 
     /* Read delayed samples with LFO modulation */
     float delayOut[FDN_CH];
@@ -210,7 +225,7 @@ static void test_stability_max_params() {
     float lowDecayMult  = 0.9f + (100/100.0f)*0.6f;   /* 1.5 */
     float highDecayMult = 0.1f + (100/100.0f)*0.9f;   /* 1.0 */
     float dampingFreqHz = 1000 * 10.0f;               /* 10000 Hz */
-    float width         = 200 / 100.0f;               /* 2.0 */
+    float width         = 200 * 0.01f;               /* 2.0 */
     float diffusion     = 1000 / 1000.0f;             /* 1.0 */
     lab_set_params(&lab, mix, decay, lowDecayMult, highDecayMult,
                    dampingFreqHz, width, diffusion, 0.1f, 0.5f);
@@ -261,7 +276,7 @@ static void test_stability_default_params() {
     float lowDecayMult  = 0.9f + (50/100.0f)*0.6f;    /* 1.2 */
     float highDecayMult = 0.1f + (70/100.0f)*0.9f;    /* 0.73 */
     float dampingFreqHz = 250 * 10.0f;                /* 2500 Hz */
-    float width         = 100 / 100.0f;               /* 1.0 */
+    float width         = 100 * 0.01f;               /* 1.0 */
     float diffusion     = 1000 / 1000.0f;             /* 1.0 */
     lab_set_params(&lab, mix, decay, lowDecayMult, highDecayMult,
                    dampingFreqHz, width, diffusion, 0.1f, 0.5f);
@@ -307,9 +322,49 @@ static void test_unified_decay_clamp() {
     printf("  PASS: fminf clamp prevents super-unity feedback\n");
 }
 
+/* Test that the engine wakes from a cold start (activeSampleCount=0) and
+ * produces wet output — the exact scenario that was permanently bypassed
+ * before commit 8f8d255.  With mix=1.0 (100% wet), the output MUST exceed
+ * the dry floor (zero) once the shortest delay line fills (~2021 samples). */
+static void test_wet_output_cold_start() {
+    printf("\n=== Wet Output Cold-Start Test ===\n");
+    printf("    mix=1.0, decay=0.5, impulse at t=0, then silence\n");
+    printf("    Expect non-zero wet output within the shortest delay time\n");
+
+    build_hadamard();
+    ScalarLabirinto lab;
+    lab_init(&lab);
+    lab.mix = 1.0f;  /* 100% wet — any dry bleed would mask the test */
+
+    assert(lab.activeSampleCount == 0 && "Engine must start cold");
+
+    /* Impulse — this must wake the engine via raw-input check. */
+    float outL, outR;
+    lab_process_sample(&lab, 1.0f, 1.0f, &outL, &outR);
+    assert(lab.activeSampleCount > 0 && "Impulse must wake the engine from cold start");
+
+    /* Shortest delay ≈ 0.0421 s × 48000 Hz = 2021 samples.
+     * Run silence until just past the first reflection. */
+    const int kFirstReflection = 2200; /* slightly beyond 2021 */
+    float maxWet = 0.0f;
+    for (int n = 0; n < kFirstReflection; n++) {
+        lab_process_sample(&lab, 0.0f, 0.0f, &outL, &outR);
+        if (fabsf(outL) > maxWet) maxWet = fabsf(outL);
+    }
+
+    printf("  Max wet amplitude in first %.1f ms = %.6f\n",
+           kFirstReflection * 1000.0f / SAMPLE_RATE, maxWet);
+    assert(maxWet > 1e-4f &&
+           "Engine must produce wet output after cold-start impulse "
+           "(was permanently 0 before APC deadlock fix)");
+
+    printf("  PASS: wet output confirmed from cold start\n");
+}
+
 int main() {
     printf("=== reverb_labirinto stability tests ===\n");
     test_unified_decay_clamp();
+    test_wet_output_cold_start();
     test_stability_default_params();
     test_stability_max_params();
     printf("\n=== ALL reverb_labirinto STABILITY TESTS PASSED ===\n");

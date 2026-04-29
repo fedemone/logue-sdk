@@ -35,11 +35,12 @@ typedef struct {
     float last_freq;       // Per-instance: avoid unnecessary reinit
 } crossover_t;
 
-// Initialize crossover at given frequency
-fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_rate) {
+// Compute and store biquad coefficients for a given frequency — does NOT reset states.
+// Used for real-time crossover updates to avoid the audible click that zeroing states causes.
+fast_inline void crossover_update_coeffs(crossover_t* xover, float freq_hz, float sample_rate) {
     float w0 = 2.0f * M_PI * freq_hz / sample_rate;
     float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);    // at init no fast function
+    float sin_w0 = sinf(w0);
     float Q = 0.707f;  // Butterworth Q for Linkwitz-Riley
 
     float alpha = sin_w0 / (2.0f * Q);
@@ -69,7 +70,14 @@ fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_
     xover->hpf_coeffs[3] = a1 / a0;
     xover->hpf_coeffs[4] = a2 / a0;
 
-    // Reset all states (L and R)
+    xover->last_freq = freq_hz;
+}
+
+// Initialize crossover at given frequency (startup only — also resets all filter states)
+fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_rate) {
+    crossover_update_coeffs(xover, freq_hz, sample_rate);
+
+    // Reset all states (L and R) — acceptable at startup, but NOT at runtime
     float32x4_t zero = vdupq_n_f32(0.0f);
     xover->l_lpf_z1  = xover->l_lpf_z2  = zero;
     xover->l_lpf2_z1 = xover->l_lpf2_z2 = zero;
@@ -79,8 +87,6 @@ fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_
     xover->r_lpf2_z1 = xover->r_lpf2_z2 = zero;
     xover->r_hpf_z1  = xover->r_hpf_z2  = zero;
     xover->r_hpf2_z1 = xover->r_hpf2_z2 = zero;
-
-    xover->last_freq = freq_hz;
 }
 
 // Process one block (4 consecutive time samples) through a biquad (Direct Form I)

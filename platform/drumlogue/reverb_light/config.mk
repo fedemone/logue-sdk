@@ -1,7 +1,7 @@
 # --- Project Configuration for Light FDN Reverb ---
 
 # 1. Project Name (The filename of your .drmlgunit)
-PROJECT := light_fdn_reverb
+PROJECT := luce_al_neon
 
 # 2. Project Type
 PROJECT_TYPE := revfx

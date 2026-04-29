@@ -29,54 +29,10 @@ constexpr uint32_t kMaxFrames = 256;
 // Static Instances
 // ============================================================================
 
-static NeonAdvancedLabirinto* s_reverb = nullptr;
+static NeonAdvancedLabirinto s_reverb_instance;
+static NeonAdvancedLabirinto* s_reverb = &s_reverb_instance;
 static unit_runtime_desc_t s_runtime_desc;
 static bool s_initialized = false;
-static bool s_bypass = true;
-
-// ============================================================================
-// Parameter State (mirrors header.c defaults)
-// ============================================================================
-// ID 0:  PRESET 0..3               default 0 (foresta)
-// ID 1:  MIX    0..1000 (x0.1%)    default 700 (70%)
-// ID 2:  TIME   1..100             default 50
-// ID 3:  LOW    1..100             default 50
-// ID 4:  HIGH   1..100             default 70
-// ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
-// ID 6:  WIDE   0..200 %           default 100
-// ID 7:  COMP   0..1000 (x0.1%)    default 1000
-// ID 8:  PILL   0..4               default 3
-// ID 9:  SHMR 0..100             default 35 (Hz)
-// ID 10: PDLY   0..100             default 0 (ms)
-
-enum parameterState {
-  k_paramProgram = 0,
-  k_mix, k_time, k_low, k_high, k_damp,
-  k_wide, k_comp, k_pill, k_shimmer_freq,
-  k_pre_delay, k_vibr,
-  k_total
-};
-
-static int32_t s_params[k_total] = {0, 700, 50, 50, 70, 250, 100, 1000, 3, 0, 0, 10};
-static const char *k_preset_names[k_preset_number] = {"foresta", "tempio",
-                                                      "labirinto", "esotico",
-                                                      "stellare"};
-// ============================================================================
-// Factory Presets
-// ============================================================================
-// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
-static const int32_t k_presets[k_preset_number][k_total] = {
-    // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {k_foresta, 600, 40, 60, 40, 200, 80, 600, 3, 0, 0, 10},
-    // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {k_tempio, 700, 70, 80, 25, 130, 130, 800, 2, 0, 0, 10},
-    // 2: labirinto - center values with random ping-pong stereo bouncing
-    {k_labirinto, 500, 60, 50, 50, 510, 100, 500, 1, 0, 10, 10},
-    // 3: esotico - microtonal echoes on non-Western scale
-    {k_esotico, 450, 40, 60, 80, 100, 100, 500, 4, 5, 5, 20},
-    // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {k_stellare, 400, 90, 50, 80, 800, 180, 300, 4, 35, 20, 10},
-};
 
 static uint8_t s_current_preset = 0;
 
@@ -100,40 +56,22 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
 
     s_runtime_desc = *desc;
 
-    // Create reverb instance
-    s_reverb = new NeonAdvancedLabirinto();
-    if (!s_reverb) {
-        s_initialized = false;
-        s_bypass = true;
-        return k_unit_err_memory;
-    }
-
-    // Initialize with memory allocation
+    // Initialize the reverb (clears delay lines and sets up shimmer tables)
     if (!s_reverb->init()) {
-        delete s_reverb;
-        s_reverb = nullptr;
         s_initialized = false;
-        s_bypass = true;
         return k_unit_err_memory;
     }
 
     s_initialized = true;
-    s_bypass = false;
-    s_current_preset = 0;
 
     // Apply default parameter values
-    unit_set_param_value(k_paramProgram, s_current_preset);
+    s_reverb->loadPreset(0);
 
     return k_unit_err_none;
 }
 
 __unit_callback void unit_teardown() {
-    if (s_reverb) {
-        delete s_reverb;
-        s_reverb = nullptr;
-    }
     s_initialized = false;
-    s_bypass = true;
 }
 
 __unit_callback void unit_reset() {
@@ -144,13 +82,13 @@ __unit_callback void unit_reset() {
 }
 
 __unit_callback void unit_resume() {}
-__unit_callback void unit_suspend() {}
+__unit_callback void unit_suspend() { s_reverb->clear(); } // Good practice to clear the delay lines
 
 __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     // ========================================================================
     // Safety Check: Bypass if not initialized
     // ========================================================================
-    if (!s_initialized || !s_reverb || s_bypass) {
+    if (!s_initialized || !s_reverb) {
         memcpy(out, in, frames * 2 * sizeof(float));
         return;
     }
@@ -189,60 +127,14 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
     if (!s_reverb) return;
     if (id >= k_total) return;
-    s_params[id] = value;   // store into local DB
-
-    switch (id) {
-    case k_paramProgram:
-        s_current_preset = value;
-        s_reverb->setFilterType(value);
-        for (uint8_t i = 0; i < k_total; i++) {
-            if (i == k_paramProgram) continue;  // avoid recursion
-            unit_set_param_value(i, k_presets[value][i]);
-        }
-        break;
-    case k_mix: // MIX  0..1000 → 0.0..1.0
-      s_reverb->setMix(value / 1000.0f);
-      break;
-    case k_time: // TIME  1..100 → decay 0.01..0.99
-      s_reverb->setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
-      break;
-    case k_low: // LOW  1..100 → low-freq decay multiplier
-      s_reverb->setLowDecay((float)value);
-      break;
-    case k_high: // HIGH  1..100 → high-freq decay multiplier
-      s_reverb->setHighDecay((float)value);
-      break;
-    case k_damp: // DAMP  20..1000 (×10 → 200..10000 Hz)
-      s_reverb->setDamping((float)value * 10.0f);
-      break;
-    case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
-      s_reverb->setWidth(value / 100.0f);
-      break;
-    case k_comp: // COMP  0..1000 → diffusion 0.0..1.0
-      s_reverb->setDiffusion(value / 1000.0f);
-      break;
-    case k_pill: // PILL  0..4  - pillar routing mode
-      s_reverb->setPillar(value);
-      break;
-    case k_shimmer_freq: // SHMR  0..100  - shimmer frequency
-      s_reverb->setShimmerFreq(value);
-      break;
-    case k_pre_delay: // PDLY 0..200 ms
-        s_reverb->setPreDelay((float)value);
-        break;
-    case k_vibr:
-        // value 1..30 → 0.1..3.0 Hz
-        s_reverb->setLfoSpeed(value * 0.1f);
-        s_reverb->updateModRate();
-        break;
-    default:
-      break;
-    }
+    s_reverb->setParameter(id, value);
 }
 
+
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
+    if (!s_reverb) return 0;
     if (id >= k_total) return 0;
-    return s_params[id];
+    return s_reverb->getParameterValue(id);
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
@@ -283,11 +175,11 @@ __unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
 
 __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx >= k_preset_number) return;
-    unit_set_param_value(k_paramProgram, idx);
+    s_reverb->loadPreset(idx);
 }
 
 __unit_callback uint8_t unit_get_preset_index() {
-    return (s_current_preset < k_preset_number) ? s_current_preset : 0;
+    return s_reverb->getPreset();
 }
 
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {

@@ -538,6 +538,179 @@ bool test_lfo_circular_reference(void) {
     return passed;
 }
 
+// ----------------------------------------------------------------------------
+// Euclidean Tuning Tests
+// ----------------------------------------------------------------------------
+
+bool test_euclidean_mode_off(void) {
+    fm_perc_synth_t synth;
+    fm_perc_synth_init(&synth);
+
+    synth.params[PARAM_LFO2_SHAPE] = EUCLID_MODE_OFF;
+    fm_perc_synth_update_params(&synth);
+
+    float o0 = vgetq_lane_f32(synth.euclid_offsets, 0);
+    float o1 = vgetq_lane_f32(synth.euclid_offsets, 1);
+    float o2 = vgetq_lane_f32(synth.euclid_offsets, 2);
+    float o3 = vgetq_lane_f32(synth.euclid_offsets, 3);
+
+    bool passed = (o0 == 0.0f && o1 == 0.0f && o2 == 0.0f && o3 == 0.0f);
+    register_test("EuclTun Mode Off (all zero)", passed, 0,
+                  passed ? NULL : "Mode 0 should give [0,0,0,0]");
+    return passed;
+}
+
+bool test_euclidean_dim7(void) {
+    fm_perc_synth_t synth;
+    fm_perc_synth_init(&synth);
+
+    // Mode 6 = Dim7: E(4,12) = [0, 3, 6, 9]
+    synth.params[PARAM_LFO2_SHAPE] = EUCLID_MODE_DIM7;
+    fm_perc_synth_update_params(&synth);
+
+    bool passed = (fabsf(vgetq_lane_f32(synth.euclid_offsets, 0) - 0.0f) < 0.001f &&
+                   fabsf(vgetq_lane_f32(synth.euclid_offsets, 1) - 3.0f) < 0.001f &&
+                   fabsf(vgetq_lane_f32(synth.euclid_offsets, 2) - 6.0f) < 0.001f &&
+                   fabsf(vgetq_lane_f32(synth.euclid_offsets, 3) - 9.0f) < 0.001f);
+    register_test("EuclTun Dim7 E(4,12)=[0,3,6,9]", passed, 0,
+                  passed ? NULL : "Dim7 offsets incorrect");
+    return passed;
+}
+
+bool test_euclidean_all_modes_monotonic(void) {
+    fm_perc_synth_t synth;
+    fm_perc_synth_init(&synth);
+
+    bool passed = true;
+    // For all modes: voice 0 = root (0), offsets monotonically non-decreasing
+    for (int m = 0; m < EUCLID_MODE_COUNT && passed; m++) {
+        synth.params[PARAM_LFO2_SHAPE] = (int8_t)m;
+        fm_perc_synth_update_params(&synth);
+
+        float o0 = vgetq_lane_f32(synth.euclid_offsets, 0);
+        float o1 = vgetq_lane_f32(synth.euclid_offsets, 1);
+        float o2 = vgetq_lane_f32(synth.euclid_offsets, 2);
+        float o3 = vgetq_lane_f32(synth.euclid_offsets, 3);
+
+        if (o0 != 0.0f || o1 < o0 || o2 < o1 || o3 < o2)
+            passed = false;
+    }
+    register_test("EuclTun All Modes Monotonic", passed, 0,
+                  passed ? NULL : "A mode has non-monotonic or non-zero root offset");
+    return passed;
+}
+
+bool test_euclidean_note_spread(void) {
+    fm_perc_synth_t synth;
+    fm_perc_synth_init(&synth);
+
+    // Whole-tone mode: E(4,8) = [0, 2, 4, 6] semitones
+    synth.params[PARAM_LFO2_SHAPE] = EUCLID_MODE_WHOLE;
+    synth.params[PARAM_VOICE_ALLOC] = 0;  // K-S-M-P default
+    fm_perc_synth_update_params(&synth);
+
+    // Note 60 (C4). Voice 3 = Perc engine, lane 3 → gets offset +6 semitones
+    // MIDI 60+6 = 66 = F#4, freq = 440 * 2^((66-69)/12) ≈ 369.99 Hz
+    fm_perc_synth_note_on(&synth, 60, 100);
+
+    float expected = 440.0f * powf(2.0f, (66.0f - 69.0f) / 12.0f);  // ~369.99 Hz
+    float actual   = vgetq_lane_f32(synth.perc.carrier_freq_base, 3);
+    bool passed = (fabsf(actual - expected) < 2.0f);  // within 2 Hz
+
+    register_test("EuclTun Note Spread (perc voice +6 st)", passed, 0,
+                  passed ? NULL : "Perc engine did not receive Euclidean-shifted pitch");
+    return passed;
+}
+
+bool test_euclidean_mode_off_no_spread(void) {
+    fm_perc_synth_t synth;
+    fm_perc_synth_init(&synth);
+
+    // Mode Off: all voices same pitch at trigger
+    synth.params[PARAM_LFO2_SHAPE] = EUCLID_MODE_OFF;
+    synth.params[PARAM_VOICE_ALLOC] = 0;
+    fm_perc_synth_update_params(&synth);
+
+    fm_perc_synth_note_on(&synth, 60, 100);  // C4 = 261.63 Hz
+
+    float expected = 440.0f * powf(2.0f, (60.0f - 69.0f) / 12.0f);  // ~261.63 Hz
+    float kick_f  = vgetq_lane_f32(synth.kick.carrier_freq, 0);
+    float perc_f  = vgetq_lane_f32(synth.perc.carrier_freq_base, 3);
+    bool passed = (fabsf(kick_f - expected) < 2.0f && fabsf(perc_f - expected) < 2.0f);
+
+    register_test("EuclTun Off: all voices same pitch", passed, 0,
+                  passed ? NULL : "Mode Off should not spread voice pitches");
+    return passed;
+}
+
+// ============================================================================
+// PART 1c: EXTREME LFO BOUNDARY TEST
+// ============================================================================
+
+/**
+ * test_lfo_extreme_boundaries
+ *
+ * Verifies that maximum LFO depth (±100%) does not produce NaN, Inf, or
+ * out-of-range output values regardless of LFO target.
+ *
+ * This exercises the clipping behavior described in PROGRESS.md:
+ * "Extreme modulation at boundaries (clipping behavior)".
+ *
+ * Each LFO target is tested with a note-on + 480-sample render (10ms).
+ * Output must stay in [-1.0, 1.0] and be free of NaN/Inf.
+ */
+bool test_lfo_extreme_boundaries(void) {
+    const int N_SAMPLES = 480;
+    const int N_TARGETS = 11;  // LFO_TARGET_NONE through LFO_TARGET_METAL_GATE
+    bool all_ok = true;
+    int nan_total = 0, inf_total = 0, range_total = 0;
+
+    for (int target = 0; target < N_TARGETS; target++) {
+        fm_perc_synth_t synth;
+        fm_perc_synth_init(&synth);
+
+        // LFO1: max positive depth, max rate, current target
+        synth.params[PARAM_LFO1_SHAPE]  = 0;    // Tri+Tri
+        synth.params[PARAM_LFO1_RATE]   = 100;  // max rate
+        synth.params[PARAM_LFO1_TARGET] = target;
+        synth.params[PARAM_LFO1_DEPTH]  = 100;  // max positive depth
+
+        // LFO2: max negative depth, same target
+        synth.params[PARAM_LFO2_RATE]   = 100;
+        synth.params[PARAM_LFO2_TARGET] = target;
+        synth.params[PARAM_LFO2_DEPTH]  = -100; // max negative depth
+
+        fm_perc_synth_update_params(&synth);
+        fm_perc_synth_note_on(&synth, 60, 127);
+
+        int nan_count = 0, inf_count = 0, range_count = 0;
+        for (int n = 0; n < N_SAMPLES; n++) {
+            float out = fm_perc_synth_process(&synth);
+            if (isnan(out)) nan_count++;
+            if (isinf(out)) inf_count++;
+            if (out < -1.001f || out > 1.001f) range_count++;
+        }
+
+        bool ok = (nan_count == 0 && inf_count == 0 && range_count == 0);
+        if (!ok) {
+            all_ok = false;
+            printf("  LFO target %2d: NaN=%d Inf=%d OutOfRange=%d  FAIL\n",
+                   target, nan_count, inf_count, range_count);
+        }
+        nan_total   += nan_count;
+        inf_total   += inf_count;
+        range_total += range_count;
+    }
+
+    printf("  All %d LFO targets at max depth: NaN=%d Inf=%d OutOfRange=%d  %s\n",
+           N_TARGETS, nan_total, inf_total, range_total, all_ok ? "PASS" : "FAIL");
+
+    register_test("LFO extreme boundaries (all targets, max depth)",
+                  all_ok, 0,
+                  all_ok ? NULL : "NaN/Inf/range violation at max LFO depth");
+    return all_ok;
+}
+
 // ============================================================================
 // PART 2: INTEGRATION TESTS
 // ============================================================================
@@ -801,6 +974,22 @@ bool run_all_tests(void) {
     test_lfo_phase_independence();
     test_lfo_bipolar_depth();
     test_lfo_circular_reference();
+
+    // PART 1b: Euclidean Tuning
+    printf("\n📋 PART 1b: EUCLIDEAN TUNING\n");
+    printf("----------------------------------------\n");
+
+    test_euclidean_mode_off();
+    test_euclidean_dim7();
+    test_euclidean_all_modes_monotonic();
+    test_euclidean_note_spread();
+    test_euclidean_mode_off_no_spread();
+
+    // PART 1c: Extreme LFO Boundaries
+    printf("\n📋 PART 1c: EXTREME LFO BOUNDARIES\n");
+    printf("----------------------------------------\n");
+
+    test_lfo_extreme_boundaries();
 
     // PART 2: Integration Tests
     printf("\n📋 PART 2: INTEGRATION\n");

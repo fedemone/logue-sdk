@@ -1,0 +1,219 @@
+ren^H    user@logue-sdk:~$ renv drumlogue[1P
+>> Initializing drumlogue development environment.
+Note: run 'env -r' to reset the environment
+[31m[drumlogue] [0m~ $ [Kbuild -l
+- drumlogue/FMpercussion
+- drumlogue/delay_tribal
+- drumlogue/dummy-delfx
+- drumlogue/dummy-masterfx
+- drumlogue/dummy-revfx
+- drumlogue/dummy-synth
+- drumlogue/omnipress
+- drumlogue/reverb_labirinto
+- drumlogue/reverb_light
+- drumlogue/scruta_astri
+- minilogue-xd/dummy-delfx
+- minilogue-xd/dummy-modfx
+- minilogue-xd/dummy-osc
+- minilogue-xd/dummy-revfx
+- minilogue-xd/waves
+- nutekt-digital/dummy-delfx
+- nutekt-digital/dummy-modfx
+- nutekt-digital/dummy-osc
+- nutekt-digital/dummy-revfx
+- nutekt-digital/waves
+- prologue/dummy-delfx
+- prologue/dummy-modfx
+- prologue/dummy-osc
+- prologue/dummy-revfx
+- prologue/waves
+- nts-1_mkii/dummy-delfx
+- nts-1_mkii/dummy-modfx
+- nts-1_mkii/dummy-osc
+- nts-1_mkii/dummy-revfx
+- nts-1_mkii/waves
+- nts-3_kaoss/dummy-genericfx
+- microkorg2/MorphEQ
+- microkorg2/MultitapDelay
+- microkorg2/Vibrato
+- microkorg2/breveR
+- microkorg2/dummy-delfx
+- microkorg2/dummy-modfx
+- microkorg2/dummy-osc
+- microkorg2/dummy-revfx
+- microkorg2/vox
+- microkorg2/waves
+[31m[drumlogue] [0m~ $ build drumlogue/FMpercussion
+>> Building /workspace/drumlogue/FMpercussion
+Compiling unit.cc
+Compiling fm_presets.cc
+In file included from [01m[Ksine_neon.h:16:0[m[K,
+                 from [01m[Kresonant_synthesis.h:14[m[K,
+                 from [01m[Kfm_presets.h:12[m[K,
+                 from [01m[Kfm_presets.cc:6[m[K:
+[01m[Kfloat_math.h:[m[K In function '[01m[Kfloat Q_rsqrt(float)[m[K':
+[01m[Kfloat_math.h:1014:21:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  i  = * ( long * ) &[01;35m[Ky[m[K;                       // evil floating point bit level hacking
+                     [01;35m[K^[m[K
+[01m[Kfloat_math.h:1016:22:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  y  = * ( float * ) &[01;35m[Ki[m[K;
+                      [01;35m[K^[m[K
+In file included from [01m[Kresonant_synthesis.h:15:0[m[K,
+                 from [01m[Kfm_presets.h:12[m[K,
+                 from [01m[Kfm_presets.cc:6[m[K:
+[01m[Kfm_voices.h:[m[K In function '[01m[Kfloat32x4_t one_pole_lpf(one_pole_t*, float32x4_t, float32x4_t)[m[K':
+[01m[Kfm_voices.h:55:82:[m[K [01;31m[Kerror: [m[K'[01m[Kvdupq_f32[m[K' was not declared in this scope
+   float32x4_t alpha = vdupq_f32(fast_div_neon(two_pi_f, (two_pi_f + SAMPLE_RATE))[01;31m[K)[m[K;
+                                                                                  [01;31m[K^[m[K
+[01m[Kfm_presets.cc:[m[K At global scope:
+[01m[Kfm_presets.cc:183:1:[m[K [01;31m[Kerror: [m[Kbraces around scalar initializer for type '[01m[Kuint8_t {aka unsigned char}[m[K'
+ [01;31m[K}[m[K;
+ [01;31m[K^[m[K
+In file included from [01m[Kkick_engine.h:16:0[m[K,
+                 from [01m[Kfm_perc_synth.h:21[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kfm_voices.h:[m[K In function '[01m[Kfloat32x4_t one_pole_lpf(one_pole_t*, float32x4_t, float32x4_t)[m[K':
+[01m[Kfm_voices.h:55:81:[m[K [01;31m[Kerror: [m[K'[01m[Kfast_div_neon[m[K' was not declared in this scope
+   float32x4_t alpha = vdupq_f32(fast_div_neon(two_pi_f, (two_pi_f + SAMPLE_RATE)[01;31m[K)[m[K);
+                                                                                 [01;31m[K^[m[K
+[01m[Kfm_voices.h:55:82:[m[K [01;31m[Kerror: [m[K'[01m[Kvdupq_f32[m[K' was not declared in this scope
+   float32x4_t alpha = vdupq_f32(fast_div_neon(two_pi_f, (two_pi_f + SAMPLE_RATE))[01;31m[K)[m[K;
+                                                                                  [01;31m[K^[m[K
+In file included from [01m[Ksine_neon.h:16:0[m[K,
+                 from [01m[Kkick_engine.h:17[m[K,
+                 from [01m[Kfm_perc_synth.h:21[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kfloat_math.h:[m[K In function '[01m[Kfloat Q_rsqrt(float)[m[K':
+[01m[Kfloat_math.h:1014:21:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  i  = * ( long * ) &[01;35m[Ky[m[K;                       // evil floating point bit level hacking
+                     [01;35m[K^[m[K
+[01m[Kfloat_math.h:1016:22:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  y  = * ( float * ) &[01;35m[Ki[m[K;
+                      [01;35m[K^[m[K
+In file included from [01m[Kfm_perc_synth.h:21:0[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kkick_engine.h:[m[K In function '[01m[Kfloat32x4_t kick_engine_process(kick_engine_t*, float32x4_t, uint32x4_t, float32x4_t, float32x4_t)[m[K':
+[01m[Kkick_engine.h:158:17:[m[K [01;35m[Kwarning: [m[Kunused variable '[01m[Kshape_factor[m[K' [[01;35m[K-Wunused-variable[m[K]
+     float32x4_t [01;35m[Kshape_factor[m[K = vmulq_f32(kick->decay_shape, envelope);
+                 [01;35m[K^~~~~~~~~~~~[m[K
+make: *** [Makefile:321: build/obj/fm_presets.o] Error 1
+make: *** Waiting for unfinished jobs....
+In file included from [01m[Kfm_perc_synth.h:22:0[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Ksnare_engine.h:[m[K In function '[01m[Kfloat32x4_t snare_engine_process(snare_engine_t*, float32x4_t, uint32x4_t, float32x4_t, float32x4_t, float32x4_t)[m[K':
+[01m[Ksnare_engine.h:172:17:[m[K [01;35m[Kwarning: [m[Kunused variable '[01m[Kpitch_env[m[K' [[01;35m[K-Wunused-variable[m[K]
+     float32x4_t [01;35m[Kpitch_env[m[K = vmulq_f32(snare->body_resonance, env2);
+                 [01;35m[K^~~~~~~~~[m[K
+make: *** [Makefile:321: build/obj/unit.o] Error 1
+>> Installing /workspace/drumlogue/FMpercussion
+Compiling unit.cc
+In file included from [01m[Kkick_engine.h:16:0[m[K,
+                 from [01m[Kfm_perc_synth.h:21[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kfm_voices.h:[m[K In function '[01m[Kfloat32x4_t one_pole_lpf(one_pole_t*, float32x4_t, float32x4_t)[m[K':
+[01m[Kfm_voices.h:55:81:[m[K [01;31m[Kerror: [m[K'[01m[Kfast_div_neon[m[K' was not declared in this scope
+   float32x4_t alpha = vdupq_f32(fast_div_neon(two_pi_f, (two_pi_f + SAMPLE_RATE)[01;31m[K)[m[K);
+                                                                                 [01;31m[K^[m[K
+[01m[Kfm_voices.h:55:82:[m[K [01;31m[Kerror: [m[K'[01m[Kvdupq_f32[m[K' was not declared in this scope
+   float32x4_t alpha = vdupq_f32(fast_div_neon(two_pi_f, (two_pi_f + SAMPLE_RATE))[01;31m[K)[m[K;
+                                                                                  [01;31m[K^[m[K
+In file included from [01m[Ksine_neon.h:16:0[m[K,
+                 from [01m[Kkick_engine.h:17[m[K,
+                 from [01m[Kfm_perc_synth.h:21[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kfloat_math.h:[m[K In function '[01m[Kfloat Q_rsqrt(float)[m[K':
+[01m[Kfloat_math.h:1014:21:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  i  = * ( long * ) &[01;35m[Ky[m[K;                       // evil floating point bit level hacking
+                     [01;35m[K^[m[K
+[01m[Kfloat_math.h:1016:22:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  y  = * ( float * ) &[01;35m[Ki[m[K;
+                      [01;35m[K^[m[K
+In file included from [01m[Kfm_perc_synth.h:21:0[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kkick_engine.h:[m[K In function '[01m[Kfloat32x4_t kick_engine_process(kick_engine_t*, float32x4_t, uint32x4_t, float32x4_t, float32x4_t)[m[K':
+[01m[Kkick_engine.h:158:17:[m[K [01;35m[Kwarning: [m[Kunused variable '[01m[Kshape_factor[m[K' [[01;35m[K-Wunused-variable[m[K]
+     float32x4_t [01;35m[Kshape_factor[m[K = vmulq_f32(kick->decay_shape, envelope);
+                 [01;35m[K^~~~~~~~~~~~[m[K
+In file included from [01m[Kfm_perc_synth.h:22:0[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Ksnare_engine.h:[m[K In function '[01m[Kfloat32x4_t snare_engine_process(snare_engine_t*, float32x4_t, uint32x4_t, float32x4_t, float32x4_t, float32x4_t)[m[K':
+[01m[Ksnare_engine.h:172:17:[m[K [01;35m[Kwarning: [m[Kunused variable '[01m[Kpitch_env[m[K' [[01;35m[K-Wunused-variable[m[K]
+     float32x4_t [01;35m[Kpitch_env[m[K = vmulq_f32(snare->body_resonance, env2);
+                 [01;35m[K^~~~~~~~~[m[K
+make: *** [Makefile:321: build/obj/unit.o] Error 1
+>> Resetting environment
+[31m[drumlogue] [0m~ $ [Kbuild drumlogue/FMpercussion
+>> Building /workspace/drumlogue/FMpercussion
+Compiling unit.cc
+Compiling fm_presets.cc
+In file included from [01m[Ksine_neon.h:16:0[m[K,
+                 from [01m[Kresonant_synthesis.h:14[m[K,
+                 from [01m[Kfm_presets.h:12[m[K,
+                 from [01m[Kfm_presets.cc:6[m[K:
+[01m[Kfloat_math.h:[m[K In function '[01m[Kfloat Q_rsqrt(float)[m[K':
+[01m[Kfloat_math.h:1014:21:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  i  = * ( long * ) &[01;35m[Ky[m[K;                       // evil floating point bit level hacking
+                     [01;35m[K^[m[K
+[01m[Kfloat_math.h:1016:22:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  y  = * ( float * ) &[01;35m[Ki[m[K;
+                      [01;35m[K^[m[K
+[01m[Kfm_presets.cc:[m[K At global scope:
+[01m[Kfm_presets.cc:183:1:[m[K [01;31m[Kerror: [m[Kbraces around scalar initializer for type '[01m[Kuint8_t {aka unsigned char}[m[K'
+ [01;31m[K}[m[K;
+ [01;31m[K^[m[K
+make: *** [Makefile:321: build/obj/fm_presets.o] Error 1
+make: *** Waiting for unfinished jobs....
+In file included from [01m[Kfm_voices.h:15:0[m[K,
+                 from [01m[Kkick_engine.h:16[m[K,
+                 from [01m[Kfm_perc_synth.h:21[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kfloat_math.h:[m[K In function '[01m[Kfloat Q_rsqrt(float)[m[K':
+[01m[Kfloat_math.h:1014:21:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  i  = * ( long * ) &[01;35m[Ky[m[K;                       // evil floating point bit level hacking
+                     [01;35m[K^[m[K
+[01m[Kfloat_math.h:1016:22:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  y  = * ( float * ) &[01;35m[Ki[m[K;
+                      [01;35m[K^[m[K
+In file included from [01m[Kfm_perc_synth.h:21:0[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Kkick_engine.h:[m[K In function '[01m[Kfloat32x4_t kick_engine_process(kick_engine_t*, float32x4_t, uint32x4_t, float32x4_t, float32x4_t)[m[K':
+[01m[Kkick_engine.h:158:17:[m[K [01;35m[Kwarning: [m[Kunused variable '[01m[Kshape_factor[m[K' [[01;35m[K-Wunused-variable[m[K]
+     float32x4_t [01;35m[Kshape_factor[m[K = vmulq_f32(kick->decay_shape, envelope);
+                 [01;35m[K^~~~~~~~~~~~[m[K
+In file included from [01m[Kfm_perc_synth.h:22:0[m[K,
+                 from [01m[Ksynth.h:15[m[K,
+                 from [01m[Kunit.cc:13[m[K:
+[01m[Ksnare_engine.h:[m[K In function '[01m[Kfloat32x4_t snare_engine_process(snare_engine_t*, float32x4_t, uint32x4_t, float32x4_t, float32x4_t, float32x4_t)[m[K':
+[01m[Ksnare_engine.h:172:17:[m[K [01;35m[Kwarning: [m[Kunused variable '[01m[Kpitch_env[m[K' [[01;35m[K-Wunused-variable[m[K]
+     float32x4_t [01;35m[Kpitch_env[m[K = vmulq_f32(snare->body_resonance, env2);
+                 [01;35m[K^~~~~~~~~[m[K
+>> Installing /workspace/drumlogue/FMpercussion
+Compiling fm_presets.cc
+In file included from [01m[Ksine_neon.h:16:0[m[K,
+                 from [01m[Kresonant_synthesis.h:14[m[K,
+                 from [01m[Kfm_presets.h:12[m[K,
+                 from [01m[Kfm_presets.cc:6[m[K:
+[01m[Kfloat_math.h:[m[K In function '[01m[Kfloat Q_rsqrt(float)[m[K':
+[01m[Kfloat_math.h:1014:21:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  i  = * ( long * ) &[01;35m[Ky[m[K;                       // evil floating point bit level hacking
+                     [01;35m[K^[m[K
+[01m[Kfloat_math.h:1016:22:[m[K [01;35m[Kwarning: [m[Kdereferencing type-punned pointer will break strict-aliasing rules [[01;35m[K-Wstrict-aliasing[m[K]
+  y  = * ( float * ) &[01;35m[Ki[m[K;
+                      [01;35m[K^[m[K
+[01m[Kfm_presets.cc:[m[K At global scope:
+[01m[Kfm_presets.cc:183:1:[m[K [01;31m[Kerror: [m[Kbraces around scalar initializer for type '[01m[Kuint8_t {aka unsigned char}[m[K'
+ [01;31m[K}[m[K;
+ [01;31m[K^[m[K
+make: *** [Makefile:321: build/obj/fm_presets.o] Error 1
+>> Resetting environment
+[31m[drumlogue] [0m~ $ [Ktime="2026-04-25T16:29:42+02:00" level=error msg="error waiting for container: unexpected EOF"

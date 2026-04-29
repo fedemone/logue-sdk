@@ -11,8 +11,9 @@
 | **3 Compression Modes** | Standard, Distressor, Multiband |
 | **External Sidechain** | 4-channel input for ducking/pumping |
 | **Drive/Wavefolder** | 5 distortion modes from soft clip to sub-octave |
+| **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
 | **NEON Optimization** | Fully vectorized for ARM Cortex-A7 |
-| **12 User Parameters** | Spread across 3 control pages |
+| **22 User Parameters** | Spread across 6 control pages |
 | **24dB/oct Crossover** | Linkwitz-Riley filters for multiband mode |
 
 ---
@@ -75,39 +76,61 @@ The drive amount controls both the input gain to the waveshaper and the dry/wet 
 
 ## Parameter Reference
 
+OmniPress has **22 parameters** across 6 pages.
+
 ### Page 1: Core Dynamics
 
 | Param | Name | Range | Description |
 |-------|------|-------|-------------|
-| 0 | THRESH | -60.0 to 0.0 dB | Compression threshold |
-| 1 | RATIO | 1.0 to 20.0 | Compression ratio |
-| 2 | ATTACK | 0.1 to 100.0 ms | Attack time |
+| 0 | THRESH | -60.0 to 0.0 dB | Compression threshold (x0.1 dB resolution) |
+| 1 | RATIO | 1.0 to 20.0 | Compression ratio (x0.1 resolution) |
+| 2 | ATTACK | 0.1 to 100.0 ms | Attack time (x0.1 ms resolution) |
 | 3 | RELEASE | 10 to 2000 ms | Release time |
 
 ### Page 2: Character & Output
 
 | Param | Name | Range | Description |
 |-------|------|-------|-------------|
-| 4 | MAKEUP | 0.0 to 24.0 dB | Output gain |
+| 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB resolution) |
 | 5 | DRIVE | 0 to 100% | Drive/wavefolder amount |
-| 6 | MIX | -100 to +100 | Dry/Wet balance |
-| 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter |
+| 6 | MIX | -100 to +100 | Dry/Wet balance (-100=dry, 0=balanced, +100=wet) |
+| 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
-### Page 3: Mode Selection
-
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
-| 8 | COMP MODE | 0-2 | 0=Standard, 1=Distressor, 2=Multiband |
-| 9 | BAND SEL | 0-3 | 0=Low, 1=Mid, 2=High, 3=All (for multiband) |
-| 10 | L THRESH | -60.0 to 0.0 dB | Selected band threshold |
-| 11 | L RATIO | 1.0 to 20.0 | Selected band ratio |
-
-### Page 4: Distressor & Future
+### Page 3: Mode & Overlord EQ
 
 | Param | Name | Range | Description |
 |-------|------|-------|-------------|
-| 12 | DSTR MODE | 0-3 | 0=None, 1=Dist2, 2=Dist3, 3=Both |
-| 13-15 | (Future) | - | Reserved for expansion |
+| 8 | COMP MODE | 0–2 | 0=Standard, 1=Distressor, 2=Multiband |
+| 9 | BASS | 0–100% | Overlord EQ: low-shelf gain/cut |
+| 10 | TREBLE | 0–100% | Overlord EQ: high-shelf gain/cut |
+| 11 | PRESENCE | 0–100% | Overlord EQ: upper-mid presence boost |
+
+> **Overlord EQ** is a 3-band semi-parametric EQ applied in the dynamics chain. At 50% each band is flat (unity). Below 50% cuts, above 50% boosts.
+
+### Page 4: Distressor Parameters
+
+| Param | Name | Range | Description |
+|-------|------|-------|-------------|
+| 12 | DstrDIST | 0–4 | Distressor harmonic distortion: 0=None, 1=Dist2 (2nd harm), 2=Dist3 (3rd harm), 3=Both, 4=Wave |
+| 13 | DstrRATIO | 0–7 | Distressor ratio selection: 0=1:1 (warm), 1=2:1, 2=3:1, 3=4:1, 4=6:1, 5=10:1 (opto), 6=20:1, 7=NUKE |
+
+### Page 5: Multiband Band Controls
+
+| Param | Name | Range | Description |
+|-------|------|-------|-------------|
+| 14 | MBand | 0–6 | Band selector: 0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All |
+| 15 | MBndThr | -60.0 to 0.0 dB | Per-band threshold (x0.1 dB resolution) |
+| 16 | MBndRto | 1.0 to 20.0 | Per-band compression ratio |
+| 17 | MBndAtk | 0.1 to 100.0 ms | Per-band attack time |
+
+### Page 6: Multiband Output Controls
+
+| Param | Name | Range | Description |
+|-------|------|-------|-------------|
+| 18 | MBndRtoRel | 10 to 2000 ms | Per-band release time |
+| 19 | MBndMkp | 0.0 to 24.0 dB | Per-band makeup gain |
+| 20 | MBndMut | 0–1 | Mute selected band (0=active, 1=muted) |
+| 21 | MBndSOl | 0–1 | Solo selected band (0=normal, 1=soloed) |
 
 ---
 
@@ -147,6 +170,11 @@ The drive amount controls both the input gain to the waveshaper and the dry/wet 
     Gain Reduction    Gain Reduction    Band Gains
           └─────────────┬─────────────────┘
                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   OVERLORD EQ (BASS/TREBLE/PRESENCE)              │
+│              3-band semi-parametric tonal shaping                 │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     DRIVE / WAVEFOLDER (5 modes)                  │
 │          Soft Clip │ Hard Clip │ Triangle │ Sine │ SubOctave      │
@@ -195,12 +223,19 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Parameter | Values Displayed |
 |-----------|------------------|
 | COMP MODE | "Standard", "Distressor", "Multiband" |
-| BAND SEL | "Low", "Mid", "High", "All" |
-| DSTR MODE | "None", "Dist 2", "Dist 3", "Both" |
+| DstrDIST | "None", "Dist 2", "Dist 3", "Both", "Wave" |
+| DstrRATIO | "1:1 Warm", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE" |
+| MBand | "Low", "Mid", "High", "Low+Mid", "Low+High", "Mid+High", "All" |
 | MIX | "DRY" (-100), "BAL" (0), "WET" (+100) |
-| RATIO | Shows as "4.0:1", "20:1", "NUKE", "Opto" |
 
 ---
+
+## Bug Fixes Applied
+
+| Bug | Symptom | Fix |
+|-----|---------|-----|
+| Multiband gain-reduction polarity inverted | Multiband mode acted as a downward expander (attenuated quiet signals, passed loud ones) | `excess = env_dB − threshold_dB` with clamp to ≥ 0; was `thresh − env` |
+| ratio=0 hard-limit returned +100 dB | NUKE mode at ratio=0 blew up output | `gain_red = 100.0f` before negation; was `-100.0f` |
 
 ## Future Expansion
 
@@ -223,7 +258,7 @@ The architecture supports easy addition of:
 | Sample Rate | 48 kHz fixed |
 | Input Channels | 4 (Main L/R + Sidechain L/R) |
 | Output Channels | 2 (Stereo) |
-| Parameters | 12 (expandable to 24) |
+| Parameters | 22 |
 | CPU Target | < 2% @ 1GHz |
 | Memory | ~4 KB |
 | Crossover | Linkwitz-Riley 24dB/oct |

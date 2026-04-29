@@ -52,7 +52,9 @@ struct MorphingFilter {
         hz = fmaxf(10.0f, hz);
 
         // 2. Top Clamp: Just below Nyquist to keep f < 2 and the SVF stable
-        hz = fminf(hz, sample_rate * 0.49f);
+        // Chamberlin SVFs explode above fs/4.
+        // Limit max frequency to ~12kHz (0.25f) to guarantee stability.
+        hz = fminf(hz, sample_rate * 0.25f);
 
         // Calculate frequency coefficient
         // (Using standard Chamberlin approx: 2 * sin(pi * f / fs))

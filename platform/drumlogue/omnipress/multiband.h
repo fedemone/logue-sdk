@@ -78,7 +78,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
 
     // Default band parameters
     for (int i = 0; i < NUM_OF_BANDS; i++) {
-        mb->bands[i].thresh_db = -20.0f;
+        mb->bands[i].thresh_db = -10.0f;
         mb->bands[i].ratio = 4.0f;
         mb->bands[i].makeup_db = 0.0f;
         mb->bands[i].attack_ms = 10.0f;
@@ -97,16 +97,17 @@ fast_inline void multiband_reset(multiband_t* m) {
     multiband_init(m, m->sample_rate);
 }
 
-// Set crossover frequencies
+// Set crossover frequencies — updates coefficients without resetting filter states.
+// This avoids the audible click/pop that zeroing the biquad delay lines would cause.
 fast_inline void multiband_set_crossover(multiband_t* mb,
                                          float low_freq,
                                          float high_freq) {
     mb->xover_low_freq  = low_freq;
     mb->xover_high_freq = high_freq;
 
-    // Reinitialize crossovers
-    crossover_init(&mb->xover_low_mid, low_freq, mb->sample_rate);
-    crossover_init(&mb->xover_mid_high, high_freq, mb->sample_rate);
+    // Coefficient-only update: preserves filter state continuity at runtime
+    crossover_update_coeffs(&mb->xover_low_mid,   low_freq,  mb->sample_rate);
+    crossover_update_coeffs(&mb->xover_mid_high,  high_freq, mb->sample_rate);
 }
 
 // Set band parameter
@@ -196,9 +197,9 @@ fast_inline void multiband_process(multiband_t* mb,
     float32x4_t high_gain = neon_expq_f32(vmulq_f32(mb->gr_high, vdupq_n_f32(0.115129f)));
 
     // Apply makeup gain
-    low_gain = vmulq_f32(low_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_LOW].makeup_db / 20.0f)));
-    mid_gain = vmulq_f32(mid_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_MID].makeup_db / 20.0f)));
-    high_gain = vmulq_f32(high_gain, vdupq_n_f32(powf(10.0f, mb->bands[BAND_HIGH].makeup_db / 20.0f)));
+    low_gain = vmulq_f32(low_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_LOW].makeup_db / 20.0f)));
+    mid_gain = vmulq_f32(mid_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_MID].makeup_db / 20.0f)));
+    high_gain = vmulq_f32(high_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_HIGH].makeup_db / 20.0f)));
 
     // Apply mute/solo logic
     int any_solo = (mb->bands[BAND_LOW].solo > 0.0f ||

@@ -42,7 +42,19 @@ Core architecture is completely finalized. Extensive NEON optimization, DSP stab
 4. **Shimmer Stability & Design (PILL=4):** *RESOLVED.* Removed the synthetic Bode ring-modulation entirely. Implemented **Cochrane 18-EDO Microtonal Shimmer**. By applying 8 independent Doppler delay modulations tuned exactly to an 18-EDO scale, the engine physically generates dense, acoustic beating organically within the Hadamard mix.
 5. **Coefficient Sign Instability:** *RESOLVED.* Standardized Biquad coefficient normalization (dividing by `a0` without injecting manual negative signs) to align with standard DSP textbooks, preventing infinite positive feedback (NaN) crashes in the Material filters.
 
+## Hardware Fixes Applied
+
+- **Critical crash fix**: `new NeonAdvancedLabirinto()` allocates ≈2.2 MB from heap,
+  which always fails on bare-metal drumlogue. Changed to static instance in BSS:
+  `static NeonAdvancedLabirinto s_reverb_instance;` — unit now boots correctly.
+- **Esotico preset dead code**: `setFilterType()` never updated `currentPreset`, so
+  the `if (currentPreset == k_esotico)` branch was always false. Fixed; esotico now
+  correctly uses `kFilterCrystal` (BPF Q=3, 2–7 kHz) for its microtonal shimmer,
+  distinct from labirinto's `kFilterMetal` (BPF Q=8, 800 Hz–4 kHz).
+
 ## Pending
 
-- [ ] Hardware testing on physical drumlogue unit.
-- [ ] Profiling total CPU usage on Cortex-A7 to ensure 12+ voices of polyphony remain available for synthesis.
+- [ ] Full hardware profiling: Cortex-A7 CPU usage to verify 12+ synthesis voices
+      remain available alongside the reverb.
+- [ ] Extended hardware soak test at all 5 presets (foresta, tempio, labirinto,
+      esotico, stellare) to verify filter stability under sustained input.

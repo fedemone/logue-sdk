@@ -66,7 +66,7 @@ constexpr float INTERVAL_MAJOR_7TH = 1.887748625f;       // 11 semitones
 constexpr float INTERVAL_OCTAVE    = 2.0f;               // 12 semitones
 
 // ============================================================================
-// Parameter Indexes - 24 parameters across 6 pages
+// Parameter Indexes - 24 parameters across 6 pages - TODO enum
 // ============================================================================
 
 // Page 1: Voice Probabilities (4 params)
@@ -109,7 +109,7 @@ constexpr uint8_t PARAM_RES_MORPH = 23;      // Resonant morph (0-100%)
 constexpr uint8_t PARAM_TOTAL = 24;          // For maintenace
 
 // ============================================================================
-// LFO Target Constants
+// LFO Target Constants - TODO enum
 // ============================================================================
 constexpr int LFO_TARGET_NONE = 0;
 constexpr int LFO_TARGET_PITCH = 1;
@@ -119,9 +119,13 @@ constexpr int LFO_TARGET_LFO2_PHASE = 4;
 constexpr int LFO_TARGET_LFO1_PHASE = 5;
 constexpr int LFO_TARGET_RES_FREQ = 6;
 constexpr int LFO_TARGET_RESONANCE = 7;
-constexpr int LFO_TARGET_NOISE_MIX = 8;  // Snare noise/tone blend; metal brightness
-constexpr int LFO_TARGET_RES_MORPH = 9;  // Resonant filter morph (fc / Q sweep)
-constexpr int LFO_TARGET_COUNT = 10;
+constexpr int LFO_TARGET_NOISE_MIX = 8;   // Snare noise/tone blend; metal brightness
+constexpr int LFO_TARGET_RES_MORPH = 9;   // Resonant filter morph (fc / Q sweep)
+constexpr int LFO_TARGET_METAL_GATE = 10; // Metal engine amplitude gate (open/closed hi-hat)
+                                           // Use with Ramp shape + positive depth:
+                                           //   rate=high → fast gate close → closed hi-hat
+                                           //   rate=low  → slow gate close → open hi-hat
+constexpr int LFO_TARGET_COUNT = 11;
 
 // ============================================================================
 // LFO Shape Constants
@@ -206,6 +210,24 @@ constexpr int ENV_STATE_OFF = 3;
 // Envelope curve types
 constexpr int ENV_CURVE_LINEAR = 0;
 constexpr int ENV_CURVE_EXPONENTIAL = 1;
+
+// ============================================================================
+// Euclidean Tuning Mode Constants
+// ============================================================================
+// Each mode assigns per-voice semitone offsets using E(4,n):
+//   position[i] = floor(i * n / 4) for voices i = 0..3
+// Voice 0 always plays the root (offset = 0); voices 1-3 get spread.
+// ============================================================================
+constexpr int EUCLID_MODE_OFF   = 0;  // Off: [0, 0, 0, 0]  — all voices unison
+constexpr int EUCLID_MODE_CLSTR = 1;  // E(4,4):  [0, 1, 2, 3]  chromatic cluster
+constexpr int EUCLID_MODE_MINOR = 2;  // E(4,6):  [0, 1, 3, 4]  minor 3rd pairs
+constexpr int EUCLID_MODE_DIATN = 3;  // E(4,7):  [0, 1, 3, 5]  diatonic cluster
+constexpr int EUCLID_MODE_WHOLE = 4;  // E(4,8):  [0, 2, 4, 6]  whole tone
+constexpr int EUCLID_MODE_PENTA = 5;  // E(4,10): [0, 2, 5, 7]  pentatonic/5th
+constexpr int EUCLID_MODE_DIM7  = 6;  // E(4,12): [0, 3, 6, 9]  diminished 7th
+constexpr int EUCLID_MODE_AUG8  = 7;  // E(4,16): [0, 4, 8, 12] augmented + octave
+constexpr int EUCLID_MODE_TRIT  = 8;  // E(4,24): [0, 6, 12, 18] tritone spread
+constexpr int EUCLID_MODE_COUNT = 9;
 
 // ============================================================================
 // PRNG (Pseudo-Random Number Generator) Constants

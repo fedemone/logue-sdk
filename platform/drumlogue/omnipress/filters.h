@@ -32,6 +32,7 @@ typedef struct {
 
 /**
  * Initialize sidechain HPF (Bessel for clean phase response)
+ * Called also at setParameter()
  */
 fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) {
     f->cutoff_hz = cutoff;
@@ -42,14 +43,14 @@ fast_inline void sidechain_hpf_init(sidechain_hpf_t* f, float cutoff, float sr) 
     // Digital angular frequency for coefficient calculation
     float w0 = 2.0f * M_PI * cutoff / sr;
     float cos_w0 = cosf(w0);
-    float sin_w0 = sinf(w0);    // at init no fast function
+    float sin_w0 = sinf(w0);
     float Q = 0.5f;  // Bessel Q
 
     // Calculate alpha
-    float alpha = sin_w0 / (2.0f * Q);
+    float alpha = sin_w0 / (2.0f * Q);  // TODO: review this, as with current settings this division is doing nothing (2.0 * 0.5)
 
     // Biquad coefficients (normalized)
-    f->b0 = (1.0f + cos_w0) / 2.0f;
+    f->b0 = (1.0f + cos_w0) * 0.5f;
     f->b1 = -(1.0f + cos_w0);
     f->b2 = f->b0;
     f->a1 = -2.0f * cos_w0;

@@ -88,6 +88,7 @@ fast_inline void calculate_bandpass_coeffs(
     float center_freq,
     float q_factor
 ) {
+    if (q_factor < 0.01f) q_factor = 0.01f;  // Guard against div-by-zero
     float w0 = 2.0f * FILTER_PI * center_freq / FILTER_SAMPLE_RATE;
     float cos_w0 = fastercosfullf(w0);
     float sin_w0 = fastersinfullf(w0);
@@ -113,6 +114,7 @@ fast_inline void calculate_highpass_coeffs(
     float cutoff_freq,
     float q_factor
 ) {
+    if (q_factor < 0.01f) q_factor = 0.01f;  // Guard against div-by-zero
     float w0 = 2.0f * FILTER_PI * cutoff_freq / FILTER_SAMPLE_RATE;
     float cos_w0 = fastercosfullf(w0);
     float sin_w0 = fastersinfullf(w0);
@@ -138,6 +140,7 @@ fast_inline void calculate_lowpass_coeffs(
     float cutoff_freq,
     float q_factor
 ) {
+    if (q_factor < 0.01f) q_factor = 0.01f;  // Guard against div-by-zero
     float w0 = 2.0f * FILTER_PI * cutoff_freq / FILTER_SAMPLE_RATE;
     float cos_w0 = fastercosfullf(w0);
     float sin_w0 = fastersinfullf(w0);

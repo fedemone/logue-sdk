@@ -131,7 +131,7 @@ fast_inline void resonant_synth_set_resonance(resonant_synth_t* rs,
                                               uint32x4_t voice_mask,
                                               float resonance_percent) {
     // Map 0-100% to 0-0.99 (a must be < 1)
-    float r = (resonance_percent / 100.0f) * 0.99f;
+    float r = (resonance_percent * 0.01f) * 0.99f;
     rs->target_resonance = vbslq_f32(voice_mask,
                                       vdupq_n_f32(r),
                                       rs->target_resonance);
@@ -203,37 +203,37 @@ fast_inline void resonant_synth_apply_morph(resonant_synth_t* rs,
     switch (rs->mode) {
         case RESONANT_MODE_LOWPASS:
             // LowPass: morph controls cutoff frequency
-            fc = 50.0f + morph * 7950.0f;  // 50-8000 Hz
-            res = 0.5f;                     // Fixed resonance
+            fc = 50.0f + morph * 7950.0f;    // 50-8000 Hz
+            res = 0.5f;                      // Fixed resonance
             gain = 1.0f;
             break;
 
         case RESONANT_MODE_BANDPASS:
             // BandPass: morph controls Q/resonance
             fc = 1000.0f;                    // Fixed center
-            res = 0.1f + morph * 0.8f;        // 0.1-0.9
+            res = 0.1f + morph * 0.8f;       // 0.1-0.9
             gain = 1.0f;
             break;
 
         case RESONANT_MODE_HIGHPASS:
             // HighPass: morph controls cutoff (inverse)
             fc = 8000.0f - morph * 7950.0f;  // 8000-50 Hz
-            res = 0.3f;                       // Fixed resonance
+            res = 0.3f;                      // Fixed resonance
             gain = 1.0f;
             break;
 
         case RESONANT_MODE_NOTCH:
             // Notch: morph controls notch width
             fc = 1000.0f;                    // Fixed center
-            res = 0.2f + morph * 0.7f;        // 0.2-0.9
+            res = 0.2f + morph * 0.7f;       // 0.2-0.9
             gain = 1.0f;
             break;
 
         case RESONANT_MODE_PEAK:
             // Peak: morph controls both frequency and gain
             fc = 200.0f + morph * 3800.0f;   // 200-4000 Hz
-            res = 0.3f + morph * 0.6f;        // 0.3-0.9
-            gain = 1.0f + morph * 3.0f;       // 1-4x
+            res = 0.3f + morph * 0.6f;       // 0.3-0.9
+            gain = 1.0f + morph * 3.0f;      // 1-4x
             break;
 
         default:

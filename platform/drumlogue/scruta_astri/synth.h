@@ -16,7 +16,6 @@ constexpr float Mid_Note_Freq = 69.0f;
 constexpr float Audio_Rate_Freq = 100000.0f;
 constexpr float percent_normalizer = 100.0f;
 constexpr int neon_lanes = 4;
-constexpr int num_params = 24;
 
 
 
@@ -29,7 +28,7 @@ public:
         k_paramL1Wave, k_paramL1Rate, k_paramL1Depth, k_paramL2Wave,
         k_paramL2Rate, k_paramL2Depth, k_paramL3Wave, k_paramL3Rate,
         k_paramL3Depth, k_paramSampRed, k_paramBitRed, k_paramCMOSDist,
-        k_paramLast // this one is just a marker
+        k_paramLast // this one is just a marker - same value as header.c
     };
 
     // Constant Borders
@@ -60,7 +59,7 @@ public:
     }
 
     inline int32_t  getParameter(uint8_t id) {
-        if (id >= num_params) return 0;
+        if (id >= k_paramLast) return 0;
         return m_params[id];
     }
 
@@ -80,7 +79,7 @@ public:
                 m_lfo3_mod_val = 0.0f;
 
                 // preset will target different modulation
-                int32_t mod_target = m_params[k_paramProgram] % num_params;
+                int32_t mod_target = m_params[k_paramProgram] % k_paramLast;
                 // set here the targets addressed by ring_modulation and let the
                 // other to be processed runtime in processBlock() as they use directly
                 // the lfo values, that are not available here.
@@ -125,8 +124,8 @@ public:
                 // 48-71: Osc 2 Reversed
                 // 72-95: Both Reversed
                 int preset = value % 96;
-                m_osc1_dir = (preset >= num_params && preset < 2*num_params) || (preset >= 3*num_params) ? -1.0f : 1.0f;
-                m_osc2_dir = (preset >= 2*num_params) ? -1.0f : 1.0f;
+                m_osc1_dir = (preset >= k_paramLast && preset < 2*k_paramLast) || (preset >= 3*k_paramLast) ? -1.0f : 1.0f;
+                m_osc2_dir = (preset >= 2*k_paramLast) ? -1.0f : 1.0f;
 
                 // Force frequency target updates
                 updateOscillators();
@@ -178,22 +177,20 @@ public:
             // FIX: The Sherman Destruction Boost
             case k_paramCMOSDist: {
                 if (value <= CLEAN_MOOG_BORDER) {
-                    m_cmos_gain = 1.0f + ((float)value / (float)CLEAN_MOOG_BORDER);
-                    filter1.drive = 0.0f;
-                    filter2.drive = 0.0f;
-                    m_sherman_asym_base = 0.0f; // Update base
+                    float t = (float)value / (float)CLEAN_MOOG_BORDER;
+                    m_cmos_gain = 1.0f + t;  // 1.0→2.0
+                    // Gentle drive even in the "clean" zone so 1-32% isn't a dead zone
+                    m_cmos_filter_drive = t * 0.5f;  // 0.0→0.5
+                    m_sherman_asym_base = 0.0f;
                     m_sherman_makeup = 1.0f;
                 } else if (value <= MOOG_SHERMAN_BORDER) {
                     m_cmos_gain = 2.0f;
-                    float moog_drive = ((float)(value - CLEAN_MOOG_BORDER) / (float)(MOOG_SHERMAN_BORDER - CLEAN_MOOG_BORDER)) * 2.0f;
-                    filter1.drive = moog_drive;
-                    filter2.drive = moog_drive;
-                    m_sherman_asym_base = 0.0f; // Update base
+                    m_cmos_filter_drive = ((float)(value - CLEAN_MOOG_BORDER) / (float)(MOOG_SHERMAN_BORDER - CLEAN_MOOG_BORDER)) * 2.0f;
+                    m_sherman_asym_base = 0.0f;
                     m_sherman_makeup = 1.0f;
                 } else {
                     m_cmos_gain = 2.0f;
-                    filter1.drive = 2.0f;
-                    filter2.drive = 2.0f;
+                    m_cmos_filter_drive = 2.0f;
                     // Update base with the parameter calculation
                     m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) / (percent_normalizer - MOOG_SHERMAN_BORDER)) * 2.0f;
                     m_sherman_makeup = 1.0f + m_sherman_asym_base * 0.5f;
@@ -355,16 +352,20 @@ public:
                 m_pitch_mod_multiplier = 1.0f;
                 m_f1_mod_multiplier = 1.0f;
                 m_f2_mod_multiplier = 1.0f;
+                m_f1_lfo_mult = 1.0f;   // Reset: no filter LFO unless preset targets it
+                m_f2_lfo_mult = 1.0f;
                 m_cmos_mod_multiplier = 1.0f;
                 m_srr_mod_offset = 0.0f;
                 m_mix2_mod_offset = 0.0f;
-                m_osc2_target_hz = 0.0f;
+                m_osc2_fm_mult = 1.0f;
+                // NOTE: m_osc2_target_hz is NOT reset here — it is set once by
+                // setParameter(k_paramOsc2Pitch) and must persist across APC cycles.
                 m_volume_mod_multiplier = 0.0f;
                 m_drv1_mod_multiplier = 0.0f;
                 m_drv2_mod_multiplier = 0.0f;
                 m_mix1_mod_offset = 0.0f;
 
-                int32_t mod_target = m_params[k_paramProgram] % num_params;
+                int32_t mod_target = m_params[k_paramProgram] % k_paramLast;
                 // note some missing modes are addressed directly in setParameters()
                 // are they are used in above ring_modulation(), so cannot be placed
                 // right here
@@ -374,9 +375,11 @@ public:
                         m_pitch_mod_multiplier = fasterpow2f(l1_val);
                         break;
                     case k_paramF1Cutoff:
+                        m_f1_lfo_mult = fasterpow2f(l1_val * 3.0f);
                         m_f1_mod_multiplier = fasterpow2f(l2_val * 4.0f);
                         break;
                     case k_paramF2Cutoff:
+                        m_f2_lfo_mult = fasterpow2f(l2_val * 3.0f);
                         m_f2_mod_multiplier = fasterpow2f(l1_val * 4.0f);
                         break;
                     case k_paramCMOSDist:
@@ -389,8 +392,9 @@ public:
                         m_mix2_mod_offset = l2_val; // Crossfade modulation
                         break;
                     case k_paramO2Detune:
-                        // Apply FM via LFO1 to the Target Hz evaluated in the zero-crossing block
-                        m_osc2_target_hz *= fasterpow2f(l2_val * 2.0f);
+                        // FM modulation: compute multiplier from LFO; applied at zero-crossing.
+                        // Do NOT accumulate into m_osc2_target_hz — it would grow to Inf.
+                        m_osc2_fm_mult = fasterpow2f(l2_val * 2.0f);
                         break;
                     case k_paramL1Wave: filter1.mode = (filter_mode)(m_params[k_paramL1Wave] % mode_last);
                         break;
@@ -472,11 +476,13 @@ public:
 
             bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
             if (osc2_wrapped) {
-                osc2.set_frequency(m_osc2_target_hz, SAMPLE_RATE_F);
+                osc2.set_frequency(m_osc2_target_hz * m_osc2_fm_mult, SAMPLE_RATE_F);
             }
 
             // 5. FILTER 1
-            float f1_mod_hz = m_f1_base_hz * fasterpow2f(l1_val * 3.0f);
+            // m_f1_lfo_mult is only set when the preset targets F1 cutoff;
+            // otherwise it holds 1.0f so the base cutoff is unaffected.
+            float f1_mod_hz = m_f1_base_hz * m_f1_lfo_mult;
             f1_mod_hz *= m_f1_mod_multiplier;
 
             filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
@@ -490,7 +496,9 @@ public:
             // Instead of calling sinf() and sqrtf() to modulate Q,
             // we modulate the Sherman Drive. This pushes the filter into
             // aggressive screaming/squelching territory safely!
-            filter1.drive = fmaxf(0.0f, fminf(5.0f, m_f1_drive_base + (m_drv1_mod_multiplier * 5.0f)));
+            // Combine CMOS drive (from k_paramCMOSDist) with resonance drive and LFO drive.
+            // m_cmos_filter_drive is the only source that survives across APC cycles.
+            filter1.drive = fmaxf(0.0f, fminf(5.0f, m_cmos_filter_drive + m_f1_drive_base + (m_drv1_mod_multiplier * 5.0f)));
             mixed_sig = filter1.process(mixed_sig, l3_val);
 
             // 6. THE CRUSH SANDWICH
@@ -509,15 +517,12 @@ public:
             }
 
             // 7. FILTER 2 - Polivoks
-            float f2_mod_hz = m_f2_base_hz * fasterpow2f(l2_val * 3.0f);
+            // m_f2_lfo_mult is only set when the preset targets F2 cutoff
+            float f2_mod_hz = m_f2_base_hz * m_f2_lfo_mult;
             f2_mod_hz *= m_f2_mod_multiplier; // Apply APC multiplier
 
             filter2.set_coeffs(f2_mod_hz, m_f2_q, SAMPLE_RATE_F);
-            filter2.drive = filter1.drive;
-            // Instead of calling sinf() and sqrtf() to modulate Q,
-            // we modulate the Polivoks Drive. This pushes the filter into
-            // aggressive screaming/squelching territory safely!
-            filter2.drive = fmaxf(0.0f, fminf(5.0f, m_f2_drive_base + (m_drv2_mod_multiplier * 5.0f)));
+            filter2.drive = fmaxf(0.0f, fminf(5.0f, m_cmos_filter_drive + m_f2_drive_base + (m_drv2_mod_multiplier * 5.0f)));
             mixed_sig = filter2.process(mixed_sig);
             mixed_sig *= m_sherman_makeup;
 
@@ -583,7 +588,7 @@ public:
     }
 
 private:
-    int32_t m_params[num_params] = {0};
+    int32_t m_params[k_paramLast] = {0};
 
     // Core Engine Instances
     WavetableOsc osc1;
@@ -641,11 +646,15 @@ private:
     // Held Modulation State
     float m_f1_mod_multiplier = 1.0f;
     float m_f2_mod_multiplier = 1.0f;
+    float m_f1_lfo_mult = 1.0f;    // APC-gated: only set when preset targets F1 cutoff
+    float m_f2_lfo_mult = 1.0f;    // APC-gated: only set when preset targets F2 cutoff
+    float m_cmos_filter_drive = 0.0f; // Drive set by k_paramCMOSDist; persists across APC cycles
     float m_cmos_mod_multiplier = 1.0f;
     float m_srr_mod_offset = 0.0f;
     float m_mix1_mod_offset = 0.0f;
     float m_mix2_mod_offset = 0.0f;
     float m_pitch_mod_multiplier = 1.0f;
+    float m_osc2_fm_mult = 1.0f;        // FM via LFO for k_paramO2Detune preset
     float m_volume_mod_multiplier = 1.0f;
     // float m_lfo1_rate_mod_multiplier = 1.0f; // TODO
     float m_drv1_mod_multiplier = 1.0f;

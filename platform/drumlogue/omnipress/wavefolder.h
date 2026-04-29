@@ -16,13 +16,7 @@
 #include <math.h>
 #include <stdint.h>
 #include "float_math.h"
-
-// Drive modes
-#define DRIVE_MODE_SOFT_CLIP   0
-#define DRIVE_MODE_HARD_CLIP    1
-#define DRIVE_MODE_TRIANGLE     2
-#define DRIVE_MODE_SINE         3
-#define DRIVE_MODE_SUBOCTAVE    4
+#include "constants.h"
 
 /**
  * Simple Xorshift PRNG for real-time use
@@ -85,14 +79,24 @@ fast_inline void wavefolder_init(wavefolder_t* wf) {
 }
 
 /**
+ * Set drive type
+ */
+fast_inline void wavefolder_set_drive_type(wavefolder_t* wf, int mode) {
+  if (mode < DRIVE_MODE_TOTAL)
+    wf->mode = mode;
+}
+/**
  * Set drive amount (0-100%)
  */
 fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
-    float drive = drive_percent / 100.0f;
+    float drive = drive_percent * 0.01f;
     wf->drive = vdupq_n_f32(drive);
 
-    // Auto makeup gain (inverse of drive reduction)
-    float makeup = 1.0f / (0.2f + drive * 0.8f);
+    // Makeup gain compensates for the pre-gain (1 + drive*2) applied in
+    // wavefolder_process. At drive=0 this is 1.0 (passthrough, matches CLEAN
+    // mode level). At drive=1.0 it is 0.33 which cancels the 3x pre-gain for
+    // signals still in the linear range of the waveshaper.
+    float makeup = 1.0f / (1.0f + drive * 2.0f);
     wf->output_gain = vdupq_n_f32(makeup);
 }
 
@@ -200,11 +204,12 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t* wf,
 
     float32x4x2_t out;
 
-    // Apply drive gain (pre-drive)
+    // Apply drive gain: 1+drive*2 gives 1x at drive=0 (passthrough) to 3x at drive=100%.
+    // Matches the makeup formula in wavefolder_set_drive so level is consistent.
     float32x4_t driven_l = vmulq_f32(in_l, vaddq_f32(vdupq_n_f32(1.0f),
-                                                      vmulq_f32(wf->drive, vdupq_n_f32(4.0f))));
+                                                      vmulq_f32(wf->drive, vdupq_n_f32(2.0f))));
     float32x4_t driven_r = vmulq_f32(in_r, vaddq_f32(vdupq_n_f32(1.0f),
-                                                      vmulq_f32(wf->drive, vdupq_n_f32(4.0f))));
+                                                      vmulq_f32(wf->drive, vdupq_n_f32(2.0f))));
 
     // Apply selected waveshaping
     switch (wf->mode) {

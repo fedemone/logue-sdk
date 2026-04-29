@@ -15,14 +15,14 @@ const __unit_header unit_header_t unit_header = {
     .unit_id     = 0x00010000U,
     .version     = 0x00010000U,   // v1.0.0
     .name        = "NeonLabirinto",
-    .num_presets = 4,
+    .num_presets = 5,
     .num_params  = 12,
     .params = {
         // Page 1: Main reverb controls
         // ID 0: Preset name
-        { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Preset"} },
-        // ID 1: MIX  wet/dry blend  0.0%-100.0% (x0.1 precision, stored 0..1000)
-        { 0, 1000, 500, 700, k_unit_param_type_percent, 1, 0, 0, {"MIX"} },
+        { 0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Preset"} },
+        // ID 1: MIX  wet/dry blend  0%-100%
+        { 0, 100, 50, 70, k_unit_param_type_percent, 0, 0, 0, {"MIX"} },
         // ID 2: TIME mid RT60 x0.1 s  (1=0.1s .. 100=10.0s)
         { 1, 100, 20, 50, k_unit_param_type_none, 0, 0, 0, {"TIME"} },
         // ID 3: LOW  low-freq RT60 x0.1 s
@@ -35,8 +35,8 @@ const __unit_header unit_header_t unit_header = {
         { 20, 1000, 250, 250, k_unit_param_type_none, 0, 0, 0, {"DAMP"} },
         // ID 6: WIDE stereo width  0%-200%
         { 0, 200, 100, 100, k_unit_param_type_percent, 0, 0, 0, {"WIDE"} },
-        // ID 7: COMP diffusion/complexity  0.0%-100.0% (x0.1, stored 0..1000)
-        { 0, 1000, 500, 1000, k_unit_param_type_percent, 1, 0, 0, {"COMP"} },
+        // ID 7: COMP diffusion/complexity  0%-100%
+        { 0, 100, 50, 100, k_unit_param_type_percent, 0, 0, 0, {"COMP"} },
 
         // Page 3:
         // ID 8: PILL pillar count index  0=sparse(2ch), 1=ping-pong(4ch), 2=stone(6ch), 3=full(8ch), 4=shimmer(8ch+)

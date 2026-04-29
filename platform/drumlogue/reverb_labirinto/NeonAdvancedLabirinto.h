@@ -31,7 +31,8 @@
 #define FREQ_MAX_DIV_MIN (18.333f)
 #define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
 #define PREDELAY_MASK (PREDELAY_BUFFER_SIZE - 1)
-#define NEON_LANES (4)
+#define NEON_LANES  (4)
+#define MAX_PILLARS (16)
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -50,6 +51,38 @@ typedef enum {
     k_stellare,
     k_preset_number,
 } preset_numer_t;
+
+
+enum parameterState {
+  k_paramProgram = 0,
+  k_mix, k_time, k_low, k_high, k_damp,
+  k_wide, k_comp, k_pill, k_shimmer_freq,
+  k_pre_delay, k_vibr,
+  k_total
+};
+
+static const char *k_preset_names[k_preset_number] =
+    {"foresta", "tempio", "labirinto", "esotico", "stellare"};
+// ============================================================================
+// Factory Presets
+// ============================================================================
+// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
+static const int32_t k_presets[k_preset_number][k_total] = {
+    // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
+    {k_foresta, 60, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
+    // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
+    {k_tempio, 70, 70, 80, 25, 130, 130, 80, 2, 0, 0, 10},
+    // 2: labirinto - center values with random ping-pong stereo bouncing
+    {k_labirinto, 50, 60, 50, 50, 510, 100, 50, 1, 0, 10, 10},
+    // 3: esotico - microtonal echoes on non-Western scale
+    {k_esotico, 45, 40, 60, 80, 100, 100, 50, 4, 5, 5, 20},
+    // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
+    {k_stellare, 40, 90, 50, 80, 800, 180, 30, 4, 35, 20, 10},
+};
+
+// ============================================================================
+// Main Class
+// ============================================================================
 
 class NeonAdvancedLabirinto {
 public:
@@ -188,9 +221,72 @@ public:
     }
 
     /*===========================================================================*/
-    /* Parameter Setters */
+    /* Parameter Setters/Getters */
     /*===========================================================================*/
+    inline int getPreset() {
+        return currentPreset;
+    }
 
+    inline void loadPreset(int32_t value) {
+        currentPreset = value;
+        setFilterType(value);
+        for (uint8_t i = 0; i < k_total; i++) {
+            setParameter(i, k_presets[value][i]);
+        }
+    }
+
+    inline int32_t getParameterValue(uint8_t index) {
+        if (index >= k_total) return -1;    // invalid value
+        return params_[index];
+    }
+
+    inline void setParameter(uint8_t index, int32_t value) {
+        if (index >= k_total) return;
+        params_[index] = value;   // store into local DB
+
+        switch (index) {
+        case k_paramProgram:
+            // do nothing to avoid recursion
+            break;
+        case k_mix: // MIX  0..100 → 0.0..1.0
+            setMix(value * 0.01f);
+            break;
+        case k_time: // TIME  1..100 → decay 0.01..0.99
+            setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
+            break;
+        case k_low: // LOW  1..100 → low-freq decay multiplier
+            setLowDecay((float)value);
+            break;
+        case k_high: // HIGH  1..100 → high-freq decay multiplier
+            setHighDecay((float)value);
+            break;
+        case k_damp: // DAMP  20..1000 (×10 → 200..10000 Hz)
+            setDamping((float)value * 10.0f);
+            break;
+        case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
+            setWidth(value * 0.01f);
+            break;
+        case k_comp: // COMP  0..100 → diffusion 0.0..1.0
+            setDiffusion(value * 0.01f);
+            break;
+        case k_pill: // PILL  0..4  - pillar routing mode
+            setPillar(value);
+            break;
+        case k_shimmer_freq: // SHMR  0..100  - shimmer frequency
+            setShimmerFreq(value);
+            break;
+        case k_pre_delay: // PDLY 0..200 ms
+            setPreDelay((float)value);
+            break;
+        case k_vibr:
+            // value 1..30 → 0.1..3.0 Hz
+            setLfoSpeed(value * 0.1f);
+            updateModRate();
+            break;
+        default:
+        break;
+        }
+    }
     void setDecay(float d) { decay = fmaxf(0.0f, fminf(0.99f, d)); }
     void setDiffusion(float d) {
         diffusion = fmaxf(0.0f, fminf(1.0f, d));
@@ -234,7 +330,7 @@ public:
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
     void setShimmerFreq(float value) {
         // Normalize UI value to 0.0 -> 1.0
-        float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+        float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
 
         // Exponential mapping: min * (max/min)^norm
         // 3.0f * (55.0 / 3.0)^norm
@@ -264,7 +360,7 @@ public:
      */
     void setLowDecay(float value) {
         // value 1-100; map to a per-channel decay multiplier 0.9..1.5
-        lowDecayMult = 0.9f + (value / 100.0f) * 0.6f;
+        lowDecayMult = 0.9f + (value * 0.01f) * 0.6f;
     }
 
     /**
@@ -273,7 +369,7 @@ public:
      */
     void setHighDecay(float value) {
         // value 1-100; higher value = brighter (less high-freq damping)
-        highDecayMult = 0.1f + (value / 100.0f) * 0.9f;
+        highDecayMult = 0.1f + (value * 0.01f) * 0.9f;
     }
 
     /**
@@ -288,14 +384,14 @@ public:
     }
 
     void setFilterType(int preset) {
-        // map preset to filterMode
+        currentPreset = preset;   // Fix: currentPreset must track the active preset
         switch (preset) {
-            case 0: filterMode = kFilterWood; break;
-            case 1: filterMode = kFilterStone; break;
-            case 2: filterMode = kFilterMetal; break;
-            case 3: filterMode = kFilterMetal; break;
-            case 4: filterMode = kFilterNoise; break;
-            default: filterMode = kFilterWood; break;
+            case k_foresta:    filterMode = kFilterWood;    break;
+            case k_tempio:     filterMode = kFilterStone;   break;
+            case k_labirinto:  filterMode = kFilterMetal;   break;  // glassy high-Q bandpass
+            case k_esotico:    filterMode = kFilterCrystal; break;  // bright allpass-like shimmer
+            case k_stellare:   filterMode = kFilterNoise;   break;
+            default:           filterMode = kFilterWood;    break;
         }
         updateBaseFc();
     }
@@ -311,7 +407,10 @@ public:
                 fc = 80.0f + dampingCoeff * 420.0f;    // 80..500 Hz
                 break;
             case kFilterMetal:
-                fc = 800.0f + dampingCoeff * 3200.0f;  // 800..4000 Hz
+                fc = 800.0f + dampingCoeff * 3200.0f;  // 800..4000 Hz  (glassy high-Q ringing)
+                break;
+            case kFilterCrystal:
+                fc = 2000.0f + dampingCoeff * 5000.0f; // 2000..7000 Hz (bright shimmer for esotico)
                 break;
             default:
                 fc = 1000.0f;
@@ -343,8 +442,23 @@ public:
         // y[n] = (b0 * x[n]) + (b1 * x[n-1]) + (b2 * x[n-2]) - (a1 * y[n-1]) - (a2 * y[n-2])
         if (filterMode == kFilterMetal) {
             // METAL: High-Q Bandpass (Constant Peak Gain)
-            // Creates a glassy, inharmonic ringing resonance
+            // Creates a glassy, inharmonic ringing resonance — used by labirinto
             float Q = 8.0f;
+            alpha = sin_w0 / (2.0f * Q);
+
+            b0 = alpha;
+            b1 = 0.0f;
+            b2 = -alpha;
+            a0 = 1.0f + alpha;
+            a1 = -2.0f * cos_w0;
+            a2 = 1.0f - alpha;
+        }
+        else if (filterMode == kFilterCrystal) {
+            // CRYSTAL: Medium-Q Bandpass at higher frequencies — used by esotico.
+            // Q=3 gives a broader peak than METAL, suitable for microtonal shimmer.
+            // The higher fc range (2-7 kHz) keeps the tail bright and airy without
+            // the harsh metallic ring, blending with the microtonal modulation path.
+            float Q = 3.0f;
             alpha = sin_w0 / (2.0f * Q);
 
             b0 = alpha;
@@ -765,12 +879,12 @@ private:
     void applyHighFreqDamping4(float32x4_t* signals) {
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             // 1. Get the mixed audio for this channel (4 samples)
-            float mixed_samps[4];
+            float mixed_samps[NEON_LANES];
             vst1q_f32(mixed_samps, signals[ch]);
 
             // 2. Process the sequential IIR Low-Pass Filter for Damping
             // dampingCoeff is calculated from UI (e.g., 0.1 to 0.95)
-            for(int s = 0; s < 4; s++) {
+            for(int s = 0; s < NEON_LANES; s++) {
                 float filtered = (mixed_samps[s] * (1.0f - dampingCoeff)) + (lpfState[ch] * dampingCoeff);
                 lpfState[ch] = filtered; // Save state for next immediate sample
                 mixed_samps[s] = filtered;
@@ -822,19 +936,18 @@ private:
     /* Vectorized Delay Line Write */
     /*===========================================================================*/
     void writeDelayLines4(const float32x4_t* signals) {
-        // Spill all channel vectors once; index by sample position (variable s)
+        // Spill all channel vectors; index by sample position (variable s)
         // to avoid vgetq_lane_f32(v, variable) which requires a constant index.
-        float ch_lanes[FDN_CHANNELS][4];
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+        float ch_lanes[FDN_CHANNELS][NEON_LANES];
+        for (int ch = 0; ch < FDN_CHANNELS; ch++)
             vst1q_f32(ch_lanes[ch], signals[ch]);
-            // Being an IIR, we can process just one block at time
-            for (int s = 0; s < 4; s++) {
+
+        for (int s = 0; s < NEON_LANES; s++) {
             uint32_t pos = (writePos + s) & BUFFER_MASK;
             for (int ch = 0; ch < FDN_CHANNELS; ch++)
                 delayLine[pos].samples[ch] = ch_lanes[ch][s];
-            }
-            writePos = (writePos + 4) & BUFFER_MASK;
         }
+        writePos = (writePos + NEON_LANES) & BUFFER_MASK;
     }
 
     /*===========================================================================*/
@@ -847,6 +960,21 @@ private:
         // Load 4 input samples for L and R channels
         float32x4_t inL4 = vld1q_f32(inL);
         float32x4_t inR4 = vld1q_f32(inR);
+
+        // APC WAKE-UP: check raw input BEFORE the bypass guard.
+        // activeSampleCount starts at 0 after clear(); the code that resets it
+        // from the delayed signal is after the pre-delay write, which is itself
+        // gated by this guard — so without a raw-input check here the reverb
+        // would never activate from bypass.
+        {
+            float32x4_t absL = vabsq_f32(inL4);
+            float32x4_t absR = vabsq_f32(inR4);
+            float32x4_t absIn = vmaxq_f32(absL, absR);
+            float32x4_t mx1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
+            float mx = vgetq_lane_f32(vmaxq_f32(mx1, vextq_f32(mx1, mx1, 1)), 0);
+            if (mx > 1e-5f)
+                activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+        }
 
         if (activeSampleCount <= 0) {
             // Apply dry gain so volume stays constant when bypassed!
@@ -862,11 +990,11 @@ private:
         // =================================================================
         // 1 & 2. PRE-DELAY (Smoothed, Interpolated, Write-Before-Read)
         // =================================================================
-        float monoLanes[4];
+        float monoLanes[NEON_LANES];
         vst1q_f32(monoLanes, inMono); // Unpack the NEON vector
-        float delayedLanes[4];
+        float delayedLanes[NEON_LANES];
 
-        for (int s = 0; s < 4; s++) {
+        for (int s = 0; s < NEON_LANES; s++) {
             // 1. WRITE FIRST: Guarantees 0.0ms delay instantly reads this exact sample
             preDelayBuffer[preDelayWritePos] = monoLanes[s];
 
@@ -877,7 +1005,7 @@ private:
             float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
 
             // Branchless wrap
-            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * NEON_LANES);
             int32_t pd_idx1 = (int32_t)safe_pd_pos;
             int32_t pd_idx2 = pd_idx1 + 1;
 
@@ -912,7 +1040,7 @@ private:
             activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
         } else if (activeSampleCount > 0) {
             // Signal absent: decrement counter
-            activeSampleCount -= 4;
+            activeSampleCount -= NEON_LANES;
         }
 
         // If counter has expired, bypass FDN processing to save cycles
@@ -920,7 +1048,7 @@ private:
             float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
             vst1q_f32(outL, vmulq_f32(inL4, dryGain));
             vst1q_f32(outR, vmulq_f32(inR4, dryGain));
-            writePos = (writePos + 4) & BUFFER_MASK;
+            writePos = (writePos + NEON_LANES) & BUFFER_MASK;
             return;
         }
 
@@ -968,7 +1096,7 @@ private:
         float loopGain = 0.7f + (decay * 0.295f);
         float unifiedDecay = fminf(0.995f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        float32x4_t feedback = vdupq_n_f32(1.0f - decay); // Keep input injection balanced
+        float32x4_t feedback = vdupq_n_f32(1.0f - decay);
 
         for (int i = 0; i < FDN_CHANNELS; i++) mixed[i] = vmulq_f32(mixed[i], decayAll);
 
@@ -1088,6 +1216,10 @@ private:
     void processScalar(float input, float& wetL, float& wetR) {
         float delayOut[FDN_CHANNELS];
 
+        // APC WAKE-UP: check raw input before bypass guard (same reason as process4Samples).
+        if (fabsf(input) > 1e-5f)
+            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+
         if (activeSampleCount <= 0) {
             // Apply dry gain so volume stays constant when bypassed!
             wetL = 0.0f; wetR = 0.0f;
@@ -1177,7 +1309,6 @@ private:
 
         applyHadamardScalar(delayOut, mixed);
 
-        // 4. Inject delayedInput instead of raw input
         mixed[0] += delayedInput * (1.0f - decay);
 
         // Exotic "Low Pitching" Shimmer (PILL=4)
@@ -1273,6 +1404,22 @@ private:
     /* Private Member Variables */
     /*===========================================================================*/
 
+    // ============================================================================
+    // Parameter State (mirrors header.c defaults)
+    // ============================================================================
+    // ID 0:  PRESET 0..3               default 0 (foresta)
+    // ID 1:  MIX    0..100 %           default 70 (70%)
+    // ID 2:  TIME   1..100             default 50
+    // ID 3:  LOW    1..100             default 50
+    // ID 4:  HIGH   1..100             default 70
+    // ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
+    // ID 6:  WIDE   0..200 %           default 100
+    // ID 7:  COMP   0..1000 (x0.1%)    default 1000
+    // ID 8:  PILL   0..4               default 3
+    // ID 9:  SHMR 0..100               default 35 (Hz)
+    // ID 10: PDLY   0..100             default 0 (ms)
+    int32_t params_[k_total]  __attribute__((aligned(16)));
+
     float sampleRate;
     int writePos;
     float decay;
@@ -1319,7 +1466,9 @@ private:
     float smoothedLfoValue;
 
     // Filter types (per channel, but we can use shared coeffs)
-    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterNoise };
+    // kFilterCrystal: bright allpass-like character for esotico (medium-Q bandpass
+    // centred higher than metal, giving a shimmering/glassy microtonal colour)
+    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterCrystal, kFilterNoise };
     FilterMode filterMode;
     float biquadA0, biquadA1, biquadA2, biquadB1, biquadB2; // shared coeffs
     float filterState1[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-1
@@ -1336,7 +1485,7 @@ private:
     static const float crossGain[5];   // indexed by pillar_
 
     // Randomized ping-pong map (for PILL=1)
-    static const uint8_t pingRandomMap[16][4]; // 16 steps, 4 channels each
+    static const uint8_t pingRandomMap[MAX_PILLARS][NEON_LANES]; // 16 steps, 4 channels each
     int pingMapIndex;
 
     float baseFc;                   // base cutoff frequency (Hz) for current preset/damping
@@ -1346,7 +1495,7 @@ private:
 const float NeonAdvancedLabirinto::crossGain[5] = {0.15f, 0.10f, 0.07f, 0.04f, 0.04f};
 
 // Pre-computed random map for ping-pong (fixed seed for reproducibility)
-const uint8_t NeonAdvancedLabirinto::pingRandomMap[16][4] = {
+const uint8_t NeonAdvancedLabirinto::pingRandomMap[MAX_PILLARS][NEON_LANES] = {
     {1,0,1,0}, {0,1,0,1}, {1,1,0,0}, {0,0,1,1},
     {1,0,0,1}, {0,1,1,0}, {1,1,1,0}, {0,1,1,1},
     {1,0,1,1}, {0,1,0,0}, {1,0,0,0}, {0,0,0,1},

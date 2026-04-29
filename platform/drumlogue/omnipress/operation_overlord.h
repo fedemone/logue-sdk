@@ -64,7 +64,7 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
  * Set drive amount (0-100%)
  */
 fast_inline void overlord_set_drive(overlord_t* ov, float drive_percent) {
-    float drive = drive_percent / 100.0f;
+    float drive = drive_percent * 0.01f;
     ov->drive = drive;
 }
 
