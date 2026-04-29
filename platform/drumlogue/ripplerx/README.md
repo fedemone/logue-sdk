@@ -91,48 +91,70 @@ The synthesizer reuses the legacy preset parameter arrays (Bells, Marimba, etc.)
 ## Reference / Literature / Inspiration Links
 
 ### Timbre analysis, similarity, and representation
-- Timbre Models of Musical Sounds: From the Model of One Sound to the Model of One Instrument  
+- Timbre Models of Musical Sounds: From the Model of One Sound to the Model of One Instrument
   https://www.academia.edu/1051621/Timbre_models_of_musical_sounds_from_the_model_of_one_sound_to_the_model_of_one_instrument
-- Aucouturier et al. (timbre representation context PDF mirror)  
+- Aucouturier et al. (timbre representation context PDF mirror)
   https://www.francoispachet.fr/wp-content/uploads/2021/01/aucouturier-06a-1.pdf
-- ISMIR 2019 paper reference used for descriptor/classification inspiration  
+- ISMIR 2019 paper reference used for descriptor/classification inspiration
   https://archives.ismir.net/ismir2019/paper/000091.pdf
-- Brightness perception / spectral centroid relation (reference link)  
+- Brightness perception / spectral centroid relation (reference link)
   https://scispace.com/pdf/brightness-perception-for-musical-instrument-sounds-relation-13u09obfoq.pdf
 
 ### Damping / decay modeling
-- Three decaying modes with equal and unequal energies and reverberation times  
+- Three decaying modes with equal and unequal energies and reverberation times
   https://www.researchgate.net/publication/371112063_Three_decaying_modes_with_equal_and_unequal_energies_and_reverberation_times
-- Tonazzi et al. postprint (material linked in discussion)  
+- Tonazzi et al. postprint (material linked in discussion)
   https://iris.uniroma1.it/retrieve/08f9d8c1-3060-409c-8997-817e882b8e13/Tonazzi_Postprint_Material_2024.pdf
-- T20/T30/T60 measurement references shared during tuning discussion  
-  https://download.spsc.tugraz.at/thesis/PhD_Balint_20201203.pdf  
+- T20/T30/T60 measurement references shared during tuning discussion
+  https://download.spsc.tugraz.at/thesis/PhD_Balint_20201203.pdf
   https://amslaurea.unibo.it/id/eprint/348/1/tesi_formattata.pdf
 
 ### Digital instrument modeling / discrete parametrization
-- Discrete-time modelling of musical instruments  
+- Discrete-time modelling of musical instruments
   https://www.researchgate.net/publication/228667658_Discrete-time_modelling_of_musical_instruments
-- Dissertation reference shared for discrete model context  
+- Dissertation reference shared for discrete model context
   http://lib.tkk.fi/Dipl/2007/urn009585.pdf
-- Sensors article link shared for additional modeling context  
+- Sensors article link shared for additional modeling context
   https://www.mdpi.com/1424-8220/25/11/3469
-- Musical instrument recognition reference for discrete parametrization guidance  
+- Musical instrument recognition reference for discrete parametrization guidance
   https://www.nature.com/articles/s41598-025-09493-y
 
 ### Oscillator / recursion / filter coefficient references
-- Harmonic quadrature oscillator recursion (Vicanek)  
+- Harmonic quadrature oscillator recursion (Vicanek)
   https://vicanek.de/articles/QuadOsc.pdf
-- Digital sine oscillator design notes  
+- Digital sine oscillator design notes
   https://www.njohnson.co.uk/pdf/drdes/Chap7.pdf
-- Biquad and coefficient calculation references  
-  https://dafx25.dii.univpm.it/wp-content/uploads/2025/09/DAFx25_paper_10.pdf  
+- Biquad and coefficient calculation references
+  https://dafx25.dii.univpm.it/wp-content/uploads/2025/09/DAFx25_paper_10.pdf
   https://www.ti.com/lit/an/slaa447/slaa447.pdf
-- Minimal sinusoidal oscillator implementation (VCII paper)  
+- Minimal sinusoidal oscillator implementation (VCII paper)
   https://www.mdpi.com/2079-9268/11/3/30
 
 ### Advanced mathematical modeling (exploratory)
-- HAL preprint shared as thought-provoking modeling reference  
+- HAL preprint shared as thought-provoking modeling reference
   https://hal.science/hal-03178044v1
+
+### Cymbal / gong modal modelling references used for Stage-2+ design
+- Chaigne, C. & Doutaut, V. — Numerical simulations of xylophones and cymbals (plate modal context)
+  https://ensta.hal.science/hal-01135295/file/ACCTOT.pdf
+- Chaigne et al. / Touzé related plate-vibration nonlinear modal interaction reference
+  https://perso.ensta.fr/~touze/PDF/ISMA04.pdf
+- Chalmers publication (plate/cymbal vibro-acoustic modelling reference)
+  https://publications.lib.chalmers.se/records/fulltext/5768.pdf
+- Vibrating plates mode visualisation/intuition reference
+  https://mdphys.org/plates.html
+- Cymbal harmonics-informed design method
+  https://ord.npust.edu.tw/wp-content/uploads/2023/07/Cymbals-with-Harmonics-Sound-a-Method-for-Design-the-Cymbals-and-Percussion-Instruments-with-Cymbals.pdf
+- Acoustical Science and Technology article (cymbal/percussion acoustic analysis context)
+  https://www.jstage.jst.go.jp/article/ast/42/6/42_E2087/_pdf/-char/en
+
+### Snare-wire / resonant-noise & filter-complexity references
+- Avnell Das thesis (snare/percussion synthesis and implementation context)
+  https://www.diva-portal.org/smash/get/diva2:833643/FULLTEXT01.pdf
+- University of Sydney review (drum/percussion modelling notes)
+  https://ses.library.usyd.edu.au/bitstream/handle/2123/9178/Jarad%20Avnell%20Das%20Final%20Review.pdf?sequence=2&isAllowed=y
+- IIR approximately-linear-phase complexity reference (for low-cost resonant shaping discussions)
+  https://www.researchgate.net/publication/333784589_A_Complexity_Analysis_of_IIR_Filters_with_an_Approximately_Linear_Phase
 
 ### Non-physical / hybrid and broader modeling context
 - Frontiers (2025) signal-processing reference shared for non-physical modelling context
