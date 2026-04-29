@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from pre_hw_analysis import compare_pair
+from pre_hw_analysis import compare_pair, read_wav_mono, autocorr_f0
 
 
 REPO_DIR = Path(__file__).resolve().parent
@@ -420,6 +420,26 @@ def infer_midi_note_from_sample_name(sample: Path, fallback: int = 60) -> int:
     return midi_from_note_name(note, octave)
 
 
+def midi_from_hz(hz: float, fallback: int = 60) -> int:
+    if hz <= 0.0:
+        return fallback
+    midi = int(round(69.0 + 12.0 * math.log2(hz / 440.0)))
+    return max(0, min(127, midi))
+
+
+def infer_midi_note_from_audio(sample: Path, fallback: int = 60) -> int:
+    """Infer pitch from waveform autocorrelation (useful when filename has no note token)."""
+    try:
+        sig, sr, _ = read_wav_mono(sample)
+        if not sig:
+            return fallback
+        early = sig[: min(len(sig), int(sr * 0.35))]
+        f0 = autocorr_f0(early, sr, fmin=35.0, fmax=4000.0)
+        return midi_from_hz(f0, fallback=fallback)
+    except Exception:
+        return fallback
+
+
 def apply_preset_note_calibration(preset_name: str, note: int) -> int:
     offset = PRESET_NOTE_CALIBRATION.get(preset_name, 0)
     # Safety clamp for accidental over-calibration.
@@ -610,6 +630,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--assumed-improvement", type=float, default=0.72)
     p.add_argument("--auto-note-align", action="store_true", help="Enable pitch-aligned MR-STFT term in comparisons")
     p.add_argument(
+        "--prefer-audio-pitch",
+        action="store_true",
+        help="Infer sample notes from audio autocorrelation before filename-note parsing.",
+    )
+    p.add_argument(
         "--preset-group",
         choices=["all", "first_batch", "remaining_batch"],
         default="all",
@@ -705,7 +730,7 @@ def run_one_iteration(
             continue
         if selected_presets is not None and pname not in selected_presets:
             continue
-        render_note = infer_midi_note_from_sample_name(s, fallback=60)
+        render_note = infer_midi_note_from_audio(s, fallback=60) if args.prefer_audio_pitch else infer_midi_note_from_sample_name(s, fallback=60)
         render_note = apply_preset_note_calibration(pname, render_note)
         mapped.append((s, presets[pname], render_note))
 
@@ -883,9 +908,38 @@ def run_one_iteration(
                     f.write(f"  - {s}\n")
             f.write("\n")
 
+    # Final snapshot artifact: presets and values involved in this run.
+    touched = sorted({r["preset"] for r in results if "preset" in r})
+    snapshot_rows = []
+    for pname in touched:
+        p = presets.get(pname)
+        if p is None:
+            continue
+        rows = by_preset.get(pname, [])
+        avg = sum(x["score"] for x in rows) / max(len(rows), 1) if rows else None
+        snapshot_rows.append({
+            "preset": pname,
+            "preset_idx": p.idx,
+            "values": p.values,
+            "avg_score": avg,
+            "samples": [x.get("sample") for x in rows],
+        })
+    snap_json = out_dir / "batch_tuning_final_presets.json"
+    snap_json.write_text(json.dumps({"presets": snapshot_rows}, indent=2))
+    snap_md = out_dir / "batch_tuning_final_presets.md"
+    with snap_md.open("w") as f:
+        f.write("# Batch Tuning Final Preset Values\n\n")
+        f.write("| Preset | Idx | Avg score | Values |\n")
+        f.write("|---|---:|---:|---|\n")
+        for r in snapshot_rows:
+            atxt = f"{r['avg_score']:.2f}" if isinstance(r.get("avg_score"), (int, float)) else "n/a"
+            f.write(f"| {r['preset']} | {r['preset_idx']} | {atxt} | `{r['values']}` |\n")
+
     print(f"Wrote: {json_path}")
     print(f"Wrote: {csv_path}")
     print(f"Wrote: {md_path}")
+    print(f"Wrote: {snap_json}")
+    print(f"Wrote: {snap_md}")
     if unmapped:
         print(f"Unmapped samples: {len(unmapped)}")
 

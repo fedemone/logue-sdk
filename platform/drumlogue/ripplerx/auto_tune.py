@@ -422,6 +422,36 @@ def run_auto_tune(
     hist_path.write_text(json.dumps({"baseline": baseline, "history": history}, indent=2))
     print(f"\nHistory saved to {hist_path}")
 
+    # Save final preset values snapshot for easy/manual application and regression tracing.
+    final_presets = parse_presets(SYNTH_ENGINE)
+    tracked_names = sorted(preset_filter) if preset_filter else sorted(final_presets.keys())
+    tracked_rows = []
+    for n in tracked_names:
+        pr = final_presets.get(n)
+        if not pr:
+            continue
+        tracked_rows.append({
+            "preset": n,
+            "preset_idx": pr.idx,
+            "values": pr.values,
+            "before_score": baseline.get(n),
+            "after_score": best_scores.get(n),
+        })
+    final_json = REPORTS_DIR / "auto_tune_final_presets.json"
+    final_json.write_text(json.dumps({"presets": tracked_rows}, indent=2))
+    final_md = REPORTS_DIR / "auto_tune_final_presets.md"
+    with final_md.open("w") as f:
+        f.write("# Auto Tune Final Preset Values\n\n")
+        f.write("| Preset | Idx | Before | After | Values |\n")
+        f.write("|---|---:|---:|---:|---|\n")
+        for r in tracked_rows:
+            b = r["before_score"]
+            a = r["after_score"]
+            btxt = f"{b:.2f}" if isinstance(b, (int, float)) else "n/a"
+            atxt = f"{a:.2f}" if isinstance(a, (int, float)) else "n/a"
+            f.write(f"| {r['preset']} | {r['preset_idx']} | {btxt} | {atxt} | `{r['values']}` |\n")
+    print(f"Final preset snapshot saved to {final_json} and {final_md}")
+
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
