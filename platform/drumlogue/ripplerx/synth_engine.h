@@ -1511,7 +1511,9 @@ public:
             if (ex.snare_wire_mix > 0.001f) {
                 // Very short resonant burst path (2nd-order): emphasizes snare-wire sizzle
                 // without feeding broadband noise into pitch-tracked waveguides.
-                float wire = noise_sum + (1.82f * ex.snare_wire_z1) - (0.835f * ex.snare_wire_z2);
+                // Poles at r=0.945, f≈3.5kHz (a1=2r·cos(w), a2=r²): wire sizzle in
+                // the snare wire frequency range; previous 695 Hz was far too low.
+                float wire = noise_sum + (1.6951f * ex.snare_wire_z1) - (0.8930f * ex.snare_wire_z2);
                 ex.snare_wire_z2 = ex.snare_wire_z1;
                 ex.snare_wire_z1 = wire;
                 noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);

@@ -63,9 +63,11 @@ MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
 FINE_TUNE_START_STABLE = 1
 FINE_STEP_OVERRIDES = {
-    "Dkay": 5,
+    "Dkay":  5,
     "Mterl": 1,
-    "NzMx": 2,
+    "NzMx":  2,
+    "NzRs":  20,   # half of coarse 40 step
+    "NzFq":  30,   # half of coarse 60 step (= 300 Hz effective)
 }
 
 # ── Import scoring from existing infrastructure ────────────────────────────────
