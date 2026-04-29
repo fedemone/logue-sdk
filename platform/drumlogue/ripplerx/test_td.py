@@ -68,7 +68,7 @@ PRESETS = [
     (  65,  194,    5,  "Kalimba"),
     (  60,  194,    0,  "StelPan"),
     (  79,    3,    0,  "Claves"),
-    (  67,  175,    0,  "Cowbel"),
+    (  67,  185,    0,  "Cowbel"),   # Dkay=185 (actual preset); Mterl=22+InHm=200 beating → measured T60 ~1.81× theory, within [0.15,2.20]
     (  84,  190,    0,  "Triangle"),  # Dkay=190: tuner reduced from 199→190; LP+allpass shortens measured T60
     (  36,   70,    3,  "Kick"),
     (  60,    5,  100,  "Clap"),
