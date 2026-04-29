@@ -52,6 +52,8 @@ PARAMS: List[Tuple[str, int, int, int, int]] = [
     ("Dkay",  10,   0, 200, 10),
     ("Mterl", 11, -10,  30,  2),
     ("NzMx",  19,   0, 100,  5),
+    ("NzRs",  20,   0, 1000, 40),
+    ("NzFq",  22,  30, 1500, 60),
     ("MlSt",   5,   0, 500, 30),
     ("InHm",  15,   0,  10,  1),
     ("TbRd",  17,  -5,  35,  2),
@@ -59,6 +61,12 @@ PARAMS: List[Tuple[str, int, int, int, int]] = [
 
 MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
+FINE_TUNE_START_STABLE = 1
+FINE_STEP_OVERRIDES = {
+    "Dkay": 5,
+    "Mterl": 1,
+    "NzMx": 2,
+}
 
 # ── Import scoring from existing infrastructure ────────────────────────────────
 sys.path.insert(0, str(REPO_DIR))
@@ -279,9 +287,11 @@ def run_auto_tune(
         best_change: Dict[str, Tuple[int, int]] = {}
         best_trial:  Dict[str, float]            = dict(best_scores)
 
+        use_fine_steps = (stable_count >= FINE_TUNE_START_STABLE)
         for param_name, col_idx, vmin, vmax, delta in PARAMS:
+            eff_delta = FINE_STEP_OVERRIDES.get(param_name, delta) if use_fine_steps else delta
             for direction in (+1, -1):
-                step = delta * direction
+                step = eff_delta * direction
 
                 # Build trial rows: apply step to all presets (clamped).
                 trial_rows = copy.deepcopy(current_rows)

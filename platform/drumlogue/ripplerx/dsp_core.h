@@ -86,6 +86,9 @@ struct ExciterState {
     float noise_out_sample = 0.0f;
     float noise_lp_state = 0.0f;   // stage-1 dual-band noise shaper LP state
     float noise_band_mix = 0.5f;   // 0=mostly low thump, 1=mostly high click
+    float snare_wire_z1 = 0.0f;    // short wire-sizzle resonator state
+    float snare_wire_z2 = 0.0f;    // short wire-sizzle resonator state
+    float snare_wire_mix = 0.0f;   // 0..1 extra wire component mix
 
     float mallet_lp = 0.0f;
     float mallet_lp2 = 0.0f;       // Second LP pole state (MlltRes)
@@ -182,16 +185,27 @@ struct VoiceState {
     // y[n] = k*y[n-1] - y[n-2], where k = 2*cos(w).
     float modal_k_1 = 0.0f;
     float modal_k_2 = 0.0f;
+    float modal_k_3 = 0.0f;
+    float modal_k_4 = 0.0f;
     float modal_y1_1 = 0.0f;
     float modal_y1_2 = 0.0f;
+    float modal_y1_3 = 0.0f;
+    float modal_y1_4 = 0.0f;
     float modal_y2_1 = 0.0f;
     float modal_y2_2 = 0.0f;
+    float modal_y2_3 = 0.0f;
+    float modal_y2_4 = 0.0f;
     uint32_t modal_norm_count = 0;
     float modal_env_1 = 0.0f;
     float modal_env_2 = 0.0f;
+    float modal_env_3 = 0.0f;
+    float modal_env_4 = 0.0f;
     float modal_decay_1 = 0.9990f;
     float modal_decay_2 = 0.9985f;
+    float modal_decay_3 = 0.9980f;
+    float modal_decay_4 = 0.9975f;
     float modal_mix = 0.0f;
+    uint8_t modal_mode_count = 0; // 2 for default pilot, 4 for metallic models
     // Stage-2 kick pitch-envelope (delay sweep) and clarinet reed nonlinearity.
     float pitch_env = 0.0f;
     float pitch_env_decay = 1.0f;

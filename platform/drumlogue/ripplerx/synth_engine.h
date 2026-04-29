@@ -49,6 +49,8 @@ static constexpr uint16_t pitch_centre = 8192;
 static constexpr float kToneLpMix = 0.3f;
 static constexpr float kToneCutDivisor = 10.0f;
 static constexpr float kToneBoostDivisor = 15.0f;
+static constexpr float kInvToneCutDivisor = 0.1f;         // 1 / 10
+static constexpr float kInvToneBoostDivisor = 0.06666667f; // 1 / 15
 static constexpr float zeroThreshold = 0.0f;
 static constexpr float alpha = 0.01f;
 static constexpr float limiter = 0.99f;
@@ -165,6 +167,19 @@ public:
         k_NumPrograms       // 39 — marker (count)
     };
 
+    enum ModelsIndex {
+        k_String,
+        k_Beam,
+        k_SquarePlate,
+        k_Membrane,
+        k_Plate,
+        k_Drumhead,
+        k_MarimbaBar,
+        k_OpenTube,
+        k_ClosedTube,
+        k_lastModel
+    };
+
     SynthState state;
 
 #ifdef UNIT_TEST_DEBUG
@@ -258,16 +273,27 @@ public:
             state.voices[i].modal_pilot_enabled = false;
             state.voices[i].modal_k_1 = 0.0f;
             state.voices[i].modal_k_2 = 0.0f;
+            state.voices[i].modal_k_3 = 0.0f;
+            state.voices[i].modal_k_4 = 0.0f;
             state.voices[i].modal_y1_1 = 0.0f;
             state.voices[i].modal_y1_2 = 0.0f;
+            state.voices[i].modal_y1_3 = 0.0f;
+            state.voices[i].modal_y1_4 = 0.0f;
             state.voices[i].modal_y2_1 = 0.0f;
             state.voices[i].modal_y2_2 = 0.0f;
+            state.voices[i].modal_y2_3 = 0.0f;
+            state.voices[i].modal_y2_4 = 0.0f;
             state.voices[i].modal_norm_count = 0;
             state.voices[i].modal_env_1 = 0.0f;
             state.voices[i].modal_env_2 = 0.0f;
+            state.voices[i].modal_env_3 = 0.0f;
+            state.voices[i].modal_env_4 = 0.0f;
             state.voices[i].modal_decay_1 = 0.9990f;
             state.voices[i].modal_decay_2 = 0.9985f;
+            state.voices[i].modal_decay_3 = 0.9980f;
+            state.voices[i].modal_decay_4 = 0.9975f;
             state.voices[i].modal_mix = 0.0f;
+            state.voices[i].modal_mode_count = 0;
             state.voices[i].pitch_env = 0.0f;
             state.voices[i].pitch_env_decay = 1.0f;
             state.voices[i].pitch_env_amt = 0.0f;
@@ -276,6 +302,9 @@ public:
 #endif
             state.voices[i].exciter.noise_lp_state = 0.0f;
             state.voices[i].exciter.noise_band_mix = 0.5f;
+            state.voices[i].exciter.snare_wire_z1 = 0.0f;
+            state.voices[i].exciter.snare_wire_z2 = 0.0f;
+            state.voices[i].exciter.snare_wire_mix = 0.0f;
 
 #ifdef ENABLE_PHASE_6_FILTERS
             // Noise filter defaults to LP mode, fully open (12 kHz)
@@ -591,19 +620,19 @@ public:
                     0.00f, // 8: Closed Tube
                 };
                 for (int i = 0; i < NUM_VOICES; ++i) {
-                    if (m_model_a == 7 || m_model_a == 8) {
+                    if (m_model_a == k_OpenTube || m_model_a == k_ClosedTube) {
                         state.voices[i].resA.phase_mult = -1.0f;
                     } else {
                         state.voices[i].resA.phase_mult = 1.0f;
                     }
-                    if (m_model_b == 7 || m_model_b == 8) {
+                    if (m_model_b == k_OpenTube || m_model_b == k_ClosedTube) {
                         state.voices[i].resB.phase_mult = -1.0f;
                     } else {
                         state.voices[i].resB.phase_mult = 1.0f;
                     }
-                    if (m_is_resonator_a && m_model_a < 9)
+                    if (m_is_resonator_a && m_model_a < k_lastModel)
                         state.voices[i].resA.model_ap_base = ap_base_by_model[m_model_a];
-                    if (m_is_resonator_b && m_model_b < 9)
+                    if (m_is_resonator_b && m_model_b < k_lastModel)
                         state.voices[i].resB.model_ap_base = ap_base_by_model[m_model_b];
                 }
 #endif
@@ -970,11 +999,11 @@ public:
         // Tube models (OpenTube=7, ClosedTube=8) use phase_mult=-1 (inverted feedback),
         // which doubles the resonance period to T=2N, halving the resonant frequency.
         // Halve the delay here to compensate so the pitch matches the MIDI note.
-        if (m_model_a == 7 || m_model_a == 8) {
+        if (m_model_a == k_OpenTube || m_model_a == k_ClosedTube) {
             v.resA.delay_length *= 0.5f;
         }
         // ResB: its own model (m_model_b) determines whether it tracks an irrational offset.
-        if (m_model_b == 3 || m_model_b == 5) {
+        if (m_model_b == k_Membrane || m_model_b == k_Drumhead) {
 #ifndef ENABLE_PHASE_8_2D_DRUMHEAD
             // Membrane / Drumhead Logic:
             // A circular membrane's overtone ratios are determined by the zeros of the
@@ -998,7 +1027,7 @@ public:
             // Standard matched resonators (Strings, Tubes, Bars)
             v.resB.delay_length = base_delay;
         }
-        if (m_model_b == 7 || m_model_b == 8) {
+        if (m_model_b == k_OpenTube || m_model_b == k_ClosedTube) {
             v.resB.delay_length *= 0.5f;
         }
 
@@ -1093,16 +1122,27 @@ public:
         v.modal_pilot_enabled = false;
         v.modal_k_1 = 0.0f;
         v.modal_k_2 = 0.0f;
+        v.modal_k_3 = 0.0f;
+        v.modal_k_4 = 0.0f;
         v.modal_y1_1 = 0.0f;
         v.modal_y1_2 = 0.0f;
+        v.modal_y1_3 = 0.0f;
+        v.modal_y1_4 = 0.0f;
         v.modal_y2_1 = 0.0f;
         v.modal_y2_2 = 0.0f;
+        v.modal_y2_3 = 0.0f;
+        v.modal_y2_4 = 0.0f;
         v.modal_norm_count = 0;
         v.modal_env_1 = 0.0f;
         v.modal_env_2 = 0.0f;
+        v.modal_env_3 = 0.0f;
+        v.modal_env_4 = 0.0f;
         v.modal_decay_1 = 0.9990f;
         v.modal_decay_2 = 0.9985f;
+        v.modal_decay_3 = 0.9980f;
+        v.modal_decay_4 = 0.9975f;
         v.modal_mix = 0.0f;
+        v.modal_mode_count = 0;
         v.pitch_env = 0.0f;
         v.pitch_env_decay = 1.0f;
         v.pitch_env_amt = 0.0f;
@@ -1111,6 +1151,9 @@ public:
 #endif
         v.exciter.noise_lp_state = 0.0f;
         v.exciter.noise_band_mix = 0.5f;
+        v.exciter.snare_wire_z1 = 0.0f;
+        v.exciter.snare_wire_z2 = 0.0f;
+        v.exciter.snare_wire_mix = 0.0f;
 
         // Clear waveguide delay line, LP state, and write pointer.
         //
@@ -1170,6 +1213,7 @@ public:
         v.exciter.master_env.state = ENV_DECAY;
 #endif
 
+
         // Stage-1 transient complexity: short coefficient modulation window.
         // Deterministic per-hit micro-randomization from note/voice/velocity.
         float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity  * 0.007874015f));    // approx 1 / 127
@@ -1207,50 +1251,76 @@ public:
         } else {
             v.exciter.noise_band_mix = 0.50f;
         }
+        if (m_preset_idx == 3) { // AcSnare: add short resonant wire-like sizzle emphasis.
+            v.exciter.snare_wire_mix = 0.55f;
+        }
 
 #if ENABLE_STAGE2_MODAL_PILOT
         // Stage-2 pilot extensions (CPU-light):
         // - Modal bank for complex metallic presets (Wodblk/Gong/Cymbal)
         // - Kick pitch-envelope (delay-length sweep)
         // - Clarinet reed nonlinearity in exciter path
-        auto init_modal_2mode = [&](float ratio2, float t60_1_ms, float t60_2_ms, float mix, float env1, float env2) {
+        auto init_modal_modes = [&](float ratio2, float ratio3, float ratio4,
+                                    float t60_1_ms, float t60_2_ms, float t60_3_ms, float t60_4_ms,
+                                    float mix, float env1, float env2, float env3, float env4,
+                                    uint8_t mode_count) {
             float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
             if (base_f < 20.0f) base_f = 20.0f;
             float f1 = fminf(base_f, 0.45f * default_sample_rate);
             float f2 = fminf(base_f * ratio2, 0.45f * default_sample_rate);
+            float f3 = fminf(base_f * ratio3, 0.45f * default_sample_rate);
+            float f4 = fminf(base_f * ratio4, 0.45f * default_sample_rate);
             float w1 = (2.0f * M_PI * f1) / default_sample_rate;
             float w2 = (2.0f * M_PI * f2) / default_sample_rate;
+            float w3 = (2.0f * M_PI * f3) / default_sample_rate;
+            float w4 = (2.0f * M_PI * f4) / default_sample_rate;
             v.modal_pilot_enabled = true;
-            v.modal_k_1 = 2.0f * cosf(w1);
-            v.modal_k_2 = 2.0f * cosf(w2);
+            v.modal_mode_count = mode_count;
+            v.modal_k_1 = 2.0f * fastercosfullf(w1);
+            v.modal_k_2 = 2.0f * fastercosfullf(w2);
+            v.modal_k_3 = (mode_count > 2) ? 2.0f * fastercosfullf(w3) : 0.0f;
+            v.modal_k_4 = (mode_count > 3) ? 2.0f * fastercosfullf(w4) : 0.0f;
             v.modal_y2_1 = 0.0f; v.modal_y1_1 = fastersinfullf(w1);
             v.modal_y2_2 = 0.0f; v.modal_y1_2 = fastersinfullf(w2);
+            v.modal_y2_3 = 0.0f; v.modal_y1_3 = (mode_count > 2) ? fastersinfullf(w3) : 0.0f;
+            v.modal_y2_4 = 0.0f; v.modal_y1_4 = (mode_count > 3) ? fastersinfullf(w4) : 0.0f;
             v.modal_norm_count = 0;
             v.modal_env_1 = env1 * v.current_velocity;
             v.modal_env_2 = env2 * v.current_velocity;
+            v.modal_env_3 = (mode_count > 2) ? (env3 * v.current_velocity) : 0.0f;
+            v.modal_env_4 = (mode_count > 3) ? (env4 * v.current_velocity) : 0.0f;
             float t60_1_s = 0.001f * t60_1_ms;
             float t60_2_s = 0.001f * t60_2_ms;
+            float t60_3_s = 0.001f * t60_3_ms;
+            float t60_4_s = 0.001f * t60_4_ms;
             v.modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
             v.modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+            v.modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_3_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+            v.modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_4_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
             v.modal_mix = mix;
         };
 
         uint8_t program = (uint8_t)m_params[k_paramProgram];
-        if (program == 12) {         // Wodblk pilot
-            init_modal_2mode(STAGE2_MODAL_RATIO_2, STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS,
-                             STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2);
-        } else if (program == 14) {  // Cymbal: richer metallic shimmer
-            init_modal_2mode(2.45f, 140.0f, 260.0f, 0.10f, 0.75f, 0.60f);
-        } else if (program == 15) {  // Gong: lower/longer metallic modes
-            init_modal_2mode(1.78f, 220.0f, 420.0f, 0.14f, 0.85f, 0.70f);
+        if (program == k_Woodblock) {         // Wodblk pilot
+            init_modal_modes(STAGE2_MODAL_RATIO_2, 0.0f, 0.0f,
+                             STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f,
+                             STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2, 0.0f, 0.0f, 2);
+        } else if (program == k_Cymbal) {  // Cymbal: richer metallic shimmer
+            init_modal_modes(2.45f, 3.91f, 5.62f,
+                             140.0f, 260.0f, 420.0f, 620.0f,
+                             0.11f, 0.75f, 0.60f, 0.46f, 0.34f, 4);
+        } else if (program == k_Gong) {  // Gong: lower/longer metallic modes
+            init_modal_modes(1.78f, 2.63f, 3.81f,
+                             220.0f, 420.0f, 680.0f, 920.0f,
+                             0.16f, 0.85f, 0.70f, 0.52f, 0.38f, 4);
         }
 
-        if (program == 21) {         // Kick: downward pitch sweep (portamento-like)
+        if (program == k_KickDrum) {         // Kick: downward pitch sweep (portamento-like)
             v.pitch_env = 1.0f;
             v.pitch_env_decay = 0.9989f;
-            v.pitch_env_amt = 0.45f;
+            v.pitch_env_amt = 9.0f; // semitone-domain sweep depth
         }
-        if (program == 25) {         // Clarinet: lightweight reed nonlinearity
+        if (program == k_Clarinet) {         // Clarinet: lightweight reed nonlinearity
             v.reed_nl_enabled = true;
             v.reed_nl_drive = 1.8f;
         }
@@ -1267,6 +1337,7 @@ public:
 
 #ifdef ENABLE_PHASE_5_EXCITERS
                 v.exciter.noise_env.release();
+                v.exciter.noise_env_hi.release();
                 v.exciter.master_env.release();
 #endif
             }
@@ -1299,6 +1370,7 @@ public:
             state.voices[i].is_releasing = true;
 #ifdef ENABLE_PHASE_5_EXCITERS
             state.voices[i].exciter.noise_env.release();
+            state.voices[i].exciter.noise_env_hi.release();
             state.voices[i].exciter.master_env.release();
 #endif
         }
@@ -1422,6 +1494,7 @@ public:
         float noise_env_high = ex.noise_env_hi.process();
         if (noise_env_low > 0.001f || noise_env_high > 0.001f) {
              float raw_noise = ex.noise_gen.process();
+             float raw_noise_unf = raw_noise; // keep true unfiltered branch for high burst
  #ifdef ENABLE_PHASE_6_FILTERS
              raw_noise = ex.noise_filter.process(raw_noise);
  #endif
@@ -1430,13 +1503,22 @@ public:
             //   - high band: unfiltered (fast click/hiss burst)
             ex.noise_lp_state += 0.15f * (raw_noise - ex.noise_lp_state);
             float low = ex.noise_lp_state;
-            float high = raw_noise;
+            float high = raw_noise_unf;
             float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
-            ex.noise_out_sample = (low_part + high_part) * ex.noise_decay_coeff;
-        }
-#endif
+            float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
+            if (ex.snare_wire_mix > 0.001f) {
+                // Very short resonant burst path (2nd-order): emphasizes snare-wire sizzle
+                // without feeding broadband noise into pitch-tracked waveguides.
+                float wire = noise_sum + (1.82f * ex.snare_wire_z1) - (0.835f * ex.snare_wire_z2);
+                ex.snare_wire_z2 = ex.snare_wire_z1;
+                ex.snare_wire_z1 = wire;
+                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);
+            }
+            ex.noise_out_sample = noise_sum;
+         }
+ #endif
 
         // 3. The Modal Mallet Strike
         // Two cascaded 1-pole LPs shape the strike spectrum:
@@ -1526,7 +1608,7 @@ public:
                 float delay_ratio_diff = (voice.resA.delay_length > 0.1f)
                     ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
                     : 0.0f;
-                if (delay_ratio_diff > 0.05f) {
+                   if (delay_ratio_diff > 0.05f) {
                     // Incoherent (different-pitch) pair.
                     // Phase incoherence reduces average coupling energy, but the worst-case
                     // beat alignment still satisfies G + C ≤ 1 only when C ≤ 1-G.
@@ -1594,7 +1676,9 @@ public:
                 float safe_cpl_b = v_safe_cpl_b;
 #if ENABLE_STAGE2_MODAL_PILOT
                 if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
-                    float sweep_scale = fmaxf(0.35f, 1.0f - (voice.pitch_env_amt * voice.pitch_env));
+                    // Exponential (semitone-domain) sweep: more natural drum down-bend.
+                    float sweep_st = voice.pitch_env_amt * voice.pitch_env;
+                    float sweep_scale = fasterpowf(2.0f, -sweep_st * 0.08333333333f); // -st/12
                     voice.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
                                                                  voice.base_delay_A * m_pitch_bend_mult * sweep_scale));
                     voice.resB.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
@@ -1675,12 +1759,42 @@ public:
 #endif
 #if ENABLE_STAGE2_MODAL_PILOT
                 if (voice.modal_pilot_enabled) {
+                    // Update modes 1/2 (and optionally 3/4 for metallic presets).
+#if defined(__ARM_NEON) || defined(__aarch64__)
+                    float32x2_t k12 = {voice.modal_k_1, voice.modal_k_2};
+                    float32x2_t y112 = {voice.modal_y1_1, voice.modal_y1_2};
+                    float32x2_t y212 = {voice.modal_y2_1, voice.modal_y2_2};
+                    float32x2_t yn12 = vsub_f32(vmul_f32(k12, y112), y212);
+                    voice.modal_y2_1 = voice.modal_y1_1;
+                    voice.modal_y2_2 = voice.modal_y1_2;
+                    voice.modal_y1_1 = vget_lane_f32(yn12, 0);
+                    voice.modal_y1_2 = vget_lane_f32(yn12, 1);
+                    if (voice.modal_mode_count > 2) {
+                        float32x2_t k34 = {voice.modal_k_3, voice.modal_k_4};
+                        float32x2_t y134 = {voice.modal_y1_3, voice.modal_y1_4};
+                        float32x2_t y234 = {voice.modal_y2_3, voice.modal_y2_4};
+                        float32x2_t yn34 = vsub_f32(vmul_f32(k34, y134), y234);
+                        voice.modal_y2_3 = voice.modal_y1_3;
+                        voice.modal_y2_4 = voice.modal_y1_4;
+                        voice.modal_y1_3 = vget_lane_f32(yn34, 0);
+                        voice.modal_y1_4 = vget_lane_f32(yn34, 1);
+                    }
+#else
                     float y1n = (voice.modal_k_1 * voice.modal_y1_1) - voice.modal_y2_1;
                     voice.modal_y2_1 = voice.modal_y1_1;
                     voice.modal_y1_1 = y1n;
                     float y2n = (voice.modal_k_2 * voice.modal_y1_2) - voice.modal_y2_2;
                     voice.modal_y2_2 = voice.modal_y1_2;
                     voice.modal_y1_2 = y2n;
+                    if (voice.modal_mode_count > 2) {
+                        float y3n = (voice.modal_k_3 * voice.modal_y1_3) - voice.modal_y2_3;
+                        voice.modal_y2_3 = voice.modal_y1_3;
+                        voice.modal_y1_3 = y3n;
+                        float y4n = (voice.modal_k_4 * voice.modal_y1_4) - voice.modal_y2_4;
+                        voice.modal_y2_4 = voice.modal_y1_4;
+                        voice.modal_y1_4 = y4n;
+                    }
+#endif
                     // Drift control: periodic soft normalization for long tails.
                     if ((voice.modal_norm_count++ & 127u) == 0u) {
                         float a1 = fmaxf(fabsf(voice.modal_y1_1), fabsf(voice.modal_y2_1));
@@ -1695,14 +1809,41 @@ public:
                             voice.modal_y1_2 *= s;
                             voice.modal_y2_2 *= s;
                         }
+                        if (voice.modal_mode_count > 2) {
+                            float a3 = fmaxf(fabsf(voice.modal_y1_3), fabsf(voice.modal_y2_3));
+                            float a4 = fmaxf(fabsf(voice.modal_y1_4), fabsf(voice.modal_y2_4));
+                            if (a3 > 1.2f) {
+                                float s = 1.0f / a3;
+                                voice.modal_y1_3 *= s;
+                                voice.modal_y2_3 *= s;
+                            }
+                            if (a4 > 1.2f) {
+                                float s = 1.0f / a4;
+                                voice.modal_y1_4 *= s;
+                                voice.modal_y2_4 *= s;
+                            }
+                        }
                     }
                     float m1 = voice.modal_y1_1 * voice.modal_env_1;
                     float m2 = voice.modal_y1_2 * voice.modal_env_2;
+                    float m3 = 0.0f, m4 = 0.0f;
                     voice.modal_env_1 *= voice.modal_decay_1;
                     voice.modal_env_2 *= voice.modal_decay_2;
-                    voice_out += (m1 + (stage2_modal_amp_ratio_2 * m2)) * voice.modal_mix;
-                    if (voice.modal_env_1 < silence_threshold && voice.modal_env_2 < silence_threshold) {
+                    if (voice.modal_mode_count > 2) {
+                        m3 = voice.modal_y1_3 * voice.modal_env_3;
+                        m4 = voice.modal_y1_4 * voice.modal_env_4;
+                        voice.modal_env_3 *= voice.modal_decay_3;
+                        voice.modal_env_4 *= voice.modal_decay_4;
+                    }
+                    voice_out += (m1
+                                + (stage2_modal_amp_ratio_2 * m2)
+                                + (0.45f * m3)
+                                + (0.28f * m4)) * voice.modal_mix;
+                    if (voice.modal_env_1 < silence_threshold &&
+                        voice.modal_env_2 < silence_threshold &&
+                        (voice.modal_mode_count <= 2 || (voice.modal_env_3 < silence_threshold && voice.modal_env_4 < silence_threshold))) {
                         voice.modal_pilot_enabled = false;
+                        voice.modal_mode_count = 0;
                     }
                 }
 #endif
@@ -1802,8 +1943,20 @@ public:
 #endif
             mix_l *= state.master_drive;
             mix_r *= state.master_drive;
+#if defined(__ARM_NEON) || defined(__aarch64__)
+            float32x2_t v = {mix_l, mix_r};
+            float32x2_t abs_v = vabs_f32(v);
+            float32x2_t den = vadd_f32(abs_v, vdup_n_f32(1.0f));
+            // Reciprocal estimate + one NR refinement (ARMv7-friendly).
+            float32x2_t rec = vrecpe_f32(den);
+            rec = vmul_f32(vrecps_f32(den, rec), rec);
+            float32x2_t clipped = vmul_f32(v, rec);
+            float clipped_l = vget_lane_f32(clipped, 0);
+            float clipped_r = vget_lane_f32(clipped, 1);
+#else
             float clipped_l = mix_l / (1.0f + fabsf(mix_l));
             float clipped_r = mix_r / (1.0f + fabsf(mix_r));
+#endif
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, clipped_l));
             main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, clipped_r));
         }
@@ -1846,8 +1999,8 @@ private:
     uint8_t m_ui_note = 60;
     uint8_t m_sample_bank = 0;
     uint8_t m_sample_number = 0;
-    uint8_t m_model_a = 0;
-    uint8_t m_model_b = 0;
+    uint8_t m_model_a = k_String;
+    uint8_t m_model_b = k_String;
     bool    m_is_resonator_a = true; // default is res A
     bool    m_is_resonator_b = true; // "copy" of res A
 
