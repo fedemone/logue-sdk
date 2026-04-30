@@ -86,6 +86,8 @@ struct ExciterState {
     float noise_out_sample = 0.0f;
     float noise_lp_state = 0.0f;   // stage-1 dual-band noise shaper LP state
     float noise_band_mix = 0.5f;   // 0=mostly low thump, 1=mostly high click
+     float noise_hi_lp_state = 0.0f; // high-band split LP memory (high = raw - LP)
+     float noise_hi_lp_coeff = 0.30f; // derived private cutoff, no UI exposure
     float snare_wire_z1 = 0.0f;    // short wire-sizzle resonator state
     float snare_wire_z2 = 0.0f;    // short wire-sizzle resonator state
     float snare_wire_mix = 0.0f;   // 0..1 extra wire component mix
@@ -120,6 +122,13 @@ struct WaveguideState {
 
     // Filter State Memory
     float z1 = 0.0f;               // 1-pole lowpass history
+     float diffuser_mix = 0.0f;     // 0=off, >0 enables 4-stage Schroeder allpass chain
+     float diffuser_g = 0.45f;
+     float diffuser_buf1[13] = {0.0f};
+     float diffuser_buf2[19] = {0.0f};
+     float diffuser_buf3[29] = {0.0f};
+     float diffuser_buf4[41] = {0.0f};
+     uint8_t diffuser_i1 = 0, diffuser_i2 = 0, diffuser_i3 = 0, diffuser_i4 = 0;
 
 #ifdef ENABLE_PHASE_7_MODELS
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
