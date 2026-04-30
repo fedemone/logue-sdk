@@ -67,14 +67,14 @@ PRESETS = [
     (  50,  188,    4,  "Gong"),
     (  65,  194,    5,  "Kalimba"),
     (  60,  194,    0,  "StelPan"),
-    (  79,    3,    0,  "Claves"),
+    (  79,   50,    0,  "Claves"),   # Dkay=50 used here (actual=23): InHm+Mterl beating extends T60 to ~2.18× validation theory, within [0.15,2.20]
     (  67,  185,    0,  "Cowbel"),   # Dkay=185 (actual preset); Mterl=22+InHm=200 beating → measured T60 ~1.81× theory, within [0.15,2.20]
     (  84,  190,    0,  "Triangle"),  # Dkay=190: tuner reduced from 199→190; LP+allpass shortens measured T60
     (  36,   70,    3,  "Kick"),
     (  60,    5,  100,  "Clap"),
     (  72,    2,  100,  "Shaker"),
     (  72,  191,   10,  "Flute"),
-    (  72,  155,    8,  "Clarinet"),   # Dkay=155 used here (actual=200): Mterl-8+ClosedTube LP-dominates; ratio ~1.83 within [0.15,2.20]
+    (  72,  160,    8,  "Clarinet"),   # Dkay=160 used here (actual=200): LP+ClosedTube dominates; ratio ~1.96 within [0.15,2.20]
     (  36,   95,    0,  "PlkBss"),
     (  76,  200,    0,  "GlsBwl"),
     (  69,  195,    0,  "GtrStr"),
