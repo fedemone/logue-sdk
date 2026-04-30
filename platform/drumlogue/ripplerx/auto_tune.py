@@ -55,7 +55,7 @@ PARAMS: List[Tuple[str, int, int, int, int]] = [
     ("NzRs",  20,   0, 1000, 40),
     ("NzFq",  22,  30, 1500, 60),
     ("MlSt",   5,   0, 500, 30),
-    ("InHm",  15,   0,  10,  1),
+    ("InHm",  15,   0,  20,  1),
     ("TbRd",  17,  -5,  35,  2),
 ]
 
@@ -63,11 +63,9 @@ MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
 FINE_TUNE_START_STABLE = 1
 FINE_STEP_OVERRIDES = {
-    "Dkay":  5,
+    "Dkay": 5,
     "Mterl": 1,
-    "NzMx":  2,
-    "NzRs":  20,   # half of coarse 40 step
-    "NzFq":  30,   # half of coarse 60 step (= 300 Hz effective)
+    "NzMx": 2,
 }
 
 # ── Import scoring from existing infrastructure ────────────────────────────────

@@ -187,6 +187,8 @@ struct VoiceState {
     float modal_k_2 = 0.0f;
     float modal_k_3 = 0.0f;
     float modal_k_4 = 0.0f;
+    float modal_k_5 = 0.0f;
+    float modal_k_6 = 0.0f;
     float modal_y1_1 = 0.0f;
     float modal_y1_2 = 0.0f;
     float modal_y1_3 = 0.0f;
@@ -195,17 +197,25 @@ struct VoiceState {
     float modal_y2_2 = 0.0f;
     float modal_y2_3 = 0.0f;
     float modal_y2_4 = 0.0f;
+    float modal_y1_5 = 0.0f;
+    float modal_y1_6 = 0.0f;
+    float modal_y2_5 = 0.0f;
+    float modal_y2_6 = 0.0f;
     uint32_t modal_norm_count = 0;
     float modal_env_1 = 0.0f;
     float modal_env_2 = 0.0f;
     float modal_env_3 = 0.0f;
     float modal_env_4 = 0.0f;
+    float modal_env_5 = 0.0f;
+    float modal_env_6 = 0.0f;
     float modal_decay_1 = 0.9990f;
     float modal_decay_2 = 0.9985f;
     float modal_decay_3 = 0.9980f;
     float modal_decay_4 = 0.9975f;
+    float modal_decay_5 = 0.9970f;
+    float modal_decay_6 = 0.9965f;
     float modal_mix = 0.0f;
-    uint8_t modal_mode_count = 0; // 2 for default pilot, 4 for metallic models
+    uint8_t modal_mode_count = 0; // 2 default pilot, up to 6 for metallic models
     // Stage-2 kick pitch-envelope (delay sweep) and clarinet reed nonlinearity.
     float pitch_env = 0.0f;
     float pitch_env_decay = 1.0f;

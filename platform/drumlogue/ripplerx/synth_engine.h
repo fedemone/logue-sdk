@@ -275,6 +275,8 @@ public:
             state.voices[i].modal_k_2 = 0.0f;
             state.voices[i].modal_k_3 = 0.0f;
             state.voices[i].modal_k_4 = 0.0f;
+             state.voices[i].modal_k_5 = 0.0f;
+             state.voices[i].modal_k_6 = 0.0f;
             state.voices[i].modal_y1_1 = 0.0f;
             state.voices[i].modal_y1_2 = 0.0f;
             state.voices[i].modal_y1_3 = 0.0f;
@@ -283,15 +285,23 @@ public:
             state.voices[i].modal_y2_2 = 0.0f;
             state.voices[i].modal_y2_3 = 0.0f;
             state.voices[i].modal_y2_4 = 0.0f;
+             state.voices[i].modal_y1_5 = 0.0f;
+             state.voices[i].modal_y1_6 = 0.0f;
+             state.voices[i].modal_y2_5 = 0.0f;
+             state.voices[i].modal_y2_6 = 0.0f;
             state.voices[i].modal_norm_count = 0;
             state.voices[i].modal_env_1 = 0.0f;
             state.voices[i].modal_env_2 = 0.0f;
             state.voices[i].modal_env_3 = 0.0f;
             state.voices[i].modal_env_4 = 0.0f;
+             state.voices[i].modal_env_5 = 0.0f;
+             state.voices[i].modal_env_6 = 0.0f;
             state.voices[i].modal_decay_1 = 0.9990f;
             state.voices[i].modal_decay_2 = 0.9985f;
             state.voices[i].modal_decay_3 = 0.9980f;
             state.voices[i].modal_decay_4 = 0.9975f;
+             state.voices[i].modal_decay_5 = 0.9970f;
+             state.voices[i].modal_decay_6 = 0.9965f;
             state.voices[i].modal_mix = 0.0f;
             state.voices[i].modal_mode_count = 0;
             state.voices[i].pitch_env = 0.0f;
@@ -302,6 +312,8 @@ public:
 #endif
             state.voices[i].exciter.noise_lp_state = 0.0f;
             state.voices[i].exciter.noise_band_mix = 0.5f;
+             state.voices[i].exciter.noise_hi_lp_state = 0.0f;
+             state.voices[i].exciter.noise_hi_lp_coeff = 0.30f;
             state.voices[i].exciter.snare_wire_z1 = 0.0f;
             state.voices[i].exciter.snare_wire_z2 = 0.0f;
             state.voices[i].exciter.snare_wire_mix = 0.0f;
@@ -807,6 +819,11 @@ public:
                 float freq = fmaxf(20.0f, fminf(20000.0f, (float)value * 10.0f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_filter.set_coeffs(freq, 0.707f, default_sample_rate);
+                     // Private split-band high cutoff (no extra UI): tied to NzFq,
+                     // shifted upward for sizzle branch and converted to 1-pole coeff.
+                     float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
+                     float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) / default_sample_rate));
+                     state.voices[i].exciter.noise_hi_lp_coeff = alpha;
                 }
 #endif
                 break;
@@ -1124,6 +1141,8 @@ public:
         v.modal_k_2 = 0.0f;
         v.modal_k_3 = 0.0f;
         v.modal_k_4 = 0.0f;
+         v.modal_k_5 = 0.0f;
+         v.modal_k_6 = 0.0f;
         v.modal_y1_1 = 0.0f;
         v.modal_y1_2 = 0.0f;
         v.modal_y1_3 = 0.0f;
@@ -1132,15 +1151,23 @@ public:
         v.modal_y2_2 = 0.0f;
         v.modal_y2_3 = 0.0f;
         v.modal_y2_4 = 0.0f;
+         v.modal_y1_5 = 0.0f;
+         v.modal_y1_6 = 0.0f;
+         v.modal_y2_5 = 0.0f;
+         v.modal_y2_6 = 0.0f;
         v.modal_norm_count = 0;
         v.modal_env_1 = 0.0f;
         v.modal_env_2 = 0.0f;
         v.modal_env_3 = 0.0f;
         v.modal_env_4 = 0.0f;
+         v.modal_env_5 = 0.0f;
+         v.modal_env_6 = 0.0f;
         v.modal_decay_1 = 0.9990f;
         v.modal_decay_2 = 0.9985f;
         v.modal_decay_3 = 0.9980f;
         v.modal_decay_4 = 0.9975f;
+         v.modal_decay_5 = 0.9970f;
+         v.modal_decay_6 = 0.9965f;
         v.modal_mix = 0.0f;
         v.modal_mode_count = 0;
         v.pitch_env = 0.0f;
@@ -1150,7 +1177,8 @@ public:
         v.reed_nl_drive = 1.0f;
 #endif
         v.exciter.noise_lp_state = 0.0f;
-        v.exciter.noise_band_mix = 0.5f;
+         v.exciter.noise_band_mix = 0.5f;
+         v.exciter.noise_hi_lp_state = 0.0f;
         v.exciter.snare_wire_z1 = 0.0f;
         v.exciter.snare_wire_z2 = 0.0f;
         v.exciter.snare_wire_mix = 0.0f;
@@ -1254,6 +1282,13 @@ public:
         if (m_preset_idx == 3) { // AcSnare: add short resonant wire-like sizzle emphasis.
             v.exciter.snare_wire_mix = 0.55f;
         }
+         // Metallic presets: enable light Schroeder diffusion in feedback loop
+         // for pseudo-modal density at low CPU cost.
+         bool metallic_diff = (m_preset_idx == 13 || m_preset_idx == 14 || m_preset_idx == 28 || m_preset_idx == 29);
+         v.resA.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
+         v.resB.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
+         v.resA.diffuser_g = 0.45f;
+         v.resB.diffuser_g = 0.45f;
 
 #if ENABLE_STAGE2_MODAL_PILOT
         // Stage-2 pilot extensions (CPU-light):
@@ -1269,35 +1304,47 @@ public:
             float f1 = fminf(base_f, 0.45f * default_sample_rate);
             float f2 = fminf(base_f * ratio2, 0.45f * default_sample_rate);
             float f3 = fminf(base_f * ratio3, 0.45f * default_sample_rate);
-            float f4 = fminf(base_f * ratio4, 0.45f * default_sample_rate);
-            float w1 = (2.0f * M_PI * f1) / default_sample_rate;
-            float w2 = (2.0f * M_PI * f2) / default_sample_rate;
-            float w3 = (2.0f * M_PI * f3) / default_sample_rate;
-            float w4 = (2.0f * M_PI * f4) / default_sample_rate;
-            v.modal_pilot_enabled = true;
-            v.modal_mode_count = mode_count;
-            v.modal_k_1 = 2.0f * fastercosfullf(w1);
-            v.modal_k_2 = 2.0f * fastercosfullf(w2);
-            v.modal_k_3 = (mode_count > 2) ? 2.0f * fastercosfullf(w3) : 0.0f;
-            v.modal_k_4 = (mode_count > 3) ? 2.0f * fastercosfullf(w4) : 0.0f;
-            v.modal_y2_1 = 0.0f; v.modal_y1_1 = fastersinfullf(w1);
-            v.modal_y2_2 = 0.0f; v.modal_y1_2 = fastersinfullf(w2);
-            v.modal_y2_3 = 0.0f; v.modal_y1_3 = (mode_count > 2) ? fastersinfullf(w3) : 0.0f;
-            v.modal_y2_4 = 0.0f; v.modal_y1_4 = (mode_count > 3) ? fastersinfullf(w4) : 0.0f;
-            v.modal_norm_count = 0;
-            v.modal_env_1 = env1 * v.current_velocity;
-            v.modal_env_2 = env2 * v.current_velocity;
-            v.modal_env_3 = (mode_count > 2) ? (env3 * v.current_velocity) : 0.0f;
-            v.modal_env_4 = (mode_count > 3) ? (env4 * v.current_velocity) : 0.0f;
-            float t60_1_s = 0.001f * t60_1_ms;
-            float t60_2_s = 0.001f * t60_2_ms;
-            float t60_3_s = 0.001f * t60_3_ms;
-            float t60_4_s = 0.001f * t60_4_ms;
-            v.modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
-            v.modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-            v.modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_3_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-            v.modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_4_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-            v.modal_mix = mix;
+             float f4 = fminf(base_f * ratio4, 0.45f * default_sample_rate);
+             float f5 = fminf(base_f * ratio4 * 1.31f, 0.45f * default_sample_rate);
+             float f6 = fminf(base_f * ratio4 * 1.62f, 0.45f * default_sample_rate);
+             float w1 = (2.0f * M_PI * f1) / default_sample_rate;
+             float w2 = (2.0f * M_PI * f2) / default_sample_rate;
+             float w3 = (2.0f * M_PI * f3) / default_sample_rate;
+             float w4 = (2.0f * M_PI * f4) / default_sample_rate;
+             float w5 = (2.0f * M_PI * f5) / default_sample_rate;
+             float w6 = (2.0f * M_PI * f6) / default_sample_rate;
+             v.modal_pilot_enabled = true;
+             v.modal_mode_count = mode_count;
+             v.modal_k_1 = 2.0f * fastercosfullf(w1);
+             v.modal_k_2 = 2.0f * fastercosfullf(w2);
+             v.modal_k_3 = (mode_count > 2) ? 2.0f * fastercosfullf(w3) : 0.0f;
+             v.modal_k_4 = (mode_count > 3) ? 2.0f * fastercosfullf(w4) : 0.0f;
+             v.modal_k_5 = (mode_count > 4) ? 2.0f * fastercosfullf(w5) : 0.0f;
+             v.modal_k_6 = (mode_count > 5) ? 2.0f * fastercosfullf(w6) : 0.0f;
+             v.modal_y2_1 = 0.0f; v.modal_y1_1 = fastersinfullf(w1);
+             v.modal_y2_2 = 0.0f; v.modal_y1_2 = fastersinfullf(w2);
+             v.modal_y2_3 = 0.0f; v.modal_y1_3 = (mode_count > 2) ? fastersinfullf(w3) : 0.0f;
+             v.modal_y2_4 = 0.0f; v.modal_y1_4 = (mode_count > 3) ? fastersinfullf(w4) : 0.0f;
+             v.modal_y2_5 = 0.0f; v.modal_y1_5 = (mode_count > 4) ? fastersinfullf(w5) : 0.0f;
+             v.modal_y2_6 = 0.0f; v.modal_y1_6 = (mode_count > 5) ? fastersinfullf(w6) : 0.0f;
+             v.modal_norm_count = 0;
+             v.modal_env_1 = env1 * v.current_velocity;
+             v.modal_env_2 = env2 * v.current_velocity;
+             v.modal_env_3 = (mode_count > 2) ? (env3 * v.current_velocity) : 0.0f;
+             v.modal_env_4 = (mode_count > 3) ? (env4 * v.current_velocity) : 0.0f;
+             v.modal_env_5 = (mode_count > 4) ? (0.22f * env4 * v.current_velocity) : 0.0f;
+             v.modal_env_6 = (mode_count > 5) ? (0.16f * env4 * v.current_velocity) : 0.0f;
+             float t60_1_s = 0.001f * t60_1_ms;
+             float t60_2_s = 0.001f * t60_2_ms;
+             float t60_3_s = 0.001f * t60_3_ms;
+             float t60_4_s = 0.001f * t60_4_ms;
+             v.modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
+             v.modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+             v.modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_3_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+             v.modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_4_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+             v.modal_decay_5 = (mode_count > 4 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / ((0.85f * t60_4_s) * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+             v.modal_decay_6 = (mode_count > 5 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / ((0.70f * t60_4_s) * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+             v.modal_mix = mix;
         };
 
         uint8_t program = (uint8_t)m_params[k_paramProgram];
@@ -1408,6 +1455,14 @@ public:
 
     // Processes a single sample through the Waveguide
     inline float process_waveguide(WaveguideState& wg, float exciter_input) {
+         auto schroeder_stage = [](float x, float* buf, uint8_t& idx, uint8_t len, float g) {
+             float d = buf[idx];
+             float v = x + g * d;
+             float y = -g * v + d;
+             buf[idx] = v;
+             idx = (uint8_t)((idx + 1u) % len);
+             return y;
+         };
         // 1. Calculate the read pointer position for exact pitch
         float read_idx = (float)wg.write_ptr - wg.delay_length;
 
@@ -1451,7 +1506,14 @@ public:
         // wg.lowpass_coeff was pre-calculated in setParameter()
         wg.z1 = (ap_out * wg.lowpass_coeff) + (wg.z1 * (1.0f - wg.lowpass_coeff));
         float filtered_out = wg.z1;
-
+         if (wg.diffuser_mix > 0.0001f) {
+             float y = filtered_out;
+             y = schroeder_stage(y, wg.diffuser_buf1, wg.diffuser_i1, 13, wg.diffuser_g);
+             y = schroeder_stage(y, wg.diffuser_buf2, wg.diffuser_i2, 19, wg.diffuser_g);
+             y = schroeder_stage(y, wg.diffuser_buf3, wg.diffuser_i3, 29, wg.diffuser_g);
+             y = schroeder_stage(y, wg.diffuser_buf4, wg.diffuser_i4, 41, wg.diffuser_g);
+             filtered_out = (filtered_out * (1.0f - wg.diffuser_mix)) + (y * wg.diffuser_mix);
+         }
         // 4. Feedback & Exciter Addition
         // wg.feedback_gain is our "Decay" time
 #ifdef ENABLE_PHASE_7_MODELS
@@ -1502,8 +1564,9 @@ public:
             //   - low band: filtered (body/snap tail)
             //   - high band: unfiltered (fast click/hiss burst)
             ex.noise_lp_state += 0.15f * (raw_noise - ex.noise_lp_state);
-            float low = ex.noise_lp_state;
-            float high = raw_noise_unf;
+             float low = ex.noise_lp_state;
+             ex.noise_hi_lp_state += ex.noise_hi_lp_coeff * (raw_noise_unf - ex.noise_hi_lp_state);
+             float high = raw_noise_unf - ex.noise_hi_lp_state;
             float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
@@ -1781,6 +1844,14 @@ public:
                         voice.modal_y1_3 = vget_lane_f32(yn34, 0);
                         voice.modal_y1_4 = vget_lane_f32(yn34, 1);
                     }
+                     if (voice.modal_mode_count > 4) {
+                         float y5n = (voice.modal_k_5 * voice.modal_y1_5) - voice.modal_y2_5;
+                         voice.modal_y2_5 = voice.modal_y1_5;
+                         voice.modal_y1_5 = y5n;
+                         float y6n = (voice.modal_k_6 * voice.modal_y1_6) - voice.modal_y2_6;
+                         voice.modal_y2_6 = voice.modal_y1_6;
+                         voice.modal_y1_6 = y6n;
+                     }
 #else
                     float y1n = (voice.modal_k_1 * voice.modal_y1_1) - voice.modal_y2_1;
                     voice.modal_y2_1 = voice.modal_y1_1;
@@ -1795,6 +1866,14 @@ public:
                         float y4n = (voice.modal_k_4 * voice.modal_y1_4) - voice.modal_y2_4;
                         voice.modal_y2_4 = voice.modal_y1_4;
                         voice.modal_y1_4 = y4n;
+                     }
+                     if (voice.modal_mode_count > 4) {
+                         float y5n = (voice.modal_k_5 * voice.modal_y1_5) - voice.modal_y2_5;
+                         voice.modal_y2_5 = voice.modal_y1_5;
+                         voice.modal_y1_5 = y5n;
+                         float y6n = (voice.modal_k_6 * voice.modal_y1_6) - voice.modal_y2_6;
+                         voice.modal_y2_6 = voice.modal_y1_6;
+                         voice.modal_y1_6 = y6n;
                     }
 #endif
                     // Drift control: periodic soft normalization for long tails.
@@ -1823,29 +1902,44 @@ public:
                                 float s = 1.0f / a4;
                                 voice.modal_y1_4 *= s;
                                 voice.modal_y2_4 *= s;
-                            }
-                        }
-                    }
-                    float m1 = voice.modal_y1_1 * voice.modal_env_1;
-                    float m2 = voice.modal_y1_2 * voice.modal_env_2;
-                    float m3 = 0.0f, m4 = 0.0f;
-                    voice.modal_env_1 *= voice.modal_decay_1;
-                    voice.modal_env_2 *= voice.modal_decay_2;
-                    if (voice.modal_mode_count > 2) {
-                        m3 = voice.modal_y1_3 * voice.modal_env_3;
-                        m4 = voice.modal_y1_4 * voice.modal_env_4;
-                        voice.modal_env_3 *= voice.modal_decay_3;
-                        voice.modal_env_4 *= voice.modal_decay_4;
-                    }
-                    voice_out += (m1
-                                + (stage2_modal_amp_ratio_2 * m2)
-                                + (0.45f * m3)
-                                + (0.28f * m4)) * voice.modal_mix;
-                    if (voice.modal_env_1 < silence_threshold &&
-                        voice.modal_env_2 < silence_threshold &&
-                        (voice.modal_mode_count <= 2 || (voice.modal_env_3 < silence_threshold && voice.modal_env_4 < silence_threshold))) {
-                        voice.modal_pilot_enabled = false;
-                        voice.modal_mode_count = 0;
+                             }
+                             if (voice.modal_mode_count > 4) {
+                                 float a5 = fmaxf(fabsf(voice.modal_y1_5), fabsf(voice.modal_y2_5));
+                                 float a6 = fmaxf(fabsf(voice.modal_y1_6), fabsf(voice.modal_y2_6));
+                                 if (a5 > 1.2f) { float s = 1.0f / a5; voice.modal_y1_5 *= s; voice.modal_y2_5 *= s; }
+                                 if (a6 > 1.2f) { float s = 1.0f / a6; voice.modal_y1_6 *= s; voice.modal_y2_6 *= s; }
+                             }
+                         }
+                     }
+                     float m1 = voice.modal_y1_1 * voice.modal_env_1;
+                     float m2 = voice.modal_y1_2 * voice.modal_env_2;
+                     float m3 = 0.0f, m4 = 0.0f, m5 = 0.0f, m6 = 0.0f;
+                     voice.modal_env_1 *= voice.modal_decay_1;
+                     voice.modal_env_2 *= voice.modal_decay_2;
+                     if (voice.modal_mode_count > 2) {
+                         m3 = voice.modal_y1_3 * voice.modal_env_3;
+                         m4 = voice.modal_y1_4 * voice.modal_env_4;
+                         voice.modal_env_3 *= voice.modal_decay_3;
+                         voice.modal_env_4 *= voice.modal_decay_4;
+                         if (voice.modal_mode_count > 4) {
+                             m5 = voice.modal_y1_5 * voice.modal_env_5;
+                             m6 = voice.modal_y1_6 * voice.modal_env_6;
+                             voice.modal_env_5 *= voice.modal_decay_5;
+                             voice.modal_env_6 *= voice.modal_decay_6;
+                         }
+                     }
+                     voice_out += (m1
+                                 + (stage2_modal_amp_ratio_2 * m2)
+                                 + (0.45f * m3)
+                                 + (0.28f * m4)
+                                 + (0.18f * m5)
+                                 + (0.12f * m6)) * voice.modal_mix;
+                     if (voice.modal_env_1 < silence_threshold &&
+                         voice.modal_env_2 < silence_threshold &&
+                         (voice.modal_mode_count <= 2 || (voice.modal_env_3 < silence_threshold && voice.modal_env_4 < silence_threshold &&
+                                                          (voice.modal_mode_count <= 4 || (voice.modal_env_5 < silence_threshold && voice.modal_env_6 < silence_threshold))))) {
+                         voice.modal_pilot_enabled = false;
+                         voice.modal_mode_count = 0;
                     }
                 }
 #endif
@@ -1882,11 +1976,11 @@ public:
                 // ── Stage 4a: Tilt EQ ──────────────────────────────────────
                 voice.tone_lp = (voice_out * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
                 if (tone_val < zeroThreshold) {
-                    voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val / kToneCutDivisor);
-                } else if (tone_val > zeroThreshold) {
-                    float hp = voice_out - voice.tone_lp;
-                    voice_out += hp * (tone_val / kToneBoostDivisor);
-                }
+                     voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val * kInvToneCutDivisor);
+                 } else if (tone_val > zeroThreshold) {
+                     float hp = voice_out - voice.tone_lp;
+                     voice_out += hp * (tone_val * kInvToneBoostDivisor);
+                 }
 #endif // RENDER_STAGE >= 4
 
                 main_out[i * 2]     += voice_out * state.master_gain;
