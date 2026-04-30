@@ -1,0 +1,23 @@
+{
+  "iteration": 1,
+  "samples_total": 61,
+  "samples_mapped": 56,
+  "samples_unmapped": [
+    "ChaChaNut2.wav",
+    "Crunch1.wav",
+    "Guiro1.wav",
+    "KnockFoley1.wav",
+    "Metal-pipe-vibrating-B-minor.wav"
+  ],
+  "pairs_compared": 0,
+  "mean_score": null,
+  "target_score": 12.0,
+  "assumed_improvement": 0.72,
+  "family_pitch_thresholds": {
+    "membranes": 10.0,
+    "mallets": 10.0,
+    "wood": 10.0
+  },
+  "family_summary": {},
+  "results": []
+}

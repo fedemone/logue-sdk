@@ -1,0 +1,1 @@
+preset,preset_idx,sample,render_note,score,estimated_runs_to_target,family,f0_threshold_met,f0_pct,f0_ratio,note_offset_semitones,attack_pct,t60_pct,centroid_pct,centroid_pitchnorm_pct,rolloff_pct,rolloff_pitchnorm_pct,flatness_pct,flux_pct,inharm_pct,mrstft_log_l1,note_aligned_mrstft_log_l1
