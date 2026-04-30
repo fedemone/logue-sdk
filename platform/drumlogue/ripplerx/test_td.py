@@ -63,7 +63,7 @@ PRESETS = [
     (  72,  199,    0,  "Vibrph"),
     (  48,   96,   10,  "Wodblk"),
     (  45,   80,    2,  "AcTom"),
-    (  60,  196,    0,  "Cymbal"),   # Dkay=196, NzMx=0: tuner raised Dkay 176→196 and removed noise
+    (  60,  182,    0,  "Cymbal"),   # Dkay=182: Mterl16+6-mode bank+diffuser → measured ~0.8s; within [0.15,2.20]×1.83s theory
     (  50,  188,    4,  "Gong"),
     (  65,  194,    5,  "Kalimba"),
     (  60,  194,    0,  "StelPan"),

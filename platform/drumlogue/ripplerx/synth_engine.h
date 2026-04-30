@@ -427,30 +427,30 @@ public:
              {   0,  60,   0,   0, 500, 470,   0,   0,   0,   0,  35,  10,   0,   0,  10,   0,   1,   5,   0,   0, 300,   0,1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
              {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,   1,   9,  20,   0, 300,   0,1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
              {   2,  36,   0,   0, 150,   0,   0,   0,   0,   3, 180,  -6,  -5,   0,  15,   0,   1,   5,   0,   0, 300,   0,1200, 707}, // 2:  808 Sub    — final Stage-1: Dkay170/Mterl-6 to counter LP-loss-shortened tail without adding noise
-             {   3,  38,   0,   1, 400, 170,   0,   0,   2,   5, 145,  -4,   0,  50,   8,   0,   1,   5,   5,  20, 500,   2, 100, 707}, // 3:  Ac Snare   — Gain5 (was 10); NzMix40 (parallel noise now audible); HP@1kHz (was 8kHz)
-             {   4,  72,   0,   1, 900, 370,   0,   0,   0,   1, 200,  30,   0,   0,  20,   2,  20,  20,   0,  20, 220,   0,1500, 707}, // 4:  TblrBel    — c=0.98@524Hz (Mterl28+TubRad20); MlltStif100 (medium felt mallet, less overtone energy → measured T60 tracks fundamental ~7.5s)
-             {   5,  40,   0,   1, 300, 320,   0,   0,   2,   3, 185,   1,   0,  30,  15,   6,   1,  -1,   3,   2, 220,   0, 500, 707}, // 5:  Timpani    — Gain3 (was 10); NzMix2 (was 3)
-             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 112,   2,   0,  35,  12,  10,   5,  17,   5,   7, 450,   0, 380, 707}, // 6:  Djambe     — Phase-26: stronger body mode + less noisy transient masking for first-batch resemblance
-             {   7,  41,   0,   1, 250, 360,   0,   0,   1,   5, 180,   4,   0,  30,  15,   2,   1,   9,   5,  29, 590,   0, 370, 707}, // 7:  Taiko      — Phase-26: reduce low-f0 drift, increase attack noise/body balance, shorter controlled tail
-             {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 130,  22,   0,  50,   8,  15,  25,  21,   5,  25, 690,   2, 460, 707}, // 8:  MrchSnr    — Phase-30: longer snare body + brighter/noisier shell transient for remaining-batch alignment
-             {   9,  60,   0,   1, 600, 305,   0,   0,   0,   0, 185,  14,   0,   0,  12,   0,   1,   9,   0,  15, 300,   0,1000, 707}, // 09: Koto       — c=0.98@262Hz (Mterl28+TubRad15); all harmonics T60≈2.2s (ref 3.47s; ratio≥0.63)
+             {   3,  38,   0,   1, 400, 170,   0,   0,   2,   5,  35,  -4,   0,  50,   8,   0,   1,   5,   5,  35, 500,   2, 100, 707}, // 3:  Ac Snare   — Dkay35: shorter KS body shifts timbre to snappier snare vs metallic gong; NzMx35 raises noise floor
+             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,  20,  20,   0,   5, 300,   0,1500, 707}, // 4:  TblrBel    — c=0.98@524Hz (Mterl28+TubRad20); MlltStif100 (medium felt mallet, less overtone energy → measured T60 tracks fundamental ~7.5s)
+             {   5,  40,   0,   1, 300, 320,   0,   0,   2,   3, 185,   1,   0,  30,  15,   9,   1,  -1,   3,   2, 300,   0, 500, 707}, // 5:  Timpani    — InHm9: slight spread on coupled membrane mode; NzRs300 longer noise tail
+             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 102,   0,   0,  35,  12,  10,   5,  17,   5,   7, 450,   0, 500, 707}, // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
+             {   7,  41,   0,   1, 250, 390,   0,   0,   1,   5, 180,   4,   0,  30,  15,   3,   1,   9,   5,  14, 550,   0, 250, 707}, // 7:  Taiko      — harder mallet + reduced noise tail NzMx14 + lower NzFq for thud character
+             {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 130,  12,   0,  50,   8,  15,  25,  21,   5,  20, 650,   2, 400, 707}, // 8:  MrchSnr    — Mterl12: less bright shell; NzMx20/NzFq400 for snappier wire character
+             {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   9,   0,   0, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
              {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,   2,   0,   0,  18,   1,   1,   6,   0,   0, 300,   0,1000, 707}, // 10: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
-             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   5,   0,   0, 460,   0, 900, 707}, // 11: Wodblk     — Phase-26: more tonal wood body, less broadband hiss, brighter but cleaner click
-             {  12,  45,   0,   1, 400, 290,   0,   0,   2,   5, 150,   2,   0,  50,  10,   1,   1,   9,   5,   0, 300,   0, 800, 707}, // 12: Ac Tom     — Gain5 (was 15)
-             {  13,  60,   0,   1, 800, 500,   0,   0,   0,   4, 196,  22,   0,   0,  18,   0,   5,  11,   5,   0, 600,   2, 520, 707}, // 13: Cymbal     — NzFq400=4kHz (was 200=2kHz): shifting noise from 2→4kHz raises centroid from ×0.34 toward ×0.65 vs reference
-             {  14,  50,   0,   1, 200,  40,   0,   0,   0,   4, 190,  -8,   0,   0,  20,   5,   1,  19,  20,   4, 840,   0,  30, 707}, // 14: Gong       — NzFq30=300Hz (was 600=6kHz): 6kHz noise was pulling centroid 3× above reference; B=0.004→InHm8
-             {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 200,   4,   0,   0,   5,   5,   1,   3,   3,   0, 300,   0,1000, 707}, // 15: Kalimba    — c=0.98@392Hz (Mterl28+TubRad15); all harmonics T60≈3.2s (ref 3.80s; ratio≥0.84)
-             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,   6,   0,   0,  12,   1,   3,   1,   5,   0, 260,   0,1000, 707}, // 16: StelPan    — c=0.98@262Hz (Mterl28+TubRad15); MlltStif150; T60≈4.8s (ref 5.39s; ratio≥0.89)
+             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   5,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
+             {  12,  45,   0,   1, 400, 260,   0,   0,   2,   5, 150,   2,   0,  50,  10,   0,   1,   9,   5,   0, 300,   0, 800, 707}, // 12: Ac Tom     — softer mallet + InHm0 for cleaner membrane fundamental
+             {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,  11,   5,   8, 600,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
+             {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,  -4,   0,   0,  20,   7,   1,  19,  20,  10, 800,   0,  30, 707}, // 14: Gong       — softer attack MlSt80 + less dark Mterl-4 + more noise onset NzMx10
+             {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 190,  10,   0,   0,   5,   6,   1,   7,   3,   0, 300,   0,1000, 707}, // 15: Kalimba    — Mterl10 warmer bar + InHm6 natural tine spread + TbRd7
+             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  14,   0,   0,  12,   0,   3,  11,   5,   0, 300,   0,1000, 707}, // 16: StelPan    — Mterl14 brighter pan + TbRd11 for steelpan inharmonic partial spread
              {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   3,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
              {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   5,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
-             {  19,  84,   0,   1, 900, 410,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  17,   0,   0, 300,   0,1500, 707}, // 19: Triangle   — final Stage-1: Mterl2/TubRad15 maximize practical sustain at Dkay ceiling
-             {  20,  36,   0,   1, 300,  60,   0,   0,   2,   5, 140,   1,   0,  50,   6,   5,   1,   7,   5,   0, 200,   0, 360, 707}, // 20: Kick Drum  — final Stage-1: Dkay70/Mterl-3 to recover tail shortened by LP loss
-             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   5,   5,  90, 600,   2, 600, 707}, // 21: Clap       — Gain5, LwCt10 (was 40); NzRes600 (was 100 — very short); pure noise char.
-             {  22,  72,   0,   1, 100, 340,   0,   0,   2,   5, 102,   6,   0,  50,   2,   0,  20,   5,   3,  80, 940,   2, 800, 707}, // 22: Shaker     — Gain3; LwCt20 (was 80); NzRes900 (was 300→~240ms noise); HP@8kHz
-             {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  -3,   0,   0,  12,   3,   1,   5,   0,  20, 990,   0, 340, 707}, // 23: Flute      — sample: D5/1.53s→Dkay191; MlltStif162; NzMix10 subtle breath; NzRes950
-             {  24,  72,   0,   0,  50,   0,   0,   0,   0,   8, 200, -10,   0,   0,  12,   9,   1,  11,   0,   0, 970,   0, 540, 707}, // 24: Clarinet   — final Stage-1: shorter Dkay and lower NzMix/NzRes to tame tube-model over-long sustain
+             {  19,  84,   0,   1, 900, 440,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  17,   0,   0, 300,   0,1500, 707}, // 19: Triangle   — harder mallet MlSt440 for cleaner metallic ping onset
+             {  20,  36,   0,   1, 300, 110,   0,   0,   2,   5, 165,   3,   0,  50,   6,   4,   1,   5,   5,   8, 200,   0, 300, 707}, // 20: Kick Drum  — Dkay165/Mterl3: longer punch tail; softer MlSt110; NzMx8 subtle click layer
+             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   5,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
+             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   5,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
+             {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  -3,   0,   0,  12,   0,   1,   5,   0,  15, 950,   0, 400, 707}, // 23: Flute      — InHm0 pure tube; NzMx15 breath noise; NzFq400 4kHz breath shimmer
+             {  24,  72,   0,   0,  50,  50,   0,   0,   0,   8, 185,  -4,   0,   0,  12,  10,   1,   9,   0,   8, 850,   0, 600, 707}, // 24: Clarinet   — Dkay185/Mterl-4: more even tube body; MlSt50 reed articulation; NzMx8 breath
              {  25,  36,   0,   1, 600, 250,   0,   0,   0,   0, 105,  -6,   0,   0,  10,   0,   1,   5,  40,   0, 300,   0, 500, 707}, // 25: PlkBass    — final Stage-1: less drive + harder mallet / slightly longer decay for cleaner pluck body
-             {  26,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,   9,  10,  20,   0,   5, 340,   0,1200, 707}, // 26: GlsBwl     — c=0.98@659Hz (Mterl28+TubRad20); MlltStif50 (very soft rubber mallet, nearly pure fundamental → measured T60 tracks fundamental ~6.3s ≥ ref12.5s/2)
+             {  26,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,  10,  20,   0,   0, 300,   0,1200, 707}, // 26: GlsBwl     — InHm10 glass bowl partials; no noise for pure bowl character
              // 27: Guitar String — Karplus-Strong reference for physical model validation.
              // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
              // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
@@ -463,17 +463,17 @@ public:
              {  27,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,   1,  15,   0,   0, 300,   0,1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
              // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
              //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-             {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 119,  30,   0,   0,   2,   9,   5,   5,   0,  30, 600,   2, 480, 707},  // 28: HHat-C  — LwCt5 (was 20); NzMix50 (was 70); NzRes600 (was 200→longer noise burst)
-             {  29,  79,   0,   1, 900, 500,   0,   0,   0,   4, 179,  29,   0,   0,  15,   9,   5,  19,   0,  40,1000,   2, 540, 707},  // 29: HHat-O  — LwCt5; NzMix40 (was 60); NzRes920 (was 200→~400ms noise for open hat)
-             {  30,  62,   0,   1, 600, 395,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,  11,   0,  25, 520,   0, 590, 707},  // 30: Conga   — Phase-26: tighter drum tail and slightly brighter membrane center
-             {  31,  62,   0,   1, 700, 480,   0,   0,   0,   4, 190,   1,   0,   0,  20,   0,   5,  17,   0,  30, 260,   0,1000, 707},  // 31: Handpn  — Plate, T60≈10s@D4→Dkay198; InHm2 (B≈0.001, near-harmonic); warm metallic
+             {  28,  79,   0,   1, 900, 420,   0,   0,   0,   4, 119,  30,   0,   0,   2,  14,   5,   5,   0,  35, 600,   2, 600, 707},  // 28: HHat-C  — softer mallet MlSt420 + InHm14 metallic partial spread + NzMx35/NzFq600
+             {  29,  79,   0,   1, 900, 450,   0,   0,   0,   4, 179,  27,   0,   0,  15,   9,   5,  21,   0,  45, 920,   2, 600, 707},  // 29: HHat-O  — Mterl27/TbRd21: balanced open hat ring; NzMx45/NzFq600 sizzle
+             {  30,  62,   0,   1, 600, 365,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,   9,   0,  15, 520,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
+             {  31,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,   7,   0,   0,  20,   1,   5,  17,   0,   5, 300,   0,1000, 707},  // 31: Handpn  — MlSt300 softer strike; Mterl7 warmer plate; InHm1 near-harmonic handpan
              {  32,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,  10,   5,   0,   0, 300,   0,1200, 707},  // 32: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
              {  33,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,   2,   5,   0,   0, 300,   0, 800, 707},  // 33: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
-             {  34,  57,   0,   1, 900, 500,   0,   0,   0,   4, 190,  30,   0,   0,  18,   0,   5,  19,   0,  45, 660,   2, 600, 707},  // 34: Ride    — c=0.98@370Hz (Mterl28+TubRad15); T60≈3.1s (ref 4.69s; ratio≥0.66)
-             {  35,  60,   0,   1, 900, 500,   0,   0,   0,   4, 194,  18,   0,   0,   8,   8,   5,   1,   0,  20, 600,   2, 760, 707},  // 35: RidBel  — LwCt5 (was 20); NzMix20 (was 60); NzRes600
-             {  36,  57,   0,   1, 650, 320,   0,   0,   0,   5, 152,  -2,   0,   0,   8,   6,   2,   1,   0,   5, 520,   0, 450, 707},  // 36: Bongo   — Phase-26: more stable fundamental cue and less sub-bass-biased transient
-             {  37,  88,   0,   1, 100, 360,   0,   0,   0,   7, 195,   7,   0,   0,   5,   0,   2,  15,   0,  70, 190,   0, 450, 707},  // 37: GlsBotl — final Stage-1: reduced noise dominance (NzMix55/NzRes150/NzFq450) for cleaner bottle resonance
-             {  38,  49,   0,   1, 900, 470,   0,   0,   0,   4, 140,  11,   0,   0,   3,  10,   5,   5,   0,  34, 110,   2, 400, 707}   // 38: Tick    — Dkay100: combined T60≈0.34s; wg T60=0.40s, master t_s=0.71s; ratio=0.64 vs ref 0.54s
+             {  34,  57,   0,   1, 900, 500,   0,   0,   0,   4, 190,  30,   0,   0,  18,   6,   5,  19,   0,  15, 700,   2, 600, 707},  // 34: Ride    — InHm6 plate spread; NzMx15/NzRs700 sizzle-only noise character
+             {  35,  60,   0,   1, 900, 461,   0,   0,   0,   4, 194,  18,   0,   0,   8,  10,   5,   3,   0,  20, 600,   2, 700, 707},  // 35: RidBel  — InHm10 bell spread; TbRd3; NzFq700 higher sizzle
+             {  36,  57,   0,   1, 650, 410,   0,   0,   0,   5, 152,  -2,   0,   0,   8,   6,   2,   1,   0,   0, 520,   0, 450, 707},  // 36: Bongo   — harder mallet MlSt410 for sharper bongo slap; InHm6 tonal cue
+             {  37,  88,   0,   1, 100, 450,   0,   0,   0,   7, 195,   5,   0,   0,   5,   0,   2,  15,   0,  45, 150,   0, 450, 707},  // 37: GlsBotl — MlSt450 harder blow onset; Mterl5 brighter; NzMx45/NzRs150 short puff
+             {  38,  49,   0,   1, 900, 500,   0,   0,   0,   4, 140,  11,   0,   0,   3,  16,   5,   5,   0,  24, 150,   2, 400, 707}   // 38: Tick    — InHm16 tight wood spread; NzMx24/NzRs150 crisp tick transient
          };
 
         if (idx >= k_NumPrograms) return;
@@ -1342,8 +1342,11 @@ public:
             v.modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
             v.modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_3_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
             v.modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_4_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-            v.modal_decay_5 = (mode_count > 4 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / ((0.85f * t60_4_s) * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-            v.modal_decay_6 = (mode_count > 5 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / ((0.70f * t60_4_s) * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+            // Modes 5 and 6 share T60_4's base but decay faster: T60_5 = 0.85×T60_4,
+            // T60_6 = 0.70×T60_4.  Reusing decay_4 via power law avoids two extra expf
+            // calls: exp(k / (r*T)) = exp(k/T)^(1/r) = decay_4^(1/r).
+            v.modal_decay_5 = (mode_count > 4 && t60_4_s > 0.0f) ? fasterpowf(v.modal_decay_4, 1.0f / 0.85f) : STAGE2_MODAL_DECAY2;
+            v.modal_decay_6 = (mode_count > 5 && t60_4_s > 0.0f) ? fasterpowf(v.modal_decay_4, 1.0f / 0.70f) : STAGE2_MODAL_DECAY2;
             v.modal_mix = mix;
         };
 
@@ -1352,14 +1355,14 @@ public:
             init_modal_modes(STAGE2_MODAL_RATIO_2, 0.0f, 0.0f,
                              STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f,
                              STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2, 0.0f, 0.0f, 2);
-        } else if (program == k_Cymbal) {  // Cymbal: richer metallic shimmer
+        } else if (program == k_Cymbal) {  // Cymbal: 6-mode inharmonic shimmer bank
             init_modal_modes(2.45f, 3.91f, 5.62f,
                              140.0f, 260.0f, 420.0f, 620.0f,
-                             0.11f, 0.75f, 0.60f, 0.46f, 0.34f, 4);
-        } else if (program == k_Gong) {  // Gong: lower/longer metallic modes
+                             0.11f, 0.75f, 0.60f, 0.46f, 0.34f, 6);
+        } else if (program == k_Gong) {  // Gong: 6-mode dense metallic modes
             init_modal_modes(1.78f, 2.63f, 3.81f,
                              220.0f, 420.0f, 680.0f, 920.0f,
-                             0.16f, 0.85f, 0.70f, 0.52f, 0.38f, 4);
+                             0.16f, 0.85f, 0.70f, 0.52f, 0.38f, 6);
         }
 
         if (program == k_KickDrum) {         // Kick: downward pitch sweep (portamento-like)
