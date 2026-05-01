@@ -46,10 +46,10 @@ static bool s_initialized = false;
 // Static Buffers (Safe - allocated in BSS, not on stack)
 // ============================================================================
 
-static float s_inL[kMaxFrames];
-static float s_inR[kMaxFrames];
-static float s_outL[kMaxFrames];
-static float s_outR[kMaxFrames];
+// static float s_inL[kMaxFrames];
+// static float s_inR[kMaxFrames];
+// static float s_outL[kMaxFrames];
+// static float s_outR[kMaxFrames];
 
 // ============================================================================
 // Callback Implementations

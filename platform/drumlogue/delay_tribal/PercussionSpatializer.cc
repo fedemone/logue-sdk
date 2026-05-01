@@ -323,7 +323,7 @@ static fast_inline void mix_clone_batch4(const clone_t* clones,
             dms += fastersinfullf(c.wobble_phase + rate * 0.0015f) * c.wobble_depth_ms;
         }
 
-        float scatter_jit = (xorshift_f32(rng_state) * 2.0f - 1.0f) * (scatter_amount * 2.4f) * (0.25f + (float)(base + lane) * 0,08333333333f);  // approx 0.75f / 9.0f
+        float scatter_jit = (xorshift_f32(rng_state) * 2.0f - 1.0f) * (scatter_amount * 2.4f) * (0.25f + (float)(base + lane) * 0.08333333333f);  // approx 0.75f / 9.0f
         dms += scatter_jit;
 
         delay.read_delay(dms * sample_rate * 0.001f, dl[lane], dr[lane]);
@@ -332,7 +332,6 @@ static fast_inline void mix_clone_batch4(const clone_t* clones,
         pan_r[lane] = c.pan_r;
         hp_mix[lane] = 1.0f / (1.0f + c.hp_hz * 0.0012f);
         lp_mix[lane] = 1.0f - fmin(0.85f, c.lp_hz * inv_12000);
-        soft[lane] = 1.0f;
     }
 
     float32x4_t vdl = vld1q_f32(dl);
@@ -369,7 +368,7 @@ static fast_inline void mix_clone_batch2(const clone_t* clones,
             dms += fastersinfullf(c.wobble_phase + rate * 0.0015f) * c.wobble_depth_ms;
         }
 
-        float scatter_jit = (xorshift_f32(rng_state) * 2.0f - 1.0f) * (scatter_amount * 2.4f) * (0.25f + (float)(base + lane) * 0,08333333333f);  // approx 0.75f / 9.0f
+        float scatter_jit = (xorshift_f32(rng_state) * 2.0f - 1.0f) * (scatter_amount * 2.4f) * (0.25f + (float)(base + lane) * 0.08333333333f);  // approx 0.75f / 9.0f
         dms += scatter_jit;
 
         delay.read_delay(dms * sample_rate * 0.001f, dl[lane], dr[lane]);
@@ -378,7 +377,6 @@ static fast_inline void mix_clone_batch2(const clone_t* clones,
         pan_r[lane] = c.pan_r;
         hp_mix[lane] = 1.0f / (1.0f + c.hp_hz * 0.0012f);
         lp_mix[lane] = 1.0f - fmin(0.85f, c.lp_hz * inv_12000);
-        soft[lane] = 1.0f;
     }
 
     float32x2_t vdl = vld1_f32(dl);
@@ -418,7 +416,7 @@ float PercussionSpatializer::process_frame(float in_l, float in_r, float& out_l,
         if (i > 0) {
             dms += fastersinfullf(c.wobble_phase + rate_ * 0.0015f) * c.wobble_depth_ms;
         }
-        float scatter_jit = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * (profile_.scatter_amount * 2.4f) * (0.25f + (float)i * 0,08333333333f);  // approx 0.75f / 9.0f
+        float scatter_jit = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * (profile_.scatter_amount * 2.4f) * (0.25f + (float)i * 0.08333333333f);  // approx 0.75f / 9.0f
         dms += scatter_jit;
 
         float dl = 0.0f, dr = 0.0f;
