@@ -35,7 +35,7 @@ enum k_parameters {
     k_paramProgram, k_dark, k_bright, k_glow,
     k_color, k_spark, k_size, k_pdly,
     k_decay, k_bass, k_color_shift,
-    k_mix, k_rate, k_irid, k_wdth,
+    k_rate, k_irid, k_wdth,
     k_total
 };
 
@@ -58,12 +58,12 @@ static const char* k_preset_names[k_preset_number] = {
 };
 
 // Values:
-//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ, MIX, RATE, IRID, WDTH }
+//  { NAME, DARK, BRIG, GLOW, COLR, SPRK, SIZE, PDLY, DCAY, BASS, CLRQ, RATE, IRID, WDTH }
 static const int32_t k_presets[k_preset_number][k_total] = {
-    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30,  0,  50, 20,  0, 70 },  // StanzaNeon: medium decay, wide
-    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0,  70, 10, 15, 50 },  // VicoBuio:   long dark, iridiscence
-    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50,  0,  50, 40,  0,100 },  // Strobo:     short, fast LFO, wide
-    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0,  80, 15, 30, 60 }   // Bruciato:   massive, iridiscence
+    { k_stanzaNeon, 20, 50, 10,  0,  5, 30,  5,  65,  30,  0, 20,  0, 70 },  // StanzaNeon: medium decay, wide
+    { k_vicoBuio,   50, 20,  0, 10,  0, 60, 15,  85,  10,  0, 10, 15, 50 },  // VicoBuio:   long dark, iridiscence
+    { k_strobo,     20, 10, 20, 20, 20, 20, 80,  45,  50,  0, 40,  0,100 },  // Strobo:     short, fast LFO, wide
+    { k_bruciato,   70,  0, 40, 10,  0, 90, 10,  95,  20,  0, 15, 30, 60 }   // Bruciato:   massive, iridiscence
 };
 
 // ============================================================================
@@ -153,7 +153,6 @@ public:
 
     float sampleRate;
     float glowLfoRate = 0.0f;
-    float mix_level = 0.5f;
     float glow_rate_hz = 0.4f;
     float irid_amt = 0.0f;
     float width_amt = 1.0f;
@@ -349,9 +348,6 @@ public:
             // val = +1.0  -> 2.0x multiplier (+1 Octave)
             update_color_resonators(fasterpow2f(norm));
             break;
-        case k_mix: // MIX  global wet/dry  0-100% → 0.0..1.0
-            setMixLevel(norm);
-            break;
         case k_rate: // RATE  glow LFO speed  0-100% → 0.05..4.0 Hz (exponential)
             setRate(norm);
             break;
@@ -403,9 +399,6 @@ public:
     // Higher knob value = more bass removed from the reverb tail.
     void setHpfCoeff(float val) {
         hpf_coeff = 0.99f - (val * 0.14f);
-    }
-    void setMixLevel(float val) {
-        mix_level = val;
     }
     // 0.0..1.0 → 0.05..4.0 Hz via 2^(val*6)*0.05 (exponential for musical feel)
     void setRate(float val) {
@@ -619,8 +612,8 @@ public:
             float color_r = 0.0f;
             if (color_amt > 0.0f) {
                 for(int f=0; f<NUM_RESONATORS; f++) {
-                    color_l += process_biquad(in_l, &color_filters_l[f], &color_coeffs[f]);
-                    color_r += process_biquad(in_r, &color_filters_r[f], &color_coeffs[f]);
+                    color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
+                    color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
                 }
                 // Scale down since we are summing 6 high-Q resonant peaks.
                 color_l *= 0.30f;
@@ -674,7 +667,7 @@ public:
             float irid_l = 0.0f;
             float irid_r = 0.0f;
             if (irid_amt > 0.0f) {
-                if (irid_amt > 0.0f) {
+                {
                     // 1. Refraction: Speed wobbles microscopically around 2.0x
                     // Assuming you have an LFO available (like the one used in GLOW)
                     float irid_speed = 2.0f + (fastersinfullf(glow_lfo_phase * 0.5f) * 0.015f);
@@ -725,21 +718,22 @@ public:
             // ==========================================
             // FINAL PARALLEL MIXDOWN
             // ==========================================
-            float mix_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
-                          (color_l * color_amt) + (spark_l * spark_amt) + (irid_l * irid_amt);
+            // FDN reverb (rev_l/rev_r) is always the base — SIZE/DECAY/BASS remain
+            // audible even when all path modifiers are at zero.
+            float path_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
+                           (color_l * color_amt) + (spark_l * spark_amt) + (irid_l * irid_amt);
+            float path_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
+                           (color_r * color_amt) + (spark_r * spark_amt) + (irid_r * irid_amt);
 
-            float mix_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
-                          (color_r * color_amt) + (spark_r * spark_amt) + (irid_r * irid_amt);
-
-            mix_l *= path_norm;
-            mix_r *= path_norm;
+            float mix_l = rev_l + path_l * path_norm;
+            float mix_r = rev_r + path_r * path_norm;
 
             // Mid-side stereo width on wet signal
             float mid  = (mix_l + mix_r) * 0.5f;
             float side = (mix_l - mix_r) * 0.5f * width_amt;
 
-            out[i]   = in_l * (1.0f - mix_level) + (mid + side) * mix_level;
-            out[i+1] = in_r * (1.0f - mix_level) + (mid - side) * mix_level;
+            out[i]   = mid + side;
+            out[i+1] = mid - side;
         }
     }
 };

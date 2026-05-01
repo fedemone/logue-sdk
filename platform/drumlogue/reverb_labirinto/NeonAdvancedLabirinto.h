@@ -55,7 +55,7 @@ typedef enum {
 
 enum parameterState {
   k_paramProgram = 0,
-  k_mix, k_time, k_low, k_high, k_damp,
+  k_time, k_low, k_high, k_damp,
   k_wide, k_comp, k_pill, k_shimmer_freq,
   k_pre_delay, k_vibr,
   k_total
@@ -66,18 +66,18 @@ static const char *k_preset_names[k_preset_number] =
 // ============================================================================
 // Factory Presets
 // ============================================================================
-// Each preset: {PRESET, MIX, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, VIBR}
+// Each preset: {PRESET, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, SHMR, PDLY, VIBR}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {k_foresta, 60, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
+    {k_foresta, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {k_tempio, 70, 70, 80, 25, 130, 130, 80, 2, 0, 0, 10},
+    {k_tempio, 70, 80, 25, 130, 130, 80, 2, 0, 0, 10},
     // 2: labirinto - center values with random ping-pong stereo bouncing
-    {k_labirinto, 50, 60, 50, 50, 510, 100, 50, 1, 0, 10, 10},
+    {k_labirinto, 60, 50, 50, 510, 100, 50, 1, 0, 10, 10},
     // 3: esotico - microtonal echoes on non-Western scale
-    {k_esotico, 45, 40, 60, 80, 100, 100, 50, 4, 5, 5, 20},
+    {k_esotico, 40, 60, 80, 100, 100, 50, 4, 5, 5, 20},
     // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {k_stellare, 40, 90, 50, 80, 800, 180, 30, 4, 35, 20, 10},
+    {k_stellare, 90, 50, 80, 800, 180, 30, 4, 35, 20, 10},
 };
 
 // ============================================================================
@@ -97,7 +97,6 @@ public:
         , diffusion(0.3f)
         , modDepth(0.1f)
         , modRate(0.5f)
-        , mix(0.3f)
         , width(1.0f)
         , dampingCoeff(0.5f)
         , lowDecayMult(1.0f)
@@ -248,9 +247,6 @@ public:
         case k_paramProgram:
             // do nothing to avoid recursion
             break;
-        case k_mix: // MIX  0..100 → 0.0..1.0
-            setMix(value * 0.01f);
-            break;
         case k_time: // TIME  1..100 → decay 0.01..0.99
             setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
             break;
@@ -324,7 +320,6 @@ public:
     // Uses a fixed base rate of 1.0 Hz so the result is always deterministic
     // regardless of how many times this is called.
     void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, lfoSpeed * modDepth)); }
-    void setMix(float m) { mix = fmaxf(0.0f, fminf(1.0f, m)); }
     void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); } // UNUSED
     // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
@@ -724,13 +719,11 @@ public:
                 // SCALAR PATH: Process remaining 1-3 samples
                 // =================================================================
                 for (int i = 0; i < blockSize; i++) {
-                    float dryL = inL[samplesProcessed + i];
-                    float dryR = inR[samplesProcessed + i];
-                    float mono = (dryL + dryR) * 0.5f;
+                    float mono = (inL[samplesProcessed + i] + inR[samplesProcessed + i]) * 0.5f;
                     float wetL, wetR;
                     processScalar(mono, wetL, wetR);
-                    outL[samplesProcessed + i] = dryL * (1.0f - mix) + wetL * mix;
-                    outR[samplesProcessed + i] = dryR * (1.0f - mix) + wetR * mix;
+                    outL[samplesProcessed + i] = wetL;
+                    outR[samplesProcessed + i] = wetR;
                 }
             }
 
@@ -977,10 +970,9 @@ private:
         }
 
         if (activeSampleCount <= 0) {
-            // Apply dry gain so volume stays constant when bypassed!
-            float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
-            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
-            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            float32x4_t zero = vdupq_n_f32(0.0f);
+            vst1q_f32(outL, zero);
+            vst1q_f32(outR, zero);
             return;
         }
 
@@ -1045,9 +1037,9 @@ private:
 
         // If counter has expired, bypass FDN processing to save cycles
         if (activeSampleCount <= 0) {
-            float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
-            vst1q_f32(outL, vmulq_f32(inL4, dryGain));
-            vst1q_f32(outR, vmulq_f32(inR4, dryGain));
+            float32x4_t zero = vdupq_n_f32(0.0f);
+            vst1q_f32(outL, zero);
+            vst1q_f32(outR, zero);
             writePos = (writePos + NEON_LANES) & BUFFER_MASK;
             return;
         }
@@ -1156,16 +1148,9 @@ private:
         float32x4_t wetL = vaddq_f32(mid, vmulq_f32(side, width4));
         float32x4_t wetR = vsubq_f32(mid, vmulq_f32(side, width4));
 
-        // Wet/dry mix
-        float32x4_t wetGain = vdupq_n_f32(mix);
-        float32x4_t dryGain = vdupq_n_f32(1.0f - mix);
-
-        float32x4_t outL4 = vaddq_f32(vmulq_f32(inL4, dryGain), vmulq_f32(wetL, wetGain));
-        float32x4_t outR4 = vaddq_f32(vmulq_f32(inR4, dryGain), vmulq_f32(wetR, wetGain));
-
-        // Store results
-        vst1q_f32(outL, outL4);
-        vst1q_f32(outR, outR4);
+        // Store wet signal directly (hardware handles dry+wet blend)
+        vst1q_f32(outL, wetL);
+        vst1q_f32(outR, wetR);
     }
 
     void updateModulation4() {
@@ -1426,7 +1411,6 @@ private:
     float diffusion;
     float modDepth;
     float modRate;
-    float mix;           // wet/dry blend  0..1
     float width;         // stereo width   0..2
     float dampingCoeff;  // one-pole LPF coeff for damping
     float lowDecayMult;  // low-freq decay multiplier
