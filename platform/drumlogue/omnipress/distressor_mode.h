@@ -275,15 +275,12 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
             gain_db = vmulq_f32(excess, vdupq_n_f32(0.95f));
             break;
 
-        case DIST_RATIO_NUKE: {
-            // Brick-wall limiting - infinite compression above threshold
-            // gain_db is POSITIVE here (reduction amount), vnegq_f32 at end makes it negative
-            uint32x4_t above_thresh = vcgtq_f32(envelope_db, thresh);
-            gain_db = vbslq_f32(above_thresh,
-                                vdupq_n_f32(40.0f),   // 40dB reduction when triggered
-                                vdupq_n_f32(0.0f));
+        case DIST_RATIO_NUKE:
+            // True brick-wall (∞:1): apply exactly the excess as gain reduction,
+            // so output is clamped to threshold regardless of how far above it.
+            // (Fixed 40dB was too aggressive for small overshoots and too weak for large ones.)
+            gain_db = excess;
             break;
-        }
     }
 
     return vnegq_f32(gain_db);  // Return negative dB for gain reduction

@@ -233,10 +233,15 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t* wf,
             out.val[1] = sine_folder(driven_r);
             break;
 
-        case DRIVE_MODE_SUBOCTAVE:
-            out.val[0] = suboctave_process(wf, driven_l);
-            out.val[1] = suboctave_process(wf, driven_r);
+        case DRIVE_MODE_SUBOCTAVE: {
+            float32x4_t sub_l = suboctave_process(wf, driven_l);
+            float32x4_t sub_r = suboctave_process(wf, driven_r);
+            // Scale the ±1 square wave by the pre-drive input amplitude so the
+            // sub-octave tracks signal dynamics instead of always blasting full scale.
+            out.val[0] = vmulq_f32(sub_l, vabsq_f32(in_l));
+            out.val[1] = vmulq_f32(sub_r, vabsq_f32(in_r));
             break;
+        }
 
         default:
             out.val[0] = driven_l;
