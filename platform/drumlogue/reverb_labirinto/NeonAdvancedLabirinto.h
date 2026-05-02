@@ -1086,15 +1086,18 @@ private:
         // from applying different decay multipliers to the two channel groups.
         // =================================================================
         // 4. Apply decay (using unified decay factor)
-        // FIX: Map 0.0-1.0 to 0.7-0.995 for realistic RT60 tails
+        // Cap at 0.95: gives ~5.7s RT60 for the 42ms channel, builds to 71% in 1 second.
+        // (Previous 0.995 cap caused 58s RT60 — reverb took 10+ seconds to become audible.)
         float loopGain = 0.7f + (decay * 0.295f);
-        float unifiedDecay = fminf(0.995f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
+        float unifiedDecay = fminf(0.95f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        float32x4_t feedback = vdupq_n_f32(1.0f - decay);
+        // Input gain = 1 - unifiedDecay ensures steady-state amplitude ≤ 1.0 for any
+        // combination of TIME/LOW/HIGH — prevents accumulation and clipping.
+        float32x4_t feedback = vdupq_n_f32(1.0f - unifiedDecay);
 
         for (int i = 0; i < FDN_CHANNELS; i++) mixed[i] = vmulq_f32(mixed[i], decayAll);
 
-        // 5. Add input (feedback)
+        // 5. Add input
         mixed[0] = vaddq_f32(mixed[0], vmulq_f32(delayedMono, feedback));
 
 
@@ -1290,13 +1293,16 @@ private:
             modPhaseVec[ch] = temp;
         }
 
-        // Frequency-dependent decay
         float mixed[FDN_CHANNELS];
         float loopGain = 0.7f + (decay * 0.295f);
+        float unifiedDecay = fminf(0.95f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
 
         applyHadamardScalar(delayOut, mixed);
 
-        mixed[0] += delayedInput * (1.0f - decay);
+        // Apply same loop gain as process4Samples (was missing — scalar path had no decay).
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) mixed[ch] *= unifiedDecay;
+
+        mixed[0] += delayedInput * (1.0f - unifiedDecay);
 
         // Exotic "Low Pitching" Shimmer (PILL=4)
         // Injects a ring-modulated copy of the wet signal back into the network.
