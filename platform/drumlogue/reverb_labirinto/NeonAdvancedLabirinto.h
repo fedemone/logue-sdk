@@ -226,10 +226,10 @@ public:
         return currentPreset;
     }
 
-    inline void loadPreset(int32_t value) {
-    if (current_preset_ != index) {
+    inline void loadPreset(int32_t index) {
+      if (current_preset_ != index) {
         current_preset_ = index;
-        setFilterType(value);
+        setFilterType(index);
         for (uint8_t i = 0; i < k_total; i++) {
             setParameter(i, k_presets[index][i]);
             }
