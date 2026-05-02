@@ -126,44 +126,44 @@ public:
     };
     enum ProgramIndex {
         k_Init = 0,         // 0
-        k_Marimba,          // 1 -sample: marimba-hit-c4_C_minor.wav
+        k_Marimba,          // 1 -sample: marimba-hit-c4_C_minor.wav (524Hz +/- 50Hz)
         k_808Sub,           // 2
-        k_AcSnare,          // 3  -sample: acoustic-snare.wav, snare heavy.wav
-        k_TubularBell,      // 4  -samples: tubular-bell*.wav
-        k_Timpani,          // 5  -sample: Orchestral-Timpani-C.wav
-        k_Djambe,           // 6  -samples: Djambe-B3.wav, Djambe-A3.wav
-        k_Taiko,            // 7  -sample: Taiko-Hit.wav
-        k_MarchSnare,       // 8  -sample: Marching-Snare-Drum-A#-minor
-        k_Koto,             // 9  -sample: Koto-B5.wav, Koto-B5.wav, Koto-Stab-F#.wav
-        k_Vibraphone,       // 10  -sample: vibraphone_C_major.wav, vibraphone_C_major1.wav
-        k_Woodblock,        // 11  -sample: Woodblock.wav, Woodblock1.wav
-        k_AcousticTom,      // 12  -sample: Tom1-001-CloseRoom.wav, Tom2-004-CloseRoom.wav
-        k_Cymbal,           // 13  -sample: cymbal-Crash16Inch.wav
-        k_Gong,             // 14  -sample: Chinese-Gong.wav, Gong-long-G#.wav
-        k_Kalimba,          // 15  -sample: kalimba-e_E.wav
-        k_SteelPan,         // 16  -sample: steel-pan-Nova Drum Real C 432.wav, steel-pan-PERCY-C4-SHort.wav, steel-pan-yudin C3.wav
-        k_Claves,           // 17  -sample: percussion-clave-like-hit-107112.mp3, wetclave.wav
-        k_Cowbell,          // 18  -sample: cowbell_2.wav
-        k_Triangle,         // 19  -sample: Triangle-Bell_F5.wav, Triangle-Bell_F5.wav,
-        k_KickDrum,         // 20  -sample: KickA-Hard-012-CloseRoom.wav
-        k_Clap,             // 21  -sample: handclap.wav
-        k_Shaker,           // 22  -sample: MaracasPair.wav
-        k_Flute,            // 23  -sample: Flute-A2.wav, Flute-D3.wav
-        k_Clarinet,         // 24  -sample: Clarinet-A-minor.wav, Clarinet-C-minor.wav
+        k_AcSnare,          // 3  -sample: acoustic-snare.wav (1436Hz +/- 20Hz), snare heavy.wav (1287Hz +/- 80Hz)
+        k_TubularBell,      // 4  -samples: tubular-bell-47849.wav (oscillates between 1500Hz and 280Hz then settles to 1230Hz)
+        k_Timpani,          // 5  -sample: Orchestral-Timpani-C.wav (239Hz +/- 20Hz)
+        k_Djambe,           // 6  -samples: Djambe-B3.wav (starts over 600Hz and settles to 215Hz), Djambe-A3.wav (starts over 1100Hz and settles to 747Hz +/- 10Hz)
+        k_Taiko,            // 7  -sample: Taiko-Hit.wav (1582Hz +/- 50Hz)
+        k_MarchSnare,       // 8  -sample: Marching-Snare-Drum-A#-minor (1750Hz +/- 100Hz)
+        k_Koto,             // 9  -sample: Koto-B5.wav (starts as 700Hz and settles to 290Hz), Koto-B5.wav (starts as 650Hz goes up to 900Hz and settles 200Hz), Koto-Stab-F#.wav (750Hz +/- 100Hz)
+        k_Vibraphone,       // 10  -sample: vibraphone_C_major.wav (goes up to 1398Hz then settles to 273Hz), vibraphone_C_major1.wav  (262Hz +/- 20Hz)
+        k_Woodblock,        // 11  -sample: Woodblock.wav (3500Hz +/- 100Hz), Woodblock1.wav (858Hz +/- 30Hz)
+        k_AcousticTom,      // 12  -sample: Tom1-001-CloseRoom.wav (428Hz +/- 50Hz), Tom2-004-CloseRoom.wav (288Hz + 50Hz)
+        k_Cymbal,           // 13  -sample: cymbal-Crash16Inch.wav (starts as 2000Hz goes down to 650Hz and settles to 1000Hz - a lot of oscillations)
+        k_Gong,             // 14  -sample: Chinese-Gong.wav, Gong-long-G#.wav (starts with 800Hz and settles to 1680Hz +/- 10Hz)
+        k_Kalimba,          // 15  -sample: kalimba-e_E.wav (1398Hz +/- 50Hz)
+        k_SteelPan,         // 16  -sample: steel-pan-Nova Drum Real C 432.wav (257Hz +/- 30Hz), steel-pan-PERCY-C4-SHort.wav (260Hz +/- 50Hz), steel-pan-yudin C3.wav (220Hz +/- 20Hz)
+        k_Claves,           // 17  -sample: percussion-clave-like-hit-107112.mp3 (950Hz +/- 40Hz), wetclave.wav  (2629Hz +/- 20Hz)
+        k_Cowbell,          // 18  -sample: Cowbell_2.wav (408Hz +/- 30Hz)
+        k_Triangle,         // 19  -sample: Triangle-Bell_C#.wav (3753Hz +/- 100Hz), Triangle-Bell_F5.wav (795Hz +/- 100Hz)
+        k_KickDrum,         // 20  -sample: KickA-Hard-012-CloseRoom.wav (1016Hz +/- 100Hz)
+        k_Clap,             // 21  -sample: 07_Clap_05_SP.wav (1532 +/- 100Hz)
+        k_Shaker,           // 22  -sample: MaracasPair.wav (11292 +/- 100Hz)
+        k_Flute,            // 23  -sample: Flute-A2.wav (427Hz +/- 5Hz), Flute-D3.wav (577Hz +/- 5Hz)
+        k_Clarinet,         // 24  -sample: Clarinet-A-minor.wav (120Hz +/- 10Hz), Clarinet-C-minor.wav (523Hz +/- 10Hz)
         k_PluckBass,        // 25  -sample:
-        k_GlassBowl,        // 26  -sample: glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav, glass-singing-bowl_23042017-01-raw-71015.wav
+        k_GlassBowl,        // 26  -sample: glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav (oscillates between 200Hz and 1550Hz), glass-singing-bowl_23042017-01-raw-71015.wav
         k_GuitarStr,        // 27 — reference: Karplus-Strong string at A4 for model validation
-        k_HiHatClosed,      // 28  -sample: HatClosedLive3.wav, OpenHatBig.wav
-        k_HiHatOpen,        // 29  -sample: TightClosedHat.wav
-        k_Conga,            // 30  -sample: Bongo_Conga2.wav
-        k_Handpan,          // 31  -sample: Tabla-Drum-Hit-D4_.wav, percussion-one-shot-tabla-3_C_major.wav
+        k_HiHatClosed,      // 28  -sample: HatClosedLive3.wav (12597Hz +/- 100Hz), OpenHatBig.wav (11746Hz +/- 100Hz)
+        k_HiHatOpen,        // 29  -sample: TightClosedHat.wav (11635Hz +/- 100Hz)
+        k_Conga,            // 30  -sample: Bongo_Conga2.wav (286Hz +/- 10Hz)
+        k_Handpan,          // 31  -sample: Tabla-Drum-Hit-D4_.wav (237Hz +/- 30Hz), percussion-one-shot-tabla-3_C_major.wav (323Hz +/- 30Hz)
         k_BellTree,         // 32  -sample:
         k_SlitDrum,         // 33  -sample:
-        k_Ride,             // 34  -sample: cymbal-Ride18Inch.wav
-        k_RideBell,         // 35  -sample: cymbal-RideBell20InchSabian.wav
-        k_Bongo,            // 36  -sample: Bongo_Conga_Mute4.wav
-        k_GlassBottle,      // 37  -sample: GlassBottle.wav
-        k_Tick,             // 38  -sample: one-tic-clock.wav,ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav, high-church-clock-fx_100bpm.wav
+        k_Ride,             // 34  -sample: cymbal-Ride18Inch.wav (start over 2000Hz and settles to 761Hz), CrashA-001-ClosedRoom.av (starts as 850Hz goes up to 1650Hz and settles to 645 - lot of oscillations in between)
+        k_RideBell,         // 35  -sample: cymbal-RideBell20InchSabian.wav (starts over 2000Hz goes down to 1600Hz and settles to 867Hz)
+        k_Bongo,            // 36  -sample: Bongo_Conga_Mute4.wav (430Hz +/- 100Hz)
+        k_GlassBottle,      // 37  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
+        k_Tick,             // 38  -sample: one-tic-clock.wav,ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav (550Hz +/- 100Hz), high-church-clock-fx_100bpm.wav (strats over 800Hz and settles to 395Hz)
         k_NumPrograms       // 39 — marker (count)
     };
 
