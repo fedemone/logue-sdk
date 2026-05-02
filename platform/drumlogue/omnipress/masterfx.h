@@ -428,14 +428,23 @@ private:
             case DIST_MODE_DIST2:
             case DIST_MODE_DIST3:
             case DIST_MODE_BOTH: {
-                // Apply harmonics BEFORE compression: x^2 and x^3 terms are
-                // imperceptibly small on the already-attenuated compressed signal.
-                // Distorting the full-level input then compressing gives audible
-                // harmonic content, emulating "drive into compressor" signal chain.
-                float32x4_t harm_l = generate_harmonics(&distressor_, main_l, distressor_.dist_mode);
-                float32x4_t harm_r = generate_harmonics(&distressor_, main_r, distressor_.dist_mode);
-                *out_l = vmulq_f32(harm_l, gain_lin);
-                *out_r = vmulq_f32(harm_r, gain_lin);
+                // DRIVE scales the pre-gain into the harmonic stage so the DRIVE
+                // knob controls saturation intensity (same gain/makeup formula as
+                // wavefolder_set_drive): at drive=0 harmonics come from unity-gain
+                // input; at drive=100% input is 3x before the polynomial, producing
+                // far more pronounced 2nd/3rd harmonic content.
+                float pre_gain = 1.0f + drive_ * 2.0f;
+                float makeup   = 1.0f / pre_gain;
+                float32x4_t pre_v = vdupq_n_f32(pre_gain);
+                float32x4_t mkp_v = vdupq_n_f32(makeup);
+                float32x4_t harm_l = generate_harmonics(&distressor_,
+                                                        vmulq_f32(main_l, pre_v),
+                                                        distressor_.dist_mode);
+                float32x4_t harm_r = generate_harmonics(&distressor_,
+                                                        vmulq_f32(main_r, pre_v),
+                                                        distressor_.dist_mode);
+                *out_l = vmulq_f32(vmulq_f32(harm_l, mkp_v), gain_lin);
+                *out_r = vmulq_f32(vmulq_f32(harm_r, mkp_v), gain_lin);
                 break;
             }
             case DIST_MODE_CLEAN:
