@@ -143,6 +143,9 @@ public:
         multiband_init(&multiband_, samplerate_);
         distressor_reset(&distressor_, samplerate_);
         update_opto_coeff(&distressor_, release_coeff_);
+        // Sync distressor envelope detector to current user attack/release so all
+        // three modes have the same detector timing and produce matching output levels.
+        envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
         overlord_init(&overlord_, samplerate_);
         smoothing_init(&smoother_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
@@ -481,6 +484,7 @@ public:
                 attack_ms_ = value * 0.1f;
                 attack_coeff_ = fasterexpf(-1.0f / (attack_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
+                envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
                 smoothing_set_times(&smoother_, attack_ms_, release_ms_);
                 break;
 
@@ -488,6 +492,7 @@ public:
                 release_ms_ = static_cast<float>(value);
                 release_coeff_ = fasterexpf(-1.0f / (release_ms_ * 0.001f * samplerate_));
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
+                envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
                 smoothing_set_times(&smoother_, attack_ms_, release_ms_);
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
