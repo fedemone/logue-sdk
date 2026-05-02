@@ -227,10 +227,12 @@ public:
     }
 
     inline void loadPreset(int32_t value) {
-        currentPreset = value;
+    if (current_preset_ != index) {
+        current_preset_ = index;
         setFilterType(value);
         for (uint8_t i = 0; i < k_total; i++) {
-            setParameter(i, k_presets[value][i]);
+            setParameter(i, k_presets[index][i]);
+            }
         }
     }
 
@@ -245,7 +247,7 @@ public:
 
         switch (index) {
         case k_paramProgram:
-            // do nothing to avoid recursion
+          if (currentPreset != value) loadPreset(value);
             break;
         case k_time: // TIME  1..100 → decay 0.01..0.99
             setDecay(0.01f + (value - 1) / 99.0f * 0.98f);
@@ -1404,7 +1406,7 @@ private:
     // ID 9:  SHMR 0..100               default 35 (Hz)
     // ID 10: PDLY   0..100             default 0 (ms)
     int32_t params_[k_total]  __attribute__((aligned(16)));
-
+    int32_t current_preset_ = 0;
     float sampleRate;
     int writePos;
     float decay;

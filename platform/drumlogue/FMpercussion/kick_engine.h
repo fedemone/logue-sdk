@@ -165,7 +165,7 @@ fast_inline float32x4_t kick_engine_process(kick_engine_t* kick,
     // now even low sweep have a click
     float32x4_t click_boost = vmulq_f32(env8,
                                         vaddq_f32(
-                                            vmulq_n_f32(kick->sweep_depth, 3.0f),
+                                            vmulq_n_f32(kick->sweep_depth, 4.0f),
                                             vdupq_n_f32(1.0f)));
     index = vaddq_f32(vaddq_f32(index, lfo_index_add), click_boost);
 

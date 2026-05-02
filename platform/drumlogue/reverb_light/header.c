@@ -15,7 +15,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id     = 0x00020000U,
     .version     = 0x00010000U,   // v1.0.0
     .name        = "LuceAlNeon",
-    .num_presets = 4,
+    .num_presets = 0,
     .num_params  = 14,
     .params = {
         // Page 1
