@@ -210,7 +210,7 @@ public:
 
         // Try possibly a value of Q: 8.0f to makes them "ring" like physical modal resonators.
         // In case 4.0f is too wide/damped to sound like a distinct pitch.
-        const float Q = 4.0f;
+        const float Q = 6.0f + shift_factor * 2.0f;
 
         for (int i = 0; i < NUM_RESONATORS; i++) {
             // Apply the UI shift
@@ -220,13 +220,13 @@ public:
             if (hz > sampleRate * 0.45f) hz = sampleRate * 0.45f;
             // Constant Peak Gain Bandpass Biquad Math
             float w0 = 2.0f * M_PI * hz / sampleRate;
-            float alpha = sinf(w0) / (2.0f * Q);
+            float alpha = fastersinfullf(w0) / (2.0f * Q);
 
             float a0 = 1.0f + alpha;
             color_coeffs[i].b0 = alpha / a0;
             color_coeffs[i].b1 = 0.0f;
             color_coeffs[i].b2 = -alpha / a0;
-            color_coeffs[i].a1 = -2.0f * cosf(w0) / a0;
+            color_coeffs[i].a1 = -2.0f * fastercosfullf(w0) / a0;
             color_coeffs[i].a2 = (1.0f - alpha) / a0;
         }
     }
@@ -620,8 +620,8 @@ public:
                     color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
                 }
                 // Scale down since we are summing 6 high-Q resonant peaks.
-                color_l *= 0.30f;
-                color_r *= 0.30f;
+                // color_l *= 0.50f;
+                // color_r *= 0.50f;
             }
             // ==========================================
             // PATH 5: SPARKLE (Stereo Pitched-up S&H Pops)
@@ -672,9 +672,9 @@ public:
             float irid_r = 0.0f;
             if (irid_amt > 0.0f) {
                 {
-                    // 1. Refraction: Speed wobbles microscopically around 2.0x
+                    // 1. Refraction: Speed wobbles microscopically around .9x
                     // Assuming you have an LFO available (like the one used in GLOW)
-                    float irid_speed = 2.0f + (fastersinfullf(glow_lfo_phase * 0.5f) * 0.015f);
+                    float irid_speed = 0.9f + (fastersinfullf(glow_lfo_phase * 0.5f) * 0.015f);
                     irid_phase += irid_speed;
                     if (irid_phase >= 2048.0f) irid_phase -= 2048.0f;
                     float irid_mono = (rev_l + rev_r) * 0.5f;
@@ -701,8 +701,8 @@ public:
                     // 3. Chromatic Aberration (Stereo Splitting)
                     // Instead of summing to mono, Head 1 favors Left and Head 2 favors Right!
                     // As they fade in and out, the iridiscence swirls across the stereo image.
-                    float irid_raw_l = (so1 * fade) + (so2 * (1.0f - fade) * 0.3f);
-                    float irid_raw_r = (so2 * fade) + (so1 * (1.0f - fade) * 0.3f);
+                    float irid_raw_l = (so1 * fade) + (so2 * (1.0f - fade) * 0.29f);
+                    float irid_raw_r = (so2 * fade) + (so1 * (1.0f - fade) * 0.31f);
 
                     // 4. Luminescence (Soft Saturation)
                     // Pushing it into a fast_tanh creates high-frequency density ("glow")
@@ -712,8 +712,8 @@ public:
 
                     // 5. Taming the harshness (Stereo LPF)
                     // Asymmetric filtering: Right side is brighter and fizzier
-                    irid_lpf_l += 0.1359f * (irid_raw_l - irid_lpf_l);
-                    irid_lpf_r += 0.1703f * (irid_raw_r - irid_lpf_r);
+                    irid_lpf_l += 0.1409f * (irid_raw_l - irid_lpf_l);
+                    irid_lpf_r += 0.1603f * (irid_raw_r - irid_lpf_r);
 
                     irid_l = irid_lpf_l;
                     irid_r = irid_lpf_r;
