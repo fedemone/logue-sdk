@@ -2608,3 +2608,55 @@ Optimization pass (requested):
   (`x / (1 + |x|)`) using `vrecpe` + `vrecps` refinement to reduce scalar divides.
 
 These changes keep behavior equivalent while lowering divide pressure in render loops
+
+## Phase 35: Classics rescue pass (HW-priority character first)
+
+Goal shift:
+- Prioritize recognizable instrument character on hardware for classics over exact sample lock.
+- Focused presets: AcSnare, Timpani, AcTom, Kick, HHat-C, HHat-O.
+
+Changes applied (preset table only):
+- AcSnare: increased shell/body and wire-burst energy; reduced bright/stringy bias.
+- Timpani: darker/boomier body with longer low sustain and broader transient.
+- AcTom: fuller low body and cleaner impact to reduce string-like ring.
+- Kick: more low-end thump, less click dominance.
+- HHat-C/HHat-O: adjusted decay/noise brightness split for clearer closed chick + open shimmer.
+
+Rationale:
+- Prior iterations plateaued with small score deltas while HW listening reported weak character.
+- This pass intentionally biases core perceptual identity for rhythm use-cases.
+
+## Phase 36: Order-confirmed model rescue step 1+2 (classics low-body path)
+
+Applied after user-confirmed order:
+1) Kick low-thump path.
+2) Timpani/Tom low-body extension.
+
+Implementation details:
+- Added a lightweight per-voice boom oscillator envelope path (private state, no UI params):
+  - `boom_phase`, `boom_inc`, `boom_env`, `boom_decay`, `boom_mix`.
+- Initialized/cleared boom state in voice reset paths.
+- Enabled boom injection for top-priority classics:
+  - Kick (`k_KickDrum`): strongest low-thump body.
+  - Timpani (`k_Timpani`): deeper longer boom.
+  - AcTom (`k_AcousticTom`): medium low-body support.
+  - AcSnare (`k_AcSnare`): subtle shell-body reinforcement only.
+- Mixed boom in render loop under `ENABLE_STAGE2_MODAL_PILOT` using fast sine path.
+
+Reason:
+- Prior tuning-only passes plateaued while HW feedback reported missing low-body identity.
+
+## Phase 37: Classics rescue step 3 (snare wire/body rebalance)
+
+Applied after order confirmation:
+- Added tunable snare-wire resonator coefficients in `ExciterState`
+  (`snare_wire_a1`, `snare_wire_a2`) and wired reset initialization.
+- Preset-specific wire tuning at NoteOn:
+  - AcSnare: stronger/brighter wire crack.
+  - MarchSnare: tighter/drier wire tone.
+- Replaced hard-coded wire resonator coefficients in `process_exciter()` with
+  per-voice coefficients.
+
+Purpose:
+- Reduce "string-like" snare perception and strengthen recognizable snare identity
+  without adding UI parameters or heavy CPU load.

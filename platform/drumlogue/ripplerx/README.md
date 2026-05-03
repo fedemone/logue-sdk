@@ -81,7 +81,7 @@ Here is how we will build those missing pieces without losing our ultra-fast, ba
 To excite the passive waveguide resonators, the engine uses lightweight mathematical impulse generators.
 - **The Mallet:** A heavily damped, single-cycle pulse simulating a physical strike.
 - **The Noise:** A fast PRNG noise burst shaped by an AR (Attack-Release) envelope to simulate breath, bow friction, or snare wires.
-Both are implemented as flat, inline C++ structs to minimize function-call overhead.
+Both are implemented as flat, inline C structs to minimize function-call overhead.
 
 ### Preset & UI Translation
 The synthesizer reuses the legacy preset parameter arrays (Bells, Marimba, etc.). The 0-1000 UI ranges are caught by the `setParameter` function and mathematically translated into physical Waveguide coefficients (Feedback $g$, Filter Cutoff $H(z)$, Dispersion) in the control thread. This allows legacy UI configurations to seamlessly drive the new acoustic engine without modification.
@@ -169,3 +169,31 @@ The synthesizer reuses the legacy preset parameter arrays (Bells, Marimba, etc.)
 ### Additional collection / paywalled candidate
 - AIP collection: Modeling of Musical Instruments
   https://pubs.aip.org/collection/1314/Modeling-of-Musical-Instruments
+
+## Pre-HW tuning workflow: Step 2 + Step 3
+
+For the deterministic note-lock workflow, use `note_map_priority.json` and run:
+
+```bash
+./run_phase23_tuning.sh
+```
+
+This executes:
+- Step 2: pitch-only validation pass with locked notes over classics + guard presets.
+- Step 3A: classics-first iterative tuning pass (`AcSnare,Kick,HHat-C,HHat-O,Timpani,Ac Tom`).
+- Step 3B: guard-set pass (`Flute,Clrint,Tick,Clap,Kalimba`) to check regression risk.
+
+Outputs are written under:
+- `batch_reports/phase2_pitch_validation`
+- `batch_reports/phase3_classics`
+- `batch_reports/phase3_guard`
+
+### Readiness check before Step 2/3 runs
+
+Use the helper below to verify whether the target set has sample coverage:
+
+```bash
+./phase23_readiness.py
+```
+
+If any target presets are listed as missing, provide curated sample files (or explicit mapping overrides) before running long tuning passes.

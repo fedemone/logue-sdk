@@ -381,6 +381,19 @@ SAMPLE_NOTE_OVERRIDES = {
     "WoodBlock1.wav": 60,
 }
 
+# Deterministic defaults for noisy/percussive classes where audio f0 detection
+# is often unstable and harms timbre-only optimization.
+PRESET_RENDER_NOTE_DEFAULTS = {
+    "AcSnre": 38,
+    "Kick": 36,
+    "HHat-C": 79,
+    "HHat-O": 79,
+    "Clap": 60,
+    "Shaker": 72,
+    "Timpni": 40,
+    "Ac Tom": 45,
+}
+
 # Provisional per-preset pitch calibration in semitones, applied after note
 # inference/overrides. Keep conservative and only for pitched presets.
 PRESET_NOTE_CALIBRATION = {
@@ -427,19 +440,27 @@ def midi_from_hz(hz: float, fallback: int = 60) -> int:
     return max(0, min(127, midi))
 
 
-def infer_midi_note_from_audio(sample: Path, fallback: int = 60) -> int:
+def infer_midi_note_from_audio(sample: Path, fallback: int = 60, fmin: float = 35.0, fmax: float = 4000.0) -> int:
     """Infer pitch from waveform autocorrelation (useful when filename has no note token)."""
     try:
         sig, sr, _ = read_wav_mono(sample)
         if not sig:
             return fallback
         early = sig[: min(len(sig), int(sr * 0.35))]
-        f0 = autocorr_f0(early, sr, fmin=35.0, fmax=4000.0)
+        f0 = autocorr_f0(early, sr, fmin=fmin, fmax=fmax)
         return midi_from_hz(f0, fallback=fallback)
     except Exception:
         return fallback
 
 
+
+
+def pitch_search_range_for_preset(preset_name: str) -> Tuple[float, float]:
+    if preset_name in {"HHat-C", "HHat-O", "Ride", "RideBll", "Cymbl"}:
+        return (400.0, 16000.0)
+    if preset_name in {"Kick", "Timpni", "AcSnre", "Ac", "Taiko", "Djmb", "MrchSnr"}:
+        return (20.0, 2500.0)
+    return (35.0, 5000.0)
 def apply_preset_note_calibration(preset_name: str, note: int) -> int:
     offset = PRESET_NOTE_CALIBRATION.get(preset_name, 0)
     # Safety clamp for accidental over-calibration.
@@ -559,7 +580,7 @@ def suggest_tuning(metrics: Dict[str, float], preset_values: List[int]) -> List[
     return hints
 
 
-def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str, float]) -> float:
+def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str, float], goal_mode: str = "exact") -> float:
     score = base_score
     family = PRESET_TO_FAMILY.get(preset_name, "other")
 
@@ -575,6 +596,18 @@ def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str,
         score -= 0.20 * abs(metrics.get("note_offset_semitones", 0.0))
         score -= 6.0 * metrics.get("timbre_vec_cosdist", 0.0)
         score -= 2.0 * metrics.get("centroid_corr_dist", 0.0)
+
+    if goal_mode == "recognizable":
+        # For inharmonic/metallic instruments we care more about recognizability
+        # and character than exact note matching.
+        if preset_name in {"Cymbl", "Ride", "RidBel", "Trngle", "Gong", "HHat-C", "HHat-O", "Tick", "TblrBel"}:
+            score -= 0.20 * metrics.get("centroid_pct", 0.0)
+            score -= 0.20 * metrics.get("rolloff_pct", 0.0)
+            score -= 0.30 * metrics.get("flatness_pct", 0.0)
+            score -= 0.30 * metrics.get("flux_pct", 0.0)
+            score -= 10.0 * metrics.get("timbre_vec_cosdist", 0.0)
+            score += 0.05 * metrics.get("f0_pct", 0.0)
+            score += 0.10 * abs(metrics.get("note_offset_semitones", 0.0))
 
     return score
 
@@ -667,6 +700,12 @@ def parse_args() -> argparse.Namespace:
         help="Absolute mean-score delta threshold used to count an iteration as stable.",
     )
     p.add_argument(
+        "--goal-mode",
+        choices=["exact", "recognizable"],
+        default="exact",
+        help="Scoring goal: exact sample match or recognizable instrument character.",
+    )
+    p.add_argument(
         "--family-pitch-thresholds",
         type=str,
         default="",
@@ -674,6 +713,18 @@ def parse_args() -> argparse.Namespace:
             "Optional family pitch mismatch thresholds in percent, format "
             "'membranes:10,mallets:10,wood:10'. Defaults are applied when omitted."
         ),
+    )
+    p.add_argument(
+        "--sample-map-file",
+        type=Path,
+        default=None,
+        help="Optional JSON map (sample filename -> preset name) to override sample-to-preset matching.",
+    )
+    p.add_argument(
+        "--note-map-file",
+        type=Path,
+        default=None,
+        help="Optional JSON map (sample-name or preset-name -> MIDI note) to lock render notes.",
     )
     return p.parse_args()
 
@@ -696,6 +747,46 @@ def parse_family_pitch_thresholds(raw: str) -> Dict[str, float]:
             raise SystemExit(f"Invalid threshold value in token: {token}") from e
     return out
 
+
+def load_note_map(path: Path | None) -> Dict[str, int]:
+    if path is None:
+        return {}
+    if not path.exists():
+        raise SystemExit(f"Note-map file not found: {path}")
+    try:
+        data = json.loads(path.read_text())
+    except Exception as e:
+        raise SystemExit(f"Invalid note-map JSON: {path}") from e
+    if not isinstance(data, dict):
+        raise SystemExit(f"Note-map must be a JSON object: {path}")
+    out: Dict[str, int] = {}
+    for k, v in data.items():
+        try:
+            out[str(k)] = max(0, min(127, int(v)))
+        except Exception:
+            continue
+    return out
+
+
+
+def load_sample_map(path: Path | None, presets: Dict[str, PresetRow]) -> Dict[str, str]:
+    if path is None:
+        return {}
+    if not path.exists():
+        raise SystemExit(f"Sample-map file not found: {path}")
+    try:
+        data = json.loads(path.read_text())
+    except Exception as e:
+        raise SystemExit(f"Invalid sample-map JSON: {path}") from e
+    if not isinstance(data, dict):
+        raise SystemExit(f"Sample-map must be a JSON object: {path}")
+    out: Dict[str, str] = {}
+    for sample_name, preset_name in data.items():
+        resolved = resolve_preset_name(str(preset_name), presets)
+        if resolved is None:
+            continue
+        out[str(sample_name)] = resolved
+    return out
 
 def run_one_iteration(
     args: argparse.Namespace,
@@ -722,15 +813,30 @@ def run_one_iteration(
 
     mapped: List[Tuple[Path, PresetRow, int]] = []
     unmapped: List[str] = []
+    note_map = load_note_map(args.note_map_file)
+    sample_map = load_sample_map(args.sample_map_file, presets)
 
     for s in sample_files:
-        pname = map_sample_to_preset(s, presets)
+        pname = sample_map.get(s.name)
+        if pname is None:
+            pname = map_sample_to_preset(s, presets)
         if pname is None:
             unmapped.append(s.name)
             continue
         if selected_presets is not None and pname not in selected_presets:
             continue
-        render_note = infer_midi_note_from_audio(s, fallback=60) if args.prefer_audio_pitch else infer_midi_note_from_sample_name(s, fallback=60)
+        if s.name in note_map:
+            render_note = note_map[s.name]
+        elif pname in note_map:
+            render_note = note_map[pname]
+        elif pname in PRESET_RENDER_NOTE_DEFAULTS:
+            render_note = PRESET_RENDER_NOTE_DEFAULTS[pname]
+        else:
+            if args.prefer_audio_pitch:
+                fmin, fmax = pitch_search_range_for_preset(pname)
+                render_note = infer_midi_note_from_audio(s, fallback=60, fmin=fmin, fmax=fmax)
+            else:
+                render_note = infer_midi_note_from_sample_name(s, fallback=60)
         render_note = apply_preset_note_calibration(pname, render_note)
         mapped.append((s, presets[pname], render_note))
 
@@ -761,7 +867,7 @@ def run_one_iteration(
         comp["render_note"] = render_note
         comp["sample"] = sample.name
         comp["raw_score"] = comp["score"]
-        comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"])
+        comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"], goal_mode=args.goal_mode)
         comp["suggestions"] = suggest_tuning(comp["metrics"], preset.values)
         comp["estimated_runs_to_target"] = estimate_runs_needed(
             comp["score"],
