@@ -226,12 +226,11 @@ public:
         return currentPreset;
     }
 
-    inline void loadPreset(int32_t index) {
-      if (current_preset_ != index) {
-        current_preset_ = index;
-        setFilterType(index);
-        for (uint8_t i = 0; i < k_total; i++) {
-            setParameter(i, k_presets[index][i]);
+    inline void loadPreset(int32_t value) {
+        if (currentPreset != value) {
+            setFilterType(value);
+            for (uint8_t i = 0; i < k_total; i++) {
+                setParameter(i, k_presets[value][i]);
             }
         }
     }
@@ -588,7 +587,7 @@ public:
         }
     }
 
-    void addColouredNoise(float32x4_t* signals, int numChannels) {
+    void addColouredNoise(float32x4_t* signals, int numChannels, float gainScale = 1.0f) {
         if (filterMode != kFilterNoise || noiseGain < 0.001f) return;
 
         for (int ch = 0; ch < numChannels; ch++) {
@@ -627,7 +626,7 @@ public:
             }
             // Inject the colored noise into the FDN channel
             float32x4_t noise = vld1q_f32(n_out);
-            signals[ch] = vmlaq_n_f32(signals[ch], noise, noiseGain);
+            signals[ch] = vmlaq_n_f32(signals[ch], noise, noiseGain * gainScale);
         }
     }
 
@@ -1062,6 +1061,17 @@ private:
         float fcMod = smoothedLfoValue * modAmount * 500.0f;  // ± up to 500 Hz
 
         // =================================================================
+        // Compute unified loop gain (needed before noise injection)
+        // Cap at 0.95: gives ~5.7s RT60 for the 42ms channel, builds to 71% in 1 second.
+        // =================================================================
+        float loopGain = 0.7f + (decay * 0.295f);
+        float unifiedDecay = fminf(0.95f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
+        float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
+        // Input gain = 1 - unifiedDecay ensures steady-state amplitude ≤ 1.0 for any
+        // combination of TIME/LOW/HIGH — prevents accumulation and clipping.
+        float32x4_t feedback = vdupq_n_f32(1.0f - unifiedDecay);
+
+        // =================================================================
         // Apply Hadamard mixing matrix (vectorized)
         // =================================================================
         float32x4_t mixed[FDN_CHANNELS];
@@ -1074,30 +1084,17 @@ private:
         applyResonantFilterModulated(mixed, FDN_CHANNELS, fcMod);
 
         // 3. Inject Environmental Noise (Brown, Pink, White, Blue, Violet, Grey)
-        addColouredNoise(mixed, FDN_CHANNELS);
+        // Scale noise by (1 - unifiedDecay) so FDN steady-state amplitude ≤ noiseGain
+        // regardless of decay setting (prevents stellare white-noise explosion).
+        addColouredNoise(mixed, FDN_CHANNELS, 1.0f - unifiedDecay);
 
         // 4. Apply cross‑channel feedback
         applyCrossFeedback(mixed);
 
-        // =================================================================
-        // Apply decay uniformly to all channels using the geometric mean of
-        // highDecayMult and lowDecayMult. This preserves the warmth/brightness
-        // balance controls while avoiding L/R stereo imbalance that would result
-        // from applying different decay multipliers to the two channel groups.
-        // =================================================================
-        // 4. Apply decay (using unified decay factor)
-        // Cap at 0.95: gives ~5.7s RT60 for the 42ms channel, builds to 71% in 1 second.
-        // (Previous 0.995 cap caused 58s RT60 — reverb took 10+ seconds to become audible.)
-        float loopGain = 0.7f + (decay * 0.295f);
-        float unifiedDecay = fminf(0.95f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
-        float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        // Input gain = 1 - unifiedDecay ensures steady-state amplitude ≤ 1.0 for any
-        // combination of TIME/LOW/HIGH — prevents accumulation and clipping.
-        float32x4_t feedback = vdupq_n_f32(1.0f - unifiedDecay);
-
+        // 5. Apply decay
         for (int i = 0; i < FDN_CHANNELS; i++) mixed[i] = vmulq_f32(mixed[i], decayAll);
 
-        // 5. Add input
+        // 6. Add input
         mixed[0] = vaddq_f32(mixed[0], vmulq_f32(delayedMono, feedback));
 
 
@@ -1412,7 +1409,6 @@ private:
     // ID 9:  SHMR 0..100               default 35 (Hz)
     // ID 10: PDLY   0..100             default 0 (ms)
     int32_t params_[k_total]  __attribute__((aligned(16)));
-    int32_t current_preset_ = 0;
     float sampleRate;
     int writePos;
     float decay;

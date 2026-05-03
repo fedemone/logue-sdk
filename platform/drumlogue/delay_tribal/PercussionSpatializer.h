@@ -111,18 +111,18 @@ public:
     PercussionSpatializer();
     ~PercussionSpatializer() = default;
 
-    inline int8_t Init(const unit_runtime_desc_t* desc);
-    inline void Teardown();
-    inline void Reset();
-    inline void Resume() {}
-    inline void Suspend() {}
+    int8_t Init(const unit_runtime_desc_t* desc);
+    void Teardown();
+    void Reset();
+    void Resume() {}
+    void Suspend() {}
 
-    inline void setParameter(uint8_t index, int32_t value);
-    inline int32_t getParameterValue(uint8_t index) const;
-    inline const char* getParameterStrValue(uint8_t index, int32_t value) const;
-    inline const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const;
+    void setParameter(uint8_t index, int32_t value);
+    int32_t getParameterValue(uint8_t index) const;
+    const char* getParameterStrValue(uint8_t index, int32_t value) const;
+    const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const;
 
-    inline void Render(const float* in, float* out, size_t frames);
+    void Render(const float* in, float* out, size_t frames);
 
 private:
     static constexpr int kMaxClones = MAX_CLONES;

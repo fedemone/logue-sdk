@@ -28,7 +28,7 @@ PercussionSpatializer::PercussionSpatializer() {
     rebuild_profile();
 }
 
-inline int8_t PercussionSpatializer::Init(const unit_runtime_desc_t* desc) {
+int8_t PercussionSpatializer::Init(const unit_runtime_desc_t* desc) {
     if (desc->samplerate != 48000) return k_unit_err_samplerate;
     if (desc->input_channels != 2 || desc->output_channels != 2) {
         if (desc->input_channels == 1 && desc->output_channels == 1) {
@@ -44,9 +44,9 @@ inline int8_t PercussionSpatializer::Init(const unit_runtime_desc_t* desc) {
     return k_unit_err_none;
 }
 
-inline void PercussionSpatializer::Teardown() {}
+void PercussionSpatializer::Teardown() {}
 
-inline void PercussionSpatializer::Reset() {
+void PercussionSpatializer::Reset() {
     if (!initialized_) return;
     delay_.clear();
     rng_state_ = 0x9E3729B9u;
@@ -239,7 +239,7 @@ void PercussionSpatializer::rebuild_profile() {
     pending_profile_rebuild_ = false;
 }
 
-inline void PercussionSpatializer::setParameter(uint8_t index, int32_t value) {
+void PercussionSpatializer::setParameter(uint8_t index, int32_t value) {
     if (index >= k_total) return;
     params_[index] = (int8_t)value;
 
@@ -278,12 +278,12 @@ inline void PercussionSpatializer::setParameter(uint8_t index, int32_t value) {
     }
 }
 
-inline int32_t PercussionSpatializer::getParameterValue(uint8_t index) const {
+int32_t PercussionSpatializer::getParameterValue(uint8_t index) const {
     if (index >= k_total) return 0;
     return params_[index];
 }
 
-inline const char* PercussionSpatializer::getParameterStrValue(uint8_t index, int32_t value) const {
+const char* PercussionSpatializer::getParameterStrValue(uint8_t index, int32_t value) const {
     static const char* mode_names[] = { "Tribale", "Militare", "Angeli" };
     static const char* clone_names[] = { "2cloni", "4cloni", "6cloni", "8cloni", "10cloni" };
 
@@ -300,7 +300,7 @@ inline const char* PercussionSpatializer::getParameterStrValue(uint8_t index, in
     return nullptr;
 }
 
-inline const uint8_t* PercussionSpatializer::getParameterBmpValue(uint8_t, int32_t) const {
+const uint8_t* PercussionSpatializer::getParameterBmpValue(uint8_t, int32_t) const {
     return nullptr;
 }
 
@@ -438,7 +438,7 @@ float PercussionSpatializer::process_frame(float in_l, float in_r, float& out_l,
     return 0.5f * (std::fabs(out_l) + std::fabs(out_r));
 }
 
-inline void PercussionSpatializer::Render(const float* in, float* out, size_t frames) {
+void PercussionSpatializer::Render(const float* in, float* out, size_t frames) {
     if (!initialized_) {
         std::memset(out, 0, frames * 2 * sizeof(float));
         return;
