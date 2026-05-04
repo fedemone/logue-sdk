@@ -446,7 +446,7 @@ public:
             {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   7,   0,   0, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,   2,   0,   0,  18,   1,   1,   4,   0,   0, 300,   0,1000, 707}, // 10: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
-            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 172,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — softer mallet + InHm0 for cleaner membrane fundamental. rescue pass: fuller low body + clearer stick transient with reduced string-like ring
+            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
             {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,   9,   5,   8, 600,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
             {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,  -4,   0,   0,  20,   7,   1,  17,  20,  10, 800,   0,  30, 707}, // 14: Gong       — softer attack MlSt80 + less dark Mterl-4 + more noise onset NzMx10
             {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 190,  10,   0,   0,   5,   6,   1,   5,   3,   0, 300,   0,1000, 707}, // 15: Kalimba    — Mterl10 warmer bar + InHm6 natural tine spread + TbRd7
@@ -454,7 +454,7 @@ public:
             {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
             {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {  19,  84,   0,   1, 900, 440,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  15,   0,   0, 300,   0,1500, 707}, // 19: Triangle   — harder mallet MlSt440 for cleaner metallic ping onset
-            {  20,  36,   0,   1, 380, 120,   0,   0,   2,   5, 188,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — Dkay165/Mterl3: longer punch tail; softer MlSt110; NzMx8 subtle click layer. rescue pass: added thump/body with darker sustain and reduced high-click dominance
+            {  20,  36,   0,   1, 380, 120,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
             {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  -3,   0,   0,  12,   0,   1,   3,   0,  15, 950,   0, 400, 707}, // 23: Flute      — InHm0 pure tube; NzMx15 breath noise; NzFq400 4kHz breath shimmer
@@ -666,7 +666,13 @@ public:
                 // Stored ÷10 (0-200 represents 0-2000). Divide by 200 (new max).
                 if (value <= 200) {
                     float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.005f));
-                    float g = 0.85f + (norm * 0.149f);
+                    // Drumhead (model 5): percussion skins need a shorter minimum decay
+                    // than strings/bars. Formula [0.45, 0.999] lets Dkay=55 give
+                    // T60≈175ms@65Hz — natural kick/tom body ring before boom takes over.
+                    // Membrane (3) and all other models keep [0.85, 0.999].
+                    float g = ((m_is_resonator_a && m_model_a == 5) || (m_is_resonator_b && m_model_b == 5))
+                              ? (0.45f + norm * 0.549f)
+                              : (0.85f + norm * 0.149f);
                     // master_env gate: exponential 50ms (Decay=0) → 10s (Decay=200).
                     // Decay is the primary sustain control; Rel only gates the noise
                     // burst.  Without this, the master_env would kill the waveguide
@@ -1394,27 +1400,47 @@ public:
             init_modal_modes(1.78f, 2.63f, 3.81f,
                              220.0f, 420.0f, 680.0f, 920.0f,
                              0.16f, 0.85f, 0.70f, 0.52f, 0.38f, 6);
+        } else if (program == k_HiHatClosed) {
+            // Thin circular plate free-edge modes (Chaigne/Chalmers plate theory).
+            // (2,0)=1.00, (3,0)≈2.11 (two-plate proximity detunes vs 2.08 ideal),
+            // (4,0)≈3.43, (2,1)≈3.95.  Very short T60: closed plates damp each other.
+            init_modal_modes(2.11f, 3.43f, 3.95f,
+                             45.0f, 60.0f, 75.0f, 60.0f,
+                             0.24f, 0.80f, 0.65f, 0.48f, 0.32f, 4);
+        } else if (program == k_HiHatOpen) {
+            // Same plate ratios, plates separated — clean modes, much longer ring.
+            init_modal_modes(2.08f, 3.40f, 3.91f,
+                             300.0f, 450.0f, 580.0f, 450.0f,
+                             0.30f, 0.85f, 0.70f, 0.55f, 0.40f, 4);
+        } else if (program == k_Timpani) {
+            // Circular membrane Bessel mode ratios relative to dominant (1,1) mode
+            // (the perceived pitch): (2,1)/1.0, (3,1)/1.340, (4,1)/1.664, (5,1)/1.980.
+            // (5,1) is near the 2nd harmonic → semi-pitched kettle character.
+            init_modal_modes(1.340f, 1.664f, 1.980f,
+                             900.0f, 680.0f, 500.0f, 380.0f,
+                             0.32f, 0.90f, 0.75f, 0.55f, 0.38f, 4);
         }
         // TODO thewse should be set at preset themselves
-        if (program == k_KickDrum) {         // Kick: downward pitch sweep (portamento-like)
+        if (program == k_KickDrum) {
+            // Kick: pitch sweep + low boom. KS feedback_gain is set short (~175ms)
+            // by the Drumhead gain curve (Dkay=55) so the boom oscillator dominates
+            // after the initial attack transient.
             v.pitch_env = 1.0f;
             v.pitch_env_decay = 0.9989f;
-            v.pitch_env_amt = 9.0f; // semitone-domain sweep depth
+            v.pitch_env_amt = 9.0f;
             v.boom_inc = (2.0f * M_PI * 58.0f) / default_sample_rate;
             v.boom_env = 1.0f;
-            v.boom_decay = 0.99925f;
-            v.boom_mix = 0.22f;
-        } else if (program == k_Timpani) {  // Timpani: deeper low-body modal reinforcement.
-            v.boom_inc = (2.0f * M_PI * 92.0f) / default_sample_rate;
-            v.boom_env = 1.0f;
-            v.boom_decay = 0.99955f;
-            v.boom_mix = 0.20f;
-        } else if (program == k_AcousticTom) { // Tom: punch/body lift.
+            v.boom_decay = 0.99940f; // ~270ms boom tail
+            v.boom_mix = 0.40f;      // boom dominates after KS decays
+        } else if (program == k_Timpani) {
+            // Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
+            v.boom_mix = 0.0f;
+        } else if (program == k_AcousticTom) {
             v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99945f;
-            v.boom_mix = 0.16f;
-        } else if (program == k_AcSnare) { // Snare: subtle shell body only.
+            v.boom_mix = 0.24f;
+        } else if (program == k_AcSnare) {
             v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99920f;

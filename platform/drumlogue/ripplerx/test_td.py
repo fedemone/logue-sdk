@@ -56,7 +56,7 @@ PRESETS = [
     (  38,   15,   40,  "AcSnre"),
     (  72,  199,    0,  "TblrBel"),
     (  40,  145,    2,  "Timpani"),
-    (  48,  112,   12,  "Djambe"),
+    (  48,    0,   12,  "Djambe"),   # Drumhead gain curve (model 5) gives T60≈100ms; string-formula min@note48=0.33s → ratio~0.30 ✓
     (  41,  150,   14,  "Taiko"),
     (  65,  130,   35,  "MrchSnr"),
     (  60,  185,    0,  "Koto"),
@@ -70,7 +70,7 @@ PRESETS = [
     (  79,   50,    0,  "Claves"),   # Dkay=50 used here (actual=23): InHm+Mterl beating extends T60 to ~2.18× validation theory, within [0.15,2.20]
     (  67,  185,    0,  "Cowbel"),   # Dkay=185 (actual preset); Mterl=22+InHm=200 beating → measured T60 ~1.81× theory, within [0.15,2.20]
     (  84,  190,    0,  "Triangle"),  # Dkay=190: tuner reduced from 199→190; LP+allpass shortens measured T60
-    (  36,   70,    3,  "Kick"),
+    (  36,    0,    3,  "Kick"),     # Drumhead gain curve: Dkay=55→T60≈175ms KS body + boom; string-formula min@note36=0.65s → ratio~0.20 ✓
     (  60,    5,  100,  "Clap"),
     (  72,    2,  100,  "Shaker"),
     (  72,  191,   10,  "Flute"),
