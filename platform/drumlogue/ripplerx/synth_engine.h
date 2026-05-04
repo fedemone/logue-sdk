@@ -1521,7 +1521,14 @@ public:
                              0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
         }
         // TODO thewse should be set at preset themselves
-        if (program == k_KickDrum) {
+        if (program == k_808Sub) {
+            // 808 bass: classic TR-808 sine-sweep character.
+            // Starts 18 semitones (1.5 oct) above the note and sweeps down in ~100ms.
+            // The long KS sustain (T60~2s) provides the sub-bass body.
+            v.pitch_env = 1.0f;
+            v.pitch_env_decay = 0.9985f;
+            v.pitch_env_amt = 18.0f;
+        } else if (program == k_KickDrum) {
             // Kick: pitch sweep + low boom. KS feedback_gain is set short (~175ms)
             // by the Drumhead gain curve (Dkay=55) so the boom oscillator dominates
             // after the initial attack transient.
