@@ -56,7 +56,7 @@ typedef enum {
 enum parameterState {
   k_paramProgram = 0,
   k_time, k_low, k_high, k_damp,
-  k_wide, k_comp, k_pill, k_shimmer_freq,
+  k_wide, k_diffusion, k_pill, k_shimmer_freq,
   k_pre_delay, k_vibr,
   k_total
 };
@@ -66,7 +66,7 @@ static const char *k_preset_names[k_preset_number] =
 // ============================================================================
 // Factory Presets
 // ============================================================================
-// Each preset: {PRESET, TIME, LOW, HIGH, DAMP, WIDE, COMP, PILL, SHMR, PDLY, VIBR}
+// Each preset: {PRESET, TIME, LOW, HIGH, DAMP, WIDE, DFSN, PILL, SHMR, PDLY, VIBR}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
     {k_foresta, 40, 60, 40, 200, 80, 60, 3, 0, 0, 10},
@@ -107,6 +107,9 @@ public:
         , shimmerDepth_(0.0f)
         , shimmerPhase_(0.0f)
         , shimmerFreq_ (35.0f)
+        , preDelayWritePos(0)
+        , currentPreDelaySamples(0.0f)
+        , targetPreDelaySamples(0.0f)
         , currentPreset(0)
         , lfoSpeed(1.0f)
         , randomLfoValue(0.0f)
@@ -116,9 +119,6 @@ public:
         , noiseSeed(132465798U)
         , noiseColour(2.0f)
         , noiseGain(0.0f)
-        , currentPreDelaySamples(0.0f)
-        , targetPreDelaySamples(0.0f)
-        , preDelayWritePos(0)
         , pingMapIndex(0) {
 
         // Initialize delay times (prime-based for smooth diffusion)
@@ -263,7 +263,7 @@ public:
         case k_wide: // WIDE  0..200 → stereo width 0.0..2.0
             setWidth(value * 0.01f);
             break;
-        case k_comp: // COMP  0..100 → diffusion 0.0..1.0
+        case k_diffusion: // DFSN  0..100 → diffusion 0.0..1.0
             setDiffusion(value * 0.01f);
             break;
         case k_pill: // PILL  0..4  - pillar routing mode
@@ -291,7 +291,7 @@ public:
             // Map to 0=Brown, 1=Pink, 2=White, 3=Blue, 4=Violet, 5=Grey
             noiseColour = diffusion * 5.999f;
         }
-        // Modulation depth depends on pillar (as before) and COMP (diffusion)
+        // Modulation depth depends on pillar (as before) and DFSN (diffusion)
         setModDepth(((pillar_ == 0) ? 0.6f : (pillar_ == 1) ? 0.4f :
                         (pillar_ == 2) ? 0.2f : 0.1f) * diffusion);
     }
@@ -310,7 +310,7 @@ public:
         pingPong_     = (pillar_ == 1);
         shimmerDepth_ = (pillar_ == 4) ? 0.4f * modDepth : 0.0f;
         shimmerPhase_ = 0.0f;
-        // Modulation depth depends on pillar (as before) and COMP (diffusion)
+        // Modulation depth depends on pillar (as before) and DFSN (diffusion)
         setModDepth(((pillar_ == 0) ? 0.6f : (pillar_ == 1) ? 0.4f :
                         (pillar_ == 2) ? 0.2f : 0.1f) * diffusion);
         updateModRate();
@@ -515,30 +515,30 @@ public:
         // ---------------------------------------------------------
         // PROPER SCALAR IIR BIQUAD PROCESSING (same as before, but using current coefficients)
         // ---------------------------------------------------------
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+        for (int ch = 0; ch < numChannels; ch++) {
 
-            // 1. Unpack the 4 consecutive samples from the NEON vector
-            float in_samps[4];
-            vst1q_f32(in_samps, signals[ch]);
+          // 1. Unpack the 4 consecutive samples from the NEON vector
+          float in_samps[NEON_LANES];
+          vst1q_f32(in_samps, signals[ch]);
 
-            float out_samps[4];
+          float out_samps[NEON_LANES];
 
-            // 2. Process sequentially to maintain the IIR feedback loop
-            for (int s = 0; s < 4; s++) {
-                float in_val = in_samps[s];
+          // 2. Process sequentially to maintain the IIR feedback loop
+          for (int s = 0; s < NEON_LANES; s++) {
+            float in_val = in_samps[s];
 
-                // Direct Form II Transposed Biquad Math
-                float out_val = (in_val * biquadA0) + filterState1[ch];
+            // Direct Form II Transposed Biquad Math
+            float out_val = (in_val * biquadA0) + filterState1[ch];
 
-                // Update history states immediately for the next sample
-                filterState1[ch] = (in_val * biquadA1) - (out_val * biquadB1) + filterState2[ch];
-                filterState2[ch] = (in_val * biquadA2) - (out_val * biquadB2);
+            // Update history states immediately for the next sample
+            filterState1[ch] = (in_val * biquadA1) - (out_val * biquadB1) + filterState2[ch];
+            filterState2[ch] = (in_val * biquadA2) - (out_val * biquadB2);
 
-                out_samps[s] = out_val;
-            }
+            out_samps[s] = out_val;
+          }
 
-            // 3. Repack back into the NEON vector to continue the delay network
-            signals[ch] = vld1q_f32(out_samps);
+          // 3. Repack back into the NEON vector to continue the delay network
+          signals[ch] = vld1q_f32(out_samps);
         }
     }
 
@@ -587,7 +587,7 @@ public:
         }
     }
 
-    void addColouredNoise(float32x4_t* signals, int numChannels, float gainScale = 1.0f) {
+    void addColouredNoise(float32x4_t* signals, int numChannels, float gainScale = 0.5f) {
         if (filterMode != kFilterNoise || noiseGain < 0.001f) return;
 
         for (int ch = 0; ch < numChannels; ch++) {
@@ -619,7 +619,7 @@ public:
                 } else {
                     // 5: Grey (Notch filter around 2kHz using z^-2)
                     // y[n] = x[n] + x[n-2] creates a comb notch
-                    n_out[i] = (n + noiseStates2[ch]) * 0.707f;
+                    n_out[i] = (n + noiseStates2[ch]) * 0.778f;
                     noiseStates2[ch] = noiseStates[ch];
                     noiseStates[ch] = n;
                 }
@@ -744,26 +744,31 @@ private:
             (float)(writePos + 2),
             (float)(writePos + 3)
         };
+        float32x4_t mods[FDN_CHANNELS];
+        // DELAY READ POINTER CALCULATIONS
+        float32x4_t readPositions[FDN_CHANNELS];
+        uint32_t baseIndices[FDN_CHANNELS][NEON_LANES];
+        float fracParts[FDN_CHANNELS][NEON_LANES];
 
         // ====================================================================
         // DYNAMIC NEON MODULATION (SWIRL & COCHRANE SHIMMER)
         // ====================================================================
-        float32x4_t mods[FDN_CHANNELS];
 
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
 
             // 1. Select Rate and Depth based on current Mode
-            float current_rate = 0.0f;
-            float current_depth = 0.0f;
+            float current_rate = 0.5f;
+            float current_depth = 1.0f;
 
             if (currentPreset == k_esotico) {
                 // Cochrane 18-EDO Shimmer Mode
                 current_rate = microtonalRate_[ch];
                 current_depth = shimmerDepth_ * 45.0f; // Deep, slow microtonal stretch
-            } else {
-                // Standard Swirl / Chorus Mode
-                current_rate = swirlRate_[ch] * (1.0f + modRate); // Scale with UI, where modRate is mapping of VIBR  LFO speed for random modulation
-                current_depth = modDepth * 20.0f; // Standard subtle diffusion
+            }
+            else if(currentPreset == k_stellare) {
+              // Standard Swirl / Chorus Mode
+              current_rate = swirlRate_[ch] * (1.0f + modRate); // Scale with UI, where modRate is mapping of VIBR  LFO speed for random modulation
+              current_depth = modDepth * 20.0f; // Standard subtle diffusion
             }
 
             // 2. Generate the 4 sequential phases for this NEON block
@@ -784,16 +789,13 @@ private:
 
             // 6. Scale by modulation depth (in samples)
             mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(current_depth));
-        }
+        // }
 
         // ====================================================================
         // DELAY READ POINTER CALCULATIONS
         // ====================================================================
-        float32x4_t readPositions[FDN_CHANNELS];
-        uint32_t baseIndices[FDN_CHANNELS][NEON_LANES];
-        float fracParts[FDN_CHANNELS][NEON_LANES];
 
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+        // for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float delaySamples = delayTimes[ch] * sampleRate;
 
             // Subtract delay length AND our new dynamic modulation
@@ -815,16 +817,16 @@ private:
                 // Store the wrapped index so we can read from it!
                 baseIndices[ch][s] = base;
                 fracParts[ch][s] = safe_pos - (float)idx;
-            }
-        }
+            // }
+        // }
 
         // Read each channel independently: each channel has its own read position
         // (baseIndices[ch][s]) so we cannot share a single vld4q_f32 across channels.
         // Scalar interpolation per channel avoids the previous cross-frame read bug.
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+        // for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float out_lanes[NEON_LANES];
 
-            for (int s = 0; s < NEON_LANES; s++) {
+            // for (int s = 0; s < NEON_LANES; s++) {
                 uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
                 uint32_t idx1 = (idx0 + 1) & BUFFER_MASK;
                 float frac = fracParts[ch][s];
@@ -902,7 +904,7 @@ private:
 
             // 3. Calculate phase increments for 4 parallel samples
             float inc = M_TWOPI * shimmerFreq_ / sampleRate;
-            float32x4_t phaseVec = {
+            float32x4_t phaseVec = {    // TODO: change those integer multiplier?
                 shimmerPhase_,
                 shimmerPhase_ + inc,
                 shimmerPhase_ + 2.0f * inc,
@@ -1057,7 +1059,7 @@ private:
         updateModulation4();
         updateRandomLfo();
 
-        float modAmount = diffusion * modDepth;   // diffusion is COMP (0..1)
+        float modAmount = diffusion * modDepth;   // diffusion is DFSN (0..1)
         float fcMod = smoothedLfoValue * modAmount * 500.0f;  // ± up to 500 Hz
 
         // =================================================================
@@ -1404,7 +1406,7 @@ private:
     // ID 4:  HIGH   1..100             default 70
     // ID 5:  DAMP   20..1000           default 250  (×10 in code → 2500 Hz)
     // ID 6:  WIDE   0..200 %           default 100
-    // ID 7:  COMP   0..1000 (x0.1%)    default 1000
+    // ID 7:  DFSN   0..1000 (x0.1%)    default 1000
     // ID 8:  PILL   0..4               default 3
     // ID 9:  SHMR 0..100               default 35 (Hz)
     // ID 10: PDLY   0..100             default 0 (ms)
@@ -1477,7 +1479,7 @@ private:
     int pingMapIndex;
 
     float baseFc;                   // base cutoff frequency (Hz) for current preset/damping
-    float filterModRange;           // max modulation range (Hz) derived from COMP and pillar
+    float filterModRange;           // max modulation range (Hz) derived from DFSN and pillar
 };
 
 const float NeonAdvancedLabirinto::crossGain[5] = {0.15f, 0.10f, 0.07f, 0.04f, 0.04f};
