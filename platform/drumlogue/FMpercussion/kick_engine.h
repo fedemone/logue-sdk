@@ -183,7 +183,7 @@ fast_inline float32x4_t kick_engine_process(kick_engine_t* kick,
         vmulq_f32(neon_sin(modulated_phase), attack_gain));
 
     // Output
-    output = vmulq_f32(output, envelope);
+    output = vmulq_f32(output, shape_factor);
     return vbslq_f32(active_mask, output, vdupq_n_f32(0.0f));
 }
 
