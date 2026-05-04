@@ -1390,7 +1390,28 @@ public:
         };
 
         uint8_t program = (uint8_t)m_params[k_paramProgram];
-        if (program == k_Woodblock) {         // Wodblk pilot
+        if (program == k_TubularBell) {
+            // Tubular bell modes (free-free bar / cylindrical tube transverse bending):
+            // 1.00 : 2.756 : 5.404 (Euler-Bernoulli beam theory).
+            // The 2.756× mode is the perceptual "strike note" — dominant in the attack.
+            // Very long T60 — tubes ring for many seconds.
+            init_modal_modes(2.756f, 5.404f, 0.0f,
+                             2000.0f, 3000.0f, 0.0f, 0.0f,
+                             0.22f, 0.18f, 0.90f, 0.55f, 0.0f, 3);
+        } else if (program == k_Vibraphone) {
+            // Vibraphone bars: tuned free-free bars with notched undercuts to bring
+            // mode 2 to exactly 4× and mode 3 to ~10× the fundamental.
+            // Fundamental is dominant (resonator tube reinforces it); upper modes give shimmer.
+            init_modal_modes(4.00f, 10.0f, 0.0f,
+                             800.0f, 300.0f, 0.0f, 0.0f,
+                             0.18f, 0.80f, 0.52f, 0.26f, 0.0f, 3);
+        } else if (program == k_Kalimba) {
+            // Kalimba tine: free cantilever bar; real tines are shaped so mode 2 ≈ 4×.
+            // Short T60 for higher modes — tines damp quickly above the fundamental.
+            init_modal_modes(4.00f, 10.0f, 0.0f,
+                             300.0f, 100.0f, 0.0f, 0.0f,
+                             0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3);
+        } else if (program == k_Woodblock) {         // Wodblk pilot
             init_modal_modes(STAGE2_MODAL_RATIO_2, 0.0f, 0.0f,
                              STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f,
                              STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2, 0.0f, 0.0f, 2);
