@@ -22,7 +22,7 @@
 
 // Parameter indices matching the fixed 24-parameter synth contract.
 typedef enum {
-    PARAM_KPROB = 0,
+    PARAM_KPROB,
     PARAM_SPROB,
     PARAM_MPROB,
     PARAM_PPROB,
@@ -80,13 +80,13 @@ typedef struct {
     uint8_t lfo1_shape;   // 0-8
     uint8_t lfo1_rate;    // 0-100
     uint8_t lfo1_target;  // 0-10
-    int8_t   lfo1_depth;  // -100..100
+    int8_t  lfo1_depth;  // -100..100
 
     // Page 5: EuclTun + LFO2
     uint8_t eucl_tun;     // 0-8 (Euclidean pitch spread)
     uint8_t lfo2_rate;    // 0-100
     uint8_t lfo2_target;  // 0-10
-    int8_t   lfo2_depth;  // -100..100
+    int8_t  lfo2_depth;  // -100..100
 
     // Page 6: Envelope + global shaping
     uint8_t env_shape;    // 0-255: bit7=metal character, bits[6:0]=envelope index

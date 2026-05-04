@@ -113,20 +113,20 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
     synth->voice_probs[3] = (uint32_t)p[PARAM_PPROB];
 
     kick_engine_update(&synth->kick,
-                       vdupq_n_f32(p[PARAM_KICK_ATK] / 100.0f),
-                       vdupq_n_f32(p[PARAM_KICK_BODY] / 100.0f));
+                       vdupq_n_f32(p[PARAM_KICK_ATK] * 0.01f),
+                       vdupq_n_f32(p[PARAM_KICK_BODY] * 0.01f));
 
     snare_engine_update(&synth->snare,
-                        vdupq_n_f32(p[PARAM_SNARE_ATK] / 100.0f),
-                        vdupq_n_f32(p[PARAM_SNARE_BODY] / 100.0f));
+                        vdupq_n_f32(p[PARAM_SNARE_ATK] * 0.01f),
+                        vdupq_n_f32(p[PARAM_SNARE_BODY] * 0.01f));
 
     metal_engine_update(&synth->metal,
-                        vdupq_n_f32(p[PARAM_METAL_ATK] / 100.0f),
-                        vdupq_n_f32(p[PARAM_METAL_BODY] / 100.0f));
+                        vdupq_n_f32(p[PARAM_METAL_ATK] * 0.01f),
+                        vdupq_n_f32(p[PARAM_METAL_BODY] * 0.01f));
 
     perc_engine_update(&synth->perc,
-                       vdupq_n_f32(p[PARAM_PERC_ATK] / 100.0f),
-                       vdupq_n_f32(p[PARAM_PERC_BODY] / 100.0f));
+                       vdupq_n_f32(p[PARAM_PERC_ATK] * 0.01f),
+                       vdupq_n_f32(p[PARAM_PERC_BODY] * 0.01f));
 
     synth->current_env_shape = (uint8_t)p[PARAM_ENV_SHAPE];
     metal_engine_set_character(&synth->metal,
@@ -382,13 +382,15 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     uint32x4_t active_mask = vmvnq_u32(vceqq_u32(synth->envelope.stage,
                                                  vdupq_n_u32(ENV_STATE_OFF)));
 
-    float32x4_t hit_shape = vdupq_n_f32(synth->params[PARAM_HIT_SHAPE] / 100.0f);
-    float32x4_t body_tilt = vdupq_n_f32(synth->params[PARAM_BODY_TILT] / 100.0f);
-    float32x4_t drive = vdupq_n_f32(synth->params[PARAM_DRIVE] / 100.0f);
+    float32x4_t hit_shape = vdupq_n_f32(synth->params[PARAM_HIT_SHAPE] * 0.01f);
+    float32x4_t body_tilt = vdupq_n_f32(synth->params[PARAM_BODY_TILT] * 0.01f);
+    float32x4_t drive = vdupq_n_f32(synth->params[PARAM_DRIVE] * 0.01f);
 
     float32x4_t transient_env = fm_make_transient_env(envelope, hit_shape);
     float32x4_t body_env = fm_make_body_env(envelope, body_tilt);
 
+    // TODO this is always processing all the 4 engines, but it's a waste in case
+    // the engine is not triggered.
     float32x4_t kick_out = kick_engine_process(&synth->kick,
                                                transient_env,
                                                active_mask,

@@ -144,7 +144,7 @@ public:
         lo_hi = vpmin_u32(lo_hi, lo_hi);
 
         if (vget_lane_u32(lo_hi, 0) == 0xFFFFFFFFu) {
-            std::memset(out, 0, frames * 2 * sizeof(float));
+            memset(out, 0, frames * 2 * sizeof(float));
             return;
         }
 

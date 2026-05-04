@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+shopt -s extglob
 # Sonaglio benchmark runner
 # Native or WSL cross-compile:
 #   CXX=/mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++
@@ -39,7 +39,7 @@ if [[ -z "${RUNNER:-}" ]]; then
 fi
 
 COMMON_FLAGS=(-std=c++17 -O3 -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
-INCLUDES=(-I"$ROOT_DIR" -I"$ROOT_DIR/platform/drumlogue" -I"$SONG_DIR")
+INCLUDES=(-I"$ROOT_DIR" -I"$ROOT_DIR/platform/drumlogue" -I"$ROOT_DIR/platform/drumlogue/common" -I"$ROOT_DIR/platform/common" -I"$SONG_DIR")
 if [[ -n "${SDK_INCLUDE_DIR:-}" ]]; then
   INCLUDES+=(-I"$SDK_INCLUDE_DIR")
 fi
@@ -78,4 +78,3 @@ else
   "$BENCH_BIN"
   set +x
 fi
-

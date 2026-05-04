@@ -12,6 +12,7 @@
 
 #include <arm_neon.h>
 #include <stdint.h>
+#include "float_math.h"
 
 #define LFO_SMOOTH_FRAMES 48  // 1ms at 48kHz
 
@@ -82,12 +83,13 @@ fast_inline void lfo_smoother_set_rate(lfo_smoother_t* sm,
                                        float new_rate,
                                        uint32x4_t voice_mask) {
     float32x4_t new_rate_vec = vdupq_n_f32(new_rate);
+    const float32x4_t inv_ramp = vdupq_n_f32(1.0f / LFO_SMOOTH_FRAMES);
 
     if (lfo_num == 0) {
         // Calculate step for each voice
         float32x4_t diff = vsubq_f32(new_rate_vec, sm->current_rate1);
         sm->rate_step1 = vbslq_f32(voice_mask,
-                                   fast_div_neon(diff, vdupq_n_f32(LFO_SMOOTH_FRAMES)),
+                                   vmulq_f32(diff, inv_ramp),
                                    sm->rate_step1);
 
         // Set target and start ramp
@@ -100,7 +102,7 @@ fast_inline void lfo_smoother_set_rate(lfo_smoother_t* sm,
     } else {
         float32x4_t diff = vsubq_f32(new_rate_vec, sm->current_rate2);
         sm->rate_step2 = vbslq_f32(voice_mask,
-                                   fast_div_neon(diff, vdupq_n_f32(LFO_SMOOTH_FRAMES)),
+                                   vmulq_f32(diff, inv_ramp),
                                    sm->rate_step2);
 
         sm->target_rate2 = vbslq_f32(voice_mask,
@@ -120,11 +122,12 @@ fast_inline void lfo_smoother_set_depth(lfo_smoother_t* sm,
                                         float new_depth,
                                         uint32x4_t voice_mask) {
     float32x4_t new_depth_vec = vdupq_n_f32(new_depth);
+    const float32x4_t inv_ramp = vdupq_n_f32(1.0f / LFO_SMOOTH_FRAMES);
 
     if (lfo_num == 0) {
         float32x4_t diff = vsubq_f32(new_depth_vec, sm->current_depth1);
         sm->depth_step1 = vbslq_f32(voice_mask,
-                                    fast_div_neon(diff, vdupq_n_f32(LFO_SMOOTH_FRAMES)),
+                                    vmulq_f32(diff, inv_ramp),
                                     sm->depth_step1);
 
         sm->target_depth1 = vbslq_f32(voice_mask,
@@ -136,7 +139,7 @@ fast_inline void lfo_smoother_set_depth(lfo_smoother_t* sm,
     } else {
         float32x4_t diff = vsubq_f32(new_depth_vec, sm->current_depth2);
         sm->depth_step2 = vbslq_f32(voice_mask,
-                                    fast_div_neon(diff, vdupq_n_f32(LFO_SMOOTH_FRAMES)),
+                                    vmulq_f32(diff, inv_ramp),
                                     sm->depth_step2);
 
         sm->target_depth2 = vbslq_f32(voice_mask,

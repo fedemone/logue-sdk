@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := dummy_synth
+PROJECT := sonaglio
 PROJECT_TYPE := synth
 
 ##############################################################################
@@ -16,21 +16,21 @@ CSRC = header.c
 CXXSRC = unit.cc
 
 # List ASM source files here
-ASMSRC = 
+ASMSRC =
 
-ASMXSRC = 
+ASMXSRC =
 
 ##############################################################################
 # Include Paths
 #
 
-UINCDIR  = 
+UINCDIR  =
 
 ##############################################################################
 # Library Paths
 #
 
-ULIBDIR = 
+ULIBDIR =
 
 ##############################################################################
 # Libraries
@@ -43,5 +43,5 @@ ULIBS += -lc
 # Macros
 #
 
-UDEFS = 
+UDEFS =
 

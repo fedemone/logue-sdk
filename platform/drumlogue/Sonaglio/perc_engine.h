@@ -68,8 +68,8 @@ fast_inline void perc_engine_update(perc_engine_t* perc,
 
     // Variation increases with attack, but body keeps it under control.
     // This gives sharper hits without collapsing into pure noise.
-    perc->variation = vaddq_f32(vmulq_n_f32(param1, vdupq_n_f32(1.00f)),
-                                vmulq_f32(param2, vdupq_n_f32(0.50f)));
+    perc->variation = vaddq_f32(vmulq_n_f32(param1, 1.00f),
+                                vmulq_n_f32(param2, 0.50f));
 }
 
 /**

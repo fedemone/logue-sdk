@@ -37,45 +37,45 @@ const __unit_header unit_header_t unit_header = {
     .dev_id = 0x46654465U,   // 'FeDe' - https://github.com/fedemone/logue-sdk
     .unit_id = 0x02U,
     .version = 0x00020000U,
-    .name = "FMPerc",
+    // .name = {'s',0},    // use thi for local testing
+    .name = "Sonaglio",
     .num_presets = 26,
     .num_params = 24,
-
     .params = {
         // Page 1: Engine probabilities
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"KProb"}},
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"SProb"}},
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"MProb"}},
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"PProb"}},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "KProb"},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "SProb"},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "MProb"},
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "PProb"},
 
         // Page 2: Kick + Snare
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"KAtk"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"KBody"}},
-        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"SAtk"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"SBody"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "KAtk"},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "KBody"},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, "SAtk"},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "SBody"},
 
         // Page 3: Metal + Perc
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"MAtk"}},
-        {0, 100, 0, 70, k_unit_param_type_percent, 0, 0, 0, {"MBody"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"PAtk"}},
-        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"PBody"}},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "MAtk"},
+        {0, 100, 0, 70, k_unit_param_type_percent, 0, 0, 0, "MBody"},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "PAtk"},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, "PBody"},
 
         // Page 4: LFO1
-        {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Shape"}},
-        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L1Rate"}},
-        {0, 10, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L1Dest"}},
-        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L1Depth"}},
+        {0, 8,   0, 0, k_unit_param_type_strings,  0, 0, 0, "L1Shape"},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, "L1Rate"},
+        {0, 10,  0, 0, k_unit_param_type_strings,  0, 0, 0, "L1Dest"},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "L1Depth"},
 
         // Page 5: LFO2 + Euclidean Tuning
-        {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"EuclTun"}},
-        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L2Rate"}},
-        {0, 10, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Dest"}},
-        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
+        {0, 8,   0, 0, k_unit_param_type_strings,  0, 0, 0, "EuclTun"},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, "L2Rate"},
+        {0, 10,  0, 0, k_unit_param_type_strings,  0, 0, 0, "L2Dest"},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "L2Depth"},
 
         // Page 6: Envelope + Global shaping
-        {0, 255, 0, 40, k_unit_param_type_none, 0, 0, 0, {"EnvShape"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"HitShp"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"BodyTilt"}},
-        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"Drive"}}
+        {0, 255, 0, 40, k_unit_param_type_none,    0, 0, 0, "EnvShape"},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "HitShp"},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "BodyTilt"},
+        {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "Drive"}
     }
 };

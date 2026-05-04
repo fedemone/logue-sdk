@@ -8,18 +8,22 @@
 #define fast_inline inline __attribute__((always_inline))
 #endif
 
-#include "platform/drumlogue/Sonaglio/constants.h"
-#include "platform/drumlogue/Sonaglio/engine_mapping.h"
-#include "platform/drumlogue/Sonaglio/prng.h"
-#include "platform/drumlogue/Sonaglio/envelope_rom.h"
-#include "platform/drumlogue/Sonaglio/lfo_enhanced.h"
-#include "platform/drumlogue/Sonaglio/lfo_smoothing.h"
-#include "platform/drumlogue/Sonaglio/kick_engine.h"
-#include "platform/drumlogue/Sonaglio/snare_engine.h"
-#include "platform/drumlogue/Sonaglio/metal_engine.h"
-#include "platform/drumlogue/Sonaglio/perc_engine.h"
-#include "platform/drumlogue/Sonaglio/fm_presets.h"
-#include "platform/drumlogue/Sonaglio/fm_perc_synth_process.h"
+#include "constants.h"
+#include "engine_mapping.h"
+#include "prng.h"
+#include "envelope_rom.h"
+#include "lfo_enhanced.h"
+#include "lfo_smoothing.h"
+#include "kick_engine.h"
+#include "snare_engine.h"
+#include "metal_engine.h"
+#include "perc_engine.h"
+#include "fm_presets.h"
+#include "fm_perc_synth_process.h"
+
+// TO RUN THIS TEST:
+// first change .name in header.c
+// ROOT_DIR=/mnt/d/Fede/drumlogue CXX=/mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ RUNNER=qemu-arm SDK_INCLUDE_DIR=/mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf ./run_sonaglio_tests.sh
 
 static int g_failures = 0;
 
@@ -41,7 +45,7 @@ static bool vec_finite(float32x4_t v) {
     return true;
 }
 
-static bool vec_nonzero(float32x4_t v) {
+[[maybe_unused]] static bool vec_nonzero(float32x4_t v) {
     float lanes[4];
     vst1q_f32(lanes, v);
     for (int i = 0; i < 4; ++i) {
@@ -148,8 +152,10 @@ static void test_preset_loading() {
         if (params[PARAM_EUCL_TUN] < 0 || params[PARAM_EUCL_TUN] > 8) {
             return report_fail(name, "Euclidean mode out of range");
         }
-        if (params[PARAM_ENV_SHAPE] < 0 || params[PARAM_ENV_SHAPE] > 127) {
-            return report_fail(name, "Envelope shape out of range");
+        if (params[PARAM_ENV_SHAPE] < 0 || params[PARAM_ENV_SHAPE] > 127) { // data type uint range is +127
+            char msg[64];
+            std::snprintf(msg, sizeof(msg), "Envelope shape out of range for preset %d", i);
+            return report_fail(name, msg);
         }
     }
 

@@ -225,6 +225,7 @@ fast_inline float32x4_t white_noise(neon_prng_t* rng) {
                                     vdupq_n_f32(1.0f));
     white = vsubq_f32(vmulq_f32(white, vdupq_n_f32(2.0f)),
                         vdupq_n_f32(1.0f));
+    return white;
 }
 
 // ========== UNIT TEST ==========

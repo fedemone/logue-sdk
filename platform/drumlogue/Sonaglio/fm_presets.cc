@@ -18,8 +18,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         20, 15, 20, 25,
         0, 10, LFO_TARGET_PITCH, 10,
         0, 0, LFO_TARGET_NONE, 0,
-        12, 35, 15, 20
-    },
+        12, 35, 15, 20},
 
     // 1: HeavyKick
     {
@@ -29,8 +28,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         15, 10, 15, 30,
         0, 15, LFO_TARGET_PITCH, 20,
         0, 0, LFO_TARGET_NONE, 0,
-        18, 25, 45, 15
-    },
+        18, 25, 45, 15},
 
     // 2: ClickKick
     {
@@ -40,8 +38,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         25, 10, 35, 20,
         1, 18, LFO_TARGET_INDEX, 20,
         1, 0, LFO_TARGET_NONE, 0,
-        8, 55, 10, 35
-    },
+        8, 55, 10, 35},
 
     // 3: CrackSnare
     {
@@ -51,8 +48,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         10, 10, 20, 20,
         2, 35, LFO_TARGET_INDEX, 50,
         0, 10, LFO_TARGET_NOISE_MIX, 15,
-        20, 55, 20, 20
-    },
+        20, 55, 20, 20},
 
     // 4: BodySnare
     {
@@ -62,8 +58,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         15, 10, 10, 10,
         0, 20, LFO_TARGET_PITCH, 15,
         0, 0, LFO_TARGET_NONE, 0,
-        25, 30, 55, 10
-    },
+        25, 30, 55, 10},
 
     // 5: GhostSnare
     {
@@ -73,8 +68,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         5, 10, 5, 5,
         0, 8, LFO_TARGET_ENV, 20,
         0, 0, LFO_TARGET_NONE, 0,
-        16, 25, 10, 5
-    },
+        16, 25, 10, 5},
 
     // 6: RimSnare
     {
@@ -84,8 +78,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         10, 10, 20, 10,
         1, 28, LFO_TARGET_PITCH, -35,
         0, 15, LFO_TARGET_INDEX, 10,
-        30, 45, 15, 20
-    },
+        30, 45, 15, 20},
 
     // 7: MetalClang
     {
@@ -95,8 +88,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         95, 65, 10, 10,
         0, 35, LFO_TARGET_INDEX, 40,
         0, 0, LFO_TARGET_NONE, 0,
-        8, 80, 35, 45
-    },
+        8, 80, 35, 45},
 
     // 8: MetalWash
     {
@@ -106,8 +98,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         80, 90, 20, 25,
         0, 20, LFO_TARGET_ENV, 40,
         0, 0, LFO_TARGET_NONE, 0,
-        70, 55, 40, 30
-    },
+        70, 55, 40, 30},
 
     // 9: GongHit
     {
@@ -117,8 +108,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         100, 95, 0, 0,
         3, 10, LFO_TARGET_PITCH, -20,
         0, 0, LFO_TARGET_NONE, 0,
-        128 + 90, 25, 45, 20
-    },
+        90, 25, 45, 20},  // env_shape was 128 + 90
 
     // 10: BellRing
     {
@@ -128,7 +118,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         100, 85, 0, 0,
         4, 18, LFO_TARGET_INDEX, 35,
         0, 0, LFO_TARGET_NONE, 0,
-        128 + 110, 35, 55, 30
+        110, 35, 55, 30  // env_shape was 128 + 110
     },
 
     // 11: PercBlock
@@ -139,8 +129,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         10, 15, 95, 65,
         0, 20, LFO_TARGET_PITCH, 15,
         0, 0, LFO_TARGET_NONE, 0,
-        14, 55, 20, 20
-    },
+        14, 55, 20, 20},
 
     // 12: PercTom
     {
@@ -150,8 +139,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         10, 10, 75, 90,
         0, 12, LFO_TARGET_ENV, 20,
         1, 0, LFO_TARGET_NONE, 0,
-        22, 25, 50, 15
-    },
+        22, 25, 50, 15},
 
     // 13: PercWood
     {
@@ -161,8 +149,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         10, 10, 85, 40,
         1, 15, LFO_TARGET_INDEX, 10,
         0, 0, LFO_TARGET_NONE, 0,
-        18, 40, 35, 10
-    },
+        18, 40, 35, 10},
 
     // 14: DryHit
     {
@@ -172,8 +159,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         50, 35, 55, 35,
         0, 0, LFO_TARGET_NONE, 0,
         0, 0, LFO_TARGET_NONE, 0,
-        4, 20, 20, 5
-    },
+        4, 20, 20, 5},
 
     // 15: DriveKit
     {
@@ -183,8 +169,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         15, 20, 20, 25,
         1, 22, LFO_TARGET_INDEX, 20,
         0, 0, LFO_TARGET_NONE, 0,
-        10, 45, 25, 80
-    },
+        10, 45, 25, 80},
 
     // 16: DarkPulse
     {
@@ -194,8 +179,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         35, 40, 35, 45,
         0, 8, LFO_TARGET_ENV, 10,
         0, 0, LFO_TARGET_NONE, 0,
-        16, 20, 30, 20
-    },
+        16, 20, 30, 20},
 
     // 17: BrightPulse
     {
@@ -205,8 +189,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         70, 55, 50, 35,
         1, 25, LFO_TARGET_INDEX, 25,
         0, 0, LFO_TARGET_NONE, 0,
-        8, 55, 25, 15
-    },
+        8, 55, 25, 15},
 
     // 18: Industrial
     {
@@ -216,8 +199,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         85, 70, 55, 40,
         0, 32, LFO_TARGET_METAL_GATE, 55,
         0, 20, LFO_TARGET_INDEX, 20,
-        128 + 70, 65, 55, 75
-    },
+        70, 65, 55, 75},  // env_shape was 128 + 70
 
     // 19: Shaker
     {
@@ -227,8 +209,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         75, 80, 85, 70,
         0, 55, LFO_TARGET_NOISE_MIX, 70,
         0, 30, LFO_TARGET_ENV, 20,
-        12, 40, 45, 25
-    },
+        12, 40, 45, 25},
 
     // 20: EuclidKit
     {
@@ -238,8 +219,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         50, 50, 50, 50,
         2, 20, LFO_TARGET_PITCH, 20,
         6, 15, LFO_TARGET_INDEX, 10,
-        18, 45, 35, 20
-    },
+        18, 45, 35, 20},
 
     // 21: WidePerc
     {
@@ -249,8 +229,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         20, 40, 70, 80,
         1, 15, LFO_TARGET_LFO2_PHASE, 35,
         4, 20, LFO_TARGET_PITCH, 25,
-        20, 35, 45, 15
-    },
+        20, 35, 45, 15},
 
     // 22: LowBody
     {
@@ -260,8 +239,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         20, 25, 25, 65,
         0, 12, LFO_TARGET_PITCH, 10,
         0, 0, LFO_TARGET_NONE, 0,
-        14, 20, 70, 10
-    },
+        14, 20, 70, 10},
 
     // 23: HardDrive
     {
@@ -271,8 +249,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         65, 55, 65, 55,
         1, 30, LFO_TARGET_INDEX, 30,
         0, 0, LFO_TARGET_NONE, 0,
-        8, 60, 45, 95
-    },
+        8, 60, 45, 95},
 
     // 24: SoftHit
     {
@@ -282,8 +259,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         25, 35, 25, 45,
         0, 10, LFO_TARGET_ENV, 15,
         0, 0, LFO_TARGET_NONE, 0,
-        4, 20, 35, 10
-    },
+        4, 20, 35, 10},
 
     // 25: Experimental
     {
@@ -293,10 +269,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
         55, 55, 55, 55,
         4, 40, LFO_TARGET_LFO2_PHASE, 50,
         8, 30, LFO_TARGET_METAL_GATE, 40,
-        128 + 40, 50, 50, 50
-    }
-};
-
+        40, 50, 50, 50}};  // env_shape was 128 + 40
 
 void load_fm_preset(uint8_t idx, int8_t *params) {
     if (idx >= NUM_OF_PRESETS || params == NULL) {
