@@ -1321,7 +1321,9 @@ public:
         // TODO these should be added to presets themselves
         // Metallic presets: enable light Schroeder diffusion in feedback loop
         // for pseudo-modal density at low CPU cost.
-        bool metallic_diff = (m_preset_idx == 13 || m_preset_idx == 14 || m_preset_idx == 28 || m_preset_idx == 29);
+        bool metallic_diff = (m_preset_idx == 13 || m_preset_idx == 14 ||  // Cymbal, Gong
+                              m_preset_idx == 28 || m_preset_idx == 29 ||  // HHat-C, HHat-O
+                              m_preset_idx == 34 || m_preset_idx == 35);   // Ride, RideBel
         v.resA.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
         v.resB.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
         v.resA.diffuser_g = 0.45f;
@@ -1419,6 +1421,57 @@ public:
             init_modal_modes(1.340f, 1.664f, 1.980f,
                              900.0f, 680.0f, 500.0f, 380.0f,
                              0.32f, 0.90f, 0.75f, 0.55f, 0.38f, 4);
+        } else if (program == k_Triangle) {
+            // Free-free rod transverse modes (Euler-Bernoulli beam theory):
+            // ratios 1.00 : 2.756 : 5.404.  Triangle is a bent rod; corners shift
+            // ratios slightly but they stay close to these theoretical values.
+            // Long T60 — real triangle rings for 3-5 s, modes decay nearly equally.
+            init_modal_modes(2.756f, 5.404f, 0.0f,
+                             1200.0f, 1400.0f, 0.0f, 0.0f,
+                             0.15f, 0.80f, 0.55f, 0.0f, 0.0f, 3);
+        } else if (program == k_Cowbell) {
+            // Rectangular metallic shell modes (Rossing cowbell measurements):
+            // 1.00 : 1.41 : 2.01 : 2.56.  Short ring — cowbell damps in ~300ms.
+            init_modal_modes(1.41f, 2.01f, 2.56f,
+                             180.0f, 130.0f, 90.0f, 65.0f,
+                             0.16f, 0.75f, 0.60f, 0.45f, 0.30f, 4);
+        } else if (program == k_BellTree) {
+            // Cup bell modes (truncated spherical shell): 1.00 : 2.01 : 2.76.
+            // Each cascade bell rings independently; long T60 for upper modes.
+            init_modal_modes(2.01f, 2.76f, 0.0f,
+                             900.0f, 700.0f, 0.0f, 0.0f,
+                             0.17f, 0.80f, 0.60f, 0.0f, 0.0f, 3);
+        } else if (program == k_SteelPan) {
+            // Steel pan: deliberately hammered-in harmonic series 1:2:3:4.
+            // Pans are tuned so the octave (2×) and 12th (3×) are audible harmonics.
+            init_modal_modes(2.00f, 3.00f, 4.00f,
+                             1200.0f, 900.0f, 700.0f, 500.0f,
+                             0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4);
+        } else if (program == k_Handpan) {
+            // Handpan: similar to steelpan, near-harmonic 1:2:3 primary modes.
+            init_modal_modes(2.00f, 3.00f, 0.0f,
+                             900.0f, 700.0f, 0.0f, 0.0f,
+                             0.20f, 0.85f, 0.65f, 0.0f, 0.0f, 3);
+        } else if (program == k_Ride) {
+            // Ride cymbal: circular plate modes — heavier / larger than crash so
+            // ratios stay close to ideal free-edge plate theory (cleaner bell tone).
+            // Longer T60 than crash; diffuser already enabled above.
+            init_modal_modes(2.08f, 3.40f, 3.91f,
+                             600.0f, 800.0f, 1000.0f, 800.0f,
+                             0.14f, 0.80f, 0.65f, 0.50f, 0.35f, 6);
+        } else if (program == k_RideBell) {
+            // Ride bell: thick domed section, bell-like modes 1.00 : 2.01 : 2.76 : 3.56.
+            // Very long ring — the bell portion of a ride can sustain 4+ seconds.
+            init_modal_modes(2.01f, 2.76f, 3.56f,
+                             1500.0f, 1200.0f, 900.0f, 700.0f,
+                             0.20f, 0.85f, 0.70f, 0.55f, 0.40f, 4);
+        } else if (program == k_GlassBowl) {
+            // Glass/crystal bowl: near-harmonic overtone series shifted slightly
+            // from integer ratios by bowl curvature — 1.00 : 2.09 : 3.35 : 4.77.
+            // Extremely long decay; modal modes reinforce the ringing harmonics.
+            init_modal_modes(2.09f, 3.35f, 4.77f,
+                             2000.0f, 1600.0f, 1200.0f, 800.0f,
+                             0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 4);
         }
         // TODO thewse should be set at preset themselves
         if (program == k_KickDrum) {
