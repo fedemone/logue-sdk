@@ -152,7 +152,7 @@ static void test_preset_loading() {
         if (params[PARAM_EUCL_TUN] < 0 || params[PARAM_EUCL_TUN] > 8) {
             return report_fail(name, "Euclidean mode out of range");
         }
-        if (params[PARAM_ENV_SHAPE] < 0 || params[PARAM_ENV_SHAPE] > 127) { // data type uint range is +127
+        if (params[PARAM_ENV_SHAPE] < 0 || params[PARAM_ENV_SHAPE] > 126) { // data type uint range is +126
             char msg[64];
             std::snprintf(msg, sizeof(msg), "Envelope shape out of range for preset %d", i);
             return report_fail(name, msg);
