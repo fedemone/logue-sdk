@@ -1472,6 +1472,32 @@ public:
             init_modal_modes(2.09f, 3.35f, 4.77f,
                              2000.0f, 1600.0f, 1200.0f, 800.0f,
                              0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 4);
+        } else if (program == k_Djambe) {
+            // Djembe: open goblet drum, circular membrane (fixed edge), no resonating cavity.
+            // Mode ratios from Bessel zeros: (1,1)=1.00, (2,1)=1.59, (3,1)=2.14, (0,2)=2.30.
+            // Short T60 — open bottom lets energy escape quickly; goblet shell has high damping.
+            init_modal_modes(1.59f, 2.14f, 2.30f,
+                             80.0f, 55.0f, 38.0f, 26.0f,
+                             0.20f, 0.65f, 0.50f, 0.35f, 0.22f, 4);
+        } else if (program == k_Taiko) {
+            // Taiko: large Japanese drum, heavy membrane with deep cylindrical shell.
+            // No closed-bottom cavity so membrane modes follow free-edge Bessel ratios.
+            // Long T60 — large mass + high tension give sustained body ring.
+            init_modal_modes(1.59f, 2.14f, 2.90f,
+                             350.0f, 250.0f, 180.0f, 120.0f,
+                             0.28f, 0.85f, 0.70f, 0.52f, 0.36f, 4);
+        } else if (program == k_Conga) {
+            // Conga: tapered cylindrical shell drum, open bottom.
+            // Membrane mode ratios similar to free circular membrane (no cavity tuning).
+            init_modal_modes(1.59f, 2.14f, 2.30f,
+                             90.0f, 65.0f, 45.0f, 30.0f,
+                             0.20f, 0.70f, 0.52f, 0.35f, 0.22f, 4);
+        } else if (program == k_Bongo) {
+            // Bongo: small high-pitched pair drum, very short membrane ring.
+            // Mode ratios: (1,1)=1.00, (2,1)=1.59, (3,1)=2.14, (0,2)=2.30.
+            init_modal_modes(1.59f, 2.14f, 2.30f,
+                             50.0f, 35.0f, 25.0f, 16.0f,
+                             0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
         }
         // TODO thewse should be set at preset themselves
         if (program == k_KickDrum) {
@@ -1488,6 +1514,13 @@ public:
         } else if (program == k_Timpani) {
             // Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
             v.boom_mix = 0.0f;
+        } else if (program == k_Taiko) {
+            // Taiko: sub-octave boom (~70 Hz) under the main membrane fundamental.
+            // Gives the deep chest-thud of a real taiko strike.
+            v.boom_inc = (2.0f * M_PI * 70.0f) / default_sample_rate;
+            v.boom_env = 1.0f;
+            v.boom_decay = 0.99950f; // ~360ms
+            v.boom_mix = 0.26f;
         } else if (program == k_AcousticTom) {
             v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
             v.boom_env = 1.0f;
