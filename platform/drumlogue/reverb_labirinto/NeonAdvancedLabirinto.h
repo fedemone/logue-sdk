@@ -805,7 +805,7 @@ private:
             // Wrap to [0, BUFFER_SIZE)
             float pos_vals[NEON_LANES];
             vst1q_f32(pos_vals, readPositions[ch]);
-
+            float out_lanes[NEON_LANES];
             for (int s = 0; s < NEON_LANES; s++) {
                 // Adding a large multiple of BUFFER_SIZE guarantees the float is positive
                 // before casting to int, avoiding C++ negative-integer-truncation issues.
@@ -824,7 +824,6 @@ private:
         // (baseIndices[ch][s]) so we cannot share a single vld4q_f32 across channels.
         // Scalar interpolation per channel avoids the previous cross-frame read bug.
         // for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float out_lanes[NEON_LANES];
 
             // for (int s = 0; s < NEON_LANES; s++) {
                 uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
