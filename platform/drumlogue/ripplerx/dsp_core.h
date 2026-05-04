@@ -91,6 +91,8 @@ struct ExciterState {
     float snare_wire_z1 = 0.0f;    // short wire-sizzle resonator state
     float snare_wire_z2 = 0.0f;    // short wire-sizzle resonator state
     float snare_wire_mix = 0.0f;   // 0..1 extra wire component mix
+    float snare_wire_a1 = 1.6951f; // resonator coeff (frequency/Q)
+    float snare_wire_a2 = 0.8930f; // resonator coeff (frequency/Q)
 
     float mallet_lp = 0.0f;
     float mallet_lp2 = 0.0f;       // Second LP pole state (MlltRes)
@@ -231,6 +233,12 @@ struct VoiceState {
     float pitch_env_amt = 0.0f;
     bool  reed_nl_enabled = false;
     float reed_nl_drive = 1.0f;
+    // Low-body boom oscillator (classics rescue path: kick/timpani/tom/snare).
+    float boom_phase = 0.0f;
+    float boom_inc = 0.0f;
+    float boom_env = 0.0f;
+    float boom_decay = 1.0f;
+    float boom_mix = 0.0f;
 #endif
 };
 

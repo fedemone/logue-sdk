@@ -2660,3 +2660,21 @@ Applied after order confirmation:
 Purpose:
 - Reduce "string-like" snare perception and strengthen recognizable snare identity
   without adding UI parameters or heavy CPU load.
+
+## Phase 38: Classics rescue step 4 (HHat metallic/noise retargeting)
+
+Applied after step-3 snare update:
+- Added preset-specific hi-hat noise split tuning in `NoteOn` (private, no UI params):
+  - `HHat-C`: higher high-band emphasis for crisp short "chick".
+  - `HHat-O`: stronger high-band wash with slightly slower split response.
+
+Implementation:
+- `k_HiHatClosed` (`m_preset_idx == 28`):
+  - `noise_band_mix = 0.86f`
+  - `noise_hi_lp_coeff = 0.42f`
+- `k_HiHatOpen` (`m_preset_idx == 29`):
+  - `noise_band_mix = 0.93f`
+  - `noise_hi_lp_coeff = 0.30f`
+
+Purpose:
+- Improve recognizable hat identity (closed tick vs open shimmer) while keeping CPU-light architecture.

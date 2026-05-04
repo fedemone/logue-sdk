@@ -240,6 +240,8 @@ public:
                 state.voices[i].resB.buffer[j] = 0.0f;
             }
 
+            // TODO these should be a kind of preset
+
             // Clear filter state memory so a Reset() mid-play never causes a click
             // on the next NoteOn (stale z1/ap states corrupt the first output samples).
             state.voices[i].resA.z1    = 0.0f;
@@ -275,8 +277,8 @@ public:
             state.voices[i].modal_k_2 = 0.0f;
             state.voices[i].modal_k_3 = 0.0f;
             state.voices[i].modal_k_4 = 0.0f;
-             state.voices[i].modal_k_5 = 0.0f;
-             state.voices[i].modal_k_6 = 0.0f;
+            state.voices[i].modal_k_5 = 0.0f;
+            state.voices[i].modal_k_6 = 0.0f;
             state.voices[i].modal_y1_1 = 0.0f;
             state.voices[i].modal_y1_2 = 0.0f;
             state.voices[i].modal_y1_3 = 0.0f;
@@ -285,17 +287,17 @@ public:
             state.voices[i].modal_y2_2 = 0.0f;
             state.voices[i].modal_y2_3 = 0.0f;
             state.voices[i].modal_y2_4 = 0.0f;
-             state.voices[i].modal_y1_5 = 0.0f;
-             state.voices[i].modal_y1_6 = 0.0f;
-             state.voices[i].modal_y2_5 = 0.0f;
-             state.voices[i].modal_y2_6 = 0.0f;
+            state.voices[i].modal_y1_5 = 0.0f;
+            state.voices[i].modal_y1_6 = 0.0f;
+            state.voices[i].modal_y2_5 = 0.0f;
+            state.voices[i].modal_y2_6 = 0.0f;
             state.voices[i].modal_norm_count = 0;
             state.voices[i].modal_env_1 = 0.0f;
             state.voices[i].modal_env_2 = 0.0f;
             state.voices[i].modal_env_3 = 0.0f;
             state.voices[i].modal_env_4 = 0.0f;
-             state.voices[i].modal_env_5 = 0.0f;
-             state.voices[i].modal_env_6 = 0.0f;
+            state.voices[i].modal_env_5 = 0.0f;
+            state.voices[i].modal_env_6 = 0.0f;
             state.voices[i].modal_decay_1 = 0.9990f;
             state.voices[i].modal_decay_2 = 0.9985f;
             state.voices[i].modal_decay_3 = 0.9980f;
@@ -309,14 +311,22 @@ public:
             state.voices[i].pitch_env_amt = 0.0f;
             state.voices[i].reed_nl_enabled = false;
             state.voices[i].reed_nl_drive = 1.0f;
+            state.voices[i].boom_phase = 0.0f;
+            state.voices[i].boom_inc = 0.0f;
+            state.voices[i].boom_env = 0.0f;
+            state.voices[i].boom_decay = 1.0f;
+            state.voices[i].boom_mix = 0.0f;
 #endif
             state.voices[i].exciter.noise_lp_state = 0.0f;
             state.voices[i].exciter.noise_band_mix = 0.5f;
-             state.voices[i].exciter.noise_hi_lp_state = 0.0f;
-             state.voices[i].exciter.noise_hi_lp_coeff = 0.30f;
+            state.voices[i].exciter.noise_hi_lp_state = 0.0f;
+            state.voices[i].exciter.noise_hi_lp_coeff = 0.30f;
             state.voices[i].exciter.snare_wire_z1 = 0.0f;
             state.voices[i].exciter.snare_wire_z2 = 0.0f;
             state.voices[i].exciter.snare_wire_mix = 0.0f;
+            state.voices[i].exciter.snare_wire_a1 = 1.6951f;
+            state.voices[i].exciter.snare_wire_a2 = 0.8930f;
+
 
 #ifdef ENABLE_PHASE_6_FILTERS
             // Noise filter defaults to LP mode, fully open (12 kHz)
@@ -1141,8 +1151,8 @@ public:
         v.modal_k_2 = 0.0f;
         v.modal_k_3 = 0.0f;
         v.modal_k_4 = 0.0f;
-         v.modal_k_5 = 0.0f;
-         v.modal_k_6 = 0.0f;
+        v.modal_k_5 = 0.0f;
+        v.modal_k_6 = 0.0f;
         v.modal_y1_1 = 0.0f;
         v.modal_y1_2 = 0.0f;
         v.modal_y1_3 = 0.0f;
@@ -1151,23 +1161,23 @@ public:
         v.modal_y2_2 = 0.0f;
         v.modal_y2_3 = 0.0f;
         v.modal_y2_4 = 0.0f;
-         v.modal_y1_5 = 0.0f;
-         v.modal_y1_6 = 0.0f;
-         v.modal_y2_5 = 0.0f;
-         v.modal_y2_6 = 0.0f;
+        v.modal_y1_5 = 0.0f;
+        v.modal_y1_6 = 0.0f;
+        v.modal_y2_5 = 0.0f;
+        v.modal_y2_6 = 0.0f;
         v.modal_norm_count = 0;
         v.modal_env_1 = 0.0f;
         v.modal_env_2 = 0.0f;
         v.modal_env_3 = 0.0f;
         v.modal_env_4 = 0.0f;
-         v.modal_env_5 = 0.0f;
-         v.modal_env_6 = 0.0f;
+        v.modal_env_5 = 0.0f;
+        v.modal_env_6 = 0.0f;
         v.modal_decay_1 = 0.9990f;
         v.modal_decay_2 = 0.9985f;
         v.modal_decay_3 = 0.9980f;
         v.modal_decay_4 = 0.9975f;
-         v.modal_decay_5 = 0.9970f;
-         v.modal_decay_6 = 0.9965f;
+        v.modal_decay_5 = 0.9970f;
+        v.modal_decay_6 = 0.9965f;
         v.modal_mix = 0.0f;
         v.modal_mode_count = 0;
         v.pitch_env = 0.0f;
@@ -1175,13 +1185,20 @@ public:
         v.pitch_env_amt = 0.0f;
         v.reed_nl_enabled = false;
         v.reed_nl_drive = 1.0f;
+        v.boom_phase = 0.0f;
+        v.boom_inc = 0.0f;
+        v.boom_env = 0.0f;
+        v.boom_decay = 1.0f;
+        v.boom_mix = 0.0f;
 #endif
         v.exciter.noise_lp_state = 0.0f;
-         v.exciter.noise_band_mix = 0.5f;
-         v.exciter.noise_hi_lp_state = 0.0f;
+        v.exciter.noise_band_mix = 0.5f;
+        v.exciter.noise_hi_lp_state = 0.0f;
         v.exciter.snare_wire_z1 = 0.0f;
         v.exciter.snare_wire_z2 = 0.0f;
         v.exciter.snare_wire_mix = 0.0f;
+        v.exciter.snare_wire_a1 = 1.6951f;
+        v.exciter.snare_wire_a2 = 0.8930f;;
 
         // Clear waveguide delay line, LP state, and write pointer.
         //
@@ -1279,16 +1296,30 @@ public:
         } else {
             v.exciter.noise_band_mix = 0.50f;
         }
-        if (m_preset_idx == 3) { // AcSnare: add short resonant wire-like sizzle emphasis.
+        // TODO these should be added to presets themselves
+        if (m_preset_idx == k_AcSnare) { // AcSnare: add short resonant wire-like sizzle emphasis.
             v.exciter.snare_wire_mix = 0.55f;
+            v.exciter.snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack
+            v.exciter.snare_wire_a2 = 0.9050f;
+        } else if (m_preset_idx == k_MarchSnare) { // March snare: drier/tighter wire.
+            v.exciter.snare_wire_mix = 0.42f;
+            v.exciter.snare_wire_a1 = 1.7050f;
+            v.exciter.snare_wire_a2 = 0.8960f;
+        } else if (m_preset_idx == k_HiHatClosed) { // HHat-C: short, crisp "chick".
+            v.exciter.noise_band_mix = 0.86f;
+            v.exciter.noise_hi_lp_coeff = 0.42f;
+        } else if (m_preset_idx == k_HiHatOpen) { // HHat-O: longer shimmering wash.
+            v.exciter.noise_band_mix = 0.93f;
+            v.exciter.noise_hi_lp_coeff = 0.30f;
         }
-         // Metallic presets: enable light Schroeder diffusion in feedback loop
-         // for pseudo-modal density at low CPU cost.
-         bool metallic_diff = (m_preset_idx == 13 || m_preset_idx == 14 || m_preset_idx == 28 || m_preset_idx == 29);
-         v.resA.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
-         v.resB.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
-         v.resA.diffuser_g = 0.45f;
-         v.resB.diffuser_g = 0.45f;
+        // TODO these should be added to presets themselves
+        // Metallic presets: enable light Schroeder diffusion in feedback loop
+        // for pseudo-modal density at low CPU cost.
+        bool metallic_diff = (m_preset_idx == 13 || m_preset_idx == 14 || m_preset_idx == 28 || m_preset_idx == 29);
+        v.resA.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
+        v.resB.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
+        v.resA.diffuser_g = 0.45f;
+        v.resB.diffuser_g = 0.45f;;
 
 #if ENABLE_STAGE2_MODAL_PILOT
         // Stage-2 pilot extensions (CPU-light):
@@ -1364,11 +1395,30 @@ public:
                              220.0f, 420.0f, 680.0f, 920.0f,
                              0.16f, 0.85f, 0.70f, 0.52f, 0.38f, 6);
         }
-
+        // TODO thewse should be set at preset themselves
         if (program == k_KickDrum) {         // Kick: downward pitch sweep (portamento-like)
             v.pitch_env = 1.0f;
             v.pitch_env_decay = 0.9989f;
             v.pitch_env_amt = 9.0f; // semitone-domain sweep depth
+            v.boom_inc = (2.0f * M_PI * 58.0f) / default_sample_rate;
+            v.boom_env = 1.0f;
+            v.boom_decay = 0.99925f;
+            v.boom_mix = 0.22f;
+        } else if (program == k_Timpani) {  // Timpani: deeper low-body modal reinforcement.
+            v.boom_inc = (2.0f * M_PI * 92.0f) / default_sample_rate;
+            v.boom_env = 1.0f;
+            v.boom_decay = 0.99955f;
+            v.boom_mix = 0.20f;
+        } else if (program == k_AcousticTom) { // Tom: punch/body lift.
+            v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
+            v.boom_env = 1.0f;
+            v.boom_decay = 0.99945f;
+            v.boom_mix = 0.16f;
+        } else if (program == k_AcSnare) { // Snare: subtle shell body only.
+            v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
+            v.boom_env = 1.0f;
+            v.boom_decay = 0.99920f;
+            v.boom_mix = 0.09f;
         }
         if (program == k_Clarinet) {         // Clarinet: lightweight reed nonlinearity
             v.reed_nl_enabled = true;
@@ -1579,7 +1629,7 @@ public:
                 // without feeding broadband noise into pitch-tracked waveguides.
                 // Poles at r=0.945, f≈3.5kHz (a1=2r·cos(w), a2=r²): wire sizzle in
                 // the snare wire frequency range; previous 695 Hz was far too low.
-                float wire = noise_sum + (1.6951f * ex.snare_wire_z1) - (0.8930f * ex.snare_wire_z2);
+                float wire = noise_sum + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
                 ex.snare_wire_z2 = ex.snare_wire_z1;
                 ex.snare_wire_z1 = wire;
                 noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);
@@ -1826,6 +1876,13 @@ public:
                 voice_out += voice.exciter.noise_out_sample * 5.0f * voice.current_velocity;
 #endif
 #if ENABLE_STAGE2_MODAL_PILOT
+                if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
+                    float boom = fastersinfullf(voice.boom_phase) * voice.boom_env * voice.boom_mix;
+                    voice_out += boom * voice.current_velocity;
+                    voice.boom_phase += voice.boom_inc;
+                    if (voice.boom_phase > (2.0f * M_PI)) voice.boom_phase -= (2.0f * M_PI);
+                    voice.boom_env *= voice.boom_decay;
+                }
                 if (voice.modal_pilot_enabled) {
                     // Update modes 1/2 (and optionally 3/4 for metallic presets).
 #if defined(__ARM_NEON) || defined(__aarch64__)
