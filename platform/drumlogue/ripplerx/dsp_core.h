@@ -239,6 +239,12 @@ struct VoiceState {
     float boom_env = 0.0f;
     float boom_decay = 1.0f;
     float boom_mix = 0.0f;
+    // Metallic transient FM chirp (character-focused, not exact sample match).
+    float metal_fm_phase = 0.0f;
+    float metal_fm_inc = 0.0f;
+    float metal_fm_env = 0.0f;
+    float metal_fm_decay = 1.0f;
+    float metal_fm_depth = 0.0f;
 #endif
 };
 

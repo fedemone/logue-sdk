@@ -316,6 +316,11 @@ public:
             state.voices[i].boom_env = 0.0f;
             state.voices[i].boom_decay = 1.0f;
             state.voices[i].boom_mix = 0.0f;
+            state.voices[i].metal_fm_phase = 0.0f;
+            state.voices[i].metal_fm_inc = 0.0f;
+            state.voices[i].metal_fm_env = 0.0f;
+            state.voices[i].metal_fm_decay = 1.0f;
+            state.voices[i].metal_fm_depth = 0.0f;
 #endif
             state.voices[i].exciter.noise_lp_state = 0.0f;
             state.voices[i].exciter.noise_band_mix = 0.5f;
@@ -1196,6 +1201,11 @@ public:
         v.boom_env = 0.0f;
         v.boom_decay = 1.0f;
         v.boom_mix = 0.0f;
+        v.metal_fm_phase = 0.0f;
+        v.metal_fm_inc = 0.0f;
+        v.metal_fm_env = 0.0f;
+        v.metal_fm_decay = 1.0f;
+        v.metal_fm_depth = 0.0f;
 #endif
         v.exciter.noise_lp_state = 0.0f;
         v.exciter.noise_band_mix = 0.5f;
@@ -1327,7 +1337,24 @@ public:
         v.resA.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
         v.resB.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
         v.resA.diffuser_g = 0.45f;
-        v.resB.diffuser_g = 0.45f;;
+        v.resB.diffuser_g = 0.45f;
+        // Metallic transient FM chirp for recognizable sweep character.
+        if (metallic_diff || m_preset_idx == k_Cowbell || m_preset_idx == k_Triangle || m_preset_idx == k_BellTree) {
+            float base_fm_hz = 850.0f;
+            if (m_preset_idx == k_HiHatClosed) base_fm_hz = 3200.0f;
+            else if (m_preset_idx == k_HiHatOpen) base_fm_hz = 2400.0f;
+            else if (m_preset_idx == k_Cymbal) base_fm_hz = 1800.0f;
+            else if (m_preset_idx == k_Ride) base_fm_hz = 1450.0f;
+            else if (m_preset_idx == k_RideBell) base_fm_hz = 1200.0f;
+            else if (m_preset_idx == k_Gong) base_fm_hz = 780.0f;
+            else if (m_preset_idx == k_Cowbell) base_fm_hz = 1100.0f;
+            else if (m_preset_idx == k_Triangle) base_fm_hz = 950.0f;
+            v.metal_fm_phase = 0.0f;
+            v.metal_fm_inc = (2.0f * M_PI * base_fm_hz) / default_sample_rate;
+            v.metal_fm_env = 1.0f;
+            v.metal_fm_decay = (m_preset_idx == k_HiHatClosed) ? 0.9955f : 0.9978f;
+            v.metal_fm_depth = (m_preset_idx == k_HiHatClosed) ? 0.08f : 0.16f;
+        }
 
 #if ENABLE_STAGE2_MODAL_PILOT
         // Stage-2 pilot extensions (CPU-light):
@@ -1890,6 +1917,16 @@ public:
                 // or unit_gate_on / unit_render are not being called.
                 float exciter_sig = process_exciter(voice.exciter);
 #if ENABLE_STAGE2_MODAL_PILOT
+                if (voice.metal_fm_depth > 0.0f && voice.metal_fm_env > silence_threshold) {
+                    float fm = fastersinfullf(voice.metal_fm_phase) * voice.metal_fm_depth * voice.metal_fm_env;
+                    exciter_sig += fm;
+                    // Sweep effect: instantaneous modulation rate is higher at onset,
+                    // then relaxes as envelope decays.
+                    float sweep = 1.0f + (2.4f * voice.metal_fm_env);
+                    voice.metal_fm_phase += voice.metal_fm_inc * sweep;
+                    if (voice.metal_fm_phase > (2.0f * M_PI)) voice.metal_fm_phase -= (2.0f * M_PI);
+                    voice.metal_fm_env *= voice.metal_fm_decay;
+                }
                 if (voice.reed_nl_enabled) {
                     // Lightweight asymmetric waveshaper to emulate reed contact.
                     float x = exciter_sig * voice.reed_nl_drive;

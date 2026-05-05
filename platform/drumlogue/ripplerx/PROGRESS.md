@@ -2678,3 +2678,31 @@ Implementation:
 
 Purpose:
 - Improve recognizable hat identity (closed tick vs open shimmer) while keeping CPU-light architecture.
+## Phase 39: Metallic FM-sweep character path + testing strategy refresh
+
+Model update:
+- Added a lightweight metallic transient FM chirp path (private per-voice state):
+  - `metal_fm_phase`, `metal_fm_inc`, `metal_fm_env`, `metal_fm_decay`, `metal_fm_depth`
+- Enabled for metallic/percussive inharmonic families (Cymbal/Gong/HHat/Ride/RideBell
+  plus Cowbell/Triangle/BellTree) with preset-specific base FM rates and envelope shapes.
+- FM chirp is injected into the exciter path at note start; modulation rate relaxes
+  as envelope decays to produce a downward sweep-like perceived transient.
+
+Testing strategy update (recognizable target, not exact clone):
+1) **Class-family A/B tests first**
+   - Families: membranes, metallic, bars/tines, tubes.
+   - Compare against family-specific targets (not global score only).
+2) **Short-window transient metrics for metallics**
+   - Evaluate 0–120 ms windows for sweep/brightness movement:
+     centroid slope, flux burst, early MR-STFT distance.
+3) **Two-score gating**
+   - Keep both `exact` and `recognizable` scores; accept changes when
+     recognizable improves and exact does not regress catastrophically.
+4) **Preset lock + note lock mandatory**
+   - Always run with note-map + sample-map locks to avoid pseudo-f0 drift.
+5) **Hardware spot checks per family milestone**
+   - After each accepted family batch, check 2-3 anchor presets on HW.
+
+Documentation needed (optional but high value):
+- If available, per-family "must-have" descriptors (e.g., open-hat shimmer tail length,
+  gong sweep aggressiveness, snare crack sharpness) can be translated into score gates.
