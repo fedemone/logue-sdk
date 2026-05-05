@@ -431,23 +431,21 @@ private:
             case DIST_MODE_DIST2:
             case DIST_MODE_DIST3:
             case DIST_MODE_BOTH: {
-                // DRIVE scales the pre-gain into the harmonic stage so the DRIVE
-                // knob controls saturation intensity (same gain/makeup formula as
-                // wavefolder_set_drive): at drive=0 harmonics come from unity-gain
-                // input; at drive=100% input is 3x before the polynomial, producing
-                // far more pronounced 2nd/3rd harmonic content.
-                float pre_gain = 1.0f + drive_ * 2.0f;
-                float makeup   = 1.0f / pre_gain;
-                float32x4_t pre_v = vdupq_n_f32(pre_gain);
-                float32x4_t mkp_v = vdupq_n_f32(makeup);
-                float32x4_t harm_l = generate_harmonics(&distressor_,
-                                                        vmulq_f32(main_l, pre_v),
-                                                        distressor_.dist_mode);
-                float32x4_t harm_r = generate_harmonics(&distressor_,
-                                                        vmulq_f32(main_r, pre_v),
-                                                        distressor_.dist_mode);
-                *out_l = vmulq_f32(vmulq_f32(harm_l, mkp_v), gain_lin);
-                *out_r = vmulq_f32(vmulq_f32(harm_r, mkp_v), gain_lin);
+                // Apply saturation to the COMPRESSED signal (not raw input).
+                // A base drive of 2x ensures audible harmonic content at all drive
+                // settings; DRIVE knob adds up to 4x on top (2..6x total).
+                // makeup = 1.8 / sat_drive compensates for pre-gain + the ~0.8 gain
+                // loss that the saturator introduces at typical operating levels.
+                float sat_drive = 2.0f + drive_ * 4.0f;
+                float makeup    = 1.8f / sat_drive;
+                float32x4_t drv = vdupq_n_f32(sat_drive);
+                float32x4_t mkp = vdupq_n_f32(makeup);
+                *out_l = vmulq_f32(generate_harmonics(&distressor_,
+                                                      vmulq_f32(comp_l, drv),
+                                                      distressor_.dist_mode), mkp);
+                *out_r = vmulq_f32(generate_harmonics(&distressor_,
+                                                      vmulq_f32(comp_r, drv),
+                                                      distressor_.dist_mode), mkp);
                 break;
             }
             case DIST_MODE_CLEAN:
