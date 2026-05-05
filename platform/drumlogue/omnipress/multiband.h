@@ -32,6 +32,7 @@ typedef struct {
         float thresh_db;
         float ratio;
         float makeup_db;
+        float makeup_gain_linear;  // fasterpowf(10, makeup_db/20) — pre-computed at set time
         float attack_ms;
         float release_ms;
         float mute;          // 0=off, 1=on (for solo/mute)
@@ -81,6 +82,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
         mb->bands[i].thresh_db = -10.0f;
         mb->bands[i].ratio = 4.0f;
         mb->bands[i].makeup_db = 0.0f;
+        mb->bands[i].makeup_gain_linear = 1.0f;   // 0 dB
         mb->bands[i].attack_ms = 10.0f;
         mb->bands[i].release_ms = 100.0f;
         mb->bands[i].mute = 0.0f;
@@ -120,7 +122,10 @@ fast_inline void multiband_set_param(multiband_t* mb,
     switch (param_id) {
         case 0: mb->bands[band].thresh_db = value; break;
         case 1: mb->bands[band].ratio = value; break;
-        case 2: mb->bands[band].makeup_db = value; break;
+        case 2:
+            mb->bands[band].makeup_db = value;
+            mb->bands[band].makeup_gain_linear = fasterpowf(10.0f, value / 20.0f);
+            break;
         case 3: mb->bands[band].attack_ms = value; multiband_update_coeff(mb, band); break;
         case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;
         case 5: mb->bands[band].mute = value; break;
@@ -196,10 +201,10 @@ fast_inline void multiband_process(multiband_t* mb,
     float32x4_t mid_gain = neon_expq_f32(vmulq_f32(mb->gr_mid, vdupq_n_f32(0.115129f)));
     float32x4_t high_gain = neon_expq_f32(vmulq_f32(mb->gr_high, vdupq_n_f32(0.115129f)));
 
-    // Apply makeup gain
-    low_gain = vmulq_f32(low_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_LOW].makeup_db / 20.0f)));
-    mid_gain = vmulq_f32(mid_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_MID].makeup_db / 20.0f)));
-    high_gain = vmulq_f32(high_gain, vdupq_n_f32(fasterpowf(10.0f, mb->bands[BAND_HIGH].makeup_db / 20.0f)));
+    // Apply makeup gain (pre-computed at parameter-set time — no fasterpowf in hot path)
+    low_gain  = vmulq_n_f32(low_gain,  mb->bands[BAND_LOW].makeup_gain_linear);
+    mid_gain  = vmulq_n_f32(mid_gain,  mb->bands[BAND_MID].makeup_gain_linear);
+    high_gain = vmulq_n_f32(high_gain, mb->bands[BAND_HIGH].makeup_gain_linear);
 
     // Apply mute/solo logic
     int any_solo = (mb->bands[BAND_LOW].solo > 0.0f ||
