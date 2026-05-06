@@ -1000,9 +1000,12 @@ public:
 #ifdef ENABLE_PHASE_8_2D_DRUMHEAD
             // Add up to a 50% stiffness boost when striking at the absolute edge
             float rim_stiffness_boost = radius * 0.5f;
-#endif
+            v.exciter.mallet_stiffness = fmaxf(0.01f, fminf(1.0f,
+                base_stiff + stif_mod * v.current_velocity + rim_stiffness_boost));
+#else
             v.exciter.mallet_stiffness = fmaxf(0.01f, fminf(1.0f,
                 base_stiff + stif_mod * v.current_velocity));
+#endif
         }
 
         // VlMllRes: harder hit → faster noise attack (sharper transient).
