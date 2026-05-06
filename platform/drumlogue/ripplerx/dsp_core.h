@@ -34,7 +34,7 @@
 
 // =================================================================
 // UNCOMMENT THIS LINE TO ACTIVATE PHASE 8 (2D DRUMHEAD STRIKE PHYSICS)
-// #define ENABLE_PHASE_8_2D_DRUMHEAD 1
+#define ENABLE_PHASE_8_2D_DRUMHEAD 1
 // =================================================================
 
 // =================================================================

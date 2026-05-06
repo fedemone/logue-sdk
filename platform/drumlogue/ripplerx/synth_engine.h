@@ -1291,10 +1291,10 @@ public:
         // Stage-1 model-specific transient presets.
         // Simple profile map: percussion gets longer/stronger transient modulation.
         uint8_t model_profile = m_model_a;
-        bool percussion_model = (model_profile == 2 || model_profile == 3 ||
-                                 model_profile == 4 || model_profile == 5 ||
-                                 model_profile == 6);
-        bool tube_model = (model_profile == 7 || model_profile == 8);
+        bool percussion_model = (model_profile == k_SquarePlate || model_profile == k_Membrane ||
+                                 model_profile == k_Plate || model_profile == k_Drumhead ||
+                                 model_profile == k_MarimbaBar);
+        bool tube_model = (model_profile == k_OpenTube || model_profile == k_ClosedTube);
         if (percussion_model) {
             v.transient_frames_total = (uint32_t)(default_sample_rate * 0.045f); // 45 ms
             v.transient_frames_left = v.transient_frames_total;
