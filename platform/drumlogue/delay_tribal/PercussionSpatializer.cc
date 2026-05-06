@@ -200,13 +200,13 @@ void PercussionSpatializer::rebuild_profile() {
 
         // Per-clone wobble rate stagger (makes each clone drift independently)
         clones_[i].wobble_rate_mul = 0.70f + 0.30f * t;
-        clones_[i].wobble_phase = xorshift_f32(rng_state_) * 2.0f * 3.14159265f;
+        clones_[i].wobble_phase = xorshift_f32(rng_state_) * 2.0f * M_PI;
 
         // Pan position
         float base_x = 0.0f;
         switch (profile_.pan_model) {
             case PAN_MODEL_CIRCLE: {
-                float arc = t * 3.14159265f - 1.5707963f;
+                float arc = t * M_PI - 1.5707963f;
                 base_x = fastersinfullf(arc);
                 break;
             }
@@ -268,7 +268,7 @@ void PercussionSpatializer::randomize_hit() {
         const float max_sct   = profile_.scatter_amount * 2.4f * (0.25f + 0.75f * follower) * gap_detach;
         const float clone_jit = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * max_sct;
         clones_[i].scatter_samples = (global_jit + clone_jit) * ms_to_smp * gap_detach;
-        clones_[i].wobble_phase    = xorshift_f32(rng_state_) * 2.0f * 3.14159265f;
+        clones_[i].wobble_phase    = xorshift_f32(rng_state_) * 2.0f * M_PI;
     }
 }
 

@@ -619,7 +619,7 @@ public:
                     color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
                     color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
                 }
-                // Scale down since we are summing 6 high-Q resonant peaks.
+                // Scale down since we are summing 6 high-Q resonant peaks. - NOTE commented out for the moment, to try louder effect
                 // color_l *= 0.50f;
                 // color_r *= 0.50f;
             }

@@ -762,6 +762,7 @@ private:
             float current_rate = 0.5f;
             float current_depth = 1.0f;
 
+            // use shimmer only on the last two presets, not available for all
             if (currentPreset == k_esotico) {
                 // Cochrane 18-EDO Shimmer Mode
                 current_rate = microtonalRate_[ch];
@@ -769,7 +770,7 @@ private:
             }
             else if(currentPreset == k_stellare) {
               // Standard Swirl / Chorus Mode
-              current_rate = swirlRate_[ch] * (1.0f + modRate); // Scale with UI, where modRate is mapping of VIBR  LFO speed for random modulation
+              current_rate = swirlRate_[ch] * (1.0f + modRate); // Scale with UI, where modRate is mapping of VIBR LFO speed for random modulation
               current_depth = modDepth * 20.0f; // Standard subtle diffusion
             }
 
@@ -905,7 +906,13 @@ private:
 
             // 3. Calculate phase increments for 4 parallel samples
             float inc = M_TWOPI * shimmerFreq_ / sampleRate;
-            float32x4_t phaseVec = {    // TODO: change those integer multiplier?
+            // Those multipliers (1.0f, 2.0f, 3.0f) are not artistic DSP parameters. They are strict structural math representing the linear flow of time.
+            // Instead of moving smoothly through the delay buffer, your 4 audio samples will be randomly grabbed from completely different, disconnected points in the pitch-shifter's memory.
+            // possible alternative
+            // Makes the shimmer warble slightly like light through a prism
+            // float lfo_wobble = sinf(some_lfo_phase) * 0.05f;
+            // float inc = 2.0f + lfo_wobble;
+            float32x4_t phaseVec = {
                 shimmerPhase_,
                 shimmerPhase_ + inc,
                 shimmerPhase_ + 2.0f * inc,
