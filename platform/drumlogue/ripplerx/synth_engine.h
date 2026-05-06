@@ -1457,6 +1457,20 @@ public:
             init_modal_modes(1.59f, 2.14f, 2.30f,
                              60.0f, 45.0f, 30.0f, 20.0f,
                              0.15f, 0.65f, 0.50f, 0.35f, 0.22f, 4);
+        } else if (program == k_MarchSnare) {
+            // March snare: same membrane ratios but very short T60 — tight shell ring
+            // that decays well before the snare wire buzz and noise crack take over.
+            init_modal_modes(1.59f, 2.14f, 2.30f,
+                             30.0f, 22.0f, 15.0f, 10.0f,
+                             0.14f, 0.60f, 0.45f, 0.30f, 0.18f, 4);
+        } else if (program == k_Claves) {
+            // Claves: cylindrical hardwood rods, free-free bar transverse bending modes.
+            // Same mode ratios as triangle (1:2.756:5.404) — "wood" vs "metal" timbre
+            // is from the loss profile (Mterl/Dkay), not the modal structure.
+            // Short T60 — claves ring briefly; upper modes die almost instantly.
+            init_modal_modes(2.756f, 5.404f, 0.0f,
+                             60.0f, 25.0f, 0.0f, 0.0f,
+                             0.16f, 0.70f, 0.45f, 0.0f, 0.0f, 3);
         } else if (program == k_Woodblock) {         // Wodblk pilot
             init_modal_modes(STAGE2_MODAL_RATIO_2, 0.0f, 0.0f,
                              STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f,
