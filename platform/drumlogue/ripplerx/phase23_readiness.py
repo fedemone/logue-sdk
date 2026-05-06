@@ -8,9 +8,10 @@ Prints:
 from pathlib import Path
 from batch_tune_runner import parse_presets, map_sample_to_preset, SYNTH_ENGINE
 
+# Note: this should have names or aliases (MANUAL_SAMPLE_TO_PRESET)? Otherwise match is not possible
 TARGET = {
-    "AcSnare", "Kick", "HHat-C", "HHat-O", "Timpani", "Ac Tom",
-    "Flute", "Clrint", "Tick", "Clap", "Kalimba",
+   "AcSnre", "Kick", "HHat-C", "HHat-O", "Timpni",
+    "Ac Tom","Flute", "Clrint", "Tick", "Clap", "Kalimba",
 }
 
 
@@ -18,13 +19,13 @@ def main() -> int:
     root = Path(__file__).resolve().parent
     presets = parse_presets(SYNTH_ENGINE)
     sample_dir = root / "samples"
-    samples = sorted([p for p in sample_dir.iterdir() if p.suffix.lower() == ".wav"])
+    samples = sorted([p for p in sample_dir.iterdir() if p.suffix.lower() in [".wav", ".mp3"]])
 
     mapped = []
     unmapped = []
     target_covered = set()
 
-    for s in samples:
+    for i, s in enumerate(samples):
         p = map_sample_to_preset(s, presets)
         if p is None:
             unmapped.append(s.name)

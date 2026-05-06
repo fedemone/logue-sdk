@@ -24,6 +24,7 @@ import csv
 import json
 import math
 import re
+import os
 import shlex
 import subprocess
 from collections import defaultdict
@@ -35,10 +36,10 @@ from pre_hw_analysis import compare_pair, read_wav_mono, autocorr_f0
 
 
 REPO_DIR = Path(__file__).resolve().parent
-SAMPLES_DIR = REPO_DIR / "samples"
-SYNTH_ENGINE = REPO_DIR / "synth_engine.h"
-DEFAULT_RENDER_DIR = REPO_DIR / "rendered_batch"
-DEFAULT_OUT_DIR = REPO_DIR / "batch_reports"
+SAMPLES_DIR = Path(os.path.join(REPO_DIR, "samples"))
+SYNTH_ENGINE = Path(os.path.join(REPO_DIR, "synth_engine.h"))
+DEFAULT_RENDER_DIR = Path(os.path.join(REPO_DIR, "rendered_batch"))
+DEFAULT_OUT_DIR = Path(os.path.join(REPO_DIR, "batch_reports"))
 
 
 # Manual coupling for ambiguous names / aliases.
@@ -342,7 +343,7 @@ Use `--preset-group remaining_batch` to run the next staged scope.
 
 
 def parse_presets(path: Path) -> Dict[str, PresetRow]:
-    txt = path.read_text()
+    txt = path.read_text(encoding='utf-8')
     # Extract idx->name mapping from getPresetName array.
     names_block = re.search(r"static inline const char \* getPresetName\(uint8_t idx\).*?\{(.*?)\};", txt, re.S)
     names = []
