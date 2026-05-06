@@ -2706,3 +2706,33 @@ Testing strategy update (recognizable target, not exact clone):
 Documentation needed (optional but high value):
 - If available, per-family "must-have" descriptors (e.g., open-hat shimmer tail length,
   gong sweep aggressiveness, snare crack sharpness) can be translated into score gates.
+
+## Phase 40: Metallic modal-attack coupling refinement
+
+- Added dynamic modal mix shaping tied to metallic FM envelope during the first
+  transient window:
+  - `modal_mix_dyn = modal_mix * (1 + 0.35 * metal_fm_env)` while FM envelope is active.
+- Goal: stronger recognizable metallic "opening" attack (cymbal/gong/ride/hat)
+  without changing steady-state ring character.
+
+Rationale:
+- Prior FM chirp improved sweep motion but modal bank attack could still feel static.
+- Coupling modal emphasis to the same transient envelope improves attack coherence
+  while decaying naturally to baseline modal mix.
+
+## Phase 41: Descriptor-driven family scoring gates
+
+Integrated user-provided family descriptors into `batch_tune_runner.py` scoring:
+- Added family preset groups (kick, snare, toms, hats, cymbals, gong, percussion texture).
+- Added descriptor-window penalties on key metrics (`t60_pct`, `flux_pct`,
+  `centroid_pct`, `flatness_pct`) to steer optimization toward recognizable
+  instrument character per family.
+
+Examples:
+- Kick: penalize over-long sustain / too-noisy body / weak transient movement.
+- Snare: penalize weak crack (low centroid/flux) and over-long tails.
+- HHat-C: prioritize bright short chick; HHat-O: prioritize sustained wash.
+- Cymbal/Ride/Gong: protect long natural decay and shimmer/booming behavior.
+
+This keeps exact-match metrics available but introduces family-intent priors
+that align tuning outcomes with musical recognizability goals.

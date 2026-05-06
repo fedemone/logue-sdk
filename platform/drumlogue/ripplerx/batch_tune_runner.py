@@ -140,7 +140,6 @@ RENDER_PRESET_NAMES = {
     "Djambe": "Djambe",
     "Taiko": "Taiko",
     "MrchSnr": "MrchSnr",
-    "TamTam": "TamTam",
     "Koto": "Koto",
     "Vibrph": "Vibrph",
     "Wodblk": "Wodblk",
@@ -174,11 +173,29 @@ RENDER_PRESET_NAMES = {
 }
 
 PERCUSSIVE_PRESETS = {
-    "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "TamTam", "Wodblk",
+    "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "Wodblk",
     "Ac Tom", "AcTom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
+KICK_PRESETS = {"Kick", "808Sub"}
+SNARE_PRESETS = {"AcSnre", "MrchSnr"}
+TOM_PRESETS = {"Ac Tom", "AcTom", "Conga", "Bongo", "Taiko", "Djambe"}
+HIHAT_PRESETS = {"HHat-C", "HHat-O"}
+CYMBAL_PRESETS = {"Cymbl", "Ride", "RidBel"}
+GONG_PRESETS = {"Gong"}
+PERC_TEXTURE_PRESETS = {"Shaker", "Clap", "Handpn"}
+
+STYLE_PROFILES: Dict[str, Dict[str, float]] = {
+    # Open-hat windows in ms, snare crack center in Hz.
+    "electronic": {"hhat_open_min_ms": 100.0, "hhat_open_max_ms": 500.0, "hhat_closed_max_ms": 500.0, "snare_crack_hz": 3200.0},
+    "trap": {"hhat_open_min_ms": 100.0, "hhat_open_max_ms": 200.0, "hhat_closed_max_ms": 250.0, "snare_crack_hz": 3800.0},
+    "house": {"hhat_open_min_ms": 180.0, "hhat_open_max_ms": 320.0, "hhat_closed_max_ms": 420.0, "snare_crack_hz": 3200.0},
+    "rock": {"hhat_open_min_ms": 300.0, "hhat_open_max_ms": 550.0, "hhat_closed_max_ms": 520.0, "snare_crack_hz": 3000.0},
+    "metal": {"hhat_open_min_ms": 160.0, "hhat_open_max_ms": 360.0, "hhat_closed_max_ms": 350.0, "snare_crack_hz": 4200.0},
+    "funk": {"hhat_open_min_ms": 140.0, "hhat_open_max_ms": 280.0, "hhat_closed_max_ms": 320.0, "snare_crack_hz": 5000.0},
+    "jazz": {"hhat_open_min_ms": 220.0, "hhat_open_max_ms": 520.0, "hhat_closed_max_ms": 520.0, "snare_crack_hz": 2600.0},
+}
 UNPITCHED_FOCUS_PRESETS = {
     # First-batch focus where autocorrelation pitch is frequently unstable and
     # should not dominate acceptance.
@@ -213,7 +230,7 @@ PRESET_GROUPS = {
     "first_batch": ["Djambe", "Taiko", "Bongo", "Conga", "Marimba", "Kalimba", "Wodblk", "Timpani"],
     "remaining_batch": [
         "Clrint", "Cymbal", "Flute", "GlsBotl", "Gong", "HHat-C", "HHat-O", "Koto",
-        "MrchSnr", "Ride", "RidBel", "StelPan", "TamTam", "TblrBel", "Tick", "Timpani",
+        "MrchSnr", "Ride", "RidBel", "StelPan", "TblrBel", "Tick", "Timpani",
     ],
 }
 
@@ -609,7 +626,96 @@ def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str,
             score += 0.05 * metrics.get("f0_pct", 0.0)
             score += 0.10 * abs(metrics.get("note_offset_semitones", 0.0))
 
+    # Descriptor-driven penalties (recognizable-family targets from HW design goals):
+    # lower is better; penalties activate only when outside desired descriptor windows.
+    flux = metrics.get("flux_pct", 0.0)
+    centroid = metrics.get("centroid_pct", 0.0)
+    t60 = metrics.get("t60_pct", 0.0)
+    flat = metrics.get("flatness_pct", 0.0)
+
+    def over(v: float, lim: float, gain: float) -> float:
+        return max(0.0, v - lim) * gain
+
+    def under(v: float, lim: float, gain: float) -> float:
+        return max(0.0, lim - v) * gain
+
+    # Kick: needs punch/sub balance and controlled sustain.
+    if preset_name in KICK_PRESETS:
+        score += over(t60, 40.0, 0.35) + over(flat, 55.0, 0.20) + under(flux, 18.0, 0.20)
+    # Snare: crack/snap with quick dry body.
+    if preset_name in SNARE_PRESETS:
+        score += over(t60, 48.0, 0.25) + under(centroid, 15.0, 0.20) + under(flux, 20.0, 0.25)
+    # Toms/congas/bongos: musical resonance, clear pitch body.
+    if preset_name in TOM_PRESETS:
+        score += over(flat, 60.0, 0.15) + under(t60, 8.0, 0.10)
+    # Hi-hats: bright click (closed) vs wash (open).
+    if preset_name == "HHat-C":
+        score += under(centroid, 18.0, 0.25) + over(t60, 26.0, 0.20)
+    if preset_name == "HHat-O":
+        score += under(centroid, 16.0, 0.18) + under(t60, 16.0, 0.12)
+    # Cymbals / ride: long natural decay + shimmer.
+    if preset_name in CYMBAL_PRESETS:
+        score += under(t60, 10.0, 0.12) + under(flux, 14.0, 0.12)
+    # Gong: booming dark body + overtone growth.
+    if preset_name in GONG_PRESETS:
+        score += under(t60, 12.0, 0.18) + over(centroid, 70.0, 0.10)
+    # Shakers/percussion textures: organic noise & subtle dynamics.
+    if preset_name in PERC_TEXTURE_PRESETS:
+        score += under(flat, 8.0, 0.15) + under(flux, 8.0, 0.12)
+
     return score
+
+
+def descriptor_window_penalty(comp: Dict[str, object], style: str = "electronic", bpm: float = 120.0) -> float:
+    """Absolute descriptor windows (family intent priors, recognizable goal).
+    Uses extracted feature values directly where possible.
+    """
+    p = str(comp.get("preset", ""))
+    ren = comp.get("ren_features", {}) or {}
+    # Defensive numeric extraction.
+    t60_ms = float(ren.get("t60_ms", 0.0) or 0.0)
+    centroid_hz = float(ren.get("centroid_hz", 0.0) or 0.0)
+    rolloff_hz = float(ren.get("rolloff_hz", 0.0) or 0.0)
+    flux = float(ren.get("flux", 0.0) or 0.0)
+
+    pen = 0.0
+    prof = STYLE_PROFILES.get(style, STYLE_PROFILES["electronic"])
+    hhat_closed_max = prof["hhat_closed_max_ms"]
+    hhat_open_min = prof["hhat_open_min_ms"]
+    hhat_open_max = prof["hhat_open_max_ms"]
+    # Optional tempo-aware ceiling (roughly 1/8 note).
+    if bpm > 1.0:
+        eighth_ms = 30000.0 / bpm
+        hhat_closed_max = min(hhat_closed_max, max(120.0, eighth_ms))
+        hhat_open_max = max(hhat_open_max, 0.8 * eighth_ms)
+
+    # Closed hat tail max.
+    if p == "HHat-C" and t60_ms > hhat_closed_max:
+        pen += (t60_ms - hhat_closed_max) * 0.02
+    # Open hat wash minimum + excessive wash guard.
+    if p == "HHat-O":
+        if t60_ms < hhat_open_min:
+            pen += (hhat_open_min - t60_ms) * 0.03
+        if t60_ms > hhat_open_max:
+            pen += (t60_ms - hhat_open_max) * 0.01
+
+    # Snare crack prominence proxy (2.5k..5k): use brightness proxies.
+    snare_crack_hz = prof["snare_crack_hz"]
+    if p in SNARE_PRESETS:
+        if centroid_hz < snare_crack_hz:
+            pen += (snare_crack_hz - centroid_hz) * 0.004
+        if rolloff_hz < 5000.0:
+            pen += (5000.0 - rolloff_hz) * 0.002
+        if flux < 2.0:
+            pen += (2.0 - flux) * 12.0
+
+    # Gong sweep aggression + swell proxy: require moderate transient movement and not overly bright body.
+    if p in GONG_PRESETS:
+        if flux < 1.4:
+            pen += (1.4 - flux) * 10.0
+        if centroid_hz > 3200.0:
+            pen += (centroid_hz - 3200.0) * 0.001
+    return pen
 
 
 def estimate_runs_needed(current_score: float, target_score: float = 12.0, assumed_improvement: float = 0.72) -> int:
@@ -705,6 +811,8 @@ def parse_args() -> argparse.Namespace:
         default="exact",
         help="Scoring goal: exact sample match or recognizable instrument character.",
     )
+    p.add_argument("--style", choices=sorted(STYLE_PROFILES.keys()), default="electronic", help="Style profile for descriptor windows.")
+    p.add_argument("--bpm", type=float, default=120.0, help="Tempo hint used for hat tail windows.")
     p.add_argument(
         "--family-pitch-thresholds",
         type=str,
@@ -868,6 +976,7 @@ def run_one_iteration(
         comp["sample"] = sample.name
         comp["raw_score"] = comp["score"]
         comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"], goal_mode=args.goal_mode)
+	comp["score"] += descriptor_window_penalty(comp, style=args.style, bpm=args.bpm)
         comp["suggestions"] = suggest_tuning(comp["metrics"], preset.values)
         comp["estimated_runs_to_target"] = estimate_runs_needed(
             comp["score"],

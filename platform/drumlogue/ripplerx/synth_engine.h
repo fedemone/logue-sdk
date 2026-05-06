@@ -2165,12 +2165,17 @@ public:
                              voice.modal_env_6 *= voice.modal_decay_6;
                          }
                      }
-                     voice_out += (m1
-                                 + (stage2_modal_amp_ratio_2 * m2)
-                                 + (0.45f * m3)
-                                 + (0.28f * m4)
-                                 + (0.18f * m5)
-                                 + (0.12f * m6)) * voice.modal_mix;
+                    float modal_mix_dyn = voice.modal_mix;
+                    if (voice.metal_fm_env > silence_threshold) {
+                        // Keep modal attack "opening" during FM chirp onset, then settle.
+                        modal_mix_dyn *= (1.0f + (0.35f * voice.metal_fm_env));
+                    }
+                    voice_out += (m1
+                                + (stage2_modal_amp_ratio_2 * m2)
+                                + (0.45f * m3)
+                                + (0.28f * m4)
+                                + (0.18f * m5)
+                                + (0.12f * m6)) * modal_mix_dyn;
                      if (voice.modal_env_1 < silence_threshold &&
                          voice.modal_env_2 < silence_threshold &&
                          (voice.modal_mode_count <= 2 || (voice.modal_env_3 < silence_threshold && voice.modal_env_4 < silence_threshold &&

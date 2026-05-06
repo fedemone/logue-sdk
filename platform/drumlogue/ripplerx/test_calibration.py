@@ -38,7 +38,6 @@ SAMPLE_TO_PRESET = {
     "kalimba-e_E.wav":                         ("Kalimba",  16,  65),
     "Koto-B5.wav":                             ("Koto",     10,  60),
     "Koto-Pluck-C-Major.wav":                  ("Koto",     10,  60),
-    "Chinese-Gong.wav":                        ("TamTam",    9,  41),
     "Gong-long-G#.wav":                        ("Gong",     15,  50),
     "Djambe-A3.wav":                           ("Djambe",    6,  48),
     "Djambe-B3.wav":                           ("Djambe",    6,  48),
