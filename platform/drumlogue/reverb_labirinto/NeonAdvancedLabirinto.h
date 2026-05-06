@@ -119,6 +119,7 @@ public:
         , noiseSeed(132465798U)
         , noiseColour(2.0f)
         , noiseGain(0.0f)
+        , noiseEnvelope(0.0f)
         , pingMapIndex(0) {
 
         // Initialize delay times (prime-based for smooth diffusion)
@@ -217,6 +218,7 @@ public:
             noiseStates[i] = 0.0f;
             noiseStates2[i] = 0.0f;
         }
+        noiseEnvelope = 0.0f;
     }
 
     /*===========================================================================*/
@@ -961,15 +963,22 @@ private:
         // from the delayed signal is after the pre-delay write, which is itself
         // gated by this guard — so without a raw-input check here the reverb
         // would never activate from bypass.
+        bool signal_active_4 = false;
         {
             float32x4_t absL = vabsq_f32(inL4);
             float32x4_t absR = vabsq_f32(inR4);
             float32x4_t absIn = vmaxq_f32(absL, absR);
             float32x4_t mx1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
             float mx = vgetq_lane_f32(vmaxq_f32(mx1, vextq_f32(mx1, mx1, 1)), 0);
+            signal_active_4 = (mx > 1e-4f);
             if (mx > 1e-5f)
                 activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
         }
+        // Noise envelope: fast attack (~83ms), slow release (~2s) for smooth stellare onset/offset.
+        if (signal_active_4)
+            noiseEnvelope += 0.001f * (1.0f - noiseEnvelope);
+        else
+            noiseEnvelope -= 0.0000417f * noiseEnvelope;
 
         if (activeSampleCount <= 0) {
             float32x4_t zero = vdupq_n_f32(0.0f);
@@ -1068,9 +1077,11 @@ private:
         float loopGain = 0.7f + (decay * 0.295f);
         float unifiedDecay = fminf(0.95f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
         float32x4_t decayAll = vdupq_n_f32(unifiedDecay);
-        // Input gain = 1 - unifiedDecay ensures steady-state amplitude ≤ 1.0 for any
-        // combination of TIME/LOW/HIGH — prevents accumulation and clipping.
-        float32x4_t feedback = vdupq_n_f32(1.0f - unifiedDecay);
+        // Floor at 0.15 so the reverb onset is audible at all TIME settings.
+        // Without this floor, TIME=90 → feedback=0.05 making the reverb take
+        // several seconds to become audible. Hard-clip below prevents accumulation.
+        float input_gain = fmaxf(0.15f, 1.0f - unifiedDecay);
+        float32x4_t feedback = vdupq_n_f32(input_gain);
 
         // =================================================================
         // Apply Hadamard mixing matrix (vectorized)
@@ -1085,9 +1096,9 @@ private:
         applyResonantFilterModulated(mixed, FDN_CHANNELS, fcMod);
 
         // 3. Inject Environmental Noise (Brown, Pink, White, Blue, Violet, Grey)
-        // Scale noise by (1 - unifiedDecay) so FDN steady-state amplitude ≤ noiseGain
-        // regardless of decay setting (prevents stellare white-noise explosion).
-        addColouredNoise(mixed, FDN_CHANNELS, 1.0f - unifiedDecay);
+        // noiseEnvelope smoothly fades noise in/out with signal activity (prevents
+        // abrupt onset/offset of stellare noise). gainScale bounds steady-state level.
+        addColouredNoise(mixed, FDN_CHANNELS, (1.0f - unifiedDecay) * noiseEnvelope);
 
         // 4. Apply cross‑channel feedback
         applyCrossFeedback(mixed);
@@ -1097,6 +1108,14 @@ private:
 
         // 6. Add input
         mixed[0] = vaddq_f32(mixed[0], vmulq_f32(delayedMono, feedback));
+
+        // 7. Hard-clip FDN channels: with input_gain floored at 0.15 the FDN can
+        // accumulate above 1.0 at very long TIME settings — clip to prevent runaway.
+        {
+            float32x4_t pos1 = vdupq_n_f32(1.0f), neg1 = vdupq_n_f32(-1.0f);
+            for (int i = 0; i < FDN_CHANNELS; i++)
+                mixed[i] = vmaxq_f32(vminq_f32(mixed[i], pos1), neg1);
+        }
 
 
         // =================================================================
@@ -1294,13 +1313,18 @@ private:
         float mixed[FDN_CHANNELS];
         float loopGain = 0.7f + (decay * 0.295f);
         float unifiedDecay = fminf(0.95f, loopGain * fasterSqrt_15bits(highDecayMult * lowDecayMult));
+        float scalar_input_gain = fmaxf(0.15f, 1.0f - unifiedDecay);
 
         applyHadamardScalar(delayOut, mixed);
 
         // Apply same loop gain as process4Samples (was missing — scalar path had no decay).
         for (int ch = 0; ch < FDN_CHANNELS; ch++) mixed[ch] *= unifiedDecay;
 
-        mixed[0] += delayedInput * (1.0f - unifiedDecay);
+        mixed[0] += delayedInput * scalar_input_gain;
+
+        // Hard-clip: prevent runaway when input_gain exceeds (1 - unifiedDecay).
+        for (int ch = 0; ch < FDN_CHANNELS; ch++)
+            mixed[ch] = fmaxf(-1.0f, fminf(1.0f, mixed[ch]));
 
         // Exotic "Low Pitching" Shimmer (PILL=4)
         // Injects a ring-modulated copy of the wet signal back into the network.
@@ -1467,6 +1491,7 @@ private:
     uint32_t noiseSeed;
     float noiseColour;                 // 0=brown .. 4=violet
     float noiseGain;                   // from DAMP
+    float noiseEnvelope;               // 0..1 smooth fade-in/out of stellare noise
     float noiseStates[FDN_CHANNELS];   // z^-1 for noise filtering
     float noiseStates2[FDN_CHANNELS];  // z^-2 for Grey noise notch
 
