@@ -976,7 +976,7 @@ def run_one_iteration(
         comp["sample"] = sample.name
         comp["raw_score"] = comp["score"]
         comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"], goal_mode=args.goal_mode)
-	comp["score"] += descriptor_window_penalty(comp, style=args.style, bpm=args.bpm)
+        comp["score"] += descriptor_window_penalty(comp, style=args.style, bpm=args.bpm)
         comp["suggestions"] = suggest_tuning(comp["metrics"], preset.values)
         comp["estimated_runs_to_target"] = estimate_runs_needed(
             comp["score"],
