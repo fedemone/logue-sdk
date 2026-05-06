@@ -42,7 +42,8 @@ const __unit_header unit_header_t unit_header = {
         // Pages 3-6: blank padding to fill 24 slots
         // ID 8: SoftAtk (Attack Softening)  0-100%
         { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"SoftAtk"} },
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // ID 9: Gap (distance between hits)  0-100%
+        { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"Gap"} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
