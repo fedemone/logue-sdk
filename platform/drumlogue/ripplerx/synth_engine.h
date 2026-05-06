@@ -1331,15 +1331,16 @@ public:
         // TODO these should be added to presets themselves
         // Metallic presets: enable light Schroeder diffusion in feedback loop
         // for pseudo-modal density at low CPU cost.
-        bool metallic_diff = (m_preset_idx == 13 || m_preset_idx == 14 ||  // Cymbal, Gong
-                              m_preset_idx == 28 || m_preset_idx == 29 ||  // HHat-C, HHat-O
-                              m_preset_idx == 34 || m_preset_idx == 35);   // Ride, RideBel
+        bool metallic_diff = (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong ||  // Cymbal, Gong
+                              m_preset_idx == k_HiHatClosed || m_preset_idx == k_HiHatOpen ||  // HHat-C, HHat-O
+                              m_preset_idx == k_Ride || m_preset_idx == k_RideBell);   // Ride, RideBel
         v.resA.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
         v.resB.diffuser_mix = metallic_diff ? 0.32f : 0.0f;
         v.resA.diffuser_g = 0.45f;
         v.resB.diffuser_g = 0.45f;
         // Metallic transient FM chirp for recognizable sweep character.
-        if (metallic_diff || m_preset_idx == k_Cowbell || m_preset_idx == k_Triangle || m_preset_idx == k_BellTree) {
+        if (metallic_diff || m_preset_idx == k_Cowbell ||
+            m_preset_idx == k_Triangle || m_preset_idx == k_BellTree) {
             float base_fm_hz = 850.0f;
             if (m_preset_idx == k_HiHatClosed) base_fm_hz = 3200.0f;
             else if (m_preset_idx == k_HiHatOpen) base_fm_hz = 2400.0f;

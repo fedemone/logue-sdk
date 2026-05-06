@@ -7,7 +7,7 @@ Uses numpy/scipy where available for speed; falls back to pure stdlib otherwise.
 import wave
 import struct
 import math
-
+from pathlib import Path
 import numpy as np
 from scipy.signal import resample_poly
 from math import gcd
@@ -413,7 +413,7 @@ def analyse_preset(name, synth_path, ref_path, cents_offset, params):
 # Preset definitions
 # ─────────────────────────────────────────────
 
-BASE = "/home/user/logue-sdk/platform/drumlogue/ripplerx"
+BASE = Path(__file__).resolve().parent
 
 presets = [
     {

@@ -38,457 +38,108 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 
 ---
 
-## Phase 23: Percussive Rebalance — Pilot Preset (Wodblk) [IN PROGRESS]
+## Phase 1: Core DSP Structures [COMPLETED]
+- [x] Define flat, cache-friendly C++ structures (`Waveguide`, `Exciter`, `Voice`).
+- [x] Establish memory bounds (4096-sample delay line for safe sub-bass).
 
-Goal of this phase is to switch from broad manual edits to a controlled **one-preset pilot**
-that can be validated quickly on hardware before scaling to the rest of the kit.
+## Phase 2: API & UI Binding [COMPLETED]
+- [x] Connect `header.c` parameter indices to the engine.
+- [x] Write `setParameter` translation logic.
+- [x] Fix `MlltStif` buffer overflow bug in UI header.
 
-### Pilot strategy
+## Phase 3: The Audio Processing Loop [COMPLETED]
+- [x] Write the per-sample DSP loop.
+- [x] Implement linear interpolation for accurate pitch tuning.
 
-- Keep prior table values for most presets.
-- Tune only `12 Wodblk` toward a more percussive profile:
-  - lower `Dkay` (shorter ring),
-  - higher `MlSt` (harder strike),
-  - higher transient noise (`NzMix`/`NzRes`/`NzFq`) for a clearer click.
+## Phase 4: Architectural Refactor & Sample Management [COMPLETED]
+- [x] JIT sample loading inside `NoteOn` safely implemented.
+- [x] Hardware "Hello World" successfully compiled and tested on Drumlogue!
 
-### Why this narrower scope
+## Phase 5: Envelopes & Exciters [COMPLETED]
+- [x] `envelope.h` and `noise.h` implemented and tested on hardware.
+- [x] Noise mix and PCM sample triggering confirmed working.
 
-- The local environment currently cannot run the Python spectral scripts (`numpy/librosa`
-  unavailable and package install blocked), and Docker toolchain is not present here.
-- A hardware A/B on one isolated preset gives faster signal and avoids overfitting changes
-  across many programs without objective render metrics.
+## Phase 6: Filters & Master FX [COMPLETED]
+- [x] `filter.h`: Implement a 2-pole Chamberlin State Variable Filter (SVF).
+- [x] Tie `header.c` LowCut and Resonance parameters to the Master SVF.
+- [x] Integrate SVF incrementally into the audio loop.
 
-### Next step after this commit
+## Phase 7: Waveguide Models & Tables [COMPLETED]
+- [x] `tables.h`: Defined fast-math lookup tables for MIDI-to-Delay-Length conversion.
+- [x] Implemented branchless Tube physics (Inverting Feedback via `phase_mult`).
+- [x] Implemented Membrane physics (Inharmonic irrational detuning of Resonator B).
+- [x] Linked UI `Model` parameter to physical topologies.
 
-Hardware A/B for preset 12 (`Wodblk`), then either:
-1. keep and propagate the same tuning pattern to adjacent percussive presets, or
-2. rollback/retune based on the measured transient/decay behaviour.
+## Phase 8: Preset Design & Acoustic Tuning [PENDING]
+- [ ] Reverse-engineer waveguide parameters for legacy 28 presets.
+- [ ] Derive coefficients for new instruments: Timpani, Djambé, Taiko, Marching Snare, Tam Tam, Koto.
 
-### Added pre-HW analysis harness
+## Phase 9: UI Polish & Missing SDK Hooks [COMPLETED]
+- [x] Preset Management: `LoadPreset()`, `getPresetIndex()`, `getPresetName()`.
+- [x] State Reporting: `getParameterValue()` for OLED display sync.
+- [x] Parameter Linkage: all core `header.c` knobs wired in `setParameter`.
+- [x] Release Phase Logic: `NoteOff`, `GateOff`, `AllNoteOff`, master envelope VCA.
+- [x] Free Parameter Decision: Gain slot → overdrive drive multiplier (1×–21×).
 
-- Added `pre_hw_analysis.py` to compare rendered audio vs reference samples using
-  both time-domain and spectral metrics without external Python dependencies.
-- Metrics include: attack time, T60 estimate (Schroeder integration), autocorrelation F0,
-  spectral centroid/rolloff/flatness/flux, inharmonicity deviation, and multi-resolution
-  log-STFT distance.
-- Output is a JSON report with per-pair metrics + a weighted scalar score to rank
-  closeness before hardware flashing.
+## Phase 10: Bug-Fix Session [COMPLETED]
+- [x] Fix Init/Reset silence: `LoadPreset(0)` called at end of `Init()`.
+- [x] Fix Chamberlin SVF formula: divisor corrected to `2*srate`.
+- [x] Fix `Reset()` not restoring `mix_ab = 0.5f`.
+- [x] Remove dead `read_pos` variable from `process_waveguide()`.
+- [x] Document mono-filter intentional L-copy pattern with TODO for true stereo.
 
-### Added batch runner for convergence workflow
+## Phase 11: Independent Resonator B Control — Partls-selector [COMPLETED]
+- [x] Partls 0–4 = partial count; 5 = select ResA edit; 6 = select ResB edit.
+- [x] Dkay, Mterl, Inharm route to resA or resB based on m_is_resonator_a.
+- [x] Model is per-resonator (m_model_a / m_model_b), phase_mult updated independently.
+- [x] LoadPreset: forces ResA context, mirrors Dkay/Mterl/Inharm to ResB, restores context.
+- [x] Reset: resets m_is_resonator_a = true for deterministic cold start.
+- [x] Fix: True → true (compile error).
+- [x] Fix: Missing } in getParameterValue (compile error / unreachable return).
+- [x] Fix: Missing ; after model_names_a[] init (compile error).
+- [x] Fix: Model B showing model_names_a instead of model_names_b.
+- [x] Fix: Partls values 5/6 showing "---" — now "-> ResA" / "-> ResB".
+- [x] Fix: getParameterStrValue used state vars instead of value arg (Bank, NzFltr, Program, Partls).
+- [x] Fix: k_paramLowCut dropped /1000.0f for Q — SVF near-unstable. Restored.
 
-- Added `batch_tune_runner.py` to automate:
-  1. sample discovery and sample→preset mapping from filenames (+ override map),
-  2. rendered/reference file coupling by preset index/name,
-  3. batch comparison with `pre_hw_analysis.py`,
-  4. tuning hints and estimated runs-to-target scoring.
-- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
-  ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
-- Added built-in helper output to the runner:
-  - `--helper` prints the full workflow guide,
-  - `--write-helper <path>` saves the guide as markdown.
-- Helper now includes WSL/QEMU commands used for ARM-side testing.
-- Added `run_tuning.sh` wrapper to execute common checks in sequence
-  (`py_compile`, helper preview/export, `git diff --check`) with clear step logs.
-- `run_tuning.sh` also reads `batch_tuning_report.json` when present and prints
-  whether another render+compare iteration is recommended based on a configurable
-  delta threshold.
-- The runner emits:
-  - `batch_tuning_report.json` (full metrics + suggestions),
-  - `batch_tuning_report.csv` (sortable table),
-  - `batch_tuning_progress.md` (human-readable progress notes).
-- Convergence estimate currently uses an exponential model
-  (`score_next = score_now * assumed_improvement`) with tunable target score and
-  improvement factor, so expected run count can be revised as real run history is collected.
-- Pre-HW comparison now includes pitch-normalized spectral deltas (centroid/rolloff
-  normalized by detected F0), reducing false mismatch when sample and rendered notes differ.
-- Added optional `--auto-note-align` mode to use pitch-aligned MR-STFT distance
-  (simple resampling alignment) when rendered and sample notes are not the same.
-
----
-
-## Phase 24 Planning: Model Weakness Review + Two-Stage Upgrade Path [PLANNED]
-
-This section records a model-by-model weakness audit and an implementation roadmap.
-Goal: improve transient complexity (Flux) and spectral texture (Flatness) while preserving
-RT safety on Drumlogue.
-
-### Current model set (from `k_paramModel`)
-
-- 0: String
-- 1: Beam
-- 2: Square plate
-- 3: Membrane
-- 4: Plate
-- 5: Drumhead
-- 6: Marimba bar
-- 7: Open tube
-- 8: Closed tube
-
-All models currently share the same core waveguide loop:
-- fractional delay read + interpolation
-- one allpass dispersion stage
-- one 1-pole lowpass loss stage
-- scalar feedback gain
-- optional dual-resonator coupling
-
-This is efficient, but some timbral limits are structural (especially for wood/percussion):
-single-loop + single-loss topology under-represents micro-chaotic partial motion.
-
-### Model weakness audit (practical)
-
-#### 0 String
-- Strength: stable harmonic decay and pluck behavior.
-- Weakness: can sound too "clean/synthetic" at high velocities due to low nonlinear content.
-
-#### 1 Beam / 2 Square / 4 Plate / 6 Marimba
-- Strength: baseline inharmonicity from model AP offsets works well for static metallic/wood modes.
-- Weakness: overtones are mostly static over time; real bars/plates show stronger time-varying
-  mode-energy exchange.
-
-#### 3 Membrane / 5 Drumhead
-- Strength: ResB mode ratio logic and coupling clamp improve stability and "drum-like" body.
-- Weakness: impact/noise complexity still not deep enough for realistic strike roughness;
-  flux remains low compared to real recordings.
-
-#### 7 Open tube / 8 Closed tube
-- Strength: tube-specific phase handling + noise injection into loop is physically sensible.
-- Weakness: expressive turbulence/reed-edge nonlinearities are minimal; timbre dynamics can feel flat.
-
-### Stage 1 (minimal / low risk): "Complexity Boost Without Topology Rewrite"
-
-Scope: additive improvements that keep current architecture and parameter model.
-
-1. **Transient-only coefficient modulation (first 10–50 ms)**
-   - Briefly modulate LP/AP coefficients post-attack.
-   - Expected impact: higher flux and more realistic attack evolution.
-   - Risk: low-medium (needs bounds and clamping).
-
-2. **Velocity-dependent micro-randomization**
-   - Add tiny per-hit jitter to selected coefficients/delay (bounded, deterministic seed option).
-   - Expected impact: less machine-like repeatability, better realism in repeated hits.
-   - Risk: low (if kept <1% and clamped).
-
-3. **Dual-band exciter noise shaping**
-   - Add simple two-band blend (e.g., low knock + high click) before current path routing.
-   - Expected impact: better flatness matching for wooden/percussive onsets.
-   - Risk: low-medium.
-
-4. **Model-specific transient envelope presets**
-   - Keep same knobs but set model-local defaults/scales for attack/decay in exciter path.
-   - Expected impact: less cross-model parameter fighting during tuning.
-   - Risk: low.
-
-5. **Batch metrics objective update**
-   - Increase weighting of Flux/Flatness for percussion classes in tuning reports.
-   - Expected impact: optimization is steered toward perceived complexity, not just pitch/T60.
-   - Risk: low.
-
-**Estimated impact of Stage 1:** medium (useful uplift, probably not full parity with hardest
-real woodblock/cymbal samples).
-**Expected implementation effort:** low-medium.
-
-### Stage 2 (optional / radical): "Topology Upgrade"
-
-Scope: structural redesign for richer physical behavior.
-
-1. **Multi-mode resonator bank (2–6 modes)**
-   - Replace single loop per resonator with modal parallel bank for percussion models.
-   - Expected impact: major improvement in flux/flatness realism and mode interactions.
-   - Risk: medium-high (CPU + parameter mapping complexity).
-
-2. **Nonlinear contact model at strike**
-   - Introduce a simple nonlinear impact function (soft/hard collision behavior).
-   - Expected impact: more realistic high-frequency burst and dynamic timbre.
-   - Risk: medium.
-
-3. **Cross-mode energy transfer matrix (sparse)**
-   - Low-rank coupling among modes instead of only A/B scalar coupling.
-   - Expected impact: realistic time-varying spectral rebalancing.
-   - Risk: high (stability tuning required).
-
-4. **Hybrid residual path**
-   - Keep physical core + add short stochastic residual shaped by model context.
-   - Expected impact: closes final realism gap for "messy" transients.
-   - Risk: medium-high.
-
-5. **Class-specific objective functions**
-   - Separate optimization criteria for pitched vs percussive vs noisy metallic classes.
-   - Expected impact: better convergence and fewer bad local minima.
-   - Risk: low-medium.
-
-**Estimated impact of Stage 2:** high (best chance to match complex real references).
-**Expected implementation effort:** high.
-
-### Suggested execution order
-
-1. Implement Stage 1 items 1+2+5 first (fastest measurable gain).
-2. Re-run 5–10 tuning iterations on Wodblk and one membrane preset.
-3. If Flux/Flatness gap remains structurally large, proceed with Stage 2 item 1 (modal bank pilot).
-4. Keep old topology behind a compile flag for A/B and CPU budget tracking.
+# Project Status Tracker
 
 ---
 
-## Phase 24a: Stage-1 Minimal Improvements [IN PROGRESS]
+## TODO LIST
 
-Implemented first-pass Stage-1 changes:
+### New presets (when physical model is stable and reliable)
+- **Gamelan** — inharmonic metallic bar, long sustain, multiple coupled overtones
+- **Bell** — high InHm, long Dkay, bright material (Mterl≈25), tight mallet
+- **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
+- **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
+- **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
+  *(user can supply parameter values from original RipplerX project)*
+- **crunch**
+- **bottle pop**
+- **kalimba**
+- **maracas**
+- **Chacha nut**
+- **Guiro**
+- **Clock**
+*(user can supply wave files for reference)*
 
-1. **Transient-only coefficient modulation (implemented)**
-   - Added a short post-strike modulation window (~35 ms) that perturbs LP/AP
-     coefficients and decays quickly.
-   - Purpose: increase attack-time spectral movement (Flux) without altering long-tail stability.
+### Project rename: RipplerX → Brachetti
+In honour of Italian performer Arturo Brachetti. When the model is settled:
+- Rename all files: `ripplerx*` → `brachetti*`
+- Rename project identifier in `config.mk`, `header.c`, `Makefile`
+- Rename the C++ class `RipplerXWaveguide` → `BrachettiWaveguide`
+- Update all comments and documentation
+- Create a new GitHub repo / branch named accordingly
 
-2. **Velocity-dependent micro-randomization (implemented)**
-   - Added deterministic per-hit jitter (derived from note/voice/velocity seed)
-     to avoid machine-identical repeated strikes.
-   - Purpose: improve realism and reduce static timbre repetition.
-
-3. **Batch objective steering for percussion (implemented)**
-   - Batch score now adds extra emphasis on Flatness/Flux for percussion-class presets.
-   - Purpose: ensure optimization pressure targets the known structural gaps.
-
-Additional Stage-1 items now implemented:
-
-4. **Dual-band exciter noise shaping (implemented)**
-   - Added low/high split blend in the noise path to better approximate wooden/percussive
-     attack texture.
-
-5. **Model-specific transient presets (implemented)**
-   - Added simple per-model profile scaling for transient window and noise-band mix
-     (percussion vs tube vs default classes).
-
-Stage-1 status: core items complete; iterate with hardware + batch metrics before Stage-2.
-
-Stage-1 correction (2026-04-23):
-
-- Fixed transient allpass jitter clamp to preserve the full supported range `[-0.99, +0.99]`.
-- Previous clamp `[0, 0.99]` accidentally removed negative AP modulation, reducing per-hit dispersion variation for models using near-zero/negative AP trajectories.
-- Verified by re-running local batch iteration harness (`batch_tune_runner.py --auto-note-align --run-render --preset-filter Wodblk ...`) to ensure report generation path remains healthy after DSP-side fix.
-- Fixed `run_tuning.sh` default report/helper paths to point at the RipplerX tool directory (`platform/drumlogue/ripplerx`) so generated `batch_reports/*` are detected by the wrapper without extra env overrides.
-- Added multi-iteration support to `batch_tune_runner.py` via `--iterations N` so 5–10-pass convergence checks (as planned) can run in one command and emit `batch_tuning_history.json/.md`.
-- Transient modulation now references dedicated unmodulated base coefficients stored in `VoiceState` (set by UI/NoteOn), avoiding cross-block drift when transient windows span multiple process blocks.
-- `pre_hw_analysis.py` decimation now applies a simple moving-average anti-alias prefilter before downsampling to reduce spectral-metric bias from alias foldback.
-
----
-
-## Phase 24b: Final Stage-1 Tuning Pass + Stage-2 Pilot Gate [IN PROGRESS]
-
-Final Stage-1 preset adjustments were applied for known structural edge cases:
-
-- **Clarinet (25)**: reduced decay/noise tail to limit tube-model over-sustain.
-- **Vibrph (11), 808Sub (2), Triangle (20), Kick (21)**: adjusted decay/loss profile to
-  compensate practical under-decay from loop lowpass losses vs theoretical T60.
-- **Claves (18)**: reduced inharm amount to lower audible beating.
-- **PlkBss (26)**: reduced drive and re-balanced strike/decay for cleaner pluck body.
-- **GlsBotl (38)**: reduced parallel noise dominance so bottle resonance remains audible.
-
-### Stage-2 pilot decision gate
-
-If the next hardware-backed 5–10 iteration batch run still plateaus above target,
-begin Stage-2 with a **single-model pilot**:
-
-1. Add a compile-time guarded modal-bank path (2–3 modes) for one percussion preset
-   (`Wodblk` or `Claves`) and keep legacy loop as fallback.
-2. Add per-mode damping/weight controls internally (not exposed to UI yet).
-3. Re-run objective loop and compare Flux/Flatness uplift vs CPU cost.
-4. Only then consider broader Stage-2 rollout to membrane/cymbal families.
-
-### Stage-2 pilot implementation started (single model)
-
-- Added compile-time guarded Stage-2 modal-bank pilot path (`ENABLE_STAGE2_MODAL_PILOT`).
-- Current pilot scope is intentionally narrow: preset `12 Wodblk` only.
-- Implemented a lightweight 2-mode decaying oscillator bank in parallel with the existing
-  waveguide output to increase transient Flux/Flatness without replacing legacy topology.
-- Legacy path remains the default reference for A/B and rollback.
-
-Next measurement step:
-- Run matched render sweeps with pilot OFF vs ON and compare:
-  - objective Flux/Flatness deltas,
-  - mean score deltas on the same sample subset,
-  - and CPU cost from hardware runtime counters.
-
-Initial local host-render A/B snapshot (Wodblk, pilot OFF vs ON) was mixed:
-- Flatness error improved slightly (3.68% → 3.19%).
-- Flux error improved slightly (99.40% → 99.06%).
-- Overall weighted score worsened (72.47 → 74.33), so first pilot constants were not net-positive.
-
-Stage-2 pilot tuning sweep (10 runs, compile-time parameter overrides):
-- Swept `STAGE2_MODAL_RATIO_2`, `STAGE2_MODAL_MIX`, `STAGE2_MODAL_DECAY1`, `STAGE2_MODAL_DECAY2`.
-- Best run selected: `ratio2=2.80`, `mix=0.08`, `decay1=0.99905`, `decay2=0.99810`.
-- Updated these as new Stage-2 pilot defaults in `synth_engine.h`.
-
-Post-sweep OFF vs ON (new defaults):
-- Weighted score improved (72.47 → 70.55).
-- Flux error improved slightly (99.40% → 99.32).
-- Flatness moved slightly worse (3.68% → 3.83), but net score improvement indicates better overall fit under current weighting.
-- Host-side runtime difference remained small (same order; no prohibitive CPU signal in local host test).
-
-Stage-2 runtime/codepath optimizations applied:
-- Transient decay factor now uses cached reciprocal (`1/transient_frames_total`) in NoteOn,
-  removing per-sample division in the hot loop.
-- Modal-bank oscillators now use recursive rotation update (sin/cos state + precomputed
-  per-note rotators) instead of calling `sinf` twice per sample.
-- `pre_hw_analysis.py` STFT now caches DFT basis tables per `n_fft` (twiddle precompute),
-  avoiding repeated `sin/cos` evaluation in the innermost loop.
-
-10-iteration Stage-2 tuning run (`Wodblk`, host renderer, auto-note-align):
-- Mean score plateaued at 74.022 for all 10 iterations.
-- This indicates current Stage-2 constants still need retuning against the full mapped subset
-  (especially mismatch dominated pairs), despite single-pair A/B gains.
-
-Conclusion for now:
-- Stage-2 pilot now shows net objective improvement for Wodblk in local A/B.
-- Keep compile-guard and continue targeted tuning + hardware CPU counters before broader rollout.
-
----
-
-## Phase 24c: Document-Driven Integration Plan [IN PROGRESS]
-
-This section starts integration from the newly provided references into tooling and
-Stage-2 development priorities.
-
-### Integrated now (tooling)
-
-1. **Automatic instrument classification literature (Scarano, UPF)**
-   - Added classifier-style low-level descriptors to `pre_hw_analysis.py`:
-     - spectral crest factor,
-     - zero-crossing rate (ZCR).
-   - Purpose: enrich timbre separability beyond centroid/flatness/flux.
-
-2. **Free-vibration decay parameter estimation (ISMA/ISAAC)**
-   - Added lightweight damping-ratio estimate (`damping_ratio_logdec`) from
-     peak log decrement in decay history.
-   - Purpose: provide physically meaningful decay mismatch metric (not only T60 slope).
-
-3. **Spatial/multichannel impact references (game audio thesis)**
-   - Added simple spatial proxy in WAV ingest:
-     - stereo side/mid RMS ratio (`spatial_width`).
-   - Purpose: preserve basic image-width information before mono fold-down so
-     future multichannel pilot scoring can include spatial coherence.
-
-### Next development steps (planned)
-
-1. **Score calibration pass**
-   - Rebalance metric weights with new terms (`crest`, `zcr`, `damping_ratio`, `spatial_width`)
-     on a fixed validation set.
-
-2. **Stage-2 modal law update**
-   - Move from fixed 2-mode decay constants toward compact frequency-dependent
-     damping law (`tau(f)`), fit against measured mode decays.
-
-3. **Multichannel pilot**
-   - Extend host renderer path for stereo/multichannel output and add
-     inter-channel consistency checks in batch reports.
-
-4. **Per-family objective profiles**
-   - Build class-specific scoring templates (wood/metal/membrane/tube),
-     reusing classification descriptors as priors.
-
-### Additional document-driven extensions (current pass)
-
-1. **Automatic classification / timbre representation docs**
-   - Added lightweight mel-domain descriptor (`mel_entropy`) and a compact
-     descriptor-vector cosine distance (`timbre_vec_cosdist`) to improve
-     timbre similarity sensitivity beyond single scalar features.
-
-2. **Mood-recognition feature engineering inspiration**
-   - Extended objective with richer low-level descriptors (crest, zcr, mel entropy)
-     that are commonly used in supervised audio models, while keeping runtime
-     dependency-free and interpretable.
-
-3. **Wooden plate FRF prediction paper (model extension target)**
-   - Planned Stage-2b surrogate: fit a small parameter→modal-response predictor
-     (`material, geometry -> mode frequencies/decays`) for offline initialization
-     of preset modal constants before final ear/metric refinement.
-   - This is not yet in DSP runtime path; it is planned for tooling-side model
-     initialization to speed convergence.
-
-4. **Current tooling update from timbre/damping literature**
-   - Added a normalized centroid decay trajectory descriptor (`centroid_decay_slope`)
-     so comparisons are less dependent on static spectrum snapshots.
-   - Added a lightweight three-segment decay surrogate (`mode_tau1..3`, `mode_e1..3`)
-     to approximate unequal modal energies/reverberation times in pre-HW scoring.
-   - Added centroid-trajectory correlation distance (`centroid_corr_dist`) to track
-     brightness-shape agreement over time, not just frame-averaged centroid.
-   - Added discrete-time damping proxy comparison using equivalent pole radii
-     (`mode_r1..3_pct`) derived from mode time constants, inspired by digital
-     instrument modeling formulations.
-   - Batch tuner suggestions now surface these mismatches explicitly to guide
-     damping/noise/transient adjustments in faster tuning loops.
-
-5. **Stage-2 modal pilot recursion/decay refinement**
-   - Replaced per-sample complex rotator state with a 2nd-order harmonic
-     recursion (`y[n]=k*y[n-1]-y[n-2]`, `k=2*cos(w)`), reducing state and
-     making the oscillator path align with standard digital resonator forms.
-   - Added lightweight periodic normalization guard on recursion states to
-     reduce drift risk over long decays.
-   - Modal decay now derives from T60-style parameters (`STAGE2_MODAL_T60_*_MS`)
-     converted to per-sample coefficients, while keeping legacy decay macros as
-     fallback constants.
-
----
-
-## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]
-
-Hardware test with Phase 21 build confirmed Phase 21 loaded ("InitDbg" shown).
-Beating root cause diagnosed from hardware observation. **82/82 tests pass.**
-
-### Hardware Observations (Phase 21 build)
-
-| Action | Result |
-|--------|--------|
-| InitDbg shown on display | Phase 21 build confirmed loaded ✓ |
-| 20 presses, same velocity | Consistent amplitude — progressive silence fixed ✓ |
-| Partls → 16 (Ptls=2) | Beating almost gone |
-| Partls → 8 or lower (Ptls=0/1) | Clean "stringy" Karplus-Strong sound ✓ |
-| Partls → 64 (Ptls=4) | Beating stronger and longer |
-| Changing sample | Little effect — sample contribution minor |
-| Model: open/closed tube | Phase inversion audible — working |
-| Other models | Subtle difference only |
-| Tone / noise parameters | Working correctly |
-| Marimba preset | One sound then silence (audio crash — TODO) |
-| Release / HitPos | No audible effect (TODO) |
-
-### Root Cause: Coupling Splits Normal Mode Frequencies
-
-**Physics:** `Partls` sets `coupling_depth = Ptls / 4.0`. When `coupling_depth > 0`, ResB
-receives `exciter + coupling × ResA_output`. Two coupled oscillators at the same nominal
-frequency f₀ split into two normal modes at `f₀ ± δf`, where δf ∝ coupling strength.
-This beat against each other at rate `2δf`.
-
-**Observation mapping:**
-- Ptls=0 (coupling=0.00): ResB disabled, pure single Karplus-Strong → no beating ✓
-- Ptls=1 (coupling=0.25): ResB enabled but low coupling → very slow beats
-- Ptls=2 (coupling=0.50): moderate coupling → "almost gone" beating ✓ (user observed)
-- Ptls=3 (coupling=0.75): Init preset — significant beating ✗
-- Ptls=4 (coupling=1.00): strong coupling → "longer and stronger" beating ✓ (user observed)
-
-**Design rule established:**
-- Single-resonator instruments (strings, tubes, bars): `Ptls=0`. Coupling=0. ResB disabled.
-- Dual-resonator instruments (membranes, bells): `Ptls≥2` AND ResA/ResB at *different*
-  delay lengths (different model types or explicit detuning). Coupling between different
-  frequencies is physically meaningful; coupling between identical frequencies is not.
-
-### Fix: InitDbg preset corrected to pure Karplus-Strong
-
-Changed Init (preset 0) to be a clean single-resonator reference:
-
-| Param | Old | New | Reason |
-|-------|-----|-----|--------|
-| Smp   |  1  |  0  | No PCM sample — pure waveguide only |
-| MlSt  | 250 | 500 | Max mallet stiffness → sharp, bright pluck |
-| Ptls  |  3  |  0  | Remove coupling; disable ResB |
-| Hit   | 26  |  0  | Full ResA output (HitPos=0 when ResB disabled) |
-| InHm  | 300 |  0  | No allpass inharmonicity — pure KS reference |
-
-Expected hardware result: clean plucked string at C4 (261 Hz), short decay (~190 ms),
-no beating, no sample sound. Every press identical amplitude.
-
-### Hardware Validation Sequence (Phase 22 build)
-
-1. **InitDbg** → press once → hear clean plucked "ting" at C4, ~190 ms, no beats
-2. **Change Partls to 3 (32 partials)** → beating should reappear (confirms diagnosis)
-3. **Change Partls back to 0** → beats disappear again
-4. **GtrStr (preset 28)** → A4 string, ~3.3 s sustain, no beats, no sample
+### Outstanding hardware investigations (deferred)
+- **Marimba audio crash** — one note plays then silence; likely energy runaway from
+  coupling + feedback gain combination. Investigate `feedback_gain` vs LP coeff stability.
+- **Release / HitPos no audible effect** — `k_paramRel` controls noise burst release only,
+  not the waveguide. `HitPos` (mix_ab) only matters when ResB is active. Both correct by
+  design but need clearer UI labels or documentation.
+- **PCM sample beats** — whether the remaining beat after Smp=0 fix comes from sample
+  content or another source; can wait until clean pure-waveguide sound is validated.
 
 ---
 
@@ -1041,81 +692,6 @@ The following bugs were found and fixed after the initial Partls-selector commit
 
 ---
 
-## Phase 14: Code-Audit Bug-Fix Session [COMPLETED]
-
-A second full audit was performed after the first round of UTs passed.
-Six issues were found and fixed.
-
-### FIX 1 — Critical: Squelch prematurely kills voice during delay-line transit
-
-**Root cause:** The old squelch checked `fabsf(voice_out) < 0.0001f` while
-`is_releasing` was set. For note 60 (C4) the delay-line round-trip takes ~183
-samples (~3.8 ms). Any GateOff within that window produced silence because
-`voice_out` was genuinely zero (the wave hadn't reflected yet) and the voice
-was killed before a single audible sample emerged.
-
-**Fix:** Replaced amplitude-threshold squelch with a **damper-pedal envelope**
-approach. `master_env` is configured in `NoteOn` with `sustain_level=1.0` and
-`decay_rate=0`, so it holds at **1.0×** during gate-on with no audible effect.
-On GateOff/NoteOff it fades to 0 at the `k_paramRel` rate. The voice is marked
-inactive only when `master_env.state == ENV_IDLE` — time-based, not
-amplitude-based.
-
-**Side-effect fix:** `k_paramRel` now audibly controls the physical-tail fade.
-Previously the Release knob had no effect because `master_env` output was
-commented out.
-
-### FIX 2 — High: `Reset()` did not clear filter states `z1`, `ap_x1`, `ap_y1`
-
-**Root cause:** `Reset()` zeroed `buffer[]` and `write_ptr` but left the 1-pole
-LP state (`z1`) and allpass states (`ap_x1`, `ap_y1`) intact. A `Reset()` called
-mid-play (OS pattern change) left non-zero filter memory, causing a click or DC
-transient at the start of the next note.
-
-**Fix:** Added explicit zeroing of all six filter-state fields inside the
-`Reset()` per-voice loop.
-
-### FIX 3 — Medium: FastSVF resonance lower-clamp mismatch
-
-**Root cause:** `set_coeffs` clamped `resonance` to a minimum of `1.0`. The UI
-`Resnc` bottom is `707` → `0.707` after `/1000`. The Butterworth flat-response
-Q (0.707) was silently raised to Q=1.0 and the bottom half of the Resnc knob
-travel had no effect.
-
-**Fix:** Changed the lower clamp from `1.0f` to `0.5f`. The UI minimum 0.707
-now passes through unchanged, giving a true Butterworth response at the
-minimum knob position.
-
-### FIX 4 — Low: Duplicate `is_active`/`is_releasing` assignment in `NoteOn`
-
-**Root cause:** `is_active = true; is_releasing = false;` appeared twice —
-once before and once after the sample-loading block that was inserted between
-two existing copies of the same assignment.
-
-**Fix:** Removed the redundant second copy.
-
-### FIX 5 — Low: `m_params[25]` over-allocated by one element
-
-**Root cause:** Declared with 25 slots despite only 24 parameters (0–23).
-Index 24 was never read or written.
-
-**Fix:** Corrected to `m_params[24]`.
-
-### FIX 6 — Low: `k_paramMterl` guard missing lower-bound check
-
-**Root cause:** `if (value <= 30)` accepted values below −10, though the inner
-`fmaxf` clamped them safely. The asymmetric guard was inconsistent with the
-`header.c` range.
-
-**Fix:** Changed to `if (value >= -10 && value <= 30)`.
-
-### Test fixes (test_hw_debug.cpp)
-
-- **T9 hardcoded voice index:** `voices[1].resA` → `voices[s.state.next_voice_idx].resA`.
-- **T9 missing from runner:** `test_delay_roundtrip()` added to `main()`.
-
----
-
 ## Phase 13: Parameter Activation & SVF Fix [COMPLETED]
 
 Four parameters stored in `m_params` but previously producing no DSP effect
@@ -1196,6 +772,81 @@ Two additional bugs found and fixed after the initial Phase 13 commit:
 
 ---
 
+## Phase 14: Code-Audit Bug-Fix Session [COMPLETED]
+
+A second full audit was performed after the first round of UTs passed.
+Six issues were found and fixed.
+
+### FIX 1 — Critical: Squelch prematurely kills voice during delay-line transit
+
+**Root cause:** The old squelch checked `fabsf(voice_out) < 0.0001f` while
+`is_releasing` was set. For note 60 (C4) the delay-line round-trip takes ~183
+samples (~3.8 ms). Any GateOff within that window produced silence because
+`voice_out` was genuinely zero (the wave hadn't reflected yet) and the voice
+was killed before a single audible sample emerged.
+
+**Fix:** Replaced amplitude-threshold squelch with a **damper-pedal envelope**
+approach. `master_env` is configured in `NoteOn` with `sustain_level=1.0` and
+`decay_rate=0`, so it holds at **1.0×** during gate-on with no audible effect.
+On GateOff/NoteOff it fades to 0 at the `k_paramRel` rate. The voice is marked
+inactive only when `master_env.state == ENV_IDLE` — time-based, not
+amplitude-based.
+
+**Side-effect fix:** `k_paramRel` now audibly controls the physical-tail fade.
+Previously the Release knob had no effect because `master_env` output was
+commented out.
+
+### FIX 2 — High: `Reset()` did not clear filter states `z1`, `ap_x1`, `ap_y1`
+
+**Root cause:** `Reset()` zeroed `buffer[]` and `write_ptr` but left the 1-pole
+LP state (`z1`) and allpass states (`ap_x1`, `ap_y1`) intact. A `Reset()` called
+mid-play (OS pattern change) left non-zero filter memory, causing a click or DC
+transient at the start of the next note.
+
+**Fix:** Added explicit zeroing of all six filter-state fields inside the
+`Reset()` per-voice loop.
+
+### FIX 3 — Medium: FastSVF resonance lower-clamp mismatch
+
+**Root cause:** `set_coeffs` clamped `resonance` to a minimum of `1.0`. The UI
+`Resnc` bottom is `707` → `0.707` after `/1000`. The Butterworth flat-response
+Q (0.707) was silently raised to Q=1.0 and the bottom half of the Resnc knob
+travel had no effect.
+
+**Fix:** Changed the lower clamp from `1.0f` to `0.5f`. The UI minimum 0.707
+now passes through unchanged, giving a true Butterworth response at the
+minimum knob position.
+
+### FIX 4 — Low: Duplicate `is_active`/`is_releasing` assignment in `NoteOn`
+
+**Root cause:** `is_active = true; is_releasing = false;` appeared twice —
+once before and once after the sample-loading block that was inserted between
+two existing copies of the same assignment.
+
+**Fix:** Removed the redundant second copy.
+
+### FIX 5 — Low: `m_params[25]` over-allocated by one element
+
+**Root cause:** Declared with 25 slots despite only 24 parameters (0–23).
+Index 24 was never read or written.
+
+**Fix:** Corrected to `m_params[24]`.
+
+### FIX 6 — Low: `k_paramMterl` guard missing lower-bound check
+
+**Root cause:** `if (value <= 30)` accepted values below −10, though the inner
+`fmaxf` clamped them safely. The asymmetric guard was inconsistent with the
+`header.c` range.
+
+**Fix:** Changed to `if (value >= -10 && value <= 30)`.
+
+### Test fixes (test_hw_debug.cpp)
+
+- **T9 hardcoded voice index:** `voices[1].resA` → `voices[s.state.next_voice_idx].resA`.
+- **T9 missing from runner:** `test_delay_roundtrip()` added to `main()`.
+
+---
+
 ## Phase 15: Dynamic Squelch, Pitch Bend, Tone Cache & fasterpowf Fix [COMPLETED]
 
 ### Dynamic Energy Squelch
@@ -1273,6 +924,95 @@ All 45 tests pass.
   effects (chorus, panning) pass through a properly independent filter.
 * **Voice 0 skipped on first note:** `NoteOn` increments `next_voice_idx`
   before assigning, so the first ever note goes to voice 1. Minor cosmetic issue.
+
+---
+
+## Phase 16: Physical Model Review & DSP Correctness Pass [COMPLETED]
+
+Full audit of the digital waveguide physical model against known physical
+acoustics theory. Eight improvements applied; 45/45 tests pass.
+
+### 1. Coupling symmetry fix (correctness)
+
+The old coupling fed ResA with ResB's previous-sample output (1-sample delay)
+but fed ResB with ResA's current-sample output (zero delay). This asymmetry made
+the two resonators physically non-reciprocal — ResB always "heard" ResA one
+sample ahead — creating a subtle formant artefact at high coupling depths.
+
+Fix: added `float resA_out_prev` to `VoiceState`; both resonators now use the
+previous sample's output of the other, making the coupling symmetric and
+physically correct.
+
+### 2. Membrane inharmonicity ratio (correctness)
+
+`resB.delay_length = base_delay * 0.68f` gave a second mode ratio of 1/0.68 ≈
+1.47. Real circular membranes have overtone ratios determined by zeros of the
+Bessel function J_mn. The dominant second mode (1,1) has ratio ≈ 1.5926 →
+1/1.5926 ≈ **0.628**.
+
+Fix: changed multiplier from `0.68f` to `0.628f`.
+
+### 3. Filter order in the waveguide loop (correctness)
+
+Old order: LP → AP → write. The AP (dispersion) operated on an already
+frequency-attenuated signal, reducing its audible inharmonicity at high
+frequencies.
+
+Physical order: AP models in-medium wave propagation (stiffness); LP models
+boundary absorption (reflection loss). Correct order: **AP → LP → write**.
+
+Fix: swapped the two filter stages in `process_waveguide()`. The feedback write
+now uses `filtered_out` (LP output) rather than `ap_out` (AP output).
+
+### 4. `while` → `if` for delay-line read pointer (performance)
+
+`delay_length` is clamped to [2, 4094], so `read_idx ≥ −4094`. One addition
+of `DELAY_BUFFER_SIZE` (4096) always puts it in range. The `while` loop body
+can execute at most once; using `while` added an unnecessary backward branch in
+the innermost hot loop.
+
+### 5. Linear interpolation Horner form (performance)
+
+`(a * (1-f)) + (b * f)` → `a + f * (b - a)`: one multiply + two adds instead
+of two multiplies + one add. Saves one multiply per sample per active resonator.
+
+### 6. Mallet LP gate — denormal prevention (performance)
+
+The two cascaded mallet-shaping LP filters ran every sample for the full voice
+lifetime even though their state decays to ≈ sub-denormal within ~250 samples.
+Added a gate (`mallet_lp2 > 1e-6f`) that skips both LP updates and the
+`* 15.0f` add once the mallet has fully settled. Eliminates wasted CPU and
+prevents denormal stalls on non-FTZ hardware.
+
+### 7. `rms_env` renamed `mag_env` (naming accuracy)
+
+The envelope follower smooths `|x|` (mean absolute value), not `x²` (which
+would be RMS). Renamed to `mag_env` throughout (`dsp_core.h`,
+`synth_engine.h`). Behaviour is identical; only the name reflects what the
+code actually computes.
+
+### 8. Loop filter pitch compensation (tuning accuracy)
+
+The 1-pole LP and allpass both add group delay at the fundamental frequency ω₀,
+making the actual loop period longer than `delay_length` samples and the pitch
+correspondingly flat. For the default preset (lowpass_coeff = 0.604), the error
+was ≈ 35 cents flat at C4.
+
+Using the DC-limit approximation (valid for all MIDI notes at 48 kHz since
+ω₀ ≪ 1 rad/sample): τ_LP ≈ (1 + pole)/(1 − pole) and τ_AP ≈ (1 + c)/(1 − c).
+
+Fix: after computing the nominal delay from the lookup table, NoteOn subtracts
+(τ_LP + τ_AP) from each resonator's `delay_length` before storing it as the
+base for PitchBend. The corrected delay for C4 changes from 189.8 to 186.1
+samples — 3.7 samples shorter — bringing pitch error from −35 cents to < 1 cent.
+
+### Pre-existing compile errors also fixed
+
+Two `static constexpr` declarations were missing their `float` type keyword
+(introduced in a user commit). The `ProgramIndex` enum had enum values with
+spaces in their names and no commas — both invalid C++. Fixed: added `float`,
+replaced spaces with camelCase, added commas, renamed the count marker from
+`k_ProgramIndex` to `k_NumPrograms` to avoid shadowing confusion.
 
 ---
 
@@ -1402,135 +1142,32 @@ followed by `GateOff` with no audio frames in between. The test then renders
 
 Result: peak = 0.837, PASS. **47/47 tests pass.**
 
----
+## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]
 
-## Phase 16: Physical Model Review & DSP Correctness Pass [COMPLETED]
+Hardware test with Phase 21 build confirmed Phase 21 loaded ("InitDbg" shown).
+Beating root cause diagnosed from hardware observation. **82/82 tests pass.**
 
-Full audit of the digital waveguide physical model against known physical
-acoustics theory. Eight improvements applied; 45/45 tests pass.
+### Hardware Observations (Phase 21 build)
 
-### 1. Coupling symmetry fix (correctness)
+| Action | Result |
+|--------|--------|
+| InitDbg shown on display | Phase 21 build confirmed loaded ✓ |
+| 20 presses, same velocity | Consistent amplitude — progressive silence fixed ✓ |
+| Partls → 16 (Ptls=2) | Beating almost gone |
+| Partls → 8 or lower (Ptls=0/1) | Clean "stringy" Karplus-Strong sound ✓ |
+| Partls → 64 (Ptls=4) | Beating stronger and longer |
+| Changing sample | Little effect — sample contribution minor |
+| Model: open/closed tube | Phase inversion audible — working |
+| Other models | Subtle difference only |
+| Tone / noise parameters | Working correctly |
+| Marimba preset | One sound then silence (audio crash — TODO) |
+| Release / HitPos | No audible effect (TODO) |
 
-The old coupling fed ResA with ResB's previous-sample output (1-sample delay)
-but fed ResB with ResA's current-sample output (zero delay). This asymmetry made
-the two resonators physically non-reciprocal — ResB always "heard" ResA one
-sample ahead — creating a subtle formant artefact at high coupling depths.
+### Root Cause: Coupling Splits Normal Mode Frequencies
 
-Fix: added `float resA_out_prev` to `VoiceState`; both resonators now use the
-previous sample's output of the other, making the coupling symmetric and
-physically correct.
-
-### 2. Membrane inharmonicity ratio (correctness)
-
-`resB.delay_length = base_delay * 0.68f` gave a second mode ratio of 1/0.68 ≈
-1.47. Real circular membranes have overtone ratios determined by zeros of the
-Bessel function J_mn. The dominant second mode (1,1) has ratio ≈ 1.5926 →
-1/1.5926 ≈ **0.628**.
-
-Fix: changed multiplier from `0.68f` to `0.628f`.
-
-### 3. Filter order in the waveguide loop (correctness)
-
-Old order: LP → AP → write. The AP (dispersion) operated on an already
-frequency-attenuated signal, reducing its audible inharmonicity at high
-frequencies.
-
-Physical order: AP models in-medium wave propagation (stiffness); LP models
-boundary absorption (reflection loss). Correct order: **AP → LP → write**.
-
-Fix: swapped the two filter stages in `process_waveguide()`. The feedback write
-now uses `filtered_out` (LP output) rather than `ap_out` (AP output).
-
-### 4. `while` → `if` for delay-line read pointer (performance)
-
-`delay_length` is clamped to [2, 4094], so `read_idx ≥ −4094`. One addition
-of `DELAY_BUFFER_SIZE` (4096) always puts it in range. The `while` loop body
-can execute at most once; using `while` added an unnecessary backward branch in
-the innermost hot loop.
-
-### 5. Linear interpolation Horner form (performance)
-
-`(a * (1-f)) + (b * f)` → `a + f * (b - a)`: one multiply + two adds instead
-of two multiplies + one add. Saves one multiply per sample per active resonator.
-
-### 6. Mallet LP gate — denormal prevention (performance)
-
-The two cascaded mallet-shaping LP filters ran every sample for the full voice
-lifetime even though their state decays to ≈ sub-denormal within ~250 samples.
-Added a gate (`mallet_lp2 > 1e-6f`) that skips both LP updates and the
-`* 15.0f` add once the mallet has fully settled. Eliminates wasted CPU and
-prevents denormal stalls on non-FTZ hardware.
-
-### 7. `rms_env` renamed `mag_env` (naming accuracy)
-
-The envelope follower smooths `|x|` (mean absolute value), not `x²` (which
-would be RMS). Renamed to `mag_env` throughout (`dsp_core.h`,
-`synth_engine.h`). Behaviour is identical; only the name reflects what the
-code actually computes.
-
-### 8. Loop filter pitch compensation (tuning accuracy)
-
-The 1-pole LP and allpass both add group delay at the fundamental frequency ω₀,
-making the actual loop period longer than `delay_length` samples and the pitch
-correspondingly flat. For the default preset (lowpass_coeff = 0.604), the error
-was ≈ 35 cents flat at C4.
-
-Using the DC-limit approximation (valid for all MIDI notes at 48 kHz since
-ω₀ ≪ 1 rad/sample): τ_LP ≈ (1 + pole)/(1 − pole) and τ_AP ≈ (1 + c)/(1 − c).
-
-Fix: after computing the nominal delay from the lookup table, NoteOn subtracts
-(τ_LP + τ_AP) from each resonator's `delay_length` before storing it as the
-base for PitchBend. The corrected delay for C4 changes from 189.8 to 186.1
-samples — 3.7 samples shorter — bringing pitch error from −35 cents to < 1 cent.
-
-### Pre-existing compile errors also fixed
-
-Two `static constexpr` declarations were missing their `float` type keyword
-(introduced in a user commit). The `ProgramIndex` enum had enum values with
-spaces in their names and no commas — both invalid C++. Fixed: added `float`,
-replaced spaces with camelCase, added commas, renamed the count marker from
-`k_ProgramIndex` to `k_NumPrograms` to avoid shadowing confusion.
-
----
-
-## Phase 1: Core DSP Structures [COMPLETED]
-- [x] Define flat, cache-friendly C++ structures (`Waveguide`, `Exciter`, `Voice`).
-- [x] Establish memory bounds (4096-sample delay line for safe sub-bass).
-
-## Phase 2: API & UI Binding [COMPLETED]
-- [x] Connect `header.c` parameter indices to the engine.
-- [x] Write `setParameter` translation logic.
-- [x] Fix `MlltStif` buffer overflow bug in UI header.
-
-## Phase 3: The Audio Processing Loop [COMPLETED]
-- [x] Write the per-sample DSP loop.
-- [x] Implement linear interpolation for accurate pitch tuning.
-
-## Phase 4: Architectural Refactor & Sample Management [COMPLETED]
-- [x] JIT sample loading inside `NoteOn` safely implemented.
-- [x] Hardware "Hello World" successfully compiled and tested on Drumlogue!
-
-## Phase 5: Envelopes & Exciters [COMPLETED]
-- [x] `envelope.h` and `noise.h` implemented and tested on hardware.
-- [x] Noise mix and PCM sample triggering confirmed working.
-
-## Phase 6: Filters & Master FX [COMPLETED]
-- [x] `filter.h`: Implement a 2-pole Chamberlin State Variable Filter (SVF).
-- [x] Tie `header.c` LowCut and Resonance parameters to the Master SVF.
-- [x] Integrate SVF incrementally into the audio loop.
-
-## Phase 7: Waveguide Models & Tables [COMPLETED]
-- [x] `tables.h`: Defined fast-math lookup tables for MIDI-to-Delay-Length conversion.
-- [x] Implemented branchless Tube physics (Inverting Feedback via `phase_mult`).
-- [x] Implemented Membrane physics (Inharmonic irrational detuning of Resonator B).
-- [x] Linked UI `Model` parameter to physical topologies.
-
-## Phase 8: Preset Design & Acoustic Tuning [PENDING]
-- [ ] Reverse-engineer waveguide parameters for legacy 28 presets.
-- [ ] Derive coefficients for new instruments: Timpani, Djambé, Taiko, Marching Snare, Tam Tam, Koto.
-
-## Phase 9: UI Polish & Missing SDK Hooks [COMPLETED]
-- [x] Preset Management: `LoadPreset()`, `getPresetIndex()`, `getPresetName()`.
+**Physics:** `Partls` sets `coupling_depth = Ptls / 4.0`. When `coupling_depth > 0`, ResB
+receives `exciter + coupling × ResA_output`. Two coupled oscillators at the same nominal
+@@ -1138,25 +1534,595 @@ replaced spaces with camelCase, added commas, renamed the count marker from
 - [x] State Reporting: `getParameterValue()` for OLED display sync.
 - [x] Parameter Linkage: all core `header.c` knobs wired in `setParameter`.
 - [x] Release Phase Logic: `NoteOff`, `GateOff`, `AllNoteOff`, master envelope VCA.
@@ -1557,44 +1194,7 @@ replaced spaces with camelCase, added commas, renamed the count marker from
 - [x] Fix: getParameterStrValue used state vars instead of value arg (Bank, NzFltr, Program, Partls).
 - [x] Fix: k_paramLowCut dropped /1000.0f for Q — SVF near-unstable. Restored.
 
-# Project Status Tracker
-
 ---
-
-## TODO LIST
-
-### New presets (when physical model is stable and reliable)
-- **Gamelan** — inharmonic metallic bar, long sustain, multiple coupled overtones
-- **Bell** — high InHm, long Dkay, bright material (Mterl≈25), tight mallet
-- **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
-- **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
-- **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
-  *(user can supply parameter values from original RipplerX project)*
-- **crunch**
-- **bottle pop**
-- **kalimba**
-- **maracas**
-- **Chacha nut**
-- **Guiro**
-- **Clock**
-*(user can supply wave files for reference)*
-
-### Project rename: RipplerX → Brachetti
-In honour of Italian performer Arturo Brachetti. When the model is settled:
-- Rename all files: `ripplerx*` → `brachetti*`
-- Rename project identifier in `config.mk`, `header.c`, `Makefile`
-- Rename the C++ class `RipplerXWaveguide` → `BrachettiWaveguide`
-- Update all comments and documentation
-- Create a new GitHub repo / branch named accordingly
-
-### Outstanding hardware investigations (deferred)
-- **Marimba audio crash** — one note plays then silence; likely energy runaway from
-  coupling + feedback gain combination. Investigate `feedback_gain` vs LP coeff stability.
-- **Release / HitPos no audible effect** — `k_paramRel` controls noise burst release only,
-  not the waveguide. `HitPos` (mix_ab) only matters when ResB is active. Both correct by
-  design but need clearer UI labels or documentation.
-- **PCM sample beats** — whether the remaining beat after Smp=0 fix comes from sample
-  content or another source; can wait until clean pure-waveguide sound is validated.
 
 ---
 
@@ -1785,6 +1385,7 @@ Scope: structural redesign for richer physical behavior.
 2. Re-run 5–10 tuning iterations on Wodblk and one membrane preset.
 3. If Flux/Flatness gap remains structurally large, proceed with Stage 2 item 1 (modal bank pilot).
 4. Keep old topology behind a compile flag for A/B and CPU budget tracking.
+
 
 ---
 
@@ -1986,59 +1587,7 @@ Stage-2 development priorities.
      fallback constants.
 
 ---
-
-## Phase 22: Beating Root Cause Identified — Coupling Splits Normal Modes [COMPLETED]
-
-Hardware test with Phase 21 build confirmed Phase 21 loaded ("InitDbg" shown).
-Beating root cause diagnosed from hardware observation. **82/82 tests pass.**
-
-### Hardware Observations (Phase 21 build)
-
-| Action | Result |
-|--------|--------|
-| InitDbg shown on display | Phase 21 build confirmed loaded ✓ |
-| 20 presses, same velocity | Consistent amplitude — progressive silence fixed ✓ |
-| Partls → 16 (Ptls=2) | Beating almost gone |
-| Partls → 8 or lower (Ptls=0/1) | Clean "stringy" Karplus-Strong sound ✓ |
-| Partls → 64 (Ptls=4) | Beating stronger and longer |
-| Changing sample | Little effect — sample contribution minor |
-| Model: open/closed tube | Phase inversion audible — working |
-| Other models | Subtle difference only |
-| Tone / noise parameters | Working correctly |
-| Marimba preset | One sound then silence (audio crash — TODO) |
-| Release / HitPos | No audible effect (TODO) |
-
-### Root Cause: Coupling Splits Normal Mode Frequencies
-
-**Physics:** `Partls` sets `coupling_depth = Ptls / 4.0`. When `coupling_depth > 0`, ResB
-receives `exciter + coupling × ResA_output`. Two coupled oscillators at the same nominal
-@@ -1138,25 +1534,595 @@ replaced spaces with camelCase, added commas, renamed the count marker from
-- [x] State Reporting: `getParameterValue()` for OLED display sync.
-- [x] Parameter Linkage: all core `header.c` knobs wired in `setParameter`.
-- [x] Release Phase Logic: `NoteOff`, `GateOff`, `AllNoteOff`, master envelope VCA.
-- [x] Free Parameter Decision: Gain slot → overdrive drive multiplier (1×–21×).
-
-## Phase 10: Bug-Fix Session [COMPLETED]
-- [x] Fix Init/Reset silence: `LoadPreset(0)` called at end of `Init()`.
-- [x] Fix Chamberlin SVF formula: divisor corrected to `2*srate`.
-- [x] Fix `Reset()` not restoring `mix_ab = 0.5f`.
-- [x] Remove dead `read_pos` variable from `process_waveguide()`.
-- [x] Document mono-filter intentional L-copy pattern with TODO for true stereo.
-
-## Phase 11: Independent Resonator B Control — Partls-selector [COMPLETED]
-- [x] Partls 0–4 = partial count; 5 = select ResA edit; 6 = select ResB edit.
-- [x] Dkay, Mterl, Inharm route to resA or resB based on m_is_resonator_a.
-- [x] Model is per-resonator (m_model_a / m_model_b), phase_mult updated independently.
-- [x] LoadPreset: forces ResA context, mirrors Dkay/Mterl/Inharm to ResB, restores context.
-- [x] Reset: resets m_is_resonator_a = true for deterministic cold start.
-- [x] Fix: True → true (compile error).
-- [x] Fix: Missing } in getParameterValue (compile error / unreachable return).
-- [x] Fix: Missing ; after model_names_a[] init (compile error).
-- [x] Fix: Model B showing model_names_a instead of model_names_b.
-- [x] Fix: Partls values 5/6 showing "---" — now "-> ResA" / "-> ResB".
-- [x] Fix: getParameterStrValue used state vars instead of value arg (Bank, NzFltr, Program, Partls).
-- [x] Fix: k_paramLowCut dropped /1000.0f for Q — SVF near-unstable. Restored.
-
+## Phase 24d: skipped
 ---
 
 ## Phase 24e: Priority-family follow-up tuning snapshot (host) [CURRENT]

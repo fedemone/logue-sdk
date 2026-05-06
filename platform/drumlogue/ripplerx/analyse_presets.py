@@ -7,6 +7,7 @@ Pure stdlib only (wave, struct, math).
 import wave
 import struct
 import math
+import os
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
@@ -276,33 +277,34 @@ def t60_to_dkay(f0_hz, t60_target_s):
 
 
 # ── per-preset analysis ────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(__file__)
 
 PRESETS = [
     {
         'name':      'Clarinet (25)',
-        'render':    '/home/user/logue-sdk/platform/drumlogue/ripplerx/rendered/25_Clarinet.wav',
-        'reference': '/home/user/logue-sdk/platform/drumlogue/ripplerx/samples/Clarinet-C-minor.wav',
+        'render':    os.path.join(BASE_DIR, 'rendered/25_Clarinet.wav'),
+        'reference': os.path.join(BASE_DIR, 'samples/Clarinet-C-minor.wav'),
         'cents':     +6,
         'params':    {'Note': 72, 'Dkay': 180, 'Mterl': -8,  'MlltStif': 10,  'MlltRes': 50,  'InHm': 9, 'NzMix': 12},
     },
     {
         'name':      'StelPan (17)',
-        'render':    '/home/user/logue-sdk/platform/drumlogue/ripplerx/rendered/17_StelPan.wav',
-        'reference': '/home/user/logue-sdk/platform/drumlogue/ripplerx/samples/steel-pan-Nova Drum Real C 432.wav',
+        'render':    os.path.join(BASE_DIR, 'rendered/17_StelPan.wav'),
+        'reference': os.path.join(BASE_DIR, 'samples/steel-pan-Nova Drum Real C 432.wav'),
         'cents':     -33,
         'params':    {'Note': 60, 'Dkay': 194, 'Mterl': 28,  'MlltStif': 150, 'MlltRes': 600, 'InHm': 0, 'NzMix': 0},
     },
     {
         'name':      'Koto (10)',
-        'render':    '/home/user/logue-sdk/platform/drumlogue/ripplerx/rendered/10_Koto.wav',
-        'reference': '/home/user/logue-sdk/platform/drumlogue/ripplerx/samples/Koto-B5.wav',
+        'render':    os.path.join(BASE_DIR, 'rendered/10_Koto.wav'),
+        'reference': os.path.join(BASE_DIR, 'samples/Koto-B5.wav'),
         'cents':     -15,
         'params':    {'Note': 60, 'Dkay': 185, 'Mterl': 28,  'MlltStif': 395, 'MlltRes': 600, 'InHm': 3, 'NzMix': 0},
     },
     {
         'name':      'TblrBel (4)',
-        'render':    '/home/user/logue-sdk/platform/drumlogue/ripplerx/rendered/04_TblrBel.wav',
-        'reference': '/home/user/logue-sdk/platform/drumlogue/ripplerx/samples/tubular-bells.wav',
+        'render':    os.path.join(BASE_DIR, 'rendered/04_TblrBel.wav'),
+        'reference': os.path.join(BASE_DIR, 'samples/tubular-bells.wav'),
         'cents':     -149,
         'params':    {'Note': 72, 'Dkay': 199, 'Mterl': 28,  'MlltStif': 100, 'MlltRes': 900, 'InHm': 5, 'NzMix': 0},
     },
