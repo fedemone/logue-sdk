@@ -1438,6 +1438,25 @@ public:
             init_modal_modes(4.00f, 10.0f, 0.0f,
                              300.0f, 100.0f, 0.0f, 0.0f,
                              0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3);
+        } else if (program == k_Marimba) {
+            // Marimba bar: free-free bar with undercut notches bringing mode 2 to 4×
+            // and mode 3 to 10× the fundamental. Resonating tubes reinforce the
+            // fundamental; upper modes add the bright woody click on attack.
+            init_modal_modes(4.00f, 10.0f, 0.0f,
+                             250.0f, 90.0f, 0.0f, 0.0f,
+                             0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3);
+        } else if (program == k_AcousticTom) {
+            // Acoustic tom: open circular membrane modes (no closed cavity).
+            // Adds body resonance overtones above the KS fundamental + boom.
+            init_modal_modes(1.59f, 2.14f, 2.30f,
+                             100.0f, 70.0f, 50.0f, 35.0f,
+                             0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
+        } else if (program == k_AcSnare) {
+            // Acoustic snare: membrane body ring + snare wire buzz (configured separately).
+            // Modes decay before the snare wire noise to avoid masking the characteristic crack.
+            init_modal_modes(1.59f, 2.14f, 2.30f,
+                             60.0f, 45.0f, 30.0f, 20.0f,
+                             0.15f, 0.65f, 0.50f, 0.35f, 0.22f, 4);
         } else if (program == k_Woodblock) {         // Wodblk pilot
             init_modal_modes(STAGE2_MODAL_RATIO_2, 0.0f, 0.0f,
                              STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f,
