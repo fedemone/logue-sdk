@@ -34,7 +34,14 @@
 
 // =================================================================
 // UNCOMMENT THIS LINE TO ACTIVATE PHASE 8 (2D DRUMHEAD STRIKE PHYSICS)
-// #define ENABLE_PHASE_8_2D_DRUMHEAD 1
+#define ENABLE_PHASE_8_2D_DRUMHEAD 1
+// =================================================================
+
+// =================================================================
+// STAGE-2 PILOT: simple 2-mode modal bank (single-preset, compile-time guarded)
+#ifndef ENABLE_STAGE2_MODAL_PILOT
+#define ENABLE_STAGE2_MODAL_PILOT 1
+#endif
 // =================================================================
 
 
@@ -63,12 +70,29 @@ struct ExciterState {
 #ifdef ENABLE_PHASE_5_EXCITERS
     FastNoise noise_gen;
     FastEnvelope noise_env;
+    FastEnvelope noise_env_hi; // short high-band burst for snare/hat click
     FastEnvelope master_env; // Optional: To choke the whole voice on GateOff
 #endif
 
     // Noise Burst Data
     float noise_decay_coeff = 0.0f;
     float current_noise_env = 0.0f;
+
+    // Computed each sample by process_exciter; read by processBlock.
+    // Noise is NOT injected into the waveguide (which would tonalize it).
+    // Instead the render loop mixes it directly into the voice output (parallel path).
+    // Exception: tube models (OpenTube=7, ClosedTube=8) also receive noise into their
+    // waveguide for physically correct sustained breath excitation (flute, clarinet).
+    float noise_out_sample = 0.0f;
+    float noise_lp_state = 0.0f;   // stage-1 dual-band noise shaper LP state
+    float noise_band_mix = 0.5f;   // 0=mostly low thump, 1=mostly high click
+    float noise_hi_lp_state = 0.0f; // high-band split LP memory (high = raw - LP)
+    float noise_hi_lp_coeff = 0.30f; // derived private cutoff, no UI exposure
+    float snare_wire_z1 = 0.0f;    // short wire-sizzle resonator state
+    float snare_wire_z2 = 0.0f;    // short wire-sizzle resonator state
+    float snare_wire_mix = 0.0f;   // 0..1 extra wire component mix
+    float snare_wire_a1 = 1.6951f; // resonator coeff (frequency/Q)
+    float snare_wire_a2 = 0.8930f; // resonator coeff (frequency/Q)
 
     float mallet_lp = 0.0f;
     float mallet_lp2 = 0.0f;       // Second LP pole state (MlltRes)
@@ -100,6 +124,13 @@ struct WaveguideState {
 
     // Filter State Memory
     float z1 = 0.0f;               // 1-pole lowpass history
+    float diffuser_mix = 0.0f;     // 0=off, >0 enables 4-stage Schroeder allpass chain
+    float diffuser_g = 0.45f;
+    float diffuser_buf1[13] = {0.0f};
+    float diffuser_buf2[19] = {0.0f};
+    float diffuser_buf3[29] = {0.0f};
+    float diffuser_buf4[41] = {0.0f};
+    uint8_t diffuser_i1 = 0, diffuser_i2 = 0, diffuser_i3 = 0, diffuser_i4 = 0;
 
 #ifdef ENABLE_PHASE_7_MODELS
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
@@ -143,6 +174,78 @@ struct VoiceState {
     // not RMS.  For the −80 dB silence gate both are equivalent in practice.
     // Smoothing: α=0.01 → τ ≈ 100 samples ≈ 2 ms at 48 kHz.
     float mag_env = 0.0f;
+
+    // Stage-1 transient complexity boost (short post-strike modulation window).
+    uint32_t transient_frames_left = 0;
+    uint32_t transient_frames_total = 0;
+    float transient_inv_total = 0.0f; // 1 / transient_frames_total (cached)
+    float transient_lp_jitter = 0.0f;
+    float transient_ap_jitter = 0.0f;
+    // Unmodulated per-voice coefficient anchors (set by UI/NoteOn).
+    // Transient modulation is always applied relative to these bases.
+    float transient_lp_base_a = 1.0f;
+    float transient_lp_base_b = 1.0f;
+    float transient_ap_base_a = 0.0f;
+    float transient_ap_base_b = 0.0f;
+
+#if ENABLE_STAGE2_MODAL_PILOT
+    // Stage-2 pilot modal-bank path (2 modes) for single-preset A/B.
+    bool modal_pilot_enabled = false;
+    // Harmonic quadrature recursion (2*cos(w) form), one biquad-like
+    // second-order recursion per mode:
+    // y[n] = k*y[n-1] - y[n-2], where k = 2*cos(w).
+    float modal_k_1 = 0.0f;
+    float modal_k_2 = 0.0f;
+    float modal_k_3 = 0.0f;
+    float modal_k_4 = 0.0f;
+    float modal_k_5 = 0.0f;
+    float modal_k_6 = 0.0f;
+    float modal_y1_1 = 0.0f;
+    float modal_y1_2 = 0.0f;
+    float modal_y1_3 = 0.0f;
+    float modal_y1_4 = 0.0f;
+    float modal_y2_1 = 0.0f;
+    float modal_y2_2 = 0.0f;
+    float modal_y2_3 = 0.0f;
+    float modal_y2_4 = 0.0f;
+    float modal_y1_5 = 0.0f;
+    float modal_y1_6 = 0.0f;
+    float modal_y2_5 = 0.0f;
+    float modal_y2_6 = 0.0f;
+    uint32_t modal_norm_count = 0;
+    float modal_env_1 = 0.0f;
+    float modal_env_2 = 0.0f;
+    float modal_env_3 = 0.0f;
+    float modal_env_4 = 0.0f;
+    float modal_env_5 = 0.0f;
+    float modal_env_6 = 0.0f;
+    float modal_decay_1 = 0.9990f;
+    float modal_decay_2 = 0.9985f;
+    float modal_decay_3 = 0.9980f;
+    float modal_decay_4 = 0.9975f;
+    float modal_decay_5 = 0.9970f;
+    float modal_decay_6 = 0.9965f;
+    float modal_mix = 0.0f;
+    uint8_t modal_mode_count = 0; // 2 default pilot, up to 6 for metallic models
+    // Stage-2 kick pitch-envelope (delay sweep) and clarinet reed nonlinearity.
+    float pitch_env = 0.0f;
+    float pitch_env_decay = 1.0f;
+    float pitch_env_amt = 0.0f;
+    bool  reed_nl_enabled = false;
+    float reed_nl_drive = 1.0f;
+    // Low-body boom oscillator (classics rescue path: kick/timpani/tom/snare).
+    float boom_phase = 0.0f;
+    float boom_inc = 0.0f;
+    float boom_env = 0.0f;
+    float boom_decay = 1.0f;
+    float boom_mix = 0.0f;
+    // Metallic transient FM chirp (character-focused, not exact sample match).
+    float metal_fm_phase = 0.0f;
+    float metal_fm_inc = 0.0f;
+    float metal_fm_env = 0.0f;
+    float metal_fm_decay = 1.0f;
+    float metal_fm_depth = 0.0f;
+#endif
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)
