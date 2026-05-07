@@ -451,7 +451,7 @@ public:
             {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   7,   0,   0, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,   2,   0,   0,  18,   1,   1,   4,   0,   0, 300,   0,1000, 707}, // 10: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
-            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
+            {  12,  45,   0,   1, 450, 130,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   2,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — MlltStif130 softer mallet; Dkay90; TbRad2 (down from 5, slightly darker LP); no boom
             {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,   9,   5,   8, 600,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
             {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,  -4,   0,   0,  20,   7,   1,  17,  20,  10, 800,   0,  30, 707}, // 14: Gong       — softer attack MlSt80 + less dark Mterl-4 + more noise onset NzMx10
             {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 190,  10,   0,   0,   5,   6,   1,   5,   3,   0, 300,   0,1000, 707}, // 15: Kalimba    — Mterl10 warmer bar + InHm6 natural tine spread + TbRd7
@@ -1451,10 +1451,12 @@ public:
                              0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3);
         } else if (program == k_AcousticTom) {
             // Acoustic tom: open circular membrane modes (no closed cavity).
-            // Adds body resonance overtones above the KS fundamental + boom.
+            // Modes 2-4 decay quickly (8-25ms) so the centroid sweeps downward from the
+            // attack click toward the KS fundamental — matching the 689→254Hz reference
+            // sweep measured on Tom1-001-CloseRoom.wav. Mode 1 lingers longer for warmth.
             init_modal_modes(1.59f, 2.14f, 2.30f,
-                             100.0f, 70.0f, 50.0f, 35.0f,
-                             0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
+                             60.0f, 25.0f, 12.0f, 8.0f,
+                             0.40f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
         } else if (program == k_AcSnare) {
             // Acoustic snare: membrane body ring + snare wire buzz (configured separately).
             // Modes decay before the snare wire noise to avoid masking the characteristic crack.
@@ -1614,10 +1616,9 @@ public:
             v.boom_decay = 0.99950f; // ~360ms
             v.boom_mix = 0.26f;
         } else if (program == k_AcousticTom) {
-            v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
-            v.boom_env = 1.0f;
-            v.boom_decay = 0.99945f;
-            v.boom_mix = 0.24f;
+            // No boom: acoustic toms resonate at their MIDI pitch; adding a sub-octave
+            // 110Hz sine made the boom outlast the KS fundamental and swamp the centroid.
+            v.boom_mix = 0.0f;
         } else if (program == k_AcSnare) {
             v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
             v.boom_env = 1.0f;
