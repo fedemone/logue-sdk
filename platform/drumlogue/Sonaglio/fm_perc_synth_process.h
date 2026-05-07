@@ -5,12 +5,19 @@
  * @brief Core Sonaglio synth state and rendering functions
  *
  * This is the active 4-engine implementation.
+ * Selector-based Sonaglio model:
+ *   - one Instrument selector
+ *   - Blend / Gap / Scatter macro controls
+ *   - optional delayed secondary trigger for combos and shadow hits
+ *   - scalar Euclidean tuning offset per engine before queue_trigger()
  * Legacy 5-engine allocation logic and resonant morphing are intentionally removed
  * from the live path.
  */
 
 #include <arm_neon.h>
 #include <stdint.h>
+#include <string.h>
+
 #include "constants.h"
 #include "engine_mapping.h"
 #include "fm_voices.h"
@@ -28,8 +35,12 @@
 // ============================================================================
 // Euclidean tuning offsets
 // ============================================================================
-// offsets[mode][voice] = semitones above root for that voice.
-// Derived from E(4,n): position[i] = floor(i * n / 4), i = 0..3.
+// offsets[mode][engine lane] = semitones above root.
+// Engine mapping used by selector mode:
+//   lane 0 = Kick
+//   lane 1 = Snare
+//   lane 2 = Metal
+//   lane 3 = Tom/Perc
 static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][4] = {
     { 0.f,  0.f,  0.f,  0.f},  // 0: Off
     { 0.f,  1.f,  2.f,  3.f},  // 1: E(4,4)
@@ -42,9 +53,9 @@ static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][4] = {
     { 0.f,  6.f, 12.f, 18.f},  // 8: E(4,24)
 };
 
-/**
- * single or combined instruments
- */
+// ============================================================================
+// Instrument selector
+// ============================================================================
 typedef enum {
     INST_KICK = 0,
     INST_SNARE,
@@ -87,7 +98,7 @@ typedef struct {
 
     // Envelope
     neon_envelope_t envelope;
-    uint8_t current_env_shape;
+    uint8_t         current_env_shape;
 
     // MIDI handler
     midi_handler_t midi;
@@ -95,19 +106,19 @@ typedef struct {
     // User parameters
     int8_t params[PARAM_TOTAL];
 
-    // New routing model
-    uint8_t instrument_sel;                  // 0..9
-    float blend;                             // 0..1
-    float gap;                               // 0..1
-    float scatter;                           // 0..1
+    // Selector routing model
+    uint8_t instrument_sel;  // 0..9
+    float blend;             // 0..1
+    float gap;               // 0..1
+    float scatter;           // 0..1
 
-    // Per-engine post-gain used by combo routing
+    // Per-engine post-gain used by selector/combo routing.
     float engine_gain[ENGINE_COUNT];
 
-    // Per-note bitmask: which engines were used for this note
+    // Per-note bitmask: bit0=kick, bit1=snare, bit2=metal, bit3=perc/tom.
     uint8_t note_engine_mask[128];
 
-    // Small trigger queue so Gap can schedule delayed secondary hits
+    // Small trigger queue so Gap can schedule delayed secondary hits.
     pending_trigger_t pending[8];
 
     // Note tuning
@@ -136,10 +147,41 @@ fast_inline float neon_horizontal_sum_alt(float32x4_t v) {
     return vget_lane_f32(sum_total, 0);
 #endif
 }
-static constexpr uint32_t kDefaultAllLanes = 0xFFFFFFFFu;
 
-static fast_inline uint32x4_t all_lanes_mask() {
-    return vdupq_n_u32(kDefaultAllLanes);
+// Use only lane 0 in the reduced selector model. This avoids summing four
+// duplicated lanes after removing the four-probability voice model.
+static fast_inline uint32x4_t active_lane_mask() {
+    uint32_t lanes[4] = {0xFFFFFFFFu, 0u, 0u, 0u};
+    return vld1q_u32(lanes);
+}
+
+static constexpr float k_u32_to_unit = 1.0f / 4294967295.0f;
+
+static fast_inline float rand_bipolar_from_prng(fm_perc_synth_t* synth) {
+    uint32x4_t rnd = neon_prng_rand_u32(&synth->prng);
+    uint32_t r0 = vgetq_lane_u32(rnd, 0);
+    return ((float)r0 * k_u32_to_unit) * 2.0f - 1.0f;
+}
+
+static fast_inline float sonaglio_euclid_offset_for_engine(const fm_perc_synth_t* synth,
+                                                           uint8_t engine) {
+    switch (engine) {
+        case ENGINE_KICK:  return vgetq_lane_f32(synth->euclid_offsets, 0);
+        case ENGINE_SNARE: return vgetq_lane_f32(synth->euclid_offsets, 1);
+        case ENGINE_METAL: return vgetq_lane_f32(synth->euclid_offsets, 2);
+        case ENGINE_PERC:  return vgetq_lane_f32(synth->euclid_offsets, 3);
+        default:           return 0.0f;
+    }
+}
+
+static fast_inline uint8_t engine_to_note_mask_bit(uint8_t engine) {
+    switch (engine) {
+        case ENGINE_KICK:  return (uint8_t)(1u << 0);
+        case ENGINE_SNARE: return (uint8_t)(1u << 1);
+        case ENGINE_METAL: return (uint8_t)(1u << 2);
+        case ENGINE_PERC:  return (uint8_t)(1u << 3);
+        default:           return 0u;
+    }
 }
 
 static fast_inline void queue_trigger(fm_perc_synth_t* synth,
@@ -172,7 +214,7 @@ static fast_inline void queue_trigger(fm_perc_synth_t* synth,
 static fast_inline void fire_engine(fm_perc_synth_t* synth,
                                     uint8_t engine,
                                     float note_f) {
-    const uint32x4_t lane = all_lanes_mask();
+    const uint32x4_t lane = active_lane_mask();
     const float32x4_t note_vec = vdupq_n_f32(note_f);
 
     switch (engine) {
@@ -195,19 +237,27 @@ static fast_inline void fire_engine(fm_perc_synth_t* synth,
 
 static fast_inline void process_pending_triggers(fm_perc_synth_t* synth) {
     for (int i = 0; i < 8; ++i) {
-        pending_trigger_t& ev = synth->pending[i];
-        if (!ev.active) continue;
+        pending_trigger_t* ev = &synth->pending[i];
+        if (!ev->active) continue;
 
-        if (ev.delay_samples > 0) {
-            --ev.delay_samples;
+        if (ev->delay_samples > 0) {
+            --ev->delay_samples;
             continue;
         }
 
-        synth->engine_gain[ev.engine] = ev.gain;
-        fire_engine(synth, ev.engine, ev.note_f);
-        ev.active = 0;
+        synth->engine_gain[ev->engine] = ev->gain;
+        fire_engine(synth, ev->engine, ev->note_f);
+        ev->active = 0;
     }
 }
+
+static fast_inline bool fm_perc_synth_has_pending(const fm_perc_synth_t* synth) {
+    for (int i = 0; i < 8; ++i) {
+        if (synth->pending[i].active) return true;
+    }
+    return false;
+}
+
 // ============================================================================
 // Parameter / preset handling
 // ============================================================================
@@ -238,7 +288,6 @@ fast_inline void fm_perc_synth_update_params(fm_perc_synth_t* synth) {
                        vdupq_n_f32(p[PARAM_PERC_BODY] * 0.01f));
 
     synth->current_env_shape = (uint8_t)p[PARAM_ENV_SHAPE];
-
     metal_engine_set_character(&synth->metal,
                                (uint32_t)(synth->current_env_shape >> 7));
 
@@ -255,8 +304,8 @@ fast_inline void load_fm_preset(uint8_t idx, int8_t* params) {
     const fm_preset_t* p = &FM_PRESETS[idx];
 
     params[PARAM_INSTRUMENT] = p->instrument_sel;
-    params[PARAM_BLEND]      = p->gap;
-    params[PARAM_GAP]        = p->blend;
+    params[PARAM_BLEND]      = p->blend;
+    params[PARAM_GAP]        = p->gap;
     params[PARAM_SCATTER]    = p->scatter;
 
     params[PARAM_KICK_ATK]   = p->kick_attack;
@@ -303,7 +352,6 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t* synth) {
     midi_handler_init(&synth->midi);
 
     synth->current_env_shape = ENV_SHAPE_DEFAULT;
-    synth->voice_triggered = vdupq_n_u32(0);
     synth->euclid_offsets = vdupq_n_f32(0.0f);
     synth->master_gain = 0.25f;
 
@@ -312,8 +360,12 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t* synth) {
     synth->gap = 0.5f;
     synth->scatter = 0.25f;
 
-    std::memset(synth->note_engine_mask, 0, sizeof(synth->note_engine_mask));
-    std::memset(synth->pending, 0, sizeof(synth->pending));
+    for (int i = 0; i < ENGINE_COUNT; ++i) {
+        synth->engine_gain[i] = 0.0f;
+    }
+
+    memset(synth->note_engine_mask, 0, sizeof(synth->note_engine_mask));
+    memset(synth->pending, 0, sizeof(synth->pending));
 
     load_fm_preset(0, synth->params);
     fm_perc_synth_update_params(synth);
@@ -326,96 +378,93 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t* synth) {
 fast_inline void fm_perc_synth_note_on(fm_perc_synth_t* synth,
                                        uint8_t note,
                                        uint8_t velocity) {
-    const float vel = (float)velocity / 127.0f;
-    const uint8_t inst = synth->instrument_sel;
+    (void)velocity; // Velocity intentionally excluded from current model.
+
+    for (int i = 0; i < ENGINE_COUNT; ++i) {
+        synth->engine_gain[i] = 0.0f;
+    }
 
     // Route table: single engines or pairs
     // Tom is routed to Perc for now (Perc is the tom/block/wood proxy).
     uint8_t engine_a = ENGINE_KICK;
     uint8_t engine_b = 0xFF;
-    bool combo = false;
+    uint8_t combo = 0;
 
-    switch (inst) {
+    switch (synth->instrument_sel) {
         case INST_KICK:   engine_a = ENGINE_KICK;  break;
         case INST_SNARE:  engine_a = ENGINE_SNARE; break;
         case INST_TOM:    engine_a = ENGINE_PERC;  break;
         case INST_METAL:  engine_a = ENGINE_METAL; break;
 
-        case INST_KS:     engine_a = ENGINE_KICK;  engine_b = ENGINE_SNARE; combo = true; break;
-        case INST_KT:     engine_a = ENGINE_KICK;  engine_b = ENGINE_PERC;   combo = true; break;
-        case INST_KM:     engine_a = ENGINE_KICK;  engine_b = ENGINE_METAL;  combo = true; break;
-        case INST_ST:     engine_a = ENGINE_SNARE; engine_b = ENGINE_PERC;   combo = true; break;
-        case INST_SM:     engine_a = ENGINE_SNARE; engine_b = ENGINE_METAL;  combo = true; break;
-        case INST_TM:     engine_a = ENGINE_PERC;  engine_b = ENGINE_METAL;  combo = true; break;
+        case INST_KS:     engine_a = ENGINE_KICK;  engine_b = ENGINE_SNARE; combo = 1; break;
+        case INST_KT:     engine_a = ENGINE_KICK;  engine_b = ENGINE_PERC;  combo = 1; break;
+        case INST_KM:     engine_a = ENGINE_KICK;  engine_b = ENGINE_METAL; combo = 1; break;
+        case INST_ST:     engine_a = ENGINE_SNARE; engine_b = ENGINE_PERC;  combo = 1; break;
+        case INST_SM:     engine_a = ENGINE_SNARE; engine_b = ENGINE_METAL; combo = 1; break;
+        case INST_TM:     engine_a = ENGINE_PERC;  engine_b = ENGINE_METAL; combo = 1; break;
         default:          engine_a = ENGINE_KICK;  break;
     }
 
     const float gap_ms = 4.0f + synth->gap * 80.0f;
-    const float scatter_ms = synth->scatter * 8.0f;
-    const float jitter_ms = ((float)neon_prng_rand_u32(&synth->prng).v[0] / (float)UINT32_MAX * 2.0f - 1.0f) * scatter_ms;
+    const float jitter_ms = rand_bipolar_from_prng(synth) * synth->scatter * 8.0f;
+    const float delayed_ms = gap_ms + jitter_ms;
+    const uint32_t gap_samples =
+        (uint32_t)((delayed_ms > 0.0f ? delayed_ms : 0.0f) * (float)SAMPLE_RATE * 0.001f);
 
-    const uint32_t gap_samples = (uint32_t)((gap_ms + jitter_ms) * (float)SAMPLE_RATE * 0.001f);
-
-    // Use Blend differently for single vs combo:
-    // - single: controls how strong the delayed shadow hit is
-    // - combo : balances the two engines
-    const float blend = synth->blend;
-
-    // Store note mask for note-off / cancellation
-    // bit0 = kick, bit1 = snare, bit2 = metal, bit3 = perc
-    uint8_t mask = 0;
-    mask |= (engine_a == ENGINE_KICK)  ? (1u << 0) : 0u;
-    mask |= (engine_a == ENGINE_SNARE) ? (1u << 1) : 0u;
-    mask |= (engine_a == ENGINE_METAL) ? (1u << 2) : 0u;
-    mask |= (engine_a == ENGINE_PERC)  ? (1u << 3) : 0u;
-    if (combo) {
-        mask |= (engine_b == ENGINE_KICK)  ? (1u << 0) : 0u;
-        mask |= (engine_b == ENGINE_SNARE) ? (1u << 1) : 0u;
-        mask |= (engine_b == ENGINE_METAL) ? (1u << 2) : 0u;
-        mask |= (engine_b == ENGINE_PERC)  ? (1u << 3) : 0u;
-    }
+    uint8_t mask = engine_to_note_mask_bit(engine_a);
+    if (combo) mask |= engine_to_note_mask_bit(engine_b);
     synth->note_engine_mask[note] = mask;
 
-    const float32x4_t base_note = vdupq_n_f32((float)note);
-    const float32x4_t tuned_note = vaddq_f32(base_note, synth->euclid_offsets);
+    // Euclidean tuning as scalar offset before queue_trigger().
+    const float note_a = (float)note + sonaglio_euclid_offset_for_engine(synth, engine_a);
 
-    // Main hit now
-    queue_trigger(synth, engine_a, note, (float)note, 1.0f, 0);
+    /**
+     * For now, I would keep Gap in a moderate range.
+     * Later, if you want truly separated hits, either:
+     * -       per-engine/per-trigger envelopes, or
+     * -       retriggering the shared envelope when a pending trigger fires,
+     *         accepting that it will also re-open the whole mix. */
+
 
     if (combo) {
         // Secondary engine delayed
-        const float gain_a = 1.0f - blend;
-        const float gain_b = blend;
+        const float gain_a = 1.0f - synth->blend;
+        const float gain_b = synth->blend;
 
         synth->engine_gain[engine_a] = gain_a;
         synth->engine_gain[engine_b] = gain_b;
 
         // slightly detune secondary layer with scatter for chaos
-        const float note_b = (float)note + ((synth->scatter * 2.0f - 1.0f) * 0.35f);
+        const float note_b_base = (float)note + sonaglio_euclid_offset_for_engine(synth, engine_b);
+        const float note_b = note_b_base + rand_bipolar_from_prng(synth) * synth->scatter * 0.35f;
+
+        queue_trigger(synth, engine_a, note, note_a, gain_a, 0);
         queue_trigger(synth, engine_b, note, note_b, gain_b, gap_samples);
     } else {
         // Single instrument: add a quieter delayed shadow hit on the same engine
-        const float shadow_gain = 0.12f + blend * 0.55f;
-        const float note_shadow = (float)note + ((synth->scatter * 2.0f - 1.0f) * 0.25f);
+        const float shadow_gain = 0.12f + synth->blend * 0.55f;
+        const float note_shadow = note_a + rand_bipolar_from_prng(synth) * synth->scatter * 0.25f;
+
+        queue_trigger(synth, engine_a, note, note_a, 1.0f, 0);
         queue_trigger(synth, engine_a, note, note_shadow, shadow_gain, gap_samples);
         synth->engine_gain[engine_a] = 1.0f;
     }
 
     // Keep current envelope behavior
-    neon_envelope_trigger(&synth->envelope, vdupq_n_u32(0xFFFFFFFFu), synth->current_env_shape);
+    neon_envelope_trigger(&synth->envelope, active_lane_mask(), synth->current_env_shape);
 }
 
 fast_inline void fm_perc_synth_note_off(fm_perc_synth_t* synth, uint8_t note) {
     // Cancel queued secondary hits for this note
     for (int i = 0; i < 8; ++i) {
-        pending_trigger_t& ev = synth->pending[i];
-        if (ev.active && ev.midi_note == note) {
-            ev.active = 0;
+        pending_trigger_t* ev = &synth->pending[i];
+        if (ev->active && ev->midi_note == note) {
+            ev->active = 0;
         }
     }
 
     synth->note_engine_mask[note] = 0;
-    neon_envelope_release(&synth->envelope, vdupq_n_u32(0xFFFFFFFFu));
+    neon_envelope_release(&synth->envelope, active_lane_mask());
 }
 
 // ============================================================================
@@ -423,8 +472,8 @@ fast_inline void fm_perc_synth_note_off(fm_perc_synth_t* synth, uint8_t note) {
 // ============================================================================
 
 fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
-
     process_pending_triggers(synth);
+
     lfo_smoother_process(&synth->lfo_smooth);
 
     synth->lfo.shape_combo = (uint32_t)synth->params[PARAM_LFO1_SHAPE];
@@ -506,6 +555,7 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
 
     uint32x4_t active_mask = vmvnq_u32(vceqq_u32(synth->envelope.stage,
                                                  vdupq_n_u32(ENV_STATE_OFF)));
+    active_mask = vandq_u32(active_mask, active_lane_mask());
 
     float32x4_t hit_shape = vdupq_n_f32(synth->params[PARAM_HIT_SHAPE] * 0.01f);
     float32x4_t body_tilt = vdupq_n_f32(synth->params[PARAM_BODY_TILT] * 0.01f);
@@ -515,22 +565,33 @@ fast_inline float fm_perc_synth_process(fm_perc_synth_t* synth) {
     float32x4_t body_env = fm_make_body_env(envelope, body_tilt);
 
     float32x4_t kick_out = vmulq_f32(
-        kick_engine_process(&synth->kick, envelope, active_mask, lfo_pitch_mult, lfo_index_add),
+        kick_engine_process(&synth->kick, transient_env, active_mask, lfo_pitch_mult, lfo_index_add),
         vdupq_n_f32(synth->engine_gain[ENGINE_KICK])
     );
 
     float32x4_t snare_out = vmulq_f32(
-        snare_engine_process(&synth->snare, envelope, active_mask, lfo_pitch_mult, lfo_index_add, lfo_noise_add),
+        snare_engine_process(&synth->snare,
+                             transient_env,
+                             active_mask,
+                             lfo_pitch_mult,
+                             vaddq_f32(lfo_index_add, lfo_noise_add),
+                             vaddq_f32(synth->snare.noise_mix, lfo_noise_add)),
         vdupq_n_f32(synth->engine_gain[ENGINE_SNARE])
     );
 
     float32x4_t metal_out = vmulq_f32(
-        metal_engine_process(&synth->metal, envelope, active_mask, lfo_pitch_mult, lfo_index_add, lfo_metal_gate),
+        metal_engine_process(&synth->metal,
+                             body_env,
+                             active_mask,
+                             lfo_pitch_mult,
+                             lfo_index_add,
+                             synth->metal.brightness,
+                             lfo_metal_gate),
         vdupq_n_f32(synth->engine_gain[ENGINE_METAL])
     );
 
     float32x4_t perc_out = vmulq_f32(
-        perc_engine_process(&synth->perc, envelope, active_mask, lfo_pitch_mult, lfo_index_add),
+        perc_engine_process(&synth->perc, body_env, active_mask, lfo_pitch_mult, lfo_index_add),
         vdupq_n_f32(synth->engine_gain[ENGINE_PERC])
     );
 

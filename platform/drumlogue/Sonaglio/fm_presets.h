@@ -59,10 +59,10 @@ typedef struct {
     char name[NAME_LENGTH];
 
     // Page 1: Probabilities
-    uint8_t prob_kick;
-    uint8_t prob_snare;
-    uint8_t prob_metal;
-    uint8_t prob_perc;
+    uint8_t instrument_sel;
+    uint8_t blend;
+    uint8_t gap;
+    uint8_t scatter;
 
     // Page 2: Kick + Snare (Attack / Body)
     uint8_t kick_attack;

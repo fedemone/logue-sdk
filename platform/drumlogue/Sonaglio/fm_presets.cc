@@ -280,38 +280,33 @@ void load_fm_preset(uint8_t idx, int8_t *params) {
 
     const fm_preset_t *p = &FM_PRESETS[idx];
 
-    // Historical field names kept in fm_preset_t:
-    //   prob_kick  -> Instrument selector (0..9)
-    //   prob_snare -> Blend (0..100)
-    //   prob_metal -> Gap (0..100)
-    //   prob_perc  -> Scatter (0..100)
-    params[PARAM_INSTRUMENT] = p->prob_kick;
-    params[PARAM_BLEND] = p->prob_snare;
-    params[PARAM_GAP] = p->prob_metal;
-    params[PARAM_SCATTER] = p->prob_perc;
+    params[PARAM_INSTRUMENT] = p->instrument_sel;
+    params[PARAM_BLEND]      = p->blend;
+    params[PARAM_GAP]        = p->gap;
+    params[PARAM_SCATTER]    = p->scatter;
 
-    params[PARAM_KICK_ATK] = p->kick_attack;
-    params[PARAM_KICK_BODY] = p->kick_body;
-    params[PARAM_SNARE_ATK] = p->snare_attack;
+    params[PARAM_KICK_ATK]   = p->kick_attack;
+    params[PARAM_KICK_BODY]  = p->kick_body;
+    params[PARAM_SNARE_ATK]  = p->snare_attack;
     params[PARAM_SNARE_BODY] = p->snare_body;
 
-    params[PARAM_METAL_ATK] = p->metal_attack;
+    params[PARAM_METAL_ATK]  = p->metal_attack;
     params[PARAM_METAL_BODY] = p->metal_body;
-    params[PARAM_PERC_ATK] = p->perc_attack;
-    params[PARAM_PERC_BODY] = p->perc_body;
+    params[PARAM_PERC_ATK]   = p->perc_attack;
+    params[PARAM_PERC_BODY]  = p->perc_body;
 
-    params[PARAM_LFO1_SHAPE] = p->lfo1_shape;
-    params[PARAM_LFO1_RATE] = p->lfo1_rate;
+    params[PARAM_LFO1_SHAPE]  = p->lfo1_shape;
+    params[PARAM_LFO1_RATE]   = p->lfo1_rate;
     params[PARAM_LFO1_TARGET] = p->lfo1_target;
-    params[PARAM_LFO1_DEPTH] = p->lfo1_depth;
+    params[PARAM_LFO1_DEPTH]  = p->lfo1_depth;
 
-    params[PARAM_EUCL_TUN] = p->eucl_tun;
-    params[PARAM_LFO2_RATE] = p->lfo2_rate;
+    params[PARAM_EUCL_TUN]    = p->eucl_tun;
+    params[PARAM_LFO2_RATE]   = p->lfo2_rate;
     params[PARAM_LFO2_TARGET] = p->lfo2_target;
-    params[PARAM_LFO2_DEPTH] = p->lfo2_depth;
+    params[PARAM_LFO2_DEPTH]  = p->lfo2_depth;
 
-    params[PARAM_ENV_SHAPE] = p->env_shape;
-    params[PARAM_HIT_SHAPE] = p->hit_shape;
-    params[PARAM_BODY_TILT] = p->body_tilt;
-    params[PARAM_DRIVE] = p->drive;
+    params[PARAM_ENV_SHAPE]   = p->env_shape;
+    params[PARAM_HIT_SHAPE]   = p->hit_shape;
+    params[PARAM_BODY_TILT]   = p->body_tilt;
+    params[PARAM_DRIVE]       = p->drive;
 }

@@ -63,7 +63,7 @@ public:
     /*===========================================================================*/
 
     enum ParamId : uint8_t {
-        // Per-engine probabilities
+        // Per-engine selection and interaction
         PARAM_INSTRUMENT = 0,   // 0..9
         PARAM_BLEND,
         PARAM_GAP,
@@ -148,8 +148,8 @@ public:
                                     vget_high_u32(off_check));
         lo_hi = vpmin_u32(lo_hi, lo_hi);
 
-        if (vget_lane_u32(lo_hi, 0) == 0xFFFFFFFFu) {
-            // All voices idle � output silence without running synthesis
+        if (vget_lane_u32(lo_hi, 0) == 0xFFFFFFFFu &&
+            !fm_perc_synth_has_pending(&synth_)) {
             memset(out, 0, frames * 2 * sizeof(float));
             return;
         }
