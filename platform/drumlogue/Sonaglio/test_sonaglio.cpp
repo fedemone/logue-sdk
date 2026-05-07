@@ -129,17 +129,15 @@ static void test_preset_loading() {
     for (uint8_t i = 0; i < NUM_OF_PRESETS; ++i) {
         load_fm_preset(i, params);
 
-        const uint8_t prob_ids[] = { PARAM_KPROB, PARAM_SPROB, PARAM_MPROB, PARAM_PPROB };
         const uint8_t body_ids[] = {
+            PARAM_BLEND, PARAM_GAP, PARAM_SCATTER,
             PARAM_KICK_ATK, PARAM_KICK_BODY, PARAM_SNARE_ATK, PARAM_SNARE_BODY,
             PARAM_METAL_ATK, PARAM_METAL_BODY, PARAM_PERC_ATK, PARAM_PERC_BODY,
             PARAM_HIT_SHAPE, PARAM_BODY_TILT, PARAM_DRIVE
         };
 
-        for (uint8_t id : prob_ids) {
-            if (params[id] < 0 || params[id] > 100) {
-                return report_fail(name, "probability out of 0..100");
-            }
+        if (params[PARAM_INSTRUMENT] < 0 || params[PARAM_INSTRUMENT] > INST_COUNT) {
+            return report_fail(name, "Invalid instrument");
         }
         for (uint8_t id : body_ids) {
             if (params[id] < 0 || params[id] > 100) {

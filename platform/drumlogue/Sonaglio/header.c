@@ -6,6 +6,19 @@
 #include "unit.h"
 
 // String tables
+const char* instruments_strings[10] = {
+    "Kick",
+    "Snare",
+    "Tom",
+    "Metal",
+    "K+S",
+    "K+T",
+    "K+M",
+    "S+T",
+    "S+M",
+    "T+M"
+};
+
 const char* lfo_shape_strings[9] = {
     "Tri+Tri", "Rmp+Rmp", "Chd+Chd",
     "Tri+Rmp", "Tri+Chd", "Rmp+Tri",
@@ -36,17 +49,20 @@ const __unit_header unit_header_t unit_header = {
     .api = UNIT_API_VERSION,
     .dev_id = 0x46654465U,   // 'FeDe' - https://github.com/fedemone/logue-sdk
     .unit_id = 0x02U,
-    .version = 0x00020000U,
     // .name = {'s',0},    // use this for local testing
     .name = "Sonaglio",
     .num_presets = 26,
     .num_params = 24,
     .params = {
         // Page 1: Engine probabilities
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "KProb"},
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "SProb"},
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "MProb"},
-        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, "PProb"},
+        // Instrument: single engine or combo pair
+        {0,   9, 0, 100, k_unit_param_type_strings, 0, 0, 0, {"Instr"}},
+        // Blend: balance between the pair; in single modes, the strength of the delayed shadow
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"Blend"}},
+        // Gap: actual separation between primary and secondary hit
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"Gap"}},
+        // Scatter: jitter, detune, looseness, and chaos
+        {0, 100, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"Scatter"}},
 
         // Page 2: Kick + Snare
         {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "KAtk"},
@@ -67,10 +83,13 @@ const __unit_header unit_header_t unit_header = {
         {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "L1Depth"},
 
         // Page 5: LFO2 + Euclidean Tuning
-        {0, 8,   0, 0, k_unit_param_type_strings,  0, 0, 0, "EuclTun"},
-        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, "L2Rate"},
-        {0, 10,  0, 0, k_unit_param_type_strings,  0, 0, 0, "L2Dest"},
-        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, "L2Depth"},
+        // EuclTun: Euclidean per-voice pitch spread. Assigns voice i a semitone
+        //   offset = floor(i * n / 4) so the 4 voices are maximally spread across
+        //   n chromatic steps. Mode 0 = off (all voices same pitch).
+        {0, 8,   0, 0, k_unit_param_type_strings, 0, 0, 0, {"EuclTun"}},
+        {0, 100, 0, 30, k_unit_param_type_percent, 0, 0, 0, {"L2Rate"}},
+        {0, 10,  0, 0, k_unit_param_type_strings, 0, 0, 0, {"L2Dest"}},
+        {-100, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"L2Depth"}},
 
         // Page 6: Envelope + Global shaping
         {0, 255, 0, 40, k_unit_param_type_none,    0, 0, 0, "EnvShape"},

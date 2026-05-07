@@ -48,6 +48,7 @@
 extern "C" {
 #endif
 // defined in header.c
+extern const char* const instruments_strings[10];
 extern const char* const lfo_shape_strings[9];
 extern const char* const lfo_target_strings[11];
 extern const char* const euclidean_mode_strings[9];
@@ -63,10 +64,10 @@ public:
 
     enum ParamId : uint8_t {
         // Per-engine probabilities
-        PARAM_KPROB = 0,
-        PARAM_SPROB,
-        PARAM_MPROB,
-        PARAM_PPROB,
+        PARAM_INSTRUMENT = 0,   // 0..9
+        PARAM_BLEND,
+        PARAM_GAP,
+        PARAM_SCATTER,
 
         // Kick + Snare
         PARAM_KICK_ATK,
@@ -112,6 +113,7 @@ public:
     ~Synth(void) {}
 
     inline int8_t Init(const unit_runtime_desc_t* desc) {
+        // Check compatibility
         if (desc->samplerate != 48000)
             return k_unit_err_samplerate;
 
@@ -137,6 +139,9 @@ public:
     /*===========================================================================*/
 
     fast_inline void Render(float* out, size_t frames) {
+        // Idle gate: if all 4 voice envelopes are in ENV_STATE_OFF, every call to
+        // fm_perc_synth_process() returns exactly 0.0, so skip the entire block.
+        // Horizontal AND of all 4 stage lanes (ARMv7-compatible):
         uint32x4_t off_check = vceqq_u32(synth_.envelope.stage,
                                          vdupq_n_u32(ENV_STATE_OFF));
         uint32x2_t lo_hi = vand_u32(vget_low_u32(off_check),
@@ -144,15 +149,16 @@ public:
         lo_hi = vpmin_u32(lo_hi, lo_hi);
 
         if (vget_lane_u32(lo_hi, 0) == 0xFFFFFFFFu) {
+            // All voices idle � output silence without running synthesis
             memset(out, 0, frames * 2 * sizeof(float));
             return;
         }
 
         float* __restrict out_p = out;
-        const float* out_e = out_p + (frames << 1);
+        const float* out_e = out_p + (frames << 1);  // Stereo output
 
         while (out_p < out_e) {
-            const float sample = fm_perc_synth_process(&synth_);
+            float sample = fm_perc_synth_process(&synth_);
             out_p[0] = sample;
             out_p[1] = sample;
             out_p += 2;
@@ -164,18 +170,17 @@ public:
     /*===========================================================================*/
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
-        fm_perc_synth_note_on(&synth_, note, velocity);
+    fm_perc_synth_note_on(&synth_, note, velocity);
     }
 
     inline void NoteOff(uint8_t note) {
         fm_perc_synth_note_off(&synth_, note);
     }
 
+    // Default gate uses a percussion root note.
+    // The active instrument selector decides what gets triggered.
     inline void GateOn(uint8_t velocity) {
-        NoteOn(36, velocity);
-        NoteOn(38, velocity);
-        NoteOn(42, velocity);
-        NoteOn(45, velocity);
+        NoteOn(36, velocity);   // default percussion root
     }
 
     inline void GateOff() {
@@ -188,8 +193,15 @@ public:
         }
     }
 
-    inline void PitchBend(uint16_t bend) { (void)bend; }
-    inline void ChannelPressure(uint8_t pressure) { (void)pressure; }
+    inline void PitchBend(uint16_t bend) {
+        (void)bend;  // Not implemented in basic FM percussion
+        // Could be used to modulate all voices' pitch
+    }
+
+    inline void ChannelPressure(uint8_t pressure) {
+        (void)pressure;  // Not implemented
+    }
+
     inline void Aftertouch(uint8_t note, uint8_t aftertouch) {
         (void)note;
         (void)aftertouch;
@@ -202,7 +214,10 @@ public:
     inline void setParameter(uint8_t index, int32_t value) {
         if (index >= PARAM_TOTAL) return;
 
+        // Store parameter value
         synth_.params[index] = static_cast<int8_t>(value);
+
+        // Update synth with new parameters
         fm_perc_synth_update_params(&synth_);
     }
 
@@ -213,6 +228,9 @@ public:
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
         switch (index) {
+            case PARAM_INSTRUMENT:
+                if (value >= 0 && value <= 9) return instruments_strings[value];
+                break;
             case PARAM_LFO1_SHAPE:
                 if (value >= 0 && value <= 8) return lfo_shape_strings[value];
                 break;
@@ -232,7 +250,7 @@ public:
     inline const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const {
         (void)index;
         (void)value;
-        return nullptr;
+        return nullptr;  // Not implemented
     }
 
     /*===========================================================================*/
@@ -261,6 +279,7 @@ private:
 
     inline void load_preset(uint8_t idx) {
         load_fm_preset(idx, synth_.params);
+        // Update synth with new parameters
         fm_perc_synth_update_params(&synth_);
         current_preset_ = idx;
     }

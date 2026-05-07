@@ -39,6 +39,38 @@ constexpr int   A4_MIDI  = 69;
 constexpr float SEMITONE_RATIO = 1.0594630943592953f;
 constexpr float LFO_PHASE_OFFSET = 0.25f;
 
+// ============================================================================
+// Parameter indexes — 24 controls
+// ============================================================================
+constexpr uint8_t PARAM_INSTRUMENT = 0;
+constexpr uint8_t PARAM_BLEND = 1;
+constexpr uint8_t PARAM_GAP = 2;
+constexpr uint8_t PARAM_SCATTER = 3;
+
+constexpr uint8_t PARAM_KICK_ATK  = 4;
+constexpr uint8_t PARAM_KICK_BODY = 5;
+constexpr uint8_t PARAM_SNARE_ATK = 6;
+constexpr uint8_t PARAM_SNARE_BODY = 7;
+constexpr uint8_t PARAM_METAL_ATK  = 8;
+constexpr uint8_t PARAM_METAL_BODY = 9;
+constexpr uint8_t PARAM_PERC_ATK   = 10;
+constexpr uint8_t PARAM_PERC_BODY  = 11;
+
+constexpr uint8_t PARAM_LFO1_SHAPE  = 12;
+constexpr uint8_t PARAM_LFO1_RATE   = 13;
+constexpr uint8_t PARAM_LFO1_TARGET = 14;
+constexpr uint8_t PARAM_LFO1_DEPTH  = 15;
+
+constexpr uint8_t PARAM_EUCL_TUN    = 16;
+constexpr uint8_t PARAM_LFO2_RATE   = 17;
+constexpr uint8_t PARAM_LFO2_TARGET = 18;
+constexpr uint8_t PARAM_LFO2_DEPTH  = 19;
+
+constexpr uint8_t PARAM_ENV_SHAPE   = 20;
+constexpr uint8_t PARAM_HIT_SHAPE   = 21;
+constexpr uint8_t PARAM_BODY_TILT   = 22;
+constexpr uint8_t PARAM_DRIVE       = 23;
+constexpr uint8_t PARAM_TOTAL       = 24;
 
 // ============================================================================
 // LFO targets - TODO make this enum

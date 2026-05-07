@@ -22,10 +22,10 @@
 
 // Parameter indices matching the fixed 24-parameter synth contract.
 typedef enum {
-    PARAM_KPROB,
-    PARAM_SPROB,
-    PARAM_MPROB,
-    PARAM_PPROB,
+    PARAM_INSTRUMENT = 0,
+    PARAM_BLEND,
+    PARAM_GAP,
+    PARAM_SCATTER,
 
     PARAM_KICK_ATK,
     PARAM_KICK_BODY,

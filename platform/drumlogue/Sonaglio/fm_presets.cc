@@ -2,8 +2,10 @@
  * @file fm_presets.cc
  * @brief Factory preset data for FM Percussion Synth
  *
- * Presets are rebuilt around the fixed 4-engine model.
- * The old voice-allocation and resonant fields are intentionally removed.
+ * Presets are rebuilt around the selector-based Sonaglio model.
+ * The four values after each preset name are now:
+ *   instrument, blend, gap, scatter
+ * The struct field names still use their historical prob_* labels for ABI compatibility.
  */
 
 #include "fm_presets.h"
@@ -13,7 +15,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 0: TightKick
     {
         "TightKick",
-        100, 20, 10, 40,
+        0, 35, 5, 5,
         85, 75, 10, 20,
         20, 15, 20, 25,
         0, 10, LFO_TARGET_PITCH, 10,
@@ -23,7 +25,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 1: HeavyKick
     {
         "HeavyKick",
-        100, 10, 5, 35,
+        0, 60, 8, 5,
         70, 95, 10, 30,
         15, 10, 15, 30,
         0, 15, LFO_TARGET_PITCH, 20,
@@ -33,7 +35,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 2: ClickKick
     {
         "ClickKick",
-        100, 15, 10, 50,
+        0, 20, 3, 15,
         90, 55, 5, 15,
         25, 10, 35, 20,
         1, 18, LFO_TARGET_INDEX, 20,
@@ -43,7 +45,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 3: CrackSnare
     {
         "CrackSnare",
-        35, 100, 20, 20,
+        1, 45, 4, 15,
         20, 30, 90, 75,
         10, 10, 20, 20,
         2, 35, LFO_TARGET_INDEX, 50,
@@ -53,7 +55,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 4: BodySnare
     {
         "BodySnare",
-        25, 100, 10, 15,
+        1, 65, 6, 10,
         25, 20, 65, 95,
         15, 10, 10, 10,
         0, 20, LFO_TARGET_PITCH, 15,
@@ -63,7 +65,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 5: GhostSnare
     {
         "GhostSnare",
-        20, 55, 10, 15,
+        1, 30, 22, 35,
         15, 20, 60, 45,
         5, 10, 5, 5,
         0, 8, LFO_TARGET_ENV, 20,
@@ -73,7 +75,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 6: RimSnare
     {
         "RimSnare",
-        10, 80, 20, 20,
+        1, 25, 6, 20,
         15, 10, 85, 45,
         10, 10, 20, 10,
         1, 28, LFO_TARGET_PITCH, -35,
@@ -83,7 +85,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 7: MetalClang
     {
         "MetalClang",
-        10, 15, 100, 20,
+        3, 50, 8, 12,
         10, 10, 20, 15,
         95, 65, 10, 10,
         0, 35, LFO_TARGET_INDEX, 40,
@@ -93,7 +95,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 8: MetalWash
     {
         "MetalWash",
-        15, 20, 100, 25,
+        3, 75, 35, 45,
         10, 15, 25, 20,
         80, 90, 20, 25,
         0, 20, LFO_TARGET_ENV, 40,
@@ -103,7 +105,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 9: GongHit
     {
         "GongHit",
-        0, 10, 100, 0,
+        3, 85, 28, 35,
         0, 0, 0, 0,
         100, 95, 0, 0,
         3, 10, LFO_TARGET_PITCH, -20,
@@ -113,7 +115,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 10: BellRing
     {
         "BellRing",
-        0, 0, 100, 0,
+        3, 80, 45, 25,
         0, 0, 0, 0,
         100, 85, 0, 0,
         4, 18, LFO_TARGET_INDEX, 35,
@@ -124,7 +126,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 11: PercBlock
     {
         "PercBlock",
-        30, 25, 10, 100,
+        2, 35, 6, 8,
         20, 20, 10, 20,
         10, 15, 95, 65,
         0, 20, LFO_TARGET_PITCH, 15,
@@ -134,7 +136,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 12: PercTom
     {
         "PercTom",
-        35, 20, 5, 100,
+        2, 70, 12, 10,
         15, 60, 10, 20,
         10, 10, 75, 90,
         0, 12, LFO_TARGET_ENV, 20,
@@ -144,7 +146,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 13: PercWood
     {
         "PercWood",
-        20, 15, 10, 100,
+        2, 30, 5, 10,
         35, 45, 10, 20,
         10, 10, 85, 40,
         1, 15, LFO_TARGET_INDEX, 10,
@@ -154,7 +156,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 14: DryHit
     {
         "DryHit",
-        60, 60, 60, 60,
+        4, 50, 0, 0,
         60, 40, 55, 35,
         50, 35, 55, 35,
         0, 0, LFO_TARGET_NONE, 0,
@@ -164,7 +166,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 15: DriveKit
     {
         "DriveKit",
-        100, 20, 20, 20,
+        4, 45, 4, 10,
         85, 65, 10, 15,
         15, 20, 20, 25,
         1, 22, LFO_TARGET_INDEX, 20,
@@ -174,7 +176,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 16: DarkPulse
     {
         "DarkPulse",
-        80, 50, 35, 50,
+        5, 55, 18, 20,
         55, 45, 35, 45,
         35, 40, 35, 45,
         0, 8, LFO_TARGET_ENV, 10,
@@ -184,7 +186,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 17: BrightPulse
     {
         "BrightPulse",
-        75, 45, 65, 45,
+        6, 55, 8, 20,
         70, 40, 60, 35,
         70, 55, 50, 35,
         1, 25, LFO_TARGET_INDEX, 25,
@@ -194,7 +196,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 18: Industrial
     {
         "Industrial",
-        35, 60, 90, 35,
+        8, 65, 15, 35,
         30, 25, 65, 45,
         85, 70, 55, 40,
         0, 32, LFO_TARGET_METAL_GATE, 55,
@@ -204,7 +206,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 19: Shaker
     {
         "Shaker",
-        15, 20, 95, 80,
+        9, 55, 10, 45,
         10, 10, 20, 20,
         75, 80, 85, 70,
         0, 55, LFO_TARGET_NOISE_MIX, 70,
@@ -214,7 +216,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 20: EuclidKit
     {
         "EuclidKit",
-        100, 100, 100, 100,
+        5, 50, 20, 30,
         60, 55, 55, 55,
         50, 50, 50, 50,
         2, 20, LFO_TARGET_PITCH, 20,
@@ -224,7 +226,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 21: WidePerc
     {
         "WidePerc",
-        40, 35, 35, 100,
+        9, 45, 35, 50,
         25, 55, 20, 55,
         20, 40, 70, 80,
         1, 15, LFO_TARGET_LFO2_PHASE, 35,
@@ -234,7 +236,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 22: LowBody
     {
         "LowBody",
-        90, 30, 20, 60,
+        5, 45, 8, 10,
         65, 90, 20, 75,
         20, 25, 25, 65,
         0, 12, LFO_TARGET_PITCH, 10,
@@ -244,7 +246,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 23: HardDrive
     {
         "HardDrive",
-        100, 50, 60, 50,
+        6, 55, 6, 25,
         90, 70, 70, 55,
         65, 55, 65, 55,
         1, 30, LFO_TARGET_INDEX, 30,
@@ -254,7 +256,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 24: SoftHit
     {
         "SoftHit",
-        85, 85, 70, 85,
+        5, 45, 22, 20,
         30, 50, 30, 45,
         25, 35, 25, 45,
         0, 10, LFO_TARGET_ENV, 15,
@@ -264,7 +266,7 @@ const fm_preset_t FM_PRESETS[NUM_OF_PRESETS] = {
     // 25: Experimental
     {
         "ExpTrack",
-        60, 50, 60, 50,
+        9, 50, 45, 70,
         55, 55, 55, 55,
         55, 55, 55, 55,
         4, 40, LFO_TARGET_LFO2_PHASE, 50,
@@ -278,10 +280,15 @@ void load_fm_preset(uint8_t idx, int8_t *params) {
 
     const fm_preset_t *p = &FM_PRESETS[idx];
 
-    params[PARAM_KPROB] = p->prob_kick;
-    params[PARAM_SPROB] = p->prob_snare;
-    params[PARAM_MPROB] = p->prob_metal;
-    params[PARAM_PPROB] = p->prob_perc;
+    // Historical field names kept in fm_preset_t:
+    //   prob_kick  -> Instrument selector (0..9)
+    //   prob_snare -> Blend (0..100)
+    //   prob_metal -> Gap (0..100)
+    //   prob_perc  -> Scatter (0..100)
+    params[PARAM_INSTRUMENT] = p->prob_kick;
+    params[PARAM_BLEND] = p->prob_snare;
+    params[PARAM_GAP] = p->prob_metal;
+    params[PARAM_SCATTER] = p->prob_perc;
 
     params[PARAM_KICK_ATK] = p->kick_attack;
     params[PARAM_KICK_BODY] = p->kick_body;
