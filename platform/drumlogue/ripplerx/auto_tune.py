@@ -211,6 +211,7 @@ def score_all(
 def run_auto_tune(
     rounds: int = MAX_ROUNDS,
     stable_stop: int = STABLE_ROUNDS,
+    stall_delta: float = 0.0,
     preset_names: Optional[List[str]] = None,
     dry_run: bool = False,
     verbose: bool = False,
@@ -276,6 +277,9 @@ def run_auto_tune(
     }
 
     best_scores: Dict[str, float] = dict(baseline)
+    previous_mean_score = (
+        sum(best_scores.values()) / len(best_scores) if best_scores else 0.0
+    )
     stable_count = 0
     history: List[Dict] = []
 
@@ -372,6 +376,7 @@ def run_auto_tune(
         elapsed = time.time() - round_start
         improved_names = [n for n in accepted]
         mean_score = sum(best_scores.values()) / len(best_scores) if best_scores else 0
+        mean_improvement = previous_mean_score - mean_score
 
         print(f"\n  Round {rnd} done in {elapsed:.1f}s | mean score: {mean_score:.2f}")
         if improved_names:
@@ -387,13 +392,21 @@ def run_auto_tune(
         history.append({
             "round": rnd,
             "mean_score": mean_score,
+            "mean_improvement": mean_improvement,
             "improved": improved_names,
             "scores": dict(best_scores),
         })
 
+        if mean_improvement <= stall_delta:
+            print(
+                f"\n  Early stop: mean score improvement {mean_improvement:.2f} <= stall threshold {stall_delta:.2f}."
+            )
+            break
+
         if stable_count >= stable_stop:
             print(f"\n  Early stop: {stable_stop} consecutive stable rounds.")
             break
+        previous_mean_score = mean_score
         print()
 
     # ── Summary ────────────────────────────────────────────────────────────────
@@ -458,6 +471,12 @@ def main() -> None:
     p.add_argument("--rounds",  type=int, default=MAX_ROUNDS)
     p.add_argument("--stable",  type=int, default=STABLE_ROUNDS,
                    help="Consecutive stable rounds before early stop")
+    p.add_argument(
+        "--stall-delta",
+        type=float,
+        default=0.0,
+        help="Stop early when per-round mean-score improvement is <= this threshold",
+    )
     p.add_argument("--preset",  type=str, default="",
                    help="Comma-separated preset names (default: all with samples)")
     p.add_argument("--dry-run", action="store_true")
@@ -469,6 +488,7 @@ def main() -> None:
     run_auto_tune(
         rounds=args.rounds,
         stable_stop=args.stable,
+        stall_delta=args.stall_delta,
         preset_names=preset_names,
         dry_run=args.dry_run,
         verbose=args.verbose,
