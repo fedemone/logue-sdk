@@ -40,22 +40,23 @@ FastTables g_tables;
 // ==============================================================================
 // CONSTANTS
 // ==============================================================================
-static constexpr float default_sample_rate = 48000.0f;
+static constexpr float    default_sample_rate = 48000.0f;
+static constexpr float    inverse_default_sample_rate = 2.0833333333e-5f; // 1 / 48000
 static constexpr uint16_t pitch_centre = 8192;
-static constexpr float kToneLpMix = 0.3f;
-static constexpr float kToneCutDivisor = 10.0f;
-static constexpr float kToneBoostDivisor = 15.0f;
-static constexpr float kInvToneCutDivisor = 0.1f;         // 1 / 10
-static constexpr float kInvToneBoostDivisor = 0.06666667f; // 1 / 15
-static constexpr float zeroThreshold = 0.0f;
-static constexpr float alpha = 0.01f;
-static constexpr float limiter = 0.99f;
-static constexpr int kSquelchGuardSamples = 1000; // ~20 ms
-static constexpr float kSquelchThreshold = 0.0001f; // -80 dB
-static constexpr float k_log_2_of_200 = 7.643856f;
-static constexpr float k_log_0001 = -6.907755279f; // logf(0.001f) — T60→decay coefficient
-static constexpr float stage2_modal_amp_ratio_2 = 0.6f;
-static constexpr float silence_threshold = 1e-5f;
+static constexpr float    kToneLpMix = 0.3f;
+static constexpr float    kToneCutDivisor = 10.0f;
+static constexpr float    kToneBoostDivisor = 15.0f;
+static constexpr float    kInvToneCutDivisor = 0.1f;         // 1 / 10
+static constexpr float    kInvToneBoostDivisor = 0.06666667f; // 1 / 15
+static constexpr float    zeroThreshold = 0.0f;
+static constexpr float    alpha = 0.01f;
+static constexpr float    limiter = 0.99f;
+static constexpr int      kSquelchGuardSamples = 1000; // ~20 ms
+static constexpr float    kSquelchThreshold = 0.0001f; // -80 dB
+static constexpr float    k_log_2_of_200 = 7.643856f;
+static constexpr float    k_log_0001 = -6.907755279f; // logf(0.001f) — T60→decay coefficient
+static constexpr float    stage2_modal_amp_ratio_2 = 0.6f;
+static constexpr float    silence_threshold = 1e-5f;
 
 // Stage-2 pilot defaults (override-able at compile time for quick sweeps).
 #define STAGE2_MODAL_RATIO_2    2.80f
@@ -240,7 +241,7 @@ public:
             state.voices[i].mag_env = 0.0f;
             state.voices[i].base_delay_A = 0.0f;
             state.voices[i].base_delay_B = 0.0f;
-            state.voices[i].transient_frames_left = 0;
+            state.voices[i].transient_frames_left  = 0;
             state.voices[i].transient_frames_total = 0;
             state.voices[i].transient_inv_total = 0.0f;
             state.voices[i].transient_lp_jitter = 0.0f;
@@ -281,40 +282,40 @@ public:
             state.voices[i].modal_decay_4 = 0.9975f;
             state.voices[i].modal_decay_5 = 0.9970f;
             state.voices[i].modal_decay_6 = 0.9965f;
-            state.voices[i].modal_mix = 0.0f;
+            state.voices[i].modal_mix     = 0.0f;
             state.voices[i].modal_mode_count = 0;
-            state.voices[i].pitch_env = 0.0f;
-            state.voices[i].pitch_env_decay = 1.0f;
-            state.voices[i].pitch_env_amt = 0.0f;
-            state.voices[i].reed_nl_enabled = false;
-            state.voices[i].reed_nl_drive = 1.0f;
+            state.voices[i].pitch_env        = 0.0f;
+            state.voices[i].pitch_env_decay  = 1.0f;
+            state.voices[i].pitch_env_amt    = 0.0f;
+            state.voices[i].reed_nl_enabled  = false;
+            state.voices[i].reed_nl_drive    = 1.0f;
             state.voices[i].boom_phase = 0.0f;
-            state.voices[i].boom_inc = 0.0f;
-            state.voices[i].boom_env = 0.0f;
+            state.voices[i].boom_inc   = 0.0f;
+            state.voices[i].boom_env   = 0.0f;
             state.voices[i].boom_decay = 1.0f;
-            state.voices[i].boom_mix = 0.0f;
+            state.voices[i].boom_mix   = 0.0f;
             state.voices[i].boom_attack_env = 1.0f;
             state.voices[i].boom_attack_inc = 1.0f;
-            state.voices[i].metal_fm_phase = 0.0f;
-            state.voices[i].metal_fm_inc = 0.0f;
-            state.voices[i].metal_fm_env = 0.0f;
-            state.voices[i].metal_fm_decay = 1.0f;
-            state.voices[i].metal_fm_depth = 0.0f;
-            state.voices[i].exciter.noise_lp_state = 0.0f;
-            state.voices[i].exciter.noise_band_mix = 0.5f;
+            state.voices[i].metal_fm_phase  = 0.0f;
+            state.voices[i].metal_fm_inc    = 0.0f;
+            state.voices[i].metal_fm_env    = 0.0f;
+            state.voices[i].metal_fm_decay  = 1.0f;
+            state.voices[i].metal_fm_depth  = 0.0f;
+            state.voices[i].exciter.noise_lp_state    = 0.0f;
+            state.voices[i].exciter.noise_band_mix    = 0.5f;
             state.voices[i].exciter.noise_hi_lp_state = 0.0f;
             state.voices[i].exciter.noise_hi_lp_coeff = 0.30f;
             state.voices[i].exciter.noise_bp_hp_state = 0.0f;
             state.voices[i].exciter.noise_bp_lp_state = 0.0f;
             state.voices[i].exciter.noise_bp_hp_coeff = 0.35f;
             state.voices[i].exciter.noise_bp_lp_coeff = 0.50f;
-            state.voices[i].exciter.wire_onset_env = 1.0f;
+            state.voices[i].exciter.wire_onset_env    = 1.0f;
             state.voices[i].exciter.wire_onset_attack = 1.0f;
-            state.voices[i].exciter.snare_wire_z1 = 0.0f;
-            state.voices[i].exciter.snare_wire_z2 = 0.0f;
+            state.voices[i].exciter.snare_wire_z1  = 0.0f;
+            state.voices[i].exciter.snare_wire_z2  = 0.0f;
             state.voices[i].exciter.snare_wire_mix = 0.0f;
-            state.voices[i].exciter.snare_wire_a1 = 1.6951f;
-            state.voices[i].exciter.snare_wire_a2 = 0.8930f;
+            state.voices[i].exciter.snare_wire_a1  = 1.6951f;
+            state.voices[i].exciter.snare_wire_a2  = 0.8930f;
 
 
             // Noise filter defaults to LP mode, fully open (12 kHz)
@@ -328,11 +329,11 @@ public:
             state.voices[i].exciter.noise_filter.hp = 0.0f;
         }
 
-        state.master_gain = 1.0f;
+        state.master_gain  = 1.0f;
         state.master_drive = 1.0f;
-        state.mix_ab = 0.5f; // Equal A/B mix
-        state.tone = 0.0f;   // Neutral tilt EQ (LoadPreset restores the preset value)
-        m_pitch_bend_mult = 1.0f; // Clear any held bend so the next note plays in tune.
+        state.mix_ab       = 0.5f; // Equal A/B mix
+        state.tone         = 0.0f;   // Neutral tilt EQ (LoadPreset restores the preset value)
+        m_pitch_bend_mult  = 1.0f; // Clear any held bend so the next note plays in tune.
 
         // Always return to ResA edit context so LoadPreset (called next in Init)
         // applies preset data symmetrically to both resonators.
@@ -487,8 +488,8 @@ public:
         // on every preset change).
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
-            if (param_id == k_paramBank) continue;
-            if (param_id == k_paramSample) continue;
+            if (param_id == k_paramBank)    continue;
+            if (param_id == k_paramSample)  continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -660,8 +661,8 @@ public:
                     // Decay is the primary sustain control; Rel only gates the noise
                     // burst.  Without this, the master_env would kill the waveguide
                     // resonance at ~28 ms (default Rel) regardless of Decay setting.
-                    float t_s = 0.05f * fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
-                    float master_rate = M_THREELN10 / (t_s * default_sample_rate);  // was 3.0f * M_LN10
+                    float t_s = fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
+                    float master_rate = M_THREELN10 * 20 * inverse_default_sample_rate / t_s;  // was 3.0f * M_LN10
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a)
                             state.voices[i].resA.feedback_gain = g;
@@ -806,7 +807,7 @@ public:
                      // Private split-band high cutoff (no extra UI): tied to NzFq,
                      // shifted upward for sizzle branch and converted to 1-pole coeff.
                      float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
-                     float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) / default_sample_rate));
+                     float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) * inverse_default_sample_rate));
                      state.voices[i].exciter.noise_hi_lp_coeff = alpha;
                 }
                 break;
@@ -874,7 +875,7 @@ public:
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
-                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
+                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
             } else {
                 snprintf(nf_buf, sizeof(nf_buf), "%dHz", hz);
             }
@@ -885,7 +886,7 @@ public:
             int32_t hz = value * 10;
             if (hz >= 1000) {
                 // Show as kHz with one decimal place: 1000→"1.0kHz", 15000→"15.0kHz"
-                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
+                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
             } else {
                 snprintf(lc_buf, sizeof(lc_buf), "%dHz", hz);
             }
@@ -969,7 +970,7 @@ public:
             float base_nz     = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] * 0.001f));
             float base_attack = 0.9f - (base_nz * 0.8f);
             float res_mod     = (float)m_params[k_paramVlMllRes] * 0.01f; // -1.0 to +1.0
-        // Add up to a 10% speed boost to the attack rate for extreme rim hits
+            // Add up to a 10% speed boost to the attack rate for extreme rim hits
             float rim_snap_boost = radius * 0.1f;
 
             v.exciter.noise_env.attack_rate = fmaxf(0.01f, fminf(0.99f,
@@ -1076,6 +1077,8 @@ public:
         v.base_delay_B = v.resB.delay_length;
         apply_pitch_bend_to_voice(v);
 
+
+        // TODO make these a second set of per-preset parameters instead of hardcoded in NoteOn(), in a new structure called ModelBasedPresets
         // Reset the magnitude-envelope squelch tracker so residual energy from the
         // previous note on this voice slot doesn't prematurely kill the new note's attack.
         v.mag_env = 0.0f;
@@ -1222,7 +1225,7 @@ public:
         uint32_t seed = (uint32_t)note * 1103515245u
                       ^ (uint32_t)state.next_voice_idx * 12345u
                       ^ (uint32_t)velocity * 2654435761u;
-        float r = ((float)((seed >> 8) & 0xFFFFu) / 32767.5f) - 1.0f; // [-1, +1]
+        float r = ((float)((seed >> 8) & 0xFFFFu) * 3.05180437934e-5f) - 1.0f; // [-1, +1] - approx 1 / 32767.5f
         v.transient_frames_total = (uint32_t)(default_sample_rate * 0.035f); // 35 ms
         v.transient_frames_left = v.transient_frames_total;
         v.transient_inv_total = (v.transient_frames_total > 0) ? (1.0f / (float)v.transient_frames_total) : 0.0f;
@@ -1253,7 +1256,7 @@ public:
         } else {
             v.exciter.noise_band_mix = 0.50f;
         }
-        // TODO these should be added to presets themselves
+        // TODO make these a second set of per-preset parameters instead of hardcoded in NoteOn(), in a new structure called ModelBasedPresets
         if (m_preset_idx == k_AcSnare) { // AcSnare: add short resonant wire-like sizzle emphasis.
             v.exciter.snare_wire_mix = 0.55f;
             v.exciter.snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack
@@ -1281,7 +1284,7 @@ public:
             v.exciter.noise_filter.set_coeffs(6000.0f, 0.707f, default_sample_rate);
             v.exciter.noise_filter.mode = 0; // LP
         }
-        // TODO these should be added to presets themselves
+        // TODO make these a second set of per-preset parameters instead of hardcoded in NoteOn(), in a new structure called ModelBasedPresets
         // Metallic presets: enable light Schroeder diffusion in feedback loop
         // for pseudo-modal density at low CPU cost.
         bool metallic_diff = (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong ||  // Cymbal, Gong
@@ -1304,7 +1307,7 @@ public:
             else if (m_preset_idx == k_Cowbell) base_fm_hz = 1100.0f;
             else if (m_preset_idx == k_Triangle) base_fm_hz = 950.0f;
             v.metal_fm_phase = 0.0f;
-            v.metal_fm_inc = (2.0f * M_PI * base_fm_hz) / default_sample_rate;
+            v.metal_fm_inc = (2.0f * M_PI * base_fm_hz) * inverse_default_sample_rate;
             v.metal_fm_env = 1.0f;
             v.metal_fm_decay = (m_preset_idx == k_HiHatClosed) ? 0.9955f : 0.9978f;
             // HHat-O: lower FM depth (0.16→0.06) so the chirp doesn't re-excite KS
@@ -1329,12 +1332,12 @@ public:
             float f4 = fminf(base_f * ratio4, 0.45f * default_sample_rate);
             float f5 = fminf(base_f * ratio4 * 1.31f, 0.45f * default_sample_rate);
             float f6 = fminf(base_f * ratio4 * 1.62f, 0.45f * default_sample_rate);
-            float w1 = (2.0f * M_PI * f1) / default_sample_rate;
-            float w2 = (2.0f * M_PI * f2) / default_sample_rate;
-            float w3 = (2.0f * M_PI * f3) / default_sample_rate;
-            float w4 = (2.0f * M_PI * f4) / default_sample_rate;
-            float w5 = (2.0f * M_PI * f5) / default_sample_rate;
-            float w6 = (2.0f * M_PI * f6) / default_sample_rate;
+            float w1 = (2.0f * M_PI * f1) * inverse_default_sample_rate;
+            float w2 = (2.0f * M_PI * f2) * inverse_default_sample_rate;
+            float w3 = (2.0f * M_PI * f3) * inverse_default_sample_rate;
+            float w4 = (2.0f * M_PI * f4) * inverse_default_sample_rate;
+            float w5 = (2.0f * M_PI * f5) * inverse_default_sample_rate;
+            float w6 = (2.0f * M_PI * f6) * inverse_default_sample_rate;
             v.modal_pilot_enabled = true;
             v.modal_mode_count = mode_count;
             v.modal_k_1 = 2.0f * fastercosfullf(w1);
@@ -1373,6 +1376,7 @@ public:
         };
 
         uint8_t program = (uint8_t)m_params[k_paramProgram];
+        // TODO move these in LoadPreset() and get from a per-preset structure instead of hardcoding in NoteOn()
         if (program == k_TubularBell) {
             // Tubular bell modes (free-free bar / cylindrical tube transverse bending):
             // 1.00 : 2.756 : 5.404 (Euler-Bernoulli beam theory).
@@ -1553,7 +1557,7 @@ public:
             v.pitch_env = 1.0f;
             v.pitch_env_decay = 0.9989f;
             v.pitch_env_amt = 9.0f;
-            v.boom_inc = (2.0f * M_PI * 58.0f) / default_sample_rate;
+            v.boom_inc = (2.0f * M_PI * 58.0f) * inverse_default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99940f; // ~270ms boom tail
             v.boom_mix = 0.40f;      // boom dominates after KS decays
@@ -1565,21 +1569,21 @@ public:
         } else if (program == k_Taiko) {
             // Taiko: sub-octave boom (~70 Hz) under the main membrane fundamental.
             // Gives the deep chest-thud of a real taiko strike.
-            v.boom_inc = (2.0f * M_PI * 70.0f) / default_sample_rate;
+            v.boom_inc = (2.0f * M_PI * 70.0f) * inverse_default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99950f; // ~360ms
             v.boom_mix = 0.26f;
             v.boom_attack_env = 0.0f;
             v.boom_attack_inc = 0.0022f;
         } else if (program == k_AcousticTom) {
-            v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
+            v.boom_inc = (2.0f * M_PI * 110.0f) * inverse_default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99945f;
             v.boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%
             v.boom_attack_env = 0.0f;
-            v.boom_attack_inc = 0.0025f;
+            v.boom_attack_inc = 0.0008f;    // reduced from 0.0025 (The boom at C4 (261 Hz ≈ sub boundary) reaches 60% by 5 ms): pushes full boom onset to ~26 ms, giving the KS mallet transient time to register
         } else if (program == k_AcSnare) {
-            v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
+            v.boom_inc = (2.0f * M_PI * 175.0f) * inverse_default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99920f;
             v.boom_mix = 0.09f;
@@ -1650,7 +1654,7 @@ public:
         } else {
             float semitones = (float)(bend - pitch_centre) * (2.0f / (float)pitch_centre);
             // A higher pitch requires a shorter delay line → negate the exponent.
-            m_pitch_bend_mult = powf(2.0f, -semitones* 0.08333333333f); // approx 1 / 12
+            m_pitch_bend_mult = powf(2.0f, -semitones * 0.08333333333f); // approx 1 / 12
         }
 
         // Apply immediately to every active voice.
@@ -1793,12 +1797,13 @@ public:
                 // without feeding broadband noise into pitch-tracked waveguides.
                 // Poles at r=0.945, f≈3.5kHz (a1=2r·cos(w), a2=r²): wire sizzle in
                 // the snare wire frequency range; previous 695 Hz was far too low.
-                float wire = noise_sum + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
+                // Instead of letting the IIR always accumulate, zero-gate the input:
+                float wire_input = noise_sum * ex.wire_onset_env;   // gate the INPUT
+                float wire = wire_input + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
                 ex.snare_wire_z2 = ex.snare_wire_z1;
                 ex.snare_wire_z1 = wire;
                 ex.wire_onset_env = fminf(1.0f, ex.wire_onset_env + ex.wire_onset_attack);
-                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix))
-                          + (wire * ex.snare_wire_mix * 0.35f * ex.wire_onset_env);
+                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);
             }
             ex.noise_out_sample = noise_sum;
          }
@@ -2163,7 +2168,6 @@ public:
                     ut_voice_out   = voice_out;
                 }
 #endif
-
                 // ── Stage 1/2: voice lifetime management ───────────────────
                 // Without Stage 3 squelch, voices stay is_active=true forever.
                 // Deactivate once the mallet has fully decayed and (if Phase 5)
