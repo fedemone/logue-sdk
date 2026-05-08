@@ -1,49 +1,10 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
-
-
-// =================================================================
-// UNCOMMENT THIS LINE TO ACTIVATE PHASE 5 (NOISE & ENVELOPES)
-#define ENABLE_PHASE_5_EXCITERS 1
-// =================================================================
-
-#ifdef ENABLE_PHASE_5_EXCITERS
 #include "noise.h"
 #include "envelope.h"
-#endif
-
-// =================================================================
-// UNCOMMENT THIS LINE TO ACTIVATE PHASE 6 (MASTER FILTER)
-#define ENABLE_PHASE_6_FILTERS 1
-// =================================================================
-
-#ifdef ENABLE_PHASE_6_FILTERS
 #include "filter.h"
-#endif
-
-// =================================================================
-// UNCOMMENT THIS LINE TO ACTIVATE PHASE 7 (MODELS & TABLES)
-#define ENABLE_PHASE_7_MODELS 1
-// =================================================================
-
-#ifdef ENABLE_PHASE_7_MODELS
 #include "tables.h"
-#endif
-
-
-// =================================================================
-// UNCOMMENT THIS LINE TO ACTIVATE PHASE 8 (2D DRUMHEAD STRIKE PHYSICS)
-#define ENABLE_PHASE_8_2D_DRUMHEAD 1
-// =================================================================
-
-// =================================================================
-// STAGE-2 PILOT: simple 2-mode modal bank (single-preset, compile-time guarded)
-#ifndef ENABLE_STAGE2_MODAL_PILOT
-#define ENABLE_STAGE2_MODAL_PILOT 1
-#endif
-// =================================================================
-
 
 
 /** Because we are optimizing for bare-metal, notice there are no virtual functions,
@@ -67,12 +28,10 @@ struct ExciterState {
     size_t current_frame = 0;
     uint8_t channels = 1;
 
-#ifdef ENABLE_PHASE_5_EXCITERS
     FastNoise noise_gen;
     FastEnvelope noise_env;
     FastEnvelope noise_env_hi; // short high-band burst for snare/hat click
     FastEnvelope master_env; // Optional: To choke the whole voice on GateOff
-#endif
 
     // Noise Burst Data
     float noise_decay_coeff = 0.0f;
@@ -105,9 +64,7 @@ struct ExciterState {
     float mallet_stiffness = 0.5f;
     float mallet_res_coeff = 0.5f; // Second LP pole coefficient (MlltRes)
 
-#ifdef ENABLE_PHASE_6_FILTERS
     FastSVF noise_filter; // Dedicated per-voice noise shaping SVF (NzFltr / NzFltFrq)
-#endif
 };
 
 /**
@@ -139,13 +96,11 @@ struct WaveguideState {
     float diffuser_buf4[41] = {0.0f};
     uint8_t diffuser_i1 = 0, diffuser_i2 = 0, diffuser_i3 = 0, diffuser_i4 = 0;
 
-#ifdef ENABLE_PHASE_7_MODELS
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
     float phase_mult = 1.0f;
     // Per-model baseline allpass dispersion (added to ap_coeff from Inharm parameter).
     // Gives each physical model a distinct inharmonic character even when Inharm=0.
     float model_ap_base = 0.0f;
-#endif
 };
 
 /**
@@ -195,7 +150,6 @@ struct VoiceState {
     float transient_ap_base_a = 0.0f;
     float transient_ap_base_b = 0.0f;
 
-#if ENABLE_STAGE2_MODAL_PILOT
     // Stage-2 pilot modal-bank path (2 modes) for single-preset A/B.
     bool modal_pilot_enabled = false;
     // Harmonic quadrature recursion (2*cos(w) form), one biquad-like
@@ -254,7 +208,6 @@ struct VoiceState {
     float metal_fm_env = 0.0f;
     float metal_fm_decay = 1.0f;
     float metal_fm_depth = 0.0f;
-#endif
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)
@@ -269,7 +222,5 @@ struct SynthState {
     float master_drive = 1.0f;
     float tone = 0.0f;        // Tilt EQ amount, cached from k_paramTone [-10, 30]
 
-#ifdef ENABLE_PHASE_6_FILTERS
     FastSVF master_filter;
-#endif
 };
