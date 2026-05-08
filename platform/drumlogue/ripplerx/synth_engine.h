@@ -318,6 +318,8 @@ public:
             state.voices[i].boom_env = 0.0f;
             state.voices[i].boom_decay = 1.0f;
             state.voices[i].boom_mix = 0.0f;
+            state.voices[i].boom_attack_env = 1.0f;
+            state.voices[i].boom_attack_inc = 1.0f;
             state.voices[i].metal_fm_phase = 0.0f;
             state.voices[i].metal_fm_inc = 0.0f;
             state.voices[i].metal_fm_env = 0.0f;
@@ -328,6 +330,12 @@ public:
             state.voices[i].exciter.noise_band_mix = 0.5f;
             state.voices[i].exciter.noise_hi_lp_state = 0.0f;
             state.voices[i].exciter.noise_hi_lp_coeff = 0.30f;
+            state.voices[i].exciter.noise_bp_hp_state = 0.0f;
+            state.voices[i].exciter.noise_bp_lp_state = 0.0f;
+            state.voices[i].exciter.noise_bp_hp_coeff = 0.35f;
+            state.voices[i].exciter.noise_bp_lp_coeff = 0.50f;
+            state.voices[i].exciter.wire_onset_env = 1.0f;
+            state.voices[i].exciter.wire_onset_attack = 1.0f;
             state.voices[i].exciter.snare_wire_z1 = 0.0f;
             state.voices[i].exciter.snare_wire_z2 = 0.0f;
             state.voices[i].exciter.snare_wire_mix = 0.0f;
@@ -444,7 +452,7 @@ public:
             {   0,  60,   0,   0, 500, 470,   0,   0,   0,   0,  35,  10,   0,   0,  10,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
             {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,   1,   7,  20,   0, 300,   0,1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
             {   2,  36,   0,   0, 150,   0,   0,   0,   0,   3, 180,  -6,  -5,   0,  15,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 2:  808 Sub    — final Stage-1: Dkay170/Mterl-6 to counter LP-loss-shortened tail without adding noise
-            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  58, 640,   2, 180, 707}, // 3:  Ac Snare   — MlRs120 (from 520): mallet path was creating 99% hi at 0-5ms; dark mallet lets staged NzMx wire lead the attack
+            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  58, 640,   2, 180, 707}, // 3:  Ac Snare   — MlRs120 (from 520): mallet path was creating 99% hi at 0-5ms; dark mallet lets staged NzMx wire lead the attack. Dkay35: shorter KS body shifts timbre to snappier snare vs metallic gong; NzMx35 raises noise floor. rescue pass: stronger shell body + wire crack, darker body with wider snare burst
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,  20,  18,   0,   5, 300,   0,1500, 707}, // 4:  TblrBel    — c=0.98@524Hz (Mterl28+TubRad20); MlltStif100 (medium felt mallet, less overtone energy → measured T60 tracks fundamental ~7.5s)
             {   5,  40,   0,   1, 360, 300,   0,   0,   2,   3, 200,  -2,   0,  36,  18,  10,   0,  -4,   4,  16, 420,   0, 380, 707}, // 5:  Timpani    — InHm9: slight spread on coupled membrane mode; NzRs300 longer noise tail. rescue pass: deeper boom (darker loss) with longer low-body sustain and broader impact
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 102,   0,   0,  35,  12,  10,   5,  15,   5,   7, 450,   0, 500, 707}, // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
@@ -461,7 +469,7 @@ public:
             {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
             {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {  19,  84,   0,   1, 900, 440,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  15,   0,   0, 300,   0,1500, 707}, // 19: Triangle   — harder mallet MlSt440 for cleaner metallic ping onset
-            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click
+            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
             {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  -3,   0,   0,  12,   0,   1,   3,   0,  15, 950,   0, 400, 707}, // 23: Flute      — InHm0 pure tube; NzMx15 breath noise; NzFq400 4kHz breath shimmer
@@ -480,8 +488,8 @@ public:
             {  27,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,   1,  13,   0,   0, 300,   0,1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  12,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — Mterl12 (from 26): centroid was 15-16kHz vs ref 7kHz; darker LP reduces KS harmonics above ~10kHz
-            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  12,   0,   0,  14,  11,   5,  20,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — Mterl12 (from 26): matched with HHat-C to bring centroid from 15kHz to ~7kHz
+            {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  12,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — Mterl12 (from 26): centroid was 15-16kHz vs ref 7kHz; darker LP reduces KS harmonics above ~10kHz. softer mallet MlSt420 + InHm14 metallic partial spread + NzMx35/NzFq600. rescue pass: tighter short chick with brighter/sparser metallic top
+            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  12,   0,   0,  14,  11,   5,  20,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — Mterl12 (from 26): matched with HHat-C to bring centroid from 15kHz to ~7kHz. Mterl27/TbRd21: balanced open hat ring; NzMx45/NzFq600 sizzle. rescue pass: longer shimmering wash with clearer high-band sizzle
             {  30,  62,   0,   1, 600, 365,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,   7,   0,  15, 520,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
             {  31,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,   7,   0,   0,  20,   1,   5,  15,   0,   5, 300,   0,1000, 707},  // 31: Handpn  — MlSt300 softer strike; Mterl7 warmer plate; InHm1 near-harmonic handpan
             {  32,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,  10,   3,   0,   0, 300,   0,1200, 707},  // 32: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
@@ -1215,6 +1223,8 @@ public:
         v.boom_env = 0.0f;
         v.boom_decay = 1.0f;
         v.boom_mix = 0.0f;
+        v.boom_attack_env = 1.0f;
+        v.boom_attack_inc = 1.0f;
         v.metal_fm_phase = 0.0f;
         v.metal_fm_inc = 0.0f;
         v.metal_fm_env = 0.0f;
@@ -1333,16 +1343,24 @@ public:
             v.exciter.snare_wire_mix = 0.55f;
             v.exciter.snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack
             v.exciter.snare_wire_a2 = 0.9050f;
+            v.exciter.wire_onset_env = 0.0f;
+            v.exciter.wire_onset_attack = 0.0014f; // ~15 ms to full wire excitation
         } else if (m_preset_idx == k_MarchSnare) { // March snare: drier/tighter wire.
             v.exciter.snare_wire_mix = 0.42f;
             v.exciter.snare_wire_a1 = 1.7050f;
             v.exciter.snare_wire_a2 = 0.8960f;
+            v.exciter.wire_onset_env = 0.0f;
+            v.exciter.wire_onset_attack = 0.0018f; // slightly faster than AcSnare
         } else if (m_preset_idx == k_HiHatClosed) { // HHat-C: short, crisp "chick".
             v.exciter.noise_band_mix = 0.86f;
             v.exciter.noise_hi_lp_coeff = 0.42f;
+            v.exciter.noise_bp_hp_coeff = 0.30f; // ~4 kHz HP
+            v.exciter.noise_bp_lp_coeff = 0.48f; // ~9 kHz LP
         } else if (m_preset_idx == k_HiHatOpen) { // HHat-O: longer shimmering wash.
             v.exciter.noise_band_mix = 0.93f;
             v.exciter.noise_hi_lp_coeff = 0.30f;
+            v.exciter.noise_bp_hp_coeff = 0.26f; // ~3.2 kHz HP
+            v.exciter.noise_bp_lp_coeff = 0.42f; // ~7 kHz LP
         }
         // TODO these should be added to presets themselves
         // Metallic presets: enable light Schroeder diffusion in feedback loop
@@ -1618,6 +1636,8 @@ public:
             v.boom_env = 1.0f;
             v.boom_decay = 0.99940f; // ~270ms boom tail
             v.boom_mix = 0.40f;      // boom dominates after KS decays
+            v.boom_attack_env = 0.0f;
+            v.boom_attack_inc = 0.0032f; // ~6.5ms onset ramp
         } else if (program == k_Timpani) {
             // Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
             v.boom_mix = 0.0f;
@@ -1628,16 +1648,22 @@ public:
             v.boom_env = 1.0f;
             v.boom_decay = 0.99950f; // ~360ms
             v.boom_mix = 0.26f;
+            v.boom_attack_env = 0.0f;
+            v.boom_attack_inc = 0.0022f;
         } else if (program == k_AcousticTom) {
             v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99945f;
             v.boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%
+            v.boom_attack_env = 0.0f;
+            v.boom_attack_inc = 0.0025f;
         } else if (program == k_AcSnare) {
             v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99920f;
             v.boom_mix = 0.09f;
+            v.boom_attack_env = 0.0f;
+            v.boom_attack_inc = 0.0018f;
         }
         if (program == k_Clarinet) {         // Clarinet: lightweight reed nonlinearity
             v.reed_nl_enabled = true;
@@ -1840,12 +1866,20 @@ public:
             //   - low band: filtered (body/snap tail)
             //   - high band: unfiltered (fast click/hiss burst)
             ex.noise_lp_state += 0.15f * (raw_noise - ex.noise_lp_state);
-             float low = ex.noise_lp_state;
-             ex.noise_hi_lp_state += ex.noise_hi_lp_coeff * (raw_noise_unf - ex.noise_hi_lp_state);
-             float high = raw_noise_unf - ex.noise_hi_lp_state;
+            float low = ex.noise_lp_state;
+            ex.noise_hi_lp_state += ex.noise_hi_lp_coeff * (raw_noise_unf - ex.noise_hi_lp_state);
+            float high = raw_noise_unf - ex.noise_hi_lp_state;
+            ex.noise_bp_hp_state += ex.noise_bp_hp_coeff * (raw_noise_unf - ex.noise_bp_hp_state);
+            float hp = raw_noise_unf - ex.noise_bp_hp_state;
+            ex.noise_bp_lp_state += ex.noise_bp_lp_coeff * (hp - ex.noise_bp_lp_state);
+            float high_bp = ex.noise_bp_lp_state;
             float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
+            if (mix > 0.80f) {
+                // Hi-hat family: replace pure HP hiss with band-limited burst centered lower.
+                high_part = high_bp * mix * 1.35f * noise_env_high;
+            }
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
                 // Very short resonant burst path (2nd-order): emphasizes snare-wire sizzle
@@ -1855,7 +1889,9 @@ public:
                 float wire = noise_sum + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
                 ex.snare_wire_z2 = ex.snare_wire_z1;
                 ex.snare_wire_z1 = wire;
-                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);
+                ex.wire_onset_env = fminf(1.0f, ex.wire_onset_env + ex.wire_onset_attack);
+                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix))
+                          + (wire * ex.snare_wire_mix * 0.35f * ex.wire_onset_env);
             }
             ex.noise_out_sample = noise_sum;
          }
@@ -2110,7 +2146,9 @@ public:
 #endif
 #if ENABLE_STAGE2_MODAL_PILOT
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
-                    float boom = fastersinfullf(voice.boom_phase) * voice.boom_env * voice.boom_mix;
+                    voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);
+                    float boom = fastersinfullf(voice.boom_phase)
+                               * voice.boom_env * voice.boom_mix * voice.boom_attack_env;
                     voice_out += boom * voice.current_velocity;
                     voice.boom_phase += voice.boom_inc;
                     if (voice.boom_phase > (2.0f * M_PI)) voice.boom_phase -= (2.0f * M_PI);

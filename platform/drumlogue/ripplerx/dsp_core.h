@@ -88,6 +88,12 @@ struct ExciterState {
     float noise_band_mix = 0.5f;   // 0=mostly low thump, 1=mostly high click
     float noise_hi_lp_state = 0.0f; // high-band split LP memory (high = raw - LP)
     float noise_hi_lp_coeff = 0.30f; // derived private cutoff, no UI exposure
+    float noise_bp_hp_state = 0.0f;  // hi-hat bandpass: HP stage state
+    float noise_bp_lp_state = 0.0f;  // hi-hat bandpass: LP stage state
+    float noise_bp_hp_coeff = 0.35f; // hi-hat bandpass HP coeff
+    float noise_bp_lp_coeff = 0.50f; // hi-hat bandpass LP coeff
+    float wire_onset_env = 1.0f;     // snare-wire onset gate (0..1)
+    float wire_onset_attack = 1.0f;  // per-sample rise rate for wire onset
     float snare_wire_z1 = 0.0f;    // short wire-sizzle resonator state
     float snare_wire_z2 = 0.0f;    // short wire-sizzle resonator state
     float snare_wire_mix = 0.0f;   // 0..1 extra wire component mix
@@ -240,6 +246,8 @@ struct VoiceState {
     float boom_env = 0.0f;
     float boom_decay = 1.0f;
     float boom_mix = 0.0f;
+    float boom_attack_env = 1.0f;
+    float boom_attack_inc = 1.0f;
     // Metallic transient FM chirp (character-focused, not exact sample match).
     float metal_fm_phase = 0.0f;
     float metal_fm_inc = 0.0f;
