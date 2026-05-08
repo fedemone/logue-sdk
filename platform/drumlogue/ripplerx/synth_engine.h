@@ -489,7 +489,7 @@ public:
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
             {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  12,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — Mterl12 (from 26): centroid was 15-16kHz vs ref 7kHz; darker LP reduces KS harmonics above ~10kHz. softer mallet MlSt420 + InHm14 metallic partial spread + NzMx35/NzFq600. rescue pass: tighter short chick with brighter/sparser metallic top
-            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  12,   0,   0,  14,  11,   5,  20,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — Mterl12 (from 26): matched with HHat-C to bring centroid from 15kHz to ~7kHz. Mterl27/TbRd21: balanced open hat ring; NzMx45/NzFq600 sizzle. rescue pass: longer shimmering wash with clearer high-band sizzle
+            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  12,   0,   0,  14,  11,   5,   8,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — TbRd8 (from 20): LP coeff 0.91→0.68; FM depth 0.16→0.06; SVF LP@6kHz noise centroid ~8kHz
             {  30,  62,   0,   1, 600, 365,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,   7,   0,  15, 520,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
             {  31,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,   7,   0,   0,  20,   1,   5,  15,   0,   5, 300,   0,1000, 707},  // 31: Handpn  — MlSt300 softer strike; Mterl7 warmer plate; InHm1 near-harmonic handpan
             {  32,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,  10,   3,   0,   0, 300,   0,1200, 707},  // 32: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
@@ -1042,7 +1042,7 @@ public:
             // (0.01 was too fast: 91% noise already at 5ms, so no staging effect.)
             if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
                 v.exciter.noise_env.attack_rate = 0.001f;
-                v.exciter.noise_env_hi.attack_rate = 0.003f;
+                v.exciter.noise_env_hi.attack_rate = 0.001f;
             }
         }
 
@@ -1354,13 +1354,17 @@ public:
         } else if (m_preset_idx == k_HiHatClosed) { // HHat-C: short, crisp "chick".
             v.exciter.noise_band_mix = 0.86f;
             v.exciter.noise_hi_lp_coeff = 0.42f;
-            v.exciter.noise_bp_hp_coeff = 0.30f; // ~4 kHz HP
-            v.exciter.noise_bp_lp_coeff = 0.48f; // ~9 kHz LP
+            // Chamberlin SVF LP at 5500 Hz gives power-weighted noise centroid ~7 kHz.
+            // (BP mode was tried but Chamberlin BP near Nyquist has centroid ~18 kHz,
+            //  not fc — the LP mode is accurate up to ~fs/8.)
+            v.exciter.noise_filter.set_coeffs(5500.0f, 0.707f, default_sample_rate);
+            v.exciter.noise_filter.mode = 0; // LP
         } else if (m_preset_idx == k_HiHatOpen) { // HHat-O: longer shimmering wash.
             v.exciter.noise_band_mix = 0.93f;
             v.exciter.noise_hi_lp_coeff = 0.30f;
-            v.exciter.noise_bp_hp_coeff = 0.26f; // ~3.2 kHz HP
-            v.exciter.noise_bp_lp_coeff = 0.42f; // ~7 kHz LP
+            // SVF LP at 6000 Hz gives centroid ~8.6 kHz for the noise burst.
+            v.exciter.noise_filter.set_coeffs(6000.0f, 0.707f, default_sample_rate);
+            v.exciter.noise_filter.mode = 0; // LP
         }
         // TODO these should be added to presets themselves
         // Metallic presets: enable light Schroeder diffusion in feedback loop
@@ -1388,7 +1392,10 @@ public:
             v.metal_fm_inc = (2.0f * M_PI * base_fm_hz) / default_sample_rate;
             v.metal_fm_env = 1.0f;
             v.metal_fm_decay = (m_preset_idx == k_HiHatClosed) ? 0.9955f : 0.9978f;
-            v.metal_fm_depth = (m_preset_idx == k_HiHatClosed) ? 0.08f : 0.16f;
+            // HHat-O: lower FM depth (0.16→0.06) so the chirp doesn't re-excite KS
+            // harmonics above 5 kHz as strongly; SVF BP@8kHz noise can then dominate.
+            v.metal_fm_depth = (m_preset_idx == k_HiHatClosed) ? 0.08f :
+                               (m_preset_idx == k_HiHatOpen)   ? 0.06f : 0.16f;
         }
 
 #if ENABLE_STAGE2_MODAL_PILOT
@@ -1486,8 +1493,8 @@ public:
             // attack click toward the KS fundamental — matching the 689→254Hz reference
             // sweep measured on Tom1-001-CloseRoom.wav. Mode 1 lingers longer for warmth.
             init_modal_modes(1.59f, 2.14f, 2.30f,
-                             60.0f, 25.0f, 12.0f, 8.0f, // alternative: 100.0f, 70.0f, 50.0f, 35.0f, // Adds body resonance overtones above the KS fundamental + boom.
-                             0.40f, 0.65f, 0.48f, 0.32f, 0.20f, 4); // alternative: 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
+                             100.0f, 70.0f, 50.0f, 35.0f,
+                             0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
         } else if (program == k_AcSnare) {
             // Acoustic snare: membrane body ring + snare wire buzz (configured separately).
             // Modes decay before the snare wire noise to avoid masking the characteristic crack.
@@ -1637,7 +1644,7 @@ public:
             v.boom_decay = 0.99940f; // ~270ms boom tail
             v.boom_mix = 0.40f;      // boom dominates after KS decays
             v.boom_attack_env = 0.0f;
-            v.boom_attack_inc = 0.0032f; // ~6.5ms onset ramp
+            v.boom_attack_inc = 0.0010f; // ~20ms onset ramp (0.0032 was 77% by 5ms, too dominant)
         } else if (program == k_Timpani) {
             // Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
             v.boom_mix = 0.0f;
@@ -1877,8 +1884,9 @@ public:
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
             if (mix > 0.80f) {
-                // Hi-hat family: replace pure HP hiss with band-limited burst centered lower.
-                high_part = high_bp * mix * 1.35f * noise_env_high;
+                // Hi-hat family: noise_filter is set to SVF LP (5.5–6 kHz) in NoteOn,
+                // centroid ≈ 7–8 kHz — use raw_noise directly instead of the HP hiss.
+                high_part = raw_noise * mix * 1.35f * noise_env_high;
             }
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
