@@ -245,9 +245,11 @@ public:
             // Clear filter state memory so a Reset() mid-play never causes a click
             // on the next NoteOn (stale z1/ap states corrupt the first output samples).
             state.voices[i].resA.z1    = 0.0f;
+            state.voices[i].resA.z2    = 0.0f;
             state.voices[i].resA.ap_x1 = 0.0f;
             state.voices[i].resA.ap_y1 = 0.0f;
             state.voices[i].resB.z1    = 0.0f;
+            state.voices[i].resB.z2    = 0.0f;
             state.voices[i].resB.ap_x1 = 0.0f;
             state.voices[i].resB.ap_y1 = 0.0f;
 
@@ -451,7 +453,7 @@ public:
             {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   7,   0,   0, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,   2,   0,   0,  18,   1,   1,   4,   0,   0, 300,   0,1000, 707}, // 10: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
-            {  12,  45,   0,   1, 450, 130,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   2,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — MlltStif130 softer mallet; Dkay90; TbRad2 (down from 5, slightly darker LP); no boom
+            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
             {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,   9,   5,   8, 600,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
             {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,  -4,   0,   0,  20,   7,   1,  17,  20,  10, 800,   0,  30, 707}, // 14: Gong       — softer attack MlSt80 + less dark Mterl-4 + more noise onset NzMx10
             {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 190,  10,   0,   0,   5,   6,   1,   5,   3,   0, 300,   0,1000, 707}, // 15: Kalimba    — Mterl10 warmer bar + InHm6 natural tine spread + TbRd7
@@ -1027,6 +1029,11 @@ public:
             // High-band burst should stay snappier than low-band burst.
             v.exciter.noise_env_hi.attack_rate = fmaxf(0.05f, fminf(0.99f,
                 v.exciter.noise_env.attack_rate * 1.25f));
+            // Snare-family physical staging: body thud first, then wire buzz.
+            if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
+                v.exciter.noise_env.attack_rate = 0.01f;
+                v.exciter.noise_env_hi.attack_rate = 0.03f;
+            }
         }
 
         // --- THE PHYSICS OF PITCH ---
@@ -1118,6 +1125,7 @@ public:
             float pa = 1.0f - v.resA.lowpass_coeff;          // LP pole
             float ca = v.resA.ap_coeff;                       // AP coefficient
             float lp_del_A = pa / (1.0f - pa);                // τ_LP: pa/(1-pa)
+            if (m_preset_idx == k_AcousticTom) lp_del_A *= 2.0f;
             float ap_del_A = (1.0f - ca) / (1.0f + ca);      // τ_AP: (1-c)/(1+c) ≤ 1
             v.resA.delay_length = fmaxf(2.0f, v.resA.delay_length - lp_del_A - ap_del_A);
 
@@ -1125,6 +1133,7 @@ public:
             float pb = 1.0f - v.resB.lowpass_coeff;
             float cb = v.resB.ap_coeff;
             float lp_del_B = pb / (1.0f - pb);
+            if (m_preset_idx == k_AcousticTom) lp_del_B *= 2.0f;
             float ap_del_B = (1.0f - cb) / (1.0f + cb);
             v.resB.delay_length = fmaxf(2.0f, v.resB.delay_length - lp_del_B - ap_del_B);
         }
@@ -1234,7 +1243,9 @@ public:
         v.resA.write_ptr = 0;
         v.resB.write_ptr = 0;
         v.resA.z1 = 0.0f;
+        v.resA.z2 = 0.0f;
         v.resB.z1 = 0.0f;
+        v.resB.z2 = 0.0f;
         if (had_residual) {
             auto clear_tail = [](float* buf, float delay_len) {
                 uint32_t len = (uint32_t)ceilf(delay_len) + 2;  // +2: frac interp safety
@@ -1455,8 +1466,8 @@ public:
             // attack click toward the KS fundamental — matching the 689→254Hz reference
             // sweep measured on Tom1-001-CloseRoom.wav. Mode 1 lingers longer for warmth.
             init_modal_modes(1.59f, 2.14f, 2.30f,
-                             60.0f, 25.0f, 12.0f, 8.0f,
-                             0.40f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
+                             60.0f, 25.0f, 12.0f, 8.0f, // alternative: 100.0f, 70.0f, 50.0f, 35.0f, // Adds body resonance overtones above the KS fundamental + boom.
+                             0.40f, 0.65f, 0.48f, 0.32f, 0.20f, 4); // alternative: 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
         } else if (program == k_AcSnare) {
             // Acoustic snare: membrane body ring + snare wire buzz (configured separately).
             // Modes decay before the snare wire noise to avoid masking the characteristic crack.
@@ -1616,9 +1627,10 @@ public:
             v.boom_decay = 0.99950f; // ~360ms
             v.boom_mix = 0.26f;
         } else if (program == k_AcousticTom) {
-            // No boom: acoustic toms resonate at their MIDI pitch; adding a sub-octave
-            // 110Hz sine made the boom outlast the KS fundamental and swamp the centroid.
-            v.boom_mix = 0.0f;
+            v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
+            v.boom_env = 1.0f;
+            v.boom_decay = 0.99945f;
+            v.boom_mix = 0.24f;
         } else if (program == k_AcSnare) {
             v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
             v.boom_env = 1.0f;
@@ -1764,14 +1776,18 @@ public:
         // wg.lowpass_coeff was pre-calculated in setParameter()
         wg.z1 = (ap_out * wg.lowpass_coeff) + (wg.z1 * (1.0f - wg.lowpass_coeff));
         float filtered_out = wg.z1;
-         if (wg.diffuser_mix > 0.0001f) {
-             float y = filtered_out;
-             y = schroeder_stage(y, wg.diffuser_buf1, wg.diffuser_i1, 13, wg.diffuser_g);
-             y = schroeder_stage(y, wg.diffuser_buf2, wg.diffuser_i2, 19, wg.diffuser_g);
-             y = schroeder_stage(y, wg.diffuser_buf3, wg.diffuser_i3, 29, wg.diffuser_g);
-             y = schroeder_stage(y, wg.diffuser_buf4, wg.diffuser_i4, 41, wg.diffuser_g);
-             filtered_out = (filtered_out * (1.0f - wg.diffuser_mix)) + (y * wg.diffuser_mix);
-         }
+        if (m_preset_idx == k_AcousticTom) {
+            wg.z2 = (wg.z1 * wg.lowpass_coeff) + (wg.z2 * (1.0f - wg.lowpass_coeff));
+            filtered_out = wg.z2;
+        }
+        if (wg.diffuser_mix > 0.0001f) {
+            float y = filtered_out;
+            y = schroeder_stage(y, wg.diffuser_buf1, wg.diffuser_i1, 13, wg.diffuser_g);
+            y = schroeder_stage(y, wg.diffuser_buf2, wg.diffuser_i2, 19, wg.diffuser_g);
+            y = schroeder_stage(y, wg.diffuser_buf3, wg.diffuser_i3, 29, wg.diffuser_g);
+            y = schroeder_stage(y, wg.diffuser_buf4, wg.diffuser_i4, 41, wg.diffuser_g);
+            filtered_out = (filtered_out * (1.0f - wg.diffuser_mix)) + (y * wg.diffuser_mix);
+        }
         // 4. Feedback & Exciter Addition
         // wg.feedback_gain is our "Decay" time
 #ifdef ENABLE_PHASE_7_MODELS

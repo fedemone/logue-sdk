@@ -123,7 +123,8 @@ struct WaveguideState {
     float ap_y1 = 0.0f;    // Allpass delayed output
 
     // Filter State Memory
-    float z1 = 0.0f;               // 1-pole lowpass history
+    float z1 = 0.0f;               // 1st lowpass pole history
+    float z2 = 0.0f;               // 2nd lowpass pole history (optional, per-preset)
     float diffuser_mix = 0.0f;     // 0=off, >0 enables 4-stage Schroeder allpass chain
     float diffuser_g = 0.45f;
     float diffuser_buf1[13] = {0.0f};
