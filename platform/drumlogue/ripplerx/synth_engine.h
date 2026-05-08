@@ -444,7 +444,7 @@ public:
             {   0,  60,   0,   0, 500, 470,   0,   0,   0,   0,  35,  10,   0,   0,  10,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
             {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,   1,   7,  20,   0, 300,   0,1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
             {   2,  36,   0,   0, 150,   0,   0,   0,   0,   3, 180,  -6,  -5,   0,  15,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 2:  808 Sub    — final Stage-1: Dkay170/Mterl-6 to counter LP-loss-shortened tail without adding noise
-            {   3,  38,   0,   1, 520, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  58, 640,   2, 180, 707}, // 3:  Ac Snare   — Dkay35: shorter KS body shifts timbre to snappier snare vs metallic gong; NzMx35 raises noise floor. rescue pass: stronger shell body + wire crack, darker body with wider snare burst
+            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  58, 640,   2, 180, 707}, // 3:  Ac Snare   — MlRs120 (from 520): mallet path was creating 99% hi at 0-5ms; dark mallet lets staged NzMx wire lead the attack
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,  20,  18,   0,   5, 300,   0,1500, 707}, // 4:  TblrBel    — c=0.98@524Hz (Mterl28+TubRad20); MlltStif100 (medium felt mallet, less overtone energy → measured T60 tracks fundamental ~7.5s)
             {   5,  40,   0,   1, 360, 300,   0,   0,   2,   3, 200,  -2,   0,  36,  18,  10,   0,  -4,   4,  16, 420,   0, 380, 707}, // 5:  Timpani    — InHm9: slight spread on coupled membrane mode; NzRs300 longer noise tail. rescue pass: deeper boom (darker loss) with longer low-body sustain and broader impact
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 102,   0,   0,  35,  12,  10,   5,  15,   5,   7, 450,   0, 500, 707}, // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
@@ -461,7 +461,7 @@ public:
             {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
             {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {  19,  84,   0,   1, 900, 440,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  15,   0,   0, 300,   0,1500, 707}, // 19: Triangle   — harder mallet MlSt440 for cleaner metallic ping onset
-            {  20,  36,   0,   1, 380, 120,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
+            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
             {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  -3,   0,   0,  12,   0,   1,   3,   0,  15, 950,   0, 400, 707}, // 23: Flute      — InHm0 pure tube; NzMx15 breath noise; NzFq400 4kHz breath shimmer
@@ -480,8 +480,8 @@ public:
             {  27,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,   1,  13,   0,   0, 300,   0,1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  26,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — softer mallet MlSt420 + InHm14 metallic partial spread + NzMx35/NzFq600. rescue pass: tighter short chick with brighter/sparser metallic top
-            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  26,   0,   0,  14,  11,   5,  20,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — Mterl27/TbRd21: balanced open hat ring; NzMx45/NzFq600 sizzle. rescue pass: longer shimmering wash with clearer high-band sizzle
+            {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  12,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — Mterl12 (from 26): centroid was 15-16kHz vs ref 7kHz; darker LP reduces KS harmonics above ~10kHz
+            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  12,   0,   0,  14,  11,   5,  20,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — Mterl12 (from 26): matched with HHat-C to bring centroid from 15kHz to ~7kHz
             {  30,  62,   0,   1, 600, 365,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,   7,   0,  15, 520,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
             {  31,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,   7,   0,   0,  20,   1,   5,  15,   0,   5, 300,   0,1000, 707},  // 31: Handpn  — MlSt300 softer strike; Mterl7 warmer plate; InHm1 near-harmonic handpan
             {  32,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,  10,   3,   0,   0, 300,   0,1200, 707},  // 32: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
@@ -1030,9 +1030,11 @@ public:
             v.exciter.noise_env_hi.attack_rate = fmaxf(0.05f, fminf(0.99f,
                 v.exciter.noise_env.attack_rate * 1.25f));
             // Snare-family physical staging: body thud first, then wire buzz.
+            // attack_rate=0.001: 21% noise at 5ms, 62% at 20ms, 91% at 50ms.
+            // (0.01 was too fast: 91% noise already at 5ms, so no staging effect.)
             if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
-                v.exciter.noise_env.attack_rate = 0.01f;
-                v.exciter.noise_env_hi.attack_rate = 0.03f;
+                v.exciter.noise_env.attack_rate = 0.001f;
+                v.exciter.noise_env_hi.attack_rate = 0.003f;
             }
         }
 
@@ -1630,7 +1632,7 @@ public:
             v.boom_inc = (2.0f * M_PI * 110.0f) / default_sample_rate;
             v.boom_env = 1.0f;
             v.boom_decay = 0.99945f;
-            v.boom_mix = 0.24f;
+            v.boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%
         } else if (program == k_AcSnare) {
             v.boom_inc = (2.0f * M_PI * 175.0f) / default_sample_rate;
             v.boom_env = 1.0f;
