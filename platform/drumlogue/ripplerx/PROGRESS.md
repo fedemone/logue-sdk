@@ -4,12 +4,33 @@
 
 ## TODO LIST
 
+### Latest progress (May 2026)
+- Rebased tuning branch on `29b33ac` and kept the recent AcTom/AcSnare/Kick/HHat tuning trajectory.
+- Confirmed and fixed a cleanup issue in the hi-hat noise path:
+  - Removed dead `ExciterState` fields `noise_bp_hp_state`, `noise_bp_lp_state`,
+    `noise_bp_hp_coeff`, `noise_bp_lp_coeff`.
+  - Removed matching reset/compute lines in `synth_engine.h` where `high_bp` was computed
+    but never consumed.
+- Current active architecture after cleanup:
+  - **AcSnare/MrchSnr**: wire-onset gate remains active through `wire_onset_env` input gating.
+  - **Kick/Taiko/AcTom/AcSnare**: boom onset ramp remains active via `boom_attack_env`.
+  - **HHat-C/O**: high-band now uses filtered burst (`raw_noise`) in the high-mix branch.
+- `test_td.py` remains green (`41/41`) and host render compile path still succeeds.
+
 ### New presets (when physical model is stable and reliable)
 - **Gamelan** — inharmonic metallic bar, long sustain, multiple coupled overtones
 - **Bell** — high InHm, long Dkay, bright material (Mterl≈25), tight mallet
 - **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
 - **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
 - **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
+- **crunch**
+- **bottle pop**
+- **kalimba**
+- **maracas**
+- **Chacha nut**
+- **Guiro**
+- **Clock**
+*(user can supply wave files for reference)*
 - **crunch**
 - **bottle pop**
 - **kalimba**

@@ -305,10 +305,6 @@ public:
             state.voices[i].exciter.noise_band_mix    = 0.5f;
             state.voices[i].exciter.noise_hi_lp_state = 0.0f;
             state.voices[i].exciter.noise_hi_lp_coeff = 0.30f;
-            state.voices[i].exciter.noise_bp_hp_state = 0.0f;
-            state.voices[i].exciter.noise_bp_lp_state = 0.0f;
-            state.voices[i].exciter.noise_bp_hp_coeff = 0.35f;
-            state.voices[i].exciter.noise_bp_lp_coeff = 0.50f;
             state.voices[i].exciter.wire_onset_env    = 1.0f;
             state.voices[i].exciter.wire_onset_attack = 1.0f;
             state.voices[i].exciter.snare_wire_z1  = 0.0f;
@@ -1779,10 +1775,6 @@ public:
             float low = ex.noise_lp_state;
             ex.noise_hi_lp_state += ex.noise_hi_lp_coeff * (raw_noise_unf - ex.noise_hi_lp_state);
             float high = raw_noise_unf - ex.noise_hi_lp_state;
-            ex.noise_bp_hp_state += ex.noise_bp_hp_coeff * (raw_noise_unf - ex.noise_bp_hp_state);
-            float hp = raw_noise_unf - ex.noise_bp_hp_state;
-            ex.noise_bp_lp_state += ex.noise_bp_lp_coeff * (hp - ex.noise_bp_lp_state);
-            float high_bp = ex.noise_bp_lp_state;
             float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
