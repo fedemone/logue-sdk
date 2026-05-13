@@ -61,6 +61,8 @@ struct ExciterState {
     float mallet_res_coeff = 0.5f; // Second LP pole coefficient (MlltRes)
 
     FastSVF noise_filter; // Dedicated per-voice noise shaping SVF (NzFltr / NzFltFrq)
+    FastSVF hat_filter;   // Dedicated hi-hat centroid filter (biquad/TPT)
+    bool use_hat_filter = false;
 };
 
 /**
@@ -77,6 +79,8 @@ struct WaveguideState {
     // Fast-math loop coefficients (Calculated from UI parameters)
     float feedback_gain = 0.0f;    // Determines Decay Time
     float lowpass_coeff = 1.0f;    // Determines Material/Tone
+    float loss_g_dc = 1.0f;        // Frequency-independent sustain factor
+    float loss_g_hf = 1.0f;        // HF feedback loss factor (0..1)
     float ap_coeff = 0.0f; // Allpass coefficient (-0.99 to 0.99)
     float ap_x1 = 0.0f;    // Allpass delayed input
     float ap_y1 = 0.0f;    // Allpass delayed output

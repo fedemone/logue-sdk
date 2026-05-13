@@ -233,6 +233,10 @@ public:
             // Re-apply safe defaults
             state.voices[i].resA.lowpass_coeff = 1.0f;
             state.voices[i].resB.lowpass_coeff = 1.0f;
+            state.voices[i].resA.loss_g_dc = 1.0f;
+            state.voices[i].resA.loss_g_hf = 1.0f;
+            state.voices[i].resB.loss_g_dc = 1.0f;
+            state.voices[i].resB.loss_g_hf = 1.0f;
 
             // Clear coupling, tone and energy-squelch memory
             state.voices[i].resA_out_prev = 0.0f;
@@ -317,6 +321,9 @@ public:
             // Noise filter defaults to LP mode, fully open (12 kHz)
             state.voices[i].exciter.noise_filter.mode = 0;
             state.voices[i].exciter.noise_filter.set_coeffs(12000.0f, 0.707f, default_sample_rate);
+            state.voices[i].exciter.hat_filter.mode = 1;
+            state.voices[i].exciter.hat_filter.set_coeffs(7000.0f, 1.1f, default_sample_rate);
+            state.voices[i].exciter.use_hat_filter = false;
             // Clear SVF delay states — set_coeffs() only updates f/q, not the
             // recursive lp/bp/hp accumulators.  Leaving them non-zero after a
             // patch change would cause a loud click on the next NoteOn.
@@ -687,13 +694,19 @@ public:
                 float coeff = 0.01f + (mterl_norm * 0.99f);
                 // Wider tube pulls the coefficient towards 1.0 (less high-frequency loss)
                 coeff = coeff + ((1.0f - coeff) * (tubrad_norm * 0.8f));
+                float hf_loss = fmaxf(0.15f, fminf(1.0f, 0.25f + (coeff * 0.75f)));
+                float dc_gain = fmaxf(0.85f, fminf(1.0f, 0.90f + (coeff * 0.10f)));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     if (m_is_resonator_a) {
                         state.voices[i].resA.lowpass_coeff = coeff;
+                        state.voices[i].resA.loss_g_dc = dc_gain;
+                        state.voices[i].resA.loss_g_hf = hf_loss;
                         state.voices[i].transient_lp_base_a = coeff;
                     }
                     if (m_is_resonator_b) {
                         state.voices[i].resB.lowpass_coeff = coeff;
+                        state.voices[i].resB.loss_g_dc = dc_gain;
+                        state.voices[i].resB.loss_g_hf = hf_loss;
                         state.voices[i].transient_lp_base_b = coeff;
                     }
                 }
@@ -800,11 +813,11 @@ public:
                 float freq = fmaxf(20.0f, fminf(20000.0f, (float)value * 10.0f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_filter.set_coeffs(freq, 0.707f, default_sample_rate);
-                    // Private split-band high cutoff (no extra UI): tied to NzFq,
-                    // shifted upward for sizzle branch and converted to 1-pole coeff.
-                    float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
-                    float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) * inverse_default_sample_rate));
-                    state.voices[i].exciter.noise_hi_lp_coeff = alpha;
+                     // Private split-band high cutoff (no extra UI): tied to NzFq,
+                     // shifted upward for sizzle branch and converted to 1-pole coeff.
+                     float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
+                     float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) * inverse_default_sample_rate));
+                     state.voices[i].exciter.noise_hi_lp_coeff = alpha;
                 }
                 break;
             }
@@ -1254,16 +1267,16 @@ public:
         }
         // TODO make these a second set of per-preset parameters instead of hardcoded in NoteOn(), in a new structure called ModelBasedPresets
         if (m_preset_idx == k_AcSnare) { // AcSnare: add short resonant wire-like sizzle emphasis.
-            v.exciter.snare_wire_mix    = 0.55f;
-            v.exciter.snare_wire_a1     = 1.7220f; // slightly brighter/tighter wire crack
-            v.exciter.snare_wire_a2     = 0.9050f;
-            v.exciter.wire_onset_env    = 0.0f;
+            v.exciter.snare_wire_mix = 0.55f;
+            v.exciter.snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack
+            v.exciter.snare_wire_a2 = 0.9050f;
+            v.exciter.wire_onset_env = 0.0f;
             v.exciter.wire_onset_attack = 0.0014f; // ~15 ms to full wire excitation
         } else if (m_preset_idx == k_MarchSnare) { // March snare: drier/tighter wire.
-            v.exciter.snare_wire_mix    = 0.42f;
-            v.exciter.snare_wire_a1     = 1.7050f;
-            v.exciter.snare_wire_a2     = 0.8960f;
-            v.exciter.wire_onset_env    = 0.0f;
+            v.exciter.snare_wire_mix = 0.42f;
+            v.exciter.snare_wire_a1 = 1.7050f;
+            v.exciter.snare_wire_a2 = 0.8960f;
+            v.exciter.wire_onset_env = 0.0f;
             v.exciter.wire_onset_attack = 0.0018f; // slightly faster than AcSnare
         } else if (m_preset_idx == k_HiHatClosed) { // HHat-C: short, crisp "chick".
             v.exciter.noise_band_mix = 0.86f;
@@ -1271,14 +1284,18 @@ public:
             // Chamberlin SVF LP at 5500 Hz gives power-weighted noise centroid ~7 kHz.
             // (BP mode was tried but Chamberlin BP near Nyquist has centroid ~18 kHz,
             //  not fc — the LP mode is accurate up to ~fs/8.)
-            v.exciter.noise_filter.set_coeffs(5500.0f, 0.707f, default_sample_rate);
-            v.exciter.noise_filter.mode = 0; // LP
+            v.exciter.hat_filter.set_coeffs(7000.0f, 1.15f, default_sample_rate);
+            v.exciter.hat_filter.mode = 1; // BP
+            v.exciter.use_hat_filter = true;
         } else if (m_preset_idx == k_HiHatOpen) { // HHat-O: longer shimmering wash.
             v.exciter.noise_band_mix = 0.93f;
             v.exciter.noise_hi_lp_coeff = 0.30f;
             // SVF LP at 6000 Hz gives centroid ~8.6 kHz for the noise burst.
-            v.exciter.noise_filter.set_coeffs(6000.0f, 0.707f, default_sample_rate);
-            v.exciter.noise_filter.mode = 0; // LP
+            v.exciter.hat_filter.set_coeffs(6800.0f, 0.95f, default_sample_rate);
+            v.exciter.hat_filter.mode = 1; // BP
+            v.exciter.use_hat_filter = true;
+        } else {
+            v.exciter.use_hat_filter = false;
         }
         // TODO make these a second set of per-preset parameters instead of hardcoded in NoteOn(), in a new structure called ModelBasedPresets
         // Metallic presets: enable light Schroeder diffusion in feedback loop
@@ -1730,7 +1747,9 @@ public:
         }
         // 4. Feedback & Exciter Addition
         // wg.feedback_gain is our "Decay" time
-        float new_val = exciter_input + (filtered_out * wg.feedback_gain * wg.phase_mult);
+        float hf = ap_out - filtered_out;
+        float loss_shaped = (filtered_out * wg.loss_g_dc) + (hf * wg.loss_g_hf);
+        float new_val = exciter_input + (loss_shaped * wg.feedback_gain * wg.phase_mult);
 
         // 5. Write back to the delay line and advance the pointer
         wg.buffer[wg.write_ptr] = new_val;
@@ -1779,9 +1798,9 @@ public:
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
             if (mix > 0.80f) {
-                // Hi-hat family: noise_filter is set to SVF LP (5.5–6 kHz) in NoteOn,
-                // centroid ≈ 7–8 kHz — use raw_noise directly instead of the HP hiss.
-                high_part = raw_noise * mix * 1.35f * noise_env_high;
+                // Hi-hat family: dedicated BP biquad for centroid control near 7 kHz.
+                float hat_bp = ex.hat_filter.process(raw_noise_unf);
+                high_part = (ex.use_hat_filter ? hat_bp : raw_noise) * mix * 1.35f * noise_env_high;
             }
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
