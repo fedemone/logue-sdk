@@ -800,11 +800,11 @@ public:
                 float freq = fmaxf(20.0f, fminf(20000.0f, (float)value * 10.0f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_filter.set_coeffs(freq, 0.707f, default_sample_rate);
-                     // Private split-band high cutoff (no extra UI): tied to NzFq,
-                     // shifted upward for sizzle branch and converted to 1-pole coeff.
-                     float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
-                     float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) * inverse_default_sample_rate));
-                     state.voices[i].exciter.noise_hi_lp_coeff = alpha;
+                    // Private split-band high cutoff (no extra UI): tied to NzFq,
+                    // shifted upward for sizzle branch and converted to 1-pole coeff.
+                    float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
+                    float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) * inverse_default_sample_rate));
+                    state.voices[i].exciter.noise_hi_lp_coeff = alpha;
                 }
                 break;
             }
@@ -1254,16 +1254,16 @@ public:
         }
         // TODO make these a second set of per-preset parameters instead of hardcoded in NoteOn(), in a new structure called ModelBasedPresets
         if (m_preset_idx == k_AcSnare) { // AcSnare: add short resonant wire-like sizzle emphasis.
-            v.exciter.snare_wire_mix = 0.55f;
-            v.exciter.snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack
-            v.exciter.snare_wire_a2 = 0.9050f;
-            v.exciter.wire_onset_env = 0.0f;
+            v.exciter.snare_wire_mix    = 0.55f;
+            v.exciter.snare_wire_a1     = 1.7220f; // slightly brighter/tighter wire crack
+            v.exciter.snare_wire_a2     = 0.9050f;
+            v.exciter.wire_onset_env    = 0.0f;
             v.exciter.wire_onset_attack = 0.0014f; // ~15 ms to full wire excitation
         } else if (m_preset_idx == k_MarchSnare) { // March snare: drier/tighter wire.
-            v.exciter.snare_wire_mix = 0.42f;
-            v.exciter.snare_wire_a1 = 1.7050f;
-            v.exciter.snare_wire_a2 = 0.8960f;
-            v.exciter.wire_onset_env = 0.0f;
+            v.exciter.snare_wire_mix    = 0.42f;
+            v.exciter.snare_wire_a1     = 1.7050f;
+            v.exciter.snare_wire_a2     = 0.8960f;
+            v.exciter.wire_onset_env    = 0.0f;
             v.exciter.wire_onset_attack = 0.0018f; // slightly faster than AcSnare
         } else if (m_preset_idx == k_HiHatClosed) { // HHat-C: short, crisp "chick".
             v.exciter.noise_band_mix = 0.86f;
