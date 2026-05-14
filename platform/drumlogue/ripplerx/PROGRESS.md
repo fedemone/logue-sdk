@@ -5,12 +5,20 @@
 ## TODO LIST
 
 ### Latest progress (May 2026)
+- Reviewed `6b57e12` refactor correctness:
+  - model-based preset assignment moved from NoteOn to LoadPreset
+  - voice/exciter reset paths centralized through constructors/reset helpers
+  - no obvious state-init regressions found in the reviewed paths
 - Implemented architectural **Step 1** (HHat centroid path): dedicated hi-hat BP biquad
   (`hat_filter`, TPT/SVF BP mode) now drives high-band hat burst shaping instead of
   relying on the generic LP-only path.
 - Implemented architectural **Step 2** (KS loss split): waveguide feedback now separates
   DC sustain (`loss_g_dc`) and HF shaping (`loss_g_hf`) so sustain and brightness can be
   tuned independently.
+- Implemented architectural **Step 3** (snare wire model): wire resonator Q is now
+  velocity-controlled at NoteOn (hard hits -> tighter/high-Q crack, soft hits -> duller buzz).
+- Implemented architectural **Step 4** (kick sub model): kick boom now sweeps
+  approximately 90 -> 55 Hz using the decaying boom envelope as an exponential-like control.
 - Consolidation run: host render compile + full `render_presets` pass completed after
   these changes.
 - Rebased tuning branch on `29b33ac` and kept the recent AcTom/AcSnare/Kick/HHat tuning trajectory.

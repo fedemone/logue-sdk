@@ -1176,6 +1176,13 @@ static const float model_param_presets[k_NumPrograms][k_model_param_total]
             if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
                 v.exciter.noise_env.attack_rate = 0.001f;
                 v.exciter.noise_env_hi.attack_rate = 0.001f;
+                // Step 3: velocity-controlled snare wire Q.
+                // Softer hits -> lower Q (duller buzz), harder hits -> higher Q (sharper crack).
+                float vq = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
+                float r = 0.90f + (0.07f * vq); // Q control via pole radius
+                float w = (2.0f * M_PI * 3360.0f) * inverse_default_sample_rate;
+                v.exciter.snare_wire_a1 = 2.0f * r * fastercosfullf(w);
+                v.exciter.snare_wire_a2 = r * r;
             }
         }
 
@@ -1799,6 +1806,11 @@ static const float model_param_presets[k_NumPrograms][k_model_param_total]
                 // the same ballpark as the resonator output driven by the ×15 mallet.
                 voice_out += voice.exciter.noise_out_sample * 5.0f * voice.current_velocity;
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
+                    if (m_preset_idx == k_KickDrum) {
+                        // Step 4: kick FM-like sub sweep (about 90 -> 55 Hz, exponential via boom_env decay).
+                        float sweep_hz = 55.0f + (35.0f * voice.boom_env);
+                        voice.boom_inc = (2.0f * M_PI * sweep_hz) * inverse_default_sample_rate;
+                    }
                     voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);
                     float boom = fastersinfullf(voice.boom_phase)
                                * voice.boom_env * voice.boom_mix * voice.boom_attack_env;
