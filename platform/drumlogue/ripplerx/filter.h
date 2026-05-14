@@ -8,16 +8,19 @@
  */
 struct FastSVF {
     // Filter State (Memory)
-    float lp = 0.0f;
-    float bp = 0.0f;
-    float hp = 0.0f;
+    float lp;
+    float bp;
+    float hp;
 
     // Fast-math coefficients (Calculated in UI thread)
-    float f = 0.0f;
-    float q = 0.0f;
+    float f;
+    float q;
 
     // CRITICAL FIX: Mode 2 = Highpass. This prevents the 10Hz parameter from muting the synth!
-    int mode = 2;
+    int mode; // 0=LP, 1=BP, 2=HP
+
+    // default constructor
+    FastSVF() : lp(0.0f), bp(0.0f), hp(0.0f), f(0.0f), q(0.0f), mode(2) {} ;
 
     // Called by the UI Thread (setParameter) to keep the Audio Thread fast
     inline void set_coeffs(float cutoff_hz, float resonance, float srate) {
