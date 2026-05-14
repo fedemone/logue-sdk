@@ -1,0 +1,62 @@
+auto_tune: 39 presets in table, 62 sample files
+  Up to 8 rounds, early-stop after 3 stable rounds
+
+Building baseline scores…
+  Baseline in 68.2s — 31 presets scored
+    Kalimba      33.70
+    Kick         40.88
+    Marmba       47.63
+    Conga        50.30
+    Handpn       53.04
+    Taiko        53.34
+    Djambe       54.83
+    TblrBel      57.75
+    Bongo        58.97
+    Timpni       59.21
+    Wodblk       60.39
+    Koto         61.38
+    StelPan      61.61
+    Vibrph       67.79
+    GlsBwl       70.24
+    Ac Tom       71.02
+    AcSnre       74.65
+    Flute        75.28
+    Trngle       79.12
+    Tick         79.62
+    GlsBotl      79.95
+    Clrint       80.55
+    MrchSnr      83.93
+    RidBel       88.33
+    Claves       88.66
+    Ride         89.23
+    HHat-O       92.34
+    HHat-C       93.55
+    Shaker       95.96
+    Gong         103.09
+    Cymbal       107.11
+
+━━━ Round 1/8 ━━━
+  trial Dkay +10: Ac Tom=71.4  AcSnre=100.1  Bongo=64.6  Claves=89.8  Clrint=84.7  Conga=56.1  Cymbal=107.1  Djambe=56.8  Flute=75.3  GlsBotl=80.6  GlsBwl=70.2  Gong=103.1  HHat-C=95.9  HHat-O=96.9  Handpn=60.5  Kalimba=33.7  Kick=45.6  Koto=61.9  Marmba=50.8  MrchSnr=87.9  RidBel=90.1  Ride=89.7  Shaker=92.5  StelPan=61.6  Taiko=54.7  TblrBel=57.8  Tick=81.7  Timpni=63.1  Trngle=80.2  Vibrph=67.8  Wodblk=61.5
+  trial Dkay -10: Ac Tom=73.0  AcSnre=76.0  Bongo=63.5  Claves=93.7  Clrint=86.2  Conga=53.2  Cymbal=108.0  Djambe=55.7  Flute=86.3  GlsBotl=89.6  GlsBwl=73.4  Gong=105.5  HHat-C=98.3  HHat-O=97.3  Handpn=56.2  Kalimba=37.6  Kick=49.3  Koto=63.5  Marmba=54.9  MrchSnr=95.8  RidBel=89.6  Ride=91.0  Shaker=96.4  StelPan=69.6  Taiko=60.7  TblrBel=63.5  Tick=82.9  Timpni=59.9  Trngle=91.5  Vibrph=68.9  Wodblk=61.3
+  trial Mterl  +2: Ac Tom=72.0  AcSnre=75.6  Bongo=63.1  Claves=91.8  Clrint=83.1  Conga=51.2  Cymbal=107.8  Djambe=55.5  Flute=80.9  GlsBotl=80.1  GlsBwl=70.2  Gong=103.0  HHat-C=93.5  HHat-O=92.6  Handpn=53.2  Kalimba=35.9  Kick=44.4  Koto=61.4  Marmba=48.0  MrchSnr=86.7  RidBel=88.9  Ride=89.2  Shaker=96.0  StelPan=63.6  Taiko=54.6  TblrBel=57.8  Tick=81.4  Timpni=62.2  Trngle=80.1  Vibrph=69.6  Wodblk=66.7
+  trial Mterl  -2: Ac Tom=71.7  AcSnre=75.3  Bongo=60.3  Claves=94.7  Clrint=80.8  Conga=49.2  Cymbal=108.1  Djambe=55.2  Flute=83.2  GlsBotl=84.3  GlsBwl=70.9  Gong=103.2  HHat-C=93.4  HHat-O=93.7  Handpn=53.1  Kalimba=36.5  Kick=43.5  Koto=61.5  Marmba=50.0  MrchSnr=84.0  RidBel=89.6  Ride=89.6  Shaker=95.8  StelPan=60.8  Taiko=54.8  TblrBel=57.9  Tick=81.8  Timpni=62.8  Trngle=80.3  Vibrph=68.3  Wodblk=64.0
+  trial NzMx  +5: Ac Tom=71.1  AcSnre=74.6  Bongo=60.4  Claves=89.2  Clrint=82.9  Conga=50.4  Cymbal=107.1  Djambe=54.9  Flute=75.3  GlsBotl=80.5  GlsBwl=70.3  Gong=104.0  HHat-C=94.3  HHat-O=93.2  Handpn=53.2  Kalimba=35.0  Kick=42.3  Koto=61.5  Marmba=51.1  MrchSnr=95.1  RidBel=89.4  Ride=90.7  Shaker=110.7  StelPan=61.3  Taiko=55.6  TblrBel=60.0  Tick=79.9  Timpni=59.5  Trngle=79.6  Vibrph=68.1  Wodblk=60.5
+  trial NzMx  -5: Ac Tom=71.2  AcSnre=101.8  Bongo=60.9  Claves=90.0  Clrint=82.0  Conga=51.5  Cymbal=107.1  Djambe=56.5  Flute=76.0  GlsBotl=80.5  GlsBwl=71.5  Gong=103.3  HHat-C=94.1  HHat-O=93.9  Handpn=54.1  Kalimba=35.9  Kick=41.8  Koto=62.3  Marmba=47.6  MrchSnr=87.7  RidBel=88.9  Ride=91.7  Shaker=115.1  StelPan=61.6  Taiko=54.2  TblrBel=58.0  Tick=81.6  Timpni=59.9  Trngle=79.1  Vibrph=67.8  Wodblk=60.7
+  trial NzRs +40: Ac Tom=71.0  AcSnre=74.4  Bongo=59.0  Claves=89.0  Clrint=83.1  Conga=52.0  Cymbal=107.1  Djambe=54.9  Flute=75.4  GlsBotl=79.8  GlsBwl=70.3  Gong=103.6  HHat-C=93.5  HHat-O=92.3  Handpn=53.0  Kalimba=34.8  Kick=41.3  Koto=61.4  Marmba=47.6  MrchSnr=86.1  RidBel=88.5  Ride=90.6  Shaker=108.8  StelPan=61.6  Taiko=53.1  TblrBel=57.8  Tick=79.6  Timpni=59.2  Trngle=79.1  Vibrph=67.8  Wodblk=60.5
+  trial NzRs -40: Ac Tom=71.1  AcSnre=74.9  Bongo=60.1  Claves=89.0  Clrint=83.1  Conga=52.7  Cymbal=107.1  Djambe=56.1  Flute=75.6  GlsBotl=80.1  GlsBwl=71.1  Gong=103.5  HHat-C=94.0  HHat-O=93.5  Handpn=53.7  Kalimba=33.7  Kick=41.1  Koto=61.4  Marmba=47.6  MrchSnr=86.9  RidBel=88.3  Ride=91.5  Shaker=95.8  StelPan=61.6  Taiko=54.1  TblrBel=57.8  Tick=81.0  Timpni=59.5  Trngle=79.1  Vibrph=67.8  Wodblk=60.4
+  trial NzFq +60: Ac Tom=71.0  AcSnre=101.7  Bongo=59.7  Claves=88.9  Clrint=80.6  Conga=50.2  Cymbal=107.1  Djambe=54.9  Flute=75.8  GlsBotl=80.1  GlsBwl=70.2  Gong=104.2  HHat-C=94.0  HHat-O=91.2  Handpn=53.0  Kalimba=33.7  Kick=41.3  Koto=61.4  Marmba=47.6  MrchSnr=84.0  RidBel=88.8  Ride=90.7  Shaker=96.0  StelPan=61.6  Taiko=54.1  TblrBel=57.8  Tick=81.0  Timpni=59.2  Trngle=79.1  Vibrph=67.8  Wodblk=60.4
+  trial NzFq -60: Ac Tom=71.0  AcSnre=75.0  Bongo=59.0  Claves=88.9  Clrint=79.0  Conga=50.6  Cymbal=107.1  Djambe=54.9  Flute=76.0  GlsBotl=79.9  GlsBwl=70.2  Gong=105.6  HHat-C=93.2  HHat-O=92.7  Handpn=53.0  Kalimba=33.7  Kick=42.2  Koto=61.4  Marmba=47.6  MrchSnr=96.1  RidBel=88.7  Ride=90.6  Shaker=124.3  StelPan=61.6  Taiko=54.4  TblrBel=57.8  Tick=80.0  Timpni=59.2  Trngle=79.1  Vibrph=67.8  Wodblk=60.4
+  trial MlSt +30: Ac Tom=71.0  AcSnre=102.5  Bongo=59.1  Claves=88.7  Clrint=86.0  Conga=51.8  Cymbal=108.4  Djambe=55.6  Flute=75.3  GlsBotl=81.5  GlsBwl=69.5  Gong=107.6  HHat-C=94.1  HHat-O=92.6  Handpn=53.1  Kalimba=33.7  Kick=43.6  Koto=61.4  Marmba=48.0  MrchSnr=83.9  RidBel=88.3  Ride=89.2  Shaker=96.0  StelPan=69.6  Taiko=53.7  TblrBel=57.7  Tick=79.6  Timpni=59.2  Trngle=78.9  Vibrph=67.8  Wodblk=60.4
+  trial MlSt -30: Ac Tom=71.1  AcSnre=75.0  Bongo=59.0  Claves=88.7  Clrint=80.6  Conga=51.7  Cymbal=108.6  Djambe=55.3  Flute=75.7  GlsBotl=79.9  GlsBwl=70.4  Gong=103.9  HHat-C=93.3  HHat-O=92.4  Handpn=53.3  Kalimba=33.7  Kick=42.0  Koto=61.4  Marmba=52.0  MrchSnr=95.5  RidBel=89.0  Ride=89.6  Shaker=96.0  StelPan=61.6  Taiko=53.3  TblrBel=61.4  Tick=79.8  Timpni=59.3  Trngle=79.1  Vibrph=68.8  Wodblk=61.1
+  trial InHm  +1: Ac Tom=71.0  AcSnre=74.7  Bongo=59.0  Claves=88.9  Clrint=80.4  Conga=50.3  Cymbal=107.1  Djambe=54.8  Flute=75.3  GlsBotl=79.9  GlsBwl=70.2  Gong=103.1  HHat-C=93.5  HHat-O=92.4  Handpn=53.0  Kalimba=33.7  Kick=40.9  Koto=61.4  Marmba=47.6  MrchSnr=83.9  RidBel=88.3  Ride=89.3  Shaker=96.0  StelPan=61.6  Taiko=53.3  TblrBel=57.7  Tick=79.6  Timpni=59.2  Trngle=79.1  Vibrph=67.8  Wodblk=60.4
+  trial InHm  -1: Ac Tom=71.0  AcSnre=74.6  Bongo=59.0  Claves=88.7  Clrint=80.5  Conga=50.3  Cymbal=107.1  Djambe=54.8  Flute=75.3  GlsBotl=78.5  GlsBwl=70.3  Gong=103.1  HHat-C=93.6  HHat-O=92.3  Handpn=53.0  Kalimba=33.7  Kick=40.9  Koto=61.4  Marmba=47.6  MrchSnr=83.9  RidBel=88.3  Ride=89.2  Shaker=96.0  StelPan=61.6  Taiko=53.3  TblrBel=57.7  Tick=79.6  Timpni=59.2  Trngle=79.0  Vibrph=67.8  Wodblk=60.4
+  trial TbRd  +2: Ac Tom=73.0  AcSnre=103.5  Bongo=65.9  Claves=92.1  Clrint=84.3  Conga=51.9  Cymbal=108.3  Djambe=56.8  Flute=82.3  GlsBotl=82.3  GlsBwl=70.2  Gong=103.1  HHat-C=93.5  HHat-O=92.3  Handpn=54.0  Kalimba=35.9  Kick=45.7  Koto=61.4  Marmba=51.8  MrchSnr=83.9  RidBel=88.9  Ride=89.2  Shaker=96.0  StelPan=63.6  Taiko=55.3  TblrBel=57.8  Tick=81.1  Timpni=60.6  Trngle=79.2  Vibrph=69.8  Wodblk=61.1
+  trial TbRd  -2: Ac Tom=72.2  AcSnre=76.1  Bongo=61.2  Claves=97.6  Clrint=81.1  Conga=50.3  Cymbal=107.4  Djambe=55.9  Flute=87.4  GlsBotl=87.3  GlsBwl=70.2  Gong=103.5  HHat-C=93.5  HHat-O=92.4  Handpn=53.5  Kalimba=35.0  Kick=44.3  Koto=61.5  Marmba=54.3  MrchSnr=84.0  RidBel=89.6  Ride=89.2  Shaker=95.8  StelPan=60.8  Taiko=57.9  TblrBel=57.8  Tick=81.8  Timpni=59.2  Trngle=81.5  Vibrph=68.4  Wodblk=61.4
+
+  Round 1 done in 1128.7s | mean score: 71.03
+  Improved: Shaker 96.0→92.5, Gong 103.1→103.0, Conga 50.3→49.2, HHat-C 93.5→93.2, StelPan 61.6→60.8, Flute 75.3→75.3, AcSnre 74.7→74.4, Cymbal 107.1→107.1, Bongo 59.0→59.0, GlsBotl 80.0→78.5, Taiko 53.3→53.1, TblrBel 57.8→57.7, HHat-O 92.3→91.2, Clrint 80.6→79.0, Trngle 79.1→78.9, GlsBwl 70.2→69.5, Kalimba 33.7→33.7, Koto 61.4→61.4, MrchSnr 83.9→83.9, Handpn 53.0→53.0, Ac Tom 71.0→71.0, Wodblk 60.4→60.4, Marmba 47.6→47.6, Vibrph 67.8→67.8, Kick 40.9→40.9, Timpni 59.2→59.2, Ride 89.2→89.2, RidBel 88.3→88.3, Tick 79.6→79.6, Claves 88.7→88.7
+
+━━━ Round 2/8 ━━━
+  trial Dkay +10: Ac Tom=71.3  AcSnre=100.5  Bongo=64.4  Claves=89.5  Clrint=84.5  Conga=53.1  Cymbal=107.1  Djambe=56.8  Flute=75.3  GlsBotl=80.6  GlsBwl=69.5  Gong=103.0  HHat-C=95.9  HHat-O=95.7  Handpn=60.5  Kalimba=33.7  Kick=45.5  Koto=61.9  Marmba=50.8  MrchSnr=88.0  RidBel=90.1  Ride=89.6  Shaker=89.5  StelPan=60.8  Taiko=54.4  TblrBel=57.7  Tick=81.7  Timpni=63.1  Trngle=80.5  Vibrph=67.8  Wodblk=61.4
+  trial Dkay -10: Ac Tom=73.0  AcSnre=75.8  Bongo=64.3  Claves=93.7  Clrint=86.2  Conga=51.3  Cymbal=108.0  Djambe=55.7  Flute=86.2  GlsBotl=90.1  GlsBwl=73.0  Gong=105.4  HHat-C=97.4  HHat-O=96.3  Handpn=56.2  Kalimba=37.6  Kick=49.3  Koto=63.5  Marmba=54.8  MrchSnr=95.8  RidBel=89.6  Ride=90.9  Shaker=96.0  StelPan=68.8  Taiko=60.4  TblrBel=59.7  Tick=82.9  Timpni=59.9  Trngle=97.0  Vibrph=68.9  Wodblk=61.3
+  trial Mterl  +2: Ac Tom=72.0  AcSnre=103.3  Bongo=64.0  Claves=91.8  Clrint=81.7  Conga=50.3  Cymbal=107.8  Djambe=55.5  Flute=80.6  GlsBotl=78.6  GlsBwl=69.5  Gong=103.0  HHat-C=93.2  HHat-O=91.8  Handpn=53.2  Kalimba=35.9  Kick=44.4  Koto=61.4  Marmba=48.0  MrchSnr=86.7  RidBel=88.9  Ride=89.2  Shaker=92.4  StelPan=61.6  Taiko=54.3  TblrBel=57.7  Tick=81.4  Timpni=62.2  Trngle=80.2  Vibrph=69.7  Wodblk=66.6

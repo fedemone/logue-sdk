@@ -35,24 +35,38 @@ inline float apply_skew(float normalized_val, float skew) {
     return fasterpowf(normalized_val, 1.0f / skew);
 }
 
-#ifdef ENABLE_PHASE_7_MODELS
 FastTables g_tables;
-#endif
 
 // ==============================================================================
 // CONSTANTS
 // ==============================================================================
-static constexpr float default_sample_rate = 48000.0f;
+static constexpr float    default_sample_rate = 48000.0f;
+static constexpr float    inverse_default_sample_rate = 2.0833333333e-5f; // 1 / 48000
 static constexpr uint16_t pitch_centre = 8192;
-static constexpr float kToneLpMix = 0.3f;
-static constexpr float kToneCutDivisor = 10.0f;
-static constexpr float kToneBoostDivisor = 15.0f;
-static constexpr float zeroThreshold = 0.0f;
-static constexpr float alpha = 0.01f;
-static constexpr float limiter = 0.99f;
-static constexpr int kSquelchGuardSamples = 1000; // ~20 ms
-static constexpr float kSquelchThreshold = 0.0001f; // -80 dB
-static constexpr float k_log_2_of_200 = 7.643856f;
+static constexpr float    kToneLpMix = 0.3f;
+static constexpr float    kToneCutDivisor = 10.0f;
+static constexpr float    kToneBoostDivisor = 15.0f;
+static constexpr float    kInvToneCutDivisor = 0.1f;         // 1 / 10
+static constexpr float    kInvToneBoostDivisor = 0.06666667f; // 1 / 15
+static constexpr float    zeroThreshold = 0.0f;
+static constexpr float    alpha = 0.01f;
+static constexpr float    limiter = 0.99f;
+static constexpr int      kSquelchGuardSamples = 1000; // ~20 ms
+static constexpr float    kSquelchThreshold = 0.0001f; // -80 dB
+static constexpr float    k_log_2_of_200 = 7.643856f;
+static constexpr float    k_log_0001 = -6.907755279f; // logf(0.001f) — T60→decay coefficient
+static constexpr float    stage2_modal_amp_ratio_2 = 0.6f;
+static constexpr float    silence_threshold = 1e-5f;
+
+// Stage-2 pilot defaults (override-able at compile time for quick sweeps).
+#define STAGE2_MODAL_RATIO_2    2.80f
+#define STAGE2_MODAL_ENV1       0.9f
+#define STAGE2_MODAL_ENV2       0.7f
+#define STAGE2_MODAL_T60_1_MS   70.0f
+#define STAGE2_MODAL_T60_2_MS   110.0f
+#define STAGE2_MODAL_DECAY1     0.99905f
+#define STAGE2_MODAL_DECAY2     0.99810f
+#define STAGE2_MODAL_MIX        0.08f
 
 // ==============================================================================
 // MAIN CLASS
@@ -91,36 +105,159 @@ public:
     };
     enum ProgramIndex {
         k_Init = 0,         // 0
-        k_Marimba,          // 1
+        k_Marimba,          // 1  -sample: marimba-hit-c4_C_minor.wav (524Hz +/- 50Hz)
         k_808Sub,           // 2
-        k_AcSnare,          // 3
-        k_TubularBell,      // 4
-        k_Timpani,          // 5
-        k_Djambe,           // 6
-        k_Taiko,            // 7
-        k_MarchSnare,       // 8
-        k_TamTam,           // 9
-        k_Koto,             // 10
-        k_Vibraphone,       // 11
-        k_Woodblock,        // 12
-        k_AcousticTom,      // 13
-        k_Cymbal,           // 14
-        k_Gong,             // 15
-        k_Kalimba,          // 16
-        k_SteelPan,         // 17
-        k_Claves,           // 18
-        k_Cowbell,          // 19
-        k_Triangle,         // 20
-        k_KickDrum,         // 21
-        k_Clap,             // 22
-        k_Shaker,           // 23
-        k_Flute,            // 24
-        k_Clarinet,         // 25
-        k_PluckBass,        // 26
-        k_GlassBowl,        // 27
-        k_GuitarStr,        // 28 — reference: Karplus-Strong string at A4 for model validation
-        k_NumPrograms       // 29 — marker (count)
+        k_AcSnare,          // 3  -sample: acoustic-snare.wav (1436Hz +/- 20Hz), snare heavy.wav (1287Hz +/- 80Hz)
+        k_TubularBell,      // 4  -samples: tubular-bell-47849.wav (oscillates between 1500Hz and 280Hz then settles to 1230Hz)
+        k_Timpani,          // 5  -sample: Orchestral-Timpani-C.wav (239Hz +/- 20Hz)
+        k_Djambe,           // 6  -samples: Djambe-B3.wav (starts over 600Hz and settles to 215Hz), Djambe-A3.wav (starts over 1100Hz and settles to 747Hz +/- 10Hz)
+        k_Taiko,            // 7  -sample: Taiko-Hit.wav (1582Hz +/- 50Hz)
+        k_MarchSnare,       // 8  -sample: Marching-Snare-Drum-A#-minor (1750Hz +/- 100Hz)
+        k_Koto,             // 9  -sample: Koto-B5.wav (starts as 700Hz and settles to 290Hz), Koto-B5.wav (starts as 650Hz goes up to 900Hz and settles 200Hz), Koto-Stab-F#.wav (750Hz +/- 100Hz)
+        k_Vibraphone,       // 10  -sample: vibraphone_C_major.wav (goes up to 1398Hz then settles to 273Hz), vibraphone_C_major1.wav  (262Hz +/- 20Hz)
+        k_Woodblock,        // 11  -sample: Woodblock.wav (3500Hz +/- 100Hz), Woodblock1.wav (858Hz +/- 30Hz)
+        k_AcousticTom,      // 12  -sample: Tom1-001-CloseRoom.wav (428Hz +/- 50Hz), Tom2-004-CloseRoom.wav (288Hz + 50Hz)
+        k_Cymbal,           // 13  -sample: cymbal-Crash16Inch.wav (starts as 2000Hz goes down to 650Hz and settles to 1000Hz - a lot of oscillations)
+        k_Gong,             // 14  -sample: Chinese-Gong.wav, Gong-long-G#.wav (starts with 800Hz and settles to 1680Hz +/- 10Hz)
+        k_Kalimba,          // 15  -sample: kalimba-e_E.wav (1398Hz +/- 50Hz)
+        k_SteelPan,         // 16  -sample: steel-pan-Nova Drum Real C 432.wav (257Hz +/- 30Hz), steel-pan-PERCY-C4-SHort.wav (260Hz +/- 50Hz), steel-pan-yudin C3.wav (220Hz +/- 20Hz)
+        k_Claves,           // 17  -sample: percussion-clave-like-hit-107112.mp3 (950Hz +/- 40Hz), wetclave.wav  (2629Hz +/- 20Hz)
+        k_Cowbell,          // 18  -sample: Cowbell_2.wav (408Hz +/- 30Hz)
+        k_Triangle,         // 19  -sample: Triangle-Bell_C#.wav (3753Hz +/- 100Hz), Triangle-Bell_F5.wav (795Hz +/- 100Hz)
+        k_KickDrum,         // 20  -sample: KickA-Hard-012-CloseRoom.wav (1016Hz +/- 100Hz)
+        k_Clap,             // 21  -sample: 07_Clap_05_SP.wav (1532 +/- 100Hz)
+        k_Shaker,           // 22  -sample: MaracasPair.wav (11292 +/- 100Hz)
+        k_Flute,            // 23  -sample: Flute-A2.wav (427Hz +/- 5Hz), Flute-D3.wav (577Hz +/- 5Hz)
+        k_Clarinet,         // 24  -sample: Clarinet-A-minor.wav (120Hz +/- 10Hz), Clarinet-C-minor.wav (523Hz +/- 10Hz)
+        k_PluckBass,        // 25  -sample:
+        k_GlassBowl,        // 26  -sample: glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav (oscillates between 200Hz and 1550Hz), glass-singing-bowl_23042017-01-raw-71015.wav
+        k_GuitarStr,        // 27 — reference: Karplus-Strong string at A4 for model validation
+        k_HiHatClosed,      // 28  -sample: HatClosedLive3.wav (12597Hz +/- 100Hz), OpenHatBig.wav (11746Hz +/- 100Hz)
+        k_HiHatOpen,        // 29  -sample: TightClosedHat.wav (11635Hz +/- 100Hz)
+        k_Conga,            // 30  -sample: Bongo_Conga2.wav (286Hz +/- 10Hz)
+        k_Handpan,          // 31  -sample: Tabla-Drum-Hit-D4_.wav (237Hz +/- 30Hz), percussion-one-shot-tabla-3_C_major.wav (323Hz +/- 30Hz)
+        k_BellTree,         // 32  -sample:
+        k_SlitDrum,         // 33  -sample:
+        k_Ride,             // 34  -sample: cymbal-Ride18Inch.wav (start over 2000Hz and settles to 761Hz), CrashA-001-ClosedRoom.av (starts as 850Hz goes up to 1650Hz and settles to 645 - lot of oscillations in between)
+        k_RideBell,         // 35  -sample: cymbal-RideBell20InchSabian.wav (starts over 2000Hz goes down to 1600Hz and settles to 867Hz)
+        k_Bongo,            // 36  -sample: Bongo_Conga_Mute4.wav (430Hz +/- 100Hz)
+        k_GlassBottle,      // 37  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
+        k_Tick,             // 38  -sample: one-tic-clock.wav,ordinary-old-clock-ticking-sound-recording_120bpm-mechanical-strike.wav (550Hz +/- 100Hz), high-church-clock-fx_100bpm.wav (strats over 800Hz and settles to 395Hz)
+        k_NumPrograms       // 39 — marker (count)
     };
+
+    enum ModelsIndex {
+        k_String,
+        k_Beam,
+        k_SquarePlate,
+        k_Membrane,
+        k_Plate,
+        k_Drumhead,
+        k_MarimbaBar,
+        k_OpenTube,
+        k_ClosedTube,
+        k_lastModel
+    };
+
+enum ModelParamIndex {
+    k_base_fm_hz,
+    k_snare_wire_z1,
+    k_snare_wire_z2,
+    k_snare_wire_mix,
+    k_snare_wire_a1,
+    k_snare_wire_a2,
+    k_wire_onset_env,
+    k_wire_onset_attack,
+    k_noise_lp_state,
+    k_noise_band_mix,
+    k_noise_hi_lp_state,
+    k_noise_hi_lp_coeff,
+    k_use_hat_filter,
+    k_diffuser_mix,
+    k_pitch_env,
+    k_pitch_env_decay,
+    k_pitch_env_amt,
+    k_boom_inc,
+    k_boom_env,
+    k_boom_decay,
+    k_boom_mix,
+    k_boom_attack_env,
+    k_boom_attack_inc,
+    k_reed_nl_enabled,
+    k_reed_nl_drive,
+    k_model_param_total
+}
+
+constexpr float kck_bm = (2.0f * M_PI * 58.0f) * inverse_default_sample_rate;
+constexpr float tak_bm = (2.0f * M_PI * 70.0f) * inverse_default_sample_rate;
+constexpr float tom_bm = (2.0f * M_PI * 110.0f) * inverse_default_sample_rate;
+constexpr float asn_bm = (2.0f * M_PI * 175.0f) * inverse_default_sample_rate;
+// AcSnare: add short resonant wire-like sizzle emphasis. snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack; wire_onset_attack = 0.0014f; // ~15 ms to full wire excitation
+// March snare: drier/tighter wire. wire_onset_attack = 0.0018f; // slightly faster than AcSnare
+// HHat-C: short, crisp "chick". noise_hi_lp_coeff = 0.42f; // Chamberlin SVF LP at 5500 Hz gives power-weighted noise centroid ~7 kHz. (BP mode was tried but Chamberlin BP near Nyquist has centroid ~18 kHz, not fc — the LP mode is accurate up to ~fs/8.) mode = 1; // BP
+// HHat-O: longer shimmering wash. noise_hi_lp_coeff = 0.30f; // SVF LP at 6000 Hz gives centroid ~8.6 kHz for the noise burst.
+// Metallic presets: enable light Schroeder diffusion in fek loop for pseudo-modal density at lU cost
+// k_808Sub: 808 bass: classic TR-808 sine-sweep character. Starts 18 semitones (1.5 oct) above the note and sweeps down in ~100ms. The long KS sustain (T60~2s) provides the sub-bass body.
+// k_KickDrum: Kick: pitch sweep + low boom. KS feedback_gain is set short (~175ms). by the Drumhead gain curve (Dkay=55) so the boom oscillator dominates after the initial attack transient. boom_decay = 0.99940f; // ~270ms boom tail boom_mix = 0.40f;      // boom dominates after KS decays boom_attack_inc = 0.0010f; // ~20ms onset ramp (0.0032 was 77% by 5ms, too dominant)
+// k_Timpani: Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
+// k_Taiko: Taiko: sub-octave boom (~70 Hz) under the main membrane fundamental.  Gives the deep chest-thud of a real taiko strike. boom_decay = 0.99950f; // ~360ms
+// k_AcousticTom: boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%. boom_attack_inc = 0.0008f;    // reduced from 0.0025 (The boom at C4 (261 Hz ≈ sub boundary) reaches 60% by 5 ms): pushes full boom onset to ~26 ms, giving the KS mallet transient time to register
+static const float model_param_presets[k_NumPrograms][k_model_param_total]
+{
+    /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_model_param_total */
+    /* k_Init        */ {  850.0f,            0.0f,            0.0f,             0.0f,         1.6951f,         0.8930f,             1.0f,                1.0f,             0.0f,             0.5f,                0.0f,                0.3f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Marimba     */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_808Sub      */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_AcSnare     */ {    0.0f,            0.0f,            0.0f,            0.55f,         1.7220f,         0.9050f,             0.0f,             0.0014f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        1.0f,           0.9985f,           18.0f,     asn_bm,       1.0f,     0.99920f,      0.09f,              0.0f,           0.0018f,             false,            0.0f,              0.0f },
+    /* k_TubularBell */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Timpani     */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Djambe      */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Taiko       */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,     tak_bm,       1.0f,     0.99950f,      0.26f,              0.0f,           0.0022f,             false,            0.0f,              0.0f },
+    /* k_MarchSnare  */ {    0.0f,            0.0f,            0.0f,            0.42f,         1.7050f,         0.8960f,             0.0f,             0.0018f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Koto        */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Vibraphone  */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Woodblock   */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_AcousticTom */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,     tom_bm,       1.0f,     0.99945f,      0.05f,              0.0f,           0.0008f,             false,            0.0f,              0.0f },
+    /* k_Cymbal      */ { 1800.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,          0.32f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Gong        */ {  780.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,          0.32f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Kalimba     */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_SteelPan    */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Claves      */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Cowbell     */ { 1100.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Triangle    */ {  950.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_KickDrum    */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        1.0f,           0.9989f,            9.0f,     kck_bm,       1.0f,     0.99940f,      0.40f,              0.0f,           0.0010f,             false,            0.0f,              0.0f },
+    /* k_Clap        */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Shaker      */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Flute       */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Clarinet    */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,              true,            1.8f,              0.0f },
+    /* k_PluckBass   */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_GlassBowl   */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_GuitarStr   */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_HiHatClosed */ { 3200.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,            0.86f,                0.0f,               0.42f,             true,          0.32f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_HiHatOpen   */ { 2400.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,            0.93f,                0.0f,               0.30f,             true,          0.32f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Conga       */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Handpan     */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_BellTree    */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_SlitDrum    */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Ride        */ { 1450.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,          0.32f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_RideBell    */ { 1200.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,          0.32f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Bongo       */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_GlassBottle */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f },
+    /* k_Tick        */ {    0.0f,            0.0f,            0.0f,             0.0f,            0.0f,            0.0f,             0.0f,                0.0f,             0.0f,             0.0f,                0.0f,                0.0f,            false,           0.0f,        0.0f,              0.0f,            0.0f,       0.0f,       0.0f,         0.0f,       0.0f,              0.0f,              0.0f,             false,            0.0f,              0.0f }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     SynthState state;
 
@@ -140,9 +277,7 @@ public:
         if (desc->samplerate != (uint32_t)default_sample_rate) return k_unit_err_samplerate;
         if (desc->output_channels != 2) return k_unit_err_geometry;
 
-#ifdef ENABLE_PHASE_7_MODELS
         g_tables.generate(default_sample_rate); // Pre-calculate all tuning math
-#endif
 
         // 2. Clear all memory explicitly at boot
         Reset();
@@ -171,67 +306,33 @@ public:
         // [UT1: MEMSET FIX] - Never memset C++ structs with default initializers!
         // memset(&state, 0, sizeof(SynthState)); <-- DELETED
         for (int i = 0; i < NUM_VOICES; ++i) {
-            state.voices[i].is_active = false;
-            state.voices[i].exciter.current_frame = 0;
-            state.voices[i].resA.write_ptr = 0;
-            state.voices[i].resB.write_ptr = 0;
-
-            // Explicitly clear delay buffers to prevent NaN garbage
-            for(int j = 0; j < DELAY_BUFFER_SIZE; ++j) {
-                state.voices[i].resA.buffer[j] = 0.0f;
-                state.voices[i].resB.buffer[j] = 0.0f;
-            }
-
-            // Clear filter state memory so a Reset() mid-play never causes a click
-            // on the next NoteOn (stale z1/ap states corrupt the first output samples).
-            state.voices[i].resA.z1    = 0.0f;
-            state.voices[i].resA.ap_x1 = 0.0f;
-            state.voices[i].resA.ap_y1 = 0.0f;
-            state.voices[i].resB.z1    = 0.0f;
-            state.voices[i].resB.ap_x1 = 0.0f;
-            state.voices[i].resB.ap_y1 = 0.0f;
-
-            // Re-apply safe defaults
-            state.voices[i].resA.lowpass_coeff = 1.0f;
-            state.voices[i].resB.lowpass_coeff = 1.0f;
+            state.voices[i](); // default constructor initializes all members to safe defaults
 
             // Clear coupling, tone and energy-squelch memory
-            state.voices[i].resA_out_prev = 0.0f;
-            state.voices[i].resB_out_prev = 0.0f;
-            state.voices[i].tone_lp = 0.0f;
-            state.voices[i].mag_env = 0.0f;
-            state.voices[i].base_delay_A = 0.0f;
-            state.voices[i].base_delay_B = 0.0f;
-
-#ifdef ENABLE_PHASE_6_FILTERS
             // Noise filter defaults to LP mode, fully open (12 kHz)
             state.voices[i].exciter.noise_filter.mode = 0;
             state.voices[i].exciter.noise_filter.set_coeffs(12000.0f, 0.707f, default_sample_rate);
+            state.voices[i].exciter.hat_filter.mode = 1;
+            state.voices[i].exciter.hat_filter.set_coeffs(7000.0f, 1.1f, default_sample_rate);
             // Clear SVF delay states — set_coeffs() only updates f/q, not the
             // recursive lp/bp/hp accumulators.  Leaving them non-zero after a
             // patch change would cause a loud click on the next NoteOn.
-            state.voices[i].exciter.noise_filter.lp = 0.0f;
-            state.voices[i].exciter.noise_filter.bp = 0.0f;
-            state.voices[i].exciter.noise_filter.hp = 0.0f;
-#endif
         }
 
-        state.master_gain = 1.0f;
+        state.master_gain  = 1.0f;
         state.master_drive = 1.0f;
-        state.mix_ab = 0.5f; // Equal A/B mix
-        state.tone = 0.0f;   // Neutral tilt EQ (LoadPreset restores the preset value)
-        m_pitch_bend_mult = 1.0f; // Clear any held bend so the next note plays in tune.
+        state.mix_ab       = 0.5f; // Equal A/B mix
+        state.tone         = 0.0f; // Neutral tilt EQ (LoadPreset restores the preset value)
+        m_pitch_bend_mult  = 1.0f; // Clear any held bend so the next note plays in tune.
 
         // Always return to ResA edit context so LoadPreset (called next in Init)
         // applies preset data symmetrically to both resonators.
         m_is_resonator_a = true;
         m_is_resonator_b = true;
 
-#ifdef ENABLE_PHASE_6_FILTERS
         // [UT1: MEMSET FIX] - Force the filter back to safe Highpass mode
         state.master_filter.mode = 2;
         state.master_filter.set_coeffs(10.0f, 0.707f, default_sample_rate);
-#endif
     }
 
     inline void Resume() {
@@ -309,35 +410,34 @@ public:
         //   Set Hit=0 for single-resonator presets so output is not halved.
         //
         //                            ÷10                           ÷10                                                              ÷10
-            { 0,  60,   0,   0,   500,  500,  0,   0,     0, 0,   25,  10,    0,   0, 10,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
-            { 1,  60,   0,   1,   800,  175,  0,   0,     0, 6,  198,  -5,    0,   0,  5,     0,     1,   5,  20,    0, 300,  0,  1200, 707}, // 1:  Marimba    — ref: decay=9.96s→Dkay198; inharm=0.0001→InHm0; damp=-0.54→Mterl-5
-            { 2,  36,   0,   0,   150,   30,  0,   0,     0, 3,  150,  -8,   -5,   0, 15,     0,     1,   5,   0,    0, 300,  0,  1200, 707}, // 2:  808 Sub    — single resonator membrane (Ptls=0, Mdl=3): no coupling instability, no overdrive
-            { 3,  38,   0,   1,   400,  200,  0,   0,     2, 5,   15,  -2,    0,  50,  8,     0,     1,   5,  10,   80, 500,  2,   800, 707}, // 3:  Ac Snare   — membrane dual (Mtr:-2 dark drum, InHm:0 clean, Gain:10 mild)
-            { 4,  72,   0,   1,   900,  500,  0,   0,     0, 1,  197,  -5,    0,   0, 20,     5,    20,   5,   0,    0, 300,  0,  1500, 707}, // 4:  TblrBel    — ref Bells: Mdl1(Beam), decay=10.78s→Dkay197, inharm≈0→InHm5, damp=-0.62→Mterl-5
-            { 5,  40,   0,   1,   300,   50,  0,   0,     2, 3,  145,  -5,    0,  30, 15,     0,     1,   5,  10,    3, 300,  0,   500, 707}, // 5:  Timpani    — membrane dual (Mdl=3, InHm:0 clean, Gain:10)
-            { 6,  48,   0,   1,   600,  200,  0,   0,     2, 5,   80,   0,    0,  50, 12,     0,     5,   5,  15,    5, 200,  0,   600, 707}, // 6:  Djambe     — membrane dual (Mtr:0 neutral, InHm:0, Gain:15)
-            { 7,  36,   0,   1,   200,   80,  0,   0,     2, 5,  100, -10,    0,  50, 18,    10,     1,   5,  40,    0, 300,  0,   400, 707}, // 7:  Taiko      — membrane dual (Mdl=5, Ptls=2)
-            { 8,  65,   0,   1,   700,  450,  0,   0,     2, 5,    8,   5,    0,  50,  3,     0,    25,   5,  20,   95, 150,  2,  1000, 707}, // 8:  MrchSnr    — membrane dual (Mtr:5 moderate, InHm:0, Gain:20)
-            { 9,  35,   0,   1,   100,  150,  0,   0,     0, 4,  199,  -8,    0,   0, 20,     4,     1,   5,  30,   10, 800,  0,   800, 707}, // 9:  Tam Tam    — ref Bong: decay=17.17s→Dkay199, inharm=0.0021→InHm4, damp=-0.76→Mterl-8, Gain:60→30
-            {10,  72,   0,   1,   600,  280,  0,   0,     0, 0,  193,  10,    0,   0, 12,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 10: Koto       — Dkay:130→193 for ~5s ring at note 72
-            {11,  72,   0,   1,   500,  300,  0,   0,     0, 1,  193,  -4,    0,   0, 18,     0,     1,   5,   0,    0, 300,  0,  1000, 707}, // 11: Vibrph     — ref Vibes: decay=4.08s→Dkay193, inharm≈0→InHm0, damp=-0.42→Mterl-4
-            {12,  76,   0,   1,   800,  350,  0,   0,     0, 2,    5,  -8,    0,   0,  2,    80,     1,   5,   0,    0, 300,  0,   500, 707}, // 12: Wodblk     — single resonator (Ptls→0)
-            {13,  45,   0,   1,   400,  200,  0,   0,     2, 5,   80,  -2,    0,  50, 10,     0,     1,   5,  15,    2, 300,  0,   800, 707}, // 13: Ac Tom     — membrane dual (InHm:0, Gain:15)
-            {14,  60,   0,   1,   800,  500,  0,   0,     0, 4,  197,  15,    0,   0, 18,     7,    40,   5,  20,   60, 700,  2,  1400, 707}, // 14: Cymbal     — ref Crash: Dkay:140→197 (10s); inharm=0.0021→InHm7; Mterl:30→15
-            {15,  36,   0,   1,   200,  200,  0,   0,     0, 4,  199,  -8,    0,   0, 20,     4,     1,   5,  20,   10, 800,  0,   600, 707}, // 15: Gong       — ref Gong: decay=17.17s→Dkay199, inharm=0.0021→InHm4, damp=-0.76→Mterl-8, Gain:40→20
-            {16,  72,   0,   1,   700,  400,  0,   0,     0, 1,  199,  -1,    0,   0,  5,    18,     1,   5,  10,    0, 300,  0,  1000, 707}, // 16: Kalimba    — ref Kalimba: decay=11.99s→Dkay199, inharm=0.0089→InHm18, damp=-0.24→Mterl-1
-            {17,  60,   0,   1,   600,  350,  0,   0,     0, 4,  185,  10,    0,   0, 12,    50,    10,   5,  20,    0, 300,  0,  1000, 707}, // 17: Steel Pan  — Dkay:100→185 (~4s); InHm:800→50 (mild plate dispersion)
-            {18,  79,   0,   1,   900,  480,  0,   0,     0, 2,    3,   5,    0,   0,  1,    20,     1,   5,   0,    0, 300,  0,   800, 707}, // 18: Claves     — single resonator (Ptls→0)
-            {19,  67,   0,   1,   800,  450,  0,   0,     0, 4,  175,  20,    0,   0,  4,   200,    20,   5,  30,    0, 300,  0,  1000, 707}, // 19: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
-            {20,  84,   0,   1,   900,  500,  0,   0,     0, 1,  199,  25,    0,   0, 15,    10,    80,   5,   0,    0, 300,  0,  1500, 707}, // 20: Triangle   — Dkay:165→199 (~8s bright ring); InHm:1990→10 (Beam model, nearly harmonic)
-            {21,  36,   0,   1,   300,  150,  0,   0,     2, 5,   50,  -5,    0,  50,  6,     0,     1,   5,  20,    5, 200,  0,   300, 707}, // 21: Kick Drum  — membrane dual (InHm:0, Gain:20)
-            {22,  60,   0,   1,   500,  300,  0,   0,     2, 5,    5,   5,    0,  50,  3,     0,    40,   5,  15,  100, 100,  2,  1000, 707}, // 22: Clap       — membrane dual (Mtr:5, InHm:0, Gain:15)
-            {23,  72,   0,   1,   100,  400,  0,   0,     2, 5,    2,  10,    0,  50,  2,     0,    80,   5,  10,  100, 300,  2,  1200, 707}, // 23: Shaker     — membrane dual (InHm:0, Gain:10)
-            {24,  72,   0,   1,   100,   50,  0,   0,     0, 7,   90,  -5,    0,   0, 12,     1,     1,   5,   0,   35, 800,  0,   600, 707}, // 24: Flute      — single resonator (Ptls→0)
-            {25,  72,   0,   0,    50,   20,  0,   0,     0, 8,  100,  -5,    0,   0, 15,     0,     1,   5,   0,   40, 800,  0,   800, 707}, // 25: Clarinet   — ClosedTube (phase_mult=-1); Note=72 so it resonates at C4 (octave-lower rule)
-            {26,  36,   0,   1,   600,  250,  0,   0,     0, 0,   85,  -8,    0,   0, 10,     0,     1,   5,  60,    0, 300,  0,   500, 707}, // 26: PlkBass    — single resonator (Ptls→0)
-            {27,  76,   0,   1,   700,  350,  0,   0,     0, 4,  199,  20,    0,   0, 18,    10,    10,   5,   0,    0, 300,  0,  1200, 707}, // 27: GlsBwl     — Dkay:160→199 (~10s singing bowl ring); InHm:1200→10 (plate, nearly harmonic)
-            // 28: Guitar String — Karplus-Strong reference for physical model validation.
+            {   0,  60,   0,   0, 500, 470,   0,   0,   0,   0,  35,  10,   0,   0,  10,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
+            {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,   1,   7,  20,   0, 300,   0,1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
+            {   2,  36,   0,   0, 150,   0,   0,   0,   0,   3, 180,  -6,  -5,   0,  15,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 2:  808 Sub    — final Stage-1: Dkay170/Mterl-6 to counter LP-loss-shortened tail without adding noise
+            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  58, 640,   2, 180, 707}, // 3:  Ac Snare   — MlRs120 (from 520): mallet path was creating 99% hi at 0-5ms; dark mallet lets staged NzMx wire lead the attack. Dkay35: shorter KS body shifts timbre to snappier snare vs metallic gong; NzMx35 raises noise floor. rescue pass: stronger shell body + wire crack, darker body with wider snare burst
+            {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,  20,  18,   0,   5, 300,   0,1500, 707}, // 4:  TblrBel    — c=0.98@524Hz (Mterl28+TubRad20); MlltStif100 (medium felt mallet, less overtone energy → measured T60 tracks fundamental ~7.5s)
+            {   5,  40,   0,   1, 360, 300,   0,   0,   2,   3, 200,  -2,   0,  36,  18,  10,   0,  -4,   4,  16, 420,   0, 380, 707}, // 5:  Timpani    — InHm9: slight spread on coupled membrane mode; NzRs300 longer noise tail. rescue pass: deeper boom (darker loss) with longer low-body sustain and broader impact
+            {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 102,   0,   0,  35,  12,  10,   5,  15,   5,   7, 450,   0, 500, 707}, // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
+            {   7,  41,   0,   1, 250, 390,   0,   0,   1,   5, 180,   4,   0,  30,  15,   3,   1,   7,   5,  14, 550,   0, 250, 707}, // 7:  Taiko      — harder mallet + reduced noise tail NzMx14 + lower NzFq for thud character
+            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 130,  12,   0,  50,   8,  15,  25,  19,   5,  20, 650,   2, 400, 707}, // 8:  MrchSnr    — Mterl12: less bright shell; NzMx20/NzFq400 for snappier wire character
+            {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   7,   0,   0, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
+            {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,   2,   0,   0,  18,   1,   1,   4,   0,   0, 300,   0,1000, 707}, // 10: Vibrph     — final Stage-1: max Dkay + brighter loss profile (Mterl2/TubRad10) to offset LP-loss under-decay
+            {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
+            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
+            {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,   9,   5,   8, 600,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
+            {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,  -4,   0,   0,  20,   7,   1,  17,  20,  10, 800,   0,  30, 707}, // 14: Gong       — softer attack MlSt80 + less dark Mterl-4 + more noise onset NzMx10
+            {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 190,  10,   0,   0,   5,   6,   1,   5,   3,   0, 300,   0,1000, 707}, // 15: Kalimba    — Mterl10 warmer bar + InHm6 natural tine spread + TbRd7
+            {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  14,   0,   0,  12,   0,   3,   9,   5,   0, 300,   0,1000, 707}, // 16: StelPan    — Mterl14 brighter pan + TbRd11 for steelpan inharmonic partial spread
+            {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
+            {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
+            {  19,  84,   0,   1, 900, 440,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  15,   0,   0, 300,   0,1500, 707}, // 19: Triangle   — harder mallet MlSt440 for cleaner metallic ping onset
+            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
+            {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
+            {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
+            {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  -3,   0,   0,  12,   0,   1,   3,   0,  15, 950,   0, 400, 707}, // 23: Flute      — InHm0 pure tube; NzMx15 breath noise; NzFq400 4kHz breath shimmer
+            {  24,  72,   0,   0,  50,  50,   0,   0,   0,   8, 185,  -4,   0,   0,  12,  10,   1,   7,   0,   8, 850,   0, 600, 707}, // 24: Clarinet   — Dkay185/Mterl-4: more even tube body; MlSt50 reed articulation; NzMx8 breath
+            {  25,  36,   0,   1, 600, 250,   0,   0,   0,   0, 105,  -6,   0,   0,  10,   0,   1,   3,  40,   0, 300,   0, 500, 707}, // 25: PlkBass    — final Stage-1: less drive + harder mallet / slightly longer decay for cleaner pluck body
+            {  26,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,  10,  18,   0,   0, 300,   0,1200, 707}, // 26: GlsBwl     — InHm10 glass bowl partials; no noise for pure bowl character
+            // 27: Guitar String — Karplus-Strong reference for physical model validation.
             // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
             // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
             // Hit=0: full ResA output (HitPos=50 would halve the signal when ResB is disabled).
@@ -346,7 +446,20 @@ public:
             // Validate: (1) pitch = 440 Hz with a tuner app; (2) audible at 3 s;
             //           (3) no flutter/beating (one clean tone per press).
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
-            {28,  69,   0,   0,   800,  600,  0,   0,     0, 0,  195,  28,    0,   0, 15,     0,     1,  15,   0,    0, 300,  0,  1200, 707}   // 28: Guitar String
+            {  27,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,   1,  13,   0,   0, 300,   0,1200, 707},  // 28: Guitar String — KS reference, A4, T60≈3.3s
+            // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+            //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  12,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — Mterl12 (from 26): centroid was 15-16kHz vs ref 7kHz; darker LP reduces KS harmonics above ~10kHz. softer mallet MlSt420 + InHm14 metallic partial spread + NzMx35/NzFq600. rescue pass: tighter short chick with brighter/sparser metallic top
+            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  12,   0,   0,  14,  11,   5,   8,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — TbRd8 (from 20): LP coeff 0.91→0.68; FM depth 0.16→0.06; SVF LP@6kHz noise centroid ~8kHz
+            {  30,  62,   0,   1, 600, 365,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,   7,   0,  15, 520,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
+            {  31,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,   7,   0,   0,  20,   1,   5,  15,   0,   5, 300,   0,1000, 707},  // 31: Handpn  — MlSt300 softer strike; Mterl7 warmer plate; InHm1 near-harmonic handpan
+            {  32,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,  10,   3,   0,   0, 300,   0,1200, 707},  // 32: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
+            {  33,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,   2,   3,   0,   0, 300,   0, 800, 707},  // 33: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
+            {  34,  57,   0,   1, 900, 500,   0,   0,   0,   4, 190,  30,   0,   0,  18,   6,   5,  17,   0,  15, 700,   2, 600, 707},  // 34: Ride    — InHm6 plate spread; NzMx15/NzRs700 sizzle-only noise character
+            {  35,  60,   0,   1, 900, 461,   0,   0,   0,   4, 194,  18,   0,   0,   8,  10,   5,   1,   0,  20, 600,   2, 700, 707},  // 35: RidBel  — InHm10 bell spread; TbRd3; NzFq700 higher sizzle
+            {  36,  57,   0,   1, 650, 410,   0,   0,   0,   5, 152,  -2,   0,   0,   8,   6,   2,  -1,   0,   0, 520,   0, 450, 707},  // 36: Bongo   — harder mallet MlSt410 for sharper bongo slap; InHm6 tonal cue
+            {  37,  88,   0,   1, 100, 450,   0,   0,   0,   7, 195,   5,   0,   0,   5,   0,   2,  13,   0,  45, 150,   0, 450, 707},  // 37: GlsBotl — MlSt450 harder blow onset; Mterl5 brighter; NzMx45/NzRs150 short puff
+            {  38,  49,   0,   1, 900, 500,   0,   0,   0,   4, 140,  11,   0,   0,   3,  16,   5,   3,   0,  24, 150,   2, 400, 707}   // 38: Tick    — InHm16 tight wood spread; NzMx24/NzRs150 crisp tick transient
         };
 
         if (idx >= k_NumPrograms) return;
@@ -365,8 +478,8 @@ public:
         // on every preset change).
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
-            if (param_id == k_paramBank) continue;
-            if (param_id == k_paramSample) continue;
+            if (param_id == k_paramBank)    continue;
+            if (param_id == k_paramSample)  continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -393,18 +506,218 @@ public:
         // Restore both flags so the user's edit context survives preset loads.
         m_is_resonator_a = saved_is_a;
         m_is_resonator_b = saved_is_b;
+
+        for (int i = 0; i < NUM_VOICES; ++i) {
+            state.voices[i].base_fm_hz          = model_param_presets[idx][k_base_fm_hz];
+            state.voices[i].snare_wire_z1       = model_param_presets[idx][k_snare_wire_z1];
+            state.voices[i].snare_wire_z2       = model_param_presets[idx][k_snare_wire_z2];
+            state.voices[i].snare_wire_mix      = model_param_presets[idx][k_snare_wire_mix];
+            state.voices[i].snare_wire_a1       = model_param_presets[idx][k_snare_wire_a1];
+            state.voices[i].snare_wire_a2       = model_param_presets[idx][k_snare_wire_a2];
+            state.voices[i].wire_onset_env      = model_param_presets[idx][k_wire_onset_env];
+            state.voices[i].wire_onset_attack   = model_param_presets[idx][k_wire_onset_attack];
+            state.voices[i].noise_lp_state      = model_param_presets[idx][k_noise_lp_state];
+            state.voices[i].noise_band_mix      = model_param_presets[idx][k_noise_band_mix];
+            state.voices[i].noise_hi_lp_state   = model_param_presets[idx][k_noise_hi_lp_state];
+            state.voices[i].noise_hi_lp_coeff   = model_param_presets[idx][k_noise_hi_lp_coeff];
+            state.voices[i].use_hat_filter      = model_param_presets[idx][k_use_hat_filter];
+            state.voices[i].ResA.diffuser_mix   = model_param_presets[idx][k_diffuser_mix];
+            state.voices[i].ResB.diffuser_mix   = state.voices[i].ResA.diffuser_mix;
+            state.voices[i].pitch_env           = model_param_presets[idx][k_pitch_env];
+            state.voices[i].pitch_env_decay     = model_param_presets[idx][k_pitch_env_decay];
+            state.voices[i].pitch_env_amt       = model_param_presets[idx][k_pitch_env_amt];
+            state.voices[i].boom_inc            = model_param_presets[idx][k_boom_inc];
+            state.voices[i].boom_env            = model_param_presets[idx][k_boom_env];
+            state.voices[i].boom_decay          = model_param_presets[idx][k_boom_decay];
+            state.voices[i].boom_mix            = model_param_presets[idx][k_boom_mix];
+            state.voices[i].boom_attack_env     = model_param_presets[idx][k_boom_attack_env];
+            state.voices[i].boom_attack_inc     = model_param_presets[idx][k_boom_attack_inc];
+            state.voices[i].reed_nl_enabled     = model_param_presets[idx][k_reed_nl_enabled];
+            state.voices[i].reed_nl_drive       = model_param_presets[idx][k_reed_nl_drive];
+
+            // TODO make this code smarter
+            if (program == k_TubularBell) {
+                // Tubular bell modes (free-free bar / cylindrical tube transverse bending):
+                // 1.00 : 2.756 : 5.404 (Euler-Bernoulli beam theory).
+                // The 2.756× mode is the perceptual "strike note" — dominant in the attack.
+                // Very long T60 — tubes ring for many seconds.
+                v.init_modal_modes(2.756f, 5.404f, 0.0f,
+                                   2000.0f, 3000.0f, 0.0f, 0.0f,
+                                   0.22f, 0.18f, 0.90f, 0.55f, 0.0f, 3);
+            } else if (program == k_Vibraphone) {
+                // Vibraphone bars: tuned free-free bars with notched undercuts to bring
+                // mode 2 to exactly 4× and mode 3 to ~10× the fundamental.
+                // Fundamental is dominant (resonator tube reinforces it); upper modes give shimmer.
+                v.init_modal_modes(4.00f, 10.0f, 0.0f,
+                                   800.0f, 300.0f, 0.0f, 0.0f,
+                                   0.18f, 0.80f, 0.52f, 0.26f, 0.0f, 3);
+            } else if (program == k_Kalimba) {
+                // Kalimba tine: free cantilever bar; real tines are shaped so mode 2 ≈ 4×.
+                // Short T60 for higher modes — tines damp quickly above the fundamental.
+                v.init_modal_modes(4.00f, 10.0f, 0.0f,
+                                   300.0f, 100.0f, 0.0f, 0.0f,
+                                   0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3);
+            } else if (program == k_Marimba) {
+                // Marimba bar: free-free bar with undercut notches bringing mode 2 to 4×
+                // and mode 3 to 10× the fundamental. Resonating tubes reinforce the
+                // fundamental; upper modes add the bright woody click on attack.
+                v.init_modal_modes(4.00f, 10.0f, 0.0f,
+                                    250.0f, 90.0f, 0.0f, 0.0f,
+                                    0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3);
+            } else if (program == k_AcousticTom) {
+                // Acoustic tom: open circular membrane modes (no closed cavity).
+                // Modes 2-4 decay quickly (8-25ms) so the centroid sweeps downward from the
+                // attack click toward the KS fundamental — matching the 689→254Hz reference
+                // sweep measured on Tom1-001-CloseRoom.wav. Mode 1 lingers longer for warmth.
+                v.init_modal_modes(1.59f, 2.14f, 2.30f,
+                                    100.0f, 70.0f, 50.0f, 35.0f,
+                                    0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
+            } else if (program == k_AcSnare) {
+                // Acoustic snare: membrane body ring + snare wire buzz (configured separately).
+                // Modes decay before the snare wire noise to avoid masking the characteristic crack.
+                v.init_modal_modes(1.59f, 2.14f, 2.30f,
+                                    60.0f, 45.0f, 30.0f, 20.0f,
+                                    0.15f, 0.65f, 0.50f, 0.35f, 0.22f, 4);
+            } else if (program == k_MarchSnare) {
+                // March snare: same membrane ratios but very short T60 — tight shell ring
+                // that decays well before the snare wire buzz and noise crack take over.
+                v.init_modal_modes(1.59f, 2.14f, 2.30f,
+                                    30.0f, 22.0f, 15.0f, 10.0f,
+                                    0.14f, 0.60f, 0.45f, 0.30f, 0.18f, 4);
+            } else if (program == k_Claves) {
+                // Claves: cylindrical hardwood rods, free-free bar transverse bending modes.
+                // Same mode ratios as triangle (1:2.756:5.404) — "wood" vs "metal" timbre
+                // is from the loss profile (Mterl/Dkay), not the modal structure.
+                // Short T60 — claves ring briefly; upper modes die almost instantly.
+                v.init_modal_modes(2.756f, 5.404f, 0.0f,
+                                    60.0f, 25.0f, 0.0f, 0.0f,
+                                    0.16f, 0.70f, 0.45f, 0.0f, 0.0f, 3);
+            } else if (program == k_Woodblock) {         // Wodblk pilot
+                v.init_modal_modes(STAGE2_MODAL_RATIO_2, 0.0f, 0.0f,
+                                    STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f,
+                                    STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2, 0.0f, 0.0f, 2);
+            } else if (program == k_Cymbal) {  // Cymbal: 6-mode inharmonic shimmer bank
+                v.init_modal_modes(2.45f, 3.91f, 5.62f,
+                                    140.0f, 260.0f, 420.0f, 620.0f,
+                                    0.11f, 0.75f, 0.60f, 0.46f, 0.34f, 6);
+            } else if (program == k_Gong) {  // Gong: 6-mode dense metallic modes
+                v.init_modal_modes(1.78f, 2.63f, 3.81f,
+                                    220.0f, 420.0f, 680.0f, 920.0f,
+                                    0.16f, 0.85f, 0.70f, 0.52f, 0.38f, 6);
+            } else if (program == k_HiHatClosed) {
+                // Thin circular plate free-edge modes (Chaigne/Chalmers plate theory).
+                // (2,0)=1.00, (3,0)≈2.11 (two-plate proximity detunes vs 2.08 ideal),
+                // (4,0)≈3.43, (2,1)≈3.95.  Very short T60: closed plates damp each other.
+                v.init_modal_modes(2.11f, 3.43f, 3.95f,
+                                    45.0f, 60.0f, 75.0f, 60.0f,
+                                    0.24f, 0.80f, 0.65f, 0.48f, 0.32f, 4);
+            } else if (program == k_HiHatOpen) {
+                // Same plate ratios, plates separated — clean modes, much longer ring.
+                v.init_modal_modes(2.08f, 3.40f, 3.91f,
+                                    300.0f, 450.0f, 580.0f, 450.0f,
+                                    0.30f, 0.85f, 0.70f, 0.55f, 0.40f, 4);
+            } else if (program == k_Timpani) {
+                // Circular membrane Bessel mode ratios relative to dominant (1,1) mode
+                // (the perceived pitch): (2,1)/1.0, (3,1)/1.340, (4,1)/1.664, (5,1)/1.980.
+                // (5,1) is near the 2nd harmonic → semi-pitched kettle character.
+                v.init_modal_modes(1.340f, 1.664f, 1.980f,
+                                    900.0f, 680.0f, 500.0f, 380.0f,
+                                    0.32f, 0.90f, 0.75f, 0.55f, 0.38f, 4);
+            } else if (program == k_Triangle) {
+                // Free-free rod transverse modes (Euler-Bernoulli beam theory):
+                // ratios 1.00 : 2.756 : 5.404.  Triangle is a bent rod; corners shift
+                // ratios slightly but they stay close to these theoretical values.
+                // Long T60 — real triangle rings for 3-5 s, modes decay nearly equally.
+                v.init_modal_modes(2.756f, 5.404f, 0.0f,
+                                    1200.0f, 1400.0f, 0.0f, 0.0f,
+                                    0.15f, 0.80f, 0.55f, 0.0f, 0.0f, 3);
+            } else if (program == k_Cowbell) {
+                // Rectangular metallic shell modes (Rossing cowbell measurements):
+                // 1.00 : 1.41 : 2.01 : 2.56.  Short ring — cowbell damps in ~300ms.
+                v.init_modal_modes(1.41f, 2.01f, 2.56f,
+                                    180.0f, 130.0f, 90.0f, 65.0f,
+                                    0.16f, 0.75f, 0.60f, 0.45f, 0.30f, 4);
+            } else if (program == k_BellTree) {
+                // Cup bell modes (truncated spherical shell): 1.00 : 2.01 : 2.76.
+                // Each cascade bell rings independently; long T60 for upper modes.
+                v.init_modal_modes(2.01f, 2.76f, 0.0f,
+                                    900.0f, 700.0f, 0.0f, 0.0f,
+                                    0.17f, 0.80f, 0.60f, 0.0f, 0.0f, 3);
+            } else if (program == k_SteelPan) {
+                // Steel pan: deliberately hammered-in harmonic series 1:2:3:4.
+                // Pans are tuned so the octave (2×) and 12th (3×) are audible harmonics.
+                v.init_modal_modes(2.00f, 3.00f, 4.00f,
+                                    1200.0f, 900.0f, 700.0f, 500.0f,
+                                    0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4);
+            } else if (program == k_Handpan) {
+                // Handpan: similar to steelpan, near-harmonic 1:2:3 primary modes.
+                v.init_modal_modes(2.00f, 3.00f, 0.0f,
+                                    900.0f, 700.0f, 0.0f, 0.0f,
+                                    0.20f, 0.85f, 0.65f, 0.0f, 0.0f, 3);
+            } else if (program == k_Ride) {
+                // Ride cymbal: circular plate modes — heavier / larger than crash so
+                // ratios stay close to ideal free-edge plate theory (cleaner bell tone).
+                // Longer T60 than crash; diffuser already enabled above.
+                v.init_modal_modes(2.08f, 3.40f, 3.91f,
+                                    600.0f, 800.0f, 1000.0f, 800.0f,
+                                    0.14f, 0.80f, 0.65f, 0.50f, 0.35f, 6);
+            } else if (program == k_RideBell) {
+                // Ride bell: thick domed section, bell-like modes 1.00 : 2.01 : 2.76 : 3.56.
+                // Very long ring — the bell portion of a ride can sustain 4+ seconds.
+                v.init_modal_modes(2.01f, 2.76f, 3.56f,
+                                    1500.0f, 1200.0f, 900.0f, 700.0f,
+                                    0.20f, 0.85f, 0.70f, 0.55f, 0.40f, 4);
+            } else if (program == k_GlassBowl) {
+                // Glass/crystal bowl: near-harmonic overtone series shifted slightly
+                // from integer ratios by bowl curvature — 1.00 : 2.09 : 3.35 : 4.77.
+                // Extremely long decay; modal modes reinforce the ringing harmonics.
+                v.init_modal_modes(2.09f, 3.35f, 4.77f,
+                                    2000.0f, 1600.0f, 1200.0f, 800.0f,
+                                    0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 4);
+            } else if (program == k_Djambe) {
+                // Djembe: open goblet drum, circular membrane (fixed edge), no resonating cavity.
+                // Mode ratios from Bessel zeros: (1,1)=1.00, (2,1)=1.59, (3,1)=2.14, (0,2)=2.30.
+                // Short T60 — open bottom lets energy escape quickly; goblet shell has high damping.
+                v.init_modal_modes(1.59f, 2.14f, 2.30f,
+                                    80.0f, 55.0f, 38.0f, 26.0f,
+                                    0.20f, 0.65f, 0.50f, 0.35f, 0.22f, 4);
+            } else if (program == k_Taiko) {
+                // Taiko: large Japanese drum, heavy membrane with deep cylindrical shell.
+                // No closed-bottom cavity so membrane modes follow free-edge Bessel ratios.
+                // Long T60 — large mass + high tension give sustained body ring.
+                v.init_modal_modes(1.59f, 2.14f, 2.90f,
+                                    350.0f, 250.0f, 180.0f, 120.0f,
+                                    0.28f, 0.85f, 0.70f, 0.52f, 0.36f, 4);
+            } else if (program == k_Conga) {
+                // Conga: tapered cylindrical shell drum, open bottom.
+                // Membrane mode ratios similar to free circular membrane (no cavity tuning).
+                v.init_modal_modes(1.59f, 2.14f, 2.30f,
+                                    90.0f, 65.0f, 45.0f, 30.0f,
+                                    0.20f, 0.70f, 0.52f, 0.35f, 0.22f, 4);
+            } else if (program == k_Bongo) {
+                // Bongo: small high-pitched pair drum, very short membrane ring.
+                // Mode ratios: (1,1)=1.00, (2,1)=1.59, (3,1)=2.14, (0,2)=2.30.
+                v.init_modal_modes(1.59f, 2.14f, 2.30f,
+                                    50.0f, 35.0f, 25.0f, 16.0f,
+                                    0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4);
+            }
+        }
     }
 
     static inline const char * getPresetName(uint8_t idx) {
         static const char* const preset_names[] = {
             "InitDbg", "Marmba", "808Sub", "AcSnre",
             "TblrBel", "Timpni", "Djambe", "Taiko",
-            "MrchSnr", "TamTam", "Koto",   "Vibrph",
+            "MrchSnr", "Koto",   "Vibrph",
             "Wodblk",  "Ac Tom", "Cymbal", "Gong",
             "Kalimba", "StelPan","Claves", "Cowbel",
             "Trngle",  "Kick",    "Clap",  "Shaker",
             "Flute",   "Clrint", "PlkBss", "GlsBwl",
-            "GtrStr"
+            "GtrStr",
+            "HHat-C",  "HHat-O", "Conga",  "Handpn",
+            "BelTre",  "SltDrm",
+            "Ride",    "RidBel",
+            "Bongo",   "GlsBotl", "Tick"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -436,7 +749,7 @@ public:
                 break;
             case k_paramMlltStif: {
                 // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
-                float norm = fmaxf(0.01f, fminf(1.0f, (float)value / 500.0f));
+                float norm = fmaxf(0.01f, fminf(1.0f, (float)value * 0.002f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.mallet_stiffness = norm;
                 }
@@ -447,7 +760,7 @@ public:
                 // UI range 0-1000 (displays with 1 decimal via frac_type=1).
                 // Maps to a second 1-pole LP coefficient stacked after mallet_stiffness LP.
                 // Low value → darker/softer mallet body. High value → brighter/sharper.
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 1000.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.001f));
                 float coeff = 0.01f + (norm * 0.99f);
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.mallet_res_coeff = coeff;
@@ -468,7 +781,7 @@ public:
                     m_active_partials = partial_counts[value];
                     // Store coupling depth from UI index so Partls=5/6
                     // (editor-select modes) never overwrite this.
-                    m_coupling_depth = (float)value / 4.0f;
+                    m_coupling_depth = (float)value * 0.25f;
                 } else {
                     // resonators can be coupled or indipendent
                     m_is_resonator_a = (value == 5) || (value == 6);
@@ -482,7 +795,6 @@ public:
                     m_model_a = value;
                 if (m_is_resonator_b)
                     m_model_b = value;
-#ifdef ENABLE_PHASE_7_MODELS
                 // Per-model baseline allpass dispersion — gives each physical model a
                 // distinct inharmonic character independently of the Inharm (ap_coeff) knob.
                 // Values calibrated to physical stiffness constants:
@@ -501,22 +813,21 @@ public:
                     0.00f, // 8: Closed Tube
                 };
                 for (int i = 0; i < NUM_VOICES; ++i) {
-                    if (m_model_a == 7 || m_model_a == 8) {
+                    if (m_model_a == k_OpenTube || m_model_a == k_ClosedTube) {
                         state.voices[i].resA.phase_mult = -1.0f;
                     } else {
                         state.voices[i].resA.phase_mult = 1.0f;
                     }
-                    if (m_model_b == 7 || m_model_b == 8) {
+                    if (m_model_b == k_OpenTube || m_model_b == k_ClosedTube) {
                         state.voices[i].resB.phase_mult = -1.0f;
                     } else {
                         state.voices[i].resB.phase_mult = 1.0f;
                     }
-                    if (m_is_resonator_a && m_model_a < 9)
+                    if (m_is_resonator_a && m_model_a < k_lastModel)
                         state.voices[i].resA.model_ap_base = ap_base_by_model[m_model_a];
-                    if (m_is_resonator_b && m_model_b < 9)
+                    if (m_is_resonator_b && m_model_b < k_lastModel)
                         state.voices[i].resB.model_ap_base = ap_base_by_model[m_model_b];
                 }
-#endif
                 break;
             }
 
@@ -524,20 +835,25 @@ public:
                 // 0.85 = instant dead thud. 0.999 = rings for ~5 seconds.
                 // Stored ÷10 (0-200 represents 0-2000). Divide by 200 (new max).
                 if (value <= 200) {
-                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 200.0f));
-                    float g = 0.85f + (norm * 0.149f);
+                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.005f));
+                    // Drumhead (model 5): percussion skins need a shorter minimum decay
+                    // than strings/bars. Formula [0.45, 0.999] lets Dkay=55 give
+                    // T60≈175ms@65Hz — natural kick/tom body ring before boom takes over.
+                    // Membrane (3) and all other models keep [0.85, 0.999].
+                    float g = ((m_is_resonator_a && m_model_a == 5) || (m_is_resonator_b && m_model_b == 5))
+                              ? (0.45f + norm * 0.549f)
+                              : (0.85f + norm * 0.149f);
                     // master_env gate: exponential 50ms (Decay=0) → 10s (Decay=200).
                     // Decay is the primary sustain control; Rel only gates the noise
                     // burst.  Without this, the master_env would kill the waveguide
                     // resonance at ~28 ms (default Rel) regardless of Decay setting.
-                    float t_s = 0.05f * fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
-                    float master_rate = M_THREELN10 / (t_s * default_sample_rate);  // was 3.0f * M_LN10
+                    float t_s = fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
+                    float master_rate = M_THREELN10 * 20 * inverse_default_sample_rate / t_s;  // was 3.0f * M_LN10
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a)
                             state.voices[i].resA.feedback_gain = g;
                         if (m_is_resonator_b)
                             state.voices[i].resB.feedback_gain = g;
-#ifdef ENABLE_PHASE_5_EXCITERS
                         // Always update regardless of which resonator is selected —
                         // master_env is voice-level, not per-resonator.
                         state.voices[i].exciter.master_env.release_rate = master_rate;
@@ -546,7 +862,6 @@ public:
                         // on a drum machine should never sustain indefinitely).
                         // NoteOff switches to the faster release_rate for a clean tail.
                         state.voices[i].exciter.master_env.decay_rate = master_rate * 0.3f;
-#endif
                     }
                 }
                 break;
@@ -556,17 +871,27 @@ public:
             case k_paramTubRad: {
                 // Combine Material (-10 to 30) and Tube Radius (0 to 20).
                 // Either parameter changing recalculates the coefficient from both stored values.
-                float mterl_norm = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) / 40.0f;
-                float tubrad_norm = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) / 20.0f;
+                float mterl_norm = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
+                float tubrad_norm = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
                 // Base material loss (0.01 = dull wood to 1.0 = lossless metal)
                 float coeff = 0.01f + (mterl_norm * 0.99f);
                 // Wider tube pulls the coefficient towards 1.0 (less high-frequency loss)
                 coeff = coeff + ((1.0f - coeff) * (tubrad_norm * 0.8f));
+                float hf_loss = fmaxf(0.15f, fminf(1.0f, 0.25f + (coeff * 0.75f)));
+                float dc_gain = fmaxf(0.85f, fminf(1.0f, 0.90f + (coeff * 0.10f)));
                 for (int i = 0; i < NUM_VOICES; ++i) {
-                    if (m_is_resonator_a)
+                    if (m_is_resonator_a) {
                         state.voices[i].resA.lowpass_coeff = coeff;
-                    if (m_is_resonator_b)
+                        state.voices[i].resA.loss_g_dc = dc_gain;
+                        state.voices[i].resA.loss_g_hf = hf_loss;
+                        state.voices[i].transient_lp_base_a = coeff;
+                    }
+                    if (m_is_resonator_b) {
                         state.voices[i].resB.lowpass_coeff = coeff;
+                        state.voices[i].resB.loss_g_dc = dc_gain;
+                        state.voices[i].resB.loss_g_hf = hf_loss;
+                        state.voices[i].transient_lp_base_b = coeff;
+                    }
                 }
                 break;
             }
@@ -579,20 +904,20 @@ public:
             }
 
             case k_paramHitPos: {
-                state.mix_ab = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+                state.mix_ab = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
                 break;
             }
 
             case k_paramRel: {
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 20.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.05f));
                 // Rel controls only the noise burst release time (0→fast snap,
                 // 20→slow noise tail).  master_env gate is tied to Decay instead,
                 // so the waveguide resonance isn't prematurely killed by a short Rel.
                 float rel_rate = 0.00005f + ((1.0f - norm) * 0.01f);
                 for (int i = 0; i < NUM_VOICES; ++i) {
-#ifdef ENABLE_PHASE_5_EXCITERS
                     state.voices[i].exciter.noise_env.release_rate = rel_rate;
-#endif
+                    // High band should decay faster than low-band body.
+                    state.voices[i].exciter.noise_env_hi.release_rate = fminf(0.99f, rel_rate * 2.5f);
                 }
                 break;
             }
@@ -600,28 +925,30 @@ public:
             case k_paramInharm: {
                 if (value <= 1999) {
                     // Stored 0-1999; effective range 0-19990 (×10). Divide by 2000 to normalise.
-                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 2000.0f));
+                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.0005f));
                     for (int i = 0; i < NUM_VOICES; ++i) {
-                        if (m_is_resonator_a)
+                        if (m_is_resonator_a) {
                             state.voices[i].resA.ap_coeff = norm;
-                        if (m_is_resonator_b)
+                            state.voices[i].transient_ap_base_a = norm;
+                        }
+                        if (m_is_resonator_b) {
                             state.voices[i].resB.ap_coeff = norm;
+                            state.voices[i].transient_ap_base_b = norm;
+                        }
                     }
                 }
                 break;
             }
             case k_paramLowCut: {
-#ifdef ENABLE_PHASE_6_FILTERS
                 // Stored 1-1999; effective range 10-19990 Hz (×10 scaling).
                 m_master_cutoff = (float)value * 10.0f;
                 // Divide by 1000: UI stores 707-4000, filter needs 0.707-4.0
-                float res_val = fmaxf(0.707f, (float)m_params[k_paramResnc] / 1000.0f);
+                float res_val = fmaxf(0.707f, (float)m_params[k_paramResnc] * 0.001f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
-#endif
                 break;
             }
             case k_paramGain: {
-                float norm = fmaxf(0.0f, (float)value / 100.0f);
+                float norm = fmaxf(0.0f, (float)value * 0.01f);
                 state.master_drive = 1.0f + (norm * 20.0f);
                 break;
             }
@@ -629,54 +956,52 @@ public:
             // resonator parameters
             case k_paramNzMix: {
                 // Updated for the new 0-100 header.c range
-#ifdef ENABLE_PHASE_5_EXCITERS
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 100.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_decay_coeff = norm;
                 }
-#endif
                 break;
             }
 
             case k_paramNzRes: {
-#ifdef ENABLE_PHASE_5_EXCITERS
                 // Leaving this at the old 0-1000 scale
-                float norm = fmaxf(0.0f, fminf(1.0f, (float)value / 1000.0f));
+                float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.001f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_env.attack_rate = 0.9f - (norm * 0.8f);
                     // Slower decay so the noise actually injects energy into the tube
                     state.voices[i].exciter.noise_env.decay_rate = 0.0001f + ((1.0f - norm) * 0.005f);
+                    // High-band click: very fast attack + faster decay.
+                    state.voices[i].exciter.noise_env_hi.attack_rate = fminf(0.99f, (0.95f - (norm * 0.3f)));
+                    state.voices[i].exciter.noise_env_hi.decay_rate = 0.003f + ((1.0f - norm) * 0.015f);
                 }
-#endif
                 break;
             }
             case k_paramResnc: {
-#ifdef ENABLE_PHASE_6_FILTERS
                 // UI passes 707 to 4000. Divide by 1000 to get a Q factor of 0.707 to 4.0
-                float res_val = fmaxf(0.707f, (float)value / 1000.0f);
+                float res_val = fmaxf(0.707f, (float)value * 0.001f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
-#endif
                 break;
             }
 
             case k_paramNzFltr: {
-#ifdef ENABLE_PHASE_6_FILTERS
                 int mode = (int)fmaxf(0.0f, fminf(2.0f, (float)value));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_filter.mode = mode;
                 }
-#endif
                 break;
             }
 
             case k_paramNzFltFrq: {
-#ifdef ENABLE_PHASE_6_FILTERS
                 // Stored ÷10 (2-2000 represents 20-20000 Hz). Multiply by 10 for real Hz.
                 float freq = fmaxf(20.0f, fminf(20000.0f, (float)value * 10.0f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.noise_filter.set_coeffs(freq, 0.707f, default_sample_rate);
+                     // Private split-band high cutoff (no extra UI): tied to NzFq,
+                     // shifted upward for sizzle branch and converted to 1-pole coeff.
+                     float hi_hz = fminf(20000.0f, fmaxf(300.0f, freq * 2.2f));
+                     float alpha = fminf(0.95f, fmaxf(0.02f, (2.0f * M_PI * hi_hz) * inverse_default_sample_rate));
+                     state.voices[i].exciter.noise_hi_lp_coeff = alpha;
                 }
-#endif
                 break;
             }
 
@@ -707,7 +1032,7 @@ public:
         static const char* const partial_names_a[]  = {"A:4",  "A:8",  "A:16",  "A:32",  "A:64"};
         static const char* const partial_names_b[]  = {"B:4",  "B:8",  "B:16",  "B:32",  "B:64"};
         static const char* const partial_names_ab[] = {"AB:4", "AB:8", "AB:16", "AB:32", "AB:64"};
-        static const char* const nz_filter_names[] = {"LP", "BP", "HP"};
+        static const char* const nz_filter_names[]  = {"LP", "BP", "HP"};
 
         if (index == k_paramProgram) {
             // value IS the preset index being browsed — use it directly.
@@ -742,7 +1067,7 @@ public:
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
-                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
+                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
             } else {
                 snprintf(nf_buf, sizeof(nf_buf), "%dHz", hz);
             }
@@ -753,7 +1078,7 @@ public:
             int32_t hz = value * 10;
             if (hz >= 1000) {
                 // Show as kHz with one decimal place: 1000→"1.0kHz", 15000→"15.0kHz"
-                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz / 1000, (hz % 1000) / 100);
+                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
             } else {
                 snprintf(lc_buf, sizeof(lc_buf), "%dHz", hz);
             }
@@ -808,70 +1133,80 @@ public:
         // --- End Sample Loading ---
 
         v.current_note = note;
-        v.current_velocity = (float)velocity / 127.0f;
-#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
+        v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
         // --- 2D DRUMHEAD STRIKE PHYSICS ---
         // 1. Calculate the physical strike location once for the entire voice
-        float hit_x = (float)m_params[k_paramHitPos] / 100.0f;
+        float hit_x = (float)m_params[k_paramHitPos] * 0.01f;
         float hit_y = (1.0f - v.current_velocity) * hit_x * 0.5f;
 
         // Use our fast-math approximation to find distance from center (0.0 to 1.0)
         float radius = sqrtsum2acc(hit_x, hit_y); //
         radius = fminf(1.0f, radius);
-#endif
 
         // --- VELOCITY MODULATION ---
         // VlMllStf: harder hit → stiffer (brighter) mallet.
         // Override the global mallet_stiffness on this specific voice only,
         // so soft hits are round and hard hits are sharp without changing other voices.
         {
-            float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] / 500.0f));
-            float stif_mod   = (float)m_params[k_paramVlMllStf] / 100.0f; // -1.0 to +1.0
-#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
+            float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            float stif_mod   = (float)m_params[k_paramVlMllStf] * 0.01f; // -1.0 to +1.0
             // Add up to a 50% stiffness boost when striking at the absolute edge
             float rim_stiffness_boost = radius * 0.5f;
-#endif
             v.exciter.mallet_stiffness = fmaxf(0.01f, fminf(1.0f,
-                base_stiff + stif_mod * v.current_velocity));
+                base_stiff + stif_mod * v.current_velocity + rim_stiffness_boost));
         }
 
         // VlMllRes: harder hit → faster noise attack (sharper transient).
         // Override the noise_env attack_rate on this voice so it responds to accents.
         {
-            float base_nz     = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] / 1000.0f));
+            float base_nz     = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] * 0.001f));
             float base_attack = 0.9f - (base_nz * 0.8f);
-            float res_mod     = (float)m_params[k_paramVlMllRes] / 100.0f; // -1.0 to +1.0
-#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
-        // Add up to a 10% speed boost to the attack rate for extreme rim hits
+            float res_mod     = (float)m_params[k_paramVlMllRes] * 0.01f; // -1.0 to +1.0
+            // Add up to a 10% speed boost to the attack rate for extreme rim hits
             float rim_snap_boost = radius * 0.1f;
 
             v.exciter.noise_env.attack_rate = fmaxf(0.01f, fminf(0.99f,
                 base_attack + (res_mod * v.current_velocity * 0.5f) + rim_snap_boost)); //
-#else
-            v.exciter.noise_env.attack_rate = fmaxf(0.01f, fminf(0.99f,
-                base_attack + res_mod * v.current_velocity * 0.5f));
-#endif
+            // High-band burst should stay snappier than low-band burst.
+            v.exciter.noise_env_hi.attack_rate = fmaxf(0.05f, fminf(0.99f,
+                v.exciter.noise_env.attack_rate * 1.25f));
+            // Snare-family physical staging: body thud first, then wire buzz.
+            // attack_rate=0.001: 21% noise at 5ms, 62% at 20ms, 91% at 50ms.
+            // (0.01 was too fast: 91% noise already at 5ms, so no staging effect.)
+            if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
+                v.exciter.noise_env.attack_rate = 0.001f;
+                v.exciter.noise_env_hi.attack_rate = 0.001f;
+                // Step 3: velocity-controlled snare wire Q.
+                // Softer hits -> lower Q (duller buzz), harder hits -> higher Q (sharper crack).
+                float vq = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
+                float r = 0.90f + (0.07f * vq); // Q control via pole radius
+                float w = (2.0f * M_PI * 3360.0f) * inverse_default_sample_rate;
+                v.exciter.snare_wire_a1 = 2.0f * r * fastercosfullf(w);
+                v.exciter.snare_wire_a2 = r * r;
+            }
         }
 
         // --- THE PHYSICS OF PITCH ---
-#ifdef ENABLE_PHASE_7_MODELS
         // 1. O(1) Array Lookup for absolute baseline pitch
         float base_delay = g_tables.note_to_delay_length[note & 127];
 
         // 2. Structural Routing: each resonator uses its own model for inharmonic offset.
         // ResA: Membrane/Drumhead models use standard pitch (resA is always the root).
         v.resA.delay_length = base_delay;
+        // Tube models (OpenTube=7, ClosedTube=8) use phase_mult=-1 (inverted feedback),
+        // which doubles the resonance period to T=2N, halving the resonant frequency.
+        // Halve the delay here to compensate so the pitch matches the MIDI note.
+        if (m_model_a == k_OpenTube || m_model_a == k_ClosedTube) {
+            v.resA.delay_length *= 0.5f;
+        }
         // ResB: its own model (m_model_b) determines whether it tracks an irrational offset.
-        if (m_model_b == 3 || m_model_b == 5) {
-#ifndef ENABLE_PHASE_8_2D_DRUMHEAD
+        if (m_model_b == k_Membrane || m_model_b == k_Drumhead) {
             // Membrane / Drumhead Logic:
             // A circular membrane's overtone ratios are determined by the zeros of the
             // Bessel function J_mn.  The dominant second mode (1,1) has ratio ≈ 1.5926
             // relative to the fundamental, so ResB should be at 1/1.5926 ≈ 0.628× the
             // fundamental delay.  The old value of 0.68 (ratio 1.47) was not a Bessel
             // zero and produced an off-character "wrong" shimmer.
-            v.resB.delay_length = base_delay * 0.628f;
-#else
             // --- 2D DRUMHEAD STRIKE PHYSICS ---
             // 4. Interpolate between Bessel modes based on strike radius
             // Center (r=0): Mode (1,1) -> ratio ~ 0.628
@@ -881,10 +1216,12 @@ public:
             float dynamic_ratio = mode_1_1 + radius * (mode_2_1 - mode_1_1);
 
             v.resB.delay_length = base_delay * dynamic_ratio;
-#endif
         } else {
             // Standard matched resonators (Strings, Tubes, Bars)
             v.resB.delay_length = base_delay;
+        }
+        if (m_model_b == k_OpenTube || m_model_b == k_ClosedTube) {
+            v.resB.delay_length *= 0.5f;
         }
 
         // Micro-detune ResB by ~5 cents to break perfect mathematical beating.
@@ -893,19 +1230,6 @@ public:
         // instrument always has slight manufacturing asymmetry between modes.
         // 5 cents ≈ 0.3% — audible as warmth/chorus, not as out-of-tune.
         v.resB.delay_length *= 1.003f;
-#else
-        // Legacy fallback calculation
-        // 1. Convert MIDI Note to Frequency (Hz)
-        float freq = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) / 12.0f);
-        // [UT2: DELAY BOUNDS FIX]
-        if (freq < 12.0f) freq = 12.0f;
-        // 2. Convert Frequency to Delay Line Length (Samples)
-        // Drumlogue sample rate is strictly 48000.0f
-        float delay_len = default_sample_rate / freq;
-        // 3. Assign to resonators (Apply fine-tuning offsets here later)
-        v.resA.delay_length = delay_len;
-        v.resB.delay_length = delay_len;
-#endif
         // --- PITCH COMPENSATION FOR LOOP FILTER GROUP DELAY ---
         // Both the 1-pole LP and the allpass extend the effective loop period by
         // their group delay, making the pitch flat.  Subtract the combined group
@@ -931,8 +1255,9 @@ public:
         {
             // ResA
             float pa = 1.0f - v.resA.lowpass_coeff;          // LP pole
-            float ca = v.resA.ap_coeff;                       // AP coefficient
-            float lp_del_A = pa / (1.0f - pa);                // τ_LP: pa/(1-pa)
+            float ca = v.resA.ap_coeff;                      // AP coefficient
+            float lp_del_A = pa / (1.0f - pa);               // τ_LP: pa/(1-pa)
+            if (m_preset_idx == k_AcousticTom) lp_del_A *= 2.0f;
             float ap_del_A = (1.0f - ca) / (1.0f + ca);      // τ_AP: (1-c)/(1+c) ≤ 1
             v.resA.delay_length = fmaxf(2.0f, v.resA.delay_length - lp_del_A - ap_del_A);
 
@@ -940,6 +1265,7 @@ public:
             float pb = 1.0f - v.resB.lowpass_coeff;
             float cb = v.resB.ap_coeff;
             float lp_del_B = pb / (1.0f - pb);
+            if (m_preset_idx == k_AcousticTom) lp_del_B *= 2.0f;
             float ap_del_B = (1.0f - cb) / (1.0f + cb);
             v.resB.delay_length = fmaxf(2.0f, v.resB.delay_length - lp_del_B - ap_del_B);
         }
@@ -950,22 +1276,9 @@ public:
         v.base_delay_B = v.resB.delay_length;
         apply_pitch_bend_to_voice(v);
 
+
         // Reset the magnitude-envelope squelch tracker so residual energy from the
         // previous note on this voice slot doesn't prematurely kill the new note's attack.
-        v.mag_env = 0.0f;
-
-        // Reset phase
-        v.exciter.current_frame = 0;
-        v.exciter.mallet_lp  = 0.0f;
-        v.exciter.mallet_lp2 = 0.0f;
-        v.resA.ap_x1 = 0.0f;
-        v.resA.ap_y1 = 0.0f;
-        v.resB.ap_x1 = 0.0f;
-        v.resB.ap_y1 = 0.0f;
-        v.resA_out_prev = 0.0f;
-        v.resB_out_prev = 0.0f;
-        v.tone_lp = 0.0f;
-
         // Clear waveguide delay line, LP state, and write pointer.
         //
         // After write_ptr is reset to 0, the read position starts at
@@ -974,14 +1287,12 @@ public:
         // the read pointer reaches position 0, which was just written by this note —
         // from that point forward every read is from freshly-computed data.
         // Only the tail window [4096 - ceil(delay_length) - 1 … 4095] is ever read
-        // before new data covers it; clearing that window (typically 110–880 floats)
-        // is correct and 10–37× cheaper than zeroing the full 16 KB buffer.
+        // before new data covers it; clearing that window (typically 110-880 floats)
+        // is correct and 10-37× cheaper than zeroing the full 16 KB buffer.
         //
         // Skip entirely on a fresh (never-triggered) slot: Reset() already zeroed it.
-        v.resA.write_ptr = 0;
-        v.resB.write_ptr = 0;
-        v.resA.z1 = 0.0f;
-        v.resB.z1 = 0.0f;
+        v.PartialReset();
+
         if (had_residual) {
             auto clear_tail = [](float* buf, float delay_len) {
                 uint32_t len = (uint32_t)ceilf(delay_len) + 2;  // +2: frac interp safety
@@ -996,18 +1307,16 @@ public:
             clear_tail(v.resB.buffer, v.resB.delay_length);
         }
 
-#ifdef ENABLE_PHASE_6_FILTERS
         // Clear noise SVF delay states so rapid re-triggering doesn't produce
         // a click from residual filter memory.  set_coeffs() (called once from
         // setParameter) only updates f/q and never zeroes lp/bp/hp.
         v.exciter.noise_filter.lp = 0.0f;
         v.exciter.noise_filter.bp = 0.0f;
         v.exciter.noise_filter.hp = 0.0f;
-#endif
 
-#ifdef ENABLE_PHASE_5_EXCITERS
         // Trigger the envelopes when a note hits
         v.exciter.noise_env.trigger();
+        v.exciter.noise_env_hi.trigger();
         // Master envelope: auto-decay from 1.0 toward 0.0 at decay_rate.
         // This ensures percussion sounds decay naturally even with gate held
         // (the Drumlogue trigger button behaviour).  NoteOff switches to the
@@ -1021,8 +1330,59 @@ public:
         v.exciter.master_env.sustain_level = 0.0f;
         v.exciter.master_env.value = 1.0f;
         v.exciter.master_env.state = ENV_DECAY;
-#endif
-    }
+
+        // Stage-1 transient complexity: short coefficient modulation window.
+        // Deterministic per-hit micro-randomization from note/voice/velocity.
+        float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity  * 0.007874015f));    // approx 1 / 127
+        uint32_t seed = (uint32_t)note * 1103515245u
+                      ^ (uint32_t)state.next_voice_idx * 12345u
+                      ^ (uint32_t)velocity * 2654435761u;
+        float r = ((float)((seed >> 8) & 0xFFFFu) * 3.05180437934e-5f) - 1.0f; // [-1, +1] - approx 1 / 32767.5f
+        v.transient_frames_total = (uint32_t)(default_sample_rate * 0.035f); // 35 ms
+        v.transient_frames_left = v.transient_frames_total;
+        v.transient_inv_total = (v.transient_frames_total > 0) ? (1.0f / (float)v.transient_frames_total) : 0.0f;
+        v.transient_lp_jitter = fmaxf(-0.08f, fminf(0.08f, (0.05f * vel_norm) + (0.02f * r)));
+        v.transient_ap_jitter = fmaxf(-0.03f, fminf(0.03f, (0.015f * vel_norm) - (0.01f * r)));
+
+        // Stage-1 model-specific transient presets.
+        // Simple profile map: percussion gets longer/stronger transient modulation.
+        uint8_t model_profile = m_model_a;
+        bool percussion_model = (model_profile == k_SquarePlate || model_profile == k_Membrane ||
+                                 model_profile == k_Plate || model_profile == k_Drumhead ||
+                                 model_profile == k_MarimbaBar);
+        bool tube_model = (model_profile == k_OpenTube || model_profile == k_ClosedTube);
+        if (percussion_model) {
+            v.transient_frames_total = (uint32_t)(default_sample_rate * 0.045f); // 45 ms
+            v.transient_frames_left = v.transient_frames_total;
+            v.transient_inv_total = (v.transient_frames_total > 0) ? (1.0f / (float)v.transient_frames_total) : 0.0f;
+            v.transient_lp_jitter = fmaxf(-0.10f, fminf(0.10f, v.transient_lp_jitter * 1.25f));
+            v.transient_ap_jitter = fmaxf(-0.04f, fminf(0.04f, v.transient_ap_jitter * 1.20f));
+            v.exciter.noise_band_mix = 0.70f;
+        } else if (tube_model) {
+            v.transient_frames_total = (uint32_t)(default_sample_rate * 0.020f); // 20 ms
+            v.transient_frames_left = v.transient_frames_total;
+            v.transient_inv_total = (v.transient_frames_total > 0) ? (1.0f / (float)v.transient_frames_total) : 0.0f;
+            v.transient_lp_jitter *= 0.6f;
+            v.transient_ap_jitter *= 0.6f;
+            v.exciter.noise_band_mix = 0.35f;
+        } else {
+            v.exciter.noise_band_mix = 0.50f;
+        }
+
+        // Metallic transient FM chirp for recognizable sweep character.
+        if (metallic_diff || m_preset_idx == k_Cowbell ||
+            m_preset_idx == k_Triangle || m_preset_idx == k_BellTree) {
+            float base_fm_hz = preset_base_fm_hz[m_preset_idx];
+            v.metal_fm_phase = 0.0f;
+            v.metal_fm_inc = (2.0f * M_PI * base_fm_hz) * inverse_default_sample_rate;
+            v.metal_fm_env = 1.0f;
+            v.metal_fm_decay = (m_preset_idx == k_HiHatClosed) ? 0.9955f : 0.9978f;
+            // HHat-O: lower FM depth (0.16→0.06) so the chirp doesn't re-excite KS
+            // harmonics above 5 kHz as strongly; SVF BP@8kHz noise can then dominate.
+            v.metal_fm_depth = (m_preset_idx == k_HiHatClosed) ? 0.08f :
+                               (m_preset_idx == k_HiHatOpen)   ? 0.06f : 0.16f;
+        }
+}
 
     inline void NoteOff(uint8_t note) {
         for (int i = 0; i < NUM_VOICES; ++i) {
@@ -1032,10 +1392,9 @@ public:
             if (v.is_active && !v.is_releasing && v.current_note == note) {
                 v.is_releasing = true;
 
-#ifdef ENABLE_PHASE_5_EXCITERS
                 v.exciter.noise_env.release();
+                v.exciter.noise_env_hi.release();
                 v.exciter.master_env.release();
-#endif
             }
         }
     }
@@ -1064,10 +1423,9 @@ public:
         // Panic button: aggressively release everything
         for (int i = 0; i < NUM_VOICES; ++i) {
             state.voices[i].is_releasing = true;
-#ifdef ENABLE_PHASE_5_EXCITERS
             state.voices[i].exciter.noise_env.release();
+            state.voices[i].exciter.noise_env_hi.release();
             state.voices[i].exciter.master_env.release();
-#endif
         }
     }
 
@@ -1084,7 +1442,7 @@ public:
         } else {
             float semitones = (float)(bend - pitch_centre) * (2.0f / (float)pitch_centre);
             // A higher pitch requires a shorter delay line → negate the exponent.
-            m_pitch_bend_mult = powf(2.0f, -semitones / 12.0f);
+            m_pitch_bend_mult = powf(2.0f, -semitones * 0.08333333333f); // approx 1 / 12
         }
 
         // Apply immediately to every active voice.
@@ -1103,6 +1461,14 @@ public:
 
     // Processes a single sample through the Waveguide
     inline float process_waveguide(WaveguideState& wg, float exciter_input) {
+         auto schroeder_stage = [](float x, float* buf, uint8_t& idx, uint8_t len, float g) {
+             float d = buf[idx];
+             float v = x + g * d;
+             float y = -g * v + d;
+             buf[idx] = v;
+             idx = (uint8_t)((idx + 1u) % len);
+             return y;
+         };
         // 1. Calculate the read pointer position for exact pitch
         float read_idx = (float)wg.write_ptr - wg.delay_length;
 
@@ -1133,11 +1499,7 @@ public:
         // physical model (Beam, Square, Plate, etc.) a distinct inharmonic character
         // even when the user sets Inharm=0.  Summed with ap_coeff (from Inharm knob)
         // and clamped to [0, 0.99) to prevent allpass instability.
-#ifdef ENABLE_PHASE_7_MODELS
         float ap = fminf(0.99f, wg.ap_coeff + wg.model_ap_base);
-#else
-        float ap = wg.ap_coeff;
-#endif
         float ap_out = (ap * delay_out) + wg.ap_x1 - (ap * wg.ap_y1);
         wg.ap_x1 = delay_out;
         wg.ap_y1 = ap_out;
@@ -1146,14 +1508,23 @@ public:
         // wg.lowpass_coeff was pre-calculated in setParameter()
         wg.z1 = (ap_out * wg.lowpass_coeff) + (wg.z1 * (1.0f - wg.lowpass_coeff));
         float filtered_out = wg.z1;
-
+        if (m_preset_idx == k_AcousticTom) {
+            wg.z2 = (wg.z1 * wg.lowpass_coeff) + (wg.z2 * (1.0f - wg.lowpass_coeff));
+            filtered_out = wg.z2;
+        }
+        if (wg.diffuser_mix > 0.0001f) {
+            float y = filtered_out;
+            y = schroeder_stage(y, wg.diffuser_buf1, wg.diffuser_i1, 13, wg.diffuser_g);
+            y = schroeder_stage(y, wg.diffuser_buf2, wg.diffuser_i2, 19, wg.diffuser_g);
+            y = schroeder_stage(y, wg.diffuser_buf3, wg.diffuser_i3, 29, wg.diffuser_g);
+            y = schroeder_stage(y, wg.diffuser_buf4, wg.diffuser_i4, 41, wg.diffuser_g);
+            filtered_out = (filtered_out * (1.0f - wg.diffuser_mix)) + (y * wg.diffuser_mix);
+        }
         // 4. Feedback & Exciter Addition
         // wg.feedback_gain is our "Decay" time
-#ifdef ENABLE_PHASE_7_MODELS
-        float new_val = exciter_input + (filtered_out * wg.feedback_gain * wg.phase_mult);
-#else
-        float new_val = exciter_input + (filtered_out * wg.feedback_gain);
-#endif
+        float hf = ap_out - filtered_out;
+        float loss_shaped = (filtered_out * wg.loss_g_dc) + (hf * wg.loss_g_hf);
+        float new_val = exciter_input + (loss_shaped * wg.feedback_gain * wg.phase_mult);
 
         // 5. Write back to the delay line and advance the pointer
         wg.buffer[wg.write_ptr] = new_val;
@@ -1177,16 +1548,51 @@ public:
             out = ex.sample_ptr[raw_idx];
         }
 
-#ifdef ENABLE_PHASE_5_EXCITERS
-        float noise_env_val = ex.noise_env.process();
-        if (noise_env_val > 0.001f) {
-            float raw_noise = ex.noise_gen.process();
-#ifdef ENABLE_PHASE_6_FILTERS
-            raw_noise = ex.noise_filter.process(raw_noise);
-#endif
-            out += raw_noise * noise_env_val * ex.noise_decay_coeff;
-        }
-#endif
+        // Noise: computed but NOT fed into the waveguide here.
+        // Storing in noise_out_sample separates percussion broadband texture
+        // (snare buzz, cymbal wash) from the pitched resonator ring.
+        // processBlock mixes it in parallel with the resonator output.
+        // Exception: tube models (phase_mult=-1) also receive noise into the waveguide
+        // to sustain the oscillation — that injection happens in processBlock.
+        ex.noise_out_sample = 0.0f;
+        float noise_env_low = ex.noise_env.process();
+        float noise_env_high = ex.noise_env_hi.process();
+        if (noise_env_low > 0.001f || noise_env_high > 0.001f) {
+             float raw_noise = ex.noise_gen.process();
+             float raw_noise_unf = raw_noise; // keep true unfiltered branch for high burst
+             raw_noise = ex.noise_filter.process(raw_noise);
+
+            // Dual-noise-burst architecture:
+            //   - low band: filtered (body/snap tail)
+            //   - high band: unfiltered (fast click/hiss burst)
+            ex.noise_lp_state += 0.15f * (raw_noise - ex.noise_lp_state);
+            float low = ex.noise_lp_state;
+            ex.noise_hi_lp_state += ex.noise_hi_lp_coeff * (raw_noise_unf - ex.noise_hi_lp_state);
+            float high = raw_noise_unf - ex.noise_hi_lp_state;
+            float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
+            float low_part = low * (1.0f - mix) * noise_env_low;
+            float high_part = high * mix * 1.35f * noise_env_high;
+            if (mix > 0.80f) {
+                // Hi-hat family: dedicated BP biquad for centroid control near 7 kHz.
+                float hat_bp = ex.hat_filter.process(raw_noise_unf);
+                high_part = (ex.use_hat_filter ? hat_bp : raw_noise) * mix * 1.35f * noise_env_high;
+            }
+            float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
+            if (ex.snare_wire_mix > 0.001f) {
+                // Very short resonant burst path (2nd-order): emphasizes snare-wire sizzle
+                // without feeding broadband noise into pitch-tracked waveguides.
+                // Poles at r=0.945, f≈3.5kHz (a1=2r·cos(w), a2=r²): wire sizzle in
+                // the snare wire frequency range; previous 695 Hz was far too low.
+                // Instead of letting the IIR always accumulate, zero-gate the input:
+                float wire_input = noise_sum * ex.wire_onset_env;   // gate the INPUT
+                float wire = wire_input + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
+                ex.snare_wire_z2 = ex.snare_wire_z1;
+                ex.snare_wire_z1 = wire;
+                ex.wire_onset_env = fminf(1.0f, ex.wire_onset_env + ex.wire_onset_attack);
+                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);
+            }
+            ex.noise_out_sample = noise_sum;
+         }
 
         // 3. The Modal Mallet Strike
         // Two cascaded 1-pole LPs shape the strike spectrum:
@@ -1196,11 +1602,15 @@ public:
         // decayed.  Without this gate the filters run for the full voice lifetime, leaking
         // CPU every sample and risking denormal (subnormal) values on non-FTZ hardware.
         // Threshold 1e-6f is well above the sub-normal range (~1.2e-38f) and inaudible.
+        //
+        // NzMix blend: mallet scales inversely with noise_decay_coeff so NzMix acts as a
+        // true crossfade — NzMix=0 → full mallet (string/bar), NzMix=100 → silent mallet
+        // (pure noise). At intermediate values both contribute proportionally.
         if (ex.current_frame == 0 || ex.mallet_lp2 > 1e-6f) {
             float mallet_impulse = (ex.current_frame == 0) ? 1.0f : 0.0f;
             ex.mallet_lp  = (mallet_impulse * ex.mallet_stiffness) + (ex.mallet_lp  * (1.0f - ex.mallet_stiffness));
             ex.mallet_lp2 = (ex.mallet_lp   * ex.mallet_res_coeff) + (ex.mallet_lp2 * (1.0f - ex.mallet_res_coeff));
-            out += ex.mallet_lp2 * 15.0f;
+            out += ex.mallet_lp2 * 15.0f * (1.0f - ex.noise_decay_coeff);
         }
 
         // CRITICAL FIX: Increment time AT THE VERY END so Frame 0 actually triggers
@@ -1225,9 +1635,6 @@ public:
     //   Stage 4 — + Tone EQ + master filter + overdrive (full render, default)
     //             If silent: tone or FX path issue.
     // ==============================================================================
-#ifndef RENDER_STAGE
-#define RENDER_STAGE 4
-#endif
 
     inline void processBlock(float* __restrict main_out, size_t frames) {
 
@@ -1272,10 +1679,15 @@ public:
                 float delay_ratio_diff = (voice.resA.delay_length > 0.1f)
                     ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
                     : 0.0f;
-                if (delay_ratio_diff > 0.05f) {
-                    // Incoherent (different-pitch) pair: 3× more coupling headroom
-                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 2.5f);
-                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 2.5f);
+                   if (delay_ratio_diff > 0.05f) {
+                    // Incoherent (different-pitch) pair.
+                    // Phase incoherence reduces average coupling energy, but the worst-case
+                    // beat alignment still satisfies G + C ≤ 1 only when C ≤ 1-G.
+                    // K=2.5 violated this (G+C = 2.5 - 1.5G > 1 for all G < 1), causing
+                    // exponential amplitude growth in long-decay presets (Timpani, Djambe).
+                    // Use the same K=0.8 as same-pitch pairs to guarantee stability.
+                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
+                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
                 } else {
                     // Coherent (same-pitch) pair: conservative stability clamp
                     v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
@@ -1290,26 +1702,76 @@ public:
                 // possible.  If Stage 1 is silent, the voice is never activated
                 // or unit_gate_on / unit_render are not being called.
                 float exciter_sig = process_exciter(voice.exciter);
+                if (voice.metal_fm_depth > 0.0f && voice.metal_fm_env > silence_threshold) {
+                    float fm = fastersinfullf(voice.metal_fm_phase) * voice.metal_fm_depth * voice.metal_fm_env;
+                    exciter_sig += fm;
+                    // Sweep effect: instantaneous modulation rate is higher at onset,
+                    // then relaxes as envelope decays.
+                    float sweep = 1.0f + (2.4f * voice.metal_fm_env);
+                    voice.metal_fm_phase += voice.metal_fm_inc * sweep;
+                    if (voice.metal_fm_phase > (2.0f * M_PI)) voice.metal_fm_phase -= (2.0f * M_PI);
+                    voice.metal_fm_env *= voice.metal_fm_decay;
+                }
+                if (voice.reed_nl_enabled) {
+                    // Lightweight asymmetric waveshaper to emulate reed contact.
+                    float x = exciter_sig * voice.reed_nl_drive;
+                    float y = (x >= 0.0f) ? fastertanhf(x) : (0.6f * fastertanhf(1.6f * x));
+                    exciter_sig = (0.65f * exciter_sig) + (0.35f * y);
+                }
                 float voice_out   = exciter_sig * voice.current_velocity;
 
                 // outA kept at 0 here so the debug probe below always compiles.
                 float outA = 0.0f;
 
-#if RENDER_STAGE >= 2
+                if (voice.transient_frames_left > 0 && voice.transient_frames_total > 0) {
+                    float t = (float)voice.transient_frames_left * voice.transient_inv_total;
+                    float decay = t * t; // smoother fade-out
+                    float lp_off = voice.transient_lp_jitter * decay;
+                    float ap_off = voice.transient_ap_jitter * decay;
+                    voice.resA.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, voice.transient_lp_base_a + lp_off));
+                    voice.resB.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, voice.transient_lp_base_b + lp_off));
+                    // Keep AP modulation symmetric around 0 so transient jitter can push
+                    // either toward positive or negative dispersion.
+                    // NOTE: Waveguide allpass explicitly supports [-0.99, +0.99].
+                    voice.resA.ap_coeff = fmaxf(-0.99f, fminf(0.99f, voice.transient_ap_base_a + ap_off));
+                    voice.resB.ap_coeff = fmaxf(-0.99f, fminf(0.99f, voice.transient_ap_base_b + ap_off));
+                    voice.transient_frames_left--;
+                } else {
+                    voice.resA.lowpass_coeff = voice.transient_lp_base_a;
+                    voice.resB.lowpass_coeff = voice.transient_lp_base_b;
+                    voice.resA.ap_coeff = voice.transient_ap_base_a;
+                    voice.resB.ap_coeff = voice.transient_ap_base_b;
+                }
+
                 // ── Stage 2: Waveguide resonators ──────────────────────────
                 // If Stage 2 is silent but Stage 1 is not, the waveguide has
                 // zero delay_length or zero feedback_gain on this hardware.
                 //
                 // Model-aware coupling clamps are pre-computed once per block above.
-                // Diff-frequency pairs (membrane/drumhead) use K=2.5 so Partials
-                // remains audible at high Decay; same-frequency pairs use K=0.8.
+                // Both diff-frequency and same-frequency pairs use K=0.8 to guarantee
+                // G+C < 1 (coupled stability) across all Dkay settings.
                 float safe_cpl_a = v_safe_cpl_a;
                 float safe_cpl_b = v_safe_cpl_b;
+                if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
+                    // Exponential (semitone-domain) sweep: more natural drum down-bend.
+                    float sweep_st = voice.pitch_env_amt * voice.pitch_env;
+                    float sweep_scale = fasterpowf(2.0f, -sweep_st * 0.08333333333f); // -st/12
+                    voice.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
+                                                                 voice.base_delay_A * m_pitch_bend_mult * sweep_scale));
+                    voice.resB.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
+                                                                 voice.base_delay_B * m_pitch_bend_mult * sweep_scale));
+                    voice.pitch_env *= voice.pitch_env_decay;
+                }
 
-                float inputA = exciter_sig + (voice.resB_out_prev * safe_cpl_a);
+                // Tube models (OpenTube=7, ClosedTube=8, phase_mult=-1) need noise fed
+                // into the waveguide so breath continuously excites the tube resonance
+                // (physically correct for flute/clarinet).  Percussion models do NOT get
+                // noise in the waveguide — it would be pitch-filtered into a tonal ring.
+                float tube_noise_A = (voice.resA.phase_mult < 0.0f)
+                                     ? voice.exciter.noise_out_sample : 0.0f;
+                float inputA = exciter_sig + tube_noise_A + (voice.resB_out_prev * safe_cpl_a);
                 outA = process_waveguide(voice.resA, inputA);
                 float outB = 0.0f;
-#ifdef ENABLE_PHASE_8_2D_DRUMHEAD
                 // --- ACTIVE PARTIAL COUNTING ---
                 // Dynamically drop Resonator B to reclaim CPU cycles.
                 // We only run the second delay line if:
@@ -1323,7 +1785,9 @@ public:
                                     fabsf(voice.resB_out_prev) > 0.00003f);
 
                 if (resB_needed) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
+                    float tube_noise_B = (voice.resB.phase_mult < 0.0f)
+                                         ? voice.exciter.noise_out_sample : 0.0f;
+                    float inputB = exciter_sig + tube_noise_B + (voice.resA_out_prev * safe_cpl_b);
                     outB = process_waveguide(voice.resB, inputB); //
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = outB;
@@ -1332,27 +1796,132 @@ public:
                     voice.resA_out_prev = outA;
                     voice.resB_out_prev = 0.0f;
                 }
-#else
-                if (m_active_partials >= 16) {
-                    float inputB = exciter_sig + (voice.resA_out_prev * safe_cpl_b);
-                    outB = process_waveguide(voice.resB, inputB);
-                    voice.resA_out_prev = outA;
-                    voice.resB_out_prev = outB;
-                } else {
-                    voice.resA_out_prev = 0.0f;
-                    voice.resB_out_prev = 0.0f;
-                }
-#endif
                 voice_out = ((outA * (1.0f - state.mix_ab)) + (outB * state.mix_ab))
                             * voice.current_velocity;
-#endif // RENDER_STAGE >= 2
 
-#if RENDER_STAGE >= 3
+                // Parallel noise path: noise bypasses the waveguide and mixes directly
+                // into the voice output.  This preserves the broadband character that the
+                // resonator would otherwise pitch-filter away (snare buzz, cymbal wash,
+                // hi-hat hiss, shaker rattle).  The ×5 factor brings noise amplitude into
+                // the same ballpark as the resonator output driven by the ×15 mallet.
+                voice_out += voice.exciter.noise_out_sample * 5.0f * voice.current_velocity;
+                if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
+                    if (m_preset_idx == k_KickDrum) {
+                        // Step 4: kick FM-like sub sweep (about 90 -> 55 Hz, exponential via boom_env decay).
+                        float sweep_hz = 55.0f + (35.0f * voice.boom_env);
+                        voice.boom_inc = (2.0f * M_PI * sweep_hz) * inverse_default_sample_rate;
+                    }
+                    voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);
+                    float boom = fastersinfullf(voice.boom_phase)
+                               * voice.boom_env * voice.boom_mix * voice.boom_attack_env;
+                    voice_out += boom * voice.current_velocity;
+                    voice.boom_phase += voice.boom_inc;
+                    if (voice.boom_phase > (2.0f * M_PI)) voice.boom_phase -= (2.0f * M_PI);
+                    voice.boom_env *= voice.boom_decay;
+                }
+                if (voice.modal_pilot_enabled) {
+                    // Update modes 1/2 (and optionally 3/4 for metallic presets).
+                    float32x2_t k12 = {voice.modal_k_1, voice.modal_k_2};
+                    float32x2_t y112 = {voice.modal_y1_1, voice.modal_y1_2};
+                    float32x2_t y212 = {voice.modal_y2_1, voice.modal_y2_2};
+                    float32x2_t yn12 = vsub_f32(vmul_f32(k12, y112), y212);
+                    voice.modal_y2_1 = voice.modal_y1_1;
+                    voice.modal_y2_2 = voice.modal_y1_2;
+                    voice.modal_y1_1 = vget_lane_f32(yn12, 0);
+                    voice.modal_y1_2 = vget_lane_f32(yn12, 1);
+                    if (voice.modal_mode_count > 2) {
+                        float32x2_t k34 = {voice.modal_k_3, voice.modal_k_4};
+                        float32x2_t y134 = {voice.modal_y1_3, voice.modal_y1_4};
+                        float32x2_t y234 = {voice.modal_y2_3, voice.modal_y2_4};
+                        float32x2_t yn34 = vsub_f32(vmul_f32(k34, y134), y234);
+                        voice.modal_y2_3 = voice.modal_y1_3;
+                        voice.modal_y2_4 = voice.modal_y1_4;
+                        voice.modal_y1_3 = vget_lane_f32(yn34, 0);
+                        voice.modal_y1_4 = vget_lane_f32(yn34, 1);
+                    }
+                     if (voice.modal_mode_count > 4) {
+                         float y5n = (voice.modal_k_5 * voice.modal_y1_5) - voice.modal_y2_5;
+                         voice.modal_y2_5 = voice.modal_y1_5;
+                         voice.modal_y1_5 = y5n;
+                         float y6n = (voice.modal_k_6 * voice.modal_y1_6) - voice.modal_y2_6;
+                         voice.modal_y2_6 = voice.modal_y1_6;
+                         voice.modal_y1_6 = y6n;
+                     }
+                    // Drift control: periodic soft normalization for long tails.
+                    if ((voice.modal_norm_count++ & 127u) == 0u) {
+                        float a1 = fmaxf(fabsf(voice.modal_y1_1), fabsf(voice.modal_y2_1));
+                        float a2 = fmaxf(fabsf(voice.modal_y1_2), fabsf(voice.modal_y2_2));
+                        if (a1 > 1.2f) {
+                            float s = 1.0f / a1;
+                            voice.modal_y1_1 *= s;
+                            voice.modal_y2_1 *= s;
+                        }
+                        if (a2 > 1.2f) {
+                            float s = 1.0f / a2;
+                            voice.modal_y1_2 *= s;
+                            voice.modal_y2_2 *= s;
+                        }
+                        if (voice.modal_mode_count > 2) {
+                            float a3 = fmaxf(fabsf(voice.modal_y1_3), fabsf(voice.modal_y2_3));
+                            float a4 = fmaxf(fabsf(voice.modal_y1_4), fabsf(voice.modal_y2_4));
+                            if (a3 > 1.2f) {
+                                float s = 1.0f / a3;
+                                voice.modal_y1_3 *= s;
+                                voice.modal_y2_3 *= s;
+                            }
+                            if (a4 > 1.2f) {
+                                float s = 1.0f / a4;
+                                voice.modal_y1_4 *= s;
+                                voice.modal_y2_4 *= s;
+                             }
+                             if (voice.modal_mode_count > 4) {
+                                 float a5 = fmaxf(fabsf(voice.modal_y1_5), fabsf(voice.modal_y2_5));
+                                 float a6 = fmaxf(fabsf(voice.modal_y1_6), fabsf(voice.modal_y2_6));
+                                 if (a5 > 1.2f) { float s = 1.0f / a5; voice.modal_y1_5 *= s; voice.modal_y2_5 *= s; }
+                                 if (a6 > 1.2f) { float s = 1.0f / a6; voice.modal_y1_6 *= s; voice.modal_y2_6 *= s; }
+                             }
+                         }
+                     }
+                     float m1 = voice.modal_y1_1 * voice.modal_env_1;
+                     float m2 = voice.modal_y1_2 * voice.modal_env_2;
+                     float m3 = 0.0f, m4 = 0.0f, m5 = 0.0f, m6 = 0.0f;
+                     voice.modal_env_1 *= voice.modal_decay_1;
+                     voice.modal_env_2 *= voice.modal_decay_2;
+                     if (voice.modal_mode_count > 2) {
+                         m3 = voice.modal_y1_3 * voice.modal_env_3;
+                         m4 = voice.modal_y1_4 * voice.modal_env_4;
+                         voice.modal_env_3 *= voice.modal_decay_3;
+                         voice.modal_env_4 *= voice.modal_decay_4;
+                         if (voice.modal_mode_count > 4) {
+                             m5 = voice.modal_y1_5 * voice.modal_env_5;
+                             m6 = voice.modal_y1_6 * voice.modal_env_6;
+                             voice.modal_env_5 *= voice.modal_decay_5;
+                             voice.modal_env_6 *= voice.modal_decay_6;
+                         }
+                     }
+                    float modal_mix_dyn = voice.modal_mix;
+                    if (voice.metal_fm_env > silence_threshold) {
+                        // Keep modal attack "opening" during FM chirp onset, then settle.
+                        modal_mix_dyn *= (1.0f + (0.35f * voice.metal_fm_env));
+                    }
+                    voice_out += (m1
+                                + (stage2_modal_amp_ratio_2 * m2)
+                                + (0.45f * m3)
+                                + (0.28f * m4)
+                                + (0.18f * m5)
+                                + (0.12f * m6)) * modal_mix_dyn;
+                     if (voice.modal_env_1 < silence_threshold &&
+                         voice.modal_env_2 < silence_threshold &&
+                         (voice.modal_mode_count <= 2 || (voice.modal_env_3 < silence_threshold && voice.modal_env_4 < silence_threshold &&
+                                                          (voice.modal_mode_count <= 4 || (voice.modal_env_5 < silence_threshold && voice.modal_env_6 < silence_threshold))))) {
+                         voice.modal_pilot_enabled = false;
+                         voice.modal_mode_count = 0;
+                    }
+                }
                 // ── Stage 3: master_env fade + squelch ────────────────────
                 // If Stage 3 is silent but Stage 2 is not, the Phase 18
                 // pre-advance fix is not working on this ARM binary — the
                 // envelope is stuck at 0 on the first GateOff tick.
-#ifdef ENABLE_PHASE_5_EXCITERS
                 voice.mag_env = (fabsf(voice_out) * alpha) + (voice.mag_env * limiter);
                 float damper_fade = voice.exciter.master_env.process();
                 voice_out *= damper_fade;
@@ -1371,19 +1940,14 @@ public:
                         voice.is_active = false;
                     }
                 }
-#endif // ENABLE_PHASE_5_EXCITERS
-#endif // RENDER_STAGE >= 3
-
-#if RENDER_STAGE >= 4
                 // ── Stage 4a: Tilt EQ ──────────────────────────────────────
                 voice.tone_lp = (voice_out * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
                 if (tone_val < zeroThreshold) {
-                    voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val / kToneCutDivisor);
-                } else if (tone_val > zeroThreshold) {
-                    float hp = voice_out - voice.tone_lp;
-                    voice_out += hp * (tone_val / kToneBoostDivisor);
-                }
-#endif // RENDER_STAGE >= 4
+                     voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val * kInvToneCutDivisor);
+                 } else if (tone_val > zeroThreshold) {
+                     float hp = voice_out - voice.tone_lp;
+                     voice_out += hp * (tone_val * kInvToneBoostDivisor);
+                 }
 
                 main_out[i * 2]     += voice_out * state.master_gain;
                 main_out[i * 2 + 1] += voice_out * state.master_gain;
@@ -1395,30 +1959,20 @@ public:
                     ut_voice_out   = voice_out;
                 }
 #endif
-
-#if RENDER_STAGE < 3
                 // ── Stage 1/2: voice lifetime management ───────────────────
                 // Without Stage 3 squelch, voices stay is_active=true forever.
                 // Deactivate once the mallet has fully decayed and (if Phase 5)
                 // the noise envelope is also idle — keeps voice slots free for
                 // re-triggering and prevents stale voices burning CPU.
-#ifdef ENABLE_PHASE_5_EXCITERS
                 if (voice.is_releasing &&
                         voice.exciter.mallet_lp2 < 1e-6f &&
-                        voice.exciter.noise_env.state == ENV_IDLE) {
+                        voice.exciter.noise_env.state == ENV_IDLE &&
+                        voice.exciter.noise_env_hi.state == ENV_IDLE) {
                     voice.is_active = false;
                 }
-#else
-                if (voice.is_releasing && voice.exciter.mallet_lp2 < 1e-6f) {
-                    voice.is_active = false;
-                }
-#endif
-#endif // RENDER_STAGE < 3
-
             }
         }
 
-#if RENDER_STAGE < 4
         // ── Stage 1-3: hard-clip output ────────────────────────────────────
         // Stage 4 uses soft-clip + overdrive.  For debug stages the raw mallet
         // impulse (~3-4 × full-scale) must be clamped or the Drumlogue DAC
@@ -1427,25 +1981,26 @@ public:
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
             main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1]));
         }
-#endif // RENDER_STAGE < 4
-
-#if RENDER_STAGE >= 4
         // ── Stage 4b: Master FX (filter + overdrive + brickwall) ──────────
         for (size_t i = 0; i < frames; ++i) {
             float mix_l = main_out[i * 2];
             float mix_r = main_out[i * 2 + 1];
-#ifdef ENABLE_PHASE_6_FILTERS
             mix_l = state.master_filter.process(mix_l);
             mix_r = mix_l;
-#endif
             mix_l *= state.master_drive;
             mix_r *= state.master_drive;
-            float clipped_l = mix_l / (1.0f + fabsf(mix_l));
-            float clipped_r = mix_r / (1.0f + fabsf(mix_r));
+            float32x2_t v = {mix_l, mix_r};
+            float32x2_t abs_v = vabs_f32(v);
+            float32x2_t den = vadd_f32(abs_v, vdup_n_f32(1.0f));
+            // Reciprocal estimate + one NR refinement (ARMv7-friendly).
+            float32x2_t rec = vrecpe_f32(den);
+            rec = vmul_f32(vrecps_f32(den, rec), rec);
+            float32x2_t clipped = vmul_f32(v, rec);
+            float clipped_l = vget_lane_f32(clipped, 0);
+            float clipped_r = vget_lane_f32(clipped, 1);
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, clipped_l));
             main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, clipped_r));
         }
-#endif // RENDER_STAGE >= 4
     }
 
     inline void GateOn(uint8_t velocity) {
@@ -1484,8 +2039,8 @@ private:
     uint8_t m_ui_note = 60;
     uint8_t m_sample_bank = 0;
     uint8_t m_sample_number = 0;
-    uint8_t m_model_a = 0;
-    uint8_t m_model_b = 0;
+    uint8_t m_model_a = k_String;
+    uint8_t m_model_b = k_String;
     bool    m_is_resonator_a = true; // default is res A
     bool    m_is_resonator_b = true; // "copy" of res A
 
