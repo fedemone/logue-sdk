@@ -59,6 +59,19 @@ PARAMS: List[Tuple[str, int, int, int, int]] = [
     ("TbRd",  17,  -5,  35,  2),
 ]
 
+# model_param_presets tuning columns (float table in synth_engine.h)
+MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
+    ("SnrMix", 3, 0.0, 1.0, 0.03),
+    ("SnrA1", 4, 1.20, 1.95, 0.02),
+    ("SnrA2", 5, 0.70, 0.99, 0.01),
+    ("WireAtk", 7, 0.0002, 0.02, 0.0004),
+    ("NzMixB", 9, 0.0, 1.0, 0.04),
+    ("NzHi", 11, 0.05, 0.95, 0.03),
+    ("PitchAmt", 16, 0.0, 24.0, 1.0),
+    ("BoomMix", 20, 0.0, 0.8, 0.03),
+    ("BoomAtk", 22, 0.0002, 0.02, 0.0004),
+]
+
 MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
 FINE_TUNE_START_STABLE = 1
@@ -80,14 +93,11 @@ from pre_hw_analysis import compare_pair
 
 # ── Preset-table I/O ──────────────────────────────────────────────────────────
 
-def _preset_block_bounds(text: str) -> Tuple[int, int]:
+def _block_bounds(text: str, pattern: str, missing_msg: str) -> Tuple[int, int]:
     """Return (start, end) char offsets of the preset data block in text."""
-    m = re.search(
-        r"static const int32_t presets\[k_NumPrograms\]\[k_lastParamIndex\]\s*=\s*\{",
-        text,
-    )
+    m = re.search(pattern, text)
     if not m:
-        raise RuntimeError("Could not locate preset table in synth_engine.h")
+        raise RuntimeError(missing_msg)
     brace_start = text.index("{", m.start())
     depth, i = 0, brace_start
     while i < len(text):
@@ -98,10 +108,26 @@ def _preset_block_bounds(text: str) -> Tuple[int, int]:
             if depth == 0:
                 return brace_start, i + 1
         i += 1
-    raise RuntimeError("Unmatched braces in preset table")
+    raise RuntimeError("Unmatched braces in table")
 
 
-def read_preset_rows(text: str) -> List[List[int]]:
+def _preset_block_bounds(text: str) -> Tuple[int, int]:
+    return _block_bounds(
+        text,
+        r"static const int32_t presets\[k_NumPrograms\]\[k_lastParamIndex\]\s*=\s*\{",
+        "Could not locate preset table in synth_engine.h",
+    )
+
+
+def _model_param_block_bounds(text: str) -> Tuple[int, int]:
+    return _block_bounds(
+        text,
+        r"inline static const float model_param_presets\[k_NumPrograms\]\[k_model_param_total\]\s*",
+        "Could not locate model_param_presets table in synth_engine.h",
+    )
+
+
+def read_preset_rows(text: str) -> List[List[float]]:
     """Return list of value lists, one per data row, preserving order."""
     start, end = _preset_block_bounds(text)
     block = text[start:end]
@@ -114,7 +140,7 @@ def read_preset_rows(text: str) -> List[List[int]]:
         if not content or content.startswith("/"):
             continue
         try:
-            vals = [int(x.strip()) for x in content.split(",") if x.strip()]
+            vals = [float(x.strip().rstrip("f")) for x in content.split(",") if x.strip()]
         except ValueError:
             continue
         if len(vals) >= 24:
@@ -122,7 +148,7 @@ def read_preset_rows(text: str) -> List[List[int]]:
     return rows
 
 
-def write_preset_rows(text: str, rows: List[List[int]]) -> str:
+def write_preset_rows(text: str, rows: List[List[float]]) -> str:
     """Replace each data row inside the preset block, preserving per-line structure."""
     start, end = _preset_block_bounds(text)
     lines = text[start:end].splitlines(keepends=True)
@@ -134,13 +160,61 @@ def write_preset_rows(text: str, rows: List[List[int]]) -> str:
             content = m.group(1).strip()
             if content and not content.startswith("/"):
                 try:
-                    vals = [int(x.strip()) for x in content.split(",") if x.strip()]
+                    vals = [float(x.strip().rstrip("f")) for x in content.split(",") if x.strip()]
                 except ValueError:
                     vals = []
                 if len(vals) >= 24:
                     new_vals = next(row_iter, vals)
-                    inner = ",".join(f"{v:4d}" for v in new_vals)
+                    inner = ",".join(f"{int(round(v)):4d}" for v in new_vals)
                     line = line[: m.start()] + "{" + inner + "}" + line[m.end():]
+        out_lines.append(line)
+    return text[:start] + "".join(out_lines) + text[end:]
+
+
+def read_model_param_rows(text: str) -> List[List[float]]:
+    start, end = _model_param_block_bounds(text)
+    block = text[start:end]
+    rows: List[List[float]] = []
+    for line in block.splitlines():
+        m = re.search(r"\{([^}]+)\}", line)
+        if not m:
+            continue
+        content = m.group(1).strip()
+        if not content:
+            continue
+        norm = content.replace("false", "0").replace("true", "1")
+        try:
+            vals = [float(x.strip().rstrip("f")) for x in norm.split(",") if x.strip()]
+        except ValueError:
+            continue
+        if len(vals) >= 20:
+            rows.append(vals)
+    return rows
+
+
+def write_model_param_rows(text: str, rows: List[List[float]]) -> str:
+    start, end = _model_param_block_bounds(text)
+    lines = text[start:end].splitlines(keepends=True)
+    row_iter = iter(rows)
+    out_lines = []
+    for line in lines:
+        m = re.search(r"\{([^}]+)\}", line)
+        if m:
+            content = m.group(1).strip()
+            norm = content.replace("false", "0").replace("true", "1")
+            try:
+                vals = [float(x.strip().rstrip("f")) for x in norm.split(",") if x.strip()]
+            except ValueError:
+                vals = []
+            if len(vals) >= 20:
+                new_vals = next(row_iter, vals)
+                formatted = []
+                for v in new_vals:
+                    if abs(v - round(v)) < 1e-6 and v in (0.0, 1.0):
+                        formatted.append("true" if int(round(v)) == 1 else "false")
+                    else:
+                        formatted.append(f"{v:9.4f}f")
+                line = line[: m.start()] + "{" + ", ".join(formatted) + "}" + line[m.end():]
         out_lines.append(line)
     return text[:start] + "".join(out_lines) + text[end:]
 
@@ -261,6 +335,7 @@ def run_auto_tune(
 
     # Current accepted values (row lists indexed by preset_idx).
     current_rows = read_preset_rows(current_text)
+    current_model_rows = read_model_param_rows(current_text)
     # Map preset_name → row index in current_rows (using values[0] = Prg).
     name_to_row: Dict[str, int] = {}
     for i, row in enumerate(current_rows):
@@ -335,6 +410,32 @@ def run_auto_tune(
                 # Restore synth_engine.h before next trial.
                 SYNTH_ENGINE.write_text(write_preset_rows(current_text, current_rows))
 
+        # Tune model_param_presets in the same round.
+        for param_name, col_idx, vmin, vmax, delta in MODEL_PARAMS:
+            for direction in (+1, -1):
+                step = delta * direction
+                trial_model_rows = copy.deepcopy(current_model_rows)
+                for name, row_i in name_to_row.items():
+                    if preset_filter and name not in preset_filter:
+                        continue
+                    old_val = trial_model_rows[row_i][col_idx]
+                    trial_model_rows[row_i][col_idx] = max(vmin, min(vmax, old_val + step))
+
+                trial_text = write_model_param_rows(current_text, trial_model_rows)
+                SYNTH_ENGINE.write_text(trial_text)
+                ok = compile_and_render(RENDER_DIR, verbose=verbose)
+                if not ok:
+                    continue
+                trial_presets = parse_presets(SYNTH_ENGINE)
+                trial_scores = score_all(trial_presets, RENDER_DIR, sample_files, preset_filter)
+                for name, sc in trial_scores.items():
+                    if sc < best_trial.get(name, float("inf")):
+                        best_trial[name] = sc
+                        best_change[name] = (1000 + col_idx, step)  # model table marker
+                label = f"+{step:.4f}" if step > 0 else f"{step:.4f}"
+                print(f"  trial M.{param_name}{label:>8}")
+                SYNTH_ENGINE.write_text(write_model_param_rows(current_text, current_model_rows))
+
         # Apply accepted per-preset changes.
         # accepted[name] = (col_idx, old_val, new_val, trial_improvement)
         accepted: Dict[str, Tuple[int, int, int, float]] = {}
@@ -344,14 +445,23 @@ def run_auto_tune(
             if improvement <= 0.0:
                 continue
             row_i = name_to_row[name]
-            old_val = new_rows[row_i][col_idx]
-            lo, hi  = col_bounds.get(col_idx, (-10000, 10000))
-            new_val = max(lo, min(hi, old_val + step))
-            new_rows[row_i][col_idx] = new_val
-            accepted[name] = (col_idx, old_val, new_val, improvement)
+            if col_idx >= 1000:
+                mcol = col_idx - 1000
+                old_val = current_model_rows[row_i][mcol]
+                mp = next((p for p in MODEL_PARAMS if p[1] == mcol), None)
+                lo, hi = (mp[2], mp[3]) if mp else (-1e9, 1e9)
+                new_val = max(lo, min(hi, old_val + step))
+                current_model_rows[row_i][mcol] = new_val
+                accepted[name] = (col_idx, int(round(old_val * 10000)), int(round(new_val * 10000)), improvement)
+            else:
+                old_val = new_rows[row_i][col_idx]
+                lo, hi  = col_bounds.get(col_idx, (-10000, 10000))
+                new_val = max(lo, min(hi, old_val + step))
+                new_rows[row_i][col_idx] = new_val
+                accepted[name] = (col_idx, int(round(old_val)), int(round(new_val)), improvement)
 
         if accepted:
-            new_text = write_preset_rows(current_text, new_rows)
+            new_text = write_model_param_rows(write_preset_rows(current_text, new_rows), current_model_rows)
             SYNTH_ENGINE.write_text(new_text)
             # Final confirmation render with all accepted changes together.
             ok = compile_and_render(RENDER_DIR, verbose=verbose)
@@ -363,15 +473,18 @@ def run_auto_tune(
                     col_idx, old_val, new_val, _ = accepted[name]
                     if apply_scores.get(name, float("inf")) >= best_scores.get(name, float("inf")):
                         row_i = name_to_row[name]
-                        new_rows[row_i][col_idx] = old_val   # revert
+                        if col_idx >= 1000:
+                            current_model_rows[row_i][col_idx - 1000] = old_val / 10000.0
+                        else:
+                            new_rows[row_i][col_idx] = old_val   # revert
                         del accepted[name]
                 best_scores.update({n: apply_scores[n] for n in accepted if n in apply_scores})
             current_rows = new_rows
-            current_text = write_preset_rows(current_text, current_rows)
+            current_text = write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows)
             SYNTH_ENGINE.write_text(current_text)
         else:
             # No changes — restore to current (already correct).
-            SYNTH_ENGINE.write_text(write_preset_rows(current_text, current_rows))
+            SYNTH_ENGINE.write_text(write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows))
 
         elapsed = time.time() - round_start
         improved_names = [n for n in accepted]
