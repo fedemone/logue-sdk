@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -71,6 +72,20 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("BoomMix", 20, 0.0, 0.8, 0.03),
     ("BoomAtk", 22, 0.0002, 0.02, 0.0004),
 ]
+
+# Named C++ constexpr constants that appear literally in model_param_presets.
+# The parser substitutes these before float-parsing; the writer restores them.
+_SR = 48000.0
+_NAMED_CONSTS: Dict[str, float] = {
+    "kck_bm": 2.0 * math.pi * 58.0  / _SR,
+    "tak_bm": 2.0 * math.pi * 70.0  / _SR,
+    "tom_bm": 2.0 * math.pi * 110.0 / _SR,
+    "asn_bm": 2.0 * math.pi * 175.0 / _SR,
+}
+# Reverse map: rounded float value → original token name.
+_REV_CONSTS: Dict[str, str] = {str(round(v, 10)): k for k, v in _NAMED_CONSTS.items()}
+# Boolean column indices in model_param_presets (k_use_hat_filter=12, k_reed_nl_enabled=23).
+_BOOL_COLS = frozenset({12, 23})
 
 MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
@@ -176,6 +191,9 @@ def read_model_param_rows(text: str) -> List[List[float]]:
     block = text[start:end]
     rows: List[List[float]] = []
     for line in block.splitlines():
+        # Substitute named C++ constants so float() parsing succeeds.
+        for cname, cval in _NAMED_CONSTS.items():
+            line = line.replace(cname, repr(cval))
         m = re.search(r"\{([^}]+)\}", line)
         if not m:
             continue
@@ -198,7 +216,11 @@ def write_model_param_rows(text: str, rows: List[List[float]]) -> str:
     row_iter = iter(rows)
     out_lines = []
     for line in lines:
-        m = re.search(r"\{([^}]+)\}", line)
+        # Substitute named constants before detecting row content.
+        subst_line = line
+        for cname, cval in _NAMED_CONSTS.items():
+            subst_line = subst_line.replace(cname, repr(cval))
+        m = re.search(r"\{([^}]+)\}", subst_line)
         if m:
             content = m.group(1).strip()
             norm = content.replace("false", "0").replace("true", "1")
@@ -209,12 +231,21 @@ def write_model_param_rows(text: str, rows: List[List[float]]) -> str:
             if len(vals) >= 20:
                 new_vals = next(row_iter, vals)
                 formatted = []
-                for v in new_vals:
-                    if abs(v - round(v)) < 1e-6 and v in (0.0, 1.0):
-                        formatted.append("true" if int(round(v)) == 1 else "false")
+                for col_i, v in enumerate(new_vals):
+                    # Restore symbolic constant names where applicable.
+                    rev_key = str(round(v, 10))
+                    if rev_key in _REV_CONSTS:
+                        formatted.append(_REV_CONSTS[rev_key])
+                    elif col_i in _BOOL_COLS:
+                        formatted.append("true" if v else "false")
                     else:
-                        formatted.append(f"{v:9.4f}f")
-                line = line[: m.start()] + "{" + ", ".join(formatted) + "}" + line[m.end():]
+                        formatted.append(f"{v:10.5f}f")
+                # Replace in the ORIGINAL line (which has the symbolic names).
+                orig_m = re.search(r"\{([^}]+)\}", line) if line != subst_line else m
+                if orig_m:
+                    line = line[: orig_m.start()] + "{" + ", ".join(formatted) + "}" + line[orig_m.end():]
+                else:
+                    line = line[: m.start()] + "{" + ", ".join(formatted) + "}" + line[m.end():]
         out_lines.append(line)
     return text[:start] + "".join(out_lines) + text[end:]
 
