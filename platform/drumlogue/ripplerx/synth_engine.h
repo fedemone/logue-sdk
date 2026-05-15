@@ -5,7 +5,9 @@
 #include <cstdio>
 #include <cstring>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
+#endif
 #include <float_math.h>
 #include "../common/runtime.h" // Drumlogue OS functions
 #include "unit.h"
@@ -208,33 +210,33 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
     /* k_Init        */ { 850.00000f,    0.00000f,    0.00000f,    0.00000f,    1.69510f,    0.89300f,    1.00000f,    1.00000f,    0.00000f,    0.50000f,    0.00000f,    0.30000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Marimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_808Sub      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_AcSnare     */ {   0.00000f,    0.00000f,    0.00000f,    0.55000f,    1.72200f,    0.90500f,    0.00000f,    0.00140f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99850f,   18.00000f, asn_bm,    1.00000f,    0.99920f,    0.09000f,    0.00000f,    0.00180f, false,    0.00000f},
+    /* k_AcSnare     */ {   0.00000f,    0.00000f,    0.00000f,    0.72000f,    1.76000f,    0.91800f,    0.00000f,    0.00260f,    0.00000f,    0.35000f,    0.00000f,    0.82000f, false,    0.00000f,    1.00000f,    0.99850f,   18.00000f,      asn_bm,    1.00000f,    0.99920f,    0.09000f,    0.00000f,    0.00180f, false,    0.00000f},
     /* k_TubularBell */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Timpani     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Djambe      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99960f,    0.26000f,    0.00000f,    0.00220f, false,    0.00000f},
-    /* k_MarchSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.42000f,    1.70500f,    0.89600f,    0.00000f,    0.00180f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,      tak_bm,    1.00000f,    0.99960f,    0.26000f,    0.00000f,    0.00220f, false,    0.00000f},
+    /* k_MarchSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.64000f,    1.74500f,    0.91200f,    0.00000f,    0.00280f,    0.00000f,    0.42000f,    0.00000f,    0.88000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Koto        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Vibraphone  */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Woodblock   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_AcousticTom */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f, tom_bm,    1.00000f,    0.99945f,    0.05000f,    0.00000f,    0.00080f, false,    0.00000f},
-    /* k_Cymbal      */ {1800.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Gong        */ { 780.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_AcousticTom */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,      tom_bm,    1.00000f,    0.99945f,    0.05000f,    0.00000f,    0.00080f, false,    0.00000f},
+    /* k_Cymbal      */ {2600.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.92000f,    0.00000f,    0.92000f, false,    0.24000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_Gong        */ { 980.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.68000f,    0.00000f,    0.70000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Kalimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_SteelPan    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Claves      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Cowbell     */ {1100.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Triangle    */ { 950.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99940f,    0.40000f,    0.00000f,    0.00100f, false,    0.00000f},
+    /* k_Triangle    */ { 950.00000f,    0.00000f,    0.00000f,    0.00000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f,      kck_bm,    1.00000f,    0.99940f,    0.40000f,    0.00000f,    0.00100f, false,    0.00000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Flute       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Clarinet    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, true,    1.80000f},
+    /* k_Flute       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_Clarinet    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,  true,    3.40000f},
     /* k_PluckBass   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_GuitarStr   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_HiHatClosed */ {3200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.42000f, true,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_HiHatOpen   */ {2400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.93000f,    0.00000f,    0.30000f, true,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_HiHatClosed */ {3200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.42000f, true,     0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_HiHatOpen   */ {2400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.96000f,    0.00000f,    0.92000f, true,     0.28000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Conga       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Handpan     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_BellTree    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
@@ -245,19 +247,6 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Tick        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f}
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     SynthState state;
 
@@ -411,32 +400,32 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
         //
         //                            ÷10                           ÷10                                                              ÷10
             {   0,  60,   0,   0, 500, 470,   0,   0,   0,   0,  35,  10,   0,   0,  10,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 0:  InitDbg    — pure KS string, no coupling
-            {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 200,  -5,   0,   0,   5,  16,   1,   7,  20,   0, 300,   0,1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
+            {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,   1,   7,  20,   0, 300,   0,1200, 707}, // 1:  Marimba    — sample: C5/1.0s→Dkay184; B=0.0075→InHm15; centroid→Mterl-9; Note60→72
             {   2,  36,   0,   0, 150,   0,   0,   0,   0,   3, 180,  -6,  -5,   0,  15,   0,   1,   3,   0,   0, 300,   0,1200, 707}, // 2:  808 Sub    — final Stage-1: Dkay170/Mterl-6 to counter LP-loss-shortened tail without adding noise
-            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  58, 640,   2, 180, 707}, // 3:  Ac Snare   — MlRs120 (from 520): mallet path was creating 99% hi at 0-5ms; dark mallet lets staged NzMx wire lead the attack. Dkay35: shorter KS body shifts timbre to snappier snare vs metallic gong; NzMx35 raises noise floor. rescue pass: stronger shell body + wire crack, darker body with wider snare burst
+            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5,  78,  -3,   0,  46,   9,   2,   0,   2,   7,  81, 740,   2, 480, 707}, // 3:  Ac Snare   — brighter wire path: higher NzMix/NzRes/NzFq to feed the new stronger snare-wire resonator
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,  20,  18,   0,   5, 300,   0,1500, 707}, // 4:  TblrBel    — c=0.98@524Hz (Mterl28+TubRad20); MlltStif100 (medium felt mallet, less overtone energy → measured T60 tracks fundamental ~7.5s)
             {   5,  40,   0,   1, 360, 300,   0,   0,   2,   3, 200,  -2,   0,  36,  18,  10,   0,  -4,   4,  16, 420,   0, 380, 707}, // 5:  Timpani    — InHm9: slight spread on coupled membrane mode; NzRs300 longer noise tail. rescue pass: deeper boom (darker loss) with longer low-body sustain and broader impact
-            {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 122,   0,   0,  35,  12,  10,   5,  15,   5,   2, 450,   0, 500, 707}, // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
-            {   7,  41,   0,   1, 250, 390,   0,   0,   1,   5, 200,   6,   0,  30,  15,   3,   1,   7,   5,  14, 550,   0, 250, 707}, // 7:  Taiko      — harder mallet + reduced noise tail NzMx14 + lower NzFq for thud character
-            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 130,  12,   0,  50,   8,  15,  25,  19,   5,  20, 650,   2, 400, 707}, // 8:  MrchSnr    — Mterl12: less bright shell; NzMx20/NzFq400 for snappier wire character
-            {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 195,  14,   0,   0,  12,   3,   1,   7,   0,   5, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
-            {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  26,   0,   0,  18,   1,   1,  15,   0,   5, 300,   0,1000, 707}, // 10: Vibrph     — Mterl28/TbRd13 (=GtrStr): coeff≈0.976→dc_gain≈0.998→T60≈3.9s@C5; within [1.13,16.6]s test bounds
-            {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 136,  22,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
+            {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 102,   0,   0,  35,  12,  10,   5,  15,   5,   7, 450,   0, 500, 707}, // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
+            {   7,  41,   0,   1, 250, 390,   0,   0,   1,   5, 180,   4,   0,  30,  15,   3,   1,   7,   5,  14, 550,   0, 250, 707}, // 7:  Taiko      — harder mallet + reduced noise tail NzMx14 + lower NzFq for thud character
+            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 130,  10,   0,  50,   8,  15,  25,  19,   5,  35, 800,   2, 620, 707}, // 8:  MrchSnr    — increase wire excitation brightness and reduce shell dominance
+            {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   7,   0,   0, 300,   0,1000, 707}, // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
+            {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,   1,  13,   0,   0, 300,   0,1000, 707}, // 10: Vibrph     — Mterl28/TbRd13 (=GtrStr): coeff≈0.976→dc_gain≈0.998→T60≈3.9s@C5; within [1.13,16.6]s test bounds
+            {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707}, // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
             {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
-            {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 200,  18,   0,   0,  18,   7,   5,   9,   5,   8, 600,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
-            {  14,  50,   0,   1, 200,  50,   0,   0,   0,   4, 190,  -4,   0,   0,  20,   7,   1,  15,  20,   5, 800,   0,  30, 707}, // 14: Gong       — softer attack MlSt80 + less dark Mterl-4 + more noise onset NzMx10
-            {  15,  65,   0,   1, 700, 461,   0,   0,   0,   1, 200,  22,   0,   0,   5,   6,   1,   5,   3,   5, 300,   0,1000, 707}, // 15: Kalimba    — Mterl20 brighter tine + InHm6 natural tine spread; coeff≈0.802→T60≈0.70s→measured≥0.54s test bound
-            {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  14,   0,   0,  12,   2,   3,   9,   5,   5, 300,   0,1000, 707}, // 16: StelPan    — Mterl14 brighter pan + TbRd11 for steelpan inharmonic partial spread
+            {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,  11,   5,  13, 640,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
+            {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,   1,   0,   0,  20,   7,   1,  19,  20,  19, 860,   0,  80, 707}, // 14: Gong       — reduce darkness and bias more upper partial noise onset
+            {  15,  65,   0,   1, 700, 420,   0,   0,   0,   1, 182,   6,   0,   0,   5,   0,   1,   7,   3,   5, 260,   0, 720, 707}, // 15: Kalimba    — darker/lower-inharmonic tine with lower noise mix
+            {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  14,   0,   0,  12,   0,   3,   9,   5,   0, 300,   0,1000, 707}, // 16: StelPan    — Mterl14 brighter pan + TbRd11 for steelpan inharmonic partial spread
             {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
-            {  18,  67,   0,   1, 800, 480,   0,   0,   0,   4, 185,  18,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
-            {  19,  84,   0,   1, 900, 440,   0,   0,   0,   1, 190,   2,   0,   0,  15,  58,  80,  13,   0,   5, 260,   0,1500, 707}, // 19: Triangle   — harder mallet MlSt440 for cleaner metallic ping onset
-            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  10, 180,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
+            {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
+            {  19,  84,   0,   1, 900, 500,   0,   0,   0,   1, 198,  14,   0,   0,  15,  22, 120,  20,   0,   5, 300,   0,2800, 707}, // 19: Triangle   — brighter loop settings and lower inharmonicity to preserve upper harmonics
+            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  15, 220,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
-            {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  24,   0,   0,  12,   0,   1,   5,   0,  15, 950,   0, 400, 707}, // 23: Flute      — Mterl22 silver flute tube (brighter); T60≈0.71s→measured≥0.26s test bound; NzMx15 breath noise
-            {  24,  72,   0,   0,  50,  20,   0,   0,   0,   8, 185,  14,   0,   0,  12,  10,   1,   7,   0,   8, 930,   0, 600, 707}, // 24: Clarinet   — Dkay185/Mterl14: dc_gain≈0.970 for realistic cylindrical-bore sustain; NzMx8 breath
+            {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  22,   0,   0,  12,   0,   1,   3,   0,  15, 950,   0, 400, 707}, // 23: Flute      — Mterl22 silver flute tube (brighter); T60≈0.71s→measured≥0.26s test bound; NzMx15 breath noise
+            {  24,  72,   0,   0,  50, 180,   0,   0,   0,   8, 185,   8,   0,   0,  12,   2,   1,  12,   0,  29, 940,   0,1800, 707}, // 24: Clarinet   — stronger reed odd-harmonic generation support via brighter tube/noise input
             {  25,  36,   0,   1, 600, 250,   0,   0,   0,   0, 105,  -6,   0,   0,  10,   0,   1,   3,  40,   0, 300,   0, 500, 707}, // 25: PlkBass    — final Stage-1: less drive + harder mallet / slightly longer decay for cleaner pluck body
-            {  26,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,  10,  18,   0,  10, 340,   0,1200, 707}, // 26: GlsBwl     — InHm10 glass bowl partials; no noise for pure bowl character
+            {  26,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,  10,  18,   0,   0, 300,   0,1200, 707}, // 26: GlsBwl     — InHm10 glass bowl partials; no noise for pure bowl character
             // 27: Guitar String — Karplus-Strong reference for physical model validation.
             // A4 = 440 Hz (standard pitch reference).  Dkay=195 → g≈0.9953 → T_60≈3.3 s.
             // Single resonator (Partls=0, no coupling), no noise (NzMix=0), no sample (Smp=0).
@@ -450,14 +439,14 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             // ── New kit voices ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
             //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - LwCt TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
             {  28,  79,   0,   1, 900, 500,   0,   0,   0,   4, 110,  12,   0,   0,   2,  16,   5,   3,   0,  48, 760,   2, 900, 707},  // 28: HHat-C  — Mterl12 (from 26): centroid was 15-16kHz vs ref 7kHz; darker LP reduces KS harmonics above ~10kHz. softer mallet MlSt420 + InHm14 metallic partial spread + NzMx35/NzFq600. rescue pass: tighter short chick with brighter/sparser metallic top
-            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  14,   0,   0,  14,  11,   5,  12,   0,  60,1100,   2,1100, 707},  // 29: HHat-O  — TbRd8 (from 20): LP coeff 0.91→0.68; FM depth 0.16→0.06; SVF LP@6kHz noise centroid ~8kHz
-            {  30,  62,   0,   1, 600, 395,   0,   0,   1,   5, 158,   5,   0,   0,  10,  10,   2,   7,   0,  15, 560,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
+            {  29,  79,   0,   1, 900, 520,   0,   0,   0,   4, 198,  14,   0,   0,  14,  11,   5,  12,   0,  79,1000,   2,2600, 707},  // 29: HHat-O  — brighter upper band and noise weighting
+            {  30,  62,   0,   1, 600, 365,   0,   0,   1,   5, 158,   3,   0,   0,  10,  10,   2,   7,   0,  15, 520,   0, 650, 707},  // 30: Conga   — softer MlSt365 + TbRd9 + NzMx15/NzFq650 for tighter conga snap
             {  31,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,  22,   0,   0,  20,   1,   5,  20,   0,   5, 300,   0,1000, 707},  // 31: Handpn  — Mterl22/TbRd20 nitrided steel; coeff≈0.960→dc_gain≈0.996→T60≈1.58s measured; within [1.42,20.8]s test bounds
             {  32,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,  10,   3,   0,   0, 300,   0,1200, 707},  // 32: BelTre  — Beam, T60=1.0s@C6→Dkay193; Mterl20 very bright; InHm10 metallic partial spread
             {  33,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,   2,   3,   0,   0, 300,   0, 800, 707},  // 33: SltDrm  — MarBar, T60=1.0s@C4→Dkay167; Mterl8 mid-bright wood; InHm6 (B≈0.003)
             {  34,  57,   0,   1, 900, 500,   0,   0,   0,   4, 190,  30,   0,   0,  18,   6,   5,  17,   0,  15, 700,   2, 600, 707},  // 34: Ride    — InHm6 plate spread; NzMx15/NzRs700 sizzle-only noise character
             {  35,  60,   0,   1, 900, 461,   0,   0,   0,   4, 194,  18,   0,   0,   8,  10,   5,   1,   0,  20, 600,   2, 700, 707},  // 35: RidBel  — InHm10 bell spread; TbRd3; NzFq700 higher sizzle
-            {  36,  57,   0,   1, 650, 410,   0,   0,   0,   5, 162,   0,   0,   0,   8,   6,   2,  -1,   0,   5, 520,   0, 450, 707},  // 36: Bongo   — harder mallet MlSt410 for sharper bongo slap; InHm6 tonal cue
+            {  36,  57,   0,   1, 650, 410,   0,   0,   0,   5, 152,  -2,   0,   0,   8,   6,   2,  -1,   0,   0, 520,   0, 450, 707},  // 36: Bongo   — harder mallet MlSt410 for sharper bongo slap; InHm6 tonal cue
             {  37,  88,   0,   1, 100, 450,   0,   0,   0,   7, 195,   5,   0,   0,   5,   0,   2,  13,   0,  45, 150,   0, 450, 707},  // 37: GlsBotl — MlSt450 harder blow onset; Mterl5 brighter; NzMx45/NzRs150 short puff
             {  38,  49,   0,   1, 900, 500,   0,   0,   0,   4, 140,  11,   0,   0,   3,  16,   5,   3,   0,  24, 150,   2, 400, 707}   // 38: Tick    — InHm16 tight wood spread; NzMx24/NzRs150 crisp tick transient
         };
@@ -783,7 +772,8 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
                     // (editor-select modes) never overwrite this.
                     m_coupling_depth = (float)value * 0.25f;
                 } else {
-                    // resonators can be coupled or indipendent
+                    // Resonator edit selector:
+                    // 5 => edit both (AB), 6 => ResA only, 7 => ResB only.
                     m_is_resonator_a = (value == 5) || (value == 6);
                     m_is_resonator_b = (value == 5) || (value == 7);
                 }
@@ -1067,9 +1057,13 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
-                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
+                int32_t khz_i = hz / 1000;
+                int32_t khz_d = (hz % 1000) / 100;
+                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", khz_i, khz_d);
             } else {
-                snprintf(nf_buf, sizeof(nf_buf), "%dHz", hz);
+                int32_t khz_i = hz / 1000;
+                int32_t khz_d = (hz % 1000) / 100;
+                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", khz_i, khz_d);
             }
             return nf_buf;
         } else if (index == k_paramLowCut) {
@@ -1368,17 +1362,31 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
         } else {
             v.exciter.noise_band_mix = 0.50f;
         }
+        // Triangle-specific sustain fix:
+        // Keep loop HF loss close to DC loss so upper partials do not collapse
+        // in the first ~50 ms (common KS 1-pole LP failure mode for triangles).
+        if (m_preset_idx == k_Triangle) {
+            v.resA.loss_g_hf = fmaxf(v.resA.loss_g_hf, 0.96f);
+            v.resB.loss_g_hf = fmaxf(v.resB.loss_g_hf, 0.96f);
+            v.resA.lowpass_coeff = fmaxf(v.resA.lowpass_coeff, 0.93f);
+            v.resB.lowpass_coeff = fmaxf(v.resB.lowpass_coeff, 0.93f);
+            v.transient_lp_base_a = v.resA.lowpass_coeff;
+            v.transient_lp_base_b = v.resB.lowpass_coeff;
+            v.transient_lp_jitter = fminf(v.transient_lp_jitter, 0.01f);
+        }
 
-        // PartialReset() zeros all boom fields (boom_env, boom_mix, boom_inc …).
-        // Restore them here for every preset that relies on the boom oscillator.
+        // Taiko boom: PartialReset() zeros all boom fields; restore them here so the
+        // deep chest-thud sub-bass is active on every strike.
         // Without this, the boom is only active immediately after LoadPreset (first
         // trigger), then silenced on every subsequent NoteOn.
+	// Tune boom to the sub-octave of the played note (harmonically related to the
+        // waveguide fundamental) so there is no inharmonic beat interference.
         if (m_preset_idx == k_Taiko) {
             // Tune boom to sub-octave of played note so it is harmonically locked
             // to the waveguide fundamental and creates no inharmonic beat interference.
-            v.boom_inc        = (float)(M_PI / base_delay); // 2π*(f0/2)/48000
+            v.boom_inc        = (float)(M_PI / base_delay); // 2π*(f0/2)/48000, sub-octave
             v.boom_env        = 1.0f;
-            v.boom_decay      = 0.99960f; // ~530ms tail; keeps RMS above -60dB threshold
+            v.boom_decay      = 0.99960f; // ~530ms boom tail; sustains RMS above -60dB threshold
             v.boom_mix        = 0.26f;
             v.boom_attack_env = 0.0f;    // ramp from zero to avoid onset click
             v.boom_attack_inc = 0.0022f;
@@ -1750,7 +1758,10 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
                     // Lightweight asymmetric waveshaper to emulate reed contact.
                     float x = exciter_sig * voice.reed_nl_drive;
                     float y = (x >= 0.0f) ? fastertanhf(x) : (0.6f * fastertanhf(1.6f * x));
-                    exciter_sig = (0.65f * exciter_sig) + (0.35f * y);
+                    // Blend strength follows drive so clarinet-like presets can
+                    // push odd harmonics without globally over-distorting softer voices.
+                    float nl_mix = fmaxf(0.35f, fminf(0.85f, 0.20f + (0.18f * voice.reed_nl_drive)));
+                    exciter_sig = ((1.0f - nl_mix) * exciter_sig) + (nl_mix * y);
                 }
                 float voice_out   = exciter_sig * voice.current_velocity;
 
@@ -1855,6 +1866,7 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
                 }
                 if (voice.modal_pilot_enabled) {
                     // Update modes 1/2 (and optionally 3/4 for metallic presets).
+// Update modes 1/2 (and optionally 3/4 for metallic presets).
                     float32x2_t k12 = {voice.modal_k_1, voice.modal_k_2};
                     float32x2_t y112 = {voice.modal_y1_1, voice.modal_y1_2};
                     float32x2_t y212 = {voice.modal_y2_1, voice.modal_y2_2};
@@ -1952,6 +1964,22 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
                          voice.modal_mode_count = 0;
                     }
                 }
+#else
+                    float yn1 = (voice.modal_k_1 * voice.modal_y1_1) - voice.modal_y2_1;
+                    float yn2 = (voice.modal_k_2 * voice.modal_y1_2) - voice.modal_y2_2;
+                    voice.modal_y2_1 = voice.modal_y1_1;
+                    voice.modal_y2_2 = voice.modal_y1_2;
+                    voice.modal_y1_1 = yn1;
+                    voice.modal_y1_2 = yn2;
+                    if (voice.modal_mode_count > 2) {
+                        float yn3 = (voice.modal_k_3 * voice.modal_y1_3) - voice.modal_y2_3;
+                        float yn4 = (voice.modal_k_4 * voice.modal_y1_4) - voice.modal_y2_4;
+                        voice.modal_y2_3 = voice.modal_y1_3;
+                        voice.modal_y2_4 = voice.modal_y1_4;
+                        voice.modal_y1_3 = yn3;
+                        voice.modal_y1_4 = yn4;
+                    }
+#endif
                 // ── Stage 3: master_env fade + squelch ────────────────────
                 // If Stage 3 is silent but Stage 2 is not, the Phase 18
                 // pre-advance fix is not working on this ARM binary — the
@@ -2028,6 +2056,7 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             mix_r = mix_l;
             mix_l *= state.master_drive;
             mix_r *= state.master_drive;
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
             float32x2_t v = {mix_l, mix_r};
             float32x2_t abs_v = vabs_f32(v);
             float32x2_t den = vadd_f32(abs_v, vdup_n_f32(1.0f));
@@ -2037,6 +2066,10 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             float32x2_t clipped = vmul_f32(v, rec);
             float clipped_l = vget_lane_f32(clipped, 0);
             float clipped_r = vget_lane_f32(clipped, 1);
+#else
+            float clipped_l = mix_l / (1.0f + fabsf(mix_l));
+            float clipped_r = mix_r / (1.0f + fabsf(mix_r));
+#endif
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, clipped_l));
             main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, clipped_r));
         }

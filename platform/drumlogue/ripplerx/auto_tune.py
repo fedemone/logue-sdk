@@ -27,7 +27,7 @@ import copy
 import json
 import math
 import re
-import shutil
+import os
 import subprocess
 import sys
 import time
@@ -41,11 +41,12 @@ SAMPLES_DIR    = REPO_DIR / "samples"
 RENDER_DIR     = REPO_DIR / "rendered_tune"
 REPORTS_DIR    = REPO_DIR / "batch_reports"
 
+RENDER_BIN = f"render_presets_tune_{os.getpid()}"
 COMPILE_CMD = (
     "g++ -std=c++17 -O2 -I. -Itest_stubs -I.. -I../../common -I../common "
-    "-DRUNTIME_COMMON_H_ render_presets.cpp -o render_presets"
+    "-DRUNTIME_COMMON_H_ render_presets.cpp -o {RENDER_BIN}"
 )
-RENDER_CMD  = "./render_presets {render_dir}/"
+RENDER_CMD = f"./{RENDER_BIN} {{render_dir}}/"
 
 # ── Tunable parameters: (name, col_idx, min_val, max_val, delta) ──────────────
 # col_idx matches the ParamIndex enum in synth_engine.h (0-based preset row)

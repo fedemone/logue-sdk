@@ -2322,3 +2322,75 @@ Examples:
 
 This keeps exact-match metrics available but introduces family-intent priors
 that align tuning outcomes with musical recognizability goals.
+
+## Phase 42: Follow-up defect corrections (May 15, 2026)
+
+- Added an architecture-side Triangle sustain correction in `NoteOn`:
+  - clamp `loss_g_hf` and `lowpass_coeff` higher for `k_Triangle`
+  - reduce positive transient LP jitter so upper partials are not immediately over-damped.
+
+New defect found during review:
+- Triangle harmonic collapse is not only preset-tuning related; transient coefficient
+  jitter was able to push loop damping darker right at onset, worsening the already
+  known KS 1-pole LP high-partial decay bias. This phase constrains that behavior
+  specifically for triangle.
+
+## Phase 43: Auto-tune execution blockers + architecture findings (May 15, 2026)
+
+- Started targeted auto-tune run for the reported defect set:
+  `AcSnre, MrchSnr, Trngle, Clrint, HHat-O, Cymbal, Kalimba, Gong, Kick`.
+- Found and fixed host-run blockers:
+  1) **Portability bug**: unconditional `<arm_neon.h>` include prevented host compile.
+     - Fixed by guarding include with `__ARM_NEON` macros.
+  2) **Host path missing scalar fallback**: NEON vector code in modal update and master
+     clipper had no non-NEON fallback, causing compile failures on x86.
+     - Added scalar fallbacks for both paths.
+  3) **Auto-tune render binary contention**: `./render_presets: Text file busy` during
+     iterative compile/render cycles.
+     - Updated `auto_tune.py` to build a PID-scoped binary name
+       (`render_presets_tune_<pid>`) so runs don't contend on a single executable.
+
+Architectural defect findings from this pass:
+- **Triangle harmonic collapse remains architecture-coupled**:
+  transient LP jitter and loop HF loss interaction can still erase upper partials early;
+  this is partially mitigated but not fundamentally solved without a less lossy loop
+  topology for metallic bars/rods.
+- **Model family overloading** persists:
+  a single KS+noise+optional modal/FM framework is carrying strings, bars, membranes,
+  cymbals, and reeds. This limits convergence for instruments with distinct physics
+  (snare-wire chatter, clarinet bore/reed coupling, triangle equal-decay modes).
+
+## Phase 44: Bullet 2+3 implementation start, Bullet 1 outline (May 15, 2026)
+
+Implemented now
+- **Bullet 2 (autotune pipeline) start**:
+  - Added PID-scoped render binary in `auto_tune.py` (from Phase 43) to prevent
+    compile/render executable contention.
+  - Added non-NEON host fallbacks so compile+render loops can run on host CI/dev
+    without ARM-specific toolchains.
+- **Bullet 3 (acceptance tied to architecture) start** in `batch_tune_runner.py`:
+  - Added architecture acceptance heuristics (`architecture_acceptance_status`) and
+    per-comparison flags: `arch_blocked`, `arch_reasons`.
+  - Added out-of-scope filtering for non-percussive presets (`Clrint`, `Flute`) by default.
+    They can still be included explicitly with `--include-out-of-scope`.
+
+Bullet 1 outline (next architecture work)
+- **Snare wire rattle mode** (multi-band, lightweight):
+  1) Replace single 2-pole wire resonator with 3 parallel bands (e.g., ~2.2/4.5/7.2 kHz),
+     each with independent decay/Q, mixed by velocity-dependent weights.
+  2) Drive bands from shaped burst + shell-coupled residual (not only white-noise burst)
+     so wire responds to body dynamics.
+  3) Add simple inter-band decorrelation (allpass per branch) to avoid static combing.
+- **Metallic low-loss loop mode** (Triangle/Bell family):
+  1) Add metallic-loop switch: low-loss core path with mild allpass dispersion instead of
+     dominant 1-pole LP attenuation.
+  2) Separate per-mode decay targets (at least 3 modes) to keep 2nd/3rd partials alive
+     near fundamental decay scale.
+  3) Keep transient brightness independent from loop sustain (attack EQ outside loop).
+
+What remains for full percussive physical-model synth
+- Dedicated physics blocks per family (membrane, snare-wire, metallic bars/plates,
+  idiophones) instead of one overloaded core.
+- Objective accept/reject gate that combines score trend + architecture-block flags so
+  tuning does not churn on fundamentally mismatched models.
+- Hardware-close validation loop: host score gate -> ARM/qemu render gate -> device A/B gate.

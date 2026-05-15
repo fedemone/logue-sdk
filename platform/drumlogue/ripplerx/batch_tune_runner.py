@@ -235,6 +235,8 @@ PRESET_GROUPS = {
     ],
 }
 
+OUT_OF_SCOPE_PERC_SYNTH_PRESETS = {"Clrint", "Flute"}
+
 
 @dataclass
 class PresetRow:
@@ -736,6 +738,23 @@ def estimate_runs_needed(current_score: float, target_score: float = 12.0, assum
     n = math.log(target_score / current_score) / math.log(assumed_improvement)
     return max(1, math.ceil(n))
 
+def architecture_acceptance_status(preset_name: str, metrics: Dict[str, float]) -> Dict[str, object]:
+    """Heuristic architecture gate: flags likely model-limited cases."""
+    c = float(metrics.get("centroid_pct", 0.0))
+    f = float(metrics.get("flux_pct", 0.0))
+    t = float(metrics.get("t60_pct", 0.0))
+    blocked = False
+    reasons: List[str] = []
+    if preset_name == "Trngle" and c > 70.0 and t > 45.0:
+        blocked = True
+        reasons.append("triangle_high_partial_collapse")
+    if preset_name in {"AcSnre", "MrchSnr"} and c > 60.0 and f > 55.0:
+        blocked = True
+        reasons.append("snare_wire_spectral_shape_mismatch")
+    if preset_name in {"HHat-O", "Cymbal"} and c > 45.0 and f > 45.0:
+        reasons.append("metallic_highband_underfit")
+    return {"arch_blocked": blocked, "arch_reasons": reasons}
+
 
 def run_renderer_for_preset(render_cmd: str, render_dir: Path, preset: PresetRow, note: int = 60) -> Path:
     render_dir.mkdir(parents=True, exist_ok=True)
@@ -835,6 +854,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional JSON map (sample-name or preset-name -> MIDI note) to lock render notes.",
     )
+    p.add_argument(
+        "--include-out-of-scope",
+        action="store_true",
+        help="Include out-of-scope non-percussive presets (Clarinet/Flute) in mapping and scoring.",
+    )
     return p.parse_args()
 
 
@@ -932,6 +956,8 @@ def run_one_iteration(
         if pname is None:
             unmapped.append(s.name)
             continue
+        if (not args.include_out_of_scope) and pname in OUT_OF_SCOPE_PERC_SYNTH_PRESETS:
+            continue
         if selected_presets is not None and pname not in selected_presets:
             continue
         if s.name in note_map:
@@ -978,6 +1004,7 @@ def run_one_iteration(
         comp["raw_score"] = comp["score"]
         comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"], goal_mode=args.goal_mode)
         comp["score"] += descriptor_window_penalty(comp, style=args.style, bpm=args.bpm)
+        comp.update(architecture_acceptance_status(preset.name, comp["metrics"]))
         comp["suggestions"] = suggest_tuning(comp["metrics"], preset.values)
         comp["estimated_runs_to_target"] = estimate_runs_needed(
             comp["score"],
