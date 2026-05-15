@@ -17,6 +17,14 @@
 constexpr size_t DELAY_BUFFER_SIZE = 4096;
 constexpr size_t DELAY_MASK = DELAY_BUFFER_SIZE - 1;
 
+constexpr float k_dsp_sample_rate     = 48000.0f;
+constexpr float k_dsp_inv_sample_rate = 1.0f / 48000.0f;
+constexpr float k_dsp_log_0001        = -6.907755279f;
+#ifndef STAGE2_MODAL_DECAY1
+#define STAGE2_MODAL_DECAY1  0.99905f
+#define STAGE2_MODAL_DECAY2  0.99810f
+#endif
+
 /**
  * The Exciter injects initial energy into the resonators.
  * It is completely passive once the sample or noise burst finishes.
@@ -71,7 +79,7 @@ struct ExciterState {
     noise_hi_lp_coeff(0.30f), wire_onset_env(1.0f), wire_onset_attack(1.0f), snare_wire_z1(0.0f),
     snare_wire_z2(0.0f), snare_wire_mix(0.0f), snare_wire_a1(1.6951f), snare_wire_a2(0.8930f),
     mallet_lp(0.0f), mallet_lp2(0.0f), mallet_stiffness(0.5f), mallet_res_coeff(0.5f),
-    noise_filter(), hat_filter(), use_hat_filter(false) {} ;
+    use_hat_filter(false) {} ;
 };
 
 /**
@@ -242,7 +250,7 @@ struct VoiceState {
     boom_phase(0.0f), boom_inc(0.0f), boom_env(0.0f), boom_decay(1.0f), boom_mix(0.0f), boom_attack_env(1.0f), boom_attack_inc(1.0f),
     metal_fm_phase(0.0f), metal_fm_inc(0.0f), metal_fm_env(0.0f), metal_fm_decay(1.0f), metal_fm_depth(0.0f) {};
 
-    PartialReset() {
+    void PartialReset() {
         mag_env = 0.0f;
 
         // Reset phase
@@ -347,24 +355,25 @@ struct VoiceState {
     // - Modal bank for complex metallic presets (Wodblk/Gong/Cymbal)
     // - Kick pitch-envelope (delay-length sweep)
     // - Clarinet reed nonlinearity in exciter path
-    auto init_modal_modes = [&](float ratio2, float ratio3, float ratio4,
-                                float t60_1_ms, float t60_2_ms, float t60_3_ms, float t60_4_ms,
-                                float mix, float env1, float env2, float env3, float env4,
-                                uint8_t mode_count) {
+    void init_modal_modes(float ratio2, float ratio3, float ratio4,
+                         float t60_1_ms, float t60_2_ms, float t60_3_ms, float t60_4_ms,
+                         float mix, float env1, float env2, float env3, float env4,
+                         uint8_t mode_count) {
+        uint8_t note = current_note;
         float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
         if (base_f < 20.0f) base_f = 20.0f;
-        float f1 = fminf(base_f, 0.45f * default_sample_rate);
-        float f2 = fminf(base_f * ratio2, 0.45f * default_sample_rate);
-        float f3 = fminf(base_f * ratio3, 0.45f * default_sample_rate);
-        float f4 = fminf(base_f * ratio4, 0.45f * default_sample_rate);
-        float f5 = fminf(base_f * ratio4 * 1.31f, 0.45f * default_sample_rate);
-        float f6 = fminf(base_f * ratio4 * 1.62f, 0.45f * default_sample_rate);
-        float w1 = (2.0f * M_PI * f1) * inverse_default_sample_rate;
-        float w2 = (2.0f * M_PI * f2) * inverse_default_sample_rate;
-        float w3 = (2.0f * M_PI * f3) * inverse_default_sample_rate;
-        float w4 = (2.0f * M_PI * f4) * inverse_default_sample_rate;
-        float w5 = (2.0f * M_PI * f5) * inverse_default_sample_rate;
-        float w6 = (2.0f * M_PI * f6) * inverse_default_sample_rate;
+        float f1 = fminf(base_f, 0.45f * k_dsp_sample_rate);
+        float f2 = fminf(base_f * ratio2, 0.45f * k_dsp_sample_rate);
+        float f3 = fminf(base_f * ratio3, 0.45f * k_dsp_sample_rate);
+        float f4 = fminf(base_f * ratio4, 0.45f * k_dsp_sample_rate);
+        float f5 = fminf(base_f * ratio4 * 1.31f, 0.45f * k_dsp_sample_rate);
+        float f6 = fminf(base_f * ratio4 * 1.62f, 0.45f * k_dsp_sample_rate);
+        float w1 = (2.0f * M_PI * f1) * k_dsp_inv_sample_rate;
+        float w2 = (2.0f * M_PI * f2) * k_dsp_inv_sample_rate;
+        float w3 = (2.0f * M_PI * f3) * k_dsp_inv_sample_rate;
+        float w4 = (2.0f * M_PI * f4) * k_dsp_inv_sample_rate;
+        float w5 = (2.0f * M_PI * f5) * k_dsp_inv_sample_rate;
+        float w6 = (2.0f * M_PI * f6) * k_dsp_inv_sample_rate;
         modal_pilot_enabled = true;
         modal_mode_count = mode_count;
         modal_k_1 = 2.0f * fastercosfullf(w1);
@@ -390,17 +399,17 @@ struct VoiceState {
         float t60_2_s = 0.001f * t60_2_ms;
         float t60_3_s = 0.001f * t60_3_ms;
         float t60_4_s = 0.001f * t60_4_ms;
-        modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_1_s * default_sample_rate)) : STAGE2_MODAL_DECAY1;
-        modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_2_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-        modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_3_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
-        modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_log_0001 / (t60_4_s * default_sample_rate)) : STAGE2_MODAL_DECAY2;
+        modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_1_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY1;
+        modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_2_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
+        modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_3_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
+        modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_4_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
         // Modes 5 and 6 share T60_4's base but decay faster: T60_5 = 0.85×T60_4,
         // T60_6 = 0.70×T60_4.  Reusing decay_4 via power law avoids two extra expf
         // calls: exp(k / (r*T)) = exp(k/T)^(1/r) = decay_4^(1/r).
         modal_decay_5 = (mode_count > 4 && t60_4_s > 0.0f) ? fasterpowf(modal_decay_4, 1.0f / 0.85f) : STAGE2_MODAL_DECAY2;
         modal_decay_6 = (mode_count > 5 && t60_4_s > 0.0f) ? fasterpowf(modal_decay_4, 1.0f / 0.70f) : STAGE2_MODAL_DECAY2;
         modal_mix = mix;
-    };
+    }
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)
