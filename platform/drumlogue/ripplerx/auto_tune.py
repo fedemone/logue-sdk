@@ -44,7 +44,7 @@ REPORTS_DIR    = REPO_DIR / "batch_reports"
 RENDER_BIN = f"render_presets_tune_{os.getpid()}"
 COMPILE_CMD = (
     "g++ -std=c++17 -O2 -I. -Itest_stubs -I.. -I../../common -I../common "
-    "-DRUNTIME_COMMON_H_ render_presets.cpp -o {RENDER_BIN}"
+    f"-DRUNTIME_COMMON_H_ render_presets.cpp -o {RENDER_BIN}"
 )
 RENDER_CMD = f"./{RENDER_BIN} {{render_dir}}/"
 
@@ -90,6 +90,9 @@ _BOOL_COLS = frozenset({12, 23})
 
 MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
+OUT_OF_SCOPE_PRESETS = {"Clrint", "Flute"}  # keep trace in docs; skip in percussive autotune
+ARCH_BLOCKED_PRESETS = {"AcSnre", "MrchSnr", "Trngle", "Cymbal", "Gong", "HHat-O", "Marmba"}
+MIN_ACCEPT_IMPROVEMENT = 0.25  # avoid churn on tiny score wiggles
 FINE_TUNE_START_STABLE = 1
 FINE_STEP_OVERRIDES = {
     "Dkay": 5,
@@ -321,6 +324,8 @@ def run_auto_tune(
     preset_names: Optional[List[str]] = None,
     dry_run: bool = False,
     verbose: bool = False,
+    include_out_of_scope: bool = False,
+    include_arch_blocked: bool = False,
 ) -> None:
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -346,6 +351,18 @@ def run_auto_tune(
           f"{len(sample_files)} sample files")
     if preset_filter:
         print(f"  Filtering to: {sorted(preset_filter)}")
+    if not include_out_of_scope:
+        if preset_filter is None:
+            preset_filter = {name for name in presets.keys() if name not in OUT_OF_SCOPE_PRESETS}
+        else:
+            preset_filter = {name for name in preset_filter if name not in OUT_OF_SCOPE_PRESETS}
+    if not include_arch_blocked:
+        if preset_filter is None:
+            preset_filter = {name for name in presets.keys() if name not in ARCH_BLOCKED_PRESETS}
+        else:
+            preset_filter = {name for name in preset_filter if name not in ARCH_BLOCKED_PRESETS}
+    if preset_filter is not None:
+        print(f"  Active tune-set after scope/arch gates: {sorted(preset_filter)}")
     print(f"  Up to {rounds} rounds, early-stop after {stable_stop} stable rounds\n")
 
     if dry_run:
@@ -389,6 +406,7 @@ def run_auto_tune(
     )
     stable_count = 0
     history: List[Dict] = []
+    routing_log: List[Dict] = []
 
     for rnd in range(1, rounds + 1):
         round_start = time.time()
@@ -474,7 +492,22 @@ def run_auto_tune(
         new_rows = copy.deepcopy(current_rows)
         for name, (col_idx, step) in best_change.items():
             improvement = best_scores.get(name, float("inf")) - best_trial[name]
-            if improvement <= 0.0:
+            if improvement <= MIN_ACCEPT_IMPROVEMENT:
+                routing_log.append({
+                    "round": rnd,
+                    "preset": name,
+                    "decision": "reject_small_delta",
+                    "improvement": improvement,
+                })
+                continue
+            if (name in ARCH_BLOCKED_PRESETS) and (not include_arch_blocked):
+                routing_log.append({
+                    "round": rnd,
+                    "preset": name,
+                    "decision": "route_arch_backlog",
+                    "reason": "arch_blocked_default",
+                    "improvement": improvement,
+                })
                 continue
             row_i = name_to_row[name]
             if col_idx >= 1000:
@@ -511,6 +544,13 @@ def run_auto_tune(
                             new_rows[row_i][col_idx] = old_val   # revert
                         del accepted[name]
                 best_scores.update({n: apply_scores[n] for n in accepted if n in apply_scores})
+                for n in accepted:
+                    routing_log.append({
+                        "round": rnd,
+                        "preset": n,
+                        "decision": "accepted",
+                        "after_score": apply_scores.get(n),
+                    })
             current_rows = new_rows
             current_text = write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows)
             SYNTH_ENGINE.write_text(current_text)
@@ -575,7 +615,12 @@ def run_auto_tune(
 
     # Save history JSON.
     hist_path = REPORTS_DIR / "auto_tune_history.json"
-    hist_path.write_text(json.dumps({"baseline": baseline, "history": history}, indent=2))
+    hist_path.write_text(json.dumps({
+        "baseline": baseline,
+        "history": history,
+        "routing_log": routing_log,
+        "min_accept_improvement": MIN_ACCEPT_IMPROVEMENT,
+    }, indent=2))
     print(f"\nHistory saved to {hist_path}")
 
     # Save final preset values snapshot for easy/manual application and regression tracing.
@@ -626,6 +671,10 @@ def main() -> None:
                    help="Comma-separated preset names (default: all with samples)")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--include-out-of-scope", action="store_true",
+                   help="Include non-percussive presets (Clrint/Flute).")
+    p.add_argument("--include-arch-blocked", action="store_true",
+                   help="Include architecture-limited presets (not recommended for pure parameter tuning).")
     args = p.parse_args()
 
     preset_names = [x.strip() for x in args.preset.split(",") if x.strip()] or None
@@ -637,6 +686,8 @@ def main() -> None:
         preset_names=preset_names,
         dry_run=args.dry_run,
         verbose=args.verbose,
+        include_out_of_scope=args.include_out_of_scope,
+        include_arch_blocked=args.include_arch_blocked,
     )
 
 

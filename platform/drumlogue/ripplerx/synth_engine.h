@@ -414,12 +414,12 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5,  90,  -2,   0,  44,  11,   1,   0,   5,   5,   8, 360,   0, 520, 707}, // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
             {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 182,  16,   0,   0,  18,   7,   5,  11,   5,  13, 640,   2, 400, 707}, // 13: Cymbal     — Dkay182/Mterl16/InHm7: balanced metallic with 6-mode bank + diffuser + noise bed
             {  14,  50,   0,   1, 200,  80,   0,   0,   0,   4, 190,   1,   0,   0,  20,   7,   1,  19,  20,  19, 860,   0,  80, 707}, // 14: Gong       — reduce darkness and bias more upper partial noise onset
-            {  15,  65,   0,   1, 700, 420,   0,   0,   0,   1, 182,   6,   0,   0,   5,   0,   1,   7,   3,   5, 260,   0, 720, 707}, // 15: Kalimba    — darker/lower-inharmonic tine with lower noise mix
+            {  15,  65,   0,   1, 700, 420,   0,   0,   0,   1, 182,   6,   0,   0,   5,   0,   1,   7,   3,  10, 260,   0, 720, 707}, // 15: Kalimba    — darker/lower-inharmonic tine with lower noise mix
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  14,   0,   0,  12,   0,   3,   9,   5,   0, 300,   0,1000, 707}, // 16: StelPan    — Mterl14 brighter pan + TbRd11 for steelpan inharmonic partial spread
             {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707}, // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
             {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707}, // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
             {  19,  84,   0,   1, 900, 500,   0,   0,   0,   1, 198,  14,   0,   0,  15,  22, 120,  20,   0,   5, 300,   0,2800, 707}, // 19: Triangle   — brighter loop settings and lower inharmonicity to preserve upper harmonics
-            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   1,   6,  15, 220,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
+            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5,  55,  -5,   0,  38,   6,   3,   0,   3,   6,  15, 220,   0, 220, 707}, // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707}, // 21: Clap       — NzMx95: maximum noise content for hand-clap character
             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707}, // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
             {  23,  72,   0,   1, 100, 132,   0,   0,   0,   7, 200,  22,   0,   0,  12,   0,   1,   3,   0,  15, 950,   0, 400, 707}, // 23: Flute      — Mterl22 silver flute tube (brighter); T60≈0.71s→measured≥0.26s test bound; NzMx15 breath noise
@@ -1053,7 +1053,6 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             snprintf(dk_buf, sizeof(dk_buf), "%d", (int)(value * 10));
             return dk_buf;
         } else if (index == k_paramNzFltFrq) {
-            // Stored ÷10; show real ×10 Hz/kHz value (20-20000 Hz)
             static char nf_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
@@ -1067,12 +1066,12 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             }
             return nf_buf;
         } else if (index == k_paramLowCut) {
-            // value is 1-1999; effective Hz is value×10 (10-19990 Hz).
             static char lc_buf[10];
             int32_t hz = value * 10;
             if (hz >= 1000) {
-                // Show as kHz with one decimal place: 1000→"1.0kHz", 15000→"15.0kHz"
-                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", hz * 0.001, (hz % 1000) * 0.01);
+                int32_t khz_i = hz / 1000;
+                int32_t khz_d = (hz % 1000) / 100;
+                snprintf(lc_buf, sizeof(lc_buf), "%d.%dkHz", khz_i, khz_d);
             } else {
                 snprintf(lc_buf, sizeof(lc_buf), "%dHz", hz);
             }
@@ -1866,7 +1865,7 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
                 }
                 if (voice.modal_pilot_enabled) {
                     // Update modes 1/2 (and optionally 3/4 for metallic presets).
-// Update modes 1/2 (and optionally 3/4 for metallic presets).
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
                     float32x2_t k12 = {voice.modal_k_1, voice.modal_k_2};
                     float32x2_t y112 = {voice.modal_y1_1, voice.modal_y1_2};
                     float32x2_t y212 = {voice.modal_y2_1, voice.modal_y2_2};
@@ -1885,6 +1884,22 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
                         voice.modal_y1_3 = vget_lane_f32(yn34, 0);
                         voice.modal_y1_4 = vget_lane_f32(yn34, 1);
                     }
+#else
+                    float yn1 = (voice.modal_k_1 * voice.modal_y1_1) - voice.modal_y2_1;
+                    float yn2 = (voice.modal_k_2 * voice.modal_y1_2) - voice.modal_y2_2;
+                    voice.modal_y2_1 = voice.modal_y1_1;
+                    voice.modal_y2_2 = voice.modal_y1_2;
+                    voice.modal_y1_1 = yn1;
+                    voice.modal_y1_2 = yn2;
+                    if (voice.modal_mode_count > 2) {
+                        float yn3 = (voice.modal_k_3 * voice.modal_y1_3) - voice.modal_y2_3;
+                        float yn4 = (voice.modal_k_4 * voice.modal_y1_4) - voice.modal_y2_4;
+                        voice.modal_y2_3 = voice.modal_y1_3;
+                        voice.modal_y2_4 = voice.modal_y1_4;
+                        voice.modal_y1_3 = yn3;
+                        voice.modal_y1_4 = yn4;
+                    }
+#endif
                      if (voice.modal_mode_count > 4) {
                          float y5n = (voice.modal_k_5 * voice.modal_y1_5) - voice.modal_y2_5;
                          voice.modal_y2_5 = voice.modal_y1_5;

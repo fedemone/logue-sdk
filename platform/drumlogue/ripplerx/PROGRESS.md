@@ -2394,3 +2394,74 @@ What remains for full percussive physical-model synth
 - Objective accept/reject gate that combines score trend + architecture-block flags so
   tuning does not churn on fundamentally mismatched models.
 - Hardware-close validation loop: host score gate -> ARM/qemu render gate -> device A/B gate.
+
+## Phase 45: Bullet 2+3 continuation and Bullet 1 plan base (May 15, 2026)
+
+Bullet 2 continuation (autotune pipeline)
+- `auto_tune.py` now applies percussive-scope and architecture gates by default:
+  - skips out-of-scope wind presets (`Clrint`, `Flute`) unless
+    `--include-out-of-scope` is passed.
+  - skips architecture-limited presets (`AcSnre`, `MrchSnr`, `Trngle`, `Cymbal`,
+    `Gong`, `HHat-O`, `Marmba`) unless `--include-arch-blocked` is passed.
+- Purpose: avoid parameter-churn on known model-limited targets and keep automatic
+  rounds focused on presets where parameter tuning can still converge.
+
+Bullet 3 continuation (acceptance tied to architecture)
+- Architecture flags from `batch_tune_runner.py` and the new auto-tune default
+  exclusion list now form a practical two-step acceptance policy:
+  1) If `arch_blocked=true` (or preset in blocked set), do not auto-accept parameter
+     changes as a final fix.
+  2) Route preset into architecture backlog and evaluate only as A/B deltas.
+
+Bullet 1 implementation plan foundation (from latest defect analysis)
+- Priority A (highest impact): **snare-wire rattle mode** for `AcSnre/MrchSnr`
+  - Multi-band stochastic wire (2-8 kHz) with independent decays and velocity
+    weighting; body-coupled excitation input; suppress residual KS ring dominance.
+- Priority B: **metallic low-loss loop mode** for `Trngle` and metallic family
+  - Loop topology that preserves high partials (less per-cycle LP loss), with
+    attack EQ separated from sustain-loss path.
+- Priority C: **metallic exciter stack** for `Cymbal/Gong/HHat-O`
+  - Add parallel HF exciter/noise path decoupled from KS tonal-loss loop; retain
+    FM path as one component rather than sole metallic generator.
+- Trace-only (out-of-scope for percussive closure): keep Clarinet/Flute notes in TODO,
+  no architecture proposals here.
+
+## Phase 46: Post-bullet tuning start (May 16, 2026)
+
+- Resumed active tuning after stabilizing bullet-2/3 gating flow.
+- Fixed critical regressions blocking host tuning loop:
+  - restored valid NEON/scalar modal-update preprocessor structure in `synth_engine.h`
+  - fixed `LowCut`/`NzFltFrq` string-format regressions (`Hz` vs `kHz` rendering).
+  - fixed `auto_tune.py` compile command bug where `{RENDER_BIN}` was emitted literally
+    instead of PID-scoped binary name.
+- Executed a real 1-round auto-tune run on currently tunable in-scope set
+  (`Kalimba`, `Kick`) and obtained measurable improvements:
+  - `Kick`: `121.70 -> 118.21` (-3.49)
+  - `Kalimba`: `65.82 -> 64.17` (-1.65)
+  - mean: `93.76 -> 91.19` (-2.57)
+
+Remaining from previous prompts (status)
+- Bullet 1 (architecture implementation) is still pending implementation work:
+  snare multi-band rattle mode + metallic low-loss loop + parallel HF exciter path.
+- Bullet 2/3 are functionally active for pipeline gating and architecture-aware routing,
+  but should be consolidated into a single explicit acceptance state machine shared
+  by auto-tune apply and batch reports.
+
+## Phase 47: Bullet-3 deepening — explicit acceptance routing (May 16, 2026)
+
+- Continued architecture-aware acceptance work by adding explicit decision routing
+  inside `auto_tune.py` apply stage.
+- New behavior:
+  - tiny improvements (`<= 0.25`) are rejected (`reject_small_delta`) to reduce churn.
+  - architecture-blocked presets are routed to backlog (`route_arch_backlog`) unless
+    `--include-arch-blocked` is explicitly enabled.
+  - accepted changes are logged as `accepted` with post-apply score.
+- `auto_tune_history.json` now includes:
+  - `routing_log`
+  - `min_accept_improvement`
+  - baseline/history as before.
+
+Status against previous prompts:
+- Bullet 2: active/tunable flow running.
+- Bullet 3: now has concrete in-run routing decisions (beyond report-side flags).
+- Bullet 1: still pending DSP architecture implementation.
