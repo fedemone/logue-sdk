@@ -59,6 +59,8 @@ struct ExciterState {
     float wire_onset_attack; // per-sample rise rate for wire onset
     float snare_wire_z1;     // short wire-sizzle resonator state
     float snare_wire_z2;     // short wire-sizzle resonator state
+    float snare_wire_lp;     // helper state for multiband wire split
+    float snare_wire_hp;     // helper state for multiband wire split
     float snare_wire_mix;    // 0..1 extra wire component mix
     float snare_wire_a1;     // resonator coeff (frequency/Q)
     float snare_wire_a2;     // resonator coeff (frequency/Q)
@@ -77,7 +79,7 @@ struct ExciterState {
     sample_frames(0), current_frame(0), channels(1), noise_decay_coeff(0.0f), current_noise_env(0.0f),
     noise_out_sample(0.0f), noise_lp_state(0.0f), noise_band_mix(0.5f), noise_hi_lp_state(0.0f),
     noise_hi_lp_coeff(0.30f), wire_onset_env(1.0f), wire_onset_attack(1.0f), snare_wire_z1(0.0f),
-    snare_wire_z2(0.0f), snare_wire_mix(0.0f), snare_wire_a1(1.6951f), snare_wire_a2(0.8930f),
+    snare_wire_z2(0.0f), snare_wire_lp(0.0f), snare_wire_hp(0.0f), snare_wire_mix(0.0f), snare_wire_a1(1.6951f), snare_wire_a2(0.8930f),
     mallet_lp(0.0f), mallet_lp2(0.0f), mallet_stiffness(0.5f), mallet_res_coeff(0.5f),
     use_hat_filter(false) {} ;
 };
@@ -337,6 +339,8 @@ struct VoiceState {
         exciter.noise_hi_lp_state = 0.0f; // updated runtime
         exciter.snare_wire_z1 = 0.0f;
         exciter.snare_wire_z2 = 0.0f;
+        exciter.snare_wire_lp = 0.0f;
+        exciter.snare_wire_hp = 0.0f;
         exciter.snare_wire_mix = 0.0f;
         exciter.snare_wire_a1 = 1.6951f;
         exciter.snare_wire_a2 = 0.8930f;;

@@ -93,6 +93,19 @@ STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
 OUT_OF_SCOPE_PRESETS = {"Clrint", "Flute"}  # keep trace in docs; skip in percussive autotune
 ARCH_BLOCKED_PRESETS = {"AcSnre", "MrchSnr", "Trngle", "Cymbal", "Gong", "HHat-O", "Marmba"}
 MIN_ACCEPT_IMPROVEMENT = 0.25  # avoid churn on tiny score wiggles
+PRESET_ALIASES = {
+    "Marimba": "Marmba",
+    "Triangle": "Trngle",
+    "Clarinet": "Clrint",
+    "SteelPan": "StelPan",
+}
+
+def acceptance_state_for_preset(name: str) -> str:
+    if name in OUT_OF_SCOPE_PRESETS:
+        return "out_of_scope_trace"
+    if name in ARCH_BLOCKED_PRESETS:
+        return "architecture_backlog"
+    return "tunable_in_scope"
 FINE_TUNE_START_STABLE = 1
 FINE_STEP_OVERRIDES = {
     "Dkay": 5,
@@ -340,8 +353,9 @@ def run_auto_tune(
     if preset_names:
         preset_filter = set()
         for n in preset_names:
-            if n in presets:
-                preset_filter.add(n)
+            resolved = n if n in presets else PRESET_ALIASES.get(n)
+            if resolved in presets:
+                preset_filter.add(resolved)
             else:
                 print(f"  Warning: preset '{n}' not found — skipped.")
 
@@ -363,6 +377,9 @@ def run_auto_tune(
             preset_filter = {name for name in preset_filter if name not in ARCH_BLOCKED_PRESETS}
     if preset_filter is not None:
         print(f"  Active tune-set after scope/arch gates: {sorted(preset_filter)}")
+        if not preset_filter:
+            print("  Nothing left to tune after scope/architecture gates. Exiting.")
+            return
     print(f"  Up to {rounds} rounds, early-stop after {stable_stop} stable rounds\n")
 
     if dry_run:
@@ -614,11 +631,26 @@ def run_auto_tune(
         print(f"{'MEAN':<12} {b_mean:>8.2f} {a_mean:>8.2f} {a_mean-b_mean:>+7.2f}")
 
     # Save history JSON.
+    routing_counts = {
+        "accepted": sum(1 for x in routing_log if x.get("decision") == "accepted"),
+        "reject_small_delta": sum(1 for x in routing_log if x.get("decision") == "reject_small_delta"),
+        "route_arch_backlog": sum(1 for x in routing_log if x.get("decision") == "route_arch_backlog"),
+    }
+    acceptance_state_counts = {
+        "tunable_in_scope": 0,
+        "architecture_backlog": 0,
+        "out_of_scope_trace": 0,
+    }
+    for n in sorted(preset_filter) if preset_filter else sorted(best_scores.keys()):
+        st = acceptance_state_for_preset(n)
+        acceptance_state_counts[st] += 1
     hist_path = REPORTS_DIR / "auto_tune_history.json"
     hist_path.write_text(json.dumps({
         "baseline": baseline,
         "history": history,
         "routing_log": routing_log,
+        "routing_counts": routing_counts,
+        "acceptance_state_counts": acceptance_state_counts,
         "min_accept_improvement": MIN_ACCEPT_IMPROVEMENT,
     }, indent=2))
     print(f"\nHistory saved to {hist_path}")
@@ -643,6 +675,15 @@ def run_auto_tune(
     final_md = REPORTS_DIR / "auto_tune_final_presets.md"
     with final_md.open("w") as f:
         f.write("# Auto Tune Final Preset Values\n\n")
+        f.write("## Routing summary\n\n")
+        f.write(f"- accepted: {routing_counts['accepted']}\n")
+        f.write(f"- reject_small_delta: {routing_counts['reject_small_delta']}\n")
+        f.write(f"- route_arch_backlog: {routing_counts['route_arch_backlog']}\n")
+        f.write(f"- min_accept_improvement: {MIN_ACCEPT_IMPROVEMENT}\n\n")
+        f.write("## Acceptance-state summary\n\n")
+        f.write(f"- tunable_in_scope: {acceptance_state_counts['tunable_in_scope']}\n")
+        f.write(f"- architecture_backlog: {acceptance_state_counts['architecture_backlog']}\n")
+        f.write(f"- out_of_scope_trace: {acceptance_state_counts['out_of_scope_trace']}\n\n")
         f.write("| Preset | Idx | Before | After | Values |\n")
         f.write("|---|---:|---:|---:|---|\n")
         for r in tracked_rows:

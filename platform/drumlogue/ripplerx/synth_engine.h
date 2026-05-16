@@ -210,33 +210,33 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
     /* k_Init        */ { 850.00000f,    0.00000f,    0.00000f,    0.00000f,    1.69510f,    0.89300f,    1.00000f,    1.00000f,    0.00000f,    0.50000f,    0.00000f,    0.30000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Marimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_808Sub      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_AcSnare     */ {   0.00000f,    0.00000f,    0.00000f,    0.72000f,    1.76000f,    0.91800f,    0.00000f,    0.00260f,    0.00000f,    0.35000f,    0.00000f,    0.82000f, false,    0.00000f,    1.00000f,    0.99850f,   18.00000f,      asn_bm,    1.00000f,    0.99920f,    0.09000f,    0.00000f,    0.00180f, false,    0.00000f},
+    /* k_AcSnare     */ {   0.00000f,    0.00000f,    0.00000f,    0.72000f,    1.76000f,    0.91800f,    0.00000f,    0.00260f,    0.00000f,    0.35000f,    0.00000f,    0.82000f, false,    0.00000f,    1.00000f,    0.99850f,   18.00000f, asn_bm,    1.00000f,    0.99920f,    0.09000f,    0.00000f,    0.00180f, false,    0.00000f},
     /* k_TubularBell */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Timpani     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Djambe      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,      tak_bm,    1.00000f,    0.99960f,    0.26000f,    0.00000f,    0.00220f, false,    0.00000f},
+    /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99960f,    0.26000f,    0.00000f,    0.00220f, false,    0.00000f},
     /* k_MarchSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.64000f,    1.74500f,    0.91200f,    0.00000f,    0.00280f,    0.00000f,    0.42000f,    0.00000f,    0.88000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Koto        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Vibraphone  */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Woodblock   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_AcousticTom */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,      tom_bm,    1.00000f,    0.99945f,    0.05000f,    0.00000f,    0.00080f, false,    0.00000f},
+    /* k_AcousticTom */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f, tom_bm,    1.00000f,    0.99945f,    0.05000f,    0.00000f,    0.00080f, false,    0.00000f},
     /* k_Cymbal      */ {2600.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.92000f,    0.00000f,    0.92000f, false,    0.24000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Gong        */ { 980.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.68000f,    0.00000f,    0.70000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Kalimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_Kalimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.03000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_SteelPan    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Claves      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Cowbell     */ {1100.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Triangle    */ { 950.00000f,    0.00000f,    0.00000f,    0.00000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f,      kck_bm,    1.00000f,    0.99940f,    0.40000f,    0.00000f,    0.00100f, false,    0.00000f},
+    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99940f,    0.43000f,    0.00000f,    0.00100f, false,    0.00000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Flute       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_Clarinet    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,  true,    3.40000f},
+    /* k_Clarinet    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, true,    3.40000f},
     /* k_PluckBass   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_GuitarStr   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_HiHatClosed */ {3200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.42000f, true,     0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
-    /* k_HiHatOpen   */ {2400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.96000f,    0.00000f,    0.92000f, true,     0.28000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_HiHatClosed */ {3200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.42000f, true,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
+    /* k_HiHatOpen   */ {2400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.96000f,    0.00000f,    0.92000f, true,    0.28000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Conga       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_Handpan     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
     /* k_BellTree    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f},
@@ -1373,6 +1373,20 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             v.transient_lp_base_b = v.resB.lowpass_coeff;
             v.transient_lp_jitter = fminf(v.transient_lp_jitter, 0.01f);
         }
+        // Bullet-1 step 2 start: metallic low-loss loop mode.
+        // Keep upper partials alive in metallic families by reducing per-cycle LP loss.
+        if (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong ||
+            m_preset_idx == k_HiHatOpen || m_preset_idx == k_Ride ||
+            m_preset_idx == k_RideBell || m_preset_idx == k_Triangle) {
+            v.resA.loss_g_hf = fmaxf(v.resA.loss_g_hf, 0.95f);
+            v.resB.loss_g_hf = fmaxf(v.resB.loss_g_hf, 0.95f);
+            v.resA.lowpass_coeff = fmaxf(v.resA.lowpass_coeff, 0.91f);
+            v.resB.lowpass_coeff = fmaxf(v.resB.lowpass_coeff, 0.91f);
+            v.transient_lp_base_a = v.resA.lowpass_coeff;
+            v.transient_lp_base_b = v.resB.lowpass_coeff;
+            // Do not let transient LP jitter darken metallic attacks.
+            v.transient_lp_jitter = fminf(v.transient_lp_jitter, 0.008f);
+        }
 
         // Taiko boom: PartialReset() zeros all boom fields; restore them here so the
         // deep chest-thud sub-bass is active on every strike.
@@ -1620,17 +1634,23 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
             }
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
-                // Very short resonant burst path (2nd-order): emphasizes snare-wire sizzle
-                // without feeding broadband noise into pitch-tracked waveguides.
-                // Poles at r=0.945, f≈3.5kHz (a1=2r·cos(w), a2=r²): wire sizzle in
-                // the snare wire frequency range; previous 695 Hz was far too low.
-                // Instead of letting the IIR always accumulate, zero-gate the input:
+                // Bullet-1 start: lightweight multiband wire-rattle approximation.
+                // Keep the existing resonator for the mid crack, then split into
+                // low/mid/high texture bands to better approximate 2–8 kHz wire chatter.
                 float wire_input = noise_sum * ex.wire_onset_env;   // gate the INPUT
                 float wire = wire_input + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
                 ex.snare_wire_z2 = ex.snare_wire_z1;
                 ex.snare_wire_z1 = wire;
+                // simple 1-pole split: lp ~2.2k, hp residual, mid = body of wire
+                ex.snare_wire_lp += 0.24f * (wire - ex.snare_wire_lp);
+                float wire_low = ex.snare_wire_lp;
+                float wire_hp_src = wire - wire_low;
+                ex.snare_wire_hp += 0.34f * (wire_hp_src - ex.snare_wire_hp);
+                float wire_mid = wire_hp_src - ex.snare_wire_hp;
+                float wire_high = ex.snare_wire_hp;
                 ex.wire_onset_env = fminf(1.0f, ex.wire_onset_env + ex.wire_onset_attack);
-                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire * ex.snare_wire_mix * 0.35f);
+                float wire_rattle = (0.22f * wire_low) + (0.95f * wire_mid) + (1.25f * wire_high);
+                noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire_rattle * ex.snare_wire_mix * 0.40f);
             }
             ex.noise_out_sample = noise_sum;
          }
