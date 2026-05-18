@@ -91,7 +91,7 @@ _BOOL_COLS = frozenset({12, 23})
 MAX_ROUNDS    = 15
 STABLE_ROUNDS = 3   # stop if no improvement for this many consecutive rounds
 OUT_OF_SCOPE_PRESETS = {"Clrint", "Flute"}  # keep trace in docs; skip in percussive autotune
-ARCH_BLOCKED_PRESETS = {"AcSnre", "MrchSnr", "Trngle", "Cymbal", "Gong", "HHat-O", "Marmba"}
+ARCH_BLOCKED_PRESETS = {"Marmba"}  # AcSnre/MrchSnr/Trngle/Cymbal/Gong/HHat-O unblocked after Phase-3 arch fixes
 MIN_ACCEPT_IMPROVEMENT = 0.25  # avoid churn on tiny score wiggles
 PRESET_ALIASES = {
     "Marimba": "Marmba",
