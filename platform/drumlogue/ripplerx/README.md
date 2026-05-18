@@ -180,7 +180,7 @@ For the deterministic note-lock workflow, use `note_map_priority.json` and run:
 
 This executes:
 - Step 2: pitch-only validation pass with locked notes over classics + guard presets.
-- Step 3A: classics-first iterative tuning pass (`AcSnare,Kick,HHat-C,HHat-O,Timpani,Ac Tom`).
+- Step 3A: classics-first iterative tuning pass (`AcSnare,Kick,HHat-C,HHat-O,Timpani,AcTom`).
 - Step 3B: guard-set pass (`Flute,Clrint,Tick,Clap,Kalimba`) to check regression risk.
 
 Outputs are written under:

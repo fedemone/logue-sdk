@@ -100,7 +100,7 @@ PRESET_ALIASES = {
     "SteelPan": "StelPan",
     "AcSnare": "AcSnre",
     "MarchSnare": "MrchSnr",
-    "AcTom": "Ac Tom",
+    "AcTom": "AcTom",
     "RideBell": "RidBel",
     "HiHatOpen": "HHat-O",
     "HiHatClosed": "HHat-C",

@@ -127,7 +127,7 @@ PRESET_NAME_ALIASES = {
     "Marimba": "Marmba",
     "Timpani": "Timpni",
     "AcSnare": "AcSnre",
-    "AcTom": "Ac Tom",
+    "AcTom": "AcTom",
 }
 
 # Render file aliases used by render_presets.cpp naming convention.
@@ -175,13 +175,13 @@ RENDER_PRESET_NAMES = {
 
 PERCUSSIVE_PRESETS = {
     "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "Wodblk",
-    "Ac Tom", "AcTom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
+    "AcTom", "AcTom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
 KICK_PRESETS = {"Kick", "808Sub"}
 SNARE_PRESETS = {"AcSnre", "MrchSnr"}
-TOM_PRESETS = {"Ac Tom", "AcTom", "Conga", "Bongo", "Taiko", "Djambe"}
+TOM_PRESETS = {"AcTom", "AcTom", "Conga", "Bongo", "Taiko", "Djambe"}
 HIHAT_PRESETS = {"HHat-C", "HHat-O"}
 CYMBAL_PRESETS = {"Cymbl", "Ride", "RidBel"}
 GONG_PRESETS = {"Gong"}
@@ -411,7 +411,7 @@ PRESET_RENDER_NOTE_DEFAULTS = {
     "Clap": 60,
     "Shaker": 72,
     "Timpni": 40,
-    "Ac Tom": 45,
+    "AcTom": 45,
 }
 
 # Provisional per-preset pitch calibration in semitones, applied after note
