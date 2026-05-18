@@ -204,22 +204,22 @@ static constexpr float asn_bm = (2.0f * M_PI * 175.0f) * inverse_default_sample_
 // k_Timpani: Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
 // k_Taiko: Taiko: sub-octave boom (~70 Hz) under the main membrane fundamental.  Gives the deep chest-thud of a real taiko strike. boom_decay = 0.99950f; // ~360ms
 // k_AcousticTom: boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%. boom_attack_inc = 0.0008f;    // reduced from 0.0025 (The boom at C4 (261 Hz ≈ sub boundary) reaches 60% by 5 ms): pushes full boom onset to ~26 ms, giving the KS mallet transient time to register
-struct ModalPresetConfig { float ratio2; float ratio3; float ratio4; float t60_1_ms; float t60_2_ms; float t60_3_ms; float t60_4_ms; float mix; float env1; float env2; float env3; float env4; uint8_t mode_count; };
-inline static constexpr ModalPresetConfig kDefaultModalPresetConfig{};
+struct ModalPresetConfig { float ratio2; float ratio3; float ratio4; float t60_1_ms; float t60_2_ms; float t60_3_ms; float t60_4_ms; float mix; float env1; float env2; float env3; float env4; uint8_t mode_count; float ratio5; float ratio6; };
+inline static constexpr ModalPresetConfig kDefaultModalPresetConfig{0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0,0.0f,0.0f};
 inline static constexpr ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
 /* k_Init */ kDefaultModalPresetConfig, /* k_Marimba */ {4.00f,10.0f,0.0f,250.0f,90.0f,0.0f,0.0f,0.18f,0.72f,0.50f,0.22f,0.0f,3}, /* k_808Sub */ kDefaultModalPresetConfig,
 /* k_AcSnare */ {1.59f,2.14f,2.30f,60.0f,45.0f,30.0f,20.0f,0.15f,0.65f,0.50f,0.35f,0.22f,4}, /* k_TubularBell */ {2.756f,5.404f,0.0f,2000.0f,3000.0f,0.0f,0.0f,0.22f,0.18f,0.90f,0.55f,0.0f,3},
 /* k_Timpani */ {1.340f,1.664f,1.980f,900.0f,680.0f,500.0f,380.0f,0.32f,0.90f,0.75f,0.55f,0.38f,4}, /* k_Djambe */ {1.59f,2.14f,2.30f,80.0f,55.0f,38.0f,26.0f,0.20f,0.65f,0.50f,0.35f,0.22f,4},
 /* k_Taiko */ {1.59f,2.14f,2.90f,350.0f,250.0f,180.0f,120.0f,0.28f,0.85f,0.70f,0.52f,0.36f,4}, /* k_MarchSnare */ {1.59f,2.14f,2.30f,30.0f,22.0f,15.0f,10.0f,0.14f,0.60f,0.45f,0.30f,0.18f,4},
 /* k_Koto */ kDefaultModalPresetConfig, /* k_Vibraphone */ {4.00f,10.0f,0.0f,800.0f,300.0f,0.0f,0.0f,0.18f,0.80f,0.52f,0.26f,0.0f,3}, /* k_Woodblock */ {STAGE2_MODAL_RATIO_2,0.0f,0.0f,STAGE2_MODAL_T60_1_MS,STAGE2_MODAL_T60_2_MS,0.0f,0.0f,STAGE2_MODAL_MIX,STAGE2_MODAL_ENV1,STAGE2_MODAL_ENV2,0.0f,0.0f,2},
-/* k_AcousticTom */ {1.59f,2.14f,2.30f,100.0f,70.0f,50.0f,35.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_Cymbal */ {2.45f,3.91f,5.62f,140.0f,260.0f,420.0f,620.0f,0.11f,0.75f,0.60f,0.46f,0.34f,6},
-/* k_Gong */ {1.78f,2.63f,3.81f,220.0f,420.0f,680.0f,920.0f,0.16f,0.85f,0.70f,0.52f,0.38f,6}, /* k_Kalimba */ {4.00f,10.0f,0.0f,300.0f,100.0f,0.0f,0.0f,0.15f,0.80f,0.50f,0.22f,0.0f,3}, /* k_SteelPan */ {2.00f,3.00f,4.00f,1200.0f,900.0f,700.0f,500.0f,0.22f,0.90f,0.75f,0.55f,0.35f,4},
+/* k_AcousticTom */ {1.59f,2.14f,2.30f,100.0f,70.0f,50.0f,35.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_Cymbal */ {1.479f,1.932f,2.332f,800.0f,600.0f,450.0f,320.0f,0.15f,0.80f,0.65f,0.50f,0.36f,6, 2.549f,2.840f},
+/* k_Gong */ {1.479f,1.932f,2.332f,2000.0f,1500.0f,1100.0f,800.0f,0.20f,0.90f,0.75f,0.56f,0.40f,6, 2.549f,2.840f}, /* k_Kalimba */ {4.00f,10.0f,0.0f,300.0f,100.0f,0.0f,0.0f,0.15f,0.80f,0.50f,0.22f,0.0f,3}, /* k_SteelPan */ {2.00f,3.00f,4.00f,1200.0f,900.0f,700.0f,500.0f,0.22f,0.90f,0.75f,0.55f,0.35f,4},
 /* k_Claves */ {2.756f,5.404f,0.0f,60.0f,25.0f,0.0f,0.0f,0.16f,0.70f,0.45f,0.0f,0.0f,3}, /* k_Cowbell */ {1.41f,2.01f,2.56f,180.0f,130.0f,90.0f,65.0f,0.16f,0.75f,0.60f,0.45f,0.30f,4}, /* k_Triangle */ {2.756f,5.404f,0.0f,1200.0f,1400.0f,0.0f,0.0f,0.15f,0.80f,0.55f,0.0f,0.0f,3},
 /* k_KickDrum */ kDefaultModalPresetConfig, /* k_Clap */ kDefaultModalPresetConfig, /* k_Shaker */ kDefaultModalPresetConfig, /* k_Flute */ kDefaultModalPresetConfig, /* k_Clarinet */ kDefaultModalPresetConfig, /* k_PluckBass */ kDefaultModalPresetConfig,
 /* k_GlassBowl */ {2.09f,3.35f,4.77f,2000.0f,1600.0f,1200.0f,800.0f,0.20f,0.85f,0.70f,0.50f,0.35f,4}, /* k_GuitarStr */ kDefaultModalPresetConfig,
-/* k_HiHatClosed */ {2.11f,3.43f,3.95f,45.0f,60.0f,75.0f,60.0f,0.24f,0.80f,0.65f,0.48f,0.32f,4}, /* k_HiHatOpen */ {2.08f,3.40f,3.91f,300.0f,450.0f,580.0f,450.0f,0.30f,0.85f,0.70f,0.55f,0.40f,4},
+/* k_HiHatClosed */ {1.479f,1.932f,2.332f,45.0f,28.0f,16.0f,10.0f,0.24f,0.80f,0.65f,0.48f,0.32f,4}, /* k_HiHatOpen */ {1.479f,1.932f,2.332f,400.0f,300.0f,200.0f,140.0f,0.30f,0.85f,0.70f,0.55f,0.40f,4},
 /* k_Conga */ {1.59f,2.14f,2.30f,90.0f,65.0f,45.0f,30.0f,0.20f,0.70f,0.52f,0.35f,0.22f,4}, /* k_Handpan */ {2.00f,3.00f,0.0f,900.0f,700.0f,0.0f,0.0f,0.20f,0.85f,0.65f,0.0f,0.0f,3}, /* k_BellTree */ {2.01f,2.76f,0.0f,900.0f,700.0f,0.0f,0.0f,0.17f,0.80f,0.60f,0.0f,0.0f,3},
-/* k_SlitDrum */ kDefaultModalPresetConfig, /* k_Ride */ {2.08f,3.40f,3.91f,600.0f,800.0f,1000.0f,800.0f,0.14f,0.80f,0.65f,0.50f,0.35f,6}, /* k_RideBell */ {2.01f,2.76f,3.56f,1500.0f,1200.0f,900.0f,700.0f,0.20f,0.85f,0.70f,0.55f,0.40f,4},
+/* k_SlitDrum */ kDefaultModalPresetConfig, /* k_Ride */ {1.479f,1.932f,2.332f,2400.0f,1800.0f,1300.0f,950.0f,0.14f,0.80f,0.65f,0.50f,0.35f,6, 2.549f,2.840f}, /* k_RideBell */ {2.01f,2.76f,3.56f,1500.0f,1200.0f,900.0f,700.0f,0.20f,0.85f,0.70f,0.55f,0.40f,4},
 /* k_Bongo */ {1.59f,2.14f,2.30f,50.0f,35.0f,25.0f,16.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_GlassBottle */ kDefaultModalPresetConfig, /* k_Tick */ kDefaultModalPresetConfig
 };
 
@@ -552,7 +552,8 @@ SynthState state;
                                    modal_cfg.t60_1_ms, modal_cfg.t60_2_ms,
                                    modal_cfg.t60_3_ms, modal_cfg.t60_4_ms,
                                    modal_cfg.mix, modal_cfg.env1, modal_cfg.env2,
-                                   modal_cfg.env3, modal_cfg.env4, modal_cfg.mode_count);
+                                   modal_cfg.env3, modal_cfg.env4, modal_cfg.mode_count,
+                                   modal_cfg.ratio5, modal_cfg.ratio6);
             }
         }
     }
@@ -1033,13 +1034,25 @@ SynthState state;
             if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
                 v.exciter.noise_env.attack_rate = 0.001f;
                 v.exciter.noise_env_hi.attack_rate = 0.001f;
-                // Step 3: velocity-controlled snare wire Q.
-                // Softer hits -> lower Q (duller buzz), harder hits -> higher Q (sharper crack).
+                // Band A: velocity-controlled centre (~2.8 kHz for AcSnare, ~3.5 kHz for MrchSnr)
                 float vq = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
-                float r = 0.90f + (0.07f * vq); // Q control via pole radius
-                float w = (2.0f * M_PI * 3360.0f) * inverse_default_sample_rate;
-                v.exciter.snare_wire_a1 = 2.0f * r * fastercosfullf(w);
-                v.exciter.snare_wire_a2 = r * r;
+                float r_a = 0.90f + (0.07f * vq);
+                float freq_a = (m_preset_idx == k_MarchSnare) ? 3500.0f : 2800.0f;
+                float w_a = (2.0f * M_PI * freq_a) * inverse_default_sample_rate;
+                v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
+                v.exciter.snare_wire_a2 = r_a * r_a;
+
+                // Band B: 4.5 kHz, slightly lower Q than band A (broader rattle)
+                float r_b = 0.86f + (0.05f * vq);
+                float w_b = (2.0f * M_PI * 4500.0f) * inverse_default_sample_rate;
+                v.exciter.snare_wire_a1b = 2.0f * r_b * fastercosfullf(w_b);
+                v.exciter.snare_wire_a2b = r_b * r_b;
+
+                // Band C: 7.2 kHz, lighter Q (high sizzle, less velocity sensitive)
+                float r_c = 0.82f + (0.03f * vq);
+                float w_c = (2.0f * M_PI * 7200.0f) * inverse_default_sample_rate;
+                v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
+                v.exciter.snare_wire_a2c = r_c * r_c;
             }
         }
 
@@ -1150,6 +1163,27 @@ SynthState state;
         // Skip entirely on a fresh (never-triggered) slot: Reset() already zeroed it.
         v.PartialReset();
 
+        // Seed noise from current delay buffer state so each note trigger has unique
+        // stochastic character. Prevents repetitive artifacts on rapid re-triggering.
+        // User suggestion: delay line contents provide entropy without timestamps.
+        {
+            uint32_t inject = 0;
+            for (int s = 0; s < 8; ++s) {
+                uint32_t w = *reinterpret_cast<const uint32_t*>(
+                    &v.resA.buffer[(v.resA.write_ptr + (uint32_t)(s * 97)) & DELAY_MASK]);
+                inject ^= w ^ (inject * 1664525UL + 1013904223UL);
+            }
+            if (inject != 0) v.exciter.noise_gen.seed ^= inject;
+        }
+
+        // Metallic rod bypass: Triangle, BellTree, Cowbell use pure-gain loop,
+        // not LP-filtered sustain. Source: Rossing & Fletcher, "Principles of
+        // Vibration and Sound", 2nd ed., ch. 3 — rod/plate modes decay without
+        // LP-style spectral darkening.
+        bool use_lp_bypass = (m_preset_idx == k_Triangle || m_preset_idx == k_BellTree || m_preset_idx == k_Cowbell);
+        v.resA.bypass_loop_lp = use_lp_bypass;
+        v.resB.bypass_loop_lp = use_lp_bypass;
+
         if (had_residual) {
             auto clear_tail = [](float* buf, float delay_len) {
                 uint32_t len = (uint32_t)ceilf(delay_len) + 2;  // +2: frac interp safety
@@ -1255,7 +1289,8 @@ SynthState state;
         // Keep upper partials alive in metallic families by reducing per-cycle LP loss.
         if (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong ||
             m_preset_idx == k_HiHatOpen || m_preset_idx == k_Ride ||
-            m_preset_idx == k_RideBell || m_preset_idx == k_Triangle) {
+            m_preset_idx == k_RideBell || m_preset_idx == k_Triangle ||
+            m_preset_idx == k_BellTree || m_preset_idx == k_Cowbell) {
             v.resA.loss_g_hf = fmaxf(v.resA.loss_g_hf, 0.95f);
             v.resB.loss_g_hf = fmaxf(v.resB.loss_g_hf, 0.95f);
             v.resA.lowpass_coeff = fmaxf(v.resA.lowpass_coeff, 0.91f);
@@ -1418,11 +1453,19 @@ SynthState state;
 
         // 3b. Loss Filter (1-pole Lowpass) — applied AFTER dispersion.
         // wg.lowpass_coeff was pre-calculated in setParameter()
-        wg.z1 = (ap_out * wg.lowpass_coeff) + (wg.z1 * (1.0f - wg.lowpass_coeff));
-        float filtered_out = wg.z1;
-        if (m_preset_idx == k_AcousticTom) {
-            wg.z2 = (wg.z1 * wg.lowpass_coeff) + (wg.z2 * (1.0f - wg.lowpass_coeff));
-            filtered_out = wg.z2;
+        // Loss filter: bypassed for metallic rods (bypass_loop_lp=true) to preserve
+        // high harmonics. T60 is then controlled entirely by loss_g_dc × feedback_gain.
+        // Technique: pure-gain resonator per Smith, "Physical Audio Signal Processing" (2010).
+        float filtered_out;
+        if (!wg.bypass_loop_lp) {
+            wg.z1 = (ap_out * wg.lowpass_coeff) + (wg.z1 * (1.0f - wg.lowpass_coeff));
+            filtered_out = wg.z1;
+            if (m_preset_idx == k_AcousticTom) {
+                wg.z2 = (wg.z1 * wg.lowpass_coeff) + (wg.z2 * (1.0f - wg.lowpass_coeff));
+                filtered_out = wg.z2;
+            }
+        } else {
+            filtered_out = ap_out;  // passthrough: hf=0, loss is pure gain only
         }
         if (wg.diffuser_mix > 0.0001f) {
             float y = filtered_out;
@@ -1491,26 +1534,32 @@ SynthState state;
             }
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
-                // Phase-B: add an early broadband crack burst before wire resonance
-                // so snare onset is less tonal and less dependent on KS body ring.
+                // Phase-B crack burst: broadband onset before wire resonance engages.
                 float crack_burst = high * noise_env_high * (1.0f - ex.wire_onset_env) * 0.90f;
                 noise_sum += crack_burst;
-                // Bullet-1 start: lightweight multiband wire-rattle approximation.
-                // Keep the existing resonator for the mid crack, then split into
-                // low/mid/high texture bands to better approximate 2–8 kHz wire chatter.
-                float wire_input = noise_sum * ex.wire_onset_env;  // gate the INPUT
-                float wire = wire_input + (ex.snare_wire_a1 * ex.snare_wire_z1) - (ex.snare_wire_a2 * ex.snare_wire_z2);
+
+                // 3-band parallel wire resonators. Each band is an IIR resonator driven
+                // by the gated noise input. Parallel topology (vs series) avoids inter-band
+                // coupling that would tonalize the rattle.
+                // Source: Cook, "Real Sound Synthesis for Interactive Applications" (2002).
+                float wire_input = noise_sum * ex.wire_onset_env;
+
+                float wa = wire_input + (ex.snare_wire_a1  * ex.snare_wire_z1)  - (ex.snare_wire_a2  * ex.snare_wire_z2);
                 ex.snare_wire_z2 = ex.snare_wire_z1;
-                ex.snare_wire_z1 = wire;
-                // simple 1-pole split: lp ~2.2k, hp residual, mid = body of wire
-                ex.snare_wire_lp += 0.24f * (wire - ex.snare_wire_lp);
-                float wire_low = ex.snare_wire_lp;
-                float wire_hp_src = wire - wire_low;
-                ex.snare_wire_hp += 0.34f * (wire_hp_src - ex.snare_wire_hp);
-                float wire_mid = wire_hp_src - ex.snare_wire_hp;
-                float wire_high = ex.snare_wire_hp;
+                ex.snare_wire_z1 = wa;
+
+                float wb = wire_input + (ex.snare_wire_a1b * ex.snare_wire_z1b) - (ex.snare_wire_a2b * ex.snare_wire_z2b);
+                ex.snare_wire_z2b = ex.snare_wire_z1b;
+                ex.snare_wire_z1b = wb;
+
+                float wc = wire_input + (ex.snare_wire_a1c * ex.snare_wire_z1c) - (ex.snare_wire_a2c * ex.snare_wire_z2c);
+                ex.snare_wire_z2c = ex.snare_wire_z1c;
+                ex.snare_wire_z1c = wc;
+
                 ex.wire_onset_env = fminf(1.0f, ex.wire_onset_env + ex.wire_onset_attack);
-                float wire_rattle = (0.22f * wire_low) + (0.95f * wire_mid) + (1.25f * wire_high);
+
+                // Mix: A gives body crack, B gives mid buzz, C gives high sizzle.
+                float wire_rattle = (0.50f * wa) + (0.80f * wb) + (0.60f * wc);
                 noise_sum = (noise_sum * (1.0f - ex.snare_wire_mix)) + (wire_rattle * ex.snare_wire_mix * 0.40f);
             }
             ex.noise_out_sample = noise_sum;
@@ -1884,22 +1933,6 @@ SynthState state;
                          voice.modal_mode_count = 0;
                     }
                 }
-#else
-                    float yn1 = (voice.modal_k_1 * voice.modal_y1_1) - voice.modal_y2_1;
-                    float yn2 = (voice.modal_k_2 * voice.modal_y1_2) - voice.modal_y2_2;
-                    voice.modal_y2_1 = voice.modal_y1_1;
-                    voice.modal_y2_2 = voice.modal_y1_2;
-                    voice.modal_y1_1 = yn1;
-                    voice.modal_y1_2 = yn2;
-                    if (voice.modal_mode_count > 2) {
-                        float yn3 = (voice.modal_k_3 * voice.modal_y1_3) - voice.modal_y2_3;
-                        float yn4 = (voice.modal_k_4 * voice.modal_y1_4) - voice.modal_y2_4;
-                        voice.modal_y2_3 = voice.modal_y1_3;
-                        voice.modal_y2_4 = voice.modal_y1_4;
-                        voice.modal_y1_3 = yn3;
-                        voice.modal_y1_4 = yn4;
-                    }
-#endif
                 // ── Stage 3: master_env fade + squelch ────────────────────
                 // If Stage 3 is silent but Stage 2 is not, the Phase 18
                 // pre-advance fix is not working on this ARM binary — the

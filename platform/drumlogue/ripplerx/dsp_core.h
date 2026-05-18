@@ -64,6 +64,17 @@ struct ExciterState {
     float snare_wire_mix;    // 0..1 extra wire component mix
     float snare_wire_a1;     // resonator coeff (frequency/Q)
     float snare_wire_a2;     // resonator coeff (frequency/Q)
+    // 3-band snare wire: bands B (~4.5 kHz) and C (~7.2 kHz) complement band A.
+    // Parallel IIR resonators per Cook, "Real Sound Synthesis for Interactive
+    // Applications" (2002), ch. 5.
+    float snare_wire_z1b = 0.0f;
+    float snare_wire_z2b = 0.0f;
+    float snare_wire_a1b = 1.620f;   // 4.5 kHz at r=0.971 (Q≈10)
+    float snare_wire_a2b = 0.942f;
+    float snare_wire_z1c = 0.0f;
+    float snare_wire_z2c = 0.0f;
+    float snare_wire_a1c = 1.120f;   // 7.2 kHz at r=0.953 (Q≈10)
+    float snare_wire_a2c = 0.908f;
     // updated runtime
     float mallet_lp;
     float mallet_lp2;        // Second LP pole state (MlltRes)
@@ -80,6 +91,8 @@ struct ExciterState {
     noise_out_sample(0.0f), noise_lp_state(0.0f), noise_band_mix(0.5f), noise_hi_lp_state(0.0f),
     noise_hi_lp_coeff(0.30f), wire_onset_env(1.0f), wire_onset_attack(1.0f), snare_wire_z1(0.0f),
     snare_wire_z2(0.0f), snare_wire_lp(0.0f), snare_wire_hp(0.0f), snare_wire_mix(0.0f), snare_wire_a1(1.6951f), snare_wire_a2(0.8930f),
+    snare_wire_z1b(0.0f), snare_wire_z2b(0.0f), snare_wire_a1b(1.620f), snare_wire_a2b(0.942f),
+    snare_wire_z1c(0.0f), snare_wire_z2c(0.0f), snare_wire_a1c(1.120f), snare_wire_a2c(0.908f),
     mallet_lp(0.0f), mallet_lp2(0.0f), mallet_stiffness(0.5f), mallet_res_coeff(0.5f),
     use_hat_filter(false) {} ;
 };
@@ -113,6 +126,7 @@ struct WaveguideState {
     float diffuser_buf3[29];
     float diffuser_buf4[41];
     uint8_t diffuser_i1, diffuser_i2, diffuser_i3, diffuser_i4;
+    bool bypass_loop_lp = false;
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
     float phase_mult;
     // Per-model baseline allpass dispersion (added to ap_coeff from Inharm parameter).
@@ -123,7 +137,7 @@ struct WaveguideState {
     WaveguideState() : buffer(), write_ptr(0), delay_length(0.0f), feedback_gain(0.0f), lowpass_coeff(1.0f),
     loss_g_dc(1.0f), loss_g_hf(1.0f), ap_coeff(0.0f), ap_x1(0.0f), ap_y1(0.0f), z1(0.0f), z2(0.0f),
     diffuser_mix(0.0f), diffuser_g(0.45f), diffuser_buf1(), diffuser_buf2(), diffuser_buf3(), diffuser_buf4(),
-    diffuser_i1(0), diffuser_i2(0), diffuser_i3(0), diffuser_i4(0), phase_mult(1.0f), model_ap_base(0.0f) {} ;
+    diffuser_i1(0), diffuser_i2(0), diffuser_i3(0), diffuser_i4(0), bypass_loop_lp(false), phase_mult(1.0f), model_ap_base(0.0f) {} ;
 };
 
 /**
@@ -354,6 +368,10 @@ struct VoiceState {
         exciter.snare_wire_mix = 0.0f;
         exciter.snare_wire_a1 = 1.6951f;
         exciter.snare_wire_a2 = 0.8930f;;
+        exciter.snare_wire_z1b = 0.0f;
+        exciter.snare_wire_z2b = 0.0f;
+        exciter.snare_wire_z1c = 0.0f;
+        exciter.snare_wire_z2c = 0.0f;
 
         resA.write_ptr = 0;
         resB.write_ptr = 0;
@@ -372,7 +390,7 @@ struct VoiceState {
     void init_modal_modes(float ratio2, float ratio3, float ratio4,
                          float t60_1_ms, float t60_2_ms, float t60_3_ms, float t60_4_ms,
                          float mix, float env1, float env2, float env3, float env4,
-                         uint8_t mode_count) {
+                         uint8_t mode_count, float ratio5 = 0.0f, float ratio6 = 0.0f) {
         uint8_t note = current_note;
         float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
         if (base_f < 20.0f) base_f = 20.0f;
@@ -380,8 +398,10 @@ struct VoiceState {
         float f2 = fminf(base_f * ratio2, 0.45f * k_dsp_sample_rate);
         float f3 = fminf(base_f * ratio3, 0.45f * k_dsp_sample_rate);
         float f4 = fminf(base_f * ratio4, 0.45f * k_dsp_sample_rate);
-        float f5 = fminf(base_f * ratio4 * 1.31f, 0.45f * k_dsp_sample_rate);
-        float f6 = fminf(base_f * ratio4 * 1.62f, 0.45f * k_dsp_sample_rate);
+        // Modes 5/6: use explicit ratios when provided (physical plate theory),
+        // otherwise fall back to legacy formula (ratio4 × 1.31 / 1.62).
+        float f5 = fminf(base_f * (ratio5 > 0.0f ? ratio5 : ratio4 * 1.31f), 0.45f * k_dsp_sample_rate);
+        float f6 = fminf(base_f * (ratio6 > 0.0f ? ratio6 : ratio4 * 1.62f), 0.45f * k_dsp_sample_rate);
         float w1 = (2.0f * M_PI * f1) * k_dsp_inv_sample_rate;
         float w2 = (2.0f * M_PI * f2) * k_dsp_inv_sample_rate;
         float w3 = (2.0f * M_PI * f3) * k_dsp_inv_sample_rate;
