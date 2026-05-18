@@ -98,6 +98,12 @@ PRESET_ALIASES = {
     "Triangle": "Trngle",
     "Clarinet": "Clrint",
     "SteelPan": "StelPan",
+    "AcSnare": "AcSnre",
+    "MarchSnare": "MrchSnr",
+    "AcTom": "Ac Tom",
+    "RideBell": "RidBel",
+    "HiHatOpen": "HHat-O",
+    "HiHatClosed": "HHat-C",
 }
 
 def acceptance_state_for_preset(name: str) -> str:
@@ -339,6 +345,7 @@ def run_auto_tune(
     verbose: bool = False,
     include_out_of_scope: bool = False,
     include_arch_blocked: bool = False,
+    skip_model_params: bool = False,
 ) -> None:
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -478,30 +485,31 @@ def run_auto_tune(
                 SYNTH_ENGINE.write_text(write_preset_rows(current_text, current_rows))
 
         # Tune model_param_presets in the same round.
-        for param_name, col_idx, vmin, vmax, delta in MODEL_PARAMS:
-            for direction in (+1, -1):
-                step = delta * direction
-                trial_model_rows = copy.deepcopy(current_model_rows)
-                for name, row_i in name_to_row.items():
-                    if preset_filter and name not in preset_filter:
-                        continue
-                    old_val = trial_model_rows[row_i][col_idx]
-                    trial_model_rows[row_i][col_idx] = max(vmin, min(vmax, old_val + step))
+        if not skip_model_params:
+            for param_name, col_idx, vmin, vmax, delta in MODEL_PARAMS:
+                for direction in (+1, -1):
+                    step = delta * direction
+                    trial_model_rows = copy.deepcopy(current_model_rows)
+                    for name, row_i in name_to_row.items():
+                        if preset_filter and name not in preset_filter:
+                            continue
+                        old_val = trial_model_rows[row_i][col_idx]
+                        trial_model_rows[row_i][col_idx] = max(vmin, min(vmax, old_val + step))
 
-                trial_text = write_model_param_rows(current_text, trial_model_rows)
-                SYNTH_ENGINE.write_text(trial_text)
-                ok = compile_and_render(RENDER_DIR, verbose=verbose)
-                if not ok:
-                    continue
-                trial_presets = parse_presets(SYNTH_ENGINE)
-                trial_scores = score_all(trial_presets, RENDER_DIR, sample_files, preset_filter)
-                for name, sc in trial_scores.items():
-                    if sc < best_trial.get(name, float("inf")):
-                        best_trial[name] = sc
-                        best_change[name] = (1000 + col_idx, step)  # model table marker
-                label = f"+{step:.4f}" if step > 0 else f"{step:.4f}"
-                print(f"  trial M.{param_name}{label:>8}")
-                SYNTH_ENGINE.write_text(write_model_param_rows(current_text, current_model_rows))
+                    trial_text = write_model_param_rows(current_text, trial_model_rows)
+                    SYNTH_ENGINE.write_text(trial_text)
+                    ok = compile_and_render(RENDER_DIR, verbose=verbose)
+                    if not ok:
+                        continue
+                    trial_presets = parse_presets(SYNTH_ENGINE)
+                    trial_scores = score_all(trial_presets, RENDER_DIR, sample_files, preset_filter)
+                    for name, sc in trial_scores.items():
+                        if sc < best_trial.get(name, float("inf")):
+                            best_trial[name] = sc
+                            best_change[name] = (1000 + col_idx, step)  # model table marker
+                    label = f"+{step:.4f}" if step > 0 else f"{step:.4f}"
+                    print(f"  trial M.{param_name}{label:>8}")
+                    SYNTH_ENGINE.write_text(write_model_param_rows(current_text, current_model_rows))
 
         # Apply accepted per-preset changes.
         # accepted[name] = (col_idx, old_val, new_val, trial_improvement)
@@ -716,6 +724,8 @@ def main() -> None:
                    help="Include non-percussive presets (Clrint/Flute).")
     p.add_argument("--include-arch-blocked", action="store_true",
                    help="Include architecture-limited presets (not recommended for pure parameter tuning).")
+    p.add_argument("--skip-model-params", action="store_true",
+                   help="Skip model_param_presets sweep for faster coarse runs.")
     args = p.parse_args()
 
     preset_names = [x.strip() for x in args.preset.split(",") if x.strip()] or None
@@ -729,6 +739,7 @@ def main() -> None:
         verbose=args.verbose,
         include_out_of_scope=args.include_out_of_scope,
         include_arch_blocked=args.include_arch_blocked,
+        skip_model_params=args.skip_model_params,
     )
 
 

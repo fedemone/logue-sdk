@@ -231,6 +231,11 @@ struct VoiceState {
     float metal_fm_env;
     float metal_fm_decay;
     float metal_fm_depth;
+    // Dedicated post-resonator high-band branch (CPU-light structural path).
+    float hf_branch_env;
+    float hf_branch_decay;
+    float hf_branch_mix;
+    float hf_branch_lp;
 
     // default constructor
     VoiceState() : is_active(false), is_releasing(false),
@@ -250,7 +255,8 @@ struct VoiceState {
     pitch_env(0.0f), pitch_env_decay(1.0f), pitch_env_amt(0.0f),
     reed_nl_enabled(false), reed_nl_drive(1.0f),
     boom_phase(0.0f), boom_inc(0.0f), boom_env(0.0f), boom_decay(1.0f), boom_mix(0.0f), boom_attack_env(1.0f), boom_attack_inc(1.0f),
-    metal_fm_phase(0.0f), metal_fm_inc(0.0f), metal_fm_env(0.0f), metal_fm_decay(1.0f), metal_fm_depth(0.0f) {};
+    metal_fm_phase(0.0f), metal_fm_inc(0.0f), metal_fm_env(0.0f), metal_fm_decay(1.0f), metal_fm_depth(0.0f),
+    hf_branch_env(0.0f), hf_branch_decay(1.0f), hf_branch_mix(0.0f), hf_branch_lp(0.0f) {};
 
     void PartialReset() {
         mag_env = 0.0f;
@@ -330,6 +336,10 @@ struct VoiceState {
         metal_fm_env = 0.0f;
         metal_fm_decay = 1.0f;
         metal_fm_depth = 0.0f;
+        hf_branch_env = 0.0f;
+        hf_branch_decay = 1.0f;
+        hf_branch_mix = 0.0f;
+        hf_branch_lp = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;
