@@ -104,6 +104,7 @@ PRESET_ALIASES = {
     "RideBell": "RidBel",
     "HiHatOpen": "HHat-O",
     "HiHatClosed": "HHat-C",
+    "Timpani": "Timpni",
 }
 
 def acceptance_state_for_preset(name: str) -> str:
