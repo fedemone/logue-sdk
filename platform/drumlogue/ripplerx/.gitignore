@@ -24,6 +24,9 @@ build/
 __pycache__/
 *.pyc
 
+# Compiled render binaries (pid-stamped by auto_tune.py)
+render_presets_tune_*
+
 # auto_tune runtime outputs
-auto_tune_run.log
+auto_tune_*.log
 batch_reports/
