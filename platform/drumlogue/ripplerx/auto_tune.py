@@ -72,6 +72,10 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("PitchAmt", 16, 0.0, 24.0, 1.0),
     ("BoomMix", 20, 0.0, 0.8, 0.03),
     ("BoomAtk", 22, 0.0002, 0.02, 0.0004),
+    ("SnrFB",   25, 2000.0, 8000.0,   200.0),  # snare Band B centre freq (Hz)
+    ("SnrRB",   26,   0.75,    0.97,    0.01),  # snare Band B pole radius base
+    ("SnrFC",   27, 3000.0, 12000.0,  300.0),  # snare Band C centre freq (Hz)
+    ("SnrRC",   28,   0.70,    0.96,    0.01),  # snare Band C pole radius base
 ]
 
 # Named C++ constexpr constants that appear literally in model_param_presets.
