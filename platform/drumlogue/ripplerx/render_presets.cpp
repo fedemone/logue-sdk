@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
         {16,  60, 8.0f, "StelPan"  },
         {17,  79, 1.0f, "Claves"   },
         {18,  67, 3.0f, "Cowbel"   },
-        {19,  84, 8.0f, "Triangle" },
+        {19,  69, 8.0f, "Triangle" },
         {20,  36, 2.0f, "Kick"     },
         {21,  60, 1.5f, "Clap"     },
         {22,  72, 2.0f, "Shaker"   },

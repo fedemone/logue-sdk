@@ -76,6 +76,7 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("SnrRB",   26,   0.75,    0.97,    0.01),  # snare Band B pole radius base
     ("SnrFC",   27, 3000.0, 12000.0,  300.0),  # snare Band C centre freq (Hz)
     ("SnrRC",   28,   0.70,    0.96,    0.01),  # snare Band C pole radius base
+    ("MdlMx",  29,   0.0,     0.5,     0.02),  # modal bank mix override
 ]
 
 # Named C++ constexpr constants that appear literally in model_param_presets.
