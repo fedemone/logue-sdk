@@ -551,7 +551,7 @@ def run_auto_tune(
                 lo, hi = (mp[2], mp[3]) if mp else (-1e9, 1e9)
                 new_val = max(lo, min(hi, old_val + step))
                 current_model_rows[row_i][mcol] = new_val
-                accepted[name] = (col_idx, int(round(old_val * 10000)), int(round(new_val * 10000)), improvement)
+                accepted[name] = (col_idx, old_val, new_val, improvement)
             else:
                 old_val = new_rows[row_i][col_idx]
                 lo, hi  = col_bounds.get(col_idx, (-10000, 10000))
