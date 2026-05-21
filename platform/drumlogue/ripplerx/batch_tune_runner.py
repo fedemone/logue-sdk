@@ -127,7 +127,7 @@ PRESET_NAME_ALIASES = {
     "Marimba": "Marmba",
     "Timpani": "Timpni",
     "AcSnare": "AcSnre",
-    "AcTom": "AcTom",
+    "AcTom": "Ac Tom",
     "Triangle": "Trngle",
     "Clarinet": "Clrint",
     "GlassBowl": "GlsBwl",
@@ -155,7 +155,7 @@ RENDER_PRESET_NAMES = {
     "Koto": "Koto",
     "Vibrph": "Vibrph",
     "Wodblk": "Wodblk",
-    "AcTom": "AcTom",
+    "AcTom": "Ac Tom",
     "Cymbal": "Cymbal",
     "Gong": "Gong",
     "Kalimba": "Kalimba",
@@ -187,13 +187,13 @@ RENDER_PRESET_NAMES = {
 
 PERCUSSIVE_PRESETS = {
     "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "Wodblk",
-    "AcTom", "AcTom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
+    "Ac Tom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
 KICK_PRESETS = {"Kick", "808Sub"}
 SNARE_PRESETS = {"AcSnre", "MrchSnr"}
-TOM_PRESETS = {"AcTom", "AcTom", "Conga", "Bongo", "Taiko", "Djambe"}
+TOM_PRESETS = {"Ac Tom", "Conga", "Bongo", "Taiko", "Djambe"}
 HIHAT_PRESETS = {"HHat-C", "HHat-O"}
 CYMBAL_PRESETS = {"Cymbl", "Ride", "RidBel"}
 GONG_PRESETS = {"Gong"}
@@ -212,7 +212,7 @@ STYLE_PROFILES: Dict[str, Dict[str, float]] = {
 UNPITCHED_FOCUS_PRESETS = {
     # First-batch focus where autocorrelation pitch is frequently unstable and
     # should not dominate acceptance.
-    "Taiko", "Bongo", "Wodblk", "Conga", "Djambe",
+    "Taiko", "Bongo", "Wodblk", "Conga", "Djambe", "Ac Tom",
 }
 
 PRESET_TO_FAMILY = {
@@ -221,6 +221,7 @@ PRESET_TO_FAMILY = {
     "Conga": "membranes",
     "Djambe": "membranes",
     "Taiko": "membranes",
+    "Ac Tom": "membranes",
     # mallets
     "Marimba": "mallets",
     "Marmba": "mallets",  # table alias
@@ -423,7 +424,7 @@ PRESET_RENDER_NOTE_DEFAULTS = {
     "Clap": 60,
     "Shaker": 72,
     "Timpni": 40,
-    "AcTom": 45,
+    "Ac Tom": 45,
 }
 
 # Per-preset pitch calibration in semitones applied after note inference.
@@ -444,7 +445,7 @@ PRESET_NOTE_CALIBRATION = {
     "Koto":     0,   # koto samples name-tagged with note (e.g., Koto-B5.wav)
     "Vibrph":   0,   # vibraphone samples name-tagged
     "Wodblk":   0,   # woodblock, no pitch alignment
-    "AcTom":    0,   # acoustic tom, no pitch alignment
+    "Ac Tom":   0,   # acoustic tom, no pitch alignment
     "Cymbal":   0,   # cymbal, no pitch alignment
     "Gong":    12,   # render note 50; gong samples an octave up from render
     "Kalimba": 12,   # render note 65; kalimba samples typically at C4(60) → +12
