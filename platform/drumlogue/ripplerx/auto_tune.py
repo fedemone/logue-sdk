@@ -518,7 +518,7 @@ def run_auto_tune(
                             best_change[name] = (1000 + col_idx, step)  # model table marker
                     label = f"+{step:.4f}" if step > 0 else f"{step:.4f}"
                     print(f"  trial M.{param_name}{label:>8}")
-                    SYNTH_ENGINE.write_text(write_model_param_rows(current_text, current_model_rows))
+                    SYNTH_ENGINE.write_text(current_text)
 
         # Apply accepted per-preset changes.
         # accepted[name] = (col_idx, old_val, new_val, trial_improvement)
