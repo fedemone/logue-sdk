@@ -557,7 +557,7 @@ def run_auto_tune(
                 lo, hi  = col_bounds.get(col_idx, (-10000, 10000))
                 new_val = max(lo, min(hi, old_val + step))
                 new_rows[row_i][col_idx] = new_val
-                accepted[name] = (col_idx, int(round(old_val)), int(round(new_val)), improvement)
+                accepted[name] = (col_idx, old_val, new_val, improvement)
 
         if accepted:
             new_text = write_model_param_rows(write_preset_rows(current_text, new_rows), current_model_rows)
