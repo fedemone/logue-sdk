@@ -573,7 +573,7 @@ def run_auto_tune(
                     if apply_scores.get(name, float("inf")) >= best_scores.get(name, float("inf")):
                         row_i = name_to_row[name]
                         if col_idx >= 1000:
-                            current_model_rows[row_i][col_idx - 1000] = old_val / 10000.0
+                            current_model_rows[row_i][col_idx - 1000] = old_val
                         else:
                             new_rows[row_i][col_idx] = old_val   # revert
                         del accepted[name]
