@@ -24,8 +24,13 @@ build/
 __pycache__/
 *.pyc
 
-# Compiled render binaries (pid-stamped by auto_tune.py)
+# Compiled render binaries (pid-stamped by auto_tune.py and sweep/debug variants)
 render_presets_tune_*
+render_presets_*
+rp_*
+
+# All rendered WAV output directories from sweeps and experiments
+rendered_*/
 
 # auto_tune runtime outputs
 auto_tune_*.log
