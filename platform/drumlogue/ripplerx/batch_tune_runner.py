@@ -128,6 +128,17 @@ PRESET_NAME_ALIASES = {
     "Timpani": "Timpni",
     "AcSnare": "AcSnre",
     "AcTom": "AcTom",
+    "Triangle": "Trngle",
+    "Clarinet": "Clrint",
+    "GlassBowl": "GlsBwl",
+    "GlassBottle": "GlsBotl",
+    "SteelPan": "StelPan",
+    "PluckedBass": "PlkBss",
+    "GuitarString": "GtrStr",
+    "BellTree": "BelTre",
+    "SlitDrum": "SltDrm",
+    "RideBell": "RidBel",
+    "HandPan": "Handpn",
 }
 
 # Render file aliases used by render_presets.cpp naming convention.
@@ -152,6 +163,7 @@ RENDER_PRESET_NAMES = {
     "Claves": "Claves",
     "Cowbel": "Cowbel",
     "Triangle": "Triangle",
+    "Trngle": "Triangle",
     "Kick": "Kick",
     "Clap": "Clap",
     "Shaker": "Shaker",
@@ -414,19 +426,51 @@ PRESET_RENDER_NOTE_DEFAULTS = {
     "AcTom": 45,
 }
 
-# Provisional per-preset pitch calibration in semitones, applied after note
-# inference/overrides. Keep conservative and only for pitched presets.
+# Per-preset pitch calibration in semitones applied after note inference.
+# One entry per preset so each instrument can be tuned independently.
+# Percussion / noise-dominant presets default to 0 (no pitch alignment needed).
+# Pitched instruments have calibration = render_note - typical_sample_note.
 PRESET_NOTE_CALIBRATION = {
-    "Marmba": 12,
-    "Marimba": 12,
-    "Kalimba": 12,
-    # First-batch pilot: only retain offsets that improved aggregate score.
-    "Djambe": -12,
-    "Conga": 19,
-    # Remaining-batch pilot calibration (Phase 30): reduce large persistent
-    # note offsets before applying deeper preset retuning.
-    "Gong": 12,
-    "MrchSnr": 24,
+    "InitDbg":  0,
+    "Marmba":  12,   # render note 72; samples typically at C4(60) → +12
+    "Marimba": 12,   # alias for Marmba
+    "808Sub":   0,   # sub kick, no pitch alignment
+    "AcSnre":   0,   # snare, no pitch alignment
+    "TblrBel":  0,   # tabla bell, no pitch alignment
+    "Timpni":   0,   # render note 40 (E2); timpani samples vary
+    "Djambe": -12,   # render note 48; samples at C5/A4 → -12 to map to C4
+    "Taiko":    0,   # taiko drum, no pitch alignment
+    "MrchSnr": 24,   # render note 65; marching snare samples often at low note
+    "Koto":     0,   # koto samples name-tagged with note (e.g., Koto-B5.wav)
+    "Vibrph":   0,   # vibraphone samples name-tagged
+    "Wodblk":   0,   # woodblock, no pitch alignment
+    "AcTom":    0,   # acoustic tom, no pitch alignment
+    "Cymbal":   0,   # cymbal, no pitch alignment
+    "Gong":    12,   # render note 50; gong samples an octave up from render
+    "Kalimba": 12,   # render note 65; kalimba samples typically at C4(60) → +12
+    "StelPan":  0,   # steel pan, no pitch alignment
+    "Claves":   0,   # claves, no pitch alignment
+    "Cowbel":   0,   # cowbell, no pitch alignment
+    "Trngle":   0,   # triangle, no pitch alignment
+    "Kick":     0,   # kick drum, no pitch alignment
+    "Clap":     0,   # clap, no pitch alignment
+    "Shaker":   0,   # shaker, no pitch alignment
+    "Flute":    0,   # out of scope (excluded from scoring)
+    "Clrint":   0,   # out of scope (excluded from scoring)
+    "PlkBss":   0,   # plucked bass, no pitch alignment
+    "GlsBwl":   0,   # glass bowl, samples named with note
+    "GtrStr":   0,   # guitar string, samples named with note
+    "HHat-C":   0,   # hi-hat closed, no pitch alignment
+    "HHat-O":   0,   # hi-hat open, no pitch alignment
+    "Conga":   19,   # render note 62; conga samples 19 st below render note
+    "Handpn":   0,   # handpan, samples named with note
+    "BelTre":   0,   # bell tree, no pitch alignment
+    "SltDrm":   0,   # slit drum, no pitch alignment
+    "Ride":     0,   # ride cymbal, no pitch alignment
+    "RidBel":   0,   # ride bell, no pitch alignment
+    "Bongo":    0,   # bongo, no pitch alignment
+    "GlsBotl":  0,   # glass bottle, no pitch alignment
+    "Tick":     0,   # tick, no pitch alignment
 }
 
 

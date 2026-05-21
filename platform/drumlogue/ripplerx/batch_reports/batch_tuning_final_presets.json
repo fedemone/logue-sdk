@@ -1,46 +1,11 @@
 {
   "presets": [
     {
-      "preset": "AcSnre",
-      "preset_idx": 3,
-      "values": [
-        3,
-        38,
-        0,
-        1,
-        120,
-        280,
-        0,
-        0,
-        2,
-        5,
-        168,
-        -7,
-        0,
-        46,
-        9,
-        3,
-        0,
-        8,
-        7,
-        61,
-        740,
-        2,
-        480,
-        707
-      ],
-      "avg_score": 81.5777376464093,
-      "samples": [
-        "acoustic-snare.wav",
-        "snare heavy.wav"
-      ]
-    },
-    {
       "preset": "Cymbal",
       "preset_idx": 13,
       "values": [
         13,
-        60,
+        65,
         0,
         1,
         800,
@@ -50,129 +15,24 @@
         0,
         4,
         200,
-        16,
+        28,
         0,
         0,
         18,
         8,
         5,
-        11,
+        15,
         5,
-        13,
+        40,
         640,
         2,
         340,
         707
       ],
-      "avg_score": 104.92481629969902,
+      "avg_score": 116.21165669171607,
       "samples": [
         "CrashA-001-CloseRoom.wav",
         "cymbal-Crash16Inch.wav"
-      ]
-    },
-    {
-      "preset": "Gong",
-      "preset_idx": 14,
-      "values": [
-        14,
-        50,
-        0,
-        1,
-        200,
-        50,
-        0,
-        0,
-        0,
-        4,
-        200,
-        1,
-        0,
-        0,
-        20,
-        8,
-        1,
-        21,
-        20,
-        19,
-        860,
-        0,
-        30,
-        707
-      ],
-      "avg_score": 101.51971851103241,
-      "samples": [
-        "Chinese-Gong.wav",
-        "Gong-long-G#.wav"
-      ]
-    },
-    {
-      "preset": "MrchSnr",
-      "preset_idx": 8,
-      "values": [
-        8,
-        65,
-        0,
-        1,
-        720,
-        500,
-        0,
-        0,
-        1,
-        5,
-        85,
-        4,
-        0,
-        50,
-        8,
-        16,
-        25,
-        19,
-        5,
-        30,
-        800,
-        2,
-        620,
-        707
-      ],
-      "avg_score": 104.27488591958111,
-      "samples": [
-        "Marching-Snare-Drum-A#-minor.wav",
-        "Metal-Pipe-Snare-E-major.wav"
-      ]
-    },
-    {
-      "preset": "Trngle",
-      "preset_idx": 19,
-      "values": [
-        19,
-        77,
-        0,
-        1,
-        900,
-        500,
-        0,
-        0,
-        0,
-        1,
-        190,
-        16,
-        0,
-        0,
-        15,
-        22,
-        120,
-        20,
-        0,
-        10,
-        300,
-        0,
-        1500,
-        707
-      ],
-      "avg_score": 81.71844672124932,
-      "samples": [
-        "Triangle-Bell-C#.wav",
-        "Triangle-Bell_F5.wav"
       ]
     }
   ]

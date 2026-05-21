@@ -217,7 +217,7 @@ inline static constexpr ModalPresetConfig modal_preset_configs[k_NumPrograms] = 
 /* k_Timpani */ {1.340f,1.664f,1.980f,900.0f,680.0f,500.0f,380.0f,0.32f,0.90f,0.75f,0.55f,0.38f,4}, /* k_Djambe */ {1.59f,2.14f,2.30f,80.0f,55.0f,38.0f,26.0f,0.20f,0.65f,0.50f,0.35f,0.22f,4},
 /* k_Taiko */ {1.59f,2.14f,2.90f,350.0f,250.0f,180.0f,120.0f,0.28f,0.85f,0.70f,0.52f,0.36f,4}, /* k_MarchSnare */ {1.59f,2.14f,2.30f,30.0f,22.0f,15.0f,10.0f,0.14f,0.60f,0.45f,0.30f,0.18f,4},
 /* k_Koto */ kDefaultModalPresetConfig, /* k_Vibraphone */ {4.00f,10.0f,0.0f,800.0f,300.0f,0.0f,0.0f,0.18f,0.80f,0.52f,0.26f,0.0f,3}, /* k_Woodblock */ {STAGE2_MODAL_RATIO_2,0.0f,0.0f,STAGE2_MODAL_T60_1_MS,STAGE2_MODAL_T60_2_MS,0.0f,0.0f,STAGE2_MODAL_MIX,STAGE2_MODAL_ENV1,STAGE2_MODAL_ENV2,0.0f,0.0f,2},
-/* k_AcousticTom */ {1.59f,2.14f,2.30f,100.0f,70.0f,50.0f,35.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_Cymbal */ {1.479f,1.932f,2.332f,800.0f,600.0f,450.0f,320.0f,0.15f,0.80f,0.65f,0.50f,0.36f,6, 2.549f,2.840f},
+/* k_AcousticTom */ {1.59f,2.14f,2.30f,100.0f,70.0f,50.0f,35.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_Cymbal */ {2.92f,6.37f,11.75f,3000.0f,2000.0f,1500.0f,1000.0f,0.15f,0.90f,0.75f,0.55f,0.36f,6, 14.0f,19.0f},
 /* k_Gong */ {1.479f,1.932f,2.332f,2000.0f,1500.0f,1100.0f,800.0f,0.20f,0.90f,0.75f,0.56f,0.40f,6, 2.549f,2.840f}, /* k_Kalimba */ {4.00f,10.0f,0.0f,300.0f,100.0f,0.0f,0.0f,0.15f,0.80f,0.50f,0.22f,0.0f,3}, /* k_SteelPan */ {2.00f,3.00f,4.00f,1200.0f,900.0f,700.0f,500.0f,0.22f,0.90f,0.75f,0.55f,0.35f,4},
 /* k_Claves */ {2.756f,5.404f,0.0f,60.0f,25.0f,0.0f,0.0f,0.16f,0.70f,0.45f,0.0f,0.0f,3}, /* k_Cowbell */ {1.41f,2.01f,2.56f,180.0f,130.0f,90.0f,65.0f,0.16f,0.75f,0.60f,0.45f,0.30f,4}, /* k_Triangle */ {2.756f,5.404f,0.0f,6000.0f,5000.0f,0.0f,0.0f,0.15f,0.80f,0.55f,0.0f,0.0f,3},
 /* k_KickDrum */ kDefaultModalPresetConfig, /* k_Clap */ kDefaultModalPresetConfig, /* k_Shaker */ kDefaultModalPresetConfig, /* k_Flute */ kDefaultModalPresetConfig, /* k_Clarinet */ kDefaultModalPresetConfig, /* k_PluckBass */ kDefaultModalPresetConfig,
@@ -243,7 +243,7 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
     /* k_Vibraphone  */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f},
     /* k_Woodblock   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.08000f},
     /* k_AcousticTom */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f, tom_bm,    1.00000f,    0.99945f,    0.05000f,    0.00000f,    0.00080f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f},
-    /* k_Cymbal      */ {3400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.98000f,    0.00000f,    0.91000f, false,    0.30000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
+    /* k_Cymbal      */ {3400.00000f,    1.00000f, 4500.00000f,    0.00000f,    0.00000f,    1.10000f,    0.00000f,    0.00000f,    0.00000f,    0.98000f,    0.00000f,    0.91000f, true,    0.30000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f},
     /* k_Gong        */ {1500.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.82000f,    0.00000f,    0.83000f, false,    0.24000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Kalimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.03000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f},
     /* k_SteelPan    */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f},
@@ -434,18 +434,18 @@ SynthState state;
             {   5,  40,   0,   1, 360, 300,   0,   0,   2,   3, 190,   0,   0,  36,  18,  10,   0,  -4,   4,  16, 420,   0, 380, 707},    // 5:  Timpani    — InHm9: slight spread on coupled membrane mode; NzRs300 longer noise tail. rescue pass: deeper boom (darker loss) with longer low-body sustain and broader impact
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 102,   0,   0,  35,  12,  10,   5,  15,   5,   7, 450,   0, 500, 707},      // 6:  Djambe     — Dkay102/Mterl0: drier djembe body with wider noise cutoff
             {   7,  41,   0,   1, 250, 390,   0,   0,   1,   5, 200,  10,   0,  30,  15,   3,   1,  11,   5,   9, 550,   0, 190, 707},       // 7:  Taiko      — harder mallet + reduced noise tail NzMx14 + lower NzFq for thud character
-            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,   4,   0,  50,   8,  16,  25,  19,   5,  30, 800,   2, 620, 707},    // 8:  MrchSnr    — increase wire excitation brightness and reduce shell dominance
+            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,  25,  19,   5,  73, 800,   2, 105, 707},    // 8:  MrchSnr    — NzMx=73/NzFq=105: low-freq dense noise raises flatness to match snare reference; Mterl=20/NzHi=0.86
             {   9,  60,   0,   1, 600, 335,   0,   0,   0,   0, 185,  12,   0,   0,  12,   3,   1,   7,   0,   0, 300,   0,1000, 707},       // 09: Koto       — InHm3 adds light inharmonic shimmer; no noise for cleaner pluck
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,   1,  13,   0,   0, 300,   0,1000, 707},     // 10: Vibrph     — Mterl28/TbRd13 (=GtrStr): coeff≈0.976→dc_gain≈0.998→T60≈3.9s@C5; within [1.13,16.6]s test bounds
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,   1,   3,   0,   5, 420,   0, 900, 707},       // 11: Wodblk     — NzMx5 light transient click; NzRs420 short burst
             {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 200,   0,   0,  44,  11,   2,   0,   9,   5,   3, 360,   0, 520, 707},       // 12: Ac Tom     — Drumhead gain curve: Dkay=90→g=0.697→T60≈195ms@110Hz; boom_mix=0.24 body lift
-            {  13,  60,   0,   1, 800, 450,   0,   0,   0,   4, 200,  16,   0,   0,  18,   8,   5,  11,   5,  45, 640,   2, 340, 707},     // 13: Cymbal     — NzMx 13→45: noise sustain extended to ~3s in NoteOn; HP@3.4kHz wash dominates tail
-            {  14,  50,   0,   1, 200,  50,   0,   0,   0,   4, 200,   1,   0,   0,  20,   8,   1,  21,  20,  19, 860,   0,  30, 707},       // 14: Gong       — reduce darkness and bias more upper partial noise onset
+            {  13,  65,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,   5,  15,   5,  40, 640,   2, 340, 707},     // 13: Cymbal     — note65(349Hz) mode6=991Hz; Dkay199 T60~11.3s; Mterl30→lossless LP; NzMx15→KS/modal dominant
+            {  14,  50,   0,   1, 200,  50,   0,   0,   0,   4, 190,   1,   0,   0,  20,   8,   1,  21,  20,  19, 860,   0,  30, 707},       // 14: Gong       — reduce darkness and bias more upper partial noise onset
             {  15,  65,   0,   1, 700, 420,   0,   0,   0,   1, 182,   6,   0,   0,   5,   0,   1,   7,   3,  10, 260,   0, 720, 707},        // 15: Kalimba    — darker/lower-inharmonic tine with lower noise mix
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  14,   0,   0,  12,   0,   3,   9,   5,   0, 300,   0,1000, 707},        // 16: StelPan    — Mterl14 brighter pan + TbRd11 for steelpan inharmonic partial spread
             {  17,  79,   0,   1, 900, 450,   0,   0,   0,   2,  13,  -1,   0,   0,   1,   2,   1,   1,   0,   0, 300,   0, 800, 707},         // 17: Claves     — final Stage-1: InHm3 to reduce audible inharmonic beating while keeping wood attack
             {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 185,  20,   0,   0,   4, 200,  20,   3,  30,   0, 300,   0,1000, 707},   // 18: Cowbell    — Dkay:55→175 (~2s metallic ring); InHm:1700→200 (moderate plate inharmonicity)
-            {  19,  69,   0,   1, 900, 500,   0,   0,   0,   1, 190,  16,   0,   0,  15,  22, 120,  20,   0,  10, 300,   0,1500, 707},  // 19: Triangle   — note 77→69: A4 trigger gives best dual-ref mean (75.77 vs 80.58 at F5)
+            {  19,  69,   0,   1, 900, 470,   0,   0,   0,   1, 190,  18,   0,   0,  15,  22, 120,  20,   0,   5, 300,   0,1500, 707},  // 19: Triangle   — note 77→69: A4 trigger gives best dual-ref mean (75.77 vs 80.58 at F5)
             {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   4,   0,   1,   6,  15, 220,   0, 220, 707},       // 20: Kick Drum  — MlSt350 (from 120): rendered 0-5ms had only 24% hi vs ref 82%; stiffer mallet sharpens beater click. Drumhead gain curve: Dkay=55→g=0.601→T60≈175ms@65Hz; boom_mix=0.40 dominates after body ring; pitch sweep 9st
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,   3,   0,  10,   3,   5,  95, 600,   2, 600, 707},       // 21: Clap       — NzMx95: maximum noise content for hand-clap character
             {  22,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,   2,   0,  20,   3,   3,  90, 900,   2, 800, 707},      // 22: Shaker     — Dkay12/Mterl10: dry rattle body; NzMx90 high noise content
@@ -1316,17 +1316,28 @@ SynthState state;
             v.hf_branch_decay = fmaxf(v.hf_branch_decay, 0.9992f);
             v.hf_branch_mix = fmaxf(v.hf_branch_mix, 0.22f);
         }
-        // Cymbal: sustained noise wash — extend noise envelopes so broadband noise
-        // (HP@3.4kHz) dominates the 4-second sustain instead of the 261Hz KS ring.
+        // Cymbal: extended noise envelopes so shimmer sustains through the full 4-second render.
+        // KS at note=90 (1480Hz) with Dkay=200 gives T60~4.6s and harmonics at 1480/2960/4440/5920Hz.
         if (m_preset_idx == k_Cymbal) {
-            v.exciter.noise_env_hi.decay_rate = 0.000007f;  // ~3s high-band
-            v.exciter.noise_env.decay_rate    = 0.0000035f; // ~4.2s low-band
-            v.hf_branch_decay = 0.9998f;                    // T60~720ms shimmer
+            v.exciter.noise_env_hi.decay_rate = 0.000007f;  // ~3s high-band shimmer
+            v.exciter.noise_env.decay_rate    = 0.0000035f; // ~6s low-band wash
+            v.hf_branch_decay = 0.9998f;                    // T60~720ms upper shimmer
         }
-
         // PartialReset() clears boom helper fields; restore them from preset params
         // on every NoteOn, without preset-specific branching.
         const ProgramIndex preset = static_cast<ProgramIndex>(m_preset_idx);
+        // hat_filter per-preset: repurpose snare_wire_z1/z2/a2 cols (safe when snare_wire_mix=0)
+        // col k_snare_wire_z1 = mode (0=LP,1=BP,2=HP), col k_snare_wire_z2 = freq Hz, col k_snare_wire_a2 = Q
+        if (v.exciter.use_hat_filter) {
+            float hf_freq = preset_param(preset, k_snare_wire_z2);
+            if (hf_freq > 0.0f) {
+                int hf_mode = (int)roundf(preset_param(preset, k_snare_wire_z1));
+                float hf_q  = preset_param(preset, k_snare_wire_a2);
+                if (hf_q < 0.1f) hf_q = 1.1f;
+                v.exciter.hat_filter.mode = hf_mode;
+                v.exciter.hat_filter.set_coeffs(hf_freq, hf_q, default_sample_rate);
+            }
+        }
         v.boom_inc = preset_param(preset, k_boom_inc);
         v.boom_env = preset_param(preset, k_boom_env);
         v.boom_decay = preset_param(preset, k_boom_decay);

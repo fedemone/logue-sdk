@@ -154,7 +154,7 @@ int main(int argc, char** argv) {
         {10,  72, 6.0f, "Vibrph"   },
         {11,  48, 2.0f, "Wodblk"   },
         {12,  45, 2.0f, "AcTom"    },
-        {13,  60, 4.0f, "Cymbal"   },
+        {13,  65, 6.0f, "Cymbal"   },
         {14,  50, 6.0f, "Gong"     },
         {15,  65, 6.0f, "Kalimba"  },
         {16,  60, 8.0f, "StelPan"  },

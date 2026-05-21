@@ -1,11 +1,3 @@
 preset,preset_idx,sample,render_note,score,estimated_runs_to_target,family,f0_threshold_met,acceptance_state,arch_blocked,arch_reasons,f0_pct,f0_ratio,note_offset_semitones,attack_pct,t60_pct,centroid_pct,centroid_pitchnorm_pct,rolloff_pct,rolloff_pitchnorm_pct,flatness_pct,flux_pct,inharm_pct,mrstft_log_l1,note_aligned_mrstft_log_l1
-Trngle,19,Triangle-Bell_F5.wav,77,68.9136,6,other,,tunable_in_scope,False,,56.6203,0.433797,-14.4589,53.3528,22.8097,40.9033,26.5955,44.4490,21.9102,63.1522,87.2838,76.5668,0.673351,0.673351
-AcSnre,3,snare heavy.wav,38,78.2987,6,other,,tunable_in_scope,False,,9.2971,0.907029,-1.6893,100.0000,26.4899,12.7837,3.8440,35.1884,28.5452,2.9162,63.5583,0.0000,1.034028,1.034028
-AcSnre,3,acoustic-snare.wav,38,84.8567,6,other,,tunable_in_scope,False,,9.2971,0.907029,-1.6893,100.0000,45.6830,26.3939,33.2371,35.3264,41.3391,58.3577,11.8245,0.0000,1.033776,1.033776
-Trngle,19,Triangle-Bell-C#.wav,60,94.5233,7,other,,tunable_in_scope,False,,92.1128,0.078872,-43.9721,90.9297,21.3378,60.4924,80.0362,53.2852,83.1162,56.6191,93.3175,100.0000,0.655205,0.655205
-Gong,14,Gong-long-G#.wav,72,99.4496,7,other,,tunable_in_scope,False,,95.8393,0.041607,-55.0444,100.0000,58.9937,17.8975,94.9323,11.2762,95.3105,12.1233,92.1267,95.3216,0.462509,0.462509
-Cymbal,13,cymbal-Crash16Inch.wav,60,102.1548,7,other,,tunable_in_scope,False,,79.1829,0.208171,-27.1699,100.0000,19.3727,44.9065,62.2150,36.6206,67.1548,68.5366,97.4465,32.2458,0.569457,0.569457
-Gong,14,Chinese-Gong.wav,72,103.5898,7,other,,tunable_in_scope,False,,98.3357,0.016643,-70.9076,100.0000,18.0626,52.8856,99.2159,50.2730,99.1724,65.6568,72.9493,100.0000,0.488592,0.488592
-MrchSnr,8,Metal-Pipe-Snare-E-major.wav,84,103.8239,7,other,,tunable_in_scope,False,,80.2820,0.197180,-28.1090,25.9046,11.1782,31.8730,71.0570,28.1017,72.5751,70.4758,83.0961,61.6259,0.752813,0.752813
-MrchSnr,8,Marching-Snare-Drum-A#-minor.wav,84,104.7259,7,other,,tunable_in_scope,False,,92.1128,0.078872,-43.9721,4.1870,7.4830,30.9704,94.5555,12.0128,93.0603,46.9279,81.1882,100.0000,0.913632,0.913632
-Cymbal,13,CrashA-001-CloseRoom.wav,21,107.6949,7,other,,tunable_in_scope,False,,96.7213,0.032787,-59.1688,100.0000,0.5525,39.0076,94.6244,28.6833,95.4026,67.3183,97.9185,100.0000,0.599400,0.599400
+Cymbal,13,cymbal-Crash16Inch.wav,60,114.6987,7,other,,tunable_in_scope,False,,79.1829,0.208171,-27.1699,100.0000,56.8112,44.1726,62.7118,29.6133,70.4247,74.9168,97.7546,60.6780,0.327975,0.327975
+Cymbal,13,CrashA-001-CloseRoom.wav,21,117.7246,7,other,,tunable_in_scope,False,,96.7213,0.032787,-59.1688,100.0000,46.1364,38.1951,94.6951,20.7984,95.8603,73.9455,98.1696,100.0000,0.425529,0.425529
