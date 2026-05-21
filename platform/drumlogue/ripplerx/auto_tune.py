@@ -57,7 +57,7 @@ PARAMS: List[Tuple[str, int, int, int, int]] = [
     ("NzRs",  20,   0, 1000, 40),
     ("NzFq",  22,  30, 1500, 60),
     ("MlSt",   5,   0, 500, 30),
-    ("InHm",  15,   0,  20,  1),
+    ("InHm",  15,   0,  30,  2),
     ("TbRd",  17,  -5,  35,  2),
 ]
 
@@ -77,6 +77,8 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("SnrFC",   27, 3000.0, 12000.0,  300.0),  # snare Band C centre freq (Hz)
     ("SnrRC",   28,   0.70,    0.96,    0.01),  # snare Band C pole radius base
     ("MdlMx",  29,   0.0,     0.5,     0.02),  # modal bank mix override
+    ("BaseFM",  0,   0.0,  8000.0,  200.0),  # metallic FM base freq (0=disabled for non-metallic)
+    ("DiffMx", 13,   0.0,     0.5,    0.02),  # Schroeder diffuser mix
 ]
 
 # Named C++ constexpr constants that appear literally in model_param_presets.

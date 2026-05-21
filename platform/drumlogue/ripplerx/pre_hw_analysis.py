@@ -605,11 +605,15 @@ def extract_features(sig: List[float], sr: int, spatial_width: float = 0.0) -> F
         centroids = [spectral_centroid(fr, sr, n_fft) for fr in spec]
         rolls = [spectral_rolloff(fr, sr, n_fft) for fr in spec]
         flats = [spectral_flatness(fr) for fr in spec]
-        centroid = sum(centroids) / len(centroids)
-        rolloff = sum(rolls) / len(rolls)
-        flat = sum(flats) / len(flats)
         crests = [spectral_crest(fr) for fr in spec]
-        crest = sum(crests) / len(crests)
+        # Energy-weight time-average so silent tail frames don't drag spectral
+        # features toward DC (issue for short sounds in long render windows).
+        frame_energy = [sum(m * m for m in fr) for fr in spec]
+        total_e = max(sum(frame_energy), EPS)
+        centroid = sum(e * c for e, c in zip(frame_energy, centroids)) / total_e
+        rolloff = sum(e * r for e, r in zip(frame_energy, rolls)) / total_e
+        flat = sum(e * f for e, f in zip(frame_energy, flats)) / total_e
+        crest = sum(e * c for e, c in zip(frame_energy, crests)) / total_e
         flux = spectral_flux(spec)
         mels = [mel_band_energies(fr, sr, n_fft, n_bands=20) for fr in spec]
         mel_mean = [sum(v[i] for v in mels) / len(mels) for i in range(20)]
