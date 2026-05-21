@@ -10,10 +10,24 @@
 Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.  
 Scores are `class_weighted_score` (lower is better). Targets are soft goals, not hard gates.
 
+### Batch-2 baselines (after onset ramp + batch-1 auto_tune × 6 rounds)
+
 | Preset   | Score  | Target | Status               |
 |----------|--------|--------|----------------------|
-| MrchSnr  | 78.02  | < 80   | ✓ **ACHIEVED**       |
-| AcSnre   | 64.54  | < 70   | ✓ **ACHIEVED** (Phase 46) |
+| Djambe   | 48.8   | < 55   | ✓ **ACHIEVED** (onset ramp 3.5ms, auto_tune ×6) |
+| Handpn   | 49.0   | < 60   | ✓ **ACHIEVED** |
+| Conga    | 53.5   | < 60   | ✓ **ACHIEVED** |
+| Taiko    | 67.6   | < 70   | ✓ **ACHIEVED** |
+| GlsBotl  | 66.5   | < 70   | ✓ **ACHIEVED** |
+| Cowbel   | 65.2   | < 70   | ✓ **ACHIEVED** |
+| HHat-C   | 75.3   | < 80   | ✓ **ACHIEVED** |
+| StelPan  | 76.3   | < 80   | ✓ **ACHIEVED** |
+| Tick     | 84.9   | < 80   | In progress (auto_tune batch-2 running) |
+| Timpni   | 87.0   | < 80   | In progress (onset ramp 2ms, needs more tuning) |
+| Claves   | 98.0   | < 80   | In progress |
+| Bongo    | 114.7  | < 80   | In progress (onset ramp 3.5ms; AtkMs optimization pending) |
+| MrchSnr  | 78.02  | < 80   | ✓ **ACHIEVED** |
+| AcSnre   | 64.54  | < 70   | ✓ **ACHIEVED** |
 | Kick     | 118.21 | < 80   | In progress          |
 | Kalimba  | 64.17  | < 70   | Close                |
 | Cymbal   | 91.82  | < 70   | Architectural limit  |
@@ -24,6 +38,14 @@ Scores are `class_weighted_score` (lower is better). Targets are soft goals, not
 - **Cymbal**: f0 detector breaks above note 65; NzMx > 40 collapses attack from 37 ms → 2 ms; `CrashA` inharm_pct is permanently 100% (ref=0 vs ren > 0 is always max pct_diff).
 - **Triangle**: `Triangle-Bell-C#.wav` has f0 at C#8 ≈ 4434 Hz — ~40 semitones above any useful render note. `attack_pct ≈ 98%` because real triangle bells have instant metal-strike onset the synth cannot reproduce.
 - **Gong**: Both gong samples score `attack_pct = 100%` and `f0_pct ≈ 96–98%`. The gong's inharmonic spectrum gives the f0 detector garbage (70+ semitone apparent mismatch). PERCUSSIVE bonus (+12–17 pts) makes the floor even higher.
+
+### Key improvements since PROGRESS.md
+
+| Change | Effect |
+|--------|--------|
+| `k_onset_attack_ms` architectural addition | Membrane drums (Djambe/Bongo/Conga/AcTom/Taiko/Handpan/Timpani) get a linear 0→1 onset ramp. Eliminated 100% attack_pct floor from 0ms render onset vs 3–4ms physical onset. Djambe: 91.9→48.8. |
+| auto_tune batch-1 × 6 rounds | BaseFM +200 Hz for Djambe/Timpani/Tick/StelPan, DiffMx 0→0.02 for membrane presets, Dkay/Cowbell parameter adjustments. |
+| autocorr_f0 aliasing fix | 44.1 kHz samples decimated to 8820 Hz were giving period-2 spurious f0=4410 Hz. Added `lo = max(4, ...)` guard. |
 
 ---
 
