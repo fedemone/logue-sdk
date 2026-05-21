@@ -436,7 +436,12 @@ def autocorr_f0(sig: List[float], sr: int, fmin: float = 50.0, fmax: float = 400
     N = len(window)
     if N < 2:
         return 0.0
-    lo = max(1, int(sr / fmax))
+    # Require period >= 4 to avoid aliasing artifacts from decimation.
+    # 44.1 kHz samples decimated by 5 give sr=8820; without this guard fmax=4000
+    # yields lo=2, which latches onto a period-2 noise artifact (~4410 Hz) instead
+    # of the actual pitch. Capping at sr//4 keeps fmax ≤ 2205 Hz (adequate for all
+    # practical musical fundamentals including upper registers).
+    lo = max(4, int(sr / fmax))
     hi = min(int(sr / fmin), N // 2)
     if hi <= lo:
         return 0.0

@@ -657,7 +657,8 @@ def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str,
     # pitch-dominance when f0 tracking is unstable and reward timbre trajectory.
     if family in {"membranes", "wood"} or preset_name in UNPITCHED_FOCUS_PRESETS:
         score -= 0.10 * metrics.get("f0_pct", 0.0)
-        score -= 0.20 * abs(metrics.get("note_offset_semitones", 0.0))
+        # Cap at 2 octaves (24 st) so f0 estimation artifacts don't produce huge credits.
+        score -= 0.20 * min(abs(metrics.get("note_offset_semitones", 0.0)), 24.0)
         score -= 6.0 * metrics.get("timbre_vec_cosdist", 0.0)
         score -= 2.0 * metrics.get("centroid_corr_dist", 0.0)
 
