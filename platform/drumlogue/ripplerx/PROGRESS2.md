@@ -73,6 +73,7 @@ NoteOn trigger
 │   └─ Modal attack coupling: modal_mix boosted by FM env during transient window
 │
 └─► MASTER SHAPING
+    ├─ Onset ramp: linear 0→1 envelope over k_onset_attack_ms ms (membrane drums only)
     ├─ Tilt EQ (Tone param)
     ├─ Magnitude envelope follower (squelch, ~−80 dB threshold)
     └─ Brickwall limiter (NaN safety net)
