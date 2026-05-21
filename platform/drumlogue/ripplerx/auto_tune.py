@@ -79,6 +79,7 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("MdlMx",  29,   0.0,     0.5,     0.02),  # modal bank mix override
     ("BaseFM",  0,   0.0,  8000.0,  200.0),  # metallic FM base freq (0=disabled for non-metallic)
     ("DiffMx", 13,   0.0,     0.5,    0.02),  # Schroeder diffuser mix
+    ("AtkMs",  30,   0.0,    10.0,    0.5),   # global onset ramp (ms); 0=instant (no ramp)
 ]
 
 # Named C++ constexpr constants that appear literally in model_param_presets.

@@ -250,6 +250,9 @@ struct VoiceState {
     float hf_branch_decay;
     float hf_branch_mix;
     float hf_branch_lp;
+    // Global onset ramp — ramps full voice_out from 0→1 over onset_attack_ms milliseconds.
+    float onset_env;
+    float onset_inc; // 0 = disabled (env stays 1.0), >0 = ramp rate per sample
 
     // default constructor
     VoiceState() : is_active(false), is_releasing(false),
@@ -270,7 +273,8 @@ struct VoiceState {
     reed_nl_enabled(false), reed_nl_drive(1.0f),
     boom_phase(0.0f), boom_inc(0.0f), boom_env(0.0f), boom_decay(1.0f), boom_mix(0.0f), boom_attack_env(1.0f), boom_attack_inc(1.0f),
     metal_fm_phase(0.0f), metal_fm_inc(0.0f), metal_fm_env(0.0f), metal_fm_decay(1.0f), metal_fm_depth(0.0f),
-    hf_branch_env(0.0f), hf_branch_decay(1.0f), hf_branch_mix(0.0f), hf_branch_lp(0.0f) {};
+    hf_branch_env(0.0f), hf_branch_decay(1.0f), hf_branch_mix(0.0f), hf_branch_lp(0.0f),
+    onset_env(1.0f), onset_inc(0.0f) {};
 
     void PartialReset() {
         mag_env = 0.0f;
@@ -354,6 +358,8 @@ struct VoiceState {
         hf_branch_decay = 1.0f;
         hf_branch_mix = 0.0f;
         hf_branch_lp = 0.0f;
+        onset_env = 1.0f;
+        onset_inc = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;
