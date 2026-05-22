@@ -148,21 +148,24 @@ Rounds stop after 3 consecutive rounds with no accepted change.
 
 ## What To Do Next (priority order)
 
-### 0. Status: batch-2b COMPLETE
+### 0. Status: Timpni dedicated pass running (PID 22881, log `/tmp/autotune_timpni.log`)
 - batch-2b converged (3 stable rounds). Final mean score: **61.42** (was 63.41).
 - All 13 batch presets now below target except **Timpni** (81.84, target <80).
-- No active auto_tune processes running.
+- Dedicated Timpni pass started with Dkay ceiling 200→300 and MdlMx step 0.02→0.05.
+- Round 1 diagnostics confirm score is dominated by fixed-floor measurement artifacts:
+  - `f0_pct=96.3%` (f0 detector artifact — −57 semitone offset in Orchestral-Timpani-C.wav)
+  - `attack_pct=90.4%` (fast mallet strike vs 2ms onset ramp)
+  - `inharm_pct=100%` (inharmonicity metric maxed out)
+  - Together ~38 pts fixed floor. Coordinate-descent is near-flat (all trials ≈81.8).
 
 ### 1. Dedicated passes (next up)
 
-**Timpni** — needs 1.84 points more. Coordinate-descent stalled on int PARAMS; try wider MODEL_PARAMS search:
-```bash
-cd platform/drumlogue/ripplerx
-python3 auto_tune.py --preset Timpni 2>&1 | tee /tmp/autotune_timpni.log
-```
-Suggested manual edits to `auto_tune.py` MODEL_PARAMS before running:
-- `M.BoomMix`: step 0.01 → 0.05 (widen search)
-- `M.BaseFM`: currently not in scope for Timpni? Add with step 400 Hz
+**Timpni** — 81.84, target <80 (1.84 pts gap). Running dedicated pass (see §0 above).
+- Wider Dkay range (200→300) and MdlMx step (0.02→0.05) already applied.
+- Round 1 shows: Dkay+10=110 (worse), all other trials ≈81.8 (flat).
+- If pass converges without hitting target, Timpni may be an **architectural limit**:
+  fixed-floor from f0-detector artifact + inharm=100% = ~38 pts unremovable.
+  The <80 target may require pitch-normalised scoring or better f0 handling.
 
 **Kick** — 118.21, target <80, far from target:
 ```bash

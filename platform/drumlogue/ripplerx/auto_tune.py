@@ -51,7 +51,7 @@ RENDER_CMD = f"./{RENDER_BIN} {{render_dir}}/"
 # ── Tunable parameters: (name, col_idx, min_val, max_val, delta) ──────────────
 # col_idx matches the ParamIndex enum in synth_engine.h (0-based preset row)
 PARAMS: List[Tuple[str, int, int, int, int]] = [
-    ("Dkay",  10,   0, 200, 10),
+    ("Dkay",  10,   0, 300, 10),
     ("Mterl", 11, -10,  30,  2),
     ("NzMx",  19,   0, 100,  5),
     ("NzRs",  20,   0, 1000, 40),
@@ -76,7 +76,7 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("SnrRB",   26,   0.75,    0.97,    0.01),  # snare Band B pole radius base
     ("SnrFC",   27, 3000.0, 12000.0,  300.0),  # snare Band C centre freq (Hz)
     ("SnrRC",   28,   0.70,    0.96,    0.01),  # snare Band C pole radius base
-    ("MdlMx",  29,   0.0,     0.5,     0.02),  # modal bank mix override
+    ("MdlMx",  29,   0.0,     0.5,     0.05),  # modal bank mix override
     ("BaseFM",  0,   0.0,  8000.0,  200.0),  # metallic FM base freq (0=disabled for non-metallic)
     ("DiffMx", 13,   0.0,     0.5,    0.02),  # Schroeder diffuser mix
     ("AtkMs",  30,   0.0,    10.0,    0.5),   # global onset ramp (ms); 0=instant (no ramp)
