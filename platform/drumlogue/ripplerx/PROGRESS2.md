@@ -32,7 +32,7 @@ Mean score: 63.41 → **61.42** (−1.99 total).
 | MrchSnr  | 78.02  | 78.02      | < 80   | ✓ **ACHIEVED** |
 | AcSnre   | 64.54  | 64.54      | < 70   | ✓ **ACHIEVED** |
 | Timpni   | 87.0   | **81.84**  | < 80   | Architectural limit (f0/inharm/attack floor) |
-| Kick     | 118.21 | **63.09**  | < 80   | ✓ **ACHIEVED** (score was stale; AtkMs 0→5ms seeded) |
+| Kick     | 118.21 | **59.10**  | < 80   | ✓ **ACHIEVED** (score was stale; AtkMs 0→5ms seeded; auto_tune TbRd1→3, AtkMs5.5ms) |
 | Kalimba  | 64.17  | **66.97**  | < 70   | ✓ **ACHIEVED** |
 | Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
 | Triangle | 73.86  | 73.86      | < 70   | Architectural limit  |
@@ -149,22 +149,25 @@ Rounds stop after 3 consecutive rounds with no accepted change.
 
 ## What To Do Next (priority order)
 
-### 0. Status: Kick auto_tune running (PID 10420, log `/tmp/autotune_kick.log`)
-- Kalimba: 66.97 ✓. Timpni: architectural limit (81.84).
-- Kick score was stale at 118.21 — actual score after diagnosis: **55.3** (already <80 ✓).
-  - Root cause of old score: scoring code was different; `attack_pct=100%` because render
-    peaks at t=0 while reference has 4.79ms onset ramp.
-  - Fix: seeded `AtkMs=5ms` for Kick → score 49.7 in sweep. Baseline for auto_tune: 63.09.
-  - auto_tune pass running to optimise remaining params (centroid, rolloff, flux ~60%).
+### 0. Status: ALL dedicated passes COMPLETE
 
-### 1. Dedicated passes (next up)
+| Preset  | Final score | Target | Result |
+|---------|------------|--------|--------|
+| Kalimba | **66.97**  | < 70   | ✓ Done (4 rounds) |
+| Kick    | **59.10**  | < 80   | ✓ Done (3 rounds, R1: TbRd1→3, R2: AtkMs5.5ms) |
+| Timpni  | **81.84**  | < 80   | Architectural limit — f0/inharm/attack floor prevents further progress |
+
+Kick note: stale score (118.21) was from pre-onset-ramp era. Actual score at session start: 55.3.
+Root cause: `attack_pct=100%` (render peaks at t=0; reference has 4.79ms onset). Seeded AtkMs=5ms,
+then auto_tune found 5.5ms optimum. All other scored presets were already < target after batch-2b.
+
+### 1. Dedicated passes — COMPLETE
 
 **Timpni** — 81.84, confirmed architectural limit (see §Architectural limits).
 
-**Kick** — RUNNING (baseline 63.09, target <80 already met). The 118.21 was stale.
-- Diagnosis: `attack_pct=100%` (render peaks at t=0, reference has 4.79ms onset). AtkMs 0→5ms seeded.
-- Remaining issues: centroid_decay_slope=81%, rolloff=60%, flux=61%, centroid=44%.
-- `f0_pct=0%`, `inharm_pct=0%` — pitch and inharmonicity are perfect.
+**Kick** — DONE. Final score **59.10** (target <80 ✓). 3 rounds, early stop.
+- Seeded: `AtkMs=5ms` (sweep showed 49.7 at 5ms vs 55.3 at 0ms; baseline for auto_tune: 63.09)
+- auto_tune R1: TbRd 1→3 (body resonance tuning). R2: AtkMs 5.0→5.5ms.
 
 **Kalimba** — DONE. Final score **66.97** (target <70 ✓). 4 rounds, converged.
 
