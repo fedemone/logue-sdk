@@ -31,7 +31,7 @@ Mean score: 63.41 → **61.42** (−1.99 total).
 | Ac Tom   | 60.01  | **57.20** | < 80   | ✓ **ACHIEVED** |
 | MrchSnr  | 78.02  | 78.02      | < 80   | ✓ **ACHIEVED** |
 | AcSnre   | 64.54  | 64.54      | < 70   | ✓ **ACHIEVED** |
-| Timpni   | 87.0   | **81.84**  | < 80   | Needs dedicated pass (1.84 above target) |
+| Timpni   | 87.0   | **81.84**  | < 80   | Architectural limit (f0/inharm/attack floor) |
 | Kick     | 118.21 | 118.21     | < 80   | Needs dedicated batch |
 | Kalimba  | 64.17  | 64.17      | < 70   | Needs dedicated pass |
 | Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
@@ -42,6 +42,7 @@ Mean score: 63.41 → **61.42** (−1.99 total).
 - **Cymbal**: f0 detector breaks above note 65; NzMx > 40 collapses attack from 37 ms → 2 ms; `CrashA` inharm_pct is permanently 100% (ref=0 vs ren > 0 is always max pct_diff).
 - **Triangle**: `Triangle-Bell-C#.wav` has f0 at C#8 ≈ 4434 Hz — ~40 semitones above any useful render note. `attack_pct ≈ 98%` because real triangle bells have instant metal-strike onset the synth cannot reproduce.
 - **Gong**: Both gong samples score `attack_pct = 100%` and `f0_pct ≈ 96–98%`. The gong's inharmonic spectrum gives the f0 detector garbage (70+ semitone apparent mismatch). PERCUSSIVE bonus (+12–17 pts) makes the floor even higher.
+- **Timpni**: `f0_pct=96.3%` (f0 detector returns −57 st offset on `Orchestral-Timpani-C.wav`), `inharm_pct=100%`, `attack_pct=90.4%`. Dedicated pass ran all 50 trials with zero improvement. Fixed floor ≈38 pts. Target <80 requires pitch-normalised f0 scoring or a better reference sample.
 
 **Ac Tom note**: Fixed in batch-2b. `PRESET_ALIASES["AcTom"]` was `"AcTom"` (no space) — corrected to `"Ac Tom"` in `auto_tune.py`. Ac Tom now scores correctly (57.20, target <80 ✓).
 
@@ -148,15 +149,13 @@ Rounds stop after 3 consecutive rounds with no accepted change.
 
 ## What To Do Next (priority order)
 
-### 0. Status: Timpni dedicated pass running (PID 22881, log `/tmp/autotune_timpni.log`)
-- batch-2b converged (3 stable rounds). Final mean score: **61.42** (was 63.41).
-- All 13 batch presets now below target except **Timpni** (81.84, target <80).
-- Dedicated Timpni pass started with Dkay ceiling 200→300 and MdlMx step 0.02→0.05.
-- Round 1 diagnostics confirm score is dominated by fixed-floor measurement artifacts:
-  - `f0_pct=96.3%` (f0 detector artifact — −57 semitone offset in Orchestral-Timpani-C.wav)
-  - `attack_pct=90.4%` (fast mallet strike vs 2ms onset ramp)
-  - `inharm_pct=100%` (inharmonicity metric maxed out)
-  - Together ~38 pts fixed floor. Coordinate-descent is near-flat (all trials ≈81.8).
+### 0. Status: Kalimba dedicated pass running
+- batch-2b converged. Final mean score: **61.42** (was 63.41).
+- Timpni (81.84) confirmed **architectural limit** (see §Architectural limits below).
+  - Dedicated pass completed in round 1 with zero improvement across all 50 trials.
+  - Fixed-floor ~38 pts from: `f0_pct=96.3%` (−57 st f0 artifact in reference),
+    `attack_pct=90.4%`, `inharm_pct=100%`. Nothing coordinate-descent can touch.
+- Kalimba pass now running (64.17 → target <70, 5.83 pts gap).
 
 ### 1. Dedicated passes (next up)
 
