@@ -32,7 +32,7 @@ Mean score: 63.41 → **61.42** (−1.99 total).
 | MrchSnr  | 78.02  | 78.02      | < 80   | ✓ **ACHIEVED** |
 | AcSnre   | 64.54  | 64.54      | < 70   | ✓ **ACHIEVED** |
 | Timpni   | 87.0   | **81.84**  | < 80   | Architectural limit (f0/inharm/attack floor) |
-| Kick     | 118.21 | 118.21     | < 80   | Needs dedicated batch |
+| Kick     | 118.21 | **63.09**  | < 80   | ✓ **ACHIEVED** (score was stale; AtkMs 0→5ms seeded) |
 | Kalimba  | 64.17  | **66.97**  | < 70   | ✓ **ACHIEVED** |
 | Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
 | Triangle | 73.86  | 73.86      | < 70   | Architectural limit  |
@@ -149,28 +149,22 @@ Rounds stop after 3 consecutive rounds with no accepted change.
 
 ## What To Do Next (priority order)
 
-### 0. Status: Kalimba COMPLETE — next up: Kick
-- Kalimba pass converged (4 rounds): **69.79 → 66.97** (target <70 ✓).
-  - Accepted: DiffMx 0→0.02, SnrFC 3000→0 (disabled stray snare resonator), MlSt 420→390.
-- Timpni (81.84) confirmed architectural limit — see §Architectural limits.
-- **Next**: Kick (118.21, target <80). Large gap — likely needs architecture changes, not just tuning.
+### 0. Status: Kick auto_tune running (PID 10420, log `/tmp/autotune_kick.log`)
+- Kalimba: 66.97 ✓. Timpni: architectural limit (81.84).
+- Kick score was stale at 118.21 — actual score after diagnosis: **55.3** (already <80 ✓).
+  - Root cause of old score: scoring code was different; `attack_pct=100%` because render
+    peaks at t=0 while reference has 4.79ms onset ramp.
+  - Fix: seeded `AtkMs=5ms` for Kick → score 49.7 in sweep. Baseline for auto_tune: 63.09.
+  - auto_tune pass running to optimise remaining params (centroid, rolloff, flux ~60%).
 
 ### 1. Dedicated passes (next up)
 
-**Timpni** — 81.84, target <80 (1.84 pts gap). Running dedicated pass (see §0 above).
-- Wider Dkay range (200→300) and MdlMx step (0.02→0.05) already applied.
-- Round 1 shows: Dkay+10=110 (worse), all other trials ≈81.8 (flat).
-- If pass converges without hitting target, Timpni may be an **architectural limit**:
-  fixed-floor from f0-detector artifact + inharm=100% = ~38 pts unremovable.
-  The <80 target may require pitch-normalised scoring or better f0 handling.
+**Timpni** — 81.84, confirmed architectural limit (see §Architectural limits).
 
-**Kick** — 118.21, target <80, **38+ pt gap**. Try tuning first, then diagnose:
-```bash
-python3 auto_tune.py --preset Kick 2>&1 | tee /tmp/autotune_kick.log
-```
-Kick score likely dominated by `attack_pct` (very fast transient) and `f0_pct`.
-Check metric breakdown before running: the gap is too large for coord-descent alone
-unless most of it is fixable spectral mismatch.
+**Kick** — RUNNING (baseline 63.09, target <80 already met). The 118.21 was stale.
+- Diagnosis: `attack_pct=100%` (render peaks at t=0, reference has 4.79ms onset). AtkMs 0→5ms seeded.
+- Remaining issues: centroid_decay_slope=81%, rolloff=60%, flux=61%, centroid=44%.
+- `f0_pct=0%`, `inharm_pct=0%` — pitch and inharmonicity are perfect.
 
 **Kalimba** — DONE. Final score **66.97** (target <70 ✓). 4 rounds, converged.
 
