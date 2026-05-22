@@ -1,6 +1,6 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-05-21  
+**Last updated:** 2026-05-22  
 **Branch:** `claude/continue-previous-session-vydFO`
 
 ---
@@ -10,37 +10,40 @@
 Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.  
 Scores are `class_weighted_score` (lower is better). Targets are soft goals, not hard gates.
 
-### After batch-2 auto_tune (rounds 1–4 complete, round 5 running)
+### After batch-2b auto_tune (COMPLETE — converged via early stop)
 
-| Preset   | Batch-2 start | After R4 | Target | Status               |
-|----------|--------------|----------|--------|----------------------|
-| Conga    | 53.5   | **34.4** | < 60   | ✓ **ACHIEVED** |
-| Djambe   | 48.8   | **48.1** | < 55   | ✓ **ACHIEVED** |
-| Taiko    | 67.6   | **46.8** | < 70   | ✓ **ACHIEVED** |
-| GlsBotl  | 66.5   | **60.4** | < 70   | ✓ **ACHIEVED** |
-| Cowbel   | 65.2   | **64.0** | < 70   | ✓ **ACHIEVED** |
-| HHat-C   | 75.3   | **69.3** | < 70   | ✓ **ACHIEVED** |
-| Handpn   | 49.0   | **48.0** | < 60   | ✓ **ACHIEVED** |
-| StelPan  | 76.3   | **71.3** | < 80   | ✓ **ACHIEVED** |
-| Tick     | 84.9   | **77.6** | < 80   | ✓ **ACHIEVED** (R2) |
-| Claves   | 98.0   | **71.7** | < 80   | ✓ **ACHIEVED** (R2) |
-| Bongo    | 114.7  | **79.1** | < 80   | ✓ **ACHIEVED** (R4) |
-| MrchSnr  | 78.02  | 78.02    | < 80   | ✓ **ACHIEVED** |
-| AcSnre   | 64.54  | 64.54    | < 70   | ✓ **ACHIEVED** |
-| Timpni   | 87.0   | **83.8** | < 80   | In progress (batch-2 R5+ running) |
-| Kick     | 118.21 | 118.21   | < 80   | Needs dedicated batch |
-| Kalimba  | 64.17  | 64.17    | < 70   | Needs dedicated pass |
-| Ac Tom   | —      | —        | < 80   | No reference samples scoring (see below) |
-| Cymbal   | 91.82  | 91.82    | < 70   | Architectural limit  |
-| Triangle | 73.86  | 73.86    | < 70   | Architectural limit  |
-| Gong     | 101.52 | 101.52   | < 70   | Architectural limit  |
+Batch-2b ran 13 presets (including Ac Tom, now fixed). Converged after round 3 (stall threshold met).  
+Mean score: 63.41 → **61.42** (−1.99 total).
+
+| Preset   | Baseline (pre-batch-2) | Batch-2b final | Target | Status               |
+|----------|------------------------|----------------|--------|----------------------|
+| Conga    | 53.5   | **31.59** | < 60   | ✓ **ACHIEVED** |
+| Djambe   | 48.8   | **48.05** | < 55   | ✓ **ACHIEVED** |
+| Taiko    | 67.6   | **46.82** | < 70   | ✓ **ACHIEVED** |
+| GlsBotl  | 66.5   | **60.38** | < 70   | ✓ **ACHIEVED** |
+| Cowbel   | 65.2   | **63.96** | < 70   | ✓ **ACHIEVED** |
+| HHat-C   | 75.3   | **68.65** | < 70   | ✓ **ACHIEVED** |
+| Handpn   | 49.0   | **47.97** | < 60   | ✓ **ACHIEVED** |
+| StelPan  | 76.3   | **71.29** | < 80   | ✓ **ACHIEVED** |
+| Tick     | 84.9   | **76.50** | < 80   | ✓ **ACHIEVED** |
+| Claves   | 98.0   | **67.95** | < 80   | ✓ **ACHIEVED** |
+| Bongo    | 114.7  | **76.28** | < 80   | ✓ **ACHIEVED** |
+| Ac Tom   | 60.01  | **57.20** | < 80   | ✓ **ACHIEVED** |
+| MrchSnr  | 78.02  | 78.02      | < 80   | ✓ **ACHIEVED** |
+| AcSnre   | 64.54  | 64.54      | < 70   | ✓ **ACHIEVED** |
+| Timpni   | 87.0   | **81.84**  | < 80   | Needs dedicated pass (1.84 above target) |
+| Kick     | 118.21 | 118.21     | < 80   | Needs dedicated batch |
+| Kalimba  | 64.17  | 64.17      | < 70   | Needs dedicated pass |
+| Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
+| Triangle | 73.86  | 73.86      | < 70   | Architectural limit  |
+| Gong     | 101.52 | 101.52     | < 70   | Architectural limit  |
 
 **Architectural limits explained** (auto_tune converged, nothing left to tune):
 - **Cymbal**: f0 detector breaks above note 65; NzMx > 40 collapses attack from 37 ms → 2 ms; `CrashA` inharm_pct is permanently 100% (ref=0 vs ren > 0 is always max pct_diff).
 - **Triangle**: `Triangle-Bell-C#.wav` has f0 at C#8 ≈ 4434 Hz — ~40 semitones above any useful render note. `attack_pct ≈ 98%` because real triangle bells have instant metal-strike onset the synth cannot reproduce.
 - **Gong**: Both gong samples score `attack_pct = 100%` and `f0_pct ≈ 96–98%`. The gong's inharmonic spectrum gives the f0 detector garbage (70+ semitone apparent mismatch). PERCUSSIVE bonus (+12–17 pts) makes the floor even higher.
 
-**Ac Tom note**: Ac Tom is included in batch-2 active set but `score_all` returns no score for it ("12 presets scored" not 13). Root cause: `MANUAL_SAMPLE_TO_PRESET` maps Tom1/Tom2 WAVs to `"AcTom"` (no space), which resolves correctly via `PRESET_NAME_ALIASES` → `"Ac Tom"`, but the rendered WAV lookup via `find_render_for_preset` may fail if the render filename doesn't match. Needs investigation; Ac Tom parameters are being incidentally updated alongside other presets.
+**Ac Tom note**: Fixed in batch-2b. `PRESET_ALIASES["AcTom"]` was `"AcTom"` (no space) — corrected to `"Ac Tom"` in `auto_tune.py`. Ac Tom now scores correctly (57.20, target <80 ✓).
 
 ### Key improvements since PROGRESS.md
 
@@ -48,7 +51,7 @@ Scores are `class_weighted_score` (lower is better). Targets are soft goals, not
 |--------|--------|
 | `k_onset_attack_ms` architectural addition | Membrane drums (Djambe/Bongo/Conga/AcTom/Taiko/Handpan/Timpani) get a linear 0→1 onset ramp. Eliminated 100% attack_pct floor from 0ms render onset vs 3–4ms physical onset. Djambe: 91.9→48.8. |
 | auto_tune batch-1 × 6 rounds | BaseFM +200 Hz for Djambe/Timpani/Tick/StelPan, DiffMx 0→0.02 for membrane presets, Dkay/Cowbell parameter adjustments. |
-| auto_tune batch-2 × 4 rounds | Mean score 75.4→62.9 across 12 presets. Bongo 114.7→79.1, Claves 98.0→71.7, Conga 53.5→34.4, Tick 84.9→77.6, HHat-C 75.3→69.3. |
+| auto_tune batch-2 × 7 rounds + batch-2b × 3 rounds | Mean score 75.4→61.4 across 13 presets. Bongo 114.7→76.3, Claves 98.0→68.0, Conga 53.5→31.6, Tick 84.9→76.5, HHat-C 75.3→68.7, Ac Tom 60.0→57.2. |
 | autocorr_f0 aliasing fix | 44.1 kHz samples decimated to 8820 Hz were giving period-2 spurious f0=4410 Hz. Added `lo = max(4, ...)` guard. |
 | Ac Tom name fix (batch_tune_runner.py) | `"AcTom": "AcTom"` → `"AcTom": "Ac Tom"` in 6 locations. Tom samples now resolve to the correct preset. |
 
@@ -145,27 +148,31 @@ Rounds stop after 3 consecutive rounds with no accepted change.
 
 ## What To Do Next (priority order)
 
-### 0. Active work (in progress)
-- **batch-2 round 5+** (PID 14650, log `/tmp/autotune_batch2.log`): 12 presets, converges on Timpni. Only Timpni (83.8) remains above its <80 target. Early-stop expected within 2–4 more rounds.
+### 0. Status: batch-2b COMPLETE
+- batch-2b converged (3 stable rounds). Final mean score: **61.42** (was 63.41).
+- All 13 batch presets now below target except **Timpni** (81.84, target <80).
+- No active auto_tune processes running.
 
-### 1. Preset tuning (after batch-2 converges)
-Run dedicated passes for presets not covered by batch-2:
+### 1. Dedicated passes (next up)
+
+**Timpni** — needs 1.84 points more. Coordinate-descent stalled on int PARAMS; try wider MODEL_PARAMS search:
 ```bash
 cd platform/drumlogue/ripplerx
-# High priority — far from target
+python3 auto_tune.py --preset Timpni 2>&1 | tee /tmp/autotune_timpni.log
+```
+Suggested manual edits to `auto_tune.py` MODEL_PARAMS before running:
+- `M.BoomMix`: step 0.01 → 0.05 (widen search)
+- `M.BaseFM`: currently not in scope for Timpni? Add with step 400 Hz
+
+**Kick** — 118.21, target <80, far from target:
+```bash
 python3 auto_tune.py --preset Kick 2>&1 | tee /tmp/autotune_kick.log
-
-# Close to target — one dedicated pass likely sufficient
-python3 auto_tune.py --preset Kalimba 2>&1 | tee /tmp/autotune_kalimba.log
-
-# Investigate then tune — currently not scoring in batch-2
-python3 auto_tune.py --preset "Ac Tom" 2>&1 | tee /tmp/autotune_actom.log
 ```
 
-**Ac Tom debug checklist** before running:
-1. Check `rendered_tune/` for a `12_AcTom*.wav` or `12_Ac*Tom*.wav` file
-2. If missing, verify `render_filename_for_preset("Ac Tom", 12)` output in Python
-3. If render exists but doesn't match `find_render_for_preset` glob, fix the filename pattern
+**Kalimba** — 64.17, target <70, close:
+```bash
+python3 auto_tune.py --preset Kalimba 2>&1 | tee /tmp/autotune_kalimba.log
+```
 
 ### 2. Architecture work (Bullet 1, partially started)
 Three pending DSP improvements from Phase 45 (still not fully implemented):
@@ -186,7 +193,7 @@ Three pending DSP improvements from Phase 45 (still not fully implemented):
 ### 3. Script improvements
 
 **auto_tune.py**
-- **BUG**: `PRESET_ALIASES` has `"AcTom": "AcTom"` — should be `"AcTom": "Ac Tom"` to match the synth engine display name. (The batch_tune_runner.py fix did not propagate here.)
+- `PRESET_ALIASES["AcTom"]` bug **FIXED** (was `"AcTom"`, now `"Ac Tom"`).
 - Dkay search range: currently 0–200 in steps of 10. After convergence switch to fine steps (5) for final pass.
 - Add support for tuning `modal_preset_configs` (frequency ratios, T60s, mix coefficients) — currently not in PARAMS/MODEL_PARAMS.
 - The model_param columns tuned are: NzMixB (col9), NzHi (col11), MdlMx (col29). Extend to cover other model params where they exist per preset.
