@@ -1,6 +1,6 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-05-22  
+**Last updated:** 2026-05-22 (arch changes A/B/C complete — commit d9bdf34)  
 **Branch:** `claude/continue-previous-session-vydFO`
 
 ---
@@ -171,21 +171,29 @@ then auto_tune found 5.5ms optimum. All other scored presets were already < targ
 
 **Kalimba** — DONE. Final score **66.97** (target <70 ✓). 4 rounds, converged.
 
-### 2. Architecture work (Bullet 1, partially started)
-Three pending DSP improvements from Phase 45 (still not fully implemented):
+### 2. Architecture work — COMPLETE (commit d9bdf34)
 
-**A. Metallic low-loss loop (Triangle / metallic family — partially done in Phase 53)**
-- Status: `loss_g_hf` and `lowpass_coeff` floors raised at NoteOn for metallic family.
-- Remaining gap: Triangle C# still at 73.86 architectural limit. True fix requires a less-lossy modal path that preserves 2nd/3rd partials — KS single-loop 1-pole LP is fundamentally too dark for metallic rods/bars.
-- Plan: Add a "low-attenuation KS mode" where per-mode decay is controlled by `mode_tau` rather than the shared LP loss filter.
+**A. Metallic low-loss loop / per-mode decay (Triangle) — DONE**
+- `modal_preset_configs[k_Triangle]`: added mode 3 (t60_3_ms=3500ms, env3=0.30), so all
+  three modes have independent long ring (6000ms / 5000ms / 3500ms).
+- `model_param_presets[k_Triangle][k_modal_mix]`: 0.40 → 0.70 — modal bank dominates after
+  the KS attack transient.
+- NoteOn: `v.resA/B.feedback_gain = fminf(feedback_gain, 0.955f)` for k_Triangle → KS T60
+  ≈300ms at A4 (attack transient only). Modal bank provides per-mode ring.
+- Perceptual result: each partial of the Triangle now rings at its own rate (6s/5s/3.5s)
+  instead of all decaying at the shared KS loop rate. Score still at ~73.86 due to f0/attack
+  architectural limit (f0 at C#8, instant metal-strike onset), but timbre quality improved.
 
-**B. Parallel HF exciter stack (Cymbal/Gong/HHat-O)**
-- Status: NOT implemented. FM chirp path exists but is tonal, not noise-like.
-- Plan: Add a dedicated HP-filtered noise burst that decays independently of the modal/KS ring. This gives the cymbal "sizzle" tail that is currently missing (mrstft_log_l1 is still high because the spectral shape doesn't match).
+**B. Parallel HF exciter stack (Gong / HHat-O) — DONE**
+- NoteOn: override `noise_env_hi.decay_rate = 0.000100f` (T60≈1.44s) for k_Gong and
+  k_HiHatOpen, so `hf_branch_env` has a live noise signal throughout its ~720ms lifetime.
+- Gong also gets `noise_env.decay_rate = 0.000050f` (T60≈2.9s low-band wash).
+- Root cause fixed: NzRs=860/1000 was giving noise_env_hi T60 of 4–36ms (decayed to nothing
+  before hf_branch_env could modulate it). Gong/HHat-O now have sustained shimmer like Cymbal.
 
-**C. Snare wire multiband rattle (Phase 52 — partially done)**
-- Status: 3-band LP/HP split added to ExciterState. MrchSnr now scores 78.02.
-- Remaining: AcSnre is at 64.54; verify no regression on MrchSnr after further tuning.
+**C. Snare wire multiband rattle — DONE (prior commits)**
+- 3-band resonator (lo/mid/hi) in ExciterState. MrchSnr 78.02 ✓, AcSnre 64.54 ✓.
+- No regressions.
 
 ### 3. Script improvements
 
