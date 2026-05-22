@@ -33,7 +33,7 @@ Mean score: 63.41 → **61.42** (−1.99 total).
 | AcSnre   | 64.54  | 64.54      | < 70   | ✓ **ACHIEVED** |
 | Timpni   | 87.0   | **81.84**  | < 80   | Architectural limit (f0/inharm/attack floor) |
 | Kick     | 118.21 | 118.21     | < 80   | Needs dedicated batch |
-| Kalimba  | 64.17  | 64.17      | < 70   | Needs dedicated pass |
+| Kalimba  | 64.17  | **66.97**  | < 70   | ✓ **ACHIEVED** |
 | Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
 | Triangle | 73.86  | 73.86      | < 70   | Architectural limit  |
 | Gong     | 101.52 | 101.52     | < 70   | Architectural limit  |
@@ -149,13 +149,11 @@ Rounds stop after 3 consecutive rounds with no accepted change.
 
 ## What To Do Next (priority order)
 
-### 0. Status: Kalimba dedicated pass running
-- batch-2b converged. Final mean score: **61.42** (was 63.41).
-- Timpni (81.84) confirmed **architectural limit** (see §Architectural limits below).
-  - Dedicated pass completed in round 1 with zero improvement across all 50 trials.
-  - Fixed-floor ~38 pts from: `f0_pct=96.3%` (−57 st f0 artifact in reference),
-    `attack_pct=90.4%`, `inharm_pct=100%`. Nothing coordinate-descent can touch.
-- Kalimba pass now running (64.17 → target <70, 5.83 pts gap).
+### 0. Status: Kalimba COMPLETE — next up: Kick
+- Kalimba pass converged (4 rounds): **69.79 → 66.97** (target <70 ✓).
+  - Accepted: DiffMx 0→0.02, SnrFC 3000→0 (disabled stray snare resonator), MlSt 420→390.
+- Timpni (81.84) confirmed architectural limit — see §Architectural limits.
+- **Next**: Kick (118.21, target <80). Large gap — likely needs architecture changes, not just tuning.
 
 ### 1. Dedicated passes (next up)
 
@@ -166,15 +164,15 @@ Rounds stop after 3 consecutive rounds with no accepted change.
   fixed-floor from f0-detector artifact + inharm=100% = ~38 pts unremovable.
   The <80 target may require pitch-normalised scoring or better f0 handling.
 
-**Kick** — 118.21, target <80, far from target:
+**Kick** — 118.21, target <80, **38+ pt gap**. Try tuning first, then diagnose:
 ```bash
 python3 auto_tune.py --preset Kick 2>&1 | tee /tmp/autotune_kick.log
 ```
+Kick score likely dominated by `attack_pct` (very fast transient) and `f0_pct`.
+Check metric breakdown before running: the gap is too large for coord-descent alone
+unless most of it is fixable spectral mismatch.
 
-**Kalimba** — 64.17, target <70, close:
-```bash
-python3 auto_tune.py --preset Kalimba 2>&1 | tee /tmp/autotune_kalimba.log
-```
+**Kalimba** — DONE. Final score **66.97** (target <70 ✓). 4 rounds, converged.
 
 ### 2. Architecture work (Bullet 1, partially started)
 Three pending DSP improvements from Phase 45 (still not fully implemented):
