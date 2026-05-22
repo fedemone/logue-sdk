@@ -28,6 +28,7 @@ import json
 import math
 import re
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -39,6 +40,7 @@ REPO_DIR       = Path(__file__).resolve().parent
 SYNTH_ENGINE   = REPO_DIR / "synth_engine.h"
 SAMPLES_DIR    = REPO_DIR / "samples"
 RENDER_DIR     = REPO_DIR / "rendered_tune"
+BATCH_DIR      = REPO_DIR / "rendered_batch"
 REPORTS_DIR    = REPO_DIR / "batch_reports"
 
 RENDER_BIN = f"render_presets_tune_{os.getpid()}"
@@ -80,6 +82,20 @@ MODEL_PARAMS: List[Tuple[str, int, float, float, float]] = [
     ("BaseFM",  0,   0.0,  8000.0,  200.0),  # metallic FM base freq (0=disabled for non-metallic)
     ("DiffMx", 13,   0.0,     0.5,    0.02),  # Schroeder diffuser mix
     ("AtkMs",  30,   0.0,    10.0,    0.5),   # global onset ramp (ms); 0=instant (no ramp)
+]
+
+# modal_preset_configs field tuning.
+# ModalPresetConfig field order (0-based): ratio2, ratio3, ratio4,
+# t60_1_ms, t60_2_ms, t60_3_ms, t60_4_ms, mix, env1, env2, env3, env4,
+# mode_count, [ratio5, ratio6].
+# Only T60 values are auto-tuned; frequency ratios and mode structure
+# are set intentionally per-instrument and must not drift under hill-climbing.
+# Entries with kDefaultModalPresetConfig (row=None) are silently skipped.
+MODAL_PARAMS: List[Tuple[str, int, float, float, float]] = [
+    ("Mc.T601", 3,   50.0, 12000.0, 500.0),  # t60_1_ms  (mode 1 ring time)
+    ("Mc.T602", 4,   30.0,  8000.0, 500.0),  # t60_2_ms
+    ("Mc.T603", 5,    0.0,  6000.0, 300.0),  # t60_3_ms  (0 = use default decay)
+    ("Mc.T604", 6,    0.0,  4000.0, 200.0),  # t60_4_ms
 ]
 
 # Named C++ constexpr constants that appear literally in model_param_presets.
@@ -282,6 +298,90 @@ def write_model_param_rows(text: str, rows: List[List[float]]) -> str:
     return text[:start] + "".join(out_lines) + text[end:]
 
 
+# ── modal_preset_configs I/O ──────────────────────────────────────────────────
+# Each entry is either kDefaultModalPresetConfig or a flat {f,f,...} initializer.
+# Multiple entries can appear on the same source line.
+_MODAL_ENTRY_RE = re.compile(r'kDefaultModalPresetConfig|\{([^{}]+)\}')
+
+# #define constants used inside modal_preset_configs (e.g. k_Woodblock row).
+_MODAL_CONSTS: Dict[str, float] = {
+    "STAGE2_MODAL_RATIO_2":  2.80,
+    "STAGE2_MODAL_ENV1":     0.9,
+    "STAGE2_MODAL_ENV2":     0.7,
+    "STAGE2_MODAL_T60_1_MS": 70.0,
+    "STAGE2_MODAL_T60_2_MS": 110.0,
+    "STAGE2_MODAL_MIX":      0.08,
+}
+
+
+def _modal_config_block_bounds(text: str) -> Tuple[int, int]:
+    return _block_bounds(
+        text,
+        r"inline static constexpr ModalPresetConfig modal_preset_configs\[k_NumPrograms\]",
+        "Could not locate modal_preset_configs in synth_engine.h",
+    )
+
+
+def read_modal_config_rows(text: str) -> List[Optional[List[float]]]:
+    """Return one entry per preset: a float list or None (kDefaultModalPresetConfig)."""
+    start, end = _modal_config_block_bounds(text)
+    block = text[start:end]
+    rows: List[Optional[List[float]]] = []
+    for m in _MODAL_ENTRY_RE.finditer(block):
+        if m.group(0).startswith("k"):  # kDefaultModalPresetConfig
+            rows.append(None)
+        else:
+            content = m.group(1)
+            # Substitute any #define constants before float-parsing.
+            for cname, cval in _MODAL_CONSTS.items():
+                content = content.replace(cname, repr(cval))
+            try:
+                vals = [float(x.strip().rstrip("f")) for x in content.split(",") if x.strip()]
+                if len(vals) >= 12:
+                    rows.append(vals)
+            except ValueError:
+                pass
+    return rows
+
+
+def write_modal_config_rows(text: str, rows: List[Optional[List[float]]]) -> str:
+    """Rewrite each explicit {..} entry in modal_preset_configs with updated values.
+
+    Unchanged rows preserve their original source text verbatim (including any
+    symbolic #define constants like STAGE2_MODAL_*).  Only actually-modified
+    rows are rewritten with literal floats.
+    """
+    start, end = _modal_config_block_bounds(text)
+    block = text[start:end]
+    matches = list(_MODAL_ENTRY_RE.finditer(block))
+    if len(matches) != len(rows):
+        # Mismatch — bail out and leave the block unchanged.
+        return text
+    # Parse original values once for change-detection.
+    orig_rows = read_modal_config_rows(text)
+    parts = []
+    prev = 0
+    for i, (m, new_row) in enumerate(zip(matches, rows)):
+        parts.append(block[prev:m.start()])
+        if new_row is None or m.group(0).startswith("k"):
+            parts.append(m.group(0))
+        elif new_row == orig_rows[i]:
+            # Unchanged — preserve the original source token exactly.
+            parts.append(m.group(0))
+        else:
+            # Modified — write back with literal floats.
+            formatted = []
+            for j, v in enumerate(new_row):
+                if j == 12:  # mode_count is uint8_t — write as plain int
+                    formatted.append(str(int(round(v))))
+                else:
+                    formatted.append(f"{v:.4f}f")
+            parts.append("{" + ",".join(formatted) + "}")
+        prev = m.end()
+    parts.append(block[prev:])
+    return text[:start] + "".join(parts) + text[end:]
+
+
 # ── Rendering and scoring ──────────────────────────────────────────────────────
 
 def compile_and_render(render_dir: Path, verbose: bool = False) -> bool:
@@ -307,6 +407,16 @@ def compile_and_render(render_dir: Path, verbose: bool = False) -> bool:
             print(r.stderr.decode(), file=sys.stderr)
         return False
     return True
+
+
+def sync_renders_to_batch() -> None:
+    """Copy all WAVs from rendered_tune/ into rendered_batch/ so batch scoring is current."""
+    BATCH_DIR.mkdir(parents=True, exist_ok=True)
+    count = sum(
+        1 for wav in RENDER_DIR.glob("*.wav")
+        if shutil.copy2(wav, BATCH_DIR / wav.name) or True
+    )
+    print(f"  Synced {count} WAV(s): rendered_tune/ → rendered_batch/")
 
 
 def score_all(
@@ -355,6 +465,7 @@ def run_auto_tune(
     include_out_of_scope: bool = False,
     include_arch_blocked: bool = False,
     skip_model_params: bool = False,
+    skip_modal_params: bool = False,
 ) -> None:
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -418,6 +529,7 @@ def run_auto_tune(
     # Current accepted values (row lists indexed by preset_idx).
     current_rows = read_preset_rows(current_text)
     current_model_rows = read_model_param_rows(current_text)
+    current_modal_rows = read_modal_config_rows(current_text)
     # Map preset_name → row index in current_rows (using values[0] = Prg).
     name_to_row: Dict[str, int] = {}
     for i, row in enumerate(current_rows):
@@ -520,6 +632,39 @@ def run_auto_tune(
                     print(f"  trial M.{param_name}{label:>8}")
                     SYNTH_ENGINE.write_text(current_text)
 
+        # Tune modal_preset_configs T60 values (col_idx marker: 2000 + field_idx).
+        if not skip_modal_params:
+            for param_name, field_idx, vmin, vmax, delta in MODAL_PARAMS:
+                for direction in (+1, -1):
+                    step = delta * direction
+                    trial_modal_rows = copy.deepcopy(current_modal_rows)
+                    changed = False
+                    for name, row_i in name_to_row.items():
+                        if preset_filter and name not in preset_filter:
+                            continue
+                        row = trial_modal_rows[row_i]
+                        if row is None or field_idx >= len(row):
+                            continue  # kDefaultModalPresetConfig or no such mode
+                        row[field_idx] = max(vmin, min(vmax, row[field_idx] + step))
+                        changed = True
+                    if not changed:
+                        continue
+                    trial_text = write_modal_config_rows(current_text, trial_modal_rows)
+                    SYNTH_ENGINE.write_text(trial_text)
+                    ok = compile_and_render(RENDER_DIR, verbose=verbose)
+                    if not ok:
+                        SYNTH_ENGINE.write_text(current_text)
+                        continue
+                    trial_presets = parse_presets(SYNTH_ENGINE)
+                    trial_scores = score_all(trial_presets, RENDER_DIR, sample_files, preset_filter)
+                    for name, sc in trial_scores.items():
+                        if sc < best_trial.get(name, float("inf")):
+                            best_trial[name] = sc
+                            best_change[name] = (2000 + field_idx, step)
+                    sign = "+" if step > 0 else ""
+                    print(f"  trial {param_name} {sign}{step:.0f}")
+                    SYNTH_ENGINE.write_text(current_text)
+
         # Apply accepted per-preset changes.
         # accepted[name] = (col_idx, old_val, new_val, trial_improvement)
         accepted: Dict[str, Tuple[int, int, int, float]] = {}
@@ -544,7 +689,18 @@ def run_auto_tune(
                 })
                 continue
             row_i = name_to_row[name]
-            if col_idx >= 1000:
+            if col_idx >= 2000:
+                mfield = col_idx - 2000
+                row = current_modal_rows[row_i]
+                if row is None or mfield >= len(row):
+                    continue
+                old_val = row[mfield]
+                mp = next((p for p in MODAL_PARAMS if p[1] == mfield), None)
+                lo, hi = (mp[2], mp[3]) if mp else (0.0, 1e6)
+                new_val = max(lo, min(hi, old_val + step))
+                row[mfield] = new_val
+                accepted[name] = (col_idx, old_val, new_val, improvement)
+            elif col_idx >= 1000:
                 mcol = col_idx - 1000
                 old_val = current_model_rows[row_i][mcol]
                 mp = next((p for p in MODEL_PARAMS if p[1] == mcol), None)
@@ -560,7 +716,10 @@ def run_auto_tune(
                 accepted[name] = (col_idx, old_val, new_val, improvement)
 
         if accepted:
-            new_text = write_model_param_rows(write_preset_rows(current_text, new_rows), current_model_rows)
+            new_text = write_modal_config_rows(
+                write_model_param_rows(write_preset_rows(current_text, new_rows), current_model_rows),
+                current_modal_rows,
+            )
             SYNTH_ENGINE.write_text(new_text)
             # Final confirmation render with all accepted changes together.
             ok = compile_and_render(RENDER_DIR, verbose=verbose)
@@ -572,7 +731,11 @@ def run_auto_tune(
                     col_idx, old_val, new_val, _ = accepted[name]
                     if apply_scores.get(name, float("inf")) >= best_scores.get(name, float("inf")):
                         row_i = name_to_row[name]
-                        if col_idx >= 1000:
+                        if col_idx >= 2000:
+                            row = current_modal_rows[row_i]
+                            if row is not None:
+                                row[col_idx - 2000] = old_val
+                        elif col_idx >= 1000:
                             current_model_rows[row_i][col_idx - 1000] = old_val
                         else:
                             new_rows[row_i][col_idx] = old_val   # revert
@@ -586,11 +749,17 @@ def run_auto_tune(
                         "after_score": apply_scores.get(n),
                     })
             current_rows = new_rows
-            current_text = write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows)
+            current_text = write_modal_config_rows(
+                write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows),
+                current_modal_rows,
+            )
             SYNTH_ENGINE.write_text(current_text)
         else:
             # No changes — restore to current (already correct).
-            SYNTH_ENGINE.write_text(write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows))
+            SYNTH_ENGINE.write_text(write_modal_config_rows(
+                write_model_param_rows(write_preset_rows(current_text, current_rows), current_model_rows),
+                current_modal_rows,
+            ))
 
         elapsed = time.time() - round_start
         improved_names = [n for n in accepted]
@@ -627,6 +796,9 @@ def run_auto_tune(
             break
         previous_mean_score = mean_score
         print()
+
+    # ── Sync final renders to rendered_batch/ ─────────────────────────────────
+    sync_renders_to_batch()
 
     # ── Summary ────────────────────────────────────────────────────────────────
     print("\n" + "═" * 60)
@@ -735,6 +907,8 @@ def main() -> None:
                    help="Include architecture-limited presets (not recommended for pure parameter tuning).")
     p.add_argument("--skip-model-params", action="store_true",
                    help="Skip model_param_presets sweep for faster coarse runs.")
+    p.add_argument("--skip-modal-params", action="store_true",
+                   help="Skip modal_preset_configs T60 sweep.")
     args = p.parse_args()
 
     preset_names = [x.strip() for x in args.preset.split(",") if x.strip()] or None
@@ -749,6 +923,7 @@ def main() -> None:
         include_out_of_scope=args.include_out_of_scope,
         include_arch_blocked=args.include_arch_blocked,
         skip_model_params=args.skip_model_params,
+        skip_modal_params=args.skip_modal_params,
     )
 
 

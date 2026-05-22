@@ -187,7 +187,7 @@ RENDER_PRESET_NAMES = {
 
 PERCUSSIVE_PRESETS = {
     "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "Wodblk",
-    "Ac Tom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
+    "Ac Tom", "Cymbal", "Gong", "Claves", "Cowbel", "Trngle", "Kick",
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
