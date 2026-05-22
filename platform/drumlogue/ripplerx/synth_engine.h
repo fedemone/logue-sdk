@@ -220,7 +220,7 @@ inline static constexpr ModalPresetConfig modal_preset_configs[k_NumPrograms] = 
 /* k_Koto */ kDefaultModalPresetConfig, /* k_Vibraphone */ {4.00f,10.0f,0.0f,800.0f,300.0f,0.0f,0.0f,0.18f,0.80f,0.52f,0.26f,0.0f,3}, /* k_Woodblock */ {STAGE2_MODAL_RATIO_2,0.0f,0.0f,STAGE2_MODAL_T60_1_MS,STAGE2_MODAL_T60_2_MS,0.0f,0.0f,STAGE2_MODAL_MIX,STAGE2_MODAL_ENV1,STAGE2_MODAL_ENV2,0.0f,0.0f,2},
 /* k_AcousticTom */ {1.59f,2.14f,2.30f,100.0f,70.0f,50.0f,35.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_Cymbal */ {2.92f,6.37f,11.75f,3000.0f,2000.0f,1500.0f,1000.0f,0.15f,0.90f,0.75f,0.55f,0.36f,6, 14.0f,19.0f},
 /* k_Gong */ {1.479f,1.932f,2.332f,2000.0f,1500.0f,1100.0f,800.0f,0.20f,0.90f,0.75f,0.56f,0.40f,6, 2.549f,2.840f}, /* k_Kalimba */ {4.00f,10.0f,0.0f,300.0f,100.0f,0.0f,0.0f,0.15f,0.80f,0.50f,0.22f,0.0f,3}, /* k_SteelPan */ {2.00f,3.00f,4.00f,1200.0f,900.0f,700.0f,500.0f,0.22f,0.90f,0.75f,0.55f,0.35f,4},
-/* k_Claves */ {2.756f,5.404f,0.0f,60.0f,25.0f,0.0f,0.0f,0.16f,0.70f,0.45f,0.0f,0.0f,3}, /* k_Cowbell */ {1.41f,2.01f,2.56f,180.0f,130.0f,90.0f,65.0f,0.16f,0.75f,0.60f,0.45f,0.30f,4}, /* k_Triangle */ {2.756f,5.404f,0.0f,6000.0f,5000.0f,0.0f,0.0f,0.15f,0.80f,0.55f,0.0f,0.0f,3},
+/* k_Claves */ {2.756f,5.404f,0.0f,60.0f,25.0f,0.0f,0.0f,0.16f,0.70f,0.45f,0.0f,0.0f,3}, /* k_Cowbell */ {1.41f,2.01f,2.56f,180.0f,130.0f,90.0f,65.0f,0.16f,0.75f,0.60f,0.45f,0.30f,4}, /* k_Triangle */ {2.756f,5.404f,0.0f,6000.0f,5000.0f,3500.0f,0.0f,0.15f,0.80f,0.55f,0.30f,0.0f,3},
 /* k_KickDrum */ kDefaultModalPresetConfig, /* k_Clap */ kDefaultModalPresetConfig, /* k_Shaker */ kDefaultModalPresetConfig, /* k_Flute */ kDefaultModalPresetConfig, /* k_Clarinet */ kDefaultModalPresetConfig, /* k_PluckBass */ kDefaultModalPresetConfig,
 /* k_GlassBowl */ {2.09f,3.35f,4.77f,2000.0f,1600.0f,1200.0f,800.0f,0.20f,0.85f,0.70f,0.50f,0.35f,4}, /* k_GuitarStr */ kDefaultModalPresetConfig,
 /* k_HiHatClosed */ {1.479f,1.932f,2.332f,45.0f,28.0f,16.0f,10.0f,0.24f,0.80f,0.65f,0.48f,0.32f,4}, /* k_HiHatOpen */ {1.479f,1.932f,2.332f,400.0f,300.0f,200.0f,140.0f,0.30f,0.85f,0.70f,0.55f,0.40f,4},
@@ -250,7 +250,7 @@ inline static const float model_param_presets[k_NumPrograms][k_model_param_total
     /* k_SteelPan    */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    1.50000f},
     /* k_Claves      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.50000f},
     /* k_Cowbell     */ { 900.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.16000f,    0.00000f},
-    /* k_Triangle    */ {1800.00000f,    0.00000f,    0.00000f,    0.00000f,    1.26000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f,    0.96000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.40000f,    0.00000f},
+    /* k_Triangle    */ {1800.00000f,    0.00000f,    0.00000f,    0.00000f,    1.26000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f,    0.96000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.70000f,    0.00000f},
     /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99940f,    0.43000f,    0.00000f,    0.00100f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    5.50000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
@@ -1324,6 +1324,18 @@ SynthState state;
             v.exciter.noise_env.decay_rate    = 0.0000035f; // ~6s low-band wash
             v.hf_branch_decay = 0.9998f;                    // T60~720ms upper shimmer
         }
+        // Gong: without this override, NzRs=860 gives noise_env_hi T60~4ms (too short).
+        // The hf_branch_env runs for ~720ms but needs a live noise signal to modulate.
+        // Setting T60≈1.4s / 2.9s gives the hf_branch sustained shimmer to work with.
+        if (m_preset_idx == k_Gong) {
+            v.exciter.noise_env_hi.decay_rate = 0.000100f; // T60≈1.44s HF shimmer
+            v.exciter.noise_env.decay_rate    = 0.000050f; // T60≈2.9s wash
+        }
+        // HHat-O: low band is already long (NzRs=1000→T60≈1.44s) but noise_env_hi
+        // decays in ~36ms after the metallic block, depriving the hf_branch of signal.
+        if (m_preset_idx == k_HiHatOpen) {
+            v.exciter.noise_env_hi.decay_rate = 0.000100f; // T60≈1.44s — matches low band
+        }
         // PartialReset() clears boom helper fields; restore them from preset params
         // on every NoteOn, without preset-specific branching.
         const ProgramIndex preset = static_cast<ProgramIndex>(m_preset_idx);
@@ -1384,6 +1396,12 @@ SynthState state;
                                    modal_mix_val, mc.env1, mc.env2, mc.env3, mc.env4,
                                    mc.mode_count, mc.ratio5, mc.ratio6);
             }
+        }
+        // Modal-dominant sustain: clamp KS to ~300ms attack transient so the
+        // modal bank (T60: 6000ms/5000ms/3500ms, mix=0.70) provides per-mode ring.
+        if (m_preset_idx == k_Triangle) {
+            v.resA.feedback_gain = fminf(v.resA.feedback_gain, 0.955f);
+            v.resB.feedback_gain = fminf(v.resB.feedback_gain, 0.955f);
         }
 }
 
