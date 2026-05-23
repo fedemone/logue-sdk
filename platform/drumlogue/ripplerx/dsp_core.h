@@ -453,7 +453,7 @@ struct VoiceState {
 };
 
 // Global Synth State (4 Voices limit for strict CPU budgeting)
-constexpr size_t NUM_VOICES = 4;
+constexpr int NUM_VOICES = 4;
 struct SynthState {
     VoiceState voices[NUM_VOICES];
     uint8_t next_voice_idx;

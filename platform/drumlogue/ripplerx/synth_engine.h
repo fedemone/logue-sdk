@@ -211,8 +211,8 @@ static constexpr float asn_bm = (2.0f * M_PI * 175.0f) * inverse_default_sample_
 // k_Taiko: Taiko: sub-octave boom (~70 Hz) under the main membrane fundamental.  Gives the deep chest-thud of a real taiko strike. boom_decay = 0.99950f; // ~360ms
 // k_AcousticTom: boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%. boom_attack_inc = 0.0008f;    // reduced from 0.0025 (The boom at C4 (261 Hz ≈ sub boundary) reaches 60% by 5 ms): pushes full boom onset to ~26 ms, giving the KS mallet transient time to register
 struct ModalPresetConfig { float ratio2; float ratio3; float ratio4; float t60_1_ms; float t60_2_ms; float t60_3_ms; float t60_4_ms; float mix; float env1; float env2; float env3; float env4; uint8_t mode_count; float ratio5; float ratio6; };
-inline static constexpr ModalPresetConfig kDefaultModalPresetConfig{0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0,0.0f,0.0f};
-inline static constexpr ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
+static constexpr ModalPresetConfig kDefaultModalPresetConfig{0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0,0.0f,0.0f};
+static constexpr ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
 /* k_Init */ kDefaultModalPresetConfig, /* k_Marimba */ {4.00f,10.0f,0.0f,250.0f,90.0f,0.0f,0.0f,0.18f,0.72f,0.50f,0.22f,0.0f,3}, /* k_808Sub */ kDefaultModalPresetConfig,
 /* k_AcSnare */ {1.59f,2.14f,2.30f,60.0f,45.0f,30.0f,20.0f,0.15f,0.65f,0.50f,0.35f,0.22f,4}, /* k_TubularBell */ {2.756f,5.404f,0.0f,2000.0f,3000.0f,0.0f,0.0f,0.22f,0.18f,0.90f,0.55f,0.0f,3},
 /* k_Timpani */ {1.340f,1.664f,1.980f,900.0f,680.0f,500.0f,380.0f,0.32f,0.90f,0.75f,0.55f,0.38f,4}, /* k_Djambe */ {1.59f,2.14f,2.30f,80.0f,55.0f,38.0f,26.0f,0.20f,0.65f,0.50f,0.35f,0.22f,4},
@@ -226,10 +226,10 @@ inline static constexpr ModalPresetConfig modal_preset_configs[k_NumPrograms] = 
 /* k_HiHatClosed */ {1.479f,1.932f,2.332f,45.0f,28.0f,16.0f,10.0f,0.24f,0.80f,0.65f,0.48f,0.32f,4}, /* k_HiHatOpen */ {1.479f,1.932f,2.332f,400.0f,300.0f,200.0f,140.0f,0.30f,0.85f,0.70f,0.55f,0.40f,4},
 /* k_Conga */ {1.59f,2.14f,2.30f,90.0f,65.0f,45.0f,30.0f,0.20f,0.70f,0.52f,0.35f,0.22f,4}, /* k_Handpan */ {2.00f,3.00f,0.0f,900.0f,700.0f,0.0f,0.0f,0.20f,0.85f,0.65f,0.0f,0.0f,3}, /* k_BellTree */ {2.01f,2.76f,0.0f,900.0f,700.0f,0.0f,0.0f,0.17f,0.80f,0.60f,0.0f,0.0f,3},
 /* k_SlitDrum */ kDefaultModalPresetConfig, /* k_Ride */ {1.479f,1.932f,2.332f,2400.0f,1800.0f,1300.0f,950.0f,0.14f,0.80f,0.65f,0.50f,0.35f,6, 2.549f,2.840f}, /* k_RideBell */ {2.01f,2.76f,3.56f,1500.0f,1200.0f,900.0f,700.0f,0.20f,0.85f,0.70f,0.55f,0.40f,4},
-/* k_Bongo */ {1.59f,2.14f,2.30f,50.0f,35.0f,25.0f,16.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4}, /* k_GlassBottle */ kDefaultModalPresetConfig, /* k_Tick */ kDefaultModalPresetConfig
+/* k_Bongo */ {1.59f,2.14f,2.30f,50.0f,35.0f,25.0f,16.0f,0.18f,0.65f,0.48f,0.32f,0.20f,4,0.0f,0.0f}, /* k_GlassBottle */ kDefaultModalPresetConfig, /* k_Tick */ kDefaultModalPresetConfig
 };
 
-inline static const float model_param_presets[k_NumPrograms][k_model_param_total]{
+static constexpr float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
     /* k_Init        */ { 850.00000f,    0.00000f,    0.00000f,    0.00000f,    1.69510f,    0.89300f,    1.00000f,    1.00000f,    0.00000f,    0.50000f,    0.00000f,    0.30000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Marimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.00000f},
