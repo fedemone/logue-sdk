@@ -11,10 +11,14 @@
  * no dynamic memory (new/malloc), and no deep class hierarchies.
  * Just pure data that the CPU cache can read sequentially. */
 
-// A power-of-two buffer size allows us to use bitwise AND (& 4095) for lightning-fast
+// A power-of-two buffer size allows us to use bitwise AND (& DELAY_MASK) for lightning-fast
 // wrap-around instead of slow modulo (%) operators.
-// 4096 samples @ 48kHz = ~85.3ms max delay (Deepest possible pitch: ~11.7 Hz)
-constexpr size_t DELAY_BUFFER_SIZE = 4096;
+// 2048 samples @ 48kHz = ~42.7ms max delay.
+// Minimum delay for the lowest Note param value (MIDI 24, B0 = 30.87 Hz) is 1555 samples.
+// With pitch bend down 2 semitones from note 24: ~1745 samples. Both fit in 2047.
+// Reduced from 4096 to cut BSS by 64 KB (8 delay lines × 2048 floats × 4 bytes)
+// so the unit fits within the Drumlogue firmware's per-unit BSS budget.
+constexpr size_t DELAY_BUFFER_SIZE = 2048;
 constexpr size_t DELAY_MASK = DELAY_BUFFER_SIZE - 1;
 
 constexpr float k_dsp_sample_rate     = 48000.0f;

@@ -1166,13 +1166,13 @@ SynthState state;
         // Clear waveguide delay line, LP state, and write pointer.
         //
         // After write_ptr is reset to 0, the read position starts at
-        // (0 - delay_length) mod DELAY_BUFFER_SIZE ≈ (4096 - delay_length).
+        // (0 - delay_length) mod DELAY_BUFFER_SIZE ≈ (DELAY_BUFFER_SIZE - delay_length).
         // The read pointer advances with the write pointer.  At sample delay_length,
         // the read pointer reaches position 0, which was just written by this note —
         // from that point forward every read is from freshly-computed data.
-        // Only the tail window [4096 - ceil(delay_length) - 1 … 4095] is ever read
-        // before new data covers it; clearing that window (typically 110-880 floats)
-        // is correct and 10-37× cheaper than zeroing the full 16 KB buffer.
+        // Only the tail window [DELAY_BUFFER_SIZE - ceil(delay_length) - 1 … end] is ever
+        // read before new data covers it; clearing that window is 10-37× cheaper than
+        // zeroing the full 8 KB buffer.
         //
         // Skip entirely on a fresh (never-triggered) slot: Reset() already zeroed it.
         v.PartialReset();
@@ -1487,8 +1487,8 @@ SynthState state;
         // 1. Calculate the read pointer position for exact pitch
         float read_idx = (float)wg.write_ptr - wg.delay_length;
 
-        // delay_length is clamped to [2, DELAY_BUFFER_SIZE-2] so read_idx ≥ −4094.
-        // One addition of DELAY_BUFFER_SIZE always brings it into [2, 4096).
+        // delay_length is clamped to [2, DELAY_BUFFER_SIZE-2] so read_idx ≥ −(DELAY_BUFFER_SIZE-2).
+        // One addition of DELAY_BUFFER_SIZE always brings it into [2, DELAY_BUFFER_SIZE).
         // Use 'if' rather than 'while' — the loop can execute at most once and
         // the extra branch prediction overhead of 'while' is never justified.
         if (read_idx < 0.0f) {
