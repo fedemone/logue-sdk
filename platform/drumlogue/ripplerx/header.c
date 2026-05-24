@@ -16,13 +16,13 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x5265736fU,                                // 'Reso'
     .version = 0x00010000U,
     .name = "RipplerX",
-    .num_presets = 28,
+    .num_presets = 39,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
 
         // Page 1: Program and sample selection
-        {0, 27, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 38, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         {0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Bank"}},
         {1, 128, 1, 1, k_unit_param_type_none, 0, 0, 0, {"Sample"}},
