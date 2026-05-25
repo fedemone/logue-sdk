@@ -337,7 +337,7 @@ def read_modal_config_rows(text: str) -> List[Optional[List[float]]]:
                 content = content.replace(cname, repr(cval))
             try:
                 vals = [float(x.strip().rstrip("f")) for x in content.split(",") if x.strip()]
-                if len(vals) >= 12:
+                if len(vals) >= 13:  # to include the mode_count field.
                     rows.append(vals)
             except ValueError:
                 pass
