@@ -377,7 +377,7 @@ struct VoiceState {
         exciter.snare_wire_hp = 0.0f;
         exciter.snare_wire_mix = 0.0f;
         exciter.snare_wire_a1 = 1.6951f;
-        exciter.snare_wire_a2 = 0.8930f;;
+        exciter.snare_wire_a2 = 0.8930f;
         exciter.snare_wire_z1b = 0.0f;
         exciter.snare_wire_z2b = 0.0f;
         exciter.snare_wire_z1c = 0.0f;
