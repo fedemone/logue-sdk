@@ -51,3 +51,7 @@ ULIBS += -lc
 #   Stage 4 — + Tone EQ + master filter + overdrive  (default when unset)
 UDEFS += -DRENDER_STAGE=4
 
+# Enable GC sections to strip unreachable code/data from the final binary.
+# This is critical for staying within the drumlogue's per-unit code budget.
+USE_LINK_GC := yes
+
