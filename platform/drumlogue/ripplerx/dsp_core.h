@@ -90,8 +90,8 @@ struct ExciterState {
     bool use_hat_filter;
 
     // default constructor
-    ExciterState() : noise_gen(), noise_env(), noise_env_hi(), master_env(), noise_filter(), hat_filter(),
-    sample_frames(0), current_frame(0), channels(1), noise_decay_coeff(0.0f), current_noise_env(0.0f),
+    ExciterState() : sample_frames(0), current_frame(0), noise_gen(), noise_env(), noise_env_hi(), master_env(),
+    noise_filter(), hat_filter(), channels(1), noise_decay_coeff(0.0f), current_noise_env(0.0f),
     noise_out_sample(0.0f), noise_lp_state(0.0f), noise_band_mix(0.5f), noise_hi_lp_state(0.0f),
     noise_hi_lp_coeff(0.30f), wire_onset_env(1.0f), wire_onset_attack(1.0f), snare_wire_z1(0.0f),
     snare_wire_z2(0.0f), snare_wire_lp(0.0f), snare_wire_hp(0.0f), snare_wire_mix(0.0f), snare_wire_a1(1.6951f), snare_wire_a2(0.8930f),
