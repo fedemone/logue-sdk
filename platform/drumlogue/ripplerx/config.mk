@@ -51,7 +51,14 @@ ULIBS += -lc
 #   Stage 4 — + Tone EQ + master filter + overdrive  (default when unset)
 UDEFS += -DRENDER_STAGE=4
 
-# Enable GC sections to strip unreachable code/data from the final binary.
-# This is critical for staying within the drumlogue's per-unit code budget.
+# Linker GC: strips unreachable code/data.  Keep enabled for code-budget reasons.
 USE_LINK_GC := yes
+
+# LTO must be DISABLED.  With LTO on, the C++14 'static constexpr' arrays
+# (modal_preset_configs, model_param_presets) have internal linkage and the
+# LTO pass constant-folds all array accesses into immediate loads, moving the
+# data from .rodata into .text.  That doubles .text (16 KB → 30 KB) and can
+# push the section past the drumlogue firmware's per-unit limit.  With LTO off
+# the arrays remain as real .rodata objects and .text stays at a normal size.
+USE_LTO := no
 
