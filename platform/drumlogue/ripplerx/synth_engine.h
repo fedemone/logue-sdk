@@ -326,20 +326,63 @@ SynthState state;
     // Called when the user changes programs or the engine needs a hard flush.
     // This prevents loud "pops" from old delay line data playing unexpectedly.
     inline void Reset() {
-        // [UT1: MEMSET FIX] - Never memset C++ structs with default initializers!
-        // memset(&state, 0, sizeof(SynthState)); <-- DELETED
         for (int i = 0; i < NUM_VOICES; ++i) {
-            state.voices[i] = VoiceState(); // default constructor initializes all members to safe defaults
+            // Wipe delay-line and diffuser buffers without allocating a ~17 KB
+            // VoiceState() temporary on the stack.  A "voices[i] = VoiceState()"
+            // assignment asks the compiler to construct a full copy-assignment
+            // temporary (≈17 KB) which risks a stack overflow inside unit_init()
+            // on the drumlogue firmware whose loading thread may have a restricted
+            // stack size.  IEEE 754: 0x00000000 == 0.0f, so memset on float[] is safe.
+            memset(state.voices[i].resA.buffer,        0, sizeof(state.voices[i].resA.buffer));
+            memset(state.voices[i].resB.buffer,        0, sizeof(state.voices[i].resB.buffer));
+            memset(state.voices[i].resA.diffuser_buf1, 0, sizeof(state.voices[i].resA.diffuser_buf1));
+            memset(state.voices[i].resA.diffuser_buf2, 0, sizeof(state.voices[i].resA.diffuser_buf2));
+            memset(state.voices[i].resA.diffuser_buf3, 0, sizeof(state.voices[i].resA.diffuser_buf3));
+            memset(state.voices[i].resA.diffuser_buf4, 0, sizeof(state.voices[i].resA.diffuser_buf4));
+            memset(state.voices[i].resB.diffuser_buf1, 0, sizeof(state.voices[i].resB.diffuser_buf1));
+            memset(state.voices[i].resB.diffuser_buf2, 0, sizeof(state.voices[i].resB.diffuser_buf2));
+            memset(state.voices[i].resB.diffuser_buf3, 0, sizeof(state.voices[i].resB.diffuser_buf3));
+            memset(state.voices[i].resB.diffuser_buf4, 0, sizeof(state.voices[i].resB.diffuser_buf4));
+            state.voices[i].resA.diffuser_i1 = state.voices[i].resA.diffuser_i2 = 0;
+            state.voices[i].resA.diffuser_i3 = state.voices[i].resA.diffuser_i4 = 0;
+            state.voices[i].resB.diffuser_i1 = state.voices[i].resB.diffuser_i2 = 0;
+            state.voices[i].resB.diffuser_i3 = state.voices[i].resB.diffuser_i4 = 0;
 
-            // Clear coupling, tone and energy-squelch memory
-            // Noise filter defaults to LP mode, fully open (12 kHz)
+            // Clear voice active / pitch memory
+            state.voices[i].is_active    = false;
+            state.voices[i].is_releasing = false;
+            state.voices[i].base_delay_A = 0.0f;
+            state.voices[i].base_delay_B = 0.0f;
+
+            // Restore non-zero waveguide defaults that PartialReset() reads before
+            // overwriting them (e.g. transient_lp_base = resA.lowpass_coeff).
+            state.voices[i].resA.lowpass_coeff = 1.0f;
+            state.voices[i].resB.lowpass_coeff = 1.0f;
+            state.voices[i].resA.loss_g_dc     = 1.0f;
+            state.voices[i].resB.loss_g_dc     = 1.0f;
+            state.voices[i].resA.loss_g_hf     = 1.0f;
+            state.voices[i].resB.loss_g_hf     = 1.0f;
+            state.voices[i].resA.phase_mult    = 1.0f;
+            state.voices[i].resB.phase_mult    = 1.0f;
+
+            // Reset all runtime modulation state: envelopes, transient shaper,
+            // modal bank, pitch env, boom, metal FM, onset, snare wire, etc.
+            state.voices[i].PartialReset();
+
+            // Noise filter: LP mode, fully open (12 kHz)
             state.voices[i].exciter.noise_filter.mode = 0;
             state.voices[i].exciter.noise_filter.set_coeffs(12000.0f, 0.707f, default_sample_rate);
+            // set_coeffs() only updates f/q — explicitly zero the SVF accumulators
+            // to avoid a click on the next NoteOn after a patch change.
+            state.voices[i].exciter.noise_filter.lp = 0.0f;
+            state.voices[i].exciter.noise_filter.bp = 0.0f;
+            state.voices[i].exciter.noise_filter.hp = 0.0f;
+            // Hat filter: BP mode (hi-hat centroid shaping)
             state.voices[i].exciter.hat_filter.mode = 1;
             state.voices[i].exciter.hat_filter.set_coeffs(7000.0f, 1.1f, default_sample_rate);
-            // Clear SVF delay states — set_coeffs() only updates f/q, not the
-            // recursive lp/bp/hp accumulators.  Leaving them non-zero after a
-            // patch change would cause a loud click on the next NoteOn.
+            state.voices[i].exciter.hat_filter.lp = 0.0f;
+            state.voices[i].exciter.hat_filter.bp = 0.0f;
+            state.voices[i].exciter.hat_filter.hp = 0.0f;
         }
 
         state.master_gain  = 1.0f;
@@ -353,9 +396,12 @@ SynthState state;
         m_is_resonator_a = true;
         m_is_resonator_b = true;
 
-        // [UT1: MEMSET FIX] - Force the filter back to safe Highpass mode
+        // Force master filter back to safe Highpass mode and clear its accumulators
         state.master_filter.mode = 2;
         state.master_filter.set_coeffs(10.0f, 0.707f, default_sample_rate);
+        state.master_filter.lp = 0.0f;
+        state.master_filter.bp = 0.0f;
+        state.master_filter.hp = 0.0f;
     }
 
     inline void Resume() {
