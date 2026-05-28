@@ -161,6 +161,18 @@ public:
         k_lastModel
     };
 
+    // Engine type determines the DSP signal path for each preset.
+    // processBlock routes via kPresetEngine[m_preset_idx].
+    enum EngineType : uint8_t {
+        ENGINE_KS,        // Karplus-Strong string/pluck
+        ENGINE_BAR,       // Free bar modal bank (marimba, vibe, kalimba...)
+        ENGINE_MEMBRANE,  // Circular membrane modal bank (kick, toms, timpani...)
+        ENGINE_SNARE,     // Membrane body + snare-wire resonators
+        ENGINE_PLATE,     // Dense inharmonic plate modes (cymbal, gong, hi-hat...)
+        ENGINE_NOISE,     // Noise burst only (clap, shaker)
+        ENGINE_REMOVED,   // Silent placeholder (flute, clarinet removed)
+    };
+
 enum ModelParamIndex : uint8_t {
     k_base_fm_hz,
     k_snare_wire_z1,
@@ -280,6 +292,50 @@ static float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_Bongo       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    3.50000f},
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Tick        */ { 400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.50000f}
+};
+
+// Preset → engine routing table.
+// NOTE: Must be 'static' only (no const/constexpr) — same .rodata rule as above.
+static EngineType kPresetEngine[k_NumPrograms] = {
+    /* k_Init(0)         */ ENGINE_KS,
+    /* k_Marimba(1)      */ ENGINE_BAR,
+    /* k_808Sub(2)       */ ENGINE_KS,
+    /* k_AcSnare(3)      */ ENGINE_SNARE,
+    /* k_TubularBell(4)  */ ENGINE_BAR,
+    /* k_Timpani(5)      */ ENGINE_MEMBRANE,
+    /* k_Djambe(6)       */ ENGINE_MEMBRANE,
+    /* k_Taiko(7)        */ ENGINE_MEMBRANE,
+    /* k_MarchSnare(8)   */ ENGINE_SNARE,
+    /* k_Koto(9)         */ ENGINE_KS,
+    /* k_Vibraphone(10)  */ ENGINE_BAR,
+    /* k_Woodblock(11)   */ ENGINE_BAR,
+    /* k_AcousticTom(12) */ ENGINE_MEMBRANE,
+    /* k_Cymbal(13)      */ ENGINE_PLATE,
+    /* k_Gong(14)        */ ENGINE_PLATE,
+    /* k_Kalimba(15)     */ ENGINE_BAR,
+    /* k_SteelPan(16)    */ ENGINE_BAR,
+    /* k_Claves(17)      */ ENGINE_BAR,
+    /* k_Cowbell(18)     */ ENGINE_PLATE,
+    /* k_Triangle(19)    */ ENGINE_PLATE,
+    /* k_KickDrum(20)    */ ENGINE_MEMBRANE,
+    /* k_Clap(21)        */ ENGINE_NOISE,
+    /* k_Shaker(22)      */ ENGINE_NOISE,
+    /* k_Flute(23)       */ ENGINE_REMOVED,
+    /* k_Clarinet(24)    */ ENGINE_REMOVED,
+    /* k_PluckBass(25)   */ ENGINE_KS,
+    /* k_GlassBowl(26)  */ ENGINE_BAR,
+    /* k_GuitarStr(27)   */ ENGINE_KS,
+    /* k_HiHatClosed(28) */ ENGINE_PLATE,
+    /* k_HiHatOpen(29)   */ ENGINE_PLATE,
+    /* k_Conga(30)       */ ENGINE_MEMBRANE,
+    /* k_Handpan(31)     */ ENGINE_MEMBRANE,
+    /* k_BellTree(32)    */ ENGINE_PLATE,
+    /* k_SlitDrum(33)    */ ENGINE_BAR,
+    /* k_Ride(34)        */ ENGINE_PLATE,
+    /* k_RideBell(35)    */ ENGINE_PLATE,
+    /* k_Bongo(36)       */ ENGINE_MEMBRANE,
+    /* k_GlassBottle(37) */ ENGINE_BAR,
+    /* k_Tick(38)        */ ENGINE_BAR,
 };
 
 inline static float preset_param(ProgramIndex program, ModelParamIndex param) {
@@ -1754,6 +1810,13 @@ SynthState state;
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
 
+            // Engine routing: silence removed presets immediately.
+            const EngineType voice_engine = kPresetEngine[m_preset_idx];
+            if (voice_engine == ENGINE_REMOVED) {
+                voice.is_active = false;
+                continue;
+            }
+
             // Pre-compute model-aware coupling clamps once per block.
             // feedback_gain is constant during audio rendering, so this runs once per voice
             // per processBlock() call instead of once per sample — saves ~128 fminf() calls.
@@ -1821,90 +1884,74 @@ SynthState state;
                 // outA kept at 0 here so the debug probe below always compiles.
                 float outA = 0.0f;
 
-                if (voice.transient_frames_left > 0 && voice.transient_frames_total > 0) {
-                    float t = (float)voice.transient_frames_left * voice.transient_inv_total;
-                    float decay = t * t; // smoother fade-out
-                    float lp_off = voice.transient_lp_jitter * decay;
-                    float ap_off = voice.transient_ap_jitter * decay;
-                    voice.resA.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, voice.transient_lp_base_a + lp_off));
-                    voice.resB.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, voice.transient_lp_base_b + lp_off));
-                    // Keep AP modulation symmetric around 0 so transient jitter can push
-                    // either toward positive or negative dispersion.
-                    // NOTE: Waveguide allpass explicitly supports [-0.99, +0.99].
-                    voice.resA.ap_coeff = fmaxf(-0.99f, fminf(0.99f, voice.transient_ap_base_a + ap_off));
-                    voice.resB.ap_coeff = fmaxf(-0.99f, fminf(0.99f, voice.transient_ap_base_b + ap_off));
-                    voice.transient_frames_left--;
-                } else {
-                    voice.resA.lowpass_coeff = voice.transient_lp_base_a;
-                    voice.resB.lowpass_coeff = voice.transient_lp_base_b;
-                    voice.resA.ap_coeff = voice.transient_ap_base_a;
-                    voice.resB.ap_coeff = voice.transient_ap_base_b;
-                }
+                // ── Stage 2: Waveguide resonators (ENGINE_KS only) ────────
+                // Non-KS engines bypass the KS delay line entirely.  The modal
+                // bank (below) is their primary tonal resonator.
+                if (voice_engine == ENGINE_KS) {
+                    if (voice.transient_frames_left > 0 && voice.transient_frames_total > 0) {
+                        float t = (float)voice.transient_frames_left * voice.transient_inv_total;
+                        float decay = t * t;
+                        float lp_off = voice.transient_lp_jitter * decay;
+                        float ap_off = voice.transient_ap_jitter * decay;
+                        voice.resA.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, voice.transient_lp_base_a + lp_off));
+                        voice.resB.lowpass_coeff = fmaxf(0.01f, fminf(0.999f, voice.transient_lp_base_b + lp_off));
+                        voice.resA.ap_coeff = fmaxf(-0.99f, fminf(0.99f, voice.transient_ap_base_a + ap_off));
+                        voice.resB.ap_coeff = fmaxf(-0.99f, fminf(0.99f, voice.transient_ap_base_b + ap_off));
+                        voice.transient_frames_left--;
+                    } else {
+                        voice.resA.lowpass_coeff = voice.transient_lp_base_a;
+                        voice.resB.lowpass_coeff = voice.transient_lp_base_b;
+                        voice.resA.ap_coeff = voice.transient_ap_base_a;
+                        voice.resB.ap_coeff = voice.transient_ap_base_b;
+                    }
 
-                // ── Stage 2: Waveguide resonators ──────────────────────────
-                // If Stage 2 is silent but Stage 1 is not, the waveguide has
-                // zero delay_length or zero feedback_gain on this hardware.
-                //
-                // Model-aware coupling clamps are pre-computed once per block above.
-                // Both diff-frequency and same-frequency pairs use K=0.8 to guarantee
-                // G+C < 1 (coupled stability) across all Dkay settings.
-                float safe_cpl_a = v_safe_cpl_a;
-                float safe_cpl_b = v_safe_cpl_b;
-                if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
-                    // Exponential (semitone-domain) sweep: more natural drum down-bend.
-                    float sweep_st = voice.pitch_env_amt * voice.pitch_env;
-                    float sweep_scale = fasterpowf(2.0f, -sweep_st * 0.08333333333f); // -st/12
-                    voice.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
-                                                                 voice.base_delay_A * m_pitch_bend_mult * sweep_scale));
-                    voice.resB.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
-                                                                 voice.base_delay_B * m_pitch_bend_mult * sweep_scale));
-                    voice.pitch_env *= voice.pitch_env_decay;
-                }
+                    float safe_cpl_a = v_safe_cpl_a;
+                    float safe_cpl_b = v_safe_cpl_b;
+                    if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
+                        float sweep_st = voice.pitch_env_amt * voice.pitch_env;
+                        float sweep_scale = fasterpowf(2.0f, -sweep_st * 0.08333333333f);
+                        voice.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
+                                                                     voice.base_delay_A * m_pitch_bend_mult * sweep_scale));
+                        voice.resB.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
+                                                                     voice.base_delay_B * m_pitch_bend_mult * sweep_scale));
+                        voice.pitch_env *= voice.pitch_env_decay;
+                    }
 
-                // Tube models (OpenTube=7, ClosedTube=8, phase_mult=-1) need noise fed
-                // into the waveguide so breath continuously excites the tube resonance
-                // (physically correct for flute/clarinet).  Percussion models do NOT get
-                // noise in the waveguide — it would be pitch-filtered into a tonal ring.
-                float tube_noise_A = (voice.resA.phase_mult < 0.0f)
-                                     ? voice.exciter.noise_out_sample : 0.0f;
-                float inputA = exciter_sig + tube_noise_A + (voice.resB_out_prev * safe_cpl_a);
-                outA = process_waveguide(voice.resA, inputA);
-                float outB = 0.0f;
-                // --- ACTIVE PARTIAL COUNTING ---
-                // Dynamically drop Resonator B to reclaim CPU cycles.
-                // We only run the second delay line if:
-                // 1. The user actually requested dual resonators (m_active_partials >= 16)
-                // 2. AND (ResB is audible in the mix OR coupling is feeding it into ResA)
-                // 3. OR ResB still has ringing energy left to decay (> -90 dB)
-
-                bool resB_needed = (m_active_partials >= 16) &&
-                                   (state.mix_ab > 0.001f ||
-                                    m_coupling_depth > 0.001f ||
-                                    fabsf(voice.resB_out_prev) > 0.00003f);
-
-                if (resB_needed) {
-                    float tube_noise_B = (voice.resB.phase_mult < 0.0f)
+                    float tube_noise_A = (voice.resA.phase_mult < 0.0f)
                                          ? voice.exciter.noise_out_sample : 0.0f;
-                    float inputB = exciter_sig + tube_noise_B + (voice.resA_out_prev * safe_cpl_b);
-                    outB = process_waveguide(voice.resB, inputB); //
-                    voice.resA_out_prev = outA;
-                    voice.resB_out_prev = outB;
+                    float inputA = exciter_sig + tube_noise_A + (voice.resB_out_prev * safe_cpl_a);
+                    outA = process_waveguide(voice.resA, inputA);
+                    float outB = 0.0f;
+
+                    bool resB_needed = (m_active_partials >= 16) &&
+                                       (state.mix_ab > 0.001f ||
+                                        m_coupling_depth > 0.001f ||
+                                        fabsf(voice.resB_out_prev) > 0.00003f);
+                    if (resB_needed) {
+                        float tube_noise_B = (voice.resB.phase_mult < 0.0f)
+                                             ? voice.exciter.noise_out_sample : 0.0f;
+                        float inputB = exciter_sig + tube_noise_B + (voice.resA_out_prev * safe_cpl_b);
+                        outB = process_waveguide(voice.resB, inputB);
+                        voice.resA_out_prev = outA;
+                        voice.resB_out_prev = outB;
+                    } else {
+                        voice.resA_out_prev = outA;
+                        voice.resB_out_prev = 0.0f;
+                    }
+                    float resonator_out = ((outA * (1.0f - state.mix_ab)) + (outB * state.mix_ab));
+                    voice_out = resonator_out * voice.current_velocity;
                 } else {
-                    // ResB is bypassed. Keep its output at 0 to prevent coupling artifacts.
-                    voice.resA_out_prev = outA;
+                    // Non-KS engine: exciter provides the transient attack.
+                    // KS coupling state is zeroed so old values don't leak if
+                    // the preset changes while a voice is active.
+                    voice.resA_out_prev = 0.0f;
                     voice.resB_out_prev = 0.0f;
+                    // Pitch sweep still applies for membrane presets (kick pitch drop).
+                    if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
+                        voice.pitch_env *= voice.pitch_env_decay;
+                    }
+                    // voice_out is already exciter_sig * current_velocity from Stage 1.
                 }
-                float resonator_out = ((outA * (1.0f - state.mix_ab)) + (outB * state.mix_ab));
-                // Structural mitigation for snare-family tonal ringing:
-                // when wire mix is high, duck pitched resonator body so the broadband
-                // wire/noise branch dominates like an actual snare drum.
-                if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
-                    float onset = 1.0f - fminf(1.0f, voice.exciter.wire_onset_env);
-                    float wire_weight = fminf(1.0f, voice.exciter.snare_wire_mix + (0.35f * onset));
-                    float ring_duck = 1.0f - (0.70f * wire_weight);
-                    resonator_out *= ring_duck;
-                }
-                voice_out = resonator_out * voice.current_velocity;
 
                 // Parallel noise path: noise bypasses the waveguide and mixes directly
                 // into the voice output.  This preserves the broadband character that the
@@ -2043,12 +2090,15 @@ SynthState state;
                         // Keep modal attack "opening" during FM chirp onset, then settle.
                         modal_mix_dyn *= (1.0f + (0.35f * voice.metal_fm_env));
                     }
+                    // Non-KS engines use the modal bank as primary tonal resonator.
+                    // Scale up mix to compensate for the absent KS resonator gain.
+                    float modal_engine_gain = (voice_engine == ENGINE_KS) ? 1.0f : 5.0f;
                     voice_out += (m1
                                 + (stage2_modal_amp_ratio_2 * m2)
                                 + (0.45f * m3)
                                 + (0.28f * m4)
                                 + (0.18f * m5)
-                                + (0.12f * m6)) * modal_mix_dyn;
+                                + (0.12f * m6)) * modal_mix_dyn * modal_engine_gain;
                      if (voice.modal_env_1 < silence_threshold &&
                          voice.modal_env_2 < silence_threshold &&
                          (voice.modal_mode_count <= 2 || (voice.modal_env_3 < silence_threshold && voice.modal_env_4 < silence_threshold &&
