@@ -621,6 +621,7 @@ def run_auto_tune(
                     SYNTH_ENGINE.write_text(trial_text)
                     ok = compile_and_render(RENDER_DIR, verbose=verbose)
                     if not ok:
+                        SYNTH_ENGINE.write_text(current_text)
                         continue
                     trial_presets = parse_presets(SYNTH_ENGINE)
                     trial_scores = score_all(trial_presets, RENDER_DIR, sample_files, preset_filter)
