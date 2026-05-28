@@ -18,7 +18,7 @@ struct FastTables {
             // Protect against divide-by-zero or sub-sonic frequencies.
             // Clamp to 24 Hz (MIDI note 24, B0): 48000/24 = 2000 samples, safely inside
             // the 2048-sample buffer. External MIDI notes below 24 are clamped in code.
-            if (freq < 12.0f) freq = 12.0f;
+            if (freq < 24.0f) freq = 24.0f;
 
             note_to_delay_length[i] = srate / freq;
         }
