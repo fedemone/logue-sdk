@@ -322,6 +322,10 @@ struct VoiceState {
         exciter.snare_wire_z2b = 0.0f;
         exciter.snare_wire_z1c = 0.0f;
         exciter.snare_wire_z2c = 0.0f;
+        exciter.snare_wire_a1b = 1.620f;
+        exciter.snare_wire_a2b = 0.942f;
+        exciter.snare_wire_a1c = 1.120f;
+        exciter.snare_wire_a2c = 0.908f;
 
         resA.write_ptr = 0;
         resB.write_ptr = 0;
