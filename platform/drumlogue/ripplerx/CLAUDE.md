@@ -25,6 +25,21 @@ object layout and places their initial values in `.data`.
 
 See `config.mk` `USE_LTO := no` and the comment block for background.
 
+## Root Cause of Marimba "1/3-Second Ring" Bug (fixed commit 859a2a4)
+
+`master_env` in `NoteOn` was set to `sustain_level=0.0f`, causing it to
+auto-decay from 1.0 → 0 at `decay_rate = master_rate × 0.3`. At default
+Dkay (stored=25, t_s≈1.94 s), `decay_rate≈0.000446` → `ENV_IDLE` in ~323 ms.
+The processBlock squelch `!is_releasing && master_env.state==ENV_IDLE` then
+killed the voice at exactly the "1/3 second" the user heard, regardless of
+modal T60 (Marimba mode-1 T60=1200 ms). Dkay=2000 didn't help because the
+*release_rate* (not decay_rate) also cuts the voice in ~97 ms after gate-off.
+
+**Fix:** For non-KS/NOISE engines, `NoteOn` sets `sustain_level=1.0f` so
+`master_env` holds at 1.0 and never auto-decays. `NoteOff` skips
+`master_env.release()` for modal engines. Voice deactivates when
+`mag_env < kSquelchThreshold` (modal ring naturally dies). See commit 859a2a4.
+
 ## Root Cause of "Always String-Like" Sound
 
 The KS waveguide produces a harmonic series (f, 2f, 3f…) regardless of modal preset.
