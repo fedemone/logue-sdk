@@ -1338,19 +1338,27 @@ SynthState state;
         // Trigger the envelopes when a note hits
         v.exciter.noise_env.trigger();
         v.exciter.noise_env_hi.trigger();
-        // Master envelope: auto-decay from 1.0 toward 0.0 at decay_rate.
-        // This ensures percussion sounds decay naturally even with gate held
-        // (the Drumlogue trigger button behaviour).  NoteOff switches to the
-        // faster release_rate for a clean tail-off.
+        // Master envelope gate.  decay_rate and release_rate set by setParameter(k_paramDkay).
         //
-        // Direct assignment avoids the  trigger() + process()  pattern that
-        // relied on value >= 0.99f after one multiply-add.  ARM -ffast-math
-        // may emit an FMA whose rounding leaves value fractionally below 0.99f.
+        // ENGINE_KS / ENGINE_NOISE: auto-decay from 1.0 → 0.0 at decay_rate while gate
+        // is held, so KS strings and noise bursts decay naturally without modal T60 limits.
+        // NoteOff switches to the faster release_rate.
         //
-        // decay_rate and release_rate are set by setParameter(k_paramDkay).
-        v.exciter.master_env.sustain_level = 0.0f;
-        v.exciter.master_env.value = 1.0f;
-        v.exciter.master_env.state = ENV_DECAY;
+        // All other engines (BAR, MEMBRANE, SNARE, PLATE): sustain at 1.0 while gate
+        // is held — do NOT auto-decay.  Modal T60 values determine ring duration; the
+        // master_env must not cut the ring short.  Voice deactivates when modal ring dies
+        // (mag_env < kSquelchThreshold) rather than when master_env reaches ENV_IDLE.
+        //
+        // Direct assignment avoids the trigger() + process() pattern that relied on
+        // value >= 0.99f after one multiply-add.  ARM -ffast-math may emit an FMA whose
+        // rounding leaves value fractionally below 0.99f.
+        {
+            const EngineType ne = kPresetEngine[m_preset_idx];
+            const bool ks_or_noise = (ne == ENGINE_KS || ne == ENGINE_NOISE);
+            v.exciter.master_env.sustain_level = ks_or_noise ? 0.0f : 1.0f;
+            v.exciter.master_env.value = 1.0f;
+            v.exciter.master_env.state = ENV_DECAY;
+        }
 
         // Stage-1 transient complexity: short coefficient modulation window.
         // Deterministic per-hit micro-randomization from note/voice/velocity.
@@ -1525,7 +1533,13 @@ SynthState state;
 
                 v.exciter.noise_env.release();
                 v.exciter.noise_env_hi.release();
-                v.exciter.master_env.release();
+                // KS/NOISE: release master_env gate so the voice decays via Dkay rate.
+                // Modal engines: master_env holds at 1.0 — modal T60 controls ring length.
+                // Voice deactivates when mag_env drops below kSquelchThreshold.
+                const EngineType ve = kPresetEngine[m_preset_idx];
+                if (ve == ENGINE_KS || ve == ENGINE_NOISE) {
+                    v.exciter.master_env.release();
+                }
             }
         }
     }
@@ -2125,11 +2139,16 @@ SynthState state;
                          voice.exciter.master_env.state == ENV_IDLE)) {
                         voice.is_active = false;
                     }
-                    // Auto-decay squelch: deactivate voices whose master_env
-                    // has naturally decayed to ENV_IDLE even while gate is held.
-                    // This reclaims voice slots for percussion auto-decay.
-                    if (!voice.is_releasing &&
+                    // KS auto-decay squelch: reclaim voice slot when master_env
+                    // (driven by Dkay) has fully decayed while gate is held.
+                    if (!voice.is_releasing && voice_engine == ENGINE_KS &&
                         voice.exciter.master_env.state == ENV_IDLE) {
+                        voice.is_active = false;
+                    }
+                    // Non-KS zombie-voice cleanup: reclaim slot when modal ring
+                    // and exciter are both silent, even with gate still held.
+                    if (!voice.is_releasing && voice_engine != ENGINE_KS &&
+                        voice.mag_env < kSquelchThreshold) {
                         voice.is_active = false;
                     }
                 }
