@@ -229,14 +229,20 @@ struct ModalPresetConfig { float ratio2; float ratio3; float ratio4; float t60_1
 // .data, which is checked separately and has a much larger budget.
 ModalPresetConfig kDefaultModalPresetConfig{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f};
 ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
-    /* k_Init */ kDefaultModalPresetConfig, /* k_Marimba */ {4.00f, 10.0f, 0.0f, 250.0f, 90.0f, 0.0f, 0.0f, 0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f}, /* k_808Sub */ kDefaultModalPresetConfig,
+    /* k_Init */ kDefaultModalPresetConfig,
+    /* k_Marimba: tuned-bar ratios 1:4:10 (marimba carving); T60 calibrated to reference
+       marimba-hit-c4: fundamental ~1.2s, mode2 ~350ms, mode3 ~100ms. */
+    {4.00f, 10.0f, 0.0f, 1200.0f, 350.0f, 100.0f, 0.0f, 0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
+    /* k_808Sub */ kDefaultModalPresetConfig,
     /* k_AcSnare */ {1.59f, 2.14f, 2.30f, 60.0f, 45.0f, 30.0f, 20.0f, 0.15f, 0.65f, 0.50f, 0.35f, 0.22f, 4, 0, 0.0f}, /* k_TubularBell */ {2.756f, 5.404f, 0.0f, 2000.0f, 3000.0f, 0.0f, 0.0f, 0.22f, 0.18f, 0.90f, 0.55f, 0.0f, 3, 0, 0.0f},
     /* k_Timpani */ {1.340f, 1.664f, 1.980f, 900.0f, 680.0f, 500.0f, 380.0f, 0.32f, 0.90f, 0.75f, 0.55f, 0.38f, 4, 0, 0.0f}, /* k_Djambe */ {1.59f, 2.14f, 2.30f, 80.0f, 55.0f, 38.0f, 26.0f, 0.20f, 0.65f, 0.50f, 0.35f, 0.22f, 4, 0, 0.0f},
     /* k_Taiko */ {1.59f, 2.14f, 2.90f, 350.0f, 250.0f, 180.0f, 120.0f, 0.28f, 0.85f, 0.70f, 0.52f, 0.36f, 4, 0, 0.0f}, /* k_MarchSnare */ {1.59f, 2.14f, 2.30f, 30.0f, 22.0f, 15.0f, 10.0f, 0.14f, 0.60f, 0.45f, 0.30f, 0.18f, 4, 0, 0.0f},
     /* k_Koto */ kDefaultModalPresetConfig, /* k_Vibraphone */ {4.00f, 10.0f, 0.0f, 800.0f, 300.0f, 0.0f, 0.0f, 0.18f, 0.80f, 0.52f, 0.26f, 0.0f, 3, 0, 0.0f},
     /* k_Woodblock */ {STAGE2_MODAL_RATIO_2, 0.0f, 0.0f, STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f, STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2, 0.0f, 0.0f, 2, 0, 0.0f},
     /* k_AcousticTom */ {1.59f, 2.14f, 2.30f, 100.0f, 70.0f, 50.0f, 35.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f}, /* k_Cymbal */ {2.92f, 6.37f, 11.75f, 3000.0f, 2000.0f, 1500.0f, 1000.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f},
-    /* k_Gong */ {1.479f, 1.932f, 2.332f, 2000.0f, 1500.0f, 1100.0f, 800.0f, 0.20f, 0.90f, 0.75f, 0.56f, 0.40f, 6, 2.549f, 2.840f}, /* k_Kalimba */ {4.00f, 10.0f, 0.0f, 300.0f, 100.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
+    /* k_Gong */ {1.479f, 1.932f, 2.332f, 2000.0f, 1500.0f, 1100.0f, 800.0f, 0.20f, 0.90f, 0.75f, 0.56f, 0.40f, 6, 2.549f, 2.840f},
+    /* k_Kalimba: tine ratios 1:4:10 (similar to marimba); T60 ~600ms for tines. */
+    {4.00f, 10.0f, 0.0f, 600.0f, 200.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
     /* k_SteelPan */ {2.00f, 3.00f, 4.00f, 1200.0f, 900.0f, 700.0f, 500.0f, 0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4, 0, 0.0f},
     /* k_Claves */ {2.756f, 5.404f, 0.0f, 60.0f, 25.0f, 0.0f, 0.0f, 0.16f, 0.70f, 0.45f, 0.0f, 0.0f, 3, 0, 0.0f}, /* k_Cowbell */ {1.41f, 2.01f, 2.56f, 180.0f, 130.0f, 90.0f, 65.0f, 0.16f, 0.75f, 0.60f, 0.45f, 0.30f, 4, 0, 0.0f},
     /* k_Triangle */ {2.756f, 5.404f, 0.0f, 6000.0f, 5000.0f, 3500.0f, 0.0f, 0.15f, 0.80f, 0.55f, 0.30f, 0.0f, 3, 0, 0.0f},

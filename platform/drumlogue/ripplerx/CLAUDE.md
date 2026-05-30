@@ -1,21 +1,27 @@
 # RipplerX – Session Brief
 
-## Working State (last commit: 6cbde8b)
+## Working State (branch tip — see git log for exact commit)
 
-- Unit **loads on hardware** (drumlogue).
-- All presets sound **string-like** regardless of the instrument model — the KS
-  waveguide dominates every signal path and its harmonic series overrides the
-  modal bank tuning.
-- Flute and Clarinet remain in the table but are slated for removal (non-percussive).
+- Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
+  sounds instead of strings. Marimba sounds like a short metallic tick — correct
+  character, but modal T60 is too short (Phase 2 tuning needed).
+- Flute and Clarinet are silenced (ENGINE_REMOVED).
 
-## Critical .rodata Constraint — Do NOT break this
+## Critical .rodata / .data Constraint — Do NOT break this
 
-The drumlogue firmware checks `.text segment` size (= `.text + .rodata + .init + .fini`) per unit. Limit ≈ 30 KB. The preset tables (~7 KB) must stay in `.data`, not `.rodata`.
+The drumlogue firmware checks `.text segment` size (= `.text + .rodata + .init + .fini`) per unit. Limit ≈ 30 KB. The preset tables (~7 KB) must stay in `.data`.
 
-**Rule:** All file-scope or class-scope arrays used as preset tables must be declared
-`static` (plain) — never `static constexpr` or `static const`. This is already
-enforced for `kDefaultModalPresetConfig`, `modal_preset_configs[]`, and
-`model_param_presets[][]`. Do **NOT** add `const`/`constexpr` back to those.
+**Working fix (a49e2f4):** The large preset arrays —
+`kDefaultModalPresetConfig`, `modal_preset_configs[]`, `model_param_presets[][]`,
+`kPresetEngine[]` — are declared as **non-static** class members (no `static`,
+no `const`, no `constexpr`). This makes them part of the global `s_synth`
+object layout and places their initial values in `.data`.
+
+**Broken patterns to avoid:**
+- `static constexpr T arr[] = {...}` → goes to `.rodata` → text-size check fails
+- `static const T arr[] = {...}` → same problem
+- `static T arr[] = {...}` **inside a class body** → GCC 6.5 rejects it (out-of-line
+  definition required for non-const static members, and constexpr causes .rodata)
 
 See `config.mk` `USE_LTO := no` and the comment block for background.
 
