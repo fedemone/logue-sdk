@@ -376,12 +376,16 @@ struct VoiceState {
         modal_k_4 = (mode_count > 3) ? 2.0f * fastercosfullf(w4) : 0.0f;
         modal_k_5 = (mode_count > 4) ? 2.0f * fastercosfullf(w5) : 0.0f;
         modal_k_6 = (mode_count > 5) ? 2.0f * fastercosfullf(w6) : 0.0f;
-        modal_y2_1 = 0.0f; modal_y1_1 = fastersinfullf(w1);
-        modal_y2_2 = 0.0f; modal_y1_2 = fastersinfullf(w2);
-        modal_y2_3 = 0.0f; modal_y1_3 = (mode_count > 2) ? fastersinfullf(w3) : 0.0f;
-        modal_y2_4 = 0.0f; modal_y1_4 = (mode_count > 3) ? fastersinfullf(w4) : 0.0f;
-        modal_y2_5 = 0.0f; modal_y1_5 = (mode_count > 4) ? fastersinfullf(w5) : 0.0f;
-        modal_y2_6 = 0.0f; modal_y1_6 = (mode_count > 5) ? fastersinfullf(w6) : 0.0f;
+        // Seed at full amplitude (cosine quadrature pair): oscillator starts
+        // at peak on frame 0 instead of tiny sin(w) ≈ 0.034 that takes ~1 ms
+        // to build up.  y2=cos(w), y1=1 gives yn=2cos·1-cos=cos, i.e. a
+        // cosine starting at 1.0 — correct initial energy for struck bars.
+        modal_y2_1 = fastercosfullf(w1); modal_y1_1 = 1.0f;
+        modal_y2_2 = fastercosfullf(w2); modal_y1_2 = 1.0f;
+        modal_y2_3 = (mode_count > 2) ? fastercosfullf(w3) : 0.0f; modal_y1_3 = (mode_count > 2) ? 1.0f : 0.0f;
+        modal_y2_4 = (mode_count > 3) ? fastercosfullf(w4) : 0.0f; modal_y1_4 = (mode_count > 3) ? 1.0f : 0.0f;
+        modal_y2_5 = (mode_count > 4) ? fastercosfullf(w5) : 0.0f; modal_y1_5 = (mode_count > 4) ? 1.0f : 0.0f;
+        modal_y2_6 = (mode_count > 5) ? fastercosfullf(w6) : 0.0f; modal_y1_6 = (mode_count > 5) ? 1.0f : 0.0f;
         modal_norm_count = 0;
         modal_env_1 = env1 * current_velocity;
         modal_env_2 = env2 * current_velocity;
@@ -393,15 +397,19 @@ struct VoiceState {
         float t60_2_s = 0.001f * t60_2_ms;
         float t60_3_s = 0.001f * t60_3_ms;
         float t60_4_s = 0.001f * t60_4_ms;
-        modal_decay_1 = (t60_1_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_1_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY1;
-        modal_decay_2 = (t60_2_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_2_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
-        modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_3_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
-        modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? fasterexpf(k_dsp_log_0001 / (t60_4_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
+        // Use expf (not fasterexpf) here: fasterexpf is catastrophically wrong for
+        // very small arguments (|x| < 0.001), e.g. T60=5s gives x=-0.0000288 but
+        // fasterexpf returns 0.971 instead of 0.99997. modal_decay is computed once
+        // at NoteOn time, so accuracy matters far more than speed.
+        modal_decay_1 = (t60_1_s > 0.0f) ? expf(k_dsp_log_0001 / (t60_1_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY1;
+        modal_decay_2 = (t60_2_s > 0.0f) ? expf(k_dsp_log_0001 / (t60_2_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
+        modal_decay_3 = (mode_count > 2 && t60_3_s > 0.0f) ? expf(k_dsp_log_0001 / (t60_3_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
+        modal_decay_4 = (mode_count > 3 && t60_4_s > 0.0f) ? expf(k_dsp_log_0001 / (t60_4_s * k_dsp_sample_rate)) : STAGE2_MODAL_DECAY2;
         // Modes 5 and 6 share T60_4's base but decay faster: T60_5 = 0.85×T60_4,
         // T60_6 = 0.70×T60_4.  Reusing decay_4 via power law avoids two extra expf
         // calls: exp(k / (r*T)) = exp(k/T)^(1/r) = decay_4^(1/r).
-        modal_decay_5 = (mode_count > 4 && t60_4_s > 0.0f) ? fasterpowf(modal_decay_4, 1.0f / 0.85f) : STAGE2_MODAL_DECAY2;
-        modal_decay_6 = (mode_count > 5 && t60_4_s > 0.0f) ? fasterpowf(modal_decay_4, 1.0f / 0.70f) : STAGE2_MODAL_DECAY2;
+        modal_decay_5 = (mode_count > 4 && t60_4_s > 0.0f) ? powf(modal_decay_4, 1.0f / 0.85f) : STAGE2_MODAL_DECAY2;
+        modal_decay_6 = (mode_count > 5 && t60_4_s > 0.0f) ? powf(modal_decay_4, 1.0f / 0.70f) : STAGE2_MODAL_DECAY2;
         modal_mix = mix;
     }
 };

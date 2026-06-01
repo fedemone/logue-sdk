@@ -3,8 +3,8 @@
 ## Working State (branch tip — see git log for exact commit)
 
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
-  sounds instead of strings. Marimba sounds like a short metallic tick — correct
-  character, but modal T60 is too short (Phase 2 tuning needed).
+  sounds instead of strings.
+- Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
 - Flute and Clarinet are silenced (ENGINE_REMOVED).
 
 ## Critical .rodata / .data Constraint — Do NOT break this
@@ -24,6 +24,17 @@ object layout and places their initial values in `.data`.
   definition required for non-const static members, and constexpr causes .rodata)
 
 See `config.mk` `USE_LTO := no` and the comment block for background.
+
+## Root Cause of Marimba "Click, No Ring" Bug (fixed — see current commit)
+
+`fasterexpf` from the fast-math library is catastrophically inaccurate for
+arguments with |x| < ~0.001. `modal_decay` is computed as
+`expf(ln(0.001) / (T60_s × srate))`. For T60=1.2s the argument is -0.000120,
+for T60=5.0s it is -0.0000288 — both fall in the broken range.
+`fasterexpf(-0.000120)` returns ~0.971 (implying T60≈5ms) instead of 0.99988.
+**Fix:** use standard `expf` (and `powf`) in `init_modal_modes` for
+`modal_decay_1..6`. These are computed once at NoteOn time, so accuracy
+dominates over the ~10 ns saved by the fast approximation.
 
 ## Root Cause of Marimba "1/3-Second Ring" Bug (fixed commit 859a2a4)
 
