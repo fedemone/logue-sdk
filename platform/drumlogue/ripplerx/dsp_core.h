@@ -223,6 +223,12 @@ struct VoiceState {
     void PartialReset() {
         mag_env = 0.0f;
 
+        // Reset exciter frame counter so the mallet fires on every NoteOn and
+        // the kSquelchGuardSamples window restarts from zero for the new note.
+        exciter.current_frame = 0;
+        exciter.mallet_lp  = 0.0f;
+        exciter.mallet_lp2 = 0.0f;
+
         // Reset phase
         // resonators
         resA.ap_x1 = 0.0f;
