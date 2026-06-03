@@ -222,12 +222,23 @@ static constexpr float asn_bm = (2.0f * M_PI * 175.0f) * inverse_default_sample_
 // k_Timpani: Modal bank (4 circular-membrane modes) replaces the fixed-frequency boom.
 // k_Taiko: Taiko: sub-octave boom (~70 Hz) under the main membrane fundamental.  Gives the deep chest-thud of a real taiko strike. boom_decay = 0.99950f; // ~360ms
 // k_AcousticTom: boom_mix = 0.05f;  // reduced from 0.24: was dominating sub band at 70%+ vs ref 11%. boom_attack_inc = 0.0008f;    // reduced from 0.0025 (The boom at C4 (261 Hz ≈ sub boundary) reaches 60% by 5 ms): pushes full boom onset to ~26 ms, giving the KS mallet transient time to register
-struct ModalPresetConfig { float ratio2; float ratio3; float ratio4; float t60_1_ms; float t60_2_ms; float t60_3_ms; float t60_4_ms; float mix; float env1; float env2; float env3; float env4; uint8_t mode_count; float ratio5; float ratio6; };
+struct ModalPresetConfig {
+    float ratio2; float ratio3; float ratio4;
+    float t60_1_ms; float t60_2_ms; float t60_3_ms; float t60_4_ms;
+    float mix;
+    float env1; float env2; float env3; float env4;
+    uint8_t mode_count;
+    float ratio5; float ratio6;
+    // Per-mode amplitude weights for modes 5 & 6.  Kept here so every
+    // instrument tuning parameter lives in the config table, not in the
+    // render loop.  For presets with mode_count <= 4 leave both as 0.
+    float env5; float env6;
+};
 // NOTE: Must be 'static' only (no const/constexpr).  On GCC 6.5, const/constexpr
 // places these arrays in .rodata, which is counted by the Drumlogue firmware in its
 // per-unit .text segment size check (~30 KB limit).  Plain 'static' puts them in
 // .data, which is checked separately and has a much larger budget.
-ModalPresetConfig kDefaultModalPresetConfig{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f};
+ModalPresetConfig kDefaultModalPresetConfig{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f};
 ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Init */ kDefaultModalPresetConfig,
     /* k_Marimba: tuned-bar ratios 1:4:10 (marimba carving); T60 calibrated to reference
@@ -239,8 +250,11 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Taiko */ {1.59f, 2.14f, 2.90f, 350.0f, 250.0f, 180.0f, 120.0f, 0.28f, 0.85f, 0.70f, 0.52f, 0.36f, 4, 0, 0.0f}, /* k_MarchSnare */ {1.59f, 2.14f, 2.30f, 30.0f, 22.0f, 15.0f, 10.0f, 0.14f, 0.60f, 0.45f, 0.30f, 0.18f, 4, 0, 0.0f},
     /* k_Koto */ kDefaultModalPresetConfig, /* k_Vibraphone */ {4.00f, 10.0f, 0.0f, 800.0f, 300.0f, 0.0f, 0.0f, 0.18f, 0.80f, 0.52f, 0.26f, 0.0f, 3, 0, 0.0f},
     /* k_Woodblock */ {STAGE2_MODAL_RATIO_2, 0.0f, 0.0f, STAGE2_MODAL_T60_1_MS, STAGE2_MODAL_T60_2_MS, 0.0f, 0.0f, STAGE2_MODAL_MIX, STAGE2_MODAL_ENV1, STAGE2_MODAL_ENV2, 0.0f, 0.0f, 2, 0, 0.0f},
-    /* k_AcousticTom */ {1.59f, 2.14f, 2.30f, 100.0f, 70.0f, 50.0f, 35.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f}, /* k_Cymbal */ {2.92f, 6.37f, 11.75f, 3000.0f, 2000.0f, 1500.0f, 1000.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f},
-    /* k_Gong */ {1.479f, 1.932f, 2.332f, 2000.0f, 1500.0f, 1100.0f, 800.0f, 0.20f, 0.90f, 0.75f, 0.56f, 0.40f, 6, 2.549f, 2.840f},
+    /* k_AcousticTom */ {1.59f, 2.14f, 2.30f, 100.0f, 70.0f, 50.0f, 35.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f},
+    /* k_Cymbal: env5=0.22×env4=0.36, env6=0.16×env4 */
+    {2.92f, 6.37f, 11.75f, 3000.0f, 2000.0f, 1500.0f, 1000.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f, 0.0792f, 0.0576f},
+    /* k_Gong: env5=0.22×env4=0.40, env6=0.16×env4 */
+    {1.479f, 1.932f, 2.332f, 2000.0f, 1500.0f, 1100.0f, 800.0f, 0.20f, 0.90f, 0.75f, 0.56f, 0.40f, 6, 2.549f, 2.840f, 0.0880f, 0.0640f},
     /* k_Kalimba: tine ratios 1:4:10 (similar to marimba); T60 ~600ms for tines. */
     {4.00f, 10.0f, 0.0f, 600.0f, 200.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
     /* k_SteelPan */ {2.00f, 3.00f, 4.00f, 1200.0f, 900.0f, 700.0f, 500.0f, 0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4, 0, 0.0f},
@@ -252,7 +266,9 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_HiHatClosed */ {1.479f, 1.932f, 2.332f, 45.0f, 28.0f, 16.0f, 10.0f, 0.24f, 0.80f, 0.65f, 0.48f, 0.32f, 4, 0, 0.0f}, /* k_HiHatOpen */ {1.479f, 1.932f, 2.332f, 400.0f, 300.0f, 200.0f, 140.0f, 0.30f, 0.85f, 0.70f, 0.55f, 0.40f, 4, 0, 0.0f},
     /* k_Conga */ {1.59f, 2.14f, 2.30f, 90.0f, 65.0f, 45.0f, 30.0f, 0.20f, 0.70f, 0.52f, 0.35f, 0.22f, 4, 0, 0.0f}, /* k_Handpan */ {2.00f, 3.00f, 0.0f, 900.0f, 700.0f, 0.0f, 0.0f, 0.20f, 0.85f, 0.65f, 0.0f, 0.0f, 3, 0, 0.0f},
     /* k_BellTree */ {2.01f, 2.76f, 0.0f, 900.0f, 700.0f, 0.0f, 0.0f, 0.17f, 0.80f, 0.60f, 0.0f, 0.0f, 3, 0, 0.0f},
-    /* k_SlitDrum */ kDefaultModalPresetConfig, /* k_Ride */ {1.479f, 1.932f, 2.332f, 2400.0f, 1800.0f, 1300.0f, 950.0f, 0.14f, 0.80f, 0.65f, 0.50f, 0.35f, 6, 2.549f, 2.840f},
+    /* k_SlitDrum */ kDefaultModalPresetConfig,
+    /* k_Ride: env5=0.22×env4=0.35, env6=0.16×env4 */
+    {1.479f, 1.932f, 2.332f, 2400.0f, 1800.0f, 1300.0f, 950.0f, 0.14f, 0.80f, 0.65f, 0.50f, 0.35f, 6, 2.549f, 2.840f, 0.0770f, 0.0560f},
     /* k_RideBell */ {2.01f, 2.76f, 3.56f, 1500.0f, 1200.0f, 900.0f, 700.0f, 0.20f, 0.85f, 0.70f, 0.55f, 0.40f, 4, 0, 0.0f},
     /* k_Bongo */ {1.59f, 2.14f, 2.30f, 50.0f, 35.0f, 25.0f, 16.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0.0f, 0.0f}, /* k_GlassBottle */ kDefaultModalPresetConfig, /* k_Tick */ kDefaultModalPresetConfig};
 
@@ -675,7 +691,8 @@ SynthState state;
                                    modal_cfg.t60_3_ms, modal_cfg.t60_4_ms,
                                    modal_cfg.mix, modal_cfg.env1, modal_cfg.env2,
                                    modal_cfg.env3, modal_cfg.env4, modal_cfg.mode_count,
-                                   modal_cfg.ratio5, modal_cfg.ratio6);
+                                   modal_cfg.ratio5, modal_cfg.ratio6,
+                                   modal_cfg.env5, modal_cfg.env6);
             }
         }
     }
@@ -1518,7 +1535,8 @@ SynthState state;
                 v.init_modal_modes(mc.ratio2, mc.ratio3, mc.ratio4,
                                    mc.t60_1_ms, mc.t60_2_ms, mc.t60_3_ms, mc.t60_4_ms,
                                    modal_mix_val, mc.env1, mc.env2, mc.env3, mc.env4,
-                                   mc.mode_count, mc.ratio5, mc.ratio6);
+                                   mc.mode_count, mc.ratio5, mc.ratio6,
+                                   mc.env5, mc.env6);
             }
         }
 }

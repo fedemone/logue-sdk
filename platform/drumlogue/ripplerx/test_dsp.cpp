@@ -441,6 +441,212 @@ static void test_modal_ring_decay() {
     std::cout << "\n--- T25 Modal Ring Decay COMPLETE ---\n";
 }
 
+// T26: master_env hold for non-KS engines.
+//
+// For ENGINE_BAR (Marimba), GateOn sets master_env to sustain_level=1.0 so it
+// holds at 1.0 forever (ring gated only by the modal amplitude decay, not by
+// master_env reaching ENV_IDLE).  If master_env decays the voice is silenced in
+// ~300ms regardless of the modal T60 — this was the original "1/3-second ring"
+// bug (commit 859a2a4).
+//
+// Checks: master_env.value > 0.999 and voice is_active at 100ms, 300ms, 600ms.
+static void test_master_env_hold() {
+    std::cout << "\n--- T26 master_env Hold for Non-KS START ---\n";
+
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    const int BLOCK_SZ = 64;
+    const float srate  = 48000.0f;
+
+    // checkpoints in ms and their expected minimum master_env.value
+    const float checkpoints_ms[] = { 100.0f, 300.0f, 600.0f };
+
+    RipplerXWaveguide s;
+    s.Init(&desc);
+    s.LoadPreset(1);    // Marimba — ENGINE_BAR
+    s.GateOn(100);
+
+    int   active = s.state.next_voice_idx;
+    auto& v      = s.state.voices[active];
+
+    // Verify the initial state is correct
+    if (v.exciter.master_env.sustain_level < 0.999f) {
+        std::cerr << "[FAIL] T26: master_env.sustain_level="
+                  << v.exciter.master_env.sustain_level
+                  << " for ENGINE_BAR (expected 1.0)\n";
+        exit(1);
+    }
+
+    int total_blocks = (int)(600.0f * 0.001f * srate / BLOCK_SZ) + 1;
+    float buf[BLOCK_SZ];
+
+    for (int blk = 0; blk < total_blocks; blk++) {
+        float elapsed_ms = blk * BLOCK_SZ * 1000.0f / srate;
+
+        for (float cp : checkpoints_ms) {
+            if (elapsed_ms >= cp && elapsed_ms < cp + BLOCK_SZ * 1000.0f / srate) {
+                if (v.exciter.master_env.value < 0.999f) {
+                    std::cerr << "[FAIL] T26: master_env.value="
+                              << v.exciter.master_env.value
+                              << " at " << cp << "ms (expected ~1.0)\n"
+                              << "  Hint: master_env.sustain_level may be 0 — the 859a2a4 fix regressed.\n";
+                    exit(1);
+                }
+                if (!v.is_active) {
+                    std::cerr << "[FAIL] T26: voice died at " << cp
+                              << "ms; Marimba T60=1200ms, voice should still be ringing\n";
+                    exit(1);
+                }
+            }
+        }
+
+        memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, BLOCK_SZ);
+    }
+
+    std::cout << "  PASS Marimba: master_env held at 1.0 through 600ms\n";
+    std::cout << "\n--- T26 master_env Hold for Non-KS COMPLETE ---\n";
+}
+
+// T27: Output smoke test — every non-REMOVED preset produces audio.
+//
+// Loads each preset, fires GateOn at velocity 100, processes 20 blocks (~26ms),
+// and checks that the peak amplitude is in (0.001, 3.0).
+//   < 0.001 → engine is silent (routing bug, wrong voice, etc.)
+//   > 3.0   → amplitude explosion (unstable resonator, run-away feedback)
+//
+// ENGINE_REMOVED presets (Flute=23, Clarinet=24) must produce ZERO output.
+static void test_preset_smoke() {
+    std::cout << "\n--- T27 Preset Output Smoke Test START ---\n";
+
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    const int BLOCK_SZ   = 64;
+    const int CHECK_BLKS = 20;   // 26ms — enough for all engine types to fire
+    const int VELOCITY   = 100;
+
+    const int num_programs = RipplerXWaveguide::k_NumPrograms;
+    for (int idx = 0; idx < num_programs; ++idx) {
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)idx);
+        s.GateOn(VELOCITY);
+
+        float buf[BLOCK_SZ];
+        float peak = 0.0f;
+        for (int blk = 0; blk < CHECK_BLKS; blk++) {
+            memset(buf, 0, sizeof(buf));
+            s.processBlock(buf, BLOCK_SZ);
+            for (int j = 0; j < BLOCK_SZ; j++) {
+                float a = fabsf(buf[j]);
+                if (a > peak) peak = a;
+            }
+        }
+
+        bool is_removed = (s.kPresetEngine[idx] == RipplerXWaveguide::ENGINE_REMOVED);
+
+        if (is_removed) {
+            if (peak > 0.0001f) {
+                std::cerr << "[FAIL] T27 preset " << idx
+                          << ": ENGINE_REMOVED produced audio (peak=" << peak << ")\n";
+                exit(1);
+            }
+        } else {
+            if (peak < 0.001f) {
+                std::cerr << "[FAIL] T27 preset " << idx
+                          << ": silent output (peak=" << peak << ")\n";
+                exit(1);
+            }
+            if (peak > 3.0f) {
+                std::cerr << "[FAIL] T27 preset " << idx
+                          << ": amplitude explosion (peak=" << peak << ")\n";
+                exit(1);
+            }
+        }
+    }
+
+    std::cout << "  PASS: all " << num_programs
+              << " presets within [0.001, 3.0] (REMOVED = silent)\n";
+    std::cout << "\n--- T27 Preset Output Smoke Test COMPLETE ---\n";
+}
+
+// T28: Rapid re-trigger — voice cycling and amplitude stability.
+//
+// Fires 6 rapid GateOns on Marimba with NO audio blocks between them.
+// Verifies:
+//   (a) next_voice_idx cycles through all 4 voices — no stuck allocation
+//   (b) No NaN or infinity in the first 100 blocks after the last trigger
+//   (c) Peak amplitude stays below 5.0 — cosine initial conditions (y1=1)
+//       start at full amplitude on each trigger; with 4 voices summing the
+//       output could theoretically reach 4× the single-voice peak.
+static void test_rapid_retrigger() {
+    std::cout << "\n--- T28 Rapid Re-trigger Stability START ---\n";
+
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    RipplerXWaveguide s;
+    s.Init(&desc);
+    s.LoadPreset(1);    // Marimba
+
+    // Fire 6 triggers — cycles all 4 voices and wraps around
+    uint8_t seen_voices = 0;
+    for (int t = 0; t < 6; t++) {
+        s.GateOn(100);
+        seen_voices |= (1u << s.state.next_voice_idx);
+    }
+
+    // (a) All 4 voice slots must have been visited
+    if (seen_voices != 0x0F) {
+        std::cerr << "[FAIL] T28: voice cycling incomplete — seen_voices=0x"
+                  << std::hex << (int)seen_voices << std::dec
+                  << " (expected 0x0F after 6 triggers)\n";
+        exit(1);
+    }
+
+    const int BLOCK_SZ = 64;
+    float buf[BLOCK_SZ];
+    for (int blk = 0; blk < 100; blk++) {
+        memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, BLOCK_SZ);
+
+        for (int j = 0; j < BLOCK_SZ; j++) {
+            float v = buf[j];
+
+            // (b) NaN / inf check
+            if (v != v || v > 1e10f || v < -1e10f) {
+                std::cerr << "[FAIL] T28: NaN or explosion at blk=" << blk
+                          << " sample=" << j << " value=" << v << "\n";
+                exit(1);
+            }
+
+            // (c) Amplitude bound — 4 voices × ~1.0 peak + limiter headroom
+            if (fabsf(v) > 5.0f) {
+                std::cerr << "[FAIL] T28: amplitude explosion at blk=" << blk
+                          << " sample=" << j << " (|value|=" << fabsf(v) << ")\n";
+                exit(1);
+            }
+        }
+    }
+
+    std::cout << "  PASS: 6 triggers — all 4 voices cycled, no NaN, peak < 5.0\n";
+    std::cout << "\n--- T28 Rapid Re-trigger Stability COMPLETE ---\n";
+}
+
 int main() {
     run_active_test();
     run_active_test2();
@@ -449,5 +655,8 @@ int main() {
     test_stereo_phase_alignment();
     test_delay_memory_leak();
     test_modal_ring_decay();
+    test_master_env_hold();
+    test_preset_smoke();
+    test_rapid_retrigger();
     return 0;
 }

@@ -350,7 +350,8 @@ struct VoiceState {
     void init_modal_modes(float ratio2, float ratio3, float ratio4,
                          float t60_1_ms, float t60_2_ms, float t60_3_ms, float t60_4_ms,
                          float mix, float env1, float env2, float env3, float env4,
-                         uint8_t mode_count, float ratio5 = 0.0f, float ratio6 = 0.0f) {
+                         uint8_t mode_count, float ratio5 = 0.0f, float ratio6 = 0.0f,
+                         float env5 = 0.0f, float env6 = 0.0f) {
         uint8_t note = current_note;
         float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
         if (base_f < 20.0f) base_f = 20.0f;
@@ -391,8 +392,8 @@ struct VoiceState {
         modal_env_2 = env2 * current_velocity;
         modal_env_3 = (mode_count > 2) ? (env3 * current_velocity) : 0.0f;
         modal_env_4 = (mode_count > 3) ? (env4 * current_velocity) : 0.0f;
-        modal_env_5 = (mode_count > 4) ? (0.22f * env4 * current_velocity) : 0.0f;
-        modal_env_6 = (mode_count > 5) ? (0.16f * env4 * current_velocity) : 0.0f;
+        modal_env_5 = (mode_count > 4) ? (env5 * current_velocity) : 0.0f;
+        modal_env_6 = (mode_count > 5) ? (env6 * current_velocity) : 0.0f;
         float t60_1_s = 0.001f * t60_1_ms;
         float t60_2_s = 0.001f * t60_2_ms;
         float t60_3_s = 0.001f * t60_3_ms;
