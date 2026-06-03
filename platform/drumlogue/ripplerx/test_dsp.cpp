@@ -338,6 +338,109 @@ static void test_delay_memory_leak() {
     std::cout << "\n--- T24 Delay Line Memory Leak on Reset COMPLETE ---\n";
 }
 
+// T25: Modal ring decay — regression test for the fasterexpf-precision bug.
+//
+// For each tested ENGINE_BAR/PLATE preset, verifies:
+//   (a) modal_decay_1 encodes the T60 from modal_preset_configs within 0.1%
+//       (fasterexpf returned ~0.971 for all T60 > 700ms; expf is correct)
+//   (b) voice stays active at min(T60/4, 300ms) — ring not prematurely killed
+//   (c) mag_env > kSquelchThreshold at that checkpoint — audible ring present
+//
+// T60 values are read live from s.modal_preset_configs so the test stays valid
+// when preset tables are re-tuned.
+static void test_modal_ring_decay() {
+    std::cout << "\n--- T25 Modal Ring Decay START ---\n";
+
+    unit_runtime_desc_t desc = {0};
+    desc.samplerate = 48000;
+    desc.output_channels = 2;
+    desc.get_num_sample_banks = mock_get_num_sample_banks;
+    desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
+    desc.get_sample = mock_get_sample;
+
+    // Presets to test — all have ENGINE_BAR or long-ring ENGINE_PLATE
+    const int preset_indices[] = { 1, 4, 10, 15, 19, 26 };
+    const char* preset_labels[] = { "Marimba", "TubularBell", "Vibraphone",
+                                    "Kalimba",  "Triangle",    "GlassBowl" };
+
+    const float srate    = 48000.0f;
+    const float log0001  = logf(0.001f);
+    const int   BLOCK_SZ = 64;
+    const int   VELOCITY = 100;
+    // kSquelchThreshold from synth_engine.h is 0.0001; use same margin
+    const float SQUELCH  = 0.0001f;
+
+    for (int ci = 0; ci < 6; ++ci) {
+        int preset_idx = preset_indices[ci];
+        const char* label = preset_labels[ci];
+
+        RipplerXWaveguide s;
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)preset_idx);
+        s.GateOn(VELOCITY);
+
+        int   active_idx = s.state.next_voice_idx;
+        auto& v          = s.state.voices[active_idx];
+
+        // Read T60 live from config (avoids stale hardcoded values)
+        float t60_ms = s.modal_preset_configs[preset_idx].t60_1_ms;
+
+        if (t60_ms <= 0.0f || v.modal_mode_count == 0) {
+            std::cout << "  SKIP " << label << ": no modal ring configured (t60=0 or mode_count=0)\n";
+            continue;
+        }
+
+        // ── (a) Decay coefficient accuracy ─────────────────────────────────
+        float expected_decay = expf(log0001 / (t60_ms * 0.001f * srate));
+        float actual_decay   = v.modal_decay_1;
+        float rel_err        = fabsf(actual_decay - expected_decay) / expected_decay;
+
+        if (rel_err > 0.001f) {
+            std::cerr << "[FAIL] T25 " << label
+                      << ": modal_decay_1=" << std::setprecision(8) << actual_decay
+                      << " expected=" << expected_decay
+                      << " (T60=" << t60_ms << "ms)"
+                      << " rel_err=" << rel_err * 100.0f << "%\n"
+                      << "  Hint: fasterexpf may have regressed for small arguments.\n";
+            exit(1);
+        }
+
+        // ── (b) Ring persistence ────────────────────────────────────────────
+        // Check at min(T60/4, 300ms) so long-T60 tests don't run for minutes.
+        float check_ms      = std::min(t60_ms * 0.25f, 300.0f);
+        int   check_blocks  = (int)(check_ms * 0.001f * srate / BLOCK_SZ);
+
+        float buf[BLOCK_SZ];
+        for (int blk = 0; blk < check_blocks; blk++) {
+            memset(buf, 0, sizeof(buf));
+            s.processBlock(buf, BLOCK_SZ);
+        }
+
+        if (!v.is_active) {
+            std::cerr << "[FAIL] T25 " << label
+                      << ": voice died at " << check_ms << "ms"
+                      << " (T60=" << t60_ms << "ms); ring cut prematurely\n";
+            exit(1);
+        }
+
+        // ── (c) Audible ring present ────────────────────────────────────────
+        if (v.mag_env < SQUELCH * 10.0f) {
+            std::cerr << "[FAIL] T25 " << label
+                      << ": mag_env=" << v.mag_env << " at " << check_ms
+                      << "ms — ring is silent (expected audible signal)\n";
+            exit(1);
+        }
+
+        std::cout << "  PASS " << label
+                  << ": T60=" << t60_ms << "ms"
+                  << " decay_1=" << std::setprecision(7) << actual_decay
+                  << " active@" << check_ms << "ms"
+                  << " mag_env=" << std::setprecision(4) << v.mag_env << "\n";
+    }
+
+    std::cout << "\n--- T25 Modal Ring Decay COMPLETE ---\n";
+}
+
 int main() {
     run_active_test();
     run_active_test2();
@@ -345,5 +448,6 @@ int main() {
     test_denormal_stalls();
     test_stereo_phase_alignment();
     test_delay_memory_leak();
+    test_modal_ring_decay();
     return 0;
 }
