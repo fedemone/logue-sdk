@@ -1537,6 +1537,26 @@ SynthState state;
                                    modal_mix_val, mc.env1, mc.env2, mc.env3, mc.env4,
                                    mc.mode_count, mc.ratio5, mc.ratio6,
                                    mc.env5, mc.env6);
+                // Dkay → modal T60 scale for BAR/MEMBRANE/SNARE/PLATE engines.
+                // Calibrated T60 values are for Dkay=200 (fully open ring).
+                // t60_scale = 2^(3*(norm-1)): Dkay=200→×1.0, Dkay=100→×0.354, Dkay=0→×0.125.
+                // Applied as powf(decay, 1/scale) because smaller scale → faster decay coefficient.
+                {
+                    const EngineType ne3 = kPresetEngine[m_preset_idx];
+                    if (ne3 != ENGINE_KS && ne3 != ENGINE_NOISE && ne3 != ENGINE_REMOVED) {
+                        float dkay_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
+                        float t60_scale = fasterpow2f(3.0f * (dkay_norm - 1.0f));
+                        if (t60_scale < 0.99f) {
+                            float exp_scale = 1.0f / t60_scale;
+                            v.modal_decay_1 = powf(v.modal_decay_1, exp_scale);
+                            v.modal_decay_2 = powf(v.modal_decay_2, exp_scale);
+                            v.modal_decay_3 = powf(v.modal_decay_3, exp_scale);
+                            v.modal_decay_4 = powf(v.modal_decay_4, exp_scale);
+                            v.modal_decay_5 = powf(v.modal_decay_5, exp_scale);
+                            v.modal_decay_6 = powf(v.modal_decay_6, exp_scale);
+                        }
+                    }
+                }
             }
         }
 }

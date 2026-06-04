@@ -6,6 +6,10 @@
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
 - Flute and Clarinet are silenced (ENGINE_REMOVED).
+- **Dkay now controls modal T60** for BAR/MEMBRANE/SNARE/PLATE engines:
+  `t60_scale = 2^(3*(norm-1))` — Dkay=200→×1.0 (calibrated), Dkay=0→×0.125.
+  Applied as `powf(modal_decay_N, 1/t60_scale)` once per NoteOn in `synth_engine.h`.
+  Verified: Marimba Dkay=0→146ms, Dkay=100→433ms, Dkay=200→1166ms.
 
 ## Critical .rodata / .data Constraint — Do NOT break this
 
