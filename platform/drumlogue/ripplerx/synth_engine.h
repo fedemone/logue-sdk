@@ -519,6 +519,12 @@ SynthState state;
     // T60 always plays at the preset's default Dkay (no regression), and the Dkay knob
     // trims around it.  Captured in LoadPreset; defaults to 0.975 (Dkay≈195).
     float m_modal_dkay_ref = 0.975f;
+    // Modal brightness reference: the normalized MlltStif the preset shipped with.
+    // Mallet stiffness tilts the higher modal modes' initial energy (stiffer mallet =
+    // brighter strike = more high-mode energy).  Pivoted at this reference so the
+    // calibrated config envs play at the default mallet, and the knob (plus velocity
+    // via VlMllStf) tilts brightness around it.  Captured in LoadPreset.
+    float m_modal_stiff_ref = 0.26f;
 
     // Called by unit_get_param_value so the OS knows what to draw on the screen.
     // For Model, return the value for the currently-selected resonator so the OLED
@@ -666,6 +672,8 @@ SynthState state;
         // Capture the preset's shipped Dkay as the modal T60 reference point.
         // At this Dkay the modal ring plays exactly the calibrated config T60.
         m_modal_dkay_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramDkay] * 0.005f));
+        // Same pattern for mallet stiffness → modal brightness pivot.
+        m_modal_stiff_ref = fmaxf(0.01f, fminf(1.0f, (float)presets[idx][k_paramMlltStif] * 0.002f));
 
         // Restore both flags so the user's edit context survives preset loads.
         m_is_resonator_a = saved_is_a;
@@ -1573,6 +1581,20 @@ SynthState state;
                             v.modal_decay_4 = powf(v.modal_decay_4, exp_scale);
                             v.modal_decay_5 = powf(v.modal_decay_5, exp_scale);
                             v.modal_decay_6 = powf(v.modal_decay_6, exp_scale);
+                        }
+
+                        // Mallet stiffness → modal brightness tilt.  v.exciter.mallet_stiffness
+                        // already folds in MlltStif, VlMllStf (velocity) and rim position.
+                        // Tilt is relative to the shipped stiffness so the calibrated config
+                        // is neutral at default; stiffer mallet boosts higher modes (brighter
+                        // strike), softer mallet cuts them (rounder).  Mode 1 is never tilted.
+                        float tilt = (v.exciter.mallet_stiffness - m_modal_stiff_ref) * 1.4f;
+                        if (tilt < -0.001f || tilt > 0.001f) {
+                            v.modal_env_2 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 1.0f));
+                            v.modal_env_3 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 2.0f));
+                            v.modal_env_4 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 3.0f));
+                            v.modal_env_5 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 4.0f));
+                            v.modal_env_6 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 5.0f));
                         }
                     }
                 }
