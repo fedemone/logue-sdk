@@ -6,10 +6,33 @@
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
 - Flute and Clarinet are silenced (ENGINE_REMOVED).
-- **Dkay now controls modal T60** for BAR/MEMBRANE/SNARE/PLATE engines:
-  `t60_scale = 2^(3*(norm-1))` — Dkay=200→×1.0 (calibrated), Dkay=0→×0.125.
-  Applied as `powf(modal_decay_N, 1/t60_scale)` once per NoteOn in `synth_engine.h`.
-  Verified: Marimba Dkay=0→146ms, Dkay=100→433ms, Dkay=200→1166ms.
+- **Dkay controls modal T60** for BAR/MEMBRANE/SNARE/PLATE engines, anchored at the
+  preset's shipped Dkay (`m_modal_dkay_ref`): `t60_scale = 2^(3*(norm - ref))`.
+  Calibrated config T60 always plays at the default Dkay (no regression); knob trims
+  around it.  Uses `exp2f` (NOT `fasterpow2f` — that returns 0.971 at scale 1.0).
+- **Mallet stiffness → modal brightness** (`m_modal_stiff_ref` pivot).  MlltStif and
+  VlMllStf (velocity) now tilt the higher modal modes' initial energy: stiffer = brighter.
+  Neutral at the shipped MlltStif so no default-sound regression.
+
+### Parameter → modal-engine mapping status (HW-reported)
+- **Working on modal engines:** Dkay (T60), MlltStif/VlMllStf (brightness), Tone, LowCut,
+  Gain, NzMix, and the noise-resonance metallic character.
+- **No effect on modal engines (expected — KS-only params):** MlltRes, Model, Partials,
+  Inharm, HitPos, Rel, TubRad.  These drive the bypassed KS waveguide.  Wiring Model →
+  modal ratio-set and Partls → mode-count is a candidate future task.
+
+### REFERENCE-ANCHOR pattern (important)
+Calibrated modal configs are tuned assuming the preset's *shipped* knob value.  Any new
+param→modal mapping MUST pivot at a captured reference (`m_modal_*_ref`, set in LoadPreset)
+so the default sound is unchanged and only knob *movement* alters it.  Anchoring at an
+absolute endpoint (e.g. Dkay=200) silently detunes every preset — that was the
+"string-like" Marimba regression.
+
+### GOTCHA: modal mix lives in TWO tables
+`ModalPresetConfig.mix` is used only by `LoadPreset`.  `NoteOn` re-inits the modal bank
+using `model_param_presets[preset][k_modal_mix]`, which **overrides** it.  Keep both in
+sync.  MarchSnare shipped with config.mix=0.14 but `k_modal_mix`=0 → silent body, pure
+noise.  Always edit the `model_param_presets` `k_modal_mix` column to change the audible mix.
 
 ## Critical .rodata / .data Constraint — Do NOT break this
 
