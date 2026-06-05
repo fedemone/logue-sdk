@@ -514,6 +514,11 @@ SynthState state;
     // Tracks the raw UI integer for all 24 parameter slots (indices 0-23)
     int32_t m_params[k_lastParamIndex] = {0};
     uint8_t m_preset_idx = 0;
+    // Modal T60 reference: the normalized Dkay the current preset shipped with.
+    // Modal ring length scales RELATIVE to this so the calibrated modal_preset_configs
+    // T60 always plays at the preset's default Dkay (no regression), and the Dkay knob
+    // trims around it.  Captured in LoadPreset; defaults to 0.975 (Dkay≈195).
+    float m_modal_dkay_ref = 0.975f;
 
     // Called by unit_get_param_value so the OS knows what to draw on the screen.
     // For Model, return the value for the currently-selected resonator so the OLED
@@ -657,6 +662,10 @@ SynthState state;
         // where resonator B is given an irrational tuning ratio of 0.68 to simulate the metallic,
         // clashing overtones of the drum skin (the edge mode).
         // Resonator A acts as the fundamental "thump" of the drum (the center mode).
+
+        // Capture the preset's shipped Dkay as the modal T60 reference point.
+        // At this Dkay the modal ring plays exactly the calibrated config T60.
+        m_modal_dkay_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramDkay] * 0.005f));
 
         // Restore both flags so the user's edit context survives preset loads.
         m_is_resonator_a = saved_is_a;
@@ -1543,16 +1552,20 @@ SynthState state;
                                    modal_mix_val, mc.env1, mc.env2, mc.env3, mc.env4,
                                    mc.mode_count, mc.ratio5, mc.ratio6,
                                    mc.env5, mc.env6);
-                // Dkay → modal T60 scale for BAR/MEMBRANE/SNARE/PLATE engines.
-                // Calibrated T60 values are for Dkay=200 (fully open ring).
-                // t60_scale = 2^(3*(norm-1)): Dkay=200→×1.0, Dkay=100→×0.354, Dkay=0→×0.125.
-                // Applied as powf(decay, 1/scale) because smaller scale → faster decay coefficient.
+                // Dkay → modal T60 trim for BAR/MEMBRANE/SNARE/PLATE engines.
+                // The calibrated modal_preset_configs T60 plays at the preset's shipped
+                // Dkay (m_modal_dkay_ref), so the default sound always matches the tuning.
+                // The knob then trims RELATIVE to that reference:
+                //   t60_scale = 2^(3*(norm - ref))  →  ref→×1.0, lower Dkay→shorter ring.
+                // exp2f (not fasterpow2f): one-time NoteOn cost, accuracy matters — the
+                // fast variant returns 0.971 at scale=1.0, silently shortening every ring.
+                // Applied as powf(decay, 1/scale): scale<1 → faster decay coefficient.
                 {
                     const EngineType ne3 = kPresetEngine[m_preset_idx];
                     if (ne3 != ENGINE_KS && ne3 != ENGINE_NOISE && ne3 != ENGINE_REMOVED) {
                         float dkay_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
-                        float t60_scale = fasterpow2f(3.0f * (dkay_norm - 1.0f));
-                        if (t60_scale < 0.99f) {
+                        float t60_scale = exp2f(3.0f * (dkay_norm - m_modal_dkay_ref));
+                        if (t60_scale < 0.999f || t60_scale > 1.001f) {
                             float exp_scale = 1.0f / t60_scale;
                             v.modal_decay_1 = powf(v.modal_decay_1, exp_scale);
                             v.modal_decay_2 = powf(v.modal_decay_2, exp_scale);
