@@ -220,6 +220,11 @@ struct VoiceState {
     float onset_env = 1.0f;         // ← non-zero
     float onset_inc = 0.0f;
 
+    // Ring-coupled noise gate: for ENGINE_PLATE, noise amplitude tracks the
+    // modal ring decay so noise and ring die together (integrated metallic).
+    // Starts at 1.0 on each NoteOn; decays with modal_decay_1 each sample.
+    float noise_ring_gate = 1.0f;   // ← non-zero
+
     void PartialReset() {
         mag_env = 0.0f;
 
@@ -310,6 +315,7 @@ struct VoiceState {
         hf_branch_lp = 0.0f;
         onset_env = 1.0f;
         onset_inc = 0.0f;
+        noise_ring_gate = 1.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;
