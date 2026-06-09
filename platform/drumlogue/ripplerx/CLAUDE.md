@@ -13,12 +13,28 @@
 - **Mallet stiffness → modal brightness** (`m_modal_stiff_ref` pivot).  MlltStif and
   VlMllStf (velocity) now tilt the higher modal modes' initial energy: stiffer = brighter.
   Neutral at the shipped MlltStif so no default-sound regression.
+- **Noise-ring coupling (ENGINE_PLATE):** `noise_ring_gate` in VoiceState tracks the
+  modal fundamental decay (`modal_decay_1`) each sample. `parallel_noise_gain` is
+  multiplied by `fmax(0.15, noise_ring_gate)` so noise amplitude follows the ring — no
+  more "juxtaposed" independent noise on metallic instruments.
+- **ENGINE_NOISE duration fix:** `sustain_level=1.0f` for NOISE engines (not 0); NoteOff
+  skips `master_env.release()` for NOISE. The `noise_env` (Rel knob) now fully controls
+  Clap/Shaker tail. Old behaviour: master_env auto-decayed in ~11 ms at default Dkay,
+  killing the voice before `noise_env` could produce any tail.
+- **Rel → noise_env.release_rate** for ENGINE_NOISE:
+  `rel_rate = 0.00005 + (1-norm)*0.01`. At Rel=18 (norm=0.90): ~200 ms tail.
+- **HiHat/Cowbell modal ratios:** switched from membrane Bessel (1.479/1.932/2.332) to
+  plate ratios (2.92/6.37, 2.00/2.68/4.30) — Bessel ratios produced "wood-like pop"
+  instead of metallic character.
+- **Gong k_modal_mix was 0 (silent body):** Only FM chirp + noise played ("sci-fi zap").
+  Fixed to 0.20 in model_param_presets. FM depth halved (0.16→0.08).
 
-### Parameter → modal-engine mapping status (HW-reported)
+### Parameter → modal-engine mapping status (HW-reported, 2nd pass)
 - **Working on modal engines:** Dkay (T60), MlltStif/VlMllStf (brightness), Tone, LowCut,
   Gain, NzMix, and the noise-resonance metallic character.
+- **Rel works for ENGINE_NOISE** (Clap/Shaker) — controls noise_env release tail.
 - **No effect on modal engines (expected — KS-only params):** MlltRes, Model, Partials,
-  Inharm, HitPos, Rel, TubRad.  These drive the bypassed KS waveguide.  Wiring Model →
+  Inharm, HitPos, TubRad.  These drive the bypassed KS waveguide.  Wiring Model →
   modal ratio-set and Partls → mode-count is a candidate future task.
 
 ### REFERENCE-ANCHOR pattern (important)
@@ -73,10 +89,11 @@ killed the voice at exactly the "1/3 second" the user heard, regardless of
 modal T60 (Marimba mode-1 T60=1200 ms). Dkay=2000 didn't help because the
 *release_rate* (not decay_rate) also cuts the voice in ~97 ms after gate-off.
 
-**Fix:** For non-KS/NOISE engines, `NoteOn` sets `sustain_level=1.0f` so
-`master_env` holds at 1.0 and never auto-decays. `NoteOff` skips
-`master_env.release()` for modal engines. Voice deactivates when
-`mag_env < kSquelchThreshold` (modal ring naturally dies). See commit 859a2a4.
+**Fix:** For non-KS engines (including NOISE), `NoteOn` sets `sustain_level=1.0f`
+so `master_env` holds at 1.0 and never auto-decays. `NoteOff` skips
+`master_env.release()` for non-KS engines. Modal voices deactivate when
+`mag_env < kSquelchThreshold` (ring naturally dies); NOISE voices deactivate when
+`noise_env` reaches ENV_IDLE. See commits 859a2a4 and 94952f8.
 
 ## Root Cause of "Always String-Like" Sound
 
@@ -163,6 +180,41 @@ marimba after Phase 2, stop and re-evaluate the approach before continuing.
 
 **ENGINE_PLATE is optional.** If effort/result ratio is too high, replace plate
 presets with sampled content rather than synthetic DSP.
+
+## ENGINE_PLATE: Noise-Ring Coupling (noise_ring_gate)
+
+Metallic instruments need noise to decay *with* the ring, not independently.
+
+`VoiceState::noise_ring_gate` (float, default 1.0) is reset to 1.0 on every NoteOn.
+In `processBlock`, for `ENGINE_PLATE` with `modal_pilot_enabled`:
+```cpp
+parallel_noise_gain *= fmaxf(0.15f, voice.noise_ring_gate);
+voice.noise_ring_gate *= voice.modal_decay_1;
+```
+`modal_decay_1` (the per-sample decay factor for mode 1) also decays the noise envelope.
+The floor of 0.15 keeps a faint sustained noise bed (metallic shimmer) even after the
+ring has mostly decayed. Without this, noise stays at full gain while the ring dies →
+"juxtaposed" rather than integrated metallic sound.
+
+## ENGINE_NOISE: Voice Lifetime
+
+Clap and Shaker use `ENGINE_NOISE`. The voice lifecycle:
+1. NoteOn: `master_env.trigger()`, `sustain_level=1.0f` → master_env holds at 1.0 forever.
+2. NoteOn: `noise_env.trigger()` with short attack; `noise_env.release_rate` set by Rel.
+3. NoteOff: **nothing** — no `master_env.release()` for NOISE engines.
+4. `noise_env` decays from 1.0 → 0 under its own release; when it reaches ENV_IDLE the
+   processBlock squelch fires and deactivates the voice.
+
+The Rel formula: `release_rate = 0.00005 + (1.0 - norm) * 0.01`.  
+At Rel=0: rate≈0.01 (~200 samples = 4 ms). At Rel=18 (norm=0.90): rate≈0.00105 (~200 ms).
+At Rel=127 (norm=1.0): rate≈0.00005 (~4 s). Shipped Clap/Shaker at Rel=18.
+
+## GOTCHA: Plate Ratios vs. Membrane Ratios
+
+HiHatClosed, HiHatOpen, and Cowbell are ENGINE_PLATE. If their modal_preset_configs
+use membrane Bessel ratios (1.000 / 1.594 / 2.136 / 2.296), they sound like a wood drum,
+not metal. Plate ratios (2.92 / 6.37 / 11.75) produce the inharmonic metallic character.
+Always use plate-appropriate ratios for PLATE presets.
 
 ## Modal Bank — Key Parameters
 
