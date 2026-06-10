@@ -28,6 +28,26 @@
   instead of metallic character.
 - **Gong k_modal_mix was 0 (silent body):** Only FM chirp + noise played ("sci-fi zap").
   Fixed to 0.20 in model_param_presets. FM depth halved (0.16→0.08).
+- **3rd HW pass — T60 calibration (Dkay at max = user can only shorten, not lengthen):**
+  Taiko 500ms→1800ms, Woodblock 50ms→160ms, Bongo 50ms→320ms, Tick 25ms→200ms,
+  KickDrum boom T60 240ms→760ms. Modal T60 must give headroom above user's Dkay=200 so
+  the Dkay knob has an audible range. Verify with `analyze_samples.py` on reference WAVs.
+- **808Sub redesigned as ENGINE_MEMBRANE sub kick:** pitch_env (τ≈21ms) sweeps boom
+  oscillator 160→45 Hz independently from boom amplitude (T60=760ms). processBlock
+  special-cases k_808Sub: `sweep_hz = 45 + pitch_env_amt * pitch_env`. Changed kPresetEngine
+  from ENGINE_KS to ENGINE_MEMBRANE.
+- **Koto "thwaaang" + T60 fix:** pitch_env_decay=0.99900 (τ=21ms, not 83ms) so the 1.5st
+  pitch glide completes in ~63ms. Growing KS delay injects zeros → fast τ minimises energy
+  loss (<2%). Dkay 185→200, Mterl 12→20, TubRad 7→18 → T60 0.49s→3.3s@C4.
+- **KS pitch_env T60 gotcha:** When pitch_env_amt>0, the KS delay starts SHORT and grows to
+  base (starts sharp → settles to fundamental). Growing delay injects interpolated zeros into
+  the feedback path, shortening T60. Fix: use τ≤21ms (pitch_env_decay≥0.9990) so the sweep
+  completes in the attack transient. NEVER use τ>50ms for KS pitch_env.
+- **Snare character fix (3rd pass):** AcSnare body T60 350ms→80ms, modal_mix 0.24→0.10.
+  MarchSnare body T60 60ms→30ms, modal_mix 0.16→0.06. Wire resonators (4.5/7.2 kHz) now
+  fully dominate over the brief membrane "toc".
+- **Gong (3rd pass):** noise_band_mix 0.82→0.50, modal_mix 0.20→0.26, fm_depth 0.08→0.12.
+  Cymbal/Gong parallel_noise_gain 7→3.5 (was too harsh).
 
 ### Parameter → modal-engine mapping status (HW-reported, 2nd pass)
 - **Working on modal engines:** Dkay (T60), MlltStif/VlMllStf (brightness), Tone, LowCut,
