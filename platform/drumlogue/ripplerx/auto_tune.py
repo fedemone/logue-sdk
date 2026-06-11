@@ -355,8 +355,7 @@ def write_modal_config_rows(text: str, rows: List[Optional[List[float]]]) -> str
     block = text[start:end]
     matches = list(_MODAL_ENTRY_RE.finditer(block))
     if len(matches) != len(rows):
-        # Mismatch — bail out and leave the block unchanged.
-        return text
+        raise RuntimeError(f"Parser mismatch: found {len(matches)} matches but expected {len(rows)} rows.")
     # Parse original values once for change-detection.
     orig_rows = read_modal_config_rows(text)
     parts = []
