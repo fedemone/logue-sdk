@@ -104,6 +104,8 @@ else
   USE_CXXOPT += -finline-limit=9999999999
   USE_CXXOPT += --param max-inline-insns-single=9999999999
   USE_CXXOPT += -fno-threadsafe-statics
+  USE_CXXOPT += -fno-exceptions
+  USE_CXXOPT += -fno-rtti
 
   ifeq ($(OPTIM),)
     USE_OPT += -Os
@@ -169,7 +171,7 @@ CXXOPT := $(USE_CXXOPT)
 ifeq ($(USE_LINK_GC),yes)
   COPT    += -ffunction-sections -fdata-sections -fno-common
   CXXOPT  += -ffunction-sections -fdata-sections -fno-common
-  LDOPT   := --gc-sections
+  LDOPT   := ,--gc-sections
 else
   LDOPT :=
 endif

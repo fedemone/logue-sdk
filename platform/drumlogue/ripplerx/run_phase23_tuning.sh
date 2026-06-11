@@ -8,7 +8,7 @@ RENDER_CMD="./run_test_render --preset {preset_idx} --note {note} --name {preset
 NOTE_MAP="./note_map_priority.json"
 SAMPLES_DIR="./samples"
 
-CLASSICS_FILTER="AcSnare,Kick,HHat-C,HHat-O,Timpani,Ac Tom"
+CLASSICS_FILTER="AcSnare,Kick,HHat-C,HHat-O,Timpani,AcTom"
 GUARD_FILTER="Flute,Clrint,Tick,Clap,Kalimba"
 
 mkdir -p batch_reports/phase2_pitch_validation batch_reports/phase3_classics batch_reports/phase3_guard

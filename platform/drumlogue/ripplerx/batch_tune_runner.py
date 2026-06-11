@@ -128,6 +128,17 @@ PRESET_NAME_ALIASES = {
     "Timpani": "Timpni",
     "AcSnare": "AcSnre",
     "AcTom": "Ac Tom",
+    "Triangle": "Trngle",
+    "Clarinet": "Clrint",
+    "GlassBowl": "GlsBwl",
+    "GlassBottle": "GlsBotl",
+    "SteelPan": "StelPan",
+    "PluckedBass": "PlkBss",
+    "GuitarString": "GtrStr",
+    "BellTree": "BelTre",
+    "SlitDrum": "SltDrm",
+    "RideBell": "RidBel",
+    "HandPan": "Handpn",
 }
 
 # Render file aliases used by render_presets.cpp naming convention.
@@ -144,7 +155,7 @@ RENDER_PRESET_NAMES = {
     "Koto": "Koto",
     "Vibrph": "Vibrph",
     "Wodblk": "Wodblk",
-    "AcTom": "AcTom",
+    "AcTom": "Ac Tom",
     "Cymbal": "Cymbal",
     "Gong": "Gong",
     "Kalimba": "Kalimba",
@@ -152,6 +163,7 @@ RENDER_PRESET_NAMES = {
     "Claves": "Claves",
     "Cowbel": "Cowbel",
     "Triangle": "Triangle",
+    "Trngle": "Triangle",
     "Kick": "Kick",
     "Clap": "Clap",
     "Shaker": "Shaker",
@@ -175,13 +187,13 @@ RENDER_PRESET_NAMES = {
 
 PERCUSSIVE_PRESETS = {
     "AcSnre", "Timpani", "Djambe", "Taiko", "MrchSnr", "Wodblk",
-    "Ac Tom", "AcTom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
+    "Ac Tom", "Cymbal", "Gong", "Claves", "Cowbel", "Triangle", "Kick",
     "Clap", "Shaker", "HHat-C", "HHat-O", "Conga", "SltDrm", "Ride", "RidBel", "Bongo", "Tick",
 }
 
 KICK_PRESETS = {"Kick", "808Sub"}
 SNARE_PRESETS = {"AcSnre", "MrchSnr"}
-TOM_PRESETS = {"Ac Tom", "AcTom", "Conga", "Bongo", "Taiko", "Djambe"}
+TOM_PRESETS = {"Ac Tom", "Conga", "Bongo", "Taiko", "Djambe"}
 HIHAT_PRESETS = {"HHat-C", "HHat-O"}
 CYMBAL_PRESETS = {"Cymbl", "Ride", "RidBel"}
 GONG_PRESETS = {"Gong"}
@@ -200,7 +212,7 @@ STYLE_PROFILES: Dict[str, Dict[str, float]] = {
 UNPITCHED_FOCUS_PRESETS = {
     # First-batch focus where autocorrelation pitch is frequently unstable and
     # should not dominate acceptance.
-    "Taiko", "Bongo", "Wodblk", "Conga", "Djambe",
+    "Taiko", "Bongo", "Wodblk", "Conga", "Djambe", "Ac Tom",
 }
 
 PRESET_TO_FAMILY = {
@@ -209,6 +221,7 @@ PRESET_TO_FAMILY = {
     "Conga": "membranes",
     "Djambe": "membranes",
     "Taiko": "membranes",
+    "Ac Tom": "membranes",
     # mallets
     "Marimba": "mallets",
     "Marmba": "mallets",  # table alias
@@ -234,6 +247,8 @@ PRESET_GROUPS = {
         "MrchSnr", "Ride", "RidBel", "StelPan", "TblrBel", "Tick", "Timpani",
     ],
 }
+
+OUT_OF_SCOPE_PERC_SYNTH_PRESETS = {"Clrint", "Flute"}
 
 
 @dataclass
@@ -412,19 +427,51 @@ PRESET_RENDER_NOTE_DEFAULTS = {
     "Ac Tom": 45,
 }
 
-# Provisional per-preset pitch calibration in semitones, applied after note
-# inference/overrides. Keep conservative and only for pitched presets.
+# Per-preset pitch calibration in semitones applied after note inference.
+# One entry per preset so each instrument can be tuned independently.
+# Percussion / noise-dominant presets default to 0 (no pitch alignment needed).
+# Pitched instruments have calibration = render_note - typical_sample_note.
 PRESET_NOTE_CALIBRATION = {
-    "Marmba": 12,
-    "Marimba": 12,
-    "Kalimba": 12,
-    # First-batch pilot: only retain offsets that improved aggregate score.
-    "Djambe": -12,
-    "Conga": 19,
-    # Remaining-batch pilot calibration (Phase 30): reduce large persistent
-    # note offsets before applying deeper preset retuning.
-    "Gong": 12,
-    "MrchSnr": 24,
+    "InitDbg":  0,
+    "Marmba":  12,   # render note 72; samples typically at C4(60) → +12
+    "Marimba": 12,   # alias for Marmba
+    "808Sub":   0,   # sub kick, no pitch alignment
+    "AcSnre":   0,   # snare, no pitch alignment
+    "TblrBel":  0,   # tabla bell, no pitch alignment
+    "Timpni":   0,   # render note 40 (E2); timpani samples vary
+    "Djambe": -12,   # render note 48; samples at C5/A4 → -12 to map to C4
+    "Taiko":    0,   # taiko drum, no pitch alignment
+    "MrchSnr": 24,   # render note 65; marching snare samples often at low note
+    "Koto":     0,   # koto samples name-tagged with note (e.g., Koto-B5.wav)
+    "Vibrph":   0,   # vibraphone samples name-tagged
+    "Wodblk":   0,   # woodblock, no pitch alignment
+    "Ac Tom":   0,   # acoustic tom, no pitch alignment
+    "Cymbal":   0,   # cymbal, no pitch alignment
+    "Gong":    12,   # render note 50; gong samples an octave up from render
+    "Kalimba": 12,   # render note 65; kalimba samples typically at C4(60) → +12
+    "StelPan":  0,   # steel pan, no pitch alignment
+    "Claves":   0,   # claves, no pitch alignment
+    "Cowbel":   0,   # cowbell, no pitch alignment
+    "Trngle":   0,   # triangle, no pitch alignment
+    "Kick":     0,   # kick drum, no pitch alignment
+    "Clap":     0,   # clap, no pitch alignment
+    "Shaker":   0,   # shaker, no pitch alignment
+    "Flute":    0,   # out of scope (excluded from scoring)
+    "Clrint":   0,   # out of scope (excluded from scoring)
+    "PlkBss":   0,   # plucked bass, no pitch alignment
+    "GlsBwl":   0,   # glass bowl, samples named with note
+    "GtrStr":   0,   # guitar string, samples named with note
+    "HHat-C":   0,   # hi-hat closed, no pitch alignment
+    "HHat-O":   0,   # hi-hat open, no pitch alignment
+    "Conga":   19,   # render note 62; conga samples 19 st below render note
+    "Handpn":   0,   # handpan, samples named with note
+    "BelTre":   0,   # bell tree, no pitch alignment
+    "SltDrm":   0,   # slit drum, no pitch alignment
+    "Ride":     0,   # ride cymbal, no pitch alignment
+    "RidBel":   0,   # ride bell, no pitch alignment
+    "Bongo":    0,   # bongo, no pitch alignment
+    "GlsBotl":  0,   # glass bottle, no pitch alignment
+    "Tick":     0,   # tick, no pitch alignment
 }
 
 
@@ -611,7 +658,8 @@ def class_weighted_score(base_score: float, preset_name: str, metrics: Dict[str,
     # pitch-dominance when f0 tracking is unstable and reward timbre trajectory.
     if family in {"membranes", "wood"} or preset_name in UNPITCHED_FOCUS_PRESETS:
         score -= 0.10 * metrics.get("f0_pct", 0.0)
-        score -= 0.20 * abs(metrics.get("note_offset_semitones", 0.0))
+        # Cap at 2 octaves (24 st) so f0 estimation artifacts don't produce huge credits.
+        score -= 0.20 * min(abs(metrics.get("note_offset_semitones", 0.0)), 24.0)
         score -= 6.0 * metrics.get("timbre_vec_cosdist", 0.0)
         score -= 2.0 * metrics.get("centroid_corr_dist", 0.0)
 
@@ -736,6 +784,30 @@ def estimate_runs_needed(current_score: float, target_score: float = 12.0, assum
     n = math.log(target_score / current_score) / math.log(assumed_improvement)
     return max(1, math.ceil(n))
 
+def architecture_acceptance_status(preset_name: str, metrics: Dict[str, float]) -> Dict[str, object]:
+    """Heuristic architecture gate: flags likely model-limited cases."""
+    c = float(metrics.get("centroid_pct", 0.0))
+    f = float(metrics.get("flux_pct", 0.0))
+    t = float(metrics.get("t60_pct", 0.0))
+    blocked = False
+    reasons: List[str] = []
+    if preset_name == "Trngle" and c > 70.0 and t > 45.0:
+        blocked = True
+        reasons.append("triangle_high_partial_collapse")
+    if preset_name in {"AcSnre", "MrchSnr"} and c > 60.0 and f > 55.0:
+        blocked = True
+        reasons.append("snare_wire_spectral_shape_mismatch")
+    if preset_name in {"HHat-O", "Cymbal"} and c > 45.0 and f > 45.0:
+        reasons.append("metallic_highband_underfit")
+    return {"arch_blocked": blocked, "arch_reasons": reasons}
+
+def acceptance_state_for_result(preset_name: str, arch_blocked: bool) -> str:
+    if preset_name in OUT_OF_SCOPE_PERC_SYNTH_PRESETS:
+        return "out_of_scope_trace"
+    if arch_blocked:
+        return "architecture_backlog"
+    return "tunable_in_scope"
+
 
 def run_renderer_for_preset(render_cmd: str, render_dir: Path, preset: PresetRow, note: int = 60) -> Path:
     render_dir.mkdir(parents=True, exist_ok=True)
@@ -835,6 +907,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional JSON map (sample-name or preset-name -> MIDI note) to lock render notes.",
     )
+    p.add_argument(
+        "--include-out-of-scope",
+        action="store_true",
+        help="Include out-of-scope non-percussive presets (Clarinet/Flute) in mapping and scoring.",
+    )
     return p.parse_args()
 
 
@@ -932,6 +1009,8 @@ def run_one_iteration(
         if pname is None:
             unmapped.append(s.name)
             continue
+        if (not args.include_out_of_scope) and pname in OUT_OF_SCOPE_PERC_SYNTH_PRESETS:
+            continue
         if selected_presets is not None and pname not in selected_presets:
             continue
         if s.name in note_map:
@@ -978,6 +1057,10 @@ def run_one_iteration(
         comp["raw_score"] = comp["score"]
         comp["score"] = class_weighted_score(comp["score"], preset.name, comp["metrics"], goal_mode=args.goal_mode)
         comp["score"] += descriptor_window_penalty(comp, style=args.style, bpm=args.bpm)
+        comp.update(architecture_acceptance_status(preset.name, comp["metrics"]))
+        comp["acceptance_state"] = acceptance_state_for_result(
+            preset.name, bool(comp.get("arch_blocked", False))
+        )
         comp["suggestions"] = suggest_tuning(comp["metrics"], preset.values)
         comp["estimated_runs_to_target"] = estimate_runs_needed(
             comp["score"],
@@ -1012,6 +1095,11 @@ def run_one_iteration(
         "assumed_improvement": args.assumed_improvement,
         "family_pitch_thresholds": family_thresholds,
         "family_summary": family_summary,
+        "acceptance_state_counts": {
+            "tunable_in_scope": sum(1 for r in results if r.get("acceptance_state") == "tunable_in_scope"),
+            "architecture_backlog": sum(1 for r in results if r.get("acceptance_state") == "architecture_backlog"),
+            "out_of_scope_trace": sum(1 for r in results if r.get("acceptance_state") == "out_of_scope_trace"),
+        },
         "results": sorted(results, key=lambda r: r["score"]),
     }
 
@@ -1030,6 +1118,9 @@ def run_one_iteration(
             "estimated_runs_to_target",
             "family",
             "f0_threshold_met",
+            "acceptance_state",
+            "arch_blocked",
+            "arch_reasons",
             "f0_pct",
             "f0_ratio",
             "note_offset_semitones",
@@ -1059,6 +1150,9 @@ def run_one_iteration(
                 r["estimated_runs_to_target"],
                 fam,
                 fam_ok,
+                r.get("acceptance_state", ""),
+                r.get("arch_blocked", False),
+                ";".join(r.get("arch_reasons", [])),
                 f"{m['f0_pct']:.4f}",
                 f"{m['f0_ratio']:.6f}",
                 f"{m['note_offset_semitones']:.4f}",
@@ -1086,6 +1180,11 @@ def run_one_iteration(
         f.write(f"- Target score: {args.target_score}\n")
         f.write(f"- Assumed improvement/run: {args.assumed_improvement:.2f}\n\n")
         f.write(f"- Auto note align: {args.auto_note_align}\n\n")
+        asc = summary.get("acceptance_state_counts", {})
+        f.write("## Acceptance-state summary\n\n")
+        f.write(f"- tunable_in_scope: {asc.get('tunable_in_scope', 0)}\n")
+        f.write(f"- architecture_backlog: {asc.get('architecture_backlog', 0)}\n")
+        f.write(f"- out_of_scope_trace: {asc.get('out_of_scope_trace', 0)}\n\n")
         if family_thresholds:
             f.write("## Family pitch thresholds\n\n")
             for fam, thr in sorted(family_thresholds.items()):

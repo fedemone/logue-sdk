@@ -2322,3 +2322,230 @@ Examples:
 
 This keeps exact-match metrics available but introduces family-intent priors
 that align tuning outcomes with musical recognizability goals.
+
+## Phase 42: Follow-up defect corrections (May 15, 2026)
+
+- Added an architecture-side Triangle sustain correction in `NoteOn`:
+  - clamp `loss_g_hf` and `lowpass_coeff` higher for `k_Triangle`
+  - reduce positive transient LP jitter so upper partials are not immediately over-damped.
+
+New defect found during review:
+- Triangle harmonic collapse is not only preset-tuning related; transient coefficient
+  jitter was able to push loop damping darker right at onset, worsening the already
+  known KS 1-pole LP high-partial decay bias. This phase constrains that behavior
+  specifically for triangle.
+
+## Phase 43: Auto-tune execution blockers + architecture findings (May 15, 2026)
+
+- Started targeted auto-tune run for the reported defect set:
+  `AcSnre, MrchSnr, Trngle, Clrint, HHat-O, Cymbal, Kalimba, Gong, Kick`.
+- Found and fixed host-run blockers:
+  1) **Portability bug**: unconditional `<arm_neon.h>` include prevented host compile.
+     - Fixed by guarding include with `__ARM_NEON` macros.
+  2) **Host path missing scalar fallback**: NEON vector code in modal update and master
+     clipper had no non-NEON fallback, causing compile failures on x86.
+     - Added scalar fallbacks for both paths.
+  3) **Auto-tune render binary contention**: `./render_presets: Text file busy` during
+     iterative compile/render cycles.
+     - Updated `auto_tune.py` to build a PID-scoped binary name
+       (`render_presets_tune_<pid>`) so runs don't contend on a single executable.
+
+Architectural defect findings from this pass:
+- **Triangle harmonic collapse remains architecture-coupled**:
+  transient LP jitter and loop HF loss interaction can still erase upper partials early;
+  this is partially mitigated but not fundamentally solved without a less lossy loop
+  topology for metallic bars/rods.
+- **Model family overloading** persists:
+  a single KS+noise+optional modal/FM framework is carrying strings, bars, membranes,
+  cymbals, and reeds. This limits convergence for instruments with distinct physics
+  (snare-wire chatter, clarinet bore/reed coupling, triangle equal-decay modes).
+
+## Phase 44: Bullet 2+3 implementation start, Bullet 1 outline (May 15, 2026)
+
+Implemented now
+- **Bullet 2 (autotune pipeline) start**:
+  - Added PID-scoped render binary in `auto_tune.py` (from Phase 43) to prevent
+    compile/render executable contention.
+  - Added non-NEON host fallbacks so compile+render loops can run on host CI/dev
+    without ARM-specific toolchains.
+- **Bullet 3 (acceptance tied to architecture) start** in `batch_tune_runner.py`:
+  - Added architecture acceptance heuristics (`architecture_acceptance_status`) and
+    per-comparison flags: `arch_blocked`, `arch_reasons`.
+  - Added out-of-scope filtering for non-percussive presets (`Clrint`, `Flute`) by default.
+    They can still be included explicitly with `--include-out-of-scope`.
+
+Bullet 1 outline (next architecture work)
+- **Snare wire rattle mode** (multi-band, lightweight):
+  1) Replace single 2-pole wire resonator with 3 parallel bands (e.g., ~2.2/4.5/7.2 kHz),
+     each with independent decay/Q, mixed by velocity-dependent weights.
+  2) Drive bands from shaped burst + shell-coupled residual (not only white-noise burst)
+     so wire responds to body dynamics.
+  3) Add simple inter-band decorrelation (allpass per branch) to avoid static combing.
+- **Metallic low-loss loop mode** (Triangle/Bell family):
+  1) Add metallic-loop switch: low-loss core path with mild allpass dispersion instead of
+     dominant 1-pole LP attenuation.
+  2) Separate per-mode decay targets (at least 3 modes) to keep 2nd/3rd partials alive
+     near fundamental decay scale.
+  3) Keep transient brightness independent from loop sustain (attack EQ outside loop).
+
+What remains for full percussive physical-model synth
+- Dedicated physics blocks per family (membrane, snare-wire, metallic bars/plates,
+  idiophones) instead of one overloaded core.
+- Objective accept/reject gate that combines score trend + architecture-block flags so
+  tuning does not churn on fundamentally mismatched models.
+- Hardware-close validation loop: host score gate -> ARM/qemu render gate -> device A/B gate.
+
+## Phase 45: Bullet 2+3 continuation and Bullet 1 plan base (May 15, 2026)
+
+Bullet 2 continuation (autotune pipeline)
+- `auto_tune.py` now applies percussive-scope and architecture gates by default:
+  - skips out-of-scope wind presets (`Clrint`, `Flute`) unless
+    `--include-out-of-scope` is passed.
+  - skips architecture-limited presets (`AcSnre`, `MrchSnr`, `Trngle`, `Cymbal`,
+    `Gong`, `HHat-O`, `Marmba`) unless `--include-arch-blocked` is passed.
+- Purpose: avoid parameter-churn on known model-limited targets and keep automatic
+  rounds focused on presets where parameter tuning can still converge.
+
+Bullet 3 continuation (acceptance tied to architecture)
+- Architecture flags from `batch_tune_runner.py` and the new auto-tune default
+  exclusion list now form a practical two-step acceptance policy:
+  1) If `arch_blocked=true` (or preset in blocked set), do not auto-accept parameter
+     changes as a final fix.
+  2) Route preset into architecture backlog and evaluate only as A/B deltas.
+
+Bullet 1 implementation plan foundation (from latest defect analysis)
+- Priority A (highest impact): **snare-wire rattle mode** for `AcSnre/MrchSnr`
+  - Multi-band stochastic wire (2-8 kHz) with independent decays and velocity
+    weighting; body-coupled excitation input; suppress residual KS ring dominance.
+- Priority B: **metallic low-loss loop mode** for `Trngle` and metallic family
+  - Loop topology that preserves high partials (less per-cycle LP loss), with
+    attack EQ separated from sustain-loss path.
+- Priority C: **metallic exciter stack** for `Cymbal/Gong/HHat-O`
+  - Add parallel HF exciter/noise path decoupled from KS tonal-loss loop; retain
+    FM path as one component rather than sole metallic generator.
+- Trace-only (out-of-scope for percussive closure): keep Clarinet/Flute notes in TODO,
+  no architecture proposals here.
+
+## Phase 46: Post-bullet tuning start (May 16, 2026)
+
+- Resumed active tuning after stabilizing bullet-2/3 gating flow.
+- Fixed critical regressions blocking host tuning loop:
+  - restored valid NEON/scalar modal-update preprocessor structure in `synth_engine.h`
+  - fixed `LowCut`/`NzFltFrq` string-format regressions (`Hz` vs `kHz` rendering).
+  - fixed `auto_tune.py` compile command bug where `{RENDER_BIN}` was emitted literally
+    instead of PID-scoped binary name.
+- Executed a real 1-round auto-tune run on currently tunable in-scope set
+  (`Kalimba`, `Kick`) and obtained measurable improvements:
+  - `Kick`: `121.70 -> 118.21` (-3.49)
+  - `Kalimba`: `65.82 -> 64.17` (-1.65)
+  - mean: `93.76 -> 91.19` (-2.57)
+
+Remaining from previous prompts (status)
+- Bullet 1 (architecture implementation) is still pending implementation work:
+  snare multi-band rattle mode + metallic low-loss loop + parallel HF exciter path.
+- Bullet 2/3 are functionally active for pipeline gating and architecture-aware routing,
+  but should be consolidated into a single explicit acceptance state machine shared
+  by auto-tune apply and batch reports.
+
+## Phase 47: Bullet-3 deepening — explicit acceptance routing (May 16, 2026)
+
+- Continued architecture-aware acceptance work by adding explicit decision routing
+  inside `auto_tune.py` apply stage.
+- New behavior:
+  - tiny improvements (`<= 0.25`) are rejected (`reject_small_delta`) to reduce churn.
+  - architecture-blocked presets are routed to backlog (`route_arch_backlog`) unless
+    `--include-arch-blocked` is explicitly enabled.
+  - accepted changes are logged as `accepted` with post-apply score.
+- `auto_tune_history.json` now includes:
+  - `routing_log`
+  - `min_accept_improvement`
+  - baseline/history as before.
+
+Status against previous prompts:
+- Bullet 2: active/tunable flow running.
+- Bullet 3: now has concrete in-run routing decisions (beyond report-side flags).
+- Bullet 1: still pending DSP architecture implementation.
+
+## Phase 48: Bullet-3 consolidation in batch reporting (May 16, 2026)
+
+- Continued deeper acceptance work by consolidating architecture routing into
+  `batch_tune_runner.py` outputs.
+- Added explicit per-result `acceptance_state`:
+  - `tunable_in_scope`
+  - `architecture_backlog`
+  - `out_of_scope_trace`
+- Added run-level `acceptance_state_counts` to JSON summary.
+- Extended CSV outputs with `acceptance_state`, `arch_blocked`, `arch_reasons` columns.
+- Extended markdown progress report with an "Acceptance-state summary" section.
+
+Why this matters
+- Bullet 3 now has matching semantics in both apply-stage auto-tune routing and
+  batch reporting artifacts, reducing ambiguity on whether a preset should be tuned,
+  backlogged for architecture work, or kept as trace-only.
+
+## Phase 49: Tuning-run usability hardening (May 16, 2026)
+
+- Continued post-bullet tuning workflow with a practical tooling fix:
+  `auto_tune.py` now resolves common human preset aliases to table names
+  (`Marimba->Marmba`, `Triangle->Trngle`, `Clarinet->Clrint`, `SteelPan->StelPan`).
+- Purpose: avoid accidental no-op tuning runs caused by display-name/table-name
+  mismatches while launching focused preset subsets.
+- This supports faster iteration now that bullet-2/3 gating is active and tuning
+  runs are being resumed.
+
+## Phase 50: Auto-tune routing summary visibility (May 16, 2026)
+
+- Continued acceptance/routing work by adding compact routing counters in
+  `auto_tune_history.json` (`routing_counts`) and in `auto_tune_final_presets.md`.
+- Purpose: make per-run decisions immediately readable (accepted vs tiny-delta reject
+  vs architecture backlog) without scanning full `routing_log` rows.
+
+## Phase 51: Bullet-2/3 completion pass (May 16, 2026)
+
+- Consolidated acceptance-state semantics into `auto_tune.py` itself so both tools
+  (`auto_tune.py` and `batch_tune_runner.py`) now emit state summaries.
+- Added `acceptance_state_for_preset()` with the same three-state routing model:
+  - `tunable_in_scope`
+  - `architecture_backlog`
+  - `out_of_scope_trace`
+- Added explicit early exit when tune-set becomes empty after scope/arch gates,
+  preventing wasted compile/render cycles.
+- Extended `auto_tune_history.json` and `auto_tune_final_presets.md` with
+  `acceptance_state_counts` to make run-level routing visibility first-class.
+
+Bullet status:
+- Bullet 2 (autotune pipeline): **completed for current scope** (gating, PID renderer,
+  empty-set guard, routable outputs, reproducible run artifacts).
+- Bullet 3 (acceptance tied to architecture): **completed for current scope**
+  (explicit decisions in auto-tune + acceptance-state reporting in batch runner and
+  auto-tune artifacts).
+- Bullet 1 (architecture implementation): pending DSP/model work.
+
+## Phase 52: Bullet-1 implementation start — snare wire multiband rattle (May 16, 2026)
+
+- Started Bullet 1 DSP implementation with a CPU-light multiband wire path.
+- Changes:
+  - Added `snare_wire_lp` and `snare_wire_hp` helper states to `ExciterState`.
+  - Reworked snare wire branch in `process_exciter()`:
+    - keep existing resonant wire core,
+    - split into low/mid/high bands,
+    - reweight and recombine as `wire_rattle` before mixing back into noise path.
+- Goal: move snare-wire character toward the expected 2–8 kHz chatter profile and
+  reduce single-band resonator coloration.
+
+Next bullet-1 steps still pending:
+- metallic low-loss loop mode (Triangle/metallic family)
+- parallel HF exciter stack for Cymbal/Gong/HHat-O
+
+## Phase 53: Bullet-1 continuation — metallic low-loss loop mode (May 16, 2026)
+
+- Implemented Bullet-1 step 2 start in `NoteOn`:
+  - Added metallic-family low-loss loop clamp for
+    `Cymbal`, `Gong`, `HHat-O`, `Ride`, `RidBel`, and `Trngle`.
+  - Raises lower bounds for `loss_g_hf` and `lowpass_coeff` and syncs transient LP bases.
+  - Limits positive transient LP jitter so metallic attacks keep upper-band content.
+
+Intent
+- Reduce architecture-coupled high-partial collapse in metallic families without
+  introducing heavy new structures yet.
+- Prepare for next Bullet-1 step: parallel dedicated HF exciter stack for cymbal/gong/hat-open.

@@ -1,90 +1,196 @@
 # RipplerX-Waveguide (Drumlogue Bare-Metal DSP)
 
 ## Overview
-This project is a polyphonic Physical Modeling synthesizer designed natively for the Korg Drumlogue. It abandons desktop-VST object-oriented paradigms in favor of a strictly **Data-Oriented Design**. It uses fixed memory allocations, branchless mathematics, and ARM NEON SIMD optimization to perfectly respect the Drumlogue's ~20-microsecond RTOS audio deadline.
+Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. 39 presets spanning strings, bars, membranes, metallic plates, and idiophones.
 
-## Core Acoustic Logic (Karplus-Strong / Digital Waveguide)
-Instead of additive sine-wave synthesis (which is mathematically expensive and prone to instability), this engine uses Digital Waveguides.
-The physics of a string, tube, or membrane are simulated by injecting a short burst of energy (The Exciter) into a circular buffer (The Delay Line). The sound loops continuously, passing through a Loss Filter on every cycle. The Delay Length determines the pitch, and the Loss Filter determines the physical material.
+---
 
-## Signal Flow Architecture
+## Signal Flow Architecture (current)
+
 ```text
-MIDI Note / Gate
-       │
-       ▼
-┌────────────────────────────────────────────────────────┐
-│ 1. EXCITER STAGE (The Strike)                          │
-│   ├─► Noise Generator (Filtered burst)                 │
-│   ├─► Mallet (Mathematical impulse)                    │
-│   └─► PCM Sample (Safely bound-checked via OS)         │
-└──────┬─────────────────────────────────────────────────┘
-       │
-       ├─────────────────────────┐ (A/B Split)
-       │                         │
-┌──────▼──────────────┐   ┌──────▼──────────────┐
-│ 2A. RESONATOR A     │   │ 2B. RESONATOR B     │
-│   ├─► Delay Line    │   │   ├─► Delay Line    │
-│   ├─► Loss Filter   │   │   ├─► Loss Filter   │
-│   └─► Fractional Hz │   │   └─► Fractional Hz │
-└──────┬──────────────┘   └──────┬──────────────┘
-       │                         │
-       └───────────┬─────────────┘
-                   │
-┌──────────────────▼─────────────────────────────────────┐
-│ 3. MASTER SHAPING                                      │
-│   ├─► A/B Mixer                                        │
-│   ├─► Brickwall Limiter (RTOS NaNs safety net)         │
-└──────────────────┬─────────────────────────────────────┘
-                   ▼
-            TO DRUMLOGUE OS
+NoteOn / Gate trigger
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│ EXCITER STAGE                                                │
+│  ├─ Dual-noise burst: LP-filtered low + unfiltered high,    │
+│  │   blended by noise_band_mix per preset                   │
+│  ├─ Mallet: two cascaded LP pulses, velocity-scaled,        │
+│  │   gated after decay (denormal prevention)                │
+│  ├─ Snare wire rattle: 3-band (lo/mid/hi) resonator,        │
+│  │   velocity-dependent Q, body-coupled excitation          │
+│  ├─ Metallic FM chirp: per-voice transient frequency sweep  │
+│  │   (Cymbal, Gong, HHat, Ride, Triangle, BellTree)         │
+│  ├─ Boom oscillator: low-body sine envelope                 │
+│  │   (Kick, Timpani, AcTom, AcSnare)                        │
+│  └─ Stage-2 modal bank: 2–6 decaying oscillators via        │
+│     2nd-order recursion (y[n]=k·y[n-1]−y[n-2])             │
+│     with T60-style per-mode decay; coupled to FM env        │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+          ┌────────────────┴────────────────┐
+          │ (A/B Split, optional coupling)  │
+          ▼                                 ▼
+┌──────────────────────┐       ┌──────────────────────┐
+│ RESONATOR A          │◄─────►│ RESONATOR B          │
+│ ├─ 4096-sample delay │       │ ├─ 4096-sample delay  │
+│ ├─ Allpass dispersion│       │ ├─ Allpass dispersion │
+│ ├─ 1-pole LP loss    │       │ ├─ 1-pole LP loss     │
+│ ├─ loss_g_dc / hf   │       │ └─ Optional (Partls≥1)│
+│ │  split sustain vs  │       └──────────────────────┘
+│ │  brightness         │
+│ └─ Pitch compensation│
+│    (LP + AP group    │
+│     delay subtracted)│
+└──────────┬───────────┘
+           │
+┌──────────▼─────────────────────────────────────────┐
+│ MASTER SHAPING                                     │
+│  ├─ Tilt EQ (Tone param: LP/HP blend)              │
+│  ├─ Master envelope VCA (damper-pedal model)       │
+│  ├─ Magnitude squelch (−80 dB threshold)           │
+│  └─ Brickwall limiter (NaN safety net)             │
+└──────────────────────────┬─────────────────────────┘
+                           ▼
+                    TO DRUMLOGUE OS
 ```
-                --------
 
-## 2. Architectural Breakdown of the Missing Modules
-Here is how we will build those missing pieces without losing our ultra-fast, bare-metal performance.
+---
 
-### A. Constants & Tables (constants.h / tables.h)
-- Instead of calculating complex math on the fly, we use pre-calculated arrays (tables) stored in the Drumlogue's flash memory.
+## Key Architectural Decisions & Quirks
 
-- Pitch-to-Frequency Table: Instead of calling powf() to convert MIDI notes to Hertz, we will have a simple const float mtof_table[128] array. Looking up a value in an array takes 1 CPU cycle.
+### Allpass formula — critical sign convention
+The allpass is `H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`.  
+DC group delay = `(1 − c) / (1 + c)`, **not** `(1 + c) / (1 − c)`.  
+Getting this wrong (as happened in Phase 16, fixed in Phase 17) causes systematic pitch sharpness proportional to the InHm setting.
 
-- Constants: We will define c_sampleRate = 48000.0f, c_maxVoices = 4, and our UI boundary constants here so the whole project uses a single source of truth.
+### SVF stability limit
+The Chamberlin SVF true stability condition is `f < √(4 + q²) − q`, which is strictly less than 2 for all `q > 0`. The naive bound `f < 2` is only safe at zero resonance. `set_coeffs()` in `filter.h` clamps `f` to `0.999 × (√(4+q²) − q)`.
 
-### B. The Envelope Generator (envelope.h)
-- We need a lightweight Envelope to shape the Noise burst and act as a VCA (Voltage Controlled Amplifier) if the user wants the sound to choke immediately on GateOff.
+### `fasterpow2(0) ≈ 0.9714` — not 1.0
+The fast-power approximation has a ~3% systematic error at `p = 0`. Every center-bend pitch message was 50 cents flat before the fix. `PitchBend()` uses an exact `if (bend == 8192) mult = 1.0f` special case. `tables.h` uses `powf` (not `fasterpowf`) for the MIDI-to-delay lookup table.
 
-- The Structure: A simple struct holding attack_rate, decay_rate, and current_level.
+### Pitch compensation at NoteOn
+Both the 1-pole LP loss filter and the allpass dispersion add group delay at the fundamental, making actual pitch flat. NoteOn subtracts `τ_LP + τ_AP` from `delay_length`:
+- `τ_LP = pa / (1 − pa)` where `pa = 1 − lowpass_coeff`
+- `τ_AP = (1 − c) / (1 + c)` for the allpass `H(z) = (c + z⁻¹)/(1 + c·z⁻¹)`
 
-- The Logic: We use an exponential decay multiplier (e.g., current_level *= decay_rate). It requires zero if/else branches during the release phase, making it incredibly fast.
+At C4 this correction is ~3.5 samples; without it pitch error is ~35 cents flat.
 
-### C. The Filter (filter.h)
-- We will use a Chamberlin State Variable Filter (SVF). It is highly efficient and provides Lowpass, Highpass, and Bandpass outputs simultaneously from the exact same calculation.
+### KS loss split: `loss_g_dc` / `loss_g_hf`
+The waveguide feedback uses two independently controlled coefficients:
+- `loss_g_dc` — low-frequency sustain (DC loop gain)
+- `loss_g_hf` — high-frequency brightness (HF branch decay)
 
-- We will use this to filter the Noise Exciter (so you can have low "thumps" or high "clicks" to strike the resonator).
+This lets sustain and spectral evolution be tuned independently, which is essential for metallic sounds where HF dies much faster than the fundamental.
 
-- We will also put one at the very end of the signal chain as a Master Filter (mapped to header.c LowCut knob).
+### Stage-2 modal bank
+Parallel to the main KS loop, a bank of 2–6 decaying oscillators (preset-specific) uses the 2nd-order harmonic recursion `y[n] = k·y[n-1] − y[n-2]` where `k = 2·cos(ω)`. State is initialized from `modal_preset_configs[]` (inharmonic frequency ratios + T60 per mode). Modal mix is boosted during the transient window by the metallic FM envelope for a stronger attack "opening" that naturally decays to the steady-state mix.
 
-### D. The Waveguide Models (models.h)
-- In old RipplerX VST, "Models" meant loading an array of 64 sine-wave ratios. In our new Waveguide engine, "Models" dictate the physical topology of the delay lines:
+### Boom oscillator (Kick, Timpani, AcTom, AcSnare)
+A sine oscillator with a fast-decay envelope injects low-body energy (40–100 Hz) on NoteOn. This is separate from the KS loop and avoids the high-cut bias of the 1-pole LP at low frequencies. Essential for kick/tom thud character that the waveguide alone under-produces.
 
-- String / Marimba: 1 Delay Line + Lowpass Filter + Dispersion (Allpass).
+### Snare wire rattle
+A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.
 
-- Open Tube (Flute): 1 Delay Line + Inverting Feedback (multiplies by -1.0 every loop).
+### Metallic low-loss clamp (Phase 53)
+At NoteOn, `Cymbal`, `Gong`, `HHat-O`, `Ride`, `RidBel`, and `Trngle` get `loss_g_hf` and `lowpass_coeff` floors raised so the KS loop retains upper partials longer. Transient LP jitter is also limited to prevent over-darkening the attack — a known architecture-coupled failure mode for metallic rods/bars.
 
-- Closed Tube (Clarinet): 1 Delay Line + Non-Inverting Feedback.
+### Same-tick GateOn + GateOff (Drumlogue one-shot model)
+The Drumlogue fires `gate_on` and `gate_off` in the same scheduler tick before any audio block. Without a fix, `master_env` sees `ENV_RELEASE, value = 0` on the first `processBlock` call and immediately kills the voice. Fix: call `v.exciter.master_env.process()` once in `NoteOn` to pre-advance the envelope to `value = 1.0` before any `GateOff` can arrive.
 
-- Membrane (Drumhead): 2 Detuned Delay Lines running in parallel to simulate the chaotic 2D vibration of a drum skin.
+### Coupled resonator beating
+Setting `Partls > 0` couples ResA and ResB at the same nominal pitch. Two coupled identical oscillators split into two normal modes at `ω ± δ`, producing beats at `2δ`. This is physically correct but perceptually surprising. Use `Partls = 0` (single resonator) for clean sustained tones.
 
-- We will use c_parameterModel UI knob to simply swap out a few coefficients and routing paths inside process_waveguide().
+### ARM `-ffast-math` vs x86 IEEE 754
+On ARM, `0 × Inf = 0`. On x86, `0 × Inf = NaN`. A diverging SVF or unbounded modal oscillator will contaminate the delay line on x86 but silently flush to zero on hardware. The brickwall limiter then masks NaN as ±0.99 on x86, making the synth appear to "work" while all sustain is gone. Always verify audio quality via `render_presets` (x86 binary), not only unit tests.
 
-### The Exciter Stage (Mallet & Noise)
-To excite the passive waveguide resonators, the engine uses lightweight mathematical impulse generators.
-- **The Mallet:** A heavily damped, single-cycle pulse simulating a physical strike.
-- **The Noise:** A fast PRNG noise burst shaped by an AR (Attack-Release) envelope to simulate breath, bow friction, or snare wires.
-Both are implemented as flat, inline C structs to minimize function-call overhead.
+---
 
-### Preset & UI Translation
-The synthesizer reuses the legacy preset parameter arrays (Bells, Marimba, etc.). The 0-1000 UI ranges are caught by the `setParameter` function and mathematically translated into physical Waveguide coefficients (Feedback $g$, Filter Cutoff $H(z)$, Dispersion) in the control thread. This allows legacy UI configurations to seamlessly drive the new acoustic engine without modification.
+## Pre-Hardware Tuning Toolchain
+
+### Scoring pipeline
+```
+render_presets (x86 C++ binary)
+      │  renders each preset to a WAV at a fixed note/duration
+      ▼
+pre_hw_analysis.py
+      │  pairwise comparison: f0, attack_time, T60, spectral centroid/rolloff/
+      │  flatness/flux, inharmonicity, MRSTFT distance, timbre vector distance
+      ▼
+batch_tune_runner.py          auto_tune.py
+      │  batch scoring +            │  greedy per-preset
+      │  acceptance routing         │  parameter search
+      ▼                             ▼
+batch_reports/              rendered_tune/ (authoritative scores)
+```
+
+**`auto_tune.py`** is the primary optimization tool. It re-renders on every trial (always fresh), implements architecture-aware routing (skips out-of-scope and arch-blocked presets by default), and requires a minimum improvement of 0.25 points before accepting a change.
+
+**`batch_tune_runner.py`** reads from `rendered_batch/` which may be stale. Use `--run-render` to refresh, or compare only within `rendered_tune/` after an `auto_tune` run.
+
+### Acceptance routing
+Every preset falls into one of three states:
+- **`tunable_in_scope`** — active parameter tuning applies; auto-tune will run
+- **`architecture_backlog`** — model limit reached; needs DSP change, not parameter change
+- **`out_of_scope_trace`** — wind instruments (Clrint, Flute); excluded unless `--include-out-of-scope`
+
+### Score metric
+`class_weighted_score` = weighted sum of ~15 pairwise metrics, dominated by:
+- `mrstft_log_l1` (weight 8.0) — multi-resolution STFT L1; most reliable perceptual proxy
+- `f0_pct` (0.16), `attack_pct` (0.14), `t60_pct` (0.18) — temporal and pitch matching
+- PERCUSSIVE bonus: `+0.12 × (flatness_pct + flux_pct)` for percussive preset families
+
+### Known architectural score floors
+
+| Preset | Permanent floor | Cause |
+|--------|----------------|-------|
+| Cymbal (CrashA) | `inharm_pct = 100%` | ref_inharm = 0, ren_inharm > 0; pct_diff always 100% |
+| Cymbal | `f0_pct ≈ 91%` | ref f0 at 4000 Hz, render at note 65 (349 Hz); gap too large |
+| Triangle C# | `f0_pct ≈ 90%` | C# sample is C#8 ≈ 4434 Hz; ~40 semitones above render range |
+| Triangle C# | `attack_pct ≈ 98%` | Triangle bell has instant metal-strike onset; KS ramp attack cannot match |
+| Gong | `attack_pct = 100%` | Both gong samples have much faster onset than the render |
+| Gong | `f0_pct ≈ 97%` | Inharmonic spectrum confounds f0 detector; apparent 70-semitone mismatch |
+
+---
+
+## Parameter Reference (preset columns in synth_engine.h)
+
+```
+{preset_idx, note, bank, smp, mallet_stif, mallet_res, ..., Dkay, Mterl, ..., NzMx, NzRs, NzFq, vel}
+```
+Key tunable parameters in `auto_tune.py`:
+
+| Param | Column | Range | Effect |
+|-------|--------|-------|--------|
+| Dkay | 10 | 0–200 | Feedback gain → T60; 200 = near-lossless |
+| Mterl | 11 | −10–30 | Material LP coefficient (0=dull wood, 30=bright metal) |
+| NzMx | 19 | 0–100 | Noise mix (caution: Cymbal attack couples to this) |
+| NzRs | 20 | 0–1000 | Noise envelope length |
+| NzFq | 22 | 0–1999 | Noise filter cutoff |
+| MlSt | 14 | 0–500 | Mallet stiffness (attack brightness) |
+| InHm | 15 | 0–2000 | Allpass dispersion coefficient |
+| TbRd | 17 | 0–20 | Tube radius (raises LP cutoff toward 1.0) |
+
+Model params (in `model_param_presets[]`, tuned via `M.` prefix in auto_tune):
+- `NzMixB` (col 9), `NzHi` (col 11), `MdlMx` (col 29), snare params (col 0–8, 12–28)
+
+---
+
+## Dkay → T60 Quick Reference
+
+```
+feedback_gain = 0.85 + (Dkay / 200) × 0.149
+T60 = 6.908 / (f0_Hz × |ln(feedback_gain)|)
+```
+
+| Dkay | g      | T60 @ C4 (261 Hz) |
+|------|--------|-------------------|
+| 0    | 0.850  | 9 ms (dead thud)  |
+| 25   | 0.869  | 189 ms (kick)     |
+| 100  | 0.925  | 850 ms (tom)      |
+| 150  | 0.962  | 2.2 s (mallet)    |
+| 200  | 0.999  | 26 s (string)     |
 
 ---
 
@@ -180,7 +286,7 @@ For the deterministic note-lock workflow, use `note_map_priority.json` and run:
 
 This executes:
 - Step 2: pitch-only validation pass with locked notes over classics + guard presets.
-- Step 3A: classics-first iterative tuning pass (`AcSnare,Kick,HHat-C,HHat-O,Timpani,Ac Tom`).
+- Step 3A: classics-first iterative tuning pass (`AcSnare,Kick,HHat-C,HHat-O,Timpani,AcTom`).
 - Step 3B: guard-set pass (`Flute,Clrint,Tick,Clap,Kalimba`) to check regression risk.
 
 Outputs are written under:

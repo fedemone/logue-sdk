@@ -8,19 +8,20 @@
  */
 struct FastSVF {
     // Filter State (Memory)
-    float lp;
-    float bp;
-    float hp;
+    // Use DMIs (no user constructor) so that globals containing FastSVF get
+    // constant-initialized into .data rather than .bss.  The drumlogue unit
+    // loader has a very small BSS budget; .data is fine because non-zero
+    // members (mode=2) prevent the all-zeros BSS optimisation.
+    float lp   = 0.0f;
+    float bp   = 0.0f;
+    float hp   = 0.0f;
 
     // Fast-math coefficients (Calculated in UI thread)
-    float f;
-    float q;
+    float f    = 0.0f;
+    float q    = 0.0f;
 
     // CRITICAL FIX: Mode 2 = Highpass. This prevents the 10Hz parameter from muting the synth!
-    int mode; // 0=LP, 1=BP, 2=HP
-
-    // default constructor
-    FastSVF() : lp(0.0f), bp(0.0f), hp(0.0f), f(0.0f), q(0.0f), mode(2) {} ;
+    int mode   = 2; // 0=LP, 1=BP, 2=HP  (non-zero → forces .data placement)
 
     // Called by the UI Thread (setParameter) to keep the Audio Thread fast
     inline void set_coeffs(float cutoff_hz, float resonance, float srate) {

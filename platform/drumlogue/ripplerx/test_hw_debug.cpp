@@ -1480,6 +1480,12 @@ static void test_dkay_controls_decay() {
         s.Init(&desc);
         s.setParameter(RipplerXWaveguide::k_paramPartls, 0); // ResA only, no coupling
         s.setParameter(RipplerXWaveguide::k_paramDkay,   dkay_val);
+        // Mterl=30 → coeff=1.0 → loss_g_dc=1.0, LP is a passthrough.
+        // Without this, the default preset (Mterl=10, dc_gain≈0.95) gives a
+        // per-round-trip gain of ~0.950 × feedback_gain so 300ms amplitude is
+        // 0.950^78.5 ≈ 0.017× initial — far below the 0.5 threshold.
+        // With Mterl=30 the only per-trip attenuation is feedback_gain itself.
+        s.setParameter(RipplerXWaveguide::k_paramMterl,  30);
         s.GateOn(127);
         // Advance to ~290 ms, then measure the peak over ~400 frames (≈2 C4 periods).
         // Single-sample measurement can land on a zero crossing of the 261 Hz sinusoid,

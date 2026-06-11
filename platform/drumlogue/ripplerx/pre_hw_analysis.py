@@ -436,7 +436,12 @@ def autocorr_f0(sig: List[float], sr: int, fmin: float = 50.0, fmax: float = 400
     N = len(window)
     if N < 2:
         return 0.0
-    lo = max(1, int(sr / fmax))
+    # Require period >= 4 to avoid aliasing artifacts from decimation.
+    # 44.1 kHz samples decimated by 5 give sr=8820; without this guard fmax=4000
+    # yields lo=2, which latches onto a period-2 noise artifact (~4410 Hz) instead
+    # of the actual pitch. Capping at sr//4 keeps fmax ≤ 2205 Hz (adequate for all
+    # practical musical fundamentals including upper registers).
+    lo = max(4, int(sr / fmax))
     hi = min(int(sr / fmin), N // 2)
     if hi <= lo:
         return 0.0
@@ -605,11 +610,15 @@ def extract_features(sig: List[float], sr: int, spatial_width: float = 0.0) -> F
         centroids = [spectral_centroid(fr, sr, n_fft) for fr in spec]
         rolls = [spectral_rolloff(fr, sr, n_fft) for fr in spec]
         flats = [spectral_flatness(fr) for fr in spec]
-        centroid = sum(centroids) / len(centroids)
-        rolloff = sum(rolls) / len(rolls)
-        flat = sum(flats) / len(flats)
         crests = [spectral_crest(fr) for fr in spec]
-        crest = sum(crests) / len(crests)
+        # Energy-weight time-average so silent tail frames don't drag spectral
+        # features toward DC (issue for short sounds in long render windows).
+        frame_energy = [sum(m * m for m in fr) for fr in spec]
+        total_e = max(sum(frame_energy), EPS)
+        centroid = sum(e * c for e, c in zip(frame_energy, centroids)) / total_e
+        rolloff = sum(e * r for e, r in zip(frame_energy, rolls)) / total_e
+        flat = sum(e * f for e, f in zip(frame_energy, flats)) / total_e
+        crest = sum(e * c for e, c in zip(frame_energy, crests)) / total_e
         flux = spectral_flux(spec)
         mels = [mel_band_energies(fr, sr, n_fft, n_bands=20) for fr in spec]
         mel_mean = [sum(v[i] for v in mels) / len(mels) for i in range(20)]

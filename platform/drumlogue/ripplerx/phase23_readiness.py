@@ -11,7 +11,7 @@ from batch_tune_runner import parse_presets, map_sample_to_preset, SYNTH_ENGINE
 # Note: this should have names or aliases (MANUAL_SAMPLE_TO_PRESET)? Otherwise match is not possible
 TARGET = {
    "AcSnre", "Kick", "HHat-C", "HHat-O", "Timpni",
-    "Ac Tom","Flute", "Clrint", "Tick", "Clap", "Kalimba",
+    "AcTom","Flute", "Clrint", "Tick", "Clap", "Kalimba",
 }
 
 

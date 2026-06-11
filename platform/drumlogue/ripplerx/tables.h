@@ -15,10 +15,10 @@ struct FastTables {
             // note in the table ~50 cents flat before any filter compensation.
             float freq = 440.0f * powf(2.0f, ((float)i - 69.0f) / 12.0f);
 
-            // Protect against divide-by-zero or sub-sonic frequencies
-            // [UT2: DELAY BOUNDS FIX] - Prevent buffer overflow wrap-around
-            // 48000 / 12Hz = 4000 samples (safely inside our 4096 buffer)
-            if (freq < 12.0f) freq = 12.0f;
+            // Protect against divide-by-zero or sub-sonic frequencies.
+            // Clamp to 24 Hz (MIDI note 24, B0): 48000/24 = 2000 samples, safely inside
+            // the 2048-sample buffer. External MIDI notes below 24 are clamped in code.
+            if (freq < 24.0f) freq = 24.0f;
 
             note_to_delay_length[i] = srate / freq;
         }
