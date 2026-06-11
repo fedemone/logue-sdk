@@ -341,6 +341,10 @@ static void test_all_presets_audible() {
 
     bool any_fail = false;
     for (int p = 0; p < RipplerXWaveguide::k_NumPrograms; ++p) {
+        // Flute (23) and Clarinet (24) are ENGINE_REMOVED: intentionally silent
+        // placeholders.  They must stay silent — checked separately below.
+        const bool removed = (p == RipplerXWaveguide::k_Flute ||
+                              p == RipplerXWaveguide::k_Clarinet);
         unit_runtime_desc_t desc = make_desc();
         RipplerXWaveguide s;
         s.Init(&desc);
@@ -349,14 +353,19 @@ static void test_all_presets_audible() {
         // 1500 frames covers the worst-case round-trip for the lowest preset note
         // (note 35 / B1 ≈ 870-sample delay with fasterpowf approximation on x86).
         float peak = run_blocks(s, 1500, 32);
-        if (peak < 1e-9f) {
+        if (!removed && peak < 1e-9f) {
             std::cout << "  [SILENT] preset " << p << " (" << RipplerXWaveguide::getPresetName(p) << ")"
                       << "  peak=" << peak << "\n";
             any_fail = true;
         }
+        if (removed && peak >= 1e-9f) {
+            std::cout << "  [NOT SILENT] removed preset " << p << " ("
+                      << RipplerXWaveguide::getPresetName(p) << ")  peak=" << peak << "\n";
+            any_fail = true;
+        }
     }
-    result("T7 all presets audible on first GateOn", !any_fail,
-           "one or more presets produce no audio - hardware would be silent on those presets");
+    result("T7 all active presets audible, removed presets silent", !any_fail,
+           "audible/silent mismatch - hardware behaviour would differ from the engine map");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -479,11 +488,11 @@ static void test_noise_svf() {
     for (int i = 0; i < 4; ++i)
         if (s.state.voices[i].exciter.noise_filter.mode != 0) all_lp = false;
 
-    // NzFltFrq: higher cutoff → larger SVF f-coefficient (Chamberlin formula)
+    // NzFltFrq: higher cutoff → larger TPT a2 coefficient (a2 = g·a1, g = tan(πfc/fs))
     s.setParameter(RipplerXWaveguide::k_paramNzFltFrq, 5000);
-    float f_5kHz = s.state.voices[0].exciter.noise_filter.f;
+    float f_5kHz = s.state.voices[0].exciter.noise_filter.a2;
     s.setParameter(RipplerXWaveguide::k_paramNzFltFrq, 200);
-    float f_200Hz = s.state.voices[0].exciter.noise_filter.f;
+    float f_200Hz = s.state.voices[0].exciter.noise_filter.a2;
 
     // NzFltr=2 → HP mode on all four voices
     s.setParameter(RipplerXWaveguide::k_paramNzFltr, 2);

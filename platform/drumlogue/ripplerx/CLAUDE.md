@@ -49,13 +49,35 @@
 - **Gong (3rd pass):** noise_band_mix 0.82→0.50, modal_mix 0.20→0.26, fm_depth 0.08→0.12.
   Cymbal/Gong parallel_noise_gain 7→3.5 (was too harsh).
 
-### Parameter → modal-engine mapping status (HW-reported, 2nd pass)
+### Parameter → modal-engine mapping status (4th pass — full wiring)
 - **Working on modal engines:** Dkay (T60), MlltStif/VlMllStf (brightness), Tone, LowCut,
-  Gain, NzMix, and the noise-resonance metallic character.
+  Gain, NzMix, NzRes/NzFltr/NzFltFrq (noise colour), and:
+  - **Model** → modal ratio template swap (`kModelModalRatios`, 9 physical models)
+  - **Partls** (0-4) → mode count offset around the shipped count, clamped [2, 6]
+  - **Inharm** → overtone spread `1 + (ratio−1)·spread` around the fundamental
+  - **Mterl** → upper-mode material damping (T60 of modes ≥ 2 scaled `2^(1.5·Δ)`)
+  - **HitPos** → strike-position excitation tilt (rim → upper modes, centre → mode 1)
+  All five are REFERENCE-ANCHORED at the preset's shipped values (see below): defaults
+  are bit-identical to the calibrated configs; only knob movement reshapes the bank.
 - **Rel works for ENGINE_NOISE** (Clap/Shaker) — controls noise_env release tail.
-- **No effect on modal engines (expected — KS-only params):** MlltRes, Model, Partials,
-  Inharm, HitPos, TubRad.  These drive the bypassed KS waveguide.  Wiring Model →
-  modal ratio-set and Partls → mode-count is a candidate future task.
+- **Still KS-only (documented):** TubRad (loop LP coefficient), MlltRes (exciter
+  transient shaping only on modal engines), Rel on non-NOISE engines (noise tail only).
+
+### Cutoff "in reverse" — fixed (TPT SVF + noise band rework)
+- `filter.h` is now a TPT (Zavalishin) SVF.  The old Chamberlin stability clamp froze
+  every cutoff above ~8.2 kHz onto a resonant ~8 kHz boundary, so LowCut/NzFltFrq got
+  LOUDER as raised — the reversal reported from hardware.  TPT is stable and accurate
+  to Nyquist; no clamp.  Chamberlin BP near Nyquist also had centroid ~18 kHz (not fc):
+  hat presets were retuned for the accurate BP (HHat-C hat HP@6k, HHat-O hat BP@12k).
+- Noise hi band now derives from the SVF-coloured noise (was: unfiltered source with
+  split corner tied to 2.2×NzFq, which REMOVED sizzle as the cutoff rose).
+  `noise_hi_lp_coeff` is a per-preset constant again (NzFq no longer overwrites it).
+- NoteOn no longer clobbers per-preset `k_noise_band_mix` with model-profile defaults
+  (table value > 0 wins; 0 = use profile default).  This un-broke HHat-C's hat path
+  (mix 0.86 > 0.80 gate) and honoured Gong's calibrated 0.50.
+- Clap retuned NzFltr HP@6k→BP@3k (ref centroid ≈1.5 kHz); GlsBotl got AtkMs=0.5.
+- `auto_tune.py` table regexes updated for the non-static member declarations
+  (`model_param_presets`, `modal_preset_configs`) — model/modal tuning was crashing.
 
 ### REFERENCE-ANCHOR pattern (important)
 Calibrated modal configs are tuned assuming the preset's *shipped* knob value.  Any new

@@ -1,7 +1,40 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-05-22 (script improvements + arch re-score; see §2 and §3)  
-**Branch:** `claude/continue-previous-session-vydFO`
+**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)  
+**Branch:** `claude/eager-galileo-2fho84`
+
+---
+
+## §0a. Parameter-wiring pass (2026-06-11)
+
+Full audit of every `ParamIndex` parameter across all six engine families
+(empirical min/max feature-delta audit, committed as `param_audit.cpp`):
+
+1. **"Cutoff in reverse" — root-caused and fixed.**  Two independent causes:
+   (a) the Chamberlin SVF stability clamp froze every cutoff above ~8.2 kHz onto
+   a resonant boundary so LowCut/NzFltFrq output got *louder* as raised —
+   `filter.h` is now a TPT (Zavalishin) SVF, stable and accurate to Nyquist;
+   (b) the noise hi-band was split from the *unfiltered* source with the split
+   corner tied to 2.2×NzFq, so raising the cutoff *removed* sizzle — both noise
+   bands now derive from the SVF-coloured noise.  All cutoff sweeps verified
+   monotonic over the full UI range.
+2. **ModelsIndex applied to modal engines.**  Model / Partls / Inharm / Mterl /
+   HitPos now reshape the modal bank on BAR/MEMBRANE/SNARE/PLATE presets via
+   `kModelModalRatios` templates, REFERENCE-ANCHORED at each preset's shipped
+   knob values (defaults bit-identical; Marimba before-vs-after self-distance 0.03).
+3. **Per-preset `k_noise_band_mix` honoured** (NoteOn no longer clobbers it with
+   model-profile defaults); HHat-C's hat-filter path engages for the first time.
+4. **Preset retunes after the noise rework** (official `auto_tune` pipeline scores,
+   lower = better): Clap BP@3k 77.4→64.0(own-harness), GlsBotl AtkMs 0.5 (recovered),
+   hats recalibrated for the accurate TPT BP (HHat-C hat HP@6k, HHat-O hat BP@12k).
+   Official-pipeline mean over 29 scored presets: **89.39 → 88.23 (−1.17)**;
+   biggest wins: AcSnre −9.0, Tick −5.7, Cymbal −5.7, TblrBel −4.0; residual:
+   HHat-C +4.5 / HHat-O +4.9 (hat scoring is noisy; see §4 caveats).
+5. **Tooling:** `auto_tune.py` table regexes fixed for the non-static member
+   declarations (model/modal tuning was crashing on the current source).
+   `param_audit.cpp` added (per-family parameter wiring audit harness).
+6. Stale unit test T7 updated: ENGINE_REMOVED presets (Flute/Clrint) must be
+   *silent*; all 82 tests pass.
 
 ---
 

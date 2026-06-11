@@ -185,7 +185,7 @@ def _preset_block_bounds(text: str) -> Tuple[int, int]:
 def _model_param_block_bounds(text: str) -> Tuple[int, int]:
     return _block_bounds(
         text,
-        r"inline static const float model_param_presets\[k_NumPrograms\]\[k_model_param_total\]\s*",
+        r"(?:inline static const )?float model_param_presets\[k_NumPrograms\]\[k_model_param_total\]\s*",
         "Could not locate model_param_presets table in synth_engine.h",
     )
 
@@ -317,7 +317,7 @@ _MODAL_CONSTS: Dict[str, float] = {
 def _modal_config_block_bounds(text: str) -> Tuple[int, int]:
     return _block_bounds(
         text,
-        r"inline static constexpr ModalPresetConfig modal_preset_configs\[k_NumPrograms\]",
+        r"(?:inline static constexpr )?ModalPresetConfig modal_preset_configs\[k_NumPrograms\]",
         "Could not locate modal_preset_configs in synth_engine.h",
     )
 
