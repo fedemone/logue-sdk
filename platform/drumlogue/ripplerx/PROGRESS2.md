@@ -25,11 +25,13 @@ Full audit of every `ParamIndex` parameter across all six engine families
 3. **Per-preset `k_noise_band_mix` honoured** (NoteOn no longer clobbers it with
    model-profile defaults); HHat-C's hat-filter path engages for the first time.
 4. **Preset retunes after the noise rework** (official `auto_tune` pipeline scores,
-   lower = better): Clap BP@3k 77.4→64.0(own-harness), GlsBotl AtkMs 0.5 (recovered),
-   hats recalibrated for the accurate TPT BP (HHat-C hat HP@6k, HHat-O hat BP@12k).
-   Official-pipeline mean over 29 scored presets: **89.39 → 88.23 (−1.17)**;
-   biggest wins: AcSnre −9.0, Tick −5.7, Cymbal −5.7, TblrBel −4.0; residual:
-   HHat-C +4.5 / HHat-O +4.9 (hat scoring is noisy; see §4 caveats).
+   lower = better): Clap BP@3k, GlsBotl AtkMs 0.5, hats recalibrated for the
+   accurate TPT BP (HHat-C hat HP@6k, HHat-O hat BP@12k) plus an `auto_tune`
+   2-round pass on both hats (HHat-C Mc.T603 16→316ms NzRs 920→960;
+   HHat-O Mc.T601 600→100ms).  Official-pipeline mean over 32 scored presets:
+   **89.39 → 86.96 (−2.44)**; biggest wins: HHat-O −17.9, HHat-C −14.6,
+   AcSnre −10.0, Cymbal −5.7, Tick −5.7, TblrBel −4.0; no preset worse than
+   +1.5 (Djambe +1.4 is the worst residual).
 5. **Tooling:** `auto_tune.py` table regexes fixed for the non-static member
    declarations (model/modal tuning was crashing on the current source).
    `param_audit.cpp` added (per-family parameter wiring audit harness).
