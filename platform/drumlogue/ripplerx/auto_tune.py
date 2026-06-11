@@ -800,6 +800,12 @@ def run_auto_tune(
     # ── Sync final renders to rendered_batch/ ─────────────────────────────────
     sync_renders_to_batch()
 
+    if os.path.exists(RENDER_BIN):
+        try:
+            os.remove(RENDER_BIN)
+        except OSError:
+            pass
+
     # ── Summary ────────────────────────────────────────────────────────────────
     print("\n" + "═" * 60)
     print("AUTO-TUNE COMPLETE\n")
