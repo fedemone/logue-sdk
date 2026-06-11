@@ -18,6 +18,8 @@
 // With pitch bend down 2 semitones from note 24: ~1745 samples. Both fit in 2047.
 // Reduced from 4096 to cut BSS by 64 KB (8 delay lines × 2048 floats × 4 bytes)
 // so the unit fits within the Drumlogue firmware's per-unit BSS budget.
+// WARNING: delay_length must be strictly clamped to < 2048 in the DSP loop
+// to prevent wrap-around pitch squeals under downward pitch bend/modulation.
 constexpr size_t DELAY_BUFFER_SIZE = 2048;
 constexpr size_t DELAY_MASK = DELAY_BUFFER_SIZE - 1;
 
