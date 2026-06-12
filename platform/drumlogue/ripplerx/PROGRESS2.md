@@ -5,6 +5,40 @@
 
 ---
 
+## §0b. 5th HW pass — preset revision + program-list rework (2026-06-12)
+
+Per the latest HW report (program count is now **37**; Flute/Clarinet removed):
+
+| Slot | Change |
+|------|--------|
+| 0 Kick2 | NEW — the pre-redesign Timpani body (HW: "keep this as an additional kick") |
+| 5 Timpni | redesigned: kettledrum principal tones 1:1.504:1.742:2:2.444 with solid upper-mode energy (was "bouncy", no metallic overtone); official score 65.5 → 54.6 |
+| 7 Taiko | redesigned: woodblock-hard crack + long TAANNG ring, TbRd16 |
+| 8 MrchSnr | noise attack staging removed — click and buzz land together |
+| 9 Koto | + harmonic-overtone modal bank (mix 0.10); 64.9 → 61.6 |
+| 13/14/27/32/33 | noise ⇄ ring cross-modulation (modal_rm_depth): wash is ring-modulated by the modal output (Risset) — "two sounds overlaid" fixed |
+| 14 Gong | + FM chirp depth 0.18, NzMx 26 (more "crash" onset) |
+| 21 Clap | multi-burst AM (~55 Hz, decaying depth) + NzRs 950 — "tcha" not click; 90.3 → 63.9 vs reference |
+| 22 Shaker | redesigned: woodblock body + 13 Hz grain-pulse AM noise |
+| 23 Taiko2 | NEW — the pre-redesign Taiko (replaces PluckBass per HW request) |
+| 26 HHat-C | = the pre-redesign Shaker voice ("a perfect closed hi-hat"); 120.9 → 74.5 |
+| 32/33 Ride/RidBel | near-harmonic ratios (read as "string") → thick-plate / bell-partial sets; Ride 105.9 → 97.6 |
+| 34 Bongo | + wood "tock" mode 5 at 3.80 |
+| 36 Tick | = the pre-redesign HHat-C chick + low clack mode; 133.6 → 94.7 |
+
+Architecture/param changes:
+- **Master filter is now a LOWPASS "Cutoff"** (was "LowCut" HP — reported reversed
+  three times).  Default/max = open; all preset rows col 16 = 1999.  The old
+  per-preset HP rumble-cuts no longer exist (Triangle/Cowbell gain some body).
+- **TubRad → modal body** (anchored): mode-1 T60 and boom_mix scale 2^(1.2·Δ).
+- **HitPos modal tilt doubled** (HW: "no effect" on AcTom/Timpani).
+- New VoiceState fields: `modal_rm_depth/modal_out_prev` (ring-mod coupling),
+  `noise_am_phase/inc/depth/decay` (enveloped-LFO noise gate).
+- Tests: KS-waveguide probes now LoadPreset(k_GuitarStr) — program 0 is a membrane.
+  82/82 pass; NaN stress clean.  Renderer list updated to the 37-slot layout.
+
+---
+
 ## §0a. Parameter-wiring pass (2026-06-11)
 
 Full audit of every `ParamIndex` parameter across all six engine families

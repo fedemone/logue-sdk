@@ -99,7 +99,7 @@ int main() {
 
     struct Target { const char* family; int preset; int note; };
     static const Target targets[] = {
-        {"KS      ", 27, 69},  // GtrStr
+        {"KS      ", 25, 69},  // GtrStr
         {"BAR     ", 1,  72},  // Marimba
         {"MEMBRANE", 5,  40},  // Timpani
         {"SNARE   ", 3,  38},  // AcSnare

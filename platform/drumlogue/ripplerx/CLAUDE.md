@@ -5,7 +5,34 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
-- Flute and Clarinet are silenced (ENGINE_REMOVED).
+- **5th HW pass (program list now 37 entries — Flute/Clarinet REMOVED outright):**
+  - Slot 0 = **Kick2** (the pre-redesign Timpani body — HW liked it as a kick).
+    Tests that probe the KS waveguide now LoadPreset(k_GuitarStr) explicitly.
+  - **Timpani redesigned**: kettledrum principal tones 1:1.504:1.742:2.0:2.444 with
+    SOLID upper-mode energy/T60s (old config's uppers were near-silent → "bouncy
+    single sine", and made Model/MlltStif/HitPos/Tone inaudible on this preset).
+  - **Taiko redesigned**: woodblock-hard crack (strong short mode 4 at 2.756) under a
+    long quasi-harmonic TAANNG ring; old Taiko lives on as **Taiko2** (slot 23,
+    replaces PluckBass per HW request).
+  - **Tick** = the pre-redesign HHat-C metallic chick + low "clack" mode (1.40, 50ms).
+  - **HHat-C** = the pre-redesign Shaker noise voice ("a perfect closed hi-hat").
+  - **Shaker redesigned**: woodblock modal body + BP noise gated by an
+    enveloped-LFO (13 Hz grain pulses, noise_am_* fields).
+  - **Clap**: multi-burst AM (~55 Hz, depth fades in ~15 ms) + NzRs 950 → "tcha" tail.
+  - **Ride/RidBel**: near-harmonic ratio sets (read as "a string") replaced with
+    thick-plate (2.92/6.37/11.75) and bell-partial (2:3.01:4.7) sets.
+  - **Noise ⇄ ring cross-modulation** (modal_rm_depth): parallel noise is
+    ring-modulated by the previous sample's modal output for Cymbal/Gong/HHat-O/
+    Ride/RidBel — wash and ring now interact instead of overlaying (Risset).
+  - **MarchSnare**: noise attack staging removed (0.012 rate) — click+buzz land together.
+  - **Koto**: harmonic-overtone modal bank (2/3/4.2, mix 0.10) on top of the KS string.
+  - **Bongo**: + wood "tock" mode 5 at ratio 3.80.
+  - **Master filter is now a LOWPASS "Cutoff"** (header.c renamed; default 1999 =
+    open; all preset rows col16 = 1999).  The old "LowCut" HP read as reversed on
+    HW three times.  NOTE: the old per-preset HP rumble-cut (e.g. Triangle 1.2 kHz)
+    no longer exists.
+  - **TubRad → modal body** (anchored): scales mode-1 T60 and boom_mix, 2^(1.2·Δ).
+  - **HitPos modal tilt coefficients doubled** (HW: "no effect" on membranes).
 - **Dkay controls modal T60** for BAR/MEMBRANE/SNARE/PLATE engines, anchored at the
   preset's shipped Dkay (`m_modal_dkay_ref`): `t60_scale = 2^(3*(norm - ref))`.
   Calibrated config T60 always plays at the default Dkay (no regression); knob trims
@@ -158,22 +185,22 @@ Each preset is assigned one `EngineType`. `processBlock` routes via a switch/if 
 | `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank (Bessel ratios 1:1.594:2.136:2.296) + boom osc | Timpani, Djembe, Taiko, AcTom, Conga, Bongo, Handpan, KickDrum |
 | `ENGINE_SNARE` | Membrane body (short, no KS) + snare-wire resonators | AcSnare, MarchSnare |
 | `ENGINE_PLATE` | Strike → dense inharmonic plate modes + metallic noise | Cymbal, Gong, HiHatClosed, HiHatOpen, Ride, RideBell, BellTree, Cowbell, Triangle |
-| `ENGINE_NOISE` | Noise burst only; no pitched resonator | Clap, Shaker |
-| `ENGINE_REMOVED` | Silent (preset reserved for future use) | Flute, Clarinet |
+| `ENGINE_NOISE` | Noise burst (+ optional modal body / AM gating) | Clap, Shaker, HiHatClosed |
+| `ENGINE_REMOVED` | Silent placeholder (currently unused — Flute/Clarinet were removed from the program list entirely) | — |
 
 ### Preset → Engine Mapping
 
 ```
-k_Init(0)         ENGINE_KS
-k_Marimba(1)      ENGINE_BAR      ← Phase 2 exemplar
-k_808Sub(2)       ENGINE_KS
+k_Kick2(0)        ENGINE_MEMBRANE  ← ex-Timpani body, kick voice
+k_Marimba(1)      ENGINE_BAR       ← Phase 2 exemplar
+k_808Sub(2)       ENGINE_MEMBRANE
 k_AcSnare(3)      ENGINE_SNARE
 k_TubularBell(4)  ENGINE_BAR
-k_Timpani(5)      ENGINE_MEMBRANE
+k_Timpani(5)      ENGINE_MEMBRANE  ← redesigned principal tones
 k_Djambe(6)       ENGINE_MEMBRANE
-k_Taiko(7)        ENGINE_MEMBRANE
+k_Taiko(7)        ENGINE_MEMBRANE  ← woodblock crack + TAANNG ring
 k_MarchSnare(8)   ENGINE_SNARE
-k_Koto(9)         ENGINE_KS
+k_Koto(9)         ENGINE_KS        ← + overtone modal bank
 k_Vibraphone(10)  ENGINE_BAR
 k_Woodblock(11)   ENGINE_BAR
 k_AcousticTom(12) ENGINE_MEMBRANE
@@ -185,24 +212,22 @@ k_Claves(17)      ENGINE_BAR
 k_Cowbell(18)     ENGINE_PLATE
 k_Triangle(19)    ENGINE_PLATE
 k_KickDrum(20)    ENGINE_MEMBRANE
-k_Clap(21)        ENGINE_NOISE
-k_Shaker(22)      ENGINE_NOISE
-k_Flute(23)       ENGINE_REMOVED
-k_Clarinet(24)    ENGINE_REMOVED
-k_PluckBass(25)   ENGINE_KS
-k_GlassBowl(26)   ENGINE_BAR
-k_GuitarStr(27)   ENGINE_KS
-k_HiHatClosed(28) ENGINE_PLATE
-k_HiHatOpen(29)   ENGINE_PLATE
-k_Conga(30)       ENGINE_MEMBRANE
-k_Handpan(31)     ENGINE_MEMBRANE
-k_BellTree(32)    ENGINE_PLATE
-k_SlitDrum(33)    ENGINE_BAR
-k_Ride(34)        ENGINE_PLATE
-k_RideBell(35)    ENGINE_PLATE
-k_Bongo(36)       ENGINE_MEMBRANE
-k_GlassBottle(37) ENGINE_BAR
-k_Tick(38)        ENGINE_BAR
+k_Clap(21)        ENGINE_NOISE     ← multi-burst AM
+k_Shaker(22)      ENGINE_NOISE     ← grain-pulse AM + woodblock body
+k_Taiko2(23)      ENGINE_MEMBRANE  ← ex-Taiko deep membrane
+k_GlassBowl(24)   ENGINE_BAR
+k_GuitarStr(25)   ENGINE_KS
+k_HiHatClosed(26) ENGINE_NOISE     ← ex-Shaker noise voice
+k_HiHatOpen(27)   ENGINE_PLATE
+k_Conga(28)       ENGINE_MEMBRANE
+k_Handpan(29)     ENGINE_MEMBRANE
+k_BellTree(30)    ENGINE_PLATE
+k_SlitDrum(31)    ENGINE_BAR
+k_Ride(32)        ENGINE_PLATE     ← thick-plate ratios
+k_RideBell(33)    ENGINE_PLATE     ← bell partials
+k_Bongo(34)       ENGINE_MEMBRANE  ← + wood tock mode
+k_GlassBottle(35) ENGINE_BAR
+k_Tick(36)        ENGINE_PLATE     ← ex-HHat-C chick + clack
 ```
 
 ## Implementation Phases

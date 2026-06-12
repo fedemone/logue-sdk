@@ -341,10 +341,8 @@ static void test_all_presets_audible() {
 
     bool any_fail = false;
     for (int p = 0; p < RipplerXWaveguide::k_NumPrograms; ++p) {
-        // Flute (23) and Clarinet (24) are ENGINE_REMOVED: intentionally silent
-        // placeholders.  They must stay silent — checked separately below.
-        const bool removed = (p == RipplerXWaveguide::k_Flute ||
-                              p == RipplerXWaveguide::k_Clarinet);
+        // Flute and Clarinet were removed outright (HW request) — every
+        // remaining program must produce audio.
         unit_runtime_desc_t desc = make_desc();
         RipplerXWaveguide s;
         s.Init(&desc);
@@ -353,19 +351,14 @@ static void test_all_presets_audible() {
         // 1500 frames covers the worst-case round-trip for the lowest preset note
         // (note 35 / B1 ≈ 870-sample delay with fasterpowf approximation on x86).
         float peak = run_blocks(s, 1500, 32);
-        if (!removed && peak < 1e-9f) {
+        if (peak < 1e-9f) {
             std::cout << "  [SILENT] preset " << p << " (" << RipplerXWaveguide::getPresetName(p) << ")"
                       << "  peak=" << peak << "\n";
             any_fail = true;
         }
-        if (removed && peak >= 1e-9f) {
-            std::cout << "  [NOT SILENT] removed preset " << p << " ("
-                      << RipplerXWaveguide::getPresetName(p) << ")  peak=" << peak << "\n";
-            any_fail = true;
-        }
     }
-    result("T7 all active presets audible, removed presets silent", !any_fail,
-           "audible/silent mismatch - hardware behaviour would differ from the engine map");
+    result("T7 all presets audible on first GateOn", !any_fail,
+           "one or more presets produce no audio - hardware would be silent on those presets");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -429,6 +422,7 @@ static void test_delay_roundtrip() {
     unit_runtime_desc_t desc = make_desc();
     RipplerXWaveguide s;
     s.Init(&desc);
+    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
     s.NoteOn(60, 127);
 
     // Inspect the allocated voice's delay_length directly.
@@ -733,6 +727,7 @@ static void test_energy_squelch() {
     {
         RipplerXWaveguide s;
         s.Init(&desc);
+    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
         // Preset 0 has feedback_gain ≈ 0.87.  Override to near-zero so the waveguide
         // loses energy almost instantly (one round-trip ≈ 190 samples).
         s.state.voices[1].resA.feedback_gain = 0.001f;
@@ -741,7 +736,9 @@ static void test_energy_squelch() {
         s.NoteOn(60, 127);
         // Let the exciter fire and the delay line fill for ~300 frames
         for (int i = 0; i < 300; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
-        s.GateOff();
+        // Release the note we actually played: GateOff() releases m_ui_note,
+        // which is 69 for the GtrStr reference preset, not 60.
+        s.NoteOff(60);
 
         int frames_to_death = 0;
         for (int i = 0; i < 5000; ++i) {
@@ -762,6 +759,7 @@ static void test_energy_squelch() {
     {
         RipplerXWaveguide s;
         s.Init(&desc);
+    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
         s.NoteOn(60, 127);
         for (int i = 0; i < 200; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
         // Do NOT call GateOff — voice should remain active.
@@ -1012,6 +1010,7 @@ static void test_master_env_trace() {
     unit_runtime_desc_t desc = make_desc();
     RipplerXWaveguide s;
     s.Init(&desc);
+    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
 
     // Probe master_env by reading the voice's exciter state after each event.
     // Voice index 1 (next_voice_idx advances from 0 to 1 on first NoteOn).
@@ -1060,6 +1059,7 @@ static void test_exciter_independent_of_env() {
     unit_runtime_desc_t desc = make_desc();
     RipplerXWaveguide s;
     s.Init(&desc);
+    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
 
     // GateOn only — no GateOff — so master_env stays at 1.0 (sustained, ENV_DECAY)
     s.GateOn(127);
@@ -1487,6 +1487,7 @@ static void test_dkay_controls_decay() {
     auto probe_at_300ms = [&](int32_t dkay_val) -> float {
         RipplerXWaveguide s;
         s.Init(&desc);
+    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
         s.setParameter(RipplerXWaveguide::k_paramPartls, 0); // ResA only, no coupling
         s.setParameter(RipplerXWaveguide::k_paramDkay,   dkay_val);
         // Mterl=30 → coeff=1.0 → loss_g_dc=1.0, LP is a passthrough.

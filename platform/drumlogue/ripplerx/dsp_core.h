@@ -227,6 +227,20 @@ struct VoiceState {
     // Starts at 1.0 on each NoteOn; decays with modal_decay_1 each sample.
     float noise_ring_gate = 1.0f;   // ← non-zero
 
+    // Noise ⇄ ring cross-modulation (metallic plates): the parallel noise is
+    // ring-modulated by the previous sample's modal-bank output so wash and
+    // ring interact (Risset-style cymbal) instead of sitting side by side.
+    float modal_rm_depth  = 0.0f;   // 0 = off; set per-preset in NoteOn
+    float modal_out_prev  = 0.0f;   // last modal mixdown (pre-mix, ±~1)
+
+    // Enveloped-LFO amplitude gate on the parallel noise (Clap multi-burst,
+    // Shaker grain pulses).  gate = 1 − depth·(0.5 + 0.5·sin(phase)); depth
+    // decays each sample so the modulation fades into the plain tail.
+    float noise_am_phase  = 0.0f;
+    float noise_am_inc    = 0.0f;
+    float noise_am_depth  = 0.0f;
+    float noise_am_decay  = 1.0f;   // ← non-zero
+
     void PartialReset() {
         mag_env = 0.0f;
 
@@ -318,6 +332,12 @@ struct VoiceState {
         onset_env = 1.0f;
         onset_inc = 0.0f;
         noise_ring_gate = 1.0f;
+        modal_rm_depth = 0.0f;
+        modal_out_prev = 0.0f;
+        noise_am_phase = 0.0f;
+        noise_am_inc = 0.0f;
+        noise_am_depth = 0.0f;
+        noise_am_decay = 1.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;
