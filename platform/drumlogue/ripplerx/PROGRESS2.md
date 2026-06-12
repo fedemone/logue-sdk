@@ -5,6 +5,22 @@
 
 ---
 
+## §0c. 6th HW pass (2026-06-12, same day)
+
+Key fix: **exact modal tuning** — `fastercosfullf`/`fasterpowf` in
+`init_modal_modes` detuned and compressed low-frequency mode stacks
+(Timpani 82/124/144/165 Hz → 86/121/139/157 Hz, ~17 Hz gaps → beating heard
+as "rough low end / unsmooth reverberation").  Replaced with exact
+`cosf`/`exp2f` at NoteOn time.  Plus: true ring-mod gate `(1−d)+d·modal`
+(also on hf_branch) for Cymbal/Ride/Gong/RidBel; Ride/RidBel rebuilt as
+noise-dominant crash washes with long shimmer envelopes; Taiko velocity
+split (boom hard / wood soft); HHat-O de-glassed (broadband HP noise +
+light crash ring); Shaker noise-dominant; Kick2/Kick/808Sub louder;
+AcSnare fast noise attack; Koto/Handpan/Gong/Tick/Bongo retunes;
+Taiko2 → "DeepBs".  82/82 tests, NaN stress clean.
+
+---
+
 ## §0b. 5th HW pass — preset revision + program-list rework (2026-06-12)
 
 Per the latest HW report (program count is now **37**; Flute/Clarinet removed):

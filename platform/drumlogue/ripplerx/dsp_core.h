@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cmath>
 #include <cstddef>
 #include "noise.h"
 #include "envelope.h"
@@ -381,7 +382,14 @@ struct VoiceState {
                          uint8_t mode_count, float ratio5 = 0.0f, float ratio6 = 0.0f,
                          float env5 = 0.0f, float env6 = 0.0f) {
         uint8_t note = current_note;
-        float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
+        // Exact math here, NOT the faster* approximations.  fastercosfullf has
+        // ~1e-3 absolute error; near w→0 the recovered mode frequency shifts by
+        // δf ≈ δcos/(w·sin w) — at timpani range (80-170 Hz) the intended
+        // 1 : 1.504 : 1.742 : 2.0 spread collapsed to 1 : 1.41 : 1.61 : 1.83
+        // with ~17 Hz mode gaps → slow beating heard on HW as a "rough, not
+        // smooth" low-end reverberation.  Same family of bug as the fasterexpf
+        // T60 failure below; this runs once per NoteOn so accuracy wins.
+        float base_f = 440.0f * exp2f(((float)note - 69.0f) * 0.08333333333f); // 1/12
         if (base_f < 20.0f) base_f = 20.0f;
         float f1 = fminf(base_f, 0.45f * k_dsp_sample_rate);
         float f2 = fminf(base_f * ratio2, 0.45f * k_dsp_sample_rate);
@@ -399,22 +407,22 @@ struct VoiceState {
         float w6 = (2.0f * M_PI * f6) * k_dsp_inv_sample_rate;
         modal_pilot_enabled = true;
         modal_mode_count = mode_count;
-        modal_k_1 = 2.0f * fastercosfullf(w1);
-        modal_k_2 = 2.0f * fastercosfullf(w2);
-        modal_k_3 = (mode_count > 2) ? 2.0f * fastercosfullf(w3) : 0.0f;
-        modal_k_4 = (mode_count > 3) ? 2.0f * fastercosfullf(w4) : 0.0f;
-        modal_k_5 = (mode_count > 4) ? 2.0f * fastercosfullf(w5) : 0.0f;
-        modal_k_6 = (mode_count > 5) ? 2.0f * fastercosfullf(w6) : 0.0f;
+        modal_k_1 = 2.0f * cosf(w1);
+        modal_k_2 = 2.0f * cosf(w2);
+        modal_k_3 = (mode_count > 2) ? 2.0f * cosf(w3) : 0.0f;
+        modal_k_4 = (mode_count > 3) ? 2.0f * cosf(w4) : 0.0f;
+        modal_k_5 = (mode_count > 4) ? 2.0f * cosf(w5) : 0.0f;
+        modal_k_6 = (mode_count > 5) ? 2.0f * cosf(w6) : 0.0f;
         // Seed at full amplitude (cosine quadrature pair): oscillator starts
         // at peak on frame 0 instead of tiny sin(w) ≈ 0.034 that takes ~1 ms
         // to build up.  y2=cos(w), y1=1 gives yn=2cos·1-cos=cos, i.e. a
         // cosine starting at 1.0 — correct initial energy for struck bars.
-        modal_y2_1 = fastercosfullf(w1); modal_y1_1 = 1.0f;
-        modal_y2_2 = fastercosfullf(w2); modal_y1_2 = 1.0f;
-        modal_y2_3 = (mode_count > 2) ? fastercosfullf(w3) : 0.0f; modal_y1_3 = (mode_count > 2) ? 1.0f : 0.0f;
-        modal_y2_4 = (mode_count > 3) ? fastercosfullf(w4) : 0.0f; modal_y1_4 = (mode_count > 3) ? 1.0f : 0.0f;
-        modal_y2_5 = (mode_count > 4) ? fastercosfullf(w5) : 0.0f; modal_y1_5 = (mode_count > 4) ? 1.0f : 0.0f;
-        modal_y2_6 = (mode_count > 5) ? fastercosfullf(w6) : 0.0f; modal_y1_6 = (mode_count > 5) ? 1.0f : 0.0f;
+        modal_y2_1 = cosf(w1); modal_y1_1 = 1.0f;
+        modal_y2_2 = cosf(w2); modal_y1_2 = 1.0f;
+        modal_y2_3 = (mode_count > 2) ? cosf(w3) : 0.0f; modal_y1_3 = (mode_count > 2) ? 1.0f : 0.0f;
+        modal_y2_4 = (mode_count > 3) ? cosf(w4) : 0.0f; modal_y1_4 = (mode_count > 3) ? 1.0f : 0.0f;
+        modal_y2_5 = (mode_count > 4) ? cosf(w5) : 0.0f; modal_y1_5 = (mode_count > 4) ? 1.0f : 0.0f;
+        modal_y2_6 = (mode_count > 5) ? cosf(w6) : 0.0f; modal_y1_6 = (mode_count > 5) ? 1.0f : 0.0f;
         modal_norm_count = 0;
         modal_env_1 = env1 * current_velocity;
         modal_env_2 = env2 * current_velocity;

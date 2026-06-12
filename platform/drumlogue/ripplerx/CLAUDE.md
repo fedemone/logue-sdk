@@ -5,6 +5,34 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **6th HW pass:**
+  - **ROOT CAUSE — modal tuning was wrong at low frequencies**: `fastercosfullf`
+    (and `fasterpowf` for base_f) in `init_modal_modes` has ~1e-3 error; near
+    w→0 the recovered frequency shifts by δcos/(w·sin w).  Timpani's intended
+    82/124/144/165 Hz landed at 86/121/139/157 Hz — compressed, ~17 Hz gaps →
+    slow beating = the "rough, not smooth" low-end reverberation.  Fixed with
+    exact `cosf`/`exp2f` (NoteOn-time, same rationale as the expf T60 fix).
+    ALL modal presets are now tuned exactly (small global pitch correction).
+  - **Ring-mod gate reshaped**: `(1−d) + d·modal` (true bipolar mix, only
+    (1−d) static carrier) instead of `1 + d·modal`; also applied to the
+    hf_branch shimmer.  Cymbal d=0.80, Ride 0.75, Gong 0.65, RidBel 0.60.
+  - **Ride/RidBel**: noise-dominant crash washes (NzMx 55/45, NzRs 950,
+    band_mix 0.95/0.90) + Gong-style long noise-env overrides (their NzRs gave
+    noise_env_hi T60 of 3-8 ms — sizzle was dead before the hf/rm paths ran).
+  - **Taiko velocity split**: hard hits → boom (×0.25..×1.75 by vel²), soft
+    hits → wood mode 4 (×1.6 soft .. ×0.6 hard).
+  - **Timpani**: +mode 6 (2.896) copper shimmer; FM chirp depth 0.16→0.06
+    (200 Hz onset growl read as "rough").
+  - **HHat-O**: de-glassed — use_hat=false (broadband HP@8k coloured noise like
+    HHat-C), modal mix 0.30→0.12 (light crash ring), Rel 18.
+  - **Shaker**: wood "toc" cut (modal mix 0.04), noise-dominant (NzMx 95),
+    grains 17 Hz / τ150 ms.  **Kick2**: boom kck_bm mix 0.85, modal 0.46.
+    **Kick** Gain 12, boom 0.58.  **808Sub** Gain 14 (was relatively quiet).
+    **AcSnare** fast noise attack 0.012 + wire mix 0.85 + NzMx 52.
+    **Koto** overtone mix 0.22, brighter envs, MlSt 420.  **Gong** upper-mode
+    T60s 1400/900/600 (ringing reverb) + NzMx 34.  **Handpan** 5 modes.
+    **Bongo** note 50 + boom 0.18 (deeper than Conga).  **Tick** clack 1.25.
+    **Taiko2 renamed "DeepBs"** ("a good guitar bass").
 - **5th HW pass (program list now 37 entries — Flute/Clarinet REMOVED outright):**
   - Slot 0 = **Kick2** (the pre-redesign Timpani body — HW liked it as a kick).
     Tests that probe the KS waveguide now LoadPreset(k_GuitarStr) explicitly.
