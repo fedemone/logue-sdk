@@ -242,6 +242,24 @@ struct VoiceState {
     float noise_am_depth  = 0.0f;
     float noise_am_decay  = 1.0f;   // ← non-zero
 
+    // ── Crash-resonator bank (ENGINE_PLATE) ──────────────────────────────────
+    // The metallic "crash" of a cymbal/gong/ride is broadband turbulent energy
+    // RESONATED at the plate's many inharmonic partials — not noise laid over a
+    // struck ring.  This is a bank of constant-peak-gain 2-pole bandpass
+    // resonators (the "feedback comb matrix" of the synthesis research), tuned
+    // to the SAME mode frequencies as the struck modal bank (reuses modal_k_*),
+    // and driven continuously by the enveloped noise burst.  Output is the noise
+    // shaped into the partials, so the wash crashes and swirls with the ring.
+    //   y[n] = r·k·y1 − r²·y2 + (1−r²)·noise   (peak gain ≈ 1, any r)
+    float crash_drive = 0.0f;       // 0 = bank off; per-preset intensity (× MlltRes)
+    float crash_r     = 0.0f;       // pole radius (ring/bandwidth of each resonator)
+    float crash_y1_1 = 0.0f, crash_y2_1 = 0.0f;
+    float crash_y1_2 = 0.0f, crash_y2_2 = 0.0f;
+    float crash_y1_3 = 0.0f, crash_y2_3 = 0.0f;
+    float crash_y1_4 = 0.0f, crash_y2_4 = 0.0f;
+    float crash_y1_5 = 0.0f, crash_y2_5 = 0.0f;
+    float crash_y1_6 = 0.0f, crash_y2_6 = 0.0f;
+
     void PartialReset() {
         mag_env = 0.0f;
 
@@ -339,6 +357,14 @@ struct VoiceState {
         noise_am_inc = 0.0f;
         noise_am_depth = 0.0f;
         noise_am_decay = 1.0f;
+        crash_drive = 0.0f;
+        crash_r = 0.0f;
+        crash_y1_1 = crash_y2_1 = 0.0f;
+        crash_y1_2 = crash_y2_2 = 0.0f;
+        crash_y1_3 = crash_y2_3 = 0.0f;
+        crash_y1_4 = crash_y2_4 = 0.0f;
+        crash_y1_5 = crash_y2_5 = 0.0f;
+        crash_y1_6 = crash_y2_6 = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;

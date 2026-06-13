@@ -5,6 +5,32 @@
 
 ---
 
+## §0d. 7th HW pass (2026-06-13) — crash-resonator bank
+
+Implemented the user's feedback-synthesis research for the metallic family.
+A "crash" is broadband noise RESONATED through inharmonic resonators, not noise
+summed beside a struck ring — that mismatch was the root of every prior
+"noise just put over the ring, not crashing" report on Cymbal/Gong/Ride/
+RidBel/HHat-O.
+
+New per-voice **crash-resonator bank** (`dsp_core.h crash_*`): 6 constant-peak-gain
+2-pole bandpass resonators reusing the modal mode frequencies (`modal_k_*`),
+driven continuously by the enveloped noise burst —
+`y[n]=r·k·y1−r²·y2+(1−r²)·noise`.  Two fixes were required to make it audible:
+the struck ring is pulled back (×0.45) so the wash can compete, and the noise
+release is slowed (T60≈2.4 s) so the wash isn't cut by the near-instant gate-off.
+Result: real crash decay envelopes that overlap and swirl with the ring.
+
+**Param repurposing** (answering the user's question): MlltRes — inaudible on a
+plate — is repurposed as live crash intensity, reference-anchored at the shipped
+value.  Documented as the pattern for wiring other dead params per engine.
+
+Other: Timpani FM growl removed (rounder low end), Koto richer inharmonic
+overtone stack, Kick faster/punchier boom ("thump" not "whomp"), Taiko more sub.
+All untouched presets bit-identical; 82/82 tests; NaN stress clean; 37 audible.
+
+---
+
 ## §0c. 6th HW pass (2026-06-12, same day)
 
 Key fix: **exact modal tuning** — `fastercosfullf`/`fasterpowf` in

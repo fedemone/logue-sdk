@@ -247,7 +247,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        (1,1)-series, Fletcher & Rossing ch.18) with SOLID upper-mode energy and
        long T60s.  The old config had near-silent uppers (0.20/0.12/0.08) — HW
        heard a bouncy single sine with no metallic overtone. */
-    {1.504f, 1.742f, 2.000f, 1300.0f, 900.0f, 650.0f, 450.0f, 0.40f, 0.90f, 0.75f, 0.65f, 0.55f, 6, 2.444f, 2.896f, 0.40f, 0.28f},
+    {1.504f, 1.742f, 2.000f, 1400.0f, 850.0f, 600.0f, 420.0f, 0.40f, 1.00f, 0.62f, 0.50f, 0.40f, 6, 2.444f, 2.896f, 0.30f, 0.22f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
     /* k_Taiko: HW redesign — woodblock-hard attack (mode 4 = bar ratio 2.756,
        short/strong) under a long quasi-harmonic "TAANNG" ring (modes 2-3 at
@@ -257,7 +257,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Koto: harmonic-overtone reinforcement on top of the KS string (mix 0.10
        in model_param_presets).  Strong 2nd/3rd partials + a slightly sharp 4.2
        shimmer are the missing koto colour reported from HW. */
-    {2.000f, 3.000f, 4.200f, 900.0f, 600.0f, 350.0f, 200.0f, 0.22f, 0.75f, 0.60f, 0.45f, 0.30f, 4, 0, 0.0f},
+    {2.005f, 3.012f, 4.215f, 1100.0f, 750.0f, 480.0f, 300.0f, 0.30f, 0.80f, 0.68f, 0.55f, 0.42f, 5, 5.42f, 0.0f, 0.30f, 0.0f},
     /* k_Vibraphone */ {4.00f, 10.0f, 0.0f, 800.0f, 300.0f, 0.0f, 0.0f, 0.18f, 0.80f, 0.52f, 0.26f, 0.0f, 3, 0, 0.0f},
     /* k_Woodblock: T60 160ms per WoodBlock1.wav reference */ {2.756f, 0.0f, 0.0f, 160.0f, 80.0f, 0.0f, 0.0f, 0.18f, 0.90f, 0.60f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_AcousticTom: T60 350ms */ {1.59f, 2.14f, 2.30f, 350.0f, 220.0f, 140.0f, 90.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f},
@@ -305,23 +305,23 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_TubularBell */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    0.00000f},
     /* k_Timpani     */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.40000f,    2.00000f},
     /* k_Djambe      */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.04000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    3.50000f},
-    /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.45000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.30000f, 1.00000f},
+    /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.30000f, 1.00000f},
     /* k_MarchSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.72000f,    1.74500f,    0.91200f,    0.00000f,    0.00280f,    0.00000f,    0.50000f,    0.00000f,    0.89000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5200.00000f,    0.88000f, 8500.00000f,    0.84000f,    0.06000f,    0.00000f},
     /* k_Koto        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99900f,    1.50000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.22000f,    0.00000f},
     /* k_Vibraphone  */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.00000f},
     /* k_Woodblock   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.00000f},
     /* k_AcousticTom */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.40000f,    0.00000f,    0.05000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tom_bm,    1.00000f,    0.99945f,    0.18000f,    0.00000f,    0.00080f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    3.50000f},
-    /* k_Cymbal      */ {3400.00000f,    1.00000f, 4500.00000f,    0.00000f,    0.00000f,    1.10000f,    0.00000f,    0.00000f,    0.00000f,    0.98000f,    0.00000f,    0.91000f, true,    0.30000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f},
+    /* k_Cymbal      */ {3400.00000f,    1.00000f, 4500.00000f,    0.00000f,    0.00000f,    1.10000f,    0.00000f,    0.00000f,    0.00000f,    0.98000f,    0.00000f,    0.91000f, true,    0.30000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.15000f,    0.00000f},
     /* k_Gong        */ { 900.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.50000f,    0.00000f,    0.86000f, false,    0.24000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.26000f,    0.00000f},
     /* k_Kalimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.03000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f},
     /* k_SteelPan    */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    1.50000f},
     /* k_Claves      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.50000f},
     /* k_Cowbell     */ { 900.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.45000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    0.00000f},
     /* k_Triangle    */ {1800.00000f,    0.00000f,    0.00000f,    0.00000f,    1.26000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f,    0.96000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.40000f,    0.00000f},
-    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99982f, 0.58000f,    0.00000f,    0.00100f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    5.50000f},
+    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99982f, 0.70000f,    0.00000f,    0.00350f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    2.00000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.04000f,    0.00000f},
-    /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.45000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
+    /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
     /* k_GuitarStr   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_HiHatClosed */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
@@ -579,6 +579,10 @@ SynthState state;
     float   m_modal_mterl_ref  = 0.5f;  // shipped Mterl, normalized 0..1
     float   m_modal_hitpos_ref = 0.26f; // shipped HitPos, normalized 0..1
     float   m_modal_tubrad_ref = 0.25f; // shipped TubRad, normalized 0..1
+    // On ENGINE_PLATE presets MlltRes is repurposed as the crash-bank intensity
+    // (the mallet-LP it normally drives is inaudible under a cymbal wash).
+    // Anchored so the shipped MlltRes plays the calibrated crash level.
+    float   m_modal_mltres_ref = 0.5f;  // shipped MlltRes, normalized 0..1
 
     // Called by unit_get_param_value so the OS knows what to draw on the screen.
     // For Model, return the value for the currently-selected resonator so the OLED
@@ -715,6 +719,7 @@ SynthState state;
         m_modal_mterl_ref  = (fmaxf(-10.0f, fminf(30.0f, (float)presets[idx][k_paramMterl])) + 10.0f) * 0.025f;
         m_modal_hitpos_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramHitPos] * 0.01f));
         m_modal_tubrad_ref = fmaxf(0.0f, fminf(20.0f, (float)presets[idx][k_paramTubRad])) * 0.05f;
+        m_modal_mltres_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramMlltRes] * 0.001f));
 
         // Restore both flags so the user's edit context survives preset loads.
         m_is_resonator_a = saved_is_a;
@@ -1613,7 +1618,7 @@ SynthState state;
           v.metal_fm_depth = (m_preset_idx == k_HiHatClosed) ? 0.08f
                            : (m_preset_idx == k_HiHatOpen)  ? 0.06f
                            : (m_preset_idx == k_Gong)       ? 0.18f  // stronger FM chirp: HW asked for more "crash" onset
-                           : (m_preset_idx == k_Timpani)    ? 0.06f  // tame the 200 Hz onset growl ("low end rough")
+                           : (m_preset_idx == k_Timpani)    ? 0.0f   // no FM: mode 6 carries the shimmer; FM only muddied the low end
                            : 0.16f;
           }
         // Noise ⇄ ring cross-modulation depths for the metallic plates.  The
@@ -1621,12 +1626,43 @@ SynthState state;
         // so wash and ring interact instead of overlaying — HW report: "two
         // sounds overlaid ... expected some modulation between the two".
         switch (m_preset_idx) {
-            case k_Cymbal:    v.modal_rm_depth = 0.80f; break;
-            case k_Gong:      v.modal_rm_depth = 0.65f; break;
-            case k_HiHatOpen: v.modal_rm_depth = 0.50f; break;
-            case k_Ride:      v.modal_rm_depth = 0.75f; break;
-            case k_RideBell:  v.modal_rm_depth = 0.60f; break;
+            case k_Cymbal:    v.modal_rm_depth = 0.40f; break;
+            case k_Gong:      v.modal_rm_depth = 0.35f; break;
+            case k_HiHatOpen: v.modal_rm_depth = 0.30f; break;
+            case k_Ride:      v.modal_rm_depth = 0.35f; break;
+            case k_RideBell:  v.modal_rm_depth = 0.30f; break;
             default: break;
+        }
+        // Crash-resonator bank (see dsp_core.h): drives the noise burst through
+        // damped bandpass resonators at the plate partials so the wash IS the
+        // partials — a crash, not noise overlaid on a ring.  This is the primary
+        // fix for the repeated "noise just put over the ring, not crashing"
+        // reports on Cymbal/Gong/Ride/RidBel/HHat-O.  crash_r sets how tightly
+        // each resonator rings (→ swirl/shimmer); crash_drive sets intensity.
+        {
+            float crash_base = 0.0f, crash_r = 0.0f;
+            switch (m_preset_idx) {
+                case k_Cymbal:    crash_base = 20.0f; crash_r = 0.9970f; break;
+                case k_Gong:      crash_base = 14.0f; crash_r = 0.9985f; break;
+                case k_HiHatOpen: crash_base = 16.0f; crash_r = 0.9968f; break;
+                case k_Ride:      crash_base = 22.0f; crash_r = 0.9984f; break;
+                case k_RideBell:  crash_base = 15.0f; crash_r = 0.9980f; break;
+                default: break;
+            }
+            if (crash_base > 0.0f) {
+                // MlltRes repurposed as crash intensity (anchored at shipped value).
+                float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
+                v.crash_drive = crash_base * exp2f(2.0f * (mr - m_modal_mltres_ref));
+                v.crash_r     = crash_r;
+                // The crash bank is fuelled by the noise burst, so the noise must
+                // SUSTAIN like the ring — not get cut ~50 ms after the Drumlogue's
+                // near-instant gate-off by the short Rel release.  Slow release so
+                // the crash wash rings ~2 s and OVERLAPS the struck ring (this
+                // overlap is the "swirling carrier + overtones" the HW asked for;
+                // every prior pass died to "ring with weak noise sprayed on top").
+                v.exciter.noise_env.release_rate    = 0.00007f; // T60 ≈ 2.4 s
+                v.exciter.noise_env_hi.release_rate = 0.00010f; // T60 ≈ 1.6 s
+            }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
         // with a 3-8 ms T60 — the sustained sizzle a ride/crash needs was dead
@@ -2294,11 +2330,17 @@ SynthState state;
                 // hi-hat hiss, shaker rattle).  The ×5 factor brings noise amplitude into
                 // the same ballpark as the resonator output driven by the ×15 mallet.
                 float parallel_noise_gain = 5.0f;
-                if (m_preset_idx == k_Triangle || m_preset_idx == k_HiHatOpen) {
+                if (m_preset_idx == k_Triangle) {
                     parallel_noise_gain = 7.0f;
                 } else if (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong) {
                     // Reduce harsh noise dominance so the modal ring is more audible
                     parallel_noise_gain = 3.5f;
+                }
+                // Crash-bank presets: the resonated wash (below) carries the
+                // pitched noise energy, so keep the raw broadband path low —
+                // otherwise the old "noise sprayed over the ring" returns.
+                if (voice.crash_drive > 0.0f) {
+                    parallel_noise_gain = 1.2f;
                 }
                 // Ring-coupled noise gate for ENGINE_PLATE: noise tracks the modal ring
                 // decay so both die together — user reported noise and ring as "juxtaposed".
@@ -2345,6 +2387,39 @@ SynthState state;
                     voice_out += hf * voice.hf_branch_env * voice.hf_branch_mix * 8.0f
                                * rm_gate * voice.current_velocity;
                     voice.hf_branch_env *= voice.hf_branch_decay;
+                }
+                // ── Crash-resonator bank (ENGINE_PLATE) ───────────────────────
+                // Drive the enveloped noise burst through damped 2-pole bandpass
+                // resonators at the plate partial frequencies (reusing modal_k_*),
+                // so the wash IS the partials.  This is what turns "noise over a
+                // ring" into a real crash that swirls with the overtones.
+                if (voice.crash_drive > 0.0f) {
+                    const float exc = voice.exciter.noise_out_sample;
+                    const float r   = voice.crash_r;
+                    const float r2  = r * r;
+                    const float g0  = (1.0f - r2);   // input gain → ~constant peak
+                    float sum = 0.0f;
+                    float cy;
+                    cy = r * voice.modal_k_1 * voice.crash_y1_1 - r2 * voice.crash_y2_1 + g0 * exc;
+                    voice.crash_y2_1 = voice.crash_y1_1; voice.crash_y1_1 = cy; sum += cy;
+                    cy = r * voice.modal_k_2 * voice.crash_y1_2 - r2 * voice.crash_y2_2 + g0 * exc;
+                    voice.crash_y2_2 = voice.crash_y1_2; voice.crash_y1_2 = cy; sum += cy;
+                    if (voice.modal_mode_count > 2) {
+                        cy = r * voice.modal_k_3 * voice.crash_y1_3 - r2 * voice.crash_y2_3 + g0 * exc;
+                        voice.crash_y2_3 = voice.crash_y1_3; voice.crash_y1_3 = cy; sum += cy;
+                        cy = r * voice.modal_k_4 * voice.crash_y1_4 - r2 * voice.crash_y2_4 + g0 * exc;
+                        voice.crash_y2_4 = voice.crash_y1_4; voice.crash_y1_4 = cy; sum += cy;
+                        if (voice.modal_mode_count > 4) {
+                            cy = r * voice.modal_k_5 * voice.crash_y1_5 - r2 * voice.crash_y2_5 + g0 * exc;
+                            voice.crash_y2_5 = voice.crash_y1_5; voice.crash_y1_5 = cy; sum += cy;
+                            cy = r * voice.modal_k_6 * voice.crash_y1_6 - r2 * voice.crash_y2_6 + g0 * exc;
+                            voice.crash_y2_6 = voice.crash_y1_6; voice.crash_y1_6 = cy; sum += cy;
+                        }
+                    }
+                    // Clamp guards the (small) low-frequency resonance peak; the
+                    // brickwall limiter is the final net.
+                    sum = fmaxf(-4.0f, fminf(4.0f, sum));
+                    voice_out += sum * voice.crash_drive * voice.current_velocity;
                 }
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
                     if (m_preset_idx == k_KickDrum) {
@@ -2479,6 +2554,10 @@ SynthState state;
                     // Feed the ring-mod coupling (1-sample delay; bounded so the
                     // noise gain factor stays well inside ±(1+depth)).
                     voice.modal_out_prev = fmaxf(-1.5f, fminf(1.5f, modal_sum));
+                    // On crash presets the struck modal bank is only the tonal
+                    // SEED/attack; the noise-driven crash bank is the body, so
+                    // pull the struck ring back to let the crash wash dominate.
+                    if (voice.crash_drive > 0.0f) modal_engine_gain *= 0.45f;
                     voice_out += modal_sum * modal_mix_dyn * modal_engine_gain;
                      if (voice.modal_env_1 < silence_threshold &&
                          voice.modal_env_2 < silence_threshold &&

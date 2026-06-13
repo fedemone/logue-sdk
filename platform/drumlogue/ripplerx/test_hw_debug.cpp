@@ -590,6 +590,7 @@ static void test_tone_eq() {
         unit_runtime_desc_t desc = make_desc();
         RipplerXWaveguide s;
         s.Init(&desc);
+        s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
         s.setParameter(RipplerXWaveguide::k_paramTone, tone_val);
         s.GateOn(127);
         float peak = 0.0f;

@@ -5,6 +5,40 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **7th HW pass — crash-resonator bank + param repurposing:**
+  - **CRASH BANK (dsp_core.h `crash_*`, processBlock):** the recurring "noise
+    just put over the ring, not crashing" on Cymbal/Gong/Ride/RidBel/HHat-O was
+    structural — noise was generated separately and summed in parallel, so it
+    could never be a crash.  Per the user's feedback-synthesis research, a crash
+    is broadband noise RESONATED through a bank of inharmonic resonators.  Added
+    a bank of 6 constant-peak-gain 2-pole bandpass resonators per voice, tuned to
+    the SAME mode frequencies as the struck modal bank (reuses `modal_k_*`), driven
+    continuously by the enveloped noise burst:
+    `y[n] = r·k·y1 − r²·y2 + (1−r²)·noise`.  The wash IS the partials → it crashes
+    and swirls with the ring.  Gated on `crash_drive>0` so non-plate presets cost 0.
+  - **Two prerequisites that made it actually work** (every prior pass failed on
+    these): (1) the struck modal ring is pulled back (`modal_engine_gain ×0.45`)
+    on crash presets so the noise wash can compete — the ring was 30× louder than
+    the noise; (2) the noise release is overridden slow (`release_rate` T60 ≈ 2.4 s)
+    so the wash isn't cut ~50 ms after the Drumlogue's near-instant gate-off — the
+    short Rel release was killing the crash fuel.  Now Cymbal decays 0.52→0.11→0.03
+    over ~1.5 s, Gong sustains ~2 s, Ride ~1.5 s — real crash envelopes.
+  - **MlltRes → crash intensity (PARAM REPURPOSING):** on ENGINE_PLATE the mallet
+    LP2 that MlltRes drives is inaudible under a wash, so MlltRes is repurposed as
+    live crash-bank intensity, REFERENCE-ANCHORED at the shipped value
+    (`m_modal_mltres_ref`): shipped 800 → calibrated drive, range ~6.6–26.4.
+    This is the pattern for the "wire dead params to hidden controls" request —
+    extend the same way for other engines as needed.
+  - **Crash presets:** Cymbal drive 20 r0.997, Gong 14 r0.9985, HHat-O 16 r0.9968,
+    Ride 22 r0.9984, RidBel 15 r0.9980.  Raw parallel noise dropped to 1.2 and
+    ring-mod depths halved (the resonated wash now carries the pitched energy).
+  - **Timpani**: FM growl removed entirely (mode 6 carries the shimmer); mode-1
+    env lifted to 1.0, uppers trimmed → rounder, less-beaty low end.
+  - **Koto**: richer/slightly-inharmonic overtone stack (2.005/3.012/4.215/5.42,
+    mix 0.30, +mode 5) for the characteristic koto timbre vs a plain string.
+  - **Kick**: faster boom attack (0.0035) + shorter onset ramp (2 ms) + boom_mix
+    0.70 → "thump" not "whomp" (sub-90 Hz peak now at 38 ms).
+  - **Taiko**: boom_mix 0.45→0.58 (more sub under the wood crack).
 - **6th HW pass:**
   - **ROOT CAUSE — modal tuning was wrong at low frequencies**: `fastercosfullf`
     (and `fasterpowf` for base_f) in `init_modal_modes` has ~1e-3 error; near
