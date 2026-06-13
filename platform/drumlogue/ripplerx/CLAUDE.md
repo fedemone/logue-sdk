@@ -5,6 +5,16 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **8th HW pass — param-reroute template extended (accepted by user):**
+  - **ENGINE_NOISE (Clap/Shaker/HHat-C):** MlltStif → grain/burst LFO rate
+    (±2 oct), MlltRes → burst depth.  Both REFERENCE-ANCHORED (default sound
+    bit-identical; verified self-dist 0.000).
+  - **ENGINE_PLATE crash family:** TubRad also sets crash ring length (bigger
+    shell → longer wash), on top of its modal-body role.
+  - Taiko sine-stack snippet & snare feedback-synthesis notes reviewed: already
+    covered and exceeded — Taiko = membrane modal bank + boom + velocity split
+    (vs 3 harmonic sines); snare = modal body + 3-band wire resonators (= their
+    transient/feedback-head/spring decomposition).  No change made (both approved).
 - **7th HW pass — crash-resonator bank + param repurposing:**
   - **CRASH BANK (dsp_core.h `crash_*`, processBlock):** the recurring "noise
     just put over the ring, not crashing" on Cymbal/Gong/Ride/RidBel/HHat-O was

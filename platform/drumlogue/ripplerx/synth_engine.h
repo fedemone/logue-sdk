@@ -1688,6 +1688,20 @@ SynthState state;
             v.noise_am_decay = 0.99986f;                 // depth τ ≈ 150 ms (3-4 grains)
             v.noise_am_phase = 1.5f * M_PI;
         }
+        // ── PARAM RE-ROUTING (accepted template) ─────────────────────────────
+        // ENGINE_NOISE (Clap/Shaker/HHat-C) leaves the whole exciter/resonator
+        // knob bank inert (mallet is masked by NzMix≈1, modal mix is ~0).  Wire
+        // the two most useful dead knobs to the grain/burst LFO, REFERENCE-
+        // ANCHORED so the shipped sound is unchanged and only knob movement bites:
+        //   MlltStif → AM rate  (grain/burst speed, ±2 oct around shipped)
+        //   MlltRes  → AM depth (burst contrast, 0..~1)
+        if (kPresetEngine[m_preset_idx] == ENGINE_NOISE && v.noise_am_inc > 0.0f) {
+            float st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            v.noise_am_inc *= exp2f(2.0f * (st - m_modal_stiff_ref));
+            float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
+            v.noise_am_depth = fmaxf(0.0f, fminf(0.99f,
+                                     v.noise_am_depth * exp2f(1.5f * (mr - m_modal_mltres_ref))));
+        }
         // Modal bank: re-initialize on every NoteOn so frequencies track the played note
         // and envelopes are velocity-scaled. LoadPreset called init_modal_modes with
         // current_velocity=0 (default) which zeroed all modal_env_X values, silencing
@@ -1788,6 +1802,14 @@ SynthState state;
                             tub = fmaxf(0.4f, fminf(2.5f, tub));
                             t1 *= tub;
                             v.boom_mix *= tub;
+                            // PARAM RE-ROUTING: on crash presets TubRad also sets
+                            // the crash wash's ring length — a bigger cymbal rings
+                            // longer.  Push crash_r toward 1 as the body grows.
+                            // (1 − r) shrinks with tub, anchored so default = shipped.
+                            if (v.crash_drive > 0.0f) {
+                                v.crash_r = 1.0f - fmaxf(0.0003f, fminf(0.02f,
+                                                    (1.0f - v.crash_r) / tub));
+                            }
                         }
                     }
                 }
