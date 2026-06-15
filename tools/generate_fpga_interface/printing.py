@@ -69,12 +69,16 @@ def write_module_define(out: TextIO, prefix: str, suffix: str,
 
 def write_address_define(out: TextIO, name: str, value: str,
                          comment: str) -> None:
-    """One CommonAddresses.h entry, preceded by an empty line."""
+    """One CommonAddresses.h entry, preceded by an empty line.
+
+    value is already the literal to emit (e.g. '0xA0000000'); the callers
+    format it, so there is no '%'/str mismatch here.
+    """
     field = name.ljust(config.ADDRESS_DEFINE_WIDTH)
     if not field.endswith(" "):
         field += " "
     out.write(f"\n/** {comment} */\n")
-    out.write(f"#define {field}({config.ADDRESS_VALUE_FORMAT % value})\n")
+    out.write(f"#define {field}({value})\n")
 
 
 # ------------------------------------------------------------------

@@ -437,8 +437,8 @@ def convert_top(root: typing.Any, output_dir: str) -> str:
             address = sf.parse_int(
                 sf.find_text(subsystem, config.TAG_BASE_ADDRESS), 0)
             printing.write_address_define(
-                out, instance + config.ADDRESS_DEFINE_SUFFIX, str(address),
-                config.ADDRESS_COMMENT % instance)
+                out, instance + config.ADDRESS_DEFINE_SUFFIX,
+                f"0x{address:08X}", config.ADDRESS_COMMENT % instance)
     return path
 
 
