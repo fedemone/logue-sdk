@@ -8,22 +8,35 @@ the subsystems summary (top.xml) produces CommonAddresses.h and is always
 processed last. Problems are reported as warnings without stopping the
 conversion and the list of the affected files is printed at the end.
 """
-
+import shutil
+import sys
+from pathlib import Path
+import typing
 import logging
 import os
 import xml.etree.ElementTree as ET
 
 import config
 import printing
+import filecmp
 import support_functions as sf
+
+from git_mgr.git_mgr import checkout_submodules
+from lib.utils import (
+    get_root,
+    temporary_change_dir,
+)
 
 log = logging.getLogger(config.LOGGER_NAME)
 
+python_dir = (Path(__file__).resolve()).parents[1]
+sys.path.append(str(python_dir))
+sys.path.append(str(python_dir) + "/lib")
 
 # ------------------------------------------------------------------
 # XML parsing
 # ------------------------------------------------------------------
-def parse_signal(element):
+def parse_signal(element) -> dict[str, typing.Any]:
     """One <signal> as a dictionary."""
     msb, lsb = sf.parse_bits(sf.find_text(element, config.TAG_BIT_MSB_LSB, "0:0"))
     value = element.find(config.TAG_SIGNAL_VALUE)
@@ -37,7 +50,7 @@ def parse_signal(element):
     }
 
 
-def parse_register(element):
+def parse_register(element) -> dict[str, typing.Any]:
     """One <register> as a dictionary."""
     return {
         "name": sf.find_text(element, config.TAG_NAME, ""),
@@ -52,7 +65,7 @@ def parse_register(element):
     }
 
 
-def parse_module(root):
+def parse_module(root) -> dict[str, typing.Any]:
     """A whole module XML as a dictionary."""
     bus_width = sf.parse_int(sf.find_text(root, config.TAG_DATA_BUS_WIDTH),
                              config.DEFAULT_DATA_BUS_WIDTH)
@@ -68,7 +81,7 @@ def parse_module(root):
 # ------------------------------------------------------------------
 # C names of registers and groups
 # ------------------------------------------------------------------
-def union_type(system_name, register, group_suffix=""):
+def union_type(system_name, register, group_suffix="") -> str:
     """Base type name (without _u/_s) of the union of a register."""
     if (register["name"] in config.PREFIX_WITH_MODULE
             or register["name"] in config.COMMON_REGISTERS):
@@ -76,7 +89,7 @@ def union_type(system_name, register, group_suffix=""):
     return sf.to_camel(register["name"]) + group_suffix
 
 
-def member_name(system_name, register, group_suffix=""):
+def member_name(system_name, register, group_suffix="") -> str:
     """Name of the register member inside the group/global struct."""
     override = config.MEMBER_NAME_OVERRIDES.get((system_name, register["name"]))
     if override:
@@ -87,7 +100,10 @@ def member_name(system_name, register, group_suffix=""):
     return sf.to_lower_camel(register["name"]) + group_suffix
 
 
-def group_names(system_name, index):
+def group_names(system_name, index) -> tuple[typing.Any |
+                                             str, typing.Any |
+                                             str, str |
+                                             typing.Any]:
     """(struct tag, member name, summary title) of a register group."""
     override = config.GROUP_NAMES.get((system_name, index))
     number = "" if index == 0 else str(index + 1)
@@ -105,7 +121,7 @@ def group_names(system_name, index):
 # ------------------------------------------------------------------
 # layout building
 # ------------------------------------------------------------------
-def build_fields(register, total_bits, warnings):
+def build_fields(register, total_bits, warnings) -> list[typing.Any]:
     """Bit-fields of one register union, gaps filled with res paddings."""
     fields, cursor, gaps = [], 0, 0
     base = sf.last_digit(register["name"])
@@ -130,7 +146,7 @@ def build_fields(register, total_bits, warnings):
     return fields
 
 
-def split_groups(registers, bus_bytes):
+def split_groups(registers, bus_bytes) -> list[typing.Any]:
     """Adjacent registers with the same replication kind form one group."""
     groups = []
     for register in registers:
@@ -141,7 +157,7 @@ def split_groups(registers, bus_bytes):
     return groups
 
 
-def set_define(defines, key, value, register, warnings):
+def set_define(defines: dict[str,int], key: str, value: typing.Any, register: dict[str,typing.Any], warnings: list[str]) -> None:
     """Record a define value, warning when two registers disagree."""
     previous = defines.setdefault(key, value)
     if previous != value:
@@ -149,7 +165,15 @@ def set_define(defines, key, value, register, warnings):
                         "value %s" % (register["name"], key, value, previous))
 
 
-def build_group(module, group, index, defines, warnings):
+def build_group(module: dict[str, typing.Any],
+                group: dict[str, typing.Any],
+                index: int,
+                defines: dict[str, typing.Any],
+                warnings) -> tuple[list[typing.Any],
+                                   list[typing.Any],
+                                   typing.Any,
+                                   typing.Any,
+                                   typing.Any]:
     """Unions, struct member lines and address extent of one group."""
     system_name = module["name"]
     bus = module["bus_bytes"]
@@ -234,7 +258,7 @@ def build_group(module, group, index, defines, warnings):
     return unions, members, start, end, block
 
 
-def module_id_value(commons, warnings):
+def module_id_value(commons, warnings) -> str:
     """The MODULE_ID define: concatenation of the version literals."""
     register = next((register for register in commons
                      if register["name"] == config.DEFINE_MODULE_ID), None)
@@ -253,7 +277,7 @@ def module_id_value(commons, warnings):
     return "0x" + "".join(parts)
 
 
-def build_define_rows(defines, total_size, module_id):
+def build_define_rows(defines, total_size, module_id) -> list[tuple[str, str]]:
     """The '#define' couples of a module header, in the reference order."""
     rows = [(config.DEFINE_TOTAL_SIZE, str(total_size))]
     if "payload_multiply" in defines:
@@ -277,7 +301,7 @@ def build_define_rows(defines, total_size, module_id):
 # ------------------------------------------------------------------
 # header writers
 # ------------------------------------------------------------------
-def convert_module(module, output_dir, warnings):
+def convert_module(module, output_dir: str, warnings: list[str]) -> str:
     """Write the C header of one module XML, return its path."""
     system_name = module["name"]
     bus = module["bus_bytes"]
@@ -313,12 +337,13 @@ def convert_module(module, output_dir, warnings):
         if gap > 0:
             defines["registers_padding"] = gap
         current["gap_after"] = gap
-    total_size = max(register["address"] for register in registers) + bus
+    total_size = max((register["address"]
+                      for register in registers), default=0) + bus
     rows = build_define_rows(defines, total_size,
                              module_id_value(commons, warnings))
     file_name = sf.header_file_name(system_name)
     path = os.path.abspath(os.path.join(output_dir, file_name))
-    with open(path, "w") as out:
+    with open(path, "w", encoding="utf-8") as out:
         printing.write_file_header(out, file_name, module["description"])
         out.write("\n")
         for suffix, value in rows:
@@ -354,39 +379,87 @@ def convert_module(module, output_dir, warnings):
     return path
 
 
-def convert_top(root, output_dir):
+def get_address() -> str:
+    """get the value from file if exist or use default"""
+    base_address = config.PL_BASE_ADDRESS_VALUE
+    if os.path.exists(config.DEFAULT_BASE_ADDR_FILE):
+        with open(config.DEFAULT_BASE_ADDR_FILE, "r", encoding="utf-8") as f:
+            for line in f.readlines():
+                if "[get_bd_addr_segs axi_mst/Reg] -force" in line:
+                    base_address = line.split()[2]
+    return base_address
+
+
+def convert_top(root: typing.Any, output_dir: str) -> str:
     """Write CommonAddresses.h from the subsystems summary (top.xml)."""
     path = os.path.abspath(os.path.join(output_dir, config.COMMON_ADDRESSES_FILE))
-    with open(path, "w") as out:
+    with open(path, "w", encoding="utf-8") as out:
         printing.write_common_addresses_header(out)
         printing.write_address_define(out, config.PL_BASE_ADDRESS_NAME,
-                                      config.PL_BASE_ADDRESS_VALUE,
+                                      get_address(),
                                       config.PL_BASE_ADDRESS_COMMENT)
         for subsystem in root.findall(config.TAG_SUBSYSTEM):
             instance = sf.find_text(subsystem, config.TAG_INSTANCE_NAME, "")
             address = sf.parse_int(
                 sf.find_text(subsystem, config.TAG_BASE_ADDRESS), 0)
             printing.write_address_define(
-                out, instance + config.ADDRESS_DEFINE_SUFFIX, address,
+                out, instance + config.ADDRESS_DEFINE_SUFFIX, str(address),
                 config.ADDRESS_COMMENT % instance)
     return path
+
+
+def prepare_folders(args: typing.Any) -> None:
+    """create missing folders and update submodules if requested"""
+    if args.submodules_update or not os.path.exists(config.DEFAULT_INPUT_PATH):
+        # import FPGA submodules, used in default path
+        with temporary_change_dir(get_root()):
+            checkout_submodules(force_option=True)
+    if os.path.exists(config.TEMP_OUTPUT_PATH):
+        shutil.rmtree(config.TEMP_OUTPUT_PATH, ignore_errors=True)
+    os.makedirs(config.TEMP_OUTPUT_PATH, exist_ok=True)
+    if not os.path.exists(args.dest_path):
+        os.makedirs(args.dest_path)
+        log.info("Created destination path:\n\t%s\n", args.dest_path)
 
 
 # ------------------------------------------------------------------
 # main
 # ------------------------------------------------------------------
-def output_dir_for(arguments, xml_path):
+def output_dir_for(arguments: typing.Any, xml_path: str) -> typing.Any | str:
     """Destination directory of the header generated from one XML."""
-    directory = arguments.output_dir or os.path.dirname(os.path.abspath(xml_path))
+    directory = arguments.dest_path if arguments.overwrite\
+        else config.TEMP_OUTPUT_PATH\
+            or os.path.dirname(os.path.abspath(xml_path))
     os.makedirs(directory, exist_ok=True)
     return directory
 
 
-def main(argv=None):
+def finalize_files(args: typing.Any) -> None:
+    """if overwriting is not forced, replace only different result files"""
+    if args.overwrite:
+        return
+    for dirs, _, files in os.walk(config.TEMP_OUTPUT_PATH):
+        for file in files:
+            destination_file = args.dest_path + os.sep + file
+            temporary_file = dirs + os.sep + file
+            if not os.path.exists(destination_file):
+                shutil.copyfile(temporary_file, destination_file)
+            elif not filecmp.cmp(temporary_file, destination_file, shallow=False):
+                os.remove(destination_file)
+                shutil.copyfile(temporary_file, destination_file)
+
+
+def main(argv=None) -> int:
+    """read the XML file as a dictionary and create the equivalent C header file"""
     arguments = sf.parse_arguments(argv)
     logging.basicConfig(level=logging.INFO, format=config.LOG_FORMAT)
     problem_files, top_files = [], []
-    for xml_path in arguments.xml_files:
+
+    if not arguments.overwrite:
+            log.info("No overwriting is selected, so files will be updated only if changed\n")
+    prepare_folders(arguments)
+
+    for xml_path in [os.path.join(arguments.xml_path, x) for x in arguments.xml_files]:
         try:
             root = ET.parse(xml_path).getroot()
         except (ET.ParseError, OSError) as error:
@@ -396,7 +469,7 @@ def main(argv=None):
         if sf.is_top_system(root):
             top_files.append((xml_path, root))      # processed last
             continue
-        warnings = []
+        warnings: list[typing.Any] = []
         try:
             header = convert_module(parse_module(root),
                                     output_dir_for(arguments, xml_path),
@@ -420,6 +493,9 @@ def main(argv=None):
         log.info(config.INFO_PARSING_OVER, header)
     if problem_files:
         log.warning(config.WARN_PROBLEM_SUMMARY, ", ".join(problem_files))
+
+    finalize_files(arguments)
+
     return 1 if problem_files else 0
 
 
