@@ -13,8 +13,32 @@ Everything that is a matter of style or naming of the generated headers
 from the XML content) is collected here, so a layout change never requires
 touching the logic.
 """
-
+import os
 from datetime import date
+from lib.utils import get_root
+
+# =====================================================================
+# Defaults paths
+# =====================================================================
+DEFAULT_INPUT_PATH = str(get_root()) + os.path.sep + "submodules/fpga/xhw/modules"
+DEFAULT_OUTPUT_PATH = str(get_root()) + os.path.sep + "fpgaInterface" + os.path.sep + "registerIf"
+TEMP_OUTPUT_PATH = str(get_root()) + os.path.sep + "loc_ws" + os.path.sep + "tmp"
+default_files = [
+    "cell_configuration.xml",
+    "cell_timing.xml",
+    "dl_cluster_pb_schedule.xml",
+    "dl_lowphy_cluster.xml",
+    "prach_cluster_schedule.xml",
+    "timer.xml",
+    "ul_lowphy_cluster.xml",
+    "pucch_accelerator_format_2_2a.xml",
+    "pucch_accelerator_format_1_1a.xml",
+    "ul_cluster_pb_schedule.xml",  # NOTE add new files here and new structures below!
+    "top.xml",
+]
+DEFAULT_BASE_ADDR_FILE = (
+    str(get_root()) + os.path.sep + "submodules/fpga/ip/nucleus_bd/nucleus_bd.tcl"
+)
 
 # =====================================================================
 # tool identity / logging
@@ -289,7 +313,7 @@ TOP_SYSTEM_NAME = "TOP"
 COMMON_ADDRESSES_FILE = "CommonAddresses.h"
 
 PL_BASE_ADDRESS_NAME = "PL_BASE_ADDRESS"
-PL_BASE_ADDRESS_VALUE = 0xA0000000       # PS view of the PL register space
+PL_BASE_ADDRESS_VALUE = "0xA0000000"       # PS view of the PL register space
 PL_BASE_ADDRESS_COMMENT = "Programmable logic register base address"
 
 ADDRESS_DEFINE_SUFFIX = "_ADDRESS"
