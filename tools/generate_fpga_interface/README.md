@@ -42,11 +42,18 @@ INFO:generate_fpga_interface:XML parsing is over, find the result file as:
 * `uint8_t reserved*[]` pads the byte gap between two registers of the same
   struct.
 * Adjacent registers are merged into one struct/array when they share the
-  same replication kind (plain, `multiply`, or RAM `length`).
+  same replication kind (plain or `multiply`).
 * A `multiply` register repeated every bus word becomes an array followed by
   `uint8_t paddingToNextRegister[..._PADDING_TO_NEXT_MULTIPLE_ADDRESS]`
   (pattern `ABC<pad>ABC<pad>`); a RAM register becomes an array with each
   element cloned in place (pattern `AA<pad>BB<pad>CC<pad>`).
+* LU RAM lengths: when every RAM of a module shares one `length` they are
+  bundled and sized by a single `_LENGTH_OF_LU_RAM_REGISTER`. When the
+  lengths differ, no warning is raised; each RAM gets its own struct and a
+  numbered define is emitted per distinct value
+  (`_LENGTH_OF_LU_RAM_REGISTER_1`, `_2`, ...), so RAMs of equal length reuse
+  the same numbered define. The replication kind is detected per register,
+  so RAM / `multiply` / plain registers may be scattered in any order.
 * `uint8_t paddingToNextRegister[..._PADDING_TO_NEXT_REGISTERS_ADDRESS]`
   joins two non-adjacent groups.
 

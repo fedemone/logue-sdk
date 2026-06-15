@@ -121,14 +121,15 @@ def group_names(system_name, index) -> tuple[typing.Any |
 # ------------------------------------------------------------------
 # layout building
 # ------------------------------------------------------------------
-def build_fields(register, total_bits, warnings) -> list[typing.Any]:
+def build_fields(register: dict[str, typing.Any], total_bits: int,
+                 warnings: list[str]) -> list[tuple[str, int, str]]:
     """Bit-fields of one register union, gaps filled with res paddings."""
     fields, cursor, gaps = [], 0, 0
     base = sf.last_digit(register["name"])
     for signal in sorted(register["signals"], key=lambda signal: signal["lsb"]):
         if signal["lsb"] < cursor:
-            warnings.append("register %s: signal %s overlaps the previous bits"
-                            % (register["name"], signal["name"]))
+            warnings.append(f"register {register['name']}: signal "
+                            f"{signal['name']} overlaps the previous bits")
             continue
         if signal["lsb"] > cursor:
             fields.append((sf.res_field_name(base, gaps),
@@ -138,64 +139,87 @@ def build_fields(register, total_bits, warnings) -> list[typing.Any]:
                        signal["msb"] - signal["lsb"] + 1, signal["description"]))
         cursor = signal["msb"] + 1
     if cursor > total_bits:
-        warnings.append("register %s: signals exceed the %d bits of the bus"
-                        % (register["name"], total_bits))
+        warnings.append(f"register {register['name']}: signals exceed the "
+                        f"{total_bits} bits of the bus")
     elif cursor < total_bits:
         fields.append((sf.res_field_name(base, gaps),
                        total_bits - cursor, config.RES_DESCRIPTION))
     return fields
 
 
-def split_groups(registers, bus_bytes) -> list[typing.Any]:
+def ram_length_defines(payload: list[dict[str, typing.Any]]
+                       ) -> tuple[dict[int, str], list[tuple[str, str]]]:
+    """Map every LU RAM length to its define suffix and list the rows.
+
+    One shared LENGTH_OF_LU_RAM_REGISTER when all the RAMs have the same
+    length, otherwise a numbered LENGTH_OF_LU_RAM_REGISTER_N per distinct one.
+    """
+    lengths = [register["length"] or 0
+               for register in payload if sf.is_ram(register)]
+    distinct = list(dict.fromkeys(lengths))
+    if len(distinct) <= 1:
+        suffixes = {length: config.DEFINE_LU_RAM_LENGTH for length in distinct}
+    else:
+        suffixes = {length: f"{config.DEFINE_LU_RAM_LENGTH}_{number}"
+                    for number, length in enumerate(distinct, start=1)}
+    rows = [(suffixes[length], str(length)) for length in distinct]
+    return suffixes, rows
+
+
+def split_groups(registers: list[dict[str, typing.Any]], bus_bytes: int,
+                 uniform_ram: bool) -> list[dict[str, typing.Any]]:
     """Adjacent registers with the same replication kind form one group."""
-    groups = []
+    groups: list[dict[str, typing.Any]] = []
     for register in registers:
-        key = sf.group_key(register, bus_bytes)
+        key = sf.group_key(register, bus_bytes, uniform_ram)
         if not groups or groups[-1]["key"] != key:
             groups.append({"key": key, "registers": []})
         groups[-1]["registers"].append(register)
     return groups
 
 
-def set_define(defines: dict[str,int], key: str, value: typing.Any, register: dict[str,typing.Any], warnings: list[str]) -> None:
+def set_define(defines: dict[str, int], key: str, value: typing.Any,
+               register: dict[str, typing.Any], warnings: list[str]) -> None:
     """Record a define value, warning when two registers disagree."""
     previous = defines.setdefault(key, value)
     if previous != value:
-        warnings.append("register %s: %s %s does not match the previous "
-                        "value %s" % (register["name"], key, value, previous))
+        warnings.append(f"register {register['name']}: {key} {value} does not "
+                        f"match the previous value {previous}")
 
 
 def build_group(module: dict[str, typing.Any],
                 group: dict[str, typing.Any],
                 index: int,
                 defines: dict[str, typing.Any],
-                warnings) -> tuple[list[typing.Any],
-                                   list[typing.Any],
-                                   typing.Any,
-                                   typing.Any,
-                                   typing.Any]:
+                ram_define_suffix: dict[int, str],
+                warnings: list[str]) -> tuple[list[typing.Any],
+                                              list[typing.Any],
+                                              int, int, bool]:
     """Unions, struct member lines and address extent of one group."""
     system_name = module["name"]
     bus = module["bus_bytes"]
     suffix = config.GROUP_TYPE_SUFFIXES.get((system_name, index), "")
     registers = group["registers"]
-    block = group["key"] != "plain"
+    key = group["key"]
+    block = isinstance(key, tuple) and key[0] == "block"
     unions, members = [], []
     reserved_index = 0
     start = cursor = registers[0]["address"]
     ram_registers = [register for register in registers if sf.is_ram(register)]
     last_ram = ram_registers[-1] if ram_registers else None
     for position, register in enumerate(registers):
-        following = registers[position + 1] if position + 1 < len(registers) else None
+        following = (registers[position + 1]
+                     if position + 1 < len(registers) else None)
         if register["address"] > cursor:
             members.append(printing.format_member(
                 config.C_BYTE_TYPE, sf.reserved_field_name(reserved_index),
-                "[%d]" % (register["address"] - cursor)))
+                f"[{register['address'] - cursor}]"))
             reserved_index += 1
             cursor = register["address"]
         elif register["address"] < cursor:
-            warnings.append("register %s: address 0x%X overlaps the previous "
-                            "register" % (register["name"], register["address"]))
+            warnings.append(f"register {register['name']}: address "
+                            f"0x{register['address']:X} overlaps the previous "
+                            f"register")
             cursor = register["address"]
         type_base = union_type(system_name, register, suffix)
         unions.append((type_base, sf.to_lower_camel(register["name"]),
@@ -203,14 +227,13 @@ def build_group(module: dict[str, typing.Any],
                        build_fields(register, bus * 8, warnings)))
         array = ""
         if sf.is_ram(register):
-            set_define(defines, "ram_length", register["length"] or 0,
-                       register, warnings)
-            array = "[%s_%s]" % (system_name, config.DEFINE_LU_RAM_LENGTH)
-            cursor += (register["length"] or 0) * bus
+            length = register["length"] or 0
+            array = f"[{system_name}_{ram_define_suffix[length]}]"
+            cursor += length * bus
         elif sf.is_inline_multiply(register, bus):
             set_define(defines, "payload_multiply", register["multiply"],
                        register, warnings)
-            array = "[%s_%s]" % (system_name, config.DEFINE_PAYLOAD_MULTIPLY)
+            array = f"[{system_name}_{config.DEFINE_PAYLOAD_MULTIPLY}]"
             cursor += register["multiply"] * bus
         else:
             cursor += bus
@@ -220,64 +243,68 @@ def build_group(module: dict[str, typing.Any],
         if sf.is_inline_multiply(register, bus):
             gap = (following["address"] - cursor) if following else 0
             if gap < 0:
-                warnings.append("register %s: the multiplied array overlaps "
-                                "the next register" % register["name"])
+                warnings.append(f"register {register['name']}: the multiplied "
+                                f"array overlaps the next register")
                 gap = 0
             set_define(defines, "multiple_padding", gap, register, warnings)
             members.append(printing.format_group_padding(
                 config.PADDING_FIELD,
-                "%s_%s" % (system_name, config.DEFINE_PADDING_MULTIPLE)))
+                f"{system_name}_{config.DEFINE_PADDING_MULTIPLE}"))
             cursor += gap
         if register is last_ram:
             gap = (following["address"] - cursor) if following else 0
             if gap < 0:
-                warnings.append("register %s: the LU RAM overlaps the next "
-                                "register" % register["name"])
+                warnings.append(f"register {register['name']}: the LU RAM "
+                                f"overlaps the next register")
                 gap = 0
             set_define(defines, "after_lu_ram", gap, register, warnings)
             members.append(printing.format_group_padding(
                 config.PADDING_FIELD_LU_RAM,
-                "%s_%s" % (system_name, config.DEFINE_PADDING_AFTER_LU_RAM)))
+                f"{system_name}_{config.DEFINE_PADDING_AFTER_LU_RAM}"))
             cursor += gap
     if block:
-        multiply, offset = group["key"][1], group["key"][2]
+        multiply, offset = key[1], key[2]
         span = cursor - start
         if span > offset:
-            warnings.append("registers multiplied every 0x%X bytes span 0x%X"
-                            % (offset, span))
+            warnings.append(f"registers multiplied every 0x{offset:X} bytes "
+                            f"span 0x{span:X}")
         set_define(defines, "payload_multiply", multiply,
                    registers[0], warnings)
         set_define(defines, "multiple_padding", max(offset - span, 0),
                    registers[0], warnings)
         members.append(printing.format_group_padding(
             config.PADDING_FIELD,
-            "%s_%s" % (system_name, config.DEFINE_PADDING_MULTIPLE)))
+            f"{system_name}_{config.DEFINE_PADDING_MULTIPLE}"))
         end = start + (multiply - 1) * offset + span
     else:
         end = cursor
     return unions, members, start, end, block
 
 
-def module_id_value(commons, warnings) -> str:
+def module_id_value(commons: list[dict[str, typing.Any]],
+                    warnings: list[str]) -> str:
     """The MODULE_ID define: concatenation of the version literals."""
     register = next((register for register in commons
                      if register["name"] == config.DEFINE_MODULE_ID), None)
     if register is None:
-        warnings.append("missing the %s register" % config.DEFINE_MODULE_ID)
+        warnings.append(f"missing the {config.DEFINE_MODULE_ID} register")
         return "0x0"
     parts = []
     for name in config.MODULE_ID_SIGNALS:
         signal = next((signal for signal in register["signals"]
                        if signal["name"] == name), None)
         if signal is None:
-            warnings.append("register %s: missing the %s signal"
-                            % (config.DEFINE_MODULE_ID, name))
+            warnings.append(f"register {config.DEFINE_MODULE_ID}: missing the "
+                            f"{name} signal")
             continue
         parts.append(sf.strip_hex_prefix(signal["value_literal"]))
     return "0x" + "".join(parts)
 
 
-def build_define_rows(defines, total_size, module_id) -> list[tuple[str, str]]:
+def build_define_rows(defines: dict[str, typing.Any],
+                      ram_define_rows: list[tuple[str, str]],
+                      total_size: int,
+                      module_id: str) -> list[tuple[str, str]]:
     """The '#define' couples of a module header, in the reference order."""
     rows = [(config.DEFINE_TOTAL_SIZE, str(total_size))]
     if "payload_multiply" in defines:
@@ -285,8 +312,8 @@ def build_define_rows(defines, total_size, module_id) -> list[tuple[str, str]]:
                      str(defines["payload_multiply"])))
         rows.append((config.DEFINE_PADDING_MULTIPLE,
                      str(defines.get("multiple_padding", 0))))
-    if "ram_length" in defines:
-        rows.append((config.DEFINE_LU_RAM_LENGTH, str(defines["ram_length"])))
+    if ram_define_rows:
+        rows.extend(ram_define_rows)
         rows.append((config.DEFINE_PADDING_AFTER_LU_RAM,
                      str(defines.get("after_lu_ram", 0))))
     if "payload_multiply" not in defines:
@@ -301,34 +328,39 @@ def build_define_rows(defines, total_size, module_id) -> list[tuple[str, str]]:
 # ------------------------------------------------------------------
 # header writers
 # ------------------------------------------------------------------
-def convert_module(module, output_dir: str, warnings: list[str]) -> str:
+def convert_module(module: dict[str, typing.Any], output_dir: str,
+                   warnings: list[str]) -> str:
     """Write the C header of one module XML, return its path."""
     system_name = module["name"]
     bus = module["bus_bytes"]
-    registers = sorted(module["registers"], key=lambda register: register["address"])
+    registers = sorted(module["registers"],
+                       key=lambda register: register["address"])
     commons = [register for register in registers
                if register["name"] in config.COMMON_REGISTERS]
     payload = [register for register in registers
                if register["name"] not in config.COMMON_REGISTERS]
     if len(commons) != len(config.COMMON_REGISTERS):
-        warnings.append("expected the %s common registers, found %d of them"
-                        % ("/".join(config.COMMON_REGISTERS), len(commons)))
-    defines, groups = {}, []
-    for index, raw_group in enumerate(split_groups(payload, bus)):
+        warnings.append(f"expected the {'/'.join(config.COMMON_REGISTERS)} "
+                        f"common registers, found {len(commons)} of them")
+    ram_define_suffix, ram_define_rows = ram_length_defines(payload)
+    uniform_ram = len(ram_define_rows) <= 1
+    defines: dict[str, typing.Any] = {}
+    groups: list[dict[str, typing.Any]] = []
+    for index, raw_group in enumerate(split_groups(payload, bus, uniform_ram)):
         unions, members, start, end, block = build_group(
-            module, raw_group, index, defines, warnings)
+            module, raw_group, index, defines, ram_define_suffix, warnings)
         tag, member, title = group_names(system_name, index)
         groups.append({"unions": unions, "members": members, "start": start,
                        "end": end, "block": block, "tag": tag,
                        "member": member, "title": title, "gap_after": 0})
     if groups and commons and groups[0]["start"] != len(commons) * bus:
-        warnings.append("the registers do not start right after the common "
-                        "ones (0x%X)" % groups[0]["start"])
+        warnings.append(f"the registers do not start right after the common "
+                        f"ones (0x{groups[0]['start']:X})")
     for current, following in zip(groups, groups[1:]):
         gap = following["start"] - current["end"]
         if gap < 0:
-            warnings.append("register groups overlap around 0x%X"
-                            % following["start"])
+            warnings.append(f"register groups overlap around "
+                            f"0x{following['start']:X}")
             gap = 0
         if gap > 0 and "registers_padding" in defines:
             warnings.append("more than one padding between register groups "
@@ -339,7 +371,7 @@ def convert_module(module, output_dir: str, warnings: list[str]) -> str:
         current["gap_after"] = gap
     total_size = max((register["address"]
                       for register in registers), default=0) + bus
-    rows = build_define_rows(defines, total_size,
+    rows = build_define_rows(defines, ram_define_rows, total_size,
                              module_id_value(commons, warnings))
     file_name = sf.header_file_name(system_name)
     path = os.path.abspath(os.path.join(output_dir, file_name))
@@ -358,8 +390,9 @@ def convert_module(module, output_dir: str, warnings: list[str]) -> str:
                 printing.write_union(out, *union)
             printing.write_summary_comment(out, group["title"])
             printing.write_struct(out, group["tag"], group["members"])
-        printing.write_global_comment(out, sf.to_title(system_name), system_name)
-        global_members = []
+        printing.write_global_comment(out, sf.to_title(system_name),
+                                      system_name)
+        global_members: list[str] = []
         for register in commons:
             global_members.append(printing.format_member(
                 union_type(system_name, register) + config.UNION_SUFFIX,
@@ -367,15 +400,16 @@ def convert_module(module, output_dir: str, warnings: list[str]) -> str:
         for group in groups:
             array = ""
             if group["block"]:
-                array = "[%s_%s]" % (system_name, config.DEFINE_PAYLOAD_MULTIPLY)
+                array = f"[{system_name}_{config.DEFINE_PAYLOAD_MULTIPLY}]"
             global_members.append(printing.format_member(
                 group["tag"], group["member"], array))
             if group["gap_after"] > 0:
                 global_members.append(printing.format_member(
                     config.C_BYTE_TYPE, config.PADDING_FIELD,
-                    "[%s_%s]" % (system_name, config.DEFINE_PADDING_REGISTERS)))
-        printing.write_struct(out, sf.to_camel(system_name) + config.STRUCT_SUFFIX,
-                              global_members)
+                    f"[{system_name}_{config.DEFINE_PADDING_REGISTERS}]"))
+        printing.write_struct(
+            out, sf.to_camel(system_name) + config.STRUCT_SUFFIX,
+            global_members)
     return path
 
 
