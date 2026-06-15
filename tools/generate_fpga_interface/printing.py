@@ -54,26 +54,28 @@ def write_global_comment(out, title, module):
 # ------------------------------------------------------------------
 # defines
 # ------------------------------------------------------------------
-def write_module_define(out, prefix, suffix, value):
+def write_module_define(out, prefix, suffix, value) -> None:
     """One '/** doc */' plus '#define <PREFIX>_<SUFFIX> (value)' couple."""
     out.write("/** %s */\n" % config.DEFINE_COMMENTS[suffix])
     field = suffix.ljust(config.DEFINE_FIELD_WIDTHS[suffix])
+    if not field.endswith(" "):
+        field += " "
     out.write("#define %s_%s(%s)\n" % (prefix, field, value))
 
 
-def write_address_define(out, name, value, comment):
+def write_address_define(out, name: str, value: str, comment: str) -> None:
     """One CommonAddresses.h entry, preceded by an empty line."""
     field = name.ljust(config.ADDRESS_DEFINE_WIDTH)
     if not field.endswith(" "):
         field += " "
-    out.write("\n/** %s */\n" % comment)
-    out.write("#define %s(%s)\n" % (field, config.ADDRESS_VALUE_FORMAT % value))
+    out.write(f"\n/** {comment} */\n")
+    out.write(f"#define {field}({config.ADDRESS_VALUE_FORMAT % value})\n")
 
 
 # ------------------------------------------------------------------
 # bit-fields and their doxygen comments
 # ------------------------------------------------------------------
-def wrap_description(text):
+def wrap_description(text) -> list[str]:
     """Field description split in lines of config.COMMENT_TEXT_WIDTH."""
     normalized = " ".join(text.split())
     lines = textwrap.wrap(normalized, config.COMMENT_TEXT_WIDTH,
@@ -126,7 +128,7 @@ def format_group_padding(name, bound):
 
 def write_struct(out, tag, member_lines):
     """A struct from its tag and the already formatted member lines."""
-    out.write("struct %s\n{\n" % tag)
+    out.write(f"struct {tag}\n{{\n")    # escape sequence
     for line in member_lines:
         out.write(line + "\n")
     out.write("};\n")
