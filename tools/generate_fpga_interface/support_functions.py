@@ -19,11 +19,54 @@ def parse_arguments(argv=None):
         description="Convert FPGA register description XML files into C "
                     "style headers (the subsystems summary XML produces "
                     + config.COMMON_ADDRESSES_FILE + ").")
-    parser.add_argument("xml_files", nargs="+",
-                        help="XML register description files to convert")
-    parser.add_argument("-o", "--output-dir", default=None,
-                        help="destination directory of the generated headers "
-                             "(default: the directory of each input XML)")
+    parser = argparse.ArgumentParser(
+            prog="convert_xml_in_c_header",
+            description=""
+            "read the FPGS XML files as a dictionary and create "
+            "the equivalent C header file. Just try simple call.",
+        )
+    parser.add_argument(
+        "-p",
+        "--xml_path",
+        help="Full path containing XML files to "
+        "be parsed. Default path will be sw/submodules/fpga/xhw/modules/",
+        default=config.DEFAULT_INPUT_PATH,
+    )
+    parser.add_argument(
+        "-x",
+        "--xml_files",
+        help="list of alternative XML files to "
+        "be parsed (no path in name!), default files will be "
+        "cell_configuration.xml, dl_cluster_pb_schedule.xml "
+        "cell_timing.xml, top.xml",
+        nargs="*",
+        default=config.default_files,
+    )
+    parser.add_argument(
+        "-d",
+        "--dest_path",
+        help="custom path list where to save the resulting "
+        "header file, alternative to default sw/fpgaInterface.",
+        default=config.DEFAULT_OUTPUT_PATH,
+    )
+    parser.add_argument(
+        "-u",
+        "--submodules_update",
+        help="remove current directory containing "
+        "the submodules, i.e. the FPGA xml files, and does a git checkout."
+        "Default is FALSE.",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-o",
+        "--overwrite",
+        help="remove destination directory contents and "
+        "replace with script results. Otherwise, update only changed files"
+        " (to avoid unneeded build trigger). Default is FALSE.",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args(argv)
 
 
@@ -122,6 +165,7 @@ def is_inline_multiply(register, bus_bytes):
 def is_block_multiply(register, bus_bytes):
     """Multiplied register belonging to a repeated block of registers."""
     return (register["multiply"] is not None
+            and register["multiply_offset"] is not None
             and register["multiply_offset"] != bus_bytes)
 
 
