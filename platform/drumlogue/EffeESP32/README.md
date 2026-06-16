@@ -95,19 +95,91 @@ settings, and six `{ratio, detune, feedback, volume, waveform}` operator slots.
 | 8 | Sustain | % | 0–100 | envelope sustain |
 | 9 | Release | ms | 0–2000 | envelope release |
 | 10 | VeloMod | % | 0–100 | velocity → level depth |
-| 11 | Filter | on/off | 0–1 | SVF enable |
+| 11 | Filter | strings | −4…5 | SVF on/off **+** carrier waveform (see below) |
 | 12 | FltFrq | Hz | 20–20000 | SVF cutoff |
 | 13 | FltRes | % | 0–100 | SVF resonance |
 | 14 | FltMrp | % | 0–100 | SVF low→band→high morph |
 | 15 | Detune | — | −50…50 | global operator detune (Hz) |
 | 16–21 | Op1…Op6 | % | 0–100 | operator levels (FM depth / carrier out) |
 | 22 | Note | midi note | 0–127 | trigger note (reloads to the instrument's GM note) |
-| 23 | — | — | — | reserved |
+| 23 | Feedbk | % | 0–200 | global operator-feedback macro (100 % = patch) |
 
 > **Override-on-touch:** selecting an instrument (param 0) copies all of its
 > stored values into both the working cache and the knob array, so the panel
 > reflects the patch. Moving any other knob overrides just that field. (As on
 > EffeMD, the currently displayed page only refreshes after you switch pages.)
+
+---
+
+## GUI parameters in detail
+
+Six pages of four parameters each.
+
+**Page 1 — Instrument & voice**
+- **Instr** — selects one of the 59 instruments. Selecting it reloads the whole
+  cache: every other knob jumps to that instrument's stored value, and **Note**
+  jumps to its canonical GM note. Pitch, Detune and Feedbk (performance macros)
+  keep their current setting.
+- **Pitch** — transposes the patch base frequency, ±24 semitones. (FM ratios are
+  preserved, so the timbre tracks the pitch.)
+- **Level** — voice volume, 0–200 % (100 % = the patch's stored level).
+- **Pan** — stereo position, full left (−100) to full right (+100).
+
+**Page 2 — Algorithm & envelope head**
+- **Algo** — FM algorithm 0–17 (the operator routing graph). Changing it is the
+  single biggest timbral move; see `fm_voice6.h` for each graph.
+- **Attack / Hold / Decay** — front of the AHDSR envelope, in milliseconds.
+
+**Page 3 — Envelope tail & dynamics**
+- **Sustain** — envelope sustain level (0 % for one-shot drums; raise it for
+  sustained tones that ring until note-off).
+- **Release** — release time after note-off, in milliseconds.
+- **VeloMod** — how much MIDI velocity scales the level (0 % = velocity ignored,
+  100 % = fully velocity-dependent).
+- **Filter** — combined **SVF enable + carrier-waveform** selector. The string
+  display makes the state explicit:
+
+  | value | display | filter | carrier waveform |
+  |------:|---------|--------|------------------|
+  | −4 | `OffSaw` | off | Saw |
+  | −3 | `OffSqr` | off | Square |
+  | −2 | `OffTri` | off | Triangle |
+  | −1 | `OffSin` | off | Sine |
+  |  0 | `Off`    | off | *patch default* |
+  |  1 | `On`     | on  | *patch default* |
+  |  2 | `On Sin` | on  | Sine |
+  |  3 | `On Tri` | on  | Triangle |
+  |  4 | `On Sqr` | on  | Square |
+  |  5 | `On Saw` | on  | Saw |
+
+  `0`/`1` keep the instrument's own carrier waveform and just toggle the filter;
+  the other values additionally force the **primary carrier** (operator 0, which
+  is an output in every algorithm) to a fixed shape — Square/Saw add bite and
+  harmonics that a pure-sine carrier lacks.
+
+**Page 4 — SVF morph filter** (active when Filter is "On…")
+- **FltFrq** — cutoff, 20 Hz–20 kHz.
+- **FltRes** — resonance, 0–100 %.
+- **FltMrp** — morph through the filter response, low → band → high (0 % = pure
+  low-pass, 50 % = band-pass, 100 % = high-pass).
+- **Detune** — global detune (Hz) added to every operator on top of its per-patch
+  detune; small amounts thicken/“analog” the tone, larger amounts clangor it.
+
+**Page 5 — Operator levels 1–4**
+- **Op1…Op4** — per-operator level, 0–100 %. For a *carrier* this is output
+  volume; for a *modulator* it is FM depth (an exponential, DX7-style curve).
+  These reshape the patch's FM balance without changing the algorithm.
+
+**Page 6 — Operator levels 5–6, Note, Feedback**
+- **Op5 / Op6** — remaining operator levels (see above).
+- **Note** — the MIDI note this instrument answers to. It is reset to the
+  instrument's canonical GM note on selection (Kick = 36, Snare = 38, Closed
+  Hi-Hat = 42 …) and is also the note fired by a bare gate trigger.
+- **Feedbk** — global feedback macro. **100 % = the patch as authored**; turning
+  down (→ 0 %) removes operator feedback for a cleaner tone, turning up
+  (→ 200 %) adds feedback to every operator for extra grit/noise — so it works
+  even on patches whose stored feedback is zero (e.g. the Kick). Implemented as a
+  ±3.5 offset in the operator feedback domain, clamped to the FM range 0–7.
 
 ---
 

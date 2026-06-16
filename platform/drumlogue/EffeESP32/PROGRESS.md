@@ -36,6 +36,15 @@ instructions for the next agent.
   (`g_drum_inst_notes[]` in the generated table — GM note for 35–81, original
   slot index for the extras). Selecting an instrument reloads `Note` to that
   value; `GateOn` triggers the assigned note.
+- **Feedbk macro** (param 23): global operator-feedback control, 0–200 %
+  (100 % = patch). Additive ±3.5 offset in the FM feedback domain (clamped 0–7),
+  so it adds grit even to zero-feedback patches. Applied at note-on
+  (`FmVoice6::addFeedback`).
+- **Combined Filter selector** (param 11, range −4…5): folds the SVF on/off flag
+  together with a carrier-waveform override for operator 0 (Sin/Tri/Sqr/Saw).
+  `0`/`1` keep the patch waveform; string labels (`Off`, `On Saw`, …) shown via
+  `getParameterStrValue`. Chosen over an ADSR-model switch (the alternative
+  envelope was a placeholder with no musical intent — see design discussion).
 - **Verification:**
   - Compiles for the real target (`armv7-a`, `-mfpu=neon-vfpv4`) with
     `arm-linux-gnueabihf-g++`; links to a `.drmlgunit` shared object exporting
@@ -86,8 +95,13 @@ instructions for the next agent.
       base shapes in the generator (`fm_operator.h` only defines 5 waveforms).
       Add the 5 negative variants to `fmo_waveform_t` + `fmo_wf_render` for full
       fidelity, then update `WF` map in `tools/gen_patches.py`.
-- [ ] **Operator detune/ratio not exposed** in the UI (only the 6 op *levels*).
-      Could add a global ratio/feedback macro if more knobs are freed.
+- [ ] **Operator ratios/detune not individually exposed** in the UI (the 6 op
+      *levels*, a global Detune and a global Feedbk macro are). The carrier
+      *waveform* is now exposed via the combined Filter selector (op 0 only); a
+      modulator-waveform or per-op ratio macro could follow if slots are freed.
+- [ ] **All 24 parameter slots are now used** — adding a feature means
+      repurposing/encoding an existing one (as the Filter param already encodes
+      both filter state and carrier waveform).
 - [ ] **Startup timbre nuance**: at boot the runtime sets every param to its
       header `init`, overriding the loaded instrument's stored values for that
       one boot sound (same behavior as EffeMD). Re-selecting the instrument

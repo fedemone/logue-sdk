@@ -38,7 +38,11 @@ const __unit_header unit_header_t unit_header = {
         {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"Sustain"}},
         {0, 2000, 0, 100, k_unit_param_type_msec, 0, 0, 0, {"Release"}},
         {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"VeloMod"}},
-        {0, 1, 0, 0, k_unit_param_type_onoff, 0, 0, 0, {"Filter"}},
+        // Filter + carrier waveform selector (string table, -4..5):
+        //   0  = filter off (patch waveform)   1 = filter on (patch waveform)
+        //  -1..-4 = filter off + Sin/Tri/Sqr/Saw carrier
+        //   2..5  = filter on  + Sin/Tri/Sqr/Saw carrier
+        {-4, 5, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Filter"}},
 
         // Page 4 — SVF morph filter
         {20, 20000, 0, 16000, k_unit_param_type_hertz, 0, 0, 0, {"FltFrq"}},
@@ -58,6 +62,7 @@ const __unit_header unit_header_t unit_header = {
         // Note: MIDI note this instrument answers to / triggers on gate.
         //       Reloaded to the instrument's canonical GM note on selection.
         {0, 127, 0, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {"-"}},
+        // Global operator-feedback macro (scales every op's feedback, 0..200%).
+        {0, 200, 0, 100, k_unit_param_type_percent, 0, 0, 0, {"Feedbk"}},
     }
 };

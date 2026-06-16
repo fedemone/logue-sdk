@@ -52,11 +52,17 @@ enum {
     P_DETUNE,       // Hz         -50..50
     P_OP1, P_OP2, P_OP3, P_OP4, P_OP5, P_OP6,  // op volumes %  0..100
     P_NOTE,         // MIDI note 0..127 (canonical trigger note for instrument)
-    P_RSVD2,
+    P_FEEDBK,       // global feedback macro %  0..200
     P_COUNT = 24
 };
 
 #define EFFEESP32_MAX_BLOCK 64
+
+// Carrier-waveform choices for the combined Filter selector (param order must
+// match the -4..-1 / 2..5 mapping and the "Sin/Tri/Sqr/Saw" label table).
+static const fmo_waveform_t kCarrierWf[4] = {
+    WF_SINE, WF_TRIANGLE, WF_SQUARE, WF_SAW
+};
 
 class Synth {
 public:
@@ -107,6 +113,7 @@ public:
         v.setFilterActive(working_.useFilter != 0);
         v.setFrequency(working_.baseFreq * pitch_mul_);
         v.addDetune(detune_hz_);
+        v.addFeedback(feedback_delta_);
         v.noteOn(note, velocity * MIDI_NORM);
     }
 
@@ -147,6 +154,16 @@ public:
             case P_ALGO:
                 snprintf(buf, sizeof(buf), "Alg%ld", (long)value);
                 return buf;
+            case P_FILTER: {
+                // -4..5 -> "Off"/"On" (+ carrier waveform when overridden)
+                static const char* const wf = "Sin\0Tri\0Sqr\0Saw";
+                if (value == 0) return "Off";
+                if (value == 1) return "On";
+                int idx = (value < 0) ? (-value - 1) : (value - 2);
+                const char* on = (value >= 1) ? "On " : "Off";
+                snprintf(buf, sizeof(buf), "%s%s", on, wf + idx * 4);
+                return buf;
+            }
             default:
                 return nullptr;
         }
@@ -178,7 +195,8 @@ private:
         params_[P_SUSTAIN]   = clampi((int)(working_.sustain * 100.0f + 0.5f), 0, 100);
         params_[P_RELEASE]   = clampi((int)(working_.release * 1000.0f + 0.5f), 0, 2000);
         params_[P_VELOMOD]   = clampi((int)(working_.veloMod * 100.0f + 0.5f), 0, 100);
-        params_[P_FILTER]    = working_.useFilter ? 1 : 0;
+        base_carrier_wf_     = working_.ops[0].waveform;   // for waveform override reset
+        params_[P_FILTER]    = working_.useFilter ? 1 : 0; // 0/1 = patch carrier waveform
         params_[P_FLT_FREQ]  = clampi((int)(working_.filterFreqHz + 0.5f), 20, 20000);
         params_[P_FLT_RESO]  = clampi((int)(working_.filterReso  * 100.0f + 0.5f), 0, 100);
         params_[P_FLT_MORPH] = clampi((int)(working_.filterMorph * 100.0f + 0.5f), 0, 100);
@@ -188,8 +206,9 @@ private:
         assigned_note_ = g_drum_inst_notes[idx];
         params_[P_NOTE] = assigned_note_;
         // Performance controls (not stored in patch) keep their current value.
-        pitch_mul_ = semitone_ratio(params_[P_PITCH]);
-        detune_hz_ = (float)params_[P_DETUNE];
+        pitch_mul_     = semitone_ratio(params_[P_PITCH]);
+        detune_hz_     = (float)params_[P_DETUNE];
+        feedback_delta_= feedback_delta_from(params_[P_FEEDBK]);
     }
 
     // ---- per-parameter override into the working patch ---------------------
@@ -205,7 +224,16 @@ private:
             case P_SUSTAIN:   working_.sustain     = v * 0.01f; break;
             case P_RELEASE:   working_.release     = v * 0.001f; break;
             case P_VELOMOD:   working_.veloMod     = v * 0.01f; break;
-            case P_FILTER:    working_.useFilter   = (uint8_t)(v ? 1 : 0); break;
+            case P_FILTER: {
+                // v in [-4..5]: filter on when v >= 1; carrier waveform override
+                // selected by magnitude (0/1 keep the patch's carrier waveform).
+                working_.useFilter = (v >= 1) ? 1 : 0;
+                int wf_idx = (v <= 0) ? (-v - 1) : (v - 2);   // -1 = no override
+                working_.ops[0].waveform =
+                    (wf_idx < 0) ? base_carrier_wf_ : kCarrierWf[wf_idx];
+                break;
+            }
+            case P_FEEDBK:    feedback_delta_      = feedback_delta_from(v); break;
             case P_FLT_FREQ:  working_.filterFreqHz= (float)v; break;
             case P_FLT_RESO:  working_.filterReso  = v * 0.01f; break;
             case P_FLT_MORPH: working_.filterMorph = v * 0.01f; break;
@@ -286,6 +314,9 @@ private:
 
     static int   clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
     static float semitone_ratio(int semi)      { return fasterpow2f((float)semi * (1.0f / 12.0f)); }
+    // Feedbk %: 100 = patch (neutral), 0 = none, 200 = +grit. Maps to a ±3.5
+    // offset in the operator feedback domain (fmo clamps to 0..7).
+    static float feedback_delta_from(int pct)  { return (pct * 0.01f - 1.0f) * 3.5f; }
 
     // ---- state -------------------------------------------------------------
     FmVoice6        voices_[MAX_VOICES];
@@ -293,6 +324,8 @@ private:
     int16_t         params_[P_COUNT];
     float           pitch_mul_ = 1.0f;
     float           detune_hz_ = 0.0f;
+    float           feedback_delta_ = 0.0f;
+    fmo_waveform_t  base_carrier_wf_ = WF_SINE;
     uint8_t         assigned_note_ = 36;
     uint8_t         current_preset_ = 0;
     float           scratch_[MAX_VOICES][EFFEESP32_MAX_BLOCK];

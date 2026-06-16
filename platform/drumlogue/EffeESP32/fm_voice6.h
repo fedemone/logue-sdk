@@ -115,6 +115,15 @@ public:
         for (auto& op : ops_) fmo_set_detune(&op, op.detune + hz);
     }
 
+    // Adds `delta` to every operator's per-patch feedback (global Feedbk macro;
+    // fmo_set_feedback clamps to 0..7). Negative removes grit, positive adds it
+    // — so the macro is useful even on patches whose feedback is zero.
+    // Called once at note-on, after applyPatch(), so it never accumulates.
+    void addFeedback(float delta) {
+        if (delta == 0.0f) return;
+        for (auto& op : ops_) fmo_set_feedback(&op, op.fb + delta);
+    }
+
     void setPan(float pan) {
         pan_  = pan;
         float p = (pan + 1.0f) * 0.5f;     // 0..1
