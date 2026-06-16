@@ -16,9 +16,11 @@ instructions for the next agent.
   by algorithms 14–17.
 - **Voice engine** (`fm_voice6.h`): port of `FmVoice6` — 6 operators, **all 18
   algorithms reproduced verbatim**, AHDSR + SVF per voice, block rendering.
-- **Envelope** (`adsr.h`): clean AHDSR re-implementation of the `Adsr` API used
-  by the upstream voice (the original `Adsr.h` is an external shared lib not in
-  the FMDrums sketch). END_NOW / END_REGULAR / END_SEMI_FAST modes preserved.
+- **Envelope** (`adsr.h`): **faithful port** of the upstream `FMDrums/adsr.h`
+  (one-pole exponential-target AHDSR; Soundpipe/Diedrichsen lineage, Copych
+  fast/semi-fast releases + HOLD phase). END_NOW / END_REGULAR / END_SEMI_FAST /
+  END_FAST modes and the D0 time-constant math preserved verbatim; only the
+  uninitialised-segment bug in `getPenalty()` was fixed.
 - **Filter** (`svf_filter.h`): direct port of `svf_morph.h` (Chamberlin SVF with
   low→band→high morph), 48 kHz, LUT sine swapped for `fastersinfullf`.
 - **Instrument table** (`drum_patches.h`, **auto-generated**): 59 patches =
@@ -29,7 +31,11 @@ instructions for the next agent.
   8-voice allocator with steal-by-score, chunked block render, **NEON pan/mix**
   (`vld1q`/`vmlaq_n`/`vst2q`) with scalar fallback, master gain for headroom.
 - **24-parameter GUI** (`header.c`) with proper SDK param types (strings, semi,
-  percent, pan, msec, hertz, on/off).
+  percent, pan, msec, hertz, on/off, **midi_note**).
+- **Trigger Note** (param 22): each instrument carries its canonical MIDI note
+  (`g_drum_inst_notes[]` in the generated table — GM note for 35–81, original
+  slot index for the extras). Selecting an instrument reloads `Note` to that
+  value; `GateOn` triggers the assigned note.
 - **Verification:**
   - Compiles for the real target (`armv7-a`, `-mfpu=neon-vfpv4`) with
     `arm-linux-gnueabihf-g++`; links to a `.drmlgunit` shared object exporting
@@ -63,6 +69,16 @@ instructions for the next agent.
 
 ## TODO / Known limitations
 
+- [ ] **Import the remaining instruments from the original JSON.** Only 59 of the
+      128 `Drumkit_default.json` slots are currently included (47 GM + 12 unique
+      extras; empty-named and parameter-duplicate slots are skipped by
+      `tools/gen_patches.py`). Decide a policy for the remaining slots — e.g.
+      include all non-empty slots even if their parameters duplicate an existing
+      patch (they map to different MIDI notes), or hand-name the duplicate
+      families (Noise Bell / Chime / Tight Clap / Tick Click / Glass FX /
+      Rail bell cycles at 82–127) — then relax the dedupe in the generator and
+      regenerate. Watch the `Instr` param `max` in `header.c` and `P_INSTR` range
+      when the count changes.
 - [ ] **Choke groups not implemented** (hi-hats won't cut each other).
 - [ ] **Reverb send dropped** — drumlogue has its own master FX; `reverbSend`
       from the JSON is intentionally ignored.

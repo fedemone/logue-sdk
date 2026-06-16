@@ -109,14 +109,14 @@ def param_key(p):
             round(p["filterFreq"],2), round(p["filterReso"],4),
             round(p["filterMorph"],4), ops)
 
-selected = []      # list of (short_name, full_name, patch_dict)
+selected = []      # list of (short_name, full_name, patch_dict, midi_note)
 seen = set()
 
 # 1) GM range 35..81
 for n in range(35, 82):
     p = patches[n]
     short, full = GM[n]
-    selected.append((short, full, p))
+    selected.append((short, full, p, n))
     seen.add(param_key(p))
 
 # 2) extras 0..34 and 82..127, only meaningful + unique
@@ -131,12 +131,12 @@ for n in list(range(0, 35)) + list(range(82, 128)):
     seen.add(k)
     short = EXTRA.get(name, re.sub(r"[^A-Za-z0-9]", "", name)[:7] or "Perc")
     # keep display names unique
-    base, used = short, {s for s, _, _ in selected}
+    base, used = short, {s for s, _, _, _ in selected}
     suffix = 2
     while short in used:
         short = (base[:6] + str(suffix))
         suffix += 1
-    selected.append((short, name, p))
+    selected.append((short, name, p, n))
 
 WF = {0:"WF_SINE",1:"WF_COSINE",2:"WF_TRIANGLE",3:"WF_SQUARE",4:"WF_SAW",
       # original has 10 waveforms; the negative variants fold onto base shapes.
@@ -169,7 +169,7 @@ lines.append("")
 lines.append(f"#define DRUM_INST_COUNT {len(selected)}")
 lines.append("")
 lines.append("static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {")
-for short, full, p in selected:
+for short, full, p, note in selected:
     ops = []
     for o in p["ops"]:
         ops.append(f"{{ {f(o['ratio'])}, {f(o['detune'])}, {f(o['fb'])}, "
@@ -187,8 +187,21 @@ lines.append("};")
 lines.append("")
 lines.append("static const char* const g_drum_inst_names[DRUM_INST_COUNT] = {")
 row = "  "
-for i, (short, full, p) in enumerate(selected):
+for short, full, p, note in selected:
     row += f'"{short}", '
+    if len(row) > 76:
+        lines.append(row.rstrip()); row = "  "
+if row.strip():
+    lines.append(row.rstrip())
+lines.append("};")
+lines.append("")
+
+# Canonical trigger note for each instrument: the source MIDI note in the
+# original drumkit (GM note for 35..81, original slot index for the extras).
+lines.append("static const uint8_t g_drum_inst_notes[DRUM_INST_COUNT] = {")
+row = "  "
+for short, full, p, note in selected:
+    row += f"{note}, "
     if len(row) > 76:
         lines.append(row.rstrip()); row = "  "
 if row.strip():
@@ -201,4 +214,4 @@ with open(dst, "w") as out:
 
 print(f"Wrote {dst}")
 print(f"Total instruments: {len(selected)} (47 GM + {len(selected)-47} extras)")
-print("Extras:", [s for s,_,_ in selected[47:]])
+print("Extras:", [s for s,_,_,_ in selected[47:]])

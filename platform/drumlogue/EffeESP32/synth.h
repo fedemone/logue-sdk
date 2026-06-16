@@ -51,7 +51,7 @@ enum {
     P_FLT_MORPH,    // %          0..100
     P_DETUNE,       // Hz         -50..50
     P_OP1, P_OP2, P_OP3, P_OP4, P_OP5, P_OP6,  // op volumes %  0..100
-    P_RSVD1,
+    P_NOTE,         // MIDI note 0..127 (canonical trigger note for instrument)
     P_RSVD2,
     P_COUNT = 24
 };
@@ -116,7 +116,7 @@ public:
                 voices_[i].noteOff();
     }
 
-    inline void GateOn(uint8_t velocity)  { NoteOn(36, velocity); }
+    inline void GateOn(uint8_t velocity)  { NoteOn(assigned_note_, velocity); }
     inline void GateOff()                 { AllNoteOff(); }
     inline void AllNoteOff() { for (int i = 0; i < MAX_VOICES; ++i) voices_[i].noteOff(); }
     inline void PitchBend(uint16_t)            {}
@@ -184,6 +184,9 @@ private:
         params_[P_FLT_MORPH] = clampi((int)(working_.filterMorph * 100.0f + 0.5f), 0, 100);
         for (int i = 0; i < FMV_NUM_OPS; ++i)
             params_[P_OP1 + i] = clampi((int)(working_.ops[i].volume * 100.0f + 0.5f), 0, 100);
+        // Assign the instrument's canonical (GM) trigger note.
+        assigned_note_ = g_drum_inst_notes[idx];
+        params_[P_NOTE] = assigned_note_;
         // Performance controls (not stored in patch) keep their current value.
         pitch_mul_ = semitone_ratio(params_[P_PITCH]);
         detune_hz_ = (float)params_[P_DETUNE];
@@ -207,6 +210,7 @@ private:
             case P_FLT_RESO:  working_.filterReso  = v * 0.01f; break;
             case P_FLT_MORPH: working_.filterMorph = v * 0.01f; break;
             case P_DETUNE:    detune_hz_           = (float)v; break;
+            case P_NOTE:      assigned_note_       = (uint8_t)clampi(v, 0, 127); break;
             case P_OP1: case P_OP2: case P_OP3:
             case P_OP4: case P_OP5: case P_OP6:
                 working_.ops[index - P_OP1].volume = v * 0.01f; break;
@@ -289,6 +293,7 @@ private:
     int16_t         params_[P_COUNT];
     float           pitch_mul_ = 1.0f;
     float           detune_hz_ = 0.0f;
+    uint8_t         assigned_note_ = 36;
     uint8_t         current_preset_ = 0;
     float           scratch_[MAX_VOICES][EFFEESP32_MAX_BLOCK];
 };

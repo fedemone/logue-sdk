@@ -52,10 +52,12 @@ const __unit_header unit_header_t unit_header = {
         {0, 100, 0, 80, k_unit_param_type_percent, 0, 0, 0, {"Op3"}},
         {0, 100, 0, 80, k_unit_param_type_percent, 0, 0, 0, {"Op4"}},
 
-        // Page 6 — operator levels 5..6 + reserved
+        // Page 6 — operator levels 5..6 + trigger note
         {0, 100, 0, 80, k_unit_param_type_percent, 0, 0, 0, {"Op5"}},
         {0, 100, 0, 80, k_unit_param_type_percent, 0, 0, 0, {"Op6"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {"-"}},
+        // Note: MIDI note this instrument answers to / triggers on gate.
+        //       Reloaded to the instrument's canonical GM note on selection.
+        {0, 127, 0, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {"-"}},
     }
 };

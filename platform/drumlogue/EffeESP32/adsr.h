@@ -2,137 +2,206 @@
 
 /**
  * @file adsr.h
- * @brief Attack/Hold/Decay/Sustain/Release envelope.
+ * @brief Attack / Hold / Decay / Sustain / Release envelope.
  *
- * Re-implementation of the `Adsr` interface used by copych's FmVoice6
- * (the original `Adsr.h` lives in a shared library outside the FMDrums
- * sketch).  Public method names and the END_* end-modes are kept identical
- * so the ported voice code reads the same as the upstream source.
+ * Faithful port of copych/ESP32-S3_FM_Drum_Synth FMDrums/adsr.h
+ *   Original author(s): Paul Batchelor
+ *   Ported from Soundpipe by Ben Sergentanis (May 2020)
+ *   Remake by Steffan Diedrichsen (May 2021)
+ *   Modified by Evgeny "Copych" Aslovskiy (Jan 2024 – Aug 2025): fast and
+ *   semi-fast releases, HOLD phase, unified D0 calc, header-only.  MIT License.
  *
- * Segments:
- *   ATTACK   : linear 0 -> 1            over attack seconds
- *   HOLD     : stay at 1                for hold seconds
- *   DECAY    : exponential 1 -> sustain over decay seconds
- *   SUSTAIN  : hold sustain level until end() is called
- *   RELEASE  : exponential -> 0         over release seconds
+ * Changes for drumlogue:
+ *   - Arduino / IRAM_ATTR removed, std::pow used.
+ *   - getPenalty() initialises its segment from the current mode (the upstream
+ *     version left it uninitialised when not sustaining).
  *
- * Percussion patches typically use sustain == 0, so DECAY runs straight into
- * silence and a note naturally frees itself (isRunning() turns false).
+ * Model: one-pole smoother toward a target,  x += D0 * (target - x).
+ * ATTACK aims slightly above 1.0 so it crosses 1.0; DECAY/RELEASE aim slightly
+ * past their endpoints so the segment terminates cleanly.
  */
 
 #include <cstdint>
+#include <cmath>
 #include "constants.h"
 
 class Adsr {
 public:
-    enum EndMode : uint8_t {
-        END_NOW       = 0,  // jump straight to idle / immediate restart
-        END_REGULAR   = 1,  // normal note-off release
-        END_SEMI_FAST = 2,  // faster release used for choke groups
-        END_FAST      = 3,
+    enum eSegment_t {
+        ADSR_SEG_IDLE, ADSR_SEG_ATTACK, ADSR_SEG_HOLD,
+        ADSR_SEG_DECAY, ADSR_SEG_SUSTAIN, ADSR_SEG_RELEASE,
+        ADSR_SEG_SEMI_FAST_RELEASE, ADSR_SEG_FAST_RELEASE
     };
 
-    enum Stage : uint8_t { IDLE, ATTACK, HOLD, DECAY, SUSTAIN, RELEASE };
+    enum eEnd_t { END_REGULAR, END_SEMI_FAST, END_FAST, END_NOW };
 
-    void init(float sampleRate) {
-        sr_ = (sampleRate > 1.0f) ? sampleRate : 48000.0f;
-        inv_sr_ = 1.0f / sr_;
-        stage_ = IDLE;
-        level_ = 0.0f;
+    // Aliases kept for call sites that used the previous interface.
+    static constexpr eEnd_t END_NOW_MODE = END_NOW;
+
+    Adsr() {}
+
+    void init(float sample_rate, int blockSize = 1) {
+        sample_rate_ = sample_rate / blockSize;
+        attackTarget_ = 1.0f + epsylon;
+        attackTime_ = decayTime_ = releaseTime_ = -1.0f;
+        fastReleaseTime_ = semiFastReleaseTime_ = -1.0f;
+        sus_level_ = 1.0f;
+        x_ = 0.0f;
+        gate_ = false;
+        mode_ = ADSR_SEG_IDLE;
+
+        setTime(ADSR_SEG_ATTACK, 0.0f);
+        setTime(ADSR_SEG_HOLD, 0.05f);
+        setTime(ADSR_SEG_DECAY, 0.05f);
+        setTime(ADSR_SEG_RELEASE, 0.05f);
+        setTime(ADSR_SEG_FAST_RELEASE, 0.0005f);   // a few samples, polyphony overrun
+        setTime(ADSR_SEG_SEMI_FAST_RELEASE, 0.02f);// note stealing / choke groups
     }
 
-    // ---- parameter setters (seconds) ---------------------------------------
-    void setAttackTime(float s)  { attack_  = clampPos(s); }
-    void setHoldTime(float s)    { hold_    = clampPos(s); }
-    void setDecayTime(float s)   { decay_   = clampPos(s); }
-    void setSustainLevel(float l){ sustain_ = (l < 0.0f) ? 0.0f : (l > 1.0f ? 1.0f : l); }
-    void setReleaseTime(float s) { release_ = clampPos(s); }
-
-    float getAttackTime()  const { return attack_; }
-    float getHoldTime()    const { return hold_; }
-    float getDecayTime()   const { return decay_; }
-    float getSustainLevel()const { return sustain_; }
-    float getReleaseTime() const { return release_; }
-
-    // ---- transport ---------------------------------------------------------
-    void retrigger(EndMode /*mode*/ = END_NOW) {
-        stage_   = ATTACK;
-        level_   = 0.0f;
-        holdCnt_ = 0.0f;
-        // Per-sample increments for the current times.
-        atkInc_  = (attack_ > 0.0f) ? (inv_sr_ / attack_) : 1.0f;
-        holdLen_ = hold_ * sr_;
-        decCoef_ = expCoef(decay_);
-        relReady_ = false;
+    void retrigger(eEnd_t hardness) {
+        gate_ = true;
+        mode_ = ADSR_SEG_ATTACK;
+        if (hardness == END_NOW) x_ = 0.0f;
+        D0_ = attackD0_;
     }
 
-    void end(EndMode mode = END_REGULAR) {
-        if (stage_ == IDLE) return;
-        float rel = release_;
-        if (mode == END_NOW)            { stage_ = IDLE; level_ = 0.0f; return; }
-        else if (mode == END_SEMI_FAST) rel *= 0.35f;
-        else if (mode == END_FAST)      rel *= 0.12f;
-        relCoef_  = expCoef(rel);
-        stage_    = RELEASE;
-        relReady_ = true;
+    void end(eEnd_t hardness) {
+        gate_ = false;
+        target_ = -epsylon;
+        switch (hardness) {
+            case END_NOW:       mode_ = ADSR_SEG_IDLE; D0_ = attackD0_; x_ = 0.f; break;
+            case END_FAST:      mode_ = ADSR_SEG_FAST_RELEASE; D0_ = fastReleaseD0_; break;
+            case END_SEMI_FAST: mode_ = ADSR_SEG_SEMI_FAST_RELEASE; D0_ = semiFastReleaseD0_; break;
+            case END_REGULAR:
+            default:            mode_ = ADSR_SEG_RELEASE; D0_ = releaseD0_; break;
+        }
     }
 
-    // ---- per-sample hot path ----------------------------------------------
+    eSegment_t getCurrentSegment() const {
+        if (gate_ && (x_ == sus_level_)) return ADSR_SEG_SUSTAIN;
+        return mode_;
+    }
+
+    float getPenalty() const {
+        switch (getCurrentSegment()) {
+            case ADSR_SEG_ATTACK:            return 0.0f;
+            case ADSR_SEG_HOLD:              return 0.0f;
+            case ADSR_SEG_DECAY:             return x_ * 0.2f;
+            case ADSR_SEG_SUSTAIN:           return x_ * 0.5f;
+            case ADSR_SEG_RELEASE:           return x_ * 0.4f;
+            case ADSR_SEG_FAST_RELEASE:      return x_ * 0.7f;
+            case ADSR_SEG_SEMI_FAST_RELEASE: return x_ * 0.9f;
+            case ADSR_SEG_IDLE:              return x_;
+            default:                         return x_ * 0.5f;
+        }
+    }
+
+    inline bool  isRunning() const { return mode_ != ADSR_SEG_IDLE; }
+    inline bool  isIdle()    const { return mode_ == ADSR_SEG_IDLE; }
+    inline float getVal()    const { return x_; }
+
+    inline float getAttackTime()  const { return attackTime_; }
+    inline float getHoldTime()    const { return holdTime_; }
+    inline float getDecayTime()   const { return decayTime_; }
+    inline float getSustainLevel()const { return sus_level_; }
+    inline float getReleaseTime() const { return releaseTime_; }
+
+    void setTime(int seg, float time) {
+        switch (seg) {
+            case ADSR_SEG_ATTACK:  setAttackTime(time); break;
+            case ADSR_SEG_HOLD:    setHoldTime(time); break;
+            case ADSR_SEG_DECAY:   setTimeConstant(time, decayTime_, decayD0_); break;
+            case ADSR_SEG_RELEASE: setTimeConstant(time, releaseTime_, releaseD0_); break;
+            case ADSR_SEG_FAST_RELEASE:      setTimeConstant(time, fastReleaseTime_, fastReleaseD0_); break;
+            case ADSR_SEG_SEMI_FAST_RELEASE: setTimeConstant(time, semiFastReleaseTime_, semiFastReleaseD0_); break;
+            default: break;
+        }
+    }
+
+    void setHoldTime(float timeInS) {
+        holdTime_ = timeInS;
+        holdSamples_ = timeInS > 0.0f ? (uint32_t)(timeInS * sample_rate_) : 0;
+        holdCounter_ = holdSamples_;
+    }
+
+    void setAttackTime(float t)  { setTimeConstant(t, attackTime_, attackD0_); }
+    void setDecayTime(float t)   { setTimeConstant(t, decayTime_, decayD0_); }
+    void setReleaseTime(float t) { setTimeConstant(t, releaseTime_, releaseD0_); }
+
+    inline void setSustainLevel(float sus_level) {
+        sus_level = (sus_level <= 0.f) ? -0.001f : (sus_level > 1.f) ? 1.f : sus_level;
+        sus_level_ = sus_level;
+    }
+
     fast_inline float process() {
-        switch (stage_) {
-            case ATTACK:
-                level_ += atkInc_;
-                if (level_ >= 1.0f) { level_ = 1.0f; stage_ = HOLD; }
-                break;
-            case HOLD:
-                if (holdCnt_ >= holdLen_) stage_ = DECAY;
-                holdCnt_ += 1.0f;
-                break;
-            case DECAY:
-                level_ = sustain_ + (level_ - sustain_) * decCoef_;
-                if (level_ <= sustain_ + 1e-5f) {
-                    level_ = sustain_;
-                    stage_ = (sustain_ > 1e-5f) ? SUSTAIN : IDLE;
+        float out = 0.0f;
+        switch (mode_) {
+            case ADSR_SEG_IDLE:
+                out = 0.0f; break;
+
+            case ADSR_SEG_ATTACK:
+                x_ += D0_ * (attackTarget_ - x_);
+                out = x_;
+                if (out >= 1.f) {
+                    x_ = out = 1.f;
+                    if (holdSamples_ > 0) {
+                        mode_ = ADSR_SEG_HOLD;
+                        holdCounter_ = holdSamples_;
+                    } else {
+                        mode_ = ADSR_SEG_DECAY;
+                        target_ = sus_level_ - (x_ - sus_level_) * epsylon;
+                        D0_ = decayD0_;
+                    }
                 }
                 break;
-            case SUSTAIN:
+
+            case ADSR_SEG_HOLD:
+                out = x_;
+                if (holdCounter_ > 0) --holdCounter_;
+                else {
+                    mode_ = ADSR_SEG_DECAY;
+                    target_ = sus_level_ - (x_ - sus_level_) * epsylon;
+                    D0_ = decayD0_;
+                }
                 break;
-            case RELEASE:
-                level_ *= relCoef_;
-                if (level_ <= 1e-5f) { level_ = 0.0f; stage_ = IDLE; }
+
+            case ADSR_SEG_DECAY:
+            case ADSR_SEG_RELEASE:
+            case ADSR_SEG_FAST_RELEASE:
+            case ADSR_SEG_SEMI_FAST_RELEASE:
+                x_ += D0_ * (target_ - x_);
+                out = x_;
+                if (out < 0.0f) {
+                    mode_ = ADSR_SEG_IDLE;
+                    x_ = out = 0.f;
+                    target_ = -epsylon;
+                    D0_ = attackD0_;
+                }
                 break;
-            case IDLE:
-            default:
-                return 0.0f;
+
+            default: break;
         }
-        return level_;
-    }
-
-    bool  isRunning() const { return stage_ != IDLE; }
-    float level()     const { return level_; }
-
-    // Voice-stealing heuristic: lower = better steal candidate.
-    float getPenalty() const {
-        if (stage_ == IDLE)    return 0.0f;
-        if (stage_ == RELEASE) return 0.25f;
-        return 1.0f;
+        return out;
     }
 
 private:
-    static float clampPos(float s) { return (s < 0.0f) ? 0.0f : s; }
+    static constexpr float epsylon  = 0.01f;
+    static constexpr float epsylon2 = epsylon / (1.0f + epsylon);
 
-    // Exponential decay coefficient reaching ~ -60 dB in `t` seconds.
-    float expCoef(float t) const {
-        if (t <= 0.0f) return 0.0f;
-        // y[n] = y[n-1] * c ; c = exp(-1 / (t * sr / k)) with k ~ 6.9 (≈ ln(1000))
-        return std::exp(-6.9078f * inv_sr_ / t);
+    void setTimeConstant(float timeInS, float& time, float& coeff) {
+        if (timeInS != time) {
+            time = timeInS;
+            coeff = (time > 0.f) ? 1.0f - std::pow(epsylon2, 1.0f / (sample_rate_ * time)) : 1.f;
+        }
     }
 
-    float sr_ = 48000.0f, inv_sr_ = 1.0f / 48000.0f;
-    float attack_ = 0.001f, hold_ = 0.0f, decay_ = 0.2f, sustain_ = 0.0f, release_ = 0.1f;
-    float level_ = 0.0f;
-    float atkInc_ = 1.0f, holdLen_ = 0.0f, holdCnt_ = 0.0f;
-    float decCoef_ = 0.0f, relCoef_ = 0.0f;
-    bool  relReady_ = false;
-    Stage stage_ = IDLE;
+    float sus_level_{0.f}, x_{0.f}, target_{0.f}, D0_{0.f};
+    float attackTarget_{1.0f}, attackTime_{-1.0f};
+    float decayTime_{-1.0f}, releaseTime_{-1.0f}, fastReleaseTime_{-1.0f}, semiFastReleaseTime_{-1.0f};
+    float attackD0_{0.f}, decayD0_{0.f}, releaseD0_{0.f}, fastReleaseD0_{0.f}, semiFastReleaseD0_{0.f};
+    float holdTime_ = 0.0f;
+    uint32_t holdSamples_ = 0, holdCounter_ = 0;
+    float sample_rate_ = 48000.0f;
+    eSegment_t mode_{ADSR_SEG_IDLE};
+    bool gate_{false};
 };

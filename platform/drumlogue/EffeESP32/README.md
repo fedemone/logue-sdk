@@ -101,7 +101,8 @@ settings, and six `{ratio, detune, feedback, volume, waveform}` operator slots.
 | 14 | FltMrp | % | 0–100 | SVF low→band→high morph |
 | 15 | Detune | — | −50…50 | global operator detune (Hz) |
 | 16–21 | Op1…Op6 | % | 0–100 | operator levels (FM depth / carrier out) |
-| 22–23 | — | — | — | reserved |
+| 22 | Note | midi note | 0–127 | trigger note (reloads to the instrument's GM note) |
+| 23 | — | — | — | reserved |
 
 > **Override-on-touch:** selecting an instrument (param 0) copies all of its
 > stored values into both the working cache and the knob array, so the panel
