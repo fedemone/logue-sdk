@@ -14,7 +14,7 @@ void TRXGongModel::Trigger() {
     env = 1.0f;
     t = 0.0f;
     phase1 = phase2 = 0.0f;
-    env_mul = expf(-INV_SAMPLE_RATE / decay);
+    env_mul = e_expff(-INV_SAMPLE_RATE / decay);
 }
 
 float TRXGongModel::Process() {

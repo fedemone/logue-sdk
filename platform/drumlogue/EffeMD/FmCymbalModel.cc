@@ -26,7 +26,7 @@ void FmCymbalModel::Trigger() {
 void FmCymbalModel::Release() {
     // Start a fast (~60 ms) fade. Only meaningful when sustain > 0, where the
     // amp envelope otherwise floors at `sustain` and never reaches silence.
-    choke_mul_ = expf(-INV_SAMPLE_RATE / 0.06f);
+    choke_mul_ = fasterexpf(-INV_SAMPLE_RATE / 0.06f);
 }
 
 float FmCymbalModel::Process() {

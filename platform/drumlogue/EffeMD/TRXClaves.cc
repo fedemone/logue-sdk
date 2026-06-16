@@ -10,7 +10,7 @@ void TRXClaves::Trigger() {
     env = 1.0f;
     t = 0.0f;
     phase1 = phase2 = 0.0f;
-    env_mul = expf(-INV_SAMPLE_RATE / decay);
+    env_mul = fasterexpf(-INV_SAMPLE_RATE / decay);
 }
 
 float TRXClaves::Process() {

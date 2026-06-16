@@ -16,9 +16,9 @@ void TRXHiHat::Init() {
 void TRXHiHat::Trigger() {
     env = 1.0f;
     t = 0.0f;
-    env_mul   = expf(-INV_SAMPLE_RATE / decay);
-    lpf_alpha = expf(-2.0f * M_PI * lpfFreq * INV_SAMPLE_RATE);
-    hpf_alpha = expf(-2.0f * M_PI * hpfFreq * INV_SAMPLE_RATE);
+    env_mul   = e_expff(-INV_SAMPLE_RATE / decay);
+    lpf_alpha = e_expff(-2.0f * M_PI * lpfFreq * INV_SAMPLE_RATE);
+    hpf_alpha = e_expff(-2.0f * M_PI * hpfFreq * INV_SAMPLE_RATE);
 }
 
 float TRXHiHat::get_value(const float fadeTime){

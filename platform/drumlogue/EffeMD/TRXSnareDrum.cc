@@ -12,8 +12,8 @@ void TRXSnareDrum::Trigger() {
     ampEnv = 1.0f;
     snapEnv = 1.0f;
     phase1 = phase2 = 0.0f;
-    amp_mul  = expf(-INV_SAMPLE_RATE / decay);
-    snap_mul = expf(-INV_SAMPLE_RATE / 0.02f); // 20ms snap noise decay
+    amp_mul  = fasterexpf(-INV_SAMPLE_RATE / decay);
+    snap_mul = fasterexpf(-INV_SAMPLE_RATE / 0.02f); // 20ms snap noise decay
 }
 
 float TRXSnareDrum::Process() {

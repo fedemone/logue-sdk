@@ -32,7 +32,7 @@ private:
     float env;
     float t;
 
-    // Per-sample decay multiplier, computed at Trigger with accurate expf
+    // Per-sample decay multiplier, computed at Trigger with accurate fasterexpf
     float env_mul;
 
     float sine(float x);

@@ -11,8 +11,8 @@ void TRXBassDrum::Trigger() {
     env = 1.0f;
     rampEnv = 1.0f;
     phase = 0.0f;
-    env_mul  = expf(-INV_SAMPLE_RATE / decay);
-    ramp_mul = expf(-INV_SAMPLE_RATE / rampDecay);
+    env_mul  = fasterexpf(-INV_SAMPLE_RATE / decay);
+    ramp_mul = fasterexpf(-INV_SAMPLE_RATE / rampDecay);
 }
 
 float TRXBassDrum::Process() {
