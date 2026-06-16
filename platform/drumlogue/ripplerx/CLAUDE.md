@@ -5,6 +5,34 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **11th HW pass — de-regress Timpani, crash decay/continuity, full param coverage:**
+  - **Timpani "bass guitar" regression:** the 10th-pass clean 1:1.5:2:2.5:3 series at
+    1.4 s T60 = a sustained harmonic tone = bass.  Fixed: ratios slightly STRETCHED
+    (1.5/2.03/2.49/3.02/3.55, not exact 0.5 steps) + T60 cut to ~850 ms → percussive,
+    struck-drum identity, still no 1.742 beating.  Decay 1.4 s→0.76 s.
+  - **Cymbal "crash too strong + no decay envelope, continues while held":** crash_base
+    11→6, bloom 1.2→0.9, modal T60 3000→1800 ms, cymbal noise decay ~6 s→~1.2 s → a
+    clear ~1.4 s decay regardless of gate hold.
+  - **Gong "still an explosion":** crash_base 4→1.5, bloom 0.3→0.2 (ring-dominant).
+  - **HHat-O / Ride "ringing too slow, like shaking ~28 Hz":** the sparse 6-resonator
+    crash wash BEATS at ~28 Hz.  Fixed by making these CONTINUOUS broadband-noise-
+    dominant (a real open hat is hiss, not a resonant wash): per-preset
+    `parallel_noise_gain` raised (HHat-O 6.0, Ride 6.5, RidBel 4.5; Cymbal/Gong stay 1.2),
+    crash_base cut (HHat-O 8→4, Ride 10→2.5), crash_r broadened (→0.985/0.982 = wider,
+    less ringing).  28 Hz beat prominence: HHat-O 5.3×→1.8×, Ride 8.7×→4.7× (Ride's low
+    note 57 limits it — flagged for possible discard).
+  - **EVERY-KNOB-DOES-SOMETHING (HW demand), via `param_audit.cpp`:** newly wired on
+    modal engines, all REFERENCE-ANCHORED: **Rel→ring-length** (folded into t60_scale,
+    ±~1 oct), **MlltRes→modal presence** (non-crash plates; crash plates keep MlltRes=
+    crash intensity), **Partls→mode count + overtone richness** (env3-6 scaled, since the
+    count change alone was inaudible).  Remaining contextual-by-design (documented):
+    velocity knobs (VlMllRes/Stf need velocity variation); NzRes/NzFltr/NzFltFrq/Resnc
+    are dead only when NzMix=0 (NzMix is the noise master-enable); KS Rel/Inharm and the
+    master Tone EQ are subtle/contextual on no-noise or low-freq presets.
+  - **Autotune:** can refine the SAMPLE-MATCHED tonal presets (membrane/bar/snare) and
+    catch regressions, but CANNOT help the metallic family — their reference scoring is
+    unreliable (no reliable f0; documented arch floors) and their character lives in
+    hardcoded crash_* / modal-config constants the tunable preset row doesn't reach.
 - **10th HW pass — crash REBALANCE + Timpani harmonic modes + Shaker swell:**
   - **The crash recipe is COMPLETE, not missing** (answering "is comb filtering /
     phase modulation missing?"): the crash resonator bank (pass 7) IS the comb/

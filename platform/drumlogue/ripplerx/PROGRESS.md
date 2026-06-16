@@ -21,6 +21,14 @@ ENGINE_PLATE: bright inharmonic jingle ratios (2.92/5.4/8.1/11.75/14) with SHORT
 grain LFO (~25–40 Hz) for the multi-jingle rattle (reuse Shaker AM path); velocity→jingle
 brightness via the MlltStif→modal-brightness tilt.
 
+**Improved Shaker (TODO — from the HHat-O flutter finding).** HW noted the metallic
+wash "shaking ~28 Hz like a shaker" and asked for a higher, continuous rattle.  Lesson:
+a rattle below ~30 Hz reads as discrete grains; for a smooth/continuous shake the grain
+rate should be higher (~40-70 Hz) OR many overlapping grains.  The current Shaker AM is
+17 Hz (audible grains, intended).  An "improved/continuous shaker" variant: raise
+`noise_am_inc` to ~45-60 Hz and/or layer two grain LFOs at different rates so individual
+hits fuse into a continuous sustained rattle.  Reuse the noise_am_* path.
+
 **Timpani physical reference (applied this pass).** Sources: SoS "Practical Percussion
 Synthesis: Timpani"; Rossing; the FDTD 3D membrane+air model (GPGPU-scale → infeasible on
 Cortex-A7, do NOT attempt).  Actionable: the pitched sound = air-loaded PREFERRED modes

@@ -251,7 +251,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        band beating = the "rough" low end reported across passes.  Dropped it; the
        remaining ratios are spaced by consonant intervals (no roughness).  The
        (2,1) mode at 1.5 carries the pitch, so its env (env2) is the strongest. */
-    {1.50f, 2.00f, 2.50f, 1400.0f, 1300.0f, 1100.0f, 900.0f, 0.40f, 0.80f, 1.00f, 0.85f, 0.60f, 6, 3.00f, 3.50f, 0.42f, 0.28f},
+    {1.50f, 2.03f, 2.49f, 850.0f, 640.0f, 470.0f, 340.0f, 0.40f, 0.75f, 1.00f, 0.78f, 0.52f, 6, 3.02f, 3.55f, 0.36f, 0.22f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
     /* k_Taiko: HW redesign — woodblock-hard attack (mode 4 = bar ratio 2.756,
        short/strong) under a long quasi-harmonic "TAANNG" ring (modes 2-3 at
@@ -265,7 +265,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Vibraphone */ {4.00f, 10.0f, 20.0f, 800.0f, 360.0f, 200.0f, 120.0f, 0.20f, 0.80f, 0.58f, 0.40f, 0.30f, 6, 24.0f, 30.0f, 0.22f, 0.16f},
     /* k_Woodblock: T60 160ms per WoodBlock1.wav reference */ {2.756f, 0.0f, 0.0f, 160.0f, 80.0f, 0.0f, 0.0f, 0.18f, 0.90f, 0.60f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_AcousticTom: T60 350ms */ {1.59f, 2.14f, 2.30f, 350.0f, 220.0f, 140.0f, 90.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f},
-    /* k_Cymbal: env5=0.22*env4, env6=0.16*env4 */ {2.92f, 6.37f, 11.75f, 3000.0f, 2000.0f, 1500.0f, 1000.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f, 0.0792f, 0.0576f},
+    /* k_Cymbal: env5=0.22*env4, env6=0.16*env4; T60 3000→1800ms for a clear decay (HW: "continues while held") */ {2.92f, 6.37f, 11.75f, 1800.0f, 1300.0f, 950.0f, 700.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f, 0.0792f, 0.0576f},
     /* k_Gong: fundamental dominates at 3000ms; quick upper decay */ {1.479f, 1.932f, 2.332f, 3000.0f, 1400.0f, 900.0f, 600.0f, 0.22f, 0.90f, 0.58f, 0.42f, 0.28f, 6, 2.549f, 2.840f, 0.14f, 0.10f},
     /* k_Kalimba: tine ratios 1:4:10; T60 ~600ms */ {4.00f, 10.0f, 0.0f, 600.0f, 200.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
     /* k_SteelPan */ {2.00f, 3.00f, 4.00f, 1200.0f, 900.0f, 700.0f, 500.0f, 0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4, 0, 0.0f},
@@ -568,6 +568,9 @@ SynthState state;
     // T60 always plays at the preset's default Dkay (no regression), and the Dkay knob
     // trims around it.  Captured in LoadPreset; defaults to 0.975 (Dkay≈195).
     float m_modal_dkay_ref = 0.975f;
+    // Rel reference (normalized 0..1) — Rel trims modal ring length on modal
+    // engines (it otherwise only gated the noise tail = dead on tonal presets).
+    float m_modal_rel_ref = 0.9f;
     // Modal brightness reference: the normalized MlltStif the preset shipped with.
     // Mallet stiffness tilts the higher modal modes' initial energy (stiffer mallet =
     // brighter strike = more high-mode energy).  Pivoted at this reference so the
@@ -727,6 +730,7 @@ SynthState state;
         m_modal_hitpos_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramHitPos] * 0.01f));
         m_modal_tubrad_ref = fmaxf(0.0f, fminf(20.0f, (float)presets[idx][k_paramTubRad])) * 0.05f;
         m_modal_mltres_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramMlltRes] * 0.001f));
+        m_modal_rel_ref    = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramRel] * 0.05f));
 
         // Restore both flags so the user's edit context survives preset loads.
         m_is_resonator_a = saved_is_a;
@@ -1562,8 +1566,8 @@ SynthState state;
         // Cymbal: extended noise envelopes so shimmer sustains through the full 4-second render.
         // KS at note=90 (1480Hz) with Dkay=200 gives T60~4.6s and harmonics at 1480/2960/4440/5920Hz.
         if (m_preset_idx == k_Cymbal) {
-            v.exciter.noise_env_hi.decay_rate = 0.000007f;  // ~3s high-band shimmer
-            v.exciter.noise_env.decay_rate    = 0.0000035f; // ~6s low-band wash
+            v.exciter.noise_env_hi.decay_rate = 0.000030f;  // ~0.8s (was ~3s) — clear crash decay
+            v.exciter.noise_env.decay_rate    = 0.000020f;  // ~1.2s (was ~6s)
             v.hf_branch_decay = 0.9998f;                    // T60~720ms upper shimmer
         }
         // Gong: without this override, NzRs=860 gives noise_env_hi T60~4ms (too short).
@@ -1653,11 +1657,11 @@ SynthState state;
                 // and not blended with the ring ("explosion" on Gong; "bell +
                 // tambourine, not blended" on Ride).  The ring is now the
                 // foreground; the crash is a supporting wash.
-                case k_Cymbal:    crash_base = 11.0f; crash_r = 0.9970f; break;
-                case k_Gong:      crash_base =  4.0f; crash_r = 0.9976f; break;
-                case k_HiHatOpen: crash_base =  8.0f; crash_r = 0.9968f; break;
-                case k_Ride:      crash_base = 10.0f; crash_r = 0.9966f; break;
-                case k_RideBell:  crash_base =  7.0f; crash_r = 0.9965f; break;
+                case k_Cymbal:    crash_base =  6.0f; crash_r = 0.9920f; break;
+                case k_Gong:      crash_base =  1.5f; crash_r = 0.9976f; break;
+                case k_HiHatOpen: crash_base =  4.0f; crash_r = 0.9850f; break;
+                case k_Ride:      crash_base =  2.5f; crash_r = 0.9820f; break;
+                case k_RideBell:  crash_base =  4.0f; crash_r = 0.9880f; break;
                 default: break;
             }
             if (crash_base > 0.0f) {
@@ -1679,11 +1683,11 @@ SynthState state;
                     // Higher ring_tap = more struck ring fed into the bloom bus =
                     // crash is COLOURED BY the ring → better blended (HW: "not
                     // blended").  Gong bloom cut hard (was a "big explosion").
-                    case k_Cymbal:    v.crash_bloom = 1.2f; v.crash_ring_tap = 0.45f; break;
-                    case k_Gong:      v.crash_bloom = 0.3f; v.crash_ring_tap = 0.40f; break;
-                    case k_HiHatOpen: v.crash_bloom = 1.3f; v.crash_ring_tap = 0.35f; break;
-                    case k_Ride:      v.crash_bloom = 1.0f; v.crash_ring_tap = 0.40f; break;
-                    case k_RideBell:  v.crash_bloom = 0.8f; v.crash_ring_tap = 0.45f; break;
+                    case k_Cymbal:    v.crash_bloom = 0.9f; v.crash_ring_tap = 0.45f; break;
+                    case k_Gong:      v.crash_bloom = 0.2f; v.crash_ring_tap = 0.40f; break;
+                    case k_HiHatOpen: v.crash_bloom = 0.5f; v.crash_ring_tap = 0.35f; break;
+                    case k_Ride:      v.crash_bloom = 0.4f; v.crash_ring_tap = 0.22f; break;
+                    case k_RideBell:  v.crash_bloom = 0.5f; v.crash_ring_tap = 0.45f; break;
                     default: break;
                 }
             }
@@ -1768,13 +1772,20 @@ SynthState state;
                         const float* tr = kModelModalRatios[model_now];
                         r2 = tr[0]; r3 = tr[1]; r4 = tr[2]; r5 = tr[3]; r6 = tr[4];
                     }
-                    // (2) Partls → mode count, offset around the shipped count.
-                    // Partls 5-7 are the ResA/ResB editor-select values: ignored.
+                    // (2) Partls → mode count AND overtone richness, offset around
+                    // the shipped count.  Partls 5-7 are ResA/ResB editor-selects:
+                    // ignored.  The count change alone was inaudible (added modes
+                    // are high/quiet), so ALSO scale the upper-mode envelopes:
+                    // up = richer/brighter overtones, down = fewer/purer.
                     {
                         int pv = m_params[k_paramPartls];
                         if (pv >= 0 && pv <= 4 && pv != m_modal_partls_ref) {
-                            int c = (int)count + (pv - m_modal_partls_ref);
+                            int d = pv - m_modal_partls_ref;
+                            int c = (int)count + d;
                             count = (uint8_t)((c < 2) ? 2 : ((c > 6) ? 6 : c));
+                            float rich = exp2f(0.6f * (float)d);   // ±per Partls step
+                            rich = fmaxf(0.2f, fminf(4.0f, rich));
+                            e3 *= rich; e4 *= rich; e5 *= rich; e6 *= rich;
                         }
                     }
                     // Fallbacks for modes the calibrated row doesn't define
@@ -1862,7 +1873,12 @@ SynthState state;
                     const EngineType ne3 = kPresetEngine[m_preset_idx];
                     if (ne3 != ENGINE_KS && ne3 != ENGINE_NOISE && ne3 != ENGINE_REMOVED) {
                         float dkay_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
-                        float t60_scale = exp2f(3.0f * (dkay_norm - m_modal_dkay_ref));
+                        // Rel → modal ring-length trim (anchored): on modal engines Rel
+                        // otherwise only gated the noise tail and felt dead.  Folded into
+                        // t60_scale alongside Dkay (Dkay = coarse decay, Rel = ±~1 oct trim).
+                        float rel_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel] * 0.05f));
+                        float t60_scale = exp2f(3.0f * (dkay_norm - m_modal_dkay_ref)
+                                              + 1.5f * (rel_norm - m_modal_rel_ref));
                         if (t60_scale < 0.999f || t60_scale > 1.001f) {
                             float exp_scale = 1.0f / t60_scale;
                             v.modal_decay_1 = powf(v.modal_decay_1, exp_scale);
@@ -1885,6 +1901,15 @@ SynthState state;
                             v.modal_env_4 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 3.0f));
                             v.modal_env_5 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 4.0f));
                             v.modal_env_6 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 5.0f));
+                        }
+
+                        // MlltRes → modal presence (anchored).  On crash plates
+                        // MlltRes is crash intensity (handled earlier); on every
+                        // OTHER modal engine it was dead, so map it to the modal
+                        // bank's level/presence — a clearly audible timbre control.
+                        if (v.crash_drive <= 0.0f) {
+                            float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
+                            v.modal_mix *= fmaxf(0.25f, fminf(3.0f, exp2f(1.6f * (mr - m_modal_mltres_ref))));
                         }
 
                         // HitPos → strike-position excitation.  Hitting toward the
@@ -2394,7 +2419,14 @@ SynthState state;
                 // pitched noise energy, so keep the raw broadband path low —
                 // otherwise the old "noise sprayed over the ring" returns.
                 if (voice.crash_drive > 0.0f) {
-                    parallel_noise_gain = 1.2f;
+                    // HHat-O / Ride / RidBel: a continuous broadband hiss bed so the
+                    // sound is a smooth sizzle, not a sparse resonant wash beating at
+                    // ~28 Hz (HW: "ringing too slow, like shaking").  Cymbal/Gong keep
+                    // it low so the ring dominates.
+                    parallel_noise_gain =
+                        (m_preset_idx == k_HiHatOpen) ? 6.0f :
+                        (m_preset_idx == k_Ride) ? 6.5f :
+                        (m_preset_idx == k_RideBell) ? 4.5f : 1.2f;
                 }
                 // Ring-coupled noise gate for ENGINE_PLATE: noise tracks the modal ring
                 // decay so both die together — user reported noise and ring as "juxtaposed".
