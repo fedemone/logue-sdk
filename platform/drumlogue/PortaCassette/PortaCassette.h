@@ -372,12 +372,15 @@ public:
         const float wow_depth_base     = 5.0f + tape_age_ * 25.0f;
         const float flutter_depth_base = 0.8f + tape_age_ * 2.0f;
 
-        float32x4_t out_l, out_r;
+        // Store NEON vectors to temporary arrays for scalar processing
+        float f_sig_l_arr[NEON_LANES];
+        float f_sig_r_arr[NEON_LANES];
+        vst1q_f32(f_sig_l_arr, sig_l);
+        vst1q_f32(f_sig_r_arr, sig_r);
+
+        float f_out_l[4], f_out_r[4];
 
         for (int s = 0; s < NEON_LANES; ++s) {
-            const float l_sample = vgetq_lane_f32(sig_l, s);
-            const float r_sample = vgetq_lane_f32(sig_r, s);
-
             const float lfo_val     = fastersinfullf(wf_lfo_phase_);
             const float flutter_val = fastersinfullf(wf_flutter_phase_);
             wf_lfo_phase_         += wf_phase_inc_;
@@ -390,8 +393,8 @@ public:
             const int32_t i_off       = (int32_t)rd_off;
             const float   fr          = rd_off - (float)i_off;
 
-            wf_delay_l_[wf_write_pos_] = l_sample;
-            wf_delay_r_[wf_write_pos_] = r_sample;
+            wf_delay_l_[wf_write_pos_] = f_sig_l_arr[s];
+            wf_delay_r_[wf_write_pos_] = f_sig_r_arr[s];
 
             // Core indices for 4-point interpolation
             uint32_t m1 = (wf_write_pos_ - i_off + WF_BUFFER_SIZE) & WF_BUFFER_MASK;
@@ -399,21 +402,15 @@ public:
             uint32_t m0 = (m1 + 1u) & WF_BUFFER_MASK;
             uint32_t m3 = (m2 - 1u) & WF_BUFFER_MASK;
 
-            float res_l = hermite4_scalar(wf_delay_l_[m0], wf_delay_l_[m1], wf_delay_l_[m2], wf_delay_l_[m3], fr);
-            float res_r = hermite4_scalar(wf_delay_r_[m0], wf_delay_r_[m1], wf_delay_r_[m2], wf_delay_r_[m3], fr);
-
-            if (s == 0) {
-                out_l = vdupq_n_f32(res_l);
-                out_r = vdupq_n_f32(res_r);
-            } else {
-                out_l = vsetq_lane_f32(res_l, out_l, s);
-                out_r = vsetq_lane_f32(res_r, out_r, s);
-            }
+            f_out_l[s] = hermite4_scalar(wf_delay_l_[m0], wf_delay_l_[m1], wf_delay_l_[m2], wf_delay_l_[m3], fr);
+            f_out_r[s] = hermite4_scalar(wf_delay_r_[m0], wf_delay_r_[m1], wf_delay_r_[m2], wf_delay_r_[m3], fr);
 
             wf_write_pos_ = (wf_write_pos_ + 1u) & WF_BUFFER_MASK;
         }
-        sig_l = out_l;
-        sig_r = out_r;
+
+        // Reload back into NEON registers
+        sig_l = vld1q_f32(f_out_l);
+        sig_r = vld1q_f32(f_out_r);
     }
 
     fast_inline void crosstalk(float32x4_t &sig_l, float32x4_t &sig_r) {
@@ -434,39 +431,38 @@ public:
         float32x4_t rand_amp_pool = prng_rand_float();
         float32x4_t rand_big_trig = prng_rand_float();
 
-        float32x4_t v_pop_env, v_big_pop_env;
+        // Store NEON vectors to temporary arrays for scalar processing
+        float f_trig_arr[NEON_LANES];
+        float f_amp_arr[NEON_LANES];
+        float f_big_trig_arr[NEON_LANES];
+        vst1q_f32(f_trig_arr, rand_trigger);
+        vst1q_f32(f_amp_arr, rand_amp_pool);
+        vst1q_f32(f_big_trig_arr, rand_big_trig);
 
-        // Run sequential time-lane loop safely via registers
+        float f_pop_env[4], f_big_pop_env[4];
+
         for (int i = 0; i < NEON_LANES; ++i) {
-            float trig      = vgetq_lane_f32(rand_trigger, i);
-            float amp       = vgetq_lane_f32(rand_amp_pool, i);
-            float big_trig  = vgetq_lane_f32(rand_big_trig, i);
-
             // Small Crackle
-            if (trig > vinyl_pop_threshold_) {
-                float amplitude = 0.15f + amp * 0.30f;
-                if (amplitude > pop_env_scalar_) {
-                    pop_env_scalar_ = amplitude;
-                }
+            if (f_trig_arr[i] > vinyl_pop_threshold_) {
+                float amp = 0.15f + f_amp_arr[i] * 0.30f;
+                if (amp > pop_env_scalar_) pop_env_scalar_ = amp;
             }
             // Big Occasional Pop
-            if (big_trig > vinyl_big_pop_threshold_) {
-                float big_amp = 0.4f + amp * 0.5f;
-                if (big_amp > big_pop_env_scalar_)
-                    big_pop_env_scalar_ = big_amp;
+            if (f_big_trig_arr[i] > vinyl_big_pop_threshold_) {
+                float amp = 0.4f + f_amp_arr[i] * 0.5f;
+                if (amp > big_pop_env_scalar_) big_pop_env_scalar_ = amp;
             }
 
-            if (i == 0) {
-                v_pop_env     = vdupq_n_f32(pop_env_scalar_);
-                v_big_pop_env = vdupq_n_f32(big_pop_env_scalar_);
-            } else {
-                v_pop_env     = vsetq_lane_f32(pop_env_scalar_, v_pop_env, i);
-                v_big_pop_env = vsetq_lane_f32(big_pop_env_scalar_, v_big_pop_env, i);
-            }
+            // Build the envelope vector for the current sample/lane
+            f_pop_env[i]     = pop_env_scalar_;
+            f_big_pop_env[i] = big_pop_env_scalar_;
 
             pop_env_scalar_     *= pop_env_decay_;
             big_pop_env_scalar_ *= big_pop_env_decay_;
         }
+
+        float32x4_t v_pop_env     = vld1q_f32(f_pop_env);
+        float32x4_t v_big_pop_env = vld1q_f32(f_big_pop_env);
 
         // 3. Shape transient & Apply envelope
         float32x4_t crackle_l = vaddq_f32(vmulq_n_f32(white_l, 0.82f), vmulq_n_f32(previous_noise_l_, 0.18f));
