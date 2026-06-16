@@ -243,11 +243,15 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_808Sub */ kDefaultModalPresetConfig,
     /* k_AcSnare: very short body ring (80ms) so the snare-wire sizzle dominates */ {1.59f, 2.14f, 2.30f, 80.0f, 50.0f, 30.0f, 18.0f, 0.24f, 0.70f, 0.50f, 0.34f, 0.20f, 4, 0, 0.0f},
     /* k_TubularBell */ {2.756f, 5.404f, 0.0f, 2000.0f, 3000.0f, 0.0f, 0.0f, 0.22f, 0.18f, 0.90f, 0.55f, 0.0f, 3, 0, 0.0f},
-    /* k_Timpani: kettledrum PRINCIPAL tones 1:1.504:1.742:2.0:2.444 (air-loaded
-       (1,1)-series, Fletcher & Rossing ch.18) with SOLID upper-mode energy and
-       long T60s.  The old config had near-silent uppers (0.20/0.12/0.08) — HW
-       heard a bouncy single sine with no metallic overtone. */
-    {1.504f, 1.742f, 2.000f, 1500.0f, 780.0f, 420.0f, 380.0f, 0.40f, 1.00f, 0.52f, 0.30f, 0.40f, 6, 2.444f, 2.896f, 0.30f, 0.24f},
+    /* k_Timpani: air-loaded PREFERRED modes 1 : 1.5 : 2 : 2.5 : 3 : 3.5
+       (Rossing; Sound-on-Sound "Practical Percussion Synthesis: Timpani").
+       These form the harmonics 2:3:4:5:6:7 of a missing fundamental an octave
+       below mode 1 → a clear "singing" pitch.  CRITICAL: the old 1.742 mode (a
+       non-preferred (1,2)-type mode) sat ~20 Hz from the 1.504 mode → critical-
+       band beating = the "rough" low end reported across passes.  Dropped it; the
+       remaining ratios are spaced by consonant intervals (no roughness).  The
+       (2,1) mode at 1.5 carries the pitch, so its env (env2) is the strongest. */
+    {1.50f, 2.00f, 2.50f, 1400.0f, 1300.0f, 1100.0f, 900.0f, 0.40f, 0.80f, 1.00f, 0.85f, 0.60f, 6, 3.00f, 3.50f, 0.42f, 0.28f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
     /* k_Taiko: HW redesign — woodblock-hard attack (mode 4 = bar ratio 2.756,
        short/strong) under a long quasi-harmonic "TAANNG" ring (modes 2-3 at
@@ -320,7 +324,10 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_Triangle    */ {1800.00000f,    0.00000f,    0.00000f,    0.00000f,    1.26000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f,    0.96000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.40000f,    0.00000f},
     /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99982f, 0.70000f,    0.00000f,    0.00350f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    2.00000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
-    /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.04000f,    0.00000f},
+    /* k_Shaker: modal_mix 0.04→0 — the woodblock body was a struck "tok" at onset
+       (HW: "too much hit sound, should not be there").  Shaker = pure rattling
+       noise (AM-modulated), no pitched hit. */
+    /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.00000f,    0.00000f},
     /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
     /* k_GuitarStr   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
@@ -1642,11 +1649,15 @@ SynthState state;
         {
             float crash_base = 0.0f, crash_r = 0.0f;
             switch (m_preset_idx) {
-                case k_Cymbal:    crash_base = 20.0f; crash_r = 0.9970f; break;
-                case k_Gong:      crash_base = 14.0f; crash_r = 0.9976f; break;
-                case k_HiHatOpen: crash_base = 16.0f; crash_r = 0.9968f; break;
-                case k_Ride:      crash_base = 22.0f; crash_r = 0.9966f; break;
-                case k_RideBell:  crash_base = 15.0f; crash_r = 0.9965f; break;
+                // 10th pass: crash levels HALVED — HW reported the crash too loud
+                // and not blended with the ring ("explosion" on Gong; "bell +
+                // tambourine, not blended" on Ride).  The ring is now the
+                // foreground; the crash is a supporting wash.
+                case k_Cymbal:    crash_base = 11.0f; crash_r = 0.9970f; break;
+                case k_Gong:      crash_base =  4.0f; crash_r = 0.9976f; break;
+                case k_HiHatOpen: crash_base =  8.0f; crash_r = 0.9968f; break;
+                case k_Ride:      crash_base = 10.0f; crash_r = 0.9966f; break;
+                case k_RideBell:  crash_base =  7.0f; crash_r = 0.9965f; break;
                 default: break;
             }
             if (crash_base > 0.0f) {
@@ -1665,11 +1676,14 @@ SynthState state;
                 // Self-PM bloom depth + how much struck ring feeds the bloom bus.
                 // Cymbal/Ride want a strong shimmering bloom; Gong a gentler one.
                 switch (m_preset_idx) {
-                    case k_Cymbal:    v.crash_bloom = 1.4f; v.crash_ring_tap = 0.40f; break;
-                    case k_Gong:      v.crash_bloom = 0.6f; v.crash_ring_tap = 0.35f; break;
-                    case k_HiHatOpen: v.crash_bloom = 1.6f; v.crash_ring_tap = 0.25f; break;
-                    case k_Ride:      v.crash_bloom = 1.0f; v.crash_ring_tap = 0.15f; break;
-                    case k_RideBell:  v.crash_bloom = 0.9f; v.crash_ring_tap = 0.20f; break;
+                    // Higher ring_tap = more struck ring fed into the bloom bus =
+                    // crash is COLOURED BY the ring → better blended (HW: "not
+                    // blended").  Gong bloom cut hard (was a "big explosion").
+                    case k_Cymbal:    v.crash_bloom = 1.2f; v.crash_ring_tap = 0.45f; break;
+                    case k_Gong:      v.crash_bloom = 0.3f; v.crash_ring_tap = 0.40f; break;
+                    case k_HiHatOpen: v.crash_bloom = 1.3f; v.crash_ring_tap = 0.35f; break;
+                    case k_Ride:      v.crash_bloom = 1.0f; v.crash_ring_tap = 0.40f; break;
+                    case k_RideBell:  v.crash_bloom = 0.8f; v.crash_ring_tap = 0.45f; break;
                     default: break;
                 }
             }
@@ -1700,6 +1714,11 @@ SynthState state;
             // there's no rattle at all").  The shaker rattles for its whole tail.
             v.noise_am_decay = 1.0f;
             v.noise_am_phase = 1.5f * M_PI;
+            // Soft onset: a shaker swells over ~15 ms, it does not click.  The
+            // noise burst otherwise reaches full level in <1 ms = the "hit" HW
+            // reported.  Slow the noise-env attack so the rattle fades in.
+            v.exciter.noise_env.attack_rate    = 0.004f;  // ~15 ms ramp
+            v.exciter.noise_env_hi.attack_rate = 0.004f;
         }
         // ── PARAM RE-ROUTING (accepted template) ─────────────────────────────
         // ENGINE_NOISE (Clap/Shaker/HHat-C) leaves the whole exciter/resonator
@@ -2633,7 +2652,7 @@ SynthState state;
                     // On crash presets the struck modal bank is only the tonal
                     // SEED/attack; the noise-driven crash bank is the body, so
                     // pull the struck ring back to let the crash wash dominate.
-                    if (voice.crash_drive > 0.0f) modal_engine_gain *= 0.45f;
+                    if (voice.crash_drive > 0.0f) modal_engine_gain *= 0.60f;  // ring more foreground now crash is halved
                     voice_out += modal_sum * modal_mix_dyn * modal_engine_gain;
                      if (voice.modal_env_1 < silence_threshold &&
                          voice.modal_env_2 < silence_threshold &&

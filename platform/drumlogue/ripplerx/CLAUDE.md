@@ -5,6 +5,29 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **10th HW pass — crash REBALANCE + Timpani harmonic modes + Shaker swell:**
+  - **The crash recipe is COMPLETE, not missing** (answering "is comb filtering /
+    phase modulation missing?"): the crash resonator bank (pass 7) IS the comb/
+    resonator matrix and self-PM bloom (pass 9) IS the phase modulation.  The
+    problem was BALANCE — passes 7–9 kept pushing crash up + ring down, so the
+    crash overpowered and didn't blend.  Fix: **crash_base ~halved** (Cymbal 20→11,
+    Gong 14→4, HHat-O 16→8, Ride 22→10, RidBel 15→7); ring raised
+    (`modal_engine_gain` crash factor 0.45→0.60); `crash_ring_tap` raised
+    (Ride 0.15→0.40, RidBel 0.20→0.45, HHat-O 0.25→0.35) so the wash is COLOURED
+    BY the ring = blended.  Gong bloom 0.6→0.3 (was "a big explosion" — recipe
+    saved in PROGRESS.md for a future Explosion preset).
+  - **Timpani harmonic preferred modes** (SoS "Practical Percussion Synthesis:
+    Timpani" + Rossing): ratios now **1 : 1.5 : 2 : 2.5 : 3 : 3.5** (2:3:4:5:6 of a
+    missing fundamental → clear "singing" pitch).  Dropped the 1.742 mode that sat
+    ~20 Hz from 1.504 = the critical-band BEATING heard as "rough" every pass.
+    Verified: modes 82/124/165 Hz, gaps a consonant 41 Hz, no beating pair.  The
+    3D FDTD membrane+air model is GPGPU-scale → infeasible here (documented, not attempted).
+  - **Shaker hit removed:** zeroed the woodblock modal body (struck "tok") AND
+    slowed the noise-env attack to ~15 ms (`attack_rate 0.004`) — the noise burst
+    hit full in <1 ms = the "hit".  Now a soft swell (onset/body peak ratio 5.35→1.10)
+    with the 17 Hz rattle intact.
+  - TODO captured in PROGRESS.md: **Tambourine** preset (we have the basis —
+    bright short jingle modes + light crash + grain AM).
 - **9th HW pass — self-PM "dynamic bloom" (THE cymbal recipe, completed):**
   - **Recipe status (answering "did you do the recipe?"):** pass 7 built the
     resonator matrix (recipe item #5).  This pass adds the **self-Phase-Modulation

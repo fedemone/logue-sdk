@@ -4,6 +4,31 @@
 
 ## TODO LIST
 
+### Future-preset recipes & references (10th HW pass, 2026-06-16)
+
+**"Explosion" preset (from the over-driven Gong).** HW said the loud Gong (passes 7–9)
+sounded like "a big explosion" — keep it as a deliberate future preset.  Reproduce on a
+Gong (ENGINE_PLATE): `crash_base≈14, crash_bloom≈0.6, crash_ring_tap≈0.35, crash_r≈0.9976`,
+`parallel_noise_gain≈1.2`, slow noise release (T60≈2.4 s), low note (~D2/50) over the deep
+modal ring (1.479/1.932/2.332).  Character = strong low broadband bloom swelling then
+decaying ~2–3 s.  (Current Gong dialled DOWN to `crash_base 4 / bloom 0.3` to be a gong.)
+
+**Tambourine preset (TODO — basis exists).** HW: the metallic ring "is close to tambourine".
+Tambourine = short drumhead thud + many bright jingle partials with fast shimmer.  Build on
+ENGINE_PLATE: bright inharmonic jingle ratios (2.92/5.4/8.1/11.75/14) with SHORT T60
+(150–400 ms), 6 modes; a short low shell "thud" mode (~250–400 Hz, T60≈80 ms); LIGHT crash
+(`crash_base≈4–6`) + high `crash_ring_tap≈0.5` so jingles shimmer not wash; `noise_am_*`
+grain LFO (~25–40 Hz) for the multi-jingle rattle (reuse Shaker AM path); velocity→jingle
+brightness via the MlltStif→modal-brightness tilt.
+
+**Timpani physical reference (applied this pass).** Sources: SoS "Practical Percussion
+Synthesis: Timpani"; Rossing; the FDTD 3D membrane+air model (GPGPU-scale → infeasible on
+Cortex-A7, do NOT attempt).  Actionable: the pitched sound = air-loaded PREFERRED modes
+**1 : 1.5 : 2 : 2.5 : 3 (: 3.5)** = harmonics 2:3:4:5:6 of a missing fundamental → clear
+pitch.  Non-preferred modes (e.g. 1.742, sitting ~20 Hz from 1.504 = critical-band beating)
+were the "rough" low end; dropped.  Mode 2 (the 1.5 "singing" mode) is the strongest.
+Future polish: slight downward onset pitch-glide (needs per-sample modal-k retune; deferred).
+
 ### Latest progress (May 2026)
 - Reviewed `6b57e12` refactor correctness:
   - model-based preset assignment moved from NoteOn to LoadPreset
