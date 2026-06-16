@@ -259,6 +259,15 @@ struct VoiceState {
     float crash_y1_4 = 0.0f, crash_y2_4 = 0.0f;
     float crash_y1_5 = 0.0f, crash_y2_5 = 0.0f;
     float crash_y1_6 = 0.0f, crash_y2_6 = 0.0f;
+    // Self-phase-modulation "dynamic bloom" (Kilohearts Phase-Distortion in the
+    // synthesis research): the combined ring+wash is written to a short delay
+    // line (the KS resA.buffer is reused — dead on plate engines) and read back
+    // at an offset modulated by the signal's own instantaneous amplitude.  This
+    // is self-FM: it generates a Bessel cascade of sidebands that fills the
+    // sparse 6-resonator spectrum into a dense crash AND intermodulates the ring
+    // with the wash ("modulation between the two" the HW kept asking for).
+    float crash_bloom    = 0.0f;    // self-PM depth (0 = no bloom)
+    float crash_ring_tap = 0.0f;    // how much struck ring feeds the bloom bus
 
     void PartialReset() {
         mag_env = 0.0f;
@@ -365,6 +374,8 @@ struct VoiceState {
         crash_y1_4 = crash_y2_4 = 0.0f;
         crash_y1_5 = crash_y2_5 = 0.0f;
         crash_y1_6 = crash_y2_6 = 0.0f;
+        crash_bloom = 0.0f;
+        crash_ring_tap = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;

@@ -247,7 +247,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        (1,1)-series, Fletcher & Rossing ch.18) with SOLID upper-mode energy and
        long T60s.  The old config had near-silent uppers (0.20/0.12/0.08) — HW
        heard a bouncy single sine with no metallic overtone. */
-    {1.504f, 1.742f, 2.000f, 1400.0f, 850.0f, 600.0f, 420.0f, 0.40f, 1.00f, 0.62f, 0.50f, 0.40f, 6, 2.444f, 2.896f, 0.30f, 0.22f},
+    {1.504f, 1.742f, 2.000f, 1500.0f, 780.0f, 420.0f, 380.0f, 0.40f, 1.00f, 0.52f, 0.30f, 0.40f, 6, 2.444f, 2.896f, 0.30f, 0.24f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
     /* k_Taiko: HW redesign — woodblock-hard attack (mode 4 = bar ratio 2.756,
        short/strong) under a long quasi-harmonic "TAANNG" ring (modes 2-3 at
@@ -257,8 +257,8 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Koto: harmonic-overtone reinforcement on top of the KS string (mix 0.10
        in model_param_presets).  Strong 2nd/3rd partials + a slightly sharp 4.2
        shimmer are the missing koto colour reported from HW. */
-    {2.005f, 3.012f, 4.215f, 1100.0f, 750.0f, 480.0f, 300.0f, 0.30f, 0.80f, 0.68f, 0.55f, 0.42f, 5, 5.42f, 0.0f, 0.30f, 0.0f},
-    /* k_Vibraphone */ {4.00f, 10.0f, 0.0f, 800.0f, 300.0f, 0.0f, 0.0f, 0.18f, 0.80f, 0.52f, 0.26f, 0.0f, 3, 0, 0.0f},
+    {2.005f, 3.012f, 4.215f, 1100.0f, 800.0f, 600.0f, 420.0f, 0.34f, 0.80f, 0.74f, 0.66f, 0.56f, 6, 5.42f, 6.81f, 0.46f, 0.36f},
+    /* k_Vibraphone */ {4.00f, 10.0f, 20.0f, 800.0f, 360.0f, 200.0f, 120.0f, 0.20f, 0.80f, 0.58f, 0.40f, 0.30f, 6, 24.0f, 30.0f, 0.22f, 0.16f},
     /* k_Woodblock: T60 160ms per WoodBlock1.wav reference */ {2.756f, 0.0f, 0.0f, 160.0f, 80.0f, 0.0f, 0.0f, 0.18f, 0.90f, 0.60f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_AcousticTom: T60 350ms */ {1.59f, 2.14f, 2.30f, 350.0f, 220.0f, 140.0f, 90.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f},
     /* k_Cymbal: env5=0.22*env4, env6=0.16*env4 */ {2.92f, 6.37f, 11.75f, 3000.0f, 2000.0f, 1500.0f, 1000.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f, 0.0792f, 0.0576f},
@@ -510,7 +510,7 @@ SynthState state;
             state.voices[i].exciter.hat_filter.hp = 0.0f;
         }
 
-        state.master_gain  = 1.0f;
+        state.master_gain  = 1.5f;  // HW: "+0.5" louder overall (soft-clip + brickwall absorb it)
         state.master_drive = 1.0f;
         state.mix_ab       = 0.5f; // Equal A/B mix
         state.tone         = 0.0f; // Neutral tilt EQ (LoadPreset restores the preset value)
@@ -633,7 +633,7 @@ SynthState state;
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 707},        // 4:  TblrBel
             {   5,  40,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — redesigned modal config: solid metallic principal tones (see modal_preset_configs)
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 707},        // 6:  Djambe    — (HW: ok)
-            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  16,   5,   9, 550,   0, 130, 707},        // 7:  Taiko     — redesign: MlSt450 woodblock-hard crack, TbRd16 large-shell body, TAANNG ring in modal config
+            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  16,   5,  26, 180,   0, 160, 707},        // 7:  Taiko     — NzMx 9→26 / NzRs 550→180 / NzFq 1.6k: short bright wood "tk" click over the boom+ring (HW: "lacking wood")
             {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 800,   2, 105, 707},        // 8:  MrchSnr   — noise attack staging removed in NoteOn (click+buzz land together)
             {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   3,1999,  18,   0,   0, 300,   0,1000, 707},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
@@ -648,7 +648,7 @@ SynthState state;
             {  19,  69,   0,   1, 900, 470,   0,   0,   0,   1, 190,  20,   0,   0,  15,  22,1999,  20,   0,   5, 300,   0,1500, 707},        // 19: Triangle
             {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   4,1999,   3,  12,  15, 220,   0, 220, 707},        // 20: Kick Drum — (HW: ok)
             {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,  19,   0,1999,   3,   5,  95, 950,   1, 300, 707},        // 21: Clap      — multi-burst AM (~55Hz, NoteOn) + Rel 19 for the 'tcha' tail
-            {  22,  84,   0,   1, 500, 450,   0,   0,   2,   6,  30,   5,   0,  50,  18,   0,1999,   3,   5,  95, 940,   1, 550, 707},        // 22: Shaker    — redesign: woodblock body (modal cfg) + BP@5.5k noise with 13Hz grain-pulse AM
+            {  22,  84,   0,   1, 500, 450,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550, 707},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
             {  23,  41,   0,   1, 250, 390,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  11,   5,   9, 550,   0, 130, 707},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
             {  24,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,1999,  18,   0,   0, 300,   0,1200, 707},        // 24: GlsBwl
             {  25,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200, 707},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
@@ -1643,10 +1643,10 @@ SynthState state;
             float crash_base = 0.0f, crash_r = 0.0f;
             switch (m_preset_idx) {
                 case k_Cymbal:    crash_base = 20.0f; crash_r = 0.9970f; break;
-                case k_Gong:      crash_base = 14.0f; crash_r = 0.9985f; break;
+                case k_Gong:      crash_base = 14.0f; crash_r = 0.9976f; break;
                 case k_HiHatOpen: crash_base = 16.0f; crash_r = 0.9968f; break;
-                case k_Ride:      crash_base = 22.0f; crash_r = 0.9984f; break;
-                case k_RideBell:  crash_base = 15.0f; crash_r = 0.9980f; break;
+                case k_Ride:      crash_base = 22.0f; crash_r = 0.9966f; break;
+                case k_RideBell:  crash_base = 15.0f; crash_r = 0.9965f; break;
                 default: break;
             }
             if (crash_base > 0.0f) {
@@ -1662,6 +1662,16 @@ SynthState state;
                 // every prior pass died to "ring with weak noise sprayed on top").
                 v.exciter.noise_env.release_rate    = 0.00007f; // T60 ≈ 2.4 s
                 v.exciter.noise_env_hi.release_rate = 0.00010f; // T60 ≈ 1.6 s
+                // Self-PM bloom depth + how much struck ring feeds the bloom bus.
+                // Cymbal/Ride want a strong shimmering bloom; Gong a gentler one.
+                switch (m_preset_idx) {
+                    case k_Cymbal:    v.crash_bloom = 1.4f; v.crash_ring_tap = 0.40f; break;
+                    case k_Gong:      v.crash_bloom = 0.6f; v.crash_ring_tap = 0.35f; break;
+                    case k_HiHatOpen: v.crash_bloom = 1.6f; v.crash_ring_tap = 0.25f; break;
+                    case k_Ride:      v.crash_bloom = 1.0f; v.crash_ring_tap = 0.15f; break;
+                    case k_RideBell:  v.crash_bloom = 0.9f; v.crash_ring_tap = 0.20f; break;
+                    default: break;
+                }
             }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
@@ -1685,7 +1695,10 @@ SynthState state;
         if (m_preset_idx == k_Shaker) {
             v.noise_am_depth = 0.92f;
             v.noise_am_inc   = (2.0f * M_PI * 17.0f) * inverse_default_sample_rate;
-            v.noise_am_decay = 0.99986f;                 // depth τ ≈ 150 ms (3-4 grains)
+            // decay = 1.0: the rattle LFO does NOT fade — a longer Rel must give a
+            // longer RATTLE, not a smooth decaying hiss (HW: "when sound is longer
+            // there's no rattle at all").  The shaker rattles for its whole tail.
+            v.noise_am_decay = 1.0f;
             v.noise_am_phase = 1.5f * M_PI;
         }
         // ── PARAM RE-ROUTING (accepted template) ─────────────────────────────
@@ -2397,17 +2410,26 @@ SynthState state;
                     if (voice.noise_am_phase > (2.0f * M_PI)) voice.noise_am_phase -= (2.0f * M_PI);
                     voice.noise_am_depth *= voice.noise_am_decay;
                 }
-                voice_out += voice.exciter.noise_out_sample * parallel_noise_gain * voice.current_velocity;
+                // For crash presets the raw noise is NOT added here — it is
+                // routed into the bloom bus (crash block below) so the whole
+                // metallic signal (noise + ring) blooms together instead of the
+                // noise sitting "sprayed over" the ring.
+                float crash_noise_in = 0.0f;
+                if (voice.crash_drive > 0.0f) {
+                    crash_noise_in = voice.exciter.noise_out_sample * parallel_noise_gain;
+                } else {
+                    voice_out += voice.exciter.noise_out_sample * parallel_noise_gain * voice.current_velocity;
+                }
                 // Structural high-band branch: simple high-pass (x - LP(x)) over
                 // exciter noise, mixed post-resonator to reduce KS-loss coupling.
                 if (voice.hf_branch_mix > 0.0f && voice.hf_branch_env > silence_threshold) {
                     voice.hf_branch_lp += 0.12f * (voice.exciter.noise_out_sample - voice.hf_branch_lp);
                     float hf = (voice.exciter.noise_out_sample - voice.hf_branch_lp);
-                    // rm_gate: the HF shimmer branch must ride the modal ring too,
-                    // otherwise it re-introduces the static "overlaid" wash that
-                    // the ring-mod was added to remove.
-                    voice_out += hf * voice.hf_branch_env * voice.hf_branch_mix * 8.0f
-                               * rm_gate * voice.current_velocity;
+                    float hf_out = hf * voice.hf_branch_env * voice.hf_branch_mix * 8.0f * rm_gate;
+                    // On crash presets the HF shimmer also feeds the bloom bus so
+                    // it doesn't re-introduce a static "overlaid" hiss.
+                    if (voice.crash_drive > 0.0f) crash_noise_in += hf_out;
+                    else                          voice_out += hf_out * voice.current_velocity;
                     voice.hf_branch_env *= voice.hf_branch_decay;
                 }
                 // ── Crash-resonator bank (ENGINE_PLATE) ───────────────────────
@@ -2438,10 +2460,42 @@ SynthState state;
                             voice.crash_y2_6 = voice.crash_y1_6; voice.crash_y1_6 = cy; sum += cy;
                         }
                     }
-                    // Clamp guards the (small) low-frequency resonance peak; the
-                    // brickwall limiter is the final net.
+                    // Clamp guards the (small) low-frequency resonance peak.
                     sum = fmaxf(-4.0f, fminf(4.0f, sum));
-                    voice_out += sum * voice.crash_drive * voice.current_velocity;
+
+                    // Bloom bus = resonated noise + raw/HF noise + a tap of the
+                    // struck ring.  All metallic content meets here so it can
+                    // intermodulate, instead of being summed in parallel.
+                    float wash = sum * voice.crash_drive
+                               + crash_noise_in
+                               + voice.modal_out_prev * voice.crash_ring_tap;
+
+                    // ── Self-phase-modulation "dynamic bloom" ─────────────────
+                    // Write the wash to the (reused, KS-dead) resA delay line and
+                    // read back at an offset modulated by the wash's own amplitude
+                    // → self-FM Bessel sidebands that densify the sparse partials
+                    // into a real crash and bloom brighter as it gets louder.
+                    float bloomed = wash;
+                    if (voice.crash_bloom > 0.0f) {
+                        WaveguideState& pd = voice.resA;
+                        pd.buffer[pd.write_ptr] = wash;
+                        // base read-back ~24 samples behind write; the modulation
+                        // multiplier is clamped to [0.25,4] so the read pointer
+                        // can never run past the write head or out of the buffer.
+                        float mult = 1.0f + voice.crash_bloom * wash;
+                        mult = fmaxf(0.25f, fminf(4.0f, mult));
+                        float rp = (float)pd.write_ptr - (12.0f * mult);
+                        if (rp < 0.0f) rp += (float)DELAY_BUFFER_SIZE;
+                        uint32_t i0 = ((uint32_t)rp) & DELAY_MASK;
+                        uint32_t i1 = (i0 + 1u) & DELAY_MASK;
+                        float frac = rp - (float)(uint32_t)rp;
+                        bloomed = pd.buffer[i0] + frac * (pd.buffer[i1] - pd.buffer[i0]);
+                        pd.write_ptr = (pd.write_ptr + 1u) & DELAY_MASK;
+                        // Blend dry wash + bloom so the pitched partials stay
+                        // present while the bloom adds density/shimmer.
+                        bloomed = 0.35f * wash + 0.9f * bloomed;
+                    }
+                    voice_out += fmaxf(-6.0f, fminf(6.0f, bloomed)) * voice.current_velocity;
                 }
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
                     if (m_preset_idx == k_KickDrum) {

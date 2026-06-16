@@ -5,6 +5,35 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **9th HW pass — self-PM "dynamic bloom" (THE cymbal recipe, completed):**
+  - **Recipe status (answering "did you do the recipe?"):** pass 7 built the
+    resonator matrix (recipe item #5).  This pass adds the **self-Phase-Modulation
+    "dynamic bloom"** (item #4, Kilohearts Phase-Distortion) that was missing —
+    that is why Cymbal/Ride/HHat-O sounded "identical": 6 discrete resonators ring
+    as sparse tones with no density and no intermodulation.  Self-PM is the Bessel
+    sideband generator that fills the spectrum into a real crash AND is literally
+    the "modulation between the two" (ring × wash) the HW kept asking for.
+    Phase-smear all-pass cascade (#2/#3) NOT added — self-PM already supplies the
+    diffusion; revisit only if more wash is wanted.
+  - **Implementation:** the metallic bus (resonated noise + raw/HF noise + a tap
+    of the struck ring, `crash_ring_tap`) is written to a short delay line —
+    the KS `resA.buffer`, **reused** (dead on plate engines → zero new memory) —
+    and read back at an offset modulated by the signal's own amplitude
+    (`crash_bloom`).  Self-FM.  Verified: Cymbal spectral density 1138→2337 bins,
+    HHat-O 497→4722; both now dense crashes.
+  - **Ride/RidBel `crash_r` was too high** (0.998+, pass 7) → ultra-narrow
+    resonators = sparse tones the bloom couldn't densify.  Lowered to ~0.9965
+    (broad, dense); ring length now comes from the noise-release sustain, not
+    razor-Q resonators.  Their low ring_tap (0.15/0.20) keeps them sizzle-bright.
+  - **Shaker rattle:** `noise_am_decay` was fading the grain LFO out (~150 ms) so a
+    long Rel gave smooth hiss.  Set to **1.0** — the 17 Hz rattle now persists for
+    the whole tail, so a longer Rel = a longer RATTLE (HW: verified mod 0.65 at
+    Rel 20).  Default Rel 18→19 so the rattle is audible out of the box.
+  - **Master gain 1.0→1.5** (HW "+0.5").  **Koto**: higher harmonics raised + 6th
+    partial (6.81).  **Vibraphone**: 3→6 modes (adds 20/24/30:1 overtones).
+    **Timpani**: inner beating modes (1.742) trimmed for a smoother low end (still
+    imperfect — reference spectrum/T60 data would help).  **Taiko**: short bright
+    1.6 kHz noise "tk" click (NzMx 9→26, NzRs 550→180) for the missing wood attack.
 - **8th HW pass — param-reroute template extended (accepted by user):**
   - **ENGINE_NOISE (Clap/Shaker/HHat-C):** MlltStif → grain/burst LFO rate
     (±2 oct), MlltRes → burst depth.  Both REFERENCE-ANCHORED (default sound
