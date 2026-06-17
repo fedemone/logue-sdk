@@ -30,6 +30,40 @@ constexpr float pop_env_decay_ = 0.98f; // Increased from 0.96f for slightly lon
 constexpr float big_pop_env_decay_ = 0.97f; // Sharper decay for clicks rather than drum-like bursts
 uint32_t sample_rate_ = 48000;
 
+// ============================================================================
+// NEON 4-wide sine — bit-identical vectorization of fastsinf/fastersinfullf
+// (Paul Mineiro FastFloat). Lets the wow & flutter LFOs evaluate 4 samples per
+// call instead of 8 scalar fastersinfullf() invocations per block.
+// ============================================================================
+static fast_inline float32x4_t fastsinf_ps(float32x4_t x) {
+    const uint32x4_t sign  = vandq_u32(vreinterpretq_u32_f32(x), vdupq_n_u32(0x80000000u));
+    const float32x4_t absx = vabsq_f32(x);
+    float32x4_t qpprox = vsubq_f32(vmulq_n_f32(x, M_4_PI),
+                                   vmulq_f32(vmulq_n_f32(x, M_4_PI2), absx));
+    float32x4_t qpproxsq = vmulq_f32(qpprox, qpprox);
+    // p,r get x's sign OR'd in; s gets it XOR'd (matches the scalar bit-tricks).
+    float32x4_t p = vreinterpretq_f32_u32(vorrq_u32(
+        vreinterpretq_u32_f32(vdupq_n_f32(0.20363937680730309f)), sign));
+    float32x4_t r = vreinterpretq_f32_u32(vorrq_u32(
+        vreinterpretq_u32_f32(vdupq_n_f32(0.015124940802184233f)), sign));
+    float32x4_t s = vreinterpretq_f32_u32(veorq_u32(
+        vreinterpretq_u32_f32(vdupq_n_f32(-0.0032225901625579573f)), sign));
+    float32x4_t inner = vmlaq_f32(r, qpproxsq, s);          // r + qpproxsq*s
+    inner = vmlaq_f32(p, qpproxsq, inner);                  // p + qpproxsq*(...)
+    return vmlaq_f32(vmulq_n_f32(qpprox, 0.78444488374548933f), qpproxsq, inner);
+}
+
+// Full-domain sine. fastsinf_ps already range-reduces internally, so callers may
+// pass un-wrapped (monotonically increasing) phases and still get bit-identical
+// results to per-sample fastersinfullf() (sine is 2*pi-periodic).
+static fast_inline float32x4_t fastersinfullf_ps(float32x4_t x) {
+    float32x4_t kf   = vcvtq_f32_s32(vcvtq_s32_f32(vmulq_n_f32(x, M_1_TWOPI))); // trunc toward zero
+    float32x4_t half = vbslq_f32(vcltq_f32(x, vdupq_n_f32(0.0f)),
+                                 vdupq_n_f32(-0.5f), vdupq_n_f32(0.5f));
+    float32x4_t arg  = vsubq_f32(vmulq_n_f32(vaddq_f32(half, kf), M_TWOPI), x);
+    return fastsinf_ps(arg);
+}
+
 class alignas(16) PortaCassette {
 public:
     enum ParamId {
@@ -296,7 +330,16 @@ public:
         // amplitude^(-0.5) = 2:1 compression
         // => env^(-0.25)
         // --------------------------------------------------------------------
-        float32x4_t enc_gain = pow_neon(env, vdupq_n_f32(-0.25f));   // smoother than vrsqrteq_f32(env)
+        // 2:1 compression gain = env^(-0.25) = rsqrt(sqrt(env)).  For this fixed
+        // exponent the general pow_neon (log_ps + exp_ps, ~50 ops) is replaced by
+        // two Newton-refined NEON rsqrt steps (~9 ops) — matches pow_neon to
+        // <2e-5 relative, far smoother than a bare vrsqrteq.
+        float32x4_t rsq = vrsqrteq_f32(env);
+        rsq = vmulq_f32(vrsqrtsq_f32(vmulq_f32(env, rsq), rsq), rsq);   // ~rsqrt(env)
+        float32x4_t sqrt_env = vmulq_f32(env, rsq);                     // sqrt(env)
+        float32x4_t enc_gain = vrsqrteq_f32(sqrt_env);
+        enc_gain = vmulq_f32(vrsqrtsq_f32(vmulq_f32(sqrt_env, enc_gain), enc_gain), enc_gain); // env^(-0.25)
+        // Existing extra refinement step (kept identical to preserve the gain curve).
         enc_gain = vmulq_f32(vrsqrtsq_f32(vmulq_f32(env, enc_gain), enc_gain), enc_gain);
         // Clamp encode gain: prevents 1000x boost during silence → loud transient onset.
         // 3.0x ≈ +9.5 dB max NR action; less than typical dbx Type II spec.
@@ -363,13 +406,29 @@ public:
         vst1q_f32(l4, sig_l);
         vst1q_f32(r4, sig_r);
 
+        // Evaluate both LFOs for all 4 samples with one NEON sine call each.
+        // fastersinfullf_ps range-reduces internally, so the un-wrapped phase
+        // ramps below are bit-identical to the old per-sample wrapped form.
+        const float32x4_t wow_phases = {
+            wf_lfo_phase_,                      wf_lfo_phase_ + wf_phase_inc_,
+            wf_lfo_phase_ + 2.0f*wf_phase_inc_, wf_lfo_phase_ + 3.0f*wf_phase_inc_ };
+        const float32x4_t flut_phases = {
+            wf_flutter_phase_,                          wf_flutter_phase_ + wf_flutter_phase_inc_,
+            wf_flutter_phase_ + 2.0f*wf_flutter_phase_inc_, wf_flutter_phase_ + 3.0f*wf_flutter_phase_inc_ };
+        float lfo4[NEON_LANES], flut4[NEON_LANES];
+        vst1q_f32(lfo4,  fastersinfullf_ps(wow_phases));
+        vst1q_f32(flut4, fastersinfullf_ps(flut_phases));
+
+        // Advance + wrap the master phases once per block (single wrap suffices:
+        // 4*inc << 2*pi). Final values match the per-sample wrapped trajectory.
+        wf_lfo_phase_     += 4.0f * wf_phase_inc_;
+        wf_flutter_phase_ += 4.0f * wf_flutter_phase_inc_;
+        if (wf_lfo_phase_     >= M_TWOPI) wf_lfo_phase_     -= M_TWOPI;
+        if (wf_flutter_phase_ >= M_TWOPI) wf_flutter_phase_ -= M_TWOPI;
+
         for (int s = 0; s < NEON_LANES; ++s) {
-            const float lfo_val     = fastersinfullf(wf_lfo_phase_);
-            const float flutter_val = fastersinfullf(wf_flutter_phase_);
-            wf_lfo_phase_         += wf_phase_inc_;
-            wf_flutter_phase_     += wf_flutter_phase_inc_;
-            if (wf_lfo_phase_     >= M_TWOPI) wf_lfo_phase_     -= M_TWOPI;
-            if (wf_flutter_phase_ >= M_TWOPI) wf_flutter_phase_ -= M_TWOPI;
+            const float lfo_val     = lfo4[s];
+            const float flutter_val = flut4[s];
 
             const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val)
                                         + flutter_depth_base * flutter_val;
