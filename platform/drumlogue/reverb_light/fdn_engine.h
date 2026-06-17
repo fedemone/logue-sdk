@@ -101,6 +101,7 @@ public:
     float delayTimes[FDN_CHANNELS];
     float fdnState[FDN_CHANNELS];
     float hadamard[FDN_CHANNELS][FDN_CHANNELS] __attribute__((aligned(16)));
+    float fdn_norm = 0.35355339f;   // 1/sqrt(FDN_CHANNELS); set in generate_hadamard()
     int writePos = 0;
 
     // internal parameters
@@ -138,9 +139,12 @@ public:
     biquad_coeffs_t bright_coeffs;
 
     // Path 4: Color (6 Visual Spectrum Resonators)
-    biquad_state_t  color_filters_l[NUM_RESONATORS] __attribute__((aligned(16)));
-    biquad_state_t  color_filters_r[NUM_RESONATORS] __attribute__((aligned(16)));
     biquad_coeffs_t color_coeffs[NUM_RESONATORS]    __attribute__((aligned(16)));
+    // SoA coefficients/state for the NEON color path, padded to 8 lanes
+    // (NUM_RESONATORS real + zero padding) so the 6 parallel bandpass biquads
+    // run two-at-a-time on NEON. Zero-coeff padding lanes contribute nothing.
+    float col_b0[8], col_b1[8], col_b2[8], col_a1[8], col_a2[8] __attribute__((aligned(16)));
+    float col_z1l[8], col_z2l[8], col_z1r[8], col_z2r[8]        __attribute__((aligned(16)));
 
     // Path 5: Sparkle (Stereo Granular S&H)
     float sparkle_buffer_l[SPARKLE_BUFFER_SIZE];
@@ -231,10 +235,23 @@ public:
             color_coeffs[i].a1 = -2.0f * fastercosfullf(w0) / a0;
             color_coeffs[i].a2 = (1.0f - alpha) / a0;
         }
+
+        // Mirror into the SoA layout used by the vectorized color path. Padding
+        // lanes (>= NUM_RESONATORS) get zero coefficients so they stay silent.
+        for (int i = 0; i < 8; i++) {
+            if (i < NUM_RESONATORS) {
+                col_b0[i] = color_coeffs[i].b0; col_b1[i] = color_coeffs[i].b1;
+                col_b2[i] = color_coeffs[i].b2; col_a1[i] = color_coeffs[i].a1;
+                col_a2[i] = color_coeffs[i].a2;
+            } else {
+                col_b0[i] = col_b1[i] = col_b2[i] = col_a1[i] = col_a2[i] = 0.0f;
+            }
+        }
     }
 
     void generate_hadamard() {
         float norm = 1.0f / sqrtf(FDN_CHANNELS);    // as init is not time strict, let's keep the original function
+        fdn_norm = norm;                            // reused by the fast WHT in step_core_fdn()
         for (int i = 0; i < FDN_CHANNELS; i++) {
             for (int j = 0; j < FDN_CHANNELS; j++) {
                 int parity = 0;
@@ -255,8 +272,8 @@ public:
         memset(fdnMem, 0, sizeof(fdnMem));
         memset(fdnState, 0, sizeof(fdnState));
         memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
-        memset(color_filters_l, 0, sizeof(color_filters_l));
-        memset(color_filters_r, 0, sizeof(color_filters_r));
+        memset(col_z1l, 0, sizeof(col_z1l)); memset(col_z2l, 0, sizeof(col_z2l));
+        memset(col_z1r, 0, sizeof(col_z1r)); memset(col_z2r, 0, sizeof(col_z2r));
         memset(sparkle_buffer_l, 0, sizeof(sparkle_buffer_l));
         memset(sparkle_buffer_r, 0, sizeof(sparkle_buffer_r));
         writePos = 0;
@@ -425,7 +442,8 @@ public:
     void step_core_fdn(float in_l, float in_r, float* out_l, float* out_r) {
         float fdnOut[FDN_CHANNELS];
 
-        // 1. Read from Delay Lines
+        // 1. Read from Delay Lines (per-channel fractional delay; channel-major
+        //    layout means the reads are a strided gather → kept scalar).
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
             float dt = baseDelayTimes[ch] * sizeScale;
             float readPos = (float)writePos - dt;
@@ -440,33 +458,58 @@ public:
             fdnOut[ch] = val1 + frac * (val2 - val1);
         }
 
-
-        // 2. Apply per-channel one-pole HPF to kill DC and bass buildup in the tail.
-        //    Formula: y[n] = x[n] - x[n-1] + hpf_coeff * y[n-1]
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float x = fdnOut[ch];
-            float y = x - hpf_x_prev[ch] + hpf_coeff * hpf_y_prev[ch];
-            hpf_x_prev[ch] = x;
-            hpf_y_prev[ch] = y;
-            fdnOut[ch] = y;
+        // 2. Per-channel one-pole HPF to kill DC and bass buildup, vectorized
+        //    across the 8 channels (4 per NEON vector). Identical per-channel
+        //    recurrence:  y[n] = x[n] - x[n-1] + hpf_coeff * y[n-1].
+        float32x4_t f_lo = vld1q_f32(&fdnOut[0]);
+        float32x4_t f_hi = vld1q_f32(&fdnOut[4]);
+        {
+            float32x4_t xprev_lo = vld1q_f32(&hpf_x_prev[0]);
+            float32x4_t xprev_hi = vld1q_f32(&hpf_x_prev[4]);
+            float32x4_t yprev_lo = vld1q_f32(&hpf_y_prev[0]);
+            float32x4_t yprev_hi = vld1q_f32(&hpf_y_prev[4]);
+            float32x4_t y_lo = vmlaq_n_f32(vsubq_f32(f_lo, xprev_lo), yprev_lo, hpf_coeff);
+            float32x4_t y_hi = vmlaq_n_f32(vsubq_f32(f_hi, xprev_hi), yprev_hi, hpf_coeff);
+            vst1q_f32(&hpf_x_prev[0], f_lo);  vst1q_f32(&hpf_x_prev[4], f_hi);
+            vst1q_f32(&hpf_y_prev[0], y_lo);  vst1q_f32(&hpf_y_prev[4], y_hi);
+            f_lo = y_lo;  f_hi = y_hi;
         }
 
-        // 3. Mixdown to Stereo Output
-        *out_l = fdnOut[0] + fdnOut[1] + fdnOut[2] + fdnOut[3];
-        *out_r = fdnOut[4] + fdnOut[5] + fdnOut[6] + fdnOut[7];
+        // 3. Stereo mixdown (channels 0-3 → L, 4-7 → R); same summation order.
+        *out_l = vgetq_lane_f32(f_lo,0) + vgetq_lane_f32(f_lo,1)
+               + vgetq_lane_f32(f_lo,2) + vgetq_lane_f32(f_lo,3);
+        *out_r = vgetq_lane_f32(f_hi,0) + vgetq_lane_f32(f_hi,1)
+               + vgetq_lane_f32(f_hi,2) + vgetq_lane_f32(f_hi,3);
 
-        // 4. Hadamard Mixing & Feedback Writing
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            float sum = 0.0f;
-            for (int j = 0; j < FDN_CHANNELS; j++) {
-                sum += fdnOut[j] * hadamard[i][j];
-            }
+        // 4. Hadamard feedback mixing via a Fast Walsh-Hadamard Transform.
+        //    hadamard[i][j] = ±1/sqrt(8) by popcount(i&j) parity, so the previous
+        //    O(N^2) matrix multiply equals (1/sqrt(8)) * WHT(fdnOut). The natural-
+        //    order WHT is a 3-stage NEON butterfly of pure add/sub (no multiplies).
+        float32x4_t a_lo = vaddq_f32(f_lo, f_hi);            // stage 1 (stride 4)
+        float32x4_t a_hi = vsubq_f32(f_lo, f_hi);
+        float32x4_t b_lo = vcombine_f32(                     // stage 2 (stride 2)
+            vadd_f32(vget_low_f32(a_lo), vget_high_f32(a_lo)),
+            vsub_f32(vget_low_f32(a_lo), vget_high_f32(a_lo)));
+        float32x4_t b_hi = vcombine_f32(
+            vadd_f32(vget_low_f32(a_hi), vget_high_f32(a_hi)),
+            vsub_f32(vget_low_f32(a_hi), vget_high_f32(a_hi)));
+        float32x4_t r_lo = vrev64q_f32(b_lo);                // stage 3 (stride 1)
+        float32x4_t r_hi = vrev64q_f32(b_hi);
+        float32x4_t wht_lo = vtrnq_f32(vaddq_f32(b_lo, r_lo), vsubq_f32(b_lo, r_lo)).val[0];
+        float32x4_t wht_hi = vtrnq_f32(vaddq_f32(b_hi, r_hi), vsubq_f32(b_hi, r_hi)).val[0];
 
-            // Inject Input: Left to channels 0-3, Right to 4-7
-            float input_inject = (i < 4) ? in_l : in_r;
+        // 5. Inject input (L→ch 0-3, R→ch 4-7) with the matrix normalisation and
+        //    decay folded into a single scale: in + WHT * (norm*decay).
+        const float nd = fdn_norm * decay;
+        float32x4_t res_lo = vmlaq_n_f32(vdupq_n_f32(in_l), wht_lo, nd);
+        float32x4_t res_hi = vmlaq_n_f32(vdupq_n_f32(in_r), wht_hi, nd);
 
-            // Pure delay network - no old LPFs, no old swirl, just decay and input
-            fdnMem[i * FDN_BUFFER_SIZE + writePos] = input_inject + (sum * decay);
+        // 6. Scatter feedback into the channel-major delay lines.
+        float wlo[4], whi[4];
+        vst1q_f32(wlo, res_lo);  vst1q_f32(whi, res_hi);
+        for (int k = 0; k < 4; k++) {
+            fdnMem[k * FDN_BUFFER_SIZE + writePos]       = wlo[k];
+            fdnMem[(k + 4) * FDN_BUFFER_SIZE + writePos] = whi[k];
         }
 
         writePos = (writePos + 1) & FDN_BUFFER_MASK;
@@ -621,10 +664,43 @@ public:
             float color_l = 0.0f;
             float color_r = 0.0f;
             if (color_amt > 0.0f) {
-                for(int f=0; f<NUM_RESONATORS; f++) {
-                    color_l += process_biquad(rev_l, &color_filters_l[f], &color_coeffs[f]);
-                    color_r += process_biquad(rev_r, &color_filters_r[f], &color_coeffs[f]);
+                // 6 parallel bandpass biquads per side, evaluated 4-at-a-time on
+                // NEON (8 padded lanes = two vector groups). Same Direct-Form
+                // recurrence as process_biquad(); padding lanes stay zero.
+                const float32x4_t inl = vdupq_n_f32(rev_l);
+                const float32x4_t inr = vdupq_n_f32(rev_r);
+                float32x4_t sumL = vdupq_n_f32(0.0f);
+                float32x4_t sumR = vdupq_n_f32(0.0f);
+                for (int g = 0; g < 8; g += 4) {
+                    float32x4_t b0 = vld1q_f32(&col_b0[g]);
+                    float32x4_t b1 = vld1q_f32(&col_b1[g]);
+                    float32x4_t b2 = vld1q_f32(&col_b2[g]);
+                    float32x4_t a1 = vld1q_f32(&col_a1[g]);
+                    float32x4_t a2 = vld1q_f32(&col_a2[g]);
+                    // Left
+                    float32x4_t z1 = vld1q_f32(&col_z1l[g]);
+                    float32x4_t z2 = vld1q_f32(&col_z2l[g]);
+                    float32x4_t out = vmlaq_f32(z1, inl, b0);          // in*b0 + z1
+                    float32x4_t nz1 = vmlsq_f32(vmlaq_f32(z2, inl, b1), out, a1); // in*b1 - out*a1 + z2
+                    float32x4_t nz2 = vmlsq_f32(vmulq_f32(inl, b2), out, a2);     // in*b2 - out*a2
+                    vst1q_f32(&col_z1l[g], nz1);
+                    vst1q_f32(&col_z2l[g], nz2);
+                    sumL = vaddq_f32(sumL, out);
+                    // Right (same coefficients)
+                    z1 = vld1q_f32(&col_z1r[g]);
+                    z2 = vld1q_f32(&col_z2r[g]);
+                    out = vmlaq_f32(z1, inr, b0);
+                    nz1 = vmlsq_f32(vmlaq_f32(z2, inr, b1), out, a1);
+                    nz2 = vmlsq_f32(vmulq_f32(inr, b2), out, a2);
+                    vst1q_f32(&col_z1r[g], nz1);
+                    vst1q_f32(&col_z2r[g], nz2);
+                    sumR = vaddq_f32(sumR, out);
                 }
+                // Horizontal sum of the 6 (+2 zero) resonator outputs per side.
+                float32x2_t sl = vadd_f32(vget_low_f32(sumL), vget_high_f32(sumL));
+                float32x2_t sr = vadd_f32(vget_low_f32(sumR), vget_high_f32(sumR));
+                color_l = vget_lane_f32(vpadd_f32(sl, sl), 0);
+                color_r = vget_lane_f32(vpadd_f32(sr, sr), 0);
                 // Scale down since we are summing 6 high-Q resonant peaks. - NOTE commented out for the moment, to try louder effect
                 // color_l *= 0.50f;
                 // color_r *= 0.50f;
