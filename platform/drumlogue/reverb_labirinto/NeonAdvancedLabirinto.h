@@ -81,6 +81,22 @@ static const int32_t k_presets[k_preset_number][k_total] = {
 };
 
 // ============================================================================
+// NEON helper: 4x4 float matrix transpose.
+// Swaps the [channel][time] <-> [time][channel] layout for a group of 4
+// channels. Used to run the per-channel IIR filters (sequential in time,
+// independent across channels) 4-wide instead of one channel at a time.
+// The operation is its own inverse, so the same routine transposes both ways.
+// ============================================================================
+static inline void neon_transpose4(const float32x4_t* in, float32x4_t* out) {
+    float32x4x2_t a = vtrnq_f32(in[0], in[1]);
+    float32x4x2_t b = vtrnq_f32(in[2], in[3]);
+    out[0] = vcombine_f32(vget_low_f32(a.val[0]),  vget_low_f32(b.val[0]));
+    out[1] = vcombine_f32(vget_low_f32(a.val[1]),  vget_low_f32(b.val[1]));
+    out[2] = vcombine_f32(vget_high_f32(a.val[0]), vget_high_f32(b.val[0]));
+    out[3] = vcombine_f32(vget_high_f32(a.val[1]), vget_high_f32(b.val[1]));
+}
+
+// ============================================================================
 // Main Class
 // ============================================================================
 
@@ -1074,6 +1090,88 @@ private:
         }
     }
 
+    /*===========================================================================*/
+    /* NEON channel-parallel IIR filter chain                                    */
+    /*                                                                           */
+    /* Processes one group of 4 FDN channels (c0..c0+3). The signals arrive in   */
+    /* [channel][time] layout (mixed[ch] = 4 consecutive time samples). Each IIR */
+    /* filter has a loop-carried dependency along TIME but the channels are       */
+    /* independent, so we transpose to [time][channel] and evaluate all 4         */
+    /* channels of each time step in a single NEON op. The per-channel recurrence,*/
+    /* coefficients and state semantics are byte-for-byte the same as the scalar  */
+    /* applyHighFreqDamping4 / applyResonantFilter[Modulated] / applyMetal /      */
+    /* applyCrystal references retained in this file; only the iteration order    */
+    /* over the independent channel axis changes.                                 */
+    /*===========================================================================*/
+    inline void applyChannelFilters4Group(float32x4_t* mixed, int c0,
+                                          bool doBiquad, bool metalBlend,
+                                          bool doMetal, bool doCrystal) {
+        // [channel][time] -> [time][channel]
+        float32x4_t T[NEON_LANES];
+        neon_transpose4(&mixed[c0], T);
+
+        // ---- 1-pole high-frequency damping (always on) ----
+        // state += alpha*(x - state)
+        {
+            const float alpha = 1.0f - dampingCoeff;
+            float32x4_t st = vld1q_f32(&lpfState[c0]);
+            for (int t = 0; t < NEON_LANES; t++) {
+                float32x4_t d = vsubq_f32(T[t], st);
+                st = vmlaq_n_f32(st, d, alpha);
+                T[t] = st;
+            }
+            vst1q_f32(&lpfState[c0], st);
+        }
+
+        // ---- Resonant biquad (Direct Form II Transposed), all modes but noise ----
+        if (doBiquad) {
+            float32x4_t fs1 = vld1q_f32(&filterState1[c0]);
+            float32x4_t fs2 = vld1q_f32(&filterState2[c0]);
+            for (int t = 0; t < NEON_LANES; t++) {
+                float32x4_t in  = T[t];
+                float32x4_t out = vmlaq_n_f32(fs1, in, biquadA0);         // in*A0 + fs1
+                fs1 = vmlaq_n_f32(fs2, in,  biquadA1);                    // fs2 + in*A1
+                fs1 = vmlsq_n_f32(fs1, out, biquadB1);                    //   - out*B1
+                fs2 = vmulq_n_f32(in,  biquadA2);                         // in*A2
+                fs2 = vmlsq_n_f32(fs2, out, biquadB2);                    //   - out*B2
+                if (filterMode == kFilterCrystal)
+                    out = vaddq_f32(vmulq_n_f32(in, 0.7f),  vmulq_n_f32(out, 0.3f));
+                else if (metalBlend && filterMode == kFilterMetal)
+                    out = vaddq_f32(vmulq_n_f32(in, 0.82f), vmulq_n_f32(out, 0.18f));
+                T[t] = out;
+            }
+            vst1q_f32(&filterState1[c0], fs1);
+            vst1q_f32(&filterState2[c0], fs2);
+        }
+
+        // ---- Metal comb (metal mode only): x += z^-1 * 0.18 ----
+        if (doMetal) {
+            float32x4_t st = vld1q_f32(&metalState[c0]);
+            for (int t = 0; t < NEON_LANES; t++) {
+                float32x4_t d = st;
+                st = T[t];
+                T[t] = vmlaq_n_f32(T[t], d, 0.18f);
+            }
+            vst1q_f32(&metalState[c0], st);
+        }
+
+        // ---- Crystal allpass (crystal mode only): y=-g*x+s; s=x+g*y ----
+        if (doCrystal) {
+            const float g = 0.35f;
+            float32x4_t st = vld1q_f32(&crystalAPState[c0]);
+            for (int t = 0; t < NEON_LANES; t++) {
+                float32x4_t in = T[t];
+                float32x4_t y  = vmlsq_n_f32(st, in, g);                  // st - g*in
+                st = vmlaq_n_f32(in, y, g);                               // in + g*y
+                T[t] = y;
+            }
+            vst1q_f32(&crystalAPState[c0], st);
+        }
+
+        // [time][channel] -> [channel][time]
+        neon_transpose4(T, &mixed[c0]);
+    }
+
     inline void applyExoticShimmer(float32x4_t* mixed) {
         if (shimmerDepth_ > 0.0f) {
             // 1. Sum channels 0-3 (Left) and 4-7 (Right)
@@ -1121,16 +1219,17 @@ private:
     /* Vectorized Delay Line Write */
     /*===========================================================================*/
     inline void writeDelayLines4(const float32x4_t* signals) {
-        // Spill all channel vectors; index by sample position (variable s)
-        // to avoid vgetq_lane_f32(v, variable) which requires a constant index.
-        float ch_lanes[FDN_CHANNELS][NEON_LANES];
-        for (int ch = 0; ch < FDN_CHANNELS; ch++)
-            vst1q_f32(ch_lanes[ch], signals[ch]);
+        // signals are [channel][time]; the delay line stores [time].samples[channel].
+        // Transpose to [time][channel] so each time slice (8 channels) is written
+        // with two aligned vector stores instead of 32 scalar scatter-stores.
+        float32x4_t tLo[NEON_LANES], tHi[NEON_LANES];
+        neon_transpose4(&signals[0], tLo);   // tLo[s] = channels 0..3 at time s
+        neon_transpose4(&signals[4], tHi);   // tHi[s] = channels 4..7 at time s
 
         for (int s = 0; s < NEON_LANES; s++) {
             uint32_t pos = (writePos + s) & BUFFER_MASK;
-            for (int ch = 0; ch < FDN_CHANNELS; ch++)
-                delayLine[pos].samples[ch] = ch_lanes[ch][s];
+            vst1q_f32(&delayLine[pos].samples[0], tLo[s]);
+            vst1q_f32(&delayLine[pos].samples[4], tHi[s]);
         }
         writePos = (writePos + NEON_LANES) & BUFFER_MASK;
     }
@@ -1303,24 +1402,32 @@ private:
         float32x4_t mixed[FDN_CHANNELS];
         applyHadamard4(delayOut, mixed);
 
-        // 1. Natural Air Absorption (old applyDiffusion4)
-        applyHighFreqDamping4(mixed);
-
-        // 2. Character Body Resonance (Wood, Stone, Metal)
-        // Screech Fix: Only update filter coefficients every 32 samples (8 blocks)
-        if (--filterUpdateCounter <= 0) {
-            filterUpdateCounter = 8;
-            applyResonantFilterModulated(mixed, FDN_CHANNELS, fcMod);
-        } else {
-            applyResonantFilter(mixed, FDN_CHANNELS);
+        // 1+2+2.5. Per-channel IIR filter chain — damping (always), resonant
+        // biquad (all modes but noise), metal comb (metal), crystal allpass
+        // (crystal) — all run channel-parallel on NEON via a transpose. Same
+        // recurrence/coeffs/state as the scalar references; only the channel
+        // iteration is vectorized. Order preserved: damping -> biquad -> metal
+        // -> crystal (resonant filter creates the spectral emphasis, the comb
+        // turns it metallic, then feedback diffuses it).
+        //
+        // Screech Fix: filter coefficients are only re-derived every 8 blocks.
+        bool doModulated;
+        if (--filterUpdateCounter <= 0) { filterUpdateCounter = 8; doModulated = true; }
+        else                            { doModulated = false; }
+        const bool doBiquad  = (filterMode != kFilterNoise);
+        if (doModulated && doBiquad) {
+            // Same modulated-cutoff computation as applyResonantFilterModulated().
+            float fc = fmaxf(20.0f, fminf(sampleRate * 0.45f, baseFc + fcMod));
+            updateFilterCoeffsAt(fc);
         }
-
-        // 2.5 add filter modes
-        // Metal mode has an additional feed-forward comb resonance for extra metallic character
-        // This order matters, because resonant filter creates spectral emphasis, comb resonance turns it metallic
-        // then feedback diffuses it; if you put it later the metallic signature gets blurred
-        applyMetalResonance(mixed);
-        applyCrystalDiffusion(mixed);
+        const bool doMetal   = (filterMode == kFilterMetal);
+        const bool doCrystal = (filterMode == kFilterCrystal);
+        // metalBlend (0.82*dry + 0.18*wet at the biquad output) is only applied
+        // on modulated blocks, matching the original split between
+        // applyResonantFilterModulated (blends metal) and applyResonantFilter
+        // (does not).
+        applyChannelFilters4Group(mixed, 0, doBiquad, doModulated, doMetal, doCrystal);
+        applyChannelFilters4Group(mixed, 4, doBiquad, doModulated, doMetal, doCrystal);
 
         // 3. Inject Environmental Noise (Brown, Pink, White, Blue, Violet, Grey)
         // noiseEnvelope smoothly fades noise in/out with signal activity (prevents
