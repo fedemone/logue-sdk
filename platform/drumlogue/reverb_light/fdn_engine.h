@@ -484,10 +484,10 @@ public:
         }
 
         // 3. Stereo mixdown (channels 0-3 → L, 4-7 → R); same summation order.
-        *out_l = vgetq_lane_f32(f_lo,0) + vgetq_lane_f32(f_lo,1)
-               + vgetq_lane_f32(f_lo,2) + vgetq_lane_f32(f_lo,3);
-        *out_r = vgetq_lane_f32(f_hi,0) + vgetq_lane_f32(f_hi,1)
-               + vgetq_lane_f32(f_hi,2) + vgetq_lane_f32(f_hi,3);
+        float32x2_t sum_lo = vadd_f32(vget_low_f32(f_lo), vget_high_f32(f_lo));
+        *out_l = vget_lane_f32(vpadd_f32(sum_lo, sum_lo), 0);
+        float32x2_t sum_hi = vadd_f32(vget_low_f32(f_hi), vget_high_f32(f_hi));
+        *out_r = vget_lane_f32(vpadd_f32(sum_hi, sum_hi), 0);
 
         // 4. Hadamard feedback mixing via a Fast Walsh-Hadamard Transform.
         //    hadamard[i][j] = ±1/sqrt(8) by popcount(i&j) parity, so the previous
