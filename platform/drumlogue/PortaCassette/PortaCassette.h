@@ -339,8 +339,6 @@ public:
         float32x4_t sqrt_env = vmulq_f32(env, rsq);                     // sqrt(env)
         float32x4_t enc_gain = vrsqrteq_f32(sqrt_env);
         enc_gain = vmulq_f32(vrsqrtsq_f32(vmulq_f32(sqrt_env, enc_gain), enc_gain), enc_gain); // env^(-0.25)
-        // Existing extra refinement step (kept identical to preserve the gain curve).
-        enc_gain = vmulq_f32(vrsqrtsq_f32(vmulq_f32(env, enc_gain), enc_gain), enc_gain);
         // Clamp encode gain: prevents 1000x boost during silence → loud transient onset.
         // 3.0x ≈ +9.5 dB max NR action; less than typical dbx Type II spec.
         enc_gain = vminq_f32(enc_gain, vdupq_n_f32((dbx_mode_ == k_encode_only) ? 1.5f : 3.0f));
