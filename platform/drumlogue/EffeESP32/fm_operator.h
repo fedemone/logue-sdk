@@ -123,7 +123,9 @@ static inline float fmo_frac(float x) {
  * ------------------------------------------------------------------------- */
 
 static inline void fmo_update_phase_inc(fm_op_t* op) {
-    op->phase_inc = (op->base_freq * op->ratio + op->detune) * INV_SAMPLE_RATE;
+    float freq = op->base_freq * op->ratio + op->detune;
+    if (freq < 0.0f) freq = 0.0f;
+    op->phase_inc = freq * INV_SAMPLE_RATE;
 }
 
 static inline void fmo_set_freq(fm_op_t* op, float hz) {
