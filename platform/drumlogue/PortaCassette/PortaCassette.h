@@ -413,9 +413,6 @@ public:
         const float32x4_t flut_phases = {
             wf_flutter_phase_,                          wf_flutter_phase_ + wf_flutter_phase_inc_,
             wf_flutter_phase_ + 2.0f*wf_flutter_phase_inc_, wf_flutter_phase_ + 3.0f*wf_flutter_phase_inc_ };
-        float lfo4[NEON_LANES], flut4[NEON_LANES];
-        vst1q_f32(lfo4,  fastersinfullf_ps(wow_phases));
-        vst1q_f32(flut4, fastersinfullf_ps(flut_phases));
 
         // Advance + wrap the master phases once per block (single wrap suffices:
         // 4*inc << 2*pi). Final values match the per-sample wrapped trajectory.
@@ -425,8 +422,8 @@ public:
         if (wf_flutter_phase_ >= M_TWOPI) wf_flutter_phase_ -= M_TWOPI;
 
         for (int s = 0; s < NEON_LANES; ++s) {
-            const float lfo_val     = lfo4[s];
-            const float flutter_val = flut4[s];
+            const float lfo_val       = fastersinfullf(vgetq_lane_f32(wow_phases, s));
+            const float flutter_val   = fastersinfullf(vgetq_lane_f32(flut_phases, s));
 
             const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val)
                                         + flutter_depth_base * flutter_val;
