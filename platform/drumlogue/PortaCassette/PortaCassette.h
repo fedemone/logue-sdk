@@ -421,9 +421,12 @@ public:
         if (wf_lfo_phase_     >= M_TWOPI) wf_lfo_phase_     -= M_TWOPI;
         if (wf_flutter_phase_ >= M_TWOPI) wf_flutter_phase_ -= M_TWOPI;
 
+        const float32x4_t lfo_vals     = fastersinfullf_ps(wow_phases);
+        const float32x4_t flutter_vals = fastersinfullf_ps(flut_phases);
+
         for (int s = 0; s < NEON_LANES; ++s) {
-            const float lfo_val       = fastersinfullf(vgetq_lane_f32(wow_phases, s));
-            const float flutter_val   = fastersinfullf(vgetq_lane_f32(flut_phases, s));
+            const float lfo_val       = vgetq_lane_f32(lfo_vals, s);
+            const float flutter_val   = vgetq_lane_f32(flutter_vals, s);
 
             const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val)
                                         + flutter_depth_base * flutter_val;
