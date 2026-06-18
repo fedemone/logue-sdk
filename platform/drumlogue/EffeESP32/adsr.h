@@ -78,7 +78,7 @@ public:
     }
 
     eSegment_t getCurrentSegment() const {
-        if (gate_ && (x_ == sus_level_)) return ADSR_SEG_SUSTAIN;
+        if (gate_ && (mode_ == ADSR_SEG_DECAY) && (x_ <= sus_level_)) return ADSR_SEG_SUSTAIN;
         return mode_;
     }
 
