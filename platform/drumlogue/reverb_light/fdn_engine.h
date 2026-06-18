@@ -109,8 +109,8 @@ public:
     int32_t current_preset_ = 0;
 
     // Per-channel one-pole HPF states (applied to each delay output to cut bass buildup)
-    float hpf_x_prev[FDN_CHANNELS];   // previous input sample
-    float hpf_y_prev[FDN_CHANNELS];   // previous output sample
+    float hpf_x_prev[FDN_CHANNELS] __attribute__((aligned(16)));   // previous input sample
+    float hpf_y_prev[FDN_CHANNELS] __attribute__((aligned(16)));   // previous output sample
 
     // Predelay
     float preDelayBuffer[PREDELAY_BUFFER_SIZE] __attribute__((aligned(16)));
@@ -143,8 +143,16 @@ public:
     // SoA coefficients/state for the NEON color path, padded to 8 lanes
     // (NUM_RESONATORS real + zero padding) so the 6 parallel bandpass biquads
     // run two-at-a-time on NEON. Zero-coeff padding lanes contribute nothing.
-    float col_b0[8], col_b1[8], col_b2[8], col_a1[8], col_a2[8] __attribute__((aligned(16)));
-    float col_z1l[8], col_z2l[8], col_z1r[8], col_z2r[8]        __attribute__((aligned(16)));
+    alignas(16) float col_b0[8];
+    alignas(16) float col_b1[8];
+    alignas(16) float col_b2[8];
+    alignas(16) float col_a1[8];
+    alignas(16) float col_a2[8];
+    alignas(16) float col_z1l[8];
+    alignas(16) float col_z2l[8];
+    alignas(16) float col_z1r[8];
+    alignas(16) float col_z2r[8];    // Applying __attribute__((aligned(16))) at the end of a comma-separated declaration list only aligns 
+                                     // the very last variable leaving the other unaligned.
 
     // Path 5: Sparkle (Stereo Granular S&H)
     float sparkle_buffer_l[SPARKLE_BUFFER_SIZE];
@@ -440,7 +448,7 @@ public:
     // BAREBONES FDN STEP (Replaces old bloated FDN logic)
     // ========================================================================
     void step_core_fdn(float in_l, float in_r, float* out_l, float* out_r) {
-        float fdnOut[FDN_CHANNELS];
+        alignas(16) float fdnOut[FDN_CHANNELS];
 
         // 1. Read from Delay Lines (per-channel fractional delay; channel-major
         //    layout means the reads are a strided gather → kept scalar).
@@ -505,11 +513,9 @@ public:
         float32x4_t res_hi = vmlaq_n_f32(vdupq_n_f32(in_r), wht_hi, nd);
 
         // 6. Scatter feedback into the channel-major delay lines.
-        float wlo[4], whi[4];
-        vst1q_f32(wlo, res_lo);  vst1q_f32(whi, res_hi);
         for (int k = 0; k < 4; k++) {
-            fdnMem[k * FDN_BUFFER_SIZE + writePos]       = wlo[k];
-            fdnMem[(k + 4) * FDN_BUFFER_SIZE + writePos] = whi[k];
+            fdnMem[k * FDN_BUFFER_SIZE + writePos]       = vgetq_lane_f32(res_lo, k);
+            fdnMem[(k + 4) * FDN_BUFFER_SIZE + writePos] = vgetq_lane_f32(res_hi, k);
         }
 
         writePos = (writePos + 1) & FDN_BUFFER_MASK;
