@@ -156,10 +156,11 @@ public:
                 return buf;
             case P_FILTER: {
                 // -4..5 -> "Off"/"On" (+ carrier waveform when overridden)
-                static const char* const wf = "Sin\0Tri\0Sqr\0Saw";
                 if (value == 0) return "Off";
                 if (value == 1) return "On";
                 int idx = (value < 0) ? (-value - 1) : (value - 2);
+                if (idx < 0 || idx >= 4) return value >= 1 ? "On" : "Off";
+                static const char* const wf = "Sin\0Tri\0Sqr\0Saw";
                 const char* on = (value >= 1) ? "On " : "Off";
                 snprintf(buf, sizeof(buf), "%s%s", on, wf + idx * 4);
                 return buf;
@@ -228,9 +229,12 @@ private:
                 // v in [-4..5]: filter on when v >= 1; carrier waveform override
                 // selected by magnitude (0/1 keep the patch's carrier waveform).
                 working_.useFilter = (v >= 1) ? 1 : 0;
-                int wf_idx = (v <= 0) ? (-v - 1) : (v - 2);   // -1 = no override
-                working_.ops[0].waveform =
-                    (wf_idx < 0) ? base_carrier_wf_ : kCarrierWf[wf_idx];
+                int wf_idx = (v <= 0) ? (-v - 1) : (v - 2);
+                if (wf_idx >= 0 && wf_idx < 4) {
+                    working_.ops[0].waveform = kCarrierWf[wf_idx];
+                } else {
+                    working_.ops[0].waveform = base_carrier_wf_;
+                }
                 break;
             }
             case P_FEEDBK:    feedback_delta_      = feedback_delta_from(v); break;
@@ -258,7 +262,7 @@ private:
         int best = 0; float bestScore = voices_[0].getStealScore();
         for (int i = 1; i < MAX_VOICES; ++i) {
             float s = voices_[i].getStealScore();
-            if (s < bestScore) { bestScore = s; best = i; }
+            if (s > bestScore) { bestScore = s; best = i; }
         }
         return best;
     }
@@ -328,5 +332,5 @@ private:
     fmo_waveform_t  base_carrier_wf_ = WF_SINE;
     uint8_t         assigned_note_ = 36;
     uint8_t         current_preset_ = 0;
-    float           scratch_[MAX_VOICES][EFFEESP32_MAX_BLOCK];
+    alignas(16) float scratch_[MAX_VOICES][EFFEESP32_MAX_BLOCK];
 };
