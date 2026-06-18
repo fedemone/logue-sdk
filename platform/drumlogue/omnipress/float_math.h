@@ -1403,17 +1403,19 @@ inline float32x4_t fast_div_neon(float32x4_t num, float32x4_t den) {
 }
 
 /**
- * ARMv7-compatible vectorized exp(x) for 4 floats using e_expff approximation.
+ * ARMv7-compatible vectorized exp(x) for 4 floats.
  * Replacement for vexpq_f32 which is ARMv8/AArch64 only.
+ * Computes e_expff()'s (1 + x/1024)^1024 limit approximation directly on the
+ * NEON vector (10 squarings) instead of 4 scalar e_expff calls + spill/reload.
+ * Bit-identical to the previous per-lane implementation (1/1024 is exact).
  */
 static inline float32x4_t neon_expq_f32(float32x4_t x) {
-  float32_t buf[4];
-  vst1q_f32(buf, x);
-  buf[0] = e_expff(buf[0]);
-  buf[1] = e_expff(buf[1]);
-  buf[2] = e_expff(buf[2]);
-  buf[3] = e_expff(buf[3]);
-  return vld1q_f32(buf);
+  x = vaddq_f32(vdupq_n_f32(1.0f), vmulq_n_f32(x, 1.0f / 1024.0f));
+  x = vmulq_f32(x, x); x = vmulq_f32(x, x); x = vmulq_f32(x, x);
+  x = vmulq_f32(x, x); x = vmulq_f32(x, x); x = vmulq_f32(x, x);
+  x = vmulq_f32(x, x); x = vmulq_f32(x, x); x = vmulq_f32(x, x);
+  x = vmulq_f32(x, x);
+  return x;
 }
 
 /**
