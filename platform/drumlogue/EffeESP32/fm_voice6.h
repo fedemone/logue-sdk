@@ -143,7 +143,8 @@ public:
         reset();
         velocity_    = vel;
         note_        = midiNote;
-        velocityVol_ = vel * volume_;
+        float effective_vel = 1.0f - veloMod_ * (1.0f - vel);
+        velocityVol_ = effective_vel * volume_;
         env_.retrigger(Adsr::END_NOW);
     }
     void noteOff()  { env_.end(Adsr::END_REGULAR); }
