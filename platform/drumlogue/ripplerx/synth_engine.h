@@ -1973,20 +1973,23 @@ SynthState state;
         // The internal Drumlogue sequencer releases the UI note
         NoteOff(m_ui_note);
 
-        // Reset the voice allocator so the next strike starts at Voice 0.
-        // Because NoteOn pre-increments before use, setting to (NUM_VOICES - 1)
-        // means the very next NoteOn wraps to index 0.
+        // Voice-allocation policy for REPEATED triggers of the same preset.
+        // The Drumlogue fires gate_on+gate_off in the same tick, so whatever
+        // next_voice_idx is left at here decides where the NEXT hit lands.
         //
-        // Without this reset: round-robin cycles through voices 1,2,3,0,1,2,3,0,...
-        // so each successive gate press uses a different slot.  When the note has a
-        // long T_60 (e.g. GtrStr ~5 s), four different voice slots accumulate residual
-        // energy at different phases, causing constructive/destructive interference
-        // ("beating") and progressive amplitude variation across presses.
+        // SUSTAINED engines (PLATE = cymbal/gong/ride/hi-hat/bell, BAR = marimba/
+        // vibe/...) must NOT reset: leaving next_voice_idx alone keeps the
+        // round-robin (…1,2,3,0…) so a fast second hit lands on a DIFFERENT voice
+        // and STACKS over the still-ringing first hit — essential for cymbal rolls
+        // and overlapping swells (HW: "important for cymbals").
         //
-        // With this reset: every gate press always starts at Voice 0.  Concurrent
-        // notes within the same gate still allocate voices 0→1→2→3 correctly, because
-        // each NoteOn call still increments before use.
-        state.next_voice_idx = NUM_VOICES - 1;
+        // SHORT/percussive engines (MEMBRANE kick/tom, SNARE, NOISE) and the KS
+        // string reference reset to a single slot so fast repeats retrigger one
+        // voice cleanly (no low-end build-up; no same-pitch string beating — the
+        // original reason this reset existed).
+        const EngineType e = kPresetEngine[m_preset_idx];
+        const bool stack = (e == ENGINE_PLATE || e == ENGINE_BAR);
+        if (!stack) state.next_voice_idx = NUM_VOICES - 1;
     }
 
     inline void AllNoteOff() {

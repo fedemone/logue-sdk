@@ -5,6 +5,19 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **12th HW pass — voice-stacking for sustained engines (cymbal rolls):**
+  - **Polyphony bug:** `GateOff()` forced `next_voice_idx = NUM_VOICES-1`, and since
+    the Drumlogue fires gate_on+gate_off in the same tick, EVERY repeated hit of a
+    preset reused voice 0 → each trigger reset the previous one = NO stacking (fatal
+    for cymbals: a second hit cut the first's ring).  The reset existed only to stop a
+    melodic STRING preset from beating across presses.
+  - **Fix (engine-aware):** GateOff now resets only for short/percussive engines
+    (MEMBRANE/SNARE/NOISE) and the KS string; **PLATE (cymbal/gong/ride/hi-hat/bell/
+    cowbell/triangle) and BAR (marimba/vibe/…) keep the round-robin so fast hits land
+    on different voices and STACK/overlap** across the 4 voices.  Verified: 3 fast hits
+    → 3 active voices on Cymbal/HHat-O/Marimba; mono on Kick/Snare.  (Per-voice crash
+    state incl. the reused resA self-PM buffer means stacked voices don't interfere.)
+  - **auto_tune.py:** confirmed NOT running/stuck (no process); it's idle.
 - **11th HW pass — de-regress Timpani, crash decay/continuity, full param coverage:**
   - **Timpani "bass guitar" regression:** the 10th-pass clean 1:1.5:2:2.5:3 series at
     1.4 s T60 = a sustained harmonic tone = bass.  Fixed: ratios slightly STRETCHED
