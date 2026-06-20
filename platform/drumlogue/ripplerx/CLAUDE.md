@@ -5,6 +5,32 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **14th HW pass — DATA-DRIVEN from the reference samples (samples/ + enum comments):**
+  - **Measured the references** (cymbal-Crash16Inch, Ride18Inch, RideBell, OpenHatBig,
+    Chinese-Gong, Orchestral-Timpani-C) vs my renders.  KEY FINDING that reverses
+    passes 10-13: a real cymbal/ride/hat is **BRIGHT (~11 kHz centroid) and NOISY
+    (spectral flatness ~0.55), sustained 0.6-3 s** — NOT a dark tonal resonator wash.
+    My renders were dark (4-7 kHz) and tonal (flat ~0.01) because I'd made them
+    ring-dominant.  The "crash too predominant" was my crash being DARK + FLUTTERING,
+    not that noise shouldn't dominate.  A crash IS mostly bright smooth noise.
+  - **Fix:** noise-dominant + bright.  `modal_engine_gain` crash factor 0.95→**0.12**
+    (ring is only a faint metallic undertone); noise high-passed bright (NzFltr=HP,
+    NzFq→12-13 kHz; Cymbal hat-BP moved 4.5 kHz→**11 kHz** — it was the band-limiter
+    darkening Cymbal); crash bank cut to a light broad colouring (drive ~0.3-0.9);
+    noise releases set to the **measured reference T60s** (Cymbal 2.3s, Ride 2.9s,
+    RidBel 3.3s, HHat-O 0.6s) with BOTH bands slow so the bright sizzle lasts the
+    whole tail (was dying first → dark tonal late).
+  - **Result vs ref** (centroid early/late, T60): Ride 10839/11032 vs 11167/11075,
+    3.1s vs 2.9s ✓; RidBel ~11k ✓ 3.9s; HHat-O 11218 ✓ 0.77s; Cymbal 10109/8978
+    (was 7437/4251) much closer; flatness still a bit low (more tonal than 0.55).
+  - **Timpani/Taiko:** ref Timpani centroid is ~650 Hz SUSTAINED (mid harmonics) —
+    my mode-1-dominant fix made the sustain too dark (~140 Hz).  Lengthened upper
+    modes toward the ref; still darker than ref in the tail.  REMAINING TENSION: the
+    reference has sustained mid harmonics (= brighter), but the HW user hears sustained
+    harmonics as "bass guitar".  Likely the additive-sine timbre, not brightness — a
+    ceiling of the 6-mode modal approach; a denser/noisier body would help.
+  - **`refcmp.py`** (host tool) compares any preset render to its reference sample
+    (centroid early/late, flatness, T60) — use it to tune toward the documented samples.
 - **13th HW pass — Timpani/Taiko attack-vs-sustain, metallic ring-dominant rebalance:**
   - **Timpani/Taiko "bass guitar + audible vibration":** root cause was NOT octave
     (fundamental energy >> sub-octave) — it was SUSTAINED bright upper harmonics +

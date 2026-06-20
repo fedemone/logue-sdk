@@ -251,7 +251,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        band beating = the "rough" low end reported across passes.  Dropped it; the
        remaining ratios are spaced by consonant intervals (no roughness).  The
        (2,1) mode at 1.5 carries the pitch, so its env (env2) is the strongest. */
-    {1.50f, 2.03f, 2.49f, 1300.0f, 300.0f, 210.0f, 150.0f, 0.40f, 1.00f, 0.62f, 0.42f, 0.28f, 6, 3.02f, 3.55f, 0.18f, 0.11f},
+    {1.50f, 2.03f, 2.49f, 1300.0f, 850.0f, 620.0f, 450.0f, 0.40f, 1.00f, 0.66f, 0.50f, 0.36f, 6, 3.02f, 3.55f, 0.24f, 0.16f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
     /* k_Taiko: HW redesign — woodblock-hard attack (mode 4 = bar ratio 2.756,
        short/strong) under a long quasi-harmonic "TAANNG" ring (modes 2-3 at
@@ -266,7 +266,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Woodblock: T60 160ms per WoodBlock1.wav reference */ {2.756f, 0.0f, 0.0f, 160.0f, 80.0f, 0.0f, 0.0f, 0.18f, 0.90f, 0.60f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_AcousticTom: T60 350ms */ {1.59f, 2.14f, 2.30f, 350.0f, 220.0f, 140.0f, 90.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f},
     /* k_Cymbal: env5=0.22*env4, env6=0.16*env4; T60 3000→1800ms for a clear decay (HW: "continues while held") */ {2.92f, 6.37f, 11.75f, 1800.0f, 1300.0f, 950.0f, 700.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f, 0.0792f, 0.0576f},
-    /* k_Gong: fundamental dominates at 3000ms; quick upper decay */ {1.479f, 1.932f, 2.332f, 3000.0f, 1400.0f, 900.0f, 600.0f, 0.22f, 0.90f, 0.58f, 0.42f, 0.28f, 6, 2.549f, 2.840f, 0.14f, 0.10f},
+    /* k_Gong: fundamental dominates at 3000ms; quick upper decay */ {1.479f, 1.932f, 2.332f, 1500.0f, 900.0f, 600.0f, 400.0f, 0.22f, 0.90f, 0.58f, 0.42f, 0.28f, 6, 2.549f, 2.840f, 0.14f, 0.10f},
     /* k_Kalimba: tine ratios 1:4:10; T60 ~600ms */ {4.00f, 10.0f, 0.0f, 600.0f, 200.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
     /* k_SteelPan */ {2.00f, 3.00f, 4.00f, 1200.0f, 900.0f, 700.0f, 500.0f, 0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4, 0, 0.0f},
     /* k_Claves */ {2.756f, 5.404f, 0.0f, 60.0f, 25.0f, 0.0f, 0.0f, 0.16f, 0.70f, 0.45f, 0.0f, 0.0f, 3, 0, 0.0f},
@@ -315,7 +315,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_Vibraphone  */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.00000f},
     /* k_Woodblock   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.00000f},
     /* k_AcousticTom */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.40000f,    0.00000f,    0.05000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tom_bm,    1.00000f,    0.99945f,    0.18000f,    0.00000f,    0.00080f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    3.50000f},
-    /* k_Cymbal      */ {3400.00000f,    1.00000f, 4500.00000f,    0.00000f,    0.00000f,    1.10000f,    0.00000f,    0.00000f,    0.00000f,    0.98000f,    0.00000f,    0.91000f, true,    0.30000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.15000f,    0.00000f},
+    /* k_Cymbal      */ {3400.00000f,    1.00000f, 11000.00000f,    0.00000f,    0.00000f,    1.10000f,    0.00000f,    0.00000f,    0.00000f,    0.98000f,    0.00000f,    0.91000f, true,    0.30000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.15000f,    0.00000f},
     /* k_Gong        */ { 900.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.50000f,    0.00000f,    0.86000f, false,    0.24000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.26000f,    0.00000f},
     /* k_Kalimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.03000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f},
     /* k_SteelPan    */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    1.50000f},
@@ -649,7 +649,7 @@ SynthState state;
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,1999,   3,   0,   5, 420,   0, 900, 707},        // 11: Wodblk    — (HW: ok)
             {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  20, 360,   0, 520, 707},        // 12: Ac Tom    — (HW: good)
-            {  13,  65,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  40, 640,   2, 340, 707},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
+            {13, 65, 0, 1, 800, 450, 0, 0, 0, 4, 200, 28, 0, 0, 18, 8, 1999, 15, 5, 62, 640, 2, 1200, 707},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
             {  14,  50,   0,   1, 200,  20,   0,   0,   0,   4, 190,   1,   0,   0,  20,   8,1999,  21,  20,  34, 860,   0,  30, 707},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
             {  15,  65,   0,   1, 700, 390,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720, 707},        // 15: Kalimba
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000, 707},        // 16: StelPan
@@ -663,13 +663,13 @@ SynthState state;
             {  24,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,1999,  18,   0,   0, 300,   0,1200, 707},        // 24: GlsBwl
             {  25,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200, 707},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
             {  26,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800, 707},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {  27,  79,   0,   1, 900, 490,   0,   0,   0,   4, 210,  18,   0,   0,  18,  12,1999,  12,   0,  88,1000,   2, 800, 707},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {27, 79, 0, 1, 900, 490, 0, 0, 0, 4, 210, 18, 0, 0, 18, 12, 1999, 12, 0, 90, 1000, 2, 1300, 707},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
             {  28,  62,   0,   1, 600, 425,   0,   0,   1,   5, 158,   3,   0,   0,  10,   8,1999,   9,   0,  15, 520,   0, 710, 707},        // 28: Conga     — (HW: ok)
             {  29,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000, 707},        // 29: Handpn
             {  30,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,1999,   3,   0,   0, 300,   0,1200, 707},        // 30: BelTre
             {  31,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,1999,   3,   0,   0, 300,   0, 800, 707},        // 31: SltDrm
-            {  32,  69,   0,   1, 900, 500,   0,   0,   0,   4, 190,  28,   0,   0,  18,   7,1999,  17,   0,  55, 950,   2, 750, 707},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {  33,  60,   0,   1, 900, 491,   0,   0,   0,   4, 200,  16,   0,   0,   8,  11,1999,   1,   0,  45, 950,   2, 800, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
+            {32, 69, 0, 1, 900, 500, 0, 0, 0, 4, 190, 28, 0, 0, 18, 7, 1999, 17, 0, 66, 950, 2, 1300, 707},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
+            {33, 60, 0, 1, 900, 491, 0, 0, 0, 4, 200, 16, 0, 0, 8, 11, 1999, 1, 0, 60, 950, 2, 1300, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
             {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 707},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707}         // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
@@ -1566,9 +1566,9 @@ SynthState state;
         // Cymbal: extended noise envelopes so shimmer sustains through the full 4-second render.
         // KS at note=90 (1480Hz) with Dkay=200 gives T60~4.6s and harmonics at 1480/2960/4440/5920Hz.
         if (m_preset_idx == k_Cymbal) {
-            v.exciter.noise_env_hi.decay_rate = 0.000030f;  // ~0.8s (was ~3s) — clear crash decay
-            v.exciter.noise_env.decay_rate    = 0.000020f;  // ~1.2s (was ~6s)
-            v.hf_branch_decay = 0.9998f;                    // T60~720ms upper shimmer
+            v.exciter.noise_env_hi.decay_rate = 0.000020f;  // keep bright hi band alive through the tail
+            v.exciter.noise_env.decay_rate    = 0.000020f;
+            v.hf_branch_decay = 0.99990f;                   // long upper shimmer
         }
         // Gong: without this override, NzRs=860 gives noise_env_hi T60~4ms (too short).
         // The hf_branch_env runs for ~720ms but needs a live noise signal to modulate.
@@ -1657,11 +1657,11 @@ SynthState state;
                 // and not blended with the ring ("explosion" on Gong; "bell +
                 // tambourine, not blended" on Ride).  The ring is now the
                 // foreground; the crash is a supporting wash.
-                case k_Cymbal:    crash_base =  2.5f; crash_r = 0.9720f; break;
+                case k_Cymbal:    crash_base =  0.3f; crash_r = 0.9720f; break;
                 case k_Gong:      crash_base =  0.6f; crash_r = 0.9850f; break;
-                case k_HiHatOpen: crash_base =  1.8f; crash_r = 0.9650f; break;
-                case k_Ride:      crash_base =  2.0f; crash_r = 0.9720f; break;
-                case k_RideBell:  crash_base =  1.6f; crash_r = 0.9680f; break;
+                case k_HiHatOpen: crash_base =  0.8f; crash_r = 0.9650f; break;
+                case k_Ride:      crash_base =  0.9f; crash_r = 0.9720f; break;
+                case k_RideBell:  crash_base =  0.8f; crash_r = 0.9680f; break;
                 default: break;
             }
             if (crash_base > 0.0f) {
@@ -1675,8 +1675,22 @@ SynthState state;
                 // the crash wash rings ~2 s and OVERLAPS the struck ring (this
                 // overlap is the "swirling carrier + overtones" the HW asked for;
                 // every prior pass died to "ring with weak noise sprayed on top").
-                v.exciter.noise_env.release_rate    = 0.00007f; // T60 ≈ 2.4 s
-                v.exciter.noise_env_hi.release_rate = 0.00010f; // T60 ≈ 1.6 s
+                // Noise releases set per-preset to the MEASURED reference T60s
+                // (cymbal-Crash16Inch 2.3s, Ride18Inch 2.9s, RidBell 3.3s,
+                // OpenHatBig 0.6s).  Critically BOTH bands (low + bright hi) use
+                // the same slow release so the bright sizzle sustains for the
+                // whole tail — otherwise the hi band died first and the late
+                // sound went dark/tonal (ref stays bright ~11kHz, flat ~0.55).
+                float rel_lo = 0.000032f, rel_hi = 0.000032f; // Cymbal ~2.3s (ref T60)
+                switch (m_preset_idx) {
+                    case k_Ride:      rel_lo = rel_hi = 0.000025f; break; // ~2.9s
+                    case k_RideBell:  rel_lo = rel_hi = 0.000022f; break; // ~3.3s
+                    case k_HiHatOpen: rel_lo = rel_hi = 0.000110f; break; // ~0.6s
+                    case k_Gong:      rel_lo = 0.000050f; rel_hi = 0.000100f; break;
+                    default: break; // Cymbal
+                }
+                v.exciter.noise_env.release_rate    = rel_lo;
+                v.exciter.noise_env_hi.release_rate = rel_hi;
                 // Self-PM bloom depth + how much struck ring feeds the bloom bus.
                 // Cymbal/Ride want a strong shimmering bloom; Gong a gentler one.
                 switch (m_preset_idx) {
@@ -2690,7 +2704,7 @@ SynthState state;
                     // On crash presets the struck modal bank is only the tonal
                     // SEED/attack; the noise-driven crash bank is the body, so
                     // pull the struck ring back to let the crash wash dominate.
-                    if (voice.crash_drive > 0.0f) modal_engine_gain *= 0.95f;  // ring is the foreground; crash a quiet blended sizzle
+                    if (voice.crash_drive > 0.0f) modal_engine_gain *= 0.12f;  // ref flat~0.55 ⇒ ring only a faint metallic undertone under bright noise
                     voice_out += modal_sum * modal_mix_dyn * modal_engine_gain;
                      if (voice.modal_env_1 < silence_threshold &&
                          voice.modal_env_2 < silence_threshold &&
