@@ -12,8 +12,8 @@ void TRXSnareDrum::Trigger() {
     ampEnv = 1.0f;
     snapEnv = 1.0f;
     phase1 = phase2 = 0.0f;
-    amp_mul  = fasterexpf(-INV_SAMPLE_RATE / decay);
-    snap_mul = fasterexpf(-INV_SAMPLE_RATE / 0.02f); // 20ms snap noise decay
+    amp_mul  = e_expff(-INV_SAMPLE_RATE / decay);
+    snap_mul = e_expff(-INV_SAMPLE_RATE / 0.02f); // 20ms snap noise decay
 }
 
 float TRXSnareDrum::Process() {
@@ -98,9 +98,9 @@ void TRXSnareDrum::setParameter(fm_param_index_t param_index, float value) {
         // SliderFloat("Bump", &bump, 0.0f, 1.0f);
             bump = value * 0.01f;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // SliderFloat("Decay", &decay, 0.05f, 1.0f);
-            decay = 0.05f + value * 0.0095f;
+            decay = 0.05f + value * 0.00475f;
             break;
         case K_Gap:
         // SliderFloat("Tune Interval", &tune, 0.0f, 400.0f);
@@ -129,7 +129,7 @@ float TRXSnareDrum::getParameter(fm_param_index_t param_index) {
         case K_Mix:
             return tone;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Gap:

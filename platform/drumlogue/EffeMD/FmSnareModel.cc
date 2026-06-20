@@ -78,9 +78,9 @@ void FmSnareModel::setParameter(fm_param_index_t param_index, float value) {
         // ParameterSlider("d_m (Mod Decay)", &d_m, 0.01f, 1.0f);
             d_m = 0.01f + value * 0.0099f;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // ParameterSlider("d_b (Tone Decay)", &d_b, 0.01f, 1.0f);
-            d_b = 0.01f + value * 0.0099f;
+            d_b = 0.01f + value * 0.00495f;
             break;
         case K_Noise_Level:
         // ParameterSlider("Abrus (Noise Level)", &Abrus, 0.0f, 1.0f);
@@ -105,7 +105,7 @@ float FmSnareModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Frequency: return f_m;
         case K_Modulation_Index:     return I;
         case K_Modulation_Decay:     return d_m;
-        case K_Decay_A:              return d_b;
+        case K_Decay_A:   // 0..200              return d_b;
         case K_Noise_Level:          return Abrus;
         case K_Noise_Decay:          return dbrus;
         case K_HPF:                  return fhp; // Hz

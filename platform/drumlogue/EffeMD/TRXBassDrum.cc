@@ -11,8 +11,8 @@ void TRXBassDrum::Trigger() {
     env = 1.0f;
     rampEnv = 1.0f;
     phase = 0.0f;
-    env_mul  = fasterexpf(-INV_SAMPLE_RATE / decay);
-    ramp_mul = fasterexpf(-INV_SAMPLE_RATE / rampDecay);
+    env_mul  = e_expff(-INV_SAMPLE_RATE / decay);
+    ramp_mul = e_expff(-INV_SAMPLE_RATE / rampDecay);
 }
 
 float TRXBassDrum::Process() {
@@ -81,9 +81,9 @@ void TRXBassDrum::setParameter(fm_param_index_t param_index, float value) {
         // SliderFloat("Ramp Decay", &rampDecay, 0.01f, 1.0f);
         rampDecay = value * 0.01f;
         break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // SliderFloat("Decay", &decay, 0.01f, 2.0f);
-        decay = 0.01f + value * 0.0199f;
+        decay = 0.01f + value * 0.00995f;
         break;
         case K_Noise_Level:
         // SliderFloat("Noise", &noise, 0.0f, 1.0f);
@@ -116,7 +116,7 @@ float TRXBassDrum::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return rampDecay;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Noise_Level:

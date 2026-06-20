@@ -104,9 +104,9 @@ void TRXHiHat::setParameter(fm_param_index_t param_index, float value) {
         // SliderFloat("Gap", &gap, 0.0f, 1.0f);
             gap = value * 0.01f;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // SliderFloat("Decay", &decay, 0.01f, 1.0f);
-            decay = 0.01f + value * 0.0099f;
+            decay = 0.01f + value * 0.00495f;
             break;
         case K_HPF:
         // SliderFloat("LPF Freq", &lpfFreq, 1000.0f, 12000.0f);
@@ -131,7 +131,7 @@ void TRXHiHat::setParameter(fm_param_index_t param_index, float value) {
 float TRXHiHat::getParameter(fm_param_index_t param_index) {
     // user editable parameters are in range 0..100
     switch (param_index) {
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Gap:

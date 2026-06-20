@@ -59,9 +59,9 @@ void FmTomModel::setParameter(fm_param_index_t param_index, float value) {
             // ParameterSlider("d_m (Mod Decay)", &d_m, 0.01f, 1.0f);
             d_m = 0.01f + value * 0.0099f;
         break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // ParameterSlider("d_b (Amp Decay)", &d_b, 0.01f, 2.0f);
-            d_b = 0.01f + value * 0.0199f;
+            d_b = 0.01f + value * 0.00995f;
             break;
         case K_Frequency_Sweep:
         // ParameterSlider("A_f (Freq Sweep Amt)", &A_f, 0.0f, 100.0f);
@@ -94,7 +94,7 @@ float FmTomModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return d_m;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return d_b;
             break;
         case K_Frequency_Sweep:

@@ -188,7 +188,7 @@ public:
                 break;
 
             case K_UseRatio:
-                return value == 1 ?  "Ratio" : "ModIdx";
+                return value == 1 ?  "Ratio" : value == 0 ?  "ModIdx" : "x";
                 break;
 
             case K_Euclidean_Tuning:
@@ -202,8 +202,8 @@ public:
                     synth_.models[instrument_id]->getParameter((fm_param_index_t)index);
                 if (actual_value == 255.0f)
                     return "x"; // NOTE first page will not refresh until another page is selected!!
-                snprintf(strbuf_, sizeof(strbuf_), ":%.f", actual_value);
-                return strbuf_;
+                snprintf(strbuf_, sizeof(strbuf_), "%.3f", actual_value);
+                    return strbuf_;
             }
         }
         return nullptr;

@@ -79,9 +79,9 @@ void FmCowbellModel::setParameter(fm_param_index_t param_index, float value) {
         // ParameterSlider("dm (Mod Decay)", &dm, 0.01f, 1.0f);
         dm = 0.01f + value * 0.0099f;
         break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // ParameterSlider("d_b1 (Decay A)", &d_b1, 0.005f, 0.2f);
-        d_b1 = 0.005f + value * 0.00195f;
+        d_b1 = 0.005f + value * 0.000975f;
         break;
         case K_Decay_B:
         // ParameterSlider("db2 (Decay B)", &db2, 0.01f, 1.0f);
@@ -114,7 +114,7 @@ float FmCowbellModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return dm;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return d_b1;
             break;
         case K_Decay_B:

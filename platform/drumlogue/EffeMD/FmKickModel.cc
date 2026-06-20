@@ -100,8 +100,8 @@ void FmKickModel::setParameter(fm_param_index_t param_index, float value) {
         case K_Modulation_Decay:
             d_m = 0.001f + value * 0.01999f;
             break;
-        case K_Decay_A:
-            d_b = 0.01f + value * 0.0199f;
+        case K_Decay_A:   // 0..200
+            d_b = 0.01f + value * 0.00995f;
             break;
         case K_Count:
             mod_env_sync = ((int)value % 2) == 0;
@@ -127,7 +127,7 @@ float FmKickModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Feedback: return b_m;
         case K_Modulation_Index:    return I;
         case K_Modulation_Decay:    return d_m;
-        case K_Decay_A:             return d_b;
+        case K_Decay_A:   // 0..200             return d_b;
         case K_Count:               return mod_env_sync ? 1.0f : 0.0f; // "mod env sync"
         case K_UseRatio:            return use_ratio_mode ? 1.0f : 0.0f;
         case K_Frequency_Sweep:     return A_f; // Hz

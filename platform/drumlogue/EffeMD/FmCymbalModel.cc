@@ -26,7 +26,7 @@ void FmCymbalModel::Trigger() {
 void FmCymbalModel::Release() {
     // Start a fast (~60 ms) fade. Only meaningful when sustain > 0, where the
     // amp envelope otherwise floors at `sustain` and never reaches silence.
-    choke_mul_ = fasterexpf(-INV_SAMPLE_RATE / 0.06f);
+    choke_mul_ = e_expff(-INV_SAMPLE_RATE / 0.06f);
 }
 
 float FmCymbalModel::Process() {
@@ -132,9 +132,9 @@ void FmCymbalModel::setParameter(fm_param_index_t param_index, float value) {
         // ParameterSlider("d_m (Mod Decay)", &d_m, 0.05f, 2.0f);
         d_m = 0.01f + value * 0.0099f;
         break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // ParameterSlider("d_b (Amp Decay)", &d_b, 0.05f, 4.0f);
-            d_b = 0.05f + value * 0.0495f;
+            d_b = 0.05f + value * 0.02475f;
             break;
         case K_Sustain:
         // ParameterSlider("sustain", &sustain, 0.0f, 1.0f);
@@ -166,7 +166,7 @@ float FmCymbalModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return d_m;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return d_b;
             break;
         case K_Sustain:

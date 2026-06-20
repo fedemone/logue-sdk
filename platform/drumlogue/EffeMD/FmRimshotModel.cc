@@ -69,9 +69,9 @@ void FmRimshotModel::setParameter(fm_param_index_t param_index, float value) {
         // ParameterSlider("d_m (mod env decay)", &d_m, 0.01f, 0.5f);
             d_m = 0.01f + value * 0.0049f;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // ParameterSlider("d_bA (body decay)", &d_bA, 0.05f, 1.0f);
-            d_bA = 0.05f + value * 0.0095f;
+            d_bA = 0.05f + value * 0.00475f;
             break;
         case K_Decay_B:
         // ParameterSlider("d_bB (rim decay)", &d_bB, 0.01f, 0.5f);
@@ -108,7 +108,7 @@ float FmRimshotModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return d_m;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return d_bA;
             break;
         case K_Decay_B:

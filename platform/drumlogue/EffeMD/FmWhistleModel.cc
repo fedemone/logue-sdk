@@ -61,7 +61,7 @@ void FmWhistleModel::loadPreset(uint8_t idx) {
           f_b = 234.804f;  f_m = 1066.67f;  I = 3.431f;  d_m = 0.17f;  d1 = 0.023f;  d2 = 0.3f;  clap_count = 2;  clap_interval = 0.028f;  fhp = 786.765f;  bm = 1.0f;
           break;
         case 1:
-          f_b = 176.64f; f_m = 1585.66f; I = 15.164f; d_m = 0.095f; d1 = 0.01f; d2 = 0.09f; clap_count = 30; clap_interval = 0.034f; fhp = 953.197f; bm = 0.018f;
+          f_b = 1364.64f; f_m = 2585.66f; I = 5.164f; d_m = 0.095f; d1 = 0.01f; d2 = 0.09f; clap_count = 6; clap_interval = 0.015f; fhp = 953.197f; bm = 0.018f;
           break;
     }
 }
@@ -73,7 +73,7 @@ void FmWhistleModel::setParameter(fm_param_index_t param_index, float value) {
         case K_Modulation_Feedback: bm = 0.01f + value * 0.0099f; break;
         case K_Modulation_Index:    I = value; break;
         case K_Modulation_Decay:    d_m = 0.01f + value * 0.0099f; break;
-        case K_Decay_A:             d1 = 0.005f + value * 0.00595f; break;
+        case K_Decay_A:   // 0..200             d1 = 0.005f + value * 0.002975f; break;
         case K_Decay_B:             d2 = 0.01f + value * 0.0099f; break;
         case K_Gap:                 clap_interval = 0.005f + value * 0.00045f; break;
         case K_Count:               clap_count = (int)value; break;
@@ -89,7 +89,7 @@ float FmWhistleModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Feedback: return bm;
         case K_Modulation_Index:    return I;
         case K_Modulation_Decay:    return d_m;
-        case K_Decay_A:             return d1;
+        case K_Decay_A:   // 0..200             return d1;
         case K_Decay_B:             return d2;
         case K_Gap:                 return clap_interval;
         case K_Count:               return (float)clap_count;

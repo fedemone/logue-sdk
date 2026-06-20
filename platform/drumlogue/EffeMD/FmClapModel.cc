@@ -102,13 +102,16 @@ float FmClapModel::Process() {
     return output;
 }
 
+// f_b >> f_m >> I >> d_m >> d1 >> d2 >> clap_count >> clap_interval >> fhp >> bm;
 void FmClapModel::loadPreset(uint8_t idx) {
     switch (idx) {
         case 0:
+        // "234.804 1066.67 3.431 0.17 0.023 0.3 2 0.028 786.765 1\n";
           f_b = 234.901f;  f_m = 1066.67f;  I = 3.431f;  d_m = 0.0087f;  d1 = 0.023f;  d2 = 0.3f;  clap_count = 2;  clap_interval = 0.028f;  fhp = 886.765f;  bm = 1.0f;  noise = 0.6f;   Q = 2.3f;
           break;
         case 1:
-          f_b = 176.73f; f_m = 1585.65f; I = 15.164f; d_m = 0.0095f; d1 = 0.01f; d2 = 0.09f; clap_count = 30; clap_interval = 0.034f; fhp = 1153.197f; bm = 0.018f;  noise = 0.7f;   Q = 2.0f;
+        // 176.64 1585.66 15.164 0.095 0.01 0.09 3 0.034 953.197 0.018
+          f_b = 176.73f; f_m = 1585.65f; I = 15.164f; d_m = 0.0095f; d1 = 0.01f; d2 = 0.09f; clap_count = 3; clap_interval = 0.034f; fhp = 1153.197f; bm = 0.018f;  noise = 0.7f;   Q = 2.0f;
           break;
         // case 2: - maybe in the future
     }
@@ -130,7 +133,7 @@ void FmClapModel::setParameter(fm_param_index_t param_index, float value) {
             break;
         case K_Modulation_Feedback:
         // ParameterSlider("bm (Mod Feedback)", &bm, 0.0f, 1.0f);
-            bm = 0.01f + value * 0.0099f;
+            bm = value * 0.01f;
             break;
         case K_Modulation_Index:
         // ParameterSlider("I (Mod Index)", &I, 0.0f, 100.0f);
@@ -140,13 +143,13 @@ void FmClapModel::setParameter(fm_param_index_t param_index, float value) {
         // ParameterSlider("d_m (Mod Decay)", &d_m, 0.001f, 0.2f);
             d_m = 0.001f + value * 0.00199f;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
         // ParameterSlider("d1 (Pre-Clap Decay)", &d1, 0.005f, 0.6f);
-            d1 = 0.005f + value * 0.00595f;
+            d1 = 0.005f + value * 0.002975f;
             break;
         case K_Decay_B:
         // ParameterSlider("d2 (Final Clap Decay)", &d2, 0.01f, 0.9f);
-            d2 = 0.01f + value * 0.0099f;
+            d2 = 0.01f + value * 0.0089f;
             break;
         case K_Gap:
         // ParameterSlider("clap_interval (s)", &clap_interval, 0.005f, 0.05f);
@@ -189,7 +192,7 @@ float FmClapModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return d_m;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return d1;
             break;
         case K_Decay_B:

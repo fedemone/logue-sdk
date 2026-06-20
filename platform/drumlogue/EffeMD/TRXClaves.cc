@@ -10,7 +10,7 @@ void TRXClaves::Trigger() {
     env = 1.0f;
     t = 0.0f;
     phase1 = phase2 = 0.0f;
-    env_mul = fasterexpf(-INV_SAMPLE_RATE / decay);
+    env_mul = e_expff(-INV_SAMPLE_RATE / decay);
 }
 
 float TRXClaves::Process() {
@@ -55,13 +55,9 @@ void TRXClaves::setParameter(fm_param_index_t param_index, float value) {
         // SliderFloat("Pitch", &pitch, 200.0f, 4000.0f);
             pitch = 100.0f + value * 19.5f; //0..200
             break;
-        case K_Decay_A:
-            // Claves are a short click. The original 0.01..5 s range turned the
-            // two beating sines into a gong at the default value; clamp to a
-            // clave-length range (~5..100 ms). The long-decay voice lives on as
-            // the separate "TRX Gong" instrument.
+        case K_Decay_A:   // 0..200
         // SliderFloat("Decay", &decay, 0.01f, 0.5f);
-        decay = 0.005f + value * 0.00095f;
+        decay = 0.01f + value * 0.0029f;
         break;
         case K_Mix:
         // SliderFloat("Balance", &balance, 0.0f, 1.0f);
@@ -71,7 +67,7 @@ void TRXClaves::setParameter(fm_param_index_t param_index, float value) {
         // SliderFloat("Interval", &interval, 0.0f, 400.0f);
             interval = value * 4.0f;
             break;
-        case K_Count:
+        case K_Sweep_Decay:
         // SliderFloat("Clip", &clip, 0.0f, 1.0f);
             clip = value * 0.01f;
             break;
@@ -85,7 +81,7 @@ float TRXClaves::getParameter(fm_param_index_t param_index) {
         case K_Base_Frequency:
             return pitch;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Mix:
@@ -111,6 +107,6 @@ float TRXClaves::getParameter(fm_param_index_t param_index) {
 //     ImGui::SliderFloat("Clip", &clip, 0.0f, 1.0f);
 // }
 
-float TRXClaves::sine(float x) {
+inline float TRXClaves::sine(float x) {
     return fastersinfullf(x);
 }

@@ -43,10 +43,10 @@ float TRXGongModel::Process() {
 void TRXGongModel::loadPreset(uint8_t idx) {
     switch (idx) {
         case 0:
-          pitch = 1410.78f; interval = 200.0f; decay = 0.5f; balance = 0.5f; clip = 0.211f;
+          pitch = 395.78f; interval = 200.0f; decay = 0.5f; balance = 0.5f; clip = 0.211f;
           break;
         case 1:
-          pitch = 880.782f; interval = 280.13f; decay = 1.2f; balance = 0.912f; clip = 0.0f;
+          pitch = 580.782f; interval = 8.13f; decay = 0.3f; balance = 0.912f; clip = 0.8f;
           break;
     }
 }
@@ -54,7 +54,7 @@ void TRXGongModel::loadPreset(uint8_t idx) {
 void TRXGongModel::setParameter(fm_param_index_t param_index, float value) {
     switch (param_index) {
         case K_Base_Frequency: pitch = 200.0f + value * 38.0f; break;
-        case K_Decay_A:        decay = 0.01f + value * 0.0499f; break;  // up to ~5 s
+        case K_Decay_A:   // 0..200        decay = 0.01f + value * 0.02495f; break;  // up to ~5 s
         case K_Mix:            balance = value * 0.01f; break;
         case K_Gap:            interval = value * 4.0f; break;
         case K_Count:          clip = value * 0.01f; break;
@@ -65,7 +65,7 @@ void TRXGongModel::setParameter(fm_param_index_t param_index, float value) {
 float TRXGongModel::getParameter(fm_param_index_t param_index) {
     switch (param_index) {
         case K_Base_Frequency: return pitch;
-        case K_Decay_A:        return decay;
+        case K_Decay_A:   // 0..200        return decay;
         case K_Mix:            return balance;
         case K_Gap:            return interval;
         case K_Count:          return clip;
