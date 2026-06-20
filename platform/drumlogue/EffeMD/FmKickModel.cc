@@ -25,10 +25,9 @@ void FmKickModel::Init() {
 void FmKickModel::Trigger() {
     Init();
     // Decay multipliers per sample: for small x, exp(-x) ~= 1 - x
-    float dt = 1.0f / SAMPLE_RATE;
-    amp_decay_const = 1.0f - (dt / d_b);
-    mod_decay_const = 1.0f - (dt / d_m);
-    freq_decay_const = 1.0f - (dt / d_f);
+        amp_decay_const = 1.0f - (INV_SAMPLE_RATE / d_b);
+    mod_decay_const = 1.0f - (INV_SAMPLE_RATE / d_m);
+    freq_decay_const = 1.0f - (INV_SAMPLE_RATE / d_f);
     if (amp_decay_const < 0.0f) amp_decay_const = 0.0f;
     if (mod_decay_const < 0.0f) mod_decay_const = 0.0f;
     if (freq_decay_const < 0.0f) freq_decay_const = 0.0f;

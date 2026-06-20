@@ -21,29 +21,28 @@ void FmWhistleModel::Trigger() {
 float FmWhistleModel::Process() {
     if (!active) return 0.0f;
 
-    float dt = 1.0f / SAMPLE_RATE;
-    float decay = (clap_stage < clap_count) ? d1 : d2;
+        float decay = (clap_stage < clap_count) ? d1 : d2;
     float amp_env = ExpDecay(t, decay);
     float mod_env = ExpDecay(t, d_m);
 
     // FM synthesis
     float mod_feedback = bm * prev_mod;
-    mod_phase = WrapPhase(mod_phase + TWO_PI * (f_m * pitch_ratio_) * dt + mod_feedback);
+    mod_phase = WrapPhase(mod_phase + TWO_PI * (f_m * pitch_ratio_) * INV_SAMPLE_RATE + mod_feedback);
     float mod_out = fastersinfullf(mod_phase);
     prev_mod = mod_out;
 
-    car_phase = WrapPhase(car_phase + TWO_PI * (f_b * pitch_ratio_) * dt + I * mod_env * mod_out);
+    car_phase = WrapPhase(car_phase + TWO_PI * (f_b * pitch_ratio_) * INV_SAMPLE_RATE + I * mod_env * mod_out);
     float tone = fastersinfullf(car_phase);
     float x = tone * amp_env;
 
     // High-pass filter
-    float alpha = 1.0f / (1.0f + 2.0f * PI * fhp * dt);
+    float alpha = 1.0f / (1.0f + 2.0f * PI * fhp * INV_SAMPLE_RATE);
     float y = alpha * (y_prev + x - x_prev);
     x_prev = x;
     y_prev = y;
 
-    t += dt;
-    clap_timer += dt;
+    t += INV_SAMPLE_RATE;
+    clap_timer += INV_SAMPLE_RATE;
 
     if (clap_timer >= clap_interval) {
         ++clap_stage;

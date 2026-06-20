@@ -125,8 +125,8 @@ fast_inline void fm_perc_synth_init(fm_perc_synth_t* synth) {
 
     synth->instrument    = ID_FmKickModel;
     synth->euclid_mode   = EUCLID_MODE_OFF;
-    synth->velocity_gain = 1.0f;
-    synth->master_gain   = 1.30f;
+    synth->velocity_gain = DEFAULT_VELOCITY_GAIN;
+    synth->master_gain   = DEFAULT_MASTER_GAIN;
     synth->silence_count = EFFEMD_SILENCE_SAMPLES;
     synth->idle          = 1;
 

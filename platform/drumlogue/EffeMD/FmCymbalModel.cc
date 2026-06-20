@@ -30,8 +30,7 @@ void FmCymbalModel::Release() {
 }
 
 float FmCymbalModel::Process() {
-    float dt = INV_SAMPLE_RATE;
-    float amp_env = sustain + ExpDecay(t, d_b);
+        float amp_env = sustain + ExpDecay(t, d_b);
     float mod_env = ExpDecay(t, d_m);
 
     static const float ratios[NUM_PAIRS] = {1.0f, 1.411f, 1.8f, 2.7f};
@@ -40,13 +39,13 @@ float FmCymbalModel::Process() {
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     // NEON v7: process the 4 modulator/carrier pairs in parallel lanes.
     const float32x4_t ratio_v = vld1q_f32(ratios);
-    const float32x4_t two_pi_dt = vdupq_n_f32(TWO_PI * dt);
+    const float32x4_t two_pi_dt = vdupq_n_f32(TWO_PI * INV_SAMPLE_RATE);
 
     float32x4_t mod_p  = vld1q_f32(mod_phase);
     float32x4_t car_p  = vld1q_f32(car_phase);
     float32x4_t prev_m = vld1q_f32(prev_mod);
 
-    // mod_phase += 2*pi*(fm*ratio)*dt + bb*prev_mod
+    // mod_phase += 2*pi*(fm*ratio)*INV_SAMPLE_RATE + bb*prev_mod
     float32x4_t mod_inc = vmulq_f32(vmulq_n_f32(ratio_v, fm * pitch_ratio_), two_pi_dt);
     mod_p = vaddq_f32(mod_p, vaddq_f32(mod_inc, vmulq_n_f32(prev_m, bb)));
     // Keep phases bounded: subtract 2*pi*round(phase/2*pi)
@@ -56,7 +55,7 @@ float FmCymbalModel::Process() {
     }
     float32x4_t mod_out = neon_sin(mod_p);
 
-    // car_phase += 2*pi*(fb*ratio)*dt + I*mod_env*mod_out
+    // car_phase += 2*pi*(fb*ratio)*INV_SAMPLE_RATE + I*mod_env*mod_out
     float32x4_t car_inc = vmulq_f32(vmulq_n_f32(ratio_v, fb * pitch_ratio_), two_pi_dt);
     car_p = vaddq_f32(car_p, vaddq_f32(car_inc, vmulq_n_f32(mod_out, I * mod_env)));
     {
@@ -75,11 +74,11 @@ float FmCymbalModel::Process() {
     sample = vget_lane_f32(s2, 0);
 #else
     for (int i = 0; i < NUM_PAIRS; ++i) {
-        mod_phase[i] = WrapPhase(mod_phase[i] + TWO_PI * (fm * pitch_ratio_ * ratios[i]) * dt + bb * prev_mod[i]);
+        mod_phase[i] = WrapPhase(mod_phase[i] + TWO_PI * (fm * pitch_ratio_ * ratios[i]) * INV_SAMPLE_RATE + bb * prev_mod[i]);
         float mod_out = fastersinfullf(mod_phase[i]);
         prev_mod[i] = mod_out;
 
-        car_phase[i] = WrapPhase(car_phase[i] + TWO_PI * (fb * pitch_ratio_ * ratios[i]) * dt + I * mod_env * mod_out);
+        car_phase[i] = WrapPhase(car_phase[i] + TWO_PI * (fb * pitch_ratio_ * ratios[i]) * INV_SAMPLE_RATE + I * mod_env * mod_out);
         float car_out = fastersinfullf(car_phase[i]);
 
         sample += car_out;
@@ -88,12 +87,12 @@ float FmCymbalModel::Process() {
 
     float mixed = sample * 0.25f * amp_env;
 
-    float alpha = 1.0f / (1.0f + 2.0f * PI * f_hp * dt);
+    float alpha = 1.0f / (1.0f + 2.0f * PI * f_hp * INV_SAMPLE_RATE);
     float y = alpha * (y_prev + mixed - x_prev);
     x_prev = mixed;
     y_prev = y;
 
-    t += dt;
+    t += INV_SAMPLE_RATE;
     choke_ *= choke_mul_;  // 1.0 until Release(), then fades to 0
     return y * choke_;
 }

@@ -10,10 +10,9 @@ void FmSnareModel::Init() {
     mod_env = 1.0f;
     noise_env = 1.0f;
     // Decay multipliers per sample: for small x, exp(-x) ~= 1 - x
-    float dt = 1.0f / SAMPLE_RATE;
-    amp_decay_const = 1.0f - (dt / d_b);
-    mod_decay_const = 1.0f - (dt / d_m);
-    noise_decay_const = 1.0f - (dt / dbrus);
+        amp_decay_const = 1.0f - (INV_SAMPLE_RATE / d_b);
+    mod_decay_const = 1.0f - (INV_SAMPLE_RATE / d_m);
+    noise_decay_const = 1.0f - (INV_SAMPLE_RATE / dbrus);
     if (amp_decay_const < 0.0f) amp_decay_const = 0.0f;
     if (mod_decay_const < 0.0f) mod_decay_const = 0.0f;
     if (noise_decay_const < 0.0f) noise_decay_const = 0.0f;
@@ -24,8 +23,7 @@ void FmSnareModel::Trigger() {
 }
 
 float FmSnareModel::Process() {
-    const float dt = 1.0f / SAMPLE_RATE;
-    // Iterative envelope decay
+    const     // Iterative envelope decay
     amp_env *= amp_decay_const;
     mod_env *= mod_decay_const;
     noise_env *= noise_decay_const;
@@ -42,7 +40,7 @@ float FmSnareModel::Process() {
     const float white = drum_rng_bipolar(&rng_) * Abrus * noise_env;
     const float x = tone + white;
     // One-pole high pass
-    const float alpha = 1.0f / (1.0f + 2.0f * PI * fhp * dt);
+    const float alpha = 1.0f / (1.0f + 2.0f * PI * fhp * INV_SAMPLE_RATE);
     const float y = alpha * (y_prev + x - x_prev);
     x_prev = x;
     y_prev = y;

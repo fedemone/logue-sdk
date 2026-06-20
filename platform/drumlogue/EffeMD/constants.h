@@ -30,6 +30,7 @@ constexpr float INV_SAMPLE_RATE = 1.0f / SAMPLE_RATE;
 constexpr float NYQUIST_FREQ    = SAMPLE_RATE * 0.5f;
 constexpr float PI              = 3.14159265f;
 constexpr float TWO_PI          = 2.0f * PI;
+constexpr float HALF_PI         = 0.5f * PI;
 
 // ============================================================================
 // MIDI / tuning constants
@@ -45,7 +46,7 @@ constexpr float LFO_PHASE_OFFSET = 0.25f;
 // ============================================================================
 constexpr float DEFAULT_VELOCITY_GAIN = 1.0f;
 constexpr float DEFAULT_MASTER_GAIN   = 2.30f;
-
+constexpr float CLAP_ATTACK_TIME = 0.00035f;
 
 // ============================================================================
 // LFO targets

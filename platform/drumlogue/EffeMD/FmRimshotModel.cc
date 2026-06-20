@@ -13,29 +13,28 @@ void FmRimshotModel::Trigger() {
 }
 
 float FmRimshotModel::Process() {
-    float dt = 1.0f / SAMPLE_RATE;
 
     float mod_env = ExpDecay(t, d_m);
     float mod_out = fastersinfullf(mod_phase);
-    mod_phase = WrapPhase(mod_phase + TWO_PI * (1000.0f * pitch_ratio_) * dt);  // fixed mod freq
+    mod_phase = WrapPhase(mod_phase + TWO_PI * (1000.0f * pitch_ratio_) * INV_SAMPLE_RATE);  // fixed mod freq
     prev_mod = mod_out;
 
     float envB = ExpDecay(t, d_bB);
     float carB = fastersinfullf(WrapPhase(carB_phase + I_B * mod_env * mod_out));
-    carB_phase = WrapPhase(carB_phase + TWO_PI * (f_bB * pitch_ratio_) * dt);
+    carB_phase = WrapPhase(carB_phase + TWO_PI * (f_bB * pitch_ratio_) * INV_SAMPLE_RATE);
 
     float envA = ExpDecay(t, d_bA);
     float carA = fastersinfullf(WrapPhase(carA_phase + I_A * mod_env * mod_out));
-    carA_phase = WrapPhase(carA_phase + TWO_PI * (f_bA * pitch_ratio_) * dt);
+    carA_phase = WrapPhase(carA_phase + TWO_PI * (f_bA * pitch_ratio_) * INV_SAMPLE_RATE);
 
     float mixed = (1.0f - A_A) * (carB * envB) + A_A * (carA * envA);
 
-    float alpha = 1.0f / (1.0f + 2.0f * PI * f_hp * dt);
+    float alpha = 1.0f / (1.0f + 2.0f * PI * f_hp * INV_SAMPLE_RATE);
     float y = alpha * (y_prev + mixed - x_prev);
     x_prev = mixed;
     y_prev = y;
 
-    t += dt;
+    t += INV_SAMPLE_RATE;
     return y;
 }
 

@@ -12,20 +12,19 @@ void FmTomModel::Trigger() {
 }
 
 float FmTomModel::Process() {
-    float dt = 1.0f / SAMPLE_RATE;
     float amp_env = ExpDecay(t, d_b);
     float mod_env = ExpDecay(t, d_m);
     float freq_env = A_f * ExpDecay(t, d_f);
 
     float mod_feedback = 1.0f * prev_mod;
-    mod_phase = WrapPhase(mod_phase + TWO_PI * (f_m * pitch_ratio_) * dt + mod_feedback);
+    mod_phase = WrapPhase(mod_phase + TWO_PI * (f_m * pitch_ratio_) * INV_SAMPLE_RATE + mod_feedback);
     float mod_out = fastersinfullf(mod_phase);
     prev_mod = mod_out;
 
-    car_phase = WrapPhase(car_phase + TWO_PI * ((f_b + freq_env) * pitch_ratio_) * dt + I * mod_env * mod_out);
+    car_phase = WrapPhase(car_phase + TWO_PI * ((f_b + freq_env) * pitch_ratio_) * INV_SAMPLE_RATE + I * mod_env * mod_out);
     float out = fastersinfullf(car_phase) * amp_env;
 
-    t += dt;
+    t += INV_SAMPLE_RATE;
     return out;
 }
 
