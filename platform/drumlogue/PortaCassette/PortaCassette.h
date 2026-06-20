@@ -427,13 +427,13 @@ public:
 
         const float32x4_t lfo_vals     = fastersinfullf_ps(wow_phases);
         const float32x4_t flutter_vals = fastersinfullf_ps(flut_phases);
-
+        float lfo_val[NEON_LANES];
+        float flutter_val[NEON_LANES];
+        vst1q_f32(lfo_val, lfo_vals);
+        vst1q_f32(flutter_val, flutter_vals);
         for (int s = 0; s < NEON_LANES; ++s) {
-            const float lfo_val       = vgetq_lane_f32(lfo_vals, s);
-            const float flutter_val   = vgetq_lane_f32(flutter_vals, s);
-
-            const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val)
-                                        + flutter_depth_base * flutter_val;
+            const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val[s])
+                                        + flutter_depth_base * flutter_val[s];
             const int32_t i_off       = (int32_t)rd_off;
             const float   fr          = rd_off - (float)i_off;
 

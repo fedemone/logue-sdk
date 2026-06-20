@@ -23,7 +23,7 @@ void FmSnareModel::Trigger() {
 }
 
 float FmSnareModel::Process() {
-    const     // Iterative envelope decay
+    // Iterative envelope decay
     amp_env *= amp_decay_const;
     mod_env *= mod_decay_const;
     noise_env *= noise_decay_const;
