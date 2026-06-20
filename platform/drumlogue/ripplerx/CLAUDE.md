@@ -5,6 +5,25 @@
 - Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
   sounds instead of strings.
 - Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
+- **13th HW pass — Timpani/Taiko attack-vs-sustain, metallic ring-dominant rebalance:**
+  - **Timpani/Taiko "bass guitar + audible vibration":** root cause was NOT octave
+    (fundamental energy >> sub-octave) — it was SUSTAINED bright upper harmonics +
+    a close-partial cluster.  A real timpani has a bright struck ATTACK that settles
+    to a smooth dark fundamental.  Fix: mode 1 dominant + LONG (1.3s Timp / 1.5s Taiko);
+    upper modes present but FAST-decay (300/210/150ms Timp, 260/175/120 Taiko) so they
+    colour only the attack.  Verified: centroid early 406Hz → late 140Hz (Timp) =
+    bright attack, dark continuous sustain.
+  - **Metallic "crash still too predominant / not blended" (4th report):** decisive
+    ring-dominant rebalance.  `modal_engine_gain` crash factor 0.60→0.95 (ring is the
+    foreground); crash_base cut 2-3× more (Cymbal 6→2.5, Gong 1.5→0.6, HHat-O 4→1.8,
+    Ride→2.0, RidBel 4→1.6); **crash_r broadened to ~0.965-0.985** so the 6 resonators
+    OVERLAP into a continuous COLOURED sizzle (blended) instead of sparse beating or
+    raw broadband hiss; raw `parallel_noise_gain` cut (HHat-O/Ride 6→2.2, etc.); bloom
+    halved.  Flutter prominence: Cymbal 2.4×, Gong 2.0×, HHat-O 1.7×, RidBel 2.9×.
+  - **Ride** still the weakest (10.3×, down from 23.8): its longer noise sustain exposes
+    the 6-resonator bank's own ~34Hz correlated AM that Cymbal's faster decay hides.
+    Note raised 57→69 (rides are bright), rm_depth→0, noise decay shortened.  STILL a
+    discard candidate per the standing user option if HW doesn't convince.
 - **12th HW pass — voice-stacking for sustained engines (cymbal rolls):**
   - **Polyphony bug:** `GateOff()` forced `next_voice_idx = NUM_VOICES-1`, and since
     the Drumlogue fires gate_on+gate_off in the same tick, EVERY repeated hit of a

@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
         {29,  62, 6.0f, "Handpn"   },
         {30,  84, 3.0f, "BelTre"   },
         {31,  60, 3.0f, "SltDrm"   },
-        {32,  57, 6.0f, "Ride"     },
+        {32,  69, 6.0f, "Ride"   },
         {33,  60, 4.0f, "RidBel"   },
         {34,  57, 2.0f, "Bongo"    },
         {35,  88, 2.0f, "GlsBotl"  },
