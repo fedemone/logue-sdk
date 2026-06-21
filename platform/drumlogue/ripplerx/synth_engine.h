@@ -250,16 +250,21 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        dominant (env1=1.00, T60=1.3s) which created a sustained 82 Hz bass-guitar drone.
        Fix: mode 2 is now dominant (env2=1.00, T60=1.1s); mode 1 is a brief 320ms thump
        heard only in the attack, not in the sustain.  Modes 3-6 add inharmonic overtones.
-       Ratios unchanged: 1:1.50:2.03:2.49:3.02:3.55 (Bessel preferred modes). */
-    {1.50f, 2.03f, 2.49f, 320.0f, 1100.0f, 760.0f, 520.0f, 0.40f, 0.28f, 1.00f, 0.75f, 0.56f, 6, 3.02f, 3.55f, 0.30f, 0.20f},
+       Ratios unchanged: 1:1.50:2.03:2.49:3.02:3.55 (Bessel preferred modes).
+       HW pass-16: removed the membrane-noise bed (it read as a "rough ripple") and
+       BRIGHTENED the sustained ring — upper modes 3-6 lifted (0.85/0.70/0.45/0.32)
+       and extended (900/680 ms) so the tail is a "clean bright ringing" rather than a
+       dark hum (ref Orchestral-Timpani-C sustains bright mid harmonics ~650 Hz). */
+    {1.50f, 2.03f, 2.49f, 320.0f, 1100.0f, 900.0f, 680.0f, 0.40f, 0.28f, 1.00f, 0.85f, 0.70f, 6, 3.02f, 3.55f, 0.45f, 0.32f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
-    /* k_Taiko: woodblock crack (mode 4) + "TAANNG" ring (modes 2-3) + sub boom.
-       Mode 1 (86 Hz) was previously dominant at T60=1.5s, creating a sustained bass drone
-       alongside the boom oscillator (70 Hz, 750ms) — double bass that read as "bass guitar".
-       Fix: mode 1 shortened to 240ms (brief sub-thump in attack only); mode 2 (129 Hz)
-       is now dominant with T60=420ms for the "TAANNG" ring.  Mode 4 woodblock crack
-       unchanged.  Boom osc (70 Hz, 750ms) provides all the sustained sub chest-thud. */
-    {1.504f, 2.000f, 2.756f, 240.0f, 420.0f, 290.0f, 120.0f, 0.30f, 0.28f, 1.00f, 0.62f, 0.80f, 4, 0, 0.0f},
+    /* k_Taiko: bright open "TAAAN" ring + sub boom.  HW reported "TUNNN not TAAAN" —
+       i.e. too dark/closed/nasal.  The dark "UNNN" was modes 1-2 (87/131 Hz) dominating
+       while the brighter upper modes (174/240 Hz) decayed in ~120-290 ms (attack only),
+       collapsing the sustain into a low hum.  Fix: extend the bright modes 3-4 toward the
+       mode-2 ring length (400/320 ms) and lift their envelopes (0.78/0.85) so the upper
+       partials SUSTAIN — the vowel opens from "UNN" to a bright "AAAN".  Mode 1 stays a
+       brief 240 ms sub-thump; boom osc (70 Hz, 750 ms) carries the sustained chest-thud. */
+    {1.504f, 2.000f, 2.756f, 240.0f, 420.0f, 400.0f, 320.0f, 0.30f, 0.28f, 1.00f, 0.78f, 0.85f, 4, 0, 0.0f},
     /* k_MarchSnare: very tight click body (30ms); wires dominate */ {1.59f, 2.14f, 2.30f, 30.0f, 20.0f, 12.0f, 7.0f, 0.16f, 0.65f, 0.48f, 0.32f, 0.18f, 4, 0, 0.0f},
     /* k_Koto: harmonic-overtone reinforcement on top of the KS string (mix 0.10
        in model_param_presets).  Strong 2nd/3rd partials + a slightly sharp 4.2
@@ -269,7 +274,12 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Woodblock: T60 160ms per WoodBlock1.wav reference */ {2.756f, 0.0f, 0.0f, 160.0f, 80.0f, 0.0f, 0.0f, 0.18f, 0.90f, 0.60f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_AcousticTom: T60 350ms */ {1.59f, 2.14f, 2.30f, 350.0f, 220.0f, 140.0f, 90.0f, 0.18f, 0.65f, 0.48f, 0.32f, 0.20f, 4, 0, 0.0f},
     /* k_Cymbal: env5=0.22*env4, env6=0.16*env4; T60 3000→1800ms for a clear decay (HW: "continues while held") */ {2.92f, 6.37f, 11.75f, 1800.0f, 1300.0f, 950.0f, 700.0f, 0.15f, 0.90f, 0.75f, 0.55f, 0.36f, 6, 14.0f, 19.0f, 0.0792f, 0.0576f},
-    /* k_Gong: fundamental dominates at 3000ms; quick upper decay */ {1.479f, 1.932f, 2.332f, 1500.0f, 900.0f, 600.0f, 400.0f, 0.22f, 0.90f, 0.58f, 0.42f, 0.28f, 6, 2.549f, 2.840f, 0.14f, 0.10f},
+    /* k_Gong: HW "still a big explosion, not metallic".  The nonlinear modal→wash
+       cascade (crash_couple 0.60) pulls the broadband energy into the pitched partials;
+       upper modes lifted/extended modestly (T60 700/500, env 0.55/0.42/0.22/0.16) so the
+       sustain gains metallic shimmer WITHOUT an over-bright clangy attack (ref ~1147 Hz
+       early). */
+    {1.479f, 1.932f, 2.332f, 1500.0f, 900.0f, 700.0f, 500.0f, 0.22f, 0.90f, 0.58f, 0.55f, 0.42f, 6, 2.549f, 2.840f, 0.22f, 0.16f},
     /* k_Kalimba: tine ratios 1:4:10; T60 ~600ms */ {4.00f, 10.0f, 0.0f, 600.0f, 200.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
     /* k_SteelPan */ {2.00f, 3.00f, 4.00f, 1200.0f, 900.0f, 700.0f, 500.0f, 0.22f, 0.90f, 0.75f, 0.55f, 0.35f, 4, 0, 0.0f},
     /* k_Claves */ {2.756f, 5.404f, 0.0f, 60.0f, 25.0f, 0.0f, 0.0f, 0.16f, 0.70f, 0.45f, 0.0f, 0.0f, 3, 0, 0.0f},
@@ -310,7 +320,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_808Sub      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99900f,  115.00000f,    0.00589f,    1.00000f,    0.99982f,    0.60000f,    0.00000f,    0.00100f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_AcSnare     */ {   0.00000f,    0.00000f,    0.00000f, 0.85000f,    1.76000f,    0.91800f,    0.00000f,    0.00260f,    0.00000f,    0.42000f,    0.00000f,    0.86000f, false,    0.00000f,    1.00000f,    0.99850f,   18.00000f, asn_bm,    1.00000f,    0.99920f,    0.12000f,    0.00000f,    0.00180f, false,    0.00000f, 4500.00000f,    0.86000f, 7200.00000f,    0.82000f,    0.10000f,    0.00000f},
     /* k_TubularBell */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    0.00000f},
-    /* k_Timpani     */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.40000f,    2.00000f},
+    /* k_Timpani     */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.40000f,    7.00000f},
     /* k_Djambe      */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.04000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    3.50000f},
     /* k_Taiko       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.30000f, 1.00000f},
     /* k_MarchSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.72000f,    1.74500f,    0.91200f,    0.00000f,    0.00280f,    0.00000f,    0.50000f,    0.00000f,    0.89000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5200.00000f,    0.88000f, 8500.00000f,    0.84000f,    0.06000f,    0.00000f},
@@ -646,7 +656,7 @@ SynthState state;
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 707},        // 4:  TblrBel
             {   5,  40,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — physics-correct: mode 2 dominant (1.1s) / mode 1 brief thump (320ms) / membrane noise bed
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 707},        // 6:  Djambe    — (HW: ok)
-            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  16,   5,  26, 180,   0, 160, 707},        // 7:  Taiko     — mode 2 dominant (420ms TAANNG) / mode 1 brief 240ms thump / boom osc 70Hz carries the sub chest-thud
+            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  16,   5,  26, 180,   0, 280, 707},        // 7:  Taiko     — bright open "TAAAN": modes 3-4 extended/lifted (400/320ms) + crisper "T" click (NzFq 160→280=2.8kHz); boom osc carries the sub
             {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 800,   2, 105, 707},        // 8:  MrchSnr   — noise attack staging removed in NoteOn (click+buzz land together)
             {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   3,1999,  18,   0,   0, 300,   0,1000, 707},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
@@ -1707,6 +1717,25 @@ SynthState state;
                     case k_RideBell:  v.crash_bloom = 0.30f; v.crash_ring_tap = 0.45f; break;
                     default: break;
                 }
+                // crash_couple: nonlinear modal→wash cascade strength (see the
+                // resonator block in processBlock).  This is the term that makes
+                // the wash BORN FROM the ring instead of juxtaposed beside it.
+                // Two families need different amounts:
+                //   BRIGHT crashes (Cymbal/Ride/HHat-O): a real crash is mostly
+                //   bright broadband noise that BREATHES with the ring — keep the
+                //   cascade LIGHT so the timbre stays bright/noisy (ref flat ~0.55);
+                //   the ring-amplitude gating of the noise drive already supplies
+                //   the "breathing" blend without tonalising the wash.
+                //   TONAL metals (Gong/RidBel): pitched-metallic, so a stronger
+                //   cascade pulls energy into the partials = metallic shimmer.
+                switch (m_preset_idx) {
+                    case k_Cymbal:    v.crash_couple = 0.30f; break;
+                    case k_Gong:      v.crash_couple = 0.60f; break;  // metallic pull (was "explosion")
+                    case k_HiHatOpen: v.crash_couple = 0.22f; break;
+                    case k_Ride:      v.crash_couple = 0.35f; break;
+                    case k_RideBell:  v.crash_couple = 0.50f; break;
+                    default: break;
+                }
             }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
@@ -2507,12 +2536,33 @@ SynthState state;
                     voice.hf_branch_env *= voice.hf_branch_decay;
                 }
                 // ── Crash-resonator bank (ENGINE_PLATE) ───────────────────────
-                // Drive the enveloped noise burst through damped 2-pole bandpass
-                // resonators at the plate partial frequencies (reusing modal_k_*),
-                // so the wash IS the partials.  This is what turns "noise over a
-                // ring" into a real crash that swirls with the overtones.
+                // Drive damped 2-pole bandpass resonators at the plate partial
+                // frequencies (reusing modal_k_*) so the wash IS the partials.
+                //
+                // NONLINEAR MODAL→WASH ENERGY CASCADE (the fix for the recurring
+                // "noise and ring are juxtaposed, not modulating each other"):
+                // the resonator drive is no longer independent noise.  It is
+                //   exc = noise·(floor + (1−floor)·|m|)  +  crash_couple·(m·|m|)
+                // where m = the struck modal output.  The first term gates the
+                // breath/sizzle by the ring amplitude (noise blooms with the ring
+                // and dies with it); the second term injects a signed-quadratic of
+                // the ring (the plate's geometric nonlinearity, Chaigne/Touzé),
+                // which generates sum/difference partials and pumps low-mode energy
+                // up into the wash.  Result: the wash is BORN from the ring and
+                // locked to its envelope (ref low/high band corr +0.76) instead of
+                // running on its own noise envelope — one sound, not two.
                 if (voice.crash_drive > 0.0f) {
-                    const float exc = voice.exciter.noise_out_sample;
+                    const float m  = voice.modal_out_prev;       // struck-plate displacement (±~1.5)
+                    const float am = fabsf(m);
+                    // floor_n = fraction of the noise drive that is always on (the
+                    // independent bright "air"); the rest blooms with the ring.  At
+                    // 0.30 the cymbal/ride keep an audibly independent bright bed
+                    // (band-env corr ~0.8 like the refs, not a fully-locked 0.99
+                    // single AM'd tone) while still breathing with the ring.
+                    const float floor_n = 0.30f;
+                    float exc = voice.exciter.noise_out_sample * (floor_n + (1.0f - floor_n) * am)
+                              + (m * am) * voice.crash_couple;    // m·|m| = signed quadratic cascade
+                    exc = fmaxf(-3.0f, fminf(3.0f, exc));
                     const float r   = voice.crash_r;
                     const float r2  = r * r;
                     const float g0  = (1.0f - r2);   // input gain → ~constant peak
@@ -2540,8 +2590,17 @@ SynthState state;
                     // Bloom bus = resonated noise + raw/HF noise + a tap of the
                     // struck ring.  All metallic content meets here so it can
                     // intermodulate, instead of being summed in parallel.
+                    // Ride/RidBel ONLY: the raw bed is amplitude-gated by the ring
+                    // (|m|), so the "crackle" blooms/dies with the bell instead of
+                    // reading as an independent crackling layer (HW: "bell
+                    // juxtaposed to crackling noise").  Cymbal/Gong/HHat-O keep
+                    // their full bright noise bed (the cascade alone supplies the
+                    // blend; gating their bed would dull the bright sizzle the
+                    // reference samples need ~11 kHz, flat ~0.55).
+                    float bed_gate = (m_preset_idx == k_Ride || m_preset_idx == k_RideBell)
+                                   ? (floor_n + (1.0f - floor_n) * am) : 1.0f;
                     float wash = sum * voice.crash_drive
-                               + crash_noise_in
+                               + crash_noise_in * bed_gate
                                + voice.modal_out_prev * voice.crash_ring_tap;
 
                     // ── Self-phase-modulation "dynamic bloom" ─────────────────
@@ -2635,27 +2694,6 @@ SynthState state;
                          voice.modal_y2_6 = voice.modal_y1_6;
                          voice.modal_y1_6 = y6n;
                      }
-                    // Timpani membrane noise bed: inject a tiny broadband noise into each mode
-                    // resonator so the sustain sounds like a continuous resonant body rather than
-                    // isolated discrete sinusoids ("bass guitar" percept).  Each resonator acts as
-                    // its own bandpass filter, so the noise is automatically pitched at the mode
-                    // frequency.  ε=0.0018 → steady-state ~2% amplitude at mode 2 Q≈62 (−34 dB
-                    // below the struck ring) — below perception as separate noise, above the floor
-                    // needed to break the "three pure tones" quality of the sustain.
-                    // Guard on modal_env_2 so injection stops with the ring (no hanging noise tail).
-                    if (m_preset_idx == k_Timpani && voice.modal_env_2 > 0.004f) {
-                        float mn = voice.exciter.noise_gen.process() * 0.0018f;
-                        voice.modal_y1_1 += mn * 0.55f;
-                        voice.modal_y1_2 += mn;
-                        if (voice.modal_mode_count > 2) {
-                            voice.modal_y1_3 += mn * 0.75f;
-                            voice.modal_y1_4 += mn * 0.55f;
-                            if (voice.modal_mode_count > 4) {
-                                voice.modal_y1_5 += mn * 0.38f;
-                                voice.modal_y1_6 += mn * 0.25f;
-                            }
-                        }
-                    }
                     // Drift control: periodic soft normalization for long tails.
                     if ((voice.modal_norm_count++ & 127u) == 0u) {
                         float a1 = fmaxf(fabsf(voice.modal_y1_1), fabsf(voice.modal_y2_1));

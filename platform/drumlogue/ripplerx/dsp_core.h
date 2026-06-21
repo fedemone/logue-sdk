@@ -268,6 +268,15 @@ struct VoiceState {
     // with the wash ("modulation between the two" the HW kept asking for).
     float crash_bloom    = 0.0f;    // self-PM depth (0 = no bloom)
     float crash_ring_tap = 0.0f;    // how much struck ring feeds the bloom bus
+    // Nonlinear modal→wash energy cascade (von Kármán plate geometric nonlinearity;
+    // Chaigne/Touzé plate-vibration modelling).  In a real cymbal/gong the broadband
+    // "crash" is NOT independent noise laid over the struck ring — it is high-mode
+    // energy pumped FROM the low struck modes by the plate's quadratic/cubic
+    // nonlinearity, so the wash is BORN from the ring and decays locked to it
+    // (measured: ref crash low/high band-envelope correlation +0.76; the wash blooms
+    // ~470 ms after the strike).  crash_couple scales the m·|m| (signed-quadratic)
+    // injection of modal energy into the resonator bank; 0 reverts to pure-noise drive.
+    float crash_couple   = 0.0f;
 
     void PartialReset() {
         mag_env = 0.0f;
@@ -376,6 +385,7 @@ struct VoiceState {
         crash_y1_6 = crash_y2_6 = 0.0f;
         crash_bloom = 0.0f;
         crash_ring_tap = 0.0f;
+        crash_couple = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;
