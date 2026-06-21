@@ -6,6 +6,7 @@ void FmClapModel::Init() {
     // contract) — including the randomized start phase below.
     drum_rng_seed(&rng_, 0xC1A90001u);
     t = 0.0f;
+    t_fm = 0.0f;  // FM timer — never resets between bursts
     clap_stage = 0;
     clap_timer = 0.0f;
     float white = drum_rng_bipolar(&rng_);
@@ -58,14 +59,19 @@ float FmClapModel::Process() {
     if (!active) return 0.0f;
 
     float decay = (clap_stage < clap_count) ? d1 : d2;
-    float amp_env = ExpDecay(t, decay);                 // slow: 80-300 ms
-    float noise_env = ExpDecay(t, decay * 0.066667f);   // fast: 5-20 ms
-    if (amp_env < 1e-6f)    amp_env = 0;
-    // attack ≈ 0 at trigger, reaches ≈95% in about 1 ms then follows the existing exponential decay
-    float attack = 1.0f - ExpDecay(t, CLAP_ATTACK_TIME);
-    // d_m creates a ultra-fast decay for the Mod Index specifically
-    float mod_env = attack * ExpDecay(t, d_m);
-    if (mod_env < 1e-6f)    mod_env = 0;
+
+    // Per-burst noise envelopes: reset to 1.0 at each burst boundary so the
+    // noise body follows the multi-burst rhythm.
+    float amp_env = ExpDecay(t, decay);                  // slow noise body
+    float noise_env = ExpDecay(t, decay * 0.066667f);    // fast noise attack
+    if (amp_env < 1e-6f)  amp_env = 0;
+
+    // FM envelopes: use t_fm which is tied to note-on and NEVER resets between
+    // bursts. This prevents the FM carrier re-attacking at each burst boundary
+    // (the "guiro" artifact where each burst produces a new pitched transient).
+    float fm_attack = 1.0f - ExpDecay(t_fm, CLAP_ATTACK_TIME);
+    float mod_env = fm_attack * ExpDecay(t_fm, d_m);
+    if (mod_env < 1e-6f)  mod_env = 0;
 
     // FM synthesis
     float mod_feedback = bm * prev_mod;
@@ -76,30 +82,27 @@ float FmClapModel::Process() {
     car_phase = WrapPhase(car_phase + omega_c + (I * mod_env) * mod_out);
     float tone = fastersinfullf(car_phase);
 
-    // A real clap is a burst of noise, not a pure tone. Blend white noise into
-    // the FM carrier so the multi-burst amplitude envelope reads as hand claps
-    // rather than a whistle. noise=0 reproduces the original pure-FM voice
-    // (also available as the separate "FM Whistle" instrument).
     float white = drum_rng_bipolar(&rng_);
 
-    // Clap body: band-passed noise. Use the SLOW envelope here — it's noise, not
-    // a tone, so a longer tail reads as a natural hand-clap, never a whistle.
+    // Noise body: band-passed noise on the per-burst slow envelope.
     float burst = white * noise * amp_env;
     float filteredNoise = processHPF(burst);
 
-    // Pitched FM: only a brief percussive "snap". Gate it with the FAST envelope
-    // so the carrier can't ring on as a sustained tone once the modulator
-    // envelope (d_m) has decayed — that sustained sine was the "synth-y" whistle.
-    float snap = tone * noise_env * (1.0f - noise);
+    // FM snap: also uses t_fm so it fires only once at note-on, not at every
+    // burst boundary. noise_env gives it a fast attack-decay shape within that
+    // single window.
+    float snap_env = fm_attack * ExpDecay(t_fm, d_m);
+    float snap = tone * snap_env * (1.0f - noise);
 
     float output = filteredNoise + snap;
 
-    t += INV_SAMPLE_RATE;
+    t    += INV_SAMPLE_RATE;
+    t_fm += INV_SAMPLE_RATE;
     clap_timer += INV_SAMPLE_RATE;
-    if (clap_timer >= clap_interval + ((white + 1) * 0.001f)) {   // white is [-1,1] ; 0.002f = 2ms jitter
+    if (clap_timer >= clap_interval) {
         ++clap_stage;
-        t = 0.0f;
-        clap_timer = 0.0f;
+        t = 0.0f;           // reset per-burst noise envelope only
+        clap_timer = 0.0f;  // t_fm keeps running
         if (clap_stage >= clap_count + 1)
             active = false;
     }
