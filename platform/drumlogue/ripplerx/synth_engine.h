@@ -243,20 +243,23 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_808Sub */ kDefaultModalPresetConfig,
     /* k_AcSnare: very short body ring (80ms) so the snare-wire sizzle dominates */ {1.59f, 2.14f, 2.30f, 80.0f, 50.0f, 30.0f, 18.0f, 0.24f, 0.70f, 0.50f, 0.34f, 0.20f, 4, 0, 0.0f},
     /* k_TubularBell */ {2.756f, 5.404f, 0.0f, 2000.0f, 3000.0f, 0.0f, 0.0f, 0.22f, 0.18f, 0.90f, 0.55f, 0.0f, 3, 0, 0.0f},
-    /* k_Timpani: air-loaded PREFERRED modes 1 : 1.5 : 2 : 2.5 : 3 : 3.5
-       (Rossing; Sound-on-Sound "Practical Percussion Synthesis: Timpani").
-       These form the harmonics 2:3:4:5:6:7 of a missing fundamental an octave
-       below mode 1 → a clear "singing" pitch.  CRITICAL: the old 1.742 mode (a
-       non-preferred (1,2)-type mode) sat ~20 Hz from the 1.504 mode → critical-
-       band beating = the "rough" low end reported across passes.  Dropped it; the
-       remaining ratios are spaced by consonant intervals (no roughness).  The
-       (2,1) mode at 1.5 carries the pitch, so its env (env2) is the strongest. */
-    {1.50f, 2.03f, 2.49f, 1300.0f, 850.0f, 620.0f, 450.0f, 0.40f, 1.00f, 0.66f, 0.50f, 0.36f, 6, 3.02f, 3.55f, 0.24f, 0.16f},
+    /* k_Timpani: Physics-correct air-loaded membrane (Rossing / SoS "Practical Percussion
+       Synthesis: Timpani").  In a real timpani the (0,1) mode (mode 1) radiates POORLY in
+       the far field — the kettle cavity suppresses it.  The (2,1) mode (mode 2, ratio 1.5)
+       IS what you tune to and is the dominant far-field pitch.  Previous passes had mode 1
+       dominant (env1=1.00, T60=1.3s) which created a sustained 82 Hz bass-guitar drone.
+       Fix: mode 2 is now dominant (env2=1.00, T60=1.1s); mode 1 is a brief 320ms thump
+       heard only in the attack, not in the sustain.  Modes 3-6 add inharmonic overtones.
+       Ratios unchanged: 1:1.50:2.03:2.49:3.02:3.55 (Bessel preferred modes). */
+    {1.50f, 2.03f, 2.49f, 320.0f, 1100.0f, 760.0f, 520.0f, 0.40f, 0.28f, 1.00f, 0.75f, 0.56f, 6, 3.02f, 3.55f, 0.30f, 0.20f},
     /* k_Djambe: 240ms body + bright slap modes 5/6 */ {1.59f, 2.14f, 2.30f, 240.0f, 150.0f, 90.0f, 55.0f, 0.22f, 0.70f, 0.48f, 0.32f, 0.20f, 6, 2.90f, 3.70f, 0.40f, 0.28f},
-    /* k_Taiko: HW redesign — woodblock-hard attack (mode 4 = bar ratio 2.756,
-       short/strong) under a long quasi-harmonic "TAANNG" ring (modes 2-3 at
-       1.504/2.0, timpani-like).  Sub-octave boom kept in model_param_presets. */
-    {1.504f, 2.000f, 2.756f, 1500.0f, 260.0f, 175.0f, 120.0f, 0.30f, 1.00f, 0.52f, 0.38f, 0.80f, 4, 0, 0.0f},
+    /* k_Taiko: woodblock crack (mode 4) + "TAANNG" ring (modes 2-3) + sub boom.
+       Mode 1 (86 Hz) was previously dominant at T60=1.5s, creating a sustained bass drone
+       alongside the boom oscillator (70 Hz, 750ms) — double bass that read as "bass guitar".
+       Fix: mode 1 shortened to 240ms (brief sub-thump in attack only); mode 2 (129 Hz)
+       is now dominant with T60=420ms for the "TAANNG" ring.  Mode 4 woodblock crack
+       unchanged.  Boom osc (70 Hz, 750ms) provides all the sustained sub chest-thud. */
+    {1.504f, 2.000f, 2.756f, 240.0f, 420.0f, 290.0f, 120.0f, 0.30f, 0.28f, 1.00f, 0.62f, 0.80f, 4, 0, 0.0f},
     /* k_MarchSnare: very tight click body (30ms); wires dominate */ {1.59f, 2.14f, 2.30f, 30.0f, 20.0f, 12.0f, 7.0f, 0.16f, 0.65f, 0.48f, 0.32f, 0.18f, 4, 0, 0.0f},
     /* k_Koto: harmonic-overtone reinforcement on top of the KS string (mix 0.10
        in model_param_presets).  Strong 2nd/3rd partials + a slightly sharp 4.2
@@ -641,9 +644,9 @@ SynthState state;
             {   2,  36,   0,   1, 350, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220, 707},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
             {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   3,1999,   8,   7,  52, 740,   2, 480, 707},        // 3:  AcSnare   — brighter wire path
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 707},        // 4:  TblrBel
-            {   5,  40,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — redesigned modal config: solid metallic principal tones (see modal_preset_configs)
+            {   5,  40,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — physics-correct: mode 2 dominant (1.1s) / mode 1 brief thump (320ms) / membrane noise bed
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 707},        // 6:  Djambe    — (HW: ok)
-            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  16,   5,  26, 180,   0, 160, 707},        // 7:  Taiko     — NzMx 9→26 / NzRs 550→180 / NzFq 1.6k: short bright wood "tk" click over the boom+ring (HW: "lacking wood")
+            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  16,   5,  26, 180,   0, 160, 707},        // 7:  Taiko     — mode 2 dominant (420ms TAANNG) / mode 1 brief 240ms thump / boom osc 70Hz carries the sub chest-thud
             {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 800,   2, 105, 707},        // 8:  MrchSnr   — noise attack staging removed in NoteOn (click+buzz land together)
             {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   3,1999,  18,   0,   0, 300,   0,1000, 707},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
@@ -2632,6 +2635,27 @@ SynthState state;
                          voice.modal_y2_6 = voice.modal_y1_6;
                          voice.modal_y1_6 = y6n;
                      }
+                    // Timpani membrane noise bed: inject a tiny broadband noise into each mode
+                    // resonator so the sustain sounds like a continuous resonant body rather than
+                    // isolated discrete sinusoids ("bass guitar" percept).  Each resonator acts as
+                    // its own bandpass filter, so the noise is automatically pitched at the mode
+                    // frequency.  ε=0.0018 → steady-state ~2% amplitude at mode 2 Q≈62 (−34 dB
+                    // below the struck ring) — below perception as separate noise, above the floor
+                    // needed to break the "three pure tones" quality of the sustain.
+                    // Guard on modal_env_2 so injection stops with the ring (no hanging noise tail).
+                    if (m_preset_idx == k_Timpani && voice.modal_env_2 > 0.004f) {
+                        float mn = voice.exciter.noise_gen.process() * 0.0018f;
+                        voice.modal_y1_1 += mn * 0.55f;
+                        voice.modal_y1_2 += mn;
+                        if (voice.modal_mode_count > 2) {
+                            voice.modal_y1_3 += mn * 0.75f;
+                            voice.modal_y1_4 += mn * 0.55f;
+                            if (voice.modal_mode_count > 4) {
+                                voice.modal_y1_5 += mn * 0.38f;
+                                voice.modal_y1_6 += mn * 0.25f;
+                            }
+                        }
+                    }
                     // Drift control: periodic soft normalization for long tails.
                     if ((voice.modal_norm_count++ & 127u) == 0u) {
                         float a1 = fmaxf(fabsf(voice.modal_y1_1), fabsf(voice.modal_y2_1));
