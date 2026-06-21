@@ -14,9 +14,10 @@ public:
     FmClapModel(void) : f_b(800.0f), f_m(800.0f), I(40.0f), d_m(0.05f),
                         d1(0.02f), d2(0.3f), clap_count(3), clap_interval(0.012f),
                         fhp(400.0f), bm(0.9f), noise(0.6f), mod_phase(0.0f), car_phase(0.0f),
-                        prev_mod(0.0f), t(0.0f), x1(0.0f), x2(0.0f), y1(0.0f), y2(0.0f),
+                        prev_mod(0.0f), t(0.0f), omega_m(0.0f), omega_c(0.0f),
+                        x1(0.0f), x2(0.0f), y1(0.0f), y2(0.0f),
                         b0(0.0f), b1(0.0f), b2(0.0f), a1(0.0f), a2(0.0f), Q(1.0f),
-                        omega_m(0.0f), omega_c(0.0f), active(false) {
+                        active(false) {
         drum_rng_seed(&rng_, 0xC1A90001u);
     };
     ~FmClapModel (void) override {};

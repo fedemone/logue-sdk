@@ -60,7 +60,7 @@ Design rules (inherited from Sonaglio):
 | 0 | **FmKick** | 2-op FM, DX7-style modulator feedback, pitch sweep, ratio mode |
 | 1 | **FmSnare** | 2-op FM + white noise + one-pole HPF |
 | 2 | **FmTom** | 2-op FM with fixed modulator feedback + pitch sweep |
-| 3 | **FmClap** | 2-op FM retriggered N times + noise burst (NzLvl) + HPF |
+| 3 | **FmClap** | retriggered band-passed noise burst (clap body) + brief FM "snap" transient |
 | 4 | **FmRimshot** | 1 modulator driving 2 carriers (body + rim), mix + HPF |
 | 5 | **FmCowbell** | 1 modulator driving 2 carriers at the classic 1:1.48 ratio |
 | 6 | **FmCymbal** | 4 modulator/carrier pairs at inharmonic ratios (NEON-vectorized); note-off choke |
@@ -71,10 +71,19 @@ Design rules (inherited from Sonaglio):
 | 11 | **FmWhistle** | The pure-FM voice of FmClap without the noise layer (tonal) |
 | 12 | **TRXGong** | TRXClaves DSP with a long decay → beating, gong-like ring |
 
-Instruments 11–12 are clones that preserve earlier voices: **FmClap** gained a
-noise burst so it sounds like a hand clap (the original pure-FM "whistle" lives
-on as **FmWhistle**), and **TRXClaves** was tightened to a short click (the
-original long-decay "gong" lives on as **TRXGong**).
+Instruments 11–12 are clones that preserve earlier voices: **FmClap** was
+reworked into a band-passed-noise hand clap (the original pure-FM "whistle"
+lives on as **FmWhistle**), and **TRXClaves** was tightened to a short click
+(the original long-decay "gong" lives on as **TRXGong**).
+
+**FmClap design note.** md-drum-synth's clap is pure 2-op FM, which whistles. A
+real hand-clap is *resonant* noise — a burst with a hollow ~1 kHz body (the
+analog 808/909 recipe). FmClap therefore runs white noise through an RBJ
+band-pass biquad (centre = `HPF`, resonance = `FrqSwp`/Q) on the slow
+multi-burst envelope to form the clap body, while the FM `tone` is gated by a
+*fast* envelope so it only contributes a brief percussive "snap" and never rings
+on as a sustained pitch. `NzLvl` blends snap vs. body; per-burst timing is
+jittered for a more human feel.
 
 Every model derives from `DrumModel` (Init / Trigger / Process / Release /
 loadPreset / setParameter / getParameter) and owns its DSP parameters.

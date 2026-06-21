@@ -2,6 +2,9 @@
 #include "FmClapModel.h"
 
 void FmClapModel::Init() {
+    // Reseed first so every trigger is bit-identical (RT-safe / reproducible
+    // contract) — including the randomized start phase below.
+    drum_rng_seed(&rng_, 0xC1A90001u);
     t = 0.0f;
     clap_stage = 0;
     clap_timer = 0.0f;
@@ -16,6 +19,7 @@ void FmClapModel::Init() {
 
 void FmClapModel::Trigger() {
     Init();
+    updateOmegas();  // pick up the current note's pitch_ratio_
 }
 
 void FmClapModel::updateFilterCoeffs(float fc, float q) {
@@ -77,17 +81,18 @@ float FmClapModel::Process() {
     // rather than a whistle. noise=0 reproduces the original pure-FM voice
     // (also available as the separate "FM Whistle" instrument).
     float white = drum_rng_bipolar(&rng_);
-    // float src = tone * (1.0f - noise) + white * noise;
-    // float x = src * amp_env;
 
-    float burst = white * noise * noise_env;
-    // High-pass filter
-    // float alpha = 1.0f / (1.0f + 2.0f * PI * fhp * INV_SAMPLE_RATE);
-    // float y = alpha * (y_prev + x - x_prev);
-    // x_prev = x;
-    // y_prev = y;
+    // Clap body: band-passed noise. Use the SLOW envelope here — it's noise, not
+    // a tone, so a longer tail reads as a natural hand-clap, never a whistle.
+    float burst = white * noise * amp_env;
     float filteredNoise = processHPF(burst);
-    float output = filteredNoise + tone * amp_env * (1.0f - noise);
+
+    // Pitched FM: only a brief percussive "snap". Gate it with the FAST envelope
+    // so the carrier can't ring on as a sustained tone once the modulator
+    // envelope (d_m) has decayed — that sustained sine was the "synth-y" whistle.
+    float snap = tone * noise_env * (1.0f - noise);
+
+    float output = filteredNoise + snap;
 
     t += INV_SAMPLE_RATE;
     clap_timer += INV_SAMPLE_RATE;
@@ -149,7 +154,8 @@ void FmClapModel::setParameter(fm_param_index_t param_index, float value) {
             break;
         case K_Decay_B:
         // ParameterSlider("d2 (Final Clap Decay)", &d2, 0.01f, 0.9f);
-            d2 = 0.01f + value * 0.0089f;
+        // now sets the band-passed-noise tail length; default (50) -> ~0.22 s
+            d2 = 0.02f + value * 0.004f;
             break;
         case K_Gap:
         // ParameterSlider("clap_interval (s)", &clap_interval, 0.005f, 0.05f);

@@ -20,9 +20,20 @@ still open.
 
 - **FM Clap sounded like a whistle.** Root cause: pure two-operator FM with a
   sine carrier — once the modulator envelope decays you hear a clean tone.
-  Fix: blend a white-noise burst into the carrier, shaped by the existing
-  multi-burst amplitude envelope, controlled by the previously-unused
-  `K_Noise_Level` (NzLvl) param (default ~0.6). Now reads as a hand clap.
+  First fix added a white-noise burst; an RBJ band-pass biquad (centre `HPF`,
+  Q `FrqSwp`), an attack ramp, a fast noise envelope and per-burst jitter were
+  then layered on for a proper clap body.
+- **FM Clap still too "synth-y" after the second hardware test.** The pitched
+  FM `tone` was enveloped by the *slow* amp envelope, so after the modulator
+  envelope (`d_m`) decayed it became a bare carrier sine ringing for hundreds
+  of ms under the clap — a sustained whistle. Fix: gate the FM tone with the
+  *fast* `noise_env` (it becomes a brief percussive "snap" only), and carry the
+  body/tail with the band-passed noise on the slow envelope (noise has no
+  pitch, so a longer tail reads as a natural clap). Also: reseeded the PRNG in
+  `Init()` to restore bit-exact retrigger determinism (the reseed had been
+  dropped, breaking the test and the RT-safe contract), added `updateOmegas()`
+  in `Trigger()` so the clap tracks MIDI pitch, retuned `DkB` to set the
+  noise-tail length (~0.22 s default), and fixed a ctor field-order warning.
 - **TRX Claves sounded like a gong.** Root cause: `K_Decay_A` mapped to
   0.01..5 s (the original desktop slider maxed at 0.5 s); at the runtime's
   default value (50) that gave a 2.5 s decay on two beating high sines.
