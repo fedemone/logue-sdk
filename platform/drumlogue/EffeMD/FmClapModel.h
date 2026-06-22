@@ -33,7 +33,7 @@ public:
         omega_m = base * f_m;
         omega_c = base * f_b;
     };
-    inline float processHPF(float x);
+    inline float processBPF(float x);
 
    private:
     /** f_b (Base Freq)

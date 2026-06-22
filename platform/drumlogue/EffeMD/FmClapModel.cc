@@ -37,7 +37,7 @@ void FmClapModel::updateFilterCoeffs(float fc, float q) {
 }
 
 
-inline float FmClapModel::processHPF(float x)
+inline float FmClapModel::processBPF(float x)
 {
     float y =
         b0 * x +
@@ -66,14 +66,14 @@ float FmClapModel::Process() {
     float noise_env = ExpDecay(t, decay * 0.066667f);    // fast noise attack
     if (amp_env < 1e-6f)  amp_env = 0;
 
-    // FM envelopes: use t_fm which is tied to note-on and NEVER resets between
+    // 2. FM envelopes: use t_fm which is tied to note-on and NEVER resets between
     // bursts. This prevents the FM carrier re-attacking at each burst boundary
     // (the "guiro" artifact where each burst produces a new pitched transient).
     float fm_attack = 1.0f - ExpDecay(t_fm, CLAP_ATTACK_TIME);
     float mod_env = fm_attack * ExpDecay(t_fm, d_m);
     if (mod_env < 1e-6f)  mod_env = 0;
 
-    // FM synthesis
+    // 3. FM Synthesis Core
     float mod_feedback = bm * prev_mod;
     mod_phase = WrapPhase(mod_phase + omega_m + mod_feedback);
     float mod_out = fastersinfullf(mod_phase);
@@ -82,11 +82,11 @@ float FmClapModel::Process() {
     car_phase = WrapPhase(car_phase + omega_c + (I * mod_env) * mod_out);
     float tone = fastersinfullf(car_phase);
 
+    // 4. Generate Signal Components
     float white = drum_rng_bipolar(&rng_);
 
     // Noise body: band-passed noise on the per-burst slow envelope.
-    float burst = white * noise * amp_env;
-    float filteredNoise = processHPF(burst);
+    float burst = white * noise * noise_env;
 
     // FM snap: also uses t_fm so it fires only once at note-on, not at every
     // burst boundary. noise_env gives it a fast attack-decay shape within that
@@ -94,17 +94,30 @@ float FmClapModel::Process() {
     float snap_env = fm_attack * ExpDecay(t_fm, d_m);
     float snap = tone * snap_env * (1.0f - noise);
 
-    float output = filteredNoise + snap;
+    // FIX: Route BOTH the noise and the FM snap through the filter.
+    // Because your filter code is actually a Band-Pass Filter, filtering the
+    // FM snap removes its raw electronic harshness, gluing it to the noise.
+    float output = processBPF(burst + snap);
 
+    // 5. Increment Timers
     t    += INV_SAMPLE_RATE;
     t_fm += INV_SAMPLE_RATE;
-    clap_timer += INV_SAMPLE_RATE;
-    if (clap_timer >= clap_interval) {
-        ++clap_stage;
-        t = 0.0f;           // reset per-burst noise envelope only
-        clap_timer = 0.0f;  // t_fm keeps running
-        if (clap_stage >= clap_count + 1)
+
+    // FIX: Lifecycle & Stage Management
+    if (clap_stage < clap_count) {
+        // We are still executing the initial rapid pre-bursts
+        clap_timer += INV_SAMPLE_RATE;
+        if (clap_timer >= clap_interval) {
+            ++clap_stage;
+            t = 0.0f;           // Reset per-burst noise envelope only
+            clap_timer = 0.0f;
+        }
+    } else {
+        // We are in the final sustained tail stage (clap_stage == clap_count).
+        // Do NOT cut it off via clap_interval. Let the long d2 decay ring out!
+        if (amp_env < 1e-5f) {
             active = false;
+        }
     }
 
     return output;
