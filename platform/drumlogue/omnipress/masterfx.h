@@ -479,7 +479,7 @@ private:
             case DIST_MODE_DIST2:
             case DIST_MODE_DIST3:
             case DIST_MODE_BOTH: {
-                // sat_drive range: 1x (DRIVE=0) to 40x (DRIV4=100) — pushes the
+                // sat_drive range: 1x (DRIVE=0) to 40x (DRIVE=100) — pushes the
                 // signal into the saturator nonlinear region.
                 // makeup = 1.0 keeps output level comparable to the input so
                 // harmonic character is always audible. The output hard-clip limiter

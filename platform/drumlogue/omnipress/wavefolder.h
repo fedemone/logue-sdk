@@ -98,8 +98,8 @@ fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
 
     // Makeup gain now scales positively with drive to compensate for perceived
     // loudness reduction due to saturation and to ensure a healthy output level.
-    // Scales from 1.0x (drive=0) to 5.0x (drive=1).
-    float makeup = 1.0f + drive * 4.0f; // Increased scaling for better audibility
+    // Scales from 1.0x (drive=0) to 30.0x (drive=1).
+    float makeup = 1.0f + drive * 29.0f; // Increased scaling for better audibility
     wf->output_gain = vdupq_n_f32(makeup);
 }
 
@@ -136,7 +136,7 @@ fast_inline float32x4_t triangle_folder(float32x4_t x) {
     // y = |(x + 1) % 4 - 2| - 1
     float32x4_t shifted = vaddq_f32(x, one);
     float32x4_t div = vmulq_f32(shifted, vdupq_n_f32(0.25f));
-    int32x4_t   floor_div = vcvtq_s32_f32(div);
+    int32x4_t   floor_div = vrndmq_f32(div);    // true floor operation
     float32x4_t mod = vsubq_f32(shifted,
                                 vmulq_f32(vcvtq_f32_s32(floor_div), four));
 
@@ -175,7 +175,7 @@ fast_inline float32x4_t suboctave_process(wavefolder_t* wf, float32x4_t in_v) {
     float lp_state1 = vgetq_lane_f32(wf->sub_lp_state1, 0); // Get LP filter state 1
     float lp_state2 = vgetq_lane_f32(wf->sub_lp_state2, 0); // Get LP filter state 2
     const float lp_coeff = 0.85f; // This coefficient can be tuned for desired smoothness
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < NEON_LANES; ++i) {
         const float x = buf_in[i];
         if (last < 0.0f && x >= 0.0f) {
             // Positive zero crossing: advance sub-octave by a half cycle.
@@ -208,15 +208,15 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
 
   float32x4x2_t out;
 
-  // Apply drive gain: 1+drive*39 gives 1x at drive=0 (passthrough) to 40x at
+  // Apply drive gain: 1+drive*19 gives 1x at drive=0 (passthrough) to 30x at
   // drive=100%. Matches the makeup formula in wavefolder_set_drive so level is
   // consistent.
   float32x4_t driven_l =
       vmulq_f32(in_l, vaddq_f32(vdupq_n_f32(1.0f),
-                                vmulq_f32(wf->drive, vdupq_n_f32(39.0f))));
+                                vmulq_f32(wf->drive, vdupq_n_f32(29.0f))));
   float32x4_t driven_r =
       vmulq_f32(in_r, vaddq_f32(vdupq_n_f32(1.0f),
-                                vmulq_f32(wf->drive, vdupq_n_f32(39.0f))));
+                                vmulq_f32(wf->drive, vdupq_n_f32(29.0f))));
 
   // Apply selected waveshaping
   switch (wf->mode) {
@@ -252,8 +252,9 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
     // Both components are now soft-clipped to prevent the sum from exceeding headroom at high drive.
     float32x4_t sub_l = vmulq_f32(sub, soft_clip(vabsq_f32(driven_l)));
     float32x4_t sub_r = vmulq_f32(sub, soft_clip(vabsq_f32(driven_r)));
-    out.val[0] = vmulq_n_f32(vaddq_f32(soft_clip(driven_l), sub_l), 0.5f);
-    out.val[1] = vmulq_n_f32(vaddq_f32(soft_clip(driven_r), sub_r), 0.5f);
+    // 80% dry + 20% wet as the output is sounding too rough and clipped at 50/50
+    out.val[0] = vaddq_f32(vmulq_n_f32(soft_clip(driven_l), 0.8f), vmulq_n_f32(sub_l, 0.2f));
+    out.val[1] = vaddq_f32(vmulq_n_f32(soft_clip(driven_r), 0.8f), vmulq_n_f32(sub_r, 0.2f));
     break;
   }
 

@@ -189,7 +189,8 @@ fast_inline void distressor_set_ratio(distressor_t* d, uint8_t mode) {
 // Old polynomial (x + 0.5*x^2, x - x^3/3) diverged for |x|>1 and was
 // inaudible at typical post-compression levels.  These use NEON fast_div_neon
 // to produce clean harmonic content bounded within ±1 (DIST3) / ~±1.5 (DIST2).
-// TODO evalute is DIST2 ±1.5 is too much due the hard clipper at end of processing
+// In real HW testing, the resulting DIST2 ±1.5 is not too much
+// (possible disruption due the hard clipper at end of processing)
 fast_inline float32x4_t generate_harmonics(distressor_t* d,
                                            float32x4_t in,
                                            uint8_t mode) {
