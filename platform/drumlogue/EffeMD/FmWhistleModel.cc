@@ -73,7 +73,7 @@ void FmWhistleModel::setParameter(fm_param_index_t param_index, float value) {
         case K_Modulation_Feedback: bm = 0.01f + value * 0.0099f; break;
         case K_Modulation_Index:    I = value; break;
         case K_Modulation_Decay:    d_m = 0.01f + value * 0.0099f; break;
-        case K_Decay_A:   // 0..200             d1 = 0.005f + value * 0.002975f; break;
+        case K_Decay_A:             d1 = 0.005f + value * 0.002975f; break;
         case K_Decay_B:             d2 = 0.01f + value * 0.0099f; break;
         case K_Gap:                 clap_interval = 0.005f + value * 0.00045f; break;
         case K_Count:               clap_count = (int)value; break;
@@ -89,7 +89,7 @@ float FmWhistleModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Feedback: return bm;
         case K_Modulation_Index:    return I;
         case K_Modulation_Decay:    return d_m;
-        case K_Decay_A:   // 0..200             return d1;
+        case K_Decay_A:             return d1;
         case K_Decay_B:             return d2;
         case K_Gap:                 return clap_interval;
         case K_Count:               return (float)clap_count;

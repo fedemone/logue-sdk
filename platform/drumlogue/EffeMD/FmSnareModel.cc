@@ -105,7 +105,7 @@ float FmSnareModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Frequency: return f_m;
         case K_Modulation_Index:     return I;
         case K_Modulation_Decay:     return d_m;
-        case K_Decay_A:   // 0..200              return d_b;
+        case K_Decay_A:              return d_b;
         case K_Noise_Level:          return Abrus;
         case K_Noise_Decay:          return dbrus;
         case K_HPF:                  return fhp; // Hz

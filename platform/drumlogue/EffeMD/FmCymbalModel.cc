@@ -9,7 +9,7 @@
 void FmCymbalModel::Init() {
     t = 0.0f;
     for (int i = 0; i < NUM_PAIRS; ++i) {
-        car_phase[i] = mod_phase[i] = PI / 2.0f;
+        car_phase[i] = mod_phase[i] = PI * 0.5f;
         prev_mod[i] = 0.0f;
     }
     x_prev = y_prev = 0.0f;
@@ -26,7 +26,7 @@ void FmCymbalModel::Trigger() {
 void FmCymbalModel::Release() {
     // Start a fast (~60 ms) fade. Only meaningful when sustain > 0, where the
     // amp envelope otherwise floors at `sustain` and never reaches silence.
-    choke_mul_ = e_expff(-INV_SAMPLE_RATE / 0.06f);
+    choke_mul_ = e_expff(-INV_SAMPLE_RATE * 16.666f);   // was / 0.06f
 }
 
 float FmCymbalModel::Process() {
@@ -122,16 +122,16 @@ void FmCymbalModel::setParameter(fm_param_index_t param_index, float value) {
             break;
         case K_Modulation_Feedback:
         // ParameterSlider("bb (Mod Feedback)", &bb, 0.0f, 1.0f);
-        bb = 0.01f + value * 0.0099f;
-        break;
+            bb = 0.01f + value * 0.0099f;
+            break;
         case K_Modulation_Index:
         // ParameterSlider("I (FM Index)", &I, 0.0f, 30.0f);
-        I = value * 0.15f;   //0..200
-        break;
+            I = value * 0.15f;   //0..200
+            break;
         case K_Modulation_Decay:
         // ParameterSlider("d_m (Mod Decay)", &d_m, 0.05f, 2.0f);
-        d_m = 0.01f + value * 0.0099f;
-        break;
+            d_m = 0.01f + value * 0.0099f;
+            break;
         case K_Decay_A:   // 0..200
         // ParameterSlider("d_b (Amp Decay)", &d_b, 0.05f, 4.0f);
             d_b = 0.05f + value * 0.02475f;
