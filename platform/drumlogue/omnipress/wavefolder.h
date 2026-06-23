@@ -98,8 +98,8 @@ fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
 
     // Makeup gain now scales positively with drive to compensate for perceived
     // loudness reduction due to saturation and to ensure a healthy output level.
-    // Scales from 1.0x (drive=0) to 30.0x (drive=1).
-    float makeup = 1.0f + drive * 29.0f; // Increased scaling for better audibility
+    // Scales from 1.0x (drive=0) to 20.0x (drive=1).
+    float makeup = 1.0f + drive * 19.0f; // Increased scaling for better audibility
     wf->output_gain = vdupq_n_f32(makeup);
 }
 
@@ -136,7 +136,7 @@ fast_inline float32x4_t triangle_folder(float32x4_t x) {
     // y = |(x + 1) % 4 - 2| - 1
     float32x4_t shifted = vaddq_f32(x, one);
     float32x4_t div = vmulq_f32(shifted, vdupq_n_f32(0.25f));
-    int32x4_t   floor_div = vrndmq_f32(div);    // true floor operation
+    int32x4_t   floor_div = vcvtq_s32_f32(div);
     float32x4_t mod = vsubq_f32(shifted,
                                 vmulq_f32(vcvtq_f32_s32(floor_div), four));
 
@@ -208,15 +208,15 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
 
   float32x4x2_t out;
 
-  // Apply drive gain: 1+drive*19 gives 1x at drive=0 (passthrough) to 30x at
+  // Apply drive gain: 1+drive*19 gives 1x at drive=0 (passthrough) to 20x at
   // drive=100%. Matches the makeup formula in wavefolder_set_drive so level is
   // consistent.
   float32x4_t driven_l =
       vmulq_f32(in_l, vaddq_f32(vdupq_n_f32(1.0f),
-                                vmulq_f32(wf->drive, vdupq_n_f32(29.0f))));
+                                vmulq_f32(wf->drive, vdupq_n_f32(19.0f))));
   float32x4_t driven_r =
       vmulq_f32(in_r, vaddq_f32(vdupq_n_f32(1.0f),
-                                vmulq_f32(wf->drive, vdupq_n_f32(29.0f))));
+                                vmulq_f32(wf->drive, vdupq_n_f32(19.0f))));
 
   // Apply selected waveshaping
   switch (wf->mode) {
@@ -246,7 +246,7 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
     // apart, creating stereo incoherence heard as fuzziness/noise.
     // A single detector gives a phase-coherent ±1 square wave; the stereo
     // image is preserved by amplitude-modulating each channel independently.
-    float32x4_t mono = vmulq_n_f32(vaddq_f32(driven_l, driven_r), 0.5f);
+    float32x4_t mono = vmulq_n_f32(vaddq_f32(driven_l, driven_r), 0.15f);
     float32x4_t sub = suboctave_process(wf, mono);
     // Use driven signals instead of raw input to prevent volume drop as drive increases.
     // Both components are now soft-clipped to prevent the sum from exceeding headroom at high drive.

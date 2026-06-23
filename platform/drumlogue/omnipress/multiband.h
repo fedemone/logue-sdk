@@ -141,7 +141,7 @@ fast_inline void multiband_set_param(multiband_t* mb,
             break;
         case 2:
             mb->bands[band].makeup_db = value;
-            mb->bands[band].makeup_gain_linear = fasterpowf(10.0f, value / 20.0f);
+            mb->bands[band].makeup_gain_linear = fasterpowf(10.0f, value * 0.05f);
             break;
         case 3: mb->bands[band].attack_ms = value; multiband_update_coeff(mb, band); break;
         case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;
