@@ -126,7 +126,7 @@ public:
         , preDelayWritePos(0)
         , currentPreDelaySamples(0.0f)
         , targetPreDelaySamples(0.0f)
-        , currentPreset(0)
+        , currentPreset(-1)
         , lfoSpeed(1.0f)
         , randomLfoValue(0.0f)
         , randomLfoCounter(0)

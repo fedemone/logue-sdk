@@ -1,16 +1,24 @@
 #include "TRXHiHat.h"
+#include "constants.h"
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#endif
 
 void TRXHiHat::Init() {
-    rng.seed(std::random_device{}());
+    drum_rng_seed(&rng_, 0x44000001u);
     env = 0.0f;
     t = 0.0f;
     lp_y = hp_y = hp_x = 0.0f;
+    for (int i = 0; i < 6; ++i) phase_[i] = 0.0f;
 }
 
 void TRXHiHat::Trigger() {
     env = 1.0f;
     t = 0.0f;
+    env_mul   = e_expff(-INV_SAMPLE_RATE / decay);
+    lpf_alpha = e_expff(-2.0f * M_PI * lpfFreq * INV_SAMPLE_RATE);
+    hpf_alpha = e_expff(-2.0f * M_PI * hpfFreq * INV_SAMPLE_RATE);
 }
 
 float TRXHiHat::get_value(const float fadeTime){
@@ -27,17 +35,15 @@ float TRXHiHat::Process() {
     float n = generateMetallicNoise();
 
     // Apply low-pass filter
-    float lpfAlpha = e_expff(-2.0f * M_PI * lpfFreq * INV_SAMPLE_RATE);
-    lp_y = (1.0f - lpfAlpha) * n + lpfAlpha * lp_y;
+    lp_y = (1.0f - lpf_alpha) * n + lpf_alpha * lp_y;
 
     // Apply high-pass filter
-    float hpfAlpha = e_expff(-2.0f * M_PI * hpfFreq * INV_SAMPLE_RATE);
-    float hp = hpfAlpha * (hp_y + lp_y - hp_x);
+    float hp = hpf_alpha * (hp_y + lp_y - hp_x);
     hp_y = lp_y;
     hp_x = hp;
 
     // Envelope decay
-    env *= e_expff(-INV_SAMPLE_RATE / (decay));
+    env *= env_mul;
 
     // GAP crossfade
     if (t > gap) {
@@ -67,16 +73,15 @@ float TRXHiHat::Process() {
 float TRXHiHat::generateMetallicNoise() {
     // Square wave harmonic mix — crude but efficient
     float result = 0.0f;
-    static float phase[6] = { 0 };
     static const float freqs[6] = { 306.0f, 512.0f, 551.0f, 743.0f, 826.0f, 900.0f };
 
     for (int i = 0; i < 6; ++i) {
-        phase[i] += freqs[i] * INV_SAMPLE_RATE;
-        if (phase[i] >= 1.0f) phase[i] -= 1.0f;
-        result += (phase[i] < 0.5f ? 1.0f : -1.0f);
+        phase_[i] += freqs[i] * pitch_ratio_ * INV_SAMPLE_RATE;
+        if (phase_[i] >= 1.0f) phase_[i] -= 1.0f;
+        result += (phase_[i] < 0.5f ? 1.0f : -1.0f);
     }
 
-    float white = noiseDist(rng);
+    float white = drum_rng_bipolar(&rng_);
     return metal * (result / 6.0f) + (1.0f - metal) * white;
 }
 
@@ -93,31 +98,40 @@ void TRXHiHat::loadPreset(uint8_t idx) {
     }
 };
 void TRXHiHat::setParameter(fm_param_index_t param_index, float value) {
-    // user editable parameters are in range 1..100
+    // user editable parameters are in range 0..100
     switch (param_index) {
-        case K_Decay_A:
-            decay = 0.01f + value * 0.0099f;
-            break;
         case K_Gap:
+        // SliderFloat("Gap", &gap, 0.0f, 1.0f);
             gap = value * 0.01f;
             break;
-        case K_Count:
-            peak = value * 0.01f;
+        case K_Decay_A:   // 0..200
+        // SliderFloat("Decay", &decay, 0.01f, 1.0f);
+            decay = 0.01f + value * 0.00495f;
             break;
         case K_HPF:
+        // SliderFloat("LPF Freq", &lpfFreq, 1000.0f, 12000.0f);
             hpfFreq = 100.0f + value * 99.0f;
             break;
         case K_LPF:
+        // SliderFloat("HPF Freq", &hpfFreq, 100.0f, 10000.0f);
             lpfFreq = 1000.0f + value * 110.0f;
+            break;
+        case K_Count:
+        // SliderFloat("Peak", &peak, 0.0f, 1.0f);
+            peak = value * 0.01f;
+            break;
+        case K_Noise_Level:
+        // SliderFloat("Metal", &metal, 0.0f, 1.0f);
+            metal = value * 0.01f;
             break;
         default:
             break;
     }
 };
 float TRXHiHat::getParameter(fm_param_index_t param_index) {
-    // user editable parameters are in range 1..100
+    // user editable parameters are in range 0..100
     switch (param_index) {
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Gap:
@@ -136,3 +150,12 @@ float TRXHiHat::getParameter(fm_param_index_t param_index) {
             break;
     }
 };
+
+// void TRXHiHat::RenderControls() {
+//     ImGui::SliderFloat("Gap", &gap, 0.0f, 1.0f);
+//     ImGui::SliderFloat("Decay", &decay, 0.01f, 1.0f);
+//     ImGui::SliderFloat("LPF Freq", &lpfFreq, 1000.0f, 12000.0f);
+//     ImGui::SliderFloat("HPF Freq", &hpfFreq, 100.0f, 10000.0f);
+//     ImGui::SliderFloat("Peak", &peak, 0.0f, 1.0f);
+//     ImGui::SliderFloat("Metal", &metal, 0.0f, 1.0f);
+// }

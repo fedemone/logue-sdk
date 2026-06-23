@@ -1,10 +1,10 @@
 #include "TRXSnareDrum.h"
-#include "fm_presets.h"
 
 void TRXSnareDrum::Init() {
     t = ampEnv = snapEnv = 0.0f;
     phase1 = phase2 = 0.0f;
     hp_x = hp_y = 0.0f;
+    drum_rng_seed(&rng_, 0x5D000001u);
 }
 
 void TRXSnareDrum::Trigger() {
@@ -12,6 +12,8 @@ void TRXSnareDrum::Trigger() {
     ampEnv = 1.0f;
     snapEnv = 1.0f;
     phase1 = phase2 = 0.0f;
+    amp_mul  = e_expff(-INV_SAMPLE_RATE / decay);
+    snap_mul = e_expff(-INV_SAMPLE_RATE / 0.02f); // 20ms snap noise decay
 }
 
 float TRXSnareDrum::Process() {
@@ -20,29 +22,29 @@ float TRXSnareDrum::Process() {
     t += INV_SAMPLE_RATE;
 
     // Decay envelopes
-    ampEnv *= e_expff(-INV_SAMPLE_RATE / (decay));
-    snapEnv *= e_expff(-INV_SAMPLE_RATE / (0.02f)); // 20ms snap noise decay
+    ampEnv *= amp_mul;
+    snapEnv *= snap_mul;
 
     // Oscillators (tuned with interval)
     float freq1 = pitch + bump * 80.0f;
     float freq2 = pitch + tune;
 
-    phase1 += freq1 * INV_SAMPLE_RATE;
+    phase1 += freq1 * pitch_ratio_ * INV_SAMPLE_RATE;
     if (phase1 > 1.0f) phase1 -= 1.0f;
-    float osc1 = fasterfullsinf(phase1 * 2.0f * M_PI);
+    float osc1 = fastersinfullf(phase1 * 2.0f * M_PI);
 
-    phase2 += freq2 * INV_SAMPLE_RATE;
+    phase2 += freq2 * pitch_ratio_ * INV_SAMPLE_RATE;
     if (phase2 > 1.0f) phase2 -= 1.0f;
-    float osc2 = fasterfullsinf(phase2 * 2.0f * M_PI);
+    float osc2 = fastersinfullf(phase2 * 2.0f * M_PI);
 
     float tonePart = (tone * osc1 + (1.0f - tone) * osc2) * ampEnv;
 
-    // Snap noise burst - TODO use prng.h
-    float snapNoise = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * snap * snapEnv;
+    // Snap noise burst
+    float snapNoise = drum_rng_bipolar(&rng_) * snap * snapEnv;
 
     // Sustained filtered noise (high-pass)
-    float rawNoise = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f);
-    float hp_a = e_expff(-2.0f * M_PI * 400.0f / SAMPLE_RATE);
+    float rawNoise = drum_rng_bipolar(&rng_);
+    const float hp_a = 0.9490f; // = exp(-2*pi*400/48000), fixed 400 Hz HPF
     float hp = hp_a * (hp_y + rawNoise - hp_x);
     hp_y = rawNoise;
     hp_x = hp;
@@ -74,31 +76,38 @@ void TRXSnareDrum::loadPreset(uint8_t idx) {
 };
 
 void TRXSnareDrum::setParameter(fm_param_index_t param_index, float value) {
-    // user editable parameters are in range 1..100 - TODO 1..1000
+    // user editable parameters are in range 0..100 - TODO 1..1000
     switch (param_index) {
         case K_Base_Frequency:
-            pitch = 60.0f + value * 3.4f;
+        // SliderFloat("Pitch", &pitch, 60.0f, 400.0f);
+            pitch = 60.0f + value * 1.7f;   //0..200
             break;
         case K_Frequency_Sweep:
+        // SliderFloat("Snap", &snap, 0.0f, 1.0f);
             snap = value * 0.01f;
             break;
         case K_Noise_Level:
+        // SliderFloat("Noise", &noise, 0.0f, 1.0f);
             noise = value * 0.01f;
             break;
-            break;
         case K_Mix:
+        // SliderFloat("Tone Balance", &tone, 0.0f, 1.0f);
             tone = value * 0.01f;
             break;
         case K_Sweep_Decay:
+        // SliderFloat("Bump", &bump, 0.0f, 1.0f);
             bump = value * 0.01f;
             break;
-        case K_Decay_A:
-            decay = 0.05f + value * 0.0095f;
+        case K_Decay_A:   // 0..200
+        // SliderFloat("Decay", &decay, 0.05f, 1.0f);
+            decay = 0.05f + value * 0.00475f;
             break;
         case K_Gap:
+        // SliderFloat("Tune Interval", &tune, 0.0f, 400.0f);
             tune = value * 4.0f;
             break;
         case K_Count:
+        // SliderFloat("Clip", &clip, 0.0f, 1.0f);
             clip = value * 0.01f;
             break;
         default:
@@ -106,7 +115,7 @@ void TRXSnareDrum::setParameter(fm_param_index_t param_index, float value) {
     }
 };
 float TRXSnareDrum::getParameter(fm_param_index_t param_index) {
-    // user editable parameters are in range 1..100
+    // user editable parameters are in range 0..100
     switch (param_index) {
         case K_Base_Frequency:
             return pitch;
@@ -120,7 +129,7 @@ float TRXSnareDrum::getParameter(fm_param_index_t param_index) {
         case K_Mix:
             return tone;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Gap:

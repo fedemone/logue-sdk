@@ -400,9 +400,13 @@ public:
         const float wow_depth_base     = 5.0f + tape_age_ * 25.0f;
         const float flutter_depth_base = 0.8f + tape_age_ * 2.0f;
 
-        float l4[NEON_LANES], r4[NEON_LANES];
-        vst1q_f32(l4, sig_l);
-        vst1q_f32(r4, sig_r);
+        // Store NEON vectors to temporary arrays for scalar processing
+        float f_sig_l_arr[NEON_LANES];
+        float f_sig_r_arr[NEON_LANES];
+        vst1q_f32(f_sig_l_arr, sig_l);
+        vst1q_f32(f_sig_r_arr, sig_r);
+
+        float f_out_l[4], f_out_r[4];
 
         // Evaluate both LFOs for all 4 samples with one NEON sine call each.
         // fastersinfullf_ps range-reduces internally, so the un-wrapped phase
@@ -423,32 +427,34 @@ public:
 
         const float32x4_t lfo_vals     = fastersinfullf_ps(wow_phases);
         const float32x4_t flutter_vals = fastersinfullf_ps(flut_phases);
-
+        float lfo_val[NEON_LANES];
+        float flutter_val[NEON_LANES];
+        vst1q_f32(lfo_val, lfo_vals);
+        vst1q_f32(flutter_val, flutter_vals);
         for (int s = 0; s < NEON_LANES; ++s) {
-            const float lfo_val       = vgetq_lane_f32(lfo_vals, s);
-            const float flutter_val   = vgetq_lane_f32(flutter_vals, s);
-
-            const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val)
-                                        + flutter_depth_base * flutter_val;
+            const float rd_off        = wow_depth_base * (1.0f + 0.8f * lfo_val[s])
+                                        + flutter_depth_base * flutter_val[s];
             const int32_t i_off       = (int32_t)rd_off;
             const float   fr          = rd_off - (float)i_off;
 
-            wf_delay_l_[wf_write_pos_] = l4[s];
-            wf_delay_r_[wf_write_pos_] = r4[s];
+            wf_delay_l_[wf_write_pos_] = f_sig_l_arr[s];
+            wf_delay_r_[wf_write_pos_] = f_sig_r_arr[s];
 
             // Core indices for 4-point interpolation
-            uint32_t m1 = (wf_write_pos_ - i_off + WF_BUFFER_SIZE) & WF_BUFFER_MASK; // Central point 1
-            uint32_t m2 = (m1 - 1u) & WF_BUFFER_MASK;                                // Central point 2
-            uint32_t m0 = (m1 + 1u) & WF_BUFFER_MASK;                                // Left guard point
-            uint32_t m3 = (m2 - 1u) & WF_BUFFER_MASK;                                // Right guard point
+            uint32_t m1 = (wf_write_pos_ - i_off + WF_BUFFER_SIZE) & WF_BUFFER_MASK;
+            uint32_t m2 = (m1 - 1u) & WF_BUFFER_MASK;
+            uint32_t m0 = (m1 + 1u) & WF_BUFFER_MASK;
+            uint32_t m3 = (m2 - 1u) & WF_BUFFER_MASK;
 
-            l4[s] = hermite4_scalar(wf_delay_l_[m0], wf_delay_l_[m1], wf_delay_l_[m2], wf_delay_l_[m3], fr);
-            r4[s] = hermite4_scalar(wf_delay_r_[m0], wf_delay_r_[m1], wf_delay_r_[m2], wf_delay_r_[m3], fr);
+            f_out_l[s] = hermite4_scalar(wf_delay_l_[m0], wf_delay_l_[m1], wf_delay_l_[m2], wf_delay_l_[m3], fr);
+            f_out_r[s] = hermite4_scalar(wf_delay_r_[m0], wf_delay_r_[m1], wf_delay_r_[m2], wf_delay_r_[m3], fr);
 
             wf_write_pos_ = (wf_write_pos_ + 1u) & WF_BUFFER_MASK;
         }
-        sig_l = vld1q_f32(l4);
-        sig_r = vld1q_f32(r4);
+
+        // Reload back into NEON registers
+        sig_l = vld1q_f32(f_out_l);
+        sig_r = vld1q_f32(f_out_r);
     }
 
     fast_inline void crosstalk(float32x4_t &sig_l, float32x4_t &sig_r) {
@@ -460,61 +466,51 @@ public:
     }
 
     fast_inline void vinyl_dust(float32x4_t &sig_l, float32x4_t &sig_r) {
-        // 1. Generate independent white noise sources (Vectorized, fast)
-        float32x4_t white_l = vsubq_f32(vmulq_n_f32(prng_rand_float(), 2.0f),
-                                        vdupq_n_f32(1.0f));
-        float32x4_t white_r = vsubq_f32(vmulq_n_f32(prng_rand_float(), 2.0f),
-                                        vdupq_n_f32(1.0f));
+        // 1. Generate independent white noise sources
+        float32x4_t white_l = vsubq_f32(vmulq_n_f32(prng_rand_float(), 2.0f), vdupq_n_f32(1.0f));
+        float32x4_t white_r = vsubq_f32(vmulq_n_f32(prng_rand_float(), 2.0f), vdupq_n_f32(1.0f));
 
-        // 2. Generate random values for triggers and amplitudes
-        float32x4_t rand_trigger = prng_rand_float();
+        // 2. Generate random pools
+        float32x4_t rand_trigger  = prng_rand_float();
         float32x4_t rand_amp_pool = prng_rand_float();
+        float32x4_t rand_big_trig = prng_rand_float();
 
-        float r_trig[NEON_LANES], r_amp[NEON_LANES];
-        vst1q_f32(r_trig, rand_trigger);
-        vst1q_f32(r_amp, rand_amp_pool);
+        // Store NEON vectors to temporary arrays for scalar processing
+        float f_trig_arr[NEON_LANES];
+        float f_amp_arr[NEON_LANES];
+        float f_big_trig_arr[NEON_LANES];
+        vst1q_f32(f_trig_arr, rand_trigger);
+        vst1q_f32(f_amp_arr, rand_amp_pool);
+        vst1q_f32(f_big_trig_arr, rand_big_trig);
 
-        // Random pool for big pops
-        float r_big_trig[NEON_LANES];
-        vst1q_f32(r_big_trig, prng_rand_float());
+        float f_pop_env[4], f_big_pop_env[4];
 
-        float env_array[NEON_LANES];
-        float big_env_array[NEON_LANES];
-
-        // Run a short 4-step sequential loop so the envelope decays sample-by-sample,
-        // letting a pop smoothly coat all subsequent time lanes!
         for (int i = 0; i < NEON_LANES; ++i) {
             // Small Crackle
-            if (r_trig[i] > vinyl_pop_threshold_) {
-                // Slightly boosted amplitude range (0.15f to 0.45f) for beautiful analog presence
-                float amplitude = 0.15f + r_amp[i] * 0.30f;
-                if (amplitude > pop_env_scalar_) {
-                    pop_env_scalar_ = amplitude;
-                }
+            if (f_trig_arr[i] > vinyl_pop_threshold_) {
+                float amp = 0.15f + f_amp_arr[i] * 0.30f;
+                if (amp > pop_env_scalar_) pop_env_scalar_ = amp;
             }
             // Big Occasional Pop
-            if (r_big_trig[i] > vinyl_big_pop_threshold_) {
-              float big_amp = 0.4f + r_amp[i] * 0.5f;
-              if (big_amp > big_pop_env_scalar_)
-                big_pop_env_scalar_ = big_amp;
+            if (f_big_trig_arr[i] > vinyl_big_pop_threshold_) {
+                float amp = 0.4f + f_amp_arr[i] * 0.5f;
+                if (amp > big_pop_env_scalar_) big_pop_env_scalar_ = amp;
             }
 
-            env_array[i] = pop_env_scalar_;
-            big_env_array[i] = big_pop_env_scalar_;
-            // Natural sequential sample-rate decay
-            pop_env_scalar_ *= pop_env_decay_;
+            // Build the envelope vector for the current sample/lane
+            f_pop_env[i]     = pop_env_scalar_;
+            f_big_pop_env[i] = big_pop_env_scalar_;
+
+            pop_env_scalar_     *= pop_env_decay_;
             big_pop_env_scalar_ *= big_pop_env_decay_;
         }
 
-        // Load back into a vector for parallel processing
-        float32x4_t v_pop_env = vld1q_f32(env_array);
-        float32x4_t v_big_pop_env = vld1q_f32(big_env_array);
+        float32x4_t v_pop_env     = vld1q_f32(f_pop_env);
+        float32x4_t v_big_pop_env = vld1q_f32(f_big_pop_env);
 
         // 3. Shape transient & Apply envelope
-        float32x4_t crackle_l = vaddq_f32(vmulq_n_f32(white_l, 0.82f),
-                                          vmulq_n_f32(previous_noise_l_, 0.18f));
-        float32x4_t crackle_r = vaddq_f32(vmulq_n_f32(white_r, 0.82f),
-                                          vmulq_n_f32(previous_noise_r_, 0.18f));
+        float32x4_t crackle_l = vaddq_f32(vmulq_n_f32(white_l, 0.82f), vmulq_n_f32(previous_noise_l_, 0.18f));
+        float32x4_t crackle_r = vaddq_f32(vmulq_n_f32(white_r, 0.82f), vmulq_n_f32(previous_noise_r_, 0.18f));
 
         previous_noise_l_ = white_l;
         previous_noise_r_ = white_r;
@@ -533,7 +529,6 @@ public:
 
         // 5. Mix into output path
         const float dust_level = 0.06f + tape_age_ * 0.08f;
-
         sig_l = vmlaq_n_f32(sig_l, crackle_l, dust_level);
         sig_r = vmlaq_n_f32(sig_r, crackle_r, dust_level);
     }
@@ -977,7 +972,7 @@ private:
 
     // =========================================================================
     // Filter coefficient calculators (Audio EQ Cookbook)
-    // Called only on parameter change — sinf/cosf/powf are fine here.
+    // Called only on parameter change — fastersinfullf/fastercosfullf/powf are fine here.
     // =========================================================================
     void UpdateCoefficients() {
         const float low_hz  = raw_params_[k_param_eq_low_hz]   * 10.0f;
@@ -1016,10 +1011,10 @@ private:
     }
 
     void calc_peaking(biquad_coeffs_t* c, float hz, float db, float q) {
-        const float A    = powf(10.0f, db / 40.0f);
+        const float A    = powf(10.0f, db * 0.025f);
         const float w0   = 2.0f * M_PI * hz * inverse_samplerate_;
-        const float cosw = cosf(w0);
-        const float alpha = sinf(w0) / (2.0f * q);
+        const float cosw = fastercosfullf(w0);
+        const float alpha = fastersinfullf(w0) / (2.0f * q);
         const float inv_a0 = A / (A + alpha);   // was 1.0f / (1.0f + alpha / A);
         c->b0 =  (1.0f + alpha * A) * inv_a0;
         c->b1 = (-2.0f * cosw)      * inv_a0;
@@ -1029,9 +1024,9 @@ private:
     }
 
     void calc_high_shelf(biquad_coeffs_t* c, float hz, float db) {
-        const float A    = powf(10.0f, db / 40.0f);
+        const float A    = powf(10.0f, db * 0.025f);
         const float w0   = 2.0f * M_PI * hz * inverse_samplerate_;
-        const float cosw = cosf(w0), sinw = sinf(w0);
+        const float cosw = fastercosfullf(w0), sinw = fastersinfullf(w0);
         const float alpha =
             (sinw * 0.5f) *
             fasterSqrt((A + 1.0f / A) *
@@ -1048,7 +1043,7 @@ private:
 
     void calc_low_pass(biquad_coeffs_t* c, float hz, float q) {
         const float w0   = 2.0f * M_PI * hz * inverse_samplerate_;
-        const float cosw = cosf(w0), sinw = sinf(w0);
+        const float cosw = fastercosfullf(w0), sinw = fastersinfullf(w0);
         const float alpha  = sinw / (2.0f * q);
         const float inv_a0 = 1.0f / (1.0f + alpha);
         c->b0 = (1.0f - cosw) * 0.5f * inv_a0;
@@ -1060,7 +1055,7 @@ private:
 
     void calc_high_pass(biquad_coeffs_t* c, float hz, float q) {
         const float w0   = 2.0f * M_PI * hz * inverse_samplerate_;
-        const float cosw = cosf(w0), sinw = sinf(w0);
+        const float cosw = fastercosfullf(w0), sinw = fastersinfullf(w0);
         const float alpha  = sinw / (2.0f * q);
         const float inv_a0 = 1.0f / (1.0f + alpha);
         c->b0 =  (1.0f + cosw) * 0.5f * inv_a0;

@@ -12,20 +12,19 @@ void FmTomModel::Trigger() {
 }
 
 float FmTomModel::Process() {
-    float dt = 1.0f / SAMPLE_RATE;
     float amp_env = ExpDecay(t, d_b);
     float mod_env = ExpDecay(t, d_m);
     float freq_env = A_f * ExpDecay(t, d_f);
 
     float mod_feedback = 1.0f * prev_mod;
-    mod_phase = WrapPhase(mod_phase + TWO_PI * f_m * dt + mod_feedback);
-    float mod_out = fasterfullsinf(mod_phase);
+    mod_phase = WrapPhase(mod_phase + TWO_PI * (f_m * pitch_ratio_) * INV_SAMPLE_RATE + mod_feedback);
+    float mod_out = fastersinfullf(mod_phase);
     prev_mod = mod_out;
 
-    car_phase = WrapPhase(car_phase + TWO_PI * (f_b + freq_env) * dt + I * mod_env * mod_out);
-    float out = fasterfullsinf(car_phase) * amp_env;
+    car_phase = WrapPhase(car_phase + TWO_PI * ((f_b + freq_env) * pitch_ratio_) * INV_SAMPLE_RATE + I * mod_env * mod_out);
+    float out = fastersinfullf(car_phase) * amp_env;
 
-    t += dt;
+    t += INV_SAMPLE_RATE;
     return out;
 }
 
@@ -42,30 +41,38 @@ void FmTomModel::loadPreset(uint8_t idx) {
     }
 };
 void FmTomModel::setParameter(fm_param_index_t param_index, float value) {
-    // user editable parameters are in range 1..100 - TODO extend to 1 1000, so the following shall be divided by additional 10
+    // user editable parameters are in range 0..100
     switch (param_index) {
         case K_Base_Frequency:
-            f_b = 80.0f + value * 3.2f;
+        // ParameterSlider("f_b (Base Frequency)", &f_b, 80.0f, 400.0f);
+            f_b = 80.0f + value * 1.6f; //0..200
             break;
         case K_Modulation_Frequency:
-            f_m = 100.0f + value * 29.0f;
-            break;
+            // ParameterSlider("f_m (Modulator Freq)", &f_m, 100.0f, 2000.0f);
+            f_m = 100.0f + value * 19.0f;
+        break;
         case K_Modulation_Index:
-            I = 100.0f + value * 19.0f;
-            break;
+            // ParameterSlider("I (Mod Index)", &I, 0.0f, 50.0f);
+            I = value * 0.25f;
+        break;
         case K_Modulation_Decay:
+            // ParameterSlider("d_m (Mod Decay)", &d_m, 0.01f, 1.0f);
             d_m = 0.01f + value * 0.0099f;
-            break;
-        case K_Decay_A:
-            d_b = 0.01f + value * 0.0199f;
+        break;
+        case K_Decay_A:   // 0..200
+        // ParameterSlider("d_b (Amp Decay)", &d_b, 0.01f, 2.0f);
+            d_b = 0.01f + value * 0.00995f;
             break;
         case K_Frequency_Sweep:
+        // ParameterSlider("A_f (Freq Sweep Amt)", &A_f, 0.0f, 100.0f);
             A_f = value;
             break;
         case K_Sweep_Decay:
+        // ParameterSlider("d_f (Freq Sweep Decay)", &d_f, 0.01f, 1.0f);
             d_f = 0.01f + value * 0.0199f;
             break;
         case K_Phase:
+        // ParameterSlider("Start Phase", &start_phase, 0.0f, PI);
             start_phase = value * 0.01 * PI;
             break;
         default:
@@ -73,7 +80,7 @@ void FmTomModel::setParameter(fm_param_index_t param_index, float value) {
     }
 };
 float FmTomModel::getParameter(fm_param_index_t param_index) {
-    // user editable parameters are in range 1..100
+    // user editable parameters are in range 0..100
     switch (param_index) {
         case K_Base_Frequency:
             return f_b;
@@ -87,7 +94,7 @@ float FmTomModel::getParameter(fm_param_index_t param_index) {
         case K_Modulation_Decay:
             return d_m;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return d_b;
             break;
         case K_Frequency_Sweep:

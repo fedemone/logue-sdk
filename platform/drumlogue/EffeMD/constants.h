@@ -30,6 +30,7 @@ constexpr float INV_SAMPLE_RATE = 1.0f / SAMPLE_RATE;
 constexpr float NYQUIST_FREQ    = SAMPLE_RATE * 0.5f;
 constexpr float PI              = 3.14159265f;
 constexpr float TWO_PI          = 2.0f * PI;
+constexpr float HALF_PI         = 0.5f * PI;
 
 // ============================================================================
 // MIDI / tuning constants
@@ -39,6 +40,13 @@ constexpr int   A4_MIDI  = 69;
 constexpr float SEMITONE_RATIO   = 1.0594630943592953f;
 constexpr float LFO_PHASE_OFFSET = 0.25f;
 
+
+// ============================================================================
+// various constants
+// ============================================================================
+constexpr float DEFAULT_VELOCITY_GAIN = 1.0f;
+constexpr float DEFAULT_MASTER_GAIN   = 2.30f;
+constexpr float CLAP_ATTACK_TIME = 0.00035f;
 
 // ============================================================================
 // LFO targets
@@ -82,6 +90,7 @@ enum euclidean_mode : int {
     EUCLID_MODE_COUNT = 9
 };
 
+constexpr int EUCLIDEAN_LANES = 4;
 
 // ============================================================================
 // PRNG / presets / smoothing
@@ -97,12 +106,7 @@ constexpr int SMOOTH_FRAMES  = 48;
 // Euclidean tuning offsets
 // ============================================================================
 // offsets[mode][engine lane] = semitones above root.
-// Engine mapping used by selector mode:
-//   lane 0 = Kick
-//   lane 1 = Snare
-//   lane 2 = Metal
-//   lane 3 = Tom/Perc
-static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][4] = {
+static const float EUCLID_OFFSETS[EUCLID_MODE_COUNT][EUCLIDEAN_LANES] = {
     { 0.f,  0.f,  0.f,  0.f},  // 0: Off
     { 0.f,  1.f,  2.f,  3.f},  // 1: E(4,4)
     { 0.f,  1.f,  3.f,  4.f},  // 2: E(4,6)
@@ -146,8 +150,8 @@ typedef enum {
   // page 6
   K_Gap,                    // clap_interval - start - interval - gap - tune - mod_env_sync
   K_Count,                  // clap_count - peak - clip
-  reserved,               // new, to be decided - LFO?
-  K_Euclidean_Tuning,       // new, to be decided
+  K_Reserved,               // reserved for future use (LFO?)
+  K_Euclidean_Tuning,       // per-engine-class Euclidean pitch offset mode
 
   PARAM_TOTAL = 24        // fixed see header.c, list must match!!
 } fm_param_index_t;
@@ -168,6 +172,8 @@ typedef enum {
     ID_TRXSnareDrum,
     ID_TRXClaves,
     ID_TRXHiHat,
+    ID_FmWhistle,   // tonal voice cloned from the original (noise-free) FM Clap
+    ID_TRXGong,     // long-decay voice cloned from the original TRX Claves
     INST_COUNT,
 } engine_id_t;
 
@@ -186,6 +192,8 @@ static const char* instruments_strings[INST_COUNT] = {
 "TRXSnareDrum",
 "TRXClaves",
 "TRXHiHat",
+"FmWhistle",
+"TRXGong",
 };
 
 static const char* lfo_shape_strings[LFO_SHAPE_COMBO_COUNT] = {
@@ -212,6 +220,36 @@ static const char* euclidean_mode_strings[EUCLID_MODE_COUNT] = {
     "Trit"    // 8: E(4,24) = [0, 6, 12, 18] tritone spread
 };
 
+
+// ============================================================================
+// Euclidean tuning lane assignment
+// ============================================================================
+// Maps an instrument to a column of EUCLID_OFFSETS, grouping the 11 models
+// into the four Sonaglio engine classes:
+//   lane 0 = Kick, lane 1 = Snare, lane 2 = Metal, lane 3 = Tom/Perc
+static inline int fm_engine_to_euclid_lane(engine_id_t engine) {
+    switch (engine) {
+        case ID_FmKickModel:
+        case ID_TRXBassDrum:
+            return 0;
+        case ID_FmSnareModel:
+        case ID_TRXSnareDrum:
+        case ID_FmClapModel:
+            return 1;
+        case ID_FmCowbellModel:
+        case ID_FmCymbalModel:
+        case ID_TRXHiHat:
+        case ID_TRXGong:
+            return 2;
+        case ID_FmTomModel:
+        case ID_FmRimshotModel:
+        case ID_TRXClaves:
+        case ID_FmWhistle:
+            return 3;
+        default:
+            return 0;
+    }
+}
 
 // ============================================================================
 // Utility helpers

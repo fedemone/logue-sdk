@@ -10,16 +10,17 @@ void TRXClaves::Trigger() {
     env = 1.0f;
     t = 0.0f;
     phase1 = phase2 = 0.0f;
+    env_mul = e_expff(-INV_SAMPLE_RATE / decay);
 }
 
 float TRXClaves::Process() {
     if (env < 0.0001f) return 0.0f;
 
     t += INV_SAMPLE_RATE;
-    env *= e_expff(-INV_SAMPLE_RATE / (decay));
+    env *= env_mul;
 
-    phase1 += pitch * INV_SAMPLE_RATE;
-    phase2 += (pitch + interval) * INV_SAMPLE_RATE;
+    phase1 += pitch * pitch_ratio_ * INV_SAMPLE_RATE;
+    phase2 += (pitch + interval) * pitch_ratio_ * INV_SAMPLE_RATE;
     if (phase1 > 1.0f) phase1 -= 1.0f;
     if (phase2 > 1.0f) phase2 -= 1.0f;
 
@@ -48,21 +49,26 @@ void TRXClaves::loadPreset(uint8_t idx) {
     }
 };
 void TRXClaves::setParameter(fm_param_index_t param_index, float value) {
-    // user editable parameters are in range 1..100
+    // user editable parameters are in range 0..100
     switch (param_index) {
         case K_Base_Frequency:
-            pitch = 200.0f + value * 38.0f;
+        // SliderFloat("Pitch", &pitch, 200.0f, 4000.0f);
+            pitch = 100.0f + value * 19.5f; //0..200
             break;
-        case K_Decay_A:
-            decay = 0.01f + value * 0.0499f;
-            break;
+        case K_Decay_A:   // 0..200
+        // SliderFloat("Decay", &decay, 0.01f, 0.5f);
+        decay = 0.01f + value * 0.0029f;
+        break;
         case K_Mix:
-            balance = value * 0.01f;
-            break;
+        // SliderFloat("Balance", &balance, 0.0f, 1.0f);
+        balance = value * 0.01f;
+        break;
         case K_Gap:
+        // SliderFloat("Interval", &interval, 0.0f, 400.0f);
             interval = value * 4.0f;
             break;
-        case K_Count:
+        case K_Sweep_Decay:
+        // SliderFloat("Clip", &clip, 0.0f, 1.0f);
             clip = value * 0.01f;
             break;
         default:
@@ -70,12 +76,12 @@ void TRXClaves::setParameter(fm_param_index_t param_index, float value) {
     }
 };
 float TRXClaves::getParameter(fm_param_index_t param_index) {
-    // user editable parameters are in range 1..100
+    // user editable parameters are in range 0..100
     switch (param_index) {
         case K_Base_Frequency:
             return pitch;
             break;
-        case K_Decay_A:
+        case K_Decay_A:   // 0..200
             return decay;
             break;
         case K_Mix:
@@ -101,6 +107,6 @@ float TRXClaves::getParameter(fm_param_index_t param_index) {
 //     ImGui::SliderFloat("Clip", &clip, 0.0f, 1.0f);
 // }
 
-float TRXClaves::sine(float x) {
-    return fasterfullsinf(x);
+inline float TRXClaves::sine(float x) {
+    return fastersinfullf(x);
 }

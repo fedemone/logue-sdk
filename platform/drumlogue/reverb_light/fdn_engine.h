@@ -14,6 +14,7 @@
 #define SPARKLE_BUFFER_SIZE 4096
 #define NUM_RESONATORS (6)
 #define SAMPLE_RATE (48000.0f)
+#define NEON_LANES  (4)
 #ifndef fast_inline
 #define fast_inline inline __attribute__((always_inline, optimize("Ofast")))
 #endif
@@ -151,7 +152,7 @@ public:
     alignas(16) float col_z1l[8];
     alignas(16) float col_z2l[8];
     alignas(16) float col_z1r[8];
-    alignas(16) float col_z2r[8];    // Applying __attribute__((aligned(16))) at the end of a comma-separated declaration list only aligns 
+    alignas(16) float col_z2r[8];    // Applying __attribute__((aligned(16))) at the end of a comma-separated declaration list only aligns
                                      // the very last variable leaving the other unaligned.
 
     // Path 5: Sparkle (Stereo Granular S&H)
@@ -470,16 +471,16 @@ public:
         //    across the 8 channels (4 per NEON vector). Identical per-channel
         //    recurrence:  y[n] = x[n] - x[n-1] + hpf_coeff * y[n-1].
         float32x4_t f_lo = vld1q_f32(&fdnOut[0]);
-        float32x4_t f_hi = vld1q_f32(&fdnOut[4]);
+        float32x4_t f_hi = vld1q_f32(&fdnOut[NEON_LANES]);
         {
             float32x4_t xprev_lo = vld1q_f32(&hpf_x_prev[0]);
-            float32x4_t xprev_hi = vld1q_f32(&hpf_x_prev[4]);
+            float32x4_t xprev_hi = vld1q_f32(&hpf_x_prev[NEON_LANES]);
             float32x4_t yprev_lo = vld1q_f32(&hpf_y_prev[0]);
-            float32x4_t yprev_hi = vld1q_f32(&hpf_y_prev[4]);
+            float32x4_t yprev_hi = vld1q_f32(&hpf_y_prev[NEON_LANES]);
             float32x4_t y_lo = vmlaq_n_f32(vsubq_f32(f_lo, xprev_lo), yprev_lo, hpf_coeff);
             float32x4_t y_hi = vmlaq_n_f32(vsubq_f32(f_hi, xprev_hi), yprev_hi, hpf_coeff);
-            vst1q_f32(&hpf_x_prev[0], f_lo);  vst1q_f32(&hpf_x_prev[4], f_hi);
-            vst1q_f32(&hpf_y_prev[0], y_lo);  vst1q_f32(&hpf_y_prev[4], y_hi);
+            vst1q_f32(&hpf_x_prev[0], f_lo);  vst1q_f32(&hpf_x_prev[NEON_LANES], f_hi);
+            vst1q_f32(&hpf_y_prev[0], y_lo);  vst1q_f32(&hpf_y_prev[NEON_LANES], y_hi);
             f_lo = y_lo;  f_hi = y_hi;
         }
 
@@ -511,11 +512,15 @@ public:
         const float nd = fdn_norm * decay;
         float32x4_t res_lo = vmlaq_n_f32(vdupq_n_f32(in_l), wht_lo, nd);
         float32x4_t res_hi = vmlaq_n_f32(vdupq_n_f32(in_r), wht_hi, nd);
+        float lo[NEON_LANES];
+        vst1q_f32(lo, res_lo);
+        float hi[NEON_LANES];
+        vst1q_f32(hi, res_hi);
 
         // 6. Scatter feedback into the channel-major delay lines.
-        for (int k = 0; k < 4; k++) {
-            fdnMem[k * FDN_BUFFER_SIZE + writePos]       = vgetq_lane_f32(res_lo, k);
-            fdnMem[(k + 4) * FDN_BUFFER_SIZE + writePos] = vgetq_lane_f32(res_hi, k);
+        for (int k = 0; k < NEON_LANES; k++) {
+            fdnMem[k * FDN_BUFFER_SIZE + writePos]                = lo[k];
+            fdnMem[(k + NEON_LANES) * FDN_BUFFER_SIZE + writePos] = hi[k];
         }
 
         writePos = (writePos + 1) & FDN_BUFFER_MASK;
@@ -670,14 +675,14 @@ public:
             float color_l = 0.0f;
             float color_r = 0.0f;
             if (color_amt > 0.0f) {
-                // 6 parallel bandpass biquads per side, evaluated 4-at-a-time on
+                // 6 parallel bandpass biquads per side, evaluated NEON_LANES-at-a-time on
                 // NEON (8 padded lanes = two vector groups). Same Direct-Form
                 // recurrence as process_biquad(); padding lanes stay zero.
                 const float32x4_t inl = vdupq_n_f32(rev_l);
                 const float32x4_t inr = vdupq_n_f32(rev_r);
                 float32x4_t sumL = vdupq_n_f32(0.0f);
                 float32x4_t sumR = vdupq_n_f32(0.0f);
-                for (int g = 0; g < 8; g += 4) {
+                for (int g = 0; g < 8; g += NEON_LANES) {
                     float32x4_t b0 = vld1q_f32(&col_b0[g]);
                     float32x4_t b1 = vld1q_f32(&col_b1[g]);
                     float32x4_t b2 = vld1q_f32(&col_b2[g]);
