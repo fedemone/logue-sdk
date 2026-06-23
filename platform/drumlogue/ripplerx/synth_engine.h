@@ -1742,6 +1742,29 @@ SynthState state;
                     case k_RideBell:  v.crash_couple = 0.50f; break;
                     default: break;
                 }
+                // ── FDN dense-wash params (see processBlock + dsp_core.h) ──────
+                // The 6-resonator bank cannot reach a real cymbal's spectral
+                // DENSITY (flatness ~0.55 vs our ~0.2), so the wash kept reading
+                // as "a few tones + a noise bed" however tightly it was coupled.
+                // The FDN supplies the dense inharmonic shimmer.  Bright crashes
+                // get a long, lightly-damped network; the open hat a short one;
+                // tonal metals (Gong/RidBel) a lighter mix so their pitched
+                // character stays foreground.
+                switch (m_preset_idx) {
+                    case k_Cymbal:    v.fdn_g = 0.985f; v.fdn_damp = 0.50f; v.fdn_drive = 0.80f; v.fdn_mix = 0.50f; break;
+                    case k_Ride:      v.fdn_g = 0.988f; v.fdn_damp = 0.45f; v.fdn_drive = 0.65f; v.fdn_mix = 0.42f; break;
+                    case k_RideBell:  v.fdn_g = 0.984f; v.fdn_damp = 0.40f; v.fdn_drive = 0.45f; v.fdn_mix = 0.35f; break;
+                    case k_HiHatOpen: v.fdn_g = 0.945f; v.fdn_damp = 0.55f; v.fdn_drive = 0.90f; v.fdn_mix = 0.55f; break;
+                    case k_Gong:      v.fdn_g = 0.986f; v.fdn_damp = 0.32f; v.fdn_drive = 0.50f; v.fdn_mix = 0.40f; break;
+                    default: break;
+                }
+                if (v.fdn_g > 0.0f) {
+                    // Clear the (KS-dead) resB delay line that hosts the 4 FDN
+                    // lines so the network starts from silence on every strike.
+                    for (uint32_t z = 0; z < DELAY_BUFFER_SIZE; ++z) v.resB.buffer[z] = 0.0f;
+                    v.fdn_lp_0 = v.fdn_lp_1 = v.fdn_lp_2 = v.fdn_lp_3 = 0.0f;
+                    v.fdn_count = 0;
+                }
             }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
@@ -1996,6 +2019,29 @@ SynthState state;
             float vel = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
             v.boom_mix *= (0.25f + 1.50f * vel * vel);      // soft ×0.3 … hard ×1.75
             v.modal_env_4 *= (1.70f - 1.10f * vel);         // soft ×1.6 … hard ×0.6
+        }
+
+        // ── Strike transient layer (membrane presets) ───────────────────────
+        // The modal tail is measurably correct; the perceptual gap is the
+        // broadband ATTACK the modal bank structurally cannot make (Taiko
+        // stick-slap, ref early centroid ~1.9 kHz; Timpani felt-mallet contact).
+        // Layer a short velocity-scaled band-passed noise burst over the modal
+        // body (see processBlock).  Pure DSP, no samples — closes most of the
+        // attack-brightness gap that incremental modal tuning could not.
+        if (m_preset_idx == k_Taiko) {
+            v.trans_env   = 1.0f;
+            v.trans_decay = 0.99204f;   // T60 ≈ 18 ms
+            v.trans_gain  = 2.90f;
+            v.trans_a_lo  = 0.220f;     // ~2 kHz HP corner
+            v.trans_a_hi  = 0.540f;     // ~6 kHz LP corner → bright stick slap
+            v.trans_lp_lo = v.trans_lp_hi = 0.0f;
+        } else if (m_preset_idx == k_Timpani) {
+            v.trans_env   = 1.0f;
+            v.trans_decay = 0.9881f;    // T60 ≈ 12 ms
+            v.trans_gain  = 2.00f;
+            v.trans_a_lo  = 0.075f;     // ~600 Hz HP corner
+            v.trans_a_hi  = 0.300f;     // ~2.6 kHz LP corner → felt-mallet contact
+            v.trans_lp_lo = v.trans_lp_hi = 0.0f;
         }
 }
 
@@ -2610,6 +2656,40 @@ SynthState state;
                                + crash_noise_in * bed_gate
                                + voice.modal_out_prev * voice.crash_ring_tap;
 
+                    // ── FDN dense metallic wash ───────────────────────────────
+                    // 4-line Hadamard feedback delay network hosted in the
+                    // KS-dead resB.buffer: supplies the dense inharmonic spectrum
+                    // the 6-resonator bank cannot, so the wash reads as one
+                    // metallic body instead of "a few tones + a noise bed".
+                    // Driven by the same nonlinear crash excitation `exc`, so it
+                    // blooms with the strike and decays locked to it.  Orthonormal
+                    // Hadamard × sub-unity gain ⇒ guaranteed-stable dense decay.
+                    if (voice.fdn_g > 0.0f) {
+                        float* __restrict B = voice.resB.buffer;
+                        const uint32_t c = voice.fdn_count++;
+                        // 4 mutually-prime lengths in 4 × 512-sample partitions;
+                        // interleaved combs → dense modes ~25-90 Hz spacing.
+                        const uint32_t p0 =    0u + (c % 281u);
+                        const uint32_t p1 =  512u + (c % 359u);
+                        const uint32_t p2 = 1024u + (c % 419u);
+                        const uint32_t p3 = 1536u + (c % 487u);
+                        float s0 = B[p0], s1 = B[p1], s2 = B[p2], s3 = B[p3];
+                        // Per-line one-pole HF damping (bright metallic decay).
+                        voice.fdn_lp_0 += voice.fdn_damp * (s0 - voice.fdn_lp_0); s0 = voice.fdn_lp_0;
+                        voice.fdn_lp_1 += voice.fdn_damp * (s1 - voice.fdn_lp_1); s1 = voice.fdn_lp_1;
+                        voice.fdn_lp_2 += voice.fdn_damp * (s2 - voice.fdn_lp_2); s2 = voice.fdn_lp_2;
+                        voice.fdn_lp_3 += voice.fdn_damp * (s3 - voice.fdn_lp_3); s3 = voice.fdn_lp_3;
+                        // Lossless Hadamard mix (the ×0.5 makes it orthonormal);
+                        // sub-unity feedback gain sets the reverberant decay.
+                        const float g  = voice.fdn_g * 0.5f;
+                        const float in = exc * voice.fdn_drive;
+                        B[p0] = in + g * (s0 + s1 + s2 + s3);
+                        B[p1] = in + g * (s0 - s1 + s2 - s3);
+                        B[p2] = in + g * (s0 + s1 - s2 - s3);
+                        B[p3] = in + g * (s0 - s1 - s2 + s3);
+                        wash += 0.25f * (s0 + s1 + s2 + s3) * voice.fdn_mix;
+                    }
+
                     // ── Self-phase-modulation "dynamic bloom" ─────────────────
                     // Write the wash to the (reused, KS-dead) resA delay line and
                     // read back at an offset modulated by the wash's own amplitude
@@ -2636,6 +2716,20 @@ SynthState state;
                         bloomed = 0.35f * wash + 0.9f * bloomed;
                     }
                     voice_out += fmaxf(-6.0f, fminf(6.0f, bloomed)) * voice.current_velocity;
+                }
+                // ── Strike transient layer (membrane presets) ─────────────────
+                // Short bright band-passed noise burst = the stick-slap / mallet-
+                // contact attack the modal bank cannot make.  band = LP(hi) − LP(lo)
+                // is a one-pole difference bandpass; the burst envelope (trans_env)
+                // decays in ~10-30 ms and the level scales with velocity, so hard
+                // hits get a brighter, louder attack transient.
+                if (voice.trans_env > silence_threshold) {
+                    float wn = voice.exciter.noise_gen.process();
+                    voice.trans_lp_lo += voice.trans_a_lo * (wn - voice.trans_lp_lo);
+                    voice.trans_lp_hi += voice.trans_a_hi * (wn - voice.trans_lp_hi);
+                    float band = voice.trans_lp_hi - voice.trans_lp_lo;
+                    voice_out += band * voice.trans_env * voice.trans_gain * voice.current_velocity;
+                    voice.trans_env *= voice.trans_decay;
                 }
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
                     if (m_preset_idx == k_KickDrum) {

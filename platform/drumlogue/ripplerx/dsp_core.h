@@ -278,6 +278,35 @@ struct VoiceState {
     // injection of modal energy into the resonator bank; 0 reverts to pure-noise drive.
     float crash_couple   = 0.0f;
 
+    // ── FDN dense metallic wash (ENGINE_PLATE bright cymbals) ─────────────────
+    // A 6-resonator bank cannot reach a real cymbal's spectral DENSITY (flatness
+    // ~0.55; our bank stalls ~0.2), so the wash and ring read as two separate
+    // things no matter how tightly they are coupled.  A 4-line feedback delay
+    // network — hosted in the KS-dead resB.buffer (zero extra RAM) — generates
+    // hundreds of dense inharmonic modes from tiny state: the missing density.
+    // Lossless Hadamard feedback (orthonormal → guaranteed stable for gain<1)
+    // plus per-line one-pole HF damping; driven by the SAME nonlinear crash
+    // excitation so the dense wash blooms and decays with the strike.
+    float    fdn_g     = 0.0f;   // 0 = FDN off; feedback gain (<1 → decaying wash)
+    float    fdn_damp  = 0.0f;   // per-line one-pole HF damping coeff
+    float    fdn_drive = 0.0f;   // input gain from the crash excitation
+    float    fdn_mix   = 0.0f;   // FDN output level into the wash bus
+    float    fdn_lp_0  = 0.0f, fdn_lp_1 = 0.0f, fdn_lp_2 = 0.0f, fdn_lp_3 = 0.0f;
+    uint32_t fdn_count = 0;
+
+    // ── Strike transient layer (membrane presets) ────────────────────────────
+    // The modal tail is measurably correct; the remaining perceptual gap is the
+    // broadband ATTACK the modal bank cannot synthesise — the Taiko stick-slap
+    // (ref early centroid ~1.9 kHz) and the Timpani felt-mallet contact.  Layer
+    // a short, velocity-scaled, band-passed noise burst over the modal body.
+    // Difference-of-one-poles bandpass; pure DSP, no samples.
+    float trans_env   = 0.0f;   // burst envelope (0 = layer off)
+    float trans_decay = 1.0f;   // per-sample decay (T60 ≈ 10-30 ms)
+    float trans_gain  = 0.0f;   // output level
+    float trans_a_lo  = 0.0f;   // bandpass low-corner one-pole coeff
+    float trans_a_hi  = 0.0f;   // bandpass high-corner one-pole coeff
+    float trans_lp_lo = 0.0f, trans_lp_hi = 0.0f;
+
     void PartialReset() {
         mag_env = 0.0f;
 
@@ -386,6 +415,20 @@ struct VoiceState {
         crash_bloom = 0.0f;
         crash_ring_tap = 0.0f;
         crash_couple = 0.0f;
+        // FDN dense metallic wash
+        fdn_g = 0.0f;
+        fdn_damp = 0.0f;
+        fdn_drive = 0.0f;
+        fdn_mix = 0.0f;
+        fdn_lp_0 = fdn_lp_1 = fdn_lp_2 = fdn_lp_3 = 0.0f;
+        fdn_count = 0;
+        // strike transient layer
+        trans_env = 0.0f;
+        trans_decay = 1.0f;
+        trans_gain = 0.0f;
+        trans_a_lo = 0.0f;
+        trans_a_hi = 0.0f;
+        trans_lp_lo = trans_lp_hi = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;

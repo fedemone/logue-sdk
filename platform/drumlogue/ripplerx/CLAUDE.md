@@ -35,6 +35,42 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 18 — FDN dense wash (cymbals) + strike transient layer (Timpani/Taiko)
+
+HW after pass 17: "sound improved, but still the very same problems as before."
+Diagnosis: pass 16's coupling matched the *temporal* band-envelope (corr +0.99) but
+not spectral **density** — ~8 resonators produce ~8 tones, so the cymbal wash still
+read as "tones + a separate noise bed". And for Timpani/Taiko the modal *tail* is
+now correct; the remaining gap is the broadband **attack** the modal bank cannot make.
+Two structural additions (both pure DSP, no samples, no `.text` table growth):
+
+**Cymbals — Feedback Delay Network (FDN) dense wash**
+- 4-line Hadamard FDN hosted in the **KS-dead `resB.buffer`** (zero new RAM; resB is
+  unused on `ENGINE_PLATE`). 4 mutually-prime delay lengths (281/359/419/487) in
+  4×512-sample partitions → hundreds of dense inharmonic modes the resonator bank
+  can't make. Lossless orthonormal Hadamard × sub-unity gain ⇒ guaranteed stable.
+  Per-line one-pole HF damping. Driven by the same nonlinear crash `exc`, so it blooms
+  with the strike and feeds the bloom self-PM too.
+- Per-preset params in NoteOn crash block (`fdn_g/damp/drive/mix`); `resB.buffer`
+  cleared on each strike. Bright crashes long+light; open hat short; Gong/RidBel light
+  mix so their pitched character stays foreground.
+- **Result (measured, body spectral flatness)**: Cymbal 0.2→**0.70**, Ride →**0.71**,
+  HHat-O →**0.58**, RidBel →**0.62** (ref ~0.55); Gong kept tonal 0.10 by design.
+  The wash now has real broadband density — the documented floor is **lifted**.
+
+**Timpani/Taiko — strike transient layer**
+- Short velocity-scaled band-passed white-noise burst (difference-of-one-poles BP)
+  layered over the modal body = the stick-slap / mallet-contact attack. State on
+  `VoiceState` (`trans_env/decay/gain/a_lo/a_hi/lp_*`); fires in NoteOn, runs per-sample
+  before the boom block.
+- Taiko: ~2-6 kHz, T60≈18 ms, gain 2.9 → early centroid **539→1806 Hz** (ref 3374;
+  remaining gap is the ref's close-mic stick, deliberately not chased to avoid hiss).
+- Timpani: ~0.6-2.6 kHz, T60≈12 ms, felt-soft (centroid barely shifts because the ~82 Hz
+  fundamental dominates the energy metric — by design; a clicky attack would be wrong).
+
+Tests: 82/82 PASS (incl. T27 all-37 in-bounds, T28 voice-cycle no-NaN, T21a heavy-strike).
+**ARM `.text` ≤ 28 KB must be confirmed on next flash** (added code is small; verify).
+
 ### Pass 17 — Data-driven modal tuning from reference samples (commit 081e82e)
 
 Applied `modal_extract.py` to fix two standing HW complaints:
@@ -287,9 +323,9 @@ See `config.mk` `USE_LTO := no`.
 
 | Issue | Cause | Decision |
 |-------|-------|----------|
-| Cymbal spectral flatness ~0.03-0.23 vs ref ~0.55 | 6-resonator bank is fundamentally tonal | Accepted; optimized for blending instead |
-| Taiko early centroid ~539 Hz vs ref ~1856 Hz | Ref has prominent close-mic stick transient | Light coupling preferred over turning "tak" into hiss |
-| Ride 34 Hz correlated AM | Sparse 6-resonator bank beating | Addressed via broadband noise dominance |
+| ~~Cymbal spectral flatness ~0.03-0.23 vs ref ~0.55~~ | ~~6-resonator bank is fundamentally tonal~~ | **RESOLVED in pass 18** — FDN dense wash lifts flatness to ~0.6-0.7 |
+| Taiko early centroid 1806 Hz vs ref 3374 Hz | Ref has prominent close-mic stick transient | Improved 3.4× via pass-18 transient layer; full ref not chased (would add hiss over the wood "tak") |
+| Ride 34 Hz correlated AM | Sparse 6-resonator bank beating | Addressed via broadband noise dominance + pass-18 FDN density |
 
 ---
 
