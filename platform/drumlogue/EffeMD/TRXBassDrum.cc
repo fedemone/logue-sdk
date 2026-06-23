@@ -79,7 +79,7 @@ void TRXBassDrum::setParameter(fm_param_index_t param_index, float value) {
         break;
         case K_Modulation_Decay:
         // SliderFloat("Ramp Decay", &rampDecay, 0.01f, 1.0f);
-        rampDecay = value * 0.01f;
+        rampDecay = 0.01f + value * 0.0099f;
         break;
         case K_Decay_A:   // 0..200
         // SliderFloat("Decay", &decay, 0.01f, 2.0f);

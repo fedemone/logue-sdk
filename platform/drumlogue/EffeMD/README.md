@@ -82,8 +82,7 @@ analog 808/909 recipe). FmClap therefore runs white noise through an RBJ
 band-pass biquad (centre = `HPF`, resonance = `FrqSwp`/Q) on the slow
 multi-burst envelope to form the clap body, while the FM `tone` is gated by a
 *fast* envelope so it only contributes a brief percussive "snap" and never rings
-on as a sustained pitch. `NzLvl` blends snap vs. body; per-burst timing is
-jittered for a more human feel.
+on as a sustained pitch. `NzLvl` blends snap vs. body.
 
 Every model derives from `DrumModel` (Init / Trigger / Process / Release /
 loadPreset / setParameter / getParameter) and owns its DSP parameters.

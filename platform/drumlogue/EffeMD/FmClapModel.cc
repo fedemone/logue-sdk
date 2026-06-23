@@ -24,7 +24,7 @@ void FmClapModel::Trigger() {
 }
 
 void FmClapModel::updateFilterCoeffs(float fc, float q) {
-    if (q == 0) return;
+    if (q < 0.1f) q = 0.1f;
     float w0 = 2.0f * PI * fc * INV_SAMPLE_RATE;
     float alpha = fastersinfullf(w0) * 0.5f / q;
     float inv_a0 = 1.0f / (1.0f + alpha);
@@ -58,9 +58,15 @@ inline float FmClapModel::processBPF(float x)
 float FmClapModel::Process() {
     if (!active) return 0.0f;
 
+    // prepare
     float decay = (clap_stage < clap_count) ? d1 : d2;
-
-    // Per-burst noise envelopes: reset to 1.0 at each burst boundary so the
+    if ((target_fhp != fhp) || (target_Q != Q)) {
+        fhp += 0.001f * (target_fhp - fhp); // smooth transition to avoid destabilizing the filter
+        Q   += 0.001f * (target_Q - Q);
+        updateFilterCoeffs(fhp, Q);
+    }
+    
+    // 1. Per-burst noise envelopes: reset to 1.0 at each burst boundary so the
     // noise body follows the multi-burst rhythm.
     float amp_env = ExpDecay(t, decay);                  // slow noise body
     float noise_env = ExpDecay(t, decay * 0.066667f);    // fast noise attack
@@ -85,19 +91,23 @@ float FmClapModel::Process() {
     // 4. Generate Signal Components
     float white = drum_rng_bipolar(&rng_);
 
+    float attack = white * noise * noise_env * fm_attack;
     // Noise body: band-passed noise on the per-burst slow envelope.
-    float burst = white * noise * noise_env;
+    float burst = white * noise * amp_env + attack;
 
     // FM snap: also uses t_fm so it fires only once at note-on, not at every
     // burst boundary. noise_env gives it a fast attack-decay shape within that
     // single window.
     float snap_env = fm_attack * ExpDecay(t_fm, d_m);
-    float snap = tone * snap_env * (1.0f - noise);
+    float snap = tone * snap_env * (1.0f - noise) * 0.25f;
 
     // FIX: Route BOTH the noise and the FM snap through the filter.
     // Because your filter code is actually a Band-Pass Filter, filtering the
     // FM snap removes its raw electronic harshness, gluing it to the noise.
-    float output = processBPF(burst + snap);
+    float body = processBPF(burst + snap);
+    // small unfiltered or high-passed air layer to reduce the impression of a single resonant synth voice
+    float air = white * noise_env * 0.1f;
+    float output = body + air;
 
     // 5. Increment Timers
     t    += INV_SAMPLE_RATE;
@@ -128,11 +138,11 @@ void FmClapModel::loadPreset(uint8_t idx) {
     switch (idx) {
         case 0:
         // "234.804 1066.67 3.431 0.17 0.023 0.3 2 0.028 786.765 1\n";
-          f_b = 234.901f;  f_m = 1066.67f;  I = 3.431f;  d_m = 0.0087f;  d1 = 0.023f;  d2 = 0.3f;  clap_count = 2;  clap_interval = 0.028f;  fhp = 886.765f;  bm = 1.0f;  noise = 0.6f;   Q = 2.3f;
+          f_b = 234.901f;  f_m = 1066.67f;  I = 3.431f;  d_m = 0.17f;  d1 = 0.023f;  d2 = 0.3f;  clap_count = 2;  clap_interval = 0.028f;  fhp = 886.765f;  bm = 1.0f;  noise = 0.86f;   Q = 0.8f;
           break;
         case 1:
         // 176.64 1585.66 15.164 0.095 0.01 0.09 3 0.034 953.197 0.018
-          f_b = 176.73f; f_m = 1585.65f; I = 15.164f; d_m = 0.0095f; d1 = 0.01f; d2 = 0.09f; clap_count = 3; clap_interval = 0.034f; fhp = 1153.197f; bm = 0.018f;  noise = 0.7f;   Q = 2.0f;
+          f_b = 176.73f; f_m = 1585.65f; I = 15.164f; d_m = 0.095f; d1 = 0.01f; d2 = 0.09f; clap_count = 3; clap_interval = 0.034f; fhp = 1153.197f; bm = 0.018f;  noise = 0.7f;   Q = 1.4f;
           break;
         // case 2: - maybe in the future
     }
@@ -186,12 +196,11 @@ void FmClapModel::setParameter(fm_param_index_t param_index, float value) {
             break;
         case K_HPF:
         // ParameterSlider("fhp (HPF Cutoff)", &fhp, 20.0f, 2000.0f);
-            fhp = 20.0f + value * 19.80f;
-            updateFilterCoeffs(fhp, Q);
+            target_fhp = 20.0f + value * 19.80f;
             break;
         case K_Frequency_Sweep:
-            Q = 0.1 + value * 0.039; // 0.1..4.0
-            updateFilterCoeffs(fhp, Q);
+            target_Q = 0.1 + value * 0.039; // 0.1..4.0
+            break;
         default:
             break;
     }

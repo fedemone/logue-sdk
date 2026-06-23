@@ -52,6 +52,10 @@ public:
     float clap_interval;  // seconds between claps
     float clap_timer;
     float fhp;
+    float target_fhp;   // smooth to avoid jumps de-stabilizing the filter
+    // add resonance
+    float Q;
+    float target_Q;
     float bm;     // user-controllable mod feedback
     float noise;  // 0..1 blend of noise burst into the FM tone (clap character)
 
@@ -61,8 +65,6 @@ public:
     float x1, x2, y1, y2;
     // Add filter coefficients
     float b0, b1, b2, a1, a2;
-    // add resonance
-    float Q;
     bool active;
 
     drum_rng_t rng_;  // deterministic noise source for the clap burst
