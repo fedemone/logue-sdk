@@ -1,7 +1,118 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-05-22 (script improvements + arch re-score; see §2 and §3)  
-**Branch:** `claude/continue-previous-session-vydFO`
+**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)  
+**Branch:** `claude/eager-galileo-2fho84`
+
+---
+
+## §0d. 7th HW pass (2026-06-13) — crash-resonator bank
+
+Implemented the user's feedback-synthesis research for the metallic family.
+A "crash" is broadband noise RESONATED through inharmonic resonators, not noise
+summed beside a struck ring — that mismatch was the root of every prior
+"noise just put over the ring, not crashing" report on Cymbal/Gong/Ride/
+RidBel/HHat-O.
+
+New per-voice **crash-resonator bank** (`dsp_core.h crash_*`): 6 constant-peak-gain
+2-pole bandpass resonators reusing the modal mode frequencies (`modal_k_*`),
+driven continuously by the enveloped noise burst —
+`y[n]=r·k·y1−r²·y2+(1−r²)·noise`.  Two fixes were required to make it audible:
+the struck ring is pulled back (×0.45) so the wash can compete, and the noise
+release is slowed (T60≈2.4 s) so the wash isn't cut by the near-instant gate-off.
+Result: real crash decay envelopes that overlap and swirl with the ring.
+
+**Param repurposing** (answering the user's question): MlltRes — inaudible on a
+plate — is repurposed as live crash intensity, reference-anchored at the shipped
+value.  Documented as the pattern for wiring other dead params per engine.
+
+Other: Timpani FM growl removed (rounder low end), Koto richer inharmonic
+overtone stack, Kick faster/punchier boom ("thump" not "whomp"), Taiko more sub.
+All untouched presets bit-identical; 82/82 tests; NaN stress clean; 37 audible.
+
+---
+
+## §0c. 6th HW pass (2026-06-12, same day)
+
+Key fix: **exact modal tuning** — `fastercosfullf`/`fasterpowf` in
+`init_modal_modes` detuned and compressed low-frequency mode stacks
+(Timpani 82/124/144/165 Hz → 86/121/139/157 Hz, ~17 Hz gaps → beating heard
+as "rough low end / unsmooth reverberation").  Replaced with exact
+`cosf`/`exp2f` at NoteOn time.  Plus: true ring-mod gate `(1−d)+d·modal`
+(also on hf_branch) for Cymbal/Ride/Gong/RidBel; Ride/RidBel rebuilt as
+noise-dominant crash washes with long shimmer envelopes; Taiko velocity
+split (boom hard / wood soft); HHat-O de-glassed (broadband HP noise +
+light crash ring); Shaker noise-dominant; Kick2/Kick/808Sub louder;
+AcSnare fast noise attack; Koto/Handpan/Gong/Tick/Bongo retunes;
+Taiko2 → "DeepBs".  82/82 tests, NaN stress clean.
+
+---
+
+## §0b. 5th HW pass — preset revision + program-list rework (2026-06-12)
+
+Per the latest HW report (program count is now **37**; Flute/Clarinet removed):
+
+| Slot | Change |
+|------|--------|
+| 0 Kick2 | NEW — the pre-redesign Timpani body (HW: "keep this as an additional kick") |
+| 5 Timpni | redesigned: kettledrum principal tones 1:1.504:1.742:2:2.444 with solid upper-mode energy (was "bouncy", no metallic overtone); official score 65.5 → 54.6 |
+| 7 Taiko | redesigned: woodblock-hard crack + long TAANNG ring, TbRd16 |
+| 8 MrchSnr | noise attack staging removed — click and buzz land together |
+| 9 Koto | + harmonic-overtone modal bank (mix 0.10); 64.9 → 61.6 |
+| 13/14/27/32/33 | noise ⇄ ring cross-modulation (modal_rm_depth): wash is ring-modulated by the modal output (Risset) — "two sounds overlaid" fixed |
+| 14 Gong | + FM chirp depth 0.18, NzMx 26 (more "crash" onset) |
+| 21 Clap | multi-burst AM (~55 Hz, decaying depth) + NzRs 950 — "tcha" not click; 90.3 → 63.9 vs reference |
+| 22 Shaker | redesigned: woodblock body + 13 Hz grain-pulse AM noise |
+| 23 Taiko2 | NEW — the pre-redesign Taiko (replaces PluckBass per HW request) |
+| 26 HHat-C | = the pre-redesign Shaker voice ("a perfect closed hi-hat"); 120.9 → 74.5 |
+| 32/33 Ride/RidBel | near-harmonic ratios (read as "string") → thick-plate / bell-partial sets; Ride 105.9 → 97.6 |
+| 34 Bongo | + wood "tock" mode 5 at 3.80 |
+| 36 Tick | = the pre-redesign HHat-C chick + low clack mode; 133.6 → 94.7 |
+
+Architecture/param changes:
+- **Master filter is now a LOWPASS "Cutoff"** (was "LowCut" HP — reported reversed
+  three times).  Default/max = open; all preset rows col 16 = 1999.  The old
+  per-preset HP rumble-cuts no longer exist (Triangle/Cowbell gain some body).
+- **TubRad → modal body** (anchored): mode-1 T60 and boom_mix scale 2^(1.2·Δ).
+- **HitPos modal tilt doubled** (HW: "no effect" on AcTom/Timpani).
+- New VoiceState fields: `modal_rm_depth/modal_out_prev` (ring-mod coupling),
+  `noise_am_phase/inc/depth/decay` (enveloped-LFO noise gate).
+- Tests: KS-waveguide probes now LoadPreset(k_GuitarStr) — program 0 is a membrane.
+  82/82 pass; NaN stress clean.  Renderer list updated to the 37-slot layout.
+
+---
+
+## §0a. Parameter-wiring pass (2026-06-11)
+
+Full audit of every `ParamIndex` parameter across all six engine families
+(empirical min/max feature-delta audit, committed as `param_audit.cpp`):
+
+1. **"Cutoff in reverse" — root-caused and fixed.**  Two independent causes:
+   (a) the Chamberlin SVF stability clamp froze every cutoff above ~8.2 kHz onto
+   a resonant boundary so LowCut/NzFltFrq output got *louder* as raised —
+   `filter.h` is now a TPT (Zavalishin) SVF, stable and accurate to Nyquist;
+   (b) the noise hi-band was split from the *unfiltered* source with the split
+   corner tied to 2.2×NzFq, so raising the cutoff *removed* sizzle — both noise
+   bands now derive from the SVF-coloured noise.  All cutoff sweeps verified
+   monotonic over the full UI range.
+2. **ModelsIndex applied to modal engines.**  Model / Partls / Inharm / Mterl /
+   HitPos now reshape the modal bank on BAR/MEMBRANE/SNARE/PLATE presets via
+   `kModelModalRatios` templates, REFERENCE-ANCHORED at each preset's shipped
+   knob values (defaults bit-identical; Marimba before-vs-after self-distance 0.03).
+3. **Per-preset `k_noise_band_mix` honoured** (NoteOn no longer clobbers it with
+   model-profile defaults); HHat-C's hat-filter path engages for the first time.
+4. **Preset retunes after the noise rework** (official `auto_tune` pipeline scores,
+   lower = better): Clap BP@3k, GlsBotl AtkMs 0.5, hats recalibrated for the
+   accurate TPT BP (HHat-C hat HP@6k, HHat-O hat BP@12k) plus an `auto_tune`
+   2-round pass on both hats (HHat-C Mc.T603 16→316ms NzRs 920→960;
+   HHat-O Mc.T601 600→100ms).  Official-pipeline mean over 32 scored presets:
+   **89.39 → 86.96 (−2.44)**; biggest wins: HHat-O −17.9, HHat-C −14.6,
+   AcSnre −10.0, Cymbal −5.7, Tick −5.7, TblrBel −4.0; no preset worse than
+   +1.5 (Djambe +1.4 is the worst residual).
+5. **Tooling:** `auto_tune.py` table regexes fixed for the non-static member
+   declarations (model/modal tuning was crashing on the current source).
+   `param_audit.cpp` added (per-family parameter wiring audit harness).
+6. Stale unit test T7 updated: ENGINE_REMOVED presets (Flute/Clrint) must be
+   *silent*; all 82 tests pass.
 
 ---
 

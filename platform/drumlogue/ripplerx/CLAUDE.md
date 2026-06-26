@@ -1,155 +1,422 @@
 # RipplerX – Session Brief
 
-## Working State (branch tip — see git log for exact commit)
+## Dev Branch
 
-- Unit **loads on hardware** and all non-KS presets now produce inharmonic modal
-  sounds instead of strings.
-- Marimba ring bug is **fixed** — ring now lasts ~1.2s as configured (Phase 2 complete).
-- Flute and Clarinet are silenced (ENGINE_REMOVED).
-- **Dkay controls modal T60** for BAR/MEMBRANE/SNARE/PLATE engines, anchored at the
-  preset's shipped Dkay (`m_modal_dkay_ref`): `t60_scale = 2^(3*(norm - ref))`.
-  Calibrated config T60 always plays at the default Dkay (no regression); knob trims
-  around it.  Uses `exp2f` (NOT `fasterpow2f` — that returns 0.971 at scale 1.0).
-- **Mallet stiffness → modal brightness** (`m_modal_stiff_ref` pivot).  MlltStif and
-  VlMllStf (velocity) now tilt the higher modal modes' initial energy: stiffer = brighter.
-  Neutral at the shipped MlltStif so no default-sound regression.
-- **Noise-ring coupling (ENGINE_PLATE):** `noise_ring_gate` in VoiceState tracks the
-  modal fundamental decay (`modal_decay_1`) each sample. `parallel_noise_gain` is
-  multiplied by `fmax(0.15, noise_ring_gate)` so noise amplitude follows the ring — no
-  more "juxtaposed" independent noise on metallic instruments.
-- **ENGINE_NOISE duration fix:** `sustain_level=1.0f` for NOISE engines (not 0); NoteOff
-  skips `master_env.release()` for NOISE. The `noise_env` (Rel knob) now fully controls
-  Clap/Shaker tail. Old behaviour: master_env auto-decayed in ~11 ms at default Dkay,
-  killing the voice before `noise_env` could produce any tail.
-- **Rel → noise_env.release_rate** for ENGINE_NOISE:
-  `rel_rate = 0.00005 + (1-norm)*0.01`. At Rel=18 (norm=0.90): ~200 ms tail.
-- **HiHat/Cowbell modal ratios:** switched from membrane Bessel (1.479/1.932/2.332) to
-  plate ratios (2.92/6.37, 2.00/2.68/4.30) — Bessel ratios produced "wood-like pop"
-  instead of metallic character.
-- **Gong k_modal_mix was 0 (silent body):** Only FM chirp + noise played ("sci-fi zap").
-  Fixed to 0.20 in model_param_presets. FM depth halved (0.16→0.08).
-- **3rd HW pass — T60 calibration (Dkay at max = user can only shorten, not lengthen):**
-  Taiko 500ms→1800ms, Woodblock 50ms→160ms, Bongo 50ms→320ms, Tick 25ms→200ms,
-  KickDrum boom T60 240ms→760ms. Modal T60 must give headroom above user's Dkay=200 so
-  the Dkay knob has an audible range. Verify with `analyze_samples.py` on reference WAVs.
-- **808Sub redesigned as ENGINE_MEMBRANE sub kick:** pitch_env (τ≈21ms) sweeps boom
-  oscillator 160→45 Hz independently from boom amplitude (T60=760ms). processBlock
-  special-cases k_808Sub: `sweep_hz = 45 + pitch_env_amt * pitch_env`. Changed kPresetEngine
-  from ENGINE_KS to ENGINE_MEMBRANE.
-- **Koto "thwaaang" + T60 fix:** pitch_env_decay=0.99900 (τ=21ms, not 83ms) so the 1.5st
-  pitch glide completes in ~63ms. Growing KS delay injects zeros → fast τ minimises energy
-  loss (<2%). Dkay 185→200, Mterl 12→20, TubRad 7→18 → T60 0.49s→3.3s@C4.
-- **KS pitch_env T60 gotcha:** When pitch_env_amt>0, the KS delay starts SHORT and grows to
-  base (starts sharp → settles to fundamental). Growing delay injects interpolated zeros into
-  the feedback path, shortening T60. Fix: use τ≤21ms (pitch_env_decay≥0.9990) so the sweep
-  completes in the attack transient. NEVER use τ>50ms for KS pitch_env.
-- **Snare character fix (3rd pass):** AcSnare body T60 350ms→80ms, modal_mix 0.24→0.10.
-  MarchSnare body T60 60ms→30ms, modal_mix 0.16→0.06. Wire resonators (4.5/7.2 kHz) now
-  fully dominate over the brief membrane "toc".
-- **Gong (3rd pass):** noise_band_mix 0.82→0.50, modal_mix 0.20→0.26, fm_depth 0.08→0.12.
-  Cymbal/Gong parallel_noise_gain 7→3.5 (was too harsh).
+`claude/eager-galileo-2fho84` on `fedemone/logue-sdk`.
 
-### Parameter → modal-engine mapping status (HW-reported, 2nd pass)
-- **Working on modal engines:** Dkay (T60), MlltStif/VlMllStf (brightness), Tone, LowCut,
-  Gain, NzMix, and the noise-resonance metallic character.
-- **Rel works for ENGINE_NOISE** (Clap/Shaker) — controls noise_env release tail.
-- **No effect on modal engines (expected — KS-only params):** MlltRes, Model, Partials,
-  Inharm, HitPos, TubRad.  These drive the bypassed KS waveguide.  Wiring Model →
-  modal ratio-set and Partls → mode-count is a candidate future task.
+Always rebuild and check `arm-unknown-linux-gnueabihf-size ripplerx.elf`:
+- `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).
+- `.bss` must stay near **552 bytes**.
 
-### REFERENCE-ANCHOR pattern (important)
-Calibrated modal configs are tuned assuming the preset's *shipped* knob value.  Any new
-param→modal mapping MUST pivot at a captured reference (`m_modal_*_ref`, set in LoadPreset)
-so the default sound is unchanged and only knob *movement* alters it.  Anchoring at an
-absolute endpoint (e.g. Dkay=200) silently detunes every preset — that was the
-"string-like" Marimba regression.
+## Current Working State (commit 081e82e)
 
-### GOTCHA: modal mix lives in TWO tables
-`ModalPresetConfig.mix` is used only by `LoadPreset`.  `NoteOn` re-inits the modal bank
-using `model_param_presets[preset][k_modal_mix]`, which **overrides** it.  Keep both in
-sync.  MarchSnare shipped with config.mix=0.14 but `k_modal_mix`=0 → silent body, pure
-noise.  Always edit the `model_param_presets` `k_modal_mix` column to change the audible mix.
+- Unit **loads on hardware**, all 37 presets render clean (0 NaN/silent).
+- DSP unit tests: **82/82 PASS** (exit 0).
+- Host syntax-check (g++ -fsyntax-only): **clean**.
+- HHat-O **HW-approved** ("ok now" — do not break).
+- ARM .text ≤ 28 KB: **must be confirmed on next flash** (cannot verify without toolchain).
+
+### Analysis tool: `modal_extract.py`
+
+Newly added (commit 081e82e). Implements the analysis half of DAFx2020 "Advanced
+Fourier Decomposition for Realistic Drum Synthesis" (Werner et al.) — high-res
+spectral peak track + per-mode STFT T60 fit on any reference WAV:
+
+```
+python3 modal_extract.py samples/Orchestral-Timpani-C.wav
+python3 modal_extract.py samples/Taiko-Hit.wav --nmodes 10 --fmax 4000
+```
+
+Output (ratio, freq, amp, T60ms) maps **directly** onto `modal_preset_configs[]`
+fields (ratio2..6, t60_1..4, env1..6). Use this whenever a membrane/bar preset
+needs its modes calibrated — measure first, guess last.
+
+---
+
+## HW Pass History (most recent first)
+
+### Pass 18 — FDN dense wash (cymbals) + strike transient layer (Timpani/Taiko)
+
+HW after pass 17: "sound improved, but still the very same problems as before."
+Diagnosis: pass 16's coupling matched the *temporal* band-envelope (corr +0.99) but
+not spectral **density** — ~8 resonators produce ~8 tones, so the cymbal wash still
+read as "tones + a separate noise bed". And for Timpani/Taiko the modal *tail* is
+now correct; the remaining gap is the broadband **attack** the modal bank cannot make.
+Two structural additions (both pure DSP, no samples, no `.text` table growth):
+
+**Cymbals — Feedback Delay Network (FDN) dense wash**
+- 4-line Hadamard FDN hosted in the **KS-dead `resB.buffer`** (zero new RAM; resB is
+  unused on `ENGINE_PLATE`). 4 mutually-prime delay lengths (281/359/419/487) in
+  4×512-sample partitions → hundreds of dense inharmonic modes the resonator bank
+  can't make. Lossless orthonormal Hadamard × sub-unity gain ⇒ guaranteed stable.
+  Per-line one-pole HF damping. Driven by the same nonlinear crash `exc`, so it blooms
+  with the strike and feeds the bloom self-PM too.
+- Per-preset params in NoteOn crash block (`fdn_g/damp/drive/mix`); `resB.buffer`
+  cleared on each strike. Bright crashes long+light; open hat short; Gong/RidBel light
+  mix so their pitched character stays foreground.
+- **Result (measured, body spectral flatness)**: Cymbal 0.2→**0.70**, Ride →**0.71**,
+  HHat-O →**0.58**, RidBel →**0.62** (ref ~0.55); Gong kept tonal 0.10 by design.
+  The wash now has real broadband density — the documented floor is **lifted**.
+
+**Timpani/Taiko — strike transient layer**
+- Short velocity-scaled band-passed white-noise burst (difference-of-one-poles BP)
+  layered over the modal body = the stick-slap / mallet-contact attack. State on
+  `VoiceState` (`trans_env/decay/gain/a_lo/a_hi/lp_*`); fires in NoteOn, runs per-sample
+  before the boom block.
+- Taiko: ~2-6 kHz, T60≈18 ms, gain 2.9 → early centroid **539→1806 Hz** (ref 3374;
+  remaining gap is the ref's close-mic stick, deliberately not chased to avoid hiss).
+- Timpani: ~0.6-2.6 kHz, T60≈12 ms, felt-soft (centroid barely shifts because the ~82 Hz
+  fundamental dominates the energy metric — by design; a clicky attack would be wrong).
+
+Tests: 82/82 PASS (incl. T27 all-37 in-bounds, T28 voice-cycle no-NaN, T21a heavy-strike).
+**ARM `.text` ≤ 28 KB must be confirmed on next flash** (added code is small; verify).
+
+### Pass 17 — Data-driven modal tuning from reference samples (commit 081e82e)
+
+Applied `modal_extract.py` to fix two standing HW complaints:
+
+**Timpani (HW: "explosion + rough ripple, not clean bright ringing")**
+- **Measured** `Orchestral-Timpani-C.wav` → series `1 : 1.495 : 1.980 : 2.601 : 3.414 : 4.010`
+  (air-loaded Rossing family). Measured upper-mode amps: 0.14/0.08/0.05 (quiet).
+- **Root cause found by measurement**: old top pair (3.02/3.55) sat only ~0.5 ratio apart
+  AND was held loud (env 0.45/0.32) → beat against mode 4 = the "rough ripple".
+- **Fix**: ratios snapped to measured (3.41/4.01 — wider, quieter cluster); upper modes
+  tamed to near-measured levels (env4-6 = 0.30/0.18/0.12); bright pitched modes 2/3
+  extended to 1.8/1.5 s for a clean sustained ring.
+- **Result**: T60 2.19 s (ref 2.37), early centroid 668 Hz (ref 811), late centroid 295 Hz
+  (was ~140 Hz dark hum).
+
+**Taiko (HW: "still TUNNN not TAAAN")**
+- **Measured** `Taiko-Hit.wav` → inharmonic series `1 : 1.377 : 1.746 : 2.100 : 2.423 : 2.754`
+  (open wooden-stave shell — NOT Bessel) PLUS a strong bright partial at **ratio 16.86 ≈ 1472 Hz**
+  (the open "AAN" vowel; matches enum comment "~1582 Hz").
+- **Root cause found by measurement**: the bright 1472 Hz partial was **not being synthesized**
+  at all (old config stopped at ratio 2.756, 4 modes) and low fundamental dominated.
+- **Fix**: 6 modes on measured inharmonic ratios; dominance shifted off 87 Hz fundamental onto
+  212 Hz mid (env4=1.00); mode 6 = 1472 Hz partial (env 0.60), sustained ~600 ms;
+  attack click brightened (NzMx 26→36, NzFq 280→360 ≈ 3.6 kHz).
+- **Result**: early centroid 421→539 Hz (ref 1856 Hz — remaining gap is close-mic stick
+  transient in the reference; pushing noise click much harder risks hiss over the wood "tak").
+
+**NOT adopted from the paper**: offline RDFT/ESPRIT pipeline and the alternate NEON
+exp-decay phasor engine (full rewrite, .text-budget risk, no benefit over existing modal ringers).
+
+---
+
+### Pass 16 — Nonlinear modal→wash energy cascade (commit a296a0d)
+
+**Problem (recurring, across 4 passes)**: "noise and ring not modulating each other — just
+mixed together separately" (Cymbal, Gong, Ride, RidBel).
+
+**Root cause (structural)**: crash resonator bank was driven by an **independent noise
+generator**; could only ever sound juxtaposed regardless of level tuning.
+
+**Fix — von Kármán nonlinear cascade** (Chaigne/Touzé plate theory, cited in README):
+In a real cymbal the broadband crash is high-mode energy pumped FROM the low struck modes
+by geometric nonlinearity. New excitation formula in processBlock:
+
+```cpp
+const float m  = voice.modal_out_prev;
+const float am = fabsf(m);
+const float floor_n = 0.30f;
+float exc = voice.exciter.noise_out_sample * (floor_n + (1.0f - floor_n) * am)
+          + (m * am) * voice.crash_couple;
+```
+
+- First term: noise blooms and dies **with the ring** (not independently).
+- Second term: ring's own energy injected into the crash wash (geometric nonlinearity).
+- `crash_couple` (new VoiceState field, default 0.0) set per-preset in NoteOn.
+
+**Per-preset coupling** (split by family):
+| Preset     | crash_couple | Rationale |
+|------------|-------------|-----------|
+| Cymbal     | 0.30        | Light — stays bright/airy, just breathes with ring |
+| HHat-O     | 0.22        | Light — approved, do not increase |
+| Ride       | 0.35        | Light + Ride/RidBel crackle bed also gated by ring |
+| RideBell   | 0.50        | Stronger for bell-modal blend |
+| Gong       | 0.60        | Strong — metallic shimmer pulling energy into partials |
+
+**Bed-gate** (Ride/RidBel only): raw crackle noise gated by `floor_n + (1-floor_n)*am`
+so the crackle bed also blooms with the bell rather than rattling independently.
+
+**Measured band-envelope correlations** (after fix, vs references):
+Cymbal +0.99, Gong +0.73, Ride +0.84, RidBel +0.64, HHat-O +0.93
+(Reference crash: +0.76, high-band peak ~470 ms after strike).
+
+**Other changes this pass**:
+- **Timpani**: removed membrane-noise bed added in pass 15 (user: "rough ripple over");
+  instead brightened upper modes for clean bright ringing; attack 2→7 ms softer.
+- **Taiko**: earlier version of mode-lifting brightness fix (superseded by pass 17).
+- **Gong**: upper modes lifted/extended modestly for metallic shimmer without clangy attack.
+
+---
+
+### Pass 15 — Timpani option C: de-synthesize modal body
+
+Mode rebalancing + membrane noise bed. The noise bed was subsequently reported as
+"rough ripple" on HW → **removed in pass 16**. (Documented for history only.)
+
+---
+
+### Pass 14 — DATA-DRIVEN from reference samples (refcmp.py)
+
+**KEY FINDING that reverses passes 10-13**: a real cymbal/ride/hat is **BRIGHT (~11 kHz
+centroid) and NOISY (spectral flatness ~0.55), sustained 0.6-3 s** — NOT a dark tonal
+wash. "Crash too predominant" = crash was DARK + FLUTTERING, not that noise shouldn't
+dominate. A crash IS mostly bright smooth noise.
+
+- `modal_engine_gain` crash factor 0.95→**0.12** (ring = faint metallic undertone).
+- Noise high-passed bright: NzFltr=HP, NzFq→12-13 kHz; Cymbal BP moved 4.5→11 kHz.
+- Crash bank cut to light broad colouring (drive ~0.3–0.9).
+- Noise releases = **measured reference T60s** (Cymbal 2.3s, Ride 2.9s, RidBel 3.3s,
+  HHat-O 0.6s) with BOTH bands slow so sizzle lasts the whole tail.
+- Result: Ride 10839/11032 vs ref 11167/11075 ✓; RidBel ~11k ✓ 3.9s; HHat-O 11218 ✓.
+- **`refcmp.py`** (host tool): compares a render vs reference (centroid early/late,
+  flatness, T60). Run after copying renders to `/tmp/rc/` (`cp rendered/*.wav /tmp/rc/`).
+
+---
+
+### Pass 13 — Timpani/Taiko attack-vs-sustain; metallic ring-dominant rebalance
+
+- Timpani/Taiko "bass guitar + audible vibration": mode 1 dominant + LONG (1.3s/1.5s);
+  upper modes fast-decay (300/210/150ms Timp, 260/175/120 Taiko) — colour only attack.
+  Centroid early 406Hz → late 140Hz (Timp) = bright attack, dark sustain.
+- Metallic crash rebalance: `modal_engine_gain` crash factor 0.60→0.95; crash_base cut
+  2-3×; crash_r broadened to ~0.965–0.985 (overlapping resonators = continuous sizzle).
+
+---
+
+### Pass 12 — Voice-stacking polyphony fix (cymbal rolls)
+
+- **Bug**: `GateOff()` forced `next_voice_idx = NUM_VOICES-1`; since Drumlogue fires
+  gate_on+gate_off in the same tick, every repeated hit reused voice 0 → no stacking.
+- **Fix**: GateOff resets only for short/percussive engines (MEMBRANE/SNARE/NOISE) and
+  KS. PLATE and BAR keep round-robin → fast hits stack/overlap across 4 voices.
+
+---
+
+### Pass 11 — De-regress Timpani; crash decay; full param coverage
+
+- Timpani "bass guitar" regression: ratios slightly stretched (1.5/2.03/2.49/3.02/3.55,
+  not exact 0.5 steps) + T60 cut ~850 ms → percussive.
+- Cymbal "continues while held": modal T60 3000→1800 ms, cymbal noise decay ~6→1.2 s.
+- Gong "still an explosion": crash_base 4→1.5, bloom 0.3→0.2.
+- HHat-O / Ride "shaking ~28 Hz": `parallel_noise_gain` raised, crash_r broadened →
+  continuous broadband-noise-dominant instead of sparse beating resonators.
+- EVERY-KNOB-DOES-SOMETHING wiring via `param_audit.cpp`: Rel→ring-length,
+  MlltRes→modal presence (crash plates: crash intensity), Partls→mode count + richness.
+
+---
+
+### Pass 10 — Crash rebalance; Timpani harmonic modes; Shaker swell
+
+- Crash recipe was complete but over-pushed: crash_base ~halved; ring raised
+  (`modal_engine_gain` 0.45→0.60); crash_ring_tap raised (Ride 0.15→0.40 etc.).
+- Timpani: ratios 1:1.5:2:2.5:3:3.5 (dropped 1.742 mode that caused critical-band beating).
+- Shaker: noise-env attack slowed to ~15 ms (was instant hit); 17 Hz rattle retained.
+
+---
+
+### Pass 9 — Self-PM "dynamic bloom" (cymbal density)
+
+- Added self-Phase-Modulation: metallic bus written to KS `resA.buffer` (reused — dead
+  on plate engines), read back at amplitude-modulated offset → self-FM.
+- Cymbal spectral density 1138→2337 bins; HHat-O 497→4722.
+- Ride/RidBel crash_r lowered ~0.9965 (broad dense wash vs razor-Q sparse tones).
+- `noise_am_decay = 1.0` for Shaker: 17 Hz rattle persists the full tail. Rel 18→19.
+
+---
+
+### Pass 7 — Crash-resonator bank
+
+- Added 6 constant-peak-gain 2-pole bandpass resonators per voice (PLATE only),
+  tuned to the same mode frequencies as the struck modal bank (reuses `modal_k_*`),
+  driven by enveloped noise: `y[n] = r·k·y1 − r²·y2 + (1−r²)·noise`.
+- Two prerequisites: (1) `modal_engine_gain ×0.45` on crash presets so wash competes;
+  (2) noise release overridden slow (~2.4s T60) so wash isn't cut by near-instant gate-off.
+- MlltRes → crash intensity on ENGINE_PLATE (REFERENCE-ANCHORED).
+
+---
+
+### Pass 6 — Modal tuning precision fix
+
+- `fastercosfullf` has ~1e-3 absolute error; near w→0 Timpani's 82/124/144/165 Hz
+  landed at 86/121/139/157 Hz — compressed, ~17 Hz gaps → slow beating.
+- Fix: exact `cosf`/`exp2f` in `init_modal_modes` (NoteOn-time, accuracy > speed).
+- Ring-mod gate reshaped: `(1−d) + d·modal` (true bipolar mix).
+- Taiko velocity split: hard → boom (×0.25..×1.75 by vel²), soft → bright mid modal mode.
+
+---
+
+### Passes 1-5 (foundations)
+
+- Engine routing scaffold (KS bypass for non-string presets).
+- ENGINE_BAR — Marimba exemplar (Phase 2 kill-switch).
+- ENGINE_MEMBRANE — Kick, Timpani, Taiko, etc.
+- ENGINE_SNARE — AcSnare, MarchSnare.
+- ENGINE_NOISE — Clap, Shaker.
+- ENGINE_PLATE — Cymbal, Gong, Hi-hat, Ride, etc.
+- Preset list: 37 entries (Flute/Clarinet removed; Taiko2 = "DeepBs"; Tick added).
+- Master filter → LOWPASS "Cutoff" (old "LowCut" HP read reversed on HW three times).
+- TPT (Zavalishin) SVF: fixed Chamberlin instability that froze cutoff above ~8.2 kHz.
+
+---
+
+## Host Build / Test Commands
+
+```bash
+# Syntax check (host — ARM cross-compiler required for actual flash build)
+g++ -std=c++14 -fsyntax-only -I. -I../common -U__ARM_NEON__ -U__ARM_NEON \
+    -Wno-strict-aliasing -Wno-unused-parameter unit.cc
+
+# DSP unit tests
+g++ -std=c++17 -O2 -I.. -I. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    test_dsp.cpp -o /tmp/run_test && /tmp/run_test
+
+# Render all 37 presets to WAV
+g++ -std=c++17 -O2 -I. -Itest_stubs -I.. -I../../common -I../common \
+    -DRUNTIME_COMMON_H_ render_presets.cpp -o /tmp/render_presets
+/tmp/render_presets rendered/
+
+# Sanity check renders (NaN / silent)
+python3 -c "
+import numpy as np, scipy.io.wavfile as wav, glob
+bad=0
+for f in sorted(glob.glob('rendered/*.wav')):
+    sr,x=wav.read(f); x=x.astype(np.float64)
+    if np.any(~np.isfinite(x)) or np.max(np.abs(x))<1e-7:
+        print('BAD:',f); bad+=1
+print(f'{bad} problems / {len(glob.glob(\"rendered/*.wav\"))} presets')
+"
+
+# Modal parameter extraction from a reference sample (DAFx2020 method)
+python3 modal_extract.py samples/Orchestral-Timpani-C.wav
+python3 modal_extract.py samples/Taiko-Hit.wav --nmodes 10
+
+# Compare render vs reference (centroid, flatness, T60)
+# Requires copying renders first: cp rendered/*.wav /tmp/rc/
+python3 refcmp.py
+```
+
+---
 
 ## Critical .rodata / .data Constraint — Do NOT break this
 
-The drumlogue firmware checks `.text segment` size (= `.text + .rodata + .init + .fini`) per unit. Limit ≈ 30 KB. The preset tables (~7 KB) must stay in `.data`.
+The drumlogue firmware checks `.text segment` size (= `.text + .rodata + .init + .fini`)
+per unit. Limit ≈ 30 KB. The preset tables (~7 KB) **must stay in `.data`**.
 
 **Working fix (a49e2f4):** The large preset arrays —
 `kDefaultModalPresetConfig`, `modal_preset_configs[]`, `model_param_presets[][]`,
 `kPresetEngine[]` — are declared as **non-static** class members (no `static`,
-no `const`, no `constexpr`). This makes them part of the global `s_synth`
-object layout and places their initial values in `.data`.
+no `const`, no `constexpr`). This places their initial values in `.data`.
 
 **Broken patterns to avoid:**
 - `static constexpr T arr[] = {...}` → goes to `.rodata` → text-size check fails
 - `static const T arr[] = {...}` → same problem
-- `static T arr[] = {...}` **inside a class body** → GCC 6.5 rejects it (out-of-line
-  definition required for non-const static members, and constexpr causes .rodata)
+- `static T arr[] = {...}` **inside a class body** → GCC 6.5 rejects it
 
-See `config.mk` `USE_LTO := no` and the comment block for background.
+See `config.mk` `USE_LTO := no`.
 
-## Root Cause of Marimba "Click, No Ring" Bug (fixed — see current commit)
+---
 
-`fasterexpf` from the fast-math library is catastrophically inaccurate for
-arguments with |x| < ~0.001. `modal_decay` is computed as
-`expf(ln(0.001) / (T60_s × srate))`. For T60=1.2s the argument is -0.000120,
-for T60=5.0s it is -0.0000288 — both fall in the broken range.
-`fasterexpf(-0.000120)` returns ~0.971 (implying T60≈5ms) instead of 0.99988.
-**Fix:** use standard `expf` (and `powf`) in `init_modal_modes` for
-`modal_decay_1..6`. These are computed once at NoteOn time, so accuracy
-dominates over the ~10 ns saved by the fast approximation.
+## Known Architectural Floors (not worth chasing)
 
-## Root Cause of Marimba "1/3-Second Ring" Bug (fixed commit 859a2a4)
+| Issue | Cause | Decision |
+|-------|-------|----------|
+| ~~Cymbal spectral flatness ~0.03-0.23 vs ref ~0.55~~ | ~~6-resonator bank is fundamentally tonal~~ | **RESOLVED in pass 18** — FDN dense wash lifts flatness to ~0.6-0.7 |
+| Taiko early centroid 1806 Hz vs ref 3374 Hz | Ref has prominent close-mic stick transient | Improved 3.4× via pass-18 transient layer; full ref not chased (would add hiss over the wood "tak") |
+| Ride 34 Hz correlated AM | Sparse 6-resonator bank beating | Addressed via broadband noise dominance + pass-18 FDN density |
 
-`master_env` in `NoteOn` was set to `sustain_level=0.0f`, causing it to
-auto-decay from 1.0 → 0 at `decay_rate = master_rate × 0.3`. At default
-Dkay (stored=25, t_s≈1.94 s), `decay_rate≈0.000446` → `ENV_IDLE` in ~323 ms.
-The processBlock squelch `!is_releasing && master_env.state==ENV_IDLE` then
-killed the voice at exactly the "1/3 second" the user heard, regardless of
-modal T60 (Marimba mode-1 T60=1200 ms). Dkay=2000 didn't help because the
-*release_rate* (not decay_rate) also cuts the voice in ~97 ms after gate-off.
+---
 
-**Fix:** For non-KS engines (including NOISE), `NoteOn` sets `sustain_level=1.0f`
-so `master_env` holds at 1.0 and never auto-decays. `NoteOff` skips
-`master_env.release()` for non-KS engines. Modal voices deactivate when
-`mag_env < kSquelchThreshold` (ring naturally dies); NOISE voices deactivate when
-`noise_env` reaches ENV_IDLE. See commits 859a2a4 and 94952f8.
+## Key Architectural Bugs (fixed — keep as gotcha reference)
 
-## Root Cause of "Always String-Like" Sound
+### GOTCHA: modal mix lives in TWO tables
 
-The KS waveguide produces a harmonic series (f, 2f, 3f…) regardless of modal preset.
-The modal bank runs **in addition** to KS at a low mix (15–30%), so KS always
-dominates. Fix: bypass KS for non-string presets; use the modal bank as the sole
-tonal resonator.
+`ModalPresetConfig.mix` is used only by `LoadPreset`.  `NoteOn` re-inits the modal bank
+using `model_param_presets[preset][k_modal_mix]`, which **overrides** it.  Keep both in sync.
+Always edit the `model_param_presets` `k_modal_mix` column to change the audible mix.
 
-## Engine Architecture (6-type redesign)
+### GOTCHA: Plate Ratios vs. Membrane Ratios
 
-Each preset is assigned one `EngineType`. `processBlock` routes via a switch/if on
-`kPresetEngine[m_preset_idx]`.
+HiHatClosed, HiHatOpen, Cowbell = ENGINE_PLATE.  If `modal_preset_configs` uses membrane
+Bessel ratios (1.000/1.594/2.136/2.296) → sounds like a wood drum.  Use plate ratios
+(2.92/6.37/11.75) for PLATE presets.
+
+### GOTCHA: Modes 5/6 inherit T60_4
+
+`init_modal_modes` computes:
+```
+modal_decay_5 = powf(modal_decay_4, 1/0.85)   // T60_5 = 0.85 × T60_4
+modal_decay_6 = powf(modal_decay_4, 1/0.70)   // T60_6 = 0.70 × T60_4
+```
+There is no independent t60_5/t60_6 field — only env5/env6 are free. Modes 5/6 always
+decay faster than mode 4.
+
+### GOTCHA: KS pitch_env T60 gotcha
+
+When pitch_env_amt>0, KS delay starts short → injects zeros into feedback path → shortens
+T60. Fix: use τ≤21ms (pitch_env_decay≥0.9990) so sweep completes in attack transient.
+**NEVER use τ>50ms for KS pitch_env.**
+
+### fasterexpf catastrophic inaccuracy
+
+`fasterexpf` catastrophically wrong for |x| < ~0.001.  `modal_decay` uses arg ~-0.00012
+at T60=1.2s → `fasterexpf` returns ~0.971 (implying T60≈5ms) instead of 0.99988.
+**Always use standard `expf`/`powf` in `init_modal_modes`** (NoteOn-time, once per hit).
+
+### fastercosfullf frequency error
+
+~1e-3 absolute error near w→0 shifts low-frequency mode ratios (Timpani ~17 Hz gaps →
+slow beating). **Always use exact `cosf` in `init_modal_modes`.**
+
+### REFERENCE-ANCHOR pattern
+
+Any param→modal mapping MUST pivot at a captured reference (`m_modal_*_ref`, set in
+`LoadPreset`) so default sound is unchanged and only knob *movement* alters it.
+Anchoring at an absolute endpoint silently detunes every preset.
+
+### ENGINE_NOISE lifetime
+
+`sustain_level=1.0f` for NOISE engines; `NoteOff` skips `master_env.release()`.
+The `noise_env` (Rel knob) fully controls Clap/Shaker tail.
+
+### ENGINE_PLATE: noise_ring_gate
+
+`VoiceState::noise_ring_gate` reset to 1.0 on NoteOn; in processBlock:
+```cpp
+parallel_noise_gain *= fmaxf(0.15f, voice.noise_ring_gate);
+voice.noise_ring_gate *= voice.modal_decay_1;
+```
+Floor of 0.15 keeps faint sustained shimmer. Without this: noise stays full while ring
+dies → "juxtaposed" sound.
+
+---
+
+## Engine Architecture
 
 ### Engine Types
 
 | Engine | Signal path | Presets |
 |--------|-------------|---------|
-| `ENGINE_KS` | Karplus-Strong delay + modal additive | Init, 808Sub, Koto, GuitarStr, PluckBass |
-| `ENGINE_BAR` | Mallet exciter → bar modal bank (ratios 1:2.756:5.404) | Marimba, Vibraphone, Kalimba, SteelPan, Woodblock, Claves, TubularBell, GlassBowl, GlassBottle, SlitDrum, Tick |
-| `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank (Bessel ratios 1:1.594:2.136:2.296) + boom osc | Timpani, Djembe, Taiko, AcTom, Conga, Bongo, Handpan, KickDrum |
-| `ENGINE_SNARE` | Membrane body (short, no KS) + snare-wire resonators | AcSnare, MarchSnare |
-| `ENGINE_PLATE` | Strike → dense inharmonic plate modes + metallic noise | Cymbal, Gong, HiHatClosed, HiHatOpen, Ride, RideBell, BellTree, Cowbell, Triangle |
-| `ENGINE_NOISE` | Noise burst only; no pitched resonator | Clap, Shaker |
-| `ENGINE_REMOVED` | Silent (preset reserved for future use) | Flute, Clarinet |
+| `ENGINE_KS` | Karplus-Strong delay + modal additive | GuitarStr, Koto |
+| `ENGINE_BAR` | Mallet exciter → bar modal bank | Marimba, Vibraphone, Kalimba, SteelPan, Woodblock, Claves, TubularBell, GlassBowl, GlassBottle, SlitDrum, Tick |
+| `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank + boom osc | Kick2, 808Sub, Timpani, Djambe, Taiko, AcTom, KickDrum, Conga, Handpan, Bongo, Taiko2 |
+| `ENGINE_SNARE` | Membrane body (short) + snare-wire resonators | AcSnare, MarchSnare |
+| `ENGINE_PLATE` | Strike → inharmonic plate modes + metallic noise + crash bank | Cymbal, Gong, HHatOpen, HHatClosed*, Ride, RideBell, BellTree, Cowbell, Triangle, Tick |
+| `ENGINE_NOISE` | Noise burst (+ optional modal body / AM gating) | Clap, Shaker, HHatClosed |
 
 ### Preset → Engine Mapping
 
 ```
-k_Init(0)         ENGINE_KS
-k_Marimba(1)      ENGINE_BAR      ← Phase 2 exemplar
-k_808Sub(2)       ENGINE_KS
+k_Kick2(0)        ENGINE_MEMBRANE  ← ex-Timpani body, kick voice
+k_Marimba(1)      ENGINE_BAR
+k_808Sub(2)       ENGINE_MEMBRANE
 k_AcSnare(3)      ENGINE_SNARE
 k_TubularBell(4)  ENGINE_BAR
-k_Timpani(5)      ENGINE_MEMBRANE
+k_Timpani(5)      ENGINE_MEMBRANE  ← data-driven from Orchestral-Timpani-C.wav
 k_Djambe(6)       ENGINE_MEMBRANE
-k_Taiko(7)        ENGINE_MEMBRANE
+k_Taiko(7)        ENGINE_MEMBRANE  ← data-driven from Taiko-Hit.wav; 6 modes incl. 1472Hz
 k_MarchSnare(8)   ENGINE_SNARE
 k_Koto(9)         ENGINE_KS
 k_Vibraphone(10)  ENGINE_BAR
@@ -164,92 +431,56 @@ k_Cowbell(18)     ENGINE_PLATE
 k_Triangle(19)    ENGINE_PLATE
 k_KickDrum(20)    ENGINE_MEMBRANE
 k_Clap(21)        ENGINE_NOISE
-k_Shaker(22)      ENGINE_NOISE
-k_Flute(23)       ENGINE_REMOVED
-k_Clarinet(24)    ENGINE_REMOVED
-k_PluckBass(25)   ENGINE_KS
-k_GlassBowl(26)   ENGINE_BAR
-k_GuitarStr(27)   ENGINE_KS
-k_HiHatClosed(28) ENGINE_PLATE
-k_HiHatOpen(29)   ENGINE_PLATE
-k_Conga(30)       ENGINE_MEMBRANE
-k_Handpan(31)     ENGINE_MEMBRANE
-k_BellTree(32)    ENGINE_PLATE
-k_SlitDrum(33)    ENGINE_BAR
-k_Ride(34)        ENGINE_PLATE
-k_RideBell(35)    ENGINE_PLATE
-k_Bongo(36)       ENGINE_MEMBRANE
-k_GlassBottle(37) ENGINE_BAR
-k_Tick(38)        ENGINE_BAR
+k_Shaker(22)      ENGINE_NOISE     ← grain-pulse AM + woodblock body
+k_Taiko2(23)      ENGINE_MEMBRANE  ← ex-Taiko deep membrane ("DeepBs")
+k_GlassBowl(24)   ENGINE_BAR
+k_GuitarStr(25)   ENGINE_KS
+k_HiHatClosed(26) ENGINE_NOISE     ← ex-Shaker noise voice
+k_HiHatOpen(27)   ENGINE_PLATE     ← HW-approved, do not break
+k_Conga(28)       ENGINE_MEMBRANE
+k_Handpan(29)     ENGINE_MEMBRANE
+k_BellTree(30)    ENGINE_PLATE
+k_SlitDrum(31)    ENGINE_BAR
+k_Ride(32)        ENGINE_PLATE
+k_RideBell(33)    ENGINE_PLATE
+k_Bongo(34)       ENGINE_MEMBRANE
+k_GlassBottle(35) ENGINE_BAR
+k_Tick(36)        ENGINE_PLATE
 ```
 
-## Implementation Phases
+### ModalPresetConfig struct fields (synth_engine.h ~line 223)
 
-| Phase | Task | Effort | Risk | Validation |
-|-------|------|--------|------|------------|
-| 1 | Engine routing scaffold — KS bypass for non-string presets, ENGINE_REMOVED silence | Low | Low | All presets audible; strings unchanged |
-| 2 | ENGINE_BAR — Marimba (kill-switch) | Medium | Low | Marimba sounds like a marimba, not a string |
-| 3 | ENGINE_MEMBRANE — Kick, Timpani, Taiko, etc. | Medium | Medium | Kick thumps, Timpani rings inharmonically |
-| 4 | ENGINE_SNARE — AcSnare, MarchSnare | Medium | Medium | Snare has sharp crack + sizzle, not ring |
-| 5 | ENGINE_NOISE — Clap, Shaker | Low | Low | Clean noise bursts |
-| 6 (optional) | ENGINE_PLATE — Cymbal, Gong, Hi-hat, etc. | High | High | Replace with samples if effort/result too high |
-| 7 | Final tuning + binary size check | Low | Low | Size within budget, all engines pass HW test |
-
-**Phase 2 is the kill-switch.** If Marimba does not sound convincingly like a
-marimba after Phase 2, stop and re-evaluate the approach before continuing.
-
-**ENGINE_PLATE is optional.** If effort/result ratio is too high, replace plate
-presets with sampled content rather than synthetic DSP.
-
-## ENGINE_PLATE: Noise-Ring Coupling (noise_ring_gate)
-
-Metallic instruments need noise to decay *with* the ring, not independently.
-
-`VoiceState::noise_ring_gate` (float, default 1.0) is reset to 1.0 on every NoteOn.
-In `processBlock`, for `ENGINE_PLATE` with `modal_pilot_enabled`:
 ```cpp
-parallel_noise_gain *= fmaxf(0.15f, voice.noise_ring_gate);
-voice.noise_ring_gate *= voice.modal_decay_1;
+struct ModalPresetConfig {
+    float ratio2, ratio3, ratio4;            // mode freq ratios (mode1 = 1.0)
+    float t60_1_ms, t60_2_ms, t60_3_ms, t60_4_ms;  // T60 per mode (ms)
+    float mix;                               // modal mix (LoadPreset only; see GOTCHA)
+    float env1, env2, env3, env4;            // per-mode amplitude weights
+    uint8_t mode_count;                      // 2..6
+    float ratio5, ratio6;                    // mode 5/6 ratios (0 = fallback formula)
+    float env5, env6;                        // per-mode amplitude weights for 5/6
+};
+// Modes 5/6 T60: always 0.85× and 0.70× of t60_4 (no independent T60 fields).
 ```
-`modal_decay_1` (the per-sample decay factor for mode 1) also decays the noise envelope.
-The floor of 0.15 keeps a faint sustained noise bed (metallic shimmer) even after the
-ring has mostly decayed. Without this, noise stays at full gain while the ring dies →
-"juxtaposed" rather than integrated metallic sound.
 
-## ENGINE_NOISE: Voice Lifetime
+### Parameter → modal-engine mapping
 
-Clap and Shaker use `ENGINE_NOISE`. The voice lifecycle:
-1. NoteOn: `master_env.trigger()`, `sustain_level=1.0f` → master_env holds at 1.0 forever.
-2. NoteOn: `noise_env.trigger()` with short attack; `noise_env.release_rate` set by Rel.
-3. NoteOff: **nothing** — no `master_env.release()` for NOISE engines.
-4. `noise_env` decays from 1.0 → 0 under its own release; when it reaches ENV_IDLE the
-   processBlock squelch fires and deactivates the voice.
+| Knob | Effect | Notes |
+|------|--------|-------|
+| Dkay | Modal T60 scale: `2^(3*(norm-ref))` | REFERENCE-ANCHORED at shipped Dkay |
+| MlltStif / VlMllStf | Upper-mode brightness tilt | REFERENCE-ANCHORED |
+| Rel | Ring-length (folded into t60_scale) on modal; noise tail on NOISE | |
+| MlltRes | Crash intensity on ENGINE_PLATE; modal presence on non-crash | REFERENCE-ANCHORED |
+| Partls (0-4) | Mode count ± around shipped count; env3-6 also scaled | Clamped [2, 6] |
+| Model | Modal ratio template swap (9 physical models) | `kModelModalRatios` |
+| Inharm | Overtone spread around fundamental | |
+| Mterl | Upper-mode material damping | `2^(1.5·Δ)` on modes ≥ 2 |
+| HitPos | Strike-position excitation tilt (rim→upper, centre→mode1) | |
 
-The Rel formula: `release_rate = 0.00005 + (1.0 - norm) * 0.01`.  
-At Rel=0: rate≈0.01 (~200 samples = 4 ms). At Rel=18 (norm=0.90): rate≈0.00105 (~200 ms).
-At Rel=127 (norm=1.0): rate≈0.00005 (~4 s). Shipped Clap/Shaker at Rel=18.
+---
 
-## GOTCHA: Plate Ratios vs. Membrane Ratios
+## TODOs (documented, not started)
 
-HiHatClosed, HiHatOpen, and Cowbell are ENGINE_PLATE. If their modal_preset_configs
-use membrane Bessel ratios (1.000 / 1.594 / 2.136 / 2.296), they sound like a wood drum,
-not metal. Plate ratios (2.92 / 6.37 / 11.75) produce the inharmonic metallic character.
-Always use plate-appropriate ratios for PLATE presets.
-
-## Modal Bank — Key Parameters
-
-`modal_preset_configs[k_NumPrograms]` in `synth_engine.h` holds per-preset mode
-ratios and T60 values. These are already calibrated and use inharmonic Bessel/bar
-ratios. The table is `static` (not constexpr) per the .rodata rule above.
-
-For **non-KS engines**, the modal bank is the **primary** tonal source (KS is
-bypassed). The modal mix values (~0.18–0.32) were calibrated relative to KS, so
-they must be scaled up by `kModalEngineGain ≈ 5.0` when running without KS.
-
-## Dev Branch
-
-`claude/continue-previous-session-vydFO` on `fedemone/logue-sdk`.
-
-Always rebuild and check `arm-unknown-linux-gnueabihf-size ripplerx.elf`:
-- `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).
-- `.bss` must stay near **552 bytes**.
+- **Tambourine**: bright short jingle modes + light crash + grain AM (basis exists).
+- **Shaker**: improved/continuous variant.
+- Await next HW listening test on pass 17 before further iteration.

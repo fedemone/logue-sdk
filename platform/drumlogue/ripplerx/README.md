@@ -64,8 +64,20 @@ The allpass is `H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`.
 DC group delay = `(1 − c) / (1 + c)`, **not** `(1 + c) / (1 − c)`.  
 Getting this wrong (as happened in Phase 16, fixed in Phase 17) causes systematic pitch sharpness proportional to the InHm setting.
 
-### SVF stability limit
-The Chamberlin SVF true stability condition is `f < √(4 + q²) − q`, which is strictly less than 2 for all `q > 0`. The naive bound `f < 2` is only safe at zero resonance. `set_coeffs()` in `filter.h` clamps `f` to `0.999 × (√(4+q²) − q)`.
+### SVF: TPT (Zavalishin), not Chamberlin
+`filter.h` implements a TPT (topology-preserving transform) SVF — the bilinear-transform discretisation of the analog SVF, unconditionally stable and frequency-accurate to Nyquist.  The previous Chamberlin SVF had a stability bound `f < √(4 + q²) − q` that capped the usable cutoff at ~8.2 kHz (Q = 0.707): every cutoff above that was clamped onto the stability boundary, freezing the filter into a lightly-damped ~8 kHz resonator whose output got LOUDER as the cutoff was raised — the "LowCut/NzFltFrq work in reverse" hardware report.  Note the Chamberlin BP near Nyquist also had a real centroid of ~18 kHz instead of fc; hat presets tuned against that behaviour were recalibrated when the TPT landed (HHat-C hat HP@6 kHz, HHat-O hat BP@12 kHz).
+
+### Dual-band noise split is post-filter
+Both noise bands (slow body via `noise_env`, fast click via `noise_env_hi`) derive from the SVF-coloured noise; `noise_hi_lp_coeff` (per-preset) only sets the body/sizzle split corner.  Historically the high band was split from the UNFILTERED source with the corner tied to 2.2×NzFltFrq — so the dominant sizzle branch ignored the user filter and raising the cutoff *removed* sizzle (reversed response).  Hat-family presets (`use_hat_filter`, engaged when `noise_band_mix > 0.8`) keep their dedicated `hat_filter` on the unfiltered source for centroid control.
+
+### Modal-engine parameter wiring (REFERENCE-ANCHOR)
+For BAR/MEMBRANE/SNARE/PLATE engines the following UI parameters reshape the modal bank, all pivoted at the preset's shipped knob values (captured in `LoadPreset`) so the calibrated `modal_preset_configs` sound is bit-identical at defaults:
+- **Model** → swaps mode-frequency ratios for the selected physical model's template (`kModelModalRatios`: harmonic string, free-free bar, Chladni square plate, Bessel membrane, thick circular plate, kettledrum quasi-harmonics, tuned bar 1:4:10, tube harmonics).
+- **Partls** (0–4) → mode count offset around the shipped count, clamped [2, 6]; missing ratios/T60s/envelopes fall back to the model template and geometric decay.
+- **Inharm** → overtone spread `ratio' = 1 + (ratio − 1) × spread` around the fundamental.
+- **Mterl** → material damping of modes ≥ 2 (`T60 × 2^(1.5·Δ)`): metal sustains overtones, wood damps them.  Mode 1 stays Dkay's job.
+- **HitPos** → strike-position excitation tilt: rim strikes feed the upper modes, centre strikes the fundamental.
+Remaining KS-only parameters: TubRad, MlltRes (exciter-transient only on modal engines), Rel (noise tail only).
 
 ### `fasterpow2(0) ≈ 0.9714` — not 1.0
 The fast-power approximation has a ~3% systematic error at `p = 0`. Every center-bend pitch message was 50 cents flat before the fix. `PitchBend()` uses an exact `if (bend == 8192) mult = 1.0f` special case. `tables.h` uses `powf` (not `fasterpowf`) for the MIDI-to-delay lookup table.

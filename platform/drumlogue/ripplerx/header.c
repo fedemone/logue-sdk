@@ -16,13 +16,13 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x5265736fU,                                // 'Reso'
     .version = 0x00010000U,
     .name = "RipplerX",
-    .num_presets = 39,
+    .num_presets = 37,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
 
         // Page 1: Program and sample selection
-        {0, 38, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 36, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         {0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Bank"}},
         {1, 128, 1, 1, k_unit_param_type_none, 0, 0, 0, {"Sample"}},
@@ -56,9 +56,10 @@ const __unit_header unit_header_t unit_header = {
         {0, 1999, 300, 0, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
 
         // Page 5: Resonator III
-        // [1..1999] — stored value is multiplied by 10 in code (effective 10–19990 Hz).
+        // Master LOWPASS cutoff: high = open, low = dark.  Stored ÷10
+        // (effective 10–19990 Hz, capped at 16 kHz internally).  Default = open.
         // type_strings so getParameterStrValue can display the real Hz/kHz value.
-        {1, 1999, 500, 1, k_unit_param_type_strings, 0, 0, 0, {"LowCut"}},
+        {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
         {0, 20, 0, 5, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
         // Range 0-100, no fraction
         {0, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Gain"}},  // <--- Overdrive

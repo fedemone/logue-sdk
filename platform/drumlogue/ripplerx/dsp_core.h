@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cmath>
 #include <cstddef>
 #include "noise.h"
 #include "envelope.h"
@@ -227,6 +228,85 @@ struct VoiceState {
     // Starts at 1.0 on each NoteOn; decays with modal_decay_1 each sample.
     float noise_ring_gate = 1.0f;   // ← non-zero
 
+    // Noise ⇄ ring cross-modulation (metallic plates): the parallel noise is
+    // ring-modulated by the previous sample's modal-bank output so wash and
+    // ring interact (Risset-style cymbal) instead of sitting side by side.
+    float modal_rm_depth  = 0.0f;   // 0 = off; set per-preset in NoteOn
+    float modal_out_prev  = 0.0f;   // last modal mixdown (pre-mix, ±~1)
+
+    // Enveloped-LFO amplitude gate on the parallel noise (Clap multi-burst,
+    // Shaker grain pulses).  gate = 1 − depth·(0.5 + 0.5·sin(phase)); depth
+    // decays each sample so the modulation fades into the plain tail.
+    float noise_am_phase  = 0.0f;
+    float noise_am_inc    = 0.0f;
+    float noise_am_depth  = 0.0f;
+    float noise_am_decay  = 1.0f;   // ← non-zero
+
+    // ── Crash-resonator bank (ENGINE_PLATE) ──────────────────────────────────
+    // The metallic "crash" of a cymbal/gong/ride is broadband turbulent energy
+    // RESONATED at the plate's many inharmonic partials — not noise laid over a
+    // struck ring.  This is a bank of constant-peak-gain 2-pole bandpass
+    // resonators (the "feedback comb matrix" of the synthesis research), tuned
+    // to the SAME mode frequencies as the struck modal bank (reuses modal_k_*),
+    // and driven continuously by the enveloped noise burst.  Output is the noise
+    // shaped into the partials, so the wash crashes and swirls with the ring.
+    //   y[n] = r·k·y1 − r²·y2 + (1−r²)·noise   (peak gain ≈ 1, any r)
+    float crash_drive = 0.0f;       // 0 = bank off; per-preset intensity (× MlltRes)
+    float crash_r     = 0.0f;       // pole radius (ring/bandwidth of each resonator)
+    float crash_y1_1 = 0.0f, crash_y2_1 = 0.0f;
+    float crash_y1_2 = 0.0f, crash_y2_2 = 0.0f;
+    float crash_y1_3 = 0.0f, crash_y2_3 = 0.0f;
+    float crash_y1_4 = 0.0f, crash_y2_4 = 0.0f;
+    float crash_y1_5 = 0.0f, crash_y2_5 = 0.0f;
+    float crash_y1_6 = 0.0f, crash_y2_6 = 0.0f;
+    // Self-phase-modulation "dynamic bloom" (Kilohearts Phase-Distortion in the
+    // synthesis research): the combined ring+wash is written to a short delay
+    // line (the KS resA.buffer is reused — dead on plate engines) and read back
+    // at an offset modulated by the signal's own instantaneous amplitude.  This
+    // is self-FM: it generates a Bessel cascade of sidebands that fills the
+    // sparse 6-resonator spectrum into a dense crash AND intermodulates the ring
+    // with the wash ("modulation between the two" the HW kept asking for).
+    float crash_bloom    = 0.0f;    // self-PM depth (0 = no bloom)
+    float crash_ring_tap = 0.0f;    // how much struck ring feeds the bloom bus
+    // Nonlinear modal→wash energy cascade (von Kármán plate geometric nonlinearity;
+    // Chaigne/Touzé plate-vibration modelling).  In a real cymbal/gong the broadband
+    // "crash" is NOT independent noise laid over the struck ring — it is high-mode
+    // energy pumped FROM the low struck modes by the plate's quadratic/cubic
+    // nonlinearity, so the wash is BORN from the ring and decays locked to it
+    // (measured: ref crash low/high band-envelope correlation +0.76; the wash blooms
+    // ~470 ms after the strike).  crash_couple scales the m·|m| (signed-quadratic)
+    // injection of modal energy into the resonator bank; 0 reverts to pure-noise drive.
+    float crash_couple   = 0.0f;
+
+    // ── FDN dense metallic wash (ENGINE_PLATE bright cymbals) ─────────────────
+    // A 6-resonator bank cannot reach a real cymbal's spectral DENSITY (flatness
+    // ~0.55; our bank stalls ~0.2), so the wash and ring read as two separate
+    // things no matter how tightly they are coupled.  A 4-line feedback delay
+    // network — hosted in the KS-dead resB.buffer (zero extra RAM) — generates
+    // hundreds of dense inharmonic modes from tiny state: the missing density.
+    // Lossless Hadamard feedback (orthonormal → guaranteed stable for gain<1)
+    // plus per-line one-pole HF damping; driven by the SAME nonlinear crash
+    // excitation so the dense wash blooms and decays with the strike.
+    float    fdn_g     = 0.0f;   // 0 = FDN off; feedback gain (<1 → decaying wash)
+    float    fdn_damp  = 0.0f;   // per-line one-pole HF damping coeff
+    float    fdn_drive = 0.0f;   // input gain from the crash excitation
+    float    fdn_mix   = 0.0f;   // FDN output level into the wash bus
+    float    fdn_lp_0  = 0.0f, fdn_lp_1 = 0.0f, fdn_lp_2 = 0.0f, fdn_lp_3 = 0.0f;
+    uint32_t fdn_count = 0;
+
+    // ── Strike transient layer (membrane presets) ────────────────────────────
+    // The modal tail is measurably correct; the remaining perceptual gap is the
+    // broadband ATTACK the modal bank cannot synthesise — the Taiko stick-slap
+    // (ref early centroid ~1.9 kHz) and the Timpani felt-mallet contact.  Layer
+    // a short, velocity-scaled, band-passed noise burst over the modal body.
+    // Difference-of-one-poles bandpass; pure DSP, no samples.
+    float trans_env   = 0.0f;   // burst envelope (0 = layer off)
+    float trans_decay = 1.0f;   // per-sample decay (T60 ≈ 10-30 ms)
+    float trans_gain  = 0.0f;   // output level
+    float trans_a_lo  = 0.0f;   // bandpass low-corner one-pole coeff
+    float trans_a_hi  = 0.0f;   // bandpass high-corner one-pole coeff
+    float trans_lp_lo = 0.0f, trans_lp_hi = 0.0f;
+
     void PartialReset() {
         mag_env = 0.0f;
 
@@ -318,6 +398,37 @@ struct VoiceState {
         onset_env = 1.0f;
         onset_inc = 0.0f;
         noise_ring_gate = 1.0f;
+        modal_rm_depth = 0.0f;
+        modal_out_prev = 0.0f;
+        noise_am_phase = 0.0f;
+        noise_am_inc = 0.0f;
+        noise_am_depth = 0.0f;
+        noise_am_decay = 1.0f;
+        crash_drive = 0.0f;
+        crash_r = 0.0f;
+        crash_y1_1 = crash_y2_1 = 0.0f;
+        crash_y1_2 = crash_y2_2 = 0.0f;
+        crash_y1_3 = crash_y2_3 = 0.0f;
+        crash_y1_4 = crash_y2_4 = 0.0f;
+        crash_y1_5 = crash_y2_5 = 0.0f;
+        crash_y1_6 = crash_y2_6 = 0.0f;
+        crash_bloom = 0.0f;
+        crash_ring_tap = 0.0f;
+        crash_couple = 0.0f;
+        // FDN dense metallic wash
+        fdn_g = 0.0f;
+        fdn_damp = 0.0f;
+        fdn_drive = 0.0f;
+        fdn_mix = 0.0f;
+        fdn_lp_0 = fdn_lp_1 = fdn_lp_2 = fdn_lp_3 = 0.0f;
+        fdn_count = 0;
+        // strike transient layer
+        trans_env = 0.0f;
+        trans_decay = 1.0f;
+        trans_gain = 0.0f;
+        trans_a_lo = 0.0f;
+        trans_a_hi = 0.0f;
+        trans_lp_lo = trans_lp_hi = 0.0f;
         // exciter state
         exciter.current_frame = 0;
         exciter.mallet_lp  = 0.0f;
@@ -361,7 +472,14 @@ struct VoiceState {
                          uint8_t mode_count, float ratio5 = 0.0f, float ratio6 = 0.0f,
                          float env5 = 0.0f, float env6 = 0.0f) {
         uint8_t note = current_note;
-        float base_f = 440.0f * fasterpowf(2.0f, ((float)note - 69.0f) * 0.08333333333f); // approx 1/12
+        // Exact math here, NOT the faster* approximations.  fastercosfullf has
+        // ~1e-3 absolute error; near w→0 the recovered mode frequency shifts by
+        // δf ≈ δcos/(w·sin w) — at timpani range (80-170 Hz) the intended
+        // 1 : 1.504 : 1.742 : 2.0 spread collapsed to 1 : 1.41 : 1.61 : 1.83
+        // with ~17 Hz mode gaps → slow beating heard on HW as a "rough, not
+        // smooth" low-end reverberation.  Same family of bug as the fasterexpf
+        // T60 failure below; this runs once per NoteOn so accuracy wins.
+        float base_f = 440.0f * exp2f(((float)note - 69.0f) * 0.08333333333f); // 1/12
         if (base_f < 20.0f) base_f = 20.0f;
         float f1 = fminf(base_f, 0.45f * k_dsp_sample_rate);
         float f2 = fminf(base_f * ratio2, 0.45f * k_dsp_sample_rate);
@@ -379,22 +497,22 @@ struct VoiceState {
         float w6 = (2.0f * M_PI * f6) * k_dsp_inv_sample_rate;
         modal_pilot_enabled = true;
         modal_mode_count = mode_count;
-        modal_k_1 = 2.0f * fastercosfullf(w1);
-        modal_k_2 = 2.0f * fastercosfullf(w2);
-        modal_k_3 = (mode_count > 2) ? 2.0f * fastercosfullf(w3) : 0.0f;
-        modal_k_4 = (mode_count > 3) ? 2.0f * fastercosfullf(w4) : 0.0f;
-        modal_k_5 = (mode_count > 4) ? 2.0f * fastercosfullf(w5) : 0.0f;
-        modal_k_6 = (mode_count > 5) ? 2.0f * fastercosfullf(w6) : 0.0f;
         // Seed at full amplitude (cosine quadrature pair): oscillator starts
         // at peak on frame 0 instead of tiny sin(w) ≈ 0.034 that takes ~1 ms
         // to build up.  y2=cos(w), y1=1 gives yn=2cos·1-cos=cos, i.e. a
         // cosine starting at 1.0 — correct initial energy for struck bars.
-        modal_y2_1 = fastercosfullf(w1); modal_y1_1 = 1.0f;
-        modal_y2_2 = fastercosfullf(w2); modal_y1_2 = 1.0f;
-        modal_y2_3 = (mode_count > 2) ? fastercosfullf(w3) : 0.0f; modal_y1_3 = (mode_count > 2) ? 1.0f : 0.0f;
-        modal_y2_4 = (mode_count > 3) ? fastercosfullf(w4) : 0.0f; modal_y1_4 = (mode_count > 3) ? 1.0f : 0.0f;
-        modal_y2_5 = (mode_count > 4) ? fastercosfullf(w5) : 0.0f; modal_y1_5 = (mode_count > 4) ? 1.0f : 0.0f;
-        modal_y2_6 = (mode_count > 5) ? fastercosfullf(w6) : 0.0f; modal_y1_6 = (mode_count > 5) ? 1.0f : 0.0f;
+        modal_y2_1 = cosf(w1); modal_y1_1 = 1.0f;
+        modal_y2_2 = cosf(w2); modal_y1_2 = 1.0f;
+        modal_y2_3 = (mode_count > 2) ? cosf(w3) : 0.0f; modal_y1_3 = (mode_count > 2) ? 1.0f : 0.0f;
+        modal_y2_4 = (mode_count > 3) ? cosf(w4) : 0.0f; modal_y1_4 = (mode_count > 3) ? 1.0f : 0.0f;
+        modal_y2_5 = (mode_count > 4) ? cosf(w5) : 0.0f; modal_y1_5 = (mode_count > 4) ? 1.0f : 0.0f;
+        modal_y2_6 = (mode_count > 5) ? cosf(w6) : 0.0f; modal_y1_6 = (mode_count > 5) ? 1.0f : 0.0f;
+        modal_k_1 = 2.0f * modal_y2_1;
+        modal_k_2 = 2.0f * modal_y2_2;
+        modal_k_3 = 2.0f * modal_y2_3;
+        modal_k_4 = 2.0f * modal_y2_4;
+        modal_k_5 = 2.0f * modal_y2_5;
+        modal_k_6 = 2.0f * modal_y2_6;
         modal_norm_count = 0;
         modal_env_1 = env1 * current_velocity;
         modal_env_2 = env2 * current_velocity;
