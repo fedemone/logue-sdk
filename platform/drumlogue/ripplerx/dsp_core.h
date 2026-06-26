@@ -497,12 +497,6 @@ struct VoiceState {
         float w6 = (2.0f * M_PI * f6) * k_dsp_inv_sample_rate;
         modal_pilot_enabled = true;
         modal_mode_count = mode_count;
-        modal_k_1 = 2.0f * cosf(w1);
-        modal_k_2 = 2.0f * cosf(w2);
-        modal_k_3 = (mode_count > 2) ? 2.0f * cosf(w3) : 0.0f;
-        modal_k_4 = (mode_count > 3) ? 2.0f * cosf(w4) : 0.0f;
-        modal_k_5 = (mode_count > 4) ? 2.0f * cosf(w5) : 0.0f;
-        modal_k_6 = (mode_count > 5) ? 2.0f * cosf(w6) : 0.0f;
         // Seed at full amplitude (cosine quadrature pair): oscillator starts
         // at peak on frame 0 instead of tiny sin(w) ≈ 0.034 that takes ~1 ms
         // to build up.  y2=cos(w), y1=1 gives yn=2cos·1-cos=cos, i.e. a
@@ -513,6 +507,12 @@ struct VoiceState {
         modal_y2_4 = (mode_count > 3) ? cosf(w4) : 0.0f; modal_y1_4 = (mode_count > 3) ? 1.0f : 0.0f;
         modal_y2_5 = (mode_count > 4) ? cosf(w5) : 0.0f; modal_y1_5 = (mode_count > 4) ? 1.0f : 0.0f;
         modal_y2_6 = (mode_count > 5) ? cosf(w6) : 0.0f; modal_y1_6 = (mode_count > 5) ? 1.0f : 0.0f;
+        modal_k_1 = 2.0f * modal_y2_1;
+        modal_k_2 = 2.0f * modal_y2_2;
+        modal_k_3 = 2.0f * modal_y2_3;
+        modal_k_4 = 2.0f * modal_y2_4;
+        modal_k_5 = 2.0f * modal_y2_5;
+        modal_k_6 = 2.0f * modal_y2_6;
         modal_norm_count = 0;
         modal_env_1 = env1 * current_velocity;
         modal_env_2 = env2 * current_velocity;

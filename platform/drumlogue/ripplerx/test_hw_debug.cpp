@@ -483,11 +483,11 @@ static void test_noise_svf() {
     for (int i = 0; i < 4; ++i)
         if (s.state.voices[i].exciter.noise_filter.mode != 0) all_lp = false;
 
-    // NzFltFrq: higher cutoff → larger TPT a2 coefficient (a2 = g·a1, g = tan(πfc/fs))
+    // NzFltFrq: higher cutoff → larger TPT a3 coefficient (a3 = g·a2, which is strictly monotonic up to Nyquist)
     s.setParameter(RipplerXWaveguide::k_paramNzFltFrq, 5000);
-    float f_5kHz = s.state.voices[0].exciter.noise_filter.a2;
+    float f_5kHz = s.state.voices[0].exciter.noise_filter.a3;
     s.setParameter(RipplerXWaveguide::k_paramNzFltFrq, 200);
-    float f_200Hz = s.state.voices[0].exciter.noise_filter.a2;
+    float f_200Hz = s.state.voices[0].exciter.noise_filter.a3;
 
     // NzFltr=2 → HP mode on all four voices
     s.setParameter(RipplerXWaveguide::k_paramNzFltr, 2);
