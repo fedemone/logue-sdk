@@ -209,7 +209,7 @@ Defects found and fixed:
 - [x] **NEON round 2 — TRXHiHat square stack** (§10).
 - [ ] **Verify the §8 fixes on hardware** (clap now claps, claves now click,
       FmWhistle/TRXGong reproduce the old voices).
-- [ ] **Audit default-value sounds on hardware** for the other 9 instruments:
+- [x] **Audit default-value sounds on hardware** for the other 9 instruments:
       the runtime applies the value-50 `setParameter` mappings at load, not
       the presets, so the parameter ranges (not the presets) define power-on
       timbre. The two bugs were both wrong default mappings.

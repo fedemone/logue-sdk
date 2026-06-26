@@ -235,7 +235,7 @@ preventing convergence to a simple periodic orbit. The tanh saturation bounds th
 
 ```
                     ┌──────────────────────────────────────────────┐
-noise_inject ──────►│  4×4 Hadamard mix (fast: 8 adds, 4 muls)    │
+noise_inject ──────►│  4×4 Hadamard mix (fast: 8 adds, 4 muls)     │
                     │  tanh saturation (drive = O2SubOct)          │
              ┌──────┤  4 delay lines (per-line one-pole filter)    ├──────┐
              │      └──────────────────────────────────────────────┘      │
