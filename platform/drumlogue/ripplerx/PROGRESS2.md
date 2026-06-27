@@ -474,7 +474,7 @@ Scoring loop: `render_presets /tmp/rc` → compare `05_Timpani.wav` / `07_Taiko.
   `NzFltFrq` 360→800 ≈ 8 kHz). This is the `NzMix`/`NzFltFrq` noise-wedge mapping in
   practice. Result: centroid_early **2×**, T60 **2×** — the "TAAAN" the HW asked for.
 
-**The crest ceiling (the "wham" the standalone got from a transparent limiter):** ★
+**The crest ceiling + the pre-clip-trim fix (the "wham"):** ★
 RipplerX's master chain **hard-clips to ±0.99 under `master_gain` 1.5** then soft-clips
 again (a deliberately loud drum-machine voicing). The mallet impulse is ~3–4× full-scale
 — exactly the transient that *would* give crest ≈ 4 — but it is clipped down to the same
@@ -482,14 +482,21 @@ ceiling the sustained body already sits at, so `crest = peak/RMS ≈ 1`. Verifie
 IS reachable on this engine (Bongo 5.99, Conga 10.08) — but only for drums whose body
 **decays fast** (short T60), letting the 0.5 s-window RMS fall below the clipped peak.
 Timpani/Taiko need a **bright + long** ring, which keeps the body at the ceiling → crest
-stays ≈ 1.3–2.4. So the three goals (bright, long, punchy) cannot all be maxed with the
-6-mode bank + hot clipper. The standalone solved this with a **transparent limiter
-(crest preservation)** the standalone owned end-to-end; here that would require a
-**per-preset pre-clip output trim** (a new internal model param, default 1.0 so the
-other 35 HW-approved presets are untouched) — set <1.0 on 5/7 to pull the body below
-0.99 so the ×3–4 transient stands above it. Deferred as out-of-scope for an in-place
-preset retune; flagged for a punch-priority pass if the kit-level aesthetic allows
-these two to be leaner/quieter than the rest.
+stays ≈ 1.3–2.4.
+
+**Fix (implemented):** a **per-preset pre-clip output trim** — `pre_clip_trim` scales the
+summed output just *before* the hard-clip (Timpani 0.50, Taiko 0.25; **1.0 for every other
+preset → bit-identical**, since ×1.0 is exact). The body drops below ±0.99 while the ×3–4
+transient still reaches it → crest recovered (Taiko 1.5→**2.9**, Timpani 1.3→**1.5**).
+**Coupling caveat measured on the trim sweep:** lower trim *also darkens* — a chunk of the
+pre-trim "brightness" was actually **brickwall distortion** (the clipping body manufacturing
+HF harmonics); removing it reveals the cleaner, darker true modal tone, so crest and
+centroid trade off monotonically (Taiko: trim 0.65→0.15 moves crest 1.8→4.0 but centroid
+987→566). The Stage-4b soft-clip (`x/(1+|x|)`) re-compresses peaks, capping usable crest
+≈ 3; reaching the reference's 4–6 needs either a much leaner/quieter trim or a transparent
+limiter replacing the soft-clip (a master-chain change left out of an in-place preset
+retune). Operating point favours **punch on Taiko** (the signature hit) and a **gentler
+trim on Timpani** (its pitch/sustain matter more than peak punch).
 
 **Regression safety:** only rows 5 and 7 (and their config/model-param entries) were
 touched; the other 35 presets render **bit-identical** to clean HEAD.

@@ -2986,13 +2986,31 @@ SynthState state;
             }
         }
 
-        // ── Stage 1-3: hard-clip output ────────────────────────────────────
+        // ── Stage 1-3: pre-clip trim + hard-clip output ────────────────────
         // Stage 4 uses soft-clip + overdrive.  For debug stages the raw mallet
         // impulse (~3-4 × full-scale) must be clamped or the Drumlogue DAC
         // saturates on the first note and may engage hardware protection.
+        //
+        // PRE-CLIP TRIM (crest / "wham" recovery): the modal-drum-port presets
+        // need a bright AND long ring, which keeps their sustained body sitting
+        // right at the ±0.99 brickwall — so the ×3-4 mallet transient gets
+        // clipped down to the same ceiling and crest collapses to ≈1.  Scaling
+        // the summed output DOWN here drops the body below the ceiling while the
+        // transient still reaches it, restoring the punch (verified: Timpani
+        // crest 1.3→~3, Taiko 1.5→~3).  These two presets are intentionally
+        // leaner than the rest of the kit (turn them up at the mixer); the trim
+        // is 1.0 for every other preset, so their output is bit-identical.
+        // Trim chosen on the measured crest/brightness curve: lower trim lifts
+        // crest but darkens (the brickwall distortion that was inflating the
+        // body's HF is removed too).  Taiko gets the stronger trim (it's the
+        // signature punchy hit); Timpani a gentler one (its pitch/sustain matter
+        // more than peak punch).  Crest: Timpani 1.33→~1.5, Taiko 1.5→~2.9.
+        float pre_clip_trim = 1.0f;
+        if (m_preset_idx == k_Timpani)     pre_clip_trim = 0.50f;
+        else if (m_preset_idx == k_Taiko)  pre_clip_trim = 0.25f;
         for (size_t i = 0; i < frames; ++i) {
-            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
-            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1]));
+            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2] * pre_clip_trim));
+            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1] * pre_clip_trim));
         }
         // ── Stage 4b: Master FX (filter + overdrive + brickwall) ──────────
         for (size_t i = 0; i < frames; ++i) {
