@@ -315,3 +315,77 @@ Use the helper below to verify whether the target set has sample coverage:
 ```
 
 If any target presets are listed as missing, provide curated sample files (or explicit mapping overrides) before running long tuning passes.
+
+---
+
+# Appendix — Modal Drum Engine (improved Timpani/Taiko port)
+
+This appendix documents the design of a standalone modal-synthesis engine whose
+Timpani and Taiko reproductions are being ported into RipplerX. It is folded in as
+reference for the improved presets and for the parameter-strengthening work. The
+guiding principle: **every change was driven by a measurement and verified against
+the sample with a reciprocal plot/metric**, not tuned by ear alone.
+
+## Goal & the two instruments
+Reproduce the *character* of a struck drumhead — strike, bloom, ringing body, and
+how the spectrum decays over time — while staying cheap on the ARMv7-A + NEON DSP.
+The two drums are acoustic opposites and stress the engine in opposite ways:
+
+| | Timpani (kettle) | Taiko |
+|---|---|---|
+| Pitch | Definite, ~131/165 Hz tonal series (2:3:4:5:6 over a missing fundamental) | Deep ~87 Hz, **inharmonic** cluster |
+| Decay | Long (rings for seconds) | Short (10% RMS by ~400 ms) |
+| Attack | Soft mallet, low thump (HF ~0.3%) | Stick "DOON", low thud (HF ~10%) |
+| Crest factor | 4.08 | **6.39** (very punchy) |
+| Tail texture | **Tonal** (flatness ~0.11) | **Noise-dominated** (flatness ~0.53) |
+
+The same engine produces both; only the **settings invert**.
+
+## Architecture (standalone engine)
+`extract_modes.py` (FFT + per-band peak-pick → modes freq/amp/decay, residual →
+broadband attack transient) → composable config-shaping scripts (`densify`,
+`hishape`, `tune`, `freqdecay`, `densefill`, `reshape_transient`) → the COUPLED
+`ResonatorDrumSynth` engine → render.
+
+**Per-sample signal flow** (maps onto RipplerX's MEMBRANE engine + boom + noise):
+```
+1. EXCITATION   e = half-sine impulse (length & amplitude scale with velocity)
+2. RESONATORS   y0 = a1·y1 − a2·y2 + g·e  per mode;  body = Σ y0   (2-pole)
+                a1=2r·cosθ, a2=r², r=exp(−α·dscale/fs), θ=2πf/fs, g=amp·sinθ
+3. NOISE WEDGE  white noise → 4 cascaded 1-poles (−24 dB/oct) cutoff SWEEPS
+                bright→dark; added to the membrane (the taiko grain)
+4. BLOOM        membrane (body+noise) ×= raised-cosine swell (floor→1 over ~ms)
+5. TRANSIENT    + sharp broadband "click" (added AFTER the bloom, stays sharp)
+6. LIMITER      transparent below 0.85, tanh soft-knee only on true peaks
+7. PITCH GLIDE  per-block resonator retune (a small downward "whoomp")
+```
+Key idea vs RipplerX's 6-mode banks: a **dense membrane fill** (~220 jittered
+low-level resonators) gives the timpani a continuous tonal "wedge", and a
+**sweeping-cutoff noise wedge** gives the taiko its grainy broadband body — the
+two textures the discrete 6-mode bank cannot make.
+
+## Measurement toolbox
+| Tool | Measures | Used for |
+|---|---|---|
+| `wham.py` | crest, atk0-5, atk/tail, HF0-10 | strike punch |
+| `atkshape.py` | 0.25 ms-bin attack envelope | bloom shape |
+| `wedge2/3.py` | −60/−80 dB top edge per frame | the spectrogram wedge |
+| `tailflat.py` | flatness profile over the tail | snare check / texture |
+| `density.py` | partials-within-20 dB + AM-depth | tonal density |
+| `specenv.py` | dB-vs-freq envelope in a window | high-end roll-off |
+
+## Per-instrument recipes (standalone engine)
+- **Timpani** (tonal wedge, long ring, soft low bloom): dense fill + bloom 4 ms from
+  silence, noise off. Match: crest 4.02 (samp 4.08), atk0-5 0.466 (0.478), wedge 7.3k→1.5k.
+- **Taiko** (noise wedge, short body, big partial bloom from a floor, low thud): noise
+  wedge on, fast body (dscale 10), bloom 16 ms floor 0.12. Match: crest 6.46 (samp 6.39),
+  atk0-5 0.340 (0.326), HF 0.112 (0.103), late flatness 0.185 (0.189), wedge 11k→2k.
+
+## NEON vectorization (resonator bank)
+The hot path is `y0 = a1·y1 − a2·y2 + g·e` per mode. State is structure-of-arrays,
+**fixed-size `alignas(16)` (no heap, no std::vector)**, padded to a multiple of 4, so
+NEON runs 4 modes/iteration (`vmulq`/`vmlaq`/`vmlsq` + ARMv7 `vadd`/`vpadd` horizontal
+sum — not AArch64 `vaddvq`). Verified on cross-compiled ARMv7 under qemu: scalar
+refactor bit-identical to the original; NEON vs scalar = 2–4 LSB / 70–78 dB (FP
+reordering only, inaudible). Kernel speedup on real hardware (x86 SSE proxy): **2.76×**
+(798 → 2202 M mode-updates/s). At 48 kHz, 280 modes ≈ 13.4 M updates/s/voice.

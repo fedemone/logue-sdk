@@ -387,3 +387,109 @@ for k,v in r['metrics'].items(): print(f'  {k}: {v:.3f}' if isinstance(v,float) 
 ## Project Rename (pending, when model is stable)
 - RipplerX → **Brachetti** (in honour of performer Arturo Brachetti)
 - Rename: all `ripplerx*` files, class `RipplerXWaveguide`, `config.mk`, `header.c`
+
+---
+
+# Modal Drum Engine — Found Issues & Fixes (timpani/taiko port)
+
+Troubleshooting log from the standalone modal engine whose Timpani/Taiko are being
+ported in. Each item: the defect heard/seen, the **measured** root cause, the fix,
+and the generalizable breakthrough. These inform the RipplerX preset tunings and the
+parameter-strengthening work.
+
+### "Resonance sounds snare-like / well-shaped noise"
+**Cause:** a sustained band-limited noise bed outlived the modes (`tailflat.py`:
+flatness stuck 0.36–0.41; a real kettle falls 0.17→0.035). **Fix:** noise OFF for
+tonal drums; recover density with amplitude compression. **Breakthrough:** spectral
+flatness is the *wrong* metric for discrete modes (a sum of sinusoids reads ≈0.001);
+use partials-within-20 dB + AM-depth and a flatness *profile* (snare = sustained-high;
+drum = falling).
+
+### "Frequency response flat above a threshold, not a negative exponential"
+**Cause:** analyzer band ceiling 720 Hz → no modes above ~688 Hz → a dead −102 dB
+floor. **Fix:** extend bands to 4.2 kHz, `densify` the low band only, `hishape` the
+upper modes → a natural roll-off.
+
+### "Strike → cut → steady horizontal lines" (not strike → exp decay)
+Three temporal defects: (1) the transient was a flat ~70 ms block that ended abruptly
+(the "cut") → `reshape_transient` exp τ≈25 ms; (2) mode decays too uniform → flat
+lines → `freqdecay` (HF dies faster, the descending diagonal); (3) ~18 ms craters =
+the two equal principal modes (a fifth) beating to zero — the timpani's inherent
+warble; eased with less compression.
+
+### "Vertical line + horizontal lines, not a filled wedge" ★
+The strike should inject **all** frequencies and the resonant system should trim the
+highs **slowly over time** = a filled triangular wedge. **Cause:** (a) the previous
+freqdecay was too aggressive (τ≈31 ms at 5 kHz → HF collapsed in 40 ms); (b) only ~17
+sparse HF modes → lines, not a continuum. **Fix:** drop the aggressive freqdecay; add a
+**dense membrane fill** (~220 jittered resonators, gentle freq-dependent decay).
+**Breakthrough:** *measure the wedge the way a dB spectrogram draws it* — the highest
+freq above −60/−80 dB per frame, not an energy roll-off (which the loud fundamental
+dominates). Snare-proof because the fill *decays* (flatness falls, tracking the sample).
+
+### "The strike needs more WHAM" ★
+Two independent causes: (1) **crest was squashed** — the output stage's always-on
+cubic `1.5x−0.5x³` boosts quiet ×1.5 and caps peaks ×1.0 (a compressor lowering crest
+≈0.67×: 3.23 vs sample 4.08) → replaced with a **transparent limiter** (unity below
+0.85) → crest 4.29; (2) **the attack was an instant tick, not a bloom** — the real hit
+swells from ~0 to peak over ~6 ms → a raised-cosine **attack bloom** → atk0-5 0.47
+(0.478). **Breakthrough:** "wham" decomposes into **crest** (a limiter problem) and
+**bloom** (an attack-envelope problem), each separately measurable.
+
+### Taiko: a noise wedge, not a mode wedge ★
+The taiko tail is genuinely noise (flatness 0.46→0.53→0.34→0.19), so the timpani's
+dense-mode fill *lowered* flatness. **Fix:** a **noise wedge** + (a) bloom the membrane
+only, add the click after (keeps the stick crack sharp → restores HF/atk0-5); (b) a
+**bloom floor** so the swell starts partway up (sharp-attack drums); (c) white noise →
+4 cascaded 1-poles (−24 dB/oct) cutoff **sweeping bright→dark**. **Breakthrough:**
+*timpani = tonal wedge (dense modes); taiko = noise wedge* — the same engine spans both
+by choosing the wedge's source. (Maps onto RipplerX's `NzMix`/`NzFltFrq`/`NzRes` noise
+path + `modal_mix` + `onset_attack_ms`.)
+
+## Porting the retune into RipplerX (presets 5 Timpani / 7 Taiko, in-place)
+
+Measured the shipped RipplerX presets against the reference WAVs (`refcmp.py`
+metrics: spectral centroid early/late, T60, plus a crest factor) and retuned the two
+preset rows + their `modal_preset_configs` / `model_param_presets` toward the samples.
+Scoring loop: `render_presets /tmp/rc` → compare `05_Timpani.wav` / `07_Taiko.wav` vs
+`samples/Orchestral-Timpani-C.wav` / `samples/Taiko-Hit.wav`.
+
+| metric | Timpani ref → before → after | Taiko ref → before → after |
+|---|---|---|
+| centroid early | 756 → 674 → **791** | 1690 → 592 → **1216** |
+| centroid late  | 646 → 280 → **355** | 887 → 240 → **424**  |
+| T60 (s)        | 1.12 → 1.39 → 1.49  | 2.10 → 0.58 → **1.11** |
+| crest          | 4.08 → 1.33 → 1.28  | 6.39 → 2.37 → 1.52   |
+
+**What worked (brightness + length, the documented HW priorities):**
+- **`modal_mix` is the brightness lever, not the modal config envelopes.** Editing the
+  upper-mode envs/T60 in `modal_preset_configs` barely moved `centroid_late` — the tail
+  is dominated by the **waveguide resonator** (Dkay-driven, tuned to the low fundamental),
+  which is ~60 % of the voice when `modal_mix` is 0.40. Raising `modal_mix` (Timpani
+  0.40→0.55, Taiko 0.30→0.60) lets the bright modal bank lead the dark fundamental →
+  centroid up. Trimming Timpani's `Dkay` 200→150 shortens that dark waveguide drone.
+- Taiko: lean out the 87 Hz boom (`boom_mix` 0.58→0.22, `boom_decay` 0.99981→0.99975 —
+  a thump, not a drone), extend the modal T60s (≈600→1400 ms), lift the bright 1472 Hz
+  "AAN" partial (env 0.60→0.88), and brighten the noise crack (`NzMix` 36→52,
+  `NzFltFrq` 360→800 ≈ 8 kHz). This is the `NzMix`/`NzFltFrq` noise-wedge mapping in
+  practice. Result: centroid_early **2×**, T60 **2×** — the "TAAAN" the HW asked for.
+
+**The crest ceiling (the "wham" the standalone got from a transparent limiter):** ★
+RipplerX's master chain **hard-clips to ±0.99 under `master_gain` 1.5** then soft-clips
+again (a deliberately loud drum-machine voicing). The mallet impulse is ~3–4× full-scale
+— exactly the transient that *would* give crest ≈ 4 — but it is clipped down to the same
+ceiling the sustained body already sits at, so `crest = peak/RMS ≈ 1`. Verified crest 4–6
+IS reachable on this engine (Bongo 5.99, Conga 10.08) — but only for drums whose body
+**decays fast** (short T60), letting the 0.5 s-window RMS fall below the clipped peak.
+Timpani/Taiko need a **bright + long** ring, which keeps the body at the ceiling → crest
+stays ≈ 1.3–2.4. So the three goals (bright, long, punchy) cannot all be maxed with the
+6-mode bank + hot clipper. The standalone solved this with a **transparent limiter
+(crest preservation)** the standalone owned end-to-end; here that would require a
+**per-preset pre-clip output trim** (a new internal model param, default 1.0 so the
+other 35 HW-approved presets are untouched) — set <1.0 on 5/7 to pull the body below
+0.99 so the ×3–4 transient stands above it. Deferred as out-of-scope for an in-place
+preset retune; flagged for a punch-priority pass if the kit-level aesthetic allows
+these two to be leaner/quieter than the rest.
+
+**Regression safety:** only rows 5 and 7 (and their config/model-param entries) were
+touched; the other 35 presets render **bit-identical** to clean HEAD.
