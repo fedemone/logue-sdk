@@ -1752,31 +1752,6 @@ SynthState state;
                     case k_RideBell:  v.crash_couple = 0.50f; break;
                     default: break;
                 }
-                // ── Strike-envelope gate for the self-PM bloom ────────────────
-                // Port of the cymbal_synthesis prototype's finding (and the
-                // original HW note "the strike envelope should drive the phase
-                // modulation"): the nonlinear self-PM chaos must bloom at the
-                // attack and settle with the tail, not ride the whole ring
-                // uniformly.  Depth 0 leaves HHat-O's approved constant bloom
-                // bit-identical; the others get a strike-dense bloom whose
-                // chaotic window lasts longer for harder strikes (tau × vel).
-                float strike_tau = 0.0f;   // seconds; 0 = no gating
-                switch (m_preset_idx) {
-                    case k_Cymbal:    v.crash_strike_depth = 0.60f; strike_tau = 0.22f; break;
-                    case k_Ride:      v.crash_strike_depth = 0.50f; strike_tau = 0.20f; break;
-                    case k_RideBell:  v.crash_strike_depth = 0.40f; strike_tau = 0.18f; break;
-                    case k_Gong:      v.crash_strike_depth = 0.50f; strike_tau = 0.50f; break;
-                    case k_HiHatOpen: v.crash_strike_depth = 0.0f;  strike_tau = 0.0f;  break; // approved: untouched
-                    default: break;
-                }
-                v.crash_strike_env = 1.0f;
-                if (strike_tau > 0.0f) {
-                    // Harder strikes sustain the chaotic regime longer.
-                    const float tau_eff = strike_tau * (0.6f + 0.8f * vel_norm);
-                    v.crash_strike_dec = expf(-1.0f / (tau_eff * default_sample_rate));
-                } else {
-                    v.crash_strike_dec = 1.0f;
-                }
                 // ── FDN dense-wash params (see processBlock + dsp_core.h) ──────
                 // The 6-resonator bank cannot reach a real cymbal's spectral
                 // DENSITY (flatness ~0.55 vs our ~0.2), so the wash kept reading
@@ -2760,14 +2735,6 @@ SynthState state;
                     // read back at an offset modulated by the wash's own amplitude
                     // → self-FM Bessel sidebands that densify the sparse partials
                     // into a real crash and bloom brighter as it gets louder.
-                    // Strike-envelope gate: scale the self-PM depth so the chaos
-                    // blooms at the attack and settles with the tail.  depth 0 ⇒
-                    // factor exactly 1.0 ⇒ HHat-O bit-identical.
-                    const float strike_gate =
-                        (1.0f - voice.crash_strike_depth) +
-                        voice.crash_strike_depth * voice.crash_strike_env;
-                    voice.crash_strike_env *= voice.crash_strike_dec;
-
                     float bloomed = wash;
                     if (voice.crash_bloom > 0.0f) {
                         WaveguideState& pd = voice.resA;
@@ -2775,7 +2742,7 @@ SynthState state;
                         // base read-back ~24 samples behind write; the modulation
                         // multiplier is clamped to [0.25,4] so the read pointer
                         // can never run past the write head or out of the buffer.
-                        float mult = 1.0f + voice.crash_bloom * strike_gate * wash;
+                        float mult = 1.0f + voice.crash_bloom * wash;
                         mult = fmaxf(0.25f, fminf(4.0f, mult));
                         float rp = (float)pd.write_ptr - (12.0f * mult);
                         if (rp < 0.0f) rp += (float)DELAY_BUFFER_SIZE;
