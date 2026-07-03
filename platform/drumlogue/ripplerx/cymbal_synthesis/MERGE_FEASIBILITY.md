@@ -1,5 +1,41 @@
 # Merge feasibility study: cymbal_synthesis → RipplerX unit
 
+## Implementation status (reassessed against the real ENGINE_PLATE code)
+
+Reading the shipping crash-bank code revised the staged plan below in one
+important way:
+
+- **Stage B2 (enlarge to 24–32 independently-tuned resonators): dropped.**
+  Pass 18 already solved "6 resonators = 6 tones" with a 4-line Hadamard FDN
+  (measured flatness 0.2 → 0.70), and the crash resonators are deliberately
+  tuned *onto* the struck partials ("the wash IS the partials"). A decorrelated
+  32-mode cloud would duplicate the FDN, add real per-voice CPU/RAM, and put
+  the HW-approved sound at risk for no new capability. **Not worth doing.**
+- **Stage B1 (√N normalisation): dropped** — the unit uses hand-tuned,
+  reference-anchored `crash_drive`, not a `/N` divide, so √N is a no-op rescale
+  that would only force re-tuning. The √N fix was the *prototype's* bug, not the
+  unit's.
+- **DONE — strike-envelope-gated self-PM bloom.** This is the genuinely
+  additive port and maps the user's original concern #2 ("the strike envelope
+  should drive the phase modulation") directly into the unit. The unit's
+  `crash_bloom` self-PM previously rode the whole ring uniformly; it is now
+  scaled by `(1-depth) + depth·strike_env`, an exponential strike envelope
+  (per-preset τ, lengthened by velocity) so the chaotic shimmer blooms at the
+  attack and settles with the tail. `depth = 0` for HHat-O keeps that approved
+  preset **byte-for-byte identical**; Cowbell/Triangle/BellTree/Tick (no crash
+  bank) are identical too. Cymbal/Gong/Ride/RideBell get a denser attack
+  (early centroid up, e.g. RidBell 8836→9089 Hz) with unchanged tail.
+  Gates passed: syntax clean, 82/82 DSP tests, 0 NaN/silent across 37 presets.
+- **TODO — velocity dynamics** (concern #1 "harder crash, longer tails"):
+  velocity-dependent bloom/brightness and tail length beyond the flat
+  `current_velocity` output gain. Small and additive; not yet started.
+
+ARM `.text` delta is a few floats of state + a handful of instructions; must
+still be confirmed on the next flash (no linking cross-toolchain here).
+
+---
+
+
 Decides how the prototype in this directory (Stowell-style dense resonator
 bank, strike-envelope PM, velocity dynamics, 1/sqrt(N) level normalisation,
 NEON v7 resonator loop) should reach the shipping RipplerX drumlogue unit.

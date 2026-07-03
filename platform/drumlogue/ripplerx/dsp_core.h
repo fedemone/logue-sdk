@@ -277,6 +277,16 @@ struct VoiceState {
     // ~470 ms after the strike).  crash_couple scales the m·|m| (signed-quadratic)
     // injection of modal energy into the resonator bank; 0 reverts to pure-noise drive.
     float crash_couple   = 0.0f;
+    // Strike-envelope gate for the self-PM bloom.  The nonlinear mode-coupling
+    // chaos of a real cymbal scales with vibration energy: strongest right
+    // after the strike, settling into clean linear ringing as the high-mode
+    // energy drains.  The pre-existing bloom rode the whole ring uniformly; now
+    // its depth is scaled by (1-depth) + depth·strike_env so the shimmer/density
+    // blooms at the attack and calms with the tail.  depth 0 ⇒ factor 1 ⇒
+    // bit-identical to the constant-bloom behaviour (HHat-O, HW-approved).
+    float crash_strike_env   = 1.0f;   // decays 1→0 across the strike window
+    float crash_strike_dec   = 1.0f;   // per-sample decay multiplier (NoteOn)
+    float crash_strike_depth = 0.0f;   // 0 = bloom un-gated
 
     // ── FDN dense metallic wash (ENGINE_PLATE bright cymbals) ─────────────────
     // A 6-resonator bank cannot reach a real cymbal's spectral DENSITY (flatness
@@ -415,6 +425,9 @@ struct VoiceState {
         crash_bloom = 0.0f;
         crash_ring_tap = 0.0f;
         crash_couple = 0.0f;
+        crash_strike_env = 1.0f;
+        crash_strike_dec = 1.0f;
+        crash_strike_depth = 0.0f;
         // FDN dense metallic wash
         fdn_g = 0.0f;
         fdn_damp = 0.0f;
