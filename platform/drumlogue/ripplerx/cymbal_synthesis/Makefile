@@ -1,5 +1,5 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++11 -Wall -Wextra -pedantic
+CXXFLAGS ?= -std=c++11 -O2 -Wall -Wextra -pedantic
 
 TARGET := test_real_cymb
 SOURCES := realistic_cymbals.cpp test_real_cymb.cpp
