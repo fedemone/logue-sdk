@@ -158,8 +158,8 @@ The behaviour checks assert that:
 - a 6-hit crash roll stacks ≥ 3 simultaneous voices without clipping;
 - overlapping crash/ride/splash/gong strikes keep earlier tails alive.
 
-## Next steps (feasibility notes for merging into the RipplerX unit)
+## Next steps
 
-1. **Optimize** — the per-sample cost is dominated by the resonator bank (72-112 biquad-like recursions) plus three `sinf` calls for the PM LFOs; the `sinf`/`expf` in the envelope path can move to per-block or recursive forms.
-2. **ARM NEON (v7)** — the resonator loop is the obvious SIMD target: 4 resonators per `float32x4_t` lane (state `y1/y2` kept in registers, coefficients contiguous). The recursion is per-resonator independent, so it vectorises cleanly.
-3. **Merge strategy** — option B (improve the existing ENGINE_PLATE path with this resonator-bank + strike-envelope-PM approach) is preferred: option A (wholesale replace) risks the HW-approved HHat-O, and option C (new instrument family) duplicates ~30 KB-constrained `.text`. Mind the RipplerX `.rodata`/`.data` placement rules (see `../CLAUDE.md`) when moving the preset tables.
+1. **Optimize** — DONE: zero-libm `process()`, recursive envelopes, fast-math swaps (see "Optimisation and fast math" above).
+2. **ARM NEON (v7)** — DONE: SoA resonator bank with a guarded intrinsics path (see "ARM NEON (v7)" above). On-target cycle measurement pending hardware access.
+3. **Merge strategy** — feasibility study written up in [`MERGE_FEASIBILITY.md`](MERGE_FEASIBILITY.md) with measured `.text`/RAM/CPU costs. Recommendation: **option B** — improve the existing ENGINE_PLATE path in five bounded, individually gated stages (enlarged NEON crash bank, strike-envelope PM gating, velocity dynamics, anchored retunes; comb skipped since the unit's FDN covers dense reflections). Options A (wholesale replace) and C (new instrument family) are rejected there with numbers.
