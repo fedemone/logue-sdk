@@ -52,7 +52,6 @@ private:
   float white();
   float pink();
   float expEnv(float attackSec, float decaySec) const;
-  float ampEnv(float t) const;
   float onePoleLow(float input, float cutoffHz, float &state) const;
   float onePoleHigh(float input, float cutoffHz, float &state) const;
   void initialiseResonators(const PresetConfig &cfg, float velocity, float muffle, float durationSec, uint32_t seed);
@@ -61,6 +60,7 @@ private:
   uint32_t rng_;
   uint32_t sampleIndex_;
   float velocity_, muffle_, combAmount_, phaseModAmount_, durationSec_;
+  float velocityGain_, strikeDecaySec_;
   const PresetConfig *cfg_;
   bool active_;
 
@@ -70,6 +70,28 @@ private:
   float comb_[kCombTaps][kCombMaxDelay];
   uint16_t combWrite_, combDelay_[kCombTaps];
   float pmPhase_[3];
+};
+
+// Polyphonic wrapper: fixed pool of voices allocated round-robin so repeated
+// strikes stack instead of choking the previous tail (cymbal rolls, crash
+// over ride tail, etc.). Free (inactive) voices are preferred; otherwise the
+// oldest voice is stolen.
+class CymbalKit {
+public:
+  enum { kVoices = 4 };
+
+  explicit CymbalKit(float sampleRate = 48000.0f);
+  void setSampleRate(float sampleRate);
+  void noteOn(const RenderParams &params, uint32_t seed = 0x12345678u);
+  float process();
+  void process(float *out, uint32_t frames);
+  bool isActive() const;
+  uint16_t activeVoices() const;
+
+private:
+  CymbalSynth voices_[kVoices];
+  uint32_t voiceAge_[kVoices];
+  uint32_t noteCounter_;
 };
 
 } // namespace realistic_cymbals

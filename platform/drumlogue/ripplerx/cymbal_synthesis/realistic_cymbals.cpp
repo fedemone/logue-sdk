@@ -22,10 +22,6 @@ float frand(uint32_t &s) {
   return ((s >> 8) * (1.0f / 16777216.0f));
 }
 
-float exprand(uint32_t &s, float lo, float hi) {
-  return lo * powf(hi / lo, frand(s));
-}
-
 float semitoneRatio(float semitones) {
   return powf(2.0f, semitones / 12.0f);
 }
@@ -48,9 +44,14 @@ static const float kRideFrequenciesHz[] = {
   4211.f, 5603.f, 7421.f, 9829.f, 12113.f, 14591.f, 16879.f, 18193.f
 };
 
+// A small (8-12") splash still has a pitched modal body: its lowest plate
+// modes sit around 1-3 kHz, with the sizzle above. Starting the anchors at
+// ~1.1 kHz (instead of 3.3 kHz) and spreading them inharmonically gives the
+// strike a metallic "pssh" identity; anchoring everything above 3 kHz reads
+// as band-passed noise.
 static const float kSplashFrequenciesHz[] = {
-  3271.f, 3899.f, 4663.f, 5483.f, 6473.f, 7639.f, 9011.f, 10531.f,
-  12281.f, 14087.f, 15791.f, 17417.f, 18803.f, 19709.f
+  1123.f, 1409.f, 1801.f, 2251.f, 2749.f, 3407.f, 4211.f, 5233.f,
+  6473.f, 7963.f, 9787.f, 12043.f, 14813.f, 17041.f
 };
 
 static const float kGongFrequenciesHz[] = {
@@ -62,7 +63,7 @@ static const PresetConfig kPresets[PRESET_COUNT] = {
   // min max freqs count jitter ampA ampD sustain ampR lowA decay hiA hiD thwack stick noise res shimmer direct comb pm modes
   { 300.f, 20000.f, kCrashFrequenciesHz, (uint16_t)(sizeof(kCrashFrequenciesHz) / sizeof(kCrashFrequenciesHz[0])), 1.8f, 0.0015f, 0.18f, 0.35f, 0.28f, 0.018f, 0.44f, 0.040f, 0.30f, 0.002f, 0.50f, 0.045f, 0.74f, 0.30f, 0.020f, 0.10f, 0.10f, 112 },
   { 450.f, 18000.f, kRideFrequenciesHz, (uint16_t)(sizeof(kRideFrequenciesHz) / sizeof(kRideFrequenciesHz[0])), 1.2f, 0.0012f, 0.24f, 0.42f, 0.32f, 0.015f, 0.55f, 0.035f, 0.34f, 0.0015f, 0.40f, 0.040f, 0.66f, 0.34f, 0.016f, 0.07f, 0.08f, 104 },
-  { 3200.f, 20000.f, kSplashFrequenciesHz, (uint16_t)(sizeof(kSplashFrequenciesHz) / sizeof(kSplashFrequenciesHz[0])), 0.65f, 0.0010f, 0.30f, 0.50f, 0.70f, 0.006f, 1.10f, 0.018f, 0.62f, 0.0012f, 0.54f, 0.032f, 1.65f, 0.18f, 0.0015f, 0.04f, 0.06f, 128 },
+  { 1000.f, 19000.f, kSplashFrequenciesHz, (uint16_t)(sizeof(kSplashFrequenciesHz) / sizeof(kSplashFrequenciesHz[0])), 0.55f, 0.0010f, 0.30f, 0.50f, 0.30f, 0.006f, 0.70f, 0.018f, 0.25f, 0.0012f, 0.54f, 0.038f, 2.60f, 0.16f, 0.0015f, 0.04f, 0.06f, 72 },
   { 150.f, 14000.f, kGongFrequenciesHz, (uint16_t)(sizeof(kGongFrequenciesHz) / sizeof(kGongFrequenciesHz[0])), 2.4f, 0.0040f, 0.80f, 0.62f, 1.20f, 0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.22f, 0.035f, 0.82f, 0.22f, 0.010f, 0.14f, 0.15f, 96 }
 };
 
@@ -117,7 +118,24 @@ void CymbalSynth::noteOn(const RenderParams &p, uint32_t seed) {
     }
   }
   combWrite_ = 0u;
-  durationSec_ = (p.durationSec > 0.01f) ? p.durationSec : cfg_->decaySec;
+  // durationSec > 0 fits envelopes to a fixed one-shot render length. When it
+  // is not supplied (live/drum-machine use) do NOT cap the tail to decaySec:
+  // use a duration long enough that the velocity-scaled natural decay rules,
+  // so hard strikes actually ring longer.
+  durationSec_ = (p.durationSec > 0.01f) ? p.durationSec : 30.0f;
+  // Harder strikes are louder: perceptual-ish curve, soft hits stay audible.
+  velocityGain_ = 0.25f + 0.75f * velocity_ * sqrtf(velocity_);
+  // Strike envelope for the nonlinear (phase-mod) shimmer: the mode-coupling
+  // chaos of a real cymbal scales with vibration energy, so it must be
+  // strongest right after the strike and die with the high-frequency energy.
+  // Base time constant follows the preset's high-band lifetime; harder
+  // strikes sustain the chaotic regime longer.
+  strikeDecaySec_ = fmaxf(0.04f, cfg_->highDecaySec * lerpf(0.5f, 1.6f, velocity_));
+  // Deterministic per-strike LFO phases (seeded, not free-running) so every
+  // strike gets the same attack shimmer character for a given seed.
+  for (int i = 0; i < 3; ++i) {
+    pmPhase_[i] = frand(rng_);
+  }
   initialiseResonators(*cfg_, velocity_, muffle_, durationSec_, rng_);
 }
 
@@ -188,26 +206,6 @@ float CymbalSynth::expEnv(float a, float d) const {
   return atk * dec;
 }
 
-float CymbalSynth::ampEnv(float t) const {
-  const float attack = fmaxf(0.0001f, cfg_->ampAttackSec);
-  const float decay = fmaxf(0.0001f, cfg_->ampDecaySec * durationSec_);
-  const float release = fmaxf(0.0001f, fminf(cfg_->ampReleaseSec, durationSec_ * 0.45f));
-  const float releaseStart = fmaxf(attack, durationSec_ - release);
-
-  if (t < attack) {
-    return t / attack;
-  }
-
-  const float decayPos = clampf((t - attack) / decay, 0.0f, 1.0f);
-  const float sustain = lerpf(1.0f, cfg_->ampSustainLevel, decayPos);
-  if (t < releaseStart) {
-    return sustain;
-  }
-
-  const float releasePos = clampf((t - releaseStart) / release, 0.0f, 1.0f);
-  return sustain * (1.0f - releasePos);
-}
-
 float CymbalSynth::onePoleLow(float x, float c, float &s) const {
   c = clampf(c, 10.0f, sampleRate_ * 0.45f);
   const float a = 1.0f - expf(-2.0f * kPi * c * invSampleRate_);
@@ -226,7 +224,6 @@ float CymbalSynth::process() {
   }
 
   const float t = sampleIndex_ * invSampleRate_;
-  const float amp = ampEnv(t);  // TODO  unused
   const float decay = fminf(cfg_->decaySec, durationSec_ * 0.55f) *
                       lerpf(0.45f, 1.15f, velocity_) *
                       lerpf(1.0f, 0.08f, muffle_);
@@ -242,7 +239,10 @@ float CymbalSynth::process() {
   // Use the noise as an excitation signal for the resonator bank rather than as
   // an audible layer.  Pink low-frequency energy helps the random driver blend
   // into the ringing modes, while the high driver is tightly envelope-shaped.
-  const float noise = pink() * 0.88f + white() * 0.12f;
+  // Harder strikes excite the high plate modes disproportionately, so the
+  // drive gets whiter (brighter) with velocity.
+  const float whiteBlend = lerpf(0.08f, 0.45f, velocity_ * velocity_);
+  const float noise = pink() * (1.0f - whiteBlend) + white() * whiteBlend;
   const float loDriver = onePoleLow(noise * cfg_->noiseLevel, lowCutoff, lpState_) * lowEnv;
   const float hiDriver = onePoleHigh(noise * cfg_->noiseLevel, highCutoff, hpLowState_) *
                          (0.18f * shimmerEnv);
@@ -256,10 +256,20 @@ float CymbalSynth::process() {
                               : 0.0f;
   const float thwack = thwackEnv * cfg_->stickLevel * velocity_;
 
+  // Strike envelope: near-instant attack, exponential decay whose time
+  // constant was set from velocity + the preset's high-band lifetime at
+  // noteOn. This — not the slow driver envelope — gates the phase modulation,
+  // so the nonlinear shimmer blooms at the strike and settles into clean
+  // linear ringing as the real instrument does.
+  const float strikeEnv = velocity_ * expEnv(0.0008f, strikeDecaySec_);
+
   float pm = 0.0f;
   for (int i = 0; i < 3; ++i) {
+    // The chaotic regime right after the strike also runs *faster*: scale the
+    // LFO rates by the strike envelope so early shimmer is denser, then the
+    // wobble slows as energy drains.
     const float rate = (i == 0 ? 37.0f : (i == 1 ? 71.0f : 113.0f)) *
-                       lerpf(0.7f, 1.6f, velocity_);
+                       lerpf(0.7f, 1.6f, velocity_) * (1.0f + 0.6f * strikeEnv);
     pmPhase_[i] += rate * invSampleRate_;
     if (pmPhase_[i] >= 1.0f) {
       pmPhase_[i] -= 1.0f;
@@ -267,9 +277,9 @@ float CymbalSynth::process() {
     pm += sinf(2.0f * kPi * pmPhase_[i]);
   }
 
-  const float driverEnv = clampf(lowEnv * 0.65f + shimmerEnv * 0.35f + thwackEnv, 0.0f, 1.0f);
-  const float pmGain = 1.0f + cfg_->phaseModDepth * phaseModAmount_ * driverEnv * pm * 0.22f;
-  const float pmExciter = cfg_->phaseModDepth * phaseModAmount_ * driverEnv * 0.035f * pm;
+  const float pmDepth = cfg_->phaseModDepth * phaseModAmount_ * strikeEnv;
+  const float pmGain = 1.0f + pmDepth * pm * 0.22f;
+  const float pmExciter = pmDepth * 0.035f * pm;
   const float driver = loDriver + hiDriver + thwack + pmExciter;
   float res = 0.0f;
   for (uint16_t i = 0u; i < resonatorCount_; ++i) {
@@ -299,6 +309,17 @@ float CymbalSynth::process() {
   dcState_ += 0.001f * (out - dcState_);
   out = (out - dcState_) * 0.9f;
 
+  // Harder strikes are louder.
+  out *= velocityGain_;
+
+  // Click-free end when the caller supplied a fixed one-shot duration (in
+  // live mode durationSec_ is effectively unbounded and this never engages).
+  const float release = fmaxf(0.001f, fminf(cfg_->ampReleaseSec, durationSec_ * 0.45f));
+  const float releaseStart = durationSec_ - release;
+  if (t >= releaseStart) {
+    out *= fmaxf(0.0f, 1.0f - (t - releaseStart) / release);
+  }
+
   if (++sampleIndex_ > (uint32_t)(decay * sampleRate_ * 8.0f)) {
     active_ = false;
   }
@@ -309,6 +330,81 @@ void CymbalSynth::process(float *out, uint32_t frames) {
   for (uint32_t i = 0u; i < frames; ++i) {
     out[i] = process();
   }
+}
+
+CymbalKit::CymbalKit(float sampleRate) : noteCounter_(0u) {
+  setSampleRate(sampleRate);
+  for (int v = 0; v < kVoices; ++v) {
+    voiceAge_[v] = 0u;
+  }
+}
+
+void CymbalKit::setSampleRate(float sampleRate) {
+  for (int v = 0; v < kVoices; ++v) {
+    voices_[v].setSampleRate(sampleRate);
+  }
+}
+
+void CymbalKit::noteOn(const RenderParams &params, uint32_t seed) {
+  // Prefer a silent voice; otherwise steal the least recently started one so
+  // the freshest tails keep ringing.
+  int chosen = -1;
+  for (int v = 0; v < kVoices; ++v) {
+    if (!voices_[v].isActive()) {
+      chosen = v;
+      break;
+    }
+  }
+  if (chosen < 0) {
+    uint32_t oldest = voiceAge_[0];
+    chosen = 0;
+    for (int v = 1; v < kVoices; ++v) {
+      if (voiceAge_[v] < oldest) {
+        oldest = voiceAge_[v];
+        chosen = v;
+      }
+    }
+  }
+  voiceAge_[chosen] = ++noteCounter_;
+  // Decorrelate simultaneous voices even when the caller reuses one seed.
+  voices_[chosen].noteOn(params, seed + 0x9e3779b9u * (uint32_t)chosen);
+}
+
+float CymbalKit::process() {
+  float sum = 0.0f;
+  for (int v = 0; v < kVoices; ++v) {
+    if (voices_[v].isActive()) {
+      sum += voices_[v].process();
+    }
+  }
+  // Soft headroom: single voice passes ~unchanged, stacked strikes are
+  // limited gently instead of hard-clipping.
+  return sum / (1.0f + 0.35f * fabsf(sum));
+}
+
+void CymbalKit::process(float *out, uint32_t frames) {
+  for (uint32_t i = 0u; i < frames; ++i) {
+    out[i] = process();
+  }
+}
+
+bool CymbalKit::isActive() const {
+  for (int v = 0; v < kVoices; ++v) {
+    if (voices_[v].isActive()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+uint16_t CymbalKit::activeVoices() const {
+  uint16_t n = 0u;
+  for (int v = 0; v < kVoices; ++v) {
+    if (voices_[v].isActive()) {
+      ++n;
+    }
+  }
+  return n;
 }
 
 } // namespace realistic_cymbals
