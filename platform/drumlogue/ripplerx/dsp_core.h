@@ -133,6 +133,271 @@ struct WaveguideState {
     float model_ap_base = 0.0f;
 };
 
+// ============================================================================
+// Cymbal engine (ENGINE_CYMBAL) — ported from cymbal_synthesis/realistic_cymbals
+// ============================================================================
+// A Dan Stowell-style dense inharmonic resonator cymbal: a large bank of
+// exponentially-detuned 2-pole ringers driven by band-split noise + a stick
+// impulse, with strike-envelope-gated phase modulation for the nonlinear
+// shimmer.  This REPLACES the old ENGINE_PLATE crash-bank + FDN + self-PM for
+// the metallic cymbal-family presets.
+//
+// DMI-only: no user-defined constructor (all members have constant default
+// initialisers) so the containing `s_synth` stays constant-initialised in
+// .data, exactly like the rest of dsp_core.h.  The prototype's 32 KB/voice
+// comb section is DROPPED — the resonator bank + PM already supplies the
+// density the FDN used to add, so the comb is not needed and would blow the
+// per-voice RAM budget.
+enum { kCymbalMaxResonators = 112 };
+
+// Parameter bundle passed by value from NoteOn (never stored persistently, so
+// no member-pointer-in-.data hazard).  freqHz points at a member array of the
+// synth class (constant-init in .data); the pointer itself lives only on the
+// stack for the duration of cymbal_note_on.
+struct CymbalConfig {
+    const float* freqHz;      // inharmonic anchor frequencies
+    uint16_t     freqCount;
+    uint16_t     resonators;  // clamped to kCymbalMaxResonators
+    float minHz, maxHz, jitterSemis;
+    float lowAttackSec, decaySec, highAttackSec, highDecaySec;
+    float thwackSec, stickLevel, noiseLevel, resonatorLevel, shimmerLevel;
+    float directNoiseLevel, phaseModDepth;
+};
+
+struct CymbalVoice {
+    bool     active       = false;
+    uint32_t rng          = 1u;
+    uint32_t sampleIndex  = 0u;
+    uint32_t endSample    = 0u;
+    float    velocity     = 0.0f;
+    float    directNoiseLevel = 0.0f;
+
+    // Per-note constants (folded once in cymbal_note_on so process() is
+    // branch-light and free of libm in steady state).
+    float velocityGain  = 0.0f;   // output level (harder = louder)
+    float resonatorNorm = 0.0f;   // resonatorLevel / sqrt(count)
+    float noiseGain     = 0.0f;
+    float whiteBlend    = 0.0f;   // velocity-dependent drive whiteness
+    float shimmerScale  = 0.0f;
+    float maxCutoff     = 0.0f;
+    float pmDepthBase   = 0.0f;
+    float pmRateBase    = 0.0f;
+    float thwackGain    = 0.0f;
+    uint32_t thwackSamples = 0u;
+    float thwackTauInv  = 0.0f;
+
+    // Geometric (one-pole) envelope recursions: value = (1-atk)*dec.
+    float lowAtk = 0.0f, lowAtkMul = 0.0f, lowDec = 0.0f, lowDecMul = 0.0f;
+    float hiAtk  = 0.0f, hiAtkMul  = 0.0f, hiDec  = 0.0f, hiDecMul  = 0.0f;
+    float strikeAtk = 0.0f, strikeAtkMul = 0.0f, strikeDec = 0.0f, strikeDecMul = 0.0f;
+
+    // Resonator bank in structure-of-arrays layout (NEON-friendly, count padded
+    // to a multiple of 4 with silent lanes).
+    uint16_t resCount = 0u;
+    float resB0[kCymbalMaxResonators]   = {};
+    float resA1[kCymbalMaxResonators]   = {};
+    float resA2[kCymbalMaxResonators]   = {};
+    float resY1[kCymbalMaxResonators]   = {};
+    float resY2[kCymbalMaxResonators]   = {};
+    float resGain[kCymbalMaxResonators] = {};
+
+    float lpState = 0.0f, hpLowState = 0.0f, dcState = 0.0f;
+    float pinkState[7] = {};
+    float pmPhase[3]   = {};
+};
+
+// --- cymbal helpers (all noteOn-time except where marked per-sample) ---------
+static inline float cym_frand(uint32_t& s) {
+    s = s * 1664525u + 1013904223u;
+    return ((s >> 8) * (1.0f / 16777216.0f));
+}
+
+// Per-sample geometric-envelope multiplier for time constant tauSec.  Exact
+// expf: the argument is ~-1e-4..-1e-2 where float_math.h's fast* variants are
+// catastrophically wrong for the resulting T60 (see CLAUDE.md gotchas).
+static inline float cym_env_mul(float tauSec, float sr) {
+    if (tauSec < 0.00002f) return 0.0f;
+    return expf(-1.0f / (tauSec * sr));
+}
+
+// One strike.  ringDecayScale shortens/lengthens the whole ring (e.g. open-hat
+// vs crash); phaseModAmount is the 0..1 nonlinear-shimmer amount.
+static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
+                                  float velocity, float ringDecayScale,
+                                  float phaseModAmount, uint32_t seed) {
+    const float sr = k_dsp_sample_rate;
+    c.velocity = fmaxf(0.01f, fminf(1.0f, velocity));
+    c.rng = seed ? seed : 0x12345678u;
+    c.sampleIndex = 0u;
+    c.active = true;
+    c.lpState = c.hpLowState = c.dcState = 0.0f;
+    for (int i = 0; i < 7; ++i) c.pinkState[i] = 0.0f;
+    c.directNoiseLevel = cfg.directNoiseLevel;
+
+    c.velocityGain = 0.25f + 0.75f * c.velocity * sqrtf(c.velocity);
+
+    // Driver envelope time constants (constant for the note).
+    const float decay     = cfg.decaySec     * ringDecayScale * (0.45f + 0.70f * c.velocity);
+    const float highDecay = cfg.highDecaySec * ringDecayScale * (0.5f  + 0.70f * c.velocity);
+    c.lowAtk = c.lowDec = c.hiAtk = c.hiDec = 1.0f;
+    c.lowAtkMul = cym_env_mul(cfg.lowAttackSec, sr);
+    c.lowDecMul = cym_env_mul(decay, sr);
+    c.hiAtkMul  = cym_env_mul(cfg.highAttackSec, sr);
+    c.hiDecMul  = cym_env_mul(highDecay, sr);
+
+    const float strikeDecaySec = fmaxf(0.04f, cfg.highDecaySec * (0.5f + 1.1f * c.velocity));
+    c.strikeAtk = c.strikeDec = 1.0f;
+    c.strikeAtkMul = cym_env_mul(0.0008f, sr);
+    c.strikeDecMul = cym_env_mul(strikeDecaySec, sr);
+
+    c.noiseGain     = cfg.noiseLevel;
+    c.whiteBlend    = 0.08f + (0.45f - 0.08f) * (c.velocity * c.velocity);
+    c.shimmerScale  = cfg.shimmerLevel * c.velocity;
+    c.maxCutoff     = 6000.0f + 14000.0f * c.velocity;
+    c.pmDepthBase   = cfg.phaseModDepth * fmaxf(0.0f, fminf(1.0f, phaseModAmount));
+    c.pmRateBase    = 0.7f + 0.9f * c.velocity;
+    c.thwackGain    = cfg.stickLevel * c.velocity;
+    c.thwackSamples = (uint32_t)(cfg.thwackSec * sr);
+    c.thwackTauInv  = 1.0f / (cfg.thwackSec - 0.001f + 0.000001f);
+    c.endSample     = (uint32_t)(decay * sr * 8.0f) + (uint32_t)(0.05f * sr);
+
+    // Resonator bank.  Exact expf/cosf here (see gotchas): r ~0.9999.
+    uint16_t count = (cfg.resonators > (uint16_t)kCymbalMaxResonators)
+                        ? (uint16_t)kCymbalMaxResonators : cfg.resonators;
+    const float requestedRingDecay = (0.55f + 0.60f * c.velocity) * ringDecayScale;
+    const float ringDecay = fmaxf(0.08f, requestedRingDecay);
+    const float r = expf(k_dsp_log_0001 / (ringDecay * sr));  // k_dsp_log_0001 = -6.9077...
+    const float b0 = sqrtf(1.0f - r * r);
+    const float r2 = -(r * r);
+    for (uint16_t i = 0u; i < count; ++i) {
+        const float anchor = cfg.freqHz[i % cfg.freqCount];
+        const float detune = (cym_frand(c.rng) * 2.0f - 1.0f) * cfg.jitterSemis;
+        const float octave = (float)(i / cfg.freqCount);
+        float f = anchor * exp2f(detune * (1.0f / 12.0f)) * exp2f(octave * 0.17f);
+        f = fmaxf(cfg.minHz, fminf(cfg.maxHz, f));
+        const float w = 6.28318530717958647692f * f * k_dsp_inv_sample_rate;
+        c.resB0[i]   = b0;
+        c.resA1[i]   = 2.0f * r * cosf(w);
+        c.resA2[i]   = r2;
+        c.resY1[i]   = 0.0f;
+        c.resY2[i]   = 0.0f;
+        c.resGain[i] = 0.85f + 0.30f * cym_frand(c.rng);
+    }
+    c.resonatorNorm = cfg.resonatorLevel / sqrtf((float)count);
+    const uint16_t padded = (uint16_t)((count + 3u) & ~3u);
+    for (uint16_t i = count; i < padded && i < (uint16_t)kCymbalMaxResonators; ++i) {
+        c.resB0[i] = c.resA1[i] = c.resA2[i] = c.resY1[i] = c.resY2[i] = c.resGain[i] = 0.0f;
+    }
+    c.resCount = padded;
+
+    for (int i = 0; i < 3; ++i) c.pmPhase[i] = cym_frand(c.rng);
+}
+
+static inline float cym_pink(CymbalVoice& c, float w) {
+    c.pinkState[0] = 0.99886f * c.pinkState[0] + w * 0.0555179f;
+    c.pinkState[1] = 0.99332f * c.pinkState[1] + w * 0.0750759f;
+    c.pinkState[2] = 0.96900f * c.pinkState[2] + w * 0.1538520f;
+    c.pinkState[3] = 0.86650f * c.pinkState[3] + w * 0.3104856f;
+    c.pinkState[4] = 0.55000f * c.pinkState[4] + w * 0.5329522f;
+    c.pinkState[5] = -0.7616f * c.pinkState[5] - w * 0.0168980f;
+    const float p = c.pinkState[0] + c.pinkState[1] + c.pinkState[2] +
+                    c.pinkState[3] + c.pinkState[4] + c.pinkState[5] +
+                    c.pinkState[6] + w * 0.5362f;
+    c.pinkState[6] = w * 0.115926f;
+    return p * 0.11f;
+}
+
+static inline float cym_one_pole_low(float x, float cutoff, float& s) {
+    cutoff = fmaxf(10.0f, fminf(k_dsp_sample_rate * 0.45f, cutoff));
+    // fastexpf ok: argument always negative (where fastpow2f is accurate) and
+    // the coefficient only nudges an already envelope-swept cutoff.
+    const float a = 1.0f - fastexpf(-6.28318530717958647692f * cutoff * k_dsp_inv_sample_rate);
+    s += a * (x - s);
+    return s;
+}
+
+// Per-sample.  Zero libm calls: fastsinf for the PM LFOs, fastexpf for the
+// swept one-pole coefficient and the short stick burst.
+static inline float cymbal_process(CymbalVoice& c) {
+    if (!c.active) return 0.0f;
+
+    c.lowAtk *= c.lowAtkMul;  c.lowDec *= c.lowDecMul;
+    c.hiAtk  *= c.hiAtkMul;   c.hiDec  *= c.hiDecMul;
+    c.strikeAtk *= c.strikeAtkMul; c.strikeDec *= c.strikeDecMul;
+    const float lowEnv    = (1.0f - c.lowAtk) * c.lowDec;
+    const float highEnv   = (1.0f - c.hiAtk)  * c.hiDec;
+    const float shimmerEnv = highEnv * c.shimmerScale;
+    const float strikeEnv = c.velocity * (1.0f - c.strikeAtk) * c.strikeDec;
+
+    const float lowCutoff  = 10.0f + c.maxCutoff * lowEnv;
+    const float highCutoff = 10001.0f - 10000.0f * highEnv;
+
+    const float wn = cym_frand(c.rng) * 2.0f - 1.0f;
+    const float noise = cym_pink(c, wn) * (1.0f - c.whiteBlend) + wn * c.whiteBlend;
+    const float loDriver = cym_one_pole_low(noise * c.noiseGain, lowCutoff, c.lpState) * lowEnv;
+    const float lpHi = cym_one_pole_low(noise * c.noiseGain, highCutoff, c.hpLowState);
+    const float hiDriver = (noise * c.noiseGain - lpHi) * (0.18f * shimmerEnv);
+
+    float thwack = 0.0f;
+    if (c.sampleIndex < c.thwackSamples) {
+        const float t = c.sampleIndex * k_dsp_inv_sample_rate;
+        const float env = (t < 0.001f) ? (t * 1000.0f)
+                                       : fastexpf(-(t - 0.001f) * c.thwackTauInv);
+        thwack = env * c.thwackGain;
+    }
+
+    float pm = 0.0f;
+    const float rateScale = c.pmRateBase * (1.0f + 0.6f * strikeEnv) * k_dsp_inv_sample_rate;
+    const float rates[3] = { 37.0f, 71.0f, 113.0f };
+    for (int i = 0; i < 3; ++i) {
+        c.pmPhase[i] += rates[i] * rateScale;
+        if (c.pmPhase[i] >= 1.0f) c.pmPhase[i] -= 1.0f;
+        const float ph = (c.pmPhase[i] > 0.5f) ? (c.pmPhase[i] - 1.0f) : c.pmPhase[i];
+        pm += fastsinf(6.28318530717958647692f * ph);
+    }
+
+    const float pmDepth = c.pmDepthBase * strikeEnv;
+    const float pmGain  = 1.0f + pmDepth * pm * 0.22f;
+    const float pmExciter = pmDepth * 0.035f * pm;
+    const float drive = (loDriver + hiDriver + thwack + pmExciter) * pmGain;
+
+    float res = 0.0f;
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+    {
+        const float32x4_t vdrive = vdupq_n_f32(drive);
+        float32x4_t vsum = vdupq_n_f32(0.0f);
+        for (uint16_t i = 0u; i < c.resCount; i += 4u) {
+            const float32x4_t y1 = vld1q_f32(c.resY1 + i);
+            float32x4_t y = vmulq_f32(vld1q_f32(c.resB0 + i), vdrive);
+            y = vmlaq_f32(y, vld1q_f32(c.resA1 + i), y1);
+            y = vmlaq_f32(y, vld1q_f32(c.resA2 + i), vld1q_f32(c.resY2 + i));
+            vst1q_f32(c.resY2 + i, y1);
+            vst1q_f32(c.resY1 + i, y);
+            vsum = vmlaq_f32(vsum, y, vld1q_f32(c.resGain + i));
+        }
+        float32x2_t vs = vadd_f32(vget_low_f32(vsum), vget_high_f32(vsum));
+        vs = vpadd_f32(vs, vs);
+        res = vget_lane_f32(vs, 0);
+    }
+#else
+    for (uint16_t i = 0u; i < c.resCount; ++i) {
+        const float y = c.resB0[i] * drive + c.resA1[i] * c.resY1[i] + c.resA2[i] * c.resY2[i];
+        c.resY2[i] = c.resY1[i];
+        c.resY1[i] = y;
+        res += y * c.resGain[i];
+    }
+#endif
+    res *= c.resonatorNorm;
+
+    float out = res + loDriver * c.directNoiseLevel + thwack * 0.07f;
+    c.dcState += 0.001f * (out - c.dcState);
+    out = (out - c.dcState) * 0.9f;
+    out *= c.velocityGain;
+
+    if (++c.sampleIndex > c.endSample) c.active = false;
+    return fmaxf(-1.0f, fminf(1.0f, out));
+}
+
 /**
  * The Master Voice Structure.
  * Holds the Exciter and two parallel Resonators (A and B).
@@ -146,6 +411,7 @@ struct VoiceState {
     ExciterState   exciter;
     WaveguideState resA;
     WaveguideState resB;
+    CymbalVoice    cymbal;   // ENGINE_CYMBAL state (dense resonator cymbal)
 
     // Coupling and Tone memory
     float resA_out_prev      = 0.0f;
@@ -460,6 +726,7 @@ struct VoiceState {
         resB.z2 = 0.0f;
         resA.diffuser_g = 0.45f;    // actually never updated
         resB.diffuser_g = 0.45f;
+        cymbal.active = false;
     }
 
     // Stage-2 pilot extensions (CPU-light):

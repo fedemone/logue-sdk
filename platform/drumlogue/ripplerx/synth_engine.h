@@ -169,6 +169,7 @@ public:
         ENGINE_PLATE,     // Dense inharmonic plate modes (cymbal, gong, hi-hat...)
         ENGINE_NOISE,     // Noise burst only (clap, shaker)
         ENGINE_REMOVED,   // Silent placeholder (flute, clarinet removed)
+        ENGINE_CYMBAL,    // Dense resonator cymbal (ex-cymbal_synthesis port)
     };
 
 enum ModelParamIndex : uint8_t {
@@ -237,6 +238,22 @@ struct ModalPresetConfig {
 // per-unit .text segment size check (~30 KB limit).  Plain 'static' puts them in
 // .data, which is checked separately and has a much larger budget.
 ModalPresetConfig kDefaultModalPresetConfig{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f};
+
+// ENGINE_CYMBAL inharmonic anchor tables (ported from cymbal_synthesis).
+// Non-static members (no 'static'/'const'/'constexpr') so their initial values
+// live in .data, not .rodata — same rule as the modal tables above.
+float m_cym_crash_hz[16] = {
+    343.f, 421.f, 512.f, 731.f, 973.f, 1289.f, 1627.f, 2143.f,
+    2879.f, 3659.f, 4721.f, 6121.f, 7841.f, 10061.f, 13109.f, 16987.f };
+float m_cym_ride_hz[16] = {
+    481.f, 603.f, 759.f, 1013.f, 1349.f, 1811.f, 2399.f, 3191.f,
+    4211.f, 5603.f, 7421.f, 9829.f, 12113.f, 14591.f, 16879.f, 18193.f };
+float m_cym_splash_hz[14] = {
+    1123.f, 1409.f, 1801.f, 2251.f, 2749.f, 3407.f, 4211.f, 5233.f,
+    6473.f, 7963.f, 9787.f, 12043.f, 14813.f, 17041.f };
+float m_cym_gong_hz[16] = {
+    162.f, 219.f, 287.f, 361.f, 452.f, 579.f, 733.f, 911.f,
+    1139.f, 1451.f, 1847.f, 2381.f, 3097.f, 4181.f, 5741.f, 7919.f };
 ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Kick2: the pre-redesign Timpani body — fundamental-dominant kettledrum thump */ {1.340f, 1.664f, 1.980f, 1100.0f, 400.0f, 200.0f, 100.0f, 0.38f, 0.95f, 0.20f, 0.12f, 0.08f, 4, 0, 0.0f},
     /* k_Marimba: tuned-bar ratios 1:4:10; T60 calibrated to marimba-hit-c4 */ {4.00f, 10.0f, 0.0f, 1200.0f, 350.0f, 100.0f, 0.0f, 0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
@@ -386,8 +403,8 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_Vibraphone(10)   */ ENGINE_BAR,
     /* k_Woodblock(11)    */ ENGINE_BAR,
     /* k_AcousticTom(12)  */ ENGINE_MEMBRANE,
-    /* k_Cymbal(13)       */ ENGINE_PLATE,
-    /* k_Gong(14)         */ ENGINE_PLATE,
+    /* k_Cymbal(13)       */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
+    /* k_Gong(14)         */ ENGINE_CYMBAL,
     /* k_Kalimba(15)      */ ENGINE_BAR,
     /* k_SteelPan(16)     */ ENGINE_BAR,
     /* k_Claves(17)       */ ENGINE_BAR,
@@ -400,13 +417,13 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_GlassBowl(24)    */ ENGINE_BAR,
     /* k_GuitarStr(25)    */ ENGINE_KS,
     /* k_HiHatClosed(26)  */ ENGINE_NOISE,  // ex-Shaker noise voice
-    /* k_HiHatOpen(27)    */ ENGINE_PLATE,
+    /* k_HiHatOpen(27)    */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
     /* k_Conga(28)        */ ENGINE_MEMBRANE,
     /* k_Handpan(29)      */ ENGINE_MEMBRANE,
     /* k_BellTree(30)     */ ENGINE_PLATE,
     /* k_SlitDrum(31)     */ ENGINE_BAR,
-    /* k_Ride(32)         */ ENGINE_PLATE,
-    /* k_RideBell(33)     */ ENGINE_PLATE,
+    /* k_Ride(32)         */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
+    /* k_RideBell(33)     */ ENGINE_CYMBAL,
     /* k_Bongo(34)        */ ENGINE_MEMBRANE,
     /* k_GlassBottle(35)  */ ENGINE_BAR,
     /* k_Tick(36)         */ ENGINE_PLATE,  // ex-HHat-C chick + clack
@@ -1777,6 +1794,46 @@ SynthState state;
                 }
             }
         }
+        // ── ENGINE_CYMBAL strike (ported dense-resonator cymbal) ───────────────
+        // Replaces the old plate crash-bank + FDN for the metallic cymbal family.
+        // Per-preset config is explicit so each preset tunes independently.
+        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+            CymbalConfig cc{};
+            float ring_scale = 1.0f, pm_amt = 1.0f;
+            switch (m_preset_idx) {
+                case k_Cymbal:
+                    cc = { m_cym_crash_hz, 16, 112, 300.f, 20000.f, 1.8f,
+                           0.018f, 0.44f, 0.040f, 0.30f, 0.002f, 0.50f, 0.045f,
+                           0.154f, 0.30f, 0.020f, 0.10f };
+                    break;
+                case k_Ride:
+                    cc = { m_cym_ride_hz, 16, 104, 450.f, 18000.f, 1.2f,
+                           0.015f, 0.55f, 0.035f, 0.34f, 0.0015f, 0.40f, 0.040f,
+                           0.52f, 0.34f, 0.016f, 0.08f };
+                    break;
+                case k_RideBell:
+                    cc = { m_cym_ride_hz, 16, 104, 450.f, 18000.f, 1.2f,
+                           0.015f, 0.55f, 0.035f, 0.34f, 0.0015f, 0.40f, 0.040f,
+                           0.52f, 0.34f, 0.016f, 0.08f };
+                    break;
+                case k_Gong:
+                    cc = { m_cym_gong_hz, 16, 96, 150.f, 14000.f, 2.4f,
+                           0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.22f, 0.035f,
+                           0.126f, 0.22f, 0.010f, 0.15f };
+                    break;
+                case k_HiHatOpen:
+                    // Open hat = short bright crash.
+                    cc = { m_cym_crash_hz, 16, 112, 300.f, 20000.f, 1.8f,
+                           0.018f, 0.44f, 0.040f, 0.30f, 0.002f, 0.50f, 0.045f,
+                           0.170f, 0.30f, 0.020f, 0.10f };
+                    ring_scale = 0.35f;
+                    break;
+                default: break;
+            }
+            if (cc.freqHz) {
+                cymbal_note_on(v.cymbal, cc, v.current_velocity, ring_scale, pm_amt, seed);
+            }
+        }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
         // with a 3-8 ms T60 — the sustained sizzle a ride/crash needs was dead
         // before the hf/ring paths could use it.  Give both long shimmer beds.
@@ -2443,6 +2500,30 @@ SynthState state;
                     v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
                     v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
                 }
+            }
+
+            // ── ENGINE_CYMBAL: self-contained dense-resonator cymbal ───────
+            // Bypasses the entire exciter/KS/modal/plate machinery; it owns its
+            // own excitation, decay and lifetime.  Output goes through the same
+            // tilt EQ + master gain as every other engine.
+            if (voice_engine == ENGINE_CYMBAL) {
+                for (size_t i = 0; i < frames; ++i) {
+                    float cy = cymbal_process(voice.cymbal);
+                    voice.tone_lp = (cy * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
+                    if (tone_val < zeroThreshold) {
+                        cy = cy + (voice.tone_lp - cy) * (-tone_val * kInvToneCutDivisor);
+                    } else if (tone_val > zeroThreshold) {
+                        const float hp = cy - voice.tone_lp;
+                        cy += hp * (tone_val * kInvToneBoostDivisor);
+                    }
+                    main_out[i * 2]     += cy * state.master_gain;
+                    main_out[i * 2 + 1] += cy * state.master_gain;
+#ifdef UNIT_TEST_DEBUG
+                    if (voice_idx == state.next_voice_idx) ut_voice_out = cy;
+#endif
+                    if (!voice.cymbal.active) { voice.is_active = false; break; }
+                }
+                continue;  // next voice
             }
 
             for (size_t i = 0; i < frames; ++i) {
