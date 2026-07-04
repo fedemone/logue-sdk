@@ -977,9 +977,9 @@ struct ModalDrumRecipe {
     float noise_coef_lo;   // wedge end cutoff (dark)
     float noise_sweep_hz;  // cutoff sweep-down rate
     float out_gain;        // absolute output level (raw vel=1.0 peak -> 0.95)
-    float root_note;       // MIDI note the mode table is pitched at (shipped preset Note)
+    float root_note;       // MIDI note of the drum's dominant sustained partial (= shipped preset Note; Timpani 165.5 Hz -> E3/52)
 };
 
-static const ModalDrumRecipe kTimpaniRecipe = { kTimpaniModes, 280, kTimpaniTransient48, 3360, 0.14f, 0.45f, 1.0f, 4.0f, 0.00f, 0.00f, 3.0f, 0.471033f, 0.007352f, 6.0f, 0.961f, 40.0f };
+static const ModalDrumRecipe kTimpaniRecipe = { kTimpaniModes, 280, kTimpaniTransient48, 3360, 0.14f, 0.45f, 1.0f, 4.0f, 0.00f, 0.00f, 3.0f, 0.471033f, 0.007352f, 6.0f, 0.961f, 52.0f };
 
 static const ModalDrumRecipe kTaikoRecipe   = { kTaikoModes, 71, kTaikoTransient48, 3360, 0.11f, 0.30f, 10.0f, 16.0f, 0.12f, 0.18f, 2.8f, 0.471033f, 0.007352f, 2.0f, 0.952f, 41.0f };

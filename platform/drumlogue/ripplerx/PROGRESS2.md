@@ -569,3 +569,34 @@ are inert on these two presets (documented trade-off).
 replaces.)  All 37 presets: the other **35 render bit-identical** to HEAD; full
 `test_dsp` suite passes (0 failures); `unit.cc` cross-compiles clean for
 Cortex-A7/NEON (only pre-existing warnings elsewhere).
+
+### HW round 3: hit knob, honest note display, two kettles
+
+Three HW defects against the "nearly perfect" kernel port, each with a distinct root:
+
+1. **"More hit — at high `VlMllRes` the hit should be prominent."**  The first
+   mapping only *steepened the knock's velocity exponent* — which does nothing at
+   full velocity (1^x = 1) and made *soft* hits quieter: inverted.  `VlMllRes` is
+   now the **hit-prominence knob**: it multiplies the knock **gain**
+   (`exp2f(2.2·Δ)`, up to ≈4.6×, the transparent limiter keeps it clean) *and*
+   flattens the velocity exponent (1.5−Δ) so the hit stays tall on soft strikes.
+   Measured: attack RMS ×1.64 @vel 100, ×1.92 @vel 50, body bit-identical.
+2. **"Note reported is not correct."**  The kettle's dominant sustained partial
+   measures **165.5 Hz ≈ E3 (MIDI 52, −5 cents)** — the A2 110 Hz principal sits a
+   fifth below and decays into it — while the row shipped `Note 40` (E2): the
+   screen lied by an octave.  Row + recipe root are now both 52, so the display
+   names the pitch you hear and the shipped row still plays at ratio 1 (renders
+   bit-identical).  Taiko measured 86.7 Hz ≈ F2 → its shipped 41 was already right.
+3. **"Note change distorts the main sound" / "check stacked hits."**  One shared
+   bank meant a new note *retuned the ringing tail* (heard as bending/distortion),
+   and cross-note stacking was impossible.  The kernel now holds **two kettles**:
+   same-note hits retrigger the same drum in place (roll accumulation preserved),
+   a new note takes the free/oldest kettle and retunes it **synchronously** —
+   possible because the decay poles are pitch-invariant, so the note path needs
+   only a sin/cos pass (~280 modes ≈ 30 µs on the A7; the `expf` work for
+   Dkay/Mterl/Inharm/Partls stays amortized in Process()).  Verified: note 52 then
+   45 → both partial sets ring independently (165.5 Hz tail survives the second
+   hit), peaks stable ±7 st (0.928/0.933/0.940 — no limiter squash), 12-hit rolls
+   clean, and the **default single-hit renders are bit-identical** to the approved
+   wedge-matched v1 renders (per-kettle RNG reseeds keep even the taiko noise
+   sequence).  Cost: second kettle ≈ +2 % host scalar (silence-gated), +6.8 KB bss.
