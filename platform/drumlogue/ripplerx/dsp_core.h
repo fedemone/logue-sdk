@@ -204,6 +204,12 @@ struct CymbalVoice {
     float lpState = 0.0f, hpLowState = 0.0f, dcState = 0.0f;
     float pinkState[7] = {};
     float pmPhase[3]   = {};
+
+    // Panic fade (AllNoteOff): the cymbal has no release envelope by design
+    // (gate_off must not choke the tail on the Drumlogue), so the only way to
+    // stop it early is a click-free output ramp.  fadeMul stays 1.0 in normal
+    // play; AllNoteOff sets it < 1 for a ~15 ms fade-out.
+    float fade = 1.0f, fadeMul = 1.0f;
 };
 
 // --- cymbal helpers (all noteOn-time except where marked per-sample) ---------
@@ -221,15 +227,20 @@ static inline float cym_env_mul(float tauSec, float sr) {
 }
 
 // One strike.  ringDecayScale shortens/lengthens the whole ring (e.g. open-hat
-// vs crash); phaseModAmount is the 0..1 nonlinear-shimmer amount.
+// vs crash); phaseModAmount is the 0..1 nonlinear-shimmer amount; pitchRatio
+// transposes the whole anchor spectrum (2^(semitones/12) relative to the
+// preset's shipped default note — a smaller/larger cymbal, not a filter).
 static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
                                   float velocity, float ringDecayScale,
-                                  float phaseModAmount, uint32_t seed) {
+                                  float phaseModAmount, float pitchRatio,
+                                  uint32_t seed) {
     const float sr = k_dsp_sample_rate;
     c.velocity = fmaxf(0.01f, fminf(1.0f, velocity));
     c.rng = seed ? seed : 0x12345678u;
     c.sampleIndex = 0u;
     c.active = true;
+    c.fade = 1.0f;
+    c.fadeMul = 1.0f;
     c.lpState = c.hpLowState = c.dcState = 0.0f;
     for (int i = 0; i < 7; ++i) c.pinkState[i] = 0.0f;
     c.directNoiseLevel = cfg.directNoiseLevel;
@@ -269,12 +280,19 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     const float r = expf(k_dsp_log_0001 / (ringDecay * sr));  // k_dsp_log_0001 = -6.9077...
     const float b0 = sqrtf(1.0f - r * r);
     const float r2 = -(r * r);
+    const float pr = fmaxf(0.25f, fminf(4.0f, pitchRatio));
+    // Scale only the LOW clamp with downward transposes; the high clamp is an
+    // absolute Nyquist guard.  Scaling the top clamp down piles every high
+    // mode onto one frequency and kills the transpose (measured: -12 semis
+    // moved the centroid by only x0.87 instead of x0.5).
+    const float fLo = cfg.minHz * fminf(pr, 1.0f);
+    const float fHi = 20000.0f;
     for (uint16_t i = 0u; i < count; ++i) {
         const float anchor = cfg.freqHz[i % cfg.freqCount];
         const float detune = (cym_frand(c.rng) * 2.0f - 1.0f) * cfg.jitterSemis;
         const float octave = (float)(i / cfg.freqCount);
-        float f = anchor * exp2f(detune * (1.0f / 12.0f)) * exp2f(octave * 0.17f);
-        f = fmaxf(cfg.minHz, fminf(cfg.maxHz, f));
+        float f = anchor * pr * exp2f(detune * (1.0f / 12.0f)) * exp2f(octave * 0.17f);
+        f = fmaxf(fLo, fminf(fHi, f));
         const float w = 6.28318530717958647692f * f * k_dsp_inv_sample_rate;
         c.resB0[i]   = b0;
         c.resA1[i]   = 2.0f * r * cosf(w);
@@ -389,10 +407,17 @@ static inline float cymbal_process(CymbalVoice& c) {
 #endif
     res *= c.resonatorNorm;
 
-    float out = res + loDriver * c.directNoiseLevel + thwack * 0.07f;
+    // Direct stick tap raised 0.07 -> 0.12: the "tang" contact click on top of
+    // the mode excitation the burst already provides through the bank.
+    float out = res + loDriver * c.directNoiseLevel + thwack * 0.12f;
     c.dcState += 0.001f * (out - c.dcState);
     out = (out - c.dcState) * 0.9f;
     out *= c.velocityGain;
+
+    // Panic fade (fadeMul < 1 only after AllNoteOff).
+    out *= c.fade;
+    c.fade *= c.fadeMul;
+    if (c.fade < 0.001f) c.active = false;
 
     if (++c.sampleIndex > c.endSample) c.active = false;
     return fmaxf(-1.0f, fminf(1.0f, out));

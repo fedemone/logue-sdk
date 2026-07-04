@@ -1696,38 +1696,63 @@ SynthState state;
         if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
             CymbalConfig cc{};
             float ring_scale = 1.0f, pm_amt = 1.0f;
+            int ref_note = 60;  // preset's shipped default Note (REFERENCE-ANCHOR)
             switch (m_preset_idx) {
                 case k_Cymbal:
                     cc = { m_cym_crash_hz, 16, 112, 300.f, 20000.f, 1.8f,
-                           0.018f, 0.44f, 0.040f, 0.30f, 0.002f, 0.50f, 0.045f,
+                           0.018f, 0.44f, 0.040f, 0.30f, 0.0035f, 0.85f, 0.045f,
                            0.154f, 0.30f, 0.020f, 0.10f };
+                    ref_note = 65;
                     break;
                 case k_Ride:
                     cc = { m_cym_ride_hz, 16, 104, 450.f, 18000.f, 1.2f,
-                           0.015f, 0.55f, 0.035f, 0.34f, 0.0015f, 0.40f, 0.040f,
+                           0.015f, 0.55f, 0.035f, 0.34f, 0.0030f, 0.75f, 0.040f,
                            0.52f, 0.34f, 0.016f, 0.08f };
+                    ref_note = 69;
                     break;
                 case k_RideBell:
+                    // Stronger, longer stick ping than Ride = the bell "tang".
                     cc = { m_cym_ride_hz, 16, 104, 450.f, 18000.f, 1.2f,
-                           0.015f, 0.55f, 0.035f, 0.34f, 0.0015f, 0.40f, 0.040f,
+                           0.015f, 0.55f, 0.035f, 0.34f, 0.0045f, 0.95f, 0.040f,
                            0.52f, 0.34f, 0.016f, 0.08f };
+                    ref_note = 60;
                     break;
                 case k_Gong:
                     cc = { m_cym_gong_hz, 16, 96, 150.f, 14000.f, 2.4f,
-                           0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.22f, 0.035f,
+                           0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
                            0.126f, 0.22f, 0.010f, 0.15f };
+                    ref_note = 50;
                     break;
                 case k_HiHatOpen:
                     // Open hat = short bright crash.
                     cc = { m_cym_crash_hz, 16, 112, 300.f, 20000.f, 1.8f,
-                           0.018f, 0.44f, 0.040f, 0.30f, 0.002f, 0.50f, 0.045f,
+                           0.018f, 0.44f, 0.040f, 0.30f, 0.0035f, 0.85f, 0.045f,
                            0.170f, 0.30f, 0.020f, 0.10f };
                     ring_scale = 0.35f;
+                    ref_note = 79;
                     break;
                 default: break;
             }
             if (cc.freqHz) {
-                cymbal_note_on(v.cymbal, cc, v.current_velocity, ring_scale, pm_amt, seed);
+                // Note transposes the whole anchor spectrum like a smaller or
+                // larger cymbal (2^(Δsemitones/12), anchored at the shipped
+                // default note so the stock sound is unchanged) — previously
+                // the note only reseeded the jitter, which read as "distortion".
+                const float pitch_ratio = exp2f((float)((int)note - ref_note) * (1.0f / 12.0f));
+                // VlMllRes scales the stick hit ("tang"): shipped value is 0 for
+                // all cymbal presets (=> x1.0 — REFERENCE-ANCHORED); positive
+                // values boost the stick level AND sharpen the noise-driver
+                // attack (punch without running the boosted click into the
+                // output clamp); negative values soften toward a felt mallet.
+                // Velocity still scales the hit on top inside cymbal_note_on.
+                const float hit_mod = (float)m_params[k_paramVlMllRes] * 0.01f;
+                cc.stickLevel = fminf(2.0f, cc.stickLevel * exp2f(1.2f * hit_mod));
+                if (hit_mod > 0.0f) {
+                    cc.lowAttackSec *= exp2f(-1.0f * hit_mod);   // up to 2x snappier
+                    cc.thwackSec    *= 1.0f + 0.6f * hit_mod;    // longer ping = "tang"
+                }
+                cymbal_note_on(v.cymbal, cc, v.current_velocity, ring_scale, pm_amt,
+                               pitch_ratio, seed);
             }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
@@ -2072,7 +2097,7 @@ SynthState state;
         // voice cleanly (no low-end build-up; no same-pitch string beating — the
         // original reason this reset existed).
         const EngineType e = kPresetEngine[m_preset_idx];
-        const bool stack = (e == ENGINE_PLATE || e == ENGINE_BAR);
+        const bool stack = (e == ENGINE_PLATE || e == ENGINE_BAR || e == ENGINE_CYMBAL);
         if (!stack) state.next_voice_idx = NUM_VOICES - 1;
     }
 
@@ -2083,6 +2108,10 @@ SynthState state;
             state.voices[i].exciter.noise_env.release();
             state.voices[i].exciter.noise_env_hi.release();
             state.voices[i].exciter.master_env.release();
+            // Cymbal voices have no release env by design (gate_off must not
+            // choke the tail); panic uses the click-free output fade instead
+            // (tau 8 ms -> voice fully off ~55 ms after AllNoteOff).
+            state.voices[i].cymbal.fadeMul = cym_env_mul(0.008f, k_dsp_sample_rate);
         }
     }
 
