@@ -210,6 +210,12 @@ struct CymbalVoice {
     // stop it early is a click-free output ramp.  fadeMul stays 1.0 in normal
     // play; AllNoteOff sets it < 1 for a ~15 ms fade-out.
     float fade = 1.0f, fadeMul = 1.0f;
+
+    // Output magnitude envelope for the CPU squelch: a voice whose tail has
+    // dropped below audibility must release its resonator bank instead of
+    // grinding through it until endSample (4 voices x full banks over long
+    // gong-length tails overloaded the target: HW audio crash).
+    float magEnv = 0.0f;
 };
 
 // --- cymbal helpers (all noteOn-time except where marked per-sample) ---------
@@ -270,7 +276,13 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     c.thwackGain    = cfg.stickLevel * c.velocity;
     c.thwackSamples = (uint32_t)(cfg.thwackSec * sr);
     c.thwackTauInv  = 1.0f / (cfg.thwackSec - 0.001f + 0.000001f);
-    c.endSample     = (uint32_t)(decay * sr * 8.0f) + (uint32_t)(0.05f * sr);
+    // Hard lifetime bound (the -66 dB magnitude squelch below normally fires
+    // first).  Uncapped, a gong voice stayed active ~15 s: 4 stacked voices
+    // ground through full resonator banks long after audibility -> CPU crash.
+    uint32_t es = (uint32_t)(decay * sr * 8.0f) + (uint32_t)(0.05f * sr);
+    const uint32_t esMax = (uint32_t)(8.0f * sr);
+    c.endSample = (es > esMax) ? esMax : es;
+    c.magEnv = 0.0f;
 
     // Resonator bank.  Exact expf/cosf here (see gotchas): r ~0.9999.
     uint16_t count = (cfg.resonators > (uint16_t)kCymbalMaxResonators)
@@ -418,6 +430,14 @@ static inline float cymbal_process(CymbalVoice& c) {
     out *= c.fade;
     c.fade *= c.fadeMul;
     if (c.fade < 0.001f) c.active = false;
+
+    // CPU squelch: release the voice once the tail is inaudible (-66 dB for
+    // ~10 ms), instead of running the full bank until endSample.  The 0.5 s
+    // guard protects slow attacks (gong lowAttackSec = 0.25 s).
+    c.magEnv += 0.002f * (fabsf(out) - c.magEnv);
+    if (c.sampleIndex > (uint32_t)(0.5f * k_dsp_sample_rate) && c.magEnv < 0.0004f) {
+        c.active = false;
+    }
 
     if (++c.sampleIndex > c.endSample) c.active = false;
     return fmaxf(-1.0f, fminf(1.0f, out));

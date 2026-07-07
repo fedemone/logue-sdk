@@ -143,7 +143,8 @@ public:
         k_Bongo,            // 34  -sample: Bongo_Conga_Mute4.wav (430Hz +/- 100Hz)
         k_GlassBottle,      // 35  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
         k_Tick,             // 36  — the pre-redesign HHat-C metallic chick + added "clack" mode (HW request)
-        k_NumPrograms       // 37 — marker (count)
+        k_Splash,           // 37  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
+        k_NumPrograms       // 38 — marker (count)
     };
 
     enum ModelsIndex {
@@ -254,6 +255,12 @@ float m_cym_splash_hz[14] = {
 float m_cym_gong_hz[16] = {
     162.f, 219.f, 287.f, 361.f, 452.f, 579.f, 733.f, 911.f,
     1139.f, 1451.f, 1847.f, 2381.f, 3097.f, 4181.f, 5741.f, 7919.f };
+// Hi-hat: everything above ~3.2 kHz with heavy jitter reads as a bright
+// metallic noise continuum (the very property that was WRONG for the pitched
+// splash is exactly a closed-hat "tick" sizzle — no low pitched body).
+float m_cym_hihat_hz[16] = {
+    3271.f, 3907.f, 4523.f, 5219.f, 6007.f, 6907.f, 7949.f, 9133.f,
+    10501.f, 12073.f, 13879.f, 15959.f, 17041.f, 18353.f, 19141.f, 19709.f };
 ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Kick2: the pre-redesign Timpani body — fundamental-dominant kettledrum thump */ {1.340f, 1.664f, 1.980f, 1100.0f, 400.0f, 200.0f, 100.0f, 0.38f, 0.95f, 0.20f, 0.12f, 0.08f, 4, 0, 0.0f},
     /* k_Marimba: tuned-bar ratios 1:4:10; T60 calibrated to marimba-hit-c4 */ {4.00f, 10.0f, 0.0f, 1200.0f, 350.0f, 100.0f, 0.0f, 0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
@@ -342,7 +349,9 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_GlassBottle: Helmholtz cavity + neck modes 1:1.47:2.42 */ {1.47f, 2.42f, 0.0f, 500.0f, 320.0f, 190.0f, 0.0f, 0.20f, 0.85f, 0.60f, 0.30f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Tick: the pre-redesign HHat-C metallic chick + a low "clack" (mode 4 at
        ratio 1.40, 50ms, strong) per HW request ("HHat-C as Tick, adding some clack under") */
-    {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f}};
+    {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f},
+    /* k_Splash: ENGINE_CYMBAL — modal bank bypassed; plate ratios kept valid */
+    {2.92f, 6.37f, 11.75f, 300.0f, 200.0f, 120.0f, 80.0f, 0.20f, 0.80f, 0.50f, 0.30f, 0.20f, 4, 0.0f, 0.0f}};
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
@@ -385,7 +394,8 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_RideBell    */ {1200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.90000f,    0.00000f,    0.05000f, false,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
     /* k_Bongo       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.01047f,    1.00000f,    0.99952f, 0.18000f,    0.00000f,    0.00200f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    3.50000f},
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
-    /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f}};
+    /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f},
+    /* k_Splash      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f}};
 
 // Preset → engine routing table.
 // NOTE: Must be 'static' only (no const/constexpr) — same .rodata rule as above.
@@ -427,6 +437,7 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_Bongo(34)        */ ENGINE_MEMBRANE,
     /* k_GlassBottle(35)  */ ENGINE_BAR,
     /* k_Tick(36)         */ ENGINE_PLATE,  // ex-HHat-C chick + clack
+    /* k_Splash(37)       */ ENGINE_CYMBAL, // small pitched splash cymbal
 };
 
 // ModelsIndex → modal frequency-ratio template: modes 2..6 relative to the
@@ -716,7 +727,8 @@ SynthState state;
             {33, 60, 0, 1, 900, 491, 0, 0, 0, 4, 200, 16, 0, 0, 8, 11, 1999, 1, 0, 60, 950, 2, 1300, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
             {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 707},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
-            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707}         // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707}         // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
         };
 
         if (idx >= k_NumPrograms) return;
@@ -833,7 +845,8 @@ SynthState state;
             "HHat-C",  "HHat-O", "Conga",  "Handpn",
             "BelTre",  "SltDrm",
             "Ride",    "RidBel",
-            "Bongo",   "GlsBotl","Tick"
+            "Bongo",   "GlsBotl","Tick",
+            "Splash"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -1697,39 +1710,56 @@ SynthState state;
             CymbalConfig cc{};
             float ring_scale = 1.0f, pm_amt = 1.0f;
             int ref_note = 60;  // preset's shipped default Note (REFERENCE-ANCHOR)
+            // Resonator counts trimmed from the prototype's 112/104/96 for the
+            // target CPU budget (4 stacked voices overloaded the interface);
+            // level is count-independent via the 1/sqrt(N) normalisation.
             switch (m_preset_idx) {
                 case k_Cymbal:
-                    cc = { m_cym_crash_hz, 16, 112, 300.f, 20000.f, 1.8f,
+                    cc = { m_cym_crash_hz, 16, 96, 300.f, 20000.f, 1.8f,
                            0.018f, 0.44f, 0.040f, 0.30f, 0.0035f, 0.85f, 0.045f,
                            0.154f, 0.30f, 0.020f, 0.10f };
                     ref_note = 65;
                     break;
                 case k_Ride:
-                    cc = { m_cym_ride_hz, 16, 104, 450.f, 18000.f, 1.2f,
+                    cc = { m_cym_ride_hz, 16, 88, 450.f, 18000.f, 1.2f,
                            0.015f, 0.55f, 0.035f, 0.34f, 0.0030f, 0.75f, 0.040f,
                            0.52f, 0.34f, 0.016f, 0.08f };
                     ref_note = 69;
                     break;
                 case k_RideBell:
                     // Stronger, longer stick ping than Ride = the bell "tang".
-                    cc = { m_cym_ride_hz, 16, 104, 450.f, 18000.f, 1.2f,
+                    cc = { m_cym_ride_hz, 16, 88, 450.f, 18000.f, 1.2f,
                            0.015f, 0.55f, 0.035f, 0.34f, 0.0045f, 0.95f, 0.040f,
                            0.52f, 0.34f, 0.016f, 0.08f };
                     ref_note = 60;
                     break;
                 case k_Gong:
-                    cc = { m_cym_gong_hz, 16, 96, 150.f, 14000.f, 2.4f,
+                    cc = { m_cym_gong_hz, 16, 80, 150.f, 14000.f, 2.4f,
                            0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
                            0.126f, 0.22f, 0.010f, 0.15f };
                     ref_note = 50;
                     break;
                 case k_HiHatOpen:
-                    // Open hat = short bright crash.
-                    cc = { m_cym_crash_hz, 16, 112, 300.f, 20000.f, 1.8f,
-                           0.018f, 0.44f, 0.040f, 0.30f, 0.0035f, 0.85f, 0.045f,
-                           0.170f, 0.30f, 0.020f, 0.10f };
-                    ring_scale = 0.35f;
+                    // Long CLOSED-hat sizzle ("tick", not "tong"): all anchors
+                    // above 3.2 kHz with heavy jitter = bright metallic noise
+                    // continuum, no pitched low body; short stick tick; decay
+                    // longer than a closed chick but far shorter than a crash.
+                    // resonatorLevel 6.5: the 1/f pink drive has ~10 dB less
+                    // energy at these >3.2 kHz anchors, so the bank needs a
+                    // much hotter tap than the low-anchor presets.
+                    cc = { m_cym_hihat_hz, 16, 64, 2800.f, 20000.f, 1.5f,
+                           0.006f, 0.55f, 0.012f, 0.30f, 0.0015f, 0.60f, 0.045f,
+                           6.50f, 0.55f, 0.010f, 0.05f };
+                    ring_scale = 0.55f;
                     ref_note = 79;
+                    break;
+                case k_Splash:
+                    // Prototype splash: pitched modal body from ~1.1 kHz with
+                    // the sizzle above; fast decay ("pssh", not hiss).
+                    cc = { m_cym_splash_hz, 14, 64, 1000.f, 19000.f, 0.55f,
+                           0.006f, 0.70f, 0.018f, 0.25f, 0.0020f, 0.75f, 0.038f,
+                           1.23f, 0.16f, 0.0015f, 0.06f };
+                    ref_note = 76;
                     break;
                 default: break;
             }
@@ -2861,6 +2891,15 @@ SynthState state;
         float pre_clip_trim = 1.0f;
         if (m_preset_idx == k_Timpani)     pre_clip_trim = 0.50f;
         else if (m_preset_idx == k_Taiko)  pre_clip_trim = 0.25f;
+        // ENGINE_CYMBAL: stacked voices (rolls) can sum past the ±0.99
+        // brickwall below, which reads as harsh noise.  CymbalKit-style soft
+        // headroom first: a single voice passes ~unchanged, stacks are limited
+        // gently instead of hard-clipping.  Other presets are untouched.
+        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+            for (size_t i = 0; i < frames * 2; ++i) {
+                main_out[i] = main_out[i] / (1.0f + 0.35f * fabsf(main_out[i]));
+            }
+        }
         for (size_t i = 0; i < frames; ++i) {
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2] * pre_clip_trim));
             main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1] * pre_clip_trim));
