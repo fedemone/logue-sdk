@@ -2489,7 +2489,7 @@ SynthState state;
                         x *= drive_rel;                        // Gain around anchor
                         float a = fabsf(x);                    // transparent limiter
                         if (a > 0.85f) {
-                            a = 0.85f + 0.15f * tanhf((a - 0.85f) * 6.6666667f);
+                            a = 0.85f + 0.15f * fastertanhf((a - 0.85f) * 6.6666667f);
                             x = (x < 0.0f) ? -a : a;
                         }
                         x = fmaxf(-0.99f, fminf(0.99f, x));

@@ -310,7 +310,7 @@ public:
             float a = fabsf(x);
             if (a > kLimThr) {
                 float over = (a - kLimThr) * (1.0f / (1.0f - kLimThr));
-                a = kLimThr + (1.0f - kLimThr) * tanhf(over);
+                a = kLimThr + (1.0f - kLimThr) * fastertanhf(over);
                 x = (x < 0.0f) ? -a : a;
             }
             mono[s] = x * r.out_gain;
