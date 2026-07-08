@@ -477,7 +477,7 @@ void CymbalKit::noteOn(const RenderParams &params, uint32_t seed) {
     uint32_t oldest = voiceAge_[0];
     chosen = 0;
     for (int v = 1; v < kVoices; ++v) {
-      if (voiceAge_[v] < oldest) {
+      if ((int32_t)(voiceAge_[v] - oldest) < 0) {
         oldest = voiceAge_[v];
         chosen = v;
       }
