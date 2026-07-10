@@ -394,18 +394,40 @@ static inline float cymbal_process(CymbalVoice& c) {
     float res = 0.0f;
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
     {
+        // 2x-unrolled with two independent accumulators/MAC chains: the
+        // Cortex-A7's in-order NEON pipe stalls on back-to-back dependent
+        // vmlaq; interleaving the a/b chains hides that latency.
         const float32x4_t vdrive = vdupq_n_f32(drive);
-        float32x4_t vsum = vdupq_n_f32(0.0f);
-        for (uint16_t i = 0u; i < c.resCount; i += 4u) {
+        float32x4_t vsum0 = vdupq_n_f32(0.0f);
+        float32x4_t vsum1 = vdupq_n_f32(0.0f);
+        uint16_t i = 0u;
+        for (; i + 8u <= c.resCount; i += 8u) {
+            const float32x4_t y1a = vld1q_f32(c.resY1 + i);
+            const float32x4_t y1b = vld1q_f32(c.resY1 + i + 4);
+            float32x4_t ya = vmulq_f32(vld1q_f32(c.resB0 + i), vdrive);
+            float32x4_t yb = vmulq_f32(vld1q_f32(c.resB0 + i + 4), vdrive);
+            ya = vmlaq_f32(ya, vld1q_f32(c.resA1 + i), y1a);
+            yb = vmlaq_f32(yb, vld1q_f32(c.resA1 + i + 4), y1b);
+            ya = vmlaq_f32(ya, vld1q_f32(c.resA2 + i), vld1q_f32(c.resY2 + i));
+            yb = vmlaq_f32(yb, vld1q_f32(c.resA2 + i + 4), vld1q_f32(c.resY2 + i + 4));
+            vst1q_f32(c.resY2 + i, y1a);
+            vst1q_f32(c.resY2 + i + 4, y1b);
+            vst1q_f32(c.resY1 + i, ya);
+            vst1q_f32(c.resY1 + i + 4, yb);
+            vsum0 = vmlaq_f32(vsum0, ya, vld1q_f32(c.resGain + i));
+            vsum1 = vmlaq_f32(vsum1, yb, vld1q_f32(c.resGain + i + 4));
+        }
+        for (; i < c.resCount; i += 4u) {  // count is a multiple of 4, not 8
             const float32x4_t y1 = vld1q_f32(c.resY1 + i);
             float32x4_t y = vmulq_f32(vld1q_f32(c.resB0 + i), vdrive);
             y = vmlaq_f32(y, vld1q_f32(c.resA1 + i), y1);
             y = vmlaq_f32(y, vld1q_f32(c.resA2 + i), vld1q_f32(c.resY2 + i));
             vst1q_f32(c.resY2 + i, y1);
             vst1q_f32(c.resY1 + i, y);
-            vsum = vmlaq_f32(vsum, y, vld1q_f32(c.resGain + i));
+            vsum0 = vmlaq_f32(vsum0, y, vld1q_f32(c.resGain + i));
         }
-        float32x2_t vs = vadd_f32(vget_low_f32(vsum), vget_high_f32(vsum));
+        vsum0 = vaddq_f32(vsum0, vsum1);
+        float32x2_t vs = vadd_f32(vget_low_f32(vsum0), vget_high_f32(vsum0));
         vs = vpadd_f32(vs, vs);
         res = vget_lane_f32(vs, 0);
     }

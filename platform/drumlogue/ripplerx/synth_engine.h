@@ -81,8 +81,8 @@ public:
     enum ParamIndex {
         k_paramProgram = 0,
         k_paramNote,        // 1
-        k_paramBank,        // 2
-        k_paramSample,      // 3
+        k_paramCymPoly,     // 2 — ex-Bank: max simultaneous cymbal voices (1-4)
+        k_paramCymReso,     // 3 — ex-Sample: cymbal resonator-bank scale (25-100 %)
         k_paramMlltRes,     // 4
         k_paramMlltStif,    // 5
         k_paramVlMllRes,    // 6
@@ -742,13 +742,13 @@ SynthState state;
         m_is_resonator_b = false;
 
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
-        // Also skip Bank and Sample so the user's sample selection persists
-        // across preset changes (user reported: sample resets to bank 0, sample 1
-        // on every preset change).
+        // Also skip Poly and Rsntrs (ex-Bank/Sample): they are global
+        // performance/CPU settings, not per-preset sound design — the user's
+        // choice persists across preset changes.
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
-            if (param_id == k_paramBank)    continue;
-            if (param_id == k_paramSample)  continue;
+            if (param_id == k_paramCymPoly) continue;
+            if (param_id == k_paramCymReso) continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -869,12 +869,12 @@ SynthState state;
                 m_ui_note = (uint8_t)fmaxf(1.0f, fminf(126.0f, value));
                 break;
 
-            case k_paramBank:
-                m_sample_bank = value;
+            case k_paramCymPoly:
+                m_cym_poly = (uint8_t)((value < 1) ? 1 : ((value > NUM_VOICES) ? NUM_VOICES : value));
                 break;
 
-            case k_paramSample:
-                m_sample_number = value;
+            case k_paramCymReso:
+                m_cym_reso_scale = (uint8_t)((value < 25) ? 25 : ((value > 100) ? 100 : value));
                 break;
             case k_paramMlltStif: {
                 // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
@@ -1147,7 +1147,6 @@ SynthState state;
     // IMPORTANT: always index into arrays with the function's `value` argument —
     // never with stored state — so scrolling through values shows the correct label.
     inline const char * getParameterStrValue(uint8_t index, int32_t value) const {
-        static const char* const bank_names[] = { "CH", "OH", "RS", "CP", "MISC", "USER", "EXP" };
         static const char* const model_names_a[] = {
             "A:Strng", "A:Beam",  "A:Sqre", "A:Mbrn", "A:Plate",
             "A:Drmhd", "A:Mrmb",  "A:OpTb", "A:ClTb"
@@ -1170,8 +1169,6 @@ SynthState state;
         if (index == k_paramProgram) {
             // value IS the preset index being browsed — use it directly.
             return getPresetName((uint8_t)value);
-        } else if (index == k_paramBank) {
-            if (value >= 0 && value < 7) return bank_names[value];
         } else if (index == k_paramModel) {
             if (value >= 0 && value < 9)
                 return m_is_resonator_a && m_is_resonator_b ? model_names_ab[value] :
@@ -1230,6 +1227,26 @@ SynthState state;
     // ==============================================================================
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         state.next_voice_idx = (state.next_voice_idx + 1) % NUM_VOICES;
+        // ENGINE_CYMBAL voice policy: Poly caps the simultaneous cymbal
+        // voices for the CPU budget.  Below the cap a silent slot is used;
+        // at the cap the WEAKEST ringing voice (smallest output magnitude,
+        // i.e. the most faded tail) is stolen — the least audible casualty.
+        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+            const int cap = (int)m_cym_poly;
+            int active = 0, freeIdx = -1, weakest = -1;
+            float wmag = 1e9f;
+            for (int i = 0; i < NUM_VOICES; ++i) {
+                VoiceState& cv = state.voices[i];
+                if (cv.is_active && cv.cymbal.active) {
+                    ++active;
+                    if (cv.cymbal.magEnv < wmag) { wmag = cv.cymbal.magEnv; weakest = i; }
+                } else if (freeIdx < 0) {
+                    freeIdx = i;
+                }
+            }
+            if (active >= cap && weakest >= 0)  state.next_voice_idx = (uint8_t)weakest;
+            else if (freeIdx >= 0)              state.next_voice_idx = (uint8_t)freeIdx;
+        }
         VoiceState& v = state.voices[state.next_voice_idx];
 
         // Capture before is_active is overwritten: only a previously-active voice
@@ -1241,32 +1258,11 @@ SynthState state;
         v.is_active = true;
         v.is_releasing = false;
 
-        // --- Sample Loading ---
-        // First, clear any old sample data
+        // PCM sample layering removed: it was never part of the approved
+        // synthesized sounds, and dropping it freed the Bank/Sample GUI params
+        // for the cymbal Poly / Rsntrs performance controls.
         v.exciter.sample_ptr = nullptr;
         v.exciter.sample_frames = 0;
-
-        // Then, try to load the new one just-in-time.
-        // CRITICAL: m_sample_number == 0 means "no sample" (Smp=0 in the preset table).
-        // Without this guard, the ternary (m_sample_number > 0) ? ... : 0 falls through
-        // to actualIndex=0, which loads hardware bank 0 / sample 0 on EVERY preset —
-        // even those explicitly set to Smp=0 (e.g. GtrStr).  The unit tests hide this
-        // because mock_get_sample() always returns nullptr, masking the real hardware path.
-        if (m_sample_number > 0 &&
-            m_get_sample && m_get_num_sample_banks_ptr && m_get_num_samples_for_bank_ptr) {
-            if (m_sample_bank < m_get_num_sample_banks_ptr()) {
-                size_t actualIndex = (size_t)(m_sample_number - 1);  // 1-indexed: Smp=1→idx 0
-                if (actualIndex < m_get_num_samples_for_bank_ptr(m_sample_bank)) {
-                    const sample_wrapper_t* wrapper = m_get_sample(m_sample_bank, actualIndex);
-                    if (wrapper && wrapper->sample_ptr) {
-                        v.exciter.sample_ptr = wrapper->sample_ptr;
-                        v.exciter.sample_frames = wrapper->frames;
-                        v.exciter.channels = wrapper->channels;
-                    }
-                }
-            }
-        }
-        // --- End Sample Loading ---
 
         v.current_note = note;
         v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
@@ -1764,6 +1760,26 @@ SynthState state;
                 default: break;
             }
             if (cc.freqHz) {
+                // Bank size = preset base x Rsntrs param (user CPU/density
+                // trade-off) x voice-pressure degradation: the 3rd/4th
+                // simultaneous voice gets a smaller bank — in a dense stack
+                // the density loss is masked, and rolls can no longer
+                // overload the CPU.
+                int active_cym = 0;
+                for (int i = 0; i < NUM_VOICES; ++i) {
+                    if (i != (int)state.next_voice_idx &&
+                        state.voices[i].is_active && state.voices[i].cymbal.active) {
+                        ++active_cym;
+                    }
+                }
+                float rscale = (float)m_cym_reso_scale * 0.01f;
+                if (active_cym >= 3)      rscale *= 0.67f;
+                else if (active_cym == 2) rscale *= 0.80f;
+                int rcount = (int)((float)cc.resonators * rscale);
+                rcount = (rcount + 3) & ~3;
+                if (rcount < 32) rcount = 32;
+                if (rcount > (int)kCymbalMaxResonators) rcount = (int)kCymbalMaxResonators;
+                cc.resonators = (uint16_t)rcount;
                 // Note transposes the whole anchor spectrum like a smaller or
                 // larger cymbal (2^(Δsemitones/12), anchored at the shipped
                 // default note so the stock sound is unchanged) — previously
@@ -2263,14 +2279,10 @@ SynthState state;
         return new_val;
     }
 
-    // Processes the Exciter (Generates the initial "strike" or sample burst)
+    // Processes the Exciter (Generates the initial "strike" burst).
+    // PCM sample playback removed (see NoteOn) — pure synthesis only.
     inline float process_exciter(ExciterState& ex) {
         float out = 0.0f;
-
-        if (ex.sample_ptr && ex.current_frame < ex.sample_frames) {
-            size_t raw_idx = ex.current_frame * ex.channels;
-            out = ex.sample_ptr[raw_idx];
-        }
 
         // Noise: computed but NOT fed into the waveguide here.
         // Storing in noise_out_sample separates percussion broadband texture
@@ -2965,8 +2977,10 @@ private:
     unit_runtime_get_sample_ptr m_get_sample = nullptr;
 
     uint8_t m_ui_note = 60;
-    uint8_t m_sample_bank = 0;
-    uint8_t m_sample_number = 0;
+    // Ex-sample-selection params, repurposed (PCM layering removed): global
+    // cymbal performance/CPU controls.
+    uint8_t m_cym_poly = 3;        // max simultaneous cymbal voices (1-4)
+    uint8_t m_cym_reso_scale = 100; // cymbal resonator-bank scale (25-100 %)
     uint8_t m_model_a = k_String;
     uint8_t m_model_b = k_String;
     bool    m_is_resonator_a = true; // default is res A
