@@ -16,16 +16,17 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x5265736fU,                                // 'Reso'
     .version = 0x00010000U,
     .name = "RipplerX",
-    .num_presets = 37,
+    .num_presets = 38,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
 
         // Page 1: Program and sample selection
-        {0, 36, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 37, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
-        {0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Bank"}},
-        {1, 128, 1, 1, k_unit_param_type_none, 0, 0, 0, {"Sample"}},
+        // Ex Bank/Sample (PCM layering removed): cymbal performance controls.
+        {1, 2, 1, 2, k_unit_param_type_none, 0, 0, 0, {"Poly"}},
+        {25, 60, 1, 40, k_unit_param_type_percent, 0, 0, 0, {"Rsntrs"}},
 
         // Page 2: Mallet
         {0, 1000, 500, 500, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},

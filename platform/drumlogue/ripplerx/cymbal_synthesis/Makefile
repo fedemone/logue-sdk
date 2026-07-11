@@ -1,9 +1,12 @@
 CXX ?= g++
-CXXFLAGS ?= -std=c++11 -Wall -Wextra -pedantic
+CXXFLAGS ?= -std=c++11 -O2 -Wall -Wextra -pedantic
 
 TARGET := test_real_cymb
 SOURCES := realistic_cymbals.cpp test_real_cymb.cpp
-WAVS := real_cymb_crash.wav real_cymb_ride.wav real_cymb_splash.wav real_cymb_gong.wav
+WAVS := real_cymb_crash.wav real_cymb_ride.wav real_cymb_splash.wav real_cymb_gong.wav \
+        real_cymb_crash_v30.wav real_cymb_crash_v60.wav real_cymb_crash_v95.wav \
+        real_cymb_crash_open.wav real_cymb_crash_choke.wav \
+        real_cymb_roll.wav real_cymb_stack.wav
 
 .PHONY: all render clean
 
