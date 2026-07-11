@@ -1,6 +1,6 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)  
+**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)
 **Branch:** `claude/eager-galileo-2fho84`
 
 ---
@@ -118,12 +118,12 @@ Full audit of every `ParamIndex` parameter across all six engine families
 
 ## Current Scores (authoritative — from `rendered_tune/`)
 
-Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.  
+Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.
 Scores are `class_weighted_score` (lower is better). Targets are soft goals, not hard gates.
 
 ### After batch-2b auto_tune (COMPLETE — converged via early stop)
 
-Batch-2b ran 13 presets (including Ac Tom, now fixed). Converged after round 3 (stall threshold met).  
+Batch-2b ran 13 presets (including Ac Tom, now fixed). Converged after round 3 (stall threshold met).
 Mean score: 63.41 → **61.42** (−1.99 total).
 
 | Preset   | Baseline (pre-batch-2) | Batch-2b final | Target | Status               |
@@ -254,7 +254,7 @@ score = 0.16·f0 + 0.14·attack + 0.18·t60 + 0.16·centroid + 0.10·rolloff
 PERCUSSIVE presets add `+ 0.12·(flatness_pct + flux_pct)` on top.
 
 ### auto_tune acceptance
-Minimum improvement threshold: `MIN_ACCEPT_IMPROVEMENT = 0.25`.  
+Minimum improvement threshold: `MIN_ACCEPT_IMPROVEMENT = 0.25`.
 Rounds stop after 3 consecutive rounds with no accepted change.
 
 ---
@@ -500,3 +500,103 @@ trim on Timpani** (its pitch/sustain matter more than peak punch).
 
 **Regression safety:** only rows 5 and 7 (and their config/model-param entries) were
 touched; the other 35 presets render **bit-identical** to clean HEAD.
+
+## HW feedback round 2 → the dense-kernel port (the real fix) ★
+
+**HW comparison (user):** vs `105_timp_wedge.wav` the HW Timpani was "rougher, not
+blended correctly, pretty different"; the HW Taiko had "a synthy note as hit" instead
+of the reference's hit.  Root cause: the in-place retune (previous section) was an
+*approximation* of the standalone engine — 6 modal modes + the waveguide fundamental
++ a mallet-click exciter, pushed through the master soft-clip.  Every complaint maps
+to a missing standalone feature:
+
+| HW complaint | missing piece |
+|---|---|
+| "rougher" | soft-clip x/(1+abs(x)) distortion on the body + only 6 partials beating |
+| "not blended" | no dense membrane fill (280 vs 6 resonators) — layers heard separately |
+| "synthy note as hit" | instant mallet tick + pitched waveguide onset instead of the recorded knock + 16 ms bloom + noise wedge |
+
+**Fix — port the actual engine, not its silhouette.**  Presets 5/7 now bypass the
+voice loop entirely and render through `ModalDrumKernel` (`modal_drum_kernel.h`), a
+faithful port of the standalone `ResonatorDrumSynth` that produced the approved
+renders, with its data embedded (`modal_drum_data.h`, generated from the exact
+configs/transients — see scratchpad `emit_data.py`):
+
+- **Coupled resonator bank**: one velocity-scaled half-sine impulse rings 280
+  (Timpani: 58 measured modes + dense jittered fill) / 71 (Taiko) two-pole
+  resonators.  NEON SoA inner loop (4 modes/iteration, `vmla/vmls`), scalar
+  fallback bit-equivalent.  Host scalar cost: 1.7 % realtime; the idle bank is
+  silence-gated.
+- **Recorded broadband knock**: the residual transients extracted from the samples
+  (`reshape_transient` τ=25/30 ms), resampled to 48 k, embedded (~26 KB), scaled
+  ×v^1.5 — the hit that "cannot be synthesized from the band-limited modes".
+- **Attack bloom**: raised-cosine membrane swell (Timpani 4 ms from silence, Taiko
+  16 ms from a 0.12 floor), transient added after (stick click stays sharp).
+- **Noise wedge** (Taiko): white noise → 4 cascaded one-poles, cutoff sweeping
+  bright→dark (coefficients re-fit for 48 kHz), level 0.18, decay 2.8 /s.
+- **Transparent limiter master stage**: Tone tilt → master LP (LowCut/Resnc) →
+  Gain re-anchored to the shipped row (drive/1.8 Timpani, /2.0 Taiko — so the
+  preset defaults are *transparent*) → unity-below-0.85 tanh-knee limiter.  The
+  legacy hard-clip → soft-clip chain (and the previous pre-clip-trim hack, now
+  removed) never touches these presets.
+- **Retrigger = same membrane**: resonator states are NOT zeroed on a new hit —
+  energy accumulates like a real drum roll (verified: 12 hits @100 ms, peak 0.94,
+  no NaN).  `Reset()` flushes the ring.
+
+**Param mapping (anchor-at-shipped-value, same pattern as the legacy modal bank):**
+Note→transpose (mode table retunes, amortized ≤48 modes/block so knob turns cannot
+blow the audio deadline); Dkay+Rel→T60 multiplier (T40 235→2030 ms on Timpani);
+MlltStif→impulse sharpness; MlltRes→knock gain; VlMllStf/VlMllRes→velocity→timbre
+couplings; Partls→membrane-fill density (the wedge↔lines continuum); Mterl→HF-ring
+tilt; HitPos→knock tilt; Inharm→upper-mode stretch; NzMix/NzFltFrq→wedge level/start
+cutoff (NzMix opens a grain layer even on Timpani, whose recipe ships noiseless);
+Tone/LowCut/Resnc/Gain act in the kernel master stage.  Model/TubRad/NzRes/NzFltr
+are inert on these two presets (documented trade-off).
+
+**Verification (in-engine render at 48 k, vel 127/70/38 vs the approved wedge trio):**
+
+| metric | 105 ref → RipplerX | 110 ref → RipplerX |
+|---|---|---|
+| crest ("wham") | 4.02 → **4.03** | 6.46 → **6.41** |
+| atk 0-5 ms RMS | 0.397 → **0.397** | 0.323 → **0.322** |
+| peak time | 15.0 → **15.0 ms** | 13.9 → **13.9 ms** |
+| T60 | 1.53 → **1.53 s** | 0.44 → **0.40 s** |
+| centroid early/late | 629/334 → **646/340** | 1371/816 → **1270/829** |
+| −60 dB wedge edge | tracks row-for-row | tracks row-for-row |
+| med/soft velocity layers | peaks 0.81/0.59 → **0.81/0.59** | 0.90 → **0.90** |
+
+(The previous port measured crest 1.53/2.86 — the soft-clip ceiling this section
+replaces.)  All 37 presets: the other **35 render bit-identical** to HEAD; full
+`test_dsp` suite passes (0 failures); `unit.cc` cross-compiles clean for
+Cortex-A7/NEON (only pre-existing warnings elsewhere).
+
+### HW round 3: hit knob, honest note display, two kettles
+
+Three HW defects against the "nearly perfect" kernel port, each with a distinct root:
+
+1. **"More hit — at high `VlMllRes` the hit should be prominent."**  The first
+   mapping only *steepened the knock's velocity exponent* — which does nothing at
+   full velocity (1^x = 1) and made *soft* hits quieter: inverted.  `VlMllRes` is
+   now the **hit-prominence knob**: it multiplies the knock **gain**
+   (`exp2f(2.2·Δ)`, up to ≈4.6×, the transparent limiter keeps it clean) *and*
+   flattens the velocity exponent (1.5−Δ) so the hit stays tall on soft strikes.
+   Measured: attack RMS ×1.64 @vel 100, ×1.92 @vel 50, body bit-identical.
+2. **"Note reported is not correct."**  The kettle's dominant sustained partial
+   measures **165.5 Hz ≈ E3 (MIDI 52, −5 cents)** — the A2 110 Hz principal sits a
+   fifth below and decays into it — while the row shipped `Note 40` (E2): the
+   screen lied by an octave.  Row + recipe root are now both 52, so the display
+   names the pitch you hear and the shipped row still plays at ratio 1 (renders
+   bit-identical).  Taiko measured 86.7 Hz ≈ F2 → its shipped 41 was already right.
+3. **"Note change distorts the main sound" / "check stacked hits."**  One shared
+   bank meant a new note *retuned the ringing tail* (heard as bending/distortion),
+   and cross-note stacking was impossible.  The kernel now holds **two kettles**:
+   same-note hits retrigger the same drum in place (roll accumulation preserved),
+   a new note takes the free/oldest kettle and retunes it **synchronously** —
+   possible because the decay poles are pitch-invariant, so the note path needs
+   only a sin/cos pass (~280 modes ≈ 30 µs on the A7; the `expf` work for
+   Dkay/Mterl/Inharm/Partls stays amortized in Process()).  Verified: note 52 then
+   45 → both partial sets ring independently (165.5 Hz tail survives the second
+   hit), peaks stable ±7 st (0.928/0.933/0.940 — no limiter squash), 12-hit rolls
+   clean, and the **default single-hit renders are bit-identical** to the approved
+   wedge-matched v1 renders (per-kettle RNG reseeds keep even the taiko noise
+   sequence).  Cost: second kettle ≈ +2 % host scalar (silence-gated), +6.8 KB bss.

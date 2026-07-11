@@ -12,6 +12,7 @@
 #include "../common/runtime.h" // Drumlogue OS functions
 #include "unit.h"
 #include "dsp_core.h"
+#include "modal_drum_kernel.h" // dense coupled-resonator kernel (Timpani/Taiko)
 
 // ==============================================================================
 // UNIT TEST DEBUG HOOKS
@@ -513,6 +514,8 @@ SynthState state;
     // Called when the user changes programs or the engine needs a hard flush.
     // This prevents loud "pops" from old delay line data playing unexpectedly.
     inline void Reset() {
+        m_drum_kernel.Flush();   // dense-kernel ring dies with the voices
+        m_kernel_tone_lp = 0.0f;
         for (int i = 0; i < NUM_VOICES; ++i) {
             // Wipe delay-line and diffuser buffers without allocating a ~17 KB
             // VoiceState() temporary on the stack.  A "voices[i] = VoiceState()"
@@ -626,6 +629,19 @@ SynthState state;
     // Rel reference (normalized 0..1) — Rel trims modal ring length on modal
     // engines (it otherwise only gated the noise tail = dead on tonal presets).
     float m_modal_rel_ref = 0.9f;
+
+    // ── Dense modal-drum kernel (Timpani/Taiko) ────────────────────────────
+    // Single mono instance: one physical membrane, shared across hits.  The
+    // remaining anchors below follow the same shipped-value pattern as the
+    // m_modal_*_ref family (captured in LoadPreset for the active kernel
+    // preset only).
+    ModalDrumKernel m_drum_kernel;
+    float   m_kernel_tone_lp   = 0.0f;   // Stage-4a tilt state for the kernel path
+    float   m_kernel_vlstf_ref = 0.0f;
+    float   m_kernel_vlres_ref = 0.0f;
+    float   m_kernel_nzmix_ref = 0.0f;
+    float   m_kernel_nzfrq_ref = 380.0f;
+
     // Modal brightness reference: the normalized MlltStif the preset shipped with.
     // Mallet stiffness tilts the higher modal modes' initial energy (stiffer mallet =
     // brighter strike = more high-mode energy).  Pivoted at this reference so the
@@ -696,7 +712,7 @@ SynthState state;
             {   2,  36,   0,   1, 350, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220, 707},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
             {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   3,1999,   8,   7,  52, 740,   2, 480, 707},        // 3:  AcSnare   — brighter wire path
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 707},        // 4:  TblrBel
-            {   5,  40,   0,   1, 360, 300,   0,  40,   2,   3, 150,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — retuned for the modal-drum port: brighter singing tail (modal_mix 0.55, upper modes 3-6 extended/lifted), leaner waveguide (Dkay 200→150) so the bright modal ring leads the dark fundamental and the attack stands out
+            {   5,  52,   0,   1, 360, 300,   0,  40,   2,   3, 150,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — dense-kernel voice.  Note 52 (E3): the kettle's dominant sustained partial measures 165.5 Hz ≈ E3 (the 110 Hz A2 principal sits a fifth below) — the display now names the pitch you hear; 52 is also the kernel recipe root, so the shipped row plays the approved render at ratio 1
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 707},        // 6:  Djambe    — (HW: ok)
             {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 120,  10,   0,  30,  15,   1,1999,  16,   5,  52, 180,   0, 800, 707},        // 7:  Taiko     — bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. Port retune: modal_mix 0.60 + brighter crack (NzMix 36→52, NzFltFrq 360→800 ≈8kHz) + leaner boom for a brighter, longer ring
             {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 800,   2, 105, 707},        // 8:  MrchSnr   — noise attack staging removed in NoteOn (click+buzz land together)
@@ -787,6 +803,31 @@ SynthState state;
         m_modal_tubrad_ref = fmaxf(0.0f, fminf(20.0f, (float)presets[idx][k_paramTubRad])) * 0.05f;
         m_modal_mltres_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramMlltRes] * 0.001f));
         m_modal_rel_ref    = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramRel] * 0.05f));
+
+        // ── Dense modal-drum kernel (Timpani/Taiko): bind the recipe behind
+        // the approved standalone renders (105_timp_wedge / 110_taiko_wedge)
+        // and capture the remaining shipped-value anchors.  ref_drive is the
+        // master_drive the shipped Gain column produces; the kernel master
+        // stage divides it back out so the shipped preset is transparent.
+        if (idx == k_Timpani || idx == k_Taiko) {
+            m_kernel_vlstf_ref = (float)presets[idx][k_paramVlMllStf] * 0.01f;
+            m_kernel_vlres_ref = (float)presets[idx][k_paramVlMllRes] * 0.01f;
+            m_kernel_nzmix_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramNzMix] * 0.01f));
+            m_kernel_nzfrq_ref = fmaxf(20.0f, (float)presets[idx][k_paramNzFltFrq]);
+            float ref_drive = 1.0f + fmaxf(0.0f, (float)presets[idx][k_paramGain] * 0.01f) * 20.0f;
+            m_drum_kernel.Configure((idx == k_Timpani) ? &kTimpaniRecipe : &kTaikoRecipe, ref_drive);
+            m_kernel_tone_lp = 0.0f;
+            RefreshKernelMods();
+            // The legacy voice loop is bypassed while the kernel preset is
+            // active — retire any voices still ringing from the previous
+            // preset so they don't resume stale when switching back.
+            for (int vi = 0; vi < NUM_VOICES; ++vi) {
+                state.voices[vi].is_active = false;
+                state.voices[vi].is_releasing = false;
+            }
+        } else {
+            m_drum_kernel.Deactivate();
+        }
 
         // Restore both flags so the user's edit context survives preset loads.
         m_is_resonator_a = saved_is_a;
@@ -1141,6 +1182,16 @@ SynthState state;
             default:
                 break;
         }
+
+        // Dense-kernel presets: re-derive the kernel modifiers whenever any
+        // mapped parameter changes.  Cheap scalar math here; mods that move
+        // decay poles amortize inside ModalDrumKernel::Process().  Note is
+        // NOT a mod — it rides each NoteOn and retunes a kettle there.
+        // (k_paramProgram routes through LoadPreset, which configures the
+        // kernel itself — skip it to avoid double work on preset switch.)
+        if (index != k_paramProgram && kernel_preset_active() && m_drum_kernel.IsActive()) {
+            RefreshKernelMods();
+        }
     }
 
     // Show A or B label depending on the resonator selected via the Partls selector.
@@ -1226,6 +1277,16 @@ SynthState state;
     // 4. Sequencer and MIDI Routing
     // ==============================================================================
     inline void NoteOn(uint8_t note, uint8_t velocity) {
+        // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
+        // Two kettles: a repeat of a kettle's note retriggers that drum in
+        // place (energy accumulates — a roll); a new note takes the other
+        // kettle, retuned synchronously, so the first ring is untouched.
+        // NoteOff is ignored — drums ring out under their measured decays.
+        if (kernel_preset_active() && m_drum_kernel.IsActive()) {
+            float ratio = exp2f(((float)note - m_drum_kernel.RootNote()) * 0.0833333333f);
+            m_drum_kernel.Trigger(note, ratio, (float)velocity * 0.007874015f);
+            return;
+        }
         state.next_voice_idx = (state.next_voice_idx + 1) % NUM_VOICES;
         // ENGINE_CYMBAL voice policy: Poly caps the simultaneous cymbal
         // voices for the CPU budget.  Below the cap a silent slot is used;
@@ -2414,6 +2475,58 @@ SynthState state;
         // Hoist tone read outside all loops — avoids UI/audio-thread race.
         const float tone_val = state.tone;
 
+        // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
+        // Renders the coupled resonator bank behind the approved standalone
+        // references and runs its OWN master stage: Tone tilt → master filter
+        // → Gain (re-anchored so the shipped row is transparent) → transparent
+        // peak limiter.  The legacy soft-clip is bypassed on purpose: it
+        // compresses the strike back into the body (crest ≈ 1) — the exact
+        // "rough / synthy hit" the HW comparison flagged.  All other presets
+        // take the unchanged legacy path below (bit-identical output).
+        if (kernel_preset_active() && m_drum_kernel.IsActive()) {
+            const float drive_rel = state.master_drive / m_drum_kernel.RefDrive();
+            size_t done = 0;
+            while (done < frames) {
+                float mono[64];
+                size_t todo = frames - done;
+                if (todo > 64) todo = 64;
+                bool audible = m_drum_kernel.Process(mono, (int)todo);
+                if (audible) {
+                    for (size_t i = 0; i < todo; ++i) {
+                        float x = mono[i];
+                        // Stage 4a tilt EQ (same curve as the voice path).
+                        m_kernel_tone_lp = (x * kToneLpMix) + (m_kernel_tone_lp * (1.0f - kToneLpMix));
+                        if (tone_val < zeroThreshold) {
+                            x = x + (m_kernel_tone_lp - x) * (-tone_val * kInvToneCutDivisor);
+                        } else if (tone_val > zeroThreshold) {
+                            x += (x - m_kernel_tone_lp) * (tone_val * kInvToneBoostDivisor);
+                        }
+                        x = state.master_filter.process(x);   // LowCut/Resnc
+                        x *= drive_rel;                        // Gain around anchor
+                        float a = fabsf(x);                    // transparent limiter
+                        if (a > 0.85f) {
+                            a = 0.85f + 0.15f * fastertanhf((a - 0.85f) * 6.6666667f);
+                            x = (x < 0.0f) ? -a : a;
+                        }
+                        x = fmaxf(-0.99f, fminf(0.99f, x));
+                        main_out[(done + i) * 2]     = x;
+                        main_out[(done + i) * 2 + 1] = x;
+                    }
+                } else {
+                    // Kernel silent: keep the master filter state flowing so
+                    // there is no step when the next hit lands.
+                    for (size_t i = 0; i < todo; ++i) {
+                        float x = state.master_filter.process(0.0f);
+                        x = fmaxf(-0.99f, fminf(0.99f, x));
+                        main_out[(done + i) * 2]     = x;
+                        main_out[(done + i) * 2 + 1] = x;
+                    }
+                }
+                done += todo;
+            }
+            return;
+        }
+
         for (int voice_idx = 0; voice_idx < NUM_VOICES; ++voice_idx) {
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
@@ -2885,24 +2998,10 @@ SynthState state;
         // Stage 4 uses soft-clip + overdrive.  For debug stages the raw mallet
         // impulse (~3-4 × full-scale) must be clamped or the Drumlogue DAC
         // saturates on the first note and may engage hardware protection.
+        // (Timpani/Taiko never reach here — the dense-kernel path above owns
+        // its own master stage; the earlier per-preset pre-clip trim hack is
+        // gone with it.)
         //
-        // PRE-CLIP TRIM (crest / "wham" recovery): the modal-drum-port presets
-        // need a bright AND long ring, which keeps their sustained body sitting
-        // right at the ±0.99 brickwall — so the ×3-4 mallet transient gets
-        // clipped down to the same ceiling and crest collapses to ≈1.  Scaling
-        // the summed output DOWN here drops the body below the ceiling while the
-        // transient still reaches it, restoring the punch (verified: Timpani
-        // crest 1.3→~3, Taiko 1.5→~3).  These two presets are intentionally
-        // leaner than the rest of the kit (turn them up at the mixer); the trim
-        // is 1.0 for every other preset, so their output is bit-identical.
-        // Trim chosen on the measured crest/brightness curve: lower trim lifts
-        // crest but darkens (the brickwall distortion that was inflating the
-        // body's HF is removed too).  Taiko gets the stronger trim (it's the
-        // signature punchy hit); Timpani a gentler one (its pitch/sustain matter
-        // more than peak punch).  Crest: Timpani 1.33→~1.5, Taiko 1.5→~2.9.
-        float pre_clip_trim = 1.0f;
-        if (m_preset_idx == k_Timpani)     pre_clip_trim = 0.50f;
-        else if (m_preset_idx == k_Taiko)  pre_clip_trim = 0.25f;
         // ENGINE_CYMBAL: stacked voices (rolls) can sum past the ±0.99
         // brickwall below, which reads as harsh noise.  CymbalKit-style soft
         // headroom first: a single voice passes ~unchanged, stacks are limited
@@ -2957,6 +3056,79 @@ SynthState state;
 // PRIVATE METHODS
 // ==============================================================================
 private:
+    // True while the dense modal-drum kernel owns the audio path.
+    inline bool kernel_preset_active() const {
+        return m_preset_idx == k_Timpani || m_preset_idx == k_Taiko;
+    }
+
+    // Map the RipplerX sound-design params onto the dense-kernel modifiers.
+    // Every mapping is a DELTA from the preset's shipped value (the same
+    // reference-anchor pattern as the legacy modal bank), so the shipped rows
+    // reproduce the approved standalone renders exactly and every knob still
+    // sculpts around that point.  Curves reuse the strengthened Task-5 gains.
+    inline void RefreshKernelMods() {
+        if (!kernel_preset_active() || !m_drum_kernel.IsActive()) return;
+        ModalDrumKernel::Mods md;
+
+        // (Pitch is not a mod: the note travels with each NoteOn/Trigger and
+        // retunes one kettle synchronously — see the kernel header.)
+
+        // Dkay (0-200, ×0.005) + Rel (0-20, ×0.05): T60 multiplier.
+        float dk = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
+        float rl = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel]  * 0.05f));
+        md.decay_mult = exp2f(3.5f * (dk - m_modal_dkay_ref) + 2.5f * (rl - m_modal_rel_ref));
+
+        // Mterl (−10..30): brighter material lets HF modes ring longer.
+        float mt = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
+        md.hf_decay_tilt = 1.2f * (mt - m_modal_mterl_ref);
+
+        // Inharm (0-1999, ×0.0005): stretches the upper modes away from f0.
+        float ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.0005f));
+        md.stretch = 1.6f * (ih - m_modal_inharm_ref);
+
+        // Partls (index 0-4): density of the membrane fill.  Shipped index =
+        // the full approved wedge; lower thins it toward the bare mode lines.
+        int pt = (m_params[k_paramPartls] >= 0 && m_params[k_paramPartls] <= 4)
+                 ? (int)m_params[k_paramPartls] : m_modal_partls_ref;
+        md.density = fminf(1.0f, exp2f(0.7f * (float)(pt - m_modal_partls_ref)));
+
+        // MlltStif (×0.002): impulse sharpness (shorter strike = brighter).
+        float st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+        md.exc_sharp = exp2f(2.0f * (st - m_modal_stiff_ref));
+
+        // MlltRes (×0.001) + HitPos (×0.01, edge = clickier) + VlMllRes: the
+        // knock ("wham") gain.  VlMllRes is the HIT-PROMINENCE knob (HW: "at
+        // high values the hit should be prominent"): raising it BOOSTS the
+        // knock and FLATTENS its velocity curve (lower exponent), so the hit
+        // stays tall even on soft strikes; lowering it buries the knock and
+        // steepens the accent response.
+        float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
+        float hp = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
+        float vs = (float)m_params[k_paramVlMllStf] * 0.01f;
+        float vr = (float)m_params[k_paramVlMllRes] * 0.01f;
+        md.knock_mult = exp2f(2.6f * (mr - m_modal_mltres_ref) +
+                              1.2f * (hp - m_modal_hitpos_ref) +
+                              2.2f * (vr - m_kernel_vlres_ref));
+        md.vel_knock_exp = fmaxf(0.4f, fminf(3.0f, 1.5f - 1.0f * (vr - m_kernel_vlres_ref)));
+
+        // VlMllStf (±100 → ±1): velocity→sharpness amount.
+        md.vel_sharp = fmaxf(0.0f, fminf(1.0f, 0.6f + 0.8f * (vs - m_kernel_vlstf_ref)));
+
+        // NzMix (0-100): noise-wedge level around the recipe.  The additive
+        // term keeps the knob alive when the recipe ships with noise 0
+        // (Timpani): opening it adds the taiko-style grain/air layer.
+        float nz  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzMix] * 0.01f));
+        float dnz = nz - m_kernel_nzmix_ref;
+        md.noise_mult = exp2f(3.0f * dnz);
+        md.noise_add  = 0.30f * fmaxf(0.0f, dnz);
+
+        // NzFltFrq (stored ÷10): wedge start-cutoff scale vs the shipped corner.
+        float fq = fmaxf(20.0f, (float)m_params[k_paramNzFltFrq]);
+        md.noise_bright = fq / m_kernel_nzfrq_ref;
+
+        m_drum_kernel.SetMods(md);
+    }
+
     inline void apply_pitch_bend_to_voice(VoiceState& v) {
         v.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 2),
                                                   v.base_delay_A * m_pitch_bend_mult));

@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
         { 2,  36, 2.0f, "808Sub"   },
         { 3,  38, 1.5f, "AcSnre"   },
         { 4,  72,16.0f, "TblrBel"  },
-        { 5,  40, 3.0f, "Timpani"  },
+        { 5,  52, 3.0f, "Timpani"  },
         { 6,  48, 2.0f, "Djambe"   },
         { 7,  41, 4.0f, "Taiko"    },
         { 8,  65, 1.5f, "MrchSnr"  },
