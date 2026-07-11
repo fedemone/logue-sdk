@@ -81,8 +81,8 @@ public:
     enum ParamIndex {
         k_paramProgram = 0,
         k_paramNote,        // 1
-        k_paramCymPoly,     // 2 — ex-Bank: max simultaneous cymbal voices (1-4)
-        k_paramCymReso,     // 3 — ex-Sample: cymbal resonator-bank scale (25-100 %)
+        k_paramCymPoly,     // 2 — ex-Bank: max simultaneous cymbal voices (1-2)
+        k_paramCymReso,     // 3 — ex-Sample: cymbal resonator-bank scale (25-60 %)
         k_paramMlltRes,     // 4
         k_paramMlltStif,    // 5
         k_paramVlMllRes,    // 6
@@ -870,11 +870,11 @@ SynthState state;
                 break;
 
             case k_paramCymPoly:
-                m_cym_poly = (uint8_t)((value < 1) ? 1 : ((value > NUM_VOICES) ? NUM_VOICES : value));
+                m_cym_poly = (uint8_t)((value < 1) ? 1 : ((value > 2) ? 2 : value));
                 break;
 
             case k_paramCymReso:
-                m_cym_reso_scale = (uint8_t)((value < 25) ? 25 : ((value > 100) ? 100 : value));
+                m_cym_reso_scale = (uint8_t)((value < 25) ? 25 : ((value > 60) ? 60 : value));
                 break;
             case k_paramMlltStif: {
                 // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
@@ -2979,8 +2979,8 @@ private:
     uint8_t m_ui_note = 60;
     // Ex-sample-selection params, repurposed (PCM layering removed): global
     // cymbal performance/CPU controls.
-    uint8_t m_cym_poly = 3;        // max simultaneous cymbal voices (1-4)
-    uint8_t m_cym_reso_scale = 100; // cymbal resonator-bank scale (25-100 %)
+    uint8_t m_cym_poly = 2;        // max simultaneous cymbal voices (1-2)
+    uint8_t m_cym_reso_scale = 40;  // cymbal resonator-bank scale (25-60 %)
     uint8_t m_model_a = k_String;
     uint8_t m_model_b = k_String;
     bool    m_is_resonator_a = true; // default is res A

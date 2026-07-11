@@ -25,8 +25,8 @@ const __unit_header unit_header_t unit_header = {
         {0, 37, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         // Ex Bank/Sample (PCM layering removed): cymbal performance controls.
-        {1, 4, 1, 3, k_unit_param_type_none, 0, 0, 0, {"Poly"}},
-        {25, 100, 1, 100, k_unit_param_type_percent, 0, 0, 0, {"Rsntrs"}},
+        {1, 2, 1, 2, k_unit_param_type_none, 0, 0, 0, {"Poly"}},
+        {25, 60, 1, 40, k_unit_param_type_percent, 0, 0, 0, {"Rsntrs"}},
 
         // Page 2: Mallet
         {0, 1000, 500, 500, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
