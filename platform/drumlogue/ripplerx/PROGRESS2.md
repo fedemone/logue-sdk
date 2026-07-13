@@ -1,6 +1,6 @@
 # RipplerX — Current Status & Next Steps
 
-**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)  
+**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)
 **Branch:** `claude/eager-galileo-2fho84`
 
 ---
@@ -118,12 +118,12 @@ Full audit of every `ParamIndex` parameter across all six engine families
 
 ## Current Scores (authoritative — from `rendered_tune/`)
 
-Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.  
+Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.
 Scores are `class_weighted_score` (lower is better). Targets are soft goals, not hard gates.
 
 ### After batch-2b auto_tune (COMPLETE — converged via early stop)
 
-Batch-2b ran 13 presets (including Ac Tom, now fixed). Converged after round 3 (stall threshold met).  
+Batch-2b ran 13 presets (including Ac Tom, now fixed). Converged after round 3 (stall threshold met).
 Mean score: 63.41 → **61.42** (−1.99 total).
 
 | Preset   | Baseline (pre-batch-2) | Batch-2b final | Target | Status               |
@@ -254,7 +254,7 @@ score = 0.16·f0 + 0.14·attack + 0.18·t60 + 0.16·centroid + 0.10·rolloff
 PERCUSSIVE presets add `+ 0.12·(flatness_pct + flux_pct)` on top.
 
 ### auto_tune acceptance
-Minimum improvement threshold: `MIN_ACCEPT_IMPROVEMENT = 0.25`.  
+Minimum improvement threshold: `MIN_ACCEPT_IMPROVEMENT = 0.25`.
 Rounds stop after 3 consecutive rounds with no accepted change.
 
 ---

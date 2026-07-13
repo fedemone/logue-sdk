@@ -82,8 +82,8 @@ public:
     enum ParamIndex {
         k_paramProgram = 0,
         k_paramNote,        // 1
-        k_paramBank,        // 2
-        k_paramSample,      // 3
+        k_paramCymPoly,     // 2 — ex-Bank: max simultaneous cymbal voices (1-2)
+        k_paramCymReso,     // 3 — ex-Sample: cymbal resonator-bank scale (25-60 %)
         k_paramMlltRes,     // 4
         k_paramMlltStif,    // 5
         k_paramVlMllRes,    // 6
@@ -144,7 +144,8 @@ public:
         k_Bongo,            // 34  -sample: Bongo_Conga_Mute4.wav (430Hz +/- 100Hz)
         k_GlassBottle,      // 35  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
         k_Tick,             // 36  — the pre-redesign HHat-C metallic chick + added "clack" mode (HW request)
-        k_NumPrograms       // 37 — marker (count)
+        k_Splash,           // 37  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
+        k_NumPrograms       // 38 — marker (count)
     };
 
     enum ModelsIndex {
@@ -170,6 +171,7 @@ public:
         ENGINE_PLATE,     // Dense inharmonic plate modes (cymbal, gong, hi-hat...)
         ENGINE_NOISE,     // Noise burst only (clap, shaker)
         ENGINE_REMOVED,   // Silent placeholder (flute, clarinet removed)
+        ENGINE_CYMBAL,    // Dense resonator cymbal (ex-cymbal_synthesis port)
     };
 
 enum ModelParamIndex : uint8_t {
@@ -238,6 +240,28 @@ struct ModalPresetConfig {
 // per-unit .text segment size check (~30 KB limit).  Plain 'static' puts them in
 // .data, which is checked separately and has a much larger budget.
 ModalPresetConfig kDefaultModalPresetConfig{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f};
+
+// ENGINE_CYMBAL inharmonic anchor tables (ported from cymbal_synthesis).
+// Non-static members (no 'static'/'const'/'constexpr') so their initial values
+// live in .data, not .rodata — same rule as the modal tables above.
+float m_cym_crash_hz[16] = {
+    343.f, 421.f, 512.f, 731.f, 973.f, 1289.f, 1627.f, 2143.f,
+    2879.f, 3659.f, 4721.f, 6121.f, 7841.f, 10061.f, 13109.f, 16987.f };
+float m_cym_ride_hz[16] = {
+    481.f, 603.f, 759.f, 1013.f, 1349.f, 1811.f, 2399.f, 3191.f,
+    4211.f, 5603.f, 7421.f, 9829.f, 12113.f, 14591.f, 16879.f, 18193.f };
+float m_cym_splash_hz[14] = {
+    1123.f, 1409.f, 1801.f, 2251.f, 2749.f, 3407.f, 4211.f, 5233.f,
+    6473.f, 7963.f, 9787.f, 12043.f, 14813.f, 17041.f };
+float m_cym_gong_hz[16] = {
+    162.f, 219.f, 287.f, 361.f, 452.f, 579.f, 733.f, 911.f,
+    1139.f, 1451.f, 1847.f, 2381.f, 3097.f, 4181.f, 5741.f, 7919.f };
+// Hi-hat: everything above ~3.2 kHz with heavy jitter reads as a bright
+// metallic noise continuum (the very property that was WRONG for the pitched
+// splash is exactly a closed-hat "tick" sizzle — no low pitched body).
+float m_cym_hihat_hz[16] = {
+    3271.f, 3907.f, 4523.f, 5219.f, 6007.f, 6907.f, 7949.f, 9133.f,
+    10501.f, 12073.f, 13879.f, 15959.f, 17041.f, 18353.f, 19141.f, 19709.f };
 ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Kick2: the pre-redesign Timpani body — fundamental-dominant kettledrum thump */ {1.340f, 1.664f, 1.980f, 1100.0f, 400.0f, 200.0f, 100.0f, 0.38f, 0.95f, 0.20f, 0.12f, 0.08f, 4, 0, 0.0f},
     /* k_Marimba: tuned-bar ratios 1:4:10; T60 calibrated to marimba-hit-c4 */ {4.00f, 10.0f, 0.0f, 1200.0f, 350.0f, 100.0f, 0.0f, 0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
@@ -326,7 +350,9 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_GlassBottle: Helmholtz cavity + neck modes 1:1.47:2.42 */ {1.47f, 2.42f, 0.0f, 500.0f, 320.0f, 190.0f, 0.0f, 0.20f, 0.85f, 0.60f, 0.30f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Tick: the pre-redesign HHat-C metallic chick + a low "clack" (mode 4 at
        ratio 1.40, 50ms, strong) per HW request ("HHat-C as Tick, adding some clack under") */
-    {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f}};
+    {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f},
+    /* k_Splash: ENGINE_CYMBAL — modal bank bypassed; plate ratios kept valid */
+    {2.92f, 6.37f, 11.75f, 300.0f, 200.0f, 120.0f, 80.0f, 0.20f, 0.80f, 0.50f, 0.30f, 0.20f, 4, 0.0f, 0.0f}};
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
@@ -369,7 +395,8 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_RideBell    */ {1200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.90000f,    0.00000f,    0.05000f, false,    0.32000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
     /* k_Bongo       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.01047f,    1.00000f,    0.99952f, 0.18000f,    0.00000f,    0.00200f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    3.50000f},
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
-    /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f}};
+    /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f},
+    /* k_Splash      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f}};
 
 // Preset → engine routing table.
 // NOTE: Must be 'static' only (no const/constexpr) — same .rodata rule as above.
@@ -387,8 +414,8 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_Vibraphone(10)   */ ENGINE_BAR,
     /* k_Woodblock(11)    */ ENGINE_BAR,
     /* k_AcousticTom(12)  */ ENGINE_MEMBRANE,
-    /* k_Cymbal(13)       */ ENGINE_PLATE,
-    /* k_Gong(14)         */ ENGINE_PLATE,
+    /* k_Cymbal(13)       */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
+    /* k_Gong(14)         */ ENGINE_CYMBAL,
     /* k_Kalimba(15)      */ ENGINE_BAR,
     /* k_SteelPan(16)     */ ENGINE_BAR,
     /* k_Claves(17)       */ ENGINE_BAR,
@@ -401,16 +428,17 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_GlassBowl(24)    */ ENGINE_BAR,
     /* k_GuitarStr(25)    */ ENGINE_KS,
     /* k_HiHatClosed(26)  */ ENGINE_NOISE,  // ex-Shaker noise voice
-    /* k_HiHatOpen(27)    */ ENGINE_PLATE,
+    /* k_HiHatOpen(27)    */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
     /* k_Conga(28)        */ ENGINE_MEMBRANE,
     /* k_Handpan(29)      */ ENGINE_MEMBRANE,
     /* k_BellTree(30)     */ ENGINE_PLATE,
     /* k_SlitDrum(31)     */ ENGINE_BAR,
-    /* k_Ride(32)         */ ENGINE_PLATE,
-    /* k_RideBell(33)     */ ENGINE_PLATE,
+    /* k_Ride(32)         */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
+    /* k_RideBell(33)     */ ENGINE_CYMBAL,
     /* k_Bongo(34)        */ ENGINE_MEMBRANE,
     /* k_GlassBottle(35)  */ ENGINE_BAR,
     /* k_Tick(36)         */ ENGINE_PLATE,  // ex-HHat-C chick + clack
+    /* k_Splash(37)       */ ENGINE_CYMBAL, // small pitched splash cymbal
 };
 
 // ModelsIndex → modal frequency-ratio template: modes 2..6 relative to the
@@ -715,7 +743,8 @@ SynthState state;
             {33, 60, 0, 1, 900, 491, 0, 0, 0, 4, 200, 16, 0, 0, 8, 11, 1999, 1, 0, 60, 950, 2, 1300, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
             {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 707},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
-            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707}         // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707}         // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
         };
 
         if (idx >= k_NumPrograms) return;
@@ -729,13 +758,13 @@ SynthState state;
         m_is_resonator_b = false;
 
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
-        // Also skip Bank and Sample so the user's sample selection persists
-        // across preset changes (user reported: sample resets to bank 0, sample 1
-        // on every preset change).
+        // Also skip Poly and Rsntrs (ex-Bank/Sample): they are global
+        // performance/CPU settings, not per-preset sound design — the user's
+        // choice persists across preset changes.
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
-            if (param_id == k_paramBank)    continue;
-            if (param_id == k_paramSample)  continue;
+            if (param_id == k_paramCymPoly) continue;
+            if (param_id == k_paramCymReso) continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -857,7 +886,8 @@ SynthState state;
             "HHat-C",  "HHat-O", "Conga",  "Handpn",
             "BelTre",  "SltDrm",
             "Ride",    "RidBel",
-            "Bongo",   "GlsBotl","Tick"
+            "Bongo",   "GlsBotl","Tick",
+            "Splash"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -880,12 +910,12 @@ SynthState state;
                 m_ui_note = (uint8_t)fmaxf(1.0f, fminf(126.0f, value));
                 break;
 
-            case k_paramBank:
-                m_sample_bank = value;
+            case k_paramCymPoly:
+                m_cym_poly = (uint8_t)((value < 1) ? 1 : ((value > 2) ? 2 : value));
                 break;
 
-            case k_paramSample:
-                m_sample_number = value;
+            case k_paramCymReso:
+                m_cym_reso_scale = (uint8_t)((value < 25) ? 25 : ((value > 60) ? 60 : value));
                 break;
             case k_paramMlltStif: {
                 // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
@@ -1168,7 +1198,6 @@ SynthState state;
     // IMPORTANT: always index into arrays with the function's `value` argument —
     // never with stored state — so scrolling through values shows the correct label.
     inline const char * getParameterStrValue(uint8_t index, int32_t value) const {
-        static const char* const bank_names[] = { "CH", "OH", "RS", "CP", "MISC", "USER", "EXP" };
         static const char* const model_names_a[] = {
             "A:Strng", "A:Beam",  "A:Sqre", "A:Mbrn", "A:Plate",
             "A:Drmhd", "A:Mrmb",  "A:OpTb", "A:ClTb"
@@ -1191,8 +1220,6 @@ SynthState state;
         if (index == k_paramProgram) {
             // value IS the preset index being browsed — use it directly.
             return getPresetName((uint8_t)value);
-        } else if (index == k_paramBank) {
-            if (value >= 0 && value < 7) return bank_names[value];
         } else if (index == k_paramModel) {
             if (value >= 0 && value < 9)
                 return m_is_resonator_a && m_is_resonator_b ? model_names_ab[value] :
@@ -1261,6 +1288,26 @@ SynthState state;
             return;
         }
         state.next_voice_idx = (state.next_voice_idx + 1) % NUM_VOICES;
+        // ENGINE_CYMBAL voice policy: Poly caps the simultaneous cymbal
+        // voices for the CPU budget.  Below the cap a silent slot is used;
+        // at the cap the WEAKEST ringing voice (smallest output magnitude,
+        // i.e. the most faded tail) is stolen — the least audible casualty.
+        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+            const int cap = (int)m_cym_poly;
+            int active = 0, freeIdx = -1, weakest = -1;
+            float wmag = 1e9f;
+            for (int i = 0; i < NUM_VOICES; ++i) {
+                VoiceState& cv = state.voices[i];
+                if (cv.is_active && cv.cymbal.active) {
+                    ++active;
+                    if (cv.cymbal.magEnv < wmag) { wmag = cv.cymbal.magEnv; weakest = i; }
+                } else if (freeIdx < 0) {
+                    freeIdx = i;
+                }
+            }
+            if (active >= cap && weakest >= 0)  state.next_voice_idx = (uint8_t)weakest;
+            else if (freeIdx >= 0)              state.next_voice_idx = (uint8_t)freeIdx;
+        }
         VoiceState& v = state.voices[state.next_voice_idx];
 
         // Capture before is_active is overwritten: only a previously-active voice
@@ -1272,32 +1319,11 @@ SynthState state;
         v.is_active = true;
         v.is_releasing = false;
 
-        // --- Sample Loading ---
-        // First, clear any old sample data
+        // PCM sample layering removed: it was never part of the approved
+        // synthesized sounds, and dropping it freed the Bank/Sample GUI params
+        // for the cymbal Poly / Rsntrs performance controls.
         v.exciter.sample_ptr = nullptr;
         v.exciter.sample_frames = 0;
-
-        // Then, try to load the new one just-in-time.
-        // CRITICAL: m_sample_number == 0 means "no sample" (Smp=0 in the preset table).
-        // Without this guard, the ternary (m_sample_number > 0) ? ... : 0 falls through
-        // to actualIndex=0, which loads hardware bank 0 / sample 0 on EVERY preset —
-        // even those explicitly set to Smp=0 (e.g. GtrStr).  The unit tests hide this
-        // because mock_get_sample() always returns nullptr, masking the real hardware path.
-        if (m_sample_number > 0 &&
-            m_get_sample && m_get_num_sample_banks_ptr && m_get_num_samples_for_bank_ptr) {
-            if (m_sample_bank < m_get_num_sample_banks_ptr()) {
-                size_t actualIndex = (size_t)(m_sample_number - 1);  // 1-indexed: Smp=1→idx 0
-                if (actualIndex < m_get_num_samples_for_bank_ptr(m_sample_bank)) {
-                    const sample_wrapper_t* wrapper = m_get_sample(m_sample_bank, actualIndex);
-                    if (wrapper && wrapper->sample_ptr) {
-                        v.exciter.sample_ptr = wrapper->sample_ptr;
-                        v.exciter.sample_frames = wrapper->frames;
-                        v.exciter.channels = wrapper->channels;
-                    }
-                }
-            }
-        }
-        // --- End Sample Loading ---
 
         v.current_note = note;
         v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
@@ -1734,108 +1760,106 @@ SynthState state;
             case k_RideBell:  v.modal_rm_depth = 0.30f; break;
             default: break;
         }
-        // Crash-resonator bank (see dsp_core.h): drives the noise burst through
-        // damped bandpass resonators at the plate partials so the wash IS the
-        // partials — a crash, not noise overlaid on a ring.  This is the primary
-        // fix for the repeated "noise just put over the ring, not crashing"
-        // reports on Cymbal/Gong/Ride/RidBel/HHat-O.  crash_r sets how tightly
-        // each resonator rings (→ swirl/shimmer); crash_drive sets intensity.
-        {
-            float crash_base = 0.0f, crash_r = 0.0f;
+        // ── ENGINE_CYMBAL strike (ported dense-resonator cymbal) ───────────────
+        // Replaces the old plate crash-bank + FDN for the metallic cymbal family.
+        // Per-preset config is explicit so each preset tunes independently.
+        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+            CymbalConfig cc{};
+            float ring_scale = 1.0f, pm_amt = 1.0f;
+            int ref_note = 60;  // preset's shipped default Note (REFERENCE-ANCHOR)
+            // Resonator counts trimmed from the prototype's 112/104/96 for the
+            // target CPU budget (4 stacked voices overloaded the interface);
+            // level is count-independent via the 1/sqrt(N) normalisation.
             switch (m_preset_idx) {
-                // 10th pass: crash levels HALVED — HW reported the crash too loud
-                // and not blended with the ring ("explosion" on Gong; "bell +
-                // tambourine, not blended" on Ride).  The ring is now the
-                // foreground; the crash is a supporting wash.
-                case k_Cymbal:    crash_base =  0.3f; crash_r = 0.9720f; break;
-                case k_Gong:      crash_base =  0.6f; crash_r = 0.9850f; break;
-                case k_HiHatOpen: crash_base =  0.8f; crash_r = 0.9650f; break;
-                case k_Ride:      crash_base =  0.9f; crash_r = 0.9720f; break;
-                case k_RideBell:  crash_base =  0.8f; crash_r = 0.9680f; break;
+                case k_Cymbal:
+                    cc = { m_cym_crash_hz, 16, 96, 300.f, 20000.f, 1.8f,
+                           0.018f, 0.44f, 0.040f, 0.30f, 0.0035f, 0.85f, 0.045f,
+                           0.154f, 0.30f, 0.020f, 0.10f };
+                    ref_note = 65;
+                    break;
+                case k_Ride:
+                    cc = { m_cym_ride_hz, 16, 88, 450.f, 18000.f, 1.2f,
+                           0.015f, 0.55f, 0.035f, 0.34f, 0.0030f, 0.75f, 0.040f,
+                           0.52f, 0.34f, 0.016f, 0.08f };
+                    ref_note = 69;
+                    break;
+                case k_RideBell:
+                    // Stronger, longer stick ping than Ride = the bell "tang".
+                    cc = { m_cym_ride_hz, 16, 88, 450.f, 18000.f, 1.2f,
+                           0.015f, 0.55f, 0.035f, 0.34f, 0.0045f, 0.95f, 0.040f,
+                           0.52f, 0.34f, 0.016f, 0.08f };
+                    ref_note = 60;
+                    break;
+                case k_Gong:
+                    cc = { m_cym_gong_hz, 16, 80, 150.f, 14000.f, 2.4f,
+                           0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
+                           0.126f, 0.22f, 0.010f, 0.15f };
+                    ref_note = 50;
+                    break;
+                case k_HiHatOpen:
+                    // Long CLOSED-hat sizzle ("tick", not "tong"): all anchors
+                    // above 3.2 kHz with heavy jitter = bright metallic noise
+                    // continuum, no pitched low body; short stick tick; decay
+                    // longer than a closed chick but far shorter than a crash.
+                    // resonatorLevel 6.5: the 1/f pink drive has ~10 dB less
+                    // energy at these >3.2 kHz anchors, so the bank needs a
+                    // much hotter tap than the low-anchor presets.
+                    cc = { m_cym_hihat_hz, 16, 64, 2800.f, 20000.f, 1.5f,
+                           0.006f, 0.55f, 0.012f, 0.30f, 0.0015f, 0.60f, 0.045f,
+                           6.50f, 0.55f, 0.010f, 0.05f };
+                    ring_scale = 0.55f;
+                    ref_note = 79;
+                    break;
+                case k_Splash:
+                    // Prototype splash: pitched modal body from ~1.1 kHz with
+                    // the sizzle above; fast decay ("pssh", not hiss).
+                    cc = { m_cym_splash_hz, 14, 64, 1000.f, 19000.f, 0.55f,
+                           0.006f, 0.70f, 0.018f, 0.25f, 0.0020f, 0.75f, 0.038f,
+                           1.23f, 0.16f, 0.0015f, 0.06f };
+                    ref_note = 76;
+                    break;
                 default: break;
             }
-            if (crash_base > 0.0f) {
-                // MlltRes repurposed as crash intensity (anchored at shipped value).
-                float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
-                v.crash_drive = crash_base * exp2f(2.0f * (mr - m_modal_mltres_ref));
-                v.crash_r     = crash_r;
-                // The crash bank is fuelled by the noise burst, so the noise must
-                // SUSTAIN like the ring — not get cut ~50 ms after the Drumlogue's
-                // near-instant gate-off by the short Rel release.  Slow release so
-                // the crash wash rings ~2 s and OVERLAPS the struck ring (this
-                // overlap is the "swirling carrier + overtones" the HW asked for;
-                // every prior pass died to "ring with weak noise sprayed on top").
-                // Noise releases set per-preset to the MEASURED reference T60s
-                // (cymbal-Crash16Inch 2.3s, Ride18Inch 2.9s, RidBell 3.3s,
-                // OpenHatBig 0.6s).  Critically BOTH bands (low + bright hi) use
-                // the same slow release so the bright sizzle sustains for the
-                // whole tail — otherwise the hi band died first and the late
-                // sound went dark/tonal (ref stays bright ~11kHz, flat ~0.55).
-                float rel_lo = 0.000032f, rel_hi = 0.000032f; // Cymbal ~2.3s (ref T60)
-                switch (m_preset_idx) {
-                    case k_Ride:      rel_lo = rel_hi = 0.000025f; break; // ~2.9s
-                    case k_RideBell:  rel_lo = rel_hi = 0.000022f; break; // ~3.3s
-                    case k_HiHatOpen: rel_lo = rel_hi = 0.000110f; break; // ~0.6s
-                    case k_Gong:      rel_lo = 0.000050f; rel_hi = 0.000100f; break;
-                    default: break; // Cymbal
+            if (cc.freqHz) {
+                // Bank size = preset base x Rsntrs param (user CPU/density
+                // trade-off) x voice-pressure degradation: the 3rd/4th
+                // simultaneous voice gets a smaller bank — in a dense stack
+                // the density loss is masked, and rolls can no longer
+                // overload the CPU.
+                int active_cym = 0;
+                for (int i = 0; i < NUM_VOICES; ++i) {
+                    if (i != (int)state.next_voice_idx &&
+                        state.voices[i].is_active && state.voices[i].cymbal.active) {
+                        ++active_cym;
+                    }
                 }
-                v.exciter.noise_env.release_rate    = rel_lo;
-                v.exciter.noise_env_hi.release_rate = rel_hi;
-                // Self-PM bloom depth + how much struck ring feeds the bloom bus.
-                // Cymbal/Ride want a strong shimmering bloom; Gong a gentler one.
-                switch (m_preset_idx) {
-                    // Higher ring_tap = more struck ring fed into the bloom bus =
-                    // crash is COLOURED BY the ring → better blended (HW: "not
-                    // blended").  Gong bloom cut hard (was a "big explosion").
-                    case k_Cymbal:    v.crash_bloom = 0.45f; v.crash_ring_tap = 0.50f; break;
-                    case k_Gong:      v.crash_bloom = 0.15f; v.crash_ring_tap = 0.45f; break;
-                    case k_HiHatOpen: v.crash_bloom = 0.30f; v.crash_ring_tap = 0.40f; break;
-                    case k_Ride:      v.crash_bloom = 0.40f; v.crash_ring_tap = 0.50f; break;
-                    case k_RideBell:  v.crash_bloom = 0.30f; v.crash_ring_tap = 0.45f; break;
-                    default: break;
+                float rscale = (float)m_cym_reso_scale * 0.01f;
+                if (active_cym >= 3)      rscale *= 0.67f;
+                else if (active_cym == 2) rscale *= 0.80f;
+                int rcount = (int)((float)cc.resonators * rscale);
+                rcount = (rcount + 3) & ~3;
+                if (rcount < 32) rcount = 32;
+                if (rcount > (int)kCymbalMaxResonators) rcount = (int)kCymbalMaxResonators;
+                cc.resonators = (uint16_t)rcount;
+                // Note transposes the whole anchor spectrum like a smaller or
+                // larger cymbal (2^(Δsemitones/12), anchored at the shipped
+                // default note so the stock sound is unchanged) — previously
+                // the note only reseeded the jitter, which read as "distortion".
+                const float pitch_ratio = exp2f((float)((int)note - ref_note) * (1.0f / 12.0f));
+                // VlMllRes scales the stick hit ("tang"): shipped value is 0 for
+                // all cymbal presets (=> x1.0 — REFERENCE-ANCHORED); positive
+                // values boost the stick level AND sharpen the noise-driver
+                // attack (punch without running the boosted click into the
+                // output clamp); negative values soften toward a felt mallet.
+                // Velocity still scales the hit on top inside cymbal_note_on.
+                const float hit_mod = (float)m_params[k_paramVlMllRes] * 0.01f;
+                cc.stickLevel = fminf(2.0f, cc.stickLevel * exp2f(1.2f * hit_mod));
+                if (hit_mod > 0.0f) {
+                    cc.lowAttackSec *= exp2f(-1.0f * hit_mod);   // up to 2x snappier
+                    cc.thwackSec    *= 1.0f + 0.6f * hit_mod;    // longer ping = "tang"
                 }
-                // crash_couple: nonlinear modal→wash cascade strength (see the
-                // resonator block in processBlock).  This is the term that makes
-                // the wash BORN FROM the ring instead of juxtaposed beside it.
-                // Two families need different amounts:
-                //   BRIGHT crashes (Cymbal/Ride/HHat-O): a real crash is mostly
-                //   bright broadband noise that BREATHES with the ring — keep the
-                //   cascade LIGHT so the timbre stays bright/noisy (ref flat ~0.55);
-                //   the ring-amplitude gating of the noise drive already supplies
-                //   the "breathing" blend without tonalising the wash.
-                //   TONAL metals (Gong/RidBel): pitched-metallic, so a stronger
-                //   cascade pulls energy into the partials = metallic shimmer.
-                switch (m_preset_idx) {
-                    case k_Cymbal:    v.crash_couple = 0.30f; break;
-                    case k_Gong:      v.crash_couple = 0.60f; break;  // metallic pull (was "explosion")
-                    case k_HiHatOpen: v.crash_couple = 0.22f; break;
-                    case k_Ride:      v.crash_couple = 0.35f; break;
-                    case k_RideBell:  v.crash_couple = 0.50f; break;
-                    default: break;
-                }
-                // ── FDN dense-wash params (see processBlock + dsp_core.h) ──────
-                // The 6-resonator bank cannot reach a real cymbal's spectral
-                // DENSITY (flatness ~0.55 vs our ~0.2), so the wash kept reading
-                // as "a few tones + a noise bed" however tightly it was coupled.
-                // The FDN supplies the dense inharmonic shimmer.  Bright crashes
-                // get a long, lightly-damped network; the open hat a short one;
-                // tonal metals (Gong/RidBel) a lighter mix so their pitched
-                // character stays foreground.
-                switch (m_preset_idx) {
-                    case k_Cymbal:    v.fdn_g = 0.985f; v.fdn_damp = 0.50f; v.fdn_drive = 0.80f; v.fdn_mix = 0.50f; break;
-                    case k_Ride:      v.fdn_g = 0.988f; v.fdn_damp = 0.45f; v.fdn_drive = 0.65f; v.fdn_mix = 0.42f; break;
-                    case k_RideBell:  v.fdn_g = 0.984f; v.fdn_damp = 0.40f; v.fdn_drive = 0.45f; v.fdn_mix = 0.35f; break;
-                    case k_HiHatOpen: v.fdn_g = 0.945f; v.fdn_damp = 0.55f; v.fdn_drive = 0.90f; v.fdn_mix = 0.55f; break;
-                    case k_Gong:      v.fdn_g = 0.986f; v.fdn_damp = 0.32f; v.fdn_drive = 0.50f; v.fdn_mix = 0.40f; break;
-                    default: break;
-                }
-                if (v.fdn_g > 0.0f) {
-                    // Clear the (KS-dead) resB delay line that hosts the 4 FDN
-                    // lines so the network starts from silence on every strike.
-                    for (uint32_t z = 0; z < DELAY_BUFFER_SIZE; ++z) v.resB.buffer[z] = 0.0f;
-                    v.fdn_lp_0 = v.fdn_lp_1 = v.fdn_lp_2 = v.fdn_lp_3 = 0.0f;
-                    v.fdn_count = 0;
-                }
+                cymbal_note_on(v.cymbal, cc, v.current_velocity, ring_scale, pm_amt,
+                               pitch_ratio, seed);
             }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
@@ -2005,14 +2029,6 @@ SynthState state;
                             tub = fmaxf(0.4f, fminf(2.5f, tub));
                             t1 *= tub;
                             v.boom_mix *= tub;
-                            // PARAM RE-ROUTING: on crash presets TubRad also sets
-                            // the crash wash's ring length — a bigger cymbal rings
-                            // longer.  Push crash_r toward 1 as the body grows.
-                            // (1 − r) shrinks with tub, anchored so default = shipped.
-                            if (v.crash_drive > 0.0f) {
-                                v.crash_r = 1.0f - fmaxf(0.0003f, fminf(0.02f,
-                                                    (1.0f - v.crash_r) / tub));
-                            }
                         }
                     }
                 }
@@ -2188,7 +2204,7 @@ SynthState state;
         // voice cleanly (no low-end build-up; no same-pitch string beating — the
         // original reason this reset existed).
         const EngineType e = kPresetEngine[m_preset_idx];
-        const bool stack = (e == ENGINE_PLATE || e == ENGINE_BAR);
+        const bool stack = (e == ENGINE_PLATE || e == ENGINE_BAR || e == ENGINE_CYMBAL);
         if (!stack) state.next_voice_idx = NUM_VOICES - 1;
     }
 
@@ -2199,6 +2215,10 @@ SynthState state;
             state.voices[i].exciter.noise_env.release();
             state.voices[i].exciter.noise_env_hi.release();
             state.voices[i].exciter.master_env.release();
+            // Cymbal voices have no release env by design (gate_off must not
+            // choke the tail); panic uses the click-free output fade instead
+            // (tau 8 ms -> voice fully off ~55 ms after AllNoteOff).
+            state.voices[i].cymbal.fadeMul = cym_env_mul(0.008f, k_dsp_sample_rate);
         }
     }
 
@@ -2320,14 +2340,10 @@ SynthState state;
         return new_val;
     }
 
-    // Processes the Exciter (Generates the initial "strike" or sample burst)
+    // Processes the Exciter (Generates the initial "strike" burst).
+    // PCM sample playback removed (see NoteOn) — pure synthesis only.
     inline float process_exciter(ExciterState& ex) {
         float out = 0.0f;
-
-        if (ex.sample_ptr && ex.current_frame < ex.sample_frames) {
-            size_t raw_idx = ex.current_frame * ex.channels;
-            out = ex.sample_ptr[raw_idx];
-        }
 
         // Noise: computed but NOT fed into the waveguide here.
         // Storing in noise_out_sample separates percussion broadband texture
@@ -2558,6 +2574,30 @@ SynthState state;
                 }
             }
 
+            // ── ENGINE_CYMBAL: self-contained dense-resonator cymbal ───────
+            // Bypasses the entire exciter/KS/modal/plate machinery; it owns its
+            // own excitation, decay and lifetime.  Output goes through the same
+            // tilt EQ + master gain as every other engine.
+            if (voice_engine == ENGINE_CYMBAL) {
+                for (size_t i = 0; i < frames; ++i) {
+                    float cy = cymbal_process(voice.cymbal);
+                    voice.tone_lp = (cy * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
+                    if (tone_val < zeroThreshold) {
+                        cy = cy + (voice.tone_lp - cy) * (-tone_val * kInvToneCutDivisor);
+                    } else if (tone_val > zeroThreshold) {
+                        const float hp = cy - voice.tone_lp;
+                        cy += hp * (tone_val * kInvToneBoostDivisor);
+                    }
+                    main_out[i * 2]     += cy * state.master_gain;
+                    main_out[i * 2 + 1] += cy * state.master_gain;
+#ifdef UNIT_TEST_DEBUG
+                    if (voice_idx == state.next_voice_idx) ut_voice_out = cy;
+#endif
+                    if (!voice.cymbal.active) { voice.is_active = false; break; }
+                }
+                continue;  // next voice
+            }
+
             for (size_t i = 0; i < frames; ++i) {
 
                 // ── Stage 1: Raw exciter (always executes) ─────────────────
@@ -2719,156 +2759,15 @@ SynthState state;
                     if (voice.noise_am_phase > (2.0f * M_PI)) voice.noise_am_phase -= (2.0f * M_PI);
                     voice.noise_am_depth *= voice.noise_am_decay;
                 }
-                // For crash presets the raw noise is NOT added here — it is
-                // routed into the bloom bus (crash block below) so the whole
-                // metallic signal (noise + ring) blooms together instead of the
-                // noise sitting "sprayed over" the ring.
-                float crash_noise_in = 0.0f;
-                if (voice.crash_drive > 0.0f) {
-                    crash_noise_in = voice.exciter.noise_out_sample * parallel_noise_gain;
-                } else {
-                    voice_out += voice.exciter.noise_out_sample * parallel_noise_gain * voice.current_velocity;
-                }
+                voice_out += voice.exciter.noise_out_sample * parallel_noise_gain * voice.current_velocity;
                 // Structural high-band branch: simple high-pass (x - LP(x)) over
                 // exciter noise, mixed post-resonator to reduce KS-loss coupling.
                 if (voice.hf_branch_mix > 0.0f && voice.hf_branch_env > silence_threshold) {
                     voice.hf_branch_lp += 0.12f * (voice.exciter.noise_out_sample - voice.hf_branch_lp);
                     float hf = (voice.exciter.noise_out_sample - voice.hf_branch_lp);
                     float hf_out = hf * voice.hf_branch_env * voice.hf_branch_mix * 8.0f * rm_gate;
-                    // On crash presets the HF shimmer also feeds the bloom bus so
-                    // it doesn't re-introduce a static "overlaid" hiss.
-                    if (voice.crash_drive > 0.0f) crash_noise_in += hf_out;
-                    else                          voice_out += hf_out * voice.current_velocity;
+                    voice_out += hf_out * voice.current_velocity;
                     voice.hf_branch_env *= voice.hf_branch_decay;
-                }
-                // ── Crash-resonator bank (ENGINE_PLATE) ───────────────────────
-                // Drive damped 2-pole bandpass resonators at the plate partial
-                // frequencies (reusing modal_k_*) so the wash IS the partials.
-                //
-                // NONLINEAR MODAL→WASH ENERGY CASCADE (the fix for the recurring
-                // "noise and ring are juxtaposed, not modulating each other"):
-                // the resonator drive is no longer independent noise.  It is
-                //   exc = noise·(floor + (1−floor)·|m|)  +  crash_couple·(m·|m|)
-                // where m = the struck modal output.  The first term gates the
-                // breath/sizzle by the ring amplitude (noise blooms with the ring
-                // and dies with it); the second term injects a signed-quadratic of
-                // the ring (the plate's geometric nonlinearity, Chaigne/Touzé),
-                // which generates sum/difference partials and pumps low-mode energy
-                // up into the wash.  Result: the wash is BORN from the ring and
-                // locked to its envelope (ref low/high band corr +0.76) instead of
-                // running on its own noise envelope — one sound, not two.
-                if (voice.crash_drive > 0.0f) {
-                    const float m  = voice.modal_out_prev;       // struck-plate displacement (±~1.5)
-                    const float am = fabsf(m);
-                    // floor_n = fraction of the noise drive that is always on (the
-                    // independent bright "air"); the rest blooms with the ring.  At
-                    // 0.30 the cymbal/ride keep an audibly independent bright bed
-                    // (band-env corr ~0.8 like the refs, not a fully-locked 0.99
-                    // single AM'd tone) while still breathing with the ring.
-                    const float floor_n = 0.30f;
-                    float exc = voice.exciter.noise_out_sample * (floor_n + (1.0f - floor_n) * am)
-                              + (m * am) * voice.crash_couple;    // m·|m| = signed quadratic cascade
-                    exc = fmaxf(-3.0f, fminf(3.0f, exc));
-                    const float r   = voice.crash_r;
-                    const float r2  = r * r;
-                    const float g0  = (1.0f - r2);   // input gain → ~constant peak
-                    float sum = 0.0f;
-                    float cy;
-                    cy = r * voice.modal_k_1 * voice.crash_y1_1 - r2 * voice.crash_y2_1 + g0 * exc;
-                    voice.crash_y2_1 = voice.crash_y1_1; voice.crash_y1_1 = cy; sum += cy;
-                    cy = r * voice.modal_k_2 * voice.crash_y1_2 - r2 * voice.crash_y2_2 + g0 * exc;
-                    voice.crash_y2_2 = voice.crash_y1_2; voice.crash_y1_2 = cy; sum += cy;
-                    if (voice.modal_mode_count > 2) {
-                        cy = r * voice.modal_k_3 * voice.crash_y1_3 - r2 * voice.crash_y2_3 + g0 * exc;
-                        voice.crash_y2_3 = voice.crash_y1_3; voice.crash_y1_3 = cy; sum += cy;
-                        cy = r * voice.modal_k_4 * voice.crash_y1_4 - r2 * voice.crash_y2_4 + g0 * exc;
-                        voice.crash_y2_4 = voice.crash_y1_4; voice.crash_y1_4 = cy; sum += cy;
-                        if (voice.modal_mode_count > 4) {
-                            cy = r * voice.modal_k_5 * voice.crash_y1_5 - r2 * voice.crash_y2_5 + g0 * exc;
-                            voice.crash_y2_5 = voice.crash_y1_5; voice.crash_y1_5 = cy; sum += cy;
-                            cy = r * voice.modal_k_6 * voice.crash_y1_6 - r2 * voice.crash_y2_6 + g0 * exc;
-                            voice.crash_y2_6 = voice.crash_y1_6; voice.crash_y1_6 = cy; sum += cy;
-                        }
-                    }
-                    // Clamp guards the (small) low-frequency resonance peak.
-                    sum = fmaxf(-4.0f, fminf(4.0f, sum));
-
-                    // Bloom bus = resonated noise + raw/HF noise + a tap of the
-                    // struck ring.  All metallic content meets here so it can
-                    // intermodulate, instead of being summed in parallel.
-                    // Ride/RidBel ONLY: the raw bed is amplitude-gated by the ring
-                    // (|m|), so the "crackle" blooms/dies with the bell instead of
-                    // reading as an independent crackling layer (HW: "bell
-                    // juxtaposed to crackling noise").  Cymbal/Gong/HHat-O keep
-                    // their full bright noise bed (the cascade alone supplies the
-                    // blend; gating their bed would dull the bright sizzle the
-                    // reference samples need ~11 kHz, flat ~0.55).
-                    float bed_gate = (m_preset_idx == k_Ride || m_preset_idx == k_RideBell)
-                                   ? (floor_n + (1.0f - floor_n) * am) : 1.0f;
-                    float wash = sum * voice.crash_drive
-                               + crash_noise_in * bed_gate
-                               + voice.modal_out_prev * voice.crash_ring_tap;
-
-                    // ── FDN dense metallic wash ───────────────────────────────
-                    // 4-line Hadamard feedback delay network hosted in the
-                    // KS-dead resB.buffer: supplies the dense inharmonic spectrum
-                    // the 6-resonator bank cannot, so the wash reads as one
-                    // metallic body instead of "a few tones + a noise bed".
-                    // Driven by the same nonlinear crash excitation `exc`, so it
-                    // blooms with the strike and decays locked to it.  Orthonormal
-                    // Hadamard × sub-unity gain ⇒ guaranteed-stable dense decay.
-                    if (voice.fdn_g > 0.0f) {
-                        float* __restrict B = voice.resB.buffer;
-                        const uint32_t c = voice.fdn_count++;
-                        // 4 mutually-prime lengths in 4 × 512-sample partitions;
-                        // interleaved combs → dense modes ~25-90 Hz spacing.
-                        const uint32_t p0 =    0u + (c % 281u);
-                        const uint32_t p1 =  512u + (c % 359u);
-                        const uint32_t p2 = 1024u + (c % 419u);
-                        const uint32_t p3 = 1536u + (c % 487u);
-                        float s0 = B[p0], s1 = B[p1], s2 = B[p2], s3 = B[p3];
-                        // Per-line one-pole HF damping (bright metallic decay).
-                        voice.fdn_lp_0 += voice.fdn_damp * (s0 - voice.fdn_lp_0); s0 = voice.fdn_lp_0;
-                        voice.fdn_lp_1 += voice.fdn_damp * (s1 - voice.fdn_lp_1); s1 = voice.fdn_lp_1;
-                        voice.fdn_lp_2 += voice.fdn_damp * (s2 - voice.fdn_lp_2); s2 = voice.fdn_lp_2;
-                        voice.fdn_lp_3 += voice.fdn_damp * (s3 - voice.fdn_lp_3); s3 = voice.fdn_lp_3;
-                        // Lossless Hadamard mix (the ×0.5 makes it orthonormal);
-                        // sub-unity feedback gain sets the reverberant decay.
-                        const float g  = voice.fdn_g * 0.5f;
-                        const float in = exc * voice.fdn_drive;
-                        B[p0] = in + g * (s0 + s1 + s2 + s3);
-                        B[p1] = in + g * (s0 - s1 + s2 - s3);
-                        B[p2] = in + g * (s0 + s1 - s2 - s3);
-                        B[p3] = in + g * (s0 - s1 - s2 + s3);
-                        wash += 0.25f * (s0 + s1 + s2 + s3) * voice.fdn_mix;
-                    }
-
-                    // ── Self-phase-modulation "dynamic bloom" ─────────────────
-                    // Write the wash to the (reused, KS-dead) resA delay line and
-                    // read back at an offset modulated by the wash's own amplitude
-                    // → self-FM Bessel sidebands that densify the sparse partials
-                    // into a real crash and bloom brighter as it gets louder.
-                    float bloomed = wash;
-                    if (voice.crash_bloom > 0.0f) {
-                        WaveguideState& pd = voice.resA;
-                        pd.buffer[pd.write_ptr] = wash;
-                        // base read-back ~24 samples behind write; the modulation
-                        // multiplier is clamped to [0.25,4] so the read pointer
-                        // can never run past the write head or out of the buffer.
-                        float mult = 1.0f + voice.crash_bloom * wash;
-                        mult = fmaxf(0.25f, fminf(4.0f, mult));
-                        float rp = (float)pd.write_ptr - (12.0f * mult);
-                        if (rp < 0.0f) rp += (float)DELAY_BUFFER_SIZE;
-                        uint32_t i0 = ((uint32_t)rp) & DELAY_MASK;
-                        uint32_t i1 = (i0 + 1u) & DELAY_MASK;
-                        float frac = rp - (float)(uint32_t)rp;
-                        bloomed = pd.buffer[i0] + frac * (pd.buffer[i1] - pd.buffer[i0]);
-                        pd.write_ptr = (pd.write_ptr + 1u) & DELAY_MASK;
-                        // Blend dry wash + bloom so the pitched partials stay
-                        // present while the bloom adds density/shimmer.
-                        bloomed = 0.35f * wash + 0.9f * bloomed;
-                    }
-                    voice_out += fmaxf(-6.0f, fminf(6.0f, bloomed)) * voice.current_velocity;
                 }
                 // ── Strike transient layer (membrane presets) ─────────────────
                 // Short bright band-passed noise burst = the stick-slap / mallet-
@@ -3017,10 +2916,6 @@ SynthState state;
                     // Feed the ring-mod coupling (1-sample delay; bounded so the
                     // noise gain factor stays well inside ±(1+depth)).
                     voice.modal_out_prev = fmaxf(-1.5f, fminf(1.5f, modal_sum));
-                    // On crash presets the struck modal bank is only the tonal
-                    // SEED/attack; the noise-driven crash bank is the body, so
-                    // pull the struck ring back to let the crash wash dominate.
-                    if (voice.crash_drive > 0.0f) modal_engine_gain *= 0.12f;  // ref flat~0.55 ⇒ ring only a faint metallic undertone under bright noise
                     voice_out += modal_sum * modal_mix_dyn * modal_engine_gain;
                      if (voice.modal_env_1 < silence_threshold &&
                          voice.modal_env_2 < silence_threshold &&
@@ -3099,16 +2994,26 @@ SynthState state;
             }
         }
 
-        // ── Stage 1-3: hard-clip output ────────────────────────────────────
+        // ── Stage 1-3: pre-clip trim + hard-clip output ────────────────────
         // Stage 4 uses soft-clip + overdrive.  For debug stages the raw mallet
         // impulse (~3-4 × full-scale) must be clamped or the Drumlogue DAC
         // saturates on the first note and may engage hardware protection.
         // (Timpani/Taiko never reach here — the dense-kernel path above owns
         // its own master stage; the earlier per-preset pre-clip trim hack is
         // gone with it.)
+        //
+        // ENGINE_CYMBAL: stacked voices (rolls) can sum past the ±0.99
+        // brickwall below, which reads as harsh noise.  CymbalKit-style soft
+        // headroom first: a single voice passes ~unchanged, stacks are limited
+        // gently instead of hard-clipping.  Other presets are untouched.
+        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+            for (size_t i = 0; i < frames * 2; ++i) {
+                main_out[i] = main_out[i] / (1.0f + 0.35f * fabsf(main_out[i]));
+            }
+        }
         for (size_t i = 0; i < frames; ++i) {
-            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
-            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1]));
+            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2] * pre_clip_trim));
+            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1] * pre_clip_trim));
         }
         // ── Stage 4b: Master FX (filter + overdrive + brickwall) ──────────
         for (size_t i = 0; i < frames; ++i) {
@@ -3244,8 +3149,10 @@ private:
     unit_runtime_get_sample_ptr m_get_sample = nullptr;
 
     uint8_t m_ui_note = 60;
-    uint8_t m_sample_bank = 0;
-    uint8_t m_sample_number = 0;
+    // Ex-sample-selection params, repurposed (PCM layering removed): global
+    // cymbal performance/CPU controls.
+    uint8_t m_cym_poly = 2;        // max simultaneous cymbal voices (1-2)
+    uint8_t m_cym_reso_scale = 40;  // cymbal resonator-bank scale (25-60 %)
     uint8_t m_model_a = k_String;
     uint8_t m_model_b = k_String;
     bool    m_is_resonator_a = true; // default is res A

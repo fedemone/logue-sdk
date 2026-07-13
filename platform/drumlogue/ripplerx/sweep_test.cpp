@@ -41,7 +41,12 @@ static void render(int idx, uint8_t note, int param, int value,
     if (param >= 0) synth.setParameter((uint8_t)param, value);
 
     const int total = (int)(dur_s * SR);
-    static float mono[48000 * 4];
+    constexpr int kMaxSamples = 48000 * 4;
+    static float mono[kMaxSamples];
+    if (total > kMaxSamples) {
+        fprintf(stderr, "Duration too long for buffer\n");
+        return;
+    }
     float st[256];
     synth.NoteOn(note, 100);
     int frame = 0; bool rel = false;
