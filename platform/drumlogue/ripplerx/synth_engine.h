@@ -145,7 +145,8 @@ public:
         k_GlassBottle,      // 35  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
         k_Tick,             // 36  — the pre-redesign HHat-C metallic chick + added "clack" mode (HW request)
         k_Splash,           // 37  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
-        k_NumPrograms       // 38 — marker (count)
+        k_BrushSnare,       // 38  — brush-swept snare: slow swish onset + 6.5 Hz swirl AM + diffuse wire hiss
+        k_NumPrograms       // 39 — marker (count)
     };
 
     enum ModelsIndex {
@@ -352,7 +353,10 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        ratio 1.40, 50ms, strong) per HW request ("HHat-C as Tick, adding some clack under") */
     {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f},
     /* k_Splash: ENGINE_CYMBAL — modal bank bypassed; plate ratios kept valid */
-    {2.92f, 6.37f, 11.75f, 300.0f, 200.0f, 120.0f, 80.0f, 0.20f, 0.80f, 0.50f, 0.30f, 0.20f, 4, 0.0f, 0.0f}};
+    {2.92f, 6.37f, 11.75f, 300.0f, 200.0f, 120.0f, 80.0f, 0.20f, 0.80f, 0.50f, 0.30f, 0.20f, 4, 0.0f, 0.0f},
+    /* k_BrushSnare: softer/darker body than AcSnare (brush barely moves the head);
+       ring slightly longer (110ms) so the head tone breathes under the swish */
+    {1.59f, 2.14f, 2.30f, 110.0f, 60.0f, 35.0f, 20.0f, 0.20f, 0.60f, 0.42f, 0.26f, 0.15f, 4, 0, 0.0f}};
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
@@ -396,7 +400,8 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_Bongo       */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.01047f,    1.00000f,    0.99952f, 0.18000f,    0.00000f,    0.00200f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    3.50000f},
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
     /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f},
-    /* k_Splash      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f}};
+    /* k_Splash      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
+    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.60000f,    1.76000f,    0.91800f,    0.00000f,    0.00080f,    0.00000f,    0.45000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.08000f,    2.00000f}};
 
 // Preset → engine routing table.
 // NOTE: Must be 'static' only (no const/constexpr) — same .rodata rule as above.
@@ -439,6 +444,7 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_GlassBottle(35)  */ ENGINE_BAR,
     /* k_Tick(36)         */ ENGINE_PLATE,  // ex-HHat-C chick + clack
     /* k_Splash(37)       */ ENGINE_CYMBAL, // small pitched splash cymbal
+    /* k_BrushSnare(38)   */ ENGINE_SNARE,  // brush-swept snare (swish + swirl)
 };
 
 // ModelsIndex → modal frequency-ratio template: modes 2..6 relative to the
@@ -710,12 +716,12 @@ SynthState state;
             {   0,  36,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 0:  Kick2     — the pre-redesign Timpani body as a solid kettledrum kick (HW-approved)
             {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,1999,   7,  20,   0, 300,   0,1200, 707},        // 1:  Marimba   — exemplar BAR voice (HW: ok)
             {   2,  36,   0,   1, 350, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220, 707},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
-            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   3,1999,   8,   7,  52, 740,   2, 480, 707},        // 3:  AcSnare   — brighter wire path
+            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   3,1999,   8,   7,  52, 950,   2, 300, 707},        // 3:  AcSnare   — wire path live; NzRs 740→950: buzz T60≈0.4s matches acoustic-snare.wav t40≈280ms; NzFq 480→300 (HP 3kHz) pulls centroid toward the darker reference
             {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 707},        // 4:  TblrBel
             {   5,  52,   0,   1, 360, 300,   0,  40,   2,   3, 150,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — dense-kernel voice.  Note 52 (E3): the kettle's dominant sustained partial measures 165.5 Hz ≈ E3 (the 110 Hz A2 principal sits a fifth below) — the display now names the pitch you hear; 52 is also the kernel recipe root, so the shipped row plays the approved render at ratio 1
             {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 707},        // 6:  Djambe    — (HW: ok)
             {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 120,  10,   0,  30,  15,   1,1999,  16,   5,  52, 180,   0, 800, 707},        // 7:  Taiko     — bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. Port retune: modal_mix 0.60 + brighter crack (NzMix 36→52, NzFltFrq 360→800 ≈8kHz) + leaner boom for a brighter, longer ring
-            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 800,   2, 105, 707},        // 8:  MrchSnr   — noise attack staging removed in NoteOn (click+buzz land together)
+            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 940,   2, 105, 707},        // 8:  MrchSnr   — click+buzz land together; NzRs 800→940: buzz T60≈0.36s matches Marching-Snare ref t40≈220ms
             {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   3,1999,  18,   0,   0, 300,   0,1000, 707},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,1999,   3,   0,   5, 420,   0, 900, 707},        // 11: Wodblk    — (HW: ok)
@@ -744,7 +750,8 @@ SynthState state;
             {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 707},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
-            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707}         // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {  38,  38,   0,   1, 120, 140,   0,  30,   2,   5, 160,  -7,   0,  46,  14,   3,1999,   8,   7,  78, 950,   1, 420, 707}         // 38: BrshSnr   — brush sweep: soft mallet, BP noise ~4.2kHz, long swish tail, swirl AM in NoteOn
         };
 
         if (idx >= k_NumPrograms) return;
@@ -887,7 +894,7 @@ SynthState state;
             "BelTre",  "SltDrm",
             "Ride",    "RidBel",
             "Bongo",   "GlsBotl","Tick",
-            "Splash"
+            "Splash",  "BrshSnr"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -1370,40 +1377,22 @@ SynthState state;
             // MarchSnare uses 0.012 (~90% in 4ms): the slow stage made the stick
             // click and the wire noise read as two separate events on hardware —
             // a marching snare's crack and buzz must land together.
+            // BrshSnr keeps a slow ~30 ms swish build instead — a brush drags
+            // across the head, it does not crack.
             if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare) {
                 // 6th HW pass: AcSnare too — the 0.001 staging still read as
                 // "sprayed noise over the click"; crack and buzz must land together.
                 float snare_attack = 0.012f;
                 v.exciter.noise_env.attack_rate = snare_attack;
                 v.exciter.noise_env_hi.attack_rate = snare_attack;
-                // Band A: velocity-controlled centre (~2.8 kHz for AcSnare, ~3.5 kHz for MrchSnr)
-                float vq = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
-                float r_a = 0.90f + (0.07f * vq);
-                float freq_a = (m_preset_idx == k_MarchSnare) ? 3500.0f : 2800.0f;
-                float w_a = (2.0f * M_PI * freq_a) * inverse_default_sample_rate;
-                v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
-                v.exciter.snare_wire_a2 = r_a * r_a;
-
-                // Band B: per-preset centre freq + pole radius (fallback: 4.5 kHz, r=0.86)
-                float freq_b = preset_param(static_cast<ProgramIndex>(m_preset_idx), k_snare_freq_b);
-                float r_b_base = preset_param(static_cast<ProgramIndex>(m_preset_idx), k_snare_r_b);
-                if (freq_b < 100.0f) freq_b = 4500.0f;
-                if (r_b_base < 0.3f) r_b_base = 0.86f;
-                float r_b = r_b_base + (0.05f * vq);
-                float w_b = (2.0f * M_PI * freq_b) * inverse_default_sample_rate;
-                v.exciter.snare_wire_a1b = 2.0f * r_b * fastercosfullf(w_b);
-                v.exciter.snare_wire_a2b = r_b * r_b;
-
-                // Band C: per-preset centre freq + pole radius (fallback: 7.2 kHz, r=0.82)
-                float freq_c = preset_param(static_cast<ProgramIndex>(m_preset_idx), k_snare_freq_c);
-                float r_c_base = preset_param(static_cast<ProgramIndex>(m_preset_idx), k_snare_r_c);
-                if (freq_c < 100.0f) freq_c = 7200.0f;
-                if (r_c_base < 0.3f) r_c_base = 0.82f;
-                float r_c = r_c_base + (0.03f * vq);
-                float w_c = (2.0f * M_PI * freq_c) * inverse_default_sample_rate;
-                v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
-                v.exciter.snare_wire_a2c = r_c * r_c;
+            } else if (m_preset_idx == k_BrushSnare) {
+                float brush_attack = 0.0015f;   // ~30 ms to 90%: the swish onset
+                v.exciter.noise_env.attack_rate = brush_attack;
+                v.exciter.noise_env_hi.attack_rate = brush_attack;
             }
+            // NOTE: the velocity-dependent wire-band coefficients are set AFTER
+            // PartialReset() below — PartialReset restores the band defaults, so
+            // anything written here would be clobbered before the first sample.
         }
 
         // --- THE PHYSICS OF PITCH ---
@@ -1719,6 +1708,73 @@ SynthState state;
         v.boom_mix = preset_param(preset, k_boom_mix);
         v.boom_attack_env = preset_param(preset, k_boom_attack_env);
         v.boom_attack_inc = preset_param(preset, k_boom_attack_inc);
+        // ── Snare-wire exciter restore (MUST be after PartialReset) ──────────
+        // PartialReset() zeroes snare_wire_mix and restores default band
+        // coefficients on every hit; LoadPreset only wrote them once at preset-
+        // load time.  Without this per-NoteOn restore the entire 3-band wire
+        // rattle was dead on every live hit — the snare family played body +
+        // plain noise only.  Restored for ENGINE_SNARE presets only: other
+        // presets with a non-zero table mix (e.g. KickDrum 0.03) were HW-
+        // approved with the wire silent, so their live behaviour is kept.
+        if (m_preset_idx == k_AcSnare || m_preset_idx == k_MarchSnare ||
+            m_preset_idx == k_BrushSnare) {
+            v.exciter.snare_wire_mix    = fmaxf(0.0f, fminf(1.0f, preset_param(preset, k_snare_wire_mix)));
+            v.exciter.wire_onset_env    = preset_param(preset, k_wire_onset_env);
+            v.exciter.wire_onset_attack = preset_param(preset, k_wire_onset_attack);
+            const float vq = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
+            // Velocity → buzz character: soft hits (ghost notes) are mostly head
+            // tone with a short, loose rattle; hard hits press the wires into the
+            // head for a tighter, brighter, longer buzz.  Anchored at vq=1 so a
+            // full-velocity hit plays the calibrated table values unchanged.
+            v.exciter.snare_wire_mix *= (0.60f + 0.40f * vq);
+            // Soft hits also die sooner: scale the natural buzz decay up to
+            // ~2× faster at zero velocity (×1.0 at full velocity).  Recomputed
+            // from the NzRs knob value — decay_rate is shared voice state, so
+            // multiplying it in place would compound across hits.
+            {
+                float nz_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] * 0.001f));
+                float base_decay = 0.0001f + ((1.0f - nz_norm) * 0.005f);
+                v.exciter.noise_env.decay_rate = base_decay * (2.0f - vq);
+            }
+            // Band A: velocity-controlled centre (~2.8 kHz AcSnare, ~3.5 kHz
+            // MrchSnr, ~2.2 kHz BrshSnr — brushes read lower/softer).
+            float r_a = 0.90f + (0.07f * vq);
+            float freq_a = (m_preset_idx == k_MarchSnare) ? 3500.0f
+                         : (m_preset_idx == k_BrushSnare) ? 2200.0f : 2800.0f;
+            if (m_preset_idx == k_BrushSnare) r_a = 0.86f + (0.06f * vq); // broader band = diffuse swish
+            float w_a = (2.0f * M_PI * freq_a) * inverse_default_sample_rate;
+            v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
+            v.exciter.snare_wire_a2 = r_a * r_a;
+
+            // Band B: per-preset centre freq + pole radius (fallback: 4.5 kHz, r=0.86)
+            float freq_b = preset_param(preset, k_snare_freq_b);
+            float r_b_base = preset_param(preset, k_snare_r_b);
+            if (freq_b < 100.0f) freq_b = 4500.0f;
+            if (r_b_base < 0.3f) r_b_base = 0.86f;
+            float r_b = r_b_base + (0.05f * vq);
+            float w_b = (2.0f * M_PI * freq_b) * inverse_default_sample_rate;
+            v.exciter.snare_wire_a1b = 2.0f * r_b * fastercosfullf(w_b);
+            v.exciter.snare_wire_a2b = r_b * r_b;
+
+            // Band C: per-preset centre freq + pole radius (fallback: 7.2 kHz, r=0.82)
+            float freq_c = preset_param(preset, k_snare_freq_c);
+            float r_c_base = preset_param(preset, k_snare_r_c);
+            if (freq_c < 100.0f) freq_c = 7200.0f;
+            if (r_c_base < 0.3f) r_c_base = 0.82f;
+            float r_c = r_c_base + (0.03f * vq);
+            float w_c = (2.0f * M_PI * freq_c) * inverse_default_sample_rate;
+            v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
+            v.exciter.snare_wire_a2c = r_c * r_c;
+        }
+        // BrshSnr swirl: a slow enveloped-LFO amplitude ripple over the noise —
+        // the circular wrist motion of a brush sweep (~6.5 Hz), fading over the
+        // stroke so the tail settles into plain sizzle.
+        if (m_preset_idx == k_BrushSnare) {
+            v.noise_am_depth = 0.45f;
+            v.noise_am_inc   = (2.0f * M_PI * 6.5f) * inverse_default_sample_rate;
+            v.noise_am_decay = 0.999985f;               // depth τ ≈ 0.7 s
+            v.noise_am_phase = 1.5f * M_PI;             // full level on frame 0
+        }
         {
             float atk_ms = preset_param(preset, k_onset_attack_ms);
             if (atk_ms > 0.001f) {
@@ -2170,14 +2226,23 @@ SynthState state;
             if (v.is_active && !v.is_releasing && v.current_note == note) {
                 v.is_releasing = true;
 
-                v.exciter.noise_env.release();
-                v.exciter.noise_env_hi.release();
+                // SNARE: do NOT release the noise envelopes.  The Drumlogue
+                // fires gate_off in the same tick as gate_on, so the Rel-rate
+                // release choked the wire buzz to ~26 ms T60 — real snare wires
+                // ring freely once the stick leaves the head.  The envelopes
+                // stay in ENV_DECAY (sustain 0) and die at the NzRs-governed
+                // natural rate, which is calibrated against the reference
+                // samples (~0.2-0.4 s buzz tails).
+                const EngineType ve = kPresetEngine[m_preset_idx];
+                if (ve != ENGINE_SNARE) {
+                    v.exciter.noise_env.release();
+                    v.exciter.noise_env_hi.release();
+                }
                 // KS: release master_env so voice decays via Dkay release rate.
                 // Modal engines: master_env holds at 1.0 — modal T60 controls ring.
                 // NOISE engines: master_env also holds at 1.0; noise_env release
                 // (controlled by Rel parameter) fades the output instead.  This
                 // gives Clap/Shaker a proper "tschaa" tail rather than an instant cut.
-                const EngineType ve = kPresetEngine[m_preset_idx];
                 if (ve == ENGINE_KS) {
                     v.exciter.master_env.release();
                 }
@@ -3012,8 +3077,8 @@ SynthState state;
             }
         }
         for (size_t i = 0; i < frames; ++i) {
-            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2] * pre_clip_trim));
-            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1] * pre_clip_trim));
+            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
+            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1]));
         }
         // ── Stage 4b: Master FX (filter + overdrive + brickwall) ──────────
         for (size_t i = 0; i < frames; ++i) {
