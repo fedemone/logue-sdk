@@ -11,7 +11,7 @@ Always rebuild and check `arm-unknown-linux-gnueabihf-size ripplerx.elf`:
 
 ## Current Working State
 
-- Unit **loads on hardware** (as of 081e82e); all **39** presets render clean (0 NaN/silent).
+- Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0).
 - Host syntax-check (g++ -fsyntax-only): **clean**.
 - HHat-O **HW-approved** ("ok now" — do not break).
@@ -62,6 +62,21 @@ Structural snare fixes (all measured; details in `REALISM_REVIEW.md`):
   per-sample invariants hoisted.  All 39 renders byte-identical.
 - Also fixed: HEAD did not compile (orphaned `pre_clip_trim` from the cymbal
   port merge).
+
+**Round 2 (HW feedback on pass 19):**
+- BrshSnr "too fast, hit too hard" → velocity compressed (0.30-0.72), swish
+  onset ~100 ms, wires resting on head (`k_wire_onset_env=1` → no crack
+  burst), 4.2 Hz swirl, tail T60≈0.64 s.  HW may supply a brush reference
+  sample for calibration.
+- **RimShot approved & added** (preset 39, ENGINE_SNARE): hard stick, rim-ring
+  mode cluster (2.42/3.38 rings longer than the head), tight 70 ms buzz.
+- **Buzz-roll continuity approved & added**: snare retriggers < 80 ms restore
+  the wire resonator states across PartialReset and skip the crack burst.
+- **All 7 per-family recommendations approved & applied** — measured results in
+  `REALISM_REVIEW.md` "Round-2 results".  Headline: Cymbal/Ride/RidBel body
+  centroid fixed via `CymbalConfig.hfTilt` HF-weighted resGain (Cymbal
+  927→6932 Hz vs ref 7366; Ride 6121 vs 6087).  Kalimba/Cowbell/Conga/AcTom/
+  Triangle/Clap table retunes.  Stereo idea discarded per HW.
 
 ### Pass 18 — FDN dense wash (cymbals) + strike transient layer (Timpani/Taiko)
 
@@ -490,6 +505,7 @@ k_GlassBottle(35) ENGINE_BAR
 k_Tick(36)        ENGINE_PLATE
 k_Splash(37)      ENGINE_CYMBAL    ← small pitched splash (dense-resonator engine)
 k_BrushSnare(38)  ENGINE_SNARE     ← "BrshSnr": brush sweep, swirl AM + diffuse wires
+k_RimShot(39)     ENGINE_SNARE     ← "RimShot": stick crack + rim-ring ping + tight buzz
 ```
 
 NOTE: Cymbal(13), Gong(14), HHatOpen(27), Ride(32), RideBell(33) were moved to

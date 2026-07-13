@@ -1,5 +1,10 @@
 # Instrument-Family Realism Review — July 2026
 
+> **Round 2 (HW feedback applied)** — all seven recommendations below were
+> approved and implemented; results at the bottom ("Round-2 results").
+> BrshSnr was reworked (softer/longer per HW), RimShot added (preset 39),
+> buzz-roll retrigger continuity added.  Stereo idea discarded as directed.
+
 Scope: full review of every engine family against the reference samples in
 `samples/`, driven by the same offline metrics the tuning pipeline uses
 (spectral centroid over the first 300 ms after the peak, t40 = time for the
@@ -138,3 +143,35 @@ per-sample engine branches (risky, large diff for maybe ~5%), NEONizing the
 3-band wire resonators (they are only 3 biquads — not worth it), and skipping
 `process_exciter` when both noise envelopes are idle and the mallet decayed
 (already effectively gated internally).
+
+## Round-2 results (HW feedback round, all 7 recommendations applied)
+
+Same metrics as above; render at the shipped note, velocity 100.
+
+| preset | before → after → ref (centroid Hz) | before → after → ref (t40 ms) | notes |
+|---|---|---|---|
+| Cymbal   | 927 → **6932** → 7366 | 1060 → 910 → 1260 | `hfTilt=3.0` HF-weighted resGain |
+| Ride     | 1379 → **6121** → 6087 | 1330 → 1310 → 1940 | `hfTilt=2.0` — essentially exact |
+| RidBel   | 1349 → **6002** → 7127 | 1330 → 1180 → 1250 | `hfTilt=2.0` |
+| Kalimba  | 554 → 661 → 1667 | 460 → **1140** → 2400 | T60 600→1500 ms; centroid gap is ref-pitch mismatch (ref tine ≈1.4 kHz f0, shipped note 349 Hz) |
+| Cowbell  | 1395 → 1201 → 5639 | 470 → **170** → 120 | now a short clank ✓; brightness capped by low mode stack — HW listen next |
+| Conga    | 919 → **481** → 554 | 70 → **180** → 300 | body 90→250 ms, slap softened |
+| AcTom    | 205 → 225 → 1521 | 260 → **370** → 490 | body 350→500 ms + stick transient layer + NzMx 30; energy centroid stays body-dominated by design (attack is brighter) |
+| Triangle | 2405 → **4772** → 8545 | — | modes 4-6 added (9.0/13.1/17.9); remaining gap = documented KS attack floor + ref-pitch mismatch |
+| Clap     | 4540 → **3692** → 2986 | 180 → 180 → 120 | NzFq 300→200 |
+
+**HF-tilt mechanism** (`CymbalConfig.hfTilt`, dsp_core.h): each ringer's tap
+gain is weighted by `(f/2 kHz)^(0.5·hfTilt)` via `fasterpowf` (note-on time,
+amplitude-only — fast-math approved).  hfTilt=1 exactly counters the pink
+driver's −3 dB/oct amplitude tilt; measured, the drive carries extra red
+energy (thwack burst, swept one-pole), so the shipped values are 3.0 (Cymbal)
+and 2.0 (Ride/RidBel).  HHat-O ("do not break"), Gong (deliberately tonal)
+and Splash keep the legacy flat bank.
+
+**Snare round 2**: BrshSnr velocity-compressed (0.30–0.72), swish onset
+~100 ms, wires resting on the head (`k_wire_onset_env=1` → no crack burst),
+4.2 Hz swirl, T60≈0.64 s tail.  RimShot (39): hard stick, HitPos 80, bright
+rim-ring cluster (2.42/3.38 ring longer than the head mode), tight 70 ms
+buzz.  Buzz rolls: retriggers < 80 ms keep the wire resonator states and skip
+the crack burst.  A user-supplied brush reference under `samples/` would let
+the brush be calibrated like Timpani/Taiko were.

@@ -166,6 +166,13 @@ struct CymbalConfig {
     float lowAttackSec, decaySec, highAttackSec, highDecaySec;
     float thwackSec, stickLevel, noiseLevel, resonatorLevel, shimmerLevel;
     float directNoiseLevel, phaseModDepth;
+    // HF gain tilt (0 = legacy flat bank).  At 1.0 each ringer's tap gain is
+    // weighted by sqrt(f / 2 kHz), which exactly counters the pink driver's
+    // −3 dB/oct amplitude tilt so the wash reads white-bright like the
+    // reference cymbals (~6-7 kHz body centroid) instead of ~1.3 kHz dark.
+    // Left 0 for presets whose balance is HW-approved (HHat-O, Gong, Splash);
+    // aggregate initializers with 17 values default this to 0.
+    float hfTilt;
 };
 
 struct CymbalVoice {
@@ -315,7 +322,13 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
         c.resA2[i]   = r2;
         c.resY1[i]   = 0.0f;
         c.resY2[i]   = 0.0f;
-        c.resGain[i] = 0.85f + 0.30f * cym_frand(c.rng);
+        float g      = 0.85f + 0.30f * cym_frand(c.rng);
+        if (cfg.hfTilt > 0.0f) {
+            // sqrt(f/2kHz)^hfTilt HF weighting (see CymbalConfig).  fasterpowf
+            // is fine here: amplitude weight, note-on time, arg in [0.15, 10].
+            g *= fasterpowf(f * 0.0005f, 0.5f * cfg.hfTilt);
+        }
+        c.resGain[i] = g;
     }
     c.resonatorNorm = cfg.resonatorLevel / sqrtf((float)count);
     const uint16_t padded = (uint16_t)((count + 3u) & ~3u);
