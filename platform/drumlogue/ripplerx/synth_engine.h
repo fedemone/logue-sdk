@@ -145,7 +145,7 @@ public:
         k_GlassBottle,      // 35  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
         k_Tick,             // 36  — the pre-redesign HHat-C metallic chick + added "clack" mode (HW request)
         k_Splash,           // 37  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
-        k_BrushSnare,       // 38  — sample: brush_snare_hit_hard.wav, snare_brush_soft.wav. brush-swept snare: slow swish onset + ~4 Hz swirl AM + diffuse wire hiss
+        k_BrushSnare,       // 38  — sample: snare_brush_hard.wav, snare_brush_medium.wav, snare_brush_soft.wav. brush-swept snare: slow swish onset + ~4 Hz swirl AM + diffuse wire hiss
         k_RimShot,          // 39  — sample: rimshot-snare.wav rimshot: hard stick crack + bright rim-ring mode cluster + tight short buzz
         k_NumPrograms       // 40 — marker (count)
     };
