@@ -105,6 +105,12 @@ A sine oscillator with a fast-decay envelope injects low-body energy (40–100 H
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.
 
+Snare-family runtime rules (restored/added July 2026 — see `REALISM_REVIEW.md`):
+- Wire parameters are restored per-NoteOn **after** `PartialReset()` (which zeroes them); for 18 HW passes the wire path was silently dead on live hits.
+- `ENGINE_SNARE` skips the noise-envelope release on NoteOff: the Drumlogue's same-tick gate_off otherwise chokes the buzz to ~26 ms. The buzz tail is governed by NzRs (calibrated to the reference samples).
+- Velocity scales wire mix and buzz decay (ghost-note physics), anchored so full velocity plays the calibrated table sound.
+- Preset 38 `BrshSnr` is a brush-swept snare: slow swish onset, 6.5 Hz enveloped swirl AM, diffuse low-Q wire bands.
+
 ### Metallic low-loss clamp (Phase 53)
 At NoteOn, `Cymbal`, `Gong`, `HHat-O`, `Ride`, `RidBel`, and `Trngle` get `loss_g_hf` and `lowpass_coeff` floors raised so the KS loop retains upper partials longer. Transient LP jitter is also limited to prevent over-darkening the attack — a known architecture-coupled failure mode for metallic rods/bars.
 
