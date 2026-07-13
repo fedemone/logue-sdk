@@ -275,3 +275,22 @@ metric here):
 Render (mid velocity): centroid 3126 Hz, flatness 0.225, band split
 33/58/8% (.3-2k / 2-6k / 6-22k), attack 37 ms, t40 290 ms — sits below the
 medium reference's 3931 Hz on purpose.
+
+### Round 4c — HW listen: "still too much hit, hitting more than the hard sample"
+
+The Round-4b onset was diagnosed by comparing peak-normalised onset envelopes
+against the references. The references PEAK EARLY (~16 ms) then decay; the 4b
+build instead SWELLED to a late broad hump (peak ~50 ms, sustained 0.4-0.5 of
+peak through 20-50 ms) — a crescendo gesture that reads as a "hit". The long
+onset ramp (45 ms) plus slow attack were building that hump. Fixed by matching
+the reference shape: quick soft entry + immediate decay, no swell.
+
+- Onset ramp 45 ms -> 10 ms (declick only, no swell-up).
+- attack_rate 0.0009 -> 0.0045 base: peak-to-onset now ~15 ms (refs: 16 ms),
+  then a clean decay (20 ms:0.37, 50 ms:0.17, 120 ms:0.06) instead of a plateau.
+- Crest 15.6 — peakier than 4b's humped 9.9 but still below the hard
+  reference's 18.1, and now shaped like the refs (transient + decay, not a
+  sustained body).
+
+Tone kept dark per 4b: centroid 3065 Hz, energy >6 kHz 8%. Tail still "long":
+t40 230 ms (soft) -> 311 ms (hard, ref 315). Level 5 dB pp->ff spread.

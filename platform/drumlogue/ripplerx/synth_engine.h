@@ -431,7 +431,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        noise SVF is a band-pass at ~4.9 kHz (NzFltr=1) instead of the old
        2.5 kHz high-pass; band_mix centred ~0.62 (velocity-tilted in NoteOn);
        wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
-    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.02000f,   24.00000f},
+    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.02000f,   10.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f}};
 
 // Preset → engine routing table.
@@ -1447,7 +1447,7 @@ SynthState state;
                 // drumming is soft and long".  Corrected refs (snare_brush_*
                 // .wav) peak at ~13-25 ms, so ~100 ms was too slow: use a soft
                 // ~22 ms swish onset, faster for soft hits (~13 ms) via velocity.
-                float brush_attack = 0.0020f + 0.0012f * (1.0f - v.current_velocity);
+                float brush_attack = 0.0045f + 0.0020f * (1.0f - v.current_velocity);
                 v.exciter.noise_env.attack_rate = brush_attack;
                 v.exciter.noise_env_hi.attack_rate = brush_attack;
             }
