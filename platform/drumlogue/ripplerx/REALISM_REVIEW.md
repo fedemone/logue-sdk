@@ -169,9 +169,39 @@ and 2.0 (Ride/RidBel).  HHat-O ("do not break"), Gong (deliberately tonal)
 and Splash keep the legacy flat bank.
 
 **Snare round 2**: BrshSnr velocity-compressed (0.30–0.72), swish onset
-~100 ms, wires resting on the head (`k_wire_onset_env=1` → no crack burst),
-4.2 Hz swirl, T60≈0.64 s tail.  RimShot (39): hard stick, HitPos 80, bright
-rim-ring cluster (2.42/3.38 ring longer than the head mode), tight 70 ms
-buzz.  Buzz rolls: retriggers < 80 ms keep the wire resonator states and skip
-the crack burst.  A user-supplied brush reference under `samples/` would let
-the brush be calibrated like Timpani/Taiko were.
+~100 ms, wires resting on the head (`k_wire_onset_env=1` → no crack burst).
+Buzz rolls: retriggers < 80 ms keep the wire resonator states and skip
+the crack burst.
+
+## Round 3 — calibration against the user-supplied references
+
+Commit f924cc1 added `brush_snare_hit_hard.wav`, `snare_brush_soft.wav`,
+`rimshot-snare.wav`.  Measurements and resulting presets:
+
+**Brush references**: a smooth, steady, VERY bright hiss (~0.65 s, flatness
+0.84, energy rising with frequency — 62% above 6 kHz), body <300 Hz ≈ 1%,
+near-zero amplitude modulation (depth ~0.002, faint ~12 Hz flutter), no wire
+resonance.  Hard and soft samples are nearly identical spectrally — velocity
+is mostly level, slightly brightness.  The round-2 BrshSnr was harsh
+precisely where it deviated: ringing wire bands, nasal 4.2 kHz BP colour,
+deep 4.2 Hz swirl.  Fixed: wire mix 0.60→0.10, noise HP 2.5 kHz + bright
+band tilt (velocity-tilted band mix 0.55+0.30·v, VlMllStf 60 in the row),
+modal body 0.02, swirl → subtle persistent 12 Hz shimmer at depth 0.15.
+
+| metric | BrshSnr render | brush ref (hard) |
+|---|---|---|
+| centroid | 10692 Hz | 11025 Hz |
+| flatness | 0.83 | 0.84 |
+| 1-3k / 3-6k / >6k energy | 12/17/69 % | 9/14/72 % |
+
+**Rimshot reference**: an extremely tight pop — t40 45 ms, centroid 3.1 kHz,
+woody honk cluster at 877/945/1017/1107 Hz + 1754 + 2785 Hz, <300 Hz ≈ 1%,
+>6 kHz ≈ 1%.  RimShot rebuilt on note 69 (440 Hz) with measured ratios
+(2.0/2.29/3.99/6.33), quiet fundamental, env weights countering the fixed
+modal_sum taper, BP noise at 3 kHz, NzRs 540.
+
+| metric | RimShot render | rimshot ref |
+|---|---|---|
+| centroid | 3127 Hz | 3106 Hz |
+| t40 | 55 ms | 45 ms |
+| 300-1k / 1-3k / 3-6k | 43/52/4 % | 33/56/10 % |

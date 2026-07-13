@@ -369,10 +369,15 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_BrushSnare: softer/darker body than AcSnare (brush barely moves the head);
        ring slightly longer (110ms) so the head tone breathes under the swish */
     {1.59f, 2.14f, 2.30f, 110.0f, 60.0f, 35.0f, 20.0f, 0.20f, 0.60f, 0.42f, 0.26f, 0.15f, 4, 0, 0.0f},
-    /* k_RimShot: stick pinned to head + rim — short head thump (mode 1, 70ms)
-       under a bright rim-ring "ping" cluster (modes 2/3 at 2.42/3.38 ring
-       LONGER than the fundamental, the rimshot signature honk) */
-    {2.42f, 3.38f, 4.31f, 70.0f, 190.0f, 160.0f, 90.0f, 0.30f, 0.80f, 0.75f, 0.60f, 0.45f, 4, 0, 0.0f}};
+    /* k_RimShot: DATA-DRIVEN from rimshot-snare.wav — measured peaks
+       877/945/1017/1107 Hz (the woody honk cluster) + 1754 + 2785 Hz, t40
+       45 ms, centroid 3.1 kHz, <300 Hz ≈ 1% of energy.  At the shipped note
+       69 (440 Hz): ratio 2.0 → 877, 2.29 → the 1000-1100 cluster centre,
+       3.99 → 1754, 6.33 → 2785.  Fundamental quiet (env1 0.30) as measured. */
+    /* env weights counter the fixed modal_sum taper (0.6/0.45/0.28/0.18 for
+       modes 2-5) so the 877-1107 cluster carries the energy as measured
+       (ref: 56% in 1-3k, fundamental barely present). */
+    {2.00f, 2.29f, 3.99f, 40.0f, 70.0f, 60.0f, 50.0f, 0.30f, 0.10f, 0.55f, 1.10f, 1.30f, 5, 6.33f, 0.0f, 1.60f, 0.0f}};
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
@@ -417,7 +422,12 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
     /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f},
     /* k_Splash      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
-    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.60000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.45000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.05000f,   12.00000f},
+    /* k_BrushSnare: DATA-DRIVEN from brush_snare_hit_hard/snare_brush_soft.wav —
+       smooth steady BRIGHT hiss (flatness 0.84, energy rising with freq, 62%
+       above 6 kHz), body <300 Hz ≈ 1%, near-zero AM, no wire resonance.  So:
+       wire mix 0.10 (a whisper of buzz, not a ring), band_mix bright 0.70
+       (velocity-tilted in NoteOn), hi split ~2.7 kHz, modal body 0.02. */
+    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.02000f,   12.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f}};
 
 // Preset → engine routing table.
@@ -769,8 +779,8 @@ SynthState state;
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
             {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  38,  38,   0,   1, 120,  80,   0,  30,   2,   5, 160,  -7,   0,  46,  14,   3,1999,   8,   7,  90, 975,   1, 420, 707},        // 38: BrshSnr   — brush sweep: velocity-compressed, ~100ms swish onset, wires resting on head (onset_env=1 → no crack), T60≈0.64s tail, 4.2Hz swirl
-            {  39,  43,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   3,1999,   8,   7,  50, 620,   2, 600, 707}         // 39: RimShot   — hard stick (MlltStif 480), rim strike (HitPos 80), bright HP noise 6kHz, tight buzz (NzRs 620 → T60≈70ms), rim ring in modal cfg
+            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  14,   3,1999,   8,   5,  95, 975,   2, 250, 707},        // 38: BrshSnr   — DATA-DRIVEN (brush refs): HP noise 2.5kHz (ref <300Hz ≈1%), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→brightness, ~100ms swish onset, T60≈0.64s tail
+            {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   3,1999,   8,   7,  55, 540,   1, 300, 707}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
 
         if (idx >= k_NumPrograms) return;
@@ -1830,14 +1840,20 @@ SynthState state;
             v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
             v.exciter.snare_wire_a2c = r_c * r_c;
         }
-        // BrshSnr swirl: a slow enveloped-LFO amplitude ripple over the noise —
-        // the circular wrist motion of a brush sweep (~4 Hz, slowed from 6.5
-        // after HW round 1: "too fast"), fading gently over the whole stroke.
+        // BrshSnr texture (calibrated against brush_snare_hit_hard/soft.wav):
+        // the references show near-ZERO amplitude modulation (measured depth
+        // ~0.002 with only a faint ~12 Hz flutter) — the earlier deep slow
+        // swirl read as wobble ("really harsh and bad").  Keep just a subtle
+        // persistent 12 Hz shimmer.  Velocity tilts the hiss brightness
+        // between the soft and hard reference characters (VlMllStf-style
+        // response; band mix capped below the 0.80 hat-filter gate).
         if (m_preset_idx == k_BrushSnare) {
-            v.noise_am_depth = 0.50f;
-            v.noise_am_inc   = (2.0f * M_PI * 4.2f) * inverse_default_sample_rate;
-            v.noise_am_decay = 0.999993f;               // depth τ ≈ 1.5 s
+            v.noise_am_depth = 0.15f;
+            v.noise_am_inc   = (2.0f * M_PI * 12.0f) * inverse_default_sample_rate;
+            v.noise_am_decay = 1.0f;                    // subtle flutter persists
             v.noise_am_phase = 1.5f * M_PI;             // full level on frame 0
+            const float vqb = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
+            v.exciter.noise_band_mix = fminf(0.79f, 0.55f + 0.30f * vqb);
         }
         {
             float atk_ms = preset_param(preset, k_onset_attack_ms);

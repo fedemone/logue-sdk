@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
         {36,  79, 1.0f, "Tick"     },
         {37,  76, 3.0f, "Splash"   },
         {38,  38, 2.0f, "BrshSnr"  },
-        {39,  43, 1.5f, "RimShot"  },
+        {39,  69, 1.0f, "RimShot"  },
     };
     const int n = (int)(sizeof(presets) / sizeof(presets[0]));
 
