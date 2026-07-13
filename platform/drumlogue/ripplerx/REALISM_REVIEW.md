@@ -294,3 +294,19 @@ the reference shape: quick soft entry + immediate decay, no swell.
 
 Tone kept dark per 4b: centroid 3065 Hz, energy >6 kHz 8%. Tail still "long":
 t40 230 ms (soft) -> 311 ms (hard, ref 315). Level 5 dB pp->ff spread.
+
+### Round 4d — HW direction: "softer entry first, then lower body"
+
+Two independent knobs adjusted from 4c:
+
+- **Softer entry**: onset ramp 10 -> 18 ms (gates just the leading edge) with
+  the fast attack kept, so the first ~8 ms eases in (5 ms envelope 0.29 -> 0.20)
+  while the peak stays early (~15 ms) and the decay stays clean — no return of
+  the swell hump.
+- **Lower body**: noise BP center 4.0 -> 4.6 kHz (NzFltFrq 400 -> 460) thins the
+  low-mid weight (.3-2k 34% -> 29%) while band_mix stays low so the top stays
+  tame (6-22k only 8% -> 11%). Centroid 3065 -> 3418 Hz, still below the
+  medium reference (3931 Hz).
+
+Committed the combined build (soft entry + lower body). "Soft entry only"
+(BP 400) is a one-line NzFltFrq revert if the extra body is wanted back.
