@@ -1522,6 +1522,11 @@ SynthState state;
         bool use_lp_bypass = (m_preset_idx == k_Triangle || m_preset_idx == k_BellTree || m_preset_idx == k_Cowbell);
         v.resA.bypass_loop_lp = use_lp_bypass;
         v.resB.bypass_loop_lp = use_lp_bypass;
+        // AcousticTom: second cascaded loss pole (darker skin).  A flag on the
+        // waveguide keeps the per-sample loop free of preset-index compares.
+        const bool use_double_lp = (m_preset_idx == k_AcousticTom);
+        v.resA.double_lp = use_double_lp;
+        v.resB.double_lp = use_double_lp;
 
         if (had_residual) {
             auto clear_tail = [](float* buf, float delay_len) {
@@ -1620,7 +1625,9 @@ SynthState state;
         {
             float preset_band_mix = preset_param(static_cast<ProgramIndex>(m_preset_idx), k_noise_band_mix);
             if (preset_band_mix > 0.001f) {
-                v.exciter.noise_band_mix = preset_band_mix;
+                // Clamp at the write site: process_exciter reads this per sample
+                // and relies on it staying inside [0, 1].
+                v.exciter.noise_band_mix = fminf(1.0f, preset_band_mix);
             }
         }
         // Bullet-1 step 3 start: dedicated metallic HF exciter emphasis.
@@ -2371,7 +2378,7 @@ SynthState state;
         if (!wg.bypass_loop_lp) {
             wg.z1 = (ap_out * wg.lowpass_coeff) + (wg.z1 * (1.0f - wg.lowpass_coeff));
             filtered_out = wg.z1;
-            if (m_preset_idx == k_AcousticTom) {
+            if (wg.double_lp) {
                 wg.z2 = (wg.z1 * wg.lowpass_coeff) + (wg.z2 * (1.0f - wg.lowpass_coeff));
                 filtered_out = wg.z2;
             }
@@ -2438,13 +2445,17 @@ SynthState state;
             float low = ex.noise_lp_state;
             ex.noise_hi_lp_state += ex.noise_hi_lp_coeff * (raw_noise - ex.noise_hi_lp_state);
             float high = raw_noise - ex.noise_hi_lp_state;
-            float mix = fmaxf(0.0f, fminf(1.0f, ex.noise_band_mix));
+            // noise_band_mix is clamped at its write sites (NoteOn / PartialReset),
+            // so no per-sample clamp is needed here.
+            const float mix = ex.noise_band_mix;
             float low_part = low * (1.0f - mix) * noise_env_low;
             float high_part = high * mix * 1.35f * noise_env_high;
             if (mix > 0.80f) {
-                // Hi-hat family: dedicated BP biquad for centroid control near 7 kHz.
-                float hat_bp = ex.hat_filter.process(raw_noise_unf);
-                high_part = (ex.use_hat_filter ? hat_bp : raw_noise) * mix * 1.35f * noise_env_high;
+                // Hi-hat family: dedicated BP biquad for centroid control near
+                // 7 kHz.  Only run the SVF when the preset actually uses it.
+                float hat_src = ex.use_hat_filter ? ex.hat_filter.process(raw_noise_unf)
+                                                  : raw_noise;
+                high_part = hat_src * mix * 1.35f * noise_env_high;
             }
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
@@ -2539,6 +2550,11 @@ SynthState state;
 
         // Hoist tone read outside all loops — avoids UI/audio-thread race.
         const float tone_val = state.tone;
+        // Every preset ships Tone=0: skip the tilt-EQ one-pole entirely then
+        // (its output path is already a no-op at 0; this also skips the LP
+        // state update).  The LP re-converges within ~10 samples when the
+        // knob moves off zero — inaudible under the knob's own change.
+        const bool tone_active = (tone_val != 0.0f);
 
         // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
         // Renders the coupled resonator bank behind the approved standalone
@@ -2560,11 +2576,13 @@ SynthState state;
                     for (size_t i = 0; i < todo; ++i) {
                         float x = mono[i];
                         // Stage 4a tilt EQ (same curve as the voice path).
-                        m_kernel_tone_lp = (x * kToneLpMix) + (m_kernel_tone_lp * (1.0f - kToneLpMix));
-                        if (tone_val < zeroThreshold) {
-                            x = x + (m_kernel_tone_lp - x) * (-tone_val * kInvToneCutDivisor);
-                        } else if (tone_val > zeroThreshold) {
-                            x += (x - m_kernel_tone_lp) * (tone_val * kInvToneBoostDivisor);
+                        if (tone_active) {
+                            m_kernel_tone_lp = (x * kToneLpMix) + (m_kernel_tone_lp * (1.0f - kToneLpMix));
+                            if (tone_val < zeroThreshold) {
+                                x = x + (m_kernel_tone_lp - x) * (-tone_val * kInvToneCutDivisor);
+                            } else {
+                                x += (x - m_kernel_tone_lp) * (tone_val * kInvToneBoostDivisor);
+                            }
                         }
                         x = state.master_filter.process(x);   // LowCut/Resnc
                         x *= drive_rel;                        // Gain around anchor
@@ -2592,6 +2610,7 @@ SynthState state;
             return;
         }
 
+        bool any_voice_rendered = false;
         for (int voice_idx = 0; voice_idx < NUM_VOICES; ++voice_idx) {
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
@@ -2602,6 +2621,7 @@ SynthState state;
                 voice.is_active = false;
                 continue;
             }
+            any_voice_rendered = true;
 
             // Pre-compute model-aware coupling clamps once per block.
             // feedback_gain is constant during audio rendering, so this runs once per voice
@@ -2646,12 +2666,14 @@ SynthState state;
             if (voice_engine == ENGINE_CYMBAL) {
                 for (size_t i = 0; i < frames; ++i) {
                     float cy = cymbal_process(voice.cymbal);
-                    voice.tone_lp = (cy * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
-                    if (tone_val < zeroThreshold) {
-                        cy = cy + (voice.tone_lp - cy) * (-tone_val * kInvToneCutDivisor);
-                    } else if (tone_val > zeroThreshold) {
-                        const float hp = cy - voice.tone_lp;
-                        cy += hp * (tone_val * kInvToneBoostDivisor);
+                    if (tone_active) {
+                        voice.tone_lp = (cy * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
+                        if (tone_val < zeroThreshold) {
+                            cy = cy + (voice.tone_lp - cy) * (-tone_val * kInvToneCutDivisor);
+                        } else {
+                            const float hp = cy - voice.tone_lp;
+                            cy += hp * (tone_val * kInvToneBoostDivisor);
+                        }
                     }
                     main_out[i * 2]     += cy * state.master_gain;
                     main_out[i * 2 + 1] += cy * state.master_gain;
@@ -2661,6 +2683,33 @@ SynthState state;
                     if (!voice.cymbal.active) { voice.is_active = false; break; }
                 }
                 continue;  // next voice
+            }
+
+            // Hoist per-preset constants out of the per-sample loop: preset
+            // index, crash_drive and the noise-gain family selection cannot
+            // change during a block.
+            float base_parallel_noise_gain = 5.0f;
+            if (m_preset_idx == k_Triangle) {
+                base_parallel_noise_gain = 7.0f;
+            } else if (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong) {
+                // Reduce harsh noise dominance so the modal ring is more audible
+                base_parallel_noise_gain = 3.5f;
+            }
+            // Crash-bank presets: the resonated wash carries the pitched noise
+            // energy, so keep the raw broadband path low — otherwise the old
+            // "noise sprayed over the ring" returns.
+            if (voice.crash_drive > 0.0f) {
+                base_parallel_noise_gain =
+                    (m_preset_idx == k_HiHatOpen) ? 2.2f :
+                    (m_preset_idx == k_Ride) ? 1.0f :
+                    (m_preset_idx == k_RideBell) ? 2.0f : 1.0f;
+            }
+            // Non-KS engines never feed the KS coupling taps: zero them once
+            // per block (was two stores per sample) so stale values don't leak
+            // if the preset changes while a voice is active.
+            if (voice_engine != ENGINE_KS) {
+                voice.resA_out_prev = 0.0f;
+                voice.resB_out_prev = 0.0f;
             }
 
             for (size_t i = 0; i < frames; ++i) {
@@ -2752,10 +2801,6 @@ SynthState state;
                     voice_out = resonator_out * voice.current_velocity;
                 } else {
                     // Non-KS engine: exciter provides the transient attack.
-                    // KS coupling state is zeroed so old values don't leak if
-                    // the preset changes while a voice is active.
-                    voice.resA_out_prev = 0.0f;
-                    voice.resB_out_prev = 0.0f;
                     // Pitch sweep still applies for membrane presets (kick pitch drop).
                     if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
                         voice.pitch_env *= voice.pitch_env_decay;
@@ -2766,31 +2811,10 @@ SynthState state;
                 // Parallel noise path: noise bypasses the waveguide and mixes directly
                 // into the voice output.  This preserves the broadband character that the
                 // resonator would otherwise pitch-filter away (snare buzz, cymbal wash,
-                // hi-hat hiss, shaker rattle).  The ×5 factor brings noise amplitude into
-                // the same ballpark as the resonator output driven by the ×15 mallet.
-                float parallel_noise_gain = 5.0f;
-                if (m_preset_idx == k_Triangle) {
-                    parallel_noise_gain = 7.0f;
-                } else if (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong) {
-                    // Reduce harsh noise dominance so the modal ring is more audible
-                    parallel_noise_gain = 3.5f;
-                }
-                // Crash-bank presets: the resonated wash (below) carries the
-                // pitched noise energy, so keep the raw broadband path low —
-                // otherwise the old "noise sprayed over the ring" returns.
-                if (voice.crash_drive > 0.0f) {
-                    // HHat-O / Ride / RidBel: a continuous broadband hiss bed so the
-                    // sound is a smooth sizzle, not a sparse resonant wash beating at
-                    // ~28 Hz (HW: "ringing too slow, like shaking").  Cymbal/Gong keep
-                    // it low so the ring dominates.
-                    // Low broadband bed everywhere — the crash sizzle is carried
-                    // by the BROAD colored resonators (continuous + blended), not by
-                    // raw hiss (which read as a separate, unblended layer).
-                    parallel_noise_gain =
-                        (m_preset_idx == k_HiHatOpen) ? 2.2f :
-                        (m_preset_idx == k_Ride) ? 1.0f :
-                        (m_preset_idx == k_RideBell) ? 2.0f : 1.0f;
-                }
+                // hi-hat hiss, shaker rattle).  The ×5 base factor brings noise amplitude
+                // into the same ballpark as the resonator output driven by the ×15 mallet;
+                // per-preset overrides are folded into base_parallel_noise_gain above.
+                float parallel_noise_gain = base_parallel_noise_gain;
                 // Ring-coupled noise gate for ENGINE_PLATE: noise tracks the modal ring
                 // decay so both die together — user reported noise and ring as "juxtaposed".
                 // noise_ring_gate starts at 1.0 on NoteOn and decays with modal_decay_1.
@@ -3018,13 +3042,15 @@ SynthState state;
                     }
                 }
                 // ── Stage 4a: Tilt EQ ──────────────────────────────────────
-                voice.tone_lp = (voice_out * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
-                if (tone_val < zeroThreshold) {
-                     voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val * kInvToneCutDivisor);
-                 } else if (tone_val > zeroThreshold) {
-                     float hp = voice_out - voice.tone_lp;
-                     voice_out += hp * (tone_val * kInvToneBoostDivisor);
-                 }
+                if (tone_active) {
+                    voice.tone_lp = (voice_out * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
+                    if (tone_val < zeroThreshold) {
+                        voice_out = voice_out + (voice.tone_lp - voice_out) * (-tone_val * kInvToneCutDivisor);
+                    } else {
+                        float hp = voice_out - voice.tone_lp;
+                        voice_out += hp * (tone_val * kInvToneBoostDivisor);
+                    }
+                }
                 if (voice.onset_inc > 0.0f && voice.onset_env < 1.0f) {
                     voice.onset_env = fminf(1.0f, voice.onset_env + voice.onset_inc);
                     voice_out *= voice.onset_env;
@@ -3071,6 +3097,20 @@ SynthState state;
         // brickwall below, which reads as harsh noise.  CymbalKit-style soft
         // headroom first: a single voice passes ~unchanged, stacks are limited
         // gently instead of hard-clipping.  Other presets are untouched.
+        // ── Idle-CPU guard ─────────────────────────────────────────────────
+        // The OS calls render continuously; with no active voice the buffer is
+        // all zeros, and after a short flush window the master SVF has settled
+        // to zero too — skip the pre-clip and master-FX loops entirely.  The
+        // flush window (240 blocks ≈ 320 ms at 64 frames) lets the filter tail
+        // ring out after the last voice dies so there is no step on re-entry.
+        if (any_voice_rendered) {
+            m_idle_flush_blocks = 240;
+        } else if (m_idle_flush_blocks > 0) {
+            --m_idle_flush_blocks;
+        } else {
+            return;
+        }
+
         if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
             for (size_t i = 0; i < frames * 2; ++i) {
                 main_out[i] = main_out[i] / (1.0f + 0.35f * fabsf(main_out[i]));
@@ -3214,6 +3254,13 @@ private:
     unit_runtime_get_sample_ptr m_get_sample = nullptr;
 
     uint8_t m_ui_note = 60;
+    // Idle-CPU guard: blocks of master-chain flush left to run after the last
+    // active voice died.  While > 0 the pre-clip + master FX loops keep running
+    // on the (all-zero) buffer so the master SVF settles; at 0 processBlock
+    // returns right after the buffer clear — the drumlogue calls every unit's
+    // render continuously, so a silent unit otherwise burns SVF + soft-clip
+    // per sample forever.
+    uint16_t m_idle_flush_blocks = 0;
     // Ex-sample-selection params, repurposed (PCM layering removed): global
     // cymbal performance/CPU controls.
     uint8_t m_cym_poly = 2;        // max simultaneous cymbal voices (1-2)

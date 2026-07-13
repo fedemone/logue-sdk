@@ -127,6 +127,9 @@ struct WaveguideState {
     float diffuser_buf4[41] = {};
     uint8_t diffuser_i1 = 0, diffuser_i2 = 0, diffuser_i3 = 0, diffuser_i4 = 0;
     bool bypass_loop_lp = false;
+    // Second cascaded loss pole (AcousticTom): set per-hit in NoteOn so the
+    // render loop doesn't compare the preset index per sample.
+    bool double_lp      = false;
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
     float phase_mult    = 1.0f;    // ← non-zero
     // Per-model baseline allpass dispersion (added to ap_coeff from Inharm parameter).
