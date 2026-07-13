@@ -259,3 +259,19 @@ In-engine velocity sweep (confirms "soft and long"):
 | 40 | −26.2 dB | 186 ms |
 | 80 | −23.7 dB | 226 ms |
 | 120 | −22.1 dB | 260 ms |
+
+### Round 4b — HW listen: "too much hit for medium, too bright"
+
+Darkened and softened past the measured reference (the ear overrides the
+metric here):
+
+- **band_mix** 0.62 → ~0.44 — with a band-pass source the split mostly
+  controls the bright onset burst, so this tames the "hit" more than the tone.
+- **BP center** 4.9 kHz → 4.0 kHz (`NzFltFrq` 500→400) — this is what actually
+  lowers the tone: centroid 3744 → 3126 Hz, energy >6 kHz halved (15%→8%).
+- **Onset** softened: attack_rate base 0.0030→0.0020 and onset ramp 12→24 ms —
+  the start swells in (attack-to-peak 17 → 37 ms) instead of striking.
+
+Render (mid velocity): centroid 3126 Hz, flatness 0.225, band split
+33/58/8% (.3-2k / 2-6k / 6-22k), attack 37 ms, t40 290 ms — sits below the
+medium reference's 3931 Hz on purpose.
