@@ -149,6 +149,7 @@ struct WaveguideState {
 // density the FDN used to add, so the comb is not needed and would blow the
 // per-voice RAM budget.
 enum { kCymbalMaxResonators = 112 };
+static_assert(kCymbalMaxResonators % 4 == 0, "kCymbalMaxResonators must be a multiple of 4 for NEON loop safety");
 
 // Parameter bundle passed by value from NoteOn (never stored persistently, so
 // no member-pointer-in-.data hazard).  freqHz points at a member array of the

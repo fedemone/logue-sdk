@@ -37,7 +37,7 @@ struct RenderParams {
 class CymbalSynth {
 public:
   enum { kMaxResonators = 128, kCombTaps = 4, kCombMaxDelay = 2048 };
-
+  static_assert(kMaxResonators % 4 == 0, "kMaxResonators must be a multiple of 4 for NEON loop safety");
   explicit CymbalSynth(float sampleRate = 48000.0f);
   void setSampleRate(float sampleRate);
   void noteOn(const RenderParams &params, uint32_t seed = 0x12345678u);
@@ -51,7 +51,7 @@ private:
   float pink();
   float onePoleLow(float input, float cutoffHz, float &state) const;
   float onePoleHigh(float input, float cutoffHz, float &state) const;
-  void initialiseResonators(const PresetConfig &cfg, float velocity, float muffle, float durationSec, uint32_t seed);
+  void  initialiseResonators(const PresetConfig &cfg, float velocity, float muffle, float durationSec, uint32_t seed);
 
   float sampleRate_, invSampleRate_;
   uint32_t rng_;
