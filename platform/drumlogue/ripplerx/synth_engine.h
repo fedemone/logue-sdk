@@ -422,11 +422,15 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_GlassBottle */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
     /* k_Tick        */ {3400.00000f,    2.00000f, 6000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    0.86000f,    0.00000f,    0.39000f, true,    0.34000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    0.50000f},
     /* k_Splash      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.50000f},
-    /* k_BrushSnare: DATA-DRIVEN from brush_snare_hit_hard/snare_brush_soft.wav —
-       smooth steady BRIGHT hiss (flatness 0.84, energy rising with freq, 62%
-       above 6 kHz), body <300 Hz ≈ 1%, near-zero AM, no wire resonance.  So:
-       wire mix 0.10 (a whisper of buzz, not a ring), band_mix bright 0.70
-       (velocity-tilted in NoteOn), hi split ~2.7 kHz, modal body 0.02. */
+    /* k_BrushSnare: DATA-DRIVEN from the CORRECTED reference set
+       snare_brush_hard / _medium / _soft.wav — a mid-focused COLOURED swish,
+       NOT the bright white hiss the earlier (mislabelled) samples implied.
+       Refs: centroid ~4.2 kHz, energy 2-6 kHz ≈ 57 %, only ~20 % above 6 kHz,
+       flatness ≈ 0.31 (band-limited, not flat), body <300 Hz ≈ 1 %, velocity
+       maps mainly to level + decay length (soft 185 ms → hard 315 ms).  So the
+       noise SVF is a band-pass at ~4.9 kHz (NzFltr=1) instead of the old
+       2.5 kHz high-pass; band_mix centred ~0.62 (velocity-tilted in NoteOn);
+       wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
     /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.02000f,   12.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f}};
 
@@ -779,7 +783,7 @@ SynthState state;
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
             {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  14,   3,1999,   8,   5,  95, 975,   2, 250, 707},        // 38: BrshSnr   — DATA-DRIVEN (brush refs): HP noise 2.5kHz (ref <300Hz ≈1%), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→brightness, ~100ms swish onset, T60≈0.64s tail
+            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   3,1999,   8,   5,  95, 975,   1, 500, 707},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
             {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   3,1999,   8,   7,  55, 540,   1, 300, 707}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
 
@@ -1376,12 +1380,15 @@ SynthState state;
 
         v.current_note = note;
         v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
-        // BrshSnr: compress the dynamics.  A brush stroke physically cannot
-        // "crack" — even a hard pad hit is a soft, drawn-out sweep.  Map
-        // velocity 0..1 → 0.30..0.72 before anything downstream (mallet
-        // brightness, wire mix, modal envs, output level) reads it.
+        // BrshSnr: shape the dynamics.  A brush stroke physically cannot
+        // "crack" — even a hard pad hit is a soft, drawn-out sweep — so the
+        // hard-hit ceiling stays capped (≈0.72 at full velocity).  But the
+        // corrected reference set spans a real ~13 dB pp→ff range (soft
+        // −38 dB, medium −35 dB, hard −25 dB), so keep the soft FLOOR low:
+        // map velocity 0..1 → 0.18..0.72 so ghost strokes are genuinely quiet
+        // while accents never exceed the drawn-out-sweep ceiling.
         if (m_preset_idx == k_BrushSnare) {
-            v.current_velocity = 0.30f + 0.42f * v.current_velocity;
+            v.current_velocity = 0.18f + 0.54f * v.current_velocity;
         }
         // --- 2D DRUMHEAD STRIKE PHYSICS ---
         // 1. Calculate the physical strike location once for the entire voice
@@ -1437,8 +1444,10 @@ SynthState state;
                 v.exciter.noise_env_hi.attack_rate = snare_attack;
             } else if (m_preset_idx == k_BrushSnare) {
                 // HW feedback round 1: "too fast and hit too hard — brush
-                // drumming is soft and long".  ~100 ms swish build to 90%.
-                float brush_attack = 0.0005f;
+                // drumming is soft and long".  Corrected refs (snare_brush_*
+                // .wav) peak at ~13-25 ms, so ~100 ms was too slow: use a soft
+                // ~22 ms swish onset, faster for soft hits (~13 ms) via velocity.
+                float brush_attack = 0.0030f + 0.0012f * (1.0f - v.current_velocity);
                 v.exciter.noise_env.attack_rate = brush_attack;
                 v.exciter.noise_env_hi.attack_rate = brush_attack;
             }
@@ -1853,7 +1862,11 @@ SynthState state;
             v.noise_am_decay = 1.0f;                    // subtle flutter persists
             v.noise_am_phase = 1.5f * M_PI;             // full level on frame 0
             const float vqb = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
-            v.exciter.noise_band_mix = fminf(0.79f, 0.55f + 0.30f * vqb);
+            // Corrected refs sit at centroid ~4.2 kHz (2-6 kHz ≈ 57%) with only a
+            // gentle velocity brightness trend (hard 4202 Hz, soft 4481 Hz). With
+            // the noise SVF now a band-pass at 3.6 kHz, keep the body/sizzle split
+            // centred (was 0.79 = far too bright over an HP source, giving 11 kHz).
+            v.exciter.noise_band_mix = fminf(0.68f, 0.56f + 0.12f * vqb);
         }
         {
             float atk_ms = preset_param(preset, k_onset_attack_ms);

@@ -205,3 +205,57 @@ modal_sum taper, BP noise at 3 kHz, NzRs 540.
 | centroid | 3127 Hz | 3106 Hz |
 | t40 | 55 ms | 45 ms |
 | 300-1k / 1-3k / 3-6k | 43/52/4 % | 33/56/10 % |
+
+## Round 4 — corrected brush references (BrshSnr re-calibration)
+
+Commit f93f4b5 amended the brush reference set: `brush_snare_hit_hard.wav`
+was **mislabelled** and is gone; the correct dynamic layers are
+`snare_brush_hard.wav`, `snare_brush_medium.wav`, `snare_brush_soft.wav`.
+(RimShot was confirmed good on hardware and is unchanged from Round 3.)
+
+The corrected samples are a completely different sound from what Round 3
+chased — much **darker and more coloured**, not a bright white hiss:
+
+| metric | hard | medium | soft |
+|---|---|---|---|
+| peak / RMS | 1.00 / −25.2 dB | 0.21 / −34.6 dB | 0.07 / −38.1 dB |
+| centroid | 4202 Hz | 3931 Hz | 4481 Hz |
+| flatness (0.5–12k) | 0.35 | 0.29 | 0.26 |
+| attack → peak | 25 ms | 23 ms | 13 ms |
+| t40 (decay) | 315 ms | 282 ms | 185 ms |
+| <300 / .3–2k / 2–6k / 6–22k | 1/22/54/23 % | 1/24/57/17 % | 1/13/66/20 % |
+
+Key corrections vs the Round-3 build (which measured centroid 11 101 Hz,
+78 % of energy above 6 kHz — far too bright):
+
+- **Noise voicing**: SVF switched from **HP 2.5 kHz → BP ~4.9 kHz**
+  (`NzFltr` 2→1, `NzFltFrq` 250→500). The old HP-over-white produced the
+  11 kHz centroid; a band-pass concentrates energy in 2–6 kHz where the refs
+  live and drops flatness to a colored ~0.31.
+- **band_mix** dropped from the 0.79 cap to a centred ~0.62 (0.56+0.12·v) —
+  the body/sizzle split no longer over-emphasises the top.
+- **Attack** sped up from ~100 ms (attack_rate 0.0005) to ~22 ms
+  (0.0030 + 0.0012·(1−v), faster for soft hits) — the corrected refs peak at
+  13–25 ms, not 100 ms.
+- **Dynamics** widened: velocity map 0.30..0.72 → **0.18..0.72** (soft floor
+  lowered, hard-hit "can't crack" ceiling kept) so ghost strokes are genuinely
+  quiet, matching the refs' ~13 dB pp→ff span. Velocity still drives decay
+  length (soft t40 186 ms → hard 260 ms in-engine, matching "soft and long").
+- **Tail** lengthened (Rel 14→17).
+
+Result — render (note 38, vel 100 → mid-range velocity) vs the **medium** ref:
+
+| metric | BrshSnr render | brush ref (medium) |
+|---|---|---|
+| centroid | 3735 Hz | 3931 Hz |
+| flatness | 0.31 | 0.29 |
+| attack / t40 | 17 / 253 ms | 23 / 282 ms |
+| .3–2k / 2–6k / 6–22k | 26/59/15 % | 24/57/17 % |
+
+In-engine velocity sweep (confirms "soft and long"):
+
+| MIDI vel | RMS | t40 |
+|---|---|---|
+| 40 | −26.2 dB | 186 ms |
+| 80 | −23.7 dB | 226 ms |
+| 120 | −22.1 dB | 260 ms |
