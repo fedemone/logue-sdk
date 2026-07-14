@@ -593,57 +593,10 @@ struct VoiceState {
     float noise_am_depth  = 0.0f;
     float noise_am_decay  = 1.0f;   // ← non-zero
 
-    // ── Crash-resonator bank (ENGINE_PLATE) ──────────────────────────────────
-    // The metallic "crash" of a cymbal/gong/ride is broadband turbulent energy
-    // RESONATED at the plate's many inharmonic partials — not noise laid over a
-    // struck ring.  This is a bank of constant-peak-gain 2-pole bandpass
-    // resonators (the "feedback comb matrix" of the synthesis research), tuned
-    // to the SAME mode frequencies as the struck modal bank (reuses modal_k_*),
-    // and driven continuously by the enveloped noise burst.  Output is the noise
-    // shaped into the partials, so the wash crashes and swirls with the ring.
-    //   y[n] = r·k·y1 − r²·y2 + (1−r²)·noise   (peak gain ≈ 1, any r)
-    float crash_drive = 0.0f;       // 0 = bank off; per-preset intensity (× MlltRes)
-    float crash_r     = 0.0f;       // pole radius (ring/bandwidth of each resonator)
-    float crash_y1_1 = 0.0f, crash_y2_1 = 0.0f;
-    float crash_y1_2 = 0.0f, crash_y2_2 = 0.0f;
-    float crash_y1_3 = 0.0f, crash_y2_3 = 0.0f;
-    float crash_y1_4 = 0.0f, crash_y2_4 = 0.0f;
-    float crash_y1_5 = 0.0f, crash_y2_5 = 0.0f;
-    float crash_y1_6 = 0.0f, crash_y2_6 = 0.0f;
-    // Self-phase-modulation "dynamic bloom" (Kilohearts Phase-Distortion in the
-    // synthesis research): the combined ring+wash is written to a short delay
-    // line (the KS resA.buffer is reused — dead on plate engines) and read back
-    // at an offset modulated by the signal's own instantaneous amplitude.  This
-    // is self-FM: it generates a Bessel cascade of sidebands that fills the
-    // sparse 6-resonator spectrum into a dense crash AND intermodulates the ring
-    // with the wash ("modulation between the two" the HW kept asking for).
-    float crash_bloom    = 0.0f;    // self-PM depth (0 = no bloom)
-    float crash_ring_tap = 0.0f;    // how much struck ring feeds the bloom bus
-    // Nonlinear modal→wash energy cascade (von Kármán plate geometric nonlinearity;
-    // Chaigne/Touzé plate-vibration modelling).  In a real cymbal/gong the broadband
-    // "crash" is NOT independent noise laid over the struck ring — it is high-mode
-    // energy pumped FROM the low struck modes by the plate's quadratic/cubic
-    // nonlinearity, so the wash is BORN from the ring and decays locked to it
-    // (measured: ref crash low/high band-envelope correlation +0.76; the wash blooms
-    // ~470 ms after the strike).  crash_couple scales the m·|m| (signed-quadratic)
-    // injection of modal energy into the resonator bank; 0 reverts to pure-noise drive.
-    float crash_couple   = 0.0f;
-
-    // ── FDN dense metallic wash (ENGINE_PLATE bright cymbals) ─────────────────
-    // A 6-resonator bank cannot reach a real cymbal's spectral DENSITY (flatness
-    // ~0.55; our bank stalls ~0.2), so the wash and ring read as two separate
-    // things no matter how tightly they are coupled.  A 4-line feedback delay
-    // network — hosted in the KS-dead resB.buffer (zero extra RAM) — generates
-    // hundreds of dense inharmonic modes from tiny state: the missing density.
-    // Lossless Hadamard feedback (orthonormal → guaranteed stable for gain<1)
-    // plus per-line one-pole HF damping; driven by the SAME nonlinear crash
-    // excitation so the dense wash blooms and decays with the strike.
-    float    fdn_g     = 0.0f;   // 0 = FDN off; feedback gain (<1 → decaying wash)
-    float    fdn_damp  = 0.0f;   // per-line one-pole HF damping coeff
-    float    fdn_drive = 0.0f;   // input gain from the crash excitation
-    float    fdn_mix   = 0.0f;   // FDN output level into the wash bus
-    float    fdn_lp_0  = 0.0f, fdn_lp_1 = 0.0f, fdn_lp_2 = 0.0f, fdn_lp_3 = 0.0f;
-    uint32_t fdn_count = 0;
+    // NOTE: the old ENGINE_PLATE crash-resonator bank, self-PM bloom and FDN
+    // dense wash (crash_* / fdn_* per-voice state) were REPLACED by the
+    // dense-resonator ENGINE_CYMBAL port (CymbalVoice above); their dead state
+    // was removed.  See git history (HW passes 7-18) for the retired code.
 
     // ── Strike transient layer (membrane presets) ────────────────────────────
     // The modal tail is measurably correct; the remaining perceptual gap is the
@@ -755,24 +708,6 @@ struct VoiceState {
         noise_am_inc = 0.0f;
         noise_am_depth = 0.0f;
         noise_am_decay = 1.0f;
-        crash_drive = 0.0f;
-        crash_r = 0.0f;
-        crash_y1_1 = crash_y2_1 = 0.0f;
-        crash_y1_2 = crash_y2_2 = 0.0f;
-        crash_y1_3 = crash_y2_3 = 0.0f;
-        crash_y1_4 = crash_y2_4 = 0.0f;
-        crash_y1_5 = crash_y2_5 = 0.0f;
-        crash_y1_6 = crash_y2_6 = 0.0f;
-        crash_bloom = 0.0f;
-        crash_ring_tap = 0.0f;
-        crash_couple = 0.0f;
-        // FDN dense metallic wash
-        fdn_g = 0.0f;
-        fdn_damp = 0.0f;
-        fdn_drive = 0.0f;
-        fdn_mix = 0.0f;
-        fdn_lp_0 = fdn_lp_1 = fdn_lp_2 = fdn_lp_3 = 0.0f;
-        fdn_count = 0;
         // strike transient layer
         trans_env = 0.0f;
         trans_decay = 1.0f;

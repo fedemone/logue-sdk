@@ -1291,9 +1291,7 @@ SynthState state;
                 int32_t khz_d = (hz % 1000) / 100;
                 snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", khz_i, khz_d);
             } else {
-                int32_t khz_i = hz / 1000;
-                int32_t khz_d = (hz % 1000) / 100;
-                snprintf(nf_buf, sizeof(nf_buf), "%d.%dkHz", khz_i, khz_d);
+                snprintf(nf_buf, sizeof(nf_buf), "%dHz", hz);
             }
             return nf_buf;
         } else if (index == k_paramLowCut) {
@@ -2280,11 +2278,13 @@ SynthState state;
                             v.modal_env_6 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 5.0f));
                         }
 
-                        // MlltRes → modal presence (anchored).  On crash plates
-                        // MlltRes is crash intensity (handled earlier); on every
-                        // OTHER modal engine it was dead, so map it to the modal
-                        // bank's level/presence — a clearly audible timbre control.
-                        if (v.crash_drive <= 0.0f) {
+                        // MlltRes → modal presence (anchored).  MlltRes was dead
+                        // on modal engines, so map it to the modal bank's
+                        // level/presence — a clearly audible timbre control.
+                        // (The old crash-bank intensity mapping went away with
+                        // the ENGINE_CYMBAL port; cymbal presets bypass this
+                        // whole path.)
+                        {
                             float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
                             // Widened 1.6→2.6 (HW: "effect too weak") so MlltRes is a
                             // strong modal presence/level control on modal engines.
@@ -2820,24 +2820,16 @@ SynthState state;
                 continue;  // next voice
             }
 
-            // Hoist per-preset constants out of the per-sample loop: preset
-            // index, crash_drive and the noise-gain family selection cannot
-            // change during a block.
+            // Hoist per-preset constants out of the per-sample loop: the
+            // noise-gain family selection cannot change during a block.
+            // (Cymbal/Gong route to ENGINE_CYMBAL and never reach this path;
+            // the values are kept for engine-routing experiments.)
             float base_parallel_noise_gain = 5.0f;
             if (m_preset_idx == k_Triangle) {
                 base_parallel_noise_gain = 7.0f;
             } else if (m_preset_idx == k_Cymbal || m_preset_idx == k_Gong) {
                 // Reduce harsh noise dominance so the modal ring is more audible
                 base_parallel_noise_gain = 3.5f;
-            }
-            // Crash-bank presets: the resonated wash carries the pitched noise
-            // energy, so keep the raw broadband path low — otherwise the old
-            // "noise sprayed over the ring" returns.
-            if (voice.crash_drive > 0.0f) {
-                base_parallel_noise_gain =
-                    (m_preset_idx == k_HiHatOpen) ? 2.2f :
-                    (m_preset_idx == k_Ride) ? 1.0f :
-                    (m_preset_idx == k_RideBell) ? 2.0f : 1.0f;
             }
             // Non-KS engines never feed the KS coupling taps: zero them once
             // per block (was two stores per sample) so stale values don't leak
