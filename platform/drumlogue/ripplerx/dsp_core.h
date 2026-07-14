@@ -6,6 +6,7 @@
 #include "envelope.h"
 #include "filter.h"
 #include "tables.h"
+#include "float_math.h"
 
 
 /** Because we are optimizing for bare-metal, notice there are no virtual functions,
@@ -840,12 +841,12 @@ struct VoiceState {
         // otherwise fall back to legacy formula (ratio4 × 1.31 / 1.62).
         float f5 = fminf(base_f * (ratio5 > 0.0f ? ratio5 : ratio4 * 1.31f), 0.45f * k_dsp_sample_rate);
         float f6 = fminf(base_f * (ratio6 > 0.0f ? ratio6 : ratio4 * 1.62f), 0.45f * k_dsp_sample_rate);
-        float w1 = (2.0f * M_PI * f1) * k_dsp_inv_sample_rate;
-        float w2 = (2.0f * M_PI * f2) * k_dsp_inv_sample_rate;
-        float w3 = (2.0f * M_PI * f3) * k_dsp_inv_sample_rate;
-        float w4 = (2.0f * M_PI * f4) * k_dsp_inv_sample_rate;
-        float w5 = (2.0f * M_PI * f5) * k_dsp_inv_sample_rate;
-        float w6 = (2.0f * M_PI * f6) * k_dsp_inv_sample_rate;
+        float w1 = (M_TWOPI * f1) * k_dsp_inv_sample_rate;
+        float w2 = (M_TWOPI * f2) * k_dsp_inv_sample_rate;
+        float w3 = (M_TWOPI * f3) * k_dsp_inv_sample_rate;
+        float w4 = (M_TWOPI * f4) * k_dsp_inv_sample_rate;
+        float w5 = (M_TWOPI * f5) * k_dsp_inv_sample_rate;
+        float w6 = (M_TWOPI * f6) * k_dsp_inv_sample_rate;
         modal_pilot_enabled = true;
         modal_mode_count = mode_count;
         // Seed at full amplitude (cosine quadrature pair): oscillator starts

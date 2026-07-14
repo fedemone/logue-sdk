@@ -211,10 +211,10 @@ enum ModelParamIndex : uint8_t {
     k_model_param_total
 };
 
-static constexpr float kck_bm = (2.0f * M_PI * 58.0f) * inverse_default_sample_rate;
-static constexpr float tak_bm = (2.0f * M_PI * 70.0f) * inverse_default_sample_rate;
-static constexpr float tom_bm = (2.0f * M_PI * 110.0f) * inverse_default_sample_rate;
-static constexpr float asn_bm = (2.0f * M_PI * 175.0f) * inverse_default_sample_rate;
+static constexpr float kck_bm = (M_TWOPI * 58.0f) * inverse_default_sample_rate;
+static constexpr float tak_bm = (M_TWOPI * 70.0f) * inverse_default_sample_rate;
+static constexpr float tom_bm = (M_TWOPI * 110.0f) * inverse_default_sample_rate;
+static constexpr float asn_bm = (M_TWOPI * 175.0f) * inverse_default_sample_rate;
 // AcSnare: add short resonant wire-like sizzle emphasis. snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack; wire_onset_attack = 0.0014f; // ~15 ms to full wire excitation
 // March snare: drier/tighter wire. wire_onset_attack = 0.0018f; // slightly faster than AcSnare
 // HHat-C: short, crisp "chick". noise_hi_lp_coeff = 0.42f; // Chamberlin SVF LP at 5500 Hz gives power-weighted noise centroid ~7 kHz. (BP mode was tried but Chamberlin BP near Nyquist has centroid ~18 kHz, not fc — the LP mode is accurate up to ~fs/8.) mode = 1; // BP
@@ -758,7 +758,7 @@ SynthState state;
             {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
             {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,1999,   3,   0,   5, 420,   0, 900, 707},        // 11: Wodblk    — (HW: ok)
             {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  30, 360,   0, 520, 707},        // 12: Ac Tom    — body extended (modal 350→500ms) + stick transient layer + NzMx 20→30 for the close-mic attack brightness
-            {13, 65, 0, 1, 800, 450, 0, 0, 0, 4, 200, 28, 0, 0, 18, 8, 1999, 15, 5, 62, 640, 2, 1200, 707},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
+            {  13,  65,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
             {  14,  50,   0,   1, 200,  20,   0,   0,   0,   4, 190,   1,   0,   0,  20,   8,1999,  21,  20,  34, 860,   0,  30, 707},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
             {  15,  65,   0,   1, 700, 390,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720, 707},        // 15: Kalimba
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000, 707},        // 16: StelPan
@@ -772,13 +772,13 @@ SynthState state;
             {  24,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,1999,  18,   0,   0, 300,   0,1200, 707},        // 24: GlsBwl
             {  25,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200, 707},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
             {  26,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800, 707},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {27, 79, 0, 1, 900, 490, 0, 0, 0, 4, 210, 18, 0, 0, 18, 12, 1999, 12, 0, 90, 1000, 2, 1300, 707},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {  27,  79,   0,   1, 900, 490,   0,   0,   0,   4, 210,  18,   0,   0,  18,  12,1999,  12,   0,  90, 1000,  2,1300, 707},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
             {  28,  62,   0,   1, 600, 425,   0,   0,   1,   5, 158,   3,   0,   0,  10,   8,1999,   9,   0,  15, 520,   0, 450, 707},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
             {  29,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000, 707},        // 29: Handpn
             {  30,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,1999,   3,   0,   0, 300,   0,1200, 707},        // 30: BelTre
             {  31,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,1999,   3,   0,   0, 300,   0, 800, 707},        // 31: SltDrm
-            {32, 69, 0, 1, 900, 500, 0, 0, 0, 4, 190, 28, 0, 0, 18, 7, 1999, 17, 0, 66, 950, 2, 1300, 707},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {33, 60, 0, 1, 900, 491, 0, 0, 0, 4, 200, 16, 0, 0, 8, 11, 1999, 1, 0, 60, 950, 2, 1300, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
+            {  32,  69,   0,   1, 900, 500,   0,   0,   0,   4, 190,  28,   0,   0,  18,   7,1999,  17,   0,  66, 950,   2,1300, 707},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
+            {  33,  60,   0,   1, 900, 491,   0,   0,   0,   4, 200,  16,   0,   0,  8,   11,1999,   1,   0,  60, 950,   2,1300, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
             {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 707},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
@@ -1851,7 +1851,7 @@ SynthState state;
                          : (m_preset_idx == k_BrushSnare) ? 2200.0f
                          : (m_preset_idx == k_RimShot)    ? 3200.0f : 2800.0f;
             if (m_preset_idx == k_BrushSnare) r_a = 0.83f + (0.03f * vq); // low-Q diffuse rattle — no resonant "ack" ring (chuff, not shack)
-            float w_a = (2.0f * M_PI * freq_a) * inverse_default_sample_rate;
+            float w_a = (M_TWOPI * freq_a) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
             v.exciter.snare_wire_a2 = r_a * r_a;
 
@@ -1861,7 +1861,7 @@ SynthState state;
             if (freq_b < 100.0f) freq_b = 4500.0f;
             if (r_b_base < 0.3f) r_b_base = 0.86f;
             float r_b = r_b_base + (0.05f * vq);
-            float w_b = (2.0f * M_PI * freq_b) * inverse_default_sample_rate;
+            float w_b = (M_TWOPI * freq_b) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1b = 2.0f * r_b * fastercosfullf(w_b);
             v.exciter.snare_wire_a2b = r_b * r_b;
 
@@ -1871,7 +1871,7 @@ SynthState state;
             if (freq_c < 100.0f) freq_c = 7200.0f;
             if (r_c_base < 0.3f) r_c_base = 0.82f;
             float r_c = r_c_base + (0.03f * vq);
-            float w_c = (2.0f * M_PI * freq_c) * inverse_default_sample_rate;
+            float w_c = (M_TWOPI * freq_c) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
             v.exciter.snare_wire_a2c = r_c * r_c;
         }
@@ -1882,9 +1882,9 @@ SynthState state;
         // resonant wire ring.  A faint ~5 Hz flutter models the straws' contact.
         if (m_preset_idx == k_BrushSnare) {
             v.noise_am_depth = 0.15f;
-            v.noise_am_inc   = (2.0f * M_PI * 5.0f) * inverse_default_sample_rate; // slow rattle (HW: "rattle must be slower")
+            v.noise_am_inc   = (M_TWOPI * 5.0f) * inverse_default_sample_rate; // slow rattle (HW: "rattle must be slower")
             v.noise_am_decay = 1.0f;                    // subtle flutter persists
-            v.noise_am_phase = 1.5f * M_PI;             // full level on frame 0
+            v.noise_am_phase = M_3_PI_2;             // full level on frame 0
             const float vqb = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
             // No bright click: the "high" burst decays WITH the soft body instead
             // of snapping in ~6 ms.  This is the single biggest "shack"->"chuff".
@@ -1911,7 +1911,7 @@ SynthState state;
             m_preset_idx == k_Triangle || m_preset_idx == k_BellTree) {
           float base_fm_hz = preset_param(static_cast<ProgramIndex>(m_preset_idx), k_base_fm_hz);
           v.metal_fm_phase = 0.0f;
-          v.metal_fm_inc = (2.0f * M_PI * base_fm_hz) * inverse_default_sample_rate;
+          v.metal_fm_inc = (M_TWOPI * base_fm_hz) * inverse_default_sample_rate;
           v.metal_fm_env = 1.0f;
           v.metal_fm_decay = (m_preset_idx == k_HiHatClosed) ? 0.9955f : 0.9978f;
           // HHat-O: lower FM depth (0.16→0.06) so the chirp doesn't re-excite KS
@@ -2063,20 +2063,20 @@ SynthState state;
         // a click on hardware.  Phase starts at 3π/2 so frame 0 is full level.
         if (m_preset_idx == k_Clap) {
             v.noise_am_depth = 0.95f;
-            v.noise_am_inc   = (2.0f * M_PI * 55.0f) * inverse_default_sample_rate;
+            v.noise_am_inc   = (M_TWOPI * 55.0f) * inverse_default_sample_rate;
             v.noise_am_decay = 0.99860f;                 // depth τ ≈ 15 ms
-            v.noise_am_phase = 1.5f * M_PI;
+            v.noise_am_phase = M_3_PI_2;
         }
         // Shaker: grain pulses — the bead mass hits each shell wall in turn,
         // ~13 Hz double-pulse with the depth fading over ~100 ms.
         if (m_preset_idx == k_Shaker) {
             v.noise_am_depth = 0.92f;
-            v.noise_am_inc   = (2.0f * M_PI * 17.0f) * inverse_default_sample_rate;
+            v.noise_am_inc   = (M_TWOPI * 17.0f) * inverse_default_sample_rate;
             // decay = 1.0: the rattle LFO does NOT fade — a longer Rel must give a
             // longer RATTLE, not a smooth decaying hiss (HW: "when sound is longer
             // there's no rattle at all").  The shaker rattles for its whole tail.
             v.noise_am_decay = 1.0f;
-            v.noise_am_phase = 1.5f * M_PI;
+            v.noise_am_phase = M_3_PI_2;
             // Soft onset: a shaker swells over ~15 ms, it does not click.  The
             // noise burst otherwise reaches full level in <1 ms = the "hit" HW
             // reported.  Slow the noise-env attack so the rattle fades in.
@@ -2861,7 +2861,7 @@ SynthState state;
                     // then relaxes as envelope decays.
                     float sweep = 1.0f + (2.4f * voice.metal_fm_env);
                     voice.metal_fm_phase += voice.metal_fm_inc * sweep;
-                    if (voice.metal_fm_phase > (2.0f * M_PI)) voice.metal_fm_phase -= (2.0f * M_PI);
+                    if (voice.metal_fm_phase > (M_TWOPI)) voice.metal_fm_phase -= (M_TWOPI);
                     voice.metal_fm_env *= voice.metal_fm_decay;
                 }
                 if (voice.reed_nl_enabled) {
@@ -2980,7 +2980,7 @@ SynthState state;
                                (0.5f + 0.5f * fastersinfullf(voice.noise_am_phase));
                     parallel_noise_gain *= fmaxf(0.0f, am);
                     voice.noise_am_phase += voice.noise_am_inc;
-                    if (voice.noise_am_phase > (2.0f * M_PI)) voice.noise_am_phase -= (2.0f * M_PI);
+                    if (voice.noise_am_phase > (M_TWOPI)) voice.noise_am_phase -= (M_TWOPI);
                     voice.noise_am_depth *= voice.noise_am_decay;
                 }
                 voice_out += voice.exciter.noise_out_sample * parallel_noise_gain * voice.current_velocity;
@@ -3011,19 +3011,19 @@ SynthState state;
                     if (m_preset_idx == k_KickDrum) {
                         // kick sub sweep: 90→55 Hz over boom_decay envelope
                         float sweep_hz = 55.0f + (35.0f * voice.boom_env);
-                        voice.boom_inc = (2.0f * M_PI * sweep_hz) * inverse_default_sample_rate;
+                        voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
                     } else if (m_preset_idx == k_808Sub) {
                         // 808-style: pitch_env (τ≈21ms) sweeps 45+115=160Hz → 45Hz in ~100ms
                         // independently from boom amplitude (boom_decay=760ms T60)
                         float sweep_hz = 45.0f + voice.pitch_env_amt * voice.pitch_env;
-                        voice.boom_inc = (2.0f * M_PI * sweep_hz) * inverse_default_sample_rate;
+                        voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
                     }
                     voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);
                     float boom = fastersinfullf(voice.boom_phase)
                                * voice.boom_env * voice.boom_mix * voice.boom_attack_env;
                     voice_out += boom * voice.current_velocity;
                     voice.boom_phase += voice.boom_inc;
-                    if (voice.boom_phase > (2.0f * M_PI)) voice.boom_phase -= (2.0f * M_PI);
+                    if (voice.boom_phase > (M_TWOPI)) voice.boom_phase -= (M_TWOPI);
                     voice.boom_env *= voice.boom_decay;
                 }
                 if (voice.modal_pilot_enabled) {
