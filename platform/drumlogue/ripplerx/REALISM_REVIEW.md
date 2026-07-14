@@ -395,3 +395,22 @@ Result (measured): soft crest 6.2 (ref 5.6), peak@14 ms, RMS 39% at t=0 — an
 immediate flat wash matching the reference. All velocities are now flat washes
 (crest 3.8-6.2, no peak/crescendo); dynamics come from level (abs peak
 0.28/0.48/0.67, ~7.6 dB) not an attack gesture.
+
+### Round 9 — "shack -> chuff" (last try before parking)
+
+HW: the onset is a snappy "shack" instead of a soft breathy "chuff".  Three
+snap sources identified and removed for the brush:
+
+1. **Fast high-band burst** — `noise_env_hi.decay_rate` was ~0.0034 (a ~6 ms
+   bright click at onset).  Now set equal to the soft body decay, so the high
+   branch fades WITH the body instead of snapping.  Biggest single change.
+2. **Bright high-branch content** — `noise_band_mix` cap 0.50 -> 0.32 (mostly
+   the low breathy branch, little sizzle).
+3. **Resonant wire ring** — band-A pole radius 0.90 -> 0.83 (low-Q diffuse
+   rattle, no tonal "ack").
+Plus BP centre 4.6 -> 3.2 kHz (breathier air).
+
+Measured: crest soft 4.3 / hard 2.9 (very flat, no transient), centroid
+~3070 Hz, no onset spike.  If this still reads as a "shack" on hardware, the
+brush chuff is parked as not achievable without further study (documented as a
+future item) and the preset kept as-is.

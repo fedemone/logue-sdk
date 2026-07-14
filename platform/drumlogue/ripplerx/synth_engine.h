@@ -783,7 +783,7 @@ SynthState state;
             {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
             {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   3,1999,   8,   5,  95, 975,   1, 460, 707},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   3,1999,   8,   5,  95, 975,   1, 320, 707},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
             {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   3,1999,   8,   7,  55, 540,   1, 300, 707}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
 
@@ -1850,7 +1850,7 @@ SynthState state;
             float freq_a = (m_preset_idx == k_MarchSnare) ? 3500.0f
                          : (m_preset_idx == k_BrushSnare) ? 2200.0f
                          : (m_preset_idx == k_RimShot)    ? 3200.0f : 2800.0f;
-            if (m_preset_idx == k_BrushSnare) r_a = 0.90f + (0.03f * vq); // moderate-Q, sustained small rattle (not tonal boing)
+            if (m_preset_idx == k_BrushSnare) r_a = 0.83f + (0.03f * vq); // low-Q diffuse rattle — no resonant "ack" ring (chuff, not shack)
             float w_a = (2.0f * M_PI * freq_a) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
             v.exciter.snare_wire_a2 = r_a * r_a;
@@ -1876,21 +1876,22 @@ SynthState state;
             v.exciter.snare_wire_a2c = r_c * r_c;
         }
         // BrshSnr texture: a brush is many small flexible straws sweeping the
-        // head, so the sound is dominated by a continuous, moderate NOISE bed
-        // (the modal struck "tok" is zeroed, like Shaker).  A faint ~12 Hz
-        // flutter models the straws' irregular contact.  band_mix stays centred
-        // over the 3.6 kHz band-pass so the noise reads dark, not hissy.
+        // head — a soft breathy "chuff", NOT a snappy "shack".  Three things
+        // create snap and must go: (1) the fast high-band burst (a ~6 ms bright
+        // click at onset), (2) too much bright high-branch content, (3) a
+        // resonant wire ring.  A faint ~5 Hz flutter models the straws' contact.
         if (m_preset_idx == k_BrushSnare) {
             v.noise_am_depth = 0.15f;
             v.noise_am_inc   = (2.0f * M_PI * 5.0f) * inverse_default_sample_rate; // slow rattle (HW: "rattle must be slower")
             v.noise_am_decay = 1.0f;                    // subtle flutter persists
             v.noise_am_phase = 1.5f * M_PI;             // full level on frame 0
             const float vqb = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
-            // Corrected refs sit at centroid ~4.2 kHz (2-6 kHz ≈ 57%) with only a
-            // gentle velocity brightness trend (hard 4202 Hz, soft 4481 Hz). With
-            // the noise SVF now a band-pass at 3.6 kHz, keep the body/sizzle split
-            // centred (was 0.79 = far too bright over an HP source, giving 11 kHz).
-            v.exciter.noise_band_mix = fminf(0.50f, 0.38f + 0.12f * vqb);
+            // No bright click: the "high" burst decays WITH the soft body instead
+            // of snapping in ~6 ms.  This is the single biggest "shack"->"chuff".
+            v.exciter.noise_env_hi.decay_rate = v.exciter.noise_env.decay_rate;
+            // Darker/softer split — mostly the low (breathy) branch, little of the
+            // bright high branch, so the puff reads as air not sizzle.
+            v.exciter.noise_band_mix = fminf(0.32f, 0.20f + 0.10f * vqb);
         }
         {
             float atk_ms = preset_param(preset, k_onset_attack_ms);
