@@ -355,3 +355,18 @@ faster). Fixed so the brush wires behave unlike a struck snare:
 
 Render soft (vel45): sustain 30% (ref 28%), t40 468 ms — a small rattle that
 rings on. Hard (vel110): sustain 28%, swift sweep. Tests pass, 40/40 clean.
+
+### Round 7 — HW: "soft is actually medium; soft should have almost no hit; rattle slower"
+
+- **Dynamics curve quadratic + low floor**: was linear `0.18 + 0.54*vel`, which
+  put mid velocities at ~0.37 ("medium").  Now `0.08 + 0.64*vel^2` — the whole
+  lower half of the velocity range stays a genuinely quiet crawl; only accents
+  build presence.  Soft (vel30) peak 0.49 -> 0.26.
+- **Attack skewed to match**: `0.0007 + 0.0058*bvq` over the renormalised range,
+  so a soft hit is a very gentle ~35 ms swish-in (onset energy is back-loaded,
+  peaking ~80 ms = a crawl with almost no hit) and only accents reach the ~5 ms
+  swift sweep.
+- **Rattle slower**: noise AM flutter 12 -> 5 Hz.
+
+Per-velocity (peak / 5 ms onset): vel30 0.26 / 0.16 (soft crawl, no hit);
+vel120 0.69 / 0.46 (swift). ~8 dB pp->ff range.

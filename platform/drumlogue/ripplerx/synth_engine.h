@@ -1382,13 +1382,14 @@ SynthState state;
         v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
         // BrshSnr: shape the dynamics.  A brush stroke physically cannot
         // "crack" — even a hard pad hit is a soft, drawn-out sweep — so the
-        // hard-hit ceiling stays capped (≈0.72 at full velocity).  But the
-        // corrected reference set spans a real ~13 dB pp→ff range (soft
-        // −38 dB, medium −35 dB, hard −25 dB), so keep the soft FLOOR low:
-        // map velocity 0..1 → 0.18..0.72 so ghost strokes are genuinely quiet
-        // while accents never exceed the drawn-out-sweep ceiling.
+        // hard-hit ceiling stays capped (≈0.72 at full velocity).  HW: a soft
+        // hit must have "almost no hit at all" — the previous linear 0.18+0.54v
+        // put a mid velocity at ~0.37 (read as "medium").  Use a QUADRATIC
+        // curve with a low floor so the whole lower half of the range stays a
+        // genuinely quiet crawl and only accents build presence.
         if (m_preset_idx == k_BrushSnare) {
-            v.current_velocity = 0.18f + 0.54f * v.current_velocity;
+            float vv = v.current_velocity;
+            v.current_velocity = 0.08f + 0.64f * vv * vv;
         }
         // --- 2D DRUMHEAD STRIKE PHYSICS ---
         // 1. Calculate the physical strike location once for the entire voice
@@ -1450,8 +1451,12 @@ SynthState state;
                 // along the membrane (gentle ~30 ms swish-in); hard = a SWIFT
                 // sweep (~8 ms) that lands with only a small tap.  So attack
                 // speeds UP with velocity (the reverse of a struck drum).
-                float bvq = fmaxf(0.0f, fminf(1.0f, (v.current_velocity - 0.30f) * 2.38f));
-                float brush_attack = 0.0016f + 0.0044f * bvq;
+                // Skew to match the quadratic velocity curve: normalise the
+                // 0.08..0.72 compressed range back to 0..1 so a soft hit gets a
+                // very gentle ~35 ms swish-in (almost no hit) and only accents
+                // reach the ~5 ms swift sweep.
+                float bvq = fmaxf(0.0f, fminf(1.0f, (v.current_velocity - 0.08f) * 1.5625f));
+                float brush_attack = 0.0007f + 0.0058f * bvq;
                 v.exciter.noise_env.attack_rate = brush_attack;
                 v.exciter.noise_env_hi.attack_rate = brush_attack;
             }
@@ -1871,7 +1876,7 @@ SynthState state;
         // over the 3.6 kHz band-pass so the noise reads dark, not hissy.
         if (m_preset_idx == k_BrushSnare) {
             v.noise_am_depth = 0.15f;
-            v.noise_am_inc   = (2.0f * M_PI * 12.0f) * inverse_default_sample_rate;
+            v.noise_am_inc   = (2.0f * M_PI * 5.0f) * inverse_default_sample_rate; // slow rattle (HW: "rattle must be slower")
             v.noise_am_decay = 1.0f;                    // subtle flutter persists
             v.noise_am_phase = 1.5f * M_PI;             // full level on frame 0
             const float vqb = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
