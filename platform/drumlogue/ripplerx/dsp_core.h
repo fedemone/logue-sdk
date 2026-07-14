@@ -6,6 +6,7 @@
 #include "envelope.h"
 #include "filter.h"
 #include "tables.h"
+#include "float_math.h"
 
 
 /** Because we are optimizing for bare-metal, notice there are no virtual functions,
@@ -127,6 +128,9 @@ struct WaveguideState {
     float diffuser_buf4[41] = {};
     uint8_t diffuser_i1 = 0, diffuser_i2 = 0, diffuser_i3 = 0, diffuser_i4 = 0;
     bool bypass_loop_lp = false;
+    // Second cascaded loss pole (AcousticTom): set per-hit in NoteOn so the
+    // render loop doesn't compare the preset index per sample.
+    bool double_lp      = false;
     // Physics Topology Multiplier (+1.0f for String, -1.0f for Tube)
     float phase_mult    = 1.0f;    // ← non-zero
     // Per-model baseline allpass dispersion (added to ap_coeff from Inharm parameter).
@@ -163,6 +167,13 @@ struct CymbalConfig {
     float lowAttackSec, decaySec, highAttackSec, highDecaySec;
     float thwackSec, stickLevel, noiseLevel, resonatorLevel, shimmerLevel;
     float directNoiseLevel, phaseModDepth;
+    // HF gain tilt (0 = legacy flat bank).  At 1.0 each ringer's tap gain is
+    // weighted by sqrt(f / 2 kHz), which exactly counters the pink driver's
+    // −3 dB/oct amplitude tilt so the wash reads white-bright like the
+    // reference cymbals (~6-7 kHz body centroid) instead of ~1.3 kHz dark.
+    // Left 0 for presets whose balance is HW-approved (HHat-O, Gong, Splash);
+    // aggregate initializers with 17 values default this to 0.
+    float hfTilt;
 };
 
 struct CymbalVoice {
@@ -312,7 +323,13 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
         c.resA2[i]   = r2;
         c.resY1[i]   = 0.0f;
         c.resY2[i]   = 0.0f;
-        c.resGain[i] = 0.85f + 0.30f * cym_frand(c.rng);
+        float g      = 0.85f + 0.30f * cym_frand(c.rng);
+        if (cfg.hfTilt > 0.0f) {
+            // sqrt(f/2kHz)^hfTilt HF weighting (see CymbalConfig).  fasterpowf
+            // is fine here: amplitude weight, note-on time, arg in [0.15, 10].
+            g *= fasterpowf(f * 0.0005f, 0.5f * cfg.hfTilt);
+        }
+        c.resGain[i] = g;
     }
     c.resonatorNorm = cfg.resonatorLevel / sqrtf((float)count);
     const uint16_t padded = (uint16_t)((count + 3u) & ~3u);
@@ -824,12 +841,12 @@ struct VoiceState {
         // otherwise fall back to legacy formula (ratio4 × 1.31 / 1.62).
         float f5 = fminf(base_f * (ratio5 > 0.0f ? ratio5 : ratio4 * 1.31f), 0.45f * k_dsp_sample_rate);
         float f6 = fminf(base_f * (ratio6 > 0.0f ? ratio6 : ratio4 * 1.62f), 0.45f * k_dsp_sample_rate);
-        float w1 = (2.0f * M_PI * f1) * k_dsp_inv_sample_rate;
-        float w2 = (2.0f * M_PI * f2) * k_dsp_inv_sample_rate;
-        float w3 = (2.0f * M_PI * f3) * k_dsp_inv_sample_rate;
-        float w4 = (2.0f * M_PI * f4) * k_dsp_inv_sample_rate;
-        float w5 = (2.0f * M_PI * f5) * k_dsp_inv_sample_rate;
-        float w6 = (2.0f * M_PI * f6) * k_dsp_inv_sample_rate;
+        float w1 = (M_TWOPI * f1) * k_dsp_inv_sample_rate;
+        float w2 = (M_TWOPI * f2) * k_dsp_inv_sample_rate;
+        float w3 = (M_TWOPI * f3) * k_dsp_inv_sample_rate;
+        float w4 = (M_TWOPI * f4) * k_dsp_inv_sample_rate;
+        float w5 = (M_TWOPI * f5) * k_dsp_inv_sample_rate;
+        float w6 = (M_TWOPI * f6) * k_dsp_inv_sample_rate;
         modal_pilot_enabled = true;
         modal_mode_count = mode_count;
         // Seed at full amplitude (cosine quadrature pair): oscillator starts

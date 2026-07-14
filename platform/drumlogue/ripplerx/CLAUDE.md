@@ -2,19 +2,21 @@
 
 ## Dev Branch
 
-`claude/eager-galileo-2fho84` on `fedemone/logue-sdk`.
+`claude/snare-drum-realism-optimization-y4hrhf` on `fedemone/logue-sdk`
+(previous work landed from `claude/eager-galileo-2fho84`).
 
 Always rebuild and check `arm-unknown-linux-gnueabihf-size ripplerx.elf`:
 - `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).
 - `.bss` must stay near **552 bytes**.
 
-## Current Working State (commit 081e82e)
+## Current Working State
 
-- Unit **loads on hardware**, all 37 presets render clean (0 NaN/silent).
-- DSP unit tests: **82/82 PASS** (exit 0).
+- Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
+- DSP unit tests: **PASS** (exit 0).
 - Host syntax-check (g++ -fsyntax-only): **clean**.
 - HHat-O **HW-approved** ("ok now" — do not break).
 - ARM .text ≤ 28 KB: **must be confirmed on next flash** (cannot verify without toolchain).
+- Per-family realism findings + ranked backlog: see `REALISM_REVIEW.md`.
 
 ### Analysis tool: `modal_extract.py`
 
@@ -34,6 +36,47 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 19 — Snare family revival + BrshSnr preset + CPU pass (branch snare-drum-realism-optimization)
+
+Structural snare fixes (all measured; details in `REALISM_REVIEW.md`):
+- **Wire path was dead on every live hit**: `NoteOn → PartialReset()` zeroes
+  `snare_wire_mix` (only `LoadPreset` ever set it), and the velocity-tuned wire
+  band coefficients were written BEFORE `PartialReset` and clobbered.  Wire
+  params are now restored per-NoteOn and the band setup runs after the reset.
+  Restore is gated to ENGINE_SNARE so presets HW-approved with the wire silent
+  (e.g. KickDrum's dormant 0.03 mix) are unchanged.
+- **Same-tick gate-off choked the buzz to ~26 ms**: ENGINE_SNARE now skips the
+  noise-env release; the tail decays at the natural NzRs rate (AcSnare NzRs
+  740→950, MrchSnr 800→940 — calibrated to ref t40s).  Renders and hardware now
+  behave identically for snares.
+- **Velocity → buzz physics**: soft hits get less wire mix + up to 2× faster
+  decay, anchored at full velocity (calibrated sound unchanged at vel=127).
+- Result: MrchSnr centroid 4705 Hz vs ref 4683, t40 230 vs 220 ms; AcSnare
+  t40 270 vs 280 ms.
+- **New preset 38 "BrshSnr"** (ENGINE_SNARE): brush sweep — ~30 ms swish
+  onset, 6.5 Hz enveloped swirl AM (noise_am machinery), diffuse low-Q wire
+  bands 2.2/3.6/6.3 kHz, BP noise ≈4.2 kHz, long tail.  Awaiting HW listen.
+- **CPU**: idle render cost cut ~99% (idle guard skips master chain when no
+  voice is active, after a 320 ms flush); Tone=0 tilt-EQ skip; several
+  per-sample invariants hoisted.  All 39 renders byte-identical.
+- Also fixed: HEAD did not compile (orphaned `pre_clip_trim` from the cymbal
+  port merge).
+
+**Round 2 (HW feedback on pass 19):**
+- BrshSnr "too fast, hit too hard" → velocity compressed (0.30-0.72), swish
+  onset ~100 ms, wires resting on head (`k_wire_onset_env=1` → no crack
+  burst), 4.2 Hz swirl, tail T60≈0.64 s.  HW may supply a brush reference
+  sample for calibration.
+- **RimShot approved & added** (preset 39, ENGINE_SNARE): hard stick, rim-ring
+  mode cluster (2.42/3.38 rings longer than the head), tight 70 ms buzz.
+- **Buzz-roll continuity approved & added**: snare retriggers < 80 ms restore
+  the wire resonator states across PartialReset and skip the crack burst.
+- **All 7 per-family recommendations approved & applied** — measured results in
+  `REALISM_REVIEW.md` "Round-2 results".  Headline: Cymbal/Ride/RidBel body
+  centroid fixed via `CymbalConfig.hfTilt` HF-weighted resGain (Cymbal
+  927→6932 Hz vs ref 7366; Ride 6121 vs 6087).  Kalimba/Cowbell/Conga/AcTom/
+  Triangle/Clap table retunes.  Stereo idea discarded per HW.
 
 ### Pass 18 — FDN dense wash (cymbals) + strike transient layer (Timpani/Taiko)
 
@@ -253,7 +296,7 @@ dominate. A crash IS mostly bright smooth noise.
 - Engine routing scaffold (KS bypass for non-string presets).
 - ENGINE_BAR — Marimba exemplar (Phase 2 kill-switch).
 - ENGINE_MEMBRANE — Kick, Timpani, Taiko, etc.
-- ENGINE_SNARE — AcSnare, MarchSnare.
+- ENGINE_SNARE — AcSnare, MarchSnare (BrushSnare added in pass 19).
 - ENGINE_NOISE — Clap, Shaker.
 - ENGINE_PLATE — Cymbal, Gong, Hi-hat, Ride, etc.
 - Preset list: 37 entries (Flute/Clarinet removed; Taiko2 = "DeepBs"; Tick added).
@@ -273,7 +316,7 @@ g++ -std=c++14 -fsyntax-only -I. -I../common -U__ARM_NEON__ -U__ARM_NEON \
 g++ -std=c++17 -O2 -I.. -I. -I../../common -I../common -DRUNTIME_COMMON_H_ \
     test_dsp.cpp -o /tmp/run_test && /tmp/run_test
 
-# Render all 37 presets to WAV
+# Render all presets to WAV
 g++ -std=c++17 -O2 -I. -Itest_stubs -I.. -I../../common -I../common \
     -DRUNTIME_COMMON_H_ render_presets.cpp -o /tmp/render_presets
 /tmp/render_presets rendered/
@@ -376,6 +419,20 @@ Any param→modal mapping MUST pivot at a captured reference (`m_modal_*_ref`, s
 `LoadPreset`) so default sound is unchanged and only knob *movement* alters it.
 Anchoring at an absolute endpoint silently detunes every preset.
 
+### GOTCHA: NoteOn ordering vs PartialReset
+
+`NoteOn` calls `v.PartialReset()` roughly mid-way through.  Any per-voice
+exciter/voice state written BEFORE that call that PartialReset touches is
+silently clobbered (this killed the snare wire for 18 HW passes).  Rule:
+per-hit DSP state setup belongs AFTER `PartialReset()`, in the restoration
+section next to the boom/onset params.
+
+### ENGINE_SNARE lifetime
+
+NoteOff does NOT release the snare noise envelopes (same-tick gate_off would
+choke the buzz to ~26 ms).  The buzz decays at the natural NzRs-governed
+ENV_DECAY rate; Rel therefore does not shape the snare noise tail.
+
 ### ENGINE_NOISE lifetime
 
 `sustain_level=1.0f` for NOISE engines; `NoteOff` skips `master_env.release()`.
@@ -402,7 +459,7 @@ dies → "juxtaposed" sound.
 | `ENGINE_KS` | Karplus-Strong delay + modal additive | GuitarStr, Koto |
 | `ENGINE_BAR` | Mallet exciter → bar modal bank | Marimba, Vibraphone, Kalimba, SteelPan, Woodblock, Claves, TubularBell, GlassBowl, GlassBottle, SlitDrum, Tick |
 | `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank + boom osc | Kick2, 808Sub, Timpani, Djambe, Taiko, AcTom, KickDrum, Conga, Handpan, Bongo, Taiko2 |
-| `ENGINE_SNARE` | Membrane body (short) + snare-wire resonators | AcSnare, MarchSnare |
+| `ENGINE_SNARE` | Membrane body (short) + snare-wire resonators | AcSnare, MarchSnare, BrushSnare |
 | `ENGINE_PLATE` | Strike → inharmonic plate modes + metallic noise + crash bank | Cymbal, Gong, HHatOpen, HHatClosed*, Ride, RideBell, BellTree, Cowbell, Triangle, Tick |
 | `ENGINE_NOISE` | Noise burst (+ optional modal body / AM gating) | Clap, Shaker, HHatClosed |
 
@@ -446,7 +503,15 @@ k_RideBell(33)    ENGINE_PLATE
 k_Bongo(34)       ENGINE_MEMBRANE
 k_GlassBottle(35) ENGINE_BAR
 k_Tick(36)        ENGINE_PLATE
+k_Splash(37)      ENGINE_CYMBAL    ← small pitched splash (dense-resonator engine)
+k_BrushSnare(38)  ENGINE_SNARE     ← "BrshSnr": brush sweep, swirl AM + diffuse wires
+k_RimShot(39)     ENGINE_SNARE     ← "RimShot": stick crack + rim-ring ping + tight buzz
 ```
+
+NOTE: Cymbal(13), Gong(14), HHatOpen(27), Ride(32), RideBell(33) were moved to
+`ENGINE_CYMBAL` (dense-resonator port) in commit 6e28c0a — the table above shows
+the historical PLATE rows for context; `kPresetEngine[]` in synth_engine.h is
+the authority.
 
 ### ModalPresetConfig struct fields (synth_engine.h ~line 223)
 

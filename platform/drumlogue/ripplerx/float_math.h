@@ -121,6 +121,10 @@ typedef float float64_t;
 #define M_TWOPI 6.283185307179586f
 #endif
 
+#ifndef M_3_PI_2
+#define M_3_PI_2 4.71238898038469f
+#endif
+
 #ifndef M_PI_2
 #define M_PI_2 1.5707963267948966f
 #endif
