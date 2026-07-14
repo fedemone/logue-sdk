@@ -26,7 +26,7 @@ struct Features {
     float rms, low_rms, hi_rms, tail_rms;
 };
 
-static Features render_features(RipplerXWaveguide& synth, int note, float dur_s) {
+static Features render_features(BrachettiSynth& synth, int note, float dur_s) {
     const int sr = 48000;
     const int total = (int)(dur_s * sr);
     const int block = 128;
@@ -114,14 +114,14 @@ int main() {
     desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     desc.get_sample = mock_get_sample;
 
-    static RipplerXWaveguide synth;
+    static BrachettiSynth synth;
 
     for (const Target& t : targets) {
         if (synth.Init(&desc) != 0) { fprintf(stderr, "init fail\n"); return 1; }
         synth.LoadPreset((uint8_t)t.preset);
         Features base = render_features(synth, t.note, 2.0f);
         printf("\n=== %s preset %d (%s) note %d ===\n", t.family, t.preset,
-               RipplerXWaveguide::getPresetName((uint8_t)t.preset), t.note);
+               BrachettiSynth::getPresetName((uint8_t)t.preset), t.note);
         printf("  baseline: rms=%.5f low=%.5f hi=%.5f tail=%.6f\n",
                base.rms, base.low_rms, base.hi_rms, base.tail_rms);
         printf("  %-9s | %-32s | %-32s | verdict\n", "param", "value=LO  rms/low/hi/tail", "value=HI  rms/low/hi/tail");

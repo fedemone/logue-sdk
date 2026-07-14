@@ -89,11 +89,11 @@ Future polish: slight downward onset pitch-glide (needs per-sample modal-k retun
 - **Clock**
 *(user can supply wave files for reference)*
 
-### Project rename: RipplerX → Brachetti
+### Project rename: Brachetti → Brachetti
 In honour of Italian performer Arturo Brachetti. When the model is settled:
-- Rename all files: `ripplerx*` → `brachetti*`
+- Rename all files: `brachetti*` → `brachetti*`
 - Rename project identifier in `config.mk`, `header.c`, `Makefile`
-- Rename the C++ class `RipplerXWaveguide` → `BrachettiWaveguide`
+- Rename the C++ class `BrachettiSynth` → `BrachettiWaveguide`
 - Update all comments and documentation
 - Create a new GitHub repo / branch named accordingly
 
@@ -184,7 +184,7 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 - **Cans** — noisy metallic, high NzMx, short Dkay, HP noise filter
 - **Tabla** — asymmetric membrane, low note, dual resonator (membrane mode), medium Dkay
 - **Sankyo** (music box) — very pure tone, near-zero InHm, long Dkay, single resonator
-  *(user can supply parameter values from original RipplerX project)*
+  *(user can supply parameter values from original Brachetti project)*
 - **crunch**
 - **bottle pop**
 - **kalimba**
@@ -194,11 +194,11 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 - **Clock**
 *(user can supply wave files for reference)*
 
-### Project rename: RipplerX → Brachetti
+### Project rename: Brachetti → Brachetti
 In honour of Italian performer Arturo Brachetti. When the model is settled:
-- Rename all files: `ripplerx*` → `brachetti*`
+- Rename all files: `brachetti*` → `brachetti*`
 - Rename project identifier in `config.mk`, `header.c`, `Makefile`
-- Rename the C++ class `RipplerXWaveguide` → `BrachettiWaveguide`
+- Rename the C++ class `BrachettiSynth` → `BrachettiWaveguide`
 - Update all comments and documentation
 - Create a new GitHub repo / branch named accordingly
 
@@ -215,11 +215,11 @@ In honour of Italian performer Arturo Brachetti. When the model is settled:
 
 ## Phase 21: Voice Allocator Reset, Sample-Skip Bug, GtrStr Preset Fix [COMPLETED]
 
-Hardware re-test (Phase 20 build on RipplerX2 branch) still showed progressive silence.
+Hardware re-test (Phase 20 build on Brachetti2 branch) still showed progressive silence.
 Root-cause: three separate bugs — two in the engine, one in the test harness.
 **82/82 tests pass.**
 
-### Hardware Symptoms (Phase 20 build, RipplerX2 branch)
+### Hardware Symptoms (Phase 20 build, Brachetti2 branch)
 
 User's Phase 20 hardware test showed **identical behaviour** to Phase 19:
 - First 4 presses: synth voice + beating (possibly detuned delay lines)
@@ -228,9 +228,9 @@ User's Phase 20 hardware test showed **identical behaviour** to Phase 19:
 Two clarifications from this report:
 1. "longer each time" (not shorter) suggests accumulating residual energy, consistent with the
    delay buffer NOT being cleared on retrigger.
-2. User's RipplerX2 branch had the GateOff voice-reset fix but NOT Phase 20's memset.
+2. User's Brachetti2 branch had the GateOff voice-reset fix but NOT Phase 20's memset.
    Our branch had the memset but NOT the GateOff reset. Neither branch had both. Hardware
-   tested RipplerX2 (no memset) → still failed.
+   tested Brachetti2 (no memset) → still failed.
 
 ### BUG 3 — CRITICAL: GateOff did not reset the voice allocator
 
@@ -240,7 +240,7 @@ For long-sustain presets (GtrStr T_60≈3.3 s), voices from presses 2, 3, 4 are 
 and audible when press 5 fires — all at the same pitch but at different phases. Their
 superposition creates beats and interferes with the new excitation.
 
-**Fix (ported from user's RipplerX2 commit):** `GateOff()` now sets `state.next_voice_idx =
+**Fix (ported from user's Brachetti2 commit):** `GateOff()` now sets `state.next_voice_idx =
 NUM_VOICES - 1`. Because `NoteOn` pre-increments before use, the very next `NoteOn` wraps to
 index 0, so every gate press always starts at Voice 0. Concurrent notes within a single gate
 still allocate voices 0→1→2→3 correctly, since each `NoteOn` call still increments first.
@@ -1311,7 +1311,7 @@ Hardware A/B for preset 12 (`Wodblk`), then either:
   2. rendered/reference file coupling by preset index/name,
   3. batch comparison with `pre_hw_analysis.py`,
   4. tuning hints and estimated runs-to-target scoring.
-- Added `test_ripplerx_render.cpp`, a single-preset renderer intended for
+- Added `test_brachetti_render.cpp`, a single-preset renderer intended for
   ARM/qemu execution (`run_test_render`) so render and analysis steps are clearly separated.
 - Added built-in helper output to the runner:
   - `--helper` prints the full workflow guide,
@@ -1494,7 +1494,7 @@ Stage-1 correction (2026-04-23):
 - Fixed transient allpass jitter clamp to preserve the full supported range `[-0.99, +0.99]`.
 - Previous clamp `[0, 0.99]` accidentally removed negative AP modulation, reducing per-hit dispersion variation for models using near-zero/negative AP trajectories.
 - Verified by re-running local batch iteration harness (`batch_tune_runner.py --auto-note-align --run-render --preset-filter Wodblk ...`) to ensure report generation path remains healthy after DSP-side fix.
-- Fixed `run_tuning.sh` default report/helper paths to point at the RipplerX tool directory (`platform/drumlogue/ripplerx`) so generated `batch_reports/*` are detected by the wrapper without extra env overrides.
+- Fixed `run_tuning.sh` default report/helper paths to point at the Brachetti tool directory (`platform/drumlogue/brachetti`) so generated `batch_reports/*` are detected by the wrapper without extra env overrides.
 - Added multi-iteration support to `batch_tune_runner.py` via `--iterations N` so 5–10-pass convergence checks (as planned) can run in one command and emit `batch_tuning_history.json/.md`.
 - Transient modulation now references dedicated unmodulated base coefficients stored in `VoiceState` (set by UI/NoteOn), avoiding cross-block drift when transient windows span multiple process blocks.
 - `pre_hw_analysis.py` decimation now applies a simple moving-average anti-alias prefilter before downsampling to reduce spectral-metric bias from alias foldback.
@@ -2211,7 +2211,7 @@ Implemented steps:
      (`2^(-st/12)` via `fasterpowf`) for more realistic downward pitch drop.
 
 Quick verification run:
-- `test_ripplerx_render`: rendered Gong + Kick snapshots successfully.
+- `test_brachetti_render`: rendered Gong + Kick snapshots successfully.
 - `batch_tune_runner.py --preset-filter "Gong,Cymbal,Kick" --run-render ...`
   produced reports in `/tmp/batch_stage2_steps123/`.
 

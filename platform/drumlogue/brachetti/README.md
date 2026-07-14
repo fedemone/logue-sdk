@@ -1,4 +1,4 @@
-# RipplerX-Waveguide (Drumlogue Bare-Metal DSP)
+# Brachetti-Waveguide (Drumlogue Bare-Metal DSP)
 
 ## Overview
 Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. 39 presets spanning strings, bars, membranes, metallic plates, and idiophones.
@@ -327,7 +327,7 @@ If any target presets are listed as missing, provide curated sample files (or ex
 # Appendix — Modal Drum Engine (improved Timpani/Taiko port)
 
 This appendix documents the design of a standalone modal-synthesis engine whose
-Timpani and Taiko reproductions are being ported into RipplerX. It is folded in as
+Timpani and Taiko reproductions are being ported into Brachetti. It is folded in as
 reference for the improved presets and for the parameter-strengthening work. The
 guiding principle: **every change was driven by a measurement and verified against
 the sample with a reciprocal plot/metric**, not tuned by ear alone.
@@ -353,7 +353,7 @@ broadband attack transient) → composable config-shaping scripts (`densify`,
 `hishape`, `tune`, `freqdecay`, `densefill`, `reshape_transient`) → the COUPLED
 `ResonatorDrumSynth` engine → render.
 
-**Per-sample signal flow** (maps onto RipplerX's MEMBRANE engine + boom + noise):
+**Per-sample signal flow** (maps onto Brachetti's MEMBRANE engine + boom + noise):
 ```
 1. EXCITATION   e = half-sine impulse (length & amplitude scale with velocity)
 2. RESONATORS   y0 = a1·y1 − a2·y2 + g·e  per mode;  body = Σ y0   (2-pole)
@@ -365,7 +365,7 @@ broadband attack transient) → composable config-shaping scripts (`densify`,
 6. LIMITER      transparent below 0.85, tanh soft-knee only on true peaks
 7. PITCH GLIDE  per-block resonator retune (a small downward "whoomp")
 ```
-Key idea vs RipplerX's 6-mode banks: a **dense membrane fill** (~220 jittered
+Key idea vs Brachetti's 6-mode banks: a **dense membrane fill** (~220 jittered
 low-level resonators) gives the timpani a continuous tonal "wedge", and a
 **sweeping-cutoff noise wedge** gives the taiko its grainy broadband body — the
 two textures the discrete 6-mode bank cannot make.

@@ -1,11 +1,11 @@
-# RipplerX – Session Brief
+# Brachetti – Session Brief
 
 ## Dev Branch
 
 `claude/snare-drum-realism-optimization-y4hrhf` on `fedemone/logue-sdk`
 (previous work landed from `claude/eager-galileo-2fho84`).
 
-Always rebuild and check `arm-unknown-linux-gnueabihf-size ripplerx.elf`:
+Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 - `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).
 - `.bss` must stay near **552 bytes**.
 

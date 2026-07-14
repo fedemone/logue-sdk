@@ -28,7 +28,7 @@ float ut_voice_out = 0.0f;
 void run_active_test() {
     std::cout << "--- STARTING ACTIVE DSP UNIT TEST 1 ---\n";
 
-    RipplerXWaveguide synth;
+    BrachettiSynth synth;
     unit_runtime_desc_t desc = {0};
     desc.samplerate = 48000;
     desc.output_channels = 2;
@@ -100,7 +100,7 @@ void run_active_test() {
 void run_active_test2() {
     std::cout << "--- STARTING DIAGNOSTIC DSP UNIT TEST 2 ---\n";
 
-    RipplerXWaveguide synth;
+    BrachettiSynth synth;
     unit_runtime_desc_t desc = {0};
     desc.samplerate = 48000;
     desc.output_channels = 2;
@@ -110,8 +110,8 @@ void run_active_test2() {
     synth.Init(&desc);
 
     synth.LoadPreset(0);
-    synth.setParameter(RipplerXWaveguide::k_paramDkay, 1500);
-    synth.setParameter(RipplerXWaveguide::k_paramNzMix, 0);
+    synth.setParameter(BrachettiSynth::k_paramDkay, 1500);
+    synth.setParameter(BrachettiSynth::k_paramNzMix, 0);
 
     synth.NoteOn(60, 127);
     uint8_t active_idx = synth.state.next_voice_idx;
@@ -145,11 +145,11 @@ static void test_nan_explosion_and_dc_offset() {
     desc.get_num_sample_banks = mock_get_num_sample_banks;
     desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     desc.get_sample = mock_get_sample;
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // We want to test a sharp transient that might trigger SVF or envelope blowups
-    s.setParameter(RipplerXWaveguide::k_paramProgram, 3); // Load Ac Snare
+    s.setParameter(BrachettiSynth::k_paramProgram, 3); // Load Ac Snare
     s.GateOn(127); // Hardest possible velocity strike
 
     const size_t frames = 32;
@@ -215,11 +215,11 @@ static void test_denormal_stalls() {
     desc.get_num_sample_banks = mock_get_num_sample_banks;
     desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     desc.get_sample = mock_get_sample;
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Load a preset with a long decay, strike it, and release it
-    s.setParameter(RipplerXWaveguide::k_paramProgram, 4); // Tubular Bell has long decay
+    s.setParameter(BrachettiSynth::k_paramProgram, 4); // Tubular Bell has long decay
     s.GateOn(127);
 
     const size_t frames = 32;
@@ -259,10 +259,10 @@ static void test_stereo_phase_alignment() {
     desc.get_num_sample_banks = mock_get_num_sample_banks;
     desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     desc.get_sample = mock_get_sample;
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
-    s.setParameter(RipplerXWaveguide::k_paramProgram, 3); // Ac Snare (wide frequency spread)
+    s.setParameter(BrachettiSynth::k_paramProgram, 3); // Ac Snare (wide frequency spread)
     s.GateOn(127);
 
     const size_t frames = 32;
@@ -303,11 +303,11 @@ static void test_delay_memory_leak() {
     desc.get_num_sample_banks = mock_get_num_sample_banks;
     desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     desc.get_sample = mock_get_sample;
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // 1. Blast the delay lines with a loud, sustained note
-    s.setParameter(RipplerXWaveguide::k_paramProgram, 2); // 808 Sub
+    s.setParameter(BrachettiSynth::k_paramProgram, 2); // 808 Sub
     s.GateOn(127);
     int block = 0;
     const size_t frames = 32;
@@ -374,7 +374,7 @@ static void test_modal_ring_decay() {
         int preset_idx = preset_indices[ci];
         const char* label = preset_labels[ci];
 
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
         s.LoadPreset((uint8_t)preset_idx);
         s.GateOn(VELOCITY);
@@ -466,7 +466,7 @@ static void test_master_env_hold() {
     // checkpoints in ms and their expected minimum master_env.value
     const float checkpoints_ms[] = { 100.0f, 300.0f, 600.0f };
 
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     s.LoadPreset(1);    // Marimba — ENGINE_BAR
     s.GateOn(100);
@@ -535,9 +535,9 @@ static void test_preset_smoke() {
     const int CHECK_BLKS = 20;   // 26ms — enough for all engine types to fire
     const int VELOCITY   = 100;
 
-    const int num_programs = RipplerXWaveguide::k_NumPrograms;
+    const int num_programs = BrachettiSynth::k_NumPrograms;
     for (int idx = 0; idx < num_programs; ++idx) {
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
         s.LoadPreset((uint8_t)idx);
         s.GateOn(VELOCITY);
@@ -553,7 +553,7 @@ static void test_preset_smoke() {
             }
         }
 
-        bool is_removed = (s.kPresetEngine[idx] == RipplerXWaveguide::ENGINE_REMOVED);
+        bool is_removed = (s.kPresetEngine[idx] == BrachettiSynth::ENGINE_REMOVED);
 
         if (is_removed) {
             if (peak > 0.0001f) {
@@ -599,7 +599,7 @@ static void test_rapid_retrigger() {
     desc.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     desc.get_sample = mock_get_sample;
 
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     s.LoadPreset(1);    // Marimba
 

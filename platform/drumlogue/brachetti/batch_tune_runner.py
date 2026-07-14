@@ -2,7 +2,7 @@
 """
 batch_tune_runner.py
 
-Batch pre-HW runner for RipplerX sample matching.
+Batch pre-HW runner for Brachetti sample matching.
 
 Pipeline:
 1) Discover reference samples.
@@ -259,7 +259,7 @@ class PresetRow:
 
 
 def build_helper_text() -> str:
-    return f"""# RipplerX Batch Tuning Helper
+    return f"""# Brachetti Batch Tuning Helper
 
 This helper describes how to run the full pre-HW loop with `batch_tune_runner.py`.
 
@@ -300,7 +300,7 @@ python3 batch_tune_runner.py \\
 Use this on WSL to build ARM render binary:
 
 ```bash
-mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -O3 -I.. -I /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf test_ripplerx_render.cpp -o run_test_render
+mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++ -static -std=c++17 -O3 -I.. -I /mnt/d/Fede/drumlogue/arm-unknown-linux-gnueabihf/arm-unknown-linux-gnueabihf test_brachetti_render.cpp -o run_test_render
 ```
 
 Run it with QEMU:

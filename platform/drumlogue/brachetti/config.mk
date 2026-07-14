@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := ripplerx
+PROJECT := brachetti
 PROJECT_TYPE := synth
 
 ##############################################################################

@@ -140,7 +140,7 @@ Source inspiration: Dan Stowell's cymbal synthesis tutorial, which describes a r
 The renderer/test executable is `test_real_cymb.cpp`; it renders one WAV per preset plus velocity-sweep, muffle, roll, and stacking test renders (mono 48 kHz / 16-bit PCM), prints per-render metrics (peak, rms, tail rms, T60, spectral-tilt brightness), and runs PASS/FAIL behaviour checks (non-zero exit on failure). Build it from this directory:
 
 ```sh
-cd platform/drumlogue/ripplerx/cymbal_synthesis
+cd platform/drumlogue/brachetti/cymbal_synthesis
 make render
 ```
 

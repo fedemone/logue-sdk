@@ -2,7 +2,7 @@
  * @file test_hw_debug.cpp
  * @brief Diagnostic unit tests targeting the UT-passes / HW-silent gap.
  *
- * Compile (from the ripplerx/ directory):
+ * Compile (from the brachetti/ directory):
  *   g++ -std=c++14 -O2 -DUNIT_TEST_DEBUG \
  *       -I../common -I. \
  *       -o test_hw_debug test_hw_debug.cpp -lm
@@ -59,7 +59,7 @@ static bool is_nan_or_inf(float v) {
 }
 
 /** Process N frames in blocks of block_size.  Returns max absolute sample seen. */
-static float run_blocks(RipplerXWaveguide& s, int total_frames, int block_size = 32) {
+static float run_blocks(BrachettiSynth& s, int total_frames, int block_size = 32) {
     float buf[256] = {0.0f};  // Max block_size we test is 64 → 128 floats, 256 is safe
     float peak = 0.0f;
     for (int done = 0; done < total_frames; done += block_size) {
@@ -75,7 +75,7 @@ static float run_blocks(RipplerXWaveguide& s, int total_frames, int block_size =
 }
 
 /** Check left-channel of a single frame for nonzero; returns true if sound present. */
-static float single_frame(RipplerXWaveguide& s) {
+static float single_frame(BrachettiSynth& s) {
     float buf[2] = {0.0f, 0.0f};
     s.processBlock(buf, 1);
     return buf[0];
@@ -103,7 +103,7 @@ static void test_param_audit() {
     std::cout << "\n── T0: Parameter audit after Init + LoadPreset(0) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     // NO manual LoadPreset here — Init already calls it.
 
@@ -151,7 +151,7 @@ static void test_hw_boot_sequence() {
     std::cout << "\n── T1: HW boot sequence (GateOn + 32-frame blocks) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     // Hardware fires GateOn, NOT NoteOn directly
     s.GateOn(127);
@@ -185,7 +185,7 @@ static void test_default_preset_no_override() {
     std::cout << "\n── T2: Default preset, no UT overrides (Dkay=250, Gain=0) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     s.NoteOn(60, 127);
 
@@ -217,7 +217,7 @@ static void test_denormal_decay() {
     std::cout << "\n── T3: Denormal / FTZ decay check (100 ms of sustained sound) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     // Use the default preset (Dkay=250 → feedback_gain≈0.869) but hold the gate open.
     s.NoteOn(60, 127);
@@ -260,7 +260,7 @@ static void test_gate_on_off_cycle() {
     std::cout << "\n── T4: GateOn → 250 frames → GateOff → 250 frames → GateOn again ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     s.GateOn(127);
@@ -295,7 +295,7 @@ static void test_block_sizes() {
     int sizes[] = {1, 16, 32, 64};
     for (int sz : sizes) {
         unit_runtime_desc_t desc = make_desc();
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
         s.GateOn(127);
         // Process enough frames to complete at least one delay-line round trip (~184 frames for C4)
@@ -315,7 +315,7 @@ static void test_reset_then_gate_on() {
     std::cout << "\n── T6: unit_reset() then GateOn still produces audio ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Simulate OS: fire one note, then reset (e.g. pattern change), then play again
@@ -338,14 +338,14 @@ static void test_reset_then_gate_on() {
 //   AND zero mallet somehow), this catches it.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_all_presets_audible() {
-    std::cout << "\n── T7: All " << RipplerXWaveguide::k_NumPrograms << " presets produce nonzero audio ──\n";
+    std::cout << "\n── T7: All " << BrachettiSynth::k_NumPrograms << " presets produce nonzero audio ──\n";
 
     bool any_fail = false;
-    for (int p = 0; p < RipplerXWaveguide::k_NumPrograms; ++p) {
+    for (int p = 0; p < BrachettiSynth::k_NumPrograms; ++p) {
         // Flute and Clarinet were removed outright (HW request) — every
         // remaining program must produce audio.
         unit_runtime_desc_t desc = make_desc();
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
         s.LoadPreset((uint8_t)p);
         s.GateOn(127);
@@ -353,7 +353,7 @@ static void test_all_presets_audible() {
         // (note 35 / B1 ≈ 870-sample delay with fasterpowf approximation on x86).
         float peak = run_blocks(s, 1500, 32);
         if (peak < 1e-9f) {
-            std::cout << "  [SILENT] preset " << p << " (" << RipplerXWaveguide::getPresetName(p) << ")"
+            std::cout << "  [SILENT] preset " << p << " (" << BrachettiSynth::getPresetName(p) << ")"
                       << "  peak=" << peak << "\n";
             any_fail = true;
         }
@@ -370,7 +370,7 @@ static void test_voice_allocation() {
     std::cout << "\n── T8: Voice allocation - first NoteOn activates a processed voice ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Count active voices before NoteOn
@@ -421,9 +421,9 @@ static void test_delay_roundtrip() {
     std::cout << "\n── T9: Delay-line round-trip echo (root cause from run_test_result.log) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
-    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
     s.NoteOn(60, 127);
 
     // Inspect the allocated voice's delay_length directly.
@@ -474,23 +474,23 @@ static void test_noise_svf() {
     std::cout << "\n── T10: NzFltr/NzFltFrq route to per-voice noise_filter ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // NzFltr=0 → LP mode on all four voices
-    s.setParameter(RipplerXWaveguide::k_paramNzFltr, 0);
+    s.setParameter(BrachettiSynth::k_paramNzFltr, 0);
     bool all_lp = true;
     for (int i = 0; i < 4; ++i)
         if (s.state.voices[i].exciter.noise_filter.mode != 0) all_lp = false;
 
     // NzFltFrq: higher cutoff → larger TPT a3 coefficient (a3 = g·a2, which is strictly monotonic up to Nyquist)
-    s.setParameter(RipplerXWaveguide::k_paramNzFltFrq, 5000);
+    s.setParameter(BrachettiSynth::k_paramNzFltFrq, 5000);
     float f_5kHz = s.state.voices[0].exciter.noise_filter.a3;
-    s.setParameter(RipplerXWaveguide::k_paramNzFltFrq, 200);
+    s.setParameter(BrachettiSynth::k_paramNzFltFrq, 200);
     float f_200Hz = s.state.voices[0].exciter.noise_filter.a3;
 
     // NzFltr=2 → HP mode on all four voices
-    s.setParameter(RipplerXWaveguide::k_paramNzFltr, 2);
+    s.setParameter(BrachettiSynth::k_paramNzFltr, 2);
     bool all_hp = true;
     for (int i = 0; i < 4; ++i)
         if (s.state.voices[i].exciter.noise_filter.mode != 2) all_hp = false;
@@ -520,15 +520,15 @@ static void test_tubrad_mterl() {
     std::cout << "\n── T11: TubRad combines with Mterl to brighten lowpass_coeff ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Target ResA (default context after Init)
-    s.setParameter(RipplerXWaveguide::k_paramMterl,  10); // mid material
-    s.setParameter(RipplerXWaveguide::k_paramTubRad,  0); // narrow tube (no adjustment)
+    s.setParameter(BrachettiSynth::k_paramMterl,  10); // mid material
+    s.setParameter(BrachettiSynth::k_paramTubRad,  0); // narrow tube (no adjustment)
     float coeff_narrow = s.state.voices[0].resA.lowpass_coeff;
 
-    s.setParameter(RipplerXWaveguide::k_paramTubRad, 20); // widest tube
+    s.setParameter(BrachettiSynth::k_paramTubRad, 20); // widest tube
     float coeff_wide   = s.state.voices[0].resA.lowpass_coeff;
 
     std::cout << "  lowpass_coeff TubRad=0  : " << coeff_narrow << "\n";
@@ -553,9 +553,9 @@ static void test_partls_coupling() {
 
     auto run_preset_with_partls = [](int partls_val) -> float {
         unit_runtime_desc_t desc = make_desc();
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
-        s.setParameter(RipplerXWaveguide::k_paramPartls, partls_val);
+        s.setParameter(BrachettiSynth::k_paramPartls, partls_val);
         s.GateOn(127);
         return run_blocks(s, 400, 32);
     };
@@ -589,10 +589,10 @@ static void test_tone_eq() {
     // perspective.  Tone=30 boosts that component ×3; Tone=-10 crushes it to ~0.
     auto peak_pre_limiter = [](int tone_val) -> float {
         unit_runtime_desc_t desc = make_desc();
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
-        s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
-        s.setParameter(RipplerXWaveguide::k_paramTone, tone_val);
+        s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+        s.setParameter(BrachettiSynth::k_paramTone, tone_val);
         s.GateOn(127);
         float peak = 0.0f;
         for (int i = 0; i < 400; ++i) {
@@ -629,11 +629,11 @@ static void test_noise_filter_state_clear() {
     std::cout << "\n── T14: noise_filter SVF state cleared on Reset() and NoteOn() ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Run 200 frames with NzMix=100 to accumulate non-zero filter state
-    s.setParameter(RipplerXWaveguide::k_paramNzMix, 100);
+    s.setParameter(BrachettiSynth::k_paramNzMix, 100);
     s.NoteOn(60, 127);
     for (int i = 0; i < 200; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
 
@@ -683,19 +683,19 @@ static void test_partls_mode_select_coupling() {
     std::cout << "\n── T15: Partls=5/6 editor-select leaves coupling depth unchanged ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Set coupling to mid-depth via Partls=2 (16 partials → 0.5 coupling)
-    s.setParameter(RipplerXWaveguide::k_paramPartls, 2);
+    s.setParameter(BrachettiSynth::k_paramPartls, 2);
     float depth_before = s.m_coupling_depth_ut();
 
     // Partls=5 selects ResA for editing — must not touch coupling
-    s.setParameter(RipplerXWaveguide::k_paramPartls, 5);
+    s.setParameter(BrachettiSynth::k_paramPartls, 5);
     float depth_after_5 = s.m_coupling_depth_ut();
 
     // Partls=6 selects ResB for editing — must not touch coupling
-    s.setParameter(RipplerXWaveguide::k_paramPartls, 6);
+    s.setParameter(BrachettiSynth::k_paramPartls, 6);
     float depth_after_6 = s.m_coupling_depth_ut();
 
     std::cout << "  coupling_depth after Partls=2  : " << depth_before  << "\n";
@@ -727,9 +727,9 @@ static void test_energy_squelch() {
 
     // Sub-test A: a voice with very low feedback_gain dies quickly after GateOff.
     {
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
-    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
         // Preset 0 has feedback_gain ≈ 0.87.  Override to near-zero so the waveguide
         // loses energy almost instantly (one round-trip ≈ 190 samples).
         s.state.voices[1].resA.feedback_gain = 0.001f;
@@ -759,9 +759,9 @@ static void test_energy_squelch() {
 
     // Sub-test B: a voice that is still sustaining (normal feedback_gain) stays active.
     {
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
-    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
         s.NoteOn(60, 127);
         for (int i = 0; i < 200; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
         // Do NOT call GateOff — voice should remain active.
@@ -782,7 +782,7 @@ static void test_pitch_bend() {
     std::cout << "\n── T17: PitchBend adjusts active-voice delay_length ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
     s.NoteOn(60, 127);
 
@@ -822,7 +822,7 @@ static void test_pitch_bend_persists_to_new_note() {
     std::cout << "\n── T18: Held pitch bend applies to notes struck while bent ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Establish the nominal (no-bend) delay for note 60
@@ -861,7 +861,7 @@ static void test_pitch_compensation_accuracy() {
     std::cout << "\n── T19: Loop filter pitch compensation accuracy ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     s.NoteOn(60, 127);
@@ -911,7 +911,7 @@ static void test_same_tick_gate() {
     std::cout << "\n── T20: Same-tick GateOn + GateOff (Drumlogue drum trigger model) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Replicate the hardware sequence: both events fire before any audio block
@@ -946,7 +946,7 @@ static void test_os_param_init_sequence() {
     std::cout << "\n── T21: OS parameter-init sequence (header defaults sent after Init) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Send all 24 header.c default values exactly as the Drumlogue OS does
@@ -1010,9 +1010,9 @@ static void test_master_env_trace() {
     std::cout << "\n── T22: master_env value trace through same-tick trigger ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
-    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
 
     // Probe master_env by reading the voice's exciter state after each event.
     // Voice index 1 (next_voice_idx advances from 0 to 1 on first NoteOn).
@@ -1059,9 +1059,9 @@ static void test_exciter_independent_of_env() {
     std::cout << "\n── T23: Exciter output at frame 0 (mallet strike, no sample) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
-    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
 
     // GateOn only — no GateOff — so master_env stays at 1.0 (sustained, ENV_DECAY)
     s.GateOn(127);
@@ -1100,7 +1100,7 @@ static void test_polyphony() {
     std::cout << "\n── T24: 4-voice polyphony (4 simultaneous NoteOn) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Fire 4 different notes — round-robin allocates voices 1,2,3,0
@@ -1146,7 +1146,7 @@ static void test_all_note_off() {
     std::cout << "\n── T25: AllNoteOff releases all active voices ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     s.NoteOn(36, 100);
@@ -1197,7 +1197,7 @@ static void test_midi_note_extremes() {
 
     for (int note : {0, 127}) {
         unit_runtime_desc_t desc = make_desc();
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
         s.NoteOn((uint8_t)note, 127);
 
@@ -1243,11 +1243,11 @@ static void test_max_inharm_stability() {
     std::cout << "\n── T27: Max Inharm (ap_coeff=0.9995) — clamping and stability ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);   // After Init: m_is_resonator_a=true, m_is_resonator_b=true
 
     // Set max inharmonicity on both resonators (both selected after Init)
-    s.setParameter(RipplerXWaveguide::k_paramInharm, 1999);
+    s.setParameter(BrachettiSynth::k_paramInharm, 1999);
 
     // Verify coefficient was applied to ResA
     float ac = s.state.voices[0].resA.ap_coeff;
@@ -1295,7 +1295,7 @@ static void test_preset_change_mid_note() {
     std::cout << "\n── T28: LoadPreset mid-note — stability and re-trigger ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Start a note, let it ring for 10 blocks
@@ -1347,7 +1347,7 @@ static void test_velocity_scaling() {
     unit_runtime_desc_t desc = make_desc();
 
     auto frame0_voice_out = [&](uint8_t vel) -> float {
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
         s.NoteOn(60, vel);
         ut_voice_out = 0.0f;
@@ -1383,10 +1383,10 @@ static void test_dkay_zero_short_gate() {
     std::cout << "\n── T30: Dkay=0 (shortest gate) produces audible output ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
-    s.setParameter(RipplerXWaveguide::k_paramDkay, 0);
+    s.setParameter(BrachettiSynth::k_paramDkay, 0);
 
     // Same-tick trigger (most demanding scenario for short decays)
     s.GateOn(127);
@@ -1419,16 +1419,16 @@ static void test_string_one_second_sustain() {
     std::cout << "\n── T31: String sustain 1 second (Dkay=200, Mterl=30, TubRad=20) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Configure for maximum-sustain string.  Both resonators are selected
     // after Init (m_is_resonator_a=true, m_is_resonator_b=true).
-    s.setParameter(RipplerXWaveguide::k_paramDkay,    200); // g=0.999, gate=10s
-    s.setParameter(RipplerXWaveguide::k_paramMterl,    30); // bright material
-    s.setParameter(RipplerXWaveguide::k_paramTubRad,   20); // wide tube
-    s.setParameter(RipplerXWaveguide::k_paramNzMix,     0); // no noise
-    s.setParameter(RipplerXWaveguide::k_paramModel,     0); // String
+    s.setParameter(BrachettiSynth::k_paramDkay,    200); // g=0.999, gate=10s
+    s.setParameter(BrachettiSynth::k_paramMterl,    30); // bright material
+    s.setParameter(BrachettiSynth::k_paramTubRad,   20); // wide tube
+    s.setParameter(BrachettiSynth::k_paramNzMix,     0); // no noise
+    s.setParameter(BrachettiSynth::k_paramModel,     0); // String
 
     // Report the actual coefficients so the test is self-documenting
     float g  = s.state.voices[0].resA.feedback_gain;
@@ -1487,17 +1487,17 @@ static void test_dkay_controls_decay() {
     // Helper: isolate ResA (Partls=0 → no coupling, m_active_partials=4 < 16)
     // then advance to frame 14400 (300 ms) and capture one frame via ut_delay_read.
     auto probe_at_300ms = [&](int32_t dkay_val) -> float {
-        RipplerXWaveguide s;
+        BrachettiSynth s;
         s.Init(&desc);
-    s.LoadPreset(RipplerXWaveguide::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
-        s.setParameter(RipplerXWaveguide::k_paramPartls, 0); // ResA only, no coupling
-        s.setParameter(RipplerXWaveguide::k_paramDkay,   dkay_val);
+    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+        s.setParameter(BrachettiSynth::k_paramPartls, 0); // ResA only, no coupling
+        s.setParameter(BrachettiSynth::k_paramDkay,   dkay_val);
         // Mterl=30 → coeff=1.0 → loss_g_dc=1.0, LP is a passthrough.
         // Without this, the default preset (Mterl=10, dc_gain≈0.95) gives a
         // per-round-trip gain of ~0.950 × feedback_gain so 300ms amplitude is
         // 0.950^78.5 ≈ 0.017× initial — far below the 0.5 threshold.
         // With Mterl=30 the only per-trip attenuation is feedback_gain itself.
-        s.setParameter(RipplerXWaveguide::k_paramMterl,  30);
+        s.setParameter(BrachettiSynth::k_paramMterl,  30);
         s.GateOn(127);
         // Advance to ~290 ms, then measure the peak over ~400 frames (≈2 C4 periods).
         // Single-sample measurement can land on a zero crossing of the 261 Hz sinusoid,
@@ -1550,7 +1550,7 @@ static void test_dkay_feedback_gain_mapping() {
     std::cout << "\n── T33: Dkay → feedback_gain mapping correctness ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Both resonators selected after Init; check voice[0].resA
@@ -1561,7 +1561,7 @@ static void test_dkay_feedback_gain_mapping() {
     };
 
     for (auto& c : cases) {
-        s.setParameter(RipplerXWaveguide::k_paramDkay, c.val);
+        s.setParameter(BrachettiSynth::k_paramDkay, c.val);
         float g = s.state.voices[0].resA.feedback_gain;
         std::cout << "  " << c.label << "  actual=" << std::fixed
                   << std::setprecision(4) << g << "\n";
@@ -1591,12 +1591,12 @@ static void test_retrigger_consistency() {
     std::cout << "\n── T34: Re-trigger consistency (no progressive amplitude loss) ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    RipplerXWaveguide s;
+    BrachettiSynth s;
     s.Init(&desc);
 
     // Use Dkay=25 (Init preset) so voices release within ~97 ms — fast enough
     // that we press slowly (every 200 ms) and still test slot reuse cleanly.
-    s.setParameter(RipplerXWaveguide::k_paramDkay, 25);
+    s.setParameter(BrachettiSynth::k_paramDkay, 25);
 
     float first_cycle_peak  = 0.0f;
     float second_cycle_peak = 0.0f;
@@ -1645,7 +1645,7 @@ static void test_retrigger_consistency() {
 
 // ════════════════════════════════════════════════════════════════════════════
 int main() {
-    std::cout << "=== RIPPLERX HW-DEBUG UNIT TESTS ===\n";
+    std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
 
     test_param_audit();

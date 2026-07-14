@@ -14,7 +14,7 @@ GUARD_FILTER="Flute,Clrint,Tick,Clap,Kalimba"
 mkdir -p batch_reports/phase2_pitch_validation batch_reports/phase3_classics batch_reports/phase3_guard
 
 echo "[1/4] Building host renderer"
-g++ -std=c++17 -O3 -I.. -I../common -I. test_ripplerx_render.cpp -o run_test_render
+g++ -std=c++17 -O3 -I.. -I../common -I. test_brachetti_render.cpp -o run_test_render
 
 echo "[2/4] Step 2 pitch-only validation"
 python3 batch_tune_runner.py \

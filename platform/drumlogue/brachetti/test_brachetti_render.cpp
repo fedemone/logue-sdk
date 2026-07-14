@@ -1,5 +1,5 @@
 /**
- * test_ripplerx_render.cpp
+ * test_brachetti_render.cpp
  *
  * Minimal single-preset renderer for ARM/qemu runs.
  *
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     const char* out_path = args(b, e, "--out", "rendered_single.wav");
     const char* name     = args(b, e, "--name", "preset");
 
-    RipplerXWaveguide synth;
+    BrachettiSynth synth;
     unit_runtime_desc_t desc = {};
     desc.samplerate = 48000;
     desc.output_channels = 2;

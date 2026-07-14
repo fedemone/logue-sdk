@@ -1,7 +1,7 @@
 /**
  * render_presets.cpp — Render every preset to a WAV file for acoustic analysis.
  *
- * Build (from the ripplerx directory):
+ * Build (from the brachetti directory):
  *   g++ -std=c++17 -O2 -I. -Itest_stubs -I.. -I../../common -I../common \
  *       -DRUNTIME_COMMON_H_ render_presets.cpp -o render_presets
  * Run:
@@ -71,7 +71,7 @@ static bool write_wav(const char* path, const float* samples, int n_samples, int
 // ── Render one preset ─────────────────────────────────────────────────────────
 static void render_preset(int preset_idx, uint8_t note, float duration_s,
                           const char* out_path, const char* preset_name) {
-    RipplerXWaveguide synth;
+    BrachettiSynth synth;
     unit_runtime_desc_t desc = {};
     desc.samplerate = 48000;
     desc.output_channels = 2;

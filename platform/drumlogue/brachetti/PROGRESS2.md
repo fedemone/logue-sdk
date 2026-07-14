@@ -1,4 +1,4 @@
-# RipplerX — Current Status & Next Steps
+# Brachetti — Current Status & Next Steps
 
 **Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)
 **Branch:** `claude/eager-galileo-2fho84`
@@ -118,7 +118,7 @@ Full audit of every `ParamIndex` parameter across all six engine families
 
 ## Current Scores (authoritative — from `rendered_tune/`)
 
-Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/ripplerx/`.
+Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/brachetti/`.
 Scores are `class_weighted_score` (lower is better). Targets are soft goals, not hard gates.
 
 ### After batch-2b auto_tune (COMPLETE — converged via early stop)
@@ -355,10 +355,10 @@ Before flashing, a preset candidate must pass:
 ## Quick Start Commands
 
 ```bash
-cd platform/drumlogue/ripplerx
+cd platform/drumlogue/brachetti
 
 # Build host renderer
-g++ -std=c++17 -O3 -I.. test_ripplerx_render.cpp -o render_presets
+g++ -std=c++17 -O3 -I.. test_brachetti_render.cpp -o render_presets
 
 # Run all unit tests
 ./test_hw_debug
@@ -384,9 +384,14 @@ for k,v in r['metrics'].items(): print(f'  {k}: {v:.3f}' if isinstance(v,float) 
 
 ---
 
-## Project Rename (pending, when model is stable)
+## Project Rename — DONE (July 2026)
 - RipplerX → **Brachetti** (in honour of performer Arturo Brachetti)
-- Rename: all `ripplerx*` files, class `RipplerXWaveguide`, `config.mk`, `header.c`
+- Renamed: `platform/drumlogue/ripplerx/` → `platform/drumlogue/brachetti/`,
+  `test_ripplerx_render.cpp` → `test_brachetti_render.cpp`, class
+  `RipplerXWaveguide` → `BrachettiSynth`, `config.mk` `PROJECT := brachetti`,
+  `header.c` unit name `"Brachetti"`, workspace file, and all doc/tooling
+  references.  `dev_id`/`unit_id` deliberately unchanged so hardware treats
+  the renamed unit as an update of the same installed unit, not a second one.
 
 ---
 
@@ -394,7 +399,7 @@ for k,v in r['metrics'].items(): print(f'  {k}: {v:.3f}' if isinstance(v,float) 
 
 Troubleshooting log from the standalone modal engine whose Timpani/Taiko are being
 ported in. Each item: the defect heard/seen, the **measured** root cause, the fix,
-and the generalizable breakthrough. These inform the RipplerX preset tunings and the
+and the generalizable breakthrough. These inform the Brachetti preset tunings and the
 parameter-strengthening work.
 
 ### "Resonance sounds snare-like / well-shaped noise"
@@ -443,12 +448,12 @@ only, add the click after (keeps the stick crack sharp → restores HF/atk0-5); 
 **bloom floor** so the swell starts partway up (sharp-attack drums); (c) white noise →
 4 cascaded 1-poles (−24 dB/oct) cutoff **sweeping bright→dark**. **Breakthrough:**
 *timpani = tonal wedge (dense modes); taiko = noise wedge* — the same engine spans both
-by choosing the wedge's source. (Maps onto RipplerX's `NzMix`/`NzFltFrq`/`NzRes` noise
+by choosing the wedge's source. (Maps onto Brachetti's `NzMix`/`NzFltFrq`/`NzRes` noise
 path + `modal_mix` + `onset_attack_ms`.)
 
-## Porting the retune into RipplerX (presets 5 Timpani / 7 Taiko, in-place)
+## Porting the retune into Brachetti (presets 5 Timpani / 7 Taiko, in-place)
 
-Measured the shipped RipplerX presets against the reference WAVs (`refcmp.py`
+Measured the shipped Brachetti presets against the reference WAVs (`refcmp.py`
 metrics: spectral centroid early/late, T60, plus a crest factor) and retuned the two
 preset rows + their `modal_preset_configs` / `model_param_presets` toward the samples.
 Scoring loop: `render_presets /tmp/rc` → compare `05_Timpani.wav` / `07_Taiko.wav` vs
@@ -475,7 +480,7 @@ Scoring loop: `render_presets /tmp/rc` → compare `05_Timpani.wav` / `07_Taiko.
   practice. Result: centroid_early **2×**, T60 **2×** — the "TAAAN" the HW asked for.
 
 **The crest ceiling + the pre-clip-trim fix (the "wham"):** ★
-RipplerX's master chain **hard-clips to ±0.99 under `master_gain` 1.5** then soft-clips
+Brachetti's master chain **hard-clips to ±0.99 under `master_gain` 1.5** then soft-clips
 again (a deliberately loud drum-machine voicing). The mallet impulse is ~3–4× full-scale
 — exactly the transient that *would* give crest ≈ 4 — but it is clipped down to the same
 ceiling the sustained body already sits at, so `crest = peak/RMS ≈ 1`. Verified crest 4–6
@@ -555,7 +560,7 @@ are inert on these two presets (documented trade-off).
 
 **Verification (in-engine render at 48 k, vel 127/70/38 vs the approved wedge trio):**
 
-| metric | 105 ref → RipplerX | 110 ref → RipplerX |
+| metric | 105 ref → Brachetti | 110 ref → Brachetti |
 |---|---|---|
 | crest ("wham") | 4.02 → **4.03** | 6.46 → **6.41** |
 | atk 0-5 ms RMS | 0.397 → **0.397** | 0.323 → **0.322** |

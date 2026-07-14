@@ -6,7 +6,7 @@ from batch_tune_runner import (
 )
 from pre_hw_analysis import compare_pair
 
-RDIR = Path('/home/user/logue-sdk/platform/drumlogue/ripplerx')
+RDIR = Path('/home/user/logue-sdk/platform/drumlogue/brachetti')
 RENDER_DIR = RDIR / 'rendered_tune'
 SYNTH = RDIR / 'synth_engine.h'
 SAMPLES = list((RDIR / 'samples').glob('*.wav'))

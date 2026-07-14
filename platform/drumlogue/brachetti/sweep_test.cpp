@@ -30,7 +30,7 @@ static const int SR = 48000;
 // Render preset `idx` with one param overridden, return metrics.
 static void render(int idx, uint8_t note, int param, int value,
                    float dur_s, double& brightness, double& tail) {
-    RipplerXWaveguide synth;
+    BrachettiSynth synth;
     unit_runtime_desc_t desc = {};
     desc.samplerate = SR; desc.output_channels = 2;
     desc.get_num_sample_banks     = mock_get_num_sample_banks;

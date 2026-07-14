@@ -4,7 +4,7 @@
 #include "realistic_cymbals.h"
 
 // KORG float_math.h fast approximations. Tolerable-use policy (mirrors the
-// RipplerX unit gotchas): per-sample LFOs (fastsinf), envelope-shaped filter
+// Brachetti unit gotchas): per-sample LFOs (fastsinf), envelope-shaped filter
 // coefficients and the short stick burst (fastexpf, negative args only) use
 // fast* variants; resonator pole placement (cosf), frequency ratios (exp2f —
 // fastpow2f is broken for positive fractional args, see semitoneRatio) and

@@ -11,7 +11,7 @@
 // ==============================================================================
 // By declaring this static, it is allocated safely in the Drumlogue's BSS memory
 // segment at boot, avoiding any real-time allocation (malloc/new) hazards.
-static RipplerXWaveguide s_synth;
+static BrachettiSynth s_synth;
 static unit_runtime_desc_t s_runtime_desc;
 
 // ==============================================================================
@@ -101,5 +101,5 @@ __unit_callback uint8_t unit_get_preset_index() {
 }
 
 __unit_callback const char * unit_get_preset_name(uint8_t idx) {
-  return RipplerXWaveguide::getPresetName(idx);
+  return BrachettiSynth::getPresetName(idx);
 }

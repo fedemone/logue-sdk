@@ -36,8 +36,8 @@
   },
   "results": [
     {
-      "reference": "/home/user/logue-sdk/platform/drumlogue/ripplerx/samples/cymbal-Crash16Inch.wav",
-      "rendered": "/home/user/logue-sdk/platform/drumlogue/ripplerx/rendered_batch/13_Cymbal.wav",
+      "reference": "/home/user/logue-sdk/platform/drumlogue/brachetti/samples/cymbal-Crash16Inch.wav",
+      "rendered": "/home/user/logue-sdk/platform/drumlogue/brachetti/rendered_batch/13_Cymbal.wav",
       "ref_features": {
         "f0_hz": 630.0,
         "attack_ms": 6.916099773242631,
@@ -137,8 +137,8 @@
       "estimated_runs_to_target": 7
     },
     {
-      "reference": "/home/user/logue-sdk/platform/drumlogue/ripplerx/samples/CrashA-001-CloseRoom.wav",
-      "rendered": "/home/user/logue-sdk/platform/drumlogue/ripplerx/rendered_batch/13_Cymbal.wav",
+      "reference": "/home/user/logue-sdk/platform/drumlogue/brachetti/samples/CrashA-001-CloseRoom.wav",
+      "rendered": "/home/user/logue-sdk/platform/drumlogue/brachetti/rendered_batch/13_Cymbal.wav",
       "ref_features": {
         "f0_hz": 4000.0,
         "attack_ms": 47.0,

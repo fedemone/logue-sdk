@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-auto_tune.py — Automated coordinate-descent tuner for RipplerX presets.
+auto_tune.py — Automated coordinate-descent tuner for Brachetti presets.
 
 Strategy (one round = 13 compiles, ~72 s):
   For each of 6 tunable parameters × 2 directions (12 trials):
@@ -893,7 +893,7 @@ def run_auto_tune(
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Automated coordinate-descent tuner for RipplerX presets")
+    p = argparse.ArgumentParser(description="Automated coordinate-descent tuner for Brachetti presets")
     p.add_argument("--rounds",  type=int, default=MAX_ROUNDS)
     p.add_argument("--stable",  type=int, default=STABLE_ROUNDS,
                    help="Consecutive stable rounds before early stop")

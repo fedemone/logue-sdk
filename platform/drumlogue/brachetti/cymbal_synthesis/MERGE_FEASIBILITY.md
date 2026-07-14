@@ -1,8 +1,8 @@
-# Merge feasibility study: cymbal_synthesis → RipplerX unit
+# Merge feasibility study: cymbal_synthesis → Brachetti unit
 
 Decides how the prototype in this directory (Stowell-style dense resonator
 bank, strike-envelope PM, velocity dynamics, 1/sqrt(N) level normalisation,
-NEON v7 resonator loop) should reach the shipping RipplerX drumlogue unit.
+NEON v7 resonator loop) should reach the shipping Brachetti drumlogue unit.
 
 **Recommendation: Option B — improve the existing `ENGINE_PLATE` path.**
 

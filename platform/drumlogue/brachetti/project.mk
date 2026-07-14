@@ -1,4 +1,4 @@
-PROJECT_NAME := ripplerx
+PROJECT_NAME := brachetti
 PROJECT_TYPE := synth
 PROJECT_DEPS := 
 PROJECT_CATEGORY := 

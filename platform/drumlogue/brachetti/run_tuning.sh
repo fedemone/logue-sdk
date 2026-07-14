@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # run_tuning.sh
-# Convenience wrapper for RipplerX tuning smoke checks and helper generation.
+# Convenience wrapper for Brachetti tuning smoke checks and helper generation.
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${ROOT_DIR}/../../.." && pwd)"
@@ -16,7 +16,7 @@ step() {
 }
 
 echo "[run_tuning] ==============================================="
-echo "[run_tuning] Starting RipplerX tuning helper checks"
+echo "[run_tuning] Starting Brachetti tuning helper checks"
 echo "[run_tuning] ROOT_DIR=${ROOT_DIR}"
 echo "[run_tuning] REPO_ROOT=${REPO_ROOT}"
 echo "[run_tuning] REPORT_JSON=${REPORT_JSON}"

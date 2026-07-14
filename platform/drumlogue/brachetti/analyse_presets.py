@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Detailed time-domain and spectral analysis of 4 RipplerX presets vs reference samples.
+Detailed time-domain and spectral analysis of 4 Brachetti presets vs reference samples.
 Pure stdlib only (wave, struct, math).
 """
 
@@ -314,7 +314,7 @@ TARGET_SR = 48000
 FFT_N     = 4096   # power of 2
 
 print("=" * 72)
-print("RIPPLERX PRESET ANALYSIS REPORT")
+print("BRACHETTI PRESET ANALYSIS REPORT")
 print("=" * 72)
 
 for preset in PRESETS:

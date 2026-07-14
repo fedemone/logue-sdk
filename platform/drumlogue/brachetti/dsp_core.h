@@ -93,7 +93,7 @@ struct ExciterState {
  * Contains the delay line memory and the loop filter states.
  */
 // DMI-only structs: no user-defined constructors anywhere in this file.
-// This is required so that the global `static RipplerXWaveguide s_synth` in
+// This is required so that the global `static BrachettiSynth s_synth` in
 // unit.cc undergoes *constant initialization* (not dynamic/runtime init).
 // With a user constructor GCC places the object in .bss (zero-filled at
 // dlopen time), consuming ~72 KB — far over the drumlogue's BSS budget.

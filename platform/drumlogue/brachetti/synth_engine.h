@@ -74,7 +74,7 @@ static constexpr float    silence_threshold = 1e-5f;
 // ==============================================================================
 // MAIN CLASS
 // ==============================================================================
-class alignas(16) RipplerXWaveguide {
+class alignas(16) BrachettiSynth {
 public:
     // ==============================================================================
     // PARAMETER INDEX ENUM (Strictly matches header.c)
@@ -3293,7 +3293,7 @@ private:
         return m_preset_idx == k_Timpani || m_preset_idx == k_Taiko;
     }
 
-    // Map the RipplerX sound-design params onto the dense-kernel modifiers.
+    // Map the Brachetti sound-design params onto the dense-kernel modifiers.
     // Every mapping is a DELTA from the preset's shipped value (the same
     // reference-anchor pattern as the legacy modal bank), so the shipped rows
     // reproduce the approved standalone renders exactly and every knob still
