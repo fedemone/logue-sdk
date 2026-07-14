@@ -431,7 +431,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        noise SVF is a band-pass at ~4.9 kHz (NzFltr=1) instead of the old
        2.5 kHz high-pass; band_mix centred ~0.62 (velocity-tilted in NoteOn);
        wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
-    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.02000f,   18.00000f},
+    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.00000f,    6.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f}};
 
 // Preset → engine routing table.
@@ -1443,11 +1443,15 @@ SynthState state;
                 v.exciter.noise_env.attack_rate = snare_attack;
                 v.exciter.noise_env_hi.attack_rate = snare_attack;
             } else if (m_preset_idx == k_BrushSnare) {
-                // HW feedback round 1: "too fast and hit too hard — brush
-                // drumming is soft and long".  Corrected refs (snare_brush_*
-                // .wav) peak at ~13-25 ms, so ~100 ms was too slow: use a soft
-                // ~22 ms swish onset, faster for soft hits (~13 ms) via velocity.
-                float brush_attack = 0.0045f + 0.0020f * (1.0f - v.current_velocity);
+                // HW model: a brush is many small flexible straws sweeping the
+                // head — the NOISE must dominate, moderate and continuous, not a
+                // struck hit (modal body zeroed, like Shaker's "tok").  Velocity
+                // sets the sweep speed, NOT a hit: soft = brush CRAWLING slowly
+                // along the membrane (gentle ~30 ms swish-in); hard = a SWIFT
+                // sweep (~8 ms) that lands with only a small tap.  So attack
+                // speeds UP with velocity (the reverse of a struck drum).
+                float bvq = fmaxf(0.0f, fminf(1.0f, (v.current_velocity - 0.30f) * 2.38f));
+                float brush_attack = 0.0016f + 0.0044f * bvq;
                 v.exciter.noise_env.attack_rate = brush_attack;
                 v.exciter.noise_env_hi.attack_rate = brush_attack;
             }
@@ -1849,13 +1853,11 @@ SynthState state;
             v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
             v.exciter.snare_wire_a2c = r_c * r_c;
         }
-        // BrshSnr texture (calibrated against brush_snare_hit_hard/soft.wav):
-        // the references show near-ZERO amplitude modulation (measured depth
-        // ~0.002 with only a faint ~12 Hz flutter) — the earlier deep slow
-        // swirl read as wobble ("really harsh and bad").  Keep just a subtle
-        // persistent 12 Hz shimmer.  Velocity tilts the hiss brightness
-        // between the soft and hard reference characters (VlMllStf-style
-        // response; band mix capped below the 0.80 hat-filter gate).
+        // BrshSnr texture: a brush is many small flexible straws sweeping the
+        // head, so the sound is dominated by a continuous, moderate NOISE bed
+        // (the modal struck "tok" is zeroed, like Shaker).  A faint ~12 Hz
+        // flutter models the straws' irregular contact.  band_mix stays centred
+        // over the 3.6 kHz band-pass so the noise reads dark, not hissy.
         if (m_preset_idx == k_BrushSnare) {
             v.noise_am_depth = 0.15f;
             v.noise_am_inc   = (2.0f * M_PI * 12.0f) * inverse_default_sample_rate;

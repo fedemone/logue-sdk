@@ -310,3 +310,24 @@ Two independent knobs adjusted from 4c:
 
 Committed the combined build (soft entry + lower body). "Soft entry only"
 (BP 400) is a one-line NzFltFrq revert if the extra body is wanted back.
+
+### Round 5 — HW reframe: brush = many straws, noise-dominant, no struck hit
+
+HW insight: "Physical modelling is a hit that resonates, but here the hit is
+done by a great number of small flexible straws, moderate and continuous,
+letting the noise dominate. Low velocity = brush crawling along the membrane;
+hard = a small hit with a swift sweep." Previous rounds fought the onset
+envelope while a struck modal body still sat on top. Structural change:
+
+- **Modal struck body zeroed** (modal_mix 0.02 -> 0), exactly the fix applied
+  to Shaker ("the woodblock body was a struck tok at onset"). The continuous
+  wire/BP noise now dominates; there is no resonant "hit" tone underneath.
+- **Velocity now sets sweep SPEED, not hit hardness** (and the direction is
+  reversed from a struck drum): soft = slow gentle crawl (~30 ms swish-in),
+  hard = swift sweep (~8 ms). attack_rate = 0.0016 + 0.0044*vel.
+- Onset ramp 18 -> 6 ms (declick only); the velocity-scaled noise attack now
+  carries the entry, so no separate ramp swell.
+
+Per-velocity onset (peak-normalised): vel30 5ms:0.23 -> 20ms:0.40 (spread,
+crawl); vel120 5ms:0.46 early then quick decay (swift). Modal removal drops
+crest 16.5 -> 14.8. Tone unchanged (dark BP 4.6 kHz).
