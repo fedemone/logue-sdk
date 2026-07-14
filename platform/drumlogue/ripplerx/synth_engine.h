@@ -431,7 +431,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        noise SVF is a band-pass at ~4.9 kHz (NzFltr=1) instead of the old
        2.5 kHz high-pass; band_mix centred ~0.62 (velocity-tilted in NoteOn);
        wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
-    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.00000f,    6.00000f},
+    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.00000f,    2.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f}};
 
 // Preset → engine routing table.
@@ -1451,12 +1451,18 @@ SynthState state;
                 // along the membrane (gentle ~30 ms swish-in); hard = a SWIFT
                 // sweep (~8 ms) that lands with only a small tap.  So attack
                 // speeds UP with velocity (the reverse of a struck drum).
-                // Skew to match the quadratic velocity curve: normalise the
-                // 0.08..0.72 compressed range back to 0..1 so a soft hit gets a
-                // very gentle ~35 ms swish-in (almost no hit) and only accents
-                // reach the ~5 ms swift sweep.
+                // Onset shape measured from the references (careful analysis):
+                // a SOFT brush hit turns ON IMMEDIATELY at a moderate flat level
+                // (RMS 43% at t=0, 80% by 8 ms, peak ~12 ms) then sits flat — it
+                // is a steady wash, NOT a swell and NOT a transient (crest 5.6).
+                // A HARD hit BUILDS more slowly to a later peak (~22 ms) then
+                // decays sharply (crest 18).  So the attack SLOWS as velocity
+                // rises — the reverse of a struck drum, and the reverse of the
+                // previous code, which made soft a slow crescendo (peak ~56 ms,
+                // heard as a hit) and hard a fast percussive onset (the "violent
+                // hit").
                 float bvq = fmaxf(0.0f, fminf(1.0f, (v.current_velocity - 0.08f) * 1.5625f));
-                float brush_attack = 0.0007f + 0.0058f * bvq;
+                float brush_attack = 0.0060f - 0.0028f * bvq;
                 v.exciter.noise_env.attack_rate = brush_attack;
                 v.exciter.noise_env_hi.attack_rate = brush_attack;
             }

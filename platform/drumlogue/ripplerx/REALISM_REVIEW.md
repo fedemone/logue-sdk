@@ -370,3 +370,28 @@ rings on. Hard (vel110): sustain 28%, swift sweep. Tests pass, 40/40 clean.
 
 Per-velocity (peak / 5 ms onset): vel30 0.26 / 0.16 (soft crawl, no hit);
 vel120 0.69 / 0.46 (swift). ~8 dB pp->ff range.
+
+### Round 8 — careful onset+sustain analysis; soft = immediate FLAT wash, not a swell
+
+HW: "hit still extremely violent; brush = many flexible straws, not a mallet;
+you did not analyse the sample carefully for hit and sustain." Correct — I had
+been normalising envelopes to their peak, which HID the crest factor. Proper
+per-sample analysis (crest = peak/RMS, absolute onset RMS):
+
+  ref soft:   crest 5.6  RMS 43% at t=0, 80% by 8 ms, peak ~12 ms, then FLAT
+  ref medium: crest 11.2 builds to peak ~14 ms
+  ref hard:   crest 18.1 slow build to peak ~22 ms
+
+Key finding: the SOFT hit turns ON IMMEDIATELY at a moderate level and sits
+FLAT (crest 5.6 = almost no transient) — it is a steady straw wash. My previous
+build did the OPPOSITE: soft was a slow crescendo (RMS 5% at t=0 → peak at
+56 ms), and mid/hard had a fast percussive onset (78% at 4 ms) = the "violent
+hit". The velocity→attack mapping was backwards.
+
+Fix: attack SLOWS as velocity rises (`0.0060 - 0.0028*bvq`), reverse of a struck
+drum; onset ramp 6 -> 2 ms so the soft wash is on from t=0.
+
+Result (measured): soft crest 6.2 (ref 5.6), peak@14 ms, RMS 39% at t=0 — an
+immediate flat wash matching the reference. All velocities are now flat washes
+(crest 3.8-6.2, no peak/crescendo); dynamics come from level (abs peak
+0.28/0.48/0.67, ~7.6 dB) not an attack gesture.
