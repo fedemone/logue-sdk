@@ -331,3 +331,27 @@ envelope while a struck modal body still sat on top. Structural change:
 Per-velocity onset (peak-normalised): vel30 5ms:0.23 -> 20ms:0.40 (spread,
 crawl); vel120 5ms:0.46 early then quick decay (swift). Modal removal drops
 crest 16.5 -> 14.8. Tone unchanged (dark BP 4.6 kHz).
+
+### Round 6 — sample analysis (modal_extract) + audible sustained rattle on soft
+
+Ran the standard `modal_extract.py` pipeline on all three corrected brush refs,
+plus a dedicated rattle/sustain analysis:
+
+- Modal: medium/hard have a ~357 Hz head fundamental with a dense 3.4-5.5 kHz
+  swish cluster; soft is brighter (~940 Hz fundamental), no low body.
+- Rattle/sustain: **soft has the HIGHEST relative sustain** — RMS at 100-200 ms
+  is 28% of the 0-40 ms onset (vs 17% medium), with a gentle ~10 Hz rattle
+  flutter. i.e. a soft brush hit is a small rattle that RINGS ON.
+
+The Round-5 build did the opposite (faded the wire mix on soft, decayed it
+faster). Fixed so the brush wires behave unlike a struck snare:
+
+- Soft hits KEEP an audible small rattle: `snare_wire_mix = 0.20 + 0.06*(1-vel)`
+  (soft a touch more), instead of `*= (0.60+0.40*vel)`.
+- Rattle SUSTAINS: buzz decay `base * (0.80 + 0.20*vel)` (soft slower), the
+  reverse of the struck-snare `* (2.0 - vel)` speed-up.
+- Wire band-A pole radius 0.86 -> 0.90 (moderate Q — sustained rattle, still
+  below the tonal-"boing" range).
+
+Render soft (vel45): sustain 30% (ref 28%), t40 468 ms — a small rattle that
+rings on. Hard (vel110): sustain 28%, swift sweep. Tests pass, 40/40 clean.

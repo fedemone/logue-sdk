@@ -1812,12 +1812,23 @@ SynthState state;
             // tone with a short, loose rattle; hard hits press the wires into the
             // head for a tighter, brighter, longer buzz.  Anchored at vq=1 so a
             // full-velocity hit plays the calibrated table values unchanged.
-            v.exciter.snare_wire_mix *= (0.60f + 0.40f * vq);
-            // Soft hits also die sooner: scale the natural buzz decay up to
-            // ~2× faster at zero velocity (×1.0 at full velocity).  Recomputed
-            // from the NzRs knob value — decay_rate is shared voice state, so
-            // multiplying it in place would compound across hits.
-            {
+            if (m_preset_idx == k_BrushSnare) {
+                // Brush wires rattle differently from a struck snare: the rattle
+                // is a SMALL detail that must stay audible and SUSTAIN even on
+                // soft "crawl" hits (soft ref sustains ~28% of peak with a
+                // ~10 Hz flutter).  So DON'T fade the wire mix on soft hits
+                // (a touch MORE if anything), and hold a slow buzz decay (soft
+                // slightly slower) so the small rattle rings on rather than dying.
+                v.exciter.snare_wire_mix = 0.20f + 0.06f * (1.0f - vq);
+                float nz_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] * 0.001f));
+                float base_decay = 0.0001f + ((1.0f - nz_norm) * 0.005f);
+                v.exciter.noise_env.decay_rate = base_decay * (0.80f + 0.20f * vq);
+            } else {
+                v.exciter.snare_wire_mix *= (0.60f + 0.40f * vq);
+                // Soft hits also die sooner: scale the natural buzz decay up to
+                // ~2× faster at zero velocity (×1.0 at full velocity).  Recomputed
+                // from the NzRs knob value — decay_rate is shared voice state, so
+                // multiplying it in place would compound across hits.
                 float nz_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramNzRes] * 0.001f));
                 float base_decay = 0.0001f + ((1.0f - nz_norm) * 0.005f);
                 v.exciter.noise_env.decay_rate = base_decay * (2.0f - vq);
@@ -1828,7 +1839,7 @@ SynthState state;
             float freq_a = (m_preset_idx == k_MarchSnare) ? 3500.0f
                          : (m_preset_idx == k_BrushSnare) ? 2200.0f
                          : (m_preset_idx == k_RimShot)    ? 3200.0f : 2800.0f;
-            if (m_preset_idx == k_BrushSnare) r_a = 0.86f + (0.06f * vq); // broader band = diffuse swish
+            if (m_preset_idx == k_BrushSnare) r_a = 0.90f + (0.03f * vq); // moderate-Q, sustained small rattle (not tonal boing)
             float w_a = (2.0f * M_PI * freq_a) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
             v.exciter.snare_wire_a2 = r_a * r_a;
