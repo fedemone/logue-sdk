@@ -414,3 +414,58 @@ Measured: crest soft 4.3 / hard 2.9 (very flat, no transient), centroid
 ~3070 Hz, no onset spike.  If this still reads as a "shack" on hardware, the
 brush chuff is parked as not achievable without further study (documented as a
 future item) and the preset kept as-is.
+
+## Post-rename status review (July 2026 — project renamed to Brachetti)
+
+Full re-measurement of the current tree (after the ENGINE_CYMBAL dense-
+resonator port, the snare pass, and the RipplerX → Brachetti rename; renders
+byte-identical through both cleanup commits).  The Round-2 numbers reproduce
+exactly on today's renders — Cymbal centroid 6946 Hz, Kalimba 661 Hz,
+Conga 480 Hz / t40 180 ms, RimShot 3125 Hz / 49 ms, MrchSnr 4741 Hz /
+226 ms — so the tree and the documentation are in sync.
+
+`refcmp.py` (project tool) on the current renders:
+
+| preset | cent early/late ren | ref | flat early ren → ref | T60 ren → ref |
+|---|---|---|---|---|
+| Cymbal  | 4787 / 6675 | 11071 / 11017 | 0.001 → 0.533 | 0.62 → 2.26 s |
+| Ride    | 4027 / 6115 | 11167 / 11075 | 0.001 → 0.554 | 0.96 → 2.93 s |
+| RidBel  | 4111 / 5830 | 10963 / 11039 | 0.001 → 0.548 | 0.73 → 3.29 s |
+| HHat-O  | 9149 / 7146 | 11057 / 11096 | 0.013 → 0.544 | 0.77 → 0.64 s |
+| Gong    | 393 / 505   | 1147 / 815    | tonal by design | 4.03 → 1.28 s |
+| Timpani | 608 / 337   | 756 / 646     | tonal ✓ | 1.53 → 1.12 s |
+
+### Ranked realism backlog (next HW pass candidates — no sound changes made
+### in this review; everything below is gated on the HW listening test)
+
+1. **Cymbal-family spectral flatness** — the dense resonator bank fixed the
+   body *centroid* (hfTilt) but not the *noisiness*: flatness measures
+   ~0.001-0.013 vs ~0.55 in every metallic reference.  A bank of narrow
+   2-pole ringers is still a sum of tones, however dense.  Experiments, in
+   order of expected payoff: (a) raise `directNoiseLevel` / add a
+   ring-gated tap of the *high* driver into the output (currently only the
+   LP'd `loDriver` bleeds through), (b) shorten `ringDecay` for the top
+   octave stacks so upper ringers get wider bandwidth (noise-like), (c) more
+   `jitterSemis` on the octave-stacked copies.  Per-preset gating mandatory:
+   HHat-O is HW-approved ("do not break"), Gong is deliberately tonal.
+2. **Crash/Ride ring length** — t40 883/1309 ms vs refs ~2263/1900+ ms and
+   refcmp T60 0.62-0.96 s vs 2.3-3.3 s.  `decaySec` / `ringDecayScale` trims
+   (the 8 s endSample cap leaves room).  Cheap table change; HW gate says
+   earlier passes shortened Cymbal because it "continues while held" — so
+   raise cautiously and re-listen.
+3. **Kalimba** — still darker/shorter than the reference (661 Hz / 1132 ms vs
+   1637 Hz / 2279 ms); a large share is the documented ref-pitch mismatch
+   (ref tine f0 ≈ 1.4 kHz vs shipped note 349 Hz).  Verify by re-rendering at
+   the ref pitch before spending another tuning round.
+4. **HHat-C tail** — 84 ms vs TightClosedHat's 321 ms t40.  HW called the
+   preset "a perfect closed hi-hat", so leave unless HW asks; the knob fix is
+   a small NzRs raise.
+5. **Taiko attack brightness** — documented architectural floor (close-mic
+   stick transient); do not chase past the transient layer already in place.
+6. **New voices** (CLAUDE.md TODOs, not started): Tambourine (bright short
+   jingle modes + light crash + grain AM) and a continuous Shaker variant.
+
+Code-review note (same pass): the retired ENGINE_PLATE crash-bank/FDN
+per-voice state was removed from dsp_core.h (dead since the ENGINE_CYMBAL
+port), and the NzFltFrq OLED readout below 1 kHz was fixed ("0.3kHz" → real
+Hz).  Neither affects audio — all 40 renders byte-identical.

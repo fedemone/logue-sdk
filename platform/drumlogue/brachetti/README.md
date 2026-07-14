@@ -1,11 +1,38 @@
-# Brachetti-Waveguide (Drumlogue Bare-Metal DSP)
+# Brachetti (Drumlogue Bare-Metal DSP)
+
+> Formerly **RipplerX-Waveguide**; renamed in honour of quick-change
+> performer Arturo Brachetti (July 2026).  `dev_id`/`unit_id` are unchanged,
+> so the renamed unit replaces an installed RipplerX build in place.
 
 ## Overview
-Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. 39 presets spanning strings, bars, membranes, metallic plates, and idiophones.
+Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. **40 presets** spanning strings, bars, membranes, metallic plates, cymbals, snares, and idiophones.
+
+Six engine families route each preset to its own signal path
+(`kPresetEngine[]` in `synth_engine.h` is the authority):
+
+| Engine | Path | Examples |
+|---|---|---|
+| `ENGINE_KS` | Karplus-Strong waveguide (+ modal overtones) | GtrStr, Koto |
+| `ENGINE_BAR` | Mallet exciter → bar modal bank | Marimba, Kalimba, Claves |
+| `ENGINE_MEMBRANE` | Strike → membrane modal bank + boom osc | Kick family, Djambe, Conga |
+| `ENGINE_SNARE` | Membrane body + 3-band snare-wire resonators | AcSnre, MrchSnr, BrshSnr, RimShot |
+| `ENGINE_NOISE` | Shaped noise burst (+ AM gating) | Clap, Shaker, HHat-C |
+| `ENGINE_CYMBAL` | Dense inharmonic resonator bank (Stowell-style) | Cymbal, Gong, Ride, RidBel, HHat-O, Splash |
+
+Timpani and Taiko additionally bypass the voice loop entirely and render
+through the dense coupled-resonator **ModalDrumKernel**
+(`modal_drum_kernel.h`, ~280 modes + recorded knock + noise wedge — see the
+appendix), which owns its own master stage with a transparent peak limiter.
 
 ---
 
-## Signal Flow Architecture (current)
+## Signal Flow Architecture (legacy voice path)
+
+The diagram below is the KS/BAR/MEMBRANE/SNARE/NOISE voice path.
+`ENGINE_CYMBAL` presets replace it with the self-contained dense-resonator
+cymbal voice (`CymbalVoice` in `dsp_core.h`), and Timpani/Taiko with the
+`ModalDrumKernel` — both still pass through the tilt EQ and master chain
+(the kernel runs its own master stage).
 
 ```text
 NoteOn / Gate trigger

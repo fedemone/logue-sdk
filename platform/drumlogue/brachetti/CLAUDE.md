@@ -1,9 +1,15 @@
 # Brachetti – Session Brief
 
+> Project renamed **RipplerX → Brachetti** (July 2026, branch
+> `claude/brachetti-review-rename-rhad77`): directory is now
+> `platform/drumlogue/brachetti/`, class `BrachettiSynth`, unit name
+> `"Brachetti"`.  `dev_id`/`unit_id` unchanged.
+
 ## Dev Branch
 
-`claude/snare-drum-realism-optimization-y4hrhf` on `fedemone/logue-sdk`
-(previous work landed from `claude/eager-galileo-2fho84`).
+`claude/brachetti-review-rename-rhad77` on `fedemone/logue-sdk`
+(previous work landed from `claude/snare-drum-realism-optimization-y4hrhf`
+and `claude/eager-galileo-2fho84`).
 
 Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 - `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).

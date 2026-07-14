@@ -1,7 +1,18 @@
 # Brachetti — Current Status & Next Steps
 
-**Last updated:** 2026-06-11 (parameter-wiring pass; see §0a)
-**Branch:** `claude/eager-galileo-2fho84`
+**Last updated:** 2026-07-14 (project renamed RipplerX → Brachetti; TODO sweep)
+**Branch:** `claude/brachetti-review-rename-rhad77`
+
+> **TODO sweep (2026-07-14):** every "What To Do Next" item below is COMPLETE
+> or at a documented architectural limit.  Still open after this sweep:
+> 1. the §3 tooling nicety (render Gong at note 62 and drop the +12 st
+>    calibration offset in the scoring tools) — optional, touch only together
+>    with a re-calibration pass;
+> 2. §4 data gaps — presets without reference samples cannot be scored;
+> 3. the new-voice TODOs in CLAUDE.md (Tambourine, continuous Shaker) and the
+>    ranked realism backlog in `REALISM_REVIEW.md` — all gated on the next HW
+>    listening test.
+> The project rename planned at the bottom of this file is DONE.
 
 ---
 
