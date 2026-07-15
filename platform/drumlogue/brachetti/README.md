@@ -138,6 +138,29 @@ Snare-family runtime rules (restored/added July 2026 — see `REALISM_REVIEW.md`
 - Velocity scales wire mix and buzz decay (ghost-note physics), anchored so full velocity plays the calibrated table sound.
 - Preset 38 `BrshSnr` is a brush-swept snare: slow swish onset, 6.5 Hz enveloped swirl AM, diffuse low-Q wire bands.
 
+#### Snare param-design layer (July 2026)
+
+The exciter/resonator knobs were near-inaudible on the snare family: the
+wire buzz (not the ~10 % modal body) is a snare's defining voice, so several
+otherwise-dead knobs are wired to the wire in `NoteOn` for `ENGINE_SNARE`.
+Every mapping is a **delta from the preset's shipped knob value**, so shipped
+presets render bit-identical and only knob *movement* bites:
+
+| Knob | Snare role | Mechanism |
+|------|-----------|-----------|
+| `Rel` | buzz **tail length** | scales `noise_env.decay_rate` (Rel was dead — snare skips the noise-env release) |
+| `MlltRes` | buzz **amount** | scales `snare_wire_mix` (±~4×) |
+| `MlltStif` | buzz **brightness** | shifts wire band centre frequencies (±1 oct) |
+| `VlMllStf` | buzz **tightness / Q** | shifts wire pole radius (clamped < 0.995) |
+| `VlMllRes` | **crack / snap** | scales the onset crack burst via `snare_crack_gain` (was dead — its attack target is overridden) |
+
+The body-shaping knobs (`Model`, `Partls`, `Inharm`, `Mterl`, `TubRad`,
+`Dkay`, `HitPos`) still reshape the snare's modal head tone through the
+existing modal-engine mappings; on a snare that body is secondary to the wire
+by design, so those knobs are the fine head-tuning and the five above are the
+primary character controls. Verified stable across 256 extreme-value knob
+combinations (pole-radius clamp holds).
+
 ### Metallic low-loss clamp (Phase 53)
 At NoteOn, `Cymbal`, `Gong`, `HHat-O`, `Ride`, `RidBel`, and `Trngle` get `loss_g_hf` and `lowpass_coeff` floors raised so the KS loop retains upper partials longer. Transient LP jitter is also limited to prevent over-darkening the attack — a known architecture-coupled failure mode for metallic rods/bars.
 

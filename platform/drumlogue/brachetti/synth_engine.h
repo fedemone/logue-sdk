@@ -702,6 +702,13 @@ SynthState state;
     // (the mallet-LP it normally drives is inaudible under a cymbal wash).
     // Anchored so the shipped MlltRes plays the calibrated crash level.
     float   m_modal_mltres_ref = 0.5f;  // shipped MlltRes, normalized 0..1
+    // Snare param-design anchors: VlMllStf / VlMllRes were near-dead on the
+    // snare family (mallet masked by the noise; VlMllRes' attack target is
+    // overridden).  Repurposed to the wire buzz (see NoteOn ENGINE_SNARE
+    // block), anchored at the shipped value (×0.01, range −1..+1) so shipped
+    // presets play bit-identical and only knob movement bites.
+    float   m_snare_vlstf_ref  = 0.0f;  // shipped VlMllStf * 0.01
+    float   m_snare_vlres_ref  = 0.0f;  // shipped VlMllRes * 0.01
 
     // Called by unit_get_param_value so the OS knows what to draw on the screen.
     // For Model, return the value for the currently-selected resonator so the OLED
@@ -745,46 +752,46 @@ SynthState state;
             //
             // Col 16 is the master LOWPASS Cutoff (stored ÷10): 1999 = fully open.
             // Columns 15 (Inharm) store 1/10th of the effective value.
-            {   0,  36,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 0:  Kick2     — the pre-redesign Timpani body as a solid kettledrum kick (HW-approved)
-            {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,1999,   7,  20,   0, 300,   0,1200, 707},        // 1:  Marimba   — exemplar BAR voice (HW: ok)
-            {   2,  36,   0,   1, 350, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220, 707},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
-            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   3,1999,   8,   7,  52, 950,   2, 300, 707},        // 3:  AcSnare   — wire path live; NzRs 740→950: buzz T60≈0.4s matches acoustic-snare.wav t40≈280ms; NzFq 480→300 (HP 3kHz) pulls centroid toward the darker reference
-            {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 707},        // 4:  TblrBel
-            {   5,  52,   0,   1, 360, 300,   0,  40,   2,   3, 150,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 707},        // 5:  Timpani   — dense-kernel voice.  Note 52 (E3): the kettle's dominant sustained partial measures 165.5 Hz ≈ E3 (the 110 Hz A2 principal sits a fifth below) — the display now names the pitch you hear; 52 is also the kernel recipe root, so the shipped row plays the approved render at ratio 1
-            {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 707},        // 6:  Djambe    — (HW: ok)
-            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 120,  10,   0,  30,  15,   1,1999,  16,   5,  52, 180,   0, 800, 707},        // 7:  Taiko     — bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. Port retune: modal_mix 0.60 + brighter crack (NzMix 36→52, NzFltFrq 360→800 ≈8kHz) + leaner boom for a brighter, longer ring
-            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 940,   2, 105, 707},        // 8:  MrchSnr   — click+buzz land together; NzRs 800→940: buzz T60≈0.36s matches Marching-Snare ref t40≈220ms
-            {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   3,1999,  18,   0,   0, 300,   0,1000, 707},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
-            {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 707},        // 10: Vibrph
-            {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,1999,   3,   0,   5, 420,   0, 900, 707},        // 11: Wodblk    — (HW: ok)
-            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  30, 360,   0, 520, 707},        // 12: Ac Tom    — body extended (modal 350→500ms) + stick transient layer + NzMx 20→30 for the close-mic attack brightness
-            {  13,  65,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
-            {  14,  50,   0,   1, 200,  20,   0,   0,   0,   4, 190,   1,   0,   0,  20,   8,1999,  21,  20,  34, 860,   0,  30, 707},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
-            {  15,  65,   0,   1, 700, 390,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720, 707},        // 15: Kalimba
-            {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000, 707},        // 16: StelPan
-            {  17,  79,   0,   1, 900, 480,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800, 707},        // 17: Claves
-            {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 175,  20,   0,   0,   4,  28,1999,   3,  30,  40, 300,   0,1000, 707},        // 18: Cowbell   — clank shortened (modal cfg 500→180ms) + more strike noise (NzMx 25→40) toward the bright ref clank
-            {  19,  69,   0,   1, 900, 470,   0,   0,   0,   1, 190,  20,   0,   0,  15,  22,1999,  20,   0,  10, 300,   0,1500, 707},        // 19: Triangle  — NzMx 5→10: feeds the raised hf_branch (NoteOn) for the missing >8kHz metal sheen
-            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   4,1999,   3,  12,  15, 220,   0, 220, 707},        // 20: Kick Drum — (HW: ok)
-            {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,  19,   0,1999,   3,   5,  95, 950,   1, 200, 707},        // 21: Clap      — multi-burst AM (~55Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 300→200 (BP 2kHz) toward ref centroid 2986Hz (was 4540)
-            {  22,  84,   0,   1, 500, 450,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550, 707},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
-            {  23,  41,   0,   1, 250, 390,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  11,   5,   9, 550,   0, 130, 707},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
-            {  24,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,1999,  18,   0,   0, 300,   0,1200, 707},        // 24: GlsBwl
-            {  25,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200, 707},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
-            {  26,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800, 707},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {  27,  79,   0,   1, 900, 490,   0,   0,   0,   4, 210,  18,   0,   0,  18,  12,1999,  12,   0,  90, 1000,  2,1300, 707},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
-            {  28,  62,   0,   1, 600, 425,   0,   0,   1,   5, 158,   3,   0,   0,  10,   8,1999,   9,   0,  15, 520,   0, 450, 707},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
-            {  29,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000, 707},        // 29: Handpn
-            {  30,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,1999,   3,   0,   0, 300,   0,1200, 707},        // 30: BelTre
-            {  31,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,1999,   3,   0,   0, 300,   0, 800, 707},        // 31: SltDrm
-            {  32,  69,   0,   1, 900, 500,   0,   0,   0,   4, 190,  28,   0,   0,  18,   7,1999,  17,   0,  66, 950,   2,1300, 707},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {  33,  60,   0,   1, 900, 491,   0,   0,   0,   4, 200,  16,   0,   0,  8,   11,1999,   1,   0,  60, 950,   2,1300, 707},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
-            {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 707},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
-            {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 707},        // 35: GlsBotl   — (HW: ok)
-            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 707},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
-            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 707},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   3,1999,   8,   5,  95, 975,   1, 320, 707},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
-            {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   3,1999,   8,   7,  55, 540,   1, 300, 707}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+            {   0,  36,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 71},        // 0:  Kick2     — the pre-redesign Timpani body as a solid kettledrum kick (HW-approved)
+            {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,  15,1999,   7,  20,   0, 300,   0,1200, 71},        // 1:  Marimba   — exemplar BAR voice (HW: ok)
+            {   2,  36,   0,   1, 350, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220, 71},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
+            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   3,1999,   8,   7,  52, 950,   2, 300, 71},        // 3:  AcSnare   — wire path live; NzRs 740→950: buzz T60≈0.4s matches acoustic-snare.wav t40≈280ms; NzFq 480→300 (HP 3kHz) pulls centroid toward the darker reference
+            {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   5,1999,  18,   0,   5, 300,   0,1500, 71},        // 4:  TblrBel
+            {   5,  52,   0,   1, 360, 300,   0,  40,   2,   3, 150,  10,   0,  36,  18,   8,1999,  -4,   4,   1, 420,   0, 380, 71},        // 5:  Timpani   — dense-kernel voice.  Note 52 (E3): the kettle's dominant sustained partial measures 165.5 Hz ≈ E3 (the 110 Hz A2 principal sits a fifth below) — the display now names the pitch you hear; 52 is also the kernel recipe root, so the shipped row plays the approved render at ratio 1
+            {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   8,1999,  15,   5,   7, 450,   0, 500, 71},        // 6:  Djambe    — (HW: ok)
+            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 120,  10,   0,  30,  15,   1,1999,  16,   5,  52, 180,   0, 800, 71},        // 7:  Taiko     — bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. Port retune: modal_mix 0.60 + brighter crack (NzMix 36→52, NzFltFrq 360→800 ≈8kHz) + leaner boom for a brighter, longer ring
+            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,  16,1999,  19,   5,  55, 940,   2, 105, 71},        // 8:  MrchSnr   — click+buzz land together; NzRs 800→940: buzz T60≈0.36s matches Marching-Snare ref t40≈220ms
+            {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   3,1999,  18,   0,   0, 300,   0,1000, 71},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
+            {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   1,1999,  13,   0,   0, 300,   0,1000, 71},        // 10: Vibrph
+            {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,  10,1999,   3,   0,   5, 420,   0, 900, 71},        // 11: Wodblk    — (HW: ok)
+            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  30, 360,   0, 520, 71},        // 12: Ac Tom    — body extended (modal 350→500ms) + stick transient layer + NzMx 20→30 for the close-mic attack brightness
+            {  13,  65,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 71},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
+            {  14,  50,   0,   1, 200,  20,   0,   0,   0,   4, 190,   1,   0,   0,  20,   8,1999,  21,  20,  34, 860,   0,  30, 71},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
+            {  15,  65,   0,   1, 700, 390,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720, 71},        // 15: Kalimba
+            {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000, 71},        // 16: StelPan
+            {  17,  79,   0,   1, 900, 480,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800, 71},        // 17: Claves
+            {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 175,  20,   0,   0,   4,  28,1999,   3,  30,  40, 300,   0,1000, 71},        // 18: Cowbell   — clank shortened (modal cfg 500→180ms) + more strike noise (NzMx 25→40) toward the bright ref clank
+            {  19,  69,   0,   1, 900, 470,   0,   0,   0,   1, 190,  20,   0,   0,  15,  22,1999,  20,   0,  10, 300,   0,1500, 71},        // 19: Triangle  — NzMx 5→10: feeds the raised hf_branch (NoteOn) for the missing >8kHz metal sheen
+            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   4,1999,   3,  12,  15, 220,   0, 220, 71},        // 20: Kick Drum — (HW: ok)
+            {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,  19,   0,1999,   3,   5,  95, 950,   1, 200, 71},        // 21: Clap      — multi-burst AM (~55Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 300→200 (BP 2kHz) toward ref centroid 2986Hz (was 4540)
+            {  22,  84,   0,   1, 500, 450,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550, 71},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
+            {  23,  41,   0,   1, 250, 390,   0,   0,   1,   5, 200,  10,   0,  30,  15,   1,1999,  11,   5,   9, 550,   0, 130, 71},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
+            {  24,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,  10,1999,  18,   0,   0, 300,   0,1200, 71},        // 24: GlsBwl
+            {  25,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200, 71},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
+            {  26,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800, 71},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
+            {  27,  79,   0,   1, 900, 490,   0,   0,   0,   4, 210,  18,   0,   0,  18,  12,1999,  12,   0,  90, 1000,  2,1300, 71},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {  28,  62,   0,   1, 600, 425,   0,   0,   1,   5, 158,   3,   0,   0,  10,   8,1999,   9,   0,  15, 520,   0, 450, 71},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
+            {  29,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000, 71},        // 29: Handpn
+            {  30,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,  10,1999,   3,   0,   0, 300,   0,1200, 71},        // 30: BelTre
+            {  31,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   6,1999,   3,   0,   0, 300,   0, 800, 71},        // 31: SltDrm
+            {  32,  69,   0,   1, 900, 500,   0,   0,   0,   4, 190,  28,   0,   0,  18,   7,1999,  17,   0,  66, 950,   2,1300, 71},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
+            {  33,  60,   0,   1, 900, 491,   0,   0,   0,   4, 200,  16,   0,   0,  8,   11,1999,   1,   0,  60, 950,   2,1300, 71},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
+            {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   4,1999,  -1,   0,   0, 520,   0, 450, 71},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
+            {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390, 71},        // 35: GlsBotl   — (HW: ok)
+            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,  15,1999,   3,   0,  58, 960,   2, 900, 71},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   8,1999,  15,   5,  62, 640,   2,1200, 71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   3,1999,   8,   5,  95, 975,   1, 320, 71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+            {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   3,1999,   8,   7,  55, 540,   1, 300, 71}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
 
         if (idx >= k_NumPrograms) return;
@@ -843,6 +850,8 @@ SynthState state;
         m_modal_tubrad_ref = fmaxf(0.0f, fminf(20.0f, (float)presets[idx][k_paramTubRad])) * 0.05f;
         m_modal_mltres_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramMlltRes] * 0.001f));
         m_modal_rel_ref    = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramRel] * 0.05f));
+        m_snare_vlstf_ref  = (float)presets[idx][k_paramVlMllStf] * 0.01f;
+        m_snare_vlres_ref  = (float)presets[idx][k_paramVlMllRes] * 0.01f;
 
         // ── Dense modal-drum kernel (Timpani/Taiko): bind the recipe behind
         // the approved standalone renders (105_timp_wedge / 110_taiko_wedge)
@@ -1156,7 +1165,7 @@ SynthState state;
                 // High values = open (full spectrum), low values = dark.
                 m_master_cutoff = (float)value * 10.0f;
                 // Divide by 1000: UI stores 707-4000, filter needs 0.707-4.0
-                float res_val = fmaxf(0.707f, (float)m_params[k_paramResnc] * 0.001f);
+                float res_val = fmaxf(0.707f, 0.707f + ((float)m_params[k_paramResnc] - 71.0f) * 0.01f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
                 break;
             }
@@ -1190,8 +1199,10 @@ SynthState state;
                 break;
             }
             case k_paramResnc: {
-                // UI passes 707 to 4000. Divide by 1000 to get a Q factor of 0.707 to 4.0
-                float res_val = fmaxf(0.707f, (float)value * 0.001f);
+                // Stored ÷10 (71-400 = display 710-4000), step 10 on the encoder.
+                // Q = 0.707 + (value-71)*0.01 → the shipped default (71) maps to
+                // EXACTLY the old Q 0.707 (bit-identical), 400 → ~4.0.
+                float res_val = fmaxf(0.707f, 0.707f + ((float)value - 71.0f) * 0.01f);
                 state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
                 break;
             }
@@ -1305,6 +1316,11 @@ SynthState state;
                 snprintf(lc_buf, sizeof(lc_buf), "%dHz", hz);
             }
             return lc_buf;
+        } else if (index == k_paramResnc) {
+            // Stored ÷10; show real ×10 value (710-4000), same as MlltStif/Dkay.
+            static char rs_buf[8];
+            snprintf(rs_buf, sizeof(rs_buf), "%d", (int)(value * 10));
+            return rs_buf;
         }
 
         // Unconditional failsafe to prevent OS screen crashes
@@ -1817,6 +1833,31 @@ SynthState state;
                 v.exciter.snare_wire_z1c = roll_z1c; v.exciter.snare_wire_z2c = roll_z2c;
             }
             const float vq = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
+            // ── Snare param-design knobs (REFERENCE-ANCHORED) ────────────────
+            // The wire BUZZ (not the ~10 % modal body) is a snare's defining
+            // voice, so the exciter/resonator knobs that were inaudible on the
+            // snare family are wired to the WIRE here.  Each mapping is a DELTA
+            // from the preset's shipped knob value, so at the shipped values
+            // every term below is a no-op → shipped presets render bit-identical
+            // and only knob MOVEMENT bites.  Curves are deliberately strong (the
+            // old modal-body mappings gave "no audible difference" on snares):
+            //   Rel      → buzz TAIL length  (Rel was DEAD — snare skips the
+            //              noise-env release — so it is free real estate)
+            //   MlltRes  → buzz AMOUNT       (wire vs plain filtered noise)
+            //   MlltStif → buzz BRIGHTNESS   (wire band centre frequencies)
+            //   VlMllStf → buzz TIGHTNESS/Q  (wire pole radius: loose↔zingy)
+            //   VlMllRes → crack / SNAP      (initial broadband crack burst;
+            //              VlMllRes was DEAD — its attack target is overridden)
+            const float sn_rel_n = fmaxf(0.0f,  fminf(1.0f, (float)m_params[k_paramRel]      * 0.05f));
+            const float sn_mr_n  = fmaxf(0.0f,  fminf(1.0f, (float)m_params[k_paramMlltRes]  * 0.001f));
+            const float sn_st_n  = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            const float sn_vs_n  = (float)m_params[k_paramVlMllStf] * 0.01f;
+            const float sn_vr_n  = (float)m_params[k_paramVlMllRes] * 0.01f;
+            const float sn_decay_mult = exp2f(-3.0f * (sn_rel_n - m_modal_rel_ref));    // long Rel = long buzz
+            const float sn_mix_mult   = exp2f( 2.0f * (sn_mr_n  - m_modal_mltres_ref)); // ±~4× buzz mix
+            const float sn_bright     = fmaxf(0.5f,  fminf(2.0f, exp2f(1.0f * (sn_st_n - m_modal_stiff_ref)))); // ±1 oct
+            const float sn_tight      = fmaxf(-0.09f, fminf(0.09f, (sn_vs_n - m_snare_vlstf_ref) * 0.09f));     // pole-radius shift
+            v.exciter.snare_crack_gain = fmaxf(0.0f, fminf(6.0f, exp2f(3.0f * (sn_vr_n - m_snare_vlres_ref)))); // ±snap
             // Velocity → buzz character: soft hits (ghost notes) are mostly head
             // tone with a short, loose rattle; hard hits press the wires into the
             // head for a tighter, brighter, longer buzz.  Anchored at vq=1 so a
@@ -1842,13 +1883,21 @@ SynthState state;
                 float base_decay = 0.0001f + ((1.0f - nz_norm) * 0.005f);
                 v.exciter.noise_env.decay_rate = base_decay * (2.0f - vq);
             }
+            // Apply the reference-anchored knob deltas to the amount + tail the
+            // velocity branches just set (no-ops at the shipped knob values).
+            v.exciter.snare_wire_mix = fmaxf(0.0f, fminf(1.0f, v.exciter.snare_wire_mix * sn_mix_mult));
+            v.exciter.noise_env.decay_rate *= sn_decay_mult;
             // Band A: velocity-controlled centre (~2.8 kHz AcSnare, ~3.5 kHz
             // MrchSnr, ~2.2 kHz BrshSnr — brushes read lower/softer).
+            // sn_bright (MlltStif) shifts the centre; sn_tight (VlMllStf) shifts
+            // the pole radius, clamped < 0.995 for stability.
             float r_a = 0.90f + (0.07f * vq);
             float freq_a = (m_preset_idx == k_MarchSnare) ? 3500.0f
                          : (m_preset_idx == k_BrushSnare) ? 2200.0f
                          : (m_preset_idx == k_RimShot)    ? 3200.0f : 2800.0f;
             if (m_preset_idx == k_BrushSnare) r_a = 0.83f + (0.03f * vq); // low-Q diffuse rattle — no resonant "ack" ring (chuff, not shack)
+            freq_a = fminf(20000.0f, freq_a * sn_bright);
+            r_a = fmaxf(0.5f, fminf(0.995f, r_a + sn_tight));
             float w_a = (M_TWOPI * freq_a) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
             v.exciter.snare_wire_a2 = r_a * r_a;
@@ -1858,7 +1907,8 @@ SynthState state;
             float r_b_base = preset_param(preset, k_snare_r_b);
             if (freq_b < 100.0f) freq_b = 4500.0f;
             if (r_b_base < 0.3f) r_b_base = 0.86f;
-            float r_b = r_b_base + (0.05f * vq);
+            freq_b = fminf(20000.0f, freq_b * sn_bright);
+            float r_b = fmaxf(0.5f, fminf(0.995f, r_b_base + (0.05f * vq) + sn_tight));
             float w_b = (M_TWOPI * freq_b) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1b = 2.0f * r_b * fastercosfullf(w_b);
             v.exciter.snare_wire_a2b = r_b * r_b;
@@ -1868,7 +1918,8 @@ SynthState state;
             float r_c_base = preset_param(preset, k_snare_r_c);
             if (freq_c < 100.0f) freq_c = 7200.0f;
             if (r_c_base < 0.3f) r_c_base = 0.82f;
-            float r_c = r_c_base + (0.03f * vq);
+            freq_c = fminf(20000.0f, freq_c * sn_bright);
+            float r_c = fmaxf(0.5f, fminf(0.995f, r_c_base + (0.03f * vq) + sn_tight));
             float w_c = (M_TWOPI * freq_c) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1c = 2.0f * r_c * fastercosfullf(w_c);
             v.exciter.snare_wire_a2c = r_c * r_c;
@@ -2595,7 +2646,9 @@ SynthState state;
             float noise_sum = (low_part + high_part) * ex.noise_decay_coeff;
             if (ex.snare_wire_mix > 0.001f) {
                 // Phase-B crack burst: broadband onset before wire resonance engages.
-                float crack_burst = high * noise_env_high * (1.0f - ex.wire_onset_env) * 0.90f;
+                // snare_crack_gain (default 1.0, VlMllRes-controlled) scales the
+                // snap: 0 = pure buzz, high = a cracky stick attack.
+                float crack_burst = high * noise_env_high * (1.0f - ex.wire_onset_env) * 0.90f * ex.snare_crack_gain;
                 noise_sum += crack_burst;
 
                 // 3-band parallel wire resonators. Each band is an IIR resonator driven

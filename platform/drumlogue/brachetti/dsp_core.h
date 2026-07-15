@@ -66,6 +66,7 @@ struct ExciterState {
     float snare_wire_lp       = 0.0f;   // helper state for multiband wire split
     float snare_wire_hp       = 0.0f;
     float snare_wire_mix      = 0.0f;
+    float snare_crack_gain    = 1.0f;   // VlMllRes → crack/snap level  ← non-zero
     float snare_wire_a1       = 1.6951f; // ← non-zero
     float snare_wire_a2       = 0.8930f; // ← non-zero
     // 3-band snare wire: bands B (~4.5 kHz) and C (~7.2 kHz) complement band A.
@@ -727,6 +728,7 @@ struct VoiceState {
         exciter.snare_wire_lp = 0.0f;
         exciter.snare_wire_hp = 0.0f;
         exciter.snare_wire_mix = 0.0f;
+        exciter.snare_crack_gain = 1.0f;
         exciter.snare_wire_a1 = 1.6951f;
         exciter.snare_wire_a2 = 0.8930f;
         exciter.snare_wire_z1b = 0.0f;

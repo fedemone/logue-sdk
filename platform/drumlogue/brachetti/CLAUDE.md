@@ -43,6 +43,27 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 20 — Snare param-design layer + Resnc granularity (branch brachetti-review-rename)
+
+The snare family had ~13 UI knobs that were inaudible (mallet masked by noise;
+VlMllRes' attack target overridden; Rel dead because ENGINE_SNARE skips the
+noise-env release). Empirical `param_audit` (snare variant) + code trace
+confirmed it. Fix: a **reference-anchored snare param-design layer** in
+`NoteOn` that wires the dead/weak knobs to the wire buzz (the snare's defining
+voice), each a delta from the shipped value so shipped presets stay
+bit-identical:
+- `Rel` → buzz **tail length**, `MlltRes` → buzz **amount**, `MlltStif` →
+  buzz **brightness**, `VlMllStf` → buzz **tightness/Q**, `VlMllRes` →
+  **crack/snap** (new `ExciterState::snare_crack_gain`, scales the onset crack
+  burst). See the README "Snare param-design layer" table.
+- Verified: all 40 shipped renders byte-identical; the five knobs now swing
+  strongly (audit) and 256 extreme-value combos are NaN/blow-up free (wire
+  pole radius clamped < 0.995).
+- **Resnc** encoder granularity coarsened from step 1 (707–4000, 3293 steps)
+  to step 10 (stored ÷10, 71–400; display shows 710–4000 like MlltStif/Dkay).
+  The Q map is `0.707 + (v−71)·0.01` so the shipped default (71) hits Q 0.707
+  exactly → bit-identical.
+
 ### Pass 19 — Snare family revival + BrshSnr preset + CPU pass (branch snare-drum-realism-optimization)
 
 Structural snare fixes (all measured; details in `REALISM_REVIEW.md`):

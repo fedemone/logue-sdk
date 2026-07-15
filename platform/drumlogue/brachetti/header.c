@@ -72,6 +72,10 @@ const __unit_header unit_header_t unit_header = {
         // Stored ÷10: range 2–2000 represents 20–20000 Hz. Step of 10 Hz on the encoder.
         // getParameterStrValue shows the real ×10 Hz/kHz value (same logic as LowCut).
         {2, 2000, 1200, 1200, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
-        {707, 4000, 0, 707, k_unit_param_type_none, 0, 0, 0, {"Resnc"}}
+        // Stored ÷10: range 71–400 represents 710–4000. Step of 10 on the
+        // encoder (was step 1 over 707–4000 — far too fine to dial).
+        // getParameterStrValue shows the real ×10 value (710–4000); code uses
+        // value×0.01 as the filter Q (0.71–4.00).
+        {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}}
     }
 };
