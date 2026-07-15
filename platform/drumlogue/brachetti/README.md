@@ -129,6 +129,21 @@ Parallel to the main KS loop, a bank of 2–6 decaying oscillators (preset-speci
 ### Boom oscillator (Kick, Timpani, AcTom, AcSnare)
 A sine oscillator with a fast-decay envelope injects low-body energy (40–100 Hz) on NoteOn. This is separate from the KS loop and avoids the high-cut bias of the 1-pole LP at low frequencies. Essential for kick/tom thud character that the waveguide alone under-produces.
 
+### Kick "thump" (beater-impact punch, July 2026)
+The boom gives the kick's *sub*, but the mallet knobs did almost nothing on
+the kick family (Kick2, 808Sub, KickDrum) — the mallet click is a tiny high
+tick, not a mid punch — so there was no way to dial in "thump". A dedicated
+`thump_*` layer adds a fast pitch-dropping mid sine (~300→115 Hz, T60 ≈ 58 ms)
+over the boom, wired to the mallet knobs the user reaches for:
+- **`MlltRes`** → thump **amount** (also still boosts modal body presence)
+- **`MlltStif`** → thump **snap / pitch** (higher = a brighter knock)
+
+Reference-anchored: at the shipped knob values the thump is exactly zero, so
+the shipped kicks render bit-identical ("perfect boom" preserved) and only
+turning the mallet knobs *up* adds the punch. Because the master chain is
+loudness-maximized (soft-clip), the thump reshapes the attack timbre rather
+than raising the peak (added-signal RMS ≈ 0.10–0.19 over the first 100 ms).
+
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.
 

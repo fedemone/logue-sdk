@@ -558,6 +558,17 @@ struct VoiceState {
     float boom_attack_env = 1.0f;   // ← non-zero
     float boom_attack_inc = 1.0f;   // ← non-zero
 
+    // Kick "thump" transient: a fast pitch-dropping mid sine punch (~500→150 Hz)
+    // layered over the boom on the kick family.  The boom gives the sub, the
+    // thump gives the beater-impact PUNCH.  Off by default (thump_env 0); the
+    // MlltRes/MlltStif knobs dial it in (see NoteOn), reference-anchored so the
+    // shipped kicks are bit-identical.  Pitch drops as thump_env/thump_amp0 falls.
+    float thump_env       = 0.0f;   // amplitude env (starts at depth·velocity)
+    float thump_amp0      = 1.0f;   // initial env value (pitch-drop normaliser) ← non-zero
+    float thump_phase     = 0.0f;
+    float thump_inc       = 0.0f;   // base angular frequency (bottom of the drop)
+    float thump_decay     = 1.0f;   // per-sample decay ← non-zero
+
     // Metallic transient FM chirp
     float metal_fm_phase  = 0.0f;
     float metal_fm_inc    = 0.0f;
@@ -690,6 +701,12 @@ struct VoiceState {
         boom_mix = 0.0f;
         boom_attack_env = 1.0f;
         boom_attack_inc = 1.0f;
+        // kick thump transient
+        thump_env = 0.0f;
+        thump_amp0 = 1.0f;
+        thump_phase = 0.0f;
+        thump_inc = 0.0f;
+        thump_decay = 1.0f;
         // metallic FM modulation (for cymbal and metallic models)
         metal_fm_phase = 0.0f;
         metal_fm_inc = 0.0f;

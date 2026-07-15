@@ -43,6 +43,22 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 21 — Kick "thump" + snare-sweep corruption check (branch brachetti-review-rename)
+
+- **Snare param sweeps verified non-corrupting**: swept each rewired snare
+  knob lo/mid/hi across all 4 snares — Rel t40 spans ~100→850 ms, MlltRes /
+  VlMllStf ~2× the buzz energy, VlMllRes adds onset snap; peaks bounded well
+  under the 0.99 limiter, no NaN/silence, all moves smooth and musical.
+- **Kick family**: the audit confirmed the mallet knobs (MlltStif/VlMllRes/
+  VlMllStf/Mterl/Inharm/HitPos) were NO EFFECT/weak — the kick is boom +
+  (quiet) modal body, and the mallet click is a tiny high tick, not a mid
+  punch. Added a dedicated `VoiceState::thump_*` layer: a fast pitch-dropping
+  mid sine (~300→115 Hz, T60 ≈ 58 ms) over the boom, wired to `MlltRes`
+  (amount) + `MlltStif` (snap/pitch), reference-anchored → shipped kicks
+  bit-identical, knob-up adds real punch (added-signal RMS 0.10-0.19 over the
+  first 100 ms; the soft-clip means it reshapes attack timbre, not peak).
+  Stable across 48 extreme kick knob combos.
+
 ### Pass 20 — Snare param-design layer + Resnc granularity (branch brachetti-review-rename)
 
 The snare family had ~13 UI knobs that were inaudible (mallet masked by noise;

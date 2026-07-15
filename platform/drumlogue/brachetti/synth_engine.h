@@ -2409,6 +2409,36 @@ SynthState state;
             v.trans_a_hi  = 0.420f;     // ~4.3 kHz LP corner → stick contact
             v.trans_lp_lo = v.trans_lp_hi = 0.0f;
         }
+
+        // ── Kick "thump" (beater-impact punch) ───────────────────────────────
+        // The kick family's boom gives the sub, but the mallet knobs did almost
+        // nothing (the mallet click is a tiny high tick, not a mid punch), so
+        // there was no way to dial in "thump".  Wire MlltRes (amount) + MlltStif
+        // (snap/pitch) to a fast pitch-dropping mid sine punch (~500→150 Hz),
+        // REFERENCE-ANCHORED: at the shipped knob values the thump is exactly
+        // zero → the shipped kicks render bit-identical ("perfect boom" kept),
+        // and turning the mallet knobs UP adds the punch the user expected.
+        if (m_preset_idx == k_Kick2 || m_preset_idx == k_808Sub ||
+            m_preset_idx == k_KickDrum) {
+            float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes]  * 0.001f));
+            float st = fmaxf(0.01f,fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            float d_mr = mr - m_modal_mltres_ref;    // anchored: 0 at shipped value
+            float d_st = st - m_modal_stiff_ref;
+            // Only positive deltas add thump (turning the knob UP = more punch).
+            float thump_amt = fmaxf(0.0f, 0.90f * d_mr + 0.55f * d_st);
+            if (thump_amt > 0.001f) {
+                // MlltStif also shifts the punch pitch (higher = snappier knock,
+                // lower = rounder thud).  Bottom-of-drop ~70-260 Hz around 115 Hz
+                // so the added energy sits in the 120-250 Hz "thump" band, below
+                // the bright mallet click and above the boom's sub.
+                float thump_hz = fmaxf(70.0f, fminf(260.0f, 115.0f * exp2f(1.2f * d_st)));
+                v.thump_inc   = (M_TWOPI * thump_hz) * inverse_default_sample_rate;
+                v.thump_env   = fminf(1.2f, thump_amt);
+                v.thump_amp0  = v.thump_env;
+                v.thump_decay = 0.99760f;   // T60 ≈ 58 ms — a punchy attack, not a tone
+                v.thump_phase = 0.0f;
+            }
+        }
 }
 
     inline void NoteOff(uint8_t note) {
@@ -3051,6 +3081,20 @@ SynthState state;
                     float band = voice.trans_lp_hi - voice.trans_lp_lo;
                     voice_out += band * voice.trans_env * voice.trans_gain * voice.current_velocity;
                     voice.trans_env *= voice.trans_decay;
+                }
+                // Kick "thump": a fast pitch-dropping mid sine punch layered
+                // over the boom.  Pitch starts ~3.5× thump_inc and drops to
+                // thump_inc as the (shared) amplitude env falls — a punchy
+                // "dow" beater impact.  Level and pitch are dialled by the
+                // mallet knobs in NoteOn (0 at shipped values → bit-identical).
+                if (voice.thump_env > silence_threshold) {
+                    float drop = (voice.thump_amp0 > 1e-6f) ? (voice.thump_env / voice.thump_amp0) : 0.0f;
+                    float swp  = 1.0f + 1.6f * drop;   // pitch drops ~2.6x→1x (a "dow" punch)
+                    float th   = fastersinfullf(voice.thump_phase) * voice.thump_env;
+                    voice_out += th * voice.current_velocity;
+                    voice.thump_phase += voice.thump_inc * swp;
+                    if (voice.thump_phase > (M_TWOPI)) voice.thump_phase -= (M_TWOPI);
+                    voice.thump_env *= voice.thump_decay;
                 }
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
                     if (m_preset_idx == k_KickDrum) {
