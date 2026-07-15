@@ -144,6 +144,34 @@ turning the mallet knobs *up* adds the punch. Because the master chain is
 loudness-maximized (soft-clip), the thump reshapes the attack timbre rather
 than raising the peak (added-signal RMS ≈ 0.10–0.19 over the first 100 ms).
 
+### Per-family knob wiring for the body-shaping params (July 2026)
+
+An empirical audit (`param_audit.cpp`) found the body-shaping knobs — `Dkay`,
+`Mterl`, `HitPos`, `Rel`, `Inharm`, `TubRad`, `Resnc` — were **dead on two
+whole families** because those engines don't use the shared modal bank the
+knobs feed: the **kick** voice is the boom oscillator, the **cymbal** family
+is the self-contained dense-resonator port, and **Timpani/Taiko** run the
+separate dense drum-kernel. Each family now maps the dead knobs to a natural
+property of *its own* engine, all **reference-anchored** (delta from the
+shipped knob value → the 40 shipped presets stay byte-identical; only knob
+movement bites):
+
+| Knob | Kick (boom) | Cymbal (dense resonator) | Kernel drums (Timpani/Taiko) | Legacy membrane / bar / plate |
+|------|-------------|--------------------------|------------------------------|-------------------------------|
+| Dkay | boom decay length (coarse) | overall ring decay | T60 (coarse) | modal T60 (coarse) |
+| Rel | boom decay length (fine) | sizzle/wash tail | T60 (fine) | modal T60 (fine) |
+| Mterl | boom body weight | metal brightness (HF tilt + ceiling) | material HF tilt (widened) | upper-mode material damping |
+| HitPos | beater click (bright tick) | edge↔bell (wash vs stick ping) | knock click | strike-position mode tilt |
+| Inharm | pitch-dive depth (808Sub) | jitter spread / shimmer density | upper-mode stretch | overtone spread |
+| TubRad | boom base tune (shell size) | instrument size (spectrum transpose) | body size (longer + darker) | whole-body ring length |
+| Resnc | — (no noise path) | noise-driver Q | — (noise wedge via NzMix/NzFq) | — (noise-filter Q) |
+
+`Resnc` is the noise-filter **Q**: it only bites where the engine has a
+prominent noise bed (cymbal wash, clap/shaker, the snare wire), and is
+inert-by-design on tonal drums. `Inharm` on the kick drives the 808-style
+pitch dive, so it is strongest on `808Sub` (the sweep kick) and deliberately
+light on Kick2/KickDrum, whose calibrated boom is left untouched.
+
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.
 

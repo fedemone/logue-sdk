@@ -557,6 +557,11 @@ struct VoiceState {
     float boom_mix        = 0.0f;
     float boom_attack_env = 1.0f;   // ← non-zero
     float boom_attack_inc = 1.0f;   // ← non-zero
+    // TubRad → boom base-tune multiplier (kick family).  Bigger shell = lower
+    // resting pitch.  1.0 = shipped (bit-identical).  Multiplies the per-sample
+    // boom frequency in processBlock (KickDrum/808Sub recompute boom_inc each
+    // sample, so the tune must live here rather than baked into boom_inc).
+    float boom_tune       = 1.0f;   // ← non-zero
 
     // Kick "thump" transient: a fast pitch-dropping mid sine punch (~500→150 Hz)
     // layered over the boom on the kick family.  The boom gives the sub, the
@@ -701,6 +706,7 @@ struct VoiceState {
         boom_mix = 0.0f;
         boom_attack_env = 1.0f;
         boom_attack_inc = 1.0f;
+        boom_tune = 1.0f;
         // kick thump transient
         thump_env = 0.0f;
         thump_amp0 = 1.0f;

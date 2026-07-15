@@ -94,7 +94,7 @@ int main() {
         {"NzRes",    20, 0,    1000},
         {"NzFltr",   21, 0,    2},
         {"NzFltFrq", 22, 2,    2000},
-        {"Resnc",    23, 707,  4000},
+        {"Resnc",    23, 71,   400},
     };
 
     struct Target { const char* family; int preset; int note; };
@@ -102,8 +102,10 @@ int main() {
         {"KS      ", 25, 69},  // GtrStr
         {"BAR     ", 1,  72},  // Marimba
         {"MEMBRANE", 5,  40},  // Timpani
+        {"MEMB-KICK", 20, 40}, // KickDrum
         {"SNARE   ", 3,  38},  // AcSnare
         {"PLATE   ", 18, 67},  // Cowbell
+        {"CYMBAL  ", 13, 69},  // Cymbal
         {"NOISE   ", 21, 60},  // Clap
     };
 

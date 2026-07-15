@@ -43,6 +43,45 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 22 — All-family body-knob wiring (branch brachetti-review-rename)
+
+`param_audit.cpp` (extended to a CYMBAL + MEMB-KICK exemplar) confirmed the
+body-shaping knobs `Dkay/Mterl/HitPos/Rel/Inharm/TubRad/Resnc` were dead on
+**two whole families**, because those engines don't use the shared modal bank
+the knobs feed:
+- **Kick** (Kick2/808Sub/KickDrum): 808Sub/KickDrum use the empty default
+  modal config (`mode_count 0`) so the shared modal routing is skipped
+  entirely; the audible voice is the boom oscillator.
+- **Cymbal** (Cymbal/Gong/HHatOpen/Ride/RideBell/Splash): the dense-resonator
+  port (`cymbal_note_on`) bypasses the modal bank.
+- **Timpani/Taiko**: the separate dense **drum-kernel** (`m_drum_kernel`)
+  bypasses the legacy voice loop; its knobs route through `RefreshKernelMods`.
+
+Each family now maps the dead knobs to a natural property of its own engine,
+all reference-anchored → **40 shipped presets byte-identical** (verified by
+render diff):
+- **Kick**: Dkay+Rel → boom decay length; Mterl → boom weight; TubRad → boom
+  base tune (new `VoiceState::boom_tune`, applied in the per-sample sweep
+  formulas since KickDrum/808Sub recompute `boom_inc`); Inharm → pitch-dive
+  depth (808Sub); HitPos → beater click (borrows the `trans_*` burst).
+- **Cymbal** (into `CymbalConfig` before `cymbal_note_on`): Dkay → ring decay,
+  Rel → sizzle tail, Mterl → hfTilt+maxHz brightness, HitPos → edge/bell
+  (stick vs wash), Inharm → jitterSemis spread, TubRad → size (folds into
+  `pitch_ratio`), Resnc already lived (noise-driver Q).
+- **Kernel drums**: added TubRad → `decay_mult`↑ + `hf_decay_tilt`↓ (bigger =
+  longer+darker); widened Mterl 1.2→2.0.
+- **Legacy membrane/bar/plate**: widened the existing modal TubRad from t1-only
+  to the whole body (t1..t4), and extended Mterl's onset tilt to mode 2.
+
+Verified with a pitch/tail probe (`verify_blind.cpp`, the 2s-RMS audit is blind
+to pitch shifts and >2s decays): kick TubRad drops boom 81→53 Hz; Timpani
+kernel ring 6.7→52 (×1e3 tail); Conga/AcTom rings lengthen; cymbal Dkay/Rel
+lengthen the tail and TubRad shifts the HF fraction 0.49→0.23.  Stability:
+extreme 7-knob corner combos across all affected presets NaN/blow-up free;
+test_dsp PASS, 82/82 test_hw_debug PASS, 0 NaN/silence / 40 renders.
+`Resnc`/`TubRad` remain inert-by-design where the engine has no matching
+mechanism (Resnc needs a noise bed; TubRad on a plain kick = tune only).
+
 ### Pass 21 — Kick "thump" + snare-sweep corruption check (branch brachetti-review-rename)
 
 - **Snare param sweeps verified non-corrupting**: swept each rewired snare

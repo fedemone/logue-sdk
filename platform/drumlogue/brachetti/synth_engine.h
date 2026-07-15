@@ -2083,7 +2083,7 @@ SynthState state;
                 // larger cymbal (2^(Δsemitones/12), anchored at the shipped
                 // default note so the stock sound is unchanged) — previously
                 // the note only reseeded the jitter, which read as "distortion".
-                const float pitch_ratio = exp2f((float)((int)note - ref_note) * (1.0f / 12.0f));
+                float pitch_ratio = exp2f((float)((int)note - ref_note) * (1.0f / 12.0f));
                 // VlMllRes scales the stick hit ("tang"): shipped value is 0 for
                 // all cymbal presets (=> x1.0 — REFERENCE-ANCHORED); positive
                 // values boost the stick level AND sharpen the noise-driver
@@ -2095,6 +2095,58 @@ SynthState state;
                 if (hit_mod > 0.0f) {
                     cc.lowAttackSec *= exp2f(-1.0f * hit_mod);   // up to 2x snappier
                     cc.thwackSec    *= 1.0f + 0.6f * hit_mod;    // longer ping = "tang"
+                }
+                // ── Cymbal knob-design (REFERENCE-ANCHORED) ──────────────────
+                // The dense-resonator port bypasses the modal bank, so Dkay,
+                // Mterl, HitPos, Rel, Inharm and TubRad were ALL dead on the
+                // cymbal family.  Map each to a natural property of the metal,
+                // anchored at the shipped knob value so the calibrated cymbals
+                // render bit-identical and only knob movement bites.
+                {
+                    // Dkay → overall ring decay length (body + sizzle together).
+                    float cd_dk = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
+                    float dscale = fmaxf(0.25f, fminf(4.0f, exp2f(2.0f * (cd_dk - m_modal_dkay_ref))));
+                    // Rel → tail length, weighted toward the sizzle (high band).
+                    // Dkay is the coarse overall length; Rel trims the tail on top
+                    // (gentle on the body decaySec, full on the sizzle highDecaySec)
+                    // so the two knobs give independent "how long / how sizzly".
+                    float cd_rl = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel] * 0.05f));
+                    float rscale = fmaxf(0.25f, fminf(4.0f, exp2f(1.6f * (cd_rl - m_modal_rel_ref))));
+                    cc.decaySec     *= fmaxf(0.25f, fminf(4.0f, dscale * sqrtf(rscale)));
+                    cc.highDecaySec *= fmaxf(0.25f, fminf(6.0f, dscale * rscale));
+                    // Inharm → jitter spread (beating density / shimmer thickness).
+                    float cd_ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.0005f));
+                    cc.jitterSemis = fmaxf(0.0f, fminf(6.0f,
+                                     cc.jitterSemis * exp2f(2.0f * (cd_ih - m_modal_inharm_ref))));
+                    // Mterl → metal brightness (hard bronze sustains highs; soft
+                    // alloy reads dull).  Tilts the bank HF weight + the ceiling.
+                    float cd_mn = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
+                    float d_cmt = cd_mn - m_modal_mterl_ref;
+                    if (d_cmt < -0.001f || d_cmt > 0.001f) {
+                        cc.hfTilt = fmaxf(0.0f, fminf(4.0f, cc.hfTilt + d_cmt * 2.5f));
+                        cc.maxHz  = fmaxf(4000.0f, fminf(20000.0f, cc.maxHz * exp2f(0.7f * d_cmt)));
+                    }
+                    // HitPos → strike locus: toward the BELL (high) = more stick
+                    // ping and pitched ring, less wash; toward the EDGE (low) =
+                    // more broadband wash, softer ping.
+                    float cd_hp = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
+                    float d_chp = cd_hp - m_modal_hitpos_ref;
+                    if (d_chp < -0.001f || d_chp > 0.001f) {
+                        cc.stickLevel     = fminf(3.0f, cc.stickLevel * exp2f(1.5f * d_chp));
+                        cc.resonatorLevel = fmaxf(0.05f, cc.resonatorLevel * exp2f(0.8f * d_chp));
+                        cc.noiseLevel     = fmaxf(0.0f, cc.noiseLevel * exp2f(-1.0f * d_chp));
+                    }
+                    // TubRad → instrument SIZE: transposes the whole anchor
+                    // spectrum like a bigger (lower) or smaller (higher) cymbal,
+                    // and adds breath under the ring.  Size is the clearest
+                    // "tube radius" analogue and is plainly audible.  Anchored so
+                    // the shipped cymbal pitch is the neutral point.
+                    float cd_tn = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
+                    float d_ctr = cd_tn - m_modal_tubrad_ref;
+                    if (d_ctr < -0.001f || d_ctr > 0.001f) {
+                        pitch_ratio *= fmaxf(0.5f, fminf(2.0f, exp2f(-0.7f * d_ctr)));
+                        cc.shimmerLevel = fmaxf(0.0f, cc.shimmerLevel * exp2f(0.8f * d_ctr));
+                    }
                 }
                 cymbal_note_on(v.cymbal, cc, v.current_velocity, ring_scale, pm_amt,
                                pitch_ratio, seed);
@@ -2253,20 +2305,32 @@ SynthState state;
                             // inaudible on fundamental-dominated drums (e.g. Timpani);
                             // metal = brighter ONSET too, wood = duller onset.
                             float matenv = fmaxf(0.4f, fminf(2.5f, sqrtf(mat)));
+                            // Also tilt mode 2 (gentler) so Mterl is audible on
+                            // drums whose energy sits in the low modes, where the
+                            // 3-6 tilt alone read as "weak" (audit).
+                            e2 *= fmaxf(0.7f, fminf(1.6f, matenv));
                             e3 *= matenv; e4 *= matenv; e5 *= matenv; e6 *= matenv;
                         }
                     }
                     // (5) TubRad → body size.  A wider shell/cavity rings its
-                    // fundamental longer and feeds more energy into the boom
-                    // oscillator (where the preset has one).  Anchored at the
-                    // shipped TubRad so the calibrated body is the neutral point.
+                    // WHOLE body longer (all modes, not just the fundamental) and
+                    // feeds more energy into the boom oscillator where the preset
+                    // has one.  Anchored at the shipped TubRad so the calibrated
+                    // body is the neutral point.  Widened from t1-only (HW/audit:
+                    // "TubRad no effect" on membranes — a mode-1-only tail change
+                    // is inaudible on fundamental-dominated drums like Timpani).
                     {
                         float tn = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
                         float tub = exp2f(1.2f * (tn - m_modal_tubrad_ref));
                         if (tub < 0.999f || tub > 1.001f) {
                             tub = fmaxf(0.4f, fminf(2.5f, tub));
-                            t1 *= tub;
-                            v.boom_mix *= tub;
+                            t1 *= tub; t2 *= tub; t3 *= tub; t4 *= tub;  // whole shell
+                            // Kick presets route TubRad → boom base tune in the
+                            // dedicated kick block below; don't also scale their
+                            // boom_mix here (keeps all three kicks consistent).
+                            if (m_preset_idx != k_Kick2 && m_preset_idx != k_808Sub &&
+                                m_preset_idx != k_KickDrum)
+                                v.boom_mix *= tub;
                         }
                     }
                 }
@@ -2437,6 +2501,62 @@ SynthState state;
                 v.thump_amp0  = v.thump_env;
                 v.thump_decay = 0.99760f;   // T60 ≈ 58 ms — a punchy attack, not a tone
                 v.thump_phase = 0.0f;
+            }
+
+            // ── Kick knob-design (REFERENCE-ANCHORED) ────────────────────────
+            // 808Sub/KickDrum use the empty default modal config (mode_count 0),
+            // so the shared modal routing above is skipped ENTIRELY and every
+            // modal knob was dead; even on Kick2 the modal bank is inaudible
+            // under the boom.  The kick's real voice IS the boom oscillator, so
+            // route the dead knobs straight to the boom.  Each is a delta from
+            // the shipped knob value → the shipped kicks render bit-identical.
+            // Dkay (coarse) + Rel (fine) → boom decay LENGTH.  boom_decay is a
+            // near-1 per-sample multiplier and T60 ∝ 1/(1−decay); scale (1−decay)
+            // by 1/len so knob-up = longer boom.
+            float dkay_n = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
+            float rel_n  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel]  * 0.05f));
+            float klen   = exp2f(2.2f * (dkay_n - m_modal_dkay_ref)
+                                + 1.6f * (rel_n  - m_modal_rel_ref));
+            if (klen < 0.999f || klen > 1.001f) {
+                float one_minus = (1.0f - v.boom_decay) / fmaxf(0.25f, fminf(4.0f, klen));
+                v.boom_decay = fmaxf(0.99000f, fminf(0.99995f, 1.0f - one_minus));
+            }
+            // Mterl → boom body WEIGHT (drumhead density → how much sub).
+            float kmn  = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
+            float d_kmt = kmn - m_modal_mterl_ref;
+            if (d_kmt < -0.001f || d_kmt > 0.001f)
+                v.boom_mix = fmaxf(0.0f, fminf(1.50f, v.boom_mix * exp2f(1.2f * d_kmt)));
+            // TubRad → boom base TUNE (bigger shell = lower resting pitch).
+            // KickDrum/808Sub recompute boom_inc every sample, so the tune must
+            // ride in boom_tune (applied inside those sweep formulas); Kick2 has
+            // a fixed boom_inc, so bake the tune in directly.
+            float ktn  = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
+            float d_ktr = ktn - m_modal_tubrad_ref;
+            if (d_ktr < -0.001f || d_ktr > 0.001f) {
+                v.boom_tune = fmaxf(0.50f, fminf(1.60f, exp2f(-0.6f * d_ktr)));
+                if (m_preset_idx == k_Kick2) v.boom_inc *= v.boom_tune;
+            }
+            // Inharm → boom pitch-DROP depth ("808 dive").  Scales the pitch_env
+            // sweep depth: strongest on 808Sub (the pitch-sweep kick, where the
+            // boom_inc formula reads pitch_env_amt directly).  Kick2 (fixed boom)
+            // and KickDrum (calibrated 90→55 Hz sweep) keep their "perfect" boom
+            // untouched, so Inharm is deliberately light there.
+            float kinh  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.0005f));
+            float d_kih = kinh - m_modal_inharm_ref;
+            if (d_kih < -0.001f || d_kih > 0.001f)
+                v.pitch_env_amt = fmaxf(0.0f, v.pitch_env_amt * fmaxf(0.10f, 1.0f + d_kih * 3.0f));
+            // HitPos → beater CLICK (harder beater = brighter contact tick).  The
+            // kick doesn't otherwise use the trans_* burst; borrow it for a short
+            // bright tick that only appears as HitPos rises above the shipped value.
+            float khit  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
+            float d_khp = khit - m_modal_hitpos_ref;
+            if (d_khp > 0.001f) {
+                v.trans_env   = fminf(1.5f, d_khp * 2.5f);
+                v.trans_decay = 0.98500f;   // T60 ≈ 9 ms — a click, not a tone
+                v.trans_gain  = 1.60f;
+                v.trans_a_lo  = 0.20f;      // ~1.8 kHz HP corner
+                v.trans_a_hi  = 0.55f;      // ~6 kHz LP corner → beater tick
+                v.trans_lp_lo = v.trans_lp_hi = 0.0f;
             }
         }
 }
@@ -3099,12 +3219,13 @@ SynthState state;
                 if (voice.boom_mix > 0.0f && voice.boom_env > silence_threshold) {
                     if (m_preset_idx == k_KickDrum) {
                         // kick sub sweep: 90→55 Hz over boom_decay envelope
-                        float sweep_hz = 55.0f + (35.0f * voice.boom_env);
+                        // (× boom_tune: TubRad retunes the whole kick, 1.0 shipped)
+                        float sweep_hz = (55.0f + (35.0f * voice.boom_env)) * voice.boom_tune;
                         voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
                     } else if (m_preset_idx == k_808Sub) {
                         // 808-style: pitch_env (τ≈21ms) sweeps 45+115=160Hz → 45Hz in ~100ms
                         // independently from boom amplitude (boom_decay=760ms T60)
-                        float sweep_hz = 45.0f + voice.pitch_env_amt * voice.pitch_env;
+                        float sweep_hz = (45.0f + voice.pitch_env_amt * voice.pitch_env) * voice.boom_tune;
                         voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
                     }
                     voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);
@@ -3407,9 +3528,20 @@ private:
         float rl = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel]  * 0.05f));
         md.decay_mult = exp2f(3.5f * (dk - m_modal_dkay_ref) + 2.5f * (rl - m_modal_rel_ref));
 
-        // Mterl (−10..30): brighter material lets HF modes ring longer.
+        // Mterl (−10..30): brighter material lets HF modes ring longer.  Widened
+        // 1.2→2.0 (audit/HW: Mterl "weak" on the kettle) for a clearer material
+        // sweep; still anchored at the shipped value → bit-identical.
         float mt = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
-        md.hf_decay_tilt = 1.2f * (mt - m_modal_mterl_ref);
+        md.hf_decay_tilt = 2.0f * (mt - m_modal_mterl_ref);
+
+        // TubRad (0-20, ×0.05): kettle/shell SIZE.  A bigger body rings a little
+        // longer AND darker (more low-mode weight); this is the "TubRad no effect
+        // on the kernel drums" fix — the legacy modal-bank TubRad path is bypassed
+        // for Timpani/Taiko.  Anchored at the shipped TubRad → bit-identical.
+        float tr = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
+        float d_tr = tr - m_modal_tubrad_ref;
+        md.decay_mult    *= exp2f(1.2f * d_tr);   // bigger = longer sustain
+        md.hf_decay_tilt -= 0.6f * d_tr;           // bigger = darker/rounder
 
         // Inharm (0-1999, ×0.0005): stretches the upper modes away from f0.
         float ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.0005f));
