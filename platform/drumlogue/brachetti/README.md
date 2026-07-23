@@ -172,6 +172,22 @@ inert-by-design on tonal drums. `Inharm` on the kick drives the 808-style
 pitch dive, so it is strongest on `808Sub` (the sweep kick) and deliberately
 light on Kick2/KickDrum, whose calibrated boom is left untouched.
 
+### Encoder-step coarsening & polyphony (July 2026)
+
+- **`Inharm` step 1 → 10.** Like `Dkay`/`Resnc`/`MlltStif`, `Inharm` is now
+  stored ÷10 (range 0–199, display ×10 = 0–1990) so the encoder dials the
+  useful range ~10× faster.  All shipped presets render byte-identical except
+  `Koto`, the only KS preset with a non-zero shipped `Inharm` (1 → 0 after the
+  ÷10 rounding): its string-diffusion `ap_coeff` shifts 0.0005 → 0, an
+  inaudible −59 dB change.
+- **MEMBRANE / SNARE / NOISE now stack.**  Fast repeats used to choke a single
+  voice (mono retrigger); they now round-robin across the 4 voices so kick,
+  tom, conga, bongo, snare and clap hits overlap (roll tails, flams).  Heavy
+  engines keep their guards: `ENGINE_CYMBAL` stays capped by the `Poly` knob
+  (`m_cym_poly`), the Timpani/Taiko kernel runs its own 2-kettle path, and
+  `ENGINE_KS` stays mono (avoids same-pitch string beating).  Peaks across all
+  presets remain limiter-bounded (rapid 4-hit stacks peak < 0.84).
+
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.
 

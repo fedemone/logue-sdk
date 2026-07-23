@@ -1233,11 +1233,11 @@ static void test_midi_note_extremes() {
 // ════════════════════════════════════════════════════════════════════════════
 // T27 — Maximum Inharm (ap_coeff=0.9995): stability and pitch clamping
 //
-//   At Inharm=1999 the allpass coefficient reaches 0.9995, giving a group
-//   delay of (1+0.9995)/(1-0.9995) = 3999 samples.  For note 60 the raw
-//   delay is 183.47 samples; after subtracting τ_AP the result is negative,
-//   so delay_length must be clamped to 2.0.  The waveguide must remain
-//   stable (no NaN/Inf) for the entire 500-block render.
+//   At Inharm=199 (max after the step-10 coarsening) the allpass coefficient
+//   reaches 0.995, giving a group delay of (1+0.995)/(1-0.995) = 399 samples.
+//   For note 60 the raw delay is 183.47 samples; after subtracting τ_AP the
+//   result is negative, so delay_length must be clamped to 2.0.  The waveguide
+//   must remain stable (no NaN/Inf) for the entire 500-block render.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_max_inharm_stability() {
     std::cout << "\n── T27: Max Inharm (ap_coeff=0.9995) — clamping and stability ──\n";
@@ -1247,15 +1247,15 @@ static void test_max_inharm_stability() {
     s.Init(&desc);   // After Init: m_is_resonator_a=true, m_is_resonator_b=true
 
     // Set max inharmonicity on both resonators (both selected after Init)
-    s.setParameter(BrachettiSynth::k_paramInharm, 1999);
+    s.setParameter(BrachettiSynth::k_paramInharm, 199);
 
     // Verify coefficient was applied to ResA
     float ac = s.state.voices[0].resA.ap_coeff;
-    std::cout << "  ResA.ap_coeff after Inharm=1999 : " << ac
-              << " (expect ≈0.9995)\n";
-    result("T27a ap_coeff >= 0.999 after Inharm=1999",
-           ac >= 0.999f,
-           "k_paramInharm=1999 did not set ap_coeff to ~0.9995");
+    std::cout << "  ResA.ap_coeff after Inharm=199 : " << ac
+              << " (expect ≈0.995)\n";
+    result("T27a ap_coeff >= 0.99 after Inharm=199",
+           ac >= 0.99f,
+           "k_paramInharm=199 did not set ap_coeff to ~0.995");
 
     s.NoteOn(60, 127);
     uint8_t vi = s.state.next_voice_idx;

@@ -43,6 +43,33 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 23 — Inharm step-10 + membrane/snare/noise polyphony (HW feedback)
+
+HW test on Kick2 + AcSnare exemplars produced a batch of feedback.  Two items
+were unambiguous and landed this pass:
+
+- **`Inharm` encoder step 1 → 10.**  Adopted the `Dkay`/`Resnc` ÷10 pattern:
+  header range 0-1999 → **0-199** (`type_strings`, display ×10), all Inharm
+  consumers `×0.0005 → ×0.005`, guard `value<=1999 → <=199`, and the preset
+  `InHm` column rescaled ÷10 (round-half-up) by a one-shot script.  **39/40
+  presets byte-identical**; only `Koto` (sole KS preset with non-zero shipped
+  Inharm, 1→0) shifts its `ap_coeff` 0.0005→0 = **−59 dB, inaudible** (render
+  diff confirmed).  T27a updated (max Inharm 199 → ap_coeff 0.995).
+- **MEMBRANE/SNARE/NOISE polyphony.**  `GateOff` stacking predicate widened
+  from `PLATE||BAR||CYMBAL` to **`e != ENGINE_KS`** — kick/tom/conga/bongo/
+  snare/clap now round-robin the 4 voices (fast repeats stack instead of
+  choking one voice).  Guards kept: cymbal capped by `m_cym_poly` (Poly knob),
+  Timpani/Taiko on the 2-kettle kernel path, KS mono (string-beating).  Poly
+  stress test: Kick2/808Sub/AcSnare/Conga/Bongo reach 4 simultaneous voices,
+  worst peak 0.84, no NaN.  **NOTE for HW:** this supersedes the mono-voice
+  buzz-roll continuity (pass 19 r2) for snares — fast pressed rolls now spread
+  across voices (each with its own crack) rather than merging into one voice;
+  confirm the roll feel on HW.
+
+Still open from the same HW batch (awaiting user decision — see PR thread):
+per-preset "increase AcSnare Dkay/TubRad range", VlMllRes "zap" ceiling,
+velocity/hit-hardness control, and an "X = unwired" param display.
+
 ### Pass 22 — All-family body-knob wiring (branch brachetti-review-rename)
 
 `param_audit.cpp` (extended to a CYMBAL + MEMB-KICK exemplar) confirmed the
