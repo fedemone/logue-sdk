@@ -164,13 +164,16 @@ movement bites):
 | HitPos | beater click (bright tick) | edge↔bell (wash vs stick ping) | knock click | strike-position mode tilt |
 | Inharm | pitch-dive depth (808Sub) | jitter spread / shimmer density | upper-mode stretch | overtone spread |
 | TubRad | boom base tune (shell size) | instrument size (spectrum transpose) | body size (longer + darker) | whole-body ring length |
-| Resnc | — (no noise path) | noise-driver Q | — (noise wedge via NzMix/NzFq) | — (noise-filter Q) |
+| Resnc | master-LP Q¹ | master-LP Q¹ | master-LP Q¹ | master-LP Q¹ |
 
-`Resnc` is the noise-filter **Q**: it only bites where the engine has a
-prominent noise bed (cymbal wash, clap/shaker, the snare wire), and is
-inert-by-design on tonal drums. `Inharm` on the kick drives the 808-style
-pitch dive, so it is strongest on `808Sub` (the sweep kick) and deliberately
-light on Kick2/KickDrum, whose calibrated boom is left untouched.
+¹ `Resnc` is the **master low-pass resonance** (`master_filter` Q).  It only
+becomes audible when you also bring `Cutoff` down so the resonant peak sits in
+the audible band; with `Cutoff` fully open — the shipped default on **every**
+preset — the peak sits up near 16 kHz and `Resnc` does effectively nothing.
+That is why it reads as "no effect" on every preset until you close the filter.
+`Inharm` on the kick drives the 808-style pitch dive, so it is strongest on
+`808Sub` (the sweep kick) and deliberately light on Kick2/KickDrum, whose
+calibrated boom is left untouched.
 
 ### Encoder-step coarsening & polyphony (July 2026)
 
@@ -187,6 +190,58 @@ light on Kick2/KickDrum, whose calibrated boom is left untouched.
   (`m_cym_poly`), the Timpani/Taiko kernel runs its own 2-kettle path, and
   `ENGINE_KS` stays mono (avoids same-pitch string beating).  Peaks across all
   presets remain limiter-bounded (rapid 4-hit stacks peak < 0.84).
+
+### Per-preset knob activity — the "which knobs are live" matrix
+
+Because each knob is wired into a specific engine mechanism, a knob does
+**nothing** when the current preset's engine has no matching mechanism — this
+is by design, not a bug.  Rather than mark dead knobs with an "X" on the
+hardware (which would need every affected knob converted to a text display),
+here is the intended-wiring matrix.  Legend: **●** live · **◐** subtle /
+context-dependent · **○** inert by design.
+
+| Knob | Kick | Tom¹ | Kernel² | Snare | Bar³ | Plate⁴ | Cymbal⁵ | Noise⁶ | String⁷ |
+|------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Rsntrs | ○ | ○ | ○ | ○ | ○ | ○ | ● | ○ | ○ |
+| MlltRes | ● | ◐ | ○ | ● | ● | ● | ◐ | ◐ | ◐ |
+| MlltStif | ◐ | ◐ | ○ | ● | ● | ◐ | ◐ | ○ | ◐ |
+| VlMllRes | ○ | ○ | ○ | ● | ◐ | ○ | ○ | ○ | ○ |
+| VlMllStf | ○ | ○ | ○ | ● | ◐ | ○ | ○ | ○ | ○ |
+| Partls | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
+| Model | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
+| Dkay | ● | ● | ● | ◐ | ● | ● | ● | ◐ | ● |
+| Mterl | ◐ | ● | ● | ○ | ● | ● | ● | ○ | ◐ |
+| Tone | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ |
+| HitPos | ● | ● | ● | ○ | ● | ● | ● | ○ | ◐ |
+| Rel | ● | ● | ● | ● | ● | ● | ● | ● | ● |
+| Inharm | ◐ | ● | ● | ○ | ● | ◐ | ● | ○ | ● |
+| TubRad | ● | ● | ● | ● | ● | ◐ | ● | ○ | ◐ |
+| Resnc | ○ | ○ | ○ | ○ | ○ | ○ | ◐ | ◐ | ○ |
+
+¹ Tom = membrane toms/congas/bongos/djembe/handpan/Taiko2 · ² Kernel =
+Timpani/Taiko (dense drum-kernel) · ³ Bar = marimba/vibes/kalimba/… (mallet
+bars) · ⁴ Plate = cowbell/triangle/belltree/tick · ⁵ Cymbal = crash/ride/
+hats/gong/splash (dense resonator) · ⁶ Noise = clap/shaker/HHatClosed · ⁷
+String = Koto/GuitarStr (Karplus-Strong).
+
+Notes on the recurring "no effect (expected)" cases:
+
+- **Rsntrs** and the **Poly** knob are *cymbal-family performance controls*
+  (resonator-bank density / voice cap).  They are inert on every non-cymbal
+  preset by design.
+- **Resnc** is the master low-pass **Q** — see footnote ¹ above; it needs
+  `Cutoff` brought down to be heard.
+- **Model / Partls** reshape the **shared modal bank**.  The kick (boom osc),
+  cymbal (dense resonator) and kernel drums bypass that bank, so these two are
+  inert there — the same structural reason the body knobs were dead before the
+  July-2026 per-family wiring.
+- **VlMllRes / VlMllStf** live on the **snare wire** (crack/snap and buzz Q);
+  on other families the mallet exciter they target is masked or absent.
+- **Tone** is a master tilt-EQ: it works on everything but is gentle, and reads
+  as "little effect" on sounds with little energy in the tilt band.
+- **Mterl / HitPos** are inert on the snare (its voice is the wire buzz, not a
+  struck modal body); **TubRad** on the snare is now the *body-depth* control
+  (July 2026, Band-A center) so it is live there.
 
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.

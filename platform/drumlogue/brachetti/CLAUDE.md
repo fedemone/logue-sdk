@@ -66,9 +66,24 @@ were unambiguous and landed this pass:
   across voices (each with its own crack) rather than merging into one voice;
   confirm the roll feel on HW.
 
-Still open from the same HW batch (awaiting user decision — see PR thread):
-per-preset "increase AcSnare Dkay/TubRad range", VlMllRes "zap" ceiling,
-velocity/hit-hardness control, and an "X = unwired" param display.
+Follow-up items from the same HW batch (user picked, second commit):
+
+- **Snare TubRad → body depth** (only-TubRad, per user).  New reference-anchored
+  mapping in the snare NoteOn block: `sn_body = clamp(exp2(-1.3·Δtubrad))`
+  applied to **Band A only** (the low body band, ~2.8 kHz on AcSnare), so
+  MlltStif (all bands = brightness) and TubRad (Band A = body depth) stay
+  independent.  Shipped snares byte-identical; AcSnare hi-energy fraction sweeps
+  0.55 (tight) → 0.44 (shipped) → 0.30 (deep) across TubRad 0→20.  Dkay left
+  subtle on the snare (user chose not to overlap Rel).
+- **Kick poly kept at 4** (user), **VlMllRes zap kept aggressive** (user) — no
+  code change.
+- **"X-for-unwired" → documented instead of on-device** (user).  Added the
+  per-preset knob-activity matrix to the README, and **corrected** the Pass-22
+  mislabel: `Resnc` is the **master-LP Q** (needs `Cutoff` down), not a
+  "noise-driver Q"; `Rsntrs`/`Poly` are cymbal-only performance controls;
+  Model/Partls are inert wherever the engine bypasses the shared modal bank.
+- **Velocity/hit-hardness**: answered (MIDI note-on velocity, set per-step on
+  the Drumlogue sequencer; no dedicated knob — 24/24 param slots used).
 
 ### Pass 22 — All-family body-knob wiring (branch brachetti-review-rename)
 

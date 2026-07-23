@@ -1864,6 +1864,16 @@ SynthState state;
             const float sn_bright     = fmaxf(0.5f,  fminf(2.0f, exp2f(1.0f * (sn_st_n - m_modal_stiff_ref)))); // ±1 oct
             const float sn_tight      = fmaxf(-0.09f, fminf(0.09f, (sn_vs_n - m_snare_vlstf_ref) * 0.09f));     // pole-radius shift
             v.exciter.snare_crack_gain = fmaxf(0.0f, fminf(6.0f, exp2f(3.0f * (sn_vr_n - m_snare_vlres_ref)))); // ±snap
+            // TubRad → snare BODY depth/tone (REFERENCE-ANCHORED).  On the snare
+            // family Dkay/TubRad only touched the quiet modal body, so TubRad was
+            // "little effect".  Give it a distinct, audible axis: shift ONLY the
+            // low wire band (Band A, the drum's body tone) — a bigger shell drops
+            // it for a deeper "thunk" under the buzz, a smaller shell lifts it for
+            // a tighter piccolo body.  MlltStif still moves ALL three bands
+            // together (overall brightness); this moves the body band alone, so
+            // the two knobs are independent.  Clamped to a musical ±~1.3 oct.
+            const float sn_tr_n  = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
+            const float sn_body  = fmaxf(0.40f, fminf(2.5f, exp2f(-1.3f * (sn_tr_n - m_modal_tubrad_ref))));
             // Velocity → buzz character: soft hits (ghost notes) are mostly head
             // tone with a short, loose rattle; hard hits press the wires into the
             // head for a tighter, brighter, longer buzz.  Anchored at vq=1 so a
@@ -1902,7 +1912,7 @@ SynthState state;
                          : (m_preset_idx == k_BrushSnare) ? 2200.0f
                          : (m_preset_idx == k_RimShot)    ? 3200.0f : 2800.0f;
             if (m_preset_idx == k_BrushSnare) r_a = 0.83f + (0.03f * vq); // low-Q diffuse rattle — no resonant "ack" ring (chuff, not shack)
-            freq_a = fminf(20000.0f, freq_a * sn_bright);
+            freq_a = fminf(20000.0f, freq_a * sn_bright * sn_body);   // sn_body = TubRad body-depth (Band A only)
             r_a = fmaxf(0.5f, fminf(0.995f, r_a + sn_tight));
             float w_a = (M_TWOPI * freq_a) * inverse_default_sample_rate;
             v.exciter.snare_wire_a1 = 2.0f * r_a * fastercosfullf(w_a);
