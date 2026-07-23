@@ -1276,9 +1276,9 @@ SynthState state;
                 return m_is_resonator_a && m_is_resonator_b ? model_names_ab[value] :
                     m_is_resonator_a ? model_names_a[value] : model_names_b[value];
         } else if (index == k_paramPartls) {
-            if (value == 5) return "-> ResA+B";
-            if (value == 6) return "-> ResA";
-            if (value == 7) return "-> ResB";
+            if (value == 5) return "ResA+B";
+            if (value == 6) return "ResA";
+            if (value == 7) return "ResB";
             if (value >= 0 && value < 5)
                 return m_is_resonator_a && m_is_resonator_b ? partial_names_ab[value] :
                     m_is_resonator_a ? partial_names_a[value] : partial_names_b[value];
