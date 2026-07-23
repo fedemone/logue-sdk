@@ -15,7 +15,7 @@ int main(){
     static BrachettiSynth s; const int sr=48000; const int block=128; static float st[block*2];
 
     // param idx: Dkay10 Mterl11 HitPos13 Rel14 Inharm15 TubRad17 Resnc23
-    struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,2,98},{14,0,20},{15,0,1999},{17,0,20},{23,71,400}};
+    struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,2,98},{14,0,20},{15,0,199},{17,0,20},{23,71,400}};
     const int NP=7;
     // affected presets across all three families + a couple neighbours
     int presets[]={0,2,20, 5,7,12,28,34,6,23, 13,14,27,32,33,37};
