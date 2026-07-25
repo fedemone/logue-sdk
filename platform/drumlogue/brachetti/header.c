@@ -1,0 +1,86 @@
+/**
+ * @file header.c
+ * @brief drumlogue SDK unit header
+ *
+ * Copyright (c) 2020-2022 KORG Inc. All rights reserved.
+ *
+ */
+
+#include "unit.h"
+
+const __unit_header unit_header_t unit_header = {
+    .header_size = sizeof(unit_header_t),
+    .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,
+    .api = UNIT_API_VERSION,
+    .dev_id = 0x46654465U,                                 // 'FeDe'
+    .unit_id = 0x5265736fU,                                // 'Reso'
+    .version = 0x00010000U,
+    .name = "Brachetti",
+    .num_presets = 40,
+    .num_params = 24,
+    .params = {
+        // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
+
+        // Page 1: Program and sample selection
+        {0, 39, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
+        // Ex Bank/Sample (PCM layering removed): performance controls.
+        // Poly = GLOBAL voice cap 1-4 (was cymbal-only 1-2 and always displayed
+        // "2").  Cymbals stay internally capped at 2 for the CPU budget; the
+        // display (type_strings) shows the EFFECTIVE polyphony for the current
+        // preset, e.g. "4(2)" on a cymbal, "1" on a string.
+        {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
+        {25, 60, 1, 40, k_unit_param_type_percent, 0, 0, 0, {"Rsntrs"}},
+
+        // Page 2: Mallet
+        {0, 1000, 500, 500, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
+        // Stored ÷10: range 10–500 represents 100–5000. Step of 10 on the encoder.
+        // getParameterStrValue shows the real ×10 value (100–5000).
+        {10, 500, 25, 500, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
+
+        // Page 3: Resonator I
+        // 0-4 are the partials, value 5 means that next params dedicated to resonator are addressing
+        // resonator A+B, value 6 is for resonator A only and 7 for resonator B only
+        {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
+        // [0..8] String , Beam ,  Square , Membrn , Plate , Drumhd , Marmb , OpnTub , ClsTub
+        {0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
+        // Stored ÷10: range 0–200 represents 0–2000. Step of 10 on the encoder.
+        // getParameterStrValue shows the real ×10 value (0–2000).
+        {0, 200, 25, 25, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
+        // [−10..30]
+        {-10, 30, 0, 10, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
+
+        // Page 4: Resonator II
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
+        {2, 98, 0, 26, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
+        {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
+        // Stored ÷10: range 0–199 represents 0–1990. Step of 10 on the encoder
+        // (was step 1 over 0–1999 — far too fine to dial).  getParameterStrValue
+        // shows the real ×10 value; code uses value×0.005 to normalise 0–1.
+        {0, 199, 30, 0, k_unit_param_type_strings, 0, 0, 0, {"Inharm"}},
+
+        // Page 5: Resonator III
+        // Master LOWPASS cutoff: high = open, low = dark.  Stored ÷10
+        // (effective 10–19990 Hz, capped at 16 kHz internally).  Default = open.
+        // type_strings so getParameterStrValue can display the real Hz/kHz value.
+        {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
+        {0, 20, 0, 5, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
+        // Range 0-100, no fraction
+        {0, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Gain"}},  // <--- Overdrive
+        {0, 100, 50, 0, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},
+
+        // Page 6: Noise II
+        {0, 1000, 300, 0, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
+        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
+        // Stored ÷10: range 2–2000 represents 20–20000 Hz. Step of 10 Hz on the encoder.
+        // getParameterStrValue shows the real ×10 Hz/kHz value (same logic as LowCut).
+        {2, 2000, 1200, 1200, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
+        // Stored ÷10: range 71–400 represents 710–4000. Step of 10 on the
+        // encoder (was step 1 over 707–4000 — far too fine to dial).
+        // getParameterStrValue shows the real ×10 value (710–4000); code uses
+        // value×0.01 as the filter Q (0.71–4.00).
+        {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}}
+    }
+};
