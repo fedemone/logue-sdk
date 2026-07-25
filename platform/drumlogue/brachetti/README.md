@@ -137,12 +137,29 @@ tick, not a mid punch — so there was no way to dial in "thump". A dedicated
 over the boom, wired to the mallet knobs the user reaches for:
 - **`MlltRes`** → thump **amount** (also still boosts modal body presence)
 - **`MlltStif`** → thump **snap / pitch** (higher = a brighter knock)
+- **`VlMllRes`** → **velocity-weighted** thump prominence (accents punch harder)
+- **`VlMllStf`** → **velocity-weighted** beater snap (adds its own knock, lifts
+  the thump pitch and shortens its ring as you hit harder)
 
 Reference-anchored: at the shipped knob values the thump is exactly zero, so
 the shipped kicks render bit-identical ("perfect boom" preserved) and only
 turning the mallet knobs *up* adds the punch. Because the master chain is
 loudness-maximized (soft-clip), the thump reshapes the attack timbre rather
 than raising the peak (added-signal RMS ≈ 0.10–0.19 over the first 100 ms).
+
+#### Thump without boom
+
+`Mterl` is the kick's boom **weight**, and turning it *down* now fades the boom
+all the way to silence at the knob floor (the downward curve is quadratic in
+`Mterl/ref`, continuous with ×1 at the shipped value; upward keeps the gentle
+`2^(1.2·Δ)` lift). So a **thump-only kick** — a dry beater knock with almost no
+sub — is `Mterl` fully down + `MlltRes` (and/or `VlMllRes`) up:
+
+| Setting | Result (808Sub, measured) |
+|---------|---------------------------|
+| shipped | total RMS 0.215, boom tail (0.2–1 s) 0.084 |
+| `Mterl` = −10 | total RMS 0.010, boom tail **0.000** — boom gone |
+| `Mterl` = −10, `MlltRes` = 1000 | attack RMS 0.192, tail 0.000 — **all thump, no boom** |
 
 ### Per-family knob wiring for the body-shaping params (July 2026)
 
@@ -200,13 +217,27 @@ hardware (which would need every affected knob converted to a text display),
 here is the intended-wiring matrix.  Legend: **●** live · **◐** subtle /
 context-dependent · **○** inert by design.
 
+> **Maintenance rule — do not hand-write this table.**  The first version of
+> this matrix was written from memory and got three cells wrong (it marked
+> `VlMllRes`/`VlMllStf` inert on the Timpani/Taiko kernel and `VlMllRes` inert
+> on cymbals, when `RefreshKernelMods` and the cymbal `stickLevel` block have
+> always read them).  A wrong "inert by design" note is worse than no note: it
+> hides a real regression behind an intended one.  **Always re-derive the
+> table from `param_audit.cpp`** (which sweeps every knob per family exemplar
+> and prints NO EFFECT / weak / ok) and cross-check against the code before
+> editing a cell.  Note the audit's own blind spot: its 2-second RMS metric
+> dilutes short transients ~50×, so a knob that adds a 40 ms attack can audit
+> `weak` while being plainly audible — confirm those with a windowed probe
+> before marking anything inert.
+
 | Knob | Kick | Tom¹ | Kernel² | Snare | Bar³ | Plate⁴ | Cymbal⁵ | Noise⁶ | String⁷ |
 |------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Poly | ● | ● | ◐ | ● | ● | ● | ◐ | ● | ○ |
 | Rsntrs | ○ | ○ | ○ | ○ | ○ | ○ | ● | ○ | ○ |
 | MlltRes | ● | ◐ | ○ | ● | ● | ● | ◐ | ◐ | ◐ |
 | MlltStif | ◐ | ◐ | ○ | ● | ● | ◐ | ◐ | ○ | ◐ |
-| VlMllRes | ○ | ○ | ○ | ● | ◐ | ○ | ○ | ○ | ○ |
-| VlMllStf | ○ | ○ | ○ | ● | ◐ | ○ | ○ | ○ | ○ |
+| VlMllRes | ● | ● | ● | ● | ○ | ◐ | ● | ◐ | ○ |
+| VlMllStf | ● | ● | ● | ● | ◐ | ◐ | ● | ◐ | ◐ |
 | Partls | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
 | Model | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
 | Dkay | ● | ● | ● | ◐ | ● | ● | ● | ◐ | ● |
@@ -226,22 +257,52 @@ String = Koto/GuitarStr (Karplus-Strong).
 
 Notes on the recurring "no effect (expected)" cases:
 
-- **Rsntrs** and the **Poly** knob are *cymbal-family performance controls*
-  (resonator-bank density / voice cap).  They are inert on every non-cymbal
-  preset by design.
+- **Rsntrs** is a *cymbal-family* performance control (resonator-bank density)
+  and is inert on every non-cymbal preset by design.  **Poly** is a **global**
+  voice cap (1-4); the cymbal family clamps it to 2 for the CPU budget, the
+  Timpani/Taiko kernel runs 2 kettles, and the string engine is mono — the
+  display shows the effective value, e.g. `4(2)`.
 - **Resnc** is the master low-pass **Q** — see footnote ¹ above; it needs
   `Cutoff` brought down to be heard.
 - **Model / Partls** reshape the **shared modal bank**.  The kick (boom osc),
   cymbal (dense resonator) and kernel drums bypass that bank, so these two are
   inert there — the same structural reason the body knobs were dead before the
   July-2026 per-family wiring.
-- **VlMllRes / VlMllStf** live on the **snare wire** (crack/snap and buzz Q);
-  on other families the mallet exciter they target is masked or absent.
 - **Tone** is a master tilt-EQ: it works on everything but is gentle, and reads
   as "little effect" on sounds with little energy in the tilt band.
 - **Mterl / HitPos** are inert on the snare (its voice is the wire buzz, not a
-  struck modal body); **TubRad** on the snare is now the *body-depth* control
-  (July 2026, Band-A center) so it is live there.
+  struck modal body); **TubRad** on the snare is the *body-depth* control
+  (July 2026, Band-A centre) so it is live there.
+
+#### Careful: `MlltRes`/`MlltStif` vs `VlMllRes`/`VlMllStf`
+
+These are **four different knobs** and the similar names cause real confusion:
+
+| Knob | Meaning |
+|------|---------|
+| `MlltRes` | mallet **resonance** — static amount (kick: thump amount) |
+| `MlltStif` | mallet **stiffness** — static hardness (kick: thump snap/pitch) |
+| `VlMllRes` | **velocity→**mallet-resonance — how much *harder hits* add hit prominence |
+| `VlMllStf` | **velocity→**mallet-stiffness — how much *harder hits* sharpen the strike |
+
+The `Vl…` pair is the **velocity-sensitivity** of the pair above it, so their
+audible effect grows with how hard you strike.
+
+#### `VlMllRes` / `VlMllStf` per family (July 2026)
+
+Previously these two only drove the shared mallet exciter and the noise-envelope
+attack, so they were inaudible wherever that exciter is masked (kick boom, tom
+body) — while being *fully live* on the snare (wire crack), the Timpani/Taiko
+kernel (knock prominence / velocity-sharpness) and the cymbal stick.  They are
+now wired on every family that lacked them, all **reference-anchored**:
+
+| Family | `VlMllRes` | `VlMllStf` |
+|--------|------------|------------|
+| Kick | velocity-weighted **thump prominence** (works standalone — no need to dial `MlltRes` first) | velocity-weighted **beater snap** (adds its own knock, raises thump pitch, shortens its ring) |
+| Tom | velocity-weighted **slap prominence** (scales a shipped stick layer, or raises a hand-slap burst on presets without one) | **slap sharpness** (brighter + shorter up, rounder + longer down) |
+| Kernel | knock prominence + flattens the velocity curve (already live) | velocity→impulse sharpness (already live) |
+| Snare | crack / snap (already live) | buzz tightness / Q (already live) |
+| Cymbal | stick "tang" level + attack (already live) | **stick stiffness** — faster bite, shorter ping, brighter strike |
 
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.

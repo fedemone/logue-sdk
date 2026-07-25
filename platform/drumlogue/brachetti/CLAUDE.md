@@ -43,6 +43,51 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 24 — Poly made real, VlMll* live everywhere, thump-only kick, knob_exp2
+
+HW batch on Kick2/AcSnare. All five items landed:
+
+- **Poly knob was a lie**: it read 1-2, was cymbal-only (`m_cym_poly`) and always
+  displayed "2".  Now a **global** cap (header 1-4, default 4, `type_strings`):
+  new `m_poly` bounds the NoteOn round-robin (`next_voice_idx % cap`), the
+  cymbal family clamps to `min(Poly,2)` for CPU, and `getParameterStrValue`
+  prints the **effective** polyphony for the current preset — `4(2)` on a
+  cymbal/kernel, `4(1)` on a string.  Verified: Kick2 Poly=2 → 2 simultaneous
+  voices, Poly=4 → 4.  ENGINE_KS keeps the full-range increment (GateOff pins
+  it to one slot; capping there would move that slot).
+- **`VlMllRes`/`VlMllStf` wired on Kick + Tom, `VlMllStf` on Cymbal.**  They had
+  only ever driven the shared mallet exciter + noise attack, which the kick boom
+  and tom body mask.  Kick: VlMllRes → velocity-weighted thump prominence
+  (standalone — no MlltRes needed), VlMllStf → its own knock + thump pitch/decay
+  snap.  Tom: VlMllRes → slap prominence (scales a shipped `trans_*` layer, or
+  raises a hand-slap burst on presets without one), VlMllStf → slap sharpness.
+  Cymbal: VlMllStf → stick stiffness (`lowAttackSec`/`thwackSec`/`hfTilt`).
+  All anchored on the shipped values (0 everywhere) → **40/40 byte-identical**.
+- **Thump-only kick** (HW: "high thump, almost no boom"): the `Mterl` → boom
+  weight curve now reaches **zero** at the knob floor (quadratic in `kmn/ref`
+  below the anchor, continuous ×1 at it; unchanged `2^(1.2Δ)` above).  Measured
+  on 808Sub: shipped total RMS 0.215 / tail 0.084 → `Mterl=-10` 0.010 / 0.000 →
+  `+MlltRes=1000` attack 0.192 / tail 0.000.
+- **`knob_exp2` (fasterpow2f) for knob curves** — see the new gotcha below.
+- **README matrix corrected** (3 wrong cells) + a maintenance rule.
+
+**Doc-accuracy incident (prevention).**  The Pass-23 "which knobs are live"
+matrix was written by hand from memory and marked `VlMllRes`/`VlMllStf` inert on
+the Timpani/Taiko kernel and `VlMllRes` inert on cymbals — all three have ALWAYS
+been live (`RefreshKernelMods` reads both; the cymbal `stickLevel` block reads
+VlMllRes).  A wrong "inert by design" label is worse than none: it disguises a
+regression as an intention.  **Rule: re-derive that table from `param_audit.cpp`
++ the code, never from memory**, and remember the audit's blind spot — its 2 s
+RMS metric dilutes a 40 ms transient ~50×, so a knob adding an attack can audit
+`weak` while being clearly audible (confirm with a windowed probe).
+(Separately: the HW report read the README's kick-thump section, which documents
+`MlltRes`/`MlltStif`, against the matrix rows for `VlMllRes`/`VlMllStf` — four
+different knobs.  README now has an explicit disambiguation table.)
+
+Verified: 40/40 byte-identical, test_dsp exit 0, test_hw_debug 82/82, stability
+**4096** combos (7 body knobs + a combined VlMllRes/VlMllStf extreme) across 16
+presets, 0 problems, worst |peak| 0.9900 = the brickwall limit (bounded).
+
 ### Pass 23 — Inharm step-10 + membrane/snare/noise polyphony (HW feedback)
 
 HW test on Kick2 + AcSnare exemplars produced a batch of feedback.  Two items
@@ -536,6 +581,24 @@ at T60=1.2s → `fasterexpf` returns ~0.971 (implying T60≈5ms) instead of 0.99
 
 ~1e-3 absolute error near w→0 shifts low-frequency mode ratios (Timpani ~17 Hz gaps →
 slow beating). **Always use exact `cosf` in `init_modal_modes`.**
+
+### knob_exp2 — fast 2^x for knob curves, but GUARD THE ANCHOR
+
+Reference-anchored knob mappings don't need exact math (±0.3 % on a response
+curve is inaudible), so they use `fasterpow2f` via the `knob_exp2` helper in
+`synth_engine.h`.  **The naive swap is a trap**: `fasterpow2f(0.0f) ≈ 0.9614`,
+not 1.0 — and every anchored mapping evaluates at exactly Δ=0 for its shipped
+preset, where the factor MUST be exactly 1.0 or the byte-identical guarantee
+breaks on all 40 presets at once (silently: everything just gets ~4 % shorter
+/ quieter).  `knob_exp2` returns 1.0 for x==0 and `fasterpow2f` otherwise.
+
+```cpp
+inline float knob_exp2(float x) { return (x == 0.0f) ? 1.0f : fasterpow2f(x); }
+```
+
+Use it for knob-response curves only.  **Keep exact `exp2f`** for tuning and
+timing: note→frequency ratios, `cymbal pitch_ratio`, the kernel trigger ratio —
+same reasoning as the `fasterexpf` / `fastercosfullf` gotchas above.
 
 ### REFERENCE-ANCHOR pattern
 

@@ -15,8 +15,10 @@ int main(){
     static BrachettiSynth s; const int sr=48000; const int block=128; static float st[block*2];
 
     // param idx: Dkay10 Mterl11 HitPos13 Rel14 Inharm15 TubRad17 Resnc23
-    struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,2,98},{14,0,20},{15,0,199},{17,0,20},{23,71,400}};
-    const int NP=7;
+    // plus a combined VlMllRes6+VlMllStf7 extreme bit (both knobs move together
+    // to keep the corner count at 2^8 instead of 2^9).
+    struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,2,98},{14,0,20},{15,0,199},{17,0,20},{23,71,400},{6,-100,100}};
+    const int NP=8;
     // affected presets across all three families + a couple neighbours
     int presets[]={0,2,20, 5,7,12,28,34,6,23, 13,14,27,32,33,37};
     int notes[]  ={36,36,36,52,45,45,50,55,48,40,69,50,79,69,60,76};
@@ -28,6 +30,7 @@ int main(){
         for(int m=0; m<(1<<NP); ++m){
             s.Init(&d); s.LoadPreset((uint8_t)presets[pi]);
             for(int k=0;k<NP;++k) s.setParameter(ps[k].idx, (m&(1<<k))?ps[k].hi:ps[k].lo);
+            s.setParameter(7, (m&(1<<(NP-1)))?100:-100);   // VlMllStf rides the VlMllRes bit
             // two velocities, retrigger
             for(int rep=0; rep<2; ++rep){
                 s.NoteOn((uint8_t)notes[pi], rep? 40:120);

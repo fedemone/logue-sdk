@@ -24,8 +24,12 @@ const __unit_header unit_header_t unit_header = {
         // Page 1: Program and sample selection
         {0, 39, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 60, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
-        // Ex Bank/Sample (PCM layering removed): cymbal performance controls.
-        {1, 2, 1, 2, k_unit_param_type_none, 0, 0, 0, {"Poly"}},
+        // Ex Bank/Sample (PCM layering removed): performance controls.
+        // Poly = GLOBAL voice cap 1-4 (was cymbal-only 1-2 and always displayed
+        // "2").  Cymbals stay internally capped at 2 for the CPU budget; the
+        // display (type_strings) shows the EFFECTIVE polyphony for the current
+        // preset, e.g. "4(2)" on a cymbal, "1" on a string.
+        {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
         {25, 60, 1, 40, k_unit_param_type_percent, 0, 0, 0, {"Rsntrs"}},
 
         // Page 2: Mallet
