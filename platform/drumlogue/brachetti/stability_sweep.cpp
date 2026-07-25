@@ -46,5 +46,54 @@ int main(){
         }
     }
     printf("stability: %d combos across %d presets, worst |peak|=%.4f, %d problems\n", combos, NPRE, worst, bad);
-    return bad?1:0;
+
+    // ── Phase 2: ROLL stress ────────────────────────────────────────────────
+    // Phase 1 leaves 3 s between hits, so it never exercises the roll paths:
+    // voice fusion inside the fuse window, the snare wire-state restore that
+    // rides on it, and the stacked round-robin just outside it.  Hammer every
+    // preset with fast strokes at extreme knob settings — fused rolls reuse one
+    // voice (its resonator state is restored, not zeroed, on the snare), and
+    // stacked rolls pile up to Poly bodies, so both need a finiteness check.
+    int rbad = 0, rolls = 0; float rworst = 0;
+    for (int p = 0; p < 40; ++p) {
+        // gap 25/45 ms = fused; 120 ms = stacked.  Alternating notes defeat the
+        // same-note test, so a fast alternating figure stacks even inside the
+        // window — cover that too.
+        const float gaps[] = {25.0f, 45.0f, 120.0f};
+        for (int gi = 0; gi < 3; ++gi) {
+            for (int alt = 0; alt < 2; ++alt) {
+                for (int ext = 0; ext < 2; ++ext) {
+                    s.Init(&d); s.LoadPreset((uint8_t)p);
+                    // ext=0: shipped knobs.  ext=1: every swept knob at an
+                    // extreme, Poly wide open so stacking is unrestricted.
+                    if (ext) {
+                        for (int k = 0; k < NP; ++k) s.setParameter(ps[k].idx, ps[k].hi);
+                        s.setParameter(7, 100);
+                        s.setParameter(2, 4);        // Poly = 4
+                    }
+                    const int gap = (int)(gaps[gi] * 0.001f * (float)sr);
+                    for (int k = 0; k < 20; ++k) {
+                        uint8_t note = (uint8_t)(48 + (alt ? (k & 1) * 5 : 0));
+                        s.NoteOn(note, (k & 1) ? 127 : 70);
+                        s.NoteOff(note);
+                        int done = 0;
+                        while (done < gap) {
+                            int t = (gap - done < block) ? (gap - done) : block;
+                            s.processBlock(st, (size_t)t);
+                            for (int i = 0; i < t * 2; ++i) {
+                                float v = st[i];
+                                if (!std::isfinite(v)) { rbad++; printf("  ROLL NaN preset %d gap %.0f alt %d ext %d\n", p, gaps[gi], alt, ext); goto nextroll; }
+                                float a = fabsf(v); if (a > rworst) rworst = a;
+                                if (a > 1.5f) { rbad++; printf("  ROLL BLOWUP preset %d gap %.0f alt %d ext %d peak %.2f\n", p, gaps[gi], alt, ext, a); goto nextroll; }
+                            }
+                            done += t;
+                        }
+                    }
+                    nextroll: rolls++;
+                }
+            }
+        }
+    }
+    printf("roll stress: %d rolls across 40 presets, worst |peak|=%.4f, %d problems\n", rolls, rworst, rbad);
+    return (bad || rbad) ? 1 : 0;
 }

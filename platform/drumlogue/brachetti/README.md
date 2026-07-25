@@ -208,6 +208,31 @@ calibrated boom is left untouched.
   `ENGINE_KS` stays mono (avoids same-pitch string beating).  Peaks across all
   presets remain limiter-bounded (rapid 4-hit stacks peak < 0.84).
 
+#### Roll fusion — the exception to stacking
+
+Stacking is right for flams and roll *tails* and wrong for a **pressed roll**.
+At 15–25 strokes/s an unconditional round-robin gave every stroke its own voice,
+so up to `Poly` complete drum bodies — each with its own crack / slap / beater
+burst — piled up: HW reported *"pressed rolls feel less smooth, Djambe
+especially is muddy."*  It also made the snare **buzz-roll wire continuity**
+unreachable, since that mechanism can only fire when the slot being reused is
+the one still rattling.
+
+`NoteOn` therefore fuses fast repeats before the round-robin advances:
+
+| Condition | Behaviour |
+|---|---|
+| Same note, drum family, gap < `kRollFuseSec` (80 ms) | **reuse** the last voice — one continuous roll |
+| Gap ≥ `kRollFuseSec` | **stack** (round-robin, as above) |
+| Different note | **stack** — a fast pitched figure is not a roll |
+| `ENGINE_CYMBAL`, `ENGINE_BAR`, `ENGINE_PLATE` | **always stack** — for a cymbal swell or marimba roll the overlap *is* the sound |
+
+`kRollFuseSec` is a single constant shared by the fusion test and the snare
+wire-state restore, so the two can never disagree about what counts as a roll.
+Measured (12 strokes, Djambe): 45 ms apart → 1 voice, passage RMS 0.444 → 0.408;
+AcTom 0.535 → 0.421.  Everything at or beyond 85 ms is **bit-identical** to the
+unfused behaviour.  Regression-tested as **T35** in `test_hw_debug.cpp`.
+
 ### Per-preset knob activity — the "which knobs are live" matrix
 
 Because each knob is wired into a specific engine mechanism, a knob does
@@ -328,6 +353,18 @@ presets render bit-identical and only knob *movement* bites:
 | `MlltStif` | buzz **brightness** | shifts wire band centre frequencies (±1 oct) |
 | `VlMllStf` | buzz **tightness / Q** | shifts wire pole radius (clamped < 0.995) |
 | `VlMllRes` | **crack / snap** | scales the onset crack burst via `snare_crack_gain` (was dead — its attack target is overridden) |
+| `TubRad` | body **depth** | shifts **Band A only** (the low body band, ~2.8 kHz on AcSnare) — see the asymmetry note below |
+
+**`TubRad` is deliberately asymmetric.**  Turning it *up* is a shell getting
+bigger, and there is no limit to how deep that reads, so the down-shift keeps
+its full −1.3 octave range.  Turning it *down* is not the mirror image: pushing
+Band A far *above* the shipped body pitch stops reading as a shallow piccolo
+snare and starts reading as a toy (HW: *"TubRad body-depth sounds a bit toy-ish
+at lower values"* — on a preset shipping `TubRad`=20 the original symmetric
+curve reached ×2.46 ≈ +1.3 oct at the knob floor).  So the up-shift runs at
+**half rate and caps at ×1.15** (≈ +2.4 semitones): audibly tighter, still a
+snare.  Δ = 0 takes the deepening branch, where `knob_exp2(0)` is exactly 1.0,
+so shipped presets stay byte-identical.
 
 The body-shaping knobs (`Model`, `Partls`, `Inharm`, `Mterl`, `TubRad`,
 `Dkay`, `HitPos`) still reshape the snare's modal head tone through the

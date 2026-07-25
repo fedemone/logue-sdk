@@ -1367,6 +1367,13 @@ SynthState state;
     // ==============================================================================
     // 4. Sequencer and MIDI Routing
     // ==============================================================================
+
+    // Roll window: strokes closer together than this belong to ONE physical
+    // roll (pressed roll / buzz roll).  Shared by BOTH the voice-fusion test in
+    // NoteOn and the snare wire-continuity restore below it — keep them on one
+    // constant so the two mechanisms can never disagree about what a roll is.
+    static constexpr float kRollFuseSec = 0.080f;
+
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
         // Two kettles: a repeat of a kettle's note retriggers that drum in
@@ -1386,7 +1393,27 @@ SynthState state;
         {
             const uint8_t cap = (kPresetEngine[m_preset_idx] == ENGINE_KS)
                                 ? (uint8_t)NUM_VOICES : m_poly;
-            state.next_voice_idx = (uint8_t)((state.next_voice_idx + 1) % cap);
+            // ROLL FUSION (HW: "pressed rolls feel less smooth, Djambe
+            // especially muddy").  Pass 23 let the drum families stack, which is
+            // right for flams and roll TAILS but wrong for a PRESSED roll: at
+            // 15-25 strokes/s every stroke took a fresh voice, so up to `cap`
+            // whole bodies — each with its own crack/slap burst — piled up into
+            // mud, and it also disabled the buzz-roll wire continuity below
+            // (which can only fire when the slot being reused is the one still
+            // rattling).  Fix: strokes inside kRollFuseSec on the SAME note
+            // REUSE the last voice (pre-pass-23 behaviour, for genuine rolls);
+            // anything slower still stacks.  Sustained engines are excluded —
+            // for cymbal swells and marimba rolls the overlap IS the sound.
+            const EngineType ne = kPresetEngine[m_preset_idx];
+            const bool fusable = (ne == ENGINE_MEMBRANE || ne == ENGINE_SNARE ||
+                                  ne == ENGINE_NOISE);
+            const VoiceState& lastv = state.voices[state.next_voice_idx];
+            const bool fuse = fusable && lastv.is_active &&
+                              lastv.current_note == note &&
+                              (lastv.exciter.current_frame <
+                               (uint32_t)(kRollFuseSec * default_sample_rate));
+            if (!fuse)
+                state.next_voice_idx = (uint8_t)((state.next_voice_idx + 1) % cap);
         }
         // ENGINE_CYMBAL voice policy: the cymbal cap (min(Poly,2)) bounds the
         // simultaneous cymbal voices for the CPU budget.  Below the cap a
@@ -1416,15 +1443,17 @@ SynthState state;
         // A fresh slot (never used since Reset()) is already zero — skip the work.
         const bool had_residual = v.is_active || v.is_releasing;
 
-        // Buzz-roll continuity (snare family): on a fast retrigger (< 80 ms —
-        // press rolls, buzz rolls) the wires are still physically rattling
-        // when the next stroke lands.  Capture the wire resonator states here,
-        // BEFORE PartialReset() zeroes them; the snare wire-restore block
+        // Buzz-roll continuity (snare family): on a fast retrigger (inside
+        // kRollFuseSec — press rolls, buzz rolls) the wires are still physically
+        // rattling when the next stroke lands.  Capture the wire resonator states
+        // here, BEFORE PartialReset() zeroes them; the snare wire-restore block
         // below puts them back and skips the crack-burst phase so rolls read
         // as one continuous buzz instead of a machine-gun row of cracks.
+        // Same window as the roll-fusion test above — that fusion is what keeps
+        // this reachable, since it only fires on the slot that is still ringing.
         const bool wires_in_motion =
             (kPresetEngine[m_preset_idx] == ENGINE_SNARE) && v.is_active &&
-            (v.exciter.current_frame < (uint32_t)(0.080f * default_sample_rate));
+            (v.exciter.current_frame < (uint32_t)(kRollFuseSec * default_sample_rate));
         const float roll_z1  = v.exciter.snare_wire_z1,  roll_z2  = v.exciter.snare_wire_z2;
         const float roll_z1b = v.exciter.snare_wire_z1b, roll_z2b = v.exciter.snare_wire_z2b;
         const float roll_z1c = v.exciter.snare_wire_z1c, roll_z2c = v.exciter.snare_wire_z2c;
@@ -1912,9 +1941,24 @@ SynthState state;
             // it for a deeper "thunk" under the buzz, a smaller shell lifts it for
             // a tighter piccolo body.  MlltStif still moves ALL three bands
             // together (overall brightness); this moves the body band alone, so
-            // the two knobs are independent.  Clamped to a musical ±~1.3 oct.
+            // the two knobs are independent.
+            //
+            // ASYMMETRIC on purpose (HW: "TubRad body-depth sounds a bit
+            // toy-ish at lower values").  Deepening is a shell getting bigger —
+            // there is no limit to how deep that reads, so DOWN keeps the full
+            // -1.3 oct range.  Thinning is not symmetric: pushing Band A far
+            // ABOVE the shipped body pitch stops reading as "shallow piccolo"
+            // and starts reading as a toy/boxy snare, and on a preset shipping
+            // TubRad=20 the old curve reached ×2.46 (≈ +1.3 oct) at the knob
+            // floor.  So UP runs at half rate and caps at ×1.15 (≈ +2.4
+            // semitones) — audibly tighter, still a snare.  Δ=0 hits the first
+            // branch, where knob_exp2(0) is exactly 1.0 → shipped presets
+            // byte-identical.
             const float sn_tr_n  = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
-            const float sn_body  = fmaxf(0.40f, fminf(2.5f, knob_exp2(-1.3f * (sn_tr_n - m_modal_tubrad_ref))));
+            const float sn_tr_d  = sn_tr_n - m_modal_tubrad_ref;
+            const float sn_body  = (sn_tr_d >= 0.0f)
+                                 ? fmaxf(0.40f, knob_exp2(-1.3f * sn_tr_d))
+                                 : fminf(1.15f, knob_exp2(-0.5f * sn_tr_d));
             // Velocity → buzz character: soft hits (ghost notes) are mostly head
             // tone with a short, loose rattle; hard hits press the wires into the
             // head for a tighter, brighter, longer buzz.  Anchored at vq=1 so a

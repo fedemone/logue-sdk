@@ -827,16 +827,22 @@ static void test_pitch_bend_persists_to_new_note() {
 
     // Establish the nominal (no-bend) delay for note 60
     s.NoteOn(60, 127);
-    float nominal = s.state.voices[1].resA.delay_length;
+    float nominal = s.state.voices[s.state.next_voice_idx].resA.delay_length;
 
-    // Hold bend up, then strike the same pitch — allocates voices[2]
+    // Hold bend up, then strike the same pitch.  Read whichever slot NoteOn
+    // actually chose — do NOT hard-code an index.  The two strikes here are 0 ms
+    // apart on the same note, so roll fusion reuses the SAME slot (see T35); an
+    // earlier version of this test assumed the second hit always advanced to
+    // voices[2], which silently probed an untouched voice reading 0.0 (T18a
+    // passed spuriously because 0 < nominal, and T18b caught it).
     s.PitchBend(16383);
     s.NoteOn(60, 127);
-    float bent_at_noteon = s.state.voices[2].resA.delay_length; // voices[2]: second NoteOn
+    const uint8_t bent_idx = s.state.next_voice_idx;
+    float bent_at_noteon = s.state.voices[bent_idx].resA.delay_length;
 
     // Return to centre — delay should snap back to root pitch
     s.PitchBend(8192);
-    float after_centre = s.state.voices[2].resA.delay_length;
+    float after_centre = s.state.voices[bent_idx].resA.delay_length;
 
     std::cout << "  nominal delay=" << nominal
               << "  delay while bent=" << bent_at_noteon
@@ -1644,6 +1650,83 @@ static void test_retrigger_consistency() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T35 — Roll-fusion policy (guards a regression that shipped twice)
+//
+//   Pass 12 made repeated hits reuse ONE voice; pass 23 made every family
+//   except KS stack; HW then reported "pressed rolls feel less smooth, Djambe
+//   especially muddy" — a pressed roll was spreading up to 4 whole drum bodies
+//   (each with its own crack/slap burst) across the voices, and it also made
+//   the snare buzz-roll wire continuity unreachable.  The policy is now
+//   time-based, so it must be asserted rather than rediscovered on hardware:
+//
+//     strokes closer than kRollFuseSec, same note, drum family  → REUSE 1 voice
+//     strokes wider than kRollFuseSec                           → STACK
+//     sustained families (cymbal / bar) always                  → STACK
+// ════════════════════════════════════════════════════════════════════════════
+static int roll_max_voices(BrachettiSynth& s, uint8_t note, float gap_ms, int strokes) {
+    const int gap = (int)(gap_ms * 0.001f * 48000.0f);
+    int maxv = 0;
+    s.state.next_voice_idx = 0;
+    for (int k = 0; k < strokes; ++k) {
+        s.NoteOn(note, 110);
+        s.NoteOff(note);              // Drumlogue fires gate on+off in one tick
+        run_blocks(s, gap, 64);
+        int act = 0;
+        for (int i = 0; i < NUM_VOICES; ++i) if (s.state.voices[i].is_active) ++act;
+        if (act > maxv) maxv = act;
+    }
+    return maxv;
+}
+
+static void test_roll_fusion() {
+    std::cout << "\n── T35: Roll fusion (pressed roll fuses, spaced strokes stack) ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    struct Case { int preset; uint8_t note; const char* name; };
+    const Case drums[] = {
+        {0,  36, "Kick2"}, {3, 38, "AcSnare"}, {6, 48, "Djambe"},
+        {12, 45, "AcTom"}, {28, 50, "Conga"},
+    };
+
+    bool all_fused = true;
+    for (const Case& c : drums) {
+        s.Init(&desc); s.LoadPreset((uint8_t)c.preset);
+        // 45 ms ≈ a 22 stroke/s pressed roll — well inside the fuse window.
+        int v = roll_max_voices(s, c.note, 45.0f, 12);
+        std::cout << "  " << c.name << " pressed roll (45 ms): voices=" << v << "\n";
+        if (v > 1) all_fused = false;
+    }
+    result("T35a pressed roll on a drum family uses a single voice",
+           all_fused,
+           "Pressed roll is spreading across voices — bodies pile up into mud "
+           "and the snare wire continuity cannot fire");
+
+    // Just past the window the round-robin must take over again, or flams and
+    // roll tails lose their overlap.
+    s.Init(&desc); s.LoadPreset(0);   // Kick2: boom still ringing at 150 ms
+    int spaced = roll_max_voices(s, 36, 150.0f, 6);
+    std::cout << "  Kick2 spaced strokes (150 ms): voices=" << spaced << "\n";
+    result("T35b strokes wider than the fuse window still stack",
+           spaced > 1,
+           "Spaced strokes are choking one voice — fuse window is too wide");
+
+    // Sustained families are excluded: for a cymbal swell or a marimba roll the
+    // overlap IS the sound (HW: "important for cymbals").
+    s.Init(&desc); s.LoadPreset(13);  // Cymbal (ENGINE_CYMBAL, capped at 2)
+    int cym = roll_max_voices(s, 69, 45.0f, 8);
+    s.Init(&desc); s.LoadPreset(1);   // Marimba (ENGINE_BAR)
+    int bar = roll_max_voices(s, 60, 45.0f, 8);
+    std::cout << "  Cymbal fast roll: voices=" << cym
+              << "   Marimba fast roll: voices=" << bar << "\n";
+    result("T35c sustained families keep stacking on a fast roll",
+           cym >= 2 && bar >= 2,
+           "Roll fusion leaked into a sustained engine — cymbal swells and "
+           "marimba rolls need the overlap");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1683,6 +1766,7 @@ int main() {
     test_dkay_controls_decay();
     test_dkay_feedback_gain_mapping();
     test_retrigger_consistency();
+    test_roll_fusion();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

@@ -43,6 +43,41 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 25 — Roll fusion (pass-23 regression) + asymmetric snare TubRad
+
+Two HW notes, both regressions from pass 23/24:
+
+- **"Pressed rolls feel less smooth, Djambe especially is muddy."**  Pass 23's
+  unconditional stacking gave every stroke of a 15-25/s pressed roll its own
+  voice, so up to `Poly` complete drum bodies (each with its own crack/slap/
+  beater burst) piled up — and it silently disabled the pass-19 snare buzz-roll
+  wire continuity, which can only fire when the reused slot is the one still
+  rattling.  `NoteOn` now **fuses** repeats before the round-robin advances:
+  same note + drum family (MEMBRANE/SNARE/NOISE) + gap < `kRollFuseSec` (80 ms)
+  → reuse the last voice; anything wider stacks; different note stacks;
+  ENGINE_CYMBAL/BAR/PLATE always stack (HW: "important for cymbals").
+  `kRollFuseSec` is **one constant** shared with the wire-restore test so the two
+  can't drift.  Measured: Djambe 45 ms roll 4 voices → 1, passage RMS
+  0.444 → 0.408; AcTom 0.535 → 0.421; ≥85 ms bit-identical to unfused.
+- **"TubRad body-depth sounds a bit toy-ish at lower values."**  The pass-23
+  mapping was symmetric, so on a preset shipping TubRad=20 the knob floor pushed
+  Band A ×2.46 (+1.3 oct) — a toy snare, not a shallow one.  Deepening keeps the
+  full −1.3 oct; **thinning now runs at half rate and caps at ×1.15**.  Δ=0 takes
+  the deepening branch (`knob_exp2(0)` == 1.0 exactly) → still byte-identical.
+
+**Test-design lesson (T18).**  Adding roll fusion broke T18b, and the failure was
+*correct*: T18 hard-coded `voices[2]` as "the slot the second NoteOn takes".
+Worse, T18a had been passing **spuriously** — it probed an untouched voice reading
+0.0 and asserted `0 < nominal`.  Tests must read `state.next_voice_idx` rather
+than assume an allocation order.  New **T35** asserts the fusion policy itself
+(fused / stacked / sustained-excluded) so it can't be rediscovered on hardware a
+third time, and `stability_sweep.cpp` gained a **phase 2 roll stress** (every
+preset × 3 gaps × same/alternating notes × shipped/extreme knobs) because phase 1
+leaves 3 s between hits and never exercised any roll path.
+
+Verified: **40/40 renders byte-identical**, test_dsp exit 0, test_hw_debug
+**85/85**, snare TubRad still audits `ok`.
+
 ### Pass 24 — Poly made real, VlMll* live everywhere, thump-only kick, knob_exp2
 
 HW batch on Kick2/AcSnare. All five items landed:
