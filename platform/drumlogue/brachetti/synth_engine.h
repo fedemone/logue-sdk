@@ -1294,9 +1294,9 @@ SynthState state;
                 return m_is_resonator_a && m_is_resonator_b ? model_names_ab[value] :
                     m_is_resonator_a ? model_names_a[value] : model_names_b[value];
         } else if (index == k_paramPartls) {
-            if (value == 5) return "-> ResA+B";
-            if (value == 6) return "-> ResA";
-            if (value == 7) return "-> ResB";
+            if (value == 5) return "ResA+B";
+            if (value == 6) return "ResA";
+            if (value == 7) return "ResB";
             if (value >= 0 && value < 5)
                 return m_is_resonator_a && m_is_resonator_b ? partial_names_ab[value] :
                     m_is_resonator_a ? partial_names_a[value] : partial_names_b[value];
@@ -2591,14 +2591,21 @@ SynthState state;
         // REFERENCE-ANCHORED: at the shipped knob values the thump is exactly
         // zero → the shipped kicks render bit-identical ("perfect boom" kept),
         // and turning the mallet knobs UP adds the punch the user expected.
+        v.thump_env = 0.0f; //  Explicitly initializing v.thump_env = 0.0f; at the start of the block ensures the thump is cleanly silenced when the voice is reused or when thump is disabled.
+        float mr = 0.0f;
+        float st = 0.0f;
+        float d_mr = 0.0f;
+        float d_st = 0.0f;
+        float thump_amt = 0.0f;
+        float thump_hz = 0.0f;
         if (m_preset_idx == k_Kick2 || m_preset_idx == k_808Sub ||
             m_preset_idx == k_KickDrum) {
-            float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes]  * 0.001f));
-            float st = fmaxf(0.01f,fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
-            float d_mr = mr - m_modal_mltres_ref;    // anchored: 0 at shipped value
-            float d_st = st - m_modal_stiff_ref;
+            mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes]  * 0.001f));
+            st = fmaxf(0.01f,fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            d_mr = mr - m_modal_mltres_ref;    // anchored: 0 at shipped value
+            d_st = st - m_modal_stiff_ref;
             // Only positive deltas add thump (turning the knob UP = more punch).
-            float thump_amt = fmaxf(0.0f, 0.90f * d_mr + 0.55f * d_st);
+            thump_amt = fmaxf(0.0f, 0.90f * d_mr + 0.55f * d_st);
             // VlMllRes → velocity-weighted thump PROMINENCE (HW: VlMllRes was
             // inert on kicks — the global mapping only touches the masked
             // mallet).  Same semantics as the kernel's hit-prominence knob:
@@ -2623,8 +2630,8 @@ SynthState state;
                 // VlMllStf → velocity-weighted SNAP: shifts the punch pitch up
                 // and shortens its ring as you hit harder (stiff beater tip).
                 float snap = d_kvs * (0.4f + 0.6f * kvq);
-                float thump_hz = fmaxf(70.0f, fminf(260.0f,
-                                 115.0f * knob_exp2(1.2f * d_st + 0.9f * snap)));
+                thump_hz = fmaxf(70.0f, fminf(260.0f,
+                           115.0f * knob_exp2(1.2f * d_st + 0.9f * snap)));
                 v.thump_inc   = (M_TWOPI * thump_hz) * inverse_default_sample_rate;
                 v.thump_env   = fminf(1.2f, thump_amt);
                 v.thump_amp0  = v.thump_env;
