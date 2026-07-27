@@ -740,6 +740,22 @@ SynthState state;
 
     // Called by unit_set_param_value(0, value) to load a new patch
     inline void LoadPreset(uint8_t idx) {
+        // A voice cannot survive a preset change: the rest of this function
+        // rewrites the shared per-voice DSP coefficients underneath it.  Arm a
+        // ~10 ms fade-out so it retires click-free under its OWN latched engine
+        // instead of being cut dead or re-excited by the incoming preset.
+        // Only on a REAL change — Init()'s LoadPreset(0) and re-selecting the
+        // current preset must stay no-ops so shipped renders are unaffected.
+        const bool preset_changed = (idx != m_preset_idx) && (idx < k_NumPrograms);
+        const float prev_drive = state.master_drive;
+        if (preset_changed) {
+            const float fmul = cym_env_mul(kPresetFadeTauSec, default_sample_rate);
+            for (int i = 0; i < NUM_VOICES; ++i) {
+                VoiceState& fv = state.voices[i];
+                if (!fv.is_active) continue;
+                if (fv.fade_mul >= 1.0f) fv.fade_mul = fmul;   // don't restart an existing fade
+            }
+        }
         m_preset_idx = idx;
         // Keep m_params[0] in sync so unit_get_param_value(0) returns the correct
         // preset index regardless of whether LoadPreset was called via setParameter
@@ -880,12 +896,17 @@ SynthState state;
             m_drum_kernel.Configure((idx == k_Timpani) ? &kTimpaniRecipe : &kTaikoRecipe, ref_drive);
             m_kernel_tone_lp = 0.0f;
             RefreshKernelMods();
-            // The legacy voice loop is bypassed while the kernel preset is
-            // active — retire any voices still ringing from the previous
-            // preset so they don't resume stale when switching back.
+            // The legacy voice loop is bypassed entirely while a kernel preset
+            // is active, so a fading voice would never get rendered and would
+            // hold its slot forever.  This is the one switch the ~10 ms fade
+            // cannot cover: retire the voices outright (as before), and clear
+            // the fade so the per-voice preset state above is re-applied on the
+            // next non-kernel load instead of being skipped as "still fading".
             for (int vi = 0; vi < NUM_VOICES; ++vi) {
                 state.voices[vi].is_active = false;
                 state.voices[vi].is_releasing = false;
+                state.voices[vi].fade = 1.0f;
+                state.voices[vi].fade_mul = 1.0f;
             }
         } else {
             m_drum_kernel.Deactivate();
@@ -895,8 +916,33 @@ SynthState state;
         m_is_resonator_a = saved_is_a;
         m_is_resonator_b = saved_is_b;
 
+        // Hold the OUTGOING master drive until the fades finish.  Gain is a
+        // master parameter, so the incoming preset's drive would otherwise hit
+        // the outgoing tail: GtrStr (Gain 0, drive 1.0) -> Gong (Gain 20, drive
+        // 5.0) drove a quiet fading string into the soft clip at 0.83, well
+        // above the 0.52 tail it was replacing.  Pre-scaling the voice cannot
+        // fix this — the ±0.99 clamp sits between the voice and the drive, so
+        // attenuating the voice just moves it out from under the clamp.
+        // Deferring the drive keeps the fading voice's chain bit-for-bit what
+        // it was; the new drive lands ~10 ms later, before any new hit can
+        // meaningfully need it.
+        if (preset_changed && state.master_drive != prev_drive) {
+            bool fading = false;
+            for (int i = 0; i < NUM_VOICES; ++i)
+                if (state.voices[i].is_active && state.voices[i].fade_mul < 1.0f) fading = true;
+            if (fading) {
+                m_pending_drive  = state.master_drive;
+                state.master_drive = prev_drive;
+            }
+        }
+
         for (int i = 0; i < NUM_VOICES; ++i) {
             VoiceState& v = state.voices[i];
+            // Skip a voice that is fading out from the PREVIOUS preset: these
+            // writes would retune its wire/boom/pitch state mid-fade, and
+            // init_modal_modes below would re-strike its modal bank at full
+            // amplitude.  It gets these values on its next NoteOn anyway.
+            if (v.is_active && v.fade_mul < 1.0f) continue;
             v.exciter.snare_wire_z1 = preset_param(static_cast<ProgramIndex>(idx), k_snare_wire_z1);
             v.exciter.snare_wire_z2 = preset_param(static_cast<ProgramIndex>(idx), k_snare_wire_z2);
             v.exciter.snare_wire_mix = preset_param(static_cast<ProgramIndex>(idx), k_snare_wire_mix);
@@ -1194,6 +1240,7 @@ SynthState state;
             case k_paramGain: {
                 float norm = fmaxf(0.0f, (float)value * 0.01f);
                 state.master_drive = 1.0f + (norm * 20.0f);
+                m_pending_drive = -1.0f;   // an explicit Gain turn wins
                 break;
             }
 
@@ -1396,6 +1443,11 @@ SynthState state;
     // voice is the one that gets trimmed; already-ringing banks are untouched.
     static constexpr int kCymResonatorBudget = 240;
 
+    // Preset-change voice fade-out time constant.  6.9 tau reaches -60 dB, so
+    // 1.5 ms tau = a ~10 ms fade: long enough to be click-free, short enough
+    // that the outgoing preset does not audibly overlap the new one.
+    static constexpr float kPresetFadeTauSec = 0.0015f;
+
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
         // Two kettles: a repeat of a kettle's note retriggers that drum in
@@ -1512,6 +1564,10 @@ SynthState state;
         // CRITICAL FIX 2: Ensure the voice actually turns on!
         v.is_active = true;
         v.is_releasing = false;
+        // Latch the engine for this strike.  processBlock routes on this, not
+        // on the live kPresetEngine[m_preset_idx], so a preset change mid-tail
+        // can no longer hand a ringing voice to another engine's code.
+        v.engine = (uint8_t)kPresetEngine[m_preset_idx];
 
         // PCM sample layering removed: it was never part of the approved
         // synthesized sounds, and dropping it freed the Bank/Sample GUI params
@@ -3262,18 +3318,35 @@ SynthState state;
             return;
         }
 
+        // Release a master drive deferred behind a preset-change fade as soon
+        // as the last fading voice has retired.
+        if (m_pending_drive >= 0.0f) {
+            bool fading = false;
+            for (int i = 0; i < NUM_VOICES; ++i)
+                if (state.voices[i].is_active && state.voices[i].fade_mul < 1.0f) fading = true;
+            if (!fading) { state.master_drive = m_pending_drive; m_pending_drive = -1.0f; }
+        }
+
         bool any_voice_rendered = false;
+        bool any_cymbal_rendered = false;
         for (int voice_idx = 0; voice_idx < NUM_VOICES; ++voice_idx) {
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
 
-            // Engine routing: silence removed presets immediately.
-            const EngineType voice_engine = kPresetEngine[m_preset_idx];
+            // Engine routing: the engine LATCHED AT NoteOn, never the live
+            // kPresetEngine[m_preset_idx].  Reading it live meant a preset
+            // change mid-tail re-routed a ringing voice into another engine's
+            // per-sample code — which, for a cymbal voice (whose exciter is
+            // never advanced and so still holds an unstarted envelope at
+            // current_frame 0), fired a complete unplayed attack: a measured
+            // 19x burst on Cymbal -> Clap.  See T38.
+            const EngineType voice_engine = (EngineType)voice.engine;
             if (voice_engine == ENGINE_REMOVED) {
                 voice.is_active = false;
                 continue;
             }
             any_voice_rendered = true;
+            if (voice_engine == ENGINE_CYMBAL) any_cymbal_rendered = true;
 
             // Pre-compute model-aware coupling clamps once per block.
             // feedback_gain is constant during audio rendering, so this runs once per voice
@@ -3318,6 +3391,11 @@ SynthState state;
             if (voice_engine == ENGINE_CYMBAL) {
                 for (size_t i = 0; i < frames; ++i) {
                     float cy = cymbal_process(voice.cymbal);
+                    if (voice.fade_mul < 1.0f) {   // preset-change fade-out
+                        cy *= voice.fade;
+                        voice.fade *= voice.fade_mul;
+                        if (voice.fade < 0.001f) { voice.is_active = false; voice.cymbal.active = false; }
+                    }
                     if (tone_active) {
                         voice.tone_lp = (cy * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
                         if (tone_val < zeroThreshold) {
@@ -3714,6 +3792,14 @@ SynthState state;
                     voice.onset_env = fminf(1.0f, voice.onset_env + voice.onset_inc);
                     voice_out *= voice.onset_env;
                 }
+                // Preset-change fade-out.  fade_mul is exactly 1.0f in normal
+                // play, so this branch is skipped and the output is unchanged
+                // bit-for-bit; only a voice orphaned by a preset change ramps.
+                if (voice.fade_mul < 1.0f) {
+                    voice_out *= voice.fade;
+                    voice.fade *= voice.fade_mul;
+                    if (voice.fade < 0.001f) voice.is_active = false;
+                }
 
                 main_out[i * 2]     += voice_out * state.master_gain;
                 main_out[i * 2 + 1] += voice_out * state.master_gain;
@@ -3770,7 +3856,10 @@ SynthState state;
             return;
         }
 
-        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+        // Keyed on a cymbal voice actually having RENDERED, not on the live
+        // preset index: after a preset change the two disagree, and the soft
+        // headroom belongs to the stacked cymbal voices, wherever they came from.
+        if (any_cymbal_rendered) {
             for (size_t i = 0; i < frames * 2; ++i) {
                 main_out[i] = main_out[i] / (1.0f + 0.35f * fabsf(main_out[i]));
             }
@@ -3933,6 +4022,8 @@ private:
     uint16_t m_idle_flush_blocks = 0;
     // Ex-sample-selection params, repurposed (PCM layering removed): global
     // cymbal performance/CPU controls.
+    // Master drive queued behind a preset-change fade (-1 = nothing pending).
+    float m_pending_drive = -1.0f;
     uint8_t m_poly = 4;            // global voice cap (1-4, Poly knob)
     uint8_t m_cym_poly = 4;        // cymbal-family cap (= m_poly; CPU is bounded
                                    // by kCymResonatorBudget, not by voice count)

@@ -59,11 +59,15 @@ static void trial(int from, const char* fname, int to, const char* tname, int no
 
     printf("%-8s -> %-8s  active %d->%d\n", fname, tname, act, act2);
     printf("   before rms:"); for (int i = 0; i < 6; ++i) printf(" %.4f", r1[i]);
+    printf("\n   before pk :"); for (int i = 0; i < 6; ++i) printf(" %.4f", p1[i]);
     printf("\n   after  rms:"); for (int i = 0; i < 8; ++i) printf(" %.4f", r2[i]);
     printf("\n   after  pk :"); for (int i = 0; i < 8; ++i) printf(" %.4f", p2[i]);
     double jump = (r1[5] > 1e-9) ? r2[0] / r1[5] : 0.0;
-    printf("\n   first-window-after / last-window-before = %.2f%s\n\n", jump,
-           (jump > 3.0 || p2[0] > 0.95) ? "   <-- BURST" : "");
+    // The honest test is against the signal that was ALREADY playing: a fade
+    // may not be louder than the tail it is fading out.
+    double pk_jump = (p1[5] > 1e-9) ? p2[0] / p1[5] : 0.0;
+    printf("\n   rms  after/before = %.2f   peak after/before = %.2f%s\n\n", jump, pk_jump,
+           (pk_jump > 1.2 || p2[0] > 0.95) ? "   <-- LOUDER THAN THE TAIL IT REPLACES" : "");
 }
 
 int main() {

@@ -52,6 +52,64 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 28 — Preset change during a ringing voice: fade instead of re-excite
+
+Review finding 1, fixed.  Turning the Program knob while anything was sounding
+either **burst** or **hard-cut**, measured with `switch_probe.cpp`:
+
+| switch | peak, first 25 ms after ÷ last 25 ms before | after |
+|---|---|---|
+| Cymbal → Clap | **9.0×** (RMS 19×, still 0.67 at +75 ms) | 0.51 |
+| Gong → Kick2 | 1.55× | 0.38 |
+| Gong → GtrStr | 1.23× | 0.38 |
+| GtrStr → Gong | 1.15× | 0.95 |
+
+Three compounding causes, all the pass-26/27 shape — *state read where it is not
+valid*:
+- `processBlock` read `kPresetEngine[m_preset_idx]` **live, every block**, so a
+  voice struck under one engine was rendered by another engine's per-sample code.
+- `LoadPreset` retired ringing voices **only** on the Timpani/Taiko branch.
+- The `ENGINE_CYMBAL` branch never calls `process_exciter`, so a cymbal voice sits
+  at `current_frame == 0` holding an **unstarted** envelope for its whole ring
+  (verified directly).  Switching to a legacy-path preset therefore fired a
+  complete, never-played attack — mallet impulse and noise burst — at the ringing
+  voice's velocity.  That was the 9× burst.
+
+Fix: `VoiceState::engine` latches the engine at NoteOn and `processBlock` routes
+on it; a real preset change arms a ~10 ms exponential fade
+(`kPresetFadeTauSec` = 1.5 ms, 6.9 τ to −60 dB) so the orphan retires click-free
+**under its own engine**; `LoadPreset` skips its per-voice state writes for a
+still-sounding voice (they would retune it mid-fade and `init_modal_modes` would
+re-strike its modal bank at full amplitude); and the cymbal soft-headroom stage
+is keyed on a cymbal voice having actually rendered rather than on the live
+preset index.  `fade_mul` is exactly 1.0f in normal play and the fade branch is
+skipped, so **40/40 renders stay byte-identical**.
+
+**Two dead ends worth not repeating.**  (a) It is *not* `LoadPreset`'s
+`init_modal_modes` call — skipping that alone leaves the burst intact (tested).
+(b) Snapshotting and restoring the fading voice's resonator coefficients across
+the setParameter storm changes nothing measurable (tested, then removed): in the
+KS branch `lowpass_coeff`/`ap_coeff` are rewritten from `transient_*_base_*`
+every sample anyway.  The real second-order problem was **master Gain**: it is a
+master parameter, so the incoming preset's drive hit the outgoing tail —
+GtrStr (Gain 0, drive 1.0) → Gong (Gain 20, drive 5.0) drove a fading string into
+the soft clip at `x/(1+|x|)` = 0.83 against the 0.52 tail it replaced.
+Pre-scaling the voice by the drive ratio **cannot** fix that: the ±0.99 clamp
+sits between the voice and the drive, so attenuating the voice merely moves it
+out from under the clamp and it ends up louder still (measured 1.39×).  The drive
+is now **deferred** (`m_pending_drive`) until the last fade retires, which keeps
+the outgoing chain bit-for-bit unchanged; an explicit Gain turn overrides it.
+
+Not covered: switches **into** Timpani/Taiko still retire legacy voices outright
+(the kernel path bypasses the voice loop entirely, so a fading voice would never
+be rendered and would hold its slot forever), and switching **away** from a
+kernel preset still hard-stops the kernel.  Both are unchanged from before.
+
+Verified: 40/40 byte-identical, test_dsp exit 0, test_hw_debug **92/92** (new
+**T38**; both halves fail against the pre-fix build at 9.0× and 0.67 residual),
+host syntax check clean, `stability_sweep` 4096 combos + 480 rolls, worst |peak|
+0.9900, 0 problems.  **ARM `.text` still unverified.**
+
 ### Open findings — full code review (July 2026), NOT yet fixed
 
 A read of every file that ships to the device (`unit.cc`, `synth_engine.h`,
@@ -60,34 +118,7 @@ A read of every file that ships to the device (`unit.cc`, `synth_engine.h`,
 Ordered by severity.
 
 **1. Changing the Program knob while a voice is ringing re-excites it.**
-Measured with `switch_probe.cpp` (strike, ring 150 ms, switch preset, measure):
-
-| switch | first 25 ms after / last 25 ms before |
-|---|---|
-| Cymbal → Clap | **19.1×** (0.028 → 0.54 RMS, peak 0.70, sustains > 200 ms) |
-| Gong → Kick2 | **2.2×** (sustains ~0.60 RMS) |
-| Gong → GtrStr | 0.76× but peak 0.53 — a gong tail becomes a plucked string |
-| GtrStr → Gong | → **exact silence**, i.e. a hard cut mid-ring |
-
-Three compounding causes, all the same shape as the pass-26/27 bugs — *state is
-read where it is not valid*:
-- `processBlock` reads `kPresetEngine[m_preset_idx]` **live, every block**, so a
-  voice struck under one engine is rendered by another engine's per-sample code.
-  The engine is never latched at NoteOn.
-- `LoadPreset` retires ringing voices **only** on the Timpani/Taiko branch.
-  Every other switch leaves `is_active` true.
-- The `ENGINE_CYMBAL` branch never calls `process_exciter`, so a cymbal voice
-  sits at `current_frame == 0` with an unstarted noise envelope for its whole
-  ring (verified directly).  Switching to any legacy-path preset therefore fires
-  **a complete, never-played attack** — mallet impulse and noise burst — at the
-  ringing voice's velocity.  That is the 19× burst.
-
-Confirmed **pre-existing**: identical numbers against `79d0581` (pre-pass-27).
-Also ruled out by experiment: it is *not* `LoadPreset`'s per-voice
-`init_modal_modes` call — skipping it for active voices leaves the burst intact.
-Cheapest correct fix is almost certainly to retire all voices on any preset
-change (the Timpani branch already does this), accepting the hard cut, or to fade
-them out over ~10 ms like the cymbal panic fade.
+**FIXED — see Pass 28 below.**
 
 **2. `LoadPreset` stores the index before bounds-checking it.**
 `m_preset_idx = idx;` runs at the top; `if (idx >= k_NumPrograms) return;` is

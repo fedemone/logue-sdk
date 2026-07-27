@@ -1903,6 +1903,70 @@ static void test_noise_same_tick_gate() {
            "the noise tail is being truncated by the same-tick release");
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T38 — A preset change while a voice rings fades it out, never re-excites it
+//
+//   processBlock used to route on the LIVE kPresetEngine[m_preset_idx], so a
+//   ringing voice was handed to whichever engine the new preset selected.  For
+//   a cymbal voice that is fatal: the ENGINE_CYMBAL branch never calls
+//   process_exciter, so the voice sits at current_frame == 0 holding an
+//   unstarted envelope, and the legacy path then fired a COMPLETE UNPLAYED
+//   ATTACK — a measured 19x RMS burst on Cymbal -> Clap.  Other switches hard-
+//   cut a ringing voice to exact silence.
+//
+//   Now the engine is latched at NoteOn and a preset change arms a ~10 ms
+//   fade.  Assert against the tail that was already playing: a fade may never
+//   be louder than what it replaces, and it must reach silence quickly.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_preset_change_fade() {
+    std::cout << "\n── T38: preset change during a ringing voice ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    struct Case { int from, to; const char* name; } cases[] = {
+        {13, 21, "Cymbal->Clap"},    // the 19x burst
+        {14, 0,  "Gong->Kick2"},
+        {14, 25, "Gong->GtrStr"},
+        {25, 14, "GtrStr->Gong"},    // was a hard cut to silence
+    };
+
+    bool all_bounded = true, all_quiet = true;
+    for (const Case& c : cases) {
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)c.from);
+        for (int i = 0; i < NUM_VOICES; ++i)
+            s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;
+        s.GateOn(110);
+        s.GateOff();
+
+        run_blocks(s, 48000 / 8, 64);                    // ~125 ms of ring
+        // Compare against the 25 ms IMMEDIATELY before the switch — the tail
+        // the fade actually replaces.  A max over the whole ring would be a
+        // different (and for a still-rising KS string, unfair) reference.
+        float pk_before = run_blocks(s, 48000 / 40, 64);
+        s.LoadPreset((uint8_t)c.to);                     // <-- switch mid-ring
+        float pk_after  = run_blocks(s, 48000 / 40, 64); // first 25 ms after
+        float pk_settle = run_blocks(s, 48000 / 20, 64); // the following 50 ms
+
+        double ratio = (pk_before > 1e-9f) ? (double)pk_after / pk_before : 0.0;
+        std::cout << "  " << c.name << ": peak before=" << pk_before
+                  << " after=" << pk_after << " (ratio=" << ratio
+                  << ")  settled=" << pk_settle << "\n";
+
+        if (ratio > 1.2 || pk_after > 0.95f) all_bounded = false;
+        if (pk_settle > 1e-3f) all_quiet = false;
+    }
+
+    result("T38a a preset change never renders louder than the tail it replaces",
+           all_bounded,
+           "a ringing voice was re-excited by the incoming preset — the engine "
+           "is being read live instead of latched at NoteOn");
+    result("T38b the orphaned voice is silent within ~25 ms",
+           all_quiet,
+           "the preset-change fade did not retire the voice");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1945,6 +2009,7 @@ int main() {
     test_roll_fusion();
     test_cymbal_stacking();
     test_noise_same_tick_gate();
+    test_preset_change_fade();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

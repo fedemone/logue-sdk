@@ -512,6 +512,23 @@ struct VoiceState {
     uint8_t current_note   = 60;    // ← non-zero → forces containing struct to .data
     float   current_velocity = 0.0f;
 
+    // The engine this voice was STRUCK with (BrachettiSynth::EngineType, stored
+    // as uint8_t because that enum is declared later, inside the synth class).
+    // processBlock must route on this and never on kPresetEngine[m_preset_idx]:
+    // the live preset index can change while a voice is ringing, which handed
+    // the voice to another engine's per-sample code mid-tail.
+    uint8_t engine = 0;
+
+    // Preset-change fade.  A voice cannot survive a preset change — the new
+    // preset overwrites the shared per-voice DSP coefficients — but cutting it
+    // dead clicks, and letting it run re-excited it (a cymbal voice holds an
+    // unstarted exciter, so the legacy path fired a whole unplayed attack).
+    // So it fades out under its OWN engine over ~10 ms and is then reclaimed.
+    // fade_mul stays exactly 1.0f in normal play and the fade block is skipped
+    // entirely, so shipped renders are bit-identical.
+    float fade      = 1.0f;   // ← non-zero
+    float fade_mul  = 1.0f;   // ← non-zero (< 1 only while fading out)
+
     ExciterState   exciter;
     WaveguideState resA;
     WaveguideState resB;
@@ -648,6 +665,9 @@ struct VoiceState {
 
     void PartialReset() {
         mag_env = 0.0f;
+        // A re-struck slot is no longer fading (NoteOn re-latches `engine`).
+        fade = 1.0f;
+        fade_mul = 1.0f;
 
         // Reset exciter frame counter so the mallet fires on every NoteOn and
         // the kSquelchGuardSamples window restarts from zero for the new note.
