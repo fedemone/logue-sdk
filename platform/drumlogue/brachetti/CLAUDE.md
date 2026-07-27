@@ -94,7 +94,13 @@ the attack spectrum without raising level (`TubRad` reads 29 % → 48 % on a
 100-400 Hz vs sub band metric and almost nothing on plain RMS).
 
 Verified: 40/40 renders byte-identical, test_dsp exit 0, test_hw_debug **88/88**,
-host syntax check clean.
+host syntax check clean, `stability_sweep` **4096** combos across 16 presets +
+**480** rolls across 40 presets with 0 problems and worst |peak| 0.9900 (the
+brickwall limit — bounded, and identical to the pre-change baseline despite the
+much wider decay clamps).  **ARM `.text` is NOT verified** — no cross-compiler
+in the session that made this pass; confirm against the 28 KB budget on the next
+flash, since the pass adds code (cymbal MlltRes/MlltStif blocks, the steal
+ranking and the resonator budget).
 
 ### Pass 25 — Roll fusion (pass-23 regression) + asymmetric snare TubRad
 
