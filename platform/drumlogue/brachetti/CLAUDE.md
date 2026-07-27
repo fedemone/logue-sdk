@@ -52,6 +52,96 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Open findings — full code review (July 2026), NOT yet fixed
+
+A read of every file that ships to the device (`unit.cc`, `synth_engine.h`,
+`dsp_core.h`, `modal_drum_kernel.h`, `envelope.h`, `filter.h`, `noise.h`,
+`tables.h`, `header.c`).  Nothing below is fixed — each needs a decision.
+Ordered by severity.
+
+**1. Changing the Program knob while a voice is ringing re-excites it.**
+Measured with `switch_probe.cpp` (strike, ring 150 ms, switch preset, measure):
+
+| switch | first 25 ms after / last 25 ms before |
+|---|---|
+| Cymbal → Clap | **19.1×** (0.028 → 0.54 RMS, peak 0.70, sustains > 200 ms) |
+| Gong → Kick2 | **2.2×** (sustains ~0.60 RMS) |
+| Gong → GtrStr | 0.76× but peak 0.53 — a gong tail becomes a plucked string |
+| GtrStr → Gong | → **exact silence**, i.e. a hard cut mid-ring |
+
+Three compounding causes, all the same shape as the pass-26/27 bugs — *state is
+read where it is not valid*:
+- `processBlock` reads `kPresetEngine[m_preset_idx]` **live, every block**, so a
+  voice struck under one engine is rendered by another engine's per-sample code.
+  The engine is never latched at NoteOn.
+- `LoadPreset` retires ringing voices **only** on the Timpani/Taiko branch.
+  Every other switch leaves `is_active` true.
+- The `ENGINE_CYMBAL` branch never calls `process_exciter`, so a cymbal voice
+  sits at `current_frame == 0` with an unstarted noise envelope for its whole
+  ring (verified directly).  Switching to any legacy-path preset therefore fires
+  **a complete, never-played attack** — mallet impulse and noise burst — at the
+  ringing voice's velocity.  That is the 19× burst.
+
+Confirmed **pre-existing**: identical numbers against `79d0581` (pre-pass-27).
+Also ruled out by experiment: it is *not* `LoadPreset`'s per-voice
+`init_modal_modes` call — skipping it for active voices leaves the burst intact.
+Cheapest correct fix is almost certainly to retire all voices on any preset
+change (the Timpani branch already does this), accepting the hard cut, or to fade
+them out over ~10 ms like the cymbal panic fade.
+
+**2. `LoadPreset` stores the index before bounds-checking it.**
+`m_preset_idx = idx;` runs at the top; `if (idx >= k_NumPrograms) return;` is
+~65 lines later.  An out-of-range index is therefore *retained*, and
+`kPresetEngine[m_preset_idx]`, `modal_preset_configs[idx]` and
+`model_param_presets[m_preset_idx]` (all sized 40) are then read out of bounds on
+the next NoteOn.  `header.c` caps Program at 39 so a well-behaved OS cannot reach
+it — but the guard exists precisely for a misbehaving one, and it does not work.
+One-line fix: move the check above the assignment.
+
+**3. `partial_counts[value]` can be indexed negatively.**  In
+`setParameter(k_paramPartls)` only `value < 5` is checked, not `value >= 0`.
+`header.c` min is 0, so again not OS-reachable.  Same one-line class of fix.
+
+**4. The `.rodata` budget rule and the shipped code disagree by ~35 KB.**
+This file states the firmware limit is ≈30 KB for text + `.rodata` and that
+`static const T arr[] = {…}` is a "broken pattern to avoid".  The code uses
+exactly that pattern for, at minimum:
+
+| symbol | bytes |
+|---|---|
+| `kTimpaniTransient48[3360]` | 13,440 |
+| `kTaikoTransient48[3360]` | 13,440 |
+| `kTimpaniModes[280]` | 3,360 |
+| `LoadPreset::presets[40][24]` | 3,840 |
+| `kTaikoModes[71]` | 852 |
+
+≈**34.9 KB of `.rodata` before a single instruction** (sizes are float/int32
+arrays, so architecture-independent; measured with `size -A` on a host `-O2`
+build of `unit.cc`).  Since the unit demonstrably loads on hardware, the
+**documented budget is probably wrong or stale** — but it is the rule that drove
+the non-static-class-member workaround for the preset tables, so it needs to be
+corrected or explained before it misleads another pass.  Cannot be settled
+without the ARM toolchain.
+
+**5. `noise.h` has no include guard** (every other header does; `float_math.h`
+uses `#ifndef __float_math_h`).  Latent only — it is included exactly once, from
+`dsp_core.h`.
+
+**6. `header.c` comment is stale**: the Poly parameter still says "Cymbals stay
+internally capped at 2 for the CPU budget", which pass 26 removed.
+
+Reviewed and found **correct**, for the record: the TPT SVF core matches
+Zavalishin ch. 4 exactly; `process_waveguide` masks both interpolation indices
+and clamps `delay_length`; the cymbal resonator-budget clamp can drive `rcount`
+negative but the `< 32` floor restores it before `sqrtf(count)` divides, so
+`resonatorNorm` is never inf/NaN; `ModalDrumKernel::RebuildBase` clamps the pole
+radius to 0.99999 and guards `decay_mult`; the kernel's mode-stretch `log2f` is
+guarded against both the 0×−inf and the log(0) cases; `getParameterStrValue`
+bounds-checks every table index.  One accepted soft race: `FastSVF::set_coeffs`
+writes `a1/a2/a3/q` from the UI thread while `process()` reads them on the audio
+thread — a torn update mixes two valid coefficient sets for one sample, and TPT
+is unconditionally stable for any `g > 0`, so it cannot diverge.
+
 ### Pass 27 — Review pass: Clap/Shaker/HHat-C were silent on hardware
 
 Not an HW report — found by **reviewing the whole codebase for the defect class
