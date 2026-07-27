@@ -18,7 +18,16 @@ Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0).
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **90/90**.
+- **Listen to Clap (21), Shaker (22) and HHat-C (26) on the next flash.**  Pass 27
+  fixed a same-tick gating bug that made all three near-silent *on device only*;
+  host renders were always correct, so these presets may never have been heard as
+  designed and could want retuning now that they are audible.
+  **Counter-evidence to resolve while listening:** HHat-C was once called "a
+  perfect closed hi-hat" on hardware (`PROGRESS2.md`, `REALISM_REVIEW.md:461`),
+  which does not fit a 20 ms 0.017-RMS blip.  Most likely that listen used MIDI
+  note-on/off with a real gate length rather than the internal sequencer — worth
+  confirming, because it decides whether the two paths now agree.
 - Host syntax-check (g++ -fsyntax-only): **clean**.
 - HHat-O **HW-approved** ("ok now" — do not break).
 - ARM .text ≤ 28 KB: **must be confirmed on next flash** (cannot verify without toolchain).
@@ -42,6 +51,49 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 27 — Review pass: Clap/Shaker/HHat-C were silent on hardware
+
+Not an HW report — found by **reviewing the whole codebase for the defect class
+behind the pass-26 gong bug**: *a decision reads a quantity that is not yet valid
+at read time.*  The gong stole the voice with the smallest `magEnv` while
+`magEnv` was still 0 from the attack.  The same shape, one severity higher:
+
+**`FastEnvelope::release()` was applied to envelopes still sitting at
+`value == 0` in `ENV_ATTACK`**, which sends them to `ENV_IDLE` on the very first
+`process()` (`value += (0-value)*rate` stays 0 → trips the `<= 0.001f` cutoff).
+Since the Drumlogue fires `gate_on`+`gate_off` in one tick, **the three
+`ENGINE_NOISE` presets — Clap (21), Shaker (22), HHat-C (26) — produced a ~20 ms
+blip and nothing else on device.**  Measured same-tick RMS per 25 ms:
+`0.018` then all zeros, against `0.256 / 0.430 / 0.281` with the gate held.
+Every host tool held the gate 20-50 ms, so all 40 renders, `param_audit`,
+`stability_sweep` and 26 HW passes reported these presets healthy.
+
+Fixed **at the mechanism**, not the site: `release()` during the attack defers
+into the new `ENV_ATTACK_REL` state, the attack completes, then the release runs
+from the top of it.  An already-open envelope is bit-for-bit untouched, so all
+**40/40 renders stay byte-identical** — and unlike the pass-19 "skip the
+release" patch, `Rel` still shapes the tail.  Restored same-tick RMS:
+Clap `0.359 0.166 0.059 0.024`, Shaker `0.430 0.213 0.158`, HHat-C
+`0.357 0.054 0.006`.  The pass-19 `ENGINE_SNARE` skip is left in place as the
+voicing choice it now is.
+
+**Process lesson — this bug had been fixed twice before, per-site** (`master_env`
+in T20, `ENGINE_SNARE` in pass 19), each time as a local workaround, so the third
+site was simply never covered.  Both earlier fixes are still described in the
+code as same-tick workarounds; **when a gotcha needs a second per-site
+workaround, fix the mechanism.**  And note what no existing tool could catch:
+`render_presets`/`param_audit` hold the gate, and `stability_sweep` only checks
+peaks and NaN, so a voice that silences *itself* passes everything.  **T37** now
+asserts the same-tick path directly (both halves fail against the pre-fix build);
+`samegate_probe.cpp` prints same-tick vs held RMS side by side for any preset.
+
+Verified: 40/40 renders byte-identical, test_dsp exit 0, test_hw_debug **90/90**,
+host syntax check clean, `stability_sweep` 4096 combos + 480 rolls, worst |peak|
+0.9900, 0 problems — unchanged from pass 26.  `.bss` unchanged (the new state is
+an extra enumerator, no new fields).  **ARM `.text` still NOT verified** — no
+cross-compiler in this session; the change is a handful of instructions in an
+inlined switch.
 
 ### Pass 26 — Gong/cymbal stacking + "subtle → live" knob depth pass
 
@@ -710,14 +762,41 @@ section next to the boom/onset params.
 
 ### ENGINE_SNARE lifetime
 
-NoteOff does NOT release the snare noise envelopes (same-tick gate_off would
-choke the buzz to ~26 ms).  The buzz decays at the natural NzRs-governed
-ENV_DECAY rate; Rel therefore does not shape the snare noise tail.
+NoteOff does NOT release the snare noise envelopes.  The buzz decays at the
+natural NzRs-governed ENV_DECAY rate; Rel therefore does not shape the snare
+noise tail.  This is a **voicing** choice (real wires ring freely once the stick
+leaves the head, and the Rel-rate release choked the buzz to ~26 ms), not the
+same-tick workaround it started life as — see the same-tick gotcha below.
 
 ### ENGINE_NOISE lifetime
 
 `sustain_level=1.0f` for NOISE engines; `NoteOff` skips `master_env.release()`.
 The `noise_env` (Rel knob) fully controls Clap/Shaker tail.
+
+### GOTCHA: a release that arrives DURING the attack (the same-tick killer)
+
+The Drumlogue fires `gate_on` **and** `gate_off` in one scheduler tick, before
+any audio block.  So every `release()` in this codebase can land on an envelope
+that `trigger()` has just zeroed and `process()` has never advanced.  Naively
+that is fatal — `ENV_RELEASE` computes `value += (0 - value)*release_rate`,
+which is still 0, trips the `value <= 0.001f` cutoff and goes `ENV_IDLE`: the
+envelope dies before it opens and the voice is silent **on hardware only**,
+because every host render holds the gate 20-50 ms and looks perfect.
+
+This bug was found and fixed **three times, per-site**, before the mechanism
+itself was fixed:
+1. `master_env`, pass ~12 (T20) — force-set to `1.0`/`ENV_DECAY` in `NoteOn`.
+2. `ENGINE_SNARE` noise envs, pass 19 — `NoteOff` skips the release ("choked
+   the buzz to ~26 ms").
+3. `ENGINE_NOISE` noise envs, pass 27 — **never covered by either**, so Clap,
+   Shaker and HHat-C were emitting a 20 ms blip and nothing else on device.
+
+`FastEnvelope::release()` now defers into **`ENV_ATTACK_REL`** when it is called
+during `ENV_ATTACK`: the attack completes, then the release runs from the top of
+it.  An envelope that is already open is untouched (40/40 renders byte-identical),
+and `Rel` keeps shaping the tail — which the pass-19-style "skip the release"
+patch does not.  **New sites do not need their own workaround.**  Regression
+test: **T37** (both halves fail against the pre-fix build).
 
 ### ENGINE_PLATE: noise_ring_gate
 

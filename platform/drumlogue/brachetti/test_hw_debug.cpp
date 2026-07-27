@@ -1829,6 +1829,80 @@ static void test_cymbal_stacking() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// T37: ENGINE_NOISE survives same-tick gating (Clap / Shaker / HHat-C)
+//
+//   Same defect class as T20, found by reviewing for it after T36.  T20 fixed
+//   master_env by force-setting it to 1.0/ENV_DECAY in NoteOn; ENGINE_SNARE was
+//   patched separately by skipping the release.  noise_env/noise_env_hi on
+//   ENGINE_NOISE were covered by neither: trigger() leaves value=0 in
+//   ENV_ATTACK, the same-tick release() jumped straight to ENV_RELEASE, and the
+//   first process() saw value <= 0.001f and went to ENV_IDLE.  The envelope died
+//   before it opened and the entire voice was silent ON HARDWARE — while
+//   render_presets.cpp, which holds the gate ~50 ms, sounded perfect.
+//
+//   FastEnvelope::release() now defers into ENV_ATTACK_REL, so the attack
+//   completes and the release runs from the top of it.  Assert against the
+//   held-gate render rather than an absolute level, so the test tracks the
+//   presets if they are ever retuned.
+// ════════════════════════════════════════════════════════════════════════════
+// skip_frames excludes the onset: a dead envelope still leaks the ~20 ms of
+// exciter that is already in flight, so only the TAIL separates the two cases.
+static double gate_energy(BrachettiSynth& s, unit_runtime_desc_t& desc,
+                          int preset, int hold_frames, int skip_frames = 0) {
+    s.Init(&desc);
+    s.LoadPreset((uint8_t)preset);
+    for (int i = 0; i < NUM_VOICES; ++i)
+        s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;  // noise PRNG free-runs
+
+    s.GateOn(100);
+    if (hold_frames <= 0) s.GateOff();          // same tick, before any audio
+
+    float buf[128];
+    double acc = 0.0;
+    const int total = 48000 / 5;                // 200 ms
+    bool released = (hold_frames <= 0);
+    for (int done = 0; done < total; done += 64) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 64);
+        if (done >= skip_frames)
+            for (int i = 0; i < 64; ++i) acc += (double)buf[i * 2] * buf[i * 2];
+        if (!released && done >= hold_frames) { s.GateOff(); released = true; }
+    }
+    return std::sqrt(acc / (total - skip_frames));
+}
+
+static void test_noise_same_tick_gate() {
+    std::cout << "\n── T37: ENGINE_NOISE survives same-tick gate on+off ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    struct { int idx; const char* name; } ps[] = {
+        {21, "Clap"}, {22, "Shaker"}, {26, "HHat-C"},
+    };
+    bool all_alive = true, all_full = true;
+    for (auto& p : ps) {
+        double same = gate_energy(s, desc, p.idx, 0);
+        double held = gate_energy(s, desc, p.idx, 48000 / 20);   // 50 ms
+        double tail = gate_energy(s, desc, p.idx, 0, 48000 / 40);  // same tick, past 25 ms
+        double ratio = held > 1e-9 ? same / held : 0.0;
+        std::cout << "  " << p.name << ": same-tick RMS=" << same
+                  << "  tail(>25ms)=" << tail
+                  << "  held-50ms RMS=" << held << "  ratio=" << ratio << "\n";
+        if (tail < 1e-3) all_alive = false;
+        if (ratio < 0.5) all_full = false;
+    }
+
+    result("T37a ENGINE_NOISE presets keep a tail under same-tick gating",
+           all_alive,
+           "Clap/Shaker/HHat-C went silent — noise_env was released at value=0 "
+           "and jumped to ENV_IDLE before producing anything");
+    result("T37b same-tick output is comparable to a held gate",
+           all_full,
+           "the noise tail is being truncated by the same-tick release");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1870,6 +1944,7 @@ int main() {
     test_retrigger_consistency();
     test_roll_fusion();
     test_cymbal_stacking();
+    test_noise_same_tick_gate();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

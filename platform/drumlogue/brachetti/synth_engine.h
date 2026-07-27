@@ -2876,13 +2876,16 @@ SynthState state;
             if (v.is_active && !v.is_releasing && v.current_note == note) {
                 v.is_releasing = true;
 
-                // SNARE: do NOT release the noise envelopes.  The Drumlogue
-                // fires gate_off in the same tick as gate_on, so the Rel-rate
-                // release choked the wire buzz to ~26 ms T60 — real snare wires
-                // ring freely once the stick leaves the head.  The envelopes
+                // SNARE: do NOT release the noise envelopes.  Real snare wires
+                // ring freely once the stick leaves the head, so the envelopes
                 // stay in ENV_DECAY (sustain 0) and die at the NzRs-governed
-                // natural rate, which is calibrated against the reference
-                // samples (~0.2-0.4 s buzz tails).
+                // natural rate, calibrated against the reference samples
+                // (~0.2-0.4 s buzz tails); the Rel-rate release choked the
+                // buzz to ~26 ms T60.  NOTE: this is a VOICING choice now, not
+                // a same-tick workaround — FastEnvelope::release() defers a
+                // release that arrives during the attack (ENV_ATTACK_REL), so
+                // every other engine can call it safely.  See the same-tick
+                // gotcha in CLAUDE.md and T37.
                 const EngineType ve = kPresetEngine[m_preset_idx];
                 if (ve != ENGINE_SNARE) {
                     v.exciter.noise_env.release();

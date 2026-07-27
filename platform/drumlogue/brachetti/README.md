@@ -440,7 +440,7 @@ A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-his
 
 Snare-family runtime rules (restored/added July 2026 — see `REALISM_REVIEW.md`):
 - Wire parameters are restored per-NoteOn **after** `PartialReset()` (which zeroes them); for 18 HW passes the wire path was silently dead on live hits.
-- `ENGINE_SNARE` skips the noise-envelope release on NoteOff: the Drumlogue's same-tick gate_off otherwise chokes the buzz to ~26 ms. The buzz tail is governed by NzRs (calibrated to the reference samples).
+- `ENGINE_SNARE` skips the noise-envelope release on NoteOff, so the buzz tail is governed by NzRs (calibrated to the reference samples) rather than Rel — real wires ring freely once the stick leaves the head, and the Rel-rate release choked the buzz to ~26 ms. This began as a workaround for the Drumlogue's same-tick gate_off and is now a voicing choice: see [Same-tick GateOn + GateOff](#same-tick-gateon--gateoff-drumlogue-one-shot-model).
 - Velocity scales wire mix and buzz decay (ghost-note physics), anchored so full velocity plays the calibrated table sound.
 - Preset 38 `BrshSnr` is a brush-swept snare: slow swish onset, 6.5 Hz enveloped swirl AM, diffuse low-Q wire bands.
 
@@ -483,7 +483,17 @@ combinations (pole-radius clamp holds).
 At NoteOn, `Cymbal`, `Gong`, `HHat-O`, `Ride`, `RidBel`, and `Trngle` get `loss_g_hf` and `lowpass_coeff` floors raised so the KS loop retains upper partials longer. Transient LP jitter is also limited to prevent over-darkening the attack — a known architecture-coupled failure mode for metallic rods/bars.
 
 ### Same-tick GateOn + GateOff (Drumlogue one-shot model)
-The Drumlogue fires `gate_on` and `gate_off` in the same scheduler tick before any audio block. Without a fix, `master_env` sees `ENV_RELEASE, value = 0` on the first `processBlock` call and immediately kills the voice. Fix: call `v.exciter.master_env.process()` once in `NoteOn` to pre-advance the envelope to `value = 1.0` before any `GateOff` can arrive.
+The Drumlogue fires `gate_on` and `gate_off` in the same scheduler tick, **before any audio block**. So every `release()` can land on an envelope that `trigger()` has just zeroed and `process()` has never advanced — and `ENV_RELEASE` from `value = 0` computes `value += (0 - value) * release_rate`, which is still 0, trips the `value <= 0.001f` cutoff and goes to `ENV_IDLE`. The envelope dies before it opens and the voice is silent.
+
+This is the single most expensive class of bug in this project, because it is **invisible to every host tool**: `render_presets.cpp` and `param_audit.cpp` hold the gate 50 ms / 20 ms and sound perfect, and `stability_sweep.cpp` only checks peaks and NaN, so a voice that silences *itself* passes. It reached hardware three times:
+
+| Site | Found | Original per-site fix |
+|------|-------|----------------------|
+| `master_env` (all engines) | pass ~12, test T20 | direct `value = 1.0f; state = ENV_DECAY;` in `NoteOn` (not `trigger()` + `process()` — ARM `-ffast-math` may emit an FMA that leaves `value` fractionally under `0.99f`) |
+| `ENGINE_SNARE` noise envs | pass 19 | `NoteOff` skips the release — buzz was choked to ~26 ms |
+| `ENGINE_NOISE` noise envs | pass 27 (review) | none — Clap/Shaker/HHat-C emitted a ~20 ms blip and nothing else on device |
+
+Since pass 27 the **mechanism** is fixed instead: `FastEnvelope::release()` called during `ENV_ATTACK` defers into `ENV_ATTACK_REL`, the attack completes, and the release then runs from the top of it. An envelope that is already open is untouched (all 40 presets stay byte-identical), and `Rel` keeps shaping the tail — which the "skip the release" approach does not. **New release sites need no workaround of their own.** `samegate_probe.cpp` prints same-tick vs held-gate RMS per 25 ms for any preset; **T37** is the regression test.
 
 ### Coupled resonator beating
 Setting `Partls > 0` couples ResA and ResB at the same nominal pitch. Two coupled identical oscillators split into two normal modes at `ω ± δ`, producing beats at `2δ`. This is physically correct but perceptually surprising. Use `Partls = 0` (single resonator) for clean sustained tones.
