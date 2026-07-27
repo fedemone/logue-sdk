@@ -249,10 +249,17 @@ static inline float cym_env_mul(float tauSec, float sr) {
 // vs crash); phaseModAmount is the 0..1 nonlinear-shimmer amount; pitchRatio
 // transposes the whole anchor spectrum (2^(semitones/12) relative to the
 // preset's shipped default note — a smaller/larger cymbal, not a filter).
+//
+// retainRing: the voice is still audibly ringing and is being struck again (or
+// its slot stolen).  Metal does not reset — the old vibration keeps decaying
+// under the new bank instead of being zeroed, so restrikes and steals add to
+// what is already sounding rather than cutting it off.  Only meaningful on a
+// re-strike; a fresh voice always starts from silence, so the shipped
+// single-hit renders are unaffected.
 static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
                                   float velocity, float ringDecayScale,
                                   float phaseModAmount, float pitchRatio,
-                                  uint32_t seed) {
+                                  uint32_t seed, bool retainRing = false) {
     const float sr = k_dsp_sample_rate;
     c.velocity = fmaxf(0.01f, fminf(1.0f, velocity));
     c.rng = seed ? seed : 0x12345678u;
@@ -298,6 +305,12 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     c.magEnv = 0.0f;
 
     // Resonator bank.  Exact expf/cosf here (see gotchas): r ~0.9999.
+    // Lanes below `keep` carry their vibration across the strike (see
+    // retainRing); everything else starts from rest.  0.75 leaves headroom for
+    // the incoming strike so a restrike adds energy without slamming the
+    // output clamp.
+    const uint16_t keep = retainRing ? c.resCount : 0u;
+    const float    keepGain = 0.75f;
     uint16_t count = (cfg.resonators > (uint16_t)kCymbalMaxResonators)
                         ? (uint16_t)kCymbalMaxResonators : cfg.resonators;
     const float requestedRingDecay = (0.55f + 0.60f * c.velocity) * ringDecayScale;
@@ -322,8 +335,13 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
         c.resB0[i]   = b0;
         c.resA1[i]   = 2.0f * r * cosf(w);
         c.resA2[i]   = r2;
-        c.resY1[i]   = 0.0f;
-        c.resY2[i]   = 0.0f;
+        if (i < keep) {
+            c.resY1[i] *= keepGain;
+            c.resY2[i] *= keepGain;
+        } else {
+            c.resY1[i] = 0.0f;
+            c.resY2[i] = 0.0f;
+        }
         float g      = 0.85f + 0.30f * cym_frand(c.rng);
         if (cfg.hfTilt > 0.0f) {
             // sqrt(f/2kHz)^hfTilt HF weighting (see CymbalConfig).  fasterpowf

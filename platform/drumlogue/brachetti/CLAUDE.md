@@ -43,6 +43,59 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 26 — Gong/cymbal stacking + "subtle → live" knob depth pass
+
+Two HW notes.
+
+**"Multiple gong hits are not stacking correctly."**  Two compounding bugs in
+the `ENGINE_CYMBAL` voice policy:
+- The family was hard-capped at **2 voices** (`m_cym_poly = min(Poly, 2)`), a CPU
+  guard predating the magnitude squelch — on the one instrument whose hits are
+  meant to pile up.
+- The steal rule **inverted itself**: it took the smallest `magEnv`, which is a
+  ~10 ms average of `|out|` starting at 0, while the gong's driver needs
+  `lowAttackSec` = 0.25 s to open.  For the first third of a second the NEWEST
+  hit is the quietest voice in the bank, so the third strike killed the second
+  one mid-bloom and repeats ping-ponged between two slots.
+
+Fix: `m_cym_poly = m_poly` (full 1-4); `kCymStealProtectSec` = 0.60 s protects
+young voices and falls back to stealing the **oldest** (age is the reliable
+ordering inside that window — `magEnv` on a dense inharmonic wash is not);
+`kCymResonatorBudget` = 240 caps the TOTAL bank across simultaneous cymbal
+voices, which is a stronger CPU guarantee than a voice count and is what makes 4
+voices affordable.  A restruck/stolen voice also keeps its ring (`retainRing`,
+×0.75) instead of zeroing `resY1/resY2` — metal does not reset.
+Measured: Gong 4 hits → distinct voices 2 → **4**, passage RMS 1.62× → 1.84×
+(150 ms) and 1.90× → 2.02× (1 s); 8 hits at 150 ms reach 2.24×; peak stays
+0.83 (limiter-bounded); worst aggregate bank 208 resonators at `Rsntrs` = 60.
+New **T36** in `test_hw_debug.cpp` asserts all three properties — T36a fails
+against the pre-fix code.
+
+**"Increase the effect of the parameters from subtle to live, without breaking
+the presets."**  Every reference-anchored mapping had its coefficient widened
+and clamps opened, anchoring untouched → **40/40 byte-identical**.  Two dead
+knobs wired: cymbal `MlltRes` → ring presence, cymbal `MlltStif` → beater
+hardness (both audited `NO EFFECT`); kick `MlltStif` gained a live lower half
+(down = slower boom onset = felt beater; it was clamped to 0 from below and
+Kick2/KickDrum ship it at 0.60/0.70).  Measured: **43** knob/family swings
+widened, 2 dead → live, 1 narrowed 5 % (noise); verdict changes **5 improved, 0
+regressed**.  Cymbal `Inharm` deliberately left at 2.0 — widening it *shrank*
+the measured HF swing (the jitter piles modes onto the `fLo`/Nyquist clamps).
+
+**Tooling lesson (`param_audit.cpp`).**  Beyond the documented 2-s-RMS transient
+blind spot, the audit had a worse one: `FastNoise::seed` is free-running and no
+reset touches it, so consecutive renders start from a different noise state.
+Clap/Shaker/hats drifted a few percent between runs and flipped their own
+verdicts — this pass first "found" a Partls regression on Clap for a knob that
+provably does nothing there (`is_modal_engine` is false for `ENGINE_NOISE`).
+The audit now pins the seed per render.  Also: on the kick, use a **band**
+metric, not RMS — the master chain is loudness-maximised, so a thump reshapes
+the attack spectrum without raising level (`TubRad` reads 29 % → 48 % on a
+100-400 Hz vs sub band metric and almost nothing on plain RMS).
+
+Verified: 40/40 renders byte-identical, test_dsp exit 0, test_hw_debug **88/88**,
+host syntax check clean.
+
 ### Pass 25 — Roll fusion (pass-23 regression) + asymmetric snare TubRad
 
 Two HW notes, both regressions from pass 23/24:

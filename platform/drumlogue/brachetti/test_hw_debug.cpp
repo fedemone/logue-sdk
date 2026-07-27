@@ -1727,6 +1727,108 @@ static void test_roll_fusion() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T36: ENGINE_CYMBAL voice stacking (HW: "multiple gong hits are not stacking")
+//
+//   The cymbal family was hard-capped at 2 voices AND stole the voice with the
+//   smallest magEnv.  magEnv is a ~10 ms average of |out| starting at 0, and a
+//   gong takes 0.25 s just to open its driver attack, so the newest hit was
+//   always the "quietest" voice in the bank: a third strike killed the second
+//   one mid-bloom and repeated hits ping-ponged between two slots instead of
+//   accumulating.  Both halves of the fix are asserted here:
+//
+//     hits within the Poly cap                → land on DISTINCT voices
+//     a hit past the cap, all voices young    → steals the OLDEST, never the
+//                                               one that was just struck
+//     total resonators across cymbal voices   → within kCymResonatorBudget
+// ════════════════════════════════════════════════════════════════════════════
+static void test_cymbal_stacking() {
+    std::cout << "\n── T36: Cymbal/gong voice stacking ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    // Four gong strikes 300 ms apart must occupy four different voices.
+    s.Init(&desc); s.LoadPreset(14);        // Gong (ENGINE_CYMBAL)
+    s.state.next_voice_idx = 0;
+    uint32_t used = 0u;
+    int worst_total = 0;
+    for (int k = 0; k < 4; ++k) {
+        s.NoteOn(50, 110);
+        s.NoteOff(50);                      // gate on+off in one tick
+        used |= (1u << s.state.next_voice_idx);
+        int total = 0;
+        for (int i = 0; i < NUM_VOICES; ++i)
+            if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
+                total += (int)s.state.voices[i].cymbal.resCount;
+        if (total > worst_total) worst_total = total;
+        run_blocks(s, (int)(0.300f * 48000.0f), 64);
+    }
+    int distinct = 0;
+    for (int i = 0; i < NUM_VOICES; ++i) if (used & (1u << i)) ++distinct;
+    std::cout << "  4 gong hits (300 ms apart): distinct voices=" << distinct
+              << "  worst total resonators=" << worst_total << "\n";
+    result("T36a repeated gong hits stack across the Poly cap",
+           distinct == 4,
+           "Gong hits are not stacking — repeated strikes are reusing slots "
+           "instead of accumulating");
+
+    // Every voice is now younger than kCymStealProtectSec, so the 5th strike
+    // must take the OLDEST slot.  Voice 0 was struck first, so it is the oldest.
+    uint8_t oldest = 0;
+    uint32_t oldest_age = 0u;
+    for (int i = 0; i < NUM_VOICES; ++i) {
+        if (s.state.voices[i].cymbal.active &&
+            s.state.voices[i].cymbal.sampleIndex >= oldest_age) {
+            oldest_age = s.state.voices[i].cymbal.sampleIndex;
+            oldest = (uint8_t)i;
+        }
+    }
+    uint8_t youngest = 0;
+    uint32_t young_age = 0xFFFFFFFFu;
+    for (int i = 0; i < NUM_VOICES; ++i) {
+        if (s.state.voices[i].cymbal.active &&
+            s.state.voices[i].cymbal.sampleIndex < young_age) {
+            young_age = s.state.voices[i].cymbal.sampleIndex;
+            youngest = (uint8_t)i;
+        }
+    }
+    s.NoteOn(50, 110);
+    s.NoteOff(50);
+    std::cout << "  5th hit stole voice " << (int)s.state.next_voice_idx
+              << " (oldest=" << (int)oldest << ", youngest=" << (int)youngest << ")\n";
+    result("T36b over the cap the OLDEST cymbal voice is stolen",
+           s.state.next_voice_idx == oldest && s.state.next_voice_idx != youngest,
+           "Voice stealing is eating the freshest strike — the magEnv ranking "
+           "inverts while a slow-attack cymbal is still blooming");
+
+    // CPU guard: the aggregate bank must respect the budget even at the
+    // maximum Rsntrs setting with every voice ringing.
+    s.Init(&desc); s.LoadPreset(13);        // Cymbal: largest base bank (96)
+    s.setParameter(3, 60);                  // Rsntrs to maximum
+    s.state.next_voice_idx = 0;
+    int budget_worst = 0;
+    for (int k = 0; k < 8; ++k) {
+        s.NoteOn(69, 127);
+        s.NoteOff(69);
+        int total = 0;
+        for (int i = 0; i < NUM_VOICES; ++i)
+            if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
+                total += (int)s.state.voices[i].cymbal.resCount;
+        if (total > budget_worst) budget_worst = total;
+        run_blocks(s, (int)(0.120f * 48000.0f), 64);
+    }
+    // The budget bounds what a NEW voice may claim; the 32-resonator floor can
+    // carry a voice past it, so allow the floor on top of the budget.
+    const int limit = BrachettiSynth::kCymResonatorBudget + 32;
+    std::cout << "  8 crash hits @Rsntrs=60: worst total resonators="
+              << budget_worst << " (limit " << limit << ")\n";
+    result("T36c stacked cymbal voices stay inside the resonator budget",
+           budget_worst <= limit,
+           "Cymbal stack is over the CPU budget — a 4-voice bank of this size "
+           "is what crashed the HW audio interface");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1767,6 +1869,7 @@ int main() {
     test_dkay_feedback_gain_mapping();
     test_retrigger_consistency();
     test_roll_fusion();
+    test_cymbal_stacking();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;
