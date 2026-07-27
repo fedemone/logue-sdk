@@ -52,6 +52,70 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 29 — Master output +3.0 dB, and review findings 2/3/5/6
+
+**Louder output.**  The master stage ended in `x / (1 + |x|)`, which divides
+EVERY sample rather than only the ones that need limiting — a 0.5 bus left the
+unit at 0.333 (−3.5 dB) and a unity bus at 0.50 (−6 dB), taking the strike crest
+with it.  It is the same curve the Timpani/Taiko kernel was given its own master
+stage to escape ("compresses the strike back into the body (crest ≈ 1) — the
+exact rough / synthy hit the HW comparison flagged").
+
+Replaced with a **soft knee that asymptotes to the brickwall by construction**:
+
+```
+over = |x| − thr;      y = thr + span·over/(over + span)      (span = ceil − thr)
+```
+
+Unity slope at the knee, monotone, and strictly below `ceil` = 0.99 for every
+finite input, so the brickwall clamp behind it is pure safety and nothing is
+flat-topped.  Same hyperbola as the old curve, translated to start at the
+threshold instead of at zero.  **Measured: +3.02 dB aggregate RMS over the 40
+presets** (0.0793 → 0.1122), worst peak 0.9661, 0 presets touching the clamp.
+
+**Threshold chosen by measurement, not taste.**  Loudness trades against
+flat-topping, because getting louder in a transient instrument *is* limiting.
+All 40 presets rendered at four thresholds (flat = consecutive identical samples
+above 0.9, i.e. visible squashing):
+
+| thr | RMS | worst peak | flat samples | longest run |
+|---|---|---|---|---|
+| 0.85 | +3.77 dB | 0.9873 | 9002 | 293 (6 ms) |
+| 0.70 | +3.45 dB | 0.9792 | 5936 | 292 |
+| **0.55** | **+3.02 dB** | **0.9661** | **52** | **15** |
+| 0.40 | +2.46 dB | 0.9485 | 32 | 15 |
+
+0.55 is the knee: **100× less squashing than 0.85 for 0.4 dB less level**, while
+0.40 buys almost nothing for another 0.56 dB.  Baseline: 0 flat samples at RMS
+0.0793.
+
+**Two shapes measured and rejected — do not re-try them.**
+`0.85 + 0.15·fastertanhf(...)` needs a clamp, because **`fastertanhf` is a
+rational approximation asymptotic to ~1.168, not 1.0**: unclamped its ceiling is
+1.013 so the brickwall still engaged (16-sample flat top on the RimShot crack),
+and clamping the tanh merely *relocates* the brickwall to exactly 0.99, which
+pinned **23034 samples** dead flat including an 11 ms plateau on the Gong.  The
+kernel path uses that same unclamped form; its presets peak at 0.92-0.94 so its
+clamp never engages today, but the shape is a latent trap.
+
+**This intentionally breaks the byte-identical guarantee** — a level change must.
+Every preset is louder; nothing else about them moved.
+
+**Review findings 2, 3, 5, 6** (all behaviour-neutral — verified 40/40
+byte-identical on their own, before the level change): `LoadPreset`'s bounds
+check moved to the first statement so an out-of-range index can no longer be
+retained and then indexed into three 40-entry tables; `setParameter(k_paramPartls)`
+rejects a negative value before `partial_counts[value]`; `#pragma once` added to
+`noise.h`; the stale "cymbals capped at 2" Poly comment in `header.c` corrected.
+Finding **4 (the ~35 KB `.rodata` discrepancy) remains open** — it cannot be
+settled without the ARM toolchain.
+
+Verified: test_dsp exit 0, test_hw_debug **92/92**, host syntax check clean,
+`stability_sweep` 4096 combos + 480 rolls, worst |peak| 0.9900, 0 problems;
+40/40 renders non-silent and NaN-free; T38 preset-change fade still bounded.
+**ARM `.text` still unverified** — note this pass *removes* the NEON reciprocal
+block from the master stage, so it should come out slightly smaller.
+
 ### Pass 28 — Preset change during a ringing voice: fade instead of re-excite
 
 Review finding 1, fixed.  Turning the Program knob while anything was sounding
@@ -110,12 +174,12 @@ Verified: 40/40 byte-identical, test_dsp exit 0, test_hw_debug **92/92** (new
 host syntax check clean, `stability_sweep` 4096 combos + 480 rolls, worst |peak|
 0.9900, 0 problems.  **ARM `.text` still unverified.**
 
-### Open findings — full code review (July 2026), NOT yet fixed
+### Code-review findings (July 2026) — 1, 2, 3, 5, 6 fixed; 4 still open
 
 A read of every file that ships to the device (`unit.cc`, `synth_engine.h`,
 `dsp_core.h`, `modal_drum_kernel.h`, `envelope.h`, `filter.h`, `noise.h`,
-`tables.h`, `header.c`).  Nothing below is fixed — each needs a decision.
-Ordered by severity.
+`tables.h`, `header.c`).  Ordered by severity.  **1, 2, 3, 5 and 6 are now
+fixed** (passes 28-29); **4 is still open** and needs the ARM toolchain.
 
 **1. Changing the Program knob while a voice is ringing re-excites it.**
 **FIXED — see Pass 28 below.**
@@ -127,13 +191,16 @@ Ordered by severity.
 `model_param_presets[m_preset_idx]` (all sized 40) are then read out of bounds on
 the next NoteOn.  `header.c` caps Program at 39 so a well-behaved OS cannot reach
 it — but the guard exists precisely for a misbehaving one, and it does not work.
-One-line fix: move the check above the assignment.
+**FIXED (pass 29)**: the guard is now the first statement in `LoadPreset`, so an
+out-of-range index is rejected before anything is written.
 
 **3. `partial_counts[value]` can be indexed negatively.**  In
 `setParameter(k_paramPartls)` only `value < 5` is checked, not `value >= 0`.
-`header.c` min is 0, so again not OS-reachable.  Same one-line class of fix.
+`header.c` min is 0, so again not OS-reachable.
+**FIXED (pass 29)**: `if (value < 0) break;` ahead of the lookup.
 
 **4. The `.rodata` budget rule and the shipped code disagree by ~35 KB.**
+**STILL OPEN.**
 This file states the firmware limit is ≈30 KB for text + `.rodata` and that
 `static const T arr[] = {…}` is a "broken pattern to avoid".  The code uses
 exactly that pattern for, at minimum:
@@ -154,11 +221,11 @@ the non-static-class-member workaround for the preset tables, so it needs to be
 corrected or explained before it misleads another pass.  Cannot be settled
 without the ARM toolchain.
 
-**5. `noise.h` has no include guard** (every other header does; `float_math.h`
+**5. `noise.h` has no include guard** — **FIXED (pass 29)**, `#pragma once`. (every other header does; `float_math.h`
 uses `#ifndef __float_math_h`).  Latent only — it is included exactly once, from
 `dsp_core.h`.
 
-**6. `header.c` comment is stale**: the Poly parameter still says "Cymbals stay
+**6. `header.c` comment is stale** — **FIXED (pass 29)**.: the Poly parameter still says "Cymbals stay
 internally capped at 2 for the CPU budget", which pass 26 removed.
 
 Reviewed and found **correct**, for the record: the TPT SVF core matches

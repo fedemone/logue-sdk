@@ -72,6 +72,11 @@ static constexpr float    k_log_2_of_200 = 7.643856f;
 static constexpr float    k_log_0001 = -6.907755279f; // logf(0.001f) — T60→decay coefficient
 static constexpr float    stage2_modal_amp_ratio_2 = 0.6f;
 static constexpr float    silence_threshold = 1e-5f;
+// Master peak limiter: unity below the threshold, tanh knee above.  Same curve
+// the Timpani/Taiko kernel master stage uses.  See the Stage-4b comment.
+static constexpr float    kMasterLimThr     = 0.55f;
+static constexpr float    kMasterLimCeil    = 0.99f;        // == the brickwall
+static constexpr float    kMasterLimSpan    = 0.44f;        // ceil - thr
 
 // Stage-2 pilot defaults (override-able at compile time for quick sweeps).
 #define STAGE2_MODAL_RATIO_2    2.80f
@@ -740,13 +745,22 @@ SynthState state;
 
     // Called by unit_set_param_value(0, value) to load a new patch
     inline void LoadPreset(uint8_t idx) {
+        // Reject an out-of-range preset BEFORE anything is written.  This guard
+        // used to sit ~65 lines lower, after `m_preset_idx = idx`, so a bad
+        // index was retained and then indexed kPresetEngine[], modal_preset_
+        // configs[] and model_param_presets[] — all sized k_NumPrograms — out of
+        // bounds on the next NoteOn.  header.c caps Program at 39 so a
+        // well-behaved OS never reached it, but the guard exists for one that
+        // does not, and where it stood it could not do its job.
+        if (idx >= k_NumPrograms) return;
+
         // A voice cannot survive a preset change: the rest of this function
         // rewrites the shared per-voice DSP coefficients underneath it.  Arm a
         // ~10 ms fade-out so it retires click-free under its OWN latched engine
         // instead of being cut dead or re-excited by the incoming preset.
         // Only on a REAL change — Init()'s LoadPreset(0) and re-selecting the
         // current preset must stay no-ops so shipped renders are unaffected.
-        const bool preset_changed = (idx != m_preset_idx) && (idx < k_NumPrograms);
+        const bool preset_changed = (idx != m_preset_idx);
         const float prev_drive = state.master_drive;
         if (preset_changed) {
             const float fmul = cym_env_mul(kPresetFadeTauSec, default_sample_rate);
@@ -822,8 +836,6 @@ SynthState state;
             {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
             {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
-
-        if (idx >= k_NumPrograms) return;
 
         // Preset loading always targets ResA first, then ResB, regardless of the
         // current editor selection.  Save both flags and restore them afterwards so
@@ -1057,6 +1069,7 @@ SynthState state;
 
             // resonator A/B parameters
             case k_paramPartls: {
+                if (value < 0) break;   // never index partial_counts[] negatively
                 if (value < 5) {
                     // Map the UI index (0-4) to the actual partial count (4/8/16/32/64).
                     // m_active_partials stores the count so comparisons are self-documenting.
@@ -3868,30 +3881,46 @@ SynthState state;
             main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
             main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1]));
         }
-        // ── Stage 4b: Master FX (filter + overdrive + brickwall) ──────────
+        // ── Stage 4b: Master FX (filter + overdrive + peak limiter) ───────
+        // The output stage used to be x / (1 + |x|), which divides EVERY
+        // sample, not just the ones that need limiting: a unity-amplitude bus
+        // left the unit at 0.50 and a 0.3 signal at 0.23.  That is where the
+        // unit's ~6 dB of missing level went — measured across the 40 shipped
+        // presets, peaks sat at 0.50-0.74 and NOTHING reached the 0.99 ceiling.
+        // It also squashed the strike crest, which is the "rough / synthy hit"
+        // the HW comparison flagged and the reason the Timpani/Taiko kernel was
+        // given its own master stage.  Use that same transparent limiter here:
+        // unity below kMasterLimThr, tanh knee above, asymptotic to 1.0.
+        // Both channels carry the same signal (mix_r was already a copy of the
+        // filtered left), so limit once and write it twice.
         for (size_t i = 0; i < frames; ++i) {
-            float mix_l = main_out[i * 2];
-            float mix_r = main_out[i * 2 + 1];
-            mix_l = state.master_filter.process(mix_l);
-            mix_r = mix_l;
-            mix_l *= state.master_drive;
-            mix_r *= state.master_drive;
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-            float32x2_t v = {mix_l, mix_r};
-            float32x2_t abs_v = vabs_f32(v);
-            float32x2_t den = vadd_f32(abs_v, vdup_n_f32(1.0f));
-            // Reciprocal estimate + one NR refinement (ARMv7-friendly).
-            float32x2_t rec = vrecpe_f32(den);
-            rec = vmul_f32(vrecps_f32(den, rec), rec);
-            float32x2_t clipped = vmul_f32(v, rec);
-            float clipped_l = vget_lane_f32(clipped, 0);
-            float clipped_r = vget_lane_f32(clipped, 1);
-#else
-            float clipped_l = mix_l / (1.0f + fabsf(mix_l));
-            float clipped_r = mix_r / (1.0f + fabsf(mix_r));
-#endif
-            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, clipped_l));
-            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, clipped_r));
+            float x = state.master_filter.process(main_out[i * 2]);
+            x *= state.master_drive;
+            float a = fabsf(x);
+            if (a > kMasterLimThr) {
+                // Soft knee that asymptotes to kMasterLimCeil BY CONSTRUCTION:
+                //     y = thr + span * over / (over + span),   over = a - thr
+                // Unity slope at the knee (continuous derivative), monotone,
+                // and strictly below `ceil` for every finite input, so nothing
+                // is ever flat-topped and the brickwall below is pure safety.
+                // It is the same hyperbola as the old x/(1+|x|), just
+                // translated to start at the threshold instead of at zero.
+                //
+                // Two shapes were tried and rejected here, both measurable:
+                // plain x/(1+|x|) compresses from zero up (a 0.5 bus left at
+                // 0.333, -3.5 dB, and the strike crest with it), while
+                // 0.85 + 0.15*fastertanhf(...) needs a clamp — fastertanhf is
+                // a rational approximation asymptotic to ~1.168, not 1.0 — and
+                // clamping it just relocates the brickwall: it pinned 23034
+                // samples dead flat across the 40 presets, including an 11 ms
+                // plateau on the Gong, where the old curve pinned none.
+                const float over = a - kMasterLimThr;
+                a = kMasterLimThr + kMasterLimSpan * over / (over + kMasterLimSpan);
+                x = (x < 0.0f) ? -a : a;
+            }
+            x = fmaxf(-kMasterLimCeil, fminf(kMasterLimCeil, x));
+            main_out[i * 2]     = x;
+            main_out[i * 2 + 1] = x;
         }
     }
 
