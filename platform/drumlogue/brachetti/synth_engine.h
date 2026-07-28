@@ -72,6 +72,30 @@ static constexpr float    k_log_2_of_200 = 7.643856f;
 static constexpr float    k_log_0001 = -6.907755279f; // logf(0.001f) — T60→decay coefficient
 static constexpr float    stage2_modal_amp_ratio_2 = 0.6f;
 static constexpr float    silence_threshold = 1e-5f;
+// Master peak limiter: unity below the threshold, tanh knee above.  Same curve
+// the Timpani/Taiko kernel master stage uses.  See the Stage-4b comment.
+// Limiter threshold.  Raised 0.55 -> 0.75 once the stage became a gain
+// envelope: a waveshaper had to start early to keep peaks down, but an
+// envelope limiter holds the ceiling by construction at any threshold, so the
+// threshold only trades loudness against how much gain riding happens.  Swept
+// 0.55/0.65/0.75/0.85 over all 40 presets — 0.75 recovers 0.54 dB over 0.55
+// while every kick keeps a crest factor well above the pre-pass-29 build the
+// HW called "perfect" (Kick2 1.43 vs 1.15, KickDrum 1.63 vs 1.34, 808Sub 1.64
+// vs 1.51) and the worst peak stays at 0.9890, under the brickwall.
+static constexpr float    kMasterLimThr     = 0.75f;
+static constexpr float    kMasterLimCeil    = 0.99f;        // == the brickwall
+static constexpr float    kMasterLimSpan    = kMasterLimCeil - kMasterLimThr;
+// Master limiter release, ms.  Chosen by measurement over 10/20/30/40/60/90/
+// 180/350 ms — the table is in CLAUDE.md pass 30.  20 ms comes out ahead of
+// BOTH earlier master stages on harmonic content and on crest factor for all
+// three kicks, at 1.16 dB of the 3.02 dB pass 29 added; longer releases keep
+// getting quieter without buying back distortion (808Sub's H3/H4/H5 are all
+// worse at 40 ms than at 20).  Two hits 150 ms apart show no ducking
+// (2nd/1st peak within 0.01 dB) anywhere below 350 ms.
+static constexpr float    kMasterLimRelMs   = 20.0f;
+// 1-exp(-1/tau) ~= 1/tau for tau this large (960 samples at 20 ms).
+static constexpr float    kMasterLimRelCoef =
+    1.0f / (kMasterLimRelMs * 0.001f * 48000.0f);
 
 // Stage-2 pilot defaults (override-able at compile time for quick sweeps).
 #define STAGE2_MODAL_RATIO_2    2.80f
@@ -94,7 +118,7 @@ public:
     enum ParamIndex {
         k_paramProgram = 0,
         k_paramNote,        // 1
-        k_paramCymPoly,     // 2 — ex-Bank: max simultaneous cymbal voices (1-2)
+        k_paramCymPoly,     // 2 — ex-Bank: global voice cap (1-4), cymbals included
         k_paramCymReso,     // 3 — ex-Sample: cymbal resonator-bank scale (25-60 %)
         k_paramMlltRes,     // 4
         k_paramMlltStif,    // 5
@@ -740,6 +764,31 @@ SynthState state;
 
     // Called by unit_set_param_value(0, value) to load a new patch
     inline void LoadPreset(uint8_t idx) {
+        // Reject an out-of-range preset BEFORE anything is written.  This guard
+        // used to sit ~65 lines lower, after `m_preset_idx = idx`, so a bad
+        // index was retained and then indexed kPresetEngine[], modal_preset_
+        // configs[] and model_param_presets[] — all sized k_NumPrograms — out of
+        // bounds on the next NoteOn.  header.c caps Program at 39 so a
+        // well-behaved OS never reached it, but the guard exists for one that
+        // does not, and where it stood it could not do its job.
+        if (idx >= k_NumPrograms) return;
+
+        // A voice cannot survive a preset change: the rest of this function
+        // rewrites the shared per-voice DSP coefficients underneath it.  Arm a
+        // ~10 ms fade-out so it retires click-free under its OWN latched engine
+        // instead of being cut dead or re-excited by the incoming preset.
+        // Only on a REAL change — Init()'s LoadPreset(0) and re-selecting the
+        // current preset must stay no-ops so shipped renders are unaffected.
+        const bool preset_changed = (idx != m_preset_idx);
+        const float prev_drive = state.master_drive;
+        if (preset_changed) {
+            const float fmul = cym_env_mul(kPresetFadeTauSec, default_sample_rate);
+            for (int i = 0; i < NUM_VOICES; ++i) {
+                VoiceState& fv = state.voices[i];
+                if (!fv.is_active) continue;
+                if (fv.fade_mul >= 1.0f) fv.fade_mul = fmul;   // don't restart an existing fade
+            }
+        }
         m_preset_idx = idx;
         // Keep m_params[0] in sync so unit_get_param_value(0) returns the correct
         // preset index regardless of whether LoadPreset was called via setParameter
@@ -765,49 +814,47 @@ SynthState state;
             // Col 16 is the master LOWPASS Cutoff (stored ÷10): 1999 = fully open.
             // Col 15 (Inharm) is stored ÷10 (0-199): code uses value×0.005 and the
             // encoder shows value×10 (coarsened from the old 0-1999 step-1 range).
-            {   0,  36,   0,   1, 360, 300,   0,  40,   2,   3, 200,  10,   0,  36,  18,   1,1999,  -4,   4,   1, 420,   0, 380,  71},        // 0:  Kick2     — the pre-redesign Timpani body as a solid kettledrum kick (HW-approved)
-            {   1,  72,   0,   1, 800, 130,   0,   0,   0,   6, 194,  -7,   0,   0,   5,   2,1999,   7,  20,   0, 300,   0,1200,  71},        // 1:  Marimba   — exemplar BAR voice (HW: ok)
-            {   2,  36,   0,   1, 350, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220,  71},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
-            {   3,  38,   0,   1, 120, 280,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   0,1999,   8,   7,  52, 950,   2, 300,  71},        // 3:  AcSnare   — wire path live; NzRs 740→950: buzz T60≈0.4s matches acoustic-snare.wav t40≈280ms; NzFq 480→300 (HP 3kHz) pulls centroid toward the darker reference
-            {   4,  72,   0,   1, 900, 340,   0,   0,   0,   1, 200,  30,   0,   0,  20,   1,1999,  18,   0,   5, 300,   0,1500,  71},        // 4:  TblrBel
-            {   5,  52,   0,   1, 360, 300,   0,  40,   2,   3, 150,  10,   0,  36,  18,   1,1999,  -4,   4,   1, 420,   0, 380,  71},        // 5:  Timpani   — dense-kernel voice.  Note 52 (E3): the kettle's dominant sustained partial measures 165.5 Hz ≈ E3 (the 110 Hz A2 principal sits a fifth below) — the display now names the pitch you hear; 52 is also the kernel recipe root, so the shipped row plays the approved render at ratio 1
-            {   6,  48,   0,   1, 600, 350,   0,   0,   1,   5, 152,   0,   0,  35,  12,   1,1999,  15,   5,   7, 450,   0, 500,  71},        // 6:  Djambe    — (HW: ok)
-            {   7,  41,   0,   1, 250, 450,   0,   0,   1,   5, 120,  10,   0,  30,  15,   0,1999,  16,   5,  52, 180,   0, 800,  71},        // 7:  Taiko     — bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. Port retune: modal_mix 0.60 + brighter crack (NzMix 36→52, NzFltFrq 360→800 ≈8kHz) + leaner boom for a brighter, longer ring
-            {   8,  65,   0,   1, 720, 500,   0,   0,   1,   5, 190,  20,   0,  50,   8,   2,1999,  19,   5,  55, 940,   2, 105,  71},        // 8:  MrchSnr   — click+buzz land together; NzRs 800→940: buzz T60≈0.36s matches Marching-Snare ref t40≈220ms
-            {   9,  60,   0,   1, 600, 420,   0,   0,   0,   0, 200,  20,   0,   0,  12,   0,1999,  18,   0,   0, 300,   0,1000,  71},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
-            {  10,  72,   0,   1, 500, 300,   0,   0,   0,   1, 200,  28,   0,   0,  18,   0,1999,  13,   0,   0, 300,   0,1000,  71},        // 10: Vibrph
-            {  11,  48,   0,   1, 900, 500,   0,   0,   0,   2, 156,  24,   0,   0,   2,   1,1999,   3,   0,   5, 420,   0, 900,  71},        // 11: Wodblk    — (HW: ok)
-            {  12,  45,   0,   1, 450, 300,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  30, 360,   0, 520,  71},        // 12: Ac Tom    — body extended (modal 350→500ms) + stick transient layer + NzMx 20→30 for the close-mic attack brightness
-            {  13,  65,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
-            {  14,  50,   0,   1, 200,  20,   0,   0,   0,   4, 190,   1,   0,   0,  20,   1,1999,  21,  20,  34, 860,   0,  30,  71},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
-            {  15,  65,   0,   1, 700, 390,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720,  71},        // 15: Kalimba
+            {   0,  36,   0,   1, 360,  30,   0,  40,   2,   3, 200,  10,   0,  36,  18,   1,1999,   0,   4,   1, 420,   0, 380,  71},        // 0:  Kick2     — the pre-redesign Timpani body as a solid kettledrum kick (HW-approved)
+            {   1,  72,   0,   1, 800,  13,   0,   0,   0,   6, 194,  -7,   0,   0,   5,   2,1999,   7,  20,   0, 300,   0,1200,  71},        // 1:  Marimba   — exemplar BAR voice (HW: ok)
+            {   2,  36,   0,   1, 350,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220,  71},        // 2:  808Sub    — boom_osc pitch sweep 160→45Hz (HW: perfect)
+            {   3,  38,   0,   1, 120,  28,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   0,1999,   8,   7,  52, 950,   2, 300,  71},        // 3:  AcSnare   — wire path live; NzRs 740→950: buzz T60≈0.4s matches acoustic-snare.wav t40≈280ms; NzFq 480→300 (HP 3kHz) pulls centroid toward the darker reference
+            {   4,  72,   0,   1, 900,  34,   0,   0,   0,   1, 200,  30,   0,   0,  20,   1,1999,  18,   0,   5, 300,   0,1500,  71},        // 4:  TblrBel
+            {   5,  52,   0,   1, 360,  30,   0,  40,   2,   3, 150,  10,   0,  36,  18,   1,1999,   0,   4,   1, 420,   0, 380,  71},        // 5:  Timpani   — dense-kernel voice.  Note 52 (E3): the kettle's dominant sustained partial measures 165.5 Hz ≈ E3 (the 110 Hz A2 principal sits a fifth below) — the display now names the pitch you hear; 52 is also the kernel recipe root, so the shipped row plays the approved render at ratio 1
+            {   6,  48,   0,   1, 600,  35,   0,   0,   1,   5, 152,   0,   0,  35,  12,   1,1999,  15,   5,   7, 450,   0, 500,  71},        // 6:  Djambe    — (HW: ok)
+            {   7,  41,   0,   1, 250,  45,   0,   0,   1,   5, 120,  10,   0,  30,  15,   0,1999,  16,   5,  52, 180,   0, 800,  71},        // 7:  Taiko     — bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. Port retune: modal_mix 0.60 + brighter crack (NzMix 36→52, NzFltFrq 360→800 ≈8kHz) + leaner boom for a brighter, longer ring
+            {   8,  65,   0,   1, 720,  50,   0,   0,   1,   5, 190,  20,   0,  50,   8,   2,1999,  19,   5,  55, 940,   2, 105,  71},        // 8:  MrchSnr   — click+buzz land together; NzRs 800→940: buzz T60≈0.36s matches Marching-Snare ref t40≈220ms
+            {   9,  60,   0,   1, 600,  42,   0,   0,   0,   0, 200,  20,   0,   0,  12,   0,1999,  18,   0,   0, 300,   0,1000,  71},        // 9:  Koto      — + harmonic-overtone modal bank (mix 0.10)
+            {  10,  72,   0,   1, 500,  30,   0,   0,   0,   1, 200,  28,   0,   0,  18,   0,1999,  13,   0,   0, 300,   0,1000,  71},        // 10: Vibrph
+            {  11,  48,   0,   1, 900,  50,   0,   0,   0,   2, 156,  24,   0,   0,   2,   1,1999,   3,   0,   5, 420,   0, 900,  71},        // 11: Wodblk    — (HW: ok)
+            {  12,  45,   0,   1, 450,  30,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  30, 360,   0, 520,  71},        // 12: Ac Tom    — body extended (modal 350→500ms) + stick transient layer + NzMx 20→30 for the close-mic attack brightness
+            {  13,  65,   0,   1, 800,  45,   0,   0,   0,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
+            {  14,  50,   0,   1, 200,   2,   0,   0,   0,   4, 190,   1,   0,   0,  20,   1,1999,  20,  20,  34, 860,   0,  30,  71},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
+            {  15,  65,   0,   1, 700,  39,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720,  71},        // 15: Kalimba
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000,  71},        // 16: StelPan
-            {  17,  79,   0,   1, 900, 480,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800,  71},        // 17: Claves
-            {  18,  67,   0,   1, 800, 420,   0,   0,   0,   4, 175,  20,   0,   0,   4,   3,1999,   3,  30,  40, 300,   0,1000,  71},        // 18: Cowbell   — clank shortened (modal cfg 500→180ms) + more strike noise (NzMx 25→40) toward the bright ref clank
-            {  19,  69,   0,   1, 900, 470,   0,   0,   0,   1, 190,  20,   0,   0,  15,   2,1999,  20,   0,  10, 300,   0,1500,  71},        // 19: Triangle  — NzMx 5→10: feeds the raised hf_branch (NoteOn) for the missing >8kHz metal sheen
-            {  20,  36,   0,   1, 380, 350,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  12,  15, 220,   0, 220,  71},        // 20: Kick Drum — (HW: ok)
-            {  21,  60,   0,   1, 500, 270,   0,   0,   2,   5,  15,   5,   0,  50,  19,   0,1999,   3,   5,  95, 950,   1, 200,  71},        // 21: Clap      — multi-burst AM (~55Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 300→200 (BP 2kHz) toward ref centroid 2986Hz (was 4540)
-            {  22,  84,   0,   1, 500, 450,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550,  71},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
-            {  23,  41,   0,   1, 250, 390,   0,   0,   1,   5, 200,  10,   0,  30,  15,   0,1999,  11,   5,   9, 550,   0, 130,  71},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
-            {  24,  76,   0,   1, 700,  50,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},        // 24: GlsBwl
-            {  25,  69,   0,   0, 800, 500,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200,  71},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
-            {  26,  72,   0,   1, 100, 370,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800,  71},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {  27,  79,   0,   1, 900, 490,   0,   0,   0,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
-            {  28,  62,   0,   1, 600, 425,   0,   0,   1,   5, 158,   3,   0,   0,  10,   1,1999,   9,   0,  15, 520,   0, 450,  71},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
-            {  29,  62,   0,   1, 700, 300,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000,  71},        // 29: Handpn
-            {  30,  84,   0,   1, 900, 420,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},        // 30: BelTre
-            {  31,  60,   0,   1, 700, 270,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},        // 31: SltDrm
-            {  32,  69,   0,   1, 900, 500,   0,   0,   0,   4, 190,  28,   0,   0,  18,   1,1999,  17,   0,  66, 950,   2,1300,  71},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {  33,  60,   0,   1, 900, 491,   0,   0,   0,   4, 200,  16,   0,   0,   8,   1,1999,   1,   0,  60, 950,   2,1300,  71},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
-            {  34,  50,   0,   1, 650, 410,   0,   0,   0,   5, 162, -10,   0,   0,   8,   0,1999,  -1,   0,   0, 520,   0, 450,  71},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
-            {  35,  88,   0,   1, 100, 450,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},        // 35: GlsBotl   — (HW: ok)
-            {  36,  79,   0,   1, 900, 500,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
-            {  37,  76,   0,   1, 800, 450,   0,   0,   0,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  38,  38,   0,   1, 120,  80,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
-            {  39,  69,   0,   1, 500, 480,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+            {  17,  79,   0,   1, 900,  48,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800,  71},        // 17: Claves
+            {  18,  67,   0,   1, 800,  42,   0,   0,   0,   4, 175,  20,   0,   0,   4,   3,1999,   3,  30,  40, 300,   0,1000,  71},        // 18: Cowbell   — clank shortened (modal cfg 500→180ms) + more strike noise (NzMx 25→40) toward the bright ref clank
+            {  19,  69,   0,   1, 900,  47,   0,   0,   0,   1, 190,  20,   0,   0,  15,   2,1999,  20,   0,  10, 300,   0,1500,  71},        // 19: Triangle  — NzMx 5→10: feeds the raised hf_branch (NoteOn) for the missing >8kHz metal sheen
+            {  20,  36,   0,   1, 380,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  12,  15, 220,   0, 220,  71},        // 20: Kick Drum — (HW: ok)
+            {  21,  60,   0,   1, 500,  27,   0,   0,   2,   5,  15,   5,   0,  50,  19,   0,1999,   3,   5,  95, 950,   1, 200,  71},        // 21: Clap      — multi-burst AM (~55Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 300→200 (BP 2kHz) toward ref centroid 2986Hz (was 4540)
+            {  22,  84,   0,   1, 500,  45,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550,  71},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
+            {  23,  41,   0,   1, 250,  39,   0,   0,   1,   5, 200,  10,   0,  30,  15,   0,1999,  11,   5,   9, 550,   0, 130,  71},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
+            {  24,  76,   0,   1, 700,   5,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},        // 24: GlsBwl
+            {  25,  69,   0,   0, 800,  50,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200,  71},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
+            {  26,  72,   0,   1, 100,  37,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800,  71},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
+            {  27,  79,   0,   1, 900,  49,   0,   0,   0,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {  28,  62,   0,   1, 600,  43,   0,   0,   1,   5, 158,   3,   0,   0,  10,   1,1999,   9,   0,  15, 520,   0, 450,  71},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
+            {  29,  62,   0,   1, 700,  30,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000,  71},        // 29: Handpn
+            {  30,  84,   0,   1, 900,  42,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},        // 30: BelTre
+            {  31,  60,   0,   1, 700,  27,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},        // 31: SltDrm
+            {  32,  69,   0,   1, 900,  50,   0,   0,   0,   4, 190,  28,   0,   0,  18,   1,1999,  17,   0,  66, 950,   2,1300,  71},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
+            {  33,  60,   0,   1, 900,  49,   0,   0,   0,   4, 200,  16,   0,   0,   8,   1,1999,   1,   0,  60, 950,   2,1300,  71},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
+            {  34,  50,   0,   1, 650,  41,   0,   0,   0,   5, 162, -10,   0,   0,   8,   0,1999,   0,   0,   0, 520,   0, 450,  71},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
+            {  35,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},        // 35: GlsBotl   — (HW: ok)
+            {  36,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  37,  76,   0,   1, 800,  45,   0,   0,   0,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {  38,  38,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+            {  39,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
-
-        if (idx >= k_NumPrograms) return;
 
         // Preset loading always targets ResA first, then ResB, regardless of the
         // current editor selection.  Save both flags and restore them afterwards so
@@ -852,7 +899,7 @@ SynthState state;
         // At this Dkay the modal ring plays exactly the calibrated config T60.
         m_modal_dkay_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramDkay] * 0.005f));
         // Same pattern for mallet stiffness → modal brightness pivot.
-        m_modal_stiff_ref = fmaxf(0.01f, fminf(1.0f, (float)presets[idx][k_paramMlltStif] * 0.002f));
+        m_modal_stiff_ref = fmaxf(0.01f, fminf(1.0f, (float)presets[idx][k_paramMlltStif] * 0.02f));
         // Anchors for the modal-engine mappings of Model / Partls / Inharm /
         // Mterl / HitPos (see NoteOn): neutral at the shipped knob values.
         m_modal_model_ref  = (uint8_t)presets[idx][k_paramModel];
@@ -880,12 +927,17 @@ SynthState state;
             m_drum_kernel.Configure((idx == k_Timpani) ? &kTimpaniRecipe : &kTaikoRecipe, ref_drive);
             m_kernel_tone_lp = 0.0f;
             RefreshKernelMods();
-            // The legacy voice loop is bypassed while the kernel preset is
-            // active — retire any voices still ringing from the previous
-            // preset so they don't resume stale when switching back.
+            // The legacy voice loop is bypassed entirely while a kernel preset
+            // is active, so a fading voice would never get rendered and would
+            // hold its slot forever.  This is the one switch the ~10 ms fade
+            // cannot cover: retire the voices outright (as before), and clear
+            // the fade so the per-voice preset state above is re-applied on the
+            // next non-kernel load instead of being skipped as "still fading".
             for (int vi = 0; vi < NUM_VOICES; ++vi) {
                 state.voices[vi].is_active = false;
                 state.voices[vi].is_releasing = false;
+                state.voices[vi].fade = 1.0f;
+                state.voices[vi].fade_mul = 1.0f;
             }
         } else {
             m_drum_kernel.Deactivate();
@@ -895,8 +947,33 @@ SynthState state;
         m_is_resonator_a = saved_is_a;
         m_is_resonator_b = saved_is_b;
 
+        // Hold the OUTGOING master drive until the fades finish.  Gain is a
+        // master parameter, so the incoming preset's drive would otherwise hit
+        // the outgoing tail: GtrStr (Gain 0, drive 1.0) -> Gong (Gain 20, drive
+        // 5.0) drove a quiet fading string into the soft clip at 0.83, well
+        // above the 0.52 tail it was replacing.  Pre-scaling the voice cannot
+        // fix this — the ±0.99 clamp sits between the voice and the drive, so
+        // attenuating the voice just moves it out from under the clamp.
+        // Deferring the drive keeps the fading voice's chain bit-for-bit what
+        // it was; the new drive lands ~10 ms later, before any new hit can
+        // meaningfully need it.
+        if (preset_changed && state.master_drive != prev_drive) {
+            bool fading = false;
+            for (int i = 0; i < NUM_VOICES; ++i)
+                if (state.voices[i].is_active && state.voices[i].fade_mul < 1.0f) fading = true;
+            if (fading) {
+                m_pending_drive  = state.master_drive;
+                state.master_drive = prev_drive;
+            }
+        }
+
         for (int i = 0; i < NUM_VOICES; ++i) {
             VoiceState& v = state.voices[i];
+            // Skip a voice that is fading out from the PREVIOUS preset: these
+            // writes would retune its wire/boom/pitch state mid-fade, and
+            // init_modal_modes below would re-strike its modal bank at full
+            // amplitude.  It gets these values on its next NoteOn anyway.
+            if (v.is_active && v.fade_mul < 1.0f) continue;
             v.exciter.snare_wire_z1 = preset_param(static_cast<ProgramIndex>(idx), k_snare_wire_z1);
             v.exciter.snare_wire_z2 = preset_param(static_cast<ProgramIndex>(idx), k_snare_wire_z2);
             v.exciter.snare_wire_mix = preset_param(static_cast<ProgramIndex>(idx), k_snare_wire_mix);
@@ -975,18 +1052,22 @@ SynthState state;
             case k_paramCymPoly:
                 // Global voice cap 1-4 (HW: "Poly always showed 2, not the
                 // actual polyphony").  Stacking engines round-robin within the
-                // first m_poly slots; the cymbal family additionally clamps to
-                // 2 for the CPU budget (dense-resonator voices are heavy).
+                // first m_poly slots.  The cymbal family used to be clamped to
+                // 2 here for the CPU budget; it now honours the full range —
+                // repeated gong/crash hits must accumulate, and the CPU is
+                // bounded instead by kCymResonatorBudget (a hard ceiling on the
+                // TOTAL bank size across simultaneous cymbal voices), which is
+                // a stronger guarantee than a voice count alone.
                 m_poly     = (uint8_t)((value < 1) ? 1 : ((value > 4) ? 4 : value));
-                m_cym_poly = (m_poly > 2) ? (uint8_t)2 : m_poly;
+                m_cym_poly = m_poly;
                 break;
 
             case k_paramCymReso:
                 m_cym_reso_scale = (uint8_t)((value < 25) ? 25 : ((value > 60) ? 60 : value));
                 break;
             case k_paramMlltStif: {
-                // Stored ÷10 (10-500 represents 100-5000). Divide by 500 (new max).
-                float norm = fmaxf(0.01f, fminf(1.0f, (float)value * 0.002f));
+                // Stored ÷100 (0-50 represents 0-5000). Divide by 50 (the max).
+                float norm = fmaxf(0.01f, fminf(1.0f, (float)value * 0.02f));
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     state.voices[i].exciter.mallet_stiffness = norm;
                 }
@@ -1007,6 +1088,7 @@ SynthState state;
 
             // resonator A/B parameters
             case k_paramPartls: {
+                if (value < 0) break;   // never index partial_counts[] negatively
                 if (value < 5) {
                     // Map the UI index (0-4) to the actual partial count (4/8/16/32/64).
                     // m_active_partials stores the count so comparisons are self-documenting.
@@ -1190,6 +1272,7 @@ SynthState state;
             case k_paramGain: {
                 float norm = fmaxf(0.0f, (float)value * 0.01f);
                 state.master_drive = 1.0f + (norm * 20.0f);
+                m_pending_drive = -1.0f;   // an explicit Gain turn wins
                 break;
             }
 
@@ -1303,9 +1386,11 @@ SynthState state;
         } else if (index == k_paramNzFltr) {
             if (value >= 0 && value < 3) return nz_filter_names[value];
         } else if (index == k_paramMlltStif) {
-            // Stored ÷10; show real ×10 value (100-5000)
+            // Stored ÷100; show real ×100 value (0-5000, step 100).  HW: at the
+            // old ÷10 step the neighbouring values were indistinguishable, so
+            // the knob read as "too subtle" across its whole travel.
             static char ms_buf[8];
-            snprintf(ms_buf, sizeof(ms_buf), "%d", (int)(value * 10));
+            snprintf(ms_buf, sizeof(ms_buf), "%d", (int)(value * 100));
             return ms_buf;
         } else if (index == k_paramDkay) {
             // Stored ÷10; show real ×10 value (0-2000)
@@ -1352,8 +1437,7 @@ SynthState state;
             int req = (value < 1) ? 1 : ((value > 4) ? 4 : (int)value);
             int eff = req;
             const EngineType pe = kPresetEngine[m_preset_idx];
-            if (pe == ENGINE_CYMBAL)          eff = (req > 2) ? 2 : req;  // CPU cap
-            else if (pe == ENGINE_KS)         eff = 1;                    // mono string
+            if (pe == ENGINE_KS)              eff = 1;                    // mono string
             else if (kernel_preset_active())  eff = (req > 2) ? 2 : req;  // 2 kettles
             if (eff != req) snprintf(pl_buf, sizeof(pl_buf), "%d(%d)", req, eff);
             else            snprintf(pl_buf, sizeof(pl_buf), "%d", eff);
@@ -1373,6 +1457,50 @@ SynthState state;
     // NoteOn and the snare wire-continuity restore below it — keep them on one
     // constant so the two mechanisms can never disagree about what a roll is.
     static constexpr float kRollFuseSec = 0.080f;
+
+    // A cymbal voice younger than this is off-limits as a steal candidate — see
+    // the ENGINE_CYMBAL voice policy in NoteOn.  It covers more than the gong's
+    // 0.25 s driver attack on purpose: magEnv is a 10 ms average of a dense
+    // inharmonic wash, so within the first half-second it fluctuates enough to
+    // rank a fresher (louder) voice below an older one.  Inside the window the
+    // age ordering is the reliable signal, so the OLDEST voice is stolen; past
+    // it the tails have separated and the faintest is genuinely the faintest.
+    static constexpr float kCymStealProtectSec = 0.60f;
+
+    // ── Cymbal CPU budget, in resonator-lane equivalents ───────────────────
+    // HW (pass 29): "cymbal: additional hit leads to silence (audio crash)";
+    // "gong: crackling then silence, possible CPU overload."  Pass 26 raised
+    // the cymbal cap from 2 voices to 4 and replaced the voice-count guard
+    // with a ceiling on the TOTAL resonator count, on the stated theory that
+    // "bounding the aggregate is a STRONGER CPU guarantee than the voice
+    // count".  That theory is wrong, and `cym_cpu_probe.cpp` measures by how
+    // much: the FIXED per-voice cost of cymbal_process — pink noise, the two
+    // driver one-poles, the PM block, the DC blocker, the magnitude envelope —
+    // is worth ~124 resonator lanes on its own, i.e. 79 % of a default 32-lane
+    // gong voice.  A resonator-only budget therefore bounded about a fifth of
+    // the real cost and never once bound at the default Rsntrs (4 gong voices
+    // ask for 128 lanes against a 240 ceiling), so pass 26's raise landed as a
+    // near-doubling of the worst case.  Measured 4 voices = 3.7x one voice.
+    //
+    // The budget is now expressed in the same units as the cost: every active
+    // cymbal voice charges kCymVoiceFixedLanes PLUS its resonators.
+    static constexpr int kCymVoiceFixedLanes = 124;
+
+    // The ceiling is the pre-pass-26 worst case — 2 voices at the largest bank
+    // the Rsntrs knob can ask for (60 lanes) — because that is the only cymbal
+    // CPU level this unit has field evidence for: it ran for 25 passes without
+    // an audio crash, and the first report of one came after pass 26 doubled
+    // it.  At the default Rsntrs this allows 2 stacked cymbal voices; a third
+    // is only affordable if the banks are small enough to pay for it.
+    static constexpr int kCymCostBudget = 2 * (kCymVoiceFixedLanes + 60);  // 368
+
+    // Smallest bank that still reads as a cymbal rather than a chord.
+    static constexpr int kCymMinResonators = 32;
+
+    // Preset-change voice fade-out time constant.  6.9 tau reaches -60 dB, so
+    // 1.5 ms tau = a ~10 ms fade: long enough to be click-free, short enough
+    // that the outgoing preset does not audibly overlap the new one.
+    static constexpr float kPresetFadeTauSec = 0.0015f;
 
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
@@ -1415,25 +1543,56 @@ SynthState state;
             if (!fuse)
                 state.next_voice_idx = (uint8_t)((state.next_voice_idx + 1) % cap);
         }
-        // ENGINE_CYMBAL voice policy: the cymbal cap (min(Poly,2)) bounds the
-        // simultaneous cymbal voices for the CPU budget.  Below the cap a
-        // silent slot is used; at the cap the WEAKEST ringing voice (smallest
-        // output magnitude, i.e. the most faded tail) is stolen — the least
-        // audible casualty.
+        // ENGINE_CYMBAL voice policy: the cymbal cap (the Poly knob) bounds the
+        // simultaneous cymbal voices.  Below the cap a silent slot is used; at
+        // the cap a ringing voice must be stolen.
+        //
+        // HW: "multiple gong hits are not stacking correctly."  The old rule —
+        // steal the smallest magEnv — inverted itself on every slow-swelling
+        // cymbal.  magEnv is a ~10 ms one-pole of |out| that starts at 0, and a
+        // gong's driver takes lowAttackSec = 0.25 s to open, so for the first
+        // third of a second the NEWEST hit is by far the quietest voice in the
+        // bank.  A second gong struck while the first was still blooming
+        // therefore killed itself on the third strike, and repeated hits ping-
+        // ponged between two slots instead of accumulating.  Two fixes:
+        //   1. voices younger than kCymStealProtectSec are off-limits (they are
+        //      still swelling, i.e. the loudest thing about to happen);
+        //   2. only genuinely faded tails are candidates; if every voice is
+        //      still young the OLDEST one goes, never the one just struck.
         if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
             const int cap = (int)m_cym_poly;
-            int active = 0, freeIdx = -1, weakest = -1;
+            const uint32_t protect =
+                (uint32_t)(kCymStealProtectSec * default_sample_rate);
+            int active = 0, freeIdx = -1, faded = -1, oldest = -1;
+            int busy_cost = 0;
             float wmag = 1e9f;
+            uint32_t oldage = 0u;
             for (int i = 0; i < NUM_VOICES; ++i) {
                 VoiceState& cv = state.voices[i];
                 if (cv.is_active && cv.cymbal.active) {
                     ++active;
-                    if (cv.cymbal.magEnv < wmag) { wmag = cv.cymbal.magEnv; weakest = i; }
+                    busy_cost += kCymVoiceFixedLanes + (int)cv.cymbal.resCount;
+                    if (cv.cymbal.sampleIndex >= protect && cv.cymbal.magEnv < wmag) {
+                        wmag = cv.cymbal.magEnv; faded = i;
+                    }
+                    if (oldest < 0 || cv.cymbal.sampleIndex >= oldage) {
+                        oldage = cv.cymbal.sampleIndex; oldest = i;
+                    }
                 } else if (freeIdx < 0) {
                     freeIdx = i;
                 }
             }
-            if (active >= cap && weakest >= 0)  state.next_voice_idx = (uint8_t)weakest;
+            // A new voice is only ADDED to the stack if the cheapest bank it
+            // could be given still fits the cost budget; otherwise the strike
+            // reuses a slot (steal) so the aggregate cost cannot grow.  This is
+            // the guard the resonator-only budget could not provide: it charges
+            // for the fixed cost that dominates a cymbal voice.
+            const bool affordable =
+                (busy_cost + kCymVoiceFixedLanes + kCymMinResonators) <= kCymCostBudget;
+            if (active < cap && affordable && freeIdx >= 0)
+                                                state.next_voice_idx = (uint8_t)freeIdx;
+            else if (faded >= 0)                state.next_voice_idx = (uint8_t)faded;
+            else if (oldest >= 0)               state.next_voice_idx = (uint8_t)oldest;
             else if (freeIdx >= 0)              state.next_voice_idx = (uint8_t)freeIdx;
         }
         VoiceState& v = state.voices[state.next_voice_idx];
@@ -1454,6 +1613,14 @@ SynthState state;
         const bool wires_in_motion =
             (kPresetEngine[m_preset_idx] == ENGINE_SNARE) && v.is_active &&
             (v.exciter.current_frame < (uint32_t)(kRollFuseSec * default_sample_rate));
+        // ENGINE_CYMBAL restrike continuity: a gong/crash that is still ringing
+        // when its slot is re-struck (or stolen) must not have its resonator
+        // bank zeroed — a struck gong keeps sounding through the next strike,
+        // and the hard reset is what made stacked hits read as "the previous
+        // one disappears".  Captured before PartialReset() clears the flag.
+        const bool cym_still_ringing =
+            (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) && v.cymbal.active;
+
         const float roll_z1  = v.exciter.snare_wire_z1,  roll_z2  = v.exciter.snare_wire_z2;
         const float roll_z1b = v.exciter.snare_wire_z1b, roll_z2b = v.exciter.snare_wire_z2b;
         const float roll_z1c = v.exciter.snare_wire_z1c, roll_z2c = v.exciter.snare_wire_z2c;
@@ -1461,6 +1628,10 @@ SynthState state;
         // CRITICAL FIX 2: Ensure the voice actually turns on!
         v.is_active = true;
         v.is_releasing = false;
+        // Latch the engine for this strike.  processBlock routes on this, not
+        // on the live kPresetEngine[m_preset_idx], so a preset change mid-tail
+        // can no longer hand a ringing voice to another engine's code.
+        v.engine = (uint8_t)kPresetEngine[m_preset_idx];
 
         // PCM sample layering removed: it was never part of the approved
         // synthesized sounds, and dropping it freed the Bank/Sample GUI params
@@ -1495,7 +1666,7 @@ SynthState state;
         // Override the global mallet_stiffness on this specific voice only,
         // so soft hits are round and hard hits are sharp without changing other voices.
         {
-            float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            float base_stiff = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
             float stif_mod   = (float)m_params[k_paramVlMllStf] * 0.01f; // -1.0 to +1.0
             // Add up to a 50% stiffness boost when striking at the absolute edge
             float rim_stiffness_boost = radius * 0.5f;
@@ -1926,14 +2097,17 @@ SynthState state;
             //              VlMllRes was DEAD — its attack target is overridden)
             const float sn_rel_n = fmaxf(0.0f,  fminf(1.0f, (float)m_params[k_paramRel]      * 0.05f));
             const float sn_mr_n  = fmaxf(0.0f,  fminf(1.0f, (float)m_params[k_paramMlltRes]  * 0.001f));
-            const float sn_st_n  = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            const float sn_st_n  = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
             const float sn_vs_n  = (float)m_params[k_paramVlMllStf] * 0.01f;
             const float sn_vr_n  = (float)m_params[k_paramVlMllRes] * 0.01f;
-            const float sn_decay_mult = knob_exp2(-3.0f * (sn_rel_n - m_modal_rel_ref));    // long Rel = long buzz
-            const float sn_mix_mult   = knob_exp2( 2.0f * (sn_mr_n  - m_modal_mltres_ref)); // ±~4× buzz mix
-            const float sn_bright     = fmaxf(0.5f,  fminf(2.0f, knob_exp2(1.0f * (sn_st_n - m_modal_stiff_ref)))); // ±1 oct
-            const float sn_tight      = fmaxf(-0.09f, fminf(0.09f, (sn_vs_n - m_snare_vlstf_ref) * 0.09f));     // pole-radius shift
-            v.exciter.snare_crack_gain = fmaxf(0.0f, fminf(6.0f, knob_exp2(3.0f * (sn_vr_n - m_snare_vlres_ref)))); // ±snap
+            // Depth pass (July 2026, HW: "from subtle to live"): every coefficient
+            // here was widened and its clamp opened.  All stay anchored at Δ=0, so
+            // the four shipped snares are untouched and only the travel grew.
+            const float sn_decay_mult = knob_exp2(-4.0f * (sn_rel_n - m_modal_rel_ref));    // long Rel = long buzz
+            const float sn_mix_mult   = knob_exp2( 3.0f * (sn_mr_n  - m_modal_mltres_ref)); // ±~8× buzz mix
+            const float sn_bright     = fmaxf(0.33f, fminf(3.0f, knob_exp2(1.6f * (sn_st_n - m_modal_stiff_ref)))); // ±1.6 oct
+            const float sn_tight      = fmaxf(-0.12f, fminf(0.12f, (sn_vs_n - m_snare_vlstf_ref) * 0.12f));     // pole-radius shift
+            v.exciter.snare_crack_gain = fmaxf(0.0f, fminf(9.0f, knob_exp2(4.0f * (sn_vr_n - m_snare_vlres_ref)))); // ±snap
             // TubRad → snare BODY depth/tone (REFERENCE-ANCHORED).  On the snare
             // family Dkay/TubRad only touched the quiet modal body, so TubRad was
             // "little effect".  Give it a distinct, audible axis: shift ONLY the
@@ -1957,7 +2131,7 @@ SynthState state;
             const float sn_tr_n  = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
             const float sn_tr_d  = sn_tr_n - m_modal_tubrad_ref;
             const float sn_body  = (sn_tr_d >= 0.0f)
-                                 ? fmaxf(0.40f, knob_exp2(-1.3f * sn_tr_d))
+                                 ? fmaxf(0.28f, knob_exp2(-1.9f * sn_tr_d))
                                  : fminf(1.15f, knob_exp2(-0.5f * sn_tr_d));
             // Velocity → buzz character: soft hits (ghost notes) are mostly head
             // tone with a short, loose rattle; hard hits press the wires into the
@@ -2165,19 +2339,27 @@ SynthState state;
                 // simultaneous voice gets a smaller bank — in a dense stack
                 // the density loss is masked, and rolls can no longer
                 // overload the CPU.
-                int active_cym = 0;
+                int active_cym = 0, busy_cost = 0;
                 for (int i = 0; i < NUM_VOICES; ++i) {
                     if (i != (int)state.next_voice_idx &&
                         state.voices[i].is_active && state.voices[i].cymbal.active) {
                         ++active_cym;
+                        busy_cost += kCymVoiceFixedLanes +
+                                     (int)state.voices[i].cymbal.resCount;
                     }
                 }
                 float rscale = (float)m_cym_reso_scale * 0.01f;
                 if (active_cym >= 3)      rscale *= 0.67f;
                 else if (active_cym == 2) rscale *= 0.80f;
                 int rcount = (int)((float)cc.resonators * rscale);
+                // Cost ceiling: whatever the ladder above asks for, the new
+                // voice may only take what is left of kCymCostBudget once its
+                // own fixed cost is paid.  Already-ringing banks keep their
+                // size; the newest (least scrutinised) voice absorbs the trim.
+                const int room = kCymCostBudget - busy_cost - kCymVoiceFixedLanes;
+                if (rcount > room) rcount = room;
                 rcount = (rcount + 3) & ~3;
-                if (rcount < 32) rcount = 32;
+                if (rcount < kCymMinResonators) rcount = kCymMinResonators;
                 if (rcount > (int)kCymbalMaxResonators) rcount = (int)kCymbalMaxResonators;
                 cc.resonators = (uint16_t)rcount;
                 // Note transposes the whole anchor spectrum like a smaller or
@@ -2214,20 +2396,30 @@ SynthState state;
                 // cymbal family.  Map each to a natural property of the metal,
                 // anchored at the shipped knob value so the calibrated cymbals
                 // render bit-identical and only knob movement bites.
+                // Depth pass (July 2026, HW: "parameters are too subtle").  Every
+                // coefficient below was widened and its clamp opened; all remain
+                // anchored at Δ=0, so the 40 shipped presets are untouched and
+                // only the travel either side of the shipped value grew.
                 {
                     // Dkay → overall ring decay length (body + sizzle together).
                     float cd_dk = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
-                    float dscale = fmaxf(0.25f, fminf(4.0f, knob_exp2(2.0f * (cd_dk - m_modal_dkay_ref))));
+                    float dscale = fmaxf(0.15f, fminf(6.0f, knob_exp2(3.0f * (cd_dk - m_modal_dkay_ref))));
                     // Rel → tail length, weighted toward the sizzle (high band).
                     // Dkay is the coarse overall length; Rel trims the tail on top
                     // (gentle on the body decaySec, full on the sizzle highDecaySec)
                     // so the two knobs give independent "how long / how sizzly".
                     float cd_rl = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel] * 0.05f));
-                    float rscale = fmaxf(0.25f, fminf(4.0f, knob_exp2(1.6f * (cd_rl - m_modal_rel_ref))));
-                    cc.decaySec     *= fmaxf(0.25f, fminf(4.0f, dscale * sqrtf(rscale)));
-                    cc.highDecaySec *= fmaxf(0.25f, fminf(6.0f, dscale * rscale));
+                    float rscale = fmaxf(0.15f, fminf(6.0f, knob_exp2(2.4f * (cd_rl - m_modal_rel_ref))));
+                    cc.decaySec     *= fmaxf(0.15f, fminf(6.0f, dscale * sqrtf(rscale)));
+                    cc.highDecaySec *= fmaxf(0.15f, fminf(9.0f, dscale * rscale));
                     // Inharm → jitter spread (beating density / shimmer thickness).
                     float cd_ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
+                    // Deliberately NOT widened with the rest of this pass.  Jitter
+                    // is the one cymbal knob already past its useful depth: at 2.4
+                    // and 3.0 the detune smears wide enough that the bank's high
+                    // modes pile onto the fLo/Nyquist clamps, and the measured
+                    // HF-band swing across the knob SHRANK (audit: ok -> weak).
+                    // 2.0 is the setting that buys the most audible spread.
                     cc.jitterSemis = fmaxf(0.0f, fminf(6.0f,
                                      cc.jitterSemis * knob_exp2(2.0f * (cd_ih - m_modal_inharm_ref))));
                     // Mterl → metal brightness (hard bronze sustains highs; soft
@@ -2235,8 +2427,8 @@ SynthState state;
                     float cd_mn = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
                     float d_cmt = cd_mn - m_modal_mterl_ref;
                     if (d_cmt < -0.001f || d_cmt > 0.001f) {
-                        cc.hfTilt = fmaxf(0.0f, fminf(4.0f, cc.hfTilt + d_cmt * 2.5f));
-                        cc.maxHz  = fmaxf(4000.0f, fminf(20000.0f, cc.maxHz * knob_exp2(0.7f * d_cmt)));
+                        cc.hfTilt = fmaxf(0.0f, fminf(5.0f, cc.hfTilt + d_cmt * 3.6f));
+                        cc.maxHz  = fmaxf(2500.0f, fminf(20000.0f, cc.maxHz * knob_exp2(1.3f * d_cmt)));
                     }
                     // HitPos → strike locus: toward the BELL (high) = more stick
                     // ping and pitched ring, less wash; toward the EDGE (low) =
@@ -2244,9 +2436,9 @@ SynthState state;
                     float cd_hp = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
                     float d_chp = cd_hp - m_modal_hitpos_ref;
                     if (d_chp < -0.001f || d_chp > 0.001f) {
-                        cc.stickLevel     = fminf(3.0f, cc.stickLevel * knob_exp2(1.5f * d_chp));
-                        cc.resonatorLevel = fmaxf(0.05f, cc.resonatorLevel * knob_exp2(0.8f * d_chp));
-                        cc.noiseLevel     = fmaxf(0.0f, cc.noiseLevel * knob_exp2(-1.0f * d_chp));
+                        cc.stickLevel     = fminf(3.0f, cc.stickLevel * knob_exp2(2.4f * d_chp));
+                        cc.resonatorLevel = fmaxf(0.03f, cc.resonatorLevel * knob_exp2(1.4f * d_chp));
+                        cc.noiseLevel     = fmaxf(0.0f, cc.noiseLevel * knob_exp2(-1.7f * d_chp));
                     }
                     // TubRad → instrument SIZE: transposes the whole anchor
                     // spectrum like a bigger (lower) or smaller (higher) cymbal,
@@ -2256,12 +2448,74 @@ SynthState state;
                     float cd_tn = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
                     float d_ctr = cd_tn - m_modal_tubrad_ref;
                     if (d_ctr < -0.001f || d_ctr > 0.001f) {
-                        pitch_ratio *= fmaxf(0.5f, fminf(2.0f, knob_exp2(-0.7f * d_ctr)));
-                        cc.shimmerLevel = fmaxf(0.0f, cc.shimmerLevel * knob_exp2(0.8f * d_ctr));
+                        pitch_ratio *= fmaxf(0.35f, fminf(2.8f, knob_exp2(-1.2f * d_ctr)));
+                        cc.shimmerLevel = fmaxf(0.0f, cc.shimmerLevel * knob_exp2(1.3f * d_ctr));
+                    }
+                    // MlltRes → RING PRESENCE (metal vs air).  Was completely
+                    // inert on the cymbal family (audit: "NO EFFECT") because
+                    // the dense-resonator port has no mallet exciter at all.
+                    // Up = the bank speaks over the noise bed (a gong that
+                    // *rings*); down = the wash dominates (all air, no metal).
+                    float cd_mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
+                    float d_cmr = cd_mr - m_modal_mltres_ref;
+                    if (d_cmr < -0.001f || d_cmr > 0.001f) {
+                        cc.resonatorLevel = fmaxf(0.03f, cc.resonatorLevel * knob_exp2(2.4f * d_cmr));
+                        cc.shimmerLevel   = fmaxf(0.0f,  cc.shimmerLevel   * knob_exp2(1.2f * d_cmr));
+                        cc.noiseLevel     = fmaxf(0.0f,  cc.noiseLevel     * knob_exp2(-0.9f * d_cmr));
+                    }
+                    // MlltStif → BEATER HARDNESS (static counterpart of the
+                    // velocity-driven VlMllStf, which was the only stick control
+                    // the family had).  Hard stick = a short bright contact ping
+                    // and a faster bite; soft mallet = a slow, dark swell — the
+                    // difference between a gong struck with a stick and one
+                    // bloomed in with a felt beater.
+                    float cd_st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
+                    float d_cst = cd_st - m_modal_stiff_ref;
+                    if (d_cst < -0.001f || d_cst > 0.001f) {
+                        cc.stickLevel   = fminf(3.0f, cc.stickLevel * knob_exp2(1.8f * d_cst));
+                        cc.thwackSec   *= fmaxf(0.30f, fminf(3.00f, knob_exp2(-1.1f * d_cst)));
+                        cc.lowAttackSec = fmaxf(0.0005f, cc.lowAttackSec * knob_exp2(-1.6f * d_cst));
+                        cc.hfTilt       = fmaxf(0.0f, fminf(5.0f, cc.hfTilt + 1.1f * d_cst));
                     }
                 }
                 cymbal_note_on(v.cymbal, cc, v.current_velocity, ring_scale, pm_amt,
-                               pitch_ratio, seed);
+                               pitch_ratio, seed, cym_still_ringing);
+
+                // ── Cymbal family level calibration ────────────────────────
+                // HW (pass 29): "cymbal: sound is very quiet".  Measured over a
+                // common 250 ms window (full-render RMS is not comparable —
+                // render lengths run 1-20 s), the ENGINE_CYMBAL presets sat
+                // 11-18 dB under the mean of every other preset in the unit:
+                //
+                //   Cymbal -18.3 dB   Ride -17.3 dB   HHat-O -17.9 dB
+                //   RidBel -14.7 dB   Splash -11.3 dB   Gong +3.6 dB
+                //
+                // This is NOT a pass-26/29 regression — the same presets
+                // measured the same before both (Cymbal 0.0080 -> 0.0099 RMS).
+                // It became audible because pass 29's master change lifts
+                // transient-dense presets ~3.7 dB but a decaying wash barely at
+                // all, so everything else moved up around them.  So it is a
+                // straight voicing miscalibration, corrected here.
+                //
+                // velocityGain is the ONLY uniform output scaler on this voice:
+                // scaling the config levels instead would not be uniform,
+                // because stickLevel feeds both the resonator drive and the
+                // direct tap and would land on the thwack squared.
+                //
+                // Gong is already correctly placed and is left alone.  HHat-O
+                // is equally quiet by measurement but is flagged
+                // "HW-approved, do not break" in CLAUDE.md, so its level is
+                // deliberately NOT touched here — raise it only on an explicit
+                // listen.
+                float cym_trim = 1.0f;
+                switch (m_preset_idx) {
+                    case k_Cymbal:   cym_trim = 3.2f; break;
+                    case k_Ride:     cym_trim = 2.9f; break;
+                    case k_RideBell: cym_trim = 2.1f; break;
+                    case k_Splash:   cym_trim = 1.4f; break;
+                    default: break;
+                }
+                v.cymbal.velocityGain *= cym_trim;
             }
         }
         // Ride/RidBel: like Gong/HHat-O, their per-preset NzRs left noise_env_hi
@@ -2304,7 +2558,7 @@ SynthState state;
         //   MlltStif → AM rate  (grain/burst speed, ±2 oct around shipped)
         //   MlltRes  → AM depth (burst contrast, 0..~1)
         if (kPresetEngine[m_preset_idx] == ENGINE_NOISE && v.noise_am_inc > 0.0f) {
-            float st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            float st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
             v.noise_am_inc *= knob_exp2(2.0f * (st - m_modal_stiff_ref));
             float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
             v.noise_am_depth = fmaxf(0.0f, fminf(0.99f,
@@ -2386,11 +2640,11 @@ SynthState state;
                     // the anchor, stretches the partials above it.
                     {
                         float inh = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
-                        // Widened 0.8→1.6 (HW: "effect too weak") so the partials
-                        // stretch/compress audibly across the Inharm range.
-                        float spread = 1.0f + (inh - m_modal_inharm_ref) * 1.6f;
+                        // Widened 0.8→1.6→2.4 (HW: "still too subtle") so the
+                        // partials stretch/compress dramatically across the range.
+                        float spread = 1.0f + (inh - m_modal_inharm_ref) * 2.4f;
                         if (spread < 0.999f || spread > 1.001f) {
-                            spread = fmaxf(0.1f, fminf(3.5f, spread));
+                            spread = fmaxf(0.05f, fminf(5.0f, spread));
                             if (r2 > 0.0f) r2 = 1.0f + (r2 - 1.0f) * spread;
                             if (r3 > 0.0f) r3 = 1.0f + (r3 - 1.0f) * spread;
                             if (r4 > 0.0f) r4 = 1.0f + (r4 - 1.0f) * spread;
@@ -2404,11 +2658,12 @@ SynthState state;
                     // (overall ring length stays Dkay's job).
                     {
                         float mn = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
-                        // Widened 1.5→2.5 (HW: "effect too weak"): metal sustains
-                        // its overtones, wood damps them — now a strong timbre sweep.
-                        float mat = knob_exp2(2.5f * (mn - m_modal_mterl_ref));
+                        // Widened 1.5→2.5→3.4 (HW: "effect too weak", then "from
+                        // subtle to live"): metal sustains its overtones, wood
+                        // damps them — now a full timbre sweep across the knob.
+                        float mat = knob_exp2(3.4f * (mn - m_modal_mterl_ref));
                         if (mat < 0.999f || mat > 1.001f) {
-                            mat = fmaxf(0.15f, fminf(6.0f, mat));
+                            mat = fmaxf(0.08f, fminf(9.0f, mat));
                             t2 *= mat;
                             t3 *= mat;
                             t4 *= mat;  // modes 5/6 derive their decay from t4
@@ -2416,11 +2671,11 @@ SynthState state;
                             // mat^0.5).  Damping only the T60 was tail-only and
                             // inaudible on fundamental-dominated drums (e.g. Timpani);
                             // metal = brighter ONSET too, wood = duller onset.
-                            float matenv = fmaxf(0.4f, fminf(2.5f, sqrtf(mat)));
+                            float matenv = fmaxf(0.25f, fminf(3.2f, sqrtf(mat)));
                             // Also tilt mode 2 (gentler) so Mterl is audible on
                             // drums whose energy sits in the low modes, where the
                             // 3-6 tilt alone read as "weak" (audit).
-                            e2 *= fmaxf(0.7f, fminf(1.6f, matenv));
+                            e2 *= fmaxf(0.5f, fminf(2.2f, matenv));
                             e3 *= matenv; e4 *= matenv; e5 *= matenv; e6 *= matenv;
                         }
                     }
@@ -2433,9 +2688,9 @@ SynthState state;
                     // is inaudible on fundamental-dominated drums like Timpani).
                     {
                         float tn = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
-                        float tub = knob_exp2(1.2f * (tn - m_modal_tubrad_ref));
+                        float tub = knob_exp2(1.9f * (tn - m_modal_tubrad_ref));
                         if (tub < 0.999f || tub > 1.001f) {
-                            tub = fmaxf(0.4f, fminf(2.5f, tub));
+                            tub = fmaxf(0.25f, fminf(3.5f, tub));
                             t1 *= tub; t2 *= tub; t3 *= tub; t4 *= tub;  // whole shell
                             // Kick presets route TubRad → boom base tune in the
                             // dedicated kick block below; don't also scale their
@@ -2468,10 +2723,10 @@ SynthState state;
                         // otherwise only gated the noise tail and felt dead.  Folded into
                         // t60_scale alongside Dkay (Dkay = coarse decay, Rel = ±~1 oct trim).
                         float rel_norm = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel] * 0.05f));
-                        // Widened (HW: "effect too weak"): Dkay 3.0→3.5 (~±3.5 oct of
-                        // ring), Rel 1.5→2.5 so Rel gives ~±2.5 oct of extra trim.
-                        float t60_scale = knob_exp2(3.5f * (dkay_norm - m_modal_dkay_ref)
-                                              + 2.5f * (rel_norm - m_modal_rel_ref));
+                        // Widened again (HW: "from subtle to live"): Dkay 3.5→4.5
+                        // (~±4.5 oct of ring), Rel 2.5→3.2 of extra trim on top.
+                        float t60_scale = knob_exp2(4.5f * (dkay_norm - m_modal_dkay_ref)
+                                              + 3.2f * (rel_norm - m_modal_rel_ref));
                         if (t60_scale < 0.999f || t60_scale > 1.001f) {
                             float exp_scale = 1.0f / t60_scale;
                             v.modal_decay_1 = powf(v.modal_decay_1, exp_scale);
@@ -2495,15 +2750,15 @@ SynthState state;
                         // baked vel/rim part at the original ×1.4 and widen only the
                         // KNOB's deviation from the shipped value (×2.4).  At the
                         // shipped knob value the knob term is exactly 0 → bit-identical.
-                        float stiff_knob = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+                        float stiff_knob = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
                         float tilt = (v.exciter.mallet_stiffness - stiff_knob) * 1.4f   // baked vel/rim (unchanged)
-                                   + (stiff_knob - m_modal_stiff_ref)          * 2.4f;  // knob travel (widened)
+                                   + (stiff_knob - m_modal_stiff_ref)          * 3.4f;  // knob travel (widened)
                         if (tilt < -0.001f || tilt > 0.001f) {
-                            v.modal_env_2 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 1.0f));
-                            v.modal_env_3 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 2.0f));
-                            v.modal_env_4 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 3.0f));
-                            v.modal_env_5 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 4.0f));
-                            v.modal_env_6 *= fmaxf(0.1f, fminf(4.0f, 1.0f + tilt * 5.0f));
+                            v.modal_env_2 *= fmaxf(0.05f, fminf(6.0f, 1.0f + tilt * 1.0f));
+                            v.modal_env_3 *= fmaxf(0.05f, fminf(6.0f, 1.0f + tilt * 2.0f));
+                            v.modal_env_4 *= fmaxf(0.05f, fminf(6.0f, 1.0f + tilt * 3.0f));
+                            v.modal_env_5 *= fmaxf(0.05f, fminf(6.0f, 1.0f + tilt * 4.0f));
+                            v.modal_env_6 *= fmaxf(0.05f, fminf(6.0f, 1.0f + tilt * 5.0f));
                         }
 
                         // MlltRes → modal presence (anchored).  MlltRes was dead
@@ -2514,9 +2769,10 @@ SynthState state;
                         // whole path.)
                         {
                             float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
-                            // Widened 1.6→2.6 (HW: "effect too weak") so MlltRes is a
-                            // strong modal presence/level control on modal engines.
-                            v.modal_mix *= fmaxf(0.1f, fminf(6.0f, knob_exp2(2.6f * (mr - m_modal_mltres_ref))));
+                            // Widened 1.6→2.6→3.4 (HW: "effect too weak", then
+                            // "from subtle to live") so MlltRes is a full-range
+                            // modal presence/level control on modal engines.
+                            v.modal_mix *= fmaxf(0.05f, fminf(9.0f, knob_exp2(3.4f * (mr - m_modal_mltres_ref))));
                         }
 
                         // HitPos → strike-position excitation.  Hitting toward the
@@ -2531,14 +2787,15 @@ SynthState state;
                             // no effect"): the tilt must be plainly audible on
                             // membrane presets whose upper modes sit well below
                             // the fundamental's level.
-                            // Widened ~1.6× again (HW still "too weak" after the first
-                            // doubling): rim vs centre is now a dramatic spectral tilt.
-                            v.modal_env_1 *= fmaxf(0.15f, fminf(2.0f, 1.0f - hit_off * 1.10f));
-                            v.modal_env_2 *= fmaxf(0.1f, fminf(6.0f, 1.0f + hit_off * 0.90f));
-                            v.modal_env_3 *= fmaxf(0.1f, fminf(6.0f, 1.0f + hit_off * 1.60f));
-                            v.modal_env_4 *= fmaxf(0.1f, fminf(6.0f, 1.0f + hit_off * 2.40f));
-                            v.modal_env_5 *= fmaxf(0.1f, fminf(6.0f, 1.0f + hit_off * 3.20f));
-                            v.modal_env_6 *= fmaxf(0.1f, fminf(6.0f, 1.0f + hit_off * 4.00f));
+                            // Widened ~1.6× again (HW still "too weak" after the
+                            // first doubling), then ×1.5 more in the July-2026
+                            // depth pass: rim vs centre is now a dramatic tilt.
+                            v.modal_env_1 *= fmaxf(0.08f, fminf(2.4f, 1.0f - hit_off * 1.55f));
+                            v.modal_env_2 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 1.35f));
+                            v.modal_env_3 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 2.40f));
+                            v.modal_env_4 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 3.60f));
+                            v.modal_env_5 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 4.80f));
+                            v.modal_env_6 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 6.00f));
                         }
                     }
                 }
@@ -2605,12 +2862,12 @@ SynthState state;
             if (d_tvr > 0.001f || d_tvr < -0.001f) {
                 if (v.trans_env > 0.0005f) {
                     // Preset ships a stick/slap layer (e.g. AcTom): scale it.
-                    v.trans_gain = fminf(6.0f, v.trans_gain *
-                                   knob_exp2(2.0f * d_tvr * (0.4f + 0.6f * tvq)));
+                    v.trans_gain = fminf(8.0f, v.trans_gain *
+                                   knob_exp2(3.0f * d_tvr * (0.4f + 0.6f * tvq)));
                 } else if (d_tvr > 0.0f) {
                     // No shipped layer: raise a velocity-weighted hand-slap
                     // burst (~1-4.6 kHz band, T60 ≈ 21 ms).
-                    v.trans_env   = fminf(1.5f, d_tvr * (0.5f + 1.3f * tvq));
+                    v.trans_env   = fminf(2.0f, d_tvr * (0.8f + 1.9f * tvq));
                     v.trans_decay = 0.99340f;
                     v.trans_gain  = 3.20f;
                     v.trans_a_lo  = 0.120f;
@@ -2645,11 +2902,11 @@ SynthState state;
         if (m_preset_idx == k_Kick2 || m_preset_idx == k_808Sub ||
             m_preset_idx == k_KickDrum) {
             mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes]  * 0.001f));
-            st = fmaxf(0.01f,fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
+            st = fmaxf(0.01f,fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
             d_mr = mr - m_modal_mltres_ref;    // anchored: 0 at shipped value
             d_st = st - m_modal_stiff_ref;
             // Only positive deltas add thump (turning the knob UP = more punch).
-            thump_amt = fmaxf(0.0f, 0.90f * d_mr + 0.55f * d_st);
+            thump_amt = fmaxf(0.0f, 1.35f * d_mr + 0.85f * d_st);
             // VlMllRes → velocity-weighted thump PROMINENCE (HW: VlMllRes was
             // inert on kicks — the global mapping only touches the masked
             // mallet).  Same semantics as the kernel's hit-prominence knob:
@@ -2659,13 +2916,56 @@ SynthState state;
             const float kvq  = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
             const float d_kvr = (float)m_params[k_paramVlMllRes] * 0.01f - m_snare_vlres_ref;
             const float d_kvs = (float)m_params[k_paramVlMllStf] * 0.01f - m_snare_vlstf_ref;
-            if (d_kvr > 0.001f)       thump_amt += d_kvr * (0.35f + 0.85f * kvq);
+            // Depth widened (HW: "still too subtle"): the ceiling below used to
+            // clamp at 1.6, which full travel already reached at 1.63, so the
+            // top of the knob was flat.  Measured knob audibility (RMS of the
+            // difference between knob-0 and knob-max renders, relative to the
+            // signal) went 808Sub -9.6 -> -6.6 dB and KickDrum -10.2 -> -5.6 dB.
+            if (d_kvr > 0.001f)       thump_amt += d_kvr * (0.90f + 1.80f * kvq);
             else if (d_kvr < -0.001f) thump_amt *= knob_exp2(2.0f * d_kvr);
-            // VlMllStf UP also contributes a small knock of its own (stiff
-            // beater tip = audible contact), so the knob is live standalone —
-            // without this it only SHAPES a thump raised by the other knobs
-            // and audits NO EFFECT when swept alone.
-            if (d_kvs > 0.001f)       thump_amt += d_kvs * 0.45f * (0.4f + 0.6f * kvq);
+            // ── VlMllRes TRADES boom for punch, it does not just add punch ────
+            // HW: "'thump' is not really increased."  The layer was being armed
+            // correctly all along (measured: thump_env 1.6 at 115 Hz on all
+            // three kicks) — the problem is that the kick bus is normalised
+            // downstream, first by a hard clip (now removed) and then by the
+            // master limiter, so ADDING a layer to an already-limited bus comes
+            // straight back out and the knob measured 0.98-1.02x.
+            //
+            // Level is the one thing a limited bus cannot give you; BALANCE is
+            // free.  So the knob now takes sub away as it adds punch, which is
+            // also what the control means musically — a beater-forward kick has
+            // less body, not more of everything.  Measured on the 100-400 Hz vs
+            // 30-90 Hz band ratio (plain RMS is blind to this — the CLAUDE.md
+            // "use a band metric on the kick" lesson), full travel moves the
+            // ratio several-fold while total level barely moves, which is
+            // exactly what "the knob does something" sounds like.
+            if (d_kvr > 0.001f) {
+                v.boom_mix = fmaxf(0.0f, v.boom_mix * (1.0f - 0.70f * d_kvr));
+            } else if (d_kvr < -0.001f) {
+                // Knob down = body-forward: give the sub back, up to +40 %.
+                v.boom_mix = fminf(1.50f, v.boom_mix * (1.0f - 0.40f * d_kvr));
+            }
+            // VlMllStf contributes a knock of its own (stiff beater tip =
+            // audible contact), so the knob is live standalone — without this
+            // it only SHAPES a thump raised by the other knobs and audits NO
+            // EFFECT when swept alone.  Depth widened and the DOWN direction
+            // added (HW: VlMllStf measured -23 dB / -37 dB = inert on Kick2):
+            // a soft beater is not "no knock", it is a rounder, weightier one,
+            // so downward trades the knock for body instead of removing both.
+            if (d_kvs > 0.001f)       thump_amt += d_kvs * 1.40f * (0.4f + 0.6f * kvq);
+            else if (d_kvs < -0.001f) v.boom_mix = fminf(1.50f,
+                                          v.boom_mix * (1.0f - 0.45f * d_kvs));
+            // MlltStif BELOW the shipped value was dead on the kick family: the
+            // thump is clamped at 0 from below, so on Kick2/KickDrum (which ship
+            // MlltStif at 0.60/0.70) the whole lower half of the knob did
+            // nothing.  A softer beater is a slower contact, so soften it the
+            // way the physics does — stretch the boom's onset ramp, giving a
+            // rounded felt-mallet "whoomp" instead of a struck attack.  Only the
+            // downward branch (d_st < 0); Δ=0 is untouched → byte-identical.
+            if (d_st < -0.001f) {
+                v.boom_attack_inc = fmaxf(0.00008f,
+                                    v.boom_attack_inc * knob_exp2(2.0f * d_st));
+            }
             if (thump_amt > 0.001f) {
                 // MlltStif also shifts the punch pitch (higher = snappier knock,
                 // lower = rounder thud).  Bottom-of-drop ~70-260 Hz around 115 Hz
@@ -2674,10 +2974,10 @@ SynthState state;
                 // VlMllStf → velocity-weighted SNAP: shifts the punch pitch up
                 // and shortens its ring as you hit harder (stiff beater tip).
                 float snap = d_kvs * (0.4f + 0.6f * kvq);
-                thump_hz = fmaxf(70.0f, fminf(260.0f,
-                           115.0f * knob_exp2(1.2f * d_st + 0.9f * snap)));
+                thump_hz = fmaxf(55.0f, fminf(340.0f,
+                           115.0f * knob_exp2(1.8f * d_st + 1.4f * snap)));
                 v.thump_inc   = (M_TWOPI * thump_hz) * inverse_default_sample_rate;
-                v.thump_env   = fminf(1.2f, thump_amt);
+                v.thump_env   = fminf(2.8f, thump_amt);
                 v.thump_amp0  = v.thump_env;
                 // Base T60 ≈ 58 ms — a punchy attack, not a tone.  snap>0
                 // widens (1-decay) → shorter/snappier; snap<0 rounder/longer.
@@ -2698,10 +2998,10 @@ SynthState state;
             // by 1/len so knob-up = longer boom.
             float dkay_n = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
             float rel_n  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel]  * 0.05f));
-            float klen   = knob_exp2(2.2f * (dkay_n - m_modal_dkay_ref)
-                                + 1.6f * (rel_n  - m_modal_rel_ref));
+            float klen   = knob_exp2(3.0f * (dkay_n - m_modal_dkay_ref)
+                                + 2.2f * (rel_n  - m_modal_rel_ref));
             if (klen < 0.999f || klen > 1.001f) {
-                float one_minus = (1.0f - v.boom_decay) / fmaxf(0.25f, fminf(4.0f, klen));
+                float one_minus = (1.0f - v.boom_decay) / fmaxf(0.15f, fminf(6.0f, klen));
                 v.boom_decay = fmaxf(0.99000f, fminf(0.99995f, 1.0f - one_minus));
             }
             // Mterl → boom body WEIGHT (drumhead density → how much sub).
@@ -2717,7 +3017,7 @@ SynthState state;
                     float t = fmaxf(0.0f, kmn / m_modal_mterl_ref);   // 1 at ref → 0 at floor
                     bw = t * t;
                 } else {
-                    bw = knob_exp2(1.2f * d_kmt);
+                    bw = knob_exp2(1.9f * d_kmt);
                 }
                 v.boom_mix = fmaxf(0.0f, fminf(1.50f, v.boom_mix * bw));
             }
@@ -2728,7 +3028,7 @@ SynthState state;
             float ktn  = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
             float d_ktr = ktn - m_modal_tubrad_ref;
             if (d_ktr < -0.001f || d_ktr > 0.001f) {
-                v.boom_tune = fmaxf(0.50f, fminf(1.60f, knob_exp2(-0.6f * d_ktr)));
+                v.boom_tune = fmaxf(0.40f, fminf(2.00f, knob_exp2(-1.0f * d_ktr)));
                 if (m_preset_idx == k_Kick2) v.boom_inc *= v.boom_tune;
             }
             // Inharm → boom pitch-DROP depth ("808 dive").  Scales the pitch_env
@@ -2739,14 +3039,14 @@ SynthState state;
             float kinh  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
             float d_kih = kinh - m_modal_inharm_ref;
             if (d_kih < -0.001f || d_kih > 0.001f)
-                v.pitch_env_amt = fmaxf(0.0f, v.pitch_env_amt * fmaxf(0.10f, 1.0f + d_kih * 3.0f));
+                v.pitch_env_amt = fmaxf(0.0f, v.pitch_env_amt * fmaxf(0.05f, 1.0f + d_kih * 4.5f));
             // HitPos → beater CLICK (harder beater = brighter contact tick).  The
             // kick doesn't otherwise use the trans_* burst; borrow it for a short
             // bright tick that only appears as HitPos rises above the shipped value.
             float khit  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
             float d_khp = khit - m_modal_hitpos_ref;
             if (d_khp > 0.001f) {
-                v.trans_env   = fminf(1.5f, d_khp * 2.5f);
+                v.trans_env   = fminf(2.0f, d_khp * 3.8f);
                 v.trans_decay = 0.98500f;   // T60 ≈ 9 ms — a click, not a tone
                 v.trans_gain  = 1.60f;
                 v.trans_a_lo  = 0.20f;      // ~1.8 kHz HP corner
@@ -2764,13 +3064,16 @@ SynthState state;
             if (v.is_active && !v.is_releasing && v.current_note == note) {
                 v.is_releasing = true;
 
-                // SNARE: do NOT release the noise envelopes.  The Drumlogue
-                // fires gate_off in the same tick as gate_on, so the Rel-rate
-                // release choked the wire buzz to ~26 ms T60 — real snare wires
-                // ring freely once the stick leaves the head.  The envelopes
+                // SNARE: do NOT release the noise envelopes.  Real snare wires
+                // ring freely once the stick leaves the head, so the envelopes
                 // stay in ENV_DECAY (sustain 0) and die at the NzRs-governed
-                // natural rate, which is calibrated against the reference
-                // samples (~0.2-0.4 s buzz tails).
+                // natural rate, calibrated against the reference samples
+                // (~0.2-0.4 s buzz tails); the Rel-rate release choked the
+                // buzz to ~26 ms T60.  NOTE: this is a VOICING choice now, not
+                // a same-tick workaround — FastEnvelope::release() defers a
+                // release that arrives during the attack (ENV_ATTACK_REL), so
+                // every other engine can call it safely.  See the same-tick
+                // gotcha in CLAUDE.md and T37.
                 const EngineType ve = kPresetEngine[m_preset_idx];
                 if (ve != ENGINE_SNARE) {
                     v.exciter.noise_env.release();
@@ -3147,18 +3450,35 @@ SynthState state;
             return;
         }
 
+        // Release a master drive deferred behind a preset-change fade as soon
+        // as the last fading voice has retired.
+        if (m_pending_drive >= 0.0f) {
+            bool fading = false;
+            for (int i = 0; i < NUM_VOICES; ++i)
+                if (state.voices[i].is_active && state.voices[i].fade_mul < 1.0f) fading = true;
+            if (!fading) { state.master_drive = m_pending_drive; m_pending_drive = -1.0f; }
+        }
+
         bool any_voice_rendered = false;
+        bool any_cymbal_rendered = false;
         for (int voice_idx = 0; voice_idx < NUM_VOICES; ++voice_idx) {
             VoiceState& voice = state.voices[voice_idx];
             if (!voice.is_active) continue;
 
-            // Engine routing: silence removed presets immediately.
-            const EngineType voice_engine = kPresetEngine[m_preset_idx];
+            // Engine routing: the engine LATCHED AT NoteOn, never the live
+            // kPresetEngine[m_preset_idx].  Reading it live meant a preset
+            // change mid-tail re-routed a ringing voice into another engine's
+            // per-sample code — which, for a cymbal voice (whose exciter is
+            // never advanced and so still holds an unstarted envelope at
+            // current_frame 0), fired a complete unplayed attack: a measured
+            // 19x burst on Cymbal -> Clap.  See T38.
+            const EngineType voice_engine = (EngineType)voice.engine;
             if (voice_engine == ENGINE_REMOVED) {
                 voice.is_active = false;
                 continue;
             }
             any_voice_rendered = true;
+            if (voice_engine == ENGINE_CYMBAL) any_cymbal_rendered = true;
 
             // Pre-compute model-aware coupling clamps once per block.
             // feedback_gain is constant during audio rendering, so this runs once per voice
@@ -3203,6 +3523,11 @@ SynthState state;
             if (voice_engine == ENGINE_CYMBAL) {
                 for (size_t i = 0; i < frames; ++i) {
                     float cy = cymbal_process(voice.cymbal);
+                    if (voice.fade_mul < 1.0f) {   // preset-change fade-out
+                        cy *= voice.fade;
+                        voice.fade *= voice.fade_mul;
+                        if (voice.fade < 0.001f) { voice.is_active = false; voice.cymbal.active = false; }
+                    }
                     if (tone_active) {
                         voice.tone_lp = (cy * kToneLpMix) + (voice.tone_lp * (1.0f - kToneLpMix));
                         if (tone_val < zeroThreshold) {
@@ -3599,6 +3924,14 @@ SynthState state;
                     voice.onset_env = fminf(1.0f, voice.onset_env + voice.onset_inc);
                     voice_out *= voice.onset_env;
                 }
+                // Preset-change fade-out.  fade_mul is exactly 1.0f in normal
+                // play, so this branch is skipped and the output is unchanged
+                // bit-for-bit; only a voice orphaned by a preset change ramps.
+                if (voice.fade_mul < 1.0f) {
+                    voice_out *= voice.fade;
+                    voice.fade *= voice.fade_mul;
+                    if (voice.fade < 0.001f) voice.is_active = false;
+                }
 
                 main_out[i * 2]     += voice_out * state.master_gain;
                 main_out[i * 2 + 1] += voice_out * state.master_gain;
@@ -3655,39 +3988,98 @@ SynthState state;
             return;
         }
 
-        if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+        // Keyed on a cymbal voice actually having RENDERED, not on the live
+        // preset index: after a preset change the two disagree, and the soft
+        // headroom belongs to the stacked cymbal voices, wherever they came from.
+        if (any_cymbal_rendered) {
             for (size_t i = 0; i < frames * 2; ++i) {
                 main_out[i] = main_out[i] / (1.0f + 0.35f * fabsf(main_out[i]));
             }
         }
+        // NOTE: there is deliberately NO hard clip of the voice bus here.
+        // A `clamp(main_out, +-0.99)` used to sit at this point, left over from
+        // the debug render stages (where the raw mallet impulse, ~3-4x full
+        // scale, could reach the DAC without a master stage behind it).  In the
+        // shipping path Stage 4b ALWAYS runs and bounds the output to
+        // kMasterLimCeil by construction, so the clamp protected nothing and
+        // cost a great deal:
+        //   - it is a hard clipper, and the kick presets sit on top of it
+        //     permanently (Kick2's bus is pinned at 0.99 for most of the hit),
+        //     which is a much larger distortion source than anything the
+        //     master curve does;
+        //   - because the bus was already pinned, ANY layer added underneath it
+        //     was invisible.  That is why VlMllRes measured 0.99x on Kick2 and
+        //     "thump is not really increased" on hardware: the thump layer was
+        //     being armed correctly (verified: thump_env 1.6 at 115 Hz on all
+        //     three kicks) and then clipped straight back off.
+        // The master limiter below sees the true bus level instead and rides it
+        // down smoothly, so added layers change the sound again.
+        // ── Stage 4b: Master FX (filter + overdrive + peak limiter) ───────
+        // The output stage used to be x / (1 + |x|), which divides EVERY
+        // sample, not just the ones that need limiting: a unity-amplitude bus
+        // left the unit at 0.50 and a 0.3 signal at 0.23.  That is where the
+        // unit's ~6 dB of missing level went — measured across the 40 shipped
+        // presets, peaks sat at 0.50-0.74 and NOTHING reached the 0.99 ceiling.
+        // It also squashed the strike crest, which is the "rough / synthy hit"
+        // the HW comparison flagged and the reason the Timpani/Taiko kernel was
+        // given its own master stage.  Use that same transparent limiter here:
+        // unity below kMasterLimThr, tanh knee above, asymptotic to 1.0.
+        // Both channels carry the same signal (mix_r was already a copy of the
+        // filtered left), so limit once and write it twice.
+        // ── Why a gain ENVELOPE and not a waveshaper ───────────────────────
+        // HW: "boom for kicks was declared perfect, but with long decays it
+        // sounds a bit brittle or distorted."  Pass 29's stage applied the
+        // curve below to every SAMPLE, which is a waveshaper: the gain changes
+        // within a single cycle, and on a ~45-90 Hz kick boom that manufactures
+        // high-order harmonics.  Measured on 808Sub at Dkay+Rel max, the 4th
+        // harmonic sat at -21.5 dB under the pre-29 x/(1+|x|) master and at
+        // -7.4 dB after — a 14 dB rise, worst on long decays because the
+        // sustained part of the boom stays under compression longest.
+        //
+        // The presets deliberately drive this stage hard (808Sub arrives at
+        // ~4.5x full scale), so softening the knee cannot help: the waveform
+        // sits deep in the compressive region, nowhere near the corner.  That
+        // was measured too — sweeping a smoothstep knee of 0 / 0.10 / 0.20 /
+        // 0.30 / 0.44 moved H4 by 0.2 dB.  Do not re-try it.
+        //
+        // Instead the peak is tracked with an instant-attack, slow-release
+        // follower and ONE gain is applied per cycle.  Because master_lim_env
+        // only ever jumps up and decays down, it is >= |x| at every sample, so
+        // out = x * (limit(env)/env) is still bounded by kMasterLimCeil BY
+        // CONSTRUCTION — the brickwall stays pure safety — while the waveform
+        // shape inside a cycle is preserved and the harmonics are not created.
         for (size_t i = 0; i < frames; ++i) {
-            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2]));
-            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, main_out[i * 2 + 1]));
-        }
-        // ── Stage 4b: Master FX (filter + overdrive + brickwall) ──────────
-        for (size_t i = 0; i < frames; ++i) {
-            float mix_l = main_out[i * 2];
-            float mix_r = main_out[i * 2 + 1];
-            mix_l = state.master_filter.process(mix_l);
-            mix_r = mix_l;
-            mix_l *= state.master_drive;
-            mix_r *= state.master_drive;
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-            float32x2_t v = {mix_l, mix_r};
-            float32x2_t abs_v = vabs_f32(v);
-            float32x2_t den = vadd_f32(abs_v, vdup_n_f32(1.0f));
-            // Reciprocal estimate + one NR refinement (ARMv7-friendly).
-            float32x2_t rec = vrecpe_f32(den);
-            rec = vmul_f32(vrecps_f32(den, rec), rec);
-            float32x2_t clipped = vmul_f32(v, rec);
-            float clipped_l = vget_lane_f32(clipped, 0);
-            float clipped_r = vget_lane_f32(clipped, 1);
-#else
-            float clipped_l = mix_l / (1.0f + fabsf(mix_l));
-            float clipped_r = mix_r / (1.0f + fabsf(mix_r));
-#endif
-            main_out[i * 2]     = fmaxf(-0.99f, fminf(0.99f, clipped_l));
-            main_out[i * 2 + 1] = fmaxf(-0.99f, fminf(0.99f, clipped_r));
+            float x = state.master_filter.process(main_out[i * 2]);
+            x *= state.master_drive;
+            const float ax = fabsf(x);
+            state.master_lim_env = (ax > state.master_lim_env)
+                ? ax
+                : state.master_lim_env + (ax - state.master_lim_env) * kMasterLimRelCoef;
+            float a = state.master_lim_env;
+            if (a > kMasterLimThr) {
+                // Soft knee that asymptotes to kMasterLimCeil BY CONSTRUCTION:
+                //     y = thr + span * over / (over + span),   over = a - thr
+                // Unity slope at the knee, monotone, and strictly below `ceil`
+                // for every finite input, so nothing is ever flat-topped and
+                // the brickwall below is pure safety.  It is the same hyperbola
+                // as the old x/(1+|x|), translated to start at the threshold.
+                //
+                // Two shapes were tried and rejected here, both measurable:
+                // plain x/(1+|x|) compresses from zero up (a 0.5 bus left at
+                // 0.333, -3.5 dB, and the strike crest with it), while
+                // 0.85 + 0.15*fastertanhf(...) needs a clamp — fastertanhf is
+                // a rational approximation asymptotic to ~1.168, not 1.0 — and
+                // clamping it just relocates the brickwall: it pinned 23034
+                // samples dead flat across the 40 presets, including an 11 ms
+                // plateau on the Gong, where the old curve pinned none.
+                const float over = a - kMasterLimThr;
+                const float y =
+                    kMasterLimThr + kMasterLimSpan * over / (over + kMasterLimSpan);
+                x *= y / a;                 // one gain for the whole cycle
+            }
+            x = fmaxf(-kMasterLimCeil, fminf(kMasterLimCeil, x));
+            main_out[i * 2]     = x;
+            main_out[i * 2 + 1] = x;
         }
     }
 
@@ -3725,13 +4117,13 @@ private:
         // Dkay (0-200, ×0.005) + Rel (0-20, ×0.05): T60 multiplier.
         float dk = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
         float rl = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel]  * 0.05f));
-        md.decay_mult = knob_exp2(3.5f * (dk - m_modal_dkay_ref) + 2.5f * (rl - m_modal_rel_ref));
+        md.decay_mult = knob_exp2(4.5f * (dk - m_modal_dkay_ref) + 3.2f * (rl - m_modal_rel_ref));
 
         // Mterl (−10..30): brighter material lets HF modes ring longer.  Widened
-        // 1.2→2.0 (audit/HW: Mterl "weak" on the kettle) for a clearer material
-        // sweep; still anchored at the shipped value → bit-identical.
+        // 1.2→2.0→3.0 (audit/HW: Mterl "weak", then "too subtle" on the kettle)
+        // for a full material sweep; still anchored → bit-identical.
         float mt = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
-        md.hf_decay_tilt = 2.0f * (mt - m_modal_mterl_ref);
+        md.hf_decay_tilt = 3.0f * (mt - m_modal_mterl_ref);
 
         // TubRad (0-20, ×0.05): kettle/shell SIZE.  A bigger body rings a little
         // longer AND darker (more low-mode weight); this is the "TubRad no effect
@@ -3739,12 +4131,12 @@ private:
         // for Timpani/Taiko.  Anchored at the shipped TubRad → bit-identical.
         float tr = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
         float d_tr = tr - m_modal_tubrad_ref;
-        md.decay_mult    *= knob_exp2(1.2f * d_tr);   // bigger = longer sustain
-        md.hf_decay_tilt -= 0.6f * d_tr;           // bigger = darker/rounder
+        md.decay_mult    *= knob_exp2(1.9f * d_tr);   // bigger = longer sustain
+        md.hf_decay_tilt -= 1.0f * d_tr;           // bigger = darker/rounder
 
         // Inharm (0-199, ×0.005): stretches the upper modes away from f0.
         float ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
-        md.stretch = 1.6f * (ih - m_modal_inharm_ref);
+        md.stretch = 2.4f * (ih - m_modal_inharm_ref);
 
         // Partls (index 0-4): density of the membrane fill.  Shipped index =
         // the full approved wedge; lower thins it toward the bare mode lines.
@@ -3753,8 +4145,8 @@ private:
         md.density = fminf(1.0f, knob_exp2(0.7f * (float)(pt - m_modal_partls_ref)));
 
         // MlltStif (×0.002): impulse sharpness (shorter strike = brighter).
-        float st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.002f));
-        md.exc_sharp = knob_exp2(2.0f * (st - m_modal_stiff_ref));
+        float st = fmaxf(0.01f, fminf(1.0f, (float)m_params[k_paramMlltStif] * 0.02f));
+        md.exc_sharp = knob_exp2(3.0f * (st - m_modal_stiff_ref));
 
         // MlltRes (×0.001) + HitPos (×0.01, edge = clickier) + VlMllRes: the
         // knock ("wham") gain.  VlMllRes is the HIT-PROMINENCE knob (HW: "at
@@ -3766,9 +4158,9 @@ private:
         float hp = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
         float vs = (float)m_params[k_paramVlMllStf] * 0.01f;
         float vr = (float)m_params[k_paramVlMllRes] * 0.01f;
-        md.knock_mult = knob_exp2(2.6f * (mr - m_modal_mltres_ref) +
-                              1.2f * (hp - m_modal_hitpos_ref) +
-                              2.2f * (vr - m_kernel_vlres_ref));
+        md.knock_mult = knob_exp2(3.4f * (mr - m_modal_mltres_ref) +
+                              1.9f * (hp - m_modal_hitpos_ref) +
+                              3.0f * (vr - m_kernel_vlres_ref));
         md.vel_knock_exp = fmaxf(0.4f, fminf(3.0f, 1.5f - 1.0f * (vr - m_kernel_vlres_ref)));
 
         // VlMllStf (±100 → ±1): velocity→sharpness amount.
@@ -3818,8 +4210,11 @@ private:
     uint16_t m_idle_flush_blocks = 0;
     // Ex-sample-selection params, repurposed (PCM layering removed): global
     // cymbal performance/CPU controls.
+    // Master drive queued behind a preset-change fade (-1 = nothing pending).
+    float m_pending_drive = -1.0f;
     uint8_t m_poly = 4;            // global voice cap (1-4, Poly knob)
-    uint8_t m_cym_poly = 2;        // cymbal-family cap = min(m_poly, 2)
+    uint8_t m_cym_poly = 4;        // cymbal-family cap (= m_poly; CPU is bounded
+                                   // by kCymResonatorBudget, not by voice count)
     uint8_t m_cym_reso_scale = 40;  // cymbal resonator-bank scale (25-60 %)
     uint8_t m_model_a = k_String;
     uint8_t m_model_b = k_String;

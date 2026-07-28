@@ -1727,6 +1727,266 @@ static void test_roll_fusion() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// T36: ENGINE_CYMBAL voice stacking (HW: "multiple gong hits are not stacking")
+//
+//   The cymbal family was hard-capped at 2 voices AND stole the voice with the
+//   smallest magEnv.  magEnv is a ~10 ms average of |out| starting at 0, and a
+//   gong takes 0.25 s just to open its driver attack, so the newest hit was
+//   always the "quietest" voice in the bank: a third strike killed the second
+//   one mid-bloom and repeated hits ping-ponged between two slots instead of
+//   accumulating.  Both halves of the fix are asserted here:
+//
+//     hits within the cost budget             → land on DISTINCT voices
+//     no strike ever reuses the slot it just  → the self-kill / ping-pong
+//       struck while another is affordable       signature of the original bug
+//     a hit past the budget, all voices young → steals the OLDEST, never the
+//                                               one that was just struck
+//     aggregate cymbal COST                   → within kCymCostBudget
+//
+//   NOTE the budget is in resonator-lane EQUIVALENTS and charges each voice
+//   kCymVoiceFixedLanes on top of its bank — see the constant's comment.  This
+//   test deliberately does NOT assert "4 distinct voices": that was pass 26's
+//   assumption, and measuring the real per-voice cost showed 4 simultaneous
+//   cymbal voices to be roughly twice the only CPU level this unit has field
+//   evidence for.  What must hold is that hits ACCUMULATE rather than replace
+//   each other, which is what the HW report was actually about.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_cymbal_stacking() {
+    std::cout << "\n── T36: Cymbal/gong voice stacking ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    // Gong strikes 300 ms apart must accumulate on distinct voices for as long
+    // as the cost budget can afford another one.
+    s.Init(&desc); s.LoadPreset(14);        // Gong (ENGINE_CYMBAL)
+    s.state.next_voice_idx = 0;
+    uint32_t used = 0u;
+    int worst_cost = 0;
+    bool reused_immediately = false;
+    int prev_idx = -1;
+    for (int k = 0; k < 4; ++k) {
+        s.NoteOn(50, 110);
+        s.NoteOff(50);                      // gate on+off in one tick
+        const int idx = (int)s.state.next_voice_idx;
+        if (idx == prev_idx) reused_immediately = true;
+        prev_idx = idx;
+        used |= (1u << idx);
+        int cost = 0;
+        for (int i = 0; i < NUM_VOICES; ++i)
+            if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
+                cost += BrachettiSynth::kCymVoiceFixedLanes +
+                        (int)s.state.voices[i].cymbal.resCount;
+        if (cost > worst_cost) worst_cost = cost;
+        run_blocks(s, (int)(0.300f * 48000.0f), 64);
+    }
+    int distinct = 0;
+    for (int i = 0; i < NUM_VOICES; ++i) if (used & (1u << i)) ++distinct;
+    std::cout << "  4 gong hits (300 ms apart): distinct voices=" << distinct
+              << "  worst cost=" << worst_cost
+              << " (budget " << BrachettiSynth::kCymCostBudget << ")\n";
+    result("T36a repeated gong hits accumulate on distinct voices",
+           distinct >= 2 && !reused_immediately,
+           "Gong hits are not stacking — repeated strikes are reusing the slot "
+           "they just struck instead of accumulating");
+
+    // Every voice is now younger than kCymStealProtectSec, so the 5th strike
+    // must take the OLDEST slot.  Voice 0 was struck first, so it is the oldest.
+    uint8_t oldest = 0;
+    uint32_t oldest_age = 0u;
+    for (int i = 0; i < NUM_VOICES; ++i) {
+        if (s.state.voices[i].cymbal.active &&
+            s.state.voices[i].cymbal.sampleIndex >= oldest_age) {
+            oldest_age = s.state.voices[i].cymbal.sampleIndex;
+            oldest = (uint8_t)i;
+        }
+    }
+    uint8_t youngest = 0;
+    uint32_t young_age = 0xFFFFFFFFu;
+    for (int i = 0; i < NUM_VOICES; ++i) {
+        if (s.state.voices[i].cymbal.active &&
+            s.state.voices[i].cymbal.sampleIndex < young_age) {
+            young_age = s.state.voices[i].cymbal.sampleIndex;
+            youngest = (uint8_t)i;
+        }
+    }
+    s.NoteOn(50, 110);
+    s.NoteOff(50);
+    std::cout << "  5th hit stole voice " << (int)s.state.next_voice_idx
+              << " (oldest=" << (int)oldest << ", youngest=" << (int)youngest << ")\n";
+    result("T36b over the cap the OLDEST cymbal voice is stolen",
+           s.state.next_voice_idx == oldest && s.state.next_voice_idx != youngest,
+           "Voice stealing is eating the freshest strike — the magEnv ranking "
+           "inverts while a slow-attack cymbal is still blooming");
+
+    // CPU guard: the aggregate bank must respect the budget even at the
+    // maximum Rsntrs setting with every voice ringing.
+    s.Init(&desc); s.LoadPreset(13);        // Cymbal: largest base bank (96)
+    s.setParameter(3, 60);                  // Rsntrs to maximum
+    s.state.next_voice_idx = 0;
+    int budget_worst = 0;
+    for (int k = 0; k < 8; ++k) {
+        s.NoteOn(69, 127);
+        s.NoteOff(69);
+        int cost = 0;
+        for (int i = 0; i < NUM_VOICES; ++i)
+            if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
+                cost += BrachettiSynth::kCymVoiceFixedLanes +
+                        (int)s.state.voices[i].cymbal.resCount;
+        if (cost > budget_worst) budget_worst = cost;
+        run_blocks(s, (int)(0.120f * 48000.0f), 64);
+    }
+    // The budget bounds what a NEW voice may claim; the minimum-bank floor can
+    // carry a voice past it, so allow that floor on top of the budget.
+    const int limit = BrachettiSynth::kCymCostBudget +
+                      BrachettiSynth::kCymMinResonators;
+    std::cout << "  8 crash hits @Rsntrs=60: worst aggregate cost="
+              << budget_worst << " (limit " << limit << ")\n";
+    result("T36c stacked cymbal voices stay inside the CPU cost budget",
+           budget_worst <= limit,
+           "Cymbal stack is over the CPU budget — this is what crashed the HW "
+           "audio interface after pass 26 raised the cap from 2 voices to 4");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// T37: ENGINE_NOISE survives same-tick gating (Clap / Shaker / HHat-C)
+//
+//   Same defect class as T20, found by reviewing for it after T36.  T20 fixed
+//   master_env by force-setting it to 1.0/ENV_DECAY in NoteOn; ENGINE_SNARE was
+//   patched separately by skipping the release.  noise_env/noise_env_hi on
+//   ENGINE_NOISE were covered by neither: trigger() leaves value=0 in
+//   ENV_ATTACK, the same-tick release() jumped straight to ENV_RELEASE, and the
+//   first process() saw value <= 0.001f and went to ENV_IDLE.  The envelope died
+//   before it opened and the entire voice was silent ON HARDWARE — while
+//   render_presets.cpp, which holds the gate ~50 ms, sounded perfect.
+//
+//   FastEnvelope::release() now defers into ENV_ATTACK_REL, so the attack
+//   completes and the release runs from the top of it.  Assert against the
+//   held-gate render rather than an absolute level, so the test tracks the
+//   presets if they are ever retuned.
+// ════════════════════════════════════════════════════════════════════════════
+// skip_frames excludes the onset: a dead envelope still leaks the ~20 ms of
+// exciter that is already in flight, so only the TAIL separates the two cases.
+static double gate_energy(BrachettiSynth& s, unit_runtime_desc_t& desc,
+                          int preset, int hold_frames, int skip_frames = 0) {
+    s.Init(&desc);
+    s.LoadPreset((uint8_t)preset);
+    for (int i = 0; i < NUM_VOICES; ++i)
+        s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;  // noise PRNG free-runs
+
+    s.GateOn(100);
+    if (hold_frames <= 0) s.GateOff();          // same tick, before any audio
+
+    float buf[128];
+    double acc = 0.0;
+    const int total = 48000 / 5;                // 200 ms
+    bool released = (hold_frames <= 0);
+    for (int done = 0; done < total; done += 64) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 64);
+        if (done >= skip_frames)
+            for (int i = 0; i < 64; ++i) acc += (double)buf[i * 2] * buf[i * 2];
+        if (!released && done >= hold_frames) { s.GateOff(); released = true; }
+    }
+    return std::sqrt(acc / (total - skip_frames));
+}
+
+static void test_noise_same_tick_gate() {
+    std::cout << "\n── T37: ENGINE_NOISE survives same-tick gate on+off ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    struct { int idx; const char* name; } ps[] = {
+        {21, "Clap"}, {22, "Shaker"}, {26, "HHat-C"},
+    };
+    bool all_alive = true, all_full = true;
+    for (auto& p : ps) {
+        double same = gate_energy(s, desc, p.idx, 0);
+        double held = gate_energy(s, desc, p.idx, 48000 / 20);   // 50 ms
+        double tail = gate_energy(s, desc, p.idx, 0, 48000 / 40);  // same tick, past 25 ms
+        double ratio = held > 1e-9 ? same / held : 0.0;
+        std::cout << "  " << p.name << ": same-tick RMS=" << same
+                  << "  tail(>25ms)=" << tail
+                  << "  held-50ms RMS=" << held << "  ratio=" << ratio << "\n";
+        if (tail < 1e-3) all_alive = false;
+        if (ratio < 0.5) all_full = false;
+    }
+
+    result("T37a ENGINE_NOISE presets keep a tail under same-tick gating",
+           all_alive,
+           "Clap/Shaker/HHat-C went silent — noise_env was released at value=0 "
+           "and jumped to ENV_IDLE before producing anything");
+    result("T37b same-tick output is comparable to a held gate",
+           all_full,
+           "the noise tail is being truncated by the same-tick release");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T38 — A preset change while a voice rings fades it out, never re-excites it
+//
+//   processBlock used to route on the LIVE kPresetEngine[m_preset_idx], so a
+//   ringing voice was handed to whichever engine the new preset selected.  For
+//   a cymbal voice that is fatal: the ENGINE_CYMBAL branch never calls
+//   process_exciter, so the voice sits at current_frame == 0 holding an
+//   unstarted envelope, and the legacy path then fired a COMPLETE UNPLAYED
+//   ATTACK — a measured 19x RMS burst on Cymbal -> Clap.  Other switches hard-
+//   cut a ringing voice to exact silence.
+//
+//   Now the engine is latched at NoteOn and a preset change arms a ~10 ms
+//   fade.  Assert against the tail that was already playing: a fade may never
+//   be louder than what it replaces, and it must reach silence quickly.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_preset_change_fade() {
+    std::cout << "\n── T38: preset change during a ringing voice ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+
+    struct Case { int from, to; const char* name; } cases[] = {
+        {13, 21, "Cymbal->Clap"},    // the 19x burst
+        {14, 0,  "Gong->Kick2"},
+        {14, 25, "Gong->GtrStr"},
+        {25, 14, "GtrStr->Gong"},    // was a hard cut to silence
+    };
+
+    bool all_bounded = true, all_quiet = true;
+    for (const Case& c : cases) {
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)c.from);
+        for (int i = 0; i < NUM_VOICES; ++i)
+            s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;
+        s.GateOn(110);
+        s.GateOff();
+
+        run_blocks(s, 48000 / 8, 64);                    // ~125 ms of ring
+        // Compare against the 25 ms IMMEDIATELY before the switch — the tail
+        // the fade actually replaces.  A max over the whole ring would be a
+        // different (and for a still-rising KS string, unfair) reference.
+        float pk_before = run_blocks(s, 48000 / 40, 64);
+        s.LoadPreset((uint8_t)c.to);                     // <-- switch mid-ring
+        float pk_after  = run_blocks(s, 48000 / 40, 64); // first 25 ms after
+        float pk_settle = run_blocks(s, 48000 / 20, 64); // the following 50 ms
+
+        double ratio = (pk_before > 1e-9f) ? (double)pk_after / pk_before : 0.0;
+        std::cout << "  " << c.name << ": peak before=" << pk_before
+                  << " after=" << pk_after << " (ratio=" << ratio
+                  << ")  settled=" << pk_settle << "\n";
+
+        if (ratio > 1.2 || pk_after > 0.95f) all_bounded = false;
+        if (pk_settle > 1e-3f) all_quiet = false;
+    }
+
+    result("T38a a preset change never renders louder than the tail it replaces",
+           all_bounded,
+           "a ringing voice was re-excited by the incoming preset — the engine "
+           "is being read live instead of latched at NoteOn");
+    result("T38b the orphaned voice is silent within ~25 ms",
+           all_quiet,
+           "the preset-change fade did not retire the voice");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -1767,6 +2027,9 @@ int main() {
     test_dkay_feedback_gain_mapping();
     test_retrigger_consistency();
     test_roll_fusion();
+    test_cymbal_stacking();
+    test_noise_same_tick_gate();
+    test_preset_change_fade();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

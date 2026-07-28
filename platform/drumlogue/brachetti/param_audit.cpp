@@ -26,7 +26,21 @@ struct Features {
     float rms, low_rms, hi_rms, tail_rms;
 };
 
+// The per-voice PRNG seed is deliberately free-running in the DSP (it must not
+// re-play the same noise on every hit) and neither Reset() nor PartialReset()
+// touches it.  In a host audit that means every render starts from wherever the
+// previous one left the generator, so noise-dominated presets (Clap, Shaker,
+// the hats) drift a few percent between runs and flip their own verdicts —
+// which is exactly how a "Partls ok -> weak" regression gets reported for a
+// knob that provably does nothing on that preset.  Pin the seed per render so
+// the comparison isolates the parameter under test.
+static void pin_noise_seed(BrachettiSynth& synth) {
+    for (int i = 0; i < NUM_VOICES; ++i)
+        synth.state.voices[i].exciter.noise_gen.seed = 2463534242UL;
+}
+
 static Features render_features(BrachettiSynth& synth, int note, float dur_s) {
+    pin_noise_seed(synth);
     const int sr = 48000;
     const int total = (int)(dur_s * sr);
     const int block = 128;

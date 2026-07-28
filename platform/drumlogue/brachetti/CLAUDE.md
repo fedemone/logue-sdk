@@ -18,7 +18,25 @@ Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0).
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **92/92**.
+- HHat-C (26) **HW-confirmed good** after the pass-27 same-tick fix.  Clap (21)
+  and Shaker (22) share that fix and are still unlistened — check them.
+- **Listen for on the next flash (pass 30):**
+  - Cymbal/Gong under **repeated fast hits** — the crash should be gone and
+    stacking should reach 2 voices, not 4.  Poly above 2 no longer adds cymbal
+    voices (the cost budget refuses them); it still applies to every other family.
+  - **Cymbal/Ride/RidBel/Splash are now 5-11 dB louder.**  Gong and HHat-O were
+    deliberately NOT touched — HHat-O measures as quiet as the others but is
+    flagged "do not break", so say whether it should come up too.
+  - **Kick boom on long decays** — the hard clipper in front of the master stage
+    is gone and the limiter no longer waveshapes; crest is now better than the
+    pre-29 build that was called "perfect".
+  - Overall level is **1.4 dB below pass 29** and 1.65 dB above pre-29.  That is
+    the price of removing the distortion; say if you want it back and it has to
+    come from re-voicing presets rather than from the master stage.
+- Still weak by measurement, awaiting a priority call: `VlMllRes` reads **zero**
+  change on Marimba/Vibrph/Kalimba/Shaker/BrshSnr, and `VlMllStf` is inert on
+  Clap/Shaker/HHat-C.  Run `knobaud.cpp` for the full 22-preset map.
 - Host syntax-check (g++ -fsyntax-only): **clean**.
 - HHat-O **HW-approved** ("ok now" — do not break).
 - ARM .text ≤ 28 KB: **must be confirmed on next flash** (cannot verify without toolchain).
@@ -42,6 +60,452 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 30 — Cymbal CPU crash, master limiter rebuild, preset/UI defaults
+
+HW batch on pass 29.  **HHat-C confirmed good** — the pass-27 same-tick fix is
+validated on device.  Seven other items, three of which turned out to share a
+root cause.
+
+**1. Cymbal/gong audio crash — pass 26's budget measured the wrong thing.**
+Pass 26 raised the cymbal cap 2→4 voices and replaced the voice-count guard with
+`kCymResonatorBudget`, on the stated theory that bounding the aggregate resonator
+count is "a STRONGER CPU guarantee than the voice count".  **That theory is
+false**, and `cym_cpu_probe.cpp` (new) measures by how much: decomposing
+`cymbal_process` into `fixed + k*resonators` shows the FIXED per-voice cost —
+pink noise, two swept driver one-poles, the PM block, the DC blocker, the
+magnitude envelope — is worth **~124 resonator lanes on its own, 79 % of a
+default 32-lane gong voice**.  The budget therefore bounded about a fifth of the
+real cost, and at the default Rsntrs it never even bound (4 gong voices ask for
+128 lanes against a 240 ceiling).  Measured 4 voices = **3.7× one voice**.
+
+Three changes:
+- **Control-rate driver** (`kCymCtrlStride` = 8): the two one-pole coefficients
+  and the three PM LFOs are updated every 8 samples instead of every sample —
+  the fastest thing there is HHat-O's 12 ms attack, so a 6 kHz control rate
+  still resolves it ~72×.  Coefficients are held piecewise constant (the filter
+  output stays continuous, so a stepped cutoff cannot click); the PM sum IS a
+  multiplier so it is linearly interpolated back to sample rate.
+- **Cost-accurate budget**: `kCymVoiceFixedLanes` (124) + `kCymCostBudget`
+  (2 × (124+60) = 368).  Every active cymbal voice charges its fixed cost PLUS
+  its bank, both when deciding whether a new voice is affordable and when
+  sizing its bank.  The ceiling is the **pre-pass-26 worst case**, the only
+  cymbal CPU level with field evidence (25 passes, no crash).
+- Result: 4 rapid gong strikes now occupy 2 voices at **29.4 µs/block**, against
+  95.6 µs for the crashing build and 49.7 µs for the last known-good — **0.59×
+  the last safe level**.  Fixed per-voice cost fell 37.1 → 24.6 ns/sample.
+
+**2. Cymbal "very quiet" — real, but NOT a regression.**  Measured over a common
+250 ms window (full-render RMS is not comparable: render lengths run 1-20 s),
+five of the six ENGINE_CYMBAL presets sat **11-18 dB under the mean of every
+other preset**: Cymbal −18.3, HHat-O −17.9, Ride −17.3, RidBel −14.7, Splash
+−11.3, Gong +3.6.  Rendering the pre-26 and pass-26 trees shows the same levels
+(Cymbal 0.0080 → 0.0099 RMS), so it is a long-standing voicing miscalibration
+that pass 29 made *audible*: its master change lifts transient-dense presets
+~3.7 dB but a decaying wash barely at all, so everything else moved up around
+them.  Corrected with a per-preset trim on `velocityGain` — the only uniform
+output scaler on the voice (scaling config levels is NOT uniform, because
+`stickLevel` feeds both the resonator drive and the direct tap and would land on
+the thwack squared).  Cymbal ×3.2, Ride ×2.9, RidBel ×2.1, Splash ×1.4; the
+family now sits −2.7 dB against the rest instead of −11.  **Gong left alone**
+(already correctly placed).  **HHat-O left alone** despite measuring equally
+quiet, because CLAUDE.md flags it "HW-approved, do not break" — raise it only on
+an explicit listen.
+
+**3, 4. Kick "thump not increased" + "brittle/distorted on long decays" — one
+cause, and it was a hard clipper nobody was looking at.**  A
+`clamp(main_out, ±0.99)` sat between the voice bus and the master stage, left
+over from the debug render stages.  In the shipping path Stage 4b always runs
+and bounds the output by construction, so it protected nothing — but the kick
+presets sit on top of it permanently (Kick2's bus is pinned at 0.99 for most of
+the hit), which made it both a large distortion source and an **invisibility
+cloak**: any layer added underneath a pinned bus is clipped straight back off.
+That is why VlMllRes measured 0.98-1.02× on the kicks while the thump layer was
+being armed perfectly (verified directly: `thump_env` 1.6 at 115 Hz on all
+three).  Removed.  Kick2 crest 1.26 → 1.50, H3 **−23.9 → −37.8 dB**.
+
+**5. Master stage: waveshaper → gain envelope.**  Pass 29's curve was applied
+per SAMPLE, i.e. the gain changed *within* a cycle — on a 45-90 Hz kick boom
+that manufactures high-order harmonics.  808Sub at Dkay+Rel max measured H4 at
+−21.5 dB under the pre-29 `x/(1+|x|)` and **−7.4 dB after pass 29**.  Now an
+instant-attack / slow-release peak follower applies ONE gain per cycle.  Since
+`master_lim_env >= |x|` always, `x * (limit(env)/env)` is still bounded by
+`kMasterLimCeil` by construction.
+
+Release swept 10/20/30/40/60/90/180/350 ms.  **20 ms wins**, and beats *both*
+earlier master stages on the reliable metrics (the 808Sub harmonic numbers are
+unreliable — it pitch-sweeps 160→45 Hz, so a fixed-frequency Goertzel smears;
+crest factor is sweep-independent and was used to decide):
+
+| preset @Dkay+Rel max | pre-29 crest | pass-29 crest | now |
+|---|---|---|---|
+| Kick2 | 1.15 | 1.11 | **1.47** |
+| 808Sub | 1.51 | 1.25 | **1.75** |
+| KickDrum | 1.34 | 1.21 | **1.67** |
+
+KickDrum's H4 improves **27 dB** over pass 29.  Two hits 150 ms apart show no
+ducking (2nd/1st peak within 0.01 dB) at any release below 350 ms.
+
+**Threshold raised 0.55 → 0.75** now that the stage is an envelope: a waveshaper
+had to start early to keep peaks down, an envelope limiter holds the ceiling at
+any threshold, so the threshold only trades loudness against gain riding.  Swept
+0.55/0.65/0.75/0.85 — 0.75 recovers 0.54 dB while every kick keeps a crest well
+above the pre-29 build the HW called "perfect".
+
+**Net level: −1.37 dB vs pass 29, +1.65 dB vs pre-29.**  This is the honest
+cost of the fix and it cannot be avoided: pass 29 bought its last ~1.4 dB *by*
+distorting (squashing peaks raises RMS).  Worst peak 0.9890, 0 NaN/silent.
+
+**A dead end, measured, do not re-try:** smoothing the limiter knee with a
+smoothstep band (0 / 0.10 / 0.20 / 0.30 / 0.44) moved 808Sub's H4 by **0.2 dB**.
+The curvature corner is irrelevant because the presets drive this stage ~4.5×
+full scale — the waveform sits deep in the compressive region, nowhere near the
+corner.  The problem was per-sample waveshaping itself, not the knee shape.
+
+**6. VlMllRes/VlMllStf depth.**  With the clipper gone the kick knobs were
+widened and made to **trade** rather than add — a limited bus cannot give you
+level, but balance is free, and a beater-forward kick should have *less* body,
+not more of everything.  VlMllRes now scales `boom_mix` down as it raises the
+thump (and up when turned down); VlMllStf gained a down direction.  Knob
+audibility (RMS of the knob-max minus shipped render, relative to signal):
+
+| preset | before | after |
+|---|---|---|
+| Kick2 | −18.9 dB | **−16.3 dB** |
+| 808Sub | −9.6 dB | **−3.8 dB** |
+| KickDrum | −10.2 dB | **−3.1 dB** |
+
+`knobaud.cpp` (new) maps both knobs across 22 presets.  It uses the
+difference-RMS metric precisely because a band or total-RMS metric is fooled by
+a downstream limiter holding the level constant while the character changes —
+which is what hid these knobs.  Most families already read LIVE; still weak and
+**left for the user to prioritise**: Marimba/Vibrph/Kalimba and Shaker/BrshSnr
+read literally 0 change on VlMllRes, and Clap/Shaker/HHat-C are inert on
+VlMllStf.
+
+**7. Boot default was not Kick2.**  `Init()` calls `LoadPreset(0)`, but the OS
+then restores its own parameter set on top via `unit_set_param_value` — and with
+no stored state that means `header.c`'s `.default` fields, of which **15 of 21
+disagreed with Kick2's preset row** (Note 60 vs 36 = two octaves up, Dkay 25 vs
+200, NzRes 0 vs 420...).  Every default is now Kick2's shipped value.  Poly and
+Rsntrs keep their own, because `LoadPreset` deliberately skips them.
+
+**8. Preset not showing actual parameter values.**  **31 stored preset values
+sat outside the range declared in `header.c`**, so the OS store could not
+represent what `LoadPreset` wrote: HitPos min was 2 while 25 presets store 0,
+Dkay max was 200 while HHat-O stores 210.  Ranges widened for those two;
+out-of-range TubRad values were clamped into [0,20] in the table instead, which
+is provably sound-neutral because every TubRad consumer already clamps there.
+Audit is now clean: 0 out-of-range, 0 wrong defaults (`range_audit.py` pattern —
+re-run it whenever the preset table or header changes).
+
+**9. MlltStif step 10 → 100.**  Stored ÷10 over 10-500 became stored ÷100 over
+0-50 (displayed ×100 = 0-5000), all 9 DSP consumers rescaled `*0.002f` →
+`*0.02f`, preset column ÷10.  Only Conga (425) and RidBel (491) are not
+representable at step 100 and round to 430/490; measured **−85.6 dB** below
+signal.  Four other presets shifted by a last-bit float difference at −107 to
+−127 dB (`350*0.002f != 35*0.02f`).
+
+**Byte-identity: 2/40.**  Intentional and unavoidable — the master architecture
+change and the pre-clip removal both touch every preset.  All *knob* mappings
+remain reference-anchored (Δ=0 ⇒ no change).
+
+Verified: syntax clean, test_dsp exit 0, test_hw_debug **92/92** (T36 rewritten
+— it hard-coded pass 26's "4 distinct voices" assumption; it now asserts hits
+ACCUMULATE and the aggregate COST stays inside budget), `stability_sweep` 4096
+combos + 480 rolls, worst |peak| 0.9900, 0 problems, 40/40 renders non-silent
+and NaN-free.  **ARM `.text` still unverified**; this pass adds the control-rate
+block and the limiter state but removes the pre-clip loop.
+
+### Pass 29 — Master output +3.0 dB, and review findings 2/3/5/6
+
+**Louder output.**  The master stage ended in `x / (1 + |x|)`, which divides
+EVERY sample rather than only the ones that need limiting — a 0.5 bus left the
+unit at 0.333 (−3.5 dB) and a unity bus at 0.50 (−6 dB), taking the strike crest
+with it.  It is the same curve the Timpani/Taiko kernel was given its own master
+stage to escape ("compresses the strike back into the body (crest ≈ 1) — the
+exact rough / synthy hit the HW comparison flagged").
+
+Replaced with a **soft knee that asymptotes to the brickwall by construction**:
+
+```
+over = |x| − thr;      y = thr + span·over/(over + span)      (span = ceil − thr)
+```
+
+Unity slope at the knee, monotone, and strictly below `ceil` = 0.99 for every
+finite input, so the brickwall clamp behind it is pure safety and nothing is
+flat-topped.  Same hyperbola as the old curve, translated to start at the
+threshold instead of at zero.  **Measured: +3.02 dB aggregate RMS over the 40
+presets** (0.0793 → 0.1122), worst peak 0.9661, 0 presets touching the clamp.
+
+**Threshold chosen by measurement, not taste.**  Loudness trades against
+flat-topping, because getting louder in a transient instrument *is* limiting.
+All 40 presets rendered at four thresholds (flat = consecutive identical samples
+above 0.9, i.e. visible squashing):
+
+| thr | RMS | worst peak | flat samples | longest run |
+|---|---|---|---|---|
+| 0.85 | +3.77 dB | 0.9873 | 9002 | 293 (6 ms) |
+| 0.70 | +3.45 dB | 0.9792 | 5936 | 292 |
+| **0.55** | **+3.02 dB** | **0.9661** | **52** | **15** |
+| 0.40 | +2.46 dB | 0.9485 | 32 | 15 |
+
+0.55 is the knee: **100× less squashing than 0.85 for 0.4 dB less level**, while
+0.40 buys almost nothing for another 0.56 dB.  Baseline: 0 flat samples at RMS
+0.0793.
+
+**Two shapes measured and rejected — do not re-try them.**
+`0.85 + 0.15·fastertanhf(...)` needs a clamp, because **`fastertanhf` is a
+rational approximation asymptotic to ~1.168, not 1.0**: unclamped its ceiling is
+1.013 so the brickwall still engaged (16-sample flat top on the RimShot crack),
+and clamping the tanh merely *relocates* the brickwall to exactly 0.99, which
+pinned **23034 samples** dead flat including an 11 ms plateau on the Gong.  The
+kernel path uses that same unclamped form; its presets peak at 0.92-0.94 so its
+clamp never engages today, but the shape is a latent trap.
+
+**This intentionally breaks the byte-identical guarantee** — a level change must.
+Every preset is louder; nothing else about them moved.
+
+**Review findings 2, 3, 5, 6** (all behaviour-neutral — verified 40/40
+byte-identical on their own, before the level change): `LoadPreset`'s bounds
+check moved to the first statement so an out-of-range index can no longer be
+retained and then indexed into three 40-entry tables; `setParameter(k_paramPartls)`
+rejects a negative value before `partial_counts[value]`; `#pragma once` added to
+`noise.h`; the stale "cymbals capped at 2" Poly comment in `header.c` corrected.
+Finding **4 (the ~35 KB `.rodata` discrepancy) remains open** — it cannot be
+settled without the ARM toolchain.
+
+Verified: test_dsp exit 0, test_hw_debug **92/92**, host syntax check clean,
+`stability_sweep` 4096 combos + 480 rolls, worst |peak| 0.9900, 0 problems;
+40/40 renders non-silent and NaN-free; T38 preset-change fade still bounded.
+**ARM `.text` still unverified** — note this pass *removes* the NEON reciprocal
+block from the master stage, so it should come out slightly smaller.
+
+### Pass 28 — Preset change during a ringing voice: fade instead of re-excite
+
+Review finding 1, fixed.  Turning the Program knob while anything was sounding
+either **burst** or **hard-cut**, measured with `switch_probe.cpp`:
+
+| switch | peak, first 25 ms after ÷ last 25 ms before | after |
+|---|---|---|
+| Cymbal → Clap | **9.0×** (RMS 19×, still 0.67 at +75 ms) | 0.51 |
+| Gong → Kick2 | 1.55× | 0.38 |
+| Gong → GtrStr | 1.23× | 0.38 |
+| GtrStr → Gong | 1.15× | 0.95 |
+
+Three compounding causes, all the pass-26/27 shape — *state read where it is not
+valid*:
+- `processBlock` read `kPresetEngine[m_preset_idx]` **live, every block**, so a
+  voice struck under one engine was rendered by another engine's per-sample code.
+- `LoadPreset` retired ringing voices **only** on the Timpani/Taiko branch.
+- The `ENGINE_CYMBAL` branch never calls `process_exciter`, so a cymbal voice sits
+  at `current_frame == 0` holding an **unstarted** envelope for its whole ring
+  (verified directly).  Switching to a legacy-path preset therefore fired a
+  complete, never-played attack — mallet impulse and noise burst — at the ringing
+  voice's velocity.  That was the 9× burst.
+
+Fix: `VoiceState::engine` latches the engine at NoteOn and `processBlock` routes
+on it; a real preset change arms a ~10 ms exponential fade
+(`kPresetFadeTauSec` = 1.5 ms, 6.9 τ to −60 dB) so the orphan retires click-free
+**under its own engine**; `LoadPreset` skips its per-voice state writes for a
+still-sounding voice (they would retune it mid-fade and `init_modal_modes` would
+re-strike its modal bank at full amplitude); and the cymbal soft-headroom stage
+is keyed on a cymbal voice having actually rendered rather than on the live
+preset index.  `fade_mul` is exactly 1.0f in normal play and the fade branch is
+skipped, so **40/40 renders stay byte-identical**.
+
+**Two dead ends worth not repeating.**  (a) It is *not* `LoadPreset`'s
+`init_modal_modes` call — skipping that alone leaves the burst intact (tested).
+(b) Snapshotting and restoring the fading voice's resonator coefficients across
+the setParameter storm changes nothing measurable (tested, then removed): in the
+KS branch `lowpass_coeff`/`ap_coeff` are rewritten from `transient_*_base_*`
+every sample anyway.  The real second-order problem was **master Gain**: it is a
+master parameter, so the incoming preset's drive hit the outgoing tail —
+GtrStr (Gain 0, drive 1.0) → Gong (Gain 20, drive 5.0) drove a fading string into
+the soft clip at `x/(1+|x|)` = 0.83 against the 0.52 tail it replaced.
+Pre-scaling the voice by the drive ratio **cannot** fix that: the ±0.99 clamp
+sits between the voice and the drive, so attenuating the voice merely moves it
+out from under the clamp and it ends up louder still (measured 1.39×).  The drive
+is now **deferred** (`m_pending_drive`) until the last fade retires, which keeps
+the outgoing chain bit-for-bit unchanged; an explicit Gain turn overrides it.
+
+Not covered: switches **into** Timpani/Taiko still retire legacy voices outright
+(the kernel path bypasses the voice loop entirely, so a fading voice would never
+be rendered and would hold its slot forever), and switching **away** from a
+kernel preset still hard-stops the kernel.  Both are unchanged from before.
+
+Verified: 40/40 byte-identical, test_dsp exit 0, test_hw_debug **92/92** (new
+**T38**; both halves fail against the pre-fix build at 9.0× and 0.67 residual),
+host syntax check clean, `stability_sweep` 4096 combos + 480 rolls, worst |peak|
+0.9900, 0 problems.  **ARM `.text` still unverified.**
+
+### Code-review findings (July 2026) — 1, 2, 3, 5, 6 fixed; 4 still open
+
+A read of every file that ships to the device (`unit.cc`, `synth_engine.h`,
+`dsp_core.h`, `modal_drum_kernel.h`, `envelope.h`, `filter.h`, `noise.h`,
+`tables.h`, `header.c`).  Ordered by severity.  **1, 2, 3, 5 and 6 are now
+fixed** (passes 28-29); **4 is still open** and needs the ARM toolchain.
+
+**1. Changing the Program knob while a voice is ringing re-excites it.**
+**FIXED — see Pass 28 below.**
+
+**2. `LoadPreset` stores the index before bounds-checking it.**
+`m_preset_idx = idx;` runs at the top; `if (idx >= k_NumPrograms) return;` is
+~65 lines later.  An out-of-range index is therefore *retained*, and
+`kPresetEngine[m_preset_idx]`, `modal_preset_configs[idx]` and
+`model_param_presets[m_preset_idx]` (all sized 40) are then read out of bounds on
+the next NoteOn.  `header.c` caps Program at 39 so a well-behaved OS cannot reach
+it — but the guard exists precisely for a misbehaving one, and it does not work.
+**FIXED (pass 29)**: the guard is now the first statement in `LoadPreset`, so an
+out-of-range index is rejected before anything is written.
+
+**3. `partial_counts[value]` can be indexed negatively.**  In
+`setParameter(k_paramPartls)` only `value < 5` is checked, not `value >= 0`.
+`header.c` min is 0, so again not OS-reachable.
+**FIXED (pass 29)**: `if (value < 0) break;` ahead of the lookup.
+
+**4. The `.rodata` budget rule and the shipped code disagree by ~35 KB.**
+**STILL OPEN.**
+This file states the firmware limit is ≈30 KB for text + `.rodata` and that
+`static const T arr[] = {…}` is a "broken pattern to avoid".  The code uses
+exactly that pattern for, at minimum:
+
+| symbol | bytes |
+|---|---|
+| `kTimpaniTransient48[3360]` | 13,440 |
+| `kTaikoTransient48[3360]` | 13,440 |
+| `kTimpaniModes[280]` | 3,360 |
+| `LoadPreset::presets[40][24]` | 3,840 |
+| `kTaikoModes[71]` | 852 |
+
+≈**34.9 KB of `.rodata` before a single instruction** (sizes are float/int32
+arrays, so architecture-independent; measured with `size -A` on a host `-O2`
+build of `unit.cc`).  Since the unit demonstrably loads on hardware, the
+**documented budget is probably wrong or stale** — but it is the rule that drove
+the non-static-class-member workaround for the preset tables, so it needs to be
+corrected or explained before it misleads another pass.  Cannot be settled
+without the ARM toolchain.
+
+**5. `noise.h` has no include guard** — **FIXED (pass 29)**, `#pragma once`. (every other header does; `float_math.h`
+uses `#ifndef __float_math_h`).  Latent only — it is included exactly once, from
+`dsp_core.h`.
+
+**6. `header.c` comment is stale** — **FIXED (pass 29)**.: the Poly parameter still says "Cymbals stay
+internally capped at 2 for the CPU budget", which pass 26 removed.
+
+Reviewed and found **correct**, for the record: the TPT SVF core matches
+Zavalishin ch. 4 exactly; `process_waveguide` masks both interpolation indices
+and clamps `delay_length`; the cymbal resonator-budget clamp can drive `rcount`
+negative but the `< 32` floor restores it before `sqrtf(count)` divides, so
+`resonatorNorm` is never inf/NaN; `ModalDrumKernel::RebuildBase` clamps the pole
+radius to 0.99999 and guards `decay_mult`; the kernel's mode-stretch `log2f` is
+guarded against both the 0×−inf and the log(0) cases; `getParameterStrValue`
+bounds-checks every table index.  One accepted soft race: `FastSVF::set_coeffs`
+writes `a1/a2/a3/q` from the UI thread while `process()` reads them on the audio
+thread — a torn update mixes two valid coefficient sets for one sample, and TPT
+is unconditionally stable for any `g > 0`, so it cannot diverge.
+
+### Pass 27 — Review pass: Clap/Shaker/HHat-C were silent on hardware
+
+Not an HW report — found by **reviewing the whole codebase for the defect class
+behind the pass-26 gong bug**: *a decision reads a quantity that is not yet valid
+at read time.*  The gong stole the voice with the smallest `magEnv` while
+`magEnv` was still 0 from the attack.  The same shape, one severity higher:
+
+**`FastEnvelope::release()` was applied to envelopes still sitting at
+`value == 0` in `ENV_ATTACK`**, which sends them to `ENV_IDLE` on the very first
+`process()` (`value += (0-value)*rate` stays 0 → trips the `<= 0.001f` cutoff).
+Since the Drumlogue fires `gate_on`+`gate_off` in one tick, **the three
+`ENGINE_NOISE` presets — Clap (21), Shaker (22), HHat-C (26) — produced a ~20 ms
+blip and nothing else on device.**  Measured same-tick RMS per 25 ms:
+`0.018` then all zeros, against `0.256 / 0.430 / 0.281` with the gate held.
+Every host tool held the gate 20-50 ms, so all 40 renders, `param_audit`,
+`stability_sweep` and 26 HW passes reported these presets healthy.
+
+Fixed **at the mechanism**, not the site: `release()` during the attack defers
+into the new `ENV_ATTACK_REL` state, the attack completes, then the release runs
+from the top of it.  An already-open envelope is bit-for-bit untouched, so all
+**40/40 renders stay byte-identical** — and unlike the pass-19 "skip the
+release" patch, `Rel` still shapes the tail.  Restored same-tick RMS:
+Clap `0.359 0.166 0.059 0.024`, Shaker `0.430 0.213 0.158`, HHat-C
+`0.357 0.054 0.006`.  The pass-19 `ENGINE_SNARE` skip is left in place as the
+voicing choice it now is.
+
+**Process lesson — this bug had been fixed twice before, per-site** (`master_env`
+in T20, `ENGINE_SNARE` in pass 19), each time as a local workaround, so the third
+site was simply never covered.  Both earlier fixes are still described in the
+code as same-tick workarounds; **when a gotcha needs a second per-site
+workaround, fix the mechanism.**  And note what no existing tool could catch:
+`render_presets`/`param_audit` hold the gate, and `stability_sweep` only checks
+peaks and NaN, so a voice that silences *itself* passes everything.  **T37** now
+asserts the same-tick path directly (both halves fail against the pre-fix build);
+`samegate_probe.cpp` prints same-tick vs held RMS side by side for any preset.
+
+Verified: 40/40 renders byte-identical, test_dsp exit 0, test_hw_debug **90/90**,
+host syntax check clean, `stability_sweep` 4096 combos + 480 rolls, worst |peak|
+0.9900, 0 problems — unchanged from pass 26.  `.bss` unchanged (the new state is
+an extra enumerator, no new fields).  **ARM `.text` still NOT verified** — no
+cross-compiler in this session; the change is a handful of instructions in an
+inlined switch.
+
+### Pass 26 — Gong/cymbal stacking + "subtle → live" knob depth pass
+
+Two HW notes.
+
+**"Multiple gong hits are not stacking correctly."**  Two compounding bugs in
+the `ENGINE_CYMBAL` voice policy:
+- The family was hard-capped at **2 voices** (`m_cym_poly = min(Poly, 2)`), a CPU
+  guard predating the magnitude squelch — on the one instrument whose hits are
+  meant to pile up.
+- The steal rule **inverted itself**: it took the smallest `magEnv`, which is a
+  ~10 ms average of `|out|` starting at 0, while the gong's driver needs
+  `lowAttackSec` = 0.25 s to open.  For the first third of a second the NEWEST
+  hit is the quietest voice in the bank, so the third strike killed the second
+  one mid-bloom and repeats ping-ponged between two slots.
+
+Fix: `m_cym_poly = m_poly` (full 1-4); `kCymStealProtectSec` = 0.60 s protects
+young voices and falls back to stealing the **oldest** (age is the reliable
+ordering inside that window — `magEnv` on a dense inharmonic wash is not);
+`kCymResonatorBudget` = 240 caps the TOTAL bank across simultaneous cymbal
+voices, which is a stronger CPU guarantee than a voice count and is what makes 4
+voices affordable.  A restruck/stolen voice also keeps its ring (`retainRing`,
+×0.75) instead of zeroing `resY1/resY2` — metal does not reset.
+Measured: Gong 4 hits → distinct voices 2 → **4**, passage RMS 1.62× → 1.84×
+(150 ms) and 1.90× → 2.02× (1 s); 8 hits at 150 ms reach 2.24×; peak stays
+0.83 (limiter-bounded); worst aggregate bank 208 resonators at `Rsntrs` = 60.
+New **T36** in `test_hw_debug.cpp` asserts all three properties — T36a fails
+against the pre-fix code.
+
+**"Increase the effect of the parameters from subtle to live, without breaking
+the presets."**  Every reference-anchored mapping had its coefficient widened
+and clamps opened, anchoring untouched → **40/40 byte-identical**.  Two dead
+knobs wired: cymbal `MlltRes` → ring presence, cymbal `MlltStif` → beater
+hardness (both audited `NO EFFECT`); kick `MlltStif` gained a live lower half
+(down = slower boom onset = felt beater; it was clamped to 0 from below and
+Kick2/KickDrum ship it at 0.60/0.70).  Measured: **43** knob/family swings
+widened, 2 dead → live, 1 narrowed 5 % (noise); verdict changes **5 improved, 0
+regressed**.  Cymbal `Inharm` deliberately left at 2.0 — widening it *shrank*
+the measured HF swing (the jitter piles modes onto the `fLo`/Nyquist clamps).
+
+**Tooling lesson (`param_audit.cpp`).**  Beyond the documented 2-s-RMS transient
+blind spot, the audit had a worse one: `FastNoise::seed` is free-running and no
+reset touches it, so consecutive renders start from a different noise state.
+Clap/Shaker/hats drifted a few percent between runs and flipped their own
+verdicts — this pass first "found" a Partls regression on Clap for a knob that
+provably does nothing there (`is_modal_engine` is false for `ENGINE_NOISE`).
+The audit now pins the seed per render.  Also: on the kick, use a **band**
+metric, not RMS — the master chain is loudness-maximised, so a thump reshapes
+the attack spectrum without raising level (`TubRad` reads 29 % → 48 % on a
+100-400 Hz vs sub band metric and almost nothing on plain RMS).
+
+Verified: 40/40 renders byte-identical, test_dsp exit 0, test_hw_debug **88/88**,
+host syntax check clean, `stability_sweep` **4096** combos across 16 presets +
+**480** rolls across 40 presets with 0 problems and worst |peak| 0.9900 (the
+brickwall limit — bounded, and identical to the pre-change baseline despite the
+much wider decay clamps).  **ARM `.text` is NOT verified** — no cross-compiler
+in the session that made this pass; confirm against the 28 KB budget on the next
+flash, since the pass adds code (cymbal MlltRes/MlltStif blocks, the steal
+ranking and the resonator budget).
 
 ### Pass 25 — Roll fusion (pass-23 regression) + asymmetric snare TubRad
 
@@ -651,14 +1115,41 @@ section next to the boom/onset params.
 
 ### ENGINE_SNARE lifetime
 
-NoteOff does NOT release the snare noise envelopes (same-tick gate_off would
-choke the buzz to ~26 ms).  The buzz decays at the natural NzRs-governed
-ENV_DECAY rate; Rel therefore does not shape the snare noise tail.
+NoteOff does NOT release the snare noise envelopes.  The buzz decays at the
+natural NzRs-governed ENV_DECAY rate; Rel therefore does not shape the snare
+noise tail.  This is a **voicing** choice (real wires ring freely once the stick
+leaves the head, and the Rel-rate release choked the buzz to ~26 ms), not the
+same-tick workaround it started life as — see the same-tick gotcha below.
 
 ### ENGINE_NOISE lifetime
 
 `sustain_level=1.0f` for NOISE engines; `NoteOff` skips `master_env.release()`.
 The `noise_env` (Rel knob) fully controls Clap/Shaker tail.
+
+### GOTCHA: a release that arrives DURING the attack (the same-tick killer)
+
+The Drumlogue fires `gate_on` **and** `gate_off` in one scheduler tick, before
+any audio block.  So every `release()` in this codebase can land on an envelope
+that `trigger()` has just zeroed and `process()` has never advanced.  Naively
+that is fatal — `ENV_RELEASE` computes `value += (0 - value)*release_rate`,
+which is still 0, trips the `value <= 0.001f` cutoff and goes `ENV_IDLE`: the
+envelope dies before it opens and the voice is silent **on hardware only**,
+because every host render holds the gate 20-50 ms and looks perfect.
+
+This bug was found and fixed **three times, per-site**, before the mechanism
+itself was fixed:
+1. `master_env`, pass ~12 (T20) — force-set to `1.0`/`ENV_DECAY` in `NoteOn`.
+2. `ENGINE_SNARE` noise envs, pass 19 — `NoteOff` skips the release ("choked
+   the buzz to ~26 ms").
+3. `ENGINE_NOISE` noise envs, pass 27 — **never covered by either**, so Clap,
+   Shaker and HHat-C were emitting a 20 ms blip and nothing else on device.
+
+`FastEnvelope::release()` now defers into **`ENV_ATTACK_REL`** when it is called
+during `ENV_ATTACK`: the attack completes, then the release runs from the top of
+it.  An envelope that is already open is untouched (40/40 renders byte-identical),
+and `Rel` keeps shaping the tail — which the pass-19-style "skip the release"
+patch does not.  **New sites do not need their own workaround.**  Regression
+test: **T37** (both halves fail against the pre-fix build).
 
 ### ENGINE_PLATE: noise_ring_gate
 

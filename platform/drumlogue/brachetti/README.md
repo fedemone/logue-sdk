@@ -203,10 +203,48 @@ calibrated boom is left untouched.
 - **MEMBRANE / SNARE / NOISE now stack.**  Fast repeats used to choke a single
   voice (mono retrigger); they now round-robin across the 4 voices so kick,
   tom, conga, bongo, snare and clap hits overlap (roll tails, flams).  Heavy
-  engines keep their guards: `ENGINE_CYMBAL` stays capped by the `Poly` knob
-  (`m_cym_poly`), the Timpani/Taiko kernel runs its own 2-kettle path, and
-  `ENGINE_KS` stays mono (avoids same-pitch string beating).  Peaks across all
-  presets remain limiter-bounded (rapid 4-hit stacks peak < 0.84).
+  engines keep their guards: `ENGINE_CYMBAL` is bounded by the `Poly` knob and
+  a resonator budget (see below), the Timpani/Taiko kernel runs its own
+  2-kettle path, and `ENGINE_KS` stays mono (avoids same-pitch string beating).
+  Peaks across all presets remain limiter-bounded (rapid 4-hit stacks peak
+  < 0.84).
+
+#### Cymbal / gong stacking — the 2-voice cap and the inverted steal
+
+HW: *"multiple gong hits are not stacking correctly."*  Two independent bugs
+compounded, and both were in the `ENGINE_CYMBAL` voice policy:
+
+1. **The family was hard-capped at 2 voices** (`m_cym_poly = min(Poly, 2)`), a
+   CPU guard from before the magnitude squelch existed.  A gong — the one
+   instrument in the unit whose hits are *supposed* to pile up — could never
+   have more than two strikes sounding.
+2. **The steal rule inverted itself on every slow-swelling cymbal.**  At the cap
+   the voice with the smallest `magEnv` was stolen.  `magEnv` is a ~10 ms
+   one-pole of `|out|` that starts at 0, and the gong's driver takes
+   `lowAttackSec` = 0.25 s to open — so for the first third of a second the
+   NEWEST hit is by far the quietest voice in the bank.  The third strike
+   therefore killed the second one mid-bloom, and repeated hits ping-ponged
+   between two slots instead of accumulating.
+
+The fix, in three parts:
+
+| Change | Effect |
+|---|---|
+| `m_cym_poly = m_poly` | the cymbal family honours the full `Poly` range (1-4) |
+| `kCymStealProtectSec` (0.60 s) | voices younger than this are off-limits; inside the window the OLDEST is stolen, never the freshest.  The window is deliberately wider than the 0.25 s attack — `magEnv` averages a dense inharmonic wash, so for the first half-second age is the reliable ordering and level is not |
+| `kCymResonatorBudget` (240) | hard ceiling on the TOTAL resonator count across simultaneous cymbal voices.  Bounding the aggregate is a *stronger* CPU guarantee than the old voice cap, which is what makes 4 voices affordable; already-ringing banks keep their size and the newest voice absorbs the trim |
+
+A restruck or stolen cymbal voice also **keeps its ring** now (`retainRing` in
+`cymbal_note_on`, retained state scaled ×0.75 for headroom): metal does not
+reset, and zeroing `resY1/resY2` is what made a stacked hit read as "the
+previous one disappears".  A fresh voice still starts from silence, so the
+shipped single-hit renders are unaffected.
+
+Measured (Gong, 4 hits): distinct voices 2 → **4**; passage RMS vs a single hit
+1.62× → **1.84×** at 150 ms spacing and 1.90× → **2.02×** at 1 s.  Eight hits at
+150 ms reach 2.24×.  Peak stays limiter-bounded at 0.83.  Worst aggregate bank
+measured 208 resonators at `Rsntrs` = 60 (budget 240).  Regression-tested as
+**T36** in `test_hw_debug.cpp` (T36a fails against the pre-fix code).
 
 #### Roll fusion — the exception to stacking
 
@@ -232,6 +270,68 @@ wire-state restore, so the two can never disagree about what counts as a roll.
 Measured (12 strokes, Djambe): 45 ms apart → 1 voice, passage RMS 0.444 → 0.408;
 AcTom 0.535 → 0.421.  Everything at or beyond 85 ms is **bit-identical** to the
 unfused behaviour.  Regression-tested as **T35** in `test_hw_debug.cpp`.
+
+### Knob depth pass — "from subtle to live" (July 2026)
+
+Every reference-anchored knob mapping in the unit had its response coefficient
+widened and its clamps opened.  The anchoring is untouched, so **all 40 shipped
+presets still render byte-identical** — only the travel either side of each
+preset's shipped value grew.
+
+| Area | What changed |
+|---|---|
+| Modal engines (bar / membrane / snare / plate) | `Dkay` 3.5→4.5 and `Rel` 2.5→3.2 on the T60 scale, `Mterl` 2.5→3.4, `Inharm` spread 1.6→2.4, `TubRad` 1.2→1.9, `MlltRes` presence 2.6→3.4, `MlltStif` tilt 2.4→3.4, `HitPos` mode tilt ×1.5 |
+| Kernel drums (Timpani / Taiko) | `Dkay`/`Rel` 3.5/2.5→4.5/3.2, `Mterl` 2.0→3.0, `TubRad` 1.2→1.9, `Inharm` 1.6→2.4, `MlltStif` 2.0→3.0, knock 2.6/1.2/2.2→3.4/1.9/3.0 |
+| Cymbal family | `Dkay` 2.0→3.0, `Rel` 1.6→2.4, `Mterl` 2.5→3.6 (+ ceiling 0.7→1.3), `HitPos` 1.5/0.8/−1.0→2.4/1.4/−1.7, `TubRad` 0.7→1.2 |
+| Snare wire | `Rel` −3.0→−4.0, `MlltRes` 2.0→3.0, `MlltStif` 1.0→1.6, `VlMllStf` Q 0.09→0.12, `VlMllRes` crack 3.0→4.0, `TubRad` body −1.3→−1.9 (the asymmetric ×1.15 thinning cap is unchanged — it exists because HW called the up-shift "toy-ish") |
+| Kick | boom length 2.2/1.6→3.0/2.2, weight 1.2→1.9, tune −0.6→−1.0, dive 3.0→4.5, click 2.5→3.8, thump amount 0.90/0.55→1.35/0.85 and pitch 1.2/0.9→1.8/1.4 |
+| Tom slap | `VlMllRes` 2.0→3.0, standalone slap burst 0.5+1.3·v → 0.8+1.9·v |
+
+**Two knobs that were fully dead are now live:**
+
+- **`MlltRes` on the cymbal family → RING PRESENCE.**  The dense-resonator port
+  has no mallet exciter at all, so this audited `NO EFFECT`.  Up = the bank
+  speaks over the noise bed (a gong that *rings*); down = the wash dominates
+  (all air, no metal).
+- **`MlltStif` on the cymbal family → BEATER HARDNESS.**  The static counterpart
+  of `VlMllStf`, which was the only stick control the family had.  Hard stick =
+  short bright contact ping and a fast bite; soft mallet = a slow dark swell —
+  a gong struck with a stick vs one bloomed in with a felt beater.
+- **`MlltStif` below the shipped value on the kick family** was also dead (the
+  thump clamps at 0 from below, and Kick2/KickDrum ship it at 0.60/0.70, so the
+  whole lower half of the knob did nothing).  Turning it down now stretches the
+  boom's onset ramp — a rounded felt-mallet "whoomp".  Measured onset ratio at
+  the knob floor: KickDrum 0.90 → **0.60**, 808Sub 0.71 → **0.54**.
+
+**Measured** (`param_audit.cpp`, relative lo-vs-hi swing): 43 knob/family
+combinations widened, 2 went from dead to live, 1 narrowed by 5 % (SNARE
+`Inharm`, within measurement noise).  Verdict changes: **5 improvements, 0
+regressions**.
+
+**One knob was deliberately NOT widened.**  Cymbal `Inharm` (jitter spread) is
+already past its useful depth: pushed from 2.0 to 2.4 and 3.0, the detune smears
+wide enough that the bank's high modes pile onto the `fLo`/Nyquist clamps and
+the measured HF swing across the knob actually *shrank* (`ok` → `weak`).  It
+stays at 2.0.
+
+#### `param_audit.cpp` has a second blind spot: the PRNG
+
+The README already warns that the audit's 2 s RMS dilutes short transients ~50×.
+It had a second, worse one: `FastNoise::seed` is deliberately free-running (a hit
+must not replay the same noise) and neither `Reset()` nor `PartialReset()` touches
+it, so every render started from wherever the previous one left the generator.
+Noise-dominated presets (Clap, Shaker, the hats) therefore drifted a few percent
+between runs and **flipped their own verdicts** — this pass initially reported a
+"Partls ok → weak regression" on Clap for a knob that provably does nothing on
+that preset (`is_modal_engine` is false for `ENGINE_NOISE`; measured identical
+before and after).  The audit now pins the seed per render, and the before/after
+comparison is reproducible.
+
+On the kick family, prefer a **band** metric over RMS: the master chain is
+loudness-maximised, so a thump reshapes the attack spectrum without raising
+level.  Measuring the 100-400 Hz "thump" band against the sub band over the
+first 100 ms shows `TubRad` swinging 29 % → **48 %** where plain RMS showed
+almost nothing.
 
 ### Per-preset knob activity — the "which knobs are live" matrix
 
@@ -259,8 +359,8 @@ context-dependent · **○** inert by design.
 |------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Poly | ● | ● | ◐ | ● | ● | ● | ◐ | ● | ○ |
 | Rsntrs | ○ | ○ | ○ | ○ | ○ | ○ | ● | ○ | ○ |
-| MlltRes | ● | ◐ | ○ | ● | ● | ● | ◐ | ◐ | ◐ |
-| MlltStif | ◐ | ◐ | ○ | ● | ● | ◐ | ◐ | ○ | ◐ |
+| MlltRes | ● | ◐ | ○ | ● | ● | ● | ● | ◐ | ◐ |
+| MlltStif | ● | ◐ | ○ | ● | ● | ◐ | ● | ○ | ◐ |
 | VlMllRes | ● | ● | ● | ● | ○ | ◐ | ● | ◐ | ○ |
 | VlMllStf | ● | ● | ● | ● | ◐ | ◐ | ● | ◐ | ◐ |
 | Partls | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
@@ -284,9 +384,10 @@ Notes on the recurring "no effect (expected)" cases:
 
 - **Rsntrs** is a *cymbal-family* performance control (resonator-bank density)
   and is inert on every non-cymbal preset by design.  **Poly** is a **global**
-  voice cap (1-4); the cymbal family clamps it to 2 for the CPU budget, the
-  Timpani/Taiko kernel runs 2 kettles, and the string engine is mono — the
-  display shows the effective value, e.g. `4(2)`.
+  voice cap (1-4).  The cymbal family now honours the full range (its CPU is
+  bounded by `kCymResonatorBudget` instead — see the stacking section above);
+  the Timpani/Taiko kernel runs 2 kettles and the string engine is mono, so the
+  display still shows the effective value there, e.g. `4(2)` / `4(1)`.
 - **Resnc** is the master low-pass **Q** — see footnote ¹ above; it needs
   `Cutoff` brought down to be heard.
 - **Model / Partls** reshape the **shared modal bank**.  The kick (boom osc),
@@ -298,6 +399,11 @@ Notes on the recurring "no effect (expected)" cases:
 - **Mterl / HitPos** are inert on the snare (its voice is the wire buzz, not a
   struck modal body); **TubRad** on the snare is the *body-depth* control
   (July 2026, Band-A centre) so it is live there.
+- **`MlltRes` / `MlltStif` on the cymbal family were ◐ and are now ●** — the
+  July-2026 depth pass wired them to ring presence and beater hardness (they
+  had audited `NO EFFECT`), and `MlltStif` on the kick gained a live lower half.
+  Re-derived from `param_audit.cpp` with the PRNG pinned, per the maintenance
+  rule above.
 
 #### Careful: `MlltRes`/`MlltStif` vs `VlMllRes`/`VlMllStf`
 
@@ -334,7 +440,7 @@ A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-his
 
 Snare-family runtime rules (restored/added July 2026 — see `REALISM_REVIEW.md`):
 - Wire parameters are restored per-NoteOn **after** `PartialReset()` (which zeroes them); for 18 HW passes the wire path was silently dead on live hits.
-- `ENGINE_SNARE` skips the noise-envelope release on NoteOff: the Drumlogue's same-tick gate_off otherwise chokes the buzz to ~26 ms. The buzz tail is governed by NzRs (calibrated to the reference samples).
+- `ENGINE_SNARE` skips the noise-envelope release on NoteOff, so the buzz tail is governed by NzRs (calibrated to the reference samples) rather than Rel — real wires ring freely once the stick leaves the head, and the Rel-rate release choked the buzz to ~26 ms. This began as a workaround for the Drumlogue's same-tick gate_off and is now a voicing choice: see [Same-tick GateOn + GateOff](#same-tick-gateon--gateoff-drumlogue-one-shot-model).
 - Velocity scales wire mix and buzz decay (ghost-note physics), anchored so full velocity plays the calibrated table sound.
 - Preset 38 `BrshSnr` is a brush-swept snare: slow swish onset, 6.5 Hz enveloped swirl AM, diffuse low-Q wire bands.
 
@@ -377,7 +483,17 @@ combinations (pole-radius clamp holds).
 At NoteOn, `Cymbal`, `Gong`, `HHat-O`, `Ride`, `RidBel`, and `Trngle` get `loss_g_hf` and `lowpass_coeff` floors raised so the KS loop retains upper partials longer. Transient LP jitter is also limited to prevent over-darkening the attack — a known architecture-coupled failure mode for metallic rods/bars.
 
 ### Same-tick GateOn + GateOff (Drumlogue one-shot model)
-The Drumlogue fires `gate_on` and `gate_off` in the same scheduler tick before any audio block. Without a fix, `master_env` sees `ENV_RELEASE, value = 0` on the first `processBlock` call and immediately kills the voice. Fix: call `v.exciter.master_env.process()` once in `NoteOn` to pre-advance the envelope to `value = 1.0` before any `GateOff` can arrive.
+The Drumlogue fires `gate_on` and `gate_off` in the same scheduler tick, **before any audio block**. So every `release()` can land on an envelope that `trigger()` has just zeroed and `process()` has never advanced — and `ENV_RELEASE` from `value = 0` computes `value += (0 - value) * release_rate`, which is still 0, trips the `value <= 0.001f` cutoff and goes to `ENV_IDLE`. The envelope dies before it opens and the voice is silent.
+
+This is the single most expensive class of bug in this project, because it is **invisible to every host tool**: `render_presets.cpp` and `param_audit.cpp` hold the gate 50 ms / 20 ms and sound perfect, and `stability_sweep.cpp` only checks peaks and NaN, so a voice that silences *itself* passes. It reached hardware three times:
+
+| Site | Found | Original per-site fix |
+|------|-------|----------------------|
+| `master_env` (all engines) | pass ~12, test T20 | direct `value = 1.0f; state = ENV_DECAY;` in `NoteOn` (not `trigger()` + `process()` — ARM `-ffast-math` may emit an FMA that leaves `value` fractionally under `0.99f`) |
+| `ENGINE_SNARE` noise envs | pass 19 | `NoteOff` skips the release — buzz was choked to ~26 ms |
+| `ENGINE_NOISE` noise envs | pass 27 (review) | none — Clap/Shaker/HHat-C emitted a ~20 ms blip and nothing else on device |
+
+Since pass 27 the **mechanism** is fixed instead: `FastEnvelope::release()` called during `ENV_ATTACK` defers into `ENV_ATTACK_REL`, the attack completes, and the release then runs from the top of it. An envelope that is already open is untouched (all 40 presets stay byte-identical), and `Rel` keeps shaping the tail — which the "skip the release" approach does not. **New release sites need no workaround of their own.** `samegate_probe.cpp` prints same-tick vs held-gate RMS per 25 ms for any preset; **T37** is the regression test.
 
 ### Coupled resonator beating
 Setting `Partls > 0` couples ResA and ResB at the same nominal pitch. Two coupled identical oscillators split into two normal modes at `ω ± δ`, producing beats at `2δ`. This is physically correct but perceptually surprising. Use `Partls = 0` (single resonator) for clean sustained tones.
