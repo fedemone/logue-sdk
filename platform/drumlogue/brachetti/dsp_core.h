@@ -218,6 +218,14 @@ struct CymbalVoice {
     float pinkState[7] = {};
     float pmPhase[3]   = {};
 
+    // Control-rate cache (see kCymCtrlStride).  The two driver one-poles used
+    // to recompute their coefficient from a fastexpf EVERY sample, and the
+    // three PM LFOs a fastsinf each — together ~57 % of a cymbal voice's fixed
+    // per-sample cost, for quantities whose fastest time constant is 12 ms.
+    uint16_t ctrlCount = 0u;                  // samples left until the next update
+    float    lpCoeff = 0.0f, hpCoeff = 0.0f;  // cached one-pole coefficients
+    float    pmVal   = 0.0f, pmStep  = 0.0f;  // PM sum, linearly interpolated
+
     // Panic fade (AllNoteOff): the cymbal has no release envelope by design
     // (gate_off must not choke the tail on the Drumlogue), so the only way to
     // stop it early is a click-free output ramp.  fadeMul stays 1.0 in normal
@@ -268,6 +276,11 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     c.fade = 1.0f;
     c.fadeMul = 1.0f;
     c.lpState = c.hpLowState = c.dcState = 0.0f;
+    // ctrlCount 0 makes the first process() sample take the control-rate
+    // branch, so lpCoeff/hpCoeff are always valid before they are read.
+    c.ctrlCount = 0u;
+    c.lpCoeff = c.hpCoeff = 0.0f;
+    c.pmVal = c.pmStep = 0.0f;
     for (int i = 0; i < 7; ++i) c.pinkState[i] = 0.0f;
     c.directNoiseLevel = cfg.directNoiseLevel;
 
@@ -374,6 +387,30 @@ static inline float cym_pink(CymbalVoice& c, float w) {
     return p * 0.11f;
 }
 
+// Control-rate divider for the cymbal driver coefficients and PM LFOs.  8
+// samples = 6 kHz control rate at 48 kHz; the fastest thing updated here is
+// HHat-O's 12 ms high-band attack (576 samples), so a stride of 8 still
+// resolves it into ~72 steps.  The one-pole coefficients are held piecewise
+// constant (the filter output stays continuous, so a stepped cutoff cannot
+// click), while the PM sum IS a multiplier and so is linearly interpolated
+// back to sample rate — a held PM value would stair-step the carrier at 6 kHz.
+enum { kCymCtrlStride = 8 };
+
+// Coefficient half of cym_one_pole_low, split out so it can be evaluated at
+// control rate: this is where the fastexpf lives.
+static inline float cym_pole_coeff(float cutoff) {
+    cutoff = fmaxf(10.0f, fminf(k_dsp_sample_rate * 0.45f, cutoff));
+    // fastexpf ok: argument always negative (where fastpow2f is accurate) and
+    // the coefficient only nudges an already envelope-swept cutoff.
+    return 1.0f - fastexpf(-6.28318530717958647692f * cutoff * k_dsp_inv_sample_rate);
+}
+
+// State half: one multiply-add, cheap enough to stay at sample rate.
+static inline float cym_one_pole_a(float x, float a, float& s) {
+    s += a * (x - s);
+    return s;
+}
+
 static inline float cym_one_pole_low(float x, float cutoff, float& s) {
     cutoff = fmaxf(10.0f, fminf(k_dsp_sample_rate * 0.45f, cutoff));
     // fastexpf ok: argument always negative (where fastpow2f is accurate) and
@@ -396,13 +433,38 @@ static inline float cymbal_process(CymbalVoice& c) {
     const float shimmerEnv = highEnv * c.shimmerScale;
     const float strikeEnv = c.velocity * (1.0f - c.strikeAtk) * c.strikeDec;
 
-    const float lowCutoff  = 10.0f + c.maxCutoff * lowEnv;
-    const float highCutoff = 10001.0f - 10000.0f * highEnv;
+    // ── Control-rate block (every kCymCtrlStride samples) ──────────────────
+    // The driver cutoffs are swept by envelopes whose fastest time constant is
+    // 12 ms, and the PM LFOs run at 37/71/113 Hz — none of it needs a fresh
+    // fastexpf/fastsinf per sample.  Measured on the host: this removes ~19 of
+    // the ~37 ns/sample/voice of FIXED cost, the part kCymResonatorBudget
+    // cannot see and which pass 26 doubled by allowing 4 voices instead of 2.
+    if (c.ctrlCount == 0u) {
+        c.ctrlCount = (uint16_t)kCymCtrlStride;
+        c.lpCoeff = cym_pole_coeff(10.0f + c.maxCutoff * lowEnv);
+        c.hpCoeff = cym_pole_coeff(10001.0f - 10000.0f * highEnv);
+
+        // Advance the three PM phases a whole stride at a time, then aim
+        // pmVal at the new sum so the per-sample path is a single add.
+        const float strikeE  = c.velocity * (1.0f - c.strikeAtk) * c.strikeDec;
+        const float rateStep = c.pmRateBase * (1.0f + 0.6f * strikeE) *
+                               k_dsp_inv_sample_rate * (float)kCymCtrlStride;
+        static const float rates[3] = { 37.0f, 71.0f, 113.0f };
+        float pmNext = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            c.pmPhase[i] += rates[i] * rateStep;
+            if (c.pmPhase[i] >= 1.0f) c.pmPhase[i] -= (float)(int)c.pmPhase[i];
+            const float ph = (c.pmPhase[i] > 0.5f) ? (c.pmPhase[i] - 1.0f) : c.pmPhase[i];
+            pmNext += fastsinf(6.28318530717958647692f * ph);
+        }
+        c.pmStep = (pmNext - c.pmVal) * (1.0f / (float)kCymCtrlStride);
+    }
+    --c.ctrlCount;
 
     const float wn = cym_frand(c.rng) * 2.0f - 1.0f;
     const float noise = cym_pink(c, wn) * (1.0f - c.whiteBlend) + wn * c.whiteBlend;
-    const float loDriver = cym_one_pole_low(noise * c.noiseGain, lowCutoff, c.lpState) * lowEnv;
-    const float lpHi = cym_one_pole_low(noise * c.noiseGain, highCutoff, c.hpLowState);
+    const float loDriver = cym_one_pole_a(noise * c.noiseGain, c.lpCoeff, c.lpState) * lowEnv;
+    const float lpHi = cym_one_pole_a(noise * c.noiseGain, c.hpCoeff, c.hpLowState);
     const float hiDriver = (noise * c.noiseGain - lpHi) * (0.18f * shimmerEnv);
 
     float thwack = 0.0f;
@@ -413,15 +475,9 @@ static inline float cymbal_process(CymbalVoice& c) {
         thwack = env * c.thwackGain;
     }
 
-    float pm = 0.0f;
-    const float rateScale = c.pmRateBase * (1.0f + 0.6f * strikeEnv) * k_dsp_inv_sample_rate;
-    const float rates[3] = { 37.0f, 71.0f, 113.0f };
-    for (int i = 0; i < 3; ++i) {
-        c.pmPhase[i] += rates[i] * rateScale;
-        if (c.pmPhase[i] >= 1.0f) c.pmPhase[i] -= 1.0f;
-        const float ph = (c.pmPhase[i] > 0.5f) ? (c.pmPhase[i] - 1.0f) : c.pmPhase[i];
-        pm += fastsinf(6.28318530717958647692f * ph);
-    }
+    // PM value: interpolated toward the control-rate target computed above.
+    c.pmVal += c.pmStep;
+    const float pm = c.pmVal;
 
     const float pmDepth = c.pmDepthBase * strikeEnv;
     const float pmGain  = 1.0f + pmDepth * pm * 0.22f;
@@ -901,6 +957,10 @@ struct SynthState {
     float mix_ab            = 0.5f;   // ← non-zero
     float master_gain       = 1.0f;   // ← non-zero
     float master_drive      = 1.0f;   // ← non-zero
+    // Master limiter peak-follower state (see the Stage 4b comment): holds the
+    // recent peak so ONE gain can be applied per cycle instead of reshaping the
+    // waveform sample by sample.  Starts at 0 = no gain reduction.
+    float master_lim_env    = 0.0f;
     float tone              = 0.0f;   // Tilt EQ amount, cached from k_paramTone [-10, 30]
 
     FastSVF master_filter;

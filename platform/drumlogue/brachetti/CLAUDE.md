@@ -18,16 +18,25 @@ Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **90/90**.
-- **Listen to Clap (21), Shaker (22) and HHat-C (26) on the next flash.**  Pass 27
-  fixed a same-tick gating bug that made all three near-silent *on device only*;
-  host renders were always correct, so these presets may never have been heard as
-  designed and could want retuning now that they are audible.
-  **Counter-evidence to resolve while listening:** HHat-C was once called "a
-  perfect closed hi-hat" on hardware (`PROGRESS2.md`, `REALISM_REVIEW.md:461`),
-  which does not fit a 20 ms 0.017-RMS blip.  Most likely that listen used MIDI
-  note-on/off with a real gate length rather than the internal sequencer — worth
-  confirming, because it decides whether the two paths now agree.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **92/92**.
+- HHat-C (26) **HW-confirmed good** after the pass-27 same-tick fix.  Clap (21)
+  and Shaker (22) share that fix and are still unlistened — check them.
+- **Listen for on the next flash (pass 30):**
+  - Cymbal/Gong under **repeated fast hits** — the crash should be gone and
+    stacking should reach 2 voices, not 4.  Poly above 2 no longer adds cymbal
+    voices (the cost budget refuses them); it still applies to every other family.
+  - **Cymbal/Ride/RidBel/Splash are now 5-11 dB louder.**  Gong and HHat-O were
+    deliberately NOT touched — HHat-O measures as quiet as the others but is
+    flagged "do not break", so say whether it should come up too.
+  - **Kick boom on long decays** — the hard clipper in front of the master stage
+    is gone and the limiter no longer waveshapes; crest is now better than the
+    pre-29 build that was called "perfect".
+  - Overall level is **1.4 dB below pass 29** and 1.65 dB above pre-29.  That is
+    the price of removing the distortion; say if you want it back and it has to
+    come from re-voicing presets rather than from the master stage.
+- Still weak by measurement, awaiting a priority call: `VlMllRes` reads **zero**
+  change on Marimba/Vibrph/Kalimba/Shaker/BrshSnr, and `VlMllStf` is inert on
+  Clap/Shaker/HHat-C.  Run `knobaud.cpp` for the full 22-preset map.
 - Host syntax-check (g++ -fsyntax-only): **clean**.
 - HHat-O **HW-approved** ("ok now" — do not break).
 - ARM .text ≤ 28 KB: **must be confirmed on next flash** (cannot verify without toolchain).
@@ -51,6 +60,162 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 30 — Cymbal CPU crash, master limiter rebuild, preset/UI defaults
+
+HW batch on pass 29.  **HHat-C confirmed good** — the pass-27 same-tick fix is
+validated on device.  Seven other items, three of which turned out to share a
+root cause.
+
+**1. Cymbal/gong audio crash — pass 26's budget measured the wrong thing.**
+Pass 26 raised the cymbal cap 2→4 voices and replaced the voice-count guard with
+`kCymResonatorBudget`, on the stated theory that bounding the aggregate resonator
+count is "a STRONGER CPU guarantee than the voice count".  **That theory is
+false**, and `cym_cpu_probe.cpp` (new) measures by how much: decomposing
+`cymbal_process` into `fixed + k*resonators` shows the FIXED per-voice cost —
+pink noise, two swept driver one-poles, the PM block, the DC blocker, the
+magnitude envelope — is worth **~124 resonator lanes on its own, 79 % of a
+default 32-lane gong voice**.  The budget therefore bounded about a fifth of the
+real cost, and at the default Rsntrs it never even bound (4 gong voices ask for
+128 lanes against a 240 ceiling).  Measured 4 voices = **3.7× one voice**.
+
+Three changes:
+- **Control-rate driver** (`kCymCtrlStride` = 8): the two one-pole coefficients
+  and the three PM LFOs are updated every 8 samples instead of every sample —
+  the fastest thing there is HHat-O's 12 ms attack, so a 6 kHz control rate
+  still resolves it ~72×.  Coefficients are held piecewise constant (the filter
+  output stays continuous, so a stepped cutoff cannot click); the PM sum IS a
+  multiplier so it is linearly interpolated back to sample rate.
+- **Cost-accurate budget**: `kCymVoiceFixedLanes` (124) + `kCymCostBudget`
+  (2 × (124+60) = 368).  Every active cymbal voice charges its fixed cost PLUS
+  its bank, both when deciding whether a new voice is affordable and when
+  sizing its bank.  The ceiling is the **pre-pass-26 worst case**, the only
+  cymbal CPU level with field evidence (25 passes, no crash).
+- Result: 4 rapid gong strikes now occupy 2 voices at **29.4 µs/block**, against
+  95.6 µs for the crashing build and 49.7 µs for the last known-good — **0.59×
+  the last safe level**.  Fixed per-voice cost fell 37.1 → 24.6 ns/sample.
+
+**2. Cymbal "very quiet" — real, but NOT a regression.**  Measured over a common
+250 ms window (full-render RMS is not comparable: render lengths run 1-20 s),
+five of the six ENGINE_CYMBAL presets sat **11-18 dB under the mean of every
+other preset**: Cymbal −18.3, HHat-O −17.9, Ride −17.3, RidBel −14.7, Splash
+−11.3, Gong +3.6.  Rendering the pre-26 and pass-26 trees shows the same levels
+(Cymbal 0.0080 → 0.0099 RMS), so it is a long-standing voicing miscalibration
+that pass 29 made *audible*: its master change lifts transient-dense presets
+~3.7 dB but a decaying wash barely at all, so everything else moved up around
+them.  Corrected with a per-preset trim on `velocityGain` — the only uniform
+output scaler on the voice (scaling config levels is NOT uniform, because
+`stickLevel` feeds both the resonator drive and the direct tap and would land on
+the thwack squared).  Cymbal ×3.2, Ride ×2.9, RidBel ×2.1, Splash ×1.4; the
+family now sits −2.7 dB against the rest instead of −11.  **Gong left alone**
+(already correctly placed).  **HHat-O left alone** despite measuring equally
+quiet, because CLAUDE.md flags it "HW-approved, do not break" — raise it only on
+an explicit listen.
+
+**3, 4. Kick "thump not increased" + "brittle/distorted on long decays" — one
+cause, and it was a hard clipper nobody was looking at.**  A
+`clamp(main_out, ±0.99)` sat between the voice bus and the master stage, left
+over from the debug render stages.  In the shipping path Stage 4b always runs
+and bounds the output by construction, so it protected nothing — but the kick
+presets sit on top of it permanently (Kick2's bus is pinned at 0.99 for most of
+the hit), which made it both a large distortion source and an **invisibility
+cloak**: any layer added underneath a pinned bus is clipped straight back off.
+That is why VlMllRes measured 0.98-1.02× on the kicks while the thump layer was
+being armed perfectly (verified directly: `thump_env` 1.6 at 115 Hz on all
+three).  Removed.  Kick2 crest 1.26 → 1.50, H3 **−23.9 → −37.8 dB**.
+
+**5. Master stage: waveshaper → gain envelope.**  Pass 29's curve was applied
+per SAMPLE, i.e. the gain changed *within* a cycle — on a 45-90 Hz kick boom
+that manufactures high-order harmonics.  808Sub at Dkay+Rel max measured H4 at
+−21.5 dB under the pre-29 `x/(1+|x|)` and **−7.4 dB after pass 29**.  Now an
+instant-attack / slow-release peak follower applies ONE gain per cycle.  Since
+`master_lim_env >= |x|` always, `x * (limit(env)/env)` is still bounded by
+`kMasterLimCeil` by construction.
+
+Release swept 10/20/30/40/60/90/180/350 ms.  **20 ms wins**, and beats *both*
+earlier master stages on the reliable metrics (the 808Sub harmonic numbers are
+unreliable — it pitch-sweeps 160→45 Hz, so a fixed-frequency Goertzel smears;
+crest factor is sweep-independent and was used to decide):
+
+| preset @Dkay+Rel max | pre-29 crest | pass-29 crest | now |
+|---|---|---|---|
+| Kick2 | 1.15 | 1.11 | **1.47** |
+| 808Sub | 1.51 | 1.25 | **1.75** |
+| KickDrum | 1.34 | 1.21 | **1.67** |
+
+KickDrum's H4 improves **27 dB** over pass 29.  Two hits 150 ms apart show no
+ducking (2nd/1st peak within 0.01 dB) at any release below 350 ms.
+
+**Threshold raised 0.55 → 0.75** now that the stage is an envelope: a waveshaper
+had to start early to keep peaks down, an envelope limiter holds the ceiling at
+any threshold, so the threshold only trades loudness against gain riding.  Swept
+0.55/0.65/0.75/0.85 — 0.75 recovers 0.54 dB while every kick keeps a crest well
+above the pre-29 build the HW called "perfect".
+
+**Net level: −1.37 dB vs pass 29, +1.65 dB vs pre-29.**  This is the honest
+cost of the fix and it cannot be avoided: pass 29 bought its last ~1.4 dB *by*
+distorting (squashing peaks raises RMS).  Worst peak 0.9890, 0 NaN/silent.
+
+**A dead end, measured, do not re-try:** smoothing the limiter knee with a
+smoothstep band (0 / 0.10 / 0.20 / 0.30 / 0.44) moved 808Sub's H4 by **0.2 dB**.
+The curvature corner is irrelevant because the presets drive this stage ~4.5×
+full scale — the waveform sits deep in the compressive region, nowhere near the
+corner.  The problem was per-sample waveshaping itself, not the knee shape.
+
+**6. VlMllRes/VlMllStf depth.**  With the clipper gone the kick knobs were
+widened and made to **trade** rather than add — a limited bus cannot give you
+level, but balance is free, and a beater-forward kick should have *less* body,
+not more of everything.  VlMllRes now scales `boom_mix` down as it raises the
+thump (and up when turned down); VlMllStf gained a down direction.  Knob
+audibility (RMS of the knob-max minus shipped render, relative to signal):
+
+| preset | before | after |
+|---|---|---|
+| Kick2 | −18.9 dB | **−16.3 dB** |
+| 808Sub | −9.6 dB | **−3.8 dB** |
+| KickDrum | −10.2 dB | **−3.1 dB** |
+
+`knobaud.cpp` (new) maps both knobs across 22 presets.  It uses the
+difference-RMS metric precisely because a band or total-RMS metric is fooled by
+a downstream limiter holding the level constant while the character changes —
+which is what hid these knobs.  Most families already read LIVE; still weak and
+**left for the user to prioritise**: Marimba/Vibrph/Kalimba and Shaker/BrshSnr
+read literally 0 change on VlMllRes, and Clap/Shaker/HHat-C are inert on
+VlMllStf.
+
+**7. Boot default was not Kick2.**  `Init()` calls `LoadPreset(0)`, but the OS
+then restores its own parameter set on top via `unit_set_param_value` — and with
+no stored state that means `header.c`'s `.default` fields, of which **15 of 21
+disagreed with Kick2's preset row** (Note 60 vs 36 = two octaves up, Dkay 25 vs
+200, NzRes 0 vs 420...).  Every default is now Kick2's shipped value.  Poly and
+Rsntrs keep their own, because `LoadPreset` deliberately skips them.
+
+**8. Preset not showing actual parameter values.**  **31 stored preset values
+sat outside the range declared in `header.c`**, so the OS store could not
+represent what `LoadPreset` wrote: HitPos min was 2 while 25 presets store 0,
+Dkay max was 200 while HHat-O stores 210.  Ranges widened for those two;
+out-of-range TubRad values were clamped into [0,20] in the table instead, which
+is provably sound-neutral because every TubRad consumer already clamps there.
+Audit is now clean: 0 out-of-range, 0 wrong defaults (`range_audit.py` pattern —
+re-run it whenever the preset table or header changes).
+
+**9. MlltStif step 10 → 100.**  Stored ÷10 over 10-500 became stored ÷100 over
+0-50 (displayed ×100 = 0-5000), all 9 DSP consumers rescaled `*0.002f` →
+`*0.02f`, preset column ÷10.  Only Conga (425) and RidBel (491) are not
+representable at step 100 and round to 430/490; measured **−85.6 dB** below
+signal.  Four other presets shifted by a last-bit float difference at −107 to
+−127 dB (`350*0.002f != 35*0.02f`).
+
+**Byte-identity: 2/40.**  Intentional and unavoidable — the master architecture
+change and the pre-clip removal both touch every preset.  All *knob* mappings
+remain reference-anchored (Δ=0 ⇒ no change).
+
+Verified: syntax clean, test_dsp exit 0, test_hw_debug **92/92** (T36 rewritten
+— it hard-coded pass 26's "4 distinct voices" assumption; it now asserts hits
+ACCUMULATE and the aggregate COST stays inside budget), `stability_sweep` 4096
+combos + 480 rolls, worst |peak| 0.9900, 0 problems, 40/40 renders non-silent
+and NaN-free.  **ARM `.text` still unverified**; this pass adds the control-rate
+block and the limiter state but removes the pre-clip loop.
 
 ### Pass 29 — Master output +3.0 dB, and review findings 2/3/5/6
 

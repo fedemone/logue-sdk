@@ -1736,10 +1736,20 @@ static void test_roll_fusion() {
 //   one mid-bloom and repeated hits ping-ponged between two slots instead of
 //   accumulating.  Both halves of the fix are asserted here:
 //
-//     hits within the Poly cap                → land on DISTINCT voices
-//     a hit past the cap, all voices young    → steals the OLDEST, never the
+//     hits within the cost budget             → land on DISTINCT voices
+//     no strike ever reuses the slot it just  → the self-kill / ping-pong
+//       struck while another is affordable       signature of the original bug
+//     a hit past the budget, all voices young → steals the OLDEST, never the
 //                                               one that was just struck
-//     total resonators across cymbal voices   → within kCymResonatorBudget
+//     aggregate cymbal COST                   → within kCymCostBudget
+//
+//   NOTE the budget is in resonator-lane EQUIVALENTS and charges each voice
+//   kCymVoiceFixedLanes on top of its bank — see the constant's comment.  This
+//   test deliberately does NOT assert "4 distinct voices": that was pass 26's
+//   assumption, and measuring the real per-voice cost showed 4 simultaneous
+//   cymbal voices to be roughly twice the only CPU level this unit has field
+//   evidence for.  What must hold is that hits ACCUMULATE rather than replace
+//   each other, which is what the HW report was actually about.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_cymbal_stacking() {
     std::cout << "\n── T36: Cymbal/gong voice stacking ──\n";
@@ -1747,30 +1757,38 @@ static void test_cymbal_stacking() {
     unit_runtime_desc_t desc = make_desc();
     BrachettiSynth s;
 
-    // Four gong strikes 300 ms apart must occupy four different voices.
+    // Gong strikes 300 ms apart must accumulate on distinct voices for as long
+    // as the cost budget can afford another one.
     s.Init(&desc); s.LoadPreset(14);        // Gong (ENGINE_CYMBAL)
     s.state.next_voice_idx = 0;
     uint32_t used = 0u;
-    int worst_total = 0;
+    int worst_cost = 0;
+    bool reused_immediately = false;
+    int prev_idx = -1;
     for (int k = 0; k < 4; ++k) {
         s.NoteOn(50, 110);
         s.NoteOff(50);                      // gate on+off in one tick
-        used |= (1u << s.state.next_voice_idx);
-        int total = 0;
+        const int idx = (int)s.state.next_voice_idx;
+        if (idx == prev_idx) reused_immediately = true;
+        prev_idx = idx;
+        used |= (1u << idx);
+        int cost = 0;
         for (int i = 0; i < NUM_VOICES; ++i)
             if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
-                total += (int)s.state.voices[i].cymbal.resCount;
-        if (total > worst_total) worst_total = total;
+                cost += BrachettiSynth::kCymVoiceFixedLanes +
+                        (int)s.state.voices[i].cymbal.resCount;
+        if (cost > worst_cost) worst_cost = cost;
         run_blocks(s, (int)(0.300f * 48000.0f), 64);
     }
     int distinct = 0;
     for (int i = 0; i < NUM_VOICES; ++i) if (used & (1u << i)) ++distinct;
     std::cout << "  4 gong hits (300 ms apart): distinct voices=" << distinct
-              << "  worst total resonators=" << worst_total << "\n";
-    result("T36a repeated gong hits stack across the Poly cap",
-           distinct == 4,
-           "Gong hits are not stacking — repeated strikes are reusing slots "
-           "instead of accumulating");
+              << "  worst cost=" << worst_cost
+              << " (budget " << BrachettiSynth::kCymCostBudget << ")\n";
+    result("T36a repeated gong hits accumulate on distinct voices",
+           distinct >= 2 && !reused_immediately,
+           "Gong hits are not stacking — repeated strikes are reusing the slot "
+           "they just struck instead of accumulating");
 
     // Every voice is now younger than kCymStealProtectSec, so the 5th strike
     // must take the OLDEST slot.  Voice 0 was struck first, so it is the oldest.
@@ -1810,22 +1828,24 @@ static void test_cymbal_stacking() {
     for (int k = 0; k < 8; ++k) {
         s.NoteOn(69, 127);
         s.NoteOff(69);
-        int total = 0;
+        int cost = 0;
         for (int i = 0; i < NUM_VOICES; ++i)
             if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
-                total += (int)s.state.voices[i].cymbal.resCount;
-        if (total > budget_worst) budget_worst = total;
+                cost += BrachettiSynth::kCymVoiceFixedLanes +
+                        (int)s.state.voices[i].cymbal.resCount;
+        if (cost > budget_worst) budget_worst = cost;
         run_blocks(s, (int)(0.120f * 48000.0f), 64);
     }
-    // The budget bounds what a NEW voice may claim; the 32-resonator floor can
-    // carry a voice past it, so allow the floor on top of the budget.
-    const int limit = BrachettiSynth::kCymResonatorBudget + 32;
-    std::cout << "  8 crash hits @Rsntrs=60: worst total resonators="
+    // The budget bounds what a NEW voice may claim; the minimum-bank floor can
+    // carry a voice past it, so allow that floor on top of the budget.
+    const int limit = BrachettiSynth::kCymCostBudget +
+                      BrachettiSynth::kCymMinResonators;
+    std::cout << "  8 crash hits @Rsntrs=60: worst aggregate cost="
               << budget_worst << " (limit " << limit << ")\n";
-    result("T36c stacked cymbal voices stay inside the resonator budget",
+    result("T36c stacked cymbal voices stay inside the CPU cost budget",
            budget_worst <= limit,
-           "Cymbal stack is over the CPU budget — a 4-voice bank of this size "
-           "is what crashed the HW audio interface");
+           "Cymbal stack is over the CPU budget — this is what crashed the HW "
+           "audio interface after pass 26 raised the cap from 2 voices to 4");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
