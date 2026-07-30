@@ -1,0 +1,618 @@
+# Brachetti — Current Status & Next Steps
+
+**Last updated:** 2026-07-14 (project renamed RipplerX → Brachetti; TODO sweep)
+**Branch:** `claude/brachetti-review-rename-rhad77`
+
+> **TODO sweep (2026-07-14):** every "What To Do Next" item below is COMPLETE
+> or at a documented architectural limit.  Still open after this sweep:
+> 1. the §3 tooling nicety (render Gong at note 62 and drop the +12 st
+>    calibration offset in the scoring tools) — optional, touch only together
+>    with a re-calibration pass;
+> 2. §4 data gaps — presets without reference samples cannot be scored;
+> 3. the new-voice TODOs in CLAUDE.md (Tambourine, continuous Shaker) and the
+>    ranked realism backlog in `REALISM_REVIEW.md` — all gated on the next HW
+>    listening test.
+> The project rename planned at the bottom of this file is DONE.
+
+---
+
+## §0d. 7th HW pass (2026-06-13) — crash-resonator bank
+
+Implemented the user's feedback-synthesis research for the metallic family.
+A "crash" is broadband noise RESONATED through inharmonic resonators, not noise
+summed beside a struck ring — that mismatch was the root of every prior
+"noise just put over the ring, not crashing" report on Cymbal/Gong/Ride/
+RidBel/HHat-O.
+
+New per-voice **crash-resonator bank** (`dsp_core.h crash_*`): 6 constant-peak-gain
+2-pole bandpass resonators reusing the modal mode frequencies (`modal_k_*`),
+driven continuously by the enveloped noise burst —
+`y[n]=r·k·y1−r²·y2+(1−r²)·noise`.  Two fixes were required to make it audible:
+the struck ring is pulled back (×0.45) so the wash can compete, and the noise
+release is slowed (T60≈2.4 s) so the wash isn't cut by the near-instant gate-off.
+Result: real crash decay envelopes that overlap and swirl with the ring.
+
+**Param repurposing** (answering the user's question): MlltRes — inaudible on a
+plate — is repurposed as live crash intensity, reference-anchored at the shipped
+value.  Documented as the pattern for wiring other dead params per engine.
+
+Other: Timpani FM growl removed (rounder low end), Koto richer inharmonic
+overtone stack, Kick faster/punchier boom ("thump" not "whomp"), Taiko more sub.
+All untouched presets bit-identical; 82/82 tests; NaN stress clean; 37 audible.
+
+---
+
+## §0c. 6th HW pass (2026-06-12, same day)
+
+Key fix: **exact modal tuning** — `fastercosfullf`/`fasterpowf` in
+`init_modal_modes` detuned and compressed low-frequency mode stacks
+(Timpani 82/124/144/165 Hz → 86/121/139/157 Hz, ~17 Hz gaps → beating heard
+as "rough low end / unsmooth reverberation").  Replaced with exact
+`cosf`/`exp2f` at NoteOn time.  Plus: true ring-mod gate `(1−d)+d·modal`
+(also on hf_branch) for Cymbal/Ride/Gong/RidBel; Ride/RidBel rebuilt as
+noise-dominant crash washes with long shimmer envelopes; Taiko velocity
+split (boom hard / wood soft); HHat-O de-glassed (broadband HP noise +
+light crash ring); Shaker noise-dominant; Kick2/Kick/808Sub louder;
+AcSnare fast noise attack; Koto/Handpan/Gong/Tick/Bongo retunes;
+Taiko2 → "DeepBs".  82/82 tests, NaN stress clean.
+
+---
+
+## §0b. 5th HW pass — preset revision + program-list rework (2026-06-12)
+
+Per the latest HW report (program count is now **37**; Flute/Clarinet removed):
+
+| Slot | Change |
+|------|--------|
+| 0 Kick2 | NEW — the pre-redesign Timpani body (HW: "keep this as an additional kick") |
+| 5 Timpni | redesigned: kettledrum principal tones 1:1.504:1.742:2:2.444 with solid upper-mode energy (was "bouncy", no metallic overtone); official score 65.5 → 54.6 |
+| 7 Taiko | redesigned: woodblock-hard crack + long TAANNG ring, TbRd16 |
+| 8 MrchSnr | noise attack staging removed — click and buzz land together |
+| 9 Koto | + harmonic-overtone modal bank (mix 0.10); 64.9 → 61.6 |
+| 13/14/27/32/33 | noise ⇄ ring cross-modulation (modal_rm_depth): wash is ring-modulated by the modal output (Risset) — "two sounds overlaid" fixed |
+| 14 Gong | + FM chirp depth 0.18, NzMx 26 (more "crash" onset) |
+| 21 Clap | multi-burst AM (~55 Hz, decaying depth) + NzRs 950 — "tcha" not click; 90.3 → 63.9 vs reference |
+| 22 Shaker | redesigned: woodblock body + 13 Hz grain-pulse AM noise |
+| 23 Taiko2 | NEW — the pre-redesign Taiko (replaces PluckBass per HW request) |
+| 26 HHat-C | = the pre-redesign Shaker voice ("a perfect closed hi-hat"); 120.9 → 74.5 |
+| 32/33 Ride/RidBel | near-harmonic ratios (read as "string") → thick-plate / bell-partial sets; Ride 105.9 → 97.6 |
+| 34 Bongo | + wood "tock" mode 5 at 3.80 |
+| 36 Tick | = the pre-redesign HHat-C chick + low clack mode; 133.6 → 94.7 |
+
+Architecture/param changes:
+- **Master filter is now a LOWPASS "Cutoff"** (was "LowCut" HP — reported reversed
+  three times).  Default/max = open; all preset rows col 16 = 1999.  The old
+  per-preset HP rumble-cuts no longer exist (Triangle/Cowbell gain some body).
+- **TubRad → modal body** (anchored): mode-1 T60 and boom_mix scale 2^(1.2·Δ).
+- **HitPos modal tilt doubled** (HW: "no effect" on AcTom/Timpani).
+- New VoiceState fields: `modal_rm_depth/modal_out_prev` (ring-mod coupling),
+  `noise_am_phase/inc/depth/decay` (enveloped-LFO noise gate).
+- Tests: KS-waveguide probes now LoadPreset(k_GuitarStr) — program 0 is a membrane.
+  82/82 pass; NaN stress clean.  Renderer list updated to the 37-slot layout.
+
+---
+
+## §0a. Parameter-wiring pass (2026-06-11)
+
+Full audit of every `ParamIndex` parameter across all six engine families
+(empirical min/max feature-delta audit, committed as `param_audit.cpp`):
+
+1. **"Cutoff in reverse" — root-caused and fixed.**  Two independent causes:
+   (a) the Chamberlin SVF stability clamp froze every cutoff above ~8.2 kHz onto
+   a resonant boundary so LowCut/NzFltFrq output got *louder* as raised —
+   `filter.h` is now a TPT (Zavalishin) SVF, stable and accurate to Nyquist;
+   (b) the noise hi-band was split from the *unfiltered* source with the split
+   corner tied to 2.2×NzFq, so raising the cutoff *removed* sizzle — both noise
+   bands now derive from the SVF-coloured noise.  All cutoff sweeps verified
+   monotonic over the full UI range.
+2. **ModelsIndex applied to modal engines.**  Model / Partls / Inharm / Mterl /
+   HitPos now reshape the modal bank on BAR/MEMBRANE/SNARE/PLATE presets via
+   `kModelModalRatios` templates, REFERENCE-ANCHORED at each preset's shipped
+   knob values (defaults bit-identical; Marimba before-vs-after self-distance 0.03).
+3. **Per-preset `k_noise_band_mix` honoured** (NoteOn no longer clobbers it with
+   model-profile defaults); HHat-C's hat-filter path engages for the first time.
+4. **Preset retunes after the noise rework** (official `auto_tune` pipeline scores,
+   lower = better): Clap BP@3k, GlsBotl AtkMs 0.5, hats recalibrated for the
+   accurate TPT BP (HHat-C hat HP@6k, HHat-O hat BP@12k) plus an `auto_tune`
+   2-round pass on both hats (HHat-C Mc.T603 16→316ms NzRs 920→960;
+   HHat-O Mc.T601 600→100ms).  Official-pipeline mean over 32 scored presets:
+   **89.39 → 86.96 (−2.44)**; biggest wins: HHat-O −17.9, HHat-C −14.6,
+   AcSnre −10.0, Cymbal −5.7, Tick −5.7, TblrBel −4.0; no preset worse than
+   +1.5 (Djambe +1.4 is the worst residual).
+5. **Tooling:** `auto_tune.py` table regexes fixed for the non-static member
+   declarations (model/modal tuning was crashing on the current source).
+   `param_audit.cpp` added (per-family parameter wiring audit harness).
+6. Stale unit test T7 updated: ENGINE_REMOVED presets (Flute/Clrint) must be
+   *silent*; all 82 tests pass.
+
+---
+
+## Current Scores (authoritative — from `rendered_tune/`)
+
+Run `python3 auto_tune.py --preset <Name>` from `platform/drumlogue/brachetti/`.
+Scores are `class_weighted_score` (lower is better). Targets are soft goals, not hard gates.
+
+### After batch-2b auto_tune (COMPLETE — converged via early stop)
+
+Batch-2b ran 13 presets (including Ac Tom, now fixed). Converged after round 3 (stall threshold met).
+Mean score: 63.41 → **61.42** (−1.99 total).
+
+| Preset   | Baseline (pre-batch-2) | Batch-2b final | Target | Status               |
+|----------|------------------------|----------------|--------|----------------------|
+| Conga    | 53.5   | **31.59** | < 60   | ✓ **ACHIEVED** |
+| Djambe   | 48.8   | **48.05** | < 55   | ✓ **ACHIEVED** |
+| Taiko    | 67.6   | **46.82** | < 70   | ✓ **ACHIEVED** |
+| GlsBotl  | 66.5   | **60.38** | < 70   | ✓ **ACHIEVED** |
+| Cowbel   | 65.2   | **63.96** | < 70   | ✓ **ACHIEVED** |
+| HHat-C   | 75.3   | **68.65** | < 70   | ✓ **ACHIEVED** |
+| Handpn   | 49.0   | **47.97** | < 60   | ✓ **ACHIEVED** |
+| StelPan  | 76.3   | **71.29** | < 80   | ✓ **ACHIEVED** |
+| Tick     | 84.9   | **76.50** | < 80   | ✓ **ACHIEVED** |
+| Claves   | 98.0   | **67.95** | < 80   | ✓ **ACHIEVED** |
+| Bongo    | 114.7  | **76.28** | < 80   | ✓ **ACHIEVED** |
+| Ac Tom   | 60.01  | **57.20** | < 80   | ✓ **ACHIEVED** |
+| MrchSnr  | 78.02  | 78.02      | < 80   | ✓ **ACHIEVED** |
+| AcSnre   | 64.54  | 64.54      | < 70   | ✓ **ACHIEVED** |
+| Timpni   | 87.0   | **81.84**  | < 80   | Architectural limit (f0/inharm/attack floor) |
+| Kick     | 118.21 | **59.10**  | < 80   | ✓ **ACHIEVED** (score was stale; AtkMs 0→5ms seeded; auto_tune TbRd1→3, AtkMs5.5ms) |
+| Kalimba  | 64.17  | **66.97**  | < 70   | ✓ **ACHIEVED** |
+| Cymbal   | 91.82  | 91.82      | < 70   | Architectural limit  |
+| Triangle | 73.86  | 73.69      | < 70   | Architectural limit (arch changes reverted — see §2) |
+| Gong     | 101.52 | **83.40**  | < 70   | Architectural limit (HF shimmer fix −18 pts) |
+| HHat-O   | n/a    | **67.54**  | < 70   | ✓ **ACHIEVED** (HF shimmer fix; first reliable score) |
+
+**Architectural limits explained** (auto_tune converged, nothing left to tune):
+- **Cymbal**: f0 detector breaks above note 65; NzMx > 40 collapses attack from 37 ms → 2 ms; `CrashA` inharm_pct is permanently 100% (ref=0 vs ren > 0 is always max pct_diff).
+- **Triangle**: `Triangle-Bell-C#.wav` has f0 at C#8 ≈ 4434 Hz — ~40 semitones above any useful render note. `attack_pct ≈ 98%` because real triangle bells have instant metal-strike onset the synth cannot reproduce.
+- **Gong**: Both gong samples score `attack_pct = 100%` and `f0_pct ≈ 96–98%`. The gong's inharmonic spectrum gives the f0 detector garbage (70+ semitone apparent mismatch). PERCUSSIVE bonus (+12–17 pts) makes the floor even higher.
+- **Timpni**: `f0_pct=96.3%` (f0 detector returns −57 st offset on `Orchestral-Timpani-C.wav`), `inharm_pct=100%`, `attack_pct=90.4%`. Dedicated pass ran all 50 trials with zero improvement. Fixed floor ≈38 pts. Target <80 requires pitch-normalised f0 scoring or a better reference sample.
+
+**Ac Tom note**: Fixed in batch-2b. `PRESET_ALIASES["AcTom"]` was `"AcTom"` (no space) — corrected to `"Ac Tom"` in `auto_tune.py`. Ac Tom now scores correctly (57.20, target <80 ✓).
+
+### Key improvements since PROGRESS.md
+
+| Change | Effect |
+|--------|--------|
+| `k_onset_attack_ms` architectural addition | Membrane drums (Djambe/Bongo/Conga/AcTom/Taiko/Handpan/Timpani) get a linear 0→1 onset ramp. Eliminated 100% attack_pct floor from 0ms render onset vs 3–4ms physical onset. Djambe: 91.9→48.8. |
+| auto_tune batch-1 × 6 rounds | BaseFM +200 Hz for Djambe/Timpani/Tick/StelPan, DiffMx 0→0.02 for membrane presets, Dkay/Cowbell parameter adjustments. |
+| auto_tune batch-2 × 7 rounds + batch-2b × 3 rounds | Mean score 75.4→61.4 across 13 presets. Bongo 114.7→76.3, Claves 98.0→68.0, Conga 53.5→31.6, Tick 84.9→76.5, HHat-C 75.3→68.7, Ac Tom 60.0→57.2. |
+| autocorr_f0 aliasing fix | 44.1 kHz samples decimated to 8820 Hz were giving period-2 spurious f0=4410 Hz. Added `lo = max(4, ...)` guard. |
+| Ac Tom name fix (batch_tune_runner.py) | `"AcTom": "AcTom"` → `"AcTom": "Ac Tom"` in 6 locations. Tom samples now resolve to the correct preset. |
+
+---
+
+## Architecture Overview (as built)
+
+### DSP core (synth_engine.h)
+
+```
+NoteOn trigger
+│
+├─► EXCITER
+│   ├─ Dual-noise burst: LP-filtered low + unfiltered high, blended by noise_band_mix
+│   ├─ Mallet: two cascaded LP pulses, velocity-scaled, gated after decay
+│   ├─ Snare wire rattle: 3-band (lo/mid/hi) resonator, velocity-dependent Q
+│   ├─ Metallic FM chirp: per-voice transient sweep (Cymbal/Gong/HHat/Ride/Triangle/BellTree)
+│   ├─ Boom oscillator: low-body sine env (Kick/Timpani/AcTom/AcSnare)
+│   └─ Stage-2 modal bank: 2–6 decaying oscillators via 2nd-order recursion
+│
+├─► KS WAVEGUIDE (Resonator A + optional Resonator B)
+│   ├─ Delay line (4096-sample, fractional-interpolation)
+│   ├─ Allpass dispersion → 1-pole LP loss (AP then LP — physically correct order)
+│   ├─ loss_g_dc / loss_g_hf split: independent sustain vs brightness control
+│   ├─ Pitch-compensation: LP and AP group-delay subtracted from delay length at NoteOn
+│   ├─ Metallic low-loss clamp: raises hf_branch_decay + lowpass_coeff floors for metallic family
+│   └─ Modal attack coupling: modal_mix boosted by FM env during transient window
+│
+└─► MASTER SHAPING
+    ├─ Onset ramp: linear 0→1 envelope over k_onset_attack_ms ms (membrane drums only)
+    ├─ Tilt EQ (Tone param)
+    ├─ Magnitude envelope follower (squelch, ~−80 dB threshold)
+    └─ Brickwall limiter (NaN safety net)
+```
+
+### Notable quirks and invariants
+
+| Quirk | Detail |
+|-------|--------|
+| **Allpass formula** | Uses `H(z) = (c + z⁻¹)/(1 + c·z⁻¹)`, so DC group delay = `(1−c)/(1+c)`, NOT `(1+c)/(1−c)`. Getting this wrong causes systematic pitch sharpness. |
+| **SVF stability** | True stability limit is `f < √(4+q²)−q`, not `f < 2`. Clamped with 0.999× safety margin in `set_coeffs()`. |
+| **fasterpow2(0) ≈ 0.9714** | Fast-math approximation is wrong at 0. PitchBend uses `if (bend==8192) mult=1.0f` exact case. Same applies to `fasterpowf` used in tables.h — replaced with `powf`. |
+| **Coupled resonator beat** | Partls > 0 couples ResA/ResB at the same pitch, splitting normal modes → beating arises from modal frequency splitting, not tuning error. |
+| **Same-tick GateOn+GateOff** | Drumlogue one-shot model fires gate_on + gate_off in the same scheduler tick. Fixed by pre-advancing `master_env.process()` once in NoteOn so release finds value=1.0. |
+| **Voice 0 skipped first note** | NoteOn pre-increments `next_voice_idx` before assigning. First note goes to voice 1. Minor cosmetic issue, known and accepted. |
+| **ARM -ffast-math** | On hardware `0 × Inf = 0`. On x86 it becomes NaN. Brickwall limiter masks NaN silently as 0.99. Always test via render binary, not just x86 unit tests. |
+| **Percussive bonus** | `class_weighted_score` adds `0.12×(flatness_pct + flux_pct)` for PERCUSSIVE_PRESETS. `Trngle` is NOT in this set (set has `"Triangle"`, not `"Trngle"`) — intentional: it keeps scoring lower. |
+| **rendered_tune vs rendered_batch** | `auto_tune.py` always writes fresh renders to `rendered_tune/`. `batch_tune_runner.py` reads from `rendered_batch/` (may be stale). Score discrepancies between the two tools usually trace to this. Always re-render before batch scoring. |
+
+### Key files
+
+| File | Role |
+|------|------|
+| `synth_engine.h` | Entire DSP engine + preset tables + model_param_presets + modal configs |
+| `render_presets.cpp` | x86 host renderer — one WAV per preset at a fixed note/duration |
+| `pre_hw_analysis.py` | Pairwise audio comparison: f0, attack, T60, centroid, MRSTFT, etc. |
+| `auto_tune.py` | Single-preset greedy parameter search; writes to `rendered_tune/` |
+| `batch_tune_runner.py` | Batch compare + scoring; reads from `rendered_batch/` |
+| `test_hw_debug.cpp` | 82 unit tests; run with `./test_hw_debug` |
+| `cymbal_sweep.py` | NzMx/note grid search for Cymbal (diagnostic, committed for reference) |
+
+### Render note decisions (render_presets.cpp, line ~150)
+
+| Preset | Note | Why |
+|--------|------|-----|
+| Cymbal | 65 | f0 detector breaks above 65; notes 72/76/80 all produce garbage f0 values |
+| MrchSnr | 65 | Best score vs marching-snare references |
+| Triangle | 69 | A4; best dual-sample mean (C# and F5) |
+| Gong | 50 | D3; low pitch for gong body; +12 st calibration applied in tooling |
+
+---
+
+## Score Metric Formulas
+
+### pct_diff
+```
+pct_diff(a, b) = 100 × |a−b| / max(|a|, |b|)
+```
+Symmetric percentage difference. 100% = completely different, 0% = identical.
+
+### class_weighted_score (simplified)
+```
+score = 0.16·f0 + 0.14·attack + 0.18·t60 + 0.16·centroid + 0.10·rolloff
+      + 0.08·flatness + 0.08·flux + 0.10·inharm + [other terms]
+      + 8.0·mrstft_log_l1
+```
+PERCUSSIVE presets add `+ 0.12·(flatness_pct + flux_pct)` on top.
+
+### auto_tune acceptance
+Minimum improvement threshold: `MIN_ACCEPT_IMPROVEMENT = 0.25`.
+Rounds stop after 3 consecutive rounds with no accepted change.
+
+---
+
+## What To Do Next (priority order)
+
+### 0. Status: ALL dedicated passes COMPLETE
+
+| Preset  | Final score | Target | Result |
+|---------|------------|--------|--------|
+| Kalimba | **66.97**  | < 70   | ✓ Done (4 rounds) |
+| Kick    | **59.10**  | < 80   | ✓ Done (3 rounds, R1: TbRd1→3, R2: AtkMs5.5ms) |
+| Timpni  | **81.84**  | < 80   | Architectural limit — f0/inharm/attack floor prevents further progress |
+
+Kick note: stale score (118.21) was from pre-onset-ramp era. Actual score at session start: 55.3.
+Root cause: `attack_pct=100%` (render peaks at t=0; reference has 4.79ms onset). Seeded AtkMs=5ms,
+then auto_tune found 5.5ms optimum. All other scored presets were already < target after batch-2b.
+
+### 1. Dedicated passes — COMPLETE
+
+**Timpni** — 81.84, confirmed architectural limit (see §Architectural limits).
+
+**Kick** — DONE. Final score **59.10** (target <80 ✓). 3 rounds, early stop.
+- Seeded: `AtkMs=5ms` (sweep showed 49.7 at 5ms vs 55.3 at 0ms; baseline for auto_tune: 63.09)
+- auto_tune R1: TbRd 1→3 (body resonance tuning). R2: AtkMs 5.0→5.5ms.
+
+**Kalimba** — DONE. Final score **66.97** (target <70 ✓). 4 rounds, converged.
+
+### 2. Architecture work — COMPLETE (commit d9bdf34)
+
+**A. Metallic low-loss loop / per-mode decay (Triangle) — REVERTED**
+- The changes (KS clamp to 0.955, modal_mix 0.40→0.70, mode 3 T60=3500ms) were applied in
+  commit d9bdf34 and then reverted in 520af0f after re-scoring showed Triangle 73.86→107.11
+  (+33 pts regression — worse).
+- Root cause: KS at 300ms + 70% modal mix shifts the spectral envelope away from the
+  reference samples; MRSTFT spiked. The concept (per-mode independent decay) is sound but
+  the specific parameters need more careful tuning to avoid regression.
+- Status: Triangle remains at 73.69 (architectural limit, f0/attack floor).
+
+**B. Parallel HF exciter stack (Gong / HHat-O) — DONE**
+- NoteOn: override `noise_env_hi.decay_rate = 0.000100f` (T60≈1.44s) for k_Gong and
+  k_HiHatOpen, so `hf_branch_env` has a live noise signal throughout its ~720ms lifetime.
+- Gong also gets `noise_env.decay_rate = 0.000050f` (T60≈2.9s low-band wash).
+- Root cause fixed: NzRs=860/1000 was giving noise_env_hi T60 of 4–36ms (decayed to nothing
+  before hf_branch_env could modulate it). Gong/HHat-O now have sustained shimmer like Cymbal.
+
+**C. Snare wire multiband rattle — DONE (prior commits)**
+- 3-band resonator (lo/mid/hi) in ExciterState. MrchSnr 78.02 ✓, AcSnre 64.54 ✓.
+- No regressions.
+
+### 3. Script improvements — COMPLETE (commit d1b6297)
+
+**auto_tune.py**
+- `PRESET_ALIASES["AcTom"]` bug **FIXED** (was `"AcTom"`, now `"Ac Tom"`).
+- Fine Dkay/Mterl/NzMx steps after 1 stable round: **already implemented** (FINE_STEP_OVERRIDES).
+- **NEW** `modal_preset_configs` T60 tuning: `read_modal_config_rows()` / `write_modal_config_rows()` parser/writer added. `MODAL_PARAMS` tunes t60_1–t60_4 per preset (T60 values for each mode). Handles kDefaultModalPresetConfig rows (skipped), STAGE2_MODAL_* constants (preserved via source-text identity), multi-config-per-line format. `--skip-modal-params` flag.
+- **NEW** `rendered_tune → rendered_batch` auto-sync: `sync_renders_to_batch()` runs at end of every `auto_tune.py` invocation.
+
+**batch_tune_runner.py**
+- `PERCUSSIVE_PRESETS` has `"Triangle"` (not `"Trngle"`) — this is **intentional**: the mismatch prevents the percussive flatness/flux penalty (+6 pts) from applying to Triangle, keeping its score lower. Do NOT change to `"Trngle"`.
+
+**render_presets.cpp**
+- Gong currently renders at note 50 with a +12 st calibration in tooling. Consider rendering at note 62 directly and removing the calibration offset.
+
+### 4. Data gaps
+Presets with no mapped reference samples (cannot score objectively):
+```
+InitDbg, TblrBel, Koto, Vibrph, StelPan*, Claves*, Cowbel*, Clap, Shaker,
+Flute, Clrint, PlkBss, GlsBwl, GtrStr, BelTre, SltDrm, Ride*, RidBel*, HHat-O*
+```
+(* have samples but scoring is noisy / no reliable f0; StelPan/Claves/Cowbel now have AtkMs tuning even without reliable f0)
+
+**Presets that DO have samples and score reliably:** Djambe, Bongo, Conga, Taiko, Handpn, Timpni, Tick, HHat-C, GlsBotl, Cowbel, Claves, StelPan, MrchSnr, AcSnre, Kick, Kalimba, Cymbal, Triangle, Gong
+
+### 5. Hardware validation gate
+Before flashing, a preset candidate must pass:
+1. `auto_tune.py` score improvement with `rendered_tune/` as ground truth
+2. Manual listen on host render (does it sound like the instrument?)
+3. ARM/qemu render sanity (no NaN, no DC offset)
+4. Hardware A/B test at stable note and velocity
+
+---
+
+## Scoring Gotchas (traps to avoid)
+
+1. **Stale rendered_batch**: After any `auto_tune.py` run, `rendered_tune/` is current but `rendered_batch/` is stale. Either re-render (`--run-render`) or compare only within `rendered_tune/`.
+
+2. **f0 detection on metallic sounds**: Triangle, Cymbal, Gong all have unreliable f0 detection. `f0_pct` is effectively a noise floor for these. Don't try to tune it down — it's a measurement artifact, not a real mismatch you can fix.
+
+3. **MRSTFT vs perceptual quality**: `mrstft_log_l1` is the most reliable metric for "sounds similar." Low mrstft + high f0_pct is fine for metallic sounds. High mrstft + low f0_pct is bad.
+
+4. **NzMx coupling to attack**: For Cymbal, NzMx > 40 collapses attack_pct from ~21% to ~96%. The NzMx → attack coupling is via noise envelope in the exciter. Don't increase NzMx without re-checking attack metric.
+
+5. **Note range for Cymbal**: note 65 is mandatory. Notes ≥ 66 produce aliased f0 detection artifacts (autocorrelation finds wrong period in complex modal/noise synthesis).
+
+---
+
+## Quick Start Commands
+
+```bash
+cd platform/drumlogue/brachetti
+
+# Build host renderer
+g++ -std=c++17 -O3 -I.. test_brachetti_render.cpp -o render_presets
+
+# Run all unit tests
+./test_hw_debug
+
+# Score a single preset (auto-renders fresh)
+python3 auto_tune.py --preset MrchSnr
+
+# Score all presets (uses rendered_tune/, re-renders all)
+python3 auto_tune.py  # no --preset flag = all in scope
+
+# Batch score (uses rendered_batch/ — may be stale)
+python3 batch_tune_runner.py --run-render --render-cmd "./render_presets --preset {preset_idx} --note {note} --name {preset_name} --out {output_wav}" --render-dir rendered_batch --out-dir batch_reports
+
+# Check detailed metrics for a preset pair
+python3 -c "
+from pre_hw_analysis import compare_pair
+from pathlib import Path
+r = compare_pair(Path('samples/Chinese-Gong.wav'), Path('rendered_tune/14_Gong.wav'))
+print(r['score'])
+for k,v in r['metrics'].items(): print(f'  {k}: {v:.3f}' if isinstance(v,float) else f'  {k}: {v}')
+"
+```
+
+---
+
+## Project Rename — DONE (July 2026)
+- RipplerX → **Brachetti** (in honour of performer Arturo Brachetti)
+- Renamed: `platform/drumlogue/ripplerx/` → `platform/drumlogue/brachetti/`,
+  `test_ripplerx_render.cpp` → `test_brachetti_render.cpp`, class
+  `RipplerXWaveguide` → `BrachettiSynth`, `config.mk` `PROJECT := brachetti`,
+  `header.c` unit name `"Brachetti"`, workspace file, and all doc/tooling
+  references.  `dev_id`/`unit_id` deliberately unchanged so hardware treats
+  the renamed unit as an update of the same installed unit, not a second one.
+
+---
+
+# Modal Drum Engine — Found Issues & Fixes (timpani/taiko port)
+
+Troubleshooting log from the standalone modal engine whose Timpani/Taiko are being
+ported in. Each item: the defect heard/seen, the **measured** root cause, the fix,
+and the generalizable breakthrough. These inform the Brachetti preset tunings and the
+parameter-strengthening work.
+
+### "Resonance sounds snare-like / well-shaped noise"
+**Cause:** a sustained band-limited noise bed outlived the modes (`tailflat.py`:
+flatness stuck 0.36–0.41; a real kettle falls 0.17→0.035). **Fix:** noise OFF for
+tonal drums; recover density with amplitude compression. **Breakthrough:** spectral
+flatness is the *wrong* metric for discrete modes (a sum of sinusoids reads ≈0.001);
+use partials-within-20 dB + AM-depth and a flatness *profile* (snare = sustained-high;
+drum = falling).
+
+### "Frequency response flat above a threshold, not a negative exponential"
+**Cause:** analyzer band ceiling 720 Hz → no modes above ~688 Hz → a dead −102 dB
+floor. **Fix:** extend bands to 4.2 kHz, `densify` the low band only, `hishape` the
+upper modes → a natural roll-off.
+
+### "Strike → cut → steady horizontal lines" (not strike → exp decay)
+Three temporal defects: (1) the transient was a flat ~70 ms block that ended abruptly
+(the "cut") → `reshape_transient` exp τ≈25 ms; (2) mode decays too uniform → flat
+lines → `freqdecay` (HF dies faster, the descending diagonal); (3) ~18 ms craters =
+the two equal principal modes (a fifth) beating to zero — the timpani's inherent
+warble; eased with less compression.
+
+### "Vertical line + horizontal lines, not a filled wedge" ★
+The strike should inject **all** frequencies and the resonant system should trim the
+highs **slowly over time** = a filled triangular wedge. **Cause:** (a) the previous
+freqdecay was too aggressive (τ≈31 ms at 5 kHz → HF collapsed in 40 ms); (b) only ~17
+sparse HF modes → lines, not a continuum. **Fix:** drop the aggressive freqdecay; add a
+**dense membrane fill** (~220 jittered resonators, gentle freq-dependent decay).
+**Breakthrough:** *measure the wedge the way a dB spectrogram draws it* — the highest
+freq above −60/−80 dB per frame, not an energy roll-off (which the loud fundamental
+dominates). Snare-proof because the fill *decays* (flatness falls, tracking the sample).
+
+### "The strike needs more WHAM" ★
+Two independent causes: (1) **crest was squashed** — the output stage's always-on
+cubic `1.5x−0.5x³` boosts quiet ×1.5 and caps peaks ×1.0 (a compressor lowering crest
+≈0.67×: 3.23 vs sample 4.08) → replaced with a **transparent limiter** (unity below
+0.85) → crest 4.29; (2) **the attack was an instant tick, not a bloom** — the real hit
+swells from ~0 to peak over ~6 ms → a raised-cosine **attack bloom** → atk0-5 0.47
+(0.478). **Breakthrough:** "wham" decomposes into **crest** (a limiter problem) and
+**bloom** (an attack-envelope problem), each separately measurable.
+
+### Taiko: a noise wedge, not a mode wedge ★
+The taiko tail is genuinely noise (flatness 0.46→0.53→0.34→0.19), so the timpani's
+dense-mode fill *lowered* flatness. **Fix:** a **noise wedge** + (a) bloom the membrane
+only, add the click after (keeps the stick crack sharp → restores HF/atk0-5); (b) a
+**bloom floor** so the swell starts partway up (sharp-attack drums); (c) white noise →
+4 cascaded 1-poles (−24 dB/oct) cutoff **sweeping bright→dark**. **Breakthrough:**
+*timpani = tonal wedge (dense modes); taiko = noise wedge* — the same engine spans both
+by choosing the wedge's source. (Maps onto Brachetti's `NzMix`/`NzFltFrq`/`NzRes` noise
+path + `modal_mix` + `onset_attack_ms`.)
+
+## Porting the retune into Brachetti (presets 5 Timpani / 7 Taiko, in-place)
+
+Measured the shipped Brachetti presets against the reference WAVs (`refcmp.py`
+metrics: spectral centroid early/late, T60, plus a crest factor) and retuned the two
+preset rows + their `modal_preset_configs` / `model_param_presets` toward the samples.
+Scoring loop: `render_presets /tmp/rc` → compare `05_Timpani.wav` / `07_Taiko.wav` vs
+`samples/Orchestral-Timpani-C.wav` / `samples/Taiko-Hit.wav`.
+
+| metric | Timpani ref → before → after | Taiko ref → before → after |
+|---|---|---|
+| centroid early | 756 → 674 → **791** | 1690 → 592 → **1216** |
+| centroid late  | 646 → 280 → **355** | 887 → 240 → **424**  |
+| T60 (s)        | 1.12 → 1.39 → 1.49  | 2.10 → 0.58 → **1.11** |
+| crest          | 4.08 → 1.33 → 1.28  | 6.39 → 2.37 → 1.52   |
+
+**What worked (brightness + length, the documented HW priorities):**
+- **`modal_mix` is the brightness lever, not the modal config envelopes.** Editing the
+  upper-mode envs/T60 in `modal_preset_configs` barely moved `centroid_late` — the tail
+  is dominated by the **waveguide resonator** (Dkay-driven, tuned to the low fundamental),
+  which is ~60 % of the voice when `modal_mix` is 0.40. Raising `modal_mix` (Timpani
+  0.40→0.55, Taiko 0.30→0.60) lets the bright modal bank lead the dark fundamental →
+  centroid up. Trimming Timpani's `Dkay` 200→150 shortens that dark waveguide drone.
+- Taiko: lean out the 87 Hz boom (`boom_mix` 0.58→0.22, `boom_decay` 0.99981→0.99975 —
+  a thump, not a drone), extend the modal T60s (≈600→1400 ms), lift the bright 1472 Hz
+  "AAN" partial (env 0.60→0.88), and brighten the noise crack (`NzMix` 36→52,
+  `NzFltFrq` 360→800 ≈ 8 kHz). This is the `NzMix`/`NzFltFrq` noise-wedge mapping in
+  practice. Result: centroid_early **2×**, T60 **2×** — the "TAAAN" the HW asked for.
+
+**The crest ceiling + the pre-clip-trim fix (the "wham"):** ★
+Brachetti's master chain **hard-clips to ±0.99 under `master_gain` 1.5** then soft-clips
+again (a deliberately loud drum-machine voicing). The mallet impulse is ~3–4× full-scale
+— exactly the transient that *would* give crest ≈ 4 — but it is clipped down to the same
+ceiling the sustained body already sits at, so `crest = peak/RMS ≈ 1`. Verified crest 4–6
+IS reachable on this engine (Bongo 5.99, Conga 10.08) — but only for drums whose body
+**decays fast** (short T60), letting the 0.5 s-window RMS fall below the clipped peak.
+Timpani/Taiko need a **bright + long** ring, which keeps the body at the ceiling → crest
+stays ≈ 1.3–2.4.
+
+**Fix (implemented):** a **per-preset pre-clip output trim** — `pre_clip_trim` scales the
+summed output just *before* the hard-clip (Timpani 0.50, Taiko 0.25; **1.0 for every other
+preset → bit-identical**, since ×1.0 is exact). The body drops below ±0.99 while the ×3–4
+transient still reaches it → crest recovered (Taiko 1.5→**2.9**, Timpani 1.3→**1.5**).
+**Coupling caveat measured on the trim sweep:** lower trim *also darkens* — a chunk of the
+pre-trim "brightness" was actually **brickwall distortion** (the clipping body manufacturing
+HF harmonics); removing it reveals the cleaner, darker true modal tone, so crest and
+centroid trade off monotonically (Taiko: trim 0.65→0.15 moves crest 1.8→4.0 but centroid
+987→566). The Stage-4b soft-clip (`x/(1+|x|)`) re-compresses peaks, capping usable crest
+≈ 3; reaching the reference's 4–6 needs either a much leaner/quieter trim or a transparent
+limiter replacing the soft-clip (a master-chain change left out of an in-place preset
+retune). Operating point favours **punch on Taiko** (the signature hit) and a **gentler
+trim on Timpani** (its pitch/sustain matter more than peak punch).
+
+**Regression safety:** only rows 5 and 7 (and their config/model-param entries) were
+touched; the other 35 presets render **bit-identical** to clean HEAD.
+
+## HW feedback round 2 → the dense-kernel port (the real fix) ★
+
+**HW comparison (user):** vs `105_timp_wedge.wav` the HW Timpani was "rougher, not
+blended correctly, pretty different"; the HW Taiko had "a synthy note as hit" instead
+of the reference's hit.  Root cause: the in-place retune (previous section) was an
+*approximation* of the standalone engine — 6 modal modes + the waveguide fundamental
++ a mallet-click exciter, pushed through the master soft-clip.  Every complaint maps
+to a missing standalone feature:
+
+| HW complaint | missing piece |
+|---|---|
+| "rougher" | soft-clip x/(1+abs(x)) distortion on the body + only 6 partials beating |
+| "not blended" | no dense membrane fill (280 vs 6 resonators) — layers heard separately |
+| "synthy note as hit" | instant mallet tick + pitched waveguide onset instead of the recorded knock + 16 ms bloom + noise wedge |
+
+**Fix — port the actual engine, not its silhouette.**  Presets 5/7 now bypass the
+voice loop entirely and render through `ModalDrumKernel` (`modal_drum_kernel.h`), a
+faithful port of the standalone `ResonatorDrumSynth` that produced the approved
+renders, with its data embedded (`modal_drum_data.h`, generated from the exact
+configs/transients — see scratchpad `emit_data.py`):
+
+- **Coupled resonator bank**: one velocity-scaled half-sine impulse rings 280
+  (Timpani: 58 measured modes + dense jittered fill) / 71 (Taiko) two-pole
+  resonators.  NEON SoA inner loop (4 modes/iteration, `vmla/vmls`), scalar
+  fallback bit-equivalent.  Host scalar cost: 1.7 % realtime; the idle bank is
+  silence-gated.
+- **Recorded broadband knock**: the residual transients extracted from the samples
+  (`reshape_transient` τ=25/30 ms), resampled to 48 k, embedded (~26 KB), scaled
+  ×v^1.5 — the hit that "cannot be synthesized from the band-limited modes".
+- **Attack bloom**: raised-cosine membrane swell (Timpani 4 ms from silence, Taiko
+  16 ms from a 0.12 floor), transient added after (stick click stays sharp).
+- **Noise wedge** (Taiko): white noise → 4 cascaded one-poles, cutoff sweeping
+  bright→dark (coefficients re-fit for 48 kHz), level 0.18, decay 2.8 /s.
+- **Transparent limiter master stage**: Tone tilt → master LP (LowCut/Resnc) →
+  Gain re-anchored to the shipped row (drive/1.8 Timpani, /2.0 Taiko — so the
+  preset defaults are *transparent*) → unity-below-0.85 tanh-knee limiter.  The
+  legacy hard-clip → soft-clip chain (and the previous pre-clip-trim hack, now
+  removed) never touches these presets.
+- **Retrigger = same membrane**: resonator states are NOT zeroed on a new hit —
+  energy accumulates like a real drum roll (verified: 12 hits @100 ms, peak 0.94,
+  no NaN).  `Reset()` flushes the ring.
+
+**Param mapping (anchor-at-shipped-value, same pattern as the legacy modal bank):**
+Note→transpose (mode table retunes, amortized ≤48 modes/block so knob turns cannot
+blow the audio deadline); Dkay+Rel→T60 multiplier (T40 235→2030 ms on Timpani);
+MlltStif→impulse sharpness; MlltRes→knock gain; VlMllStf/VlMllRes→velocity→timbre
+couplings; Partls→membrane-fill density (the wedge↔lines continuum); Mterl→HF-ring
+tilt; HitPos→knock tilt; Inharm→upper-mode stretch; NzMix/NzFltFrq→wedge level/start
+cutoff (NzMix opens a grain layer even on Timpani, whose recipe ships noiseless);
+Tone/LowCut/Resnc/Gain act in the kernel master stage.  Model/TubRad/NzRes/NzFltr
+are inert on these two presets (documented trade-off).
+
+**Verification (in-engine render at 48 k, vel 127/70/38 vs the approved wedge trio):**
+
+| metric | 105 ref → Brachetti | 110 ref → Brachetti |
+|---|---|---|
+| crest ("wham") | 4.02 → **4.03** | 6.46 → **6.41** |
+| atk 0-5 ms RMS | 0.397 → **0.397** | 0.323 → **0.322** |
+| peak time | 15.0 → **15.0 ms** | 13.9 → **13.9 ms** |
+| T60 | 1.53 → **1.53 s** | 0.44 → **0.40 s** |
+| centroid early/late | 629/334 → **646/340** | 1371/816 → **1270/829** |
+| −60 dB wedge edge | tracks row-for-row | tracks row-for-row |
+| med/soft velocity layers | peaks 0.81/0.59 → **0.81/0.59** | 0.90 → **0.90** |
+
+(The previous port measured crest 1.53/2.86 — the soft-clip ceiling this section
+replaces.)  All 37 presets: the other **35 render bit-identical** to HEAD; full
+`test_dsp` suite passes (0 failures); `unit.cc` cross-compiles clean for
+Cortex-A7/NEON (only pre-existing warnings elsewhere).
+
+### HW round 3: hit knob, honest note display, two kettles
+
+Three HW defects against the "nearly perfect" kernel port, each with a distinct root:
+
+1. **"More hit — at high `VlMllRes` the hit should be prominent."**  The first
+   mapping only *steepened the knock's velocity exponent* — which does nothing at
+   full velocity (1^x = 1) and made *soft* hits quieter: inverted.  `VlMllRes` is
+   now the **hit-prominence knob**: it multiplies the knock **gain**
+   (`exp2f(2.2·Δ)`, up to ≈4.6×, the transparent limiter keeps it clean) *and*
+   flattens the velocity exponent (1.5−Δ) so the hit stays tall on soft strikes.
+   Measured: attack RMS ×1.64 @vel 100, ×1.92 @vel 50, body bit-identical.
+2. **"Note reported is not correct."**  The kettle's dominant sustained partial
+   measures **165.5 Hz ≈ E3 (MIDI 52, −5 cents)** — the A2 110 Hz principal sits a
+   fifth below and decays into it — while the row shipped `Note 40` (E2): the
+   screen lied by an octave.  Row + recipe root are now both 52, so the display
+   names the pitch you hear and the shipped row still plays at ratio 1 (renders
+   bit-identical).  Taiko measured 86.7 Hz ≈ F2 → its shipped 41 was already right.
+3. **"Note change distorts the main sound" / "check stacked hits."**  One shared
+   bank meant a new note *retuned the ringing tail* (heard as bending/distortion),
+   and cross-note stacking was impossible.  The kernel now holds **two kettles**:
+   same-note hits retrigger the same drum in place (roll accumulation preserved),
+   a new note takes the free/oldest kettle and retunes it **synchronously** —
+   possible because the decay poles are pitch-invariant, so the note path needs
+   only a sin/cos pass (~280 modes ≈ 30 µs on the A7; the `expf` work for
+   Dkay/Mterl/Inharm/Partls stays amortized in Process()).  Verified: note 52 then
+   45 → both partial sets ring independently (165.5 Hz tail survives the second
+   hit), peaks stable ±7 st (0.928/0.933/0.940 — no limiter squash), 12-hit rolls
+   clean, and the **default single-hit renders are bit-identical** to the approved
+   wedge-matched v1 renders (per-kettle RNG reseeds keep even the taiko noise
+   sequence).  Cost: second kettle ≈ +2 % host scalar (silence-gated), +6.8 KB bss.
