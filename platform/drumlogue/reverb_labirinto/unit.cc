@@ -144,13 +144,6 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
     (void)value;
     if (id == k_shimmer_freq)
     {
-        // SHMR is dual purpose: shimmer pitch-shift rate in PILL=4, and the
-        // ping-pong bounce time in PILL=1 (where there is no shimmer to set).
-        // Show whichever one the current routing actually uses.
-        if (s_reverb->isPingPong()) {
-            snprintf(sf_buf, sizeof(sf_buf), "%dms", (int32_t)(s_reverb->getBounceTimeMs() + 0.5f));
-            return sf_buf;
-        }
         int32_t hz_x10 = (int32_t)(s_reverb->getShimmerFreq() * 10.0f);
         snprintf(sf_buf, sizeof(sf_buf), "%d.%dHz", hz_x10 / 10, hz_x10 % 10);
         return sf_buf;
