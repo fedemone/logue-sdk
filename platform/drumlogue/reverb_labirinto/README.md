@@ -29,20 +29,20 @@ TIME sets a real mid-band RT60. Inside the feedback loop the signal is split at 
 ### 3. True Ping-Pong Routing (PILL = 1)
 The 8 channels are split into a left bank (0–3) and a right bank (4–7). Each bank is mixed with its own orthonormal 4-point Hadamard and then written into the **opposite** bank's delay lines, so energy physically crosses the stereo field once per bounce and returns one bounce later. The input is injected into the left bank only, so the first echo is hard left and the tail alternates from there.
 
-**SHMR** sets the bounce time (60–500 ms) in this mode — the parameter display switches to milliseconds. A small bank-to-bank bleed keeps the quiet side from dropping out entirely between bounces.
+**BNCE** sets the bounce time directly in milliseconds (60–500 ms). A small bank-to-bank bleed keeps the quiet side from dropping out entirely between bounces; it is scaled with BNCE so the leakage per second stays constant and a fast bounce reads as crisply as a slow one.
 
 ### 4. Coloured Noise Injection
 When the filter mode is set to **Noise** (*stellare* preset), the reverb acts as an acoustic resonator for an internal pseudo-random noise generator. The noise color sweeps smoothly from deep Brown, through Pink and Grey (notched), up to harsh Violet. Use **DFSN** (diffusion) to shape the noise density and **DAMP** to control the noise injection gain.
 
 ### 5. Cochrane 18-EDO Microtonal Shimmer
-The *esotico* preset subjects the 8 delay lines to deep, independent Doppler pitch-shifts locked to an 18-EDO (Equal Division of the Octave) microtonal scale. When these echoes collide in the Hadamard matrix, they generate massive, non-Western acoustic beating and dense harmonic interference. Both *esotico* and *stellare* additionally use PILL = 4, which ring-modulates a copy of the wet signal back into the last two channels; **SHMR** sets that modulation frequency (3–55 Hz).
+The *esotico* preset subjects the 8 delay lines to deep, independent Doppler pitch-shifts locked to an 18-EDO (Equal Division of the Octave) microtonal scale. When these echoes collide in the Hadamard matrix, they generate massive, non-Western acoustic beating and dense harmonic interference. Both *esotico* and *stellare* additionally use PILL = 4, which ring-modulates a copy of the wet signal back into the last two channels; **SHMR** sets that modulation frequency (3–55 Hz). SHMR has no effect in the other routing modes.
 
 ### 6. Output Ceiling
 This is a send effect, so the wet output passes through a soft limiter with a hard knee at 0.8: exactly transparent below that level, gently compressing above it, and bounded at ~0.93 whatever TIME, DAMP and DFSN are set to.
 
 ## Parameter Guide
 
-NeonLabirinto has **11 parameters** across 3 pages.
+NeonLabirinto has **12 parameters** across 3 pages.
 
 ### Page 1: Main Controls
 
@@ -66,9 +66,10 @@ NeonLabirinto has **11 parameters** across 3 pages.
 
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
-| 8 | SHMR | 0–100 | PILL=4: shimmer frequency (3–55 Hz). PILL=1: bounce time (60–500 ms) |
+| 8 | SHMR | 0–100 | Shimmer frequency, 3–55 Hz (PILL=4 only) |
 | 9 | PDLY | 0–200 ms | Slew-limited pre-delay (tape-style interpolation avoids zipper noise) |
 | 10 | VIBR | 1–30 | LFO speed for random diffusion matrix modulation (×0.1 → 0.1–3.0 Hz) |
+| 11 | BNCE | 60–500 ms | Ping-pong bounce time (PILL=1 only) |
 
 ## Factory Presets
 
@@ -76,7 +77,7 @@ NeonLabirinto has **11 parameters** across 3 pages.
 |---|------|--------|------|-----------|
 | 0 | foresta | Wood | 3 (full) | Warm, mellow room; short decay, moderate diffusion |
 | 1 | tempio | Stone | 2 (stone) | Dark, heavy; long lows, tight highs, wide stereo |
-| 2 | labirinto | Metal | 1 (ping-pong) | Glassy tail bouncing between the speakers every ~190 ms |
+| 2 | labirinto | Metal | 1 (ping-pong) | Glassy tail bouncing between the speakers every 190 ms |
 | 3 | esotico | Crystal | 4 (shimmer) | Microtonal shimmer; bright, exotic, non-Western character |
 | 4 | stellare | Noise | 4 (shimmer) | Long, spacey; noise-seeded reverb with deep shimmer tail |
 
@@ -101,4 +102,4 @@ Place `NeonAdvancedLabirinto.h`, `unit.cc`, and `header.c` in your SDK project. 
 cd test && make
 ```
 
-It checks that both feedback matrices are energy-preserving, that the limiter is transparent below its knee and bounded above it, that RT60 tracks TIME, that PILL=1 produces a periodic left/right bounce at the period SHMR asks for (and that the diffuse modes do not), and that no preset can diverge or exceed the output ceiling at extreme settings.
+It checks that both feedback matrices are energy-preserving, that the limiter is transparent below its knee and bounded above it, that RT60 tracks TIME, that PILL=1 produces a periodic left/right bounce at the period BNCE asks for (and that the diffuse modes do not), and that no preset can diverge or exceed the output ceiling at extreme settings.

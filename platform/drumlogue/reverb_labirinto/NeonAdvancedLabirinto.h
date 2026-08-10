@@ -38,13 +38,11 @@
 #define RT60_MAX_S   (10.0f)
 #define RT60_RATIO   (RT60_MAX_S / RT60_MIN_S)
 
-// Ping-pong (PILL=1) bounce time range in milliseconds. The bounce period is
-// the delay-line length of one bank, so this directly sets how fast the tail
-// jumps between speakers. SHMR selects it: shimmer itself only exists in
-// PILL=4, so that control is otherwise idle in ping-pong mode.
+// Ping-pong (PILL=1) bounce time range in milliseconds, set by BNCE. The
+// bounce period is the delay-line length of one bank, so this directly sets how
+// fast the tail jumps between speakers.
 #define PINGPONG_MIN_MS   (60.0f)
 #define PINGPONG_MAX_MS   (500.0f)
-#define PINGPONG_MS_RATIO (PINGPONG_MAX_MS / PINGPONG_MIN_MS)
 
 // Limiter knee. Below this level the transfer is exactly y = x; above it the
 // excess is soft-clipped, saturating at kLimitThreshold + (2/3)*(1-threshold).
@@ -81,7 +79,7 @@ enum parameterState {
   k_paramProgram = 0,
   k_time, k_low, k_high, k_damp,
   k_wide, k_diffusion, k_pill, k_shimmer_freq,
-  k_pre_delay, k_vibr,
+  k_pre_delay, k_vibr, k_bounce,
   k_total
 };
 
@@ -90,18 +88,18 @@ static const char *k_preset_names[k_preset_number] =
 // ============================================================================
 // Factory Presets
 // ============================================================================
-//    {PRESET,  TIME, LOW, HIGH, DAMP, WIDE, DFSN, PILL, SHMR, PDLY, VIBR}
+//    {PRESET,  TIME, LOW, HIGH, DAMP, WIDE, DFSN, PILL, SHMR, PDLY, VIBR, BNCE}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {k_foresta,   50,  60,   40,  220,   90,   50,    3,    0,    40,  15},
+    {k_foresta,   50,  60,   40,  220,   90,   50,    3,    0,    40,  15,  180},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {k_tempio,    70,  80,   25,  150,  150,   80,    2,   10,   10,  10},
-    // 2: labirinto - glassy tail bouncing between the speakers (SHMR = bounce time)
-    {k_labirinto, 65,  50,   55,  510,  150,   50,    1,   55,   10,  30},
+    {k_tempio,    70,  80,   25,  150,  150,   80,    2,   10,   10,  10,  180},
+    // 2: labirinto - glassy tail bouncing between the speakers every BNCE ms
+    {k_labirinto, 65,  50,   55,  510,  150,   50,    1,    0,   10,  30,  190},
     // 3: esotico - microtonal echoes on non-Western scale
-    {k_esotico,   58,  30,   80,  800,  80,    50,    4,    45,    0,  30},
+    {k_esotico,   58,  30,   80,  800,  80,    50,    4,    45,    0,  30,  180},
     // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {k_stellare,  90,  70,   80,  520,  190,   8,    4,   35,   20,   5},
+    {k_stellare,  90,  70,   80,  520,  190,   8,    4,   35,   20,   5,  180},
 };
 
 // ============================================================================
@@ -337,7 +335,7 @@ public:
         // (Subtracting the cross-feedback instead, as before, left a per-pass
         // gain of 0.88*1.10 = 0.97 at long TIME settings — a 30 s tail from a
         // control that claims 10 s, and only a hair away from self-oscillation.)
-        const float loopExtra = (1.0f + crossGain[pillar_]) * colourPeakGain();
+        const float loopExtra = (1.0f + effectiveCrossGain()) * colourPeakGain();
         // 0.985 rather than 1.0: the dark modes get extra loss for free from
         // their lowpass, but crystal and noise have a genuinely unity-gain loop,
         // so without a margin here a long TIME plus a busy pattern piles up
@@ -358,6 +356,22 @@ public:
         // little, which is how a bigger room actually behaves.
         const float gg = fminf(0.999f, unifiedDecay);
         inputDrive = fmaxf(0.14f, 0.55f * fasterpowf(1.0f - gg * gg, 0.4f));
+    }
+
+    /**
+     * Bank-to-bank bleed for ping-pong, and plain cross-feedback for every other
+     * routing mode.
+     *
+     * The bleed is what stops the quiet side going silent between bounces, but
+     * it accumulates once per trip round the network — so at a fast bounce time
+     * the tail makes twice as many trips per second and the alternation washes
+     * out twice as fast. Scaling the bleed with the bounce time keeps the amount
+     * of leakage *per second* roughly constant, so BNCE stays a crisp ping-pong
+     * across its whole range instead of only at the slow end.
+     */
+    float effectiveCrossGain() const {
+        if (pillar_ != 1) return crossGain[pillar_];
+        return fmaxf(0.04f, fminf(0.16f, crossGain[1] * bounceTimeMs * (1.0f / 190.0f)));
     }
 
     /**
@@ -443,6 +457,9 @@ public:
             setLfoSpeed(value * 0.1f);
             updateModRate();
             break;
+        case k_bounce: // BNCE 60..500 ms - ping-pong bounce time
+            setBounceTime(value);
+            break;
         default:
         break;
         }
@@ -499,15 +516,19 @@ public:
         // Exponential mapping: min * (max/min)^norm
         // 3.0f * (55.0 / 3.0)^norm
         shimmerFreq_ = 3.0f * fasterpowf(FREQ_MAX_DIV_MIN, norm);
-
-        // Shimmer only exists in PILL=4, so in ping-pong mode the same control
-        // sets the bounce time instead (60..500 ms, exponential).
-        bounceTimeMs = PINGPONG_MIN_MS * fasterpowf(PINGPONG_MS_RATIO, norm);
-        if (pillar_ == 1) updateDelayTimes();
     }
     float getShimmerFreq() { return shimmerFreq_; }
-    float getBounceTimeMs() { return bounceTimeMs; }
-    bool  isPingPong() { return pingPong_; }
+
+    /**
+     * Ping-pong bounce time in milliseconds (PILL=1). Sets how long the tail
+     * spends on one side before crossing to the other; the value is the
+     * delay-line length of a bank, so it is a real time, not an abstract index.
+     * Ignored by the other routing modes, which have no banks to swap.
+     */
+    void setBounceTime(int32_t ms) {
+        bounceTimeMs = fmaxf(PINGPONG_MIN_MS, fminf(PINGPONG_MAX_MS, (float)ms));
+        if (pillar_ == 1) updateDelayTimes();
+    }
     void setPreDelay(float ms) {
         float clampedMs = fmaxf(0.0f, fminf(340.0f, ms));
         // Convert milliseconds to samples and store it as our new float target
@@ -811,7 +832,7 @@ public:
     }
 
     void applyCrossFeedback(float32x4_t* signals) {
-        float gain = crossGain[pillar_];
+        float gain = effectiveCrossGain();
         if (gain < 0.001f) return;
 
         float32x4_t t0, t1;
@@ -1891,9 +1912,10 @@ private:
     // ID 5:  WIDE   0..200 %           default 100
     // ID 6:  DFSN   0..100 %           default 100
     // ID 7:  PILL   0..4               default 3
-    // ID 8:  SHMR   0..100             default 35   shimmer Hz, or bounce ms in PILL=1
+    // ID 8:  SHMR   0..100             default 35   shimmer frequency (PILL=4)
     // ID 9:  PDLY   0..200             default 0 (ms)
     // ID 10: VIBR   1..30              default 10   (×0.1 → 0.1..3.0 Hz)
+    // ID 11: BNCE   60..500            default 180  ping-pong bounce time (ms)
     int32_t params_[k_total]  __attribute__((aligned(16)));
     float sampleRate;
     int writePos;
@@ -1977,6 +1999,8 @@ private:
 };
 
 // Cross-feedback gain per routing mode. Index 1 (ping-pong) is the bleed between
-// the left and right banks: it keeps the quiet side from going fully silent
-// between bounces, so raising it softens the bounce and lowering it hardens it.
+// the left and right banks — it keeps the quiet side from going fully silent
+// between bounces — quoted at the 190 ms reference bounce time and scaled from
+// there by effectiveCrossGain(). Raising it softens the bounce, lowering it
+// hardens it.
 const float NeonAdvancedLabirinto::crossGain[5] = {0.15f, 0.10f, 0.07f, 0.04f, 0.04f};

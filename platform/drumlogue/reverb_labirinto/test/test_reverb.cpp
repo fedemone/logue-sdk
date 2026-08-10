@@ -291,26 +291,36 @@ static void test_time_controls_rt60() {
 }
 
 // PILL=1 must produce a real, periodic left/right alternation whose period is
-// what SHMR asks for. The old implementation only reshuffled a random
+// what BNCE asks for. The old implementation only reshuffled a random
 // channel-to-side map, which is stereo jitter, not a bounce.
 static void test_pingpong() {
-    printf("\n[ping-pong] PILL=1 bounces, and SHMR sets the bounce time\n");
+    printf("\n[ping-pong] PILL=1 bounces, and BNCE sets the bounce time\n");
 
-    const int shmr[]  = {25, 55, 75};
+    const int bnce[] = {100, 190, 300};
     for (int i = 0; i < 3; i++) {
         int ovr[k_total]; allDefaults(ovr);
-        ovr[k_shimmer_freq] = shmr[i];
+        ovr[k_bounce] = bnce[i];
         Render r = render(2, ovr, 8.0f, false);
         Bounce b = bounce(r, 0.15f);
-        float expect = PINGPONG_MIN_MS * powf(PINGPONG_MS_RATIO, shmr[i] / 100.0f);
         char buf[160];
-        snprintf(buf, sizeof(buf), "(SHMR=%d: expect ~%.0f ms, measured %.0f ms, strength %.2f)",
-                 shmr[i], expect, b.periodMs, b.strength);
+        snprintf(buf, sizeof(buf), "(BNCE=%d ms: measured %.0f ms, strength %.2f)",
+                 bnce[i], b.periodMs, b.strength);
         // The balance envelope is measured in 10 ms buckets and smeared by the
         // spread inside each bank, so allow a generous tolerance on the period.
-        bool ok = b.strength > 0.2f && fabsf(b.periodMs - expect) < 0.45f * expect;
-        check(ok, "bounce period follows SHMR", buf);
+        bool ok = b.strength > 0.2f && fabsf(b.periodMs - bnce[i]) < 0.45f * bnce[i];
+        check(ok, "bounce period follows BNCE", buf);
     }
+
+    // SHMR must no longer move the bounce: it is a shimmer control again.
+    int a[k_total], z[k_total];
+    allDefaults(a); allDefaults(z);
+    a[k_shimmer_freq] = 0;
+    z[k_shimmer_freq] = 100;
+    Bounce ba = bounce(render(2, a, 8.0f, false), 0.15f);
+    Bounce bz = bounce(render(2, z, 8.0f, false), 0.15f);
+    char sbuf[160];
+    snprintf(sbuf, sizeof(sbuf), "(SHMR 0 -> %.0f ms, SHMR 100 -> %.0f ms)", ba.periodMs, bz.periodMs);
+    check(fabsf(ba.periodMs - bz.periodMs) < 1e-3f, "SHMR does not affect the bounce", sbuf);
 
     // ...and the diffuse modes must not bounce.
     int ovr[k_total]; allDefaults(ovr);
