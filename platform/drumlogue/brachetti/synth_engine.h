@@ -119,7 +119,7 @@ public:
         k_paramProgram = 0,
         k_paramNote,        // 1
         k_paramCymPoly,     // 2 — ex-Bank: global voice cap (1-4), cymbals included
-        k_paramCymReso,     // 3 — ex-Sample: cymbal resonator-bank scale (25-60 %)
+        k_paramVelocity,    // 3 — ex-Rsntrs: velocity bias (-100 ghost .. +100 wham)
         k_paramMlltRes,     // 4
         k_paramMlltStif,    // 5
         k_paramVlMllRes,    // 6
@@ -549,6 +549,10 @@ SynthState state;
 #ifdef UNIT_TEST_DEBUG
     // Expose private members for unit test introspection (test binary only).
     float m_coupling_depth_ut() const { return m_coupling_depth; }
+    // Which resonator(s) the editor is pointed at.  T40 asserts a cymbal
+    // density of 5-7 leaves this alone (it survives a preset change).
+    bool  m_is_resonator_a_ut() const { return m_is_resonator_a; }
+    bool  m_is_resonator_b_ut() const { return m_is_resonator_b; }
 #endif
 
     // ==============================================================================
@@ -796,7 +800,7 @@ SynthState state;
         m_params[k_paramProgram] = idx;
 
         // Columns Map: NOTE keep the justification so it's easier to read!!
-        // 0:Prgram | 1:Note | 2:Bank | 3:Sample | 4:MlltRes | 5:MlltStif | 6:VlMllR | 7:VlMllS
+        // 0:Prgram | 1:Note | 2:Poly | 3:Vel    | 4:MlltRes | 5:MlltStif | 6:VlMllR | 7:VlMllS
         // 8:Prtls  | 9:Model| 10:Dkay| 11:Mterl | 12:Tone   | 13:HitPos  | 14:Rel   | 15:Inharm
         // 16:LCut  | 17:TRad| 18:Gain| 19:NzMix | 20:NzRes  | 21:NzFltr  | 22:NzFrq | 23:Resnc
         // Column order matches the ParamIndex enum above.
@@ -805,7 +809,15 @@ SynthState state;
         // Columns 15 (Inharm) and 16 (LowCut) store 1/10th of the effective value.
         // setParameter multiplies them back by 10 so the encoder travels 10× fewer steps.
         static const int32_t presets[k_NumPrograms][k_lastParamIndex] = {
-            //  Prg  Nte  Bnk  Smp - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - Cut  TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            //  Prg  Nte  Ply  Vel - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - Cut  TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            //
+            // Cols 2 (Poly) and 3 (Velocity) are GLOBAL performance controls:
+            // LoadPreset skips them, so the stale values still sitting in those
+            // columns are never read.  Col 8 (Partls) doubles as the cymbal
+            // resonator DENSITY on the six ENGINE_CYMBAL rows (13/14/27/32/33/
+            // 37), where the shared modal bank it normally drives is bypassed:
+            // density = 25 + 5 x Partls %, so their shipped 3 = the 40 % the
+            // ex-"Rsntrs" knob defaulted to.
             //
             // COUPLING RULE (Phase 25: dynamic clamp in render loop):
             //   safe_coupling ≤ (1 − feedback_gain) × 0.8 guarantees stability at
@@ -827,8 +839,8 @@ SynthState state;
             {  10,  72,   0,   1, 500,  30,   0,   0,   0,   1, 200,  28,   0,   0,  18,   0,1999,  13,   0,   0, 300,   0,1000,  71},        // 10: Vibrph
             {  11,  48,   0,   1, 900,  50,   0,   0,   0,   2, 156,  24,   0,   0,   2,   1,1999,   3,   0,   5, 420,   0, 900,  71},        // 11: Wodblk    — (HW: ok)
             {  12,  45,   0,   1, 450,  30,   0,   0,   2,   5, 200,   0,   0,  44,  11,   0,1999,   9,   5,  30, 360,   0, 520,  71},        // 12: Ac Tom    — body extended (modal 350→500ms) + stick transient layer + NzMx 20→30 for the close-mic attack brightness
-            {  13,  65,   0,   1, 800,  45,   0,   0,   0,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
-            {  14,  50,   0,   1, 200,   2,   0,   0,   0,   4, 190,   1,   0,   0,  20,   1,1999,  20,  20,  34, 860,   0,  30,  71},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
+            {  13,  65,   0,   1, 800,  45,   0,   0,   3,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 13: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
+            {  14,  50,   0,   1, 200,   2,   0,   0,   3,   4, 190,   1,   0,   0,  20,   1,1999,  20,  20,  34, 860,   0,  30,  71},        // 14: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
             {  15,  65,   0,   1, 700,  39,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720,  71},        // 15: Kalimba
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000,  71},        // 16: StelPan
             {  17,  79,   0,   1, 900,  48,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800,  71},        // 17: Claves
@@ -841,17 +853,17 @@ SynthState state;
             {  24,  76,   0,   1, 700,   5,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},        // 24: GlsBwl
             {  25,  69,   0,   0, 800,  50,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200,  71},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
             {  26,  72,   0,   1, 100,  37,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800,  71},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {  27,  79,   0,   1, 900,  49,   0,   0,   0,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {  27,  79,   0,   1, 900,  49,   0,   0,   3,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
             {  28,  62,   0,   1, 600,  43,   0,   0,   1,   5, 158,   3,   0,   0,  10,   1,1999,   9,   0,  15, 520,   0, 450,  71},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
             {  29,  62,   0,   1, 700,  30,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000,  71},        // 29: Handpn
             {  30,  84,   0,   1, 900,  42,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},        // 30: BelTre
             {  31,  60,   0,   1, 700,  27,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},        // 31: SltDrm
-            {  32,  69,   0,   1, 900,  50,   0,   0,   0,   4, 190,  28,   0,   0,  18,   1,1999,  17,   0,  66, 950,   2,1300,  71},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {  33,  60,   0,   1, 900,  49,   0,   0,   0,   4, 200,  16,   0,   0,   8,   1,1999,   1,   0,  60, 950,   2,1300,  71},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
+            {  32,  69,   0,   1, 900,  50,   0,   0,   3,   4, 190,  28,   0,   0,  18,   1,1999,  17,   0,  66, 950,   2,1300,  71},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
+            {  33,  60,   0,   1, 900,  49,   0,   0,   3,   4, 200,  16,   0,   0,   8,   1,1999,   1,   0,  60, 950,   2,1300,  71},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
             {  34,  50,   0,   1, 650,  41,   0,   0,   0,   5, 162, -10,   0,   0,   8,   0,1999,   0,   0,   0, 520,   0, 450,  71},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
             {  35,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},        // 35: GlsBotl   — (HW: ok)
             {  36,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
-            {  37,  76,   0,   1, 800,  45,   0,   0,   0,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {  37,  76,   0,   1, 800,  45,   0,   0,   3,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
             {  38,  38,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
             {  39,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
         };
@@ -865,13 +877,15 @@ SynthState state;
         m_is_resonator_b = false;
 
         // Apply parameters, SKIPPING INDEX 0 to prevent infinite recursion stack overflow!
-        // Also skip Poly and Rsntrs (ex-Bank/Sample): they are global
-        // performance/CPU settings, not per-preset sound design — the user's
-        // choice persists across preset changes.
+        // Also skip Poly and Velocity (the two ex-Bank/Sample slots): they are
+        // global performance settings, not per-preset sound design — the user's
+        // choice persists across preset changes.  (The cymbal resonator density
+        // that used to live in slot 3 is NOT global any more: it rides on
+        // Partls, which is a normal per-preset column and loads with the row.)
         for (uint8_t param_id = 0; param_id < 24; ++param_id) {
             if (param_id == k_paramProgram) continue;
             if (param_id == k_paramCymPoly) continue;
-            if (param_id == k_paramCymReso) continue;
+            if (param_id == k_paramVelocity) continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -1062,8 +1076,13 @@ SynthState state;
                 m_cym_poly = m_poly;
                 break;
 
-            case k_paramCymReso:
-                m_cym_reso_scale = (uint8_t)((value < 25) ? 25 : ((value > 60) ? 60 : value));
+            case k_paramVelocity:
+                // Global performance control: bias every incoming strike.  0 is
+                // NEUTRAL (the note plays at exactly the velocity it was sent
+                // with, so the shipped presets and every render are unchanged),
+                // negative = ghost notes, positive = "wham".  This stores the
+                // raw -1..+1 knob; the curve lives in vel_bias_apply().
+                m_vel_bias = fmaxf(-1.0f, fminf(1.0f, (float)value * 0.01f));
                 break;
             case k_paramMlltStif: {
                 // Stored ÷100 (0-50 represents 0-5000). Divide by 50 (the max).
@@ -1089,6 +1108,32 @@ SynthState state;
             // resonator A/B parameters
             case k_paramPartls: {
                 if (value < 0) break;   // never index partial_counts[] negatively
+                // ── Cymbal family: Partls IS the resonator-bank density ──────
+                // The dense-resonator cymbal bypasses the shared modal bank, so
+                // Partls (mode count / ResB coupling) was inert on all six
+                // ENGINE_CYMBAL presets while a whole GUI slot (ex-"Rsntrs")
+                // carried nothing else.  Fold the density onto the dead knob and
+                // the slot is free for the Velocity control.  Unlike Rsntrs the
+                // density is now a normal per-preset column: LoadPreset walks
+                // it like every other param (m_preset_idx is already the
+                // incoming preset by then), so each cymbal row carries its own
+                // bank size and a non-cymbal row cannot resize the cymbals.
+                // The 8 knob positions span the old Rsntrs range 25-60 % in
+                // steps of 5; index 3 = 40 %, the shipped default the six
+                // cymbal rows now store.  Computed, not tabled, so it costs no
+                // .rodata (see the size rule in CLAUDE.md).
+                //
+                // On a cymbal preset this is the WHOLE meaning of the knob: the
+                // modal-bank half below is skipped, and in particular positions
+                // 5-7 must not touch the ResA/ResB EDIT SELECTOR.  LoadPreset
+                // saves and restores that selector across a preset change, so a
+                // density of 60 % (7 = "ResB only") would otherwise follow the
+                // user out of the cymbal preset and leave Model/Dkay/Mterl/
+                // Inharm writing to ResB alone on the next drum they loaded.
+                if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+                    if (value <= 7) m_cym_reso_scale = (uint8_t)(25 + 5 * value);
+                    break;
+                }
                 if (value < 5) {
                     // Map the UI index (0-4) to the actual partial count (4/8/16/32/64).
                     // m_active_partials stores the count so comparisons are self-documenting.
@@ -1377,6 +1422,16 @@ SynthState state;
                 return m_is_resonator_a && m_is_resonator_b ? model_names_ab[value] :
                     m_is_resonator_a ? model_names_a[value] : model_names_b[value];
         } else if (index == k_paramPartls) {
+            // On the cymbal family this knob is the resonator-bank DENSITY (the
+            // ex-"Rsntrs" control), so show what it actually does there — the
+            // partial-count / ResA-ResB labels below would be a lie: the dense
+            // resonator engine has no shared modal bank to give partials to.
+            if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
+                static char cr_buf[8];
+                int d = (value < 0) ? 0 : ((value > 7) ? 7 : (int)value);
+                snprintf(cr_buf, sizeof(cr_buf), "Rs%d%%", 25 + 5 * d);
+                return cr_buf;
+            }
             if (value == 5) return "ResA+B";
             if (value == 6) return "ResA";
             if (value == 7) return "ResB";
@@ -1502,7 +1557,44 @@ SynthState state;
     // that the outgoing preset does not audibly overlap the new one.
     static constexpr float kPresetFadeTauSec = 0.0015f;
 
+    // ── Velocity knob ──────────────────────────────────────────────────────
+    // How far a full "wham" may push a strike PAST the calibrated maximum.
+    // Every preset is voiced at velocity 1.0, so without an over-range the top
+    // of the knob would do literally nothing whenever the sequencer already
+    // sends 127 — the exact "this knob is dead" class of report this unit keeps
+    // collecting.  1.30 is a hit ~2.3 dB hotter with a correspondingly harder /
+    // longer strike; the shaping terms downstream clamp at their calibrated
+    // maxima (a stick cannot get harder than hard), so the over-range reads as
+    // energy, not as a new timbre, and the master limiter still bounds output.
+    static constexpr float kVelWhamMax = 1.30f;
+    // Floor: a ghosted strike must stay a strike.  Below this the exciter is
+    // quiet enough that the magnitude squelch (-80 dB) can retire the voice
+    // before it speaks, which reads as a dropped note rather than a ghost.
+    static constexpr float kVelGhostMin = 0.02f;
+
+    // Velocity knob curve.  knob = 0 returns the incoming velocity EXACTLY
+    // (not approximately — knob_exp2(0) is exactly 1.0), so the default knob
+    // keeps all 40 presets and every render byte-identical.
+    //   knob < 0 → ghost notes: down to x0.19 (velocity 127 lands at ~24)
+    //   knob > 0 → wham:        up to x5.28, clamped at kVelWhamMax, so any
+    //                           stroke above ~velocity 25 saturates to a
+    //                           full-force hit no matter what the step stores.
+    // Velocity is the unit's whole dynamics axis — it drives mallet stiffness,
+    // wire mix/decay, boom weight, cymbal drive and the kernel impulse — so
+    // biasing it here, once, gives all of that for free on every engine.
+    inline float vel_bias_apply(float vel_norm) const {
+        if (m_vel_bias == 0.0f) return vel_norm;
+        const float scaled = vel_norm * knob_exp2(2.4f * m_vel_bias);
+        const float ceil_v = (m_vel_bias > 0.0f)
+                             ? (1.0f + (kVelWhamMax - 1.0f) * m_vel_bias)
+                             : 1.0f;
+        return fmaxf(kVelGhostMin, fminf(ceil_v, scaled));
+    }
+
     inline void NoteOn(uint8_t note, uint8_t velocity) {
+        // The Velocity knob biases the strike ONCE, here, before either engine
+        // path reads it (see vel_bias_apply).
+        const float vel_norm = vel_bias_apply((float)velocity * 0.007874015f);
         // ── Dense modal-drum kernel path (Timpani/Taiko) ───────────────────
         // Two kettles: a repeat of a kettle's note retriggers that drum in
         // place (energy accumulates — a roll); a new note takes the other
@@ -1510,7 +1602,7 @@ SynthState state;
         // NoteOff is ignored — drums ring out under their measured decays.
         if (kernel_preset_active() && m_drum_kernel.IsActive()) {
             float ratio = exp2f(((float)note - m_drum_kernel.RootNote()) * 0.0833333333f);
-            m_drum_kernel.Trigger(note, ratio, (float)velocity * 0.007874015f);
+            m_drum_kernel.Trigger(note, ratio, vel_norm);
             return;
         }
         // Global Poly cap: stacking engines round-robin within the first
@@ -1640,7 +1732,7 @@ SynthState state;
         v.exciter.sample_frames = 0;
 
         v.current_note = note;
-        v.current_velocity = (float)velocity * 0.007874015f;    // approx 1 / 127
+        v.current_velocity = vel_norm;   // MIDI velocity x the Velocity knob
         // BrshSnr: shape the dynamics.  A brush stroke physically cannot
         // "crack" — even a hard pad hit is a soft, drawn-out sweep — so the
         // hard-hit ceiling stays capped (≈0.72 at full velocity).  HW: a soft
@@ -1918,7 +2010,10 @@ SynthState state;
 
         // Stage-1 transient complexity: short coefficient modulation window.
         // Deterministic per-hit micro-randomization from note/voice/velocity.
-        float vel_norm = fmaxf(0.0f, fminf(1.0f, velocity  * 0.007874015f));    // approx 1 / 127
+        // Jitter depth follows the BIASED strike (vel_norm above), clamped back
+        // into [0,1]: the modulation window is a transient-shaping depth, not
+        // an energy, so a wham strike must not widen it past its tuned maximum.
+        const float vel_jit = fmaxf(0.0f, fminf(1.0f, vel_norm));
         uint32_t seed = (uint32_t)note * 1103515245u
                       ^ (uint32_t)state.next_voice_idx * 12345u
                       ^ (uint32_t)velocity * 2654435761u;
@@ -1926,8 +2021,8 @@ SynthState state;
         v.transient_frames_total = (uint32_t)(default_sample_rate * 0.035f); // 35 ms
         v.transient_frames_left = v.transient_frames_total;
         v.transient_inv_total = (v.transient_frames_total > 0) ? (1.0f / (float)v.transient_frames_total) : 0.0f;
-        v.transient_lp_jitter = fmaxf(-0.08f, fminf(0.08f, (0.05f * vel_norm) + (0.02f * r)));
-        v.transient_ap_jitter = fmaxf(-0.03f, fminf(0.03f, (0.015f * vel_norm) - (0.01f * r)));
+        v.transient_lp_jitter = fmaxf(-0.08f, fminf(0.08f, (0.05f * vel_jit) + (0.02f * r)));
+        v.transient_ap_jitter = fmaxf(-0.03f, fminf(0.03f, (0.015f * vel_jit) - (0.01f * r)));
 
         // Stage-1 model-specific transient presets.
         // Simple profile map: percussion gets longer/stronger transient modulation.
@@ -4214,8 +4309,11 @@ private:
     float m_pending_drive = -1.0f;
     uint8_t m_poly = 4;            // global voice cap (1-4, Poly knob)
     uint8_t m_cym_poly = 4;        // cymbal-family cap (= m_poly; CPU is bounded
-                                   // by kCymResonatorBudget, not by voice count)
-    uint8_t m_cym_reso_scale = 40;  // cymbal resonator-bank scale (25-60 %)
+                                   // by kCymCostBudget, not by voice count)
+    uint8_t m_cym_reso_scale = 40;  // cymbal resonator-bank scale (25-60 %),
+                                    // driven by Partls on the cymbal presets
+    float   m_vel_bias = 0.0f;      // Velocity knob, -1 (ghost) .. +1 (wham);
+                                    // 0 = neutral, strikes play as sent
     uint8_t m_model_a = k_String;
     uint8_t m_model_b = k_String;
     bool    m_is_resonator_a = true; // default is res A

@@ -243,7 +243,8 @@ shipped single-hit renders are unaffected.
 Measured (Gong, 4 hits): distinct voices 2 → **4**; passage RMS vs a single hit
 1.62× → **1.84×** at 150 ms spacing and 1.90× → **2.02×** at 1 s.  Eight hits at
 150 ms reach 2.24×.  Peak stays limiter-bounded at 0.83.  Worst aggregate bank
-measured 208 resonators at `Rsntrs` = 60 (budget 240).  Regression-tested as
+measured 208 resonators at max density (then `Rsntrs` = 60, now `Partls` = 7;
+budget 240).  Regression-tested as
 **T36** in `test_hw_debug.cpp` (T36a fails against the pre-fix code).
 
 #### Roll fusion — the exception to stacking
@@ -358,12 +359,12 @@ context-dependent · **○** inert by design.
 | Knob | Kick | Tom¹ | Kernel² | Snare | Bar³ | Plate⁴ | Cymbal⁵ | Noise⁶ | String⁷ |
 |------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Poly | ● | ● | ◐ | ● | ● | ● | ◐ | ● | ○ |
-| Rsntrs | ○ | ○ | ○ | ○ | ○ | ○ | ● | ○ | ○ |
+| Velocity | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | MlltRes | ● | ◐ | ○ | ● | ● | ● | ● | ◐ | ◐ |
 | MlltStif | ● | ◐ | ○ | ● | ● | ◐ | ● | ○ | ◐ |
 | VlMllRes | ● | ● | ● | ● | ○ | ◐ | ● | ◐ | ○ |
 | VlMllStf | ● | ● | ● | ● | ◐ | ◐ | ● | ◐ | ◐ |
-| Partls | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
+| Partls | ○ | ● | ○ | ○ | ● | ● | ●⁸ | ○ | ● |
 | Model | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
 | Dkay | ● | ● | ● | ◐ | ● | ● | ● | ◐ | ● |
 | Mterl | ◐ | ● | ● | ○ | ● | ● | ● | ○ | ◐ |
@@ -378,22 +379,31 @@ context-dependent · **○** inert by design.
 Timpani/Taiko (dense drum-kernel) · ³ Bar = marimba/vibes/kalimba/… (mallet
 bars) · ⁴ Plate = cowbell/triangle/belltree/tick · ⁵ Cymbal = crash/ride/
 hats/gong/splash (dense resonator) · ⁶ Noise = clap/shaker/HHatClosed · ⁷
-String = Koto/GuitarStr (Karplus-Strong).
+String = Koto/GuitarStr (Karplus-Strong) · ⁸ on the cymbal family **Partls is
+the resonator-bank density** (the ex-`Rsntrs` control), not a mode count.  It
+is marked live on the strength of **T40**, which measures the bank directly
+(32 → 60 resonators across the knob); `param_audit.cpp` reads it `weak`,
+because the bank is 1/√N level-normalised so a density change moves texture
+without moving RMS — exactly the blind spot the maintenance rule above warns
+about.  `Velocity` needs no such caveat: it audits `ok` on all eight family
+exemplars.
 
 Notes on the recurring "no effect (expected)" cases:
 
-- **Rsntrs** is a *cymbal-family* performance control (resonator-bank density)
-  and is inert on every non-cymbal preset by design.  **Poly** is a **global**
-  voice cap (1-4).  The cymbal family now honours the full range (its CPU is
-  bounded by `kCymResonatorBudget` instead — see the stacking section above);
-  the Timpani/Taiko kernel runs 2 kettles and the string engine is mono, so the
-  display still shows the effective value there, e.g. `4(2)` / `4(1)`.
+- **Velocity** and **Poly** are the two **global** performance controls (they
+  are skipped by `LoadPreset`, so they survive a preset change).  Velocity is
+  live on every engine because it biases the strike itself — see the section
+  below.  Poly is the voice cap (1-4); the cymbal family honours the full range
+  with its CPU bounded by `kCymCostBudget` instead, while the Timpani/Taiko
+  kernel runs 2 kettles and the string engine is mono, so the display shows the
+  effective value there, e.g. `4(2)` / `4(1)`.
 - **Resnc** is the master low-pass **Q** — see footnote ¹ above; it needs
   `Cutoff` brought down to be heard.
 - **Model / Partls** reshape the **shared modal bank**.  The kick (boom osc),
-  cymbal (dense resonator) and kernel drums bypass that bank, so these two are
+  cymbal (dense resonator) and kernel drums bypass that bank, so `Model` is
   inert there — the same structural reason the body knobs were dead before the
-  July-2026 per-family wiring.
+  July-2026 per-family wiring.  `Partls` is the exception: on the cymbal family
+  it now carries the resonator density instead (see below).
 - **Tone** is a master tilt-EQ: it works on everything but is gentle, and reads
   as "little effect" on sounds with little energy in the tilt band.
 - **Mterl / HitPos** are inert on the snare (its voice is the wire buzz, not a
@@ -434,6 +444,124 @@ now wired on every family that lacked them, all **reference-anchored**:
 | Kernel | knock prominence + flattens the velocity curve (already live) | velocity→impulse sharpness (already live) |
 | Snare | crack / snap (already live) | buzz tightness / Q (already live) |
 | Cymbal | stick "tang" level + attack (already live) | **stick stiffness** — faster bite, shorter ping, brighter strike |
+
+### The Velocity knob, and cymbal density on `Partls` (August 2026)
+
+Ask: *"can Rsntrs move to Partls for cymbals, so we can spare a parameter and
+use it for velocity — ghost notes low, big wham high?"*  Yes, and the swap is
+free in both directions, because each knob was dead exactly where the other
+one lives:
+
+- **`Rsntrs`** (resonator-bank density) was a *cymbal-only* control that did
+  nothing on the other 34 presets, yet occupied one of 24 GUI slots.
+- **`Partls`** (mode count + ResA/ResB coupling) is inert on the six
+  `ENGINE_CYMBAL` presets, because the dense-resonator cymbal bypasses the
+  shared modal bank that `Partls` reshapes.
+
+So the density moved onto `Partls` for the cymbal family, and slot 3 became
+**`Velocity`**, the dynamics control the unit never had — until now the only
+way in was per-step velocity on the sequencer.
+
+#### `Partls` on the cymbal family = bank density
+
+`density % = 25 + 5 × Partls`, i.e. the 8 knob positions span the old
+`Rsntrs` range 25-60 % exactly.  Unlike `Rsntrs` this is a **normal per-preset
+column**, so each cymbal row now carries its own bank size; the six shipped
+rows store `Partls = 3` = the 40 % the old knob defaulted to, and all 40
+renders stay **byte-identical**.  Measured bank sizes (`T40`):
+
+| Preset | Partls 0 | Partls 3 (shipped) | Partls 7 |
+|---|--:|--:|--:|
+| Cymbal | 32 | 40 | 60 |
+| Ride / RidBel | 32 | 36 | 52 |
+| Gong | 32 | 32 | 48 |
+| HHat-O / Splash | 32 | 32 | 40 |
+
+The floor is `kCymMinResonators` (32 — below that a cymbal reads as a chord),
+which is why the low end of the knob flattens on the smaller-bank presets.
+The display follows the meaning: on a cymbal preset the knob reads `Rs40%`
+instead of `AB:32`.
+
+**One trap worth knowing about**: `Partls` positions 5-7 are the *ResA/ResB
+edit selector* on the legacy engines, and `LoadPreset` deliberately saves and
+restores that selector across a preset change.  If the cymbal density fell
+through to it, dialling 60 % density on a gong would leave `Model`/`Dkay`/
+`Mterl`/`Inharm` writing to **ResB only** on the next drum loaded — a knob
+half-dead for reasons nobody could trace back.  On a cymbal preset the
+selector branch is skipped entirely; **T40c** asserts it.
+
+#### `Velocity` — ghost notes ⇄ wham
+
+Bipolar, `-100 … 0 … +100`, matching `VlMllRes`/`VlMllStf`:
+
+```
+v' = clamp( v × 2^(2.4·knob) , 0.02 , 1 + 0.30·knob )     knob = -1 … +1
+```
+
+`knob = 0` returns the incoming velocity **exactly** (`knob_exp2(0)` is exactly
+1.0 — see the gotcha), so the default is a true no-op and every shipped preset
+is untouched.  It is applied **once**, at the top of `NoteOn`, before either
+strike path reads it, which is why it is live on all nine families in the
+matrix above: velocity is this unit's whole dynamics axis — mallet stiffness,
+noise attack, wire mix and buzz decay, boom weight, cymbal drive and decay,
+kernel impulse sharpness — and biasing it there gives all of that for free.
+
+Measured (250 ms RMS, PRNG pinned, `velocity_probe.cpp`):
+
+| Preset | ghost (−100) | neutral | wham at vel 64 | wham at vel 127 |
+|---|--:|--:|--:|--:|
+| Kick2 | −4.5 dB | — | +0.8 dB | +0.1 dB |
+| AcSnare | −11.7 dB | — | +6.6 dB | +0.7 dB |
+| Cymbal | −18.3 dB | — | +11.1 dB | **+4.1 dB** |
+| Timpani | −8.6 dB | — | +1.5 dB | +0.1 dB |
+| Marimba | −5.7 dB | — | +1.1 dB | +0.1 dB |
+
+**The wham has an honest ceiling, and it is the master stage.**  Above neutral
+the knob may push a strike up to ×1.30 past a MIDI 127 (`kVelWhamMax`) — the
+downstream shaping terms clamp at their calibrated maxima, so the over-range
+reads as energy, not as a new timbre, which is right: a stick cannot get harder
+than hard.  That over-range is plainly audible where the preset has headroom
+(Cymbal +4.1 dB) and **inaudible on the presets that already pin the limiter at
+full velocity** (Kick2, Marimba: −38 dB difference-RMS).  This is the same wall
+pass 30 documented — *a limited bus cannot give you level, but balance is
+free*.  So the knob's up direction is for **lifting weak strokes to full
+force**, which it does everywhere (a velocity-64 stroke reaches the
+velocity-127 render on all five exemplars, **T39d**); if you want more than a
+full-force hit on a kick or a bar, that is `VlMllRes`/`VlMllStf` (character)
+and `Gain` (drive), not this knob.
+
+The ghost direction has no such wall and is strong everywhere: −4.5 to −18.3 dB
+with the timbre softening as it goes, because the same velocity axis carries
+both.  A floor of 0.02 keeps a ghosted note a *note* — below that the −80 dB
+magnitude squelch can retire the voice before it speaks, which reads as a
+dropped step rather than a ghost.
+
+Regression tests: **T39** (a-e) for the knob, **T40** (a-c) for the density.
+`velocity_probe.cpp` maps the knob across any preset; it reports both plain RMS
+and difference-RMS in dB, because a total-RMS metric is fooled by a limiter
+holding the level while the character changes (the blind spot that hid three
+kick knobs in pass 30).
+
+### Note assignment per instrument — see `NOTE_AUDIT.md`
+
+`note_audit.cpp` + `note_audit.py` render every preset **at its own shipped
+Note** through `GateOn()` (the sequencer's path, so the note under test is
+always the preset's own) and measure what comes out.  Headlines:
+
+- All **8 engine anchors match** their preset's Note exactly (six cymbal
+  `ref_note`s, both kernel `root_note`s), so no preset plays a transposed
+  version of the spectrum it was calibrated on.
+- **Note is inert on 8 presets** — 808Sub and KickDrum (boom oscillator, no
+  modal body), the three snares (the wire bands are absolute Hz), and the three
+  NOISE presets.  On the two kicks that means the screen says 65 Hz while you
+  hear 45 / 57 Hz; `TubRad` is their real tune control.
+- **Five presets are pitched oddly for the instrument** (Bongo at 147 Hz,
+  Woodblock at 131 Hz, the snares at 73 Hz = the *General MIDI drum-map number*
+  used as a pitch, Triangle at 440 Hz, Claves 4 semitones below the one clave
+  reference in `samples/`).  None has been changed — each alters an approved
+  sound — see `NOTE_AUDIT.md` §4 for the recommendation per preset.
+- `render_presets.cpp` carries its own note list and disagrees with the shipped
+  column on exactly one preset: **Bongo, scored at 220 Hz, shipped at 147 Hz**.
 
 ### Snare wire rattle
 A 3-band parallel resonator (low-body ≈ 2 kHz, mid-crack ≈ 4.5 kHz, high-hiss ≈ 7 kHz) replaces the older single 2-pole resonator. Band weights are velocity-dependent (harder hit → tighter/brighter crack). Body-coupled excitation input (not just white noise) makes the wire respond to shell dynamics.

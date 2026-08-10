@@ -269,7 +269,14 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
                                   float phaseModAmount, float pitchRatio,
                                   uint32_t seed, bool retainRing = false) {
     const float sr = k_dsp_sample_rate;
-    c.velocity = fmaxf(0.01f, fminf(1.0f, velocity));
+    // The old ceiling of 1.0 made the Velocity knob's "wham" half dead on the
+    // whole cymbal family: NoteOn can now hand this a strike hotter than a
+    // MIDI 127 (bounded by BrachettiSynth::kVelWhamMax = 1.30), and a hard
+    // 1.0 clamp here discarded exactly that.  2.0 is a sanity bound on garbage
+    // input, not a voicing decision — every formula below is monotone and
+    // bounded past 1.0 (velocityGain grows, decays lengthen, and maxCutoff is
+    // re-clamped to 0.45·sr by cym_pole_coeff).
+    c.velocity = fmaxf(0.01f, fminf(2.0f, velocity));
     c.rng = seed ? seed : 0x12345678u;
     c.sampleIndex = 0u;
     c.active = true;

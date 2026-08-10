@@ -7,9 +7,10 @@
 
 ## Dev Branch
 
-`claude/brachetti-review-rename-rhad77` on `fedemone/logue-sdk`
-(previous work landed from `claude/snare-drum-realism-optimization-y4hrhf`
-and `claude/eager-galileo-2fho84`).
+`claude/brachetti-cymbal-velocity-2y8gsi` on `fedemone/logue-sdk`
+(previous work landed from `claude/brachetti-review-rename-rhad77`,
+`claude/snare-drum-realism-optimization-y4hrhf` and
+`claude/eager-galileo-2fho84`).
 
 Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 - `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).
@@ -18,7 +19,19 @@ Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **92/92**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **100/100**.
+- **Pass 31 (new GUI layout — say if the knob placement is wrong):** slot 3 is
+  now **`Velocity`** (-100 ghost / 0 as-played / +100 wham) and the cymbal
+  resonator density moved onto **`Partls`** (shows `Rs40%` on a cymbal preset).
+  Listen for: ghost notes at the bottom of Velocity on snare/cymbal rolls; the
+  wham forcing weak steps to full force.  Expect the wham to do **little at
+  velocity 127 on Kick2/Marimba** — those pin the limiter — and a clear +4 dB
+  on the cymbals.  Density: `Partls` 0-7 = 25-60 %, shipped rows are 3.
+- **Note assignment audited** (`NOTE_AUDIT.md`): 8 anchors all match, Note is
+  inert on 8 presets, and **five presets need a pitch decision** (Bongo,
+  Woodblock, the two snares, Triangle, Claves).  Nothing changed — these are
+  yours to call.  Bongo is the strongest: it is *scored* at 220 Hz by
+  `render_presets.cpp` and *ships* at 147 Hz.
 - HHat-C (26) **HW-confirmed good** after the pass-27 same-tick fix.  Clap (21)
   and Shaker (22) share that fix and are still unlistened — check them.
 - **Listen for on the next flash (pass 30):**
@@ -60,6 +73,94 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 31 — Rsntrs → Partls (cymbals), the freed slot becomes Velocity, note audit
+
+User request: *"Is it possible to move Rsntrs to Partls for cymbals?  So we can
+spare a parameter and use it for velocity (ghost notes for low values and big
+wham for high values)"* + *"Check the note assignment for instruments."*
+
+**1. The swap is free in both directions.**  `Rsntrs` was a cymbal-only
+resonator-density control occupying one of 24 GUI slots and doing nothing on
+the other 34 presets; `Partls` is inert on the six `ENGINE_CYMBAL` presets,
+which bypass the shared modal bank it reshapes.  Density is now
+`25 + 5 × Partls` % (the old 25-60 % range, 8 positions), and unlike `Rsntrs`
+it is a **normal per-preset column** — the six cymbal rows store `Partls = 3`
+= the 40 % the old knob defaulted to, so all **40 renders stay byte-identical**.
+Display follows: a cymbal preset shows `Rs40%`, not `AB:32`.
+
+  **The trap that had to be closed**: `Partls` 5-7 is the ResA/ResB *editor
+  select*, and `LoadPreset` saves and restores that selector across preset
+  changes.  Left alone, dialling 60 % density on a gong would leave
+  `Model`/`Dkay`/`Mterl`/`Inharm` writing to **ResB only** on the next drum
+  loaded — a half-dead knob nobody could trace back.  On a cymbal preset the
+  selector branch is skipped entirely (**T40c**).
+
+**2. Slot 3 = `Velocity`, bipolar -100..+100, default 0 = exact no-op.**
+Applied ONCE at the top of `NoteOn`, before either strike path reads it:
+
+```
+v' = clamp( v × 2^(2.4·knob), 0.02, 1 + 0.30·knob )
+```
+
+so it is live on every family (audits `ok` on all 8 `param_audit` exemplars)
+without touching a single per-engine mapping — velocity is this unit's whole
+dynamics axis.  `knob_exp2(0)` is exactly 1.0, so the default is byte-identical
+by construction (**T39a** asserts it over all 127 velocities).
+
+  Measured (250 ms RMS, `velocity_probe.cpp`, PRNG pinned): ghost at -100 is
+  **-4.5 dB (Kick2) to -18.3 dB (Cymbal)**; wham at +100 lifts a velocity-64
+  stroke by +0.8 to +11.1 dB and reaches the full-velocity render on every
+  exemplar (**T39d**).
+
+  **Honest limitation, do not "fix" it by adding gain.**  Above neutral the
+  knob may push a strike ×1.30 past a MIDI 127 (`kVelWhamMax`; the two leaf
+  clamps in `cymbal_note_on` and `ModalDrumKernel::Trigger` were relaxed 1.0 →
+  2.0 as sanity bounds so the over-range survives).  That is **+4.1 dB on
+  Cymbal** and **inaudible on Kick2/Marimba** (-38 dB difference-RMS), because
+  those presets already pin the master limiter at full velocity — pass 30's
+  wall: *a limited bus cannot give you level, but balance is free*.  The up
+  direction is for lifting weak strokes; for more than a full-force hit the
+  controls are `VlMllRes`/`VlMllStf` (character) and `Gain` (drive).
+
+**3. Note assignment — new `note_audit.cpp` + `note_audit.py`, findings in
+`NOTE_AUDIT.md`.**  Renders every preset **at its own shipped Note** through
+`GateOn()` (the sequencer path; `render_presets.cpp` passes its own hard-coded
+notes and cannot see this class of drift):
+
+- **All 8 engine anchors match** (six cymbal `ref_note`s, both kernel
+  `root_note`s, Δ = 0): no preset plays a transposed calibration.
+- **Note is inert on 8 presets** (exactly 0.0 semitones on a +12 test):
+  808Sub/KickDrum (boom osc, empty modal config — you hear 44.7 / 56.7 Hz while
+  the screen says 65.4), the three snares (wire bands are absolute Hz), and the
+  three NOISE presets.  RimShot is the snare exception at a full +12.
+- **Five presets are pitched oddly for the instrument** — Bongo 147 Hz
+  (bongos are 250-600 Hz), Woodblock 131 Hz (~0.8-2.5 kHz), AcSnare/BrshSnr
+  73 Hz (**note 38 is the General MIDI drum-map NUMBER used as a pitch**;
+  Brachetti's Note is a pitch, not a kit slot), Triangle 440 Hz, Claves 4
+  semitones under the one clave reference in `samples/` (measured: 955-975 Hz).
+  **Nothing changed** — each alters an approved sound; `NOTE_AUDIT.md` §4 has
+  the recommendation per preset and awaits a listen.
+- **`render_presets.cpp` disagrees with the shipped column on exactly one
+  preset**: Bongo is *scored* at note 57 (220 Hz) and *ships* at 50 (147 Hz).
+  That makes Bongo the strongest of the five.
+
+**Tooling fixed along the way** (both were measuring the wrong thing):
+`test_hw_debug` T36c set slot 3 to 60 for "max Rsntrs" — that is now the
+Velocity knob, so it was silently testing the CPU budget at the DEFAULT bank
+size; it uses `Partls = 7` and the worst aggregate cost is back to a meaningful
+368 (limit 400).  `param_audit.cpp` swept `MlltStif` over 10-500, a range the
+parameter lost in pass 30 (it is ÷100 over 0-50 now), so 500 clamped to the
+same stiffness as 50 and the knob's lower half went unmeasured.
+
+Verified: **40/40 renders byte-identical**, host syntax check clean, test_dsp
+exit 0, test_hw_debug **100/100** (T39a-e, T40a-c new), `stability_sweep` 4096
+combos + 480 rolls with the Velocity knob riding the hit-hardness corner bit,
+worst |peak| **0.9900** (the brickwall limit) and 0 problems — identical to the
+pass-30 baseline.  **ARM `.text` still unverified** (no cross-compiler in this
+session): this pass adds `vel_bias_apply`, one branch in the Partls case and a
+`snprintf` display branch, and removes the old `k_paramCymReso` case — roughly
+neutral, but confirm against the 28 KB budget on the next flash.
 
 ### Pass 30 — Cymbal CPU crash, master limiter rebuild, preset/UI defaults
 
@@ -628,6 +729,8 @@ Follow-up items from the same HW batch (user picked, second commit):
   Model/Partls are inert wherever the engine bypasses the shared modal bank.
 - **Velocity/hit-hardness**: answered (MIDI note-on velocity, set per-step on
   the Drumlogue sequencer; no dedicated knob — 24/24 param slots used).
+  **Superseded in pass 31**: a slot was freed by moving the cymbal resonator
+  density onto `Partls`, and slot 3 is now a global `Velocity` knob.
 
 ### Pass 22 — All-family body-knob wiring (branch brachetti-review-rename)
 
@@ -1007,6 +1110,21 @@ python3 modal_extract.py samples/Taiko-Hit.wav --nmodes 10
 # Compare render vs reference (centroid, flatness, T60)
 # Requires copying renders first: cp rendered/*.wav /tmp/rc/
 python3 refcmp.py
+
+# Velocity-knob map per preset (rms / attack-window rms / difference-RMS dB).
+# Use the dRMS column, not rms: the master stage is loudness-maximised, so a
+# knob that reshapes a hit without raising its level reads as "no change" on
+# any total-RMS metric (this is what hid three kick knobs in pass 30).
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    velocity_probe.cpp -o /tmp/velocity_probe
+/tmp/velocity_probe            # all 40 presets, or pass indices: 0 3 13 5
+
+# Note-assignment audit — renders each preset AT ITS OWN shipped Note through
+# GateOn() (render_presets.cpp uses its own hard-coded notes and cannot see
+# drift between the two).  Findings live in NOTE_AUDIT.md.
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    note_audit.cpp -o /tmp/note_audit
+/tmp/note_audit /tmp/na > /tmp/na.csv && python3 note_audit.py /tmp/na.csv
 ```
 
 ---
