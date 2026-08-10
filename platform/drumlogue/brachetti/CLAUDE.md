@@ -12,14 +12,22 @@
 `claude/snare-drum-realism-optimization-y4hrhf` and
 `claude/eager-galileo-2fho84`).
 
-Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
-- `.text` (= text + .rodata) must stay below **28 KB** (safe margin below 30 KB limit).
-- `.bss` must stay near **552 bytes**.
+Always rebuild and check the ARM section sizes — pass 32 added a cross-build
+that works in-session, so this is a real check now, not a note-to-self (command
+under "Host Build / Test Commands"; discussion under the constraint section).
+Current shipping tree: `.text` 50,312 · `.rodata` 34,324 · `.data` 472 ·
+`.bss` 107,572.  **The "28 KB / 30 KB" limit this file used to assert here was
+never true** — see the constraint section. Watch the numbers for regressions;
+do not contort code to hit an imaginary ceiling.
 
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **100/100**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 32 (code review, no sound change):** one real bug fixed — `Reset()`
+  used to leave a deferred master drive queued, so a suspend caught mid-fade
+  came back **14 dB loud** (T41).  Plus dead-code and size work; `.rodata` is
+  1920 B smaller.  Nothing to listen for; 40/40 renders byte-identical.
 - **Pass 31 (new GUI layout — say if the knob placement is wrong):** slot 3 is
   now **`Velocity`** (-100 ghost / 0 as-played / +100 wham) and the cymbal
   resonator density moved onto **`Partls`** (shows `Rs40%` on a cymbal preset).
@@ -52,7 +60,9 @@ Always rebuild and check `arm-unknown-linux-gnueabihf-size brachetti.elf`:
   Clap/Shaker/HHat-C.  Run `knobaud.cpp` for the full 22-preset map.
 - Host syntax-check (g++ -fsyntax-only): **clean**.
 - HHat-O **HW-approved** ("ok now" — do not break).
-- ARM .text ≤ 28 KB: **must be confirmed on next flash** (cannot verify without toolchain).
+- ~~ARM .text ≤ 28 KB: must be confirmed on next flash (cannot verify without
+  toolchain).~~ **Superseded in pass 32** — there *is* a usable cross-compiler,
+  the sizes are measured above, and the 28 KB figure was wrong.
 - Per-family realism findings + ranked backlog: see `REALISM_REVIEW.md`.
 
 ### Analysis tool: `modal_extract.py`
@@ -73,6 +83,67 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 32 — Code review: one real bug, dead code, and the size budget was fiction
+
+No new features and **no sound change** (40/40 renders byte-identical).  A
+general review pass; four things came out of it.
+
+**1. `Reset()` left master-stage state queued — a 14 dB gain error (T41).**
+A preset change over a ringing voice defers the incoming preset's master drive
+behind the ~10 ms fade (pass 30).  `LoadPreset` can never leave a stale one,
+because its parameter loop always rewrites Gain and that case clears the queue
+— but **`Reset()` has no such loop and cleared nothing**, while killing every
+voice, so the fade the deferral was waiting on never happened.  `Suspend()` is
+`AllNoteOff() + Reset()`, so a suspend caught between a preset change and the
+end of its fade handed the next session the *previous* preset's drive:
+measured GtrStr → Gong → suspend → resume, `master_drive` jumped **1.0 → 5.0**
+and stayed there until the user turned Gain.  `Reset()` now also clears
+`master_lim_env` (a limiter follower left high rides the first strike after
+Resume down for ~20 ms) and `m_idle_flush_blocks`.  **T41a-c**; T41b/c fail on
+the pre-fix tree, verified.
+
+**2. The coupling-stability branch had been dead since the K=2.5 revert.**
+`processBlock` computed a delay-length ratio (a float divide, per active voice
+per block) to choose between "incoherent" and "coherent" clamps whose two arms
+were *character-for-character identical* — the permissive K=2.5 arm was reverted
+long ago for being unstable, and the test outlived it.  Removed.
+
+**3. The voice bus is mono; half the output writes were dead.**  Every engine
+is single-channel, and Stage 4b filters `main_out[i*2]` and writes the result
+to *both* lanes — so everything the voice loops accumulated into `main_out[i*2+1]`
+was overwritten before it could be heard.  The voice loops now write the left
+lane only, and the cymbal soft-headroom pass iterates `frames` instead of
+`frames*2`: **64 fewer float divides per block** whenever a cymbal renders
+(ARM disassembly: the pass drops from 128 iterations of 15 instructions to 64
+of 16).  Both early returns stay correct — the kernel path writes both lanes
+itself, and the idle path returns on an all-zero buffer.
+*Honest measurement*: on x86-64 `-O2` this is **within noise** (±4 %), because
+the host vectorises the paired stereo store into one 8-byte store and so cannot
+show the win.  The saving is an in-order Cortex-A7 at `-Os` argument (no
+auto-vectorisation there), supported by the instruction counts above, not a
+host benchmark.
+
+**4. Size: −1,872 bytes, and the budget in this file was wrong by ~2.8×.**
+`LoadPreset`'s `presets[40][24]` was `int32_t` for a stored range of
+[-10, 1999]; narrowing it to `int16_t` frees 1920 B of `.rodata` with every
+value round-tripping unchanged.  Net ARM code segment 86,508 → **84,636 B**.
+Which is the point: pass 32 finally *measured* it (the distro ships an ARM
+cross-compiler; the Makefile only fails because it hardcodes a Windows
+toolchain path), and the answer is nothing like the "≈ 30 KB" ceiling this
+file has asserted for 20 passes.  See the rewritten constraint section below —
+in short, `.rodata` alone is 34.3 KB, that figure is toolchain-independent, and
+the unit runs.  **Stop dodging `.rodata` and start measuring.**
+
+Also: `k_lastParamIndex` replaces the magic `24`s in `setParameter`/`LoadPreset`
+plus a `static_assert` tying the enum to header.c's `num_params` (adding a
+parameter to one and not the other silently shifts every preset column), and
+three comments naming the retired `Rsntrs` knob were corrected.
+
+Verified: **40/40 renders byte-identical**, syntax clean, test_dsp exit 0,
+test_hw_debug **103/103** (T41a-c new), `stability_sweep` 4096 combos + 480
+rolls, worst |peak| 0.9900, 0 problems, 0 NaN/silent — every number identical
+to the pass-31 baseline.  ARM cross-build clean.
 
 ### Pass 31 — Rsntrs → Partls (cymbals), the freed slot becomes Velocity, note audit
 
@@ -1083,6 +1154,30 @@ dominate. A crash IS mostly bright smooth noise.
 g++ -std=c++14 -fsyntax-only -I. -I../common -U__ARM_NEON__ -U__ARM_NEON \
     -Wno-strict-aliasing -Wno-unused-parameter unit.cc
 
+# ── ARM CODE-SIZE CHECK (pass 32: this is now possible in-session) ──────────
+# Every pass before this one ended with ".text unverified — no cross-compiler".
+# There is one in the distro; the Makefile only fails because it hardcodes a
+# Windows toolchain path.  Install it and build the real ARM object directly:
+#
+#   apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf
+#
+# Flags mirror the Makefile (ARCH_OPT + USE_COPT/USE_CXXOPT + -Os).  gcc 13
+# rejects the Makefile's -finline-limit=9999999999 (> INT_MAX) — 2000000000
+# behaves the same.  This is NOT the vendor gcc 6.5, so .text moves a little
+# between toolchains; .rodata/.data/.bss are exact.
+ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
+OPT="-Os -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing \
+     -falign-functions=16 -fno-math-errno -fomit-frame-pointer"
+CXXO="-std=gnu++14 -fno-threadsafe-statics -fno-exceptions -fno-rtti \
+      -finline-limit=2000000000 --param max-inline-insns-single=2000000000"
+arm-linux-gnueabihf-g++ -c $ARCH $OPT $CXXO -DRENDER_STAGE=4 -fPIC \
+    -ffunction-sections -fdata-sections -w -I. -I../common unit.cc -o /tmp/unit.o
+arm-linux-gnueabihf-gcc -c $ARCH $OPT -std=c11 -DRENDER_STAGE=4 -fPIC \
+    -ffunction-sections -fdata-sections -w -I. -I../common header.c -o /tmp/header.o
+arm-linux-gnueabihf-g++ $ARCH $OPT -shared -Wl,--gc-sections \
+    /tmp/unit.o /tmp/header.o -lm -o /tmp/brachetti.elf
+arm-linux-gnueabihf-size -A /tmp/brachetti.elf | grep -E '^\.(text|rodata|data|bss)'
+
 # DSP unit tests
 g++ -std=c++17 -O2 -I.. -I. -I../../common -I../common -DRUNTIME_COMMON_H_ \
     test_dsp.cpp -o /tmp/run_test && /tmp/run_test
@@ -1129,22 +1224,49 @@ g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
 
 ---
 
-## Critical .rodata / .data Constraint — Do NOT break this
+## .rodata / .data Constraint — MEASURED in pass 32, and the number was wrong
 
-The drumlogue firmware checks `.text segment` size (= `.text + .rodata + .init + .fini`)
-per unit. Limit ≈ 30 KB. The preset tables (~7 KB) **must stay in `.data`**.
+**The rule below is kept because it is good hygiene, but its stated limit is
+not real.**  Pass 32 cross-compiled the shipping unit for ARM for the first
+time (see the build command above) and measured:
 
-**Working fix (a49e2f4):** The large preset arrays —
+```
+.text = 50,312   .rodata = 34,324   (text+rodata = 84,636)   .data = 472   .bss = 107,572
+```
+
+That is **~2.8× the "≈ 30 KB" ceiling this file has asserted since a49e2f4**,
+and the unit loads and runs on hardware.  The `.rodata` figure alone (34.3 KB)
+is over the claimed ceiling for `text+rodata` — and `.rodata` is *data*, so it
+is the same size under any compiler: `modal_drum_data.h` puts 31 KB of
+`static const` mode tables and attack transients there (two 3360-float
+transients = 13.4 KB each), which by the old rule should have been unloadable
+since the dense kernel shipped.  Whatever the firmware actually checks, it is
+not "text+rodata ≤ 30 KB".
+
+**What this means in practice:**
+- Do **not** contort code to dodge `.rodata` any more (computing a table
+  instead of tabling it, splitting arrays, keeping LTO off "for size").
+  Those are now cost-free choices, not requirements.
+- Do keep the `.data` pattern below — it is harmless, already in place, and if
+  a real limit does exist it is the safe side of it.
+- **Do re-measure instead of guessing.**  The cross-build takes ~15 s and
+  reports the exact number; there is no longer any reason for a pass to end
+  with ".text unverified".
+
+**The `.data` pattern (unchanged):** The large preset arrays —
 `kDefaultModalPresetConfig`, `modal_preset_configs[]`, `model_param_presets[][]`,
 `kPresetEngine[]` — are declared as **non-static** class members (no `static`,
-no `const`, no `constexpr`). This places their initial values in `.data`.
+no `const`, no `constexpr`), which places their initial values in `.data`.
 
-**Broken patterns to avoid:**
-- `static constexpr T arr[] = {...}` → goes to `.rodata` → text-size check fails
-- `static const T arr[] = {...}` → same problem
-- `static T arr[] = {...}` **inside a class body** → GCC 6.5 rejects it
+**Patterns that land in `.rodata`** (fine now, but know where they go):
+- `static constexpr T arr[] = {...}` and `static const T arr[] = {...}`
+- `static T arr[] = {...}` **inside a class body** → GCC 6.5 rejects it (real)
 
-See `config.mk` `USE_LTO := no`.
+The one large `static const` left is `LoadPreset`'s `presets[40][24]`; pass 32
+narrowed it to `int16_t` (stored range is [-10, 1999]), halving it to 1920 B.
+
+See `config.mk` `USE_LTO := no` — kept, but its stated size justification no
+longer holds; if LTO is ever wanted, measure rather than assume.
 
 ---
 

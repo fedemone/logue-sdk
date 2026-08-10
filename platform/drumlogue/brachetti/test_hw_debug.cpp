@@ -2171,6 +2171,72 @@ static void test_cymbal_density_on_partls() {
            "Mterl/Inharm will write to one resonator only on the next preset");
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T41 — Reset() must not leave master-stage state queued
+//
+//   A preset change over a ringing voice DEFERS the incoming preset's master
+//   drive behind the ~10 ms fade (pass 30) — the tail keeps the old drive, the
+//   new one lands when the fade retires.  processBlock releases it; LoadPreset
+//   can never leave a stale one because its parameter loop always rewrites
+//   Gain, and that case clears the queue.
+//
+//   Reset() has neither: it kills every voice outright, so the deferral's fade
+//   never happens and nothing clears it.  Suspend() is AllNoteOff() + Reset(),
+//   so a suspend caught between the preset change and the end of the fade used
+//   to hand the NEXT session a drive belonging to the preset before last — a
+//   whole-unit gain error that persists until the user turns Gain.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_reset_clears_deferred_drive() {
+    std::cout << "\n── T41: Reset() leaves no queued master state ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+    s.Init(&desc);
+
+    s.LoadPreset(25);                       // GtrStr, Gain 0  -> drive 1.0
+    s.GateOn(110);
+    run_blocks(s, 4800, 64);                // ~100 ms of ring
+    const float drive_gtr = s.state.master_drive;
+
+    s.LoadPreset(14);                       // Gong, Gain 20 -> drive 5.0, DEFERRED
+    const float drive_held = s.state.master_drive;
+
+    // Suspend mid-fade, before any block has run the release.
+    s.AllNoteOff();
+    s.Reset();
+    const float drive_after_reset = s.state.master_drive;
+    run_blocks(s, 640, 64);                 // Resume: blocks with no voice
+    const float drive_settled = s.state.master_drive;
+
+    std::cout << "  GtrStr drive=" << drive_gtr
+              << "  held during fade=" << drive_held
+              << "  after Reset=" << drive_after_reset
+              << "  after 10 blocks=" << drive_settled << "\n";
+
+    result("T41a the incoming preset's drive is still deferred behind the fade",
+           drive_held == drive_gtr,
+           "the deferral itself has stopped working — a preset change now "
+           "slams the new Gain onto the outgoing tail (pass 30 regression)");
+    result("T41b Reset() drops a drive queued behind a fade it just cancelled",
+           drive_settled == drive_after_reset,
+           "the first block after Resume() installed a drive belonging to the "
+           "preset that was fading when the unit was suspended");
+
+    // Same argument for the limiter follower: it is master-stage state, it only
+    // decays (20 ms release), and a voiceless Reset leaves it holding gain
+    // reduction over the first strike of the next session.
+    s.Init(&desc);
+    s.LoadPreset(0);
+    s.GateOn(127);
+    run_blocks(s, 4800, 64);
+    const bool env_was_up = s.state.master_lim_env > 0.1f;
+    s.Reset();
+    result("T41c Reset() clears the master limiter follower",
+           env_was_up && s.state.master_lim_env == 0.0f,
+           "a limiter envelope left high rides the first hit after Resume() "
+           "down for ~20 ms");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -2216,6 +2282,7 @@ int main() {
     test_preset_change_fade();
     test_velocity_knob();
     test_cymbal_density_on_partls();
+    test_reset_clears_deferred_drive();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

@@ -30,7 +30,7 @@ const __unit_header unit_header_t unit_header = {
         // 36 = two octaves up, Dkay 25 vs 200, NzRes 0 vs 420, ...), so the
         // unit booted showing "Kick2" while sounding like something else.
         // Every default below is now Kick2's shipped value; only Poly and
-        // Rsntrs keep their own, because LoadPreset deliberately skips them
+        // Velocity keep their own, because LoadPreset deliberately skips them
         // (they are global performance settings, not per-preset sound design).
         // If preset 0's row changes, change these with it.
         //
