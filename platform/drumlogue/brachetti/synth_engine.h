@@ -142,6 +142,12 @@ public:
         k_paramResnc,       // 23
         k_lastParamIndex    // marker
     };
+    // Tripwire: header.c declares `.num_params` and lays out exactly this many
+    // slots, and the preset table below has one column per slot.  Adding a
+    // parameter to this enum without adding its row to header.c (or vice versa)
+    // silently shifts every column of all 40 presets, which reads as "the unit
+    // loads the wrong sound" rather than as a build error.
+    static_assert(k_lastParamIndex == 24, "header.c declares 24 params");
     enum ProgramIndex {
         k_Kick2 = 0,        // 0  — solid kettledrum-kick (the pre-redesign Timpani body, HW-approved as a kick)
         k_Marimba,          // 1  -sample: marimba-hit-c4_C_minor.wav (524Hz +/- 50Hz)
@@ -655,6 +661,20 @@ SynthState state;
 
         state.master_gain  = 1.5f;  // HW: "+0.5" louder overall (soft-clip + brickwall absorb it)
         state.master_drive = 1.0f;
+        // Reset() kills every voice, so a master drive deferred behind a
+        // preset-change fade has nothing left to wait for — and unlike
+        // LoadPreset (whose parameter loop always rewrites Gain, which clears
+        // the queue) nothing here would ever clear it.  Suspend() is
+        // AllNoteOff() + Reset(), so leaving it queued means the first block
+        // after Resume() installs the drive of whatever preset was mid-fade
+        // when the unit was suspended, on top of the one actually loaded.
+        m_pending_drive    = -1.0f;
+        // Master-stage state dies with the voices too: a limiter envelope left
+        // high would ride the first strike after Resume() down for ~20 ms, and
+        // a non-zero idle counter would keep the master chain spinning on an
+        // empty buffer.
+        state.master_lim_env = 0.0f;
+        m_idle_flush_blocks  = 0;
         state.mix_ab       = 0.5f; // Equal A/B mix
         state.tone         = 0.0f; // Neutral tilt EQ (LoadPreset restores the preset value)
         m_pitch_bend_mult  = 1.0f; // Clear any held bend so the next note plays in tune.
@@ -808,7 +828,15 @@ SynthState state;
         // noise, master FX). Phase 12/13 in PROGRESS.md track future additions (TubRad, Tone, etc.).
         // Columns 15 (Inharm) and 16 (LowCut) store 1/10th of the effective value.
         // setParameter multiplies them back by 10 so the encoder travels 10× fewer steps.
-        static const int32_t presets[k_NumPrograms][k_lastParamIndex] = {
+        // int16_t, not int32_t: this table is the ONE large `static const` the
+        // unit still keeps in .rodata (the other big arrays are non-static class
+        // members precisely so their initialisers land in .data — see the size
+        // rule in CLAUDE.md), and it is read exactly twice per preset load, both
+        // times through a widening conversion.  The stored range is [-10, 1999],
+        // a tenth of what int16_t holds, so halving the element width is free:
+        // 3840 B → 1920 B of code-segment budget, and every value round-trips
+        // unchanged.  Widen it again if any column ever needs > ±32767.
+        static const int16_t presets[k_NumPrograms][k_lastParamIndex] = {
             //  Prg  Nte  Ply  Vel - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - Cut  TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
             //
             // Cols 2 (Poly) and 3 (Velocity) are GLOBAL performance controls:
@@ -882,7 +910,7 @@ SynthState state;
         // choice persists across preset changes.  (The cymbal resonator density
         // that used to live in slot 3 is NOT global any more: it rides on
         // Partls, which is a normal per-preset column and loads with the row.)
-        for (uint8_t param_id = 0; param_id < 24; ++param_id) {
+        for (uint8_t param_id = 0; param_id < k_lastParamIndex; ++param_id) {
             if (param_id == k_paramProgram) continue;
             if (param_id == k_paramCymPoly) continue;
             if (param_id == k_paramVelocity) continue;
@@ -971,6 +999,12 @@ SynthState state;
         // Deferring the drive keeps the fading voice's chain bit-for-bit what
         // it was; the new drive lands ~10 ms later, before any new hit can
         // meaningfully need it.
+        //
+        // A deferral cannot go stale here: the parameter loop above always
+        // writes k_paramGain, whose case clears m_pending_drive before this
+        // block can re-arm it, so the queue only ever holds the drive of the
+        // preset now loading.  (Reset() has no such loop — see the explicit
+        // clear there.)
         if (preset_changed && state.master_drive != prev_drive) {
             bool fading = false;
             for (int i = 0; i < NUM_VOICES; ++i)
@@ -1051,7 +1085,7 @@ SynthState state;
     // ==============================================================================
     inline void setParameter(uint8_t index, int32_t value) {
         // CRITICAL UI FIX: Prevent OS out-of-bounds writes
-        if (index >= 24) return;
+        if (index >= k_lastParamIndex) return;
         m_params[index] = value;
 
         switch(index) {
@@ -1727,7 +1761,7 @@ SynthState state;
 
         // PCM sample layering removed: it was never part of the approved
         // synthesized sounds, and dropping it freed the Bank/Sample GUI params
-        // for the cymbal Poly / Rsntrs performance controls.
+        // for the Poly / Velocity performance controls.
         v.exciter.sample_ptr = nullptr;
         v.exciter.sample_frames = 0;
 
@@ -2429,7 +2463,7 @@ SynthState state;
                 cc.hfTilt = (m_preset_idx == k_Cymbal) ? 3.0f : 2.0f;
             }
             if (cc.freqHz) {
-                // Bank size = preset base x Rsntrs param (user CPU/density
+                // Bank size = preset base x Partls density (user CPU/density
                 // trade-off) x voice-pressure degradation: the 3rd/4th
                 // simultaneous voice gets a smaller bank — in a dense stack
                 // the density loss is masked, and rolls can no longer
@@ -3554,6 +3588,17 @@ SynthState state;
             if (!fading) { state.master_drive = m_pending_drive; m_pending_drive = -1.0f; }
         }
 
+        // ── The voice bus is MONO; only main_out[i*2] carries it ──────────────
+        // Every engine here is single-channel, and Stage 4b filters the LEFT
+        // sample and writes the result to BOTH channels, so anything a voice
+        // accumulates into main_out[i*2+1] is overwritten before it can be
+        // heard.  The voice loops therefore write the left lane only — the
+        // right one is filled once, at the end.  This is not a shortcut: the
+        // stereo store cost an extra load-add-store per sample PER VOICE in the
+        // hottest loop in the unit, and the cymbal soft-headroom pass below was
+        // spending a divide per sample on a lane nobody reads.
+        // Both early returns above stay correct: the kernel path writes both
+        // channels itself, and the idle path returns on an all-zero buffer.
         bool any_voice_rendered = false;
         bool any_cymbal_rendered = false;
         for (int voice_idx = 0; voice_idx < NUM_VOICES; ++voice_idx) {
@@ -3579,36 +3624,23 @@ SynthState state;
             // feedback_gain is constant during audio rendering, so this runs once per voice
             // per processBlock() call instead of once per sample — saves ~128 fminf() calls.
             //
-            // Different-frequency resonator pairs (membrane/drumhead, ResB tuned to the Bessel
-            // (1,1) mode ratio 0.628× base pitch) are phase-incoherent: coupling energy from
-            // ResB arrives at a different phase on every round trip, partially cancelling rather
-            // than always constructively adding.  This allows a 3× more permissive clamp (K=2.5
-            // vs K=0.8) so the Partials knob remains audible at high Decay values without
-            // the exponential explosion that full coupling causes for same-frequency pairs.
+            // The clamp is K=0.8 for EVERY pair, coherent or not.  A permissive
+            // K=2.5 for different-pitch (phase-incoherent) pairs was tried and
+            // reverted: phase incoherence lowers the AVERAGE coupling energy but
+            // not the worst-case beat alignment, which still needs C ≤ 1−G, and
+            // K=2.5 violates that for every G < 1 (G + C = 2.5 − 1.5G > 1) —
+            // long-decay presets (Timpani, Djambe) grew exponentially.  The two
+            // arms of that test had therefore been identical since the revert,
+            // so the pitch-ratio comparison that selected between them (a float
+            // divide per active voice per block) is gone with them.
             //
-            // Stability check (Timpani worst case: g=0.958, Ptls=2, diff_freq):
-            //   safe_cpl = min(0.25, 0.042 × 2.5) = min(0.25, 0.105) = 0.105
-            // vs old value: min(0.25, 0.034) = 0.034 (below audibility).
+            // Stability check (Timpani worst case: g=0.958, Ptls=2):
+            //   safe_cpl = min(0.25, 0.042 × 0.8) = 0.034
             float v_safe_cpl_a = 0.0f, v_safe_cpl_b = 0.0f;
             if (m_active_partials >= 16) {
-                float half_depth = m_coupling_depth * 0.5f;
-                float delay_ratio_diff = (voice.resA.delay_length > 0.1f)
-                    ? fabsf(1.0f - voice.resB.delay_length / voice.resA.delay_length)
-                    : 0.0f;
-                if (delay_ratio_diff > 0.05f) {
-                    // Incoherent (different-pitch) pair.
-                    // Phase incoherence reduces average coupling energy, but the worst-case
-                    // beat alignment still satisfies G + C ≤ 1 only when C ≤ 1-G.
-                    // K=2.5 violated this (G+C = 2.5 - 1.5G > 1 for all G < 1), causing
-                    // exponential amplitude growth in long-decay presets (Timpani, Djambe).
-                    // Use the same K=0.8 as same-pitch pairs to guarantee stability.
-                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
-                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
-                } else {
-                    // Coherent (same-pitch) pair: conservative stability clamp
-                    v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
-                    v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
-                }
+                const float half_depth = m_coupling_depth * 0.5f;
+                v_safe_cpl_a = fminf(half_depth, (1.0f - voice.resA.feedback_gain) * 0.8f);
+                v_safe_cpl_b = fminf(half_depth, (1.0f - voice.resB.feedback_gain) * 0.8f);
             }
 
             // ── ENGINE_CYMBAL: self-contained dense-resonator cymbal ───────
@@ -3632,8 +3664,8 @@ SynthState state;
                             cy += hp * (tone_val * kInvToneBoostDivisor);
                         }
                     }
-                    main_out[i * 2]     += cy * state.master_gain;
-                    main_out[i * 2 + 1] += cy * state.master_gain;
+                    // Left only — see the mono-bus note above the voice loop.
+                    main_out[i * 2] += cy * state.master_gain;
 #ifdef UNIT_TEST_DEBUG
                     if (voice_idx == state.next_voice_idx) ut_voice_out = cy;
 #endif
@@ -4028,8 +4060,8 @@ SynthState state;
                     if (voice.fade < 0.001f) voice.is_active = false;
                 }
 
-                main_out[i * 2]     += voice_out * state.master_gain;
-                main_out[i * 2 + 1] += voice_out * state.master_gain;
+                // Left only — see the mono-bus note above the voice loop.
+                main_out[i * 2] += voice_out * state.master_gain;
 
 #ifdef UNIT_TEST_DEBUG
                 if (voice_idx == state.next_voice_idx) {
@@ -4087,8 +4119,9 @@ SynthState state;
         // preset index: after a preset change the two disagree, and the soft
         // headroom belongs to the stacked cymbal voices, wherever they came from.
         if (any_cymbal_rendered) {
-            for (size_t i = 0; i < frames * 2; ++i) {
-                main_out[i] = main_out[i] / (1.0f + 0.35f * fabsf(main_out[i]));
+            for (size_t i = 0; i < frames; ++i) {
+                const size_t l = i * 2;
+                main_out[l] = main_out[l] / (1.0f + 0.35f * fabsf(main_out[l]));
             }
         }
         // NOTE: there is deliberately NO hard clip of the voice bus here.
