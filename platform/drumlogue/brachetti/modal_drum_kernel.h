@@ -110,7 +110,12 @@ public:
     void Trigger(uint8_t note, float ratio, float velocity) {
         if (!IsActive()) return;
         const ModalDrumRecipe& r = *m_recipe;
-        float v = (velocity < 0.0f) ? 0.0f : (velocity > 1.0f ? 1.0f : velocity);
+        // Ceiling 2.0, not 1.0: the caller's Velocity knob can ask for a strike
+        // harder than MIDI 127 (bounded to 1.30 there) and clamping it back to
+        // 1.0 would make the "wham" direction dead on Timpani/Taiko.  This is a
+        // sanity bound on garbage input — exc_gain/knock/noise scale linearly
+        // past 1.0 and the pitch glide is still pole-clamped in Process().
+        float v = (velocity < 0.0f) ? 0.0f : (velocity > 2.0f ? 2.0f : velocity);
 
         // ── kettle selection ────────────────────────────────────────────
         // Same note → the same physical drum: retrigger in place (roll).

@@ -1820,9 +1820,13 @@ static void test_cymbal_stacking() {
            "inverts while a slow-attack cymbal is still blooming");
 
     // CPU guard: the aggregate bank must respect the budget even at the
-    // maximum Rsntrs setting with every voice ringing.
+    // maximum density setting with every voice ringing.
     s.Init(&desc); s.LoadPreset(13);        // Cymbal: largest base bank (96)
-    s.setParameter(3, 60);                  // Rsntrs to maximum
+    // Density is Partls on the cymbal family now (7 = 60 %, the old Rsntrs
+    // maximum).  Slot 3 is the Velocity knob — setting THAT to 60 would leave
+    // this test measuring the budget at the DEFAULT bank size and passing for
+    // the wrong reason.
+    s.setParameter(BrachettiSynth::k_paramPartls, 7);
     s.state.next_voice_idx = 0;
     int budget_worst = 0;
     for (int k = 0; k < 8; ++k) {
@@ -1840,7 +1844,7 @@ static void test_cymbal_stacking() {
     // carry a voice past it, so allow that floor on top of the budget.
     const int limit = BrachettiSynth::kCymCostBudget +
                       BrachettiSynth::kCymMinResonators;
-    std::cout << "  8 crash hits @Rsntrs=60: worst aggregate cost="
+    std::cout << "  8 crash hits @Partls=7 (60 %): worst aggregate cost="
               << budget_worst << " (limit " << limit << ")\n";
     result("T36c stacked cymbal voices stay inside the CPU cost budget",
            budget_worst <= limit,
@@ -1987,6 +1991,186 @@ static void test_preset_change_fade() {
            "the preset-change fade did not retire the voice");
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T39 — Velocity knob (the ex-Rsntrs slot): ghost <- neutral -> wham
+//
+//   Three properties, and the first is the one that protects every shipped
+//   preset: at the DEFAULT knob (0) a strike must be bit-for-bit the strike
+//   that was sent, on every engine.  The other two are the reason the knob
+//   exists: turning it down must ghost a hit, and turning it UP must bite even
+//   when the sequencer already sends 127 — a knob that can only "restore" full
+//   velocity is dead for anyone who never edits per-step velocity, which is
+//   the same class of dead knob this unit has shipped four times.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_velocity_knob() {
+    std::cout << "\n── T39: Velocity knob (ghost / neutral / wham) ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+
+    // One exemplar per strike path: legacy voice, dense cymbal, drum kernel.
+    struct Case { int preset; const char* name; } cases[] = {
+        { 0,  "Kick2 (membrane)" },
+        { 3,  "AcSnare (snare)"  },
+        {13,  "Cymbal (cymbal)"  },
+        { 5,  "Timpani (kernel)" },
+        { 1,  "Marimba (bar)"    },
+    };
+
+    // Sum |x| over `frames` — RMS-ish energy that a peak-limited master stage
+    // cannot flatten as completely as it flattens the peak.
+    auto energy = [&](int preset, int32_t knob, uint8_t vel, int frames) -> double {
+        BrachettiSynth s;
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)preset);
+        for (int i = 0; i < NUM_VOICES; ++i)
+            s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;   // pin the PRNG
+        s.setParameter(BrachettiSynth::k_paramVelocity, knob);
+        s.GateOn(vel);
+        s.GateOff();
+        float buf[128] = {0.0f};
+        double sum = 0.0;
+        for (int done = 0; done < frames; done += 64) {
+            std::memset(buf, 0, sizeof(buf));
+            s.processBlock(buf, 64);
+            for (int i = 0; i < 128; i += 2) sum += std::fabs(buf[i]);
+        }
+        return sum;
+    };
+
+    const int frames = 48000 / 4;   // 250 ms
+    bool neutral_identical = true, ghost_quieter = true;
+    bool wham_reaches_full = true, wham_never_drops = true;
+    for (const Case& c : cases) {
+        const double neutral   = energy(c.preset,    0, 100, frames);
+        const double neutral2  = energy(c.preset,    0, 100, frames);
+        const double ghost     = energy(c.preset, -100, 100, frames);
+        const double mid_wham  = energy(c.preset, +100,  64, frames);
+        const double full_neut = energy(c.preset,    0, 127, frames);
+        const double full_wham = energy(c.preset, +100, 127, frames);
+
+        std::cout << "  " << c.name << ": neutral=" << neutral
+                  << "  ghost=" << ghost
+                  << "  | vel64+wham=" << mid_wham
+                  << "  vel127 neutral=" << full_neut << " wham=" << full_wham << "\n";
+
+        if (neutral != neutral2)                 neutral_identical = false;
+        if (!(ghost < neutral * 0.6))            ghost_quieter = false;
+        if (!(mid_wham >= full_neut * 0.95))     wham_reaches_full = false;
+        if (!(full_wham >= full_neut * 0.98))    wham_never_drops = false;
+    }
+
+    // Byte-identity of the default knob, checked directly against the raw
+    // velocity path: knob 0 must return the input untouched, not "close to".
+    BrachettiSynth probe;
+    probe.Init(&desc);
+    bool exact_neutral = true;
+    for (int v = 1; v <= 127; ++v) {
+        const float raw = (float)v * 0.007874015f;
+        if (probe.vel_bias_apply(raw) != raw) exact_neutral = false;
+    }
+
+    result("T39a the default Velocity knob is an exact no-op on every velocity",
+           exact_neutral,
+           "vel_bias_apply(raw) != raw at knob 0 — every shipped preset just "
+           "moved (knob_exp2(0) must be exactly 1.0)");
+    result("T39b renders are deterministic at the default knob",
+           neutral_identical,
+           "two identical renders differed — the PRNG pin or the knob leaked state");
+    result("T39c the knob at minimum ghosts the hit",
+           ghost_quieter,
+           "Velocity = -100 did not drop the strike energy below 60 %");
+    // This is the wham's real job: a half-hearted step must land as a full
+    // strike.  Beyond that, at velocity 127, the presets that already pin the
+    // master limiter (kick, bars) CANNOT get louder — a limited bus has no
+    // level left to give (pass 30).  So assert the reachable property, and
+    // separately that the over-range never costs level anywhere.
+    result("T39d the knob at maximum lifts a mid-velocity stroke to a full hit",
+           wham_reaches_full,
+           "Velocity = +100 on a velocity-64 stroke stayed below the "
+           "full-velocity render — the ceiling is not being reached");
+    result("T39e the wham over-range never costs level at velocity 127",
+           wham_never_drops,
+           "Velocity = +100 made a full-velocity hit QUIETER — a velocity "
+           "curve downstream is non-monotone past 1.0");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T40 — Cymbal resonator density rides on Partls (the ex-Rsntrs control)
+//
+//   Partls is inert on ENGINE_CYMBAL (that family bypasses the shared modal
+//   bank), so the density moved onto it to free a GUI slot.  Assert that it
+//   really drives the bank, that the shipped rows still ask for the 40 % the
+//   old knob defaulted to, and that positions 5-7 do NOT fall through into the
+//   ResA/ResB edit selector — that selector survives a preset change, so a
+//   leak there would silently half-disable Model/Dkay on the NEXT preset.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_cymbal_density_on_partls() {
+    std::cout << "\n── T40: cymbal density on Partls ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    const int cym[] = {13, 14, 27, 32, 33, 37};
+
+    // Bank size actually handed to the resonator engine, per knob position.
+    auto res_count = [&](int preset, int32_t partls) -> int {
+        BrachettiSynth s;
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)preset);
+        s.setParameter(BrachettiSynth::k_paramPartls, partls);
+        s.GateOn(110);
+        s.GateOff();
+        for (int i = 0; i < NUM_VOICES; ++i)
+            if (s.state.voices[i].cymbal.active)
+                return (int)s.state.voices[i].cymbal.resCount;
+        return -1;
+    };
+
+    bool monotone = true, shipped_is_40 = true;
+    for (int p : cym) {
+        const int lo  = res_count(p, 0);   // 25 %
+        const int mid = res_count(p, 3);   // 40 % = the shipped rows
+        const int hi  = res_count(p, 7);   // 60 %
+        std::cout << "  preset " << p << ": Partls 0/3/7 -> " << lo << "/" << mid
+                  << "/" << hi << " resonators\n";
+        if (!(lo <= mid && mid <= hi && lo < hi)) monotone = false;
+
+        // The shipped row must select the same bank the ex-Rsntrs default did.
+        BrachettiSynth s;
+        s.Init(&desc);
+        s.LoadPreset((uint8_t)p);
+        s.GateOn(110);
+        s.GateOff();
+        int shipped = -1;
+        for (int i = 0; i < NUM_VOICES; ++i)
+            if (s.state.voices[i].cymbal.active) shipped = (int)s.state.voices[i].cymbal.resCount;
+        if (shipped != mid) shipped_is_40 = false;
+    }
+
+    // Positions 5-7 on a cymbal preset must leave the editor selection alone.
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.LoadPreset(13);                                        // Cymbal
+    const bool sel_a = s.m_is_resonator_a_ut(), sel_b = s.m_is_resonator_b_ut();
+    bool sel_intact = true;
+    for (int32_t p = 5; p <= 7; ++p) {
+        s.setParameter(BrachettiSynth::k_paramPartls, p);    // 50 / 55 / 60 %
+        if (s.m_is_resonator_a_ut() != sel_a || s.m_is_resonator_b_ut() != sel_b)
+            sel_intact = false;
+    }
+
+    result("T40a Partls scales the cymbal resonator bank monotonically",
+           monotone,
+           "the density knob did not resize the bank — Partls is not reaching "
+           "m_cym_reso_scale");
+    result("T40b the shipped cymbal rows still ask for the ex-Rsntrs 40 % bank",
+           shipped_is_40,
+           "a cymbal preset's Partls column no longer stores 3 — its bank size "
+           "(and therefore its CPU cost and sound) has moved");
+    result("T40c a cymbal density of 5-7 does not hijack the ResA/ResB selector",
+           sel_intact,
+           "Partls 5-7 fell through to the editor-select branch: Model/Dkay/"
+           "Mterl/Inharm will write to one resonator only on the next preset");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -2030,6 +2214,8 @@ int main() {
     test_cymbal_stacking();
     test_noise_same_tick_gate();
     test_preset_change_fade();
+    test_velocity_knob();
+    test_cymbal_density_on_partls();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

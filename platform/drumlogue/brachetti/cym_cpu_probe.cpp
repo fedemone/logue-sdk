@@ -109,7 +109,7 @@ int main() {
            100.0 * fixed / (fixed + 32 * per_lane));
 
     printf("=== B. real processBlock, Gong (preset 14), stacked voices ===\n");
-    printf("  Rsntrs (m_cym_reso_scale) default = 40%%\n");
+    printf("  density (Partls, m_cym_reso_scale) default = 40%%\n");
     printf("%7s %10s %14s %12s %12s\n",
            "voices", "banks", "aggregate res", "ns/block", "x1 voice");
     double base = 0;
@@ -145,13 +145,15 @@ int main() {
         printf("%7d %10s %14d %12.0f %12.2fx\n", nv, banks, agg, best, best / base);
     }
 
-    printf("\n=== C. same, at Rsntrs = 60%% (max) ===\n");
+    printf("\n=== C. same, at max density (Partls = 7 = 60%%) ===\n");
     printf("%7s %10s %14s %12s\n", "voices", "banks", "aggregate res", "ns/block");
     for (int nv = 1; nv <= 4; ++nv) {
         s.Init(&D);
         s.LoadPreset(13);                       // Cymbal: the biggest base bank (96)
         s.setParameter(BrachettiSynth::k_paramCymPoly, 4);
-        s.setParameter(BrachettiSynth::k_paramCymReso, 60);
+        // Density moved onto Partls (7 = 60 %) when the ex-Rsntrs slot
+        // became the Velocity knob.
+        s.setParameter(BrachettiSynth::k_paramPartls, 7);
         float st[256];
         char banks[64] = {0};
         int agg = 0;

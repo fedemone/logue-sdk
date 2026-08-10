@@ -47,7 +47,8 @@ const __unit_header unit_header_t unit_header = {
         // Page 1: Program and sample selection
         {0, 39, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
-        // Ex Bank/Sample (PCM layering removed): performance controls.
+        // Ex Bank/Sample (PCM layering removed): global performance controls.
+        // LoadPreset skips both, so they persist across preset changes.
         // Poly = GLOBAL voice cap 1-4 (was cymbal-only 1-2 and always displayed
         // "2").  Cymbals are bounded on top of this knob by kCymCostBudget, a
         // ceiling on the aggregate cymbal CPU cost that charges each voice its
@@ -58,7 +59,16 @@ const __unit_header unit_header_t unit_header = {
         // preset, e.g. "4(2)" on the 2-kettle Timpani/Taiko kernel, "1" on a
         // string.
         {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
-        {25, 60, 1, 40, k_unit_param_type_percent, 0, 0, 0, {"Rsntrs"}},
+        // Velocity bias, the ex-"Rsntrs" slot.  Rsntrs was a cymbal-only
+        // resonator-density control and did nothing on the other 34 presets;
+        // it now rides on Partls (inert on the cymbal family, which bypasses
+        // the shared modal bank), which frees this slot for the dynamics
+        // control the unit never had — the drumlogue's only other way in is
+        // per-step velocity.  0 = neutral (the strike plays exactly as sent, so
+        // every shipped preset is unchanged), negative = ghost notes, positive
+        // = "wham", which saturates strikes to full force and can push ~2.3 dB
+        // past a MIDI 127 hit.  Bipolar range matches VlMllRes/VlMllStf.
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Velocity"}},
 
         // Page 2: Mallet
         {0, 1000, 500, 360, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},

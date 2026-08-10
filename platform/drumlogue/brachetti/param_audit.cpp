@@ -89,10 +89,21 @@ struct ParamSpec { const char* name; uint8_t idx; int32_t lo; int32_t hi; };
 int main() {
     // name, index, audit-low, audit-high (from header.c ranges)
     static const ParamSpec specs[] = {
+        // Velocity (slot 3, ex-Rsntrs) is a GLOBAL knob and is live on every
+        // family — it biases the strike itself, so it belongs in the sweep.
+        {"Velocity", 3,  -100, 100},
         {"MlltRes",  4,  0,    1000},
-        {"MlltStif", 5,  10,   500},
+        // MlltStif is stored /100 over 0-50 since pass 30 (it was /10 over
+        // 10-500).  The old bounds swept a range the parameter no longer has:
+        // 500 clamped to the same stiffness as 50 and the audit under-reported
+        // the knob's low half.
+        {"MlltStif", 5,  0,    50},
         {"VlMllRes", 6,  -100, 100},
         {"VlMllStf", 7,  -100, 100},
+        // Stays 0-4: 5-7 are the ResA/ResB editor-select modes on the legacy
+        // engines, so sweeping to 7 would stop exercising the mode COUNT.  On
+        // the cymbal family 0-4 is resonator density 25-45 % (the top of that
+        // knob, 60 %, is covered by T40 instead).
         {"Partls",   8,  0,    4},
         {"Model",    9,  0,    8},
         {"Dkay",     10, 10,   200},

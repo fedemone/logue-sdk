@@ -15,8 +15,10 @@ int main(){
     static BrachettiSynth s; const int sr=48000; const int block=128; static float st[block*2];
 
     // param idx: Dkay10 Mterl11 HitPos13 Rel14 Inharm15 TubRad17 Resnc23
-    // plus a combined VlMllRes6+VlMllStf7 extreme bit (both knobs move together
-    // to keep the corner count at 2^8 instead of 2^9).
+    // plus a combined VlMllRes6+VlMllStf7+Velocity3 extreme bit (the three
+    // hit-hardness knobs move together, which keeps the corner count at 2^8
+    // instead of 2^10 and is also the corner that matters: full wham on top of
+    // maximum velocity sensitivity is the loudest strike the unit can produce).
     struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,2,98},{14,0,20},{15,0,199},{17,0,20},{23,71,400},{6,-100,100}};
     const int NP=8;
     // affected presets across all three families + a couple neighbours
@@ -31,6 +33,7 @@ int main(){
             s.Init(&d); s.LoadPreset((uint8_t)presets[pi]);
             for(int k=0;k<NP;++k) s.setParameter(ps[k].idx, (m&(1<<k))?ps[k].hi:ps[k].lo);
             s.setParameter(7, (m&(1<<(NP-1)))?100:-100);   // VlMllStf rides the VlMllRes bit
+            s.setParameter(3, (m&(1<<(NP-1)))?100:-100);   // Velocity too: +100 = wham, -100 = ghost
             // two velocities, retrigger
             for(int rep=0; rep<2; ++rep){
                 s.NoteOn((uint8_t)notes[pi], rep? 40:120);
@@ -69,6 +72,7 @@ int main(){
                     if (ext) {
                         for (int k = 0; k < NP; ++k) s.setParameter(ps[k].idx, ps[k].hi);
                         s.setParameter(7, 100);
+                        s.setParameter(3, 100);      // Velocity = full wham
                         s.setParameter(2, 4);        // Poly = 4
                     }
                     const int gap = (int)(gaps[gi] * 0.001f * (float)sr);
