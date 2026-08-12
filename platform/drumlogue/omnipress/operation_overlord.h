@@ -94,37 +94,6 @@ fast_inline float vmeanq_f32(float32x4_t vec) {
     return (vget_lane_f32(sum2, 0) + vget_lane_f32(sum2, 1)) * 0.25f;
 }
 
-// Ultra-fast Asymmetrical Triode Shaper using hardware reciprocal square root engines
-fast_inline float32x4_t pirkle_triode_shaper(float32x4_t v_gk, float shape_pos, float shape_neg) {
-    float32x4_t v_zero = vdupq_n_f32(0.0f);
-    float32x4_t v_one  = vdupq_n_f32(1.0f);
-
-    // Isolate positive and negative grid excursions
-    float32x4_t v_pos = vmaxq_f32(v_gk, v_zero);
-    float32x4_t v_neg = vminq_f32(v_gk, v_zero);
-
-    // Polynomial squaring for non-linear coefficients
-    float32x4_t v_pos2 = vmulq_f32(v_pos, v_pos);
-    float32x4_t v_neg2 = vmulq_f32(v_neg, v_neg);
-
-    float32x4_t v_shp_pos = vmulq_f32(v_pos2, vdupq_n_f32(shape_pos));
-    float32x4_t v_shp_neg = vmulq_f32(v_neg2, vdupq_n_f32(shape_neg));
-
-    // Combine paths into a joint denominator: 1 + (Bp * pos^2) + (Bn * neg^2)
-    float32x4_t denom = vaddq_f32(v_one, vaddq_f32(v_shp_pos, v_shp_neg));
-
-    // ARM NEON pipeline optimization: Hardware reciprocal square root approximation
-    float32x4_t rsq_est  = vrsqrteq_f32(denom);
-    float32x4_t rsq_step = vrsqrtsq_f32(vmulq_f32(rsq_est, rsq_est), denom); // Newton-Raphson precision iteration
-    float32x4_t rec_sqrt = vmulq_f32(rsq_est, rsq_step);
-
-    // Scale output by reciprocal square root
-    float32x4_t out = vmulq_f32(v_gk, rec_sqrt);
-
-    // CRITICAL: A true common-cathode valve inverts signal phase natively
-    return vnegq_f32(out);
-}
-
 /**
  * Set drive amount (0-100%)
  */

@@ -411,7 +411,10 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
     if (freq != state->last_freq || gain_db != state->last_gain_db ||
         low_shelf != state->last_low_shelf) {
 
-        float A      = fasterpowf(10.0f, gain_db / 40.0f);
+        // A = 10^(dB/40) = exp(dB * ln(10)/40).  fasterpowf is only good to a
+        // few percent here, which is a visible shelf-gain error; e_expff holds
+        // well under 0.01 dB across the +/-12 dB range and is cached anyway.
+        float A      = e_expff(gain_db * (INV_DB_COEFF * 0.5f));
         float sqrtA  = fasterSqrt(A);
         float w0     = 2.0f * M_PI * freq / sr;
         float cos_w0 = fastercosfullf(w0);
@@ -484,18 +487,9 @@ fast_inline float32x4_t low_shelf_filter(float32x4_t in,
     return shelving_filter(in, state, freq, gain_db, 1, sr);
 }
 
-// Convert linear to dB (approximation)
+// Convert linear to dB.  The bare mantissa interpolation this used to inline
+// was good to only 0.52 dB, which showed up directly as threshold error in
+// Standard and Distressor modes; neon_log2q_f32 is the shared 0.005 dB version.
 fast_inline float32x4_t linear_to_db(float32x4_t linear) {
-  // log10(x) ≈ log2(x) * 0.30103
-  uint32x4_t u = vreinterpretq_u32_f32(linear);
-  uint32x4_t exp = vandq_u32(u, vdupq_n_u32(0x7F800000));
-  uint32x4_t mant = vandq_u32(u, vdupq_n_u32(0x007FFFFF));
-
-  float32x4_t exp_f = vcvtq_f32_u32(vshrq_n_u32(exp, 23));
-  float32x4_t mant_f = vcvtq_f32_u32(mant);
-  float32x4_t log2 =
-      vaddq_f32(vsubq_f32(exp_f, vdupq_n_f32(127.0f)),
-                vmulq_f32(mant_f, vdupq_n_f32(1.0f / (1 << 23))));
-
-  return vmulq_f32(log2, vdupq_n_f32(6.0206f)); // 20 * log10(2)
+  return vmulq_n_f32(neon_log2q_f32(linear), 6.0206f); // 20 * log10(2)
 }

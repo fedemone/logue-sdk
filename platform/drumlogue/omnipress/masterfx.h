@@ -436,7 +436,7 @@ private:
         gain_history_ = vld1q_f32(smoothed);
 
         // 5. Convert smoothly changing dB back to linear gain
-        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(gain_history_, vdupq_n_f32(0.11512925f)));
+        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(gain_history_, vdupq_n_f32(INV_DB_COEFF)));
 
         // 6. Apply to VCA
         *out_l = vmulq_f32(main_l, gain_lin);
@@ -462,7 +462,7 @@ private:
                                                          attack_coeff_,
                                                          distressor_.opto_coeff);
 
-        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db, vdupq_n_f32(0.115129f)));
+        float32x4_t gain_lin = neon_expq_f32(vmulq_f32(smoothed_gain_db, vdupq_n_f32(INV_DB_COEFF)));
 
         float32x4_t comp_l = vmulq_f32(main_l, gain_lin);
         float32x4_t comp_r = vmulq_f32(main_r, gain_lin);
@@ -475,12 +475,11 @@ private:
             case DRIVE_MODE_TRIANGLE:
             case DRIVE_MODE_SINE:
             case DRIVE_MODE_SUBOCTAVE: {
-                // wavefolder_set_drive needs 1-100%
-                float sat_drive = drive_ * 100.0f;
-                float32x4_t drv = vdupq_n_f32(sat_drive);
-                wavefolder_set_drive(&wavefolder_, sat_drive);
+                // Drive and makeup are already cached by setParameter(k_drive);
+                // recomputing them here ran a reciprocal square root on every
+                // 4-sample block for no reason.
                 // Wavefolder operates post-compression for dynamics control
-                float32x4x2_t folded = wavefolder_process(&wavefolder_, comp_l, comp_r, drv);
+                float32x4x2_t folded = wavefolder_process(&wavefolder_, comp_l, comp_r);
                 *out_l = folded.val[0];
                 *out_r = folded.val[1];
                 break;
@@ -580,10 +579,10 @@ public:
 
             case k_makeup: // MAKEUP (0.0 to 24.0 dB)
                 makeup_db_ = value * 0.1f;
-                // Exact conversion (control rate).  fasterpowf(10, 0) returns
-                // 0.9713, which put a 0.25 dB insertion loss on every mode even
-                // at MAKEUP=0, and 24.0 dB came out as 23.69 dB.
-                makeup_lin_scalar = expf(makeup_db_ * 0.11512925f);  // ln(10)/20
+                // fasterpowf(10, 0) returns 0.9713, which put a 0.25 dB insertion
+                // loss on every mode even at MAKEUP=0, and turned 24.0 dB into
+                // 23.69 dB.  e_expff holds 0.033 dB over the whole range.
+                makeup_lin_scalar = e_expff(makeup_db_ * INV_DB_COEFF);
                 break;
             case k_attenuation_limit: // ATTEN LIMIT (-30.0 to 0.0 dB)
                 atten_limit_db_ = value * 0.1f;
