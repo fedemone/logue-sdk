@@ -56,7 +56,8 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"TREBLE"} },   // ID 13 - Overlord
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"PRESENCE"} }, // ID 14 - Overlord
         // ID 15: DSTR DIST  0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=soft clip, 5=hard clip, 6=triangle, 7=sine, 8=suboctave
-        { 0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrDist"} },    // ID 15 - Distressor distortion type
+        // Max is 8: DIST_MODE_TOTAL is 9, so setParameter rejects 9 and it has no display string.
+        { 0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrDist"} },    // ID 15 - Distressor distortion type
 
         // Page 5: Multiband per-band parameters
         // ID 17: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All

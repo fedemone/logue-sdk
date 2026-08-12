@@ -54,7 +54,7 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     ov->drive = 0.0f;
     ov->bass = 0.5f;
     ov->treble = 0.5f;
-    ov->blend = 1.0f;
+    ov->blend = 0.0f;   // matches drive = 0 under the fade-in law in overlord_set_drive
     ov->presence = 0.5f;
 
     biquad_init_state(&ov->bass_boost_l);
@@ -131,6 +131,12 @@ fast_inline float32x4_t pirkle_triode_shaper(float32x4_t v_gk, float shape_pos, 
 fast_inline void overlord_set_drive(overlord_t* ov, float drive_percent) {
     float drive = drive_percent * 0.01f;
     ov->drive = drive;
+
+    // The tube stages have ~2 dB of insertion loss even as drive approaches
+    // zero, so engaging them produced an audible step at the first click of the
+    // knob.  Fading the parallel blend in over the bottom tenth of the range
+    // turns that step into a ramp; from DRIVE=10 up this is fully wet as before.
+    ov->blend = (drive < 0.1f) ? (drive * 10.0f) : 1.0f;
 }
 
 
@@ -310,21 +316,24 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
     // POST FILTERS & LINEAR PARALLEL BLEND
     // ==========================================
 
-    // Run the hybrid saturation into your tone stack filters
-    float32x4_t eq_l = baxandall_eq(wet_l, &ov->bass_boost_l, &ov->treble_boost_l, ov->bass, ov->treble, sample_rate);
-    float32x4_t eq_r = baxandall_eq(wet_r, &ov->bass_boost_r, &ov->treble_boost_r, ov->bass, ov->treble, sample_rate);
-
-    float presence_gain = (ov->presence - 0.5f) * 24.0f;
-    wet_l = high_shelf_filter(eq_l, &ov->presence_l, 5500.0f, presence_gain, 1.0f, sample_rate);
-    wet_r = high_shelf_filter(eq_r, &ov->presence_r, 5500.0f, presence_gain, 1.0f, sample_rate);
-
-    // Blend safely knowing phase vectors match perfectly
+    // Blend the saturation against dry BEFORE the tone stack.  Blending after it
+    // would fade the EQ out along with the drive, and the blend now ramps up
+    // across the bottom of the DRIVE range — the tone controls must stay at full
+    // strength there.  Phase vectors match, so this is a safe linear crossfade.
     float32x4_t wet_gain = vdupq_n_f32(ov->blend);
     float32x4_t dry_gain = vdupq_n_f32(1.0f - ov->blend);
+    float32x4_t mix_l = vaddq_f32(vmulq_f32(dry_l, dry_gain), vmulq_f32(wet_l, wet_gain));
+    float32x4_t mix_r = vaddq_f32(vmulq_f32(dry_r, dry_gain), vmulq_f32(wet_r, wet_gain));
+
+    // Run the blended signal into the tone stack filters
+    float32x4_t eq_l = baxandall_eq(mix_l, &ov->bass_boost_l, &ov->treble_boost_l, ov->bass, ov->treble, sample_rate);
+    float32x4_t eq_r = baxandall_eq(mix_r, &ov->bass_boost_r, &ov->treble_boost_r, ov->bass, ov->treble, sample_rate);
+
+    float presence_gain = (ov->presence - 0.5f) * 24.0f;
 
     float32x4x2_t out;
-    out.val[0] = vaddq_f32(vmulq_f32(dry_l, dry_gain), vmulq_f32(wet_l, wet_gain));
-    out.val[1] = vaddq_f32(vmulq_f32(dry_r, dry_gain), vmulq_f32(wet_r, wet_gain));
+    out.val[0] = high_shelf_filter(eq_l, &ov->presence_l, 5500.0f, presence_gain, 1.0f, sample_rate);
+    out.val[1] = high_shelf_filter(eq_r, &ov->presence_r, 5500.0f, presence_gain, 1.0f, sample_rate);
 
     return out;
 }

@@ -308,11 +308,15 @@ private:
         // =================================================================
         // 1. SIDECHAIN SELECTION
         // =================================================================
+        // Average, not sum: summing made the detector see +6 dB on mono-correlated
+        // material, so the labelled threshold was 6 dB optimistic and drifted with
+        // stereo width.  Multiband detects per band with max(|L|,|R|), so summing
+        // here also gave the three modes different effective thresholds.
         float32x4_t sidechain;
         if (has_sidechain_ && use_external_sc_) {
-            sidechain = vaddq_f32(sc_l, sc_r);
+            sidechain = vmulq_n_f32(vaddq_f32(sc_l, sc_r), 0.5f);
         } else {
-            sidechain = vaddq_f32(main_l, main_r);
+            sidechain = vmulq_n_f32(vaddq_f32(main_l, main_r), 0.5f);
         }
 
         // =================================================================
@@ -359,12 +363,17 @@ private:
         // =================================================================
         // 5. DRIVE / EQ
         // =================================================================
-        if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+        // The old gate was 'drive_ > 0.01f', i.e. DRIVE=1 (drive_ = 0.01) was
+        // byte-identical to DRIVE=0 — a dead first click — and the Overlord EQ
+        // never ran at all in Standard/Multiband unless DRIVE reached 2.
+        // Routing DRIVE=0 through the EQ-only path fixes both: the EQ is always
+        // in circuit and the drive knob is live from its first step.
+        if (comp_mode_ == COMP_MODE_DISTRESSOR || drive_ <= 0.0f) {
             // EQ-only (no tube saturation) — distressor provides its own distortion
             float32x4x2_t eq_out = overlord_apply_eq(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = eq_out.val[0];
             processed_r = eq_out.val[1];
-        } else if (drive_ > 0.01f) {
+        } else {
             // Full EQ + tube drive for standard/multiband modes
             float32x4x2_t driven = overlord_process(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = driven.val[0];
@@ -571,7 +580,10 @@ public:
 
             case k_makeup: // MAKEUP (0.0 to 24.0 dB)
                 makeup_db_ = value * 0.1f;
-                makeup_lin_scalar = fasterpowf(10.0f, makeup_db_ * 0.05f);
+                // Exact conversion (control rate).  fasterpowf(10, 0) returns
+                // 0.9713, which put a 0.25 dB insertion loss on every mode even
+                // at MAKEUP=0, and 24.0 dB came out as 23.69 dB.
+                makeup_lin_scalar = expf(makeup_db_ * 0.11512925f);  // ln(10)/20
                 break;
             case k_attenuation_limit: // ATTEN LIMIT (-30.0 to 0.0 dB)
                 atten_limit_db_ = value * 0.1f;
@@ -659,6 +671,12 @@ public:
                         attack_coeff_ =
                             fasterexpf(-0.02083333f / (attack_ms_)); // 1 / (0.001f * samplerate_)
                     }
+                    // SLOPE means something different in each mode, so re-read it
+                    // here.  A host replaying a stored program walks the parameter
+                    // IDs in order and therefore sets SLOPE (ID 1) before COMP MODE
+                    // (ID 8): without this the distressor ratio stayed at its 4:1
+                    // init no matter where the knob was.
+                    setParameter(k_slope, raw_params_[k_slope]);
                 }
                 break;
 

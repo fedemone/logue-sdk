@@ -422,7 +422,10 @@ static void section_quirks() {
     printf("   fasterpowf(10, 24/20) = %.6f -> %+0.3f dB (ideal +24)\n",
            fasterpowf(10.0f,1.2f), 20*log10(fasterpowf(10.0f,1.2f)));
 
-    hdr("G2. DETECTOR FEED IS (L+R), NOT (L+R)/2\n"
+    hdr("G2. DETECTOR CALIBRATION: the feed is the mono average 0.5*(L+R), so a\n"
+        "    mono source reads its true level.  Hard-panned content sits 6 dB\n"
+        "    lower in a mono-sum detector by construction, which is why the two\n"
+        "    columns still differ by 6 dB * slope.\n"
         "    threshold -30 dB, ~4:1, limits +/-30 dB, in -6 dBFS");
     for (int mode = 0; mode < 3; ++mode) {
         Params p = headerDefaults();
@@ -441,7 +444,8 @@ static void section_quirks() {
                MODE_NAME[mode], mono, left, mono - left);
     }
 
-    hdr("G3. DRIVE GATE IN STANDARD/MULTIBAND ('drive_ > 0.01f' in process_block)");
+    hdr("G3. DRIVE IS LIVE FROM ITS FIRST STEP.  The old gate was 'drive_ > 0.01f',\n"
+        "    so DRIVE=1 was identical to 0 and DRIVE=2 arrived with a ~2 dB step.");
     for (int mode : {0, 2}) {
         for (int drv : {0, 1, 2}) {
             Params p = headerDefaults();
@@ -460,8 +464,10 @@ static void section_quirks() {
         }
     }
 
-    hdr("G4. WAVEFOLDER GAIN LAW (Hard clip, in -60 dBFS so the shaper stays linear)");
-    printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "(1+19d)^2 dB", "delta");
+    hdr("G4. WAVEFOLDER GAIN LAW (Hard clip, in -60 dBFS so the shaper stays\n"
+        "    linear).  Pre-gain is g = 1+19d and makeup is 1/sqrt(g), so the net\n"
+        "    small-signal gain is sqrt(g): +13 dB across the knob, not +52 dB.");
+    printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "sqrt(g) dB", "delta");
     for (int drv : {0, 5, 10, 25, 50, 75, 100}) {
         Params p = headerDefaults();
         p.v[k_compressor_mode] = 1;
@@ -471,7 +477,7 @@ static void section_quirks() {
         p.v[k_drive]           = drv;
         apply(p);
         double m  = measure(0.001, F0, SETTLE, MEAS).gain_fund_db;
-        double th = 40.0 * log10(1.0 + 19.0 * (drv * 0.01));
+        double th = 10.0 * log10(1.0 + 19.0 * (drv * 0.01));
         printf("   %6d %+12.2f %+14.2f %+8.2f\n", drv, m, th, m - th);
     }
 
