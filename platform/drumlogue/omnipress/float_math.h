@@ -1419,6 +1419,30 @@ static inline float32x4_t neon_expq_f32(float32x4_t x) {
 }
 
 /**
+ * ARMv7-compatible vectorized log2(x) for 4 positive floats.
+ *
+ * Takes the exponent straight from the IEEE-754 field and refines the mantissa
+ * with a minimax cubic, giving 0.0008 in log2 (0.005 dB) for a fraction of the
+ * cost of log_ps.  The plain mantissa interpolation this replaces was only good
+ * to 0.52 dB, and a 2nd-order refinement to 0.17 dB — both large enough to shift
+ * a compressor threshold audibly.
+ */
+static inline float32x4_t neon_log2q_f32(float32x4_t x) {
+  const uint32x4_t u = vreinterpretq_u32_f32(x);
+
+  float32x4_t exp_f = vcvtq_f32_u32(
+      vshrq_n_u32(vandq_u32(u, vdupq_n_u32(0x7F800000)), 23));
+  float32x4_t m = vmulq_n_f32(
+      vcvtq_f32_u32(vandq_u32(u, vdupq_n_u32(0x007FFFFF))), 1.0f / 8388608.0f);
+
+  // log2(1 + m) ~= m * (a + m * (b + m * c)) for m in [0, 1)
+  float32x4_t p = vmlaq_f32(vdupq_n_f32(-0.5881844f), m, vdupq_n_f32(0.1644826f));
+  p = vmlaq_f32(vdupq_n_f32(1.4243498f), m, p);
+
+  return vmlaq_f32(vsubq_f32(exp_f, vdupq_n_f32(127.0f)), m, p);
+}
+
+/**
  * ARMv7-compatible vectorized sqrt(x) for 4 floats using NEON rsqrte + N-R.
  * Replacement for vsqrtq_f32 which is ARMv8/AArch64 only.
  */

@@ -227,5 +227,5 @@ constexpr int VECTOR_ALIGN = 16;                    // 16-byte alignment
 // ============================================================================
 
 constexpr float EPSILON = 1e-12f;                   // Prevent denormals
-constexpr float DB_COEFF = 8.65617f;                // 20 / ln(10)
-constexpr float INV_DB_COEFF = 0.115129f;           // ln(10) / 20
+constexpr float DB_COEFF = 8.6858896f;              // 20 / ln(10)
+constexpr float INV_DB_COEFF = 0.11512925f;         // ln(10) / 20

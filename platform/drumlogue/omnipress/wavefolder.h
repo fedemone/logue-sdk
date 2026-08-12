@@ -103,9 +103,8 @@ fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
     // loudness control.  1/sqrt(g) splits the difference between exact
     // compensation (1/g, which makes saturated material collapse in level) and
     // no compensation at all, keeping the whole knob range within ~13 dB.
-    // (control rate only, so the exact sqrtf is affordable)
-    float g = 1.0f + drive * 19.0f;
-    wf->output_gain = vdupq_n_f32(1.0f / sqrtf(g));
+    // Q_rsqrt is within 0.015 dB over g = 1..20, well below audibility.
+    wf->output_gain = vdupq_n_f32(Q_rsqrt(1.0f + drive * 19.0f));
 }
 
 /**
@@ -160,37 +159,21 @@ fast_inline float32x4_t triangle_folder(float32x4_t x) {
 }
 
 /**
- * Sine folder
+ * Sine folder: y = (2/pi) * sin(x * pi/2)
  *
- * The old two-term Taylor series (angle - angle^3/6) is only usable to about
- * |angle| < 1.5, yet the input clamp admitted angles up to +/-pi, where it
- * returns -2.03 instead of 0.  Past DRIVE ~15 that made the fundamental collapse
- * into broadband hash (THD above 500%).  This uses the Bhaskara-style parabolic
- * approximation plus one refinement, ~0.2% accurate, so the fold stays a fold.
+ * sin_ps (float_math.h) carries its own Cephes range reduction, so the fold
+ * simply keeps folding however hard the stage is driven — no clamp, no
+ * pre-folding.  The old code approximated sin with a two-term Taylor series
+ * (angle - angle^3/6), only usable to about |angle| < 1.5, while clamping the
+ * input to +/-2 admitted angles out to +/-pi where that series returns -2.03
+ * instead of 0.  Past DRIVE ~15 the fundamental collapsed into broadband hash
+ * (THD above 500%).
  *
- * The result is scaled by 2/pi so the small-signal slope is unity: sin(x*pi/2)
- * has slope pi/2, which gave this mode +3.9 dB of gain over every other
- * distortion type at DRIVE=0.
+ * The 2/pi scale gives unity small-signal slope; plain sin(x*pi/2) has slope
+ * pi/2, which ran this mode 3.9 dB hotter than every other distortion type.
  */
 fast_inline float32x4_t sine_folder(float32x4_t x) {
-    const float32x4_t half_pi = vdupq_n_f32(M_PI_2);
-
-    // Fold the input into [-1, 1] first, then apply the sine shape.  The old
-    // code clamped to +/-2 instead, which mapped everything past |x| = 2 onto
-    // sin(pi) = 0: a dead zone that annihilated the fundamental at high drive.
-    // Folding first also keeps the angle inside [-pi/2, pi/2], where the
-    // approximation below is at its most accurate, and lets the folder keep
-    // folding however hard it is driven.
-    float32x4_t a = vmulq_f32(triangle_folder(x), half_pi);
-
-    // y = (4/pi)*a - (4/pi^2)*a*|a|          (max error ~5%)
-    float32x4_t y = vsubq_f32(vmulq_n_f32(a, 4.0f / (float)M_PI),
-                              vmulq_n_f32(vmulq_f32(a, vabsq_f32(a)),
-                                          4.0f / (float)(M_PI * M_PI)));
-    // y += 0.225 * (y*|y| - y)               (max error ~0.2%)
-    y = vaddq_f32(y, vmulq_n_f32(vsubq_f32(vmulq_f32(y, vabsq_f32(y)), y), 0.225f));
-
-    return vmulq_n_f32(y, 2.0f / (float)M_PI);      // unity small-signal gain
+    return vmulq_n_f32(sin_ps(vmulq_n_f32(x, (float)M_PI_2)), 2.0f / (float)M_PI);
 }
 
 // Sub-octave generator — sequential scalar processing for correct zero-crossing detection.
@@ -235,21 +218,15 @@ fast_inline float32x4_t suboctave_process(wavefolder_t* wf, float32x4_t in_v) {
  */
 fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
                                              float32x4_t in_l,
-                                             float32x4_t in_r,
-                                             float32x4_t drive) {
-  (void)drive; // drive is stored in wf->drive
-
+                                             float32x4_t in_r) {
   float32x4x2_t out;
 
-  // Apply drive gain: 1+drive*19 gives 1x at drive=0 (passthrough) to 20x at
-  // drive=100%. Matches the makeup formula in wavefolder_set_drive so level is
-  // consistent.
-  float32x4_t driven_l =
-      vmulq_f32(in_l, vaddq_f32(vdupq_n_f32(1.0f),
-                                vmulq_f32(wf->drive, vdupq_n_f32(19.0f))));
-  float32x4_t driven_r =
-      vmulq_f32(in_r, vaddq_f32(vdupq_n_f32(1.0f),
-                                vmulq_f32(wf->drive, vdupq_n_f32(19.0f))));
+  // Apply drive gain: g = 1+drive*19 gives 1x at drive=0 (passthrough) to 20x
+  // at drive=100%.  wavefolder_set_drive caches the matching 1/sqrt(g) makeup,
+  // so the knob adds character rather than 52 dB of level.
+  const float32x4_t g = vmlaq_f32(vdupq_n_f32(1.0f), wf->drive, vdupq_n_f32(19.0f));
+  float32x4_t driven_l = vmulq_f32(in_l, g);
+  float32x4_t driven_r = vmulq_f32(in_r, g);
 
   // Apply selected waveshaping
   switch (wf->mode) {

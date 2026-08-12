@@ -412,15 +412,43 @@ static void section_kick() {
 
 /* G. Mechanisms behind the numbers above. */
 static void section_quirks() {
-    hdr("G1. UNITY ACCURACY OF fasterpowf() USED FOR MAKEUP GAIN");
-    printf("   fasterpowf(10, 0)     = %.6f -> %+0.3f dB (ideal 0)\n",
-           fasterpowf(10.0f,0.0f), 20*log10(fasterpowf(10.0f,0.0f)));
-    printf("   fasterpowf(10, 6/20)  = %.6f -> %+0.3f dB (ideal +6)\n",
-           fasterpowf(10.0f,0.3f), 20*log10(fasterpowf(10.0f,0.3f)));
-    printf("   fasterpowf(10, 12/20) = %.6f -> %+0.3f dB (ideal +12)\n",
-           fasterpowf(10.0f,0.6f), 20*log10(fasterpowf(10.0f,0.6f)));
-    printf("   fasterpowf(10, 24/20) = %.6f -> %+0.3f dB (ideal +24)\n",
-           fasterpowf(10.0f,1.2f), 20*log10(fasterpowf(10.0f,1.2f)));
+    hdr("G1. MAKEUP GAIN ACCURACY, measured end to end through Process()\n"
+        "    (the old fasterpowf path is shown for comparison)");
+    printf("   %-9s %12s %14s %12s\n", "MAKEUP", "measured", "e_expff", "fasterpowf");
+    for (int raw : {0, 30, 60, 120, 180, 240}) {
+        Params p = headerDefaults();
+        p.v[k_compressor_mode]   = 0;
+        p.v[k_attenuation_limit] = 0;
+        p.v[k_gain_limit]        = 0;
+        p.v[k_makeup]            = raw;
+        apply(p);
+        float db = raw * 0.1f;
+        printf("   %-9.1f %+12.3f %+14.3f %+12.3f\n", db,
+               measure(0.01, F0, SETTLE, MEAS).gain_fund_db,
+               20*log10(e_expff(db * INV_DB_COEFF)),
+               20*log10(fasterpowf(10.0f, db * 0.05f)));
+    }
+
+    hdr("G1b. ENVELOPE-TO-dB ACCURACY (neon_log2q_f32 feeds every threshold\n"
+        "     comparison; the error here lands directly on the threshold)");
+    {
+        double w_new = 0, w_old = 0, w_2nd = 0;
+        for (double v = 1e-4; v < 1.0; v *= 1.0007) {
+            float f = (float)v;
+            float got[4];
+            vst1q_f32(got, linear_to_db(vdupq_n_f32(f)));
+            unsigned u; memcpy(&u, &f, 4);
+            double ex = (double)((u >> 23) & 0xFF) - 127.0;
+            double m  = (double)(u & 0x7FFFFF) / 8388608.0;
+            double want = 20.0 * log10(v);
+            w_new = fmax(w_new, fabs(got[0] - want));
+            w_old = fmax(w_old, fabs((ex + m) * 6.0206 - want));
+            w_2nd = fmax(w_2nd, fabs((ex + m*1.442695 - m*m*0.442695) * 6.0206 - want));
+        }
+        printf("   linear_to_db now (shared cubic) : %.4f dB worst case\n", w_new);
+        printf("   previous mantissa interpolation : %.4f dB\n", w_old);
+        printf("   previous multiband 2nd order    : %.4f dB\n", w_2nd);
+    }
 
     hdr("G2. DETECTOR CALIBRATION: the feed is the mono average 0.5*(L+R), so a\n"
         "    mono source reads its true level.  Hard-panned content sits 6 dB\n"

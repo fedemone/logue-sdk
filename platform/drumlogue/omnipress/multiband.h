@@ -145,10 +145,10 @@ fast_inline void multiband_set_param(multiband_t* mb,
             break;
         case 2:
             mb->bands[band].makeup_db = value;
-            // Control rate: use the exact conversion.  fasterpowf(10, 0) returns
-            // 0.9713, so simply touching MAKEUP used to cost 0.25 dB, rising to
-            // 0.31 dB at the top of the range.
-            mb->bands[band].makeup_gain_linear = expf(value * 0.11512925f);
+            // fasterpowf(10, 0) returns 0.9713, so simply touching MAKEUP used to
+            // cost 0.25 dB, rising to 0.31 dB at the top of the range.  e_expff is
+            // within 0.033 dB over the whole 0..24 dB span.
+            mb->bands[band].makeup_gain_linear = e_expff(value * INV_DB_COEFF);
             break;
         case 3: mb->bands[band].attack_ms = value; multiband_update_coeff(mb, band); break;
         case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;
@@ -173,24 +173,6 @@ fast_inline float multiband_get_param(const multiband_t* mb,
         case 6: return mb->bands[band].solo;
         default: return 0.0f;
     }
-}
-
-// High-precision branchless 2nd-order polynomial Log2 engine
-fast_inline float32x4_t precision_log2_neon(float32x4_t x) {
-    uint32x4_t u_x = vreinterpretq_u32_f32(x);
-    uint32x4_t exp = vandq_u32(u_x, vdupq_n_u32(0x7F800000));
-    uint32x4_t mant = vandq_u32(u_x, vdupq_n_u32(0x007FFFFF));
-
-    float32x4_t exp_f = vcvtq_f32_u32(vshrq_n_u32(exp, 23));
-    float32x4_t mant_f = vmulq_f32(vcvtq_f32_u32(mant), vdupq_n_f32(1.0f / 8388608.0f));
-
-    // 2nd-order minimax polynomial refinement for log2(1 + x)
-    // Minimizes the 0.5dB ripple down to unmeasurable levels
-    float32x4_t p1 = vdupq_n_f32(1.442695f);
-    float32x4_t p2 = vdupq_n_f32(-0.442695f);
-    float32x4_t poly = vaddq_f32(vmulq_f32(mant_f, p1), vmulq_f32(vmulq_f32(mant_f, mant_f), p2));
-
-    return vaddq_f32(vsubq_f32(exp_f, vdupq_n_f32(127.0f)), poly);
 }
 
 // Micro-targeted DC Blocker to sanitize baseline offset shift
@@ -240,7 +222,7 @@ fast_inline float32x4_t process_compressor_lane(float32x4_t* gain_state, float32
                                                 float thresh_db, float gr_slope,
                                                 float att_coeff, float rel_coeff) {
     // 1. Convert smoothed envelope to clean dB values
-    float32x4_t db_env = vmulq_f32(precision_log2_neon(vmaxq_f32(env_linear, vdupq_n_f32(1e-5f))), vdupq_n_f32(6.0206f));
+    float32x4_t db_env = vmulq_n_f32(neon_log2q_f32(vmaxq_f32(env_linear, vdupq_n_f32(1e-5f))), 6.0206f);
     float32x4_t excess = vmaxq_f32(vsubq_f32(db_env, vdupq_n_f32(thresh_db)), vdupq_n_f32(0.0f));
 
     // 2. Standard gain computer equation using pre-calculated slope
@@ -262,7 +244,7 @@ fast_inline float32x4_t process_compressor_lane(float32x4_t* gain_state, float32
     *gain_state = vld1q_f32(out);
 
     // Convert smoothed gain reduction from dB back to a linear scalar multiplier
-    return neon_expq_f32(vmulq_f32(*gain_state, vdupq_n_f32(0.11512925f)));
+    return neon_expq_f32(vmulq_f32(*gain_state, vdupq_n_f32(INV_DB_COEFF)));
 }
 
 // Processing Execution Path
