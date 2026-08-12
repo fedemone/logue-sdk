@@ -236,6 +236,27 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 |-----|---------|-----|
 | Multiband gain-reduction polarity inverted | Multiband mode acted as a downward expander (attenuated quiet signals, passed loud ones) | `excess = env_dB − threshold_dB` with clamp to ≥ 0; was `thresh − env` |
 | ratio=0 hard-limit returned +100 dB | NUKE mode at ratio=0 blew up output | `gain_red = 100.0f` before negation; was `-100.0f` |
+| Multiband 7 dB quieter than the other modes | Switching COMP MODE to Multiband dropped the level | `MASTER_SUM_SCALING` 0.45 → 1.0; the Linkwitz-Riley tree already reconstructs to unity |
+| Detector fed `L+R` instead of `0.5*(L+R)` | Threshold 6 dB optimistic on mono material, and different from Multiband's per-band detector | Average the sidechain in `process_block` |
+| MAKEUP built from `fasterpowf` | 0.25 dB insertion loss at MAKEUP=0, 24.0 dB delivered as 23.69 dB | Exact `expf(dB * ln10/20)` at control rate (master and per-band) |
+| Wavefolder applied the drive gain twice | Total gain `(1+19d)²` = +52 dB at DRIVE=100, pinning everything to the output limiter | Makeup is `1/sqrt(g)`, so net small-signal gain is `sqrt(g)` (+13 dB across the knob) |
+| Triangle folder inverted polarity | `y = -x` throughout the linear region, so the wet path cancelled the dry one at partial MIX (-37 dB at BAL) | Return `1 - |…|` instead of `|…| - 1` |
+| Triangle folder never folded negative peaks | `vcvtq_s32_f32` truncates toward zero, so the modulo went negative; mode was indistinguishable from Hard clip | Floor the quotient before the modulo |
+| Sine folder used a 2-term Taylor series over ±π | Returned -2.03 instead of 0 at the fold; fundamental collapsed above DRIVE 15 | Fold into ±1 first, then a Bhaskara-style approximation (~0.2% accurate) |
+| Distortion types not level-matched | Sine ran +3.9 dB hot, SubOct 2 dB quiet, at DRIVE=0 | Sine scaled by 2/π, SubOct mix renormalised — every shaper now has unity small-signal gain |
+| DRIVE=1 did nothing; DRIVE=2 stepped ~2 dB | Gate `drive_ > 0.01f`, plus the Overlord EQ never ran below DRIVE=2 | DRIVE=0 takes the EQ-only path; the tube blend fades in over the bottom tenth of the knob |
+| SLOPE evaluated against the previous COMP MODE | A host replaying parameters in ID order sets SLOPE (ID 1) before COMP MODE (ID 8), so the Distressor ratio stayed at its 4:1 init | `k_compressor_mode` re-applies the stored SLOPE |
+| DstrDist max was 9 | Value 9 is rejected by `setParameter` and has no display string | Max is 8 in `header.c` |
+
+Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
+
+```
+g++ -std=c++14 -O2 -I test_portable -I . -I ../common -o test_levels test_levels.cpp -lm
+./test_levels
+```
+
+All three modes now measure 0.00 dB insertion gain, and all nine distortion
+types sit within 0.9 dB of each other at DRIVE=0.
 
 ## Future Expansion
 

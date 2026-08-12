@@ -15,7 +15,11 @@
 #define BAND_MID 1
 #define BAND_HIGH 2
 #define NUM_OF_BANDS (3)
-const float MASTER_SUM_SCALING = 0.45f;
+// The Linkwitz-Riley tree reconstructs to unity, so the band sum needs no
+// trim: the 0.45 that used to live here left multiband mode 7 dB quieter than
+// Standard and Distressor at identical settings.  Transient overshoot from the
+// crossover phase response is caught by the output limiter in MasterFX::Process.
+const float MASTER_SUM_SCALING = 1.0f;
 
 // State structures for IIR components
 // State tracker for phase compensation biquads
@@ -141,7 +145,10 @@ fast_inline void multiband_set_param(multiband_t* mb,
             break;
         case 2:
             mb->bands[band].makeup_db = value;
-            mb->bands[band].makeup_gain_linear = fasterpowf(10.0f, value * 0.05f);
+            // Control rate: use the exact conversion.  fasterpowf(10, 0) returns
+            // 0.9713, so simply touching MAKEUP used to cost 0.25 dB, rising to
+            // 0.31 dB at the top of the range.
+            mb->bands[band].makeup_gain_linear = expf(value * 0.11512925f);
             break;
         case 3: mb->bands[band].attack_ms = value; multiband_update_coeff(mb, band); break;
         case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;

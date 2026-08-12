@@ -96,11 +96,16 @@ fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
     float drive = drive_percent * 0.01f;
     wf->drive = vdupq_n_f32(drive);
 
-    // Makeup gain now scales positively with drive to compensate for perceived
-    // loudness reduction due to saturation and to ensure a healthy output level.
-    // Scales from 1.0x (drive=0) to 20.0x (drive=1).
-    float makeup = 1.0f + drive * 19.0f; // Increased scaling for better audibility
-    wf->output_gain = vdupq_n_f32(makeup);
+    // Makeup compensates the input drive gain instead of repeating it.
+    // wavefolder_process pushes the signal in by g = 1 + 19*drive; a makeup of
+    // g as well made the total gain g^2 (up to +52 dB at DRIVE=100), which
+    // slammed everything into the output limiter and turned DRIVE into a
+    // loudness control.  1/sqrt(g) splits the difference between exact
+    // compensation (1/g, which makes saturated material collapse in level) and
+    // no compensation at all, keeping the whole knob range within ~13 dB.
+    // (control rate only, so the exact sqrtf is affordable)
+    float g = 1.0f + drive * 19.0f;
+    wf->output_gain = vdupq_n_f32(1.0f / sqrtf(g));
 }
 
 /**
@@ -133,31 +138,59 @@ fast_inline float32x4_t triangle_folder(float32x4_t x) {
     float32x4_t two = vdupq_n_f32(2.0f);
     float32x4_t four = vdupq_n_f32(4.0f);
 
-    // y = |(x + 1) % 4 - 2| - 1
+    // y = 1 - |(x + 1) mod 4 - 2|
+    // The old form returned |...| - 1, which evaluates to -x for |x| <= 1: the
+    // folder inverted polarity across its whole linear region, so at partial MIX
+    // the wet path cancelled the dry one (measured -37 dB at MIX=BAL).
     float32x4_t shifted = vaddq_f32(x, one);
     float32x4_t div = vmulq_f32(shifted, vdupq_n_f32(0.25f));
-    int32x4_t   floor_div = vcvtq_s32_f32(div);
-    float32x4_t mod = vsubq_f32(shifted,
-                                vmulq_f32(vcvtq_f32_s32(floor_div), four));
+
+    // Floor, not truncate.  vcvtq_s32_f32 rounds toward zero, so for shifted < 0
+    // the modulo came out negative and the negative half of the waveform was
+    // passed straight through unfolded — which is why this mode used to be
+    // indistinguishable from hard clip.
+    float32x4_t trunc_div = vcvtq_f32_s32(vcvtq_s32_f32(div));
+    float32x4_t floor_div = vsubq_f32(trunc_div,
+                                      vbslq_f32(vcltq_f32(div, trunc_div),
+                                                one, vdupq_n_f32(0.0f)));
+    float32x4_t mod = vsubq_f32(shifted, vmulq_f32(floor_div, four));
 
     float32x4_t abs_diff = vabsq_f32(vsubq_f32(mod, two));
-    return vsubq_f32(abs_diff, one);
+    return vsubq_f32(one, abs_diff);
 }
 
 /**
  * Sine folder
+ *
+ * The old two-term Taylor series (angle - angle^3/6) is only usable to about
+ * |angle| < 1.5, yet the input clamp admitted angles up to +/-pi, where it
+ * returns -2.03 instead of 0.  Past DRIVE ~15 that made the fundamental collapse
+ * into broadband hash (THD above 500%).  This uses the Bhaskara-style parabolic
+ * approximation plus one refinement, ~0.2% accurate, so the fold stays a fold.
+ *
+ * The result is scaled by 2/pi so the small-signal slope is unity: sin(x*pi/2)
+ * has slope pi/2, which gave this mode +3.9 dB of gain over every other
+ * distortion type at DRIVE=0.
  */
 fast_inline float32x4_t sine_folder(float32x4_t x) {
-    float32x4_t half_pi = vdupq_n_f32(M_PI_2);
-    float32x4_t two = vdupq_n_f32(2.0f);
+    const float32x4_t half_pi = vdupq_n_f32(M_PI_2);
 
-    x = vmaxq_f32(vminq_f32(x, two), vnegq_f32(two));
-    float32x4_t angle = vmulq_f32(x, half_pi);
+    // Fold the input into [-1, 1] first, then apply the sine shape.  The old
+    // code clamped to +/-2 instead, which mapped everything past |x| = 2 onto
+    // sin(pi) = 0: a dead zone that annihilated the fundamental at high drive.
+    // Folding first also keeps the angle inside [-pi/2, pi/2], where the
+    // approximation below is at its most accurate, and lets the folder keep
+    // folding however hard it is driven.
+    float32x4_t a = vmulq_f32(triangle_folder(x), half_pi);
 
-    // sin(angle) ≈ angle - angle^3/6
-    float32x4_t a2 = vmulq_f32(angle, angle);
-    float32x4_t a3 = vmulq_f32(angle, a2);
-    return vsubq_f32(angle, vmulq_f32(a3, vdupq_n_f32(1.0f/6.0f)));
+    // y = (4/pi)*a - (4/pi^2)*a*|a|          (max error ~5%)
+    float32x4_t y = vsubq_f32(vmulq_n_f32(a, 4.0f / (float)M_PI),
+                              vmulq_n_f32(vmulq_f32(a, vabsq_f32(a)),
+                                          4.0f / (float)(M_PI * M_PI)));
+    // y += 0.225 * (y*|y| - y)               (max error ~0.2%)
+    y = vaddq_f32(y, vmulq_n_f32(vsubq_f32(vmulq_f32(y, vabsq_f32(y)), y), 0.225f));
+
+    return vmulq_n_f32(y, 2.0f / (float)M_PI);      // unity small-signal gain
 }
 
 // Sub-octave generator — sequential scalar processing for correct zero-crossing detection.
@@ -252,9 +285,11 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
     // Both components are now soft-clipped to prevent the sum from exceeding headroom at high drive.
     float32x4_t sub_l = vmulq_f32(sub, soft_clip(vabsq_f32(driven_l)));
     float32x4_t sub_r = vmulq_f32(sub, soft_clip(vabsq_f32(driven_r)));
-    // 80% dry + 20% wet as the output is sounding too rough and clipped at 50/50
-    out.val[0] = vaddq_f32(vmulq_n_f32(soft_clip(driven_l), 0.8f), vmulq_n_f32(sub_l, 0.2f));
-    out.val[1] = vaddq_f32(vmulq_n_f32(soft_clip(driven_r), 0.8f), vmulq_n_f32(sub_r, 0.2f));
+    // 80% dry + 20% wet as the output is sounding too rough and clipped at 50/50,
+    // renormalised by 1/0.8 so the dry component keeps unity small-signal gain.
+    // Without it this mode sat ~2 dB below every other distortion type.
+    out.val[0] = vaddq_f32(soft_clip(driven_l), vmulq_n_f32(sub_l, 0.25f));
+    out.val[1] = vaddq_f32(soft_clip(driven_r), vmulq_n_f32(sub_r, 0.25f));
     break;
   }
 
