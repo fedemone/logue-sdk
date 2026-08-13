@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x5265736fU,                                // 'Reso'
     .version = 0x00010000U,
     .name = "Brachetti",
-    .num_presets = 40,
+    .num_presets = 41,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
@@ -45,7 +45,11 @@ const __unit_header unit_header_t unit_header = {
         // sound-neutral because every TubRad consumer already clamps there.
 
         // Page 1: Program and sample selection
-        {0, 39, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        // Max MUST be k_NumPrograms-1.  It is also the only thing stopping the
+        // OS from handing LoadPreset an out-of-range index, and .num_presets
+        // above must agree with both — all three move together when a preset
+        // is added (pass 33 added RackTom at 40).
+        {0, 40, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         // Ex Bank/Sample (PCM layering removed): global performance controls.
         // LoadPreset skips both, so they persist across preset changes.

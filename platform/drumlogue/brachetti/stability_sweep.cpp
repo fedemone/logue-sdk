@@ -58,7 +58,7 @@ int main(){
     // voice (its resonator state is restored, not zeroed, on the snare), and
     // stacked rolls pile up to Poly bodies, so both need a finiteness check.
     int rbad = 0, rolls = 0; float rworst = 0;
-    for (int p = 0; p < 40; ++p) {
+    for (int p = 0; p < BrachettiSynth::k_NumPrograms; ++p) {
         // gap 25/45 ms = fused; 120 ms = stacked.  Alternating notes defeat the
         // same-note test, so a fast alternating figure stacks even inside the
         // window — cover that too.
@@ -98,6 +98,7 @@ int main(){
             }
         }
     }
-    printf("roll stress: %d rolls across 40 presets, worst |peak|=%.4f, %d problems\n", rolls, rworst, rbad);
+    printf("roll stress: %d rolls across %d presets, worst |peak|=%.4f, %d problems\n",
+           rolls, (int)BrachettiSynth::k_NumPrograms, rworst, rbad);
     return (bad || rbad) ? 1 : 0;
 }

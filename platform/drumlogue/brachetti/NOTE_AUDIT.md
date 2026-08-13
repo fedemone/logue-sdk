@@ -1,6 +1,6 @@
 # Note-assignment audit (August 2026)
 
-What the **Note** parameter does on each of the 40 presets, measured rather
+What the **Note** parameter does on each of the 41 presets, measured rather
 than assumed.  Reproduce with:
 
 ```bash
@@ -91,8 +91,8 @@ cowbell register and is the weakest of these calls.
 ## 5. `render_presets.cpp` disagrees with one preset
 
 The render harness carries its own note list, used for every calibration score
-in `batch_reports/` and `rendered_tune/`.  It matches the shipped column on 39
-of 40 presets:
+in `batch_reports/` and `rendered_tune/`.  It matches the shipped column on 40
+of 41 presets:
 
 | Preset | Preset column | render_presets.cpp |
 |---|---|---|
@@ -105,6 +105,11 @@ Fixing it means changing one of the two numbers — a voicing decision, so it is
 left for a listen rather than applied here.
 
 ## 6. Everything else
+
+Added in pass 33 and clean on both counts: **RackTom (40)** ships note 53,
+nominal 174.6 Hz, measures **174.7 Hz (Δ +0.0 semitones)** and tracks a +12
+transpose at **+12.0** — and `render_presets.cpp` scores it at the same note 53,
+so it does not join Bongo in §5.
 
 The remaining 26 presets track their note exactly (peak within ±0.1 semitone of
 nominal) and sit in a defensible register for the instrument: Kick2 65 Hz,

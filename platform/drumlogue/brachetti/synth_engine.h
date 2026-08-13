@@ -189,7 +189,8 @@ public:
         k_Splash,           // 37  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
         k_BrushSnare,       // 38  — sample: snare_brush_hard.wav, snare_brush_medium.wav, snare_brush_soft.wav. brush-swept snare: slow swish onset + ~4 Hz swirl AM + diffuse wire hiss
         k_RimShot,          // 39  — sample: rimshot-snare.wav rimshot: hard stick crack + bright rim-ring mode cluster + tight short buzz
-        k_NumPrograms       // 40 — marker (count)
+        k_RackTom,          // 40  — mounted rack tom at F3 (174.6 Hz): the high drum to Ac Tom's low one.  Tighter head, shorter ring, brighter stick, less shell air.  NOT yet calibrated against a reference sample — see CLAUDE.md pass 33.
+        k_NumPrograms       // 41 — marker (count)
     };
 
     enum ModelsIndex {
@@ -256,6 +257,11 @@ enum ModelParamIndex : uint8_t {
 static constexpr float kck_bm = (M_TWOPI * 58.0f) * inverse_default_sample_rate;
 static constexpr float tak_bm = (M_TWOPI * 70.0f) * inverse_default_sample_rate;
 static constexpr float tom_bm = (M_TWOPI * 110.0f) * inverse_default_sample_rate;
+// Rack tom: the shell air resonance tracks the head tuning, so a drum tuned an
+// octave-ish above Ac Tom (110 Hz) gets its boom at ~175 Hz rather than sharing
+// the low one — reusing tom_bm here would put a floor-tom body under a rack-tom
+// head, which is exactly the "toy kit" artefact of a single tom sample pitched up.
+static constexpr float rtm_bm = (M_TWOPI * 175.0f) * inverse_default_sample_rate;
 static constexpr float asn_bm = (M_TWOPI * 175.0f) * inverse_default_sample_rate;
 // AcSnare: add short resonant wire-like sizzle emphasis. snare_wire_a1 = 1.7220f; // slightly brighter/tighter wire crack; wire_onset_attack = 0.0014f; // ~15 ms to full wire excitation
 // March snare: drier/tighter wire. wire_onset_attack = 0.0018f; // slightly faster than AcSnare
@@ -419,7 +425,18 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* env weights counter the fixed modal_sum taper (0.6/0.45/0.28/0.18 for
        modes 2-5) so the 877-1107 cluster carries the energy as measured
        (ref: 56% in 1-3k, fundamental barely present). */
-    {2.00f, 2.29f, 3.99f, 40.0f, 70.0f, 60.0f, 50.0f, 0.30f, 0.10f, 0.55f, 1.10f, 1.30f, 5, 6.33f, 0.0f, 1.60f, 0.0f}};
+    {2.00f, 2.29f, 3.99f, 40.0f, 70.0f, 60.0f, 50.0f, 0.30f, 0.10f, 0.55f, 1.10f, 1.30f, 5, 6.33f, 0.0f, 1.60f, 0.0f},
+    /* k_RackTom: the SAME air-loaded membrane ratios as Ac Tom (1.59/2.14/2.30)
+       — both are two-headed drums, and the mode series of a circular membrane
+       does not change with tuning, only its absolute frequencies do, which the
+       Note column already supplies.  What actually separates a rack tom from
+       the floor tom is the DECAY and the top of the spectrum: a smaller shell
+       under a tighter head rings ~300 ms rather than Ac Tom's 500, and a mode 5
+       at ratio 3.60 (≈ 629 Hz at the shipped F3) carries the woody stick "tock"
+       that a mounted tom has and a floor tom does not — same device as Bongo's
+       3.80, one drum size lower.  NOT measured: these are physical defaults
+       awaiting the reference sample. */
+    {1.59f, 2.14f, 2.30f, 300.0f, 175.0f, 105.0f, 65.0f, 0.20f, 0.65f, 0.52f, 0.36f, 0.24f, 5, 3.60f, 0.0f, 0.30f, 0.0f}};
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
@@ -474,7 +491,18 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        2.5 kHz high-pass; band_mix centred ~0.62 (velocity-tilted in NoteOn);
        wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
     /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.00000f,    2.00000f},
-    /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f}};
+    /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f},
+    /* k_RackTom: Ac Tom's row with the four things that scale with drum SIZE
+       moved: boom at rtm_bm (175 Hz, not 110), boom_mix 0.18 → 0.12 and
+       boom_decay 0.99945 → 0.99925 (a smaller shell holds less air, briefly),
+       boom_attack_inc 0.0008 → 0.00115 (the boom of a small drum arrives
+       sooner).  Brighter contact via noise_band_mix 0.40 → 0.46 and
+       noise_hi_lp_coeff 0.05 → 0.09, and onset_attack_ms 3.5 → 2.4 for the
+       crisper stick.  modal_mix 0.18 → 0.20 tilts the balance off the shell
+       and onto the head, which is what makes a rack tom read as pitched.
+       NOTE the two-table gotcha: this k_modal_mix is the one that is audible,
+       and modal_preset_configs' `mix` must be kept equal to it (both 0.20). */
+    /* k_RackTom     */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.46000f,    0.00000f,    0.09000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, rtm_bm,    1.00000f,    0.99925f,    0.12000f,    0.00000f,    0.00115f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    2.40000f}};
 
 // Preset → engine routing table.
 // NOTE: Must be 'static' only (no const/constexpr) — same .rodata rule as above.
@@ -519,6 +547,7 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_Splash(37)       */ ENGINE_CYMBAL, // small pitched splash cymbal
     /* k_BrushSnare(38)   */ ENGINE_SNARE,  // brush-swept snare (swish + swirl)
     /* k_RimShot(39)      */ ENGINE_SNARE,  // rimshot crack + rim-ring ping
+    /* k_RackTom(40)      */ ENGINE_MEMBRANE,  // mounted rack tom (high drum to Ac Tom's low)
 };
 
 // ModelsIndex → modal frequency-ratio template: modes 2..6 relative to the
@@ -893,7 +922,8 @@ SynthState state;
             {  36,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
             {  37,  76,   0,   1, 800,  45,   0,   0,   3,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
             {  38,  38,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
-            {  39,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71}         // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+            {  39,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71},        // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+            {  40,  53,   0,   1, 420,  36,   0,   0,   2,   5, 190,   0,   0,  52,   9,   0,1999,   6,   5,  38, 300,   0, 700,  71}         // 40: RackTom   — note 53 (F3, 174.6 Hz) = the rack tom an octave-ish over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS on this engine — LoadPreset captures each into m_modal_*_ref from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  (Mterl/TubRad additionally write resA's loss filter absolutely, but that is read only under voice_engine == ENGINE_KS, so it is dead on a membrane.)  Ring length lives in modal_preset_configs, shell in model_param_presets
         };
 
         // Preset loading always targets ResA first, then ResB, regardless of the
@@ -1074,7 +1104,8 @@ SynthState state;
             "BelTre",  "SltDrm",
             "Ride",    "RidBel",
             "Bongo",   "GlsBotl","Tick",
-            "Splash",  "BrshSnr","RimShot"
+            "Splash",  "BrshSnr","RimShot",
+            "RackTom"
         };
         if (idx < k_NumPrograms) return preset_names[idx];
         return "Unknown";
@@ -2970,6 +3001,18 @@ SynthState state;
             v.trans_gain  = 3.00f;
             v.trans_a_lo  = 0.130f;     // ~1.1 kHz HP corner
             v.trans_a_hi  = 0.420f;     // ~4.3 kHz LP corner → stick contact
+            v.trans_lp_lo = v.trans_lp_hi = 0.0f;
+        } else if (m_preset_idx == k_RackTom) {
+            // Same stick on a tighter, smaller head: the contact is shorter and
+            // sits higher than Ac Tom's.  A rack tom is normally played with the
+            // same stick as the floor tom, so the gain is close — what changes
+            // is that a tight head stops the contact sooner (T60 22 ms vs 30)
+            // and passes more of its top (1.3-5 kHz vs 1.1-4.3).
+            v.trans_env   = 1.0f;
+            v.trans_decay = 0.99382f;   // T60 ≈ 22 ms
+            v.trans_gain  = 3.20f;
+            v.trans_a_lo  = 0.150f;     // ~1.3 kHz HP corner
+            v.trans_a_hi  = 0.470f;     // ~5.0 kHz LP corner → tight stick crack
             v.trans_lp_lo = v.trans_lp_hi = 0.0f;
         }
 

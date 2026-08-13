@@ -5,7 +5,7 @@
 > so the renamed unit replaces an installed RipplerX build in place.
 
 ## Overview
-Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. **40 presets** spanning strings, bars, membranes, metallic plates, cymbals, snares, and idiophones.
+Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. **41 presets** spanning strings, bars, membranes, metallic plates, cymbals, snares, and idiophones.
 
 Six engine families route each preset to its own signal path
 (`kPresetEngine[]` in `synth_engine.h` is the authority):
