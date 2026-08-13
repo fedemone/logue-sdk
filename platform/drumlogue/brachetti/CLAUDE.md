@@ -34,10 +34,9 @@ so read the row name, not the row order.)
   nothing could be measured).  Listen for: does it read as the *same kit* as
   Ac Tom, and is the stick contact too bright?  The 40 older presets are
   byte-identical.  **Retuned against `samples/rock-rack-tom-1.wav` in the same
-  pass** — envelope now matches the reference (t60 617 ms vs 613).  **Open
-  decision:** the reference measures 113 Hz, a semitone from Ac Tom's 110, so
-  the preset still ships at note 53 to stay distinct; see pass 33 for the
-  two-value change if you want it faithful instead.
+  pass** — envelope now matches the reference (t60 617 ms vs 613).  Note 53 is
+  a **decided** deviation from the reference's own 113 Hz (which would collide
+  with Ac Tom's 110) — see pass 33; don't "correct" it.
 - **Pass 32 (code review, no sound change):** one real bug fixed — `Reset()`
   used to leave a deferred master drive queued, so a suspend caught mid-fade
   came back **14 dB loud** (T41).  Plus dead-code and size work; `.rodata` is
@@ -236,13 +235,15 @@ lands on the reference (2.28 % vs 2.74 %) and 300 Hz-1 kHz reaches 1.13 %
 2-pole burst filter, not more level.  This is the same call pass 18 made on
 Taiko's close-mic stick transient, for the same reason.
 
-**Open — the pitch collides with Ac Tom, and it is the user's call.**  The
+**The pitch collides with Ac Tom — DECIDED, do not re-litigate.**  The
 reference's fundamental measures **113.0 Hz**; Ac Tom ships **110.0 Hz**.  The
 sample is a *rock* rack tom, i.e. deliberately tuned low, so being faithful to
-it would put two presets a semitone apart.  RackTom therefore still ships at
-note 53 (174.6 Hz) with the measured *character* transposed up, which keeps the
-kit logic the preset was added for.  Shipping it faithful instead is a
-two-value change: preset column Note 53 → 46 and `rtm_bm` 175 → 113 Hz.
+its pitch would have put two presets a semitone apart.  Asked, and the user
+chose to **keep note 53 (174.6 Hz)** and transpose the measured *character* up,
+preserving the kit logic the preset was added for.  So RackTom is deliberately
+NOT at its reference's pitch, and a future pass measuring the two side by side
+should not "fix" that.  (If it is ever revisited, faithful is a two-value
+change: preset column Note 53 → 46 and `rtm_bm` 175 → 113 Hz.)
 
 ### Pass 32 — Code review: one real bug, dead code, and the size budget was fiction
 
