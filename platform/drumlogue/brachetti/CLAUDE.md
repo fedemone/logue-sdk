@@ -33,7 +33,11 @@ so read the row name, not the row order.)
   (the user is supplying one; `samples/` currently holds a single clave mp3, so
   nothing could be measured).  Listen for: does it read as the *same kit* as
   Ac Tom, and is the stick contact too bright?  The 40 older presets are
-  byte-identical.
+  byte-identical.  **Retuned against `samples/rock-rack-tom-1.wav` in the same
+  pass** — envelope now matches the reference (t60 617 ms vs 613).  **Open
+  decision:** the reference measures 113 Hz, a semitone from Ac Tom's 110, so
+  the preset still ships at note 53 to stay distinct; see pass 33 for the
+  two-value change if you want it faithful instead.
 - **Pass 32 (code review, no sound change):** one real bug fixed — `Reset()`
   used to leave a deferred master drive queued, so a suspend caught mid-fade
   came back **14 dB loud** (T41).  Plus dead-code and size work; `.rodata` is
@@ -84,7 +88,19 @@ spectral peak track + per-mode STFT T60 fit on any reference WAV:
 ```
 python3 modal_extract.py samples/Orchestral-Timpani-C.wav
 python3 modal_extract.py samples/Taiko-Hit.wav --nmodes 10 --fmax 4000
+python3 modal_extract.py samples/rock-rack-tom-1.wav --nmodes 10
 ```
+
+**Two cross-checks it does not do for you, both of which mattered in pass 33.**
+(a) Its amplitude ranking is not the sustained spectrum's: on
+`rock-rack-tom-1.wav` it reports the 144 Hz partial at amp 1.00 and the 113 Hz
+fundamental at 0.72, while a high-resolution FFT of the 50-550 ms window has
+113 Hz at 1.00 and 144 Hz at **0.124**.  Confirm the ranking against a plain
+sustained-window FFT before believing which mode is dominant.
+(b) It only sees SUSTAINED partials, so a band that lives entirely in the
+attack is invisible to it — window the reference in time (0-30 / 30-100 /
+100-300 ms) to decide whether missing energy belongs in the mode table or in
+the `trans_*` burst.
 
 Output (ratio, freq, amp, T60ms) maps **directly** onto `modal_preset_configs[]`
 fields (ratio2..6, t60_1..4, env1..6). Use this whenever a membrane/bar preset
@@ -166,10 +182,67 @@ Verified: **40/40 pre-existing renders byte-identical** (the new one is the only
 added file), syntax clean, test_dsp exit 0, test_hw_debug **103/103**,
 0 NaN/silent across **41** presets, ARM cross-build clean.
 
-**Open:** the voicing is physical-defaults only.  When the reference sample
-arrives, run `modal_extract.py` on it and snap `modal_preset_configs[k_RackTom]`
-(ratios / T60s / envs) to the measurement — same route as Timpani and Taiko in
-pass 17.
+**Retuned in the same pass against `samples/rock-rack-tom-1.wav`** (user-supplied).
+The physical defaults above were kept only until the reference landed; every
+one of them that the measurement contradicted was replaced.  Three findings:
+
+**1. Copying Ac Tom's membrane ratios was wrong, and the sample says why.**
+A two-headed tom's batter and resonant heads couple through the shell air,
+which does not transpose the single-head Bessel series — it SPLITS the
+fundamental into a tight cluster.  Measured (sustained 50-550 ms window):
+
+| freq | amp | ratio | T60 |
+|---|---|---|---|
+| 113.0 Hz | 1.000 | 1.000 | 617 ms |
+| 121.0 Hz | 0.188 | 1.071 | ~560 ms |
+| 143.8 Hz | 0.124 | 1.272 | 483 ms |
+| 152.5 Hz | 0.075 | 1.350 | — |
+| 213.1 Hz | 0.096 | 1.886 | 586 ms |
+| 309.8 Hz | 0.110 | 2.729 | 729 ms |
+
+The drum is also far PURER than the defaults assumed — every partial above the
+fundamental sits at 0.06-0.19, not 0.24-0.52, and **96 % of the reference's
+power is in one 100-200 Hz band**.  The 1.071 sideband beating 8 Hz from the
+fundamental IS the tom's characteristic wobble and is kept, but deliberately at
+env 0.19: pass 17 showed two close modes held LOUD is exactly what made the old
+Timpani "rough ripple".  The 1.815 partial is dropped rather than shipped
+beside 1.886 — 8 Hz apart at equal level, same trap.
+
+**2. The first cut rang half as long as the real drum.**  Measured t40 is
+**400 ms**; the "smaller shell decays faster" reasoning had produced 220 ms.
+Ac Tom is 324 ms, so a rack tom actually rings LONGER than the floor tom here.
+T60s snapped to the measured values (and `boom_decay` 0.99925 → 0.99950, since
+the shell has to hold under a 620 ms body rather than drop out from under it).
+Result: t20 202 / t40 419 / t60 617 ms against the reference's 213 / 400 / 613.
+
+**3. "Brighter stick" meant the wrong band.**  The burst shipped at 1.3-5 kHz
+on the assumption that stick contact is treble.  The reference's 0-30 ms window
+carries **12.0 % of its attack energy in 300 Hz-1 kHz and only 2.7 % in
+1-6 kHz** — a stick on a tuned head is a MID thwack, not sizzle, and a 1.3 kHz
+corner filtered out the one band that mattered.  Band moved to ~250 Hz-1.15 kHz,
+gain 3.2 → 24.  Also note this is a **transient, not modal**: that mid energy
+falls 12.0 % → 1.4 % → 0.5 % across 0-30 / 30-100 / 100-300 ms, which is why it
+belongs in `trans_*` and not in the mode table.
+
+**Structural floor, measured — do not chase it with gain.**  `trans_*` is a
+*difference of two one-pole lowpasses*, so it rolls off at only 6 dB/oct above
+its upper corner; integrated over 1-24 kHz that residual beats a narrow
+300 Hz-1 kHz passband no matter where the corners sit.  Swept: raising gain
+6.5 → 45 moves 300 Hz-1 kHz from 0.31 % → 3.58 % while 1-6 kHz races 0.77 % →
+20.7 %, i.e. **the top band rises ~3× faster than the target band**, and the
+result is a bright click, not a thwack.  Shipped at gain 24, where 1-6 kHz
+lands on the reference (2.28 % vs 2.74 %) and 300 Hz-1 kHz reaches 1.13 %
+(3.6× the first cut, still ~10× under the reference).  Closing the rest needs a
+2-pole burst filter, not more level.  This is the same call pass 18 made on
+Taiko's close-mic stick transient, for the same reason.
+
+**Open — the pitch collides with Ac Tom, and it is the user's call.**  The
+reference's fundamental measures **113.0 Hz**; Ac Tom ships **110.0 Hz**.  The
+sample is a *rock* rack tom, i.e. deliberately tuned low, so being faithful to
+it would put two presets a semitone apart.  RackTom therefore still ships at
+note 53 (174.6 Hz) with the measured *character* transposed up, which keeps the
+kit logic the preset was added for.  Shipping it faithful instead is a
+two-value change: preset column Note 53 → 46 and `rtm_bm` 175 → 113 Hz.
 
 ### Pass 32 — Code review: one real bug, dead code, and the size budget was fiction
 
