@@ -27,6 +27,14 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 34 (fixes the pass-33 "sdeng") — needs a listen:** RackTom's mode
+  cluster turned out to be a **pitch glide** misread by the FFT; it is now a
+  swept boom (238→179 Hz) over a quiet, well-separated modal bank.  Energy in
+  the first 25 ms **6.4 % → 34.0 %**; the swell and the "wow" notch are gone.
+  Listen for: does it read as a thump now, and is the glide too much / too
+  little?  **Also found: `pitch_env` is cleared per-hit and never restored, so
+  808Sub's documented 160→45 Hz sweep has never fired** — left unfixed on
+  purpose (it is HW-approved as it sounds); say if you want it.
 - **Pass 33 (new preset — needs a listen):** preset **40 `RackTom`**, a mounted
   rack tom at note 53 (F3, 174.6 Hz) — the high drum to Ac Tom's low one.
   Built from membrane physics, **not yet calibrated against a reference sample**
@@ -108,6 +116,82 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 34 — RackTom "sdeng not thump": a glide misread as modes, and two traps
+
+HW listen on pass 33: *"Rendered is too much string like ('sdeng' sound)
+instead of a clear 'thump'."*  Correct, and the cause was a **measurement
+error in pass 33**, not a voicing preference.
+
+**1. The mode cluster was an artefact of a pitch glide.**  A windowed FFT of
+`rock-rack-tom-1.wav` shows partials at ratios 1.071 / 1.272 / 1.350, and pass
+33 shipped them as static modes.  Tracking the dominant partial in 30 ms
+windows instead shows there is only **one** partial, and it slides:
+
+```
+t=  0 ms 160 Hz    t= 60 ms 127 Hz    t=150 ms 113 Hz
+t= 20 ms 142 Hz    t= 80 ms 122 Hz    t=250 ms 112 Hz
+t= 40 ms 133 Hz    t=100 ms 119 Hz    t=400 ms 104 Hz
+```
+
+A 160 → 110 Hz head bend (~650 cents, τ ≈ 55 ms).  **A stationary FFT cannot
+represent a glide**, so it smears one moving partial into several fixed ones —
+and resynthesising those builds a detuned chord that BEATS.  Modes at 1.000 and
+1.071 beat at 12.4 Hz, whose first constructive maximum lands ~60 ms after the
+strike, so the drum **swelled to its peak instead of decaying from it**
+(envelope rms 0.35 → 0.65 at 60 ms; the reference peaks at t=0 and falls
+monotonically).  That swell is the "sdeng".  **Rule: before trusting a mode
+cluster from any FFT, track the partial over short windows.  Percussion with a
+head bend will always fake a cluster.**
+
+**2. `pitch_env` is cleared by `PartialReset()` and never restored — 808Sub's
+documented sweep has been dead.**  The glide belongs on the boom oscillator
+(the only thing here that can change pitch mid-note), which is what 808Sub
+claims to do.  It does not: `PartialReset()` zeroes `pitch_env`,
+`pitch_env_decay` and `pitch_env_amt` (`dsp_core.h`), the NoteOn restore block
+rebuilds every `boom_*` field but **not these three**, and they are written
+only by `LoadPreset` — so the first NoteOn clears them permanently.  Measured
+on the shipping tree: **808Sub sits flat at 45 Hz** through the whole hit
+against its documented "160 → 45 Hz sweep", and pass 22's Inharm → pitch-dive
+knob multiplies a zero.  KickDrum escapes only because its formula uses
+`boom_env`, which *is* restored.
+**808Sub is deliberately NOT fixed here** — it is HW-approved as it stands and
+un-breaking it would change an approved sound; that is the user's call.
+RackTom restores the three fields in its own post-`PartialReset` block.
+This is the same defect class as the snare-wire bug (pass 19) and the
+`pitch_env` gotcha now sits with it in the gotcha list.
+
+**3. Chasing a band ratio with gain fed the limiter.**  Pass 33 raised
+`trans_gain` to 24 to close the 300 Hz-1 kHz gap.  Swept against the master
+stage, that measured **worse in the band it was raised for** — 300 Hz-1 kHz
+reads 2.21 % at gain 0 and 1.95 % at gain 5 — because a burst that large pins
+the limiter, which ducks the whole hit and recovers into a swell: the first
+20 ms sat at rms 0.25 with the burst against **0.48 without it**.  Shipped at
+2.5, the last value that still decays monotonically.  Pass 30's rule holds:
+*a limited bus cannot give you level.*
+
+**4. The boom must not glide through a loud mode 1.**  First fix attempt kept
+mode 1 at env 0.55 with a 520 ms T60 to carry the tail; the gliding boom passed
+through it and cancelled, digging an audible "wow" notch (envelope 0.29 → 0.06
+→ 0.14 across 80-120 ms).  Mode 1 is now quiet (env 0.28) since the boom *is*
+the fundamental, and the boom rests at **174.61 Hz** — exactly note 53 — so the
+two lock instead of beating.
+
+**Result:** energy in the first 25 ms **6.4 % → 34.0 %** (reference 39.8 %,
+Ac Tom 22.4 %), envelope monotonic with no swell and no notch, glide live at
+238 → 179 Hz.  `boom_decay` 0.99972 is a measured compromise — the reference
+decays in two stages and one exponential cannot, so the knob trades attack
+share against tail: 0.99976 → 29.7 % / t40 383 ms, 0.99960 → 44.2 % / t40
+231 ms; shipped 0.99972 → 34.4 % / 329 ms, tipped toward the attack because
+thump was the complaint.
+
+Note tracking survived the restructure (`note_audit` Δ +0.1 semitones, +12.0 on
+a +12 test) because the note ratio is folded into `boom_tune` — booms in this
+engine are otherwise absolute Hz, which is exactly why the kicks audit as
+"Note inert".
+
+Verified: **40/40 pre-existing renders byte-identical**, syntax clean, test_dsp
+exit 0, test_hw_debug **103/103**, 0 NaN/silent across 41.
 
 ### Pass 33 — New preset 40 "RackTom", and the seven-table checklist for adding one
 
@@ -1526,6 +1610,39 @@ same-tick workaround it started life as — see the same-tick gotcha below.
 
 `sustain_level=1.0f` for NOISE engines; `NoteOff` skips `master_env.release()`.
 The `noise_env` (Rel knob) fully controls Clap/Shaker tail.
+
+### GOTCHA: `pitch_env` is cleared per-hit and never restored (808Sub is dead)
+
+Same shape as the snare-wire bug: `PartialReset()` (called from every `NoteOn`)
+zeroes `pitch_env`, `pitch_env_decay` and `pitch_env_amt`, and the NoteOn
+restoration block rebuilds every `boom_*` field but not those three.  They are
+written **only** by `LoadPreset`, so the first hit clears them for good.
+
+Any sweep whose formula reads `pitch_env` therefore does not happen.  Measured
+on the shipping tree: **808Sub is flat at 45 Hz** for the whole hit, against
+the "160 → 45 Hz pitch sweep" its comment and this file both claim, and pass
+22's Inharm → pitch-dive mapping scales a zero.  KickDrum's sweep works only
+because it is written in terms of `boom_env` (`55 + 35*boom_env`), which the
+restore block does rebuild.
+
+`k_RackTom` restores the three fields itself, after `PartialReset()`.
+**808Sub is knowingly left broken**: it is HW-approved as it sounds today, so
+fixing it is a voicing decision, not a bug fix.  If it is ever fixed, do it in
+the shared restore block and expect 808Sub's render to change.
+
+### GOTCHA: a stationary FFT turns a pitch GLIDE into a fake mode cluster
+
+Percussion with a head bend (toms, 808-style kicks) will show a tight cluster
+of partials in any windowed FFT — `modal_extract.py` included, since it only
+looks for sustained partials.  Resynthesising that cluster as static modes
+produces a detuned chord that beats, and the first beat maximum typically lands
+40-80 ms in, so the drum **swells to its peak after the strike** instead of
+decaying from it.  That is what pass 34's "sdeng not thump" report was.
+
+**Always track the dominant partial over short (~30 ms) windows before
+believing a cluster.**  On `rock-rack-tom-1.wav` the "cluster" at ratios
+1.071/1.272/1.350 is one partial sliding 160 → 110 Hz with τ ≈ 55 ms.  A glide
+belongs on the boom oscillator, not in the mode table.
 
 ### GOTCHA: a release that arrives DURING the attack (the same-tick killer)
 

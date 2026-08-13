@@ -427,33 +427,37 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        (ref: 56% in 1-3k, fundamental barely present). */
     {2.00f, 2.29f, 3.99f, 40.0f, 70.0f, 60.0f, 50.0f, 0.30f, 0.10f, 0.55f, 1.10f, 1.30f, 5, 6.33f, 0.0f, 1.60f, 0.0f},
     /* k_RackTom: DATA-DRIVEN from samples/rock-rack-tom-1.wav.  The physical
-       defaults this row shipped with (Ac Tom's 1.59/2.14/2.30 membrane series)
-       were WRONG for a two-headed tom, and the measurement says why: a rack
-       tom's batter and resonant heads couple through the shell air, which does
-       not transpose the single-head series — it SPLITS the fundamental into a
-       tight cluster.  Measured partials, sustained 50-550 ms window:
+       THE MODE CLUSTER WAS AN ARTEFACT — do not put it back.  A windowed FFT
+       of the reference shows what looks like a tight cluster of partials at
+       ratios 1.071 / 1.272 / 1.350, and shipping those as static modes is what
+       the HW listen came back on: "too string like (sdeng) instead of a clear
+       thump".  Tracking the dominant partial in 30 ms windows shows why —
+       there is only ONE partial, and it SLIDES:
 
-         113.0 Hz  amp 1.000   ratio 1.000   T60 617 ms   <- fundamental
-         121.0 Hz  amp 0.188   ratio 1.071   T60 ~560     <- coupling sideband
-         143.8 Hz  amp 0.124   ratio 1.272   T60 483
-         152.5 Hz  amp 0.075   ratio 1.350
-         213.1 Hz  amp 0.096   ratio 1.886   T60 586
-         247.6 Hz  amp 0.060   ratio 2.190   T60 466
+         t=  0 ms  160 Hz      t= 60 ms  127 Hz      t=150 ms  113 Hz
+         t= 20 ms  142 Hz      t= 80 ms  122 Hz      t=250 ms  112 Hz
+         t= 40 ms  133 Hz      t=100 ms  119 Hz      t=400 ms  104 Hz
 
-       Two things follow.  (1) The drum is far PURER than the old row: every
-       partial above the fundamental sits at 0.06-0.19, not the 0.24-0.52 the
-       defaults used — 96 % of the reference's power is in one 100-200 Hz band.
-       (2) The 1.071 sideband beating against the fundamental 8 Hz away IS the
-       tom's characteristic wobble, so it is kept — but deliberately at env
-       0.19, because pass 17 showed that two modes this close held LOUD is
-       exactly what made the old Timpani "rough ripple".
-       The 1.815 partial (amp 0.083) is dropped rather than shipped alongside
-       1.886: 8 Hz apart at equal level, same trap, and one of the pair carries
-       the character on its own.
-       T60s are the measured ones; note the modes-5/6 gotcha — they inherit
-       0.85x/0.70x of t60_4, so t60_4 = 600 puts them at 510/420 ms against a
-       measured 586/466. */
-    {1.071f, 1.272f, 1.350f, 620.0f, 560.0f, 480.0f, 600.0f, 0.24f, 1.00f, 0.19f, 0.13f, 0.08f, 6, 1.886f, 2.729f, 0.10f, 0.11f}};
+       i.e. a 160 → 110 Hz head bend (~650 cents, τ ≈ 55 ms).  A stationary FFT
+       cannot represent a glide, so it smears one moving partial into several
+       fixed ones — and resynthesising those fixed ones builds a detuned chord
+       that BEATS.  Measured on the shipped render: modes at 1.000 and 1.071
+       beat at 12.4 Hz, whose first constructive maximum lands ~60 ms after the
+       strike, so the drum SWELLED to its peak instead of decaying from it
+       (envelope rms 0.35 → 0.65 at 60 ms, against a reference that peaks at
+       t=0 and falls monotonically).  That swell is the "sdeng".
+       The glide now lives where this engine puts pitch bends — the boom
+       oscillator, see the k_RackTom branch in the render loop — and this bank
+       is back to genuine, WELL-SEPARATED air-loaded membrane ratios that
+       cannot beat, held short and quiet so they colour the body without
+       droning under the thump.
+       env1 is deliberately LOW (0.28, against 0.40 on mode 2): the boom now
+       carries the fundamental, so a loud mode 1 would merely duplicate it —
+       and worse, the boom glides THROUGH it.  Measured with env1 at 0.55 and a
+       520 ms mode 1, the two cancelled as the glide passed: the envelope fell
+       0.29 → 0.06 → 0.14 across 80-120 ms, an audible "wow" notch.  Keeping
+       mode 1 quiet and the tail moderate removes it. */
+    {1.59f, 2.14f, 2.30f, 380.0f, 220.0f, 140.0f, 90.0f, 0.12f, 0.28f, 0.40f, 0.26f, 0.16f, 4, 0.0f, 0.0f, 0.0f, 0.0f}};
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
@@ -509,20 +513,30 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
     /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.00000f,    2.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f},
-    /* k_RackTom: boom at rtm_bm, mix 0.12 (the reference puts only 1.6 % of
-       its power below 100 Hz, so the shell is a support layer, not the voice),
-       boom_attack_inc 0.00115 for a quick onset.  boom_decay 0.99950 — the
-       first cut used 0.99925 on the theory that a small shell decays fast, and
-       the measurement disagrees: this drum rings t40 = 400 ms, LONGER than
-       Ac Tom's 324, so the shell has to hold under the 620 ms body rather than
-       drop out from under it.
-       noise_band_mix 0.46 / noise_hi_lp_coeff 0.09 / onset_attack_ms 2.4 are
-       kept: the reference's attack power-centroid is 265 Hz against this
-       preset's 228, i.e. the render is if anything DARKER than the reference,
-       so there is nothing here to pull back.
+    /* k_RackTom: the BOOM is this preset's fundamental, not a support layer —
+       it is the only oscillator here that can glide, and the reference's whole
+       thump is a 160 → 110 Hz glide (see the modal config).  So, unlike Ac Tom
+       (boom_mix 0.05) and unlike this row's own first cut (0.12), the boom
+       carries the voice at 0.45 and the modal bank is trimmed to 0.10.
+
+       pitch_env 1.0 / decay 0.999619 / amt 79.5 realise the glide: τ = 55 ms
+       measured, and 175 + 79.5 = 254.5 Hz = 175 x 1.4545, the measured 160/110
+       start-to-rest ratio applied to this preset's resting pitch.
+
+       boom_attack_inc 0.00115 -> 0.0104 is part of the "sdeng" fix: at 0.00115
+       the boom needed ~18 ms to reach full, so the hit did not land on the hit;
+       0.0104 is a ~2 ms onset.
+       boom_decay 0.99972 (T60 ≈ 515 ms) is a measured compromise, not a
+       calculation.  The reference decays in TWO stages — fast to ~100 ms, then
+       a slower tail — which one exponential cannot do, so this knob trades
+       attack share against tail length: 0.99976 gives t40 383 ms with 29.7 % of
+       the energy in the first 25 ms, 0.99960 gives 44.2 % but t40 collapses to
+       231 ms.  0.99972 lands at 34.4 % / 329 ms against the reference's
+       39.8 % / 400 ms, and the complaint being answered was thump, so the
+       balance is deliberately tipped toward the attack.
        NOTE the two-table gotcha: this k_modal_mix is the audible one, and
-       modal_preset_configs' `mix` must equal it — both moved 0.20 -> 0.24. */
-    /* k_RackTom     */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.46000f,    0.00000f,    0.09000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, rtm_bm,    1.00000f,    0.99950f,    0.12000f,    0.00000f,    0.00115f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.24000f,    2.40000f}};
+       modal_preset_configs' `mix` must equal it — both are 0.12. */
+    /* k_RackTom     */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.46000f,    0.00000f,    0.09000f, false,    0.02000f,    1.00000f,    0.999619f,   79.50000f, rtm_bm,    1.00000f,    0.99972f,    0.45000f,    0.00000f,    0.01040f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.12000f,    1.20000f}};
 
 // Preset → engine routing table.
 // NOTE: Must be 'static' only (no const/constexpr) — same .rodata rule as above.
@@ -3029,15 +3043,43 @@ SynthState state;
             // it carries 12.0 % of its attack energy in 300 Hz-1 kHz and only
             // 2.7 % in 1-6 kHz, i.e. the contact of a stick on a tuned tom head
             // is mostly a MID thwack, not sizzle.  A 1.3 kHz HP corner filtered
-            // out the very band that matters and left the render 18 dB short
-            // there.  Band moved down to ~300 Hz-3 kHz, gain and length raised
-            // to close the gap.
+            // out the very band that matters, so the band moved down here.
+            //
+            // The GAIN, though, must stay small — this is a limiter-pumping
+            // trap, and chasing that 12 % with level walks straight into it.
+            // Swept against the master stage: gain 24 measured WORSE in the
+            // very band it was raised for (300 Hz-1 kHz: 1.95 % at gain 5,
+            // 2.21 % at gain 0) because a burst that large pins the limiter,
+            // which then ducks the whole hit and recovers into a swell — the
+            // render peaked 60 ms AFTER the strike and its first 20 ms sat at
+            // rms 0.25 against 0.48 with the burst switched off.  Gain 2.5 is
+            // the last value that still decays monotonically.  Pass 30's rule
+            // applies unchanged: a limited bus cannot give you level.
             v.trans_env   = 1.0f;
             v.trans_decay = 0.99539f;   // T60 ≈ 30 ms
-            v.trans_gain  = 24.0f;
+            v.trans_gain  = 2.5f;
             v.trans_a_lo  = 0.030f;     // band ≈ 250 Hz …
             v.trans_a_hi  = 0.135f;     // … to 1.15 kHz — the measured thwack band
             v.trans_lp_lo = v.trans_lp_hi = 0.0f;
+            // The swept boom is this preset's fundamental, and booms in this
+            // engine are absolute Hz (which is why the kicks audit as "Note
+            // inert").  Fold the note ratio into boom_tune — the sweep formula
+            // already multiplies by it — so RackTom keeps tracking its Note
+            // instead of joining that list.  MUST sit after PartialReset(),
+            // which resets boom_tune to 1.0.
+            v.boom_tune = exp2f(((float)note - 53.0f) * (1.0f / 12.0f));
+            // …and the same reason forces the pitch-envelope restore here.
+            // PartialReset() zeroes pitch_env / _decay / _amt (dsp_core.h), and
+            // the restore block above rebuilds every boom_* field but not these
+            // three — they are written ONLY by LoadPreset, so the first NoteOn
+            // clears them permanently.  Without this the sweep formula reads
+            // 175 + 79.5*0 and the glide silently does not happen (measured:
+            // +9 cents over the whole hit).  See the k_808Sub note in CLAUDE.md
+            // pass 34 — that preset has the same defect and is NOT fixed here,
+            // because it would change an HW-approved sound.
+            v.pitch_env       = preset_param(preset, k_pitch_env);
+            v.pitch_env_decay = preset_param(preset, k_pitch_env_decay);
+            v.pitch_env_amt   = preset_param(preset, k_pitch_env_amt);
         }
 
         // ── Tom/membrane strike knobs (REFERENCE-ANCHORED) ───────────────────
@@ -3944,6 +3986,16 @@ SynthState state;
                         // 808-style: pitch_env (τ≈21ms) sweeps 45+115=160Hz → 45Hz in ~100ms
                         // independently from boom amplitude (boom_decay=760ms T60)
                         float sweep_hz = (45.0f + voice.pitch_env_amt * voice.pitch_env) * voice.boom_tune;
+                        voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
+                    } else if (m_preset_idx == k_RackTom) {
+                        // The tom's THUMP is a pitch bend, not a mode.  Tracking
+                        // the dominant partial of rock-rack-tom-1.wav in 30 ms
+                        // windows shows one partial sliding 160 → 110 Hz (~650
+                        // cents) with τ ≈ 55 ms, not the static cluster a windowed
+                        // FFT appears to show — see the modal config comment.
+                        // 175 Hz is the resting pitch at the shipped Note; boom_tune
+                        // carries the note ratio so the whole drum still transposes.
+                        float sweep_hz = (174.61f + voice.pitch_env_amt * voice.pitch_env) * voice.boom_tune;
                         voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
                     }
                     voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);
