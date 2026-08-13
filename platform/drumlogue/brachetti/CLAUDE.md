@@ -15,15 +15,25 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 50,312 · `.rodata` 34,324 · `.data` 472 ·
-`.bss` 107,572.  **The "28 KB / 30 KB" limit this file used to assert here was
+Current shipping tree: `.text` 50,644 · `.rodata` 34,384 · `.data.rel.ro` 472 ·
+`.bss` 107,764.  **The "28 KB / 30 KB" limit this file used to assert here was
 never true** — see the constraint section. Watch the numbers for regressions;
 do not contort code to hit an imaginary ceiling.
+(Pass 32 listed the third figure as `.data`; the section actually carrying the
+472 bytes is `.data.rel.ro` — plain `.data` is 4 bytes.  `size -A` prints both,
+so read the row name, not the row order.)
 
 ## Current Working State
 
-- Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
+- Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 33 (new preset — needs a listen):** preset **40 `RackTom`**, a mounted
+  rack tom at note 53 (F3, 174.6 Hz) — the high drum to Ac Tom's low one.
+  Built from membrane physics, **not yet calibrated against a reference sample**
+  (the user is supplying one; `samples/` currently holds a single clave mp3, so
+  nothing could be measured).  Listen for: does it read as the *same kit* as
+  Ac Tom, and is the stick contact too bright?  The 40 older presets are
+  byte-identical.
 - **Pass 32 (code review, no sound change):** one real bug fixed — `Reset()`
   used to leave a deferred master drive queued, so a suspend caught mid-fade
   came back **14 dB loud** (T41).  Plus dead-code and size work; `.rodata` is
@@ -83,6 +93,83 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 33 — New preset 40 "RackTom", and the seven-table checklist for adding one
+
+User request: *"Add new Tom preset."*  The shipped `Ac Tom` (12) is already the
+**low** drum — it ships note 45 (110 Hz) with its boom oscillator hard-wired to
+`tom_bm` = 110 Hz — so a second low tom would have duplicated it.  Chosen (with
+the user) as a **rack tom at note 53 (F3, 174.6 Hz)**, which turns the two into
+a kit rather than two takes on the same drum.
+
+**What actually distinguishes it, and what does not.**  The mode *ratios* are
+Ac Tom's unchanged (1.59 / 2.14 / 2.30): both are two-headed drums, and the
+mode series of a circular membrane does not move with tuning — only its
+absolute frequencies do, which the Note column already supplies.  Copying the
+ratios is therefore the physically correct choice, not laziness.  What does
+change is everything that scales with drum SIZE:
+
+| | Ac Tom | RackTom | why |
+|---|---|---|---|
+| Note | 45 (110 Hz) | 53 (174.6 Hz) | rack vs floor |
+| boom osc | `tom_bm` 110 Hz | `rtm_bm` 175 Hz | shell air tracks head tuning |
+| `boom_mix` | 0.18 | 0.12 | smaller shell holds less air |
+| `boom_decay` | 0.99945 | 0.99925 | …and holds it more briefly |
+| `boom_attack_inc` | 0.0008 | 0.00115 | a small drum's boom arrives sooner |
+| body T60 | 500 ms | 300 ms | tighter head |
+| modes | 4 | 5 (+ratio 3.60) | the woody stick "tock" a mounted tom has |
+| stick T60 | 30 ms | 22 ms, 1.3-5 kHz | tight head stops contact sooner |
+| `modal_mix` | 0.18 | 0.20 | head over shell = reads as pitched |
+
+**Measured:** fundamental **174.7 Hz** against a nominal 174.6 (`note_audit`
+Δ = **+0.0 semitones**), tracks a +12 transpose at **+12.0** exactly, t40
+**236 ms** vs Ac Tom's 362, and **100 %** of the 150-400 ms body energy sits in
+the 150-300 Hz band (peak 174 Hz) — a clean pitched body, no hiss bed.  Level
+lands **−1.5 dB** against the 41-preset mean (Ac Tom is +1.2), well inside the
+family spread, so it needed no `velocityGain` trim.
+
+**A metric trap worth recording.**  A magnitude-weighted spectral centroid read
+the new body at 1059 Hz and Ac Tom's at 246, which looks like a bright-body
+regression.  It is an artefact: a −60 dB noise floor spread across 20 kHz
+dominates a *magnitude*-weighted mean while contributing ~0 % of the *power*.
+The band-power table above is the honest measurement.  **Use power, not
+magnitude, for centroid comparisons on percussion** — this metric is also what
+several earlier passes quoted.
+
+**Adding a preset touches SEVEN parallel tables**, all indexed by the same
+enum and none of them checked against each other by the compiler:
+
+1. `ProgramIndex` enum (`synth_engine.h`) — before `k_NumPrograms`
+2. `modal_preset_configs[k_NumPrograms]`
+3. `model_param_presets[k_NumPrograms][k_model_param_total]`
+4. `kPresetEngine[k_NumPrograms]`
+5. `LoadPreset`'s `presets[k_NumPrograms][k_lastParamIndex]`
+6. `getPresetName`'s `preset_names[]`
+7. `header.c` — **`.num_presets` AND the Program parameter's `max`**, which is
+   also the only thing stopping the OS handing `LoadPreset` an out-of-range
+   index
+
+Miss any one of 2-6 and the arrays disagree in length — the enum grows but the
+initialiser does not, so the last preset reads zeroed or out-of-bounds data.
+Miss 7 and the preset exists but is unreachable from the UI.  Host tools with
+their own copy of the count also need it: `render_presets.cpp` has a hard-coded
+entry list (a preset missing there is simply never rendered or diffed, which
+would silently exempt it from the byte-identity check), and `note_audit.cpp` /
+`stability_sweep.cpp` had literal `40`s — **both now read
+`BrachettiSynth::k_NumPrograms`** so they cannot drift again.
+
+Size: text+rodata 84,636 → **85,028 B (+392)**; `.rodata` +60 is exactly the
+new 24×`int16_t` row (48) + name pointer (4) + `"RackTom"` (8), and `.bss` +192
+is the three per-instance table rows.
+
+Verified: **40/40 pre-existing renders byte-identical** (the new one is the only
+added file), syntax clean, test_dsp exit 0, test_hw_debug **103/103**,
+0 NaN/silent across **41** presets, ARM cross-build clean.
+
+**Open:** the voicing is physical-defaults only.  When the reference sample
+arrives, run `modal_extract.py` on it and snap `modal_preset_configs[k_RackTom]`
+(ratios / T60s / envs) to the measurement — same route as Timpani and Taiko in
+pass 17.
 
 ### Pass 32 — Code review: one real bug, dead code, and the size budget was fiction
 
@@ -1411,7 +1498,7 @@ dies → "juxtaposed" sound.
 |--------|-------------|---------|
 | `ENGINE_KS` | Karplus-Strong delay + modal additive | GuitarStr, Koto |
 | `ENGINE_BAR` | Mallet exciter → bar modal bank | Marimba, Vibraphone, Kalimba, SteelPan, Woodblock, Claves, TubularBell, GlassBowl, GlassBottle, SlitDrum, Tick |
-| `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank + boom osc | Kick2, 808Sub, Timpani, Djambe, Taiko, AcTom, KickDrum, Conga, Handpan, Bongo, Taiko2 |
+| `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank + boom osc | Kick2, 808Sub, Timpani, Djambe, Taiko, AcTom, RackTom, KickDrum, Conga, Handpan, Bongo, Taiko2 |
 | `ENGINE_SNARE` | Membrane body (short) + snare-wire resonators | AcSnare, MarchSnare, BrushSnare |
 | `ENGINE_PLATE` | Strike → inharmonic plate modes + metallic noise + crash bank | Cymbal, Gong, HHatOpen, HHatClosed*, Ride, RideBell, BellTree, Cowbell, Triangle, Tick |
 | `ENGINE_NOISE` | Noise burst (+ optional modal body / AM gating) | Clap, Shaker, HHatClosed |
@@ -1459,6 +1546,7 @@ k_Tick(36)        ENGINE_PLATE
 k_Splash(37)      ENGINE_CYMBAL    ← small pitched splash (dense-resonator engine)
 k_BrushSnare(38)  ENGINE_SNARE     ← "BrshSnr": brush sweep, swirl AM + diffuse wires
 k_RimShot(39)     ENGINE_SNARE     ← "RimShot": stick crack + rim-ring ping + tight buzz
+k_RackTom(40)     ENGINE_MEMBRANE  ← "RackTom": rack tom at F3, the high drum to Ac Tom's low
 ```
 
 NOTE: Cymbal(13), Gong(14), HHatOpen(27), Ride(32), RideBell(33) were moved to

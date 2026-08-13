@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
         return mono;
     };
 
-    for (int p = 0; p < 40; ++p) {
+    for (int p = 0; p < BrachettiSynth::k_NumPrograms; ++p) {
         BrachettiSynth s;
         unit_runtime_desc_t d = {};
         d.samplerate = kSR;
