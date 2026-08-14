@@ -32,7 +32,10 @@ so read the row name, not the row order.)
   Listen for: is the dive too much?  It is the preset's designed behaviour, but
   the HW "perfect" verdict was given to the *flat* version, so this is a new
   sound.  Level is unchanged (RMS 0.4622 → 0.4617).  Pass 22's Inharm →
-  dive-depth knob works again as a side effect.  1 of 41 renders changed.
+  dive-depth knob works again as a side effect — and was **re-centred** so it
+  now trims as well as deepens: `Inharm` spans flat (≈51 Hz start, the old
+  sound) → shipped 160 → 480 Hz, with the shipped render byte-identical.
+  1 of 41 renders changed.
 - **Pass 34 (fixes the pass-33 "sdeng") — needs a listen:** RackTom's mode
   cluster turned out to be a **pitch glide** misread by the FFT; it is now a
   swept boom (238→179 Hz) over a quiet, well-separated modal bank.  Energy in
@@ -161,6 +164,35 @@ two paths were equivalent.
 **Exactly 1 of 41 renders changed** (`02_808Sub.wav`); the other 40 are
 byte-identical.  Verified: syntax clean, test_dsp exit 0, test_hw_debug
 **103/103**, 0 NaN/silent across 41.
+
+**Dive depth is on `Inharm`, and the knob was re-centred** (user: *"Is it
+possible to wire the dive amount to an existing parameter?"*).  It was already
+wired — pass 22 mapped Inharm → dive depth for the kick family — it had simply
+been scaling a zero for as long as `pitch_env` was being cleared.  Inharm is a
+free knob on this preset: its other two roles are the KS `ap_coeff` write
+(ENGINE_KS only) and the modal overtone spread (needs modes; 808Sub's modal
+config is empty).
+
+The catch was reach.  808Sub shipped `InHm = 0`, the BOTTOM of the range, and
+the mapping is `factor = max(0.05, 1 + 4.5·d)` with `d = norm − ref` — so with
+ref pinned at 0 the knob could only ever *deepen* the dive, never trim it:
+
+| Inharm | 0 | 25 | 50 | 100 | 150 | 199 |
+|---|---|---|---|---|---|---|
+| dive start, ref=0 (before) | 134 Hz | 177 | 242 | 348 | 444 | 585 |
+| dive start, ref=40 (**now**) | **50.8** | 98.8 | 142 | 264 | 375 | 480 |
+
+Moving the shipped column 0 → 40 re-centres it: Inharm 0 now gives a ~51 Hz
+start — effectively flat, i.e. **the pre-pass-35 sound is still reachable from
+the front panel** — through the shipped 160 Hz dive at 40, out to 480 Hz.
+**All 41 renders stay byte-identical**, because `m_modal_inharm_ref` is read
+from that very column, so `d = 0` at the shipped value either way.  Level is
+flat across the whole sweep (250 ms RMS 0.4754-0.4763).
+
+**This is the general trick for a one-sided knob**: when a reference-anchored
+parameter ships at the end of its range, the knob loses one direction.  Moving
+the shipped value re-centres the travel *for free* — the anchor moves with it,
+so the sound cannot change.  Worth checking wherever a knob "only goes up".
 
 ### Pass 34 — RackTom "sdeng not thump": a glide misread as modes, and two traps
 
