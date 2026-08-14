@@ -27,6 +27,12 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 35 (808Sub changed — needs a listen):** 808Sub's documented 160→45 Hz
+  pitch dive had **never fired** (the `pitch_env` clobber); it is now live.
+  Listen for: is the dive too much?  It is the preset's designed behaviour, but
+  the HW "perfect" verdict was given to the *flat* version, so this is a new
+  sound.  Level is unchanged (RMS 0.4622 → 0.4617).  Pass 22's Inharm →
+  dive-depth knob works again as a side effect.  1 of 41 renders changed.
 - **Pass 34 (fixes the pass-33 "sdeng") — needs a listen:** RackTom's mode
   cluster turned out to be a **pitch glide** misread by the FFT; it is now a
   swept boom (238→179 Hz) over a quiet, well-separated modal bank.  Energy in
@@ -116,6 +122,45 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 35 — 808Sub's pitch dive turned back on (it had never fired)
+
+User: *"Change 808sub"*, after pass 34 reported the `pitch_env` clobber.
+
+**One line of cause, one preset of effect.**  `PartialReset()` zeroes
+`pitch_env / _decay / _amt`; only `LoadPreset` ever wrote them; the NoteOn
+restore block rebuilt every `boom_*` field but not those three.  So the first
+hit cleared them for good and 808Sub played a **flat 45 Hz** for its whole life
+instead of the 160 → 45 Hz dive its own comment documents.  The restore now
+lives in that block, and 808Sub dives as designed — measured by zero-crossing
+so the sweep is not smeared by a window:
+
+```
+t=  3.2 ms 133 Hz    t= 27.6 ms  71 Hz    t= 70.8 ms 48.0 Hz
+t= 11.2 ms 105 Hz    t= 42.6 ms  57 Hz    t=102.8 ms 45.6 Hz
+```
+
+(The instantaneous start is 45 + 115 = 160 Hz; τ ≈ 21 ms means it is already at
+133 Hz by the first complete half-cycle — which is also why a 30 ms-window FFT
+read the opening as 97 Hz.  **Use zero crossings, not an FFT, to check a fast
+sweep.**)  Level is unchanged: peak 1.000 → 1.000, 250 ms RMS 0.4622 → 0.4617,
+so the dive costs nothing at the limiter.
+
+**The restore is gated to 808Sub + RackTom on purpose.**  Five presets carry
+non-zero pitch_env data; the other three — AcSnare (amt 18), Koto (amt 1.5, and
+on ENGINE_KS it would sweep the *delay line*) and KickDrum (amt 9, inert because
+its boom is written against `boom_env`) — are HW-approved as they sound and were
+not part of the request.  A blanket restore would have re-voiced them silently.
+**Pass 22's Inharm → dive-depth knob on 808Sub is live again as a side effect** —
+it had been scaling a zero.
+
+RackTom's own local restore from pass 34 was folded into the shared one; its
+render is **byte-identical** across that refactor, which is the check that the
+two paths were equivalent.
+
+**Exactly 1 of 41 renders changed** (`02_808Sub.wav`); the other 40 are
+byte-identical.  Verified: syntax clean, test_dsp exit 0, test_hw_debug
+**103/103**, 0 NaN/silent across 41.
 
 ### Pass 34 — RackTom "sdeng not thump": a glide misread as modes, and two traps
 
@@ -1625,10 +1670,13 @@ the "160 → 45 Hz pitch sweep" its comment and this file both claim, and pass
 because it is written in terms of `boom_env` (`55 + 35*boom_env`), which the
 restore block does rebuild.
 
-`k_RackTom` restores the three fields itself, after `PartialReset()`.
-**808Sub is knowingly left broken**: it is HW-approved as it sounds today, so
-fixing it is a voicing decision, not a bug fix.  If it is ever fixed, do it in
-the shared restore block and expect 808Sub's render to change.
+**Fixed for 808Sub + RackTom in pass 35** (user: *"Change 808sub"*), in the
+shared NoteOn restore block.  The restore is **gated**, not blanket: five
+presets carry non-zero pitch_env data — 808Sub, RackTom, AcSnare (amt 18),
+Koto (amt 1.5, and on ENGINE_KS it sweeps the delay line) and KickDrum (amt 9,
+inert because its boom reads `boom_env`) — so restoring unconditionally would
+silently re-voice three HW-approved presets nobody asked about.  **Adding a
+preset to that gate changes its sound**; treat it as a voicing decision.
 
 ### GOTCHA: a stationary FFT turns a pitch GLIDE into a fake mode cluster
 
