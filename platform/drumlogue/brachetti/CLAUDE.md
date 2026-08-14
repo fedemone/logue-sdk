@@ -27,6 +27,11 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 36 (no sound change):** `Inharm` is now **bipolar −100..100**, centre 0.
+  All 41 presets shipped it at 0..3, i.e. on the floor of the old 0..199 range,
+  so the knob could only ever push one way on every preset; it now cuts as well
+  as boosts.  41/41 renders byte-identical.  Nothing to listen for — but the
+  knob should feel different (and useful) below centre on any preset.
 - **Pass 35 (808Sub changed — needs a listen):** 808Sub's documented 160→45 Hz
   pitch dive had **never fired** (the `pitch_env` clobber); it is now live.
   Listen for: is the dive too much?  It is the preset's designed behaviour, but
@@ -125,6 +130,69 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 36 — `Inharm` made BIPOLAR (-100..100), which un-floors it everywhere
+
+User: *"If problem is bottom range of InHm, we could make the range bipolar
+(-100, 100).  Presets will be the same and result should be the same."*  Right
+on all three counts, and a better fix than pass 35's per-preset re-centring.
+
+**The floor was systemic, not an 808Sub quirk.**  Every Inharm mapping is
+reference-anchored on `d = norm − (that preset's own shipped Inharm)`, so the
+knob's travel is whatever the range leaves either side of the shipped value.
+**All 41 presets ship Inharm in 0..3** — against a 0..199 range they were all
+sitting on the floor, so on every one of them the knob could only push upward.
+Centring the range on 0 gives all 41 a downward half they never had.
+
+- `header.c`: `{0, 199, 30, 1}` → `{-100, 100, 0, 1}` (the `{min,max,centre,
+  default}` layout `Mterl` already uses for a bipolar knob).
+- Normalisation `×0.005` → `×0.01` at the six Inharm sites, which **keeps the
+  reach**: `100×0.01 = 1.00` against the old `199×0.005 = 0.995`, so full-up is
+  the same knob it was.  (Careful: `k_paramDkay` also uses `×0.005` two cases
+  away and must NOT be touched.)
+- The four *anchored* consumers get `fmaxf(-1.0f, …)` so negatives survive;
+  the one *absolute* consumer — the KS allpass coefficient — keeps its `≥ 0`
+  floor, so the negative half is simply inert on ENGINE_KS rather than
+  inverting the allpass.  Both KS presets ship Inharm 0, so nothing that used
+  to work is lost.
+- **Pass 35's `InHm = 40` on 808Sub is reverted to 0**, now redundant.
+
+**All 41 renders byte-identical**, exactly as the user predicted: `d = 0` at
+the shipped value under either range.
+
+**Two real bugs this shook out.**
+1. **`ap_coeff` would have hit exactly 1.000** at the new maximum — a one-pole
+   allpass with its pole *on the unit circle*.  The old range never reached it
+   (199×0.005 = 0.995) so the bound had only ever been implicit; it is now an
+   explicit `fminf(0.995f, …)`.
+2. **The dive-depth curve was linear and floored at d = −0.21.**  `max(0.05,
+   1 + 4.5·d)` was written when Inharm could only go up, so its downward half
+   had never been reachable — under the bipolar range everything below Inharm
+   −30 measured *identically* (47.8 Hz start) and ~70 % of the new travel was
+   dead.  Now `knob_exp2(2.5·d)`: exponential, never negative, and
+   `knob_exp2(0) == 1.0` exactly so the anchor holds.
+
+808Sub dive start across the finished knob (zero-crossing measured):
+
+| Inharm | −100 | −60 | −30 | −10 | **0** | 25 | 50 | 100 |
+|---|---|---|---|---|---|---|---|---|
+| linear (before) | 47.8 | 47.8 | 47.8 | 89 | 134 | 242 | 348 | 571 |
+| **exp (now)** | **56.5** | **70.8** | **92.7** | **117.6** | **134** | 178 | 267 | 632 |
+
+Level is flat across the whole sweep (250 ms RMS 0.4753-0.4761).
+
+**Three tools carried the stale range and were silently testing nothing** — the
+pass-31 lesson again.  `test_hw_debug` **T27a** drove `Inharm = 199` as "max";
+that is now out of bounds and `setParameter` *rejects* it, so the assertion was
+passing on a value it never set.  `stability_sweep` swept the Inharm corner
+`{15,0,199}` (same rejection, and it never touched the negative half) and
+`param_audit` declared the range `0..199`.  All three updated to −100..100.
+**When a parameter's range moves, grep every tool for the old bounds** — a
+tool that sets an out-of-range value fails silently and keeps reporting PASS.
+
+Verified: 41/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**103/103** (T27a fixed), 0 NaN/silent across 41, stability re-run with the
+corrected bipolar corners.
 
 ### Pass 35 — 808Sub's pitch dive turned back on (it had never fired)
 

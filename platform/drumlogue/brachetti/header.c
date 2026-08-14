@@ -102,10 +102,21 @@ const __unit_header unit_header_t unit_header = {
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
         {0, 98, 0, 36, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         {0, 20, 0, 18, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
-        // Stored ÷10: range 0–199 represents 0–1990. Step of 10 on the encoder
-        // (was step 1 over 0–1999 — far too fine to dial).  getParameterStrValue
-        // shows the real ×10 value; code uses value×0.005 to normalise 0–1.
-        {0, 199, 30, 1, k_unit_param_type_strings, 0, 0, 0, {"Inharm"}},
+        // BIPOLAR since pass 36: -100..100, centre 0, stored ÷10 (display
+        // ±1000).  Code uses value×0.01 to normalise to -1..1.
+        //
+        // Why bipolar: every Inharm mapping is REFERENCE-ANCHORED on
+        // d = norm − (the preset's own shipped Inharm), so the knob's travel is
+        // whatever the range leaves on each side of that value.  All 41 presets
+        // ship Inharm in 0..3 — so against the old 0..199 range they sat on the
+        // FLOOR and the knob could only ever push one way.  Centring the range
+        // on 0 gives every preset a downward half it never had, without moving
+        // a single preset value (which is why all 41 renders stay
+        // byte-identical: d = 0 at the shipped value either way).
+        //
+        // ×0.005 → ×0.01 keeps the reach: 100×0.01 = 1.00 against the old
+        // 199×0.005 = 0.995, so full-up is the same knob as before.
+        {-100, 100, 0, 1, k_unit_param_type_strings, 0, 0, 0, {"Inharm"}},
 
         // Page 5: Resonator III
         // Master LOWPASS cutoff: high = open, low = dark.  Stored ÷10

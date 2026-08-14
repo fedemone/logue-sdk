@@ -919,7 +919,7 @@ SynthState state;
             // encoder shows value×10 (coarsened from the old 0-1999 step-1 range).
             {   0,  36,   0,   1, 360,  30,   0,  40,   2,   3, 200,  10,   0,  36,  18,   1,1999,   0,   4,   1, 420,   0, 380,  71},        // 0:  Kick2     — the pre-redesign Timpani body as a solid kettledrum kick (HW-approved)
             {   1,  72,   0,   1, 800,  13,   0,   0,   0,   6, 194,  -7,   0,   0,   5,   2,1999,   7,  20,   0, 300,   0,1200,  71},        // 1:  Marimba   — exemplar BAR voice (HW: ok)
-            {   2,  36,   0,   1, 350,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,  40,1999,   3,  14,   5, 220,   0, 220,  71},        // 2:  808Sub    — boom_osc pitch dive 160→45Hz.  InHm 0→40 (pass 35) re-CENTRES the dive-depth knob without retuning anything: Inharm is reference-anchored on d = norm − m_modal_inharm_ref, and the ref is read from THIS column, so d = 0 at the shipped value either way and the render is byte-identical.  At 0 the knob could only deepen the dive (160→585 Hz start, never shallower); at 40 it spans flat (≈56 Hz start, the pre-pass-35 sound) → shipped 160 → 572 Hz.  Inharm's other two roles are dead here: the ap_coeff write is KS-only and the overtone spread needs modal modes, and 808Sub's modal config is empty
+            {   2,  36,   0,   1, 350,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220,  71},        // 2:  808Sub    — boom_osc pitch dive 160→45Hz, depth on Inharm (pass 22's mapping, live again since pass 35).  InHm is back to 0 here: pass 35 had moved it to 40 purely to re-centre that knob, and pass 36 made Inharm BIPOLAR (-100..100) which centres EVERY preset at once, so the per-preset hack is obsolete.  Inharm's other two roles are dead on this preset anyway — the ap_coeff write is KS-only and the overtone spread needs modal modes, and 808Sub's modal config is empty
 
             {   3,  38,   0,   1, 120,  28,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   0,1999,   8,   7,  52, 950,   2, 300,  71},        // 3:  AcSnare   — wire path live; NzRs 740→950: buzz T60≈0.4s matches acoustic-snare.wav t40≈280ms; NzFq 480→300 (HP 3kHz) pulls centroid toward the darker reference
             {   4,  72,   0,   1, 900,  34,   0,   0,   0,   1, 200,  30,   0,   0,  20,   1,1999,  18,   0,   5, 300,   0,1500,  71},        // 4:  TblrBel
@@ -1011,7 +1011,7 @@ SynthState state;
         // Mterl / HitPos (see NoteOn): neutral at the shipped knob values.
         m_modal_model_ref  = (uint8_t)presets[idx][k_paramModel];
         m_modal_partls_ref = (presets[idx][k_paramPartls] <= 4) ? presets[idx][k_paramPartls] : 0;
-        m_modal_inharm_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramInharm] * 0.005f));
+        m_modal_inharm_ref = fmaxf(-1.0f, fminf(1.0f, (float)presets[idx][k_paramInharm] * 0.01f));
         m_modal_mterl_ref  = (fmaxf(-10.0f, fminf(30.0f, (float)presets[idx][k_paramMterl])) + 10.0f) * 0.025f;
         m_modal_hitpos_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramHitPos] * 0.01f));
         m_modal_tubrad_ref = fmaxf(0.0f, fminf(20.0f, (float)presets[idx][k_paramTubRad])) * 0.05f;
@@ -1388,9 +1388,19 @@ SynthState state;
             }
 
             case k_paramInharm: {
-                if (value <= 199) {
-                    // Stored 0-199 (÷10 encoder); effective 0-1990. Divide by 200 to normalise.
-                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.005f));
+                if (value <= 100) {
+                    // Bipolar -100..100 (÷10 encoder).  ×0.01 normalises to
+                    // -1..1.  This one consumer is ABSOLUTE, not anchored: it
+                    // is the KS allpass coefficient, which must stay >= 0, so
+                    // the negative half of the knob floors here rather than
+                    // inverting the allpass.  Both KS presets ship Inharm 0,
+                    // so nothing is lost that used to work.
+                    // Capped at 0.995, NOT 1.0: this feeds a one-pole allpass,
+                    // and a coefficient of exactly 1.0 puts its pole on the
+                    // unit circle.  The old 0..199 range reached 199×0.005 =
+                    // 0.995 and so was implicitly safe; ×0.01 would hit 1.000
+                    // at the new maximum, so the bound is now explicit.
+                    float norm = fmaxf(0.0f, fminf(0.995f, (float)value * 0.01f));
                     for (int i = 0; i < NUM_VOICES; ++i) {
                         if (m_is_resonator_a) {
                             state.voices[i].resA.ap_coeff = norm;
@@ -1580,7 +1590,8 @@ SynthState state;
             snprintf(rs_buf, sizeof(rs_buf), "%d", (int)(value * 10));
             return rs_buf;
         } else if (index == k_paramInharm) {
-            // Stored ÷10; show real ×10 value (0-1990), same as Dkay/Resnc.
+            // Stored ÷10; show real ×10 value (-1000..1000).  Bipolar since
+            // pass 36 — see header.c.
             static char ih_buf[8];
             snprintf(ih_buf, sizeof(ih_buf), "%d", (int)(value * 10));
             return ih_buf;
@@ -2631,7 +2642,7 @@ SynthState state;
                     cc.decaySec     *= fmaxf(0.15f, fminf(6.0f, dscale * sqrtf(rscale)));
                     cc.highDecaySec *= fmaxf(0.15f, fminf(9.0f, dscale * rscale));
                     // Inharm → jitter spread (beating density / shimmer thickness).
-                    float cd_ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
+                    float cd_ih = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.01f));
                     // Deliberately NOT widened with the rest of this pass.  Jitter
                     // is the one cymbal knob already past its useful depth: at 2.4
                     // and 3.0 the detune smears wide enough that the bank's high
@@ -2857,7 +2868,7 @@ SynthState state;
                     // at the shipped Inharm.  Compresses toward harmonicity below
                     // the anchor, stretches the partials above it.
                     {
-                        float inh = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
+                        float inh = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.01f));
                         // Widened 0.8→1.6→2.4 (HW: "still too subtle") so the
                         // partials stretch/compress dramatically across the range.
                         float spread = 1.0f + (inh - m_modal_inharm_ref) * 2.4f;
@@ -3288,10 +3299,20 @@ SynthState state;
             // boom_inc formula reads pitch_env_amt directly).  Kick2 (fixed boom)
             // and KickDrum (calibrated 90→55 Hz sweep) keep their "perfect" boom
             // untouched, so Inharm is deliberately light there.
-            float kinh  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
+            float kinh  = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.01f));
             float d_kih = kinh - m_modal_inharm_ref;
+            // Exponential, not linear.  The old `max(0.05, 1 + 4.5·d)` was
+            // written when Inharm could only go UP from a floored 0, so its
+            // downward half was never reachable and never mattered.  Under the
+            // bipolar range (pass 36) it does: linear, the factor hits its 0.05
+            // floor at d = −0.21, so everything below Inharm −30 measured
+            // IDENTICALLY (47.8 Hz start) and ~70 % of the new travel was dead.
+            // `knob_exp2` spreads the whole range and cannot go negative —
+            // 2^(2.5·d) reaches 0.18 at d = −1 and 5.7 at d = +1, keeping the
+            // top end where the linear curve had it.  knob_exp2(0) is exactly
+            // 1.0, so the anchor — and byte-identity — is preserved.
             if (d_kih < -0.001f || d_kih > 0.001f)
-                v.pitch_env_amt = fmaxf(0.0f, v.pitch_env_amt * fmaxf(0.05f, 1.0f + d_kih * 4.5f));
+                v.pitch_env_amt = fmaxf(0.0f, v.pitch_env_amt * knob_exp2(2.5f * d_kih));
             // HitPos → beater CLICK (harder beater = brighter contact tick).  The
             // kick doesn't otherwise use the trans_* burst; borrow it for a short
             // bright tick that only appears as HitPos rises above the shipped value.
@@ -4396,7 +4417,7 @@ private:
         md.hf_decay_tilt -= 1.0f * d_tr;           // bigger = darker/rounder
 
         // Inharm (0-199, ×0.005): stretches the upper modes away from f0.
-        float ih = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.005f));
+        float ih = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.01f));
         md.stretch = 2.4f * (ih - m_modal_inharm_ref);
 
         // Partls (index 0-4): density of the membrane fill.  Shipped index =
