@@ -2252,6 +2252,29 @@ SynthState state;
         v.boom_mix = preset_param(preset, k_boom_mix);
         v.boom_attack_env = preset_param(preset, k_boom_attack_env);
         v.boom_attack_inc = preset_param(preset, k_boom_attack_inc);
+        // ── Pitch-envelope restore (MUST be after PartialReset) ──────────────
+        // Same defect as the snare-wire bug below: PartialReset() zeroes
+        // pitch_env / _decay / _amt, only LoadPreset ever wrote them, and the
+        // boom_* restores above never covered them — so the FIRST NoteOn
+        // cleared them permanently and every pitch_env-driven sweep in the unit
+        // was dead.  808Sub measured flat at 45 Hz for the whole hit against
+        // its documented 160 → 45 Hz dive, and pass 22's Inharm → dive-depth
+        // knob was scaling a zero.  (KickDrum's sweep works only because it is
+        // written against boom_env, which IS restored above.)
+        //
+        // Deliberately NOT a blanket restore.  Five presets carry non-zero
+        // pitch_env data: 808Sub, RackTom, AcSnare (amt 18), Koto (amt 1.5,
+        // and on ENGINE_KS it would sweep the delay line) and KickDrum (amt 9,
+        // inert — its boom reads boom_env).  Enabling all of them at once would
+        // silently re-voice three HW-approved presets that nobody asked about,
+        // so the restore is gated to the two whose sweep is intended.  Adding a
+        // preset here CHANGES ITS SOUND — that is a voicing decision, not a
+        // bug fix.
+        if (m_preset_idx == k_808Sub || m_preset_idx == k_RackTom) {
+            v.pitch_env       = preset_param(preset, k_pitch_env);
+            v.pitch_env_decay = preset_param(preset, k_pitch_env_decay);
+            v.pitch_env_amt   = preset_param(preset, k_pitch_env_amt);
+        }
         // ── Snare-wire exciter restore (MUST be after PartialReset) ──────────
         // PartialReset() zeroes snare_wire_mix and restores default band
         // coefficients on every hit; LoadPreset only wrote them once at preset-
@@ -3068,18 +3091,8 @@ SynthState state;
             // instead of joining that list.  MUST sit after PartialReset(),
             // which resets boom_tune to 1.0.
             v.boom_tune = exp2f(((float)note - 53.0f) * (1.0f / 12.0f));
-            // …and the same reason forces the pitch-envelope restore here.
-            // PartialReset() zeroes pitch_env / _decay / _amt (dsp_core.h), and
-            // the restore block above rebuilds every boom_* field but not these
-            // three — they are written ONLY by LoadPreset, so the first NoteOn
-            // clears them permanently.  Without this the sweep formula reads
-            // 175 + 79.5*0 and the glide silently does not happen (measured:
-            // +9 cents over the whole hit).  See the k_808Sub note in CLAUDE.md
-            // pass 34 — that preset has the same defect and is NOT fixed here,
-            // because it would change an HW-approved sound.
-            v.pitch_env       = preset_param(preset, k_pitch_env);
-            v.pitch_env_decay = preset_param(preset, k_pitch_env_decay);
-            v.pitch_env_amt   = preset_param(preset, k_pitch_env_amt);
+            // (The pitch-envelope restore this glide depends on lives in the
+            // shared boom restore block above, gated to 808Sub + RackTom.)
         }
 
         // ── Tom/membrane strike knobs (REFERENCE-ANCHORED) ───────────────────
