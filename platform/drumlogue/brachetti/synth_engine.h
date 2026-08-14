@@ -2869,9 +2869,22 @@ SynthState state;
                     // the anchor, stretches the partials above it.
                     {
                         float inh = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.01f));
-                        // Widened 0.8→1.6→2.4 (HW: "still too subtle") so the
-                        // partials stretch/compress dramatically across the range.
-                        float spread = 1.0f + (inh - m_modal_inharm_ref) * 2.4f;
+                        // Exponential, not linear (pass 37).  The old
+                        // `1 + 2.4·d` was written when Inharm could only go UP
+                        // from a floored 0, so its downward half was never
+                        // reachable.  Under the bipolar range it is, and linear
+                        // was doubly wrong there: `spread` hit the 0.05 clamp at
+                        // d = −0.40, so **Inharm −40 … −100 all rendered
+                        // identically** (measured on Handpan: ratios frozen at
+                        // 1.000/1.011/1.054/1.099/1.103/1.168), and 0.05 is a
+                        // DEGENERATE point — it collapses every partial onto the
+                        // fundamental, which is a unison pile-up, not the
+                        // "compressed toward harmonicity" the mapping intends.
+                        // 2^(1.75·d) spans 0.30…3.36 over the full travel — the
+                        // same top end as before, a live and musical bottom, and
+                        // it cannot reach zero.  knob_exp2(0) is exactly 1.0, so
+                        // the anchor and byte-identity hold.
+                        float spread = knob_exp2(1.75f * (inh - m_modal_inharm_ref));
                         if (spread < 0.999f || spread > 1.001f) {
                             spread = fmaxf(0.05f, fminf(5.0f, spread));
                             if (r2 > 0.0f) r2 = 1.0f + (r2 - 1.0f) * spread;

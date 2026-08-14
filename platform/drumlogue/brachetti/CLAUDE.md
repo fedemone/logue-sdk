@@ -27,6 +27,11 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 37 (no sound change):** the modal **overtone spread** was floored the
+  same way the dive was — Inharm −40…−100 all rendered *identically*, collapsing
+  every partial onto the fundamental.  Now exponential and live across the whole
+  range.  Audited all five Inharm consumers: 4 live both ways, the KS allpass
+  inert below centre by design.  41/41 byte-identical.
 - **Pass 36 (no sound change):** `Inharm` is now **bipolar −100..100**, centre 0.
   All 41 presets shipped it at 0..3, i.e. on the floor of the old 0..199 range,
   so the knob could only ever push one way on every preset; it now cuts as well
@@ -130,6 +135,51 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 37 — the rest of the Inharm mappings, audited across the new range
+
+Pass 36 opened a downward half on every preset; this pass checks what each of
+the five Inharm consumers actually *does* with it.  Measured as difference-RMS
+against each preset's shipped render (below ≈ −60 dB = inaudible):
+
+| mapping | −100 | −50 | +50 | +100 | verdict |
+|---|---|---|---|---|---|
+| modal overtone spread | −5.3 | −5.3 | −5.3 | −5.5 | **was floored — fixed** |
+| kernel mode stretch | +3.2 | +3.0 | +3.0 | +3.1 | already live |
+| cymbal jitterSemis | +1.4 | +1.0 | +1.4 | +1.3 | already live |
+| KS allpass coeff | **−inf** | **−inf** | −6.9 | −28.0 | inert below centre, correctly |
+
+**Only one needed changing.**  The modal overtone spread was
+`spread = 1 + 2.4·d`, linear, clamped `[0.05, 5.0]` — so it hit the floor at
+d = −0.40 and **Inharm −40 … −100 all rendered identically** (measured on
+Handpan: ratios frozen at 1.000/1.011/1.054/1.099/1.103/1.168).  Worse, 0.05 is
+a *degenerate* point: it collapses every partial onto the fundamental, a unison
+pile-up rather than the "compressed toward harmonicity" the mapping intends.
+Now `knob_exp2(1.75·d)` — spans 0.30…3.36 over the full travel, same top end,
+live and musical bottom, cannot reach zero.  Handpan now compresses smoothly:
+
+```
+Inharm  -100  1.334 1.661 1.926      Inharm    0  2.069 3.033 5.135  (anchor)
+Inharm   -60  1.534 1.985 2.510      Inharm  +50  4.833 6.770
+Inharm   -20  1.861 3.463 4.314      Inharm +100  7.998 11.505
+```
+
+**The two that were already fine, and why** — worth recording so nobody
+"fixes" them: the cymbal jitter is `knob_exp2(2.0·d)`, already exponential and
+symmetric; the kernel stretch looks linear (`stretch = 2.4·d`) but is consumed
+inside an exponent — `freq *= exp2f(stretch · log2f(freq/f0) · 0.25)` — so a
+mode at ratio r maps to r^(1+0.6·d), symmetric in log space with no clamp.
+**Linear-looking is not the test; where the value lands is.**
+
+**The KS allpass is inert below centre BY DESIGN, not by oversight.**  It is
+the one *absolute* Inharm consumer (`ap_coeff`, floored at 0 for stability),
+and `ap_coeff = 0` already *is* the harmonic extreme for a Karplus-Strong
+string — there is no "less inharmonic than harmonic" for that mechanism to
+reach.  Both KS presets ship Inharm 0, so the negative half is byte-identical
+to shipped (the −inf above is exactly that).  Leave it.
+
+Verified: 41/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**103/103**, 0 NaN/silent across 41, stability 4096 combos + 492 rolls.
 
 ### Pass 36 — `Inharm` made BIPOLAR (-100..100), which un-floors it everywhere
 
