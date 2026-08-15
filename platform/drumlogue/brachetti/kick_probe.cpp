@@ -44,7 +44,7 @@ int main(){
   D.get_num_sample_banks=mock_get_num_sample_banks; D.get_num_samples_for_bank=mock_get_num_samples_for_bank; D.get_sample=mock_get_sample;
   struct K{const char*n;int i;int lo;int hi;} ks[]={
     {"MlltRes",4,0,1000},{"MlltStif",5,10,500},{"VlMllRes",6,-100,100},{"VlMllStf",7,-100,100},
-    {"Mterl",11,-10,30},{"TubRad",17,0,20},{"HitPos",13,2,98},{"Inharm",15,0,199}};
+    {"Mterl",11,-10,30},{"TubRad",17,0,20},{"HitPos",13,-98,98},{"Inharm",15,-100,100}};
   struct T{int p;int n;const char*nm;} ts[]={{0,36,"Kick2"},{2,36,"808Sub"},{20,36,"KickDrum"}};
   for(auto&t:ts){ double base=thump_ratio(t.p,t.n,-1,0);
     printf("=== %s  attack(100ms) thump/boom base=%.4f\n",t.nm,base);

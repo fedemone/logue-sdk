@@ -100,7 +100,24 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 4: Resonator II
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
-        {0, 98, 0, 36, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
+        // BIPOLAR since pass 39: -98..98, centre 0 (was 0..98).
+        //
+        // Same pathology Inharm had before pass 36, measured with
+        // plateau_probe: HitPos's three ANCHORED consumers pivot on
+        // d = norm − (the preset's own shipped HitPos), and **25 of the 41
+        // presets ship it at the exact floor 0** — so on a clear majority of
+        // the library the knob could only ever push toward the rim, never
+        // toward the centre.  Opening a negative half gives those 25 a
+        // direction they never had, and moves no preset value (d = 0 at the
+        // shipped value either way), so all 41 renders stay byte-identical.
+        //
+        // UNLIKE Inharm, re-centring the shipped values is NOT an option here:
+        // HitPos also feeds two ABSOLUTE consumers, so moving the stored value
+        // would change the sound.  Those two stay floored at 0 and are simply
+        // inert below centre — see the strike-physics and mix_ab comments in
+        // synth_engine.h.  Negative is meaningless for both: 0 already IS
+        // "struck dead centre".
+        {-98, 98, 0, 36, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         {0, 20, 0, 18, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // BIPOLAR since pass 36: -100..100, centre 0, stored ÷10 (display
         // ±1000).  Code uses value×0.01 to normalise to -1..1.

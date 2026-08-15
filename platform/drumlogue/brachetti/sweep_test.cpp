@@ -95,8 +95,8 @@ int main(int argc, char** argv) {
         { "MlltStif",  5,   10,  500, false },
         { "Partls  ",  8,    0,    4, false },
         { "Mterl   ", 11,  -10,   30, false },
-        { "HitPos  ", 13,    2,   98, false },
-        { "Inharm  ", 15,    0, 199, false },
+        { "HitPos  ", 13,  -98,   98, false },
+        { "Inharm  ", 15, -100, 100, false },
         { "Dkay    ", 10,    0,  200, true  },
         { "Rel     ", 14,    0,   20, true  },
     };
