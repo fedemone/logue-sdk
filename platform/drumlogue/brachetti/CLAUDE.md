@@ -1747,6 +1747,18 @@ g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
     velocity_probe.cpp -o /tmp/velocity_probe
 /tmp/velocity_probe            # all 40 presets, or pass indices: 0 3 13 5
 
+# Dead-knob-travel probe — walks each parameter across its WHOLE declared range
+# and counts DISTINCT renders.  param_audit only compares the two ENDS of a
+# range, so a clamp plateau in the middle is invisible to it; this is what finds
+# the pass-36/37 defect class (a linear mapping into a hard clamp, so a third of
+# the knob does nothing).  "below=1" means the entire downward half is dead on
+# that preset — the "shipped value sits on the range floor" pathology.
+# Caveat: on ranges with fewer integers than steps (Partls/Model/NzFltr) the
+# collapsed-span column is a sampling artefact; DEAD/one-sided stay valid.
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    plateau_probe.cpp -o /tmp/plateau_probe
+/tmp/plateau_probe
+
 # Note-assignment audit — renders each preset AT ITS OWN shipped Note through
 # GateOn() (render_presets.cpp uses its own hard-coded notes and cannot see
 # drift between the two).  Findings live in NOTE_AUDIT.md.
