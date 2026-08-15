@@ -152,6 +152,65 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 40 — obsolete tools removed (no DSP change)
+
+User: *"Remove obsolete tools."*  14 files deleted, all recoverable from git
+history.  Nothing in the shipping unit changed; every remaining tool still
+compiles.
+
+**Standard applied** — remove only if all three hold: the investigation it was
+built for is CLOSED and its finding is recorded here; nothing in the docs tells
+anyone to run it; and it is not the permanent regression test for the bug it
+found.  A tool that is a general-purpose instrument (works on any preset/knob)
+was kept even if it has not been run in twenty passes.
+
+| removed | why |
+|---|---|
+| `sweep_test.cpp` | min/max knob deltas — superseded by `plateau_probe` (whole range) and `param_audit` (better metrics) |
+| `vlmod_probe.cpp` | "how much do VlMll\* move" — `plateau_probe` did exactly this job in pass 39 and also says *where* they stop moving |
+| `dive_probe.cpp` | 808Sub dive vs Inharm; closed pass 36, table is in this file |
+| `live_probe.cpp` | Inharm difference-RMS per mapping; closed pass 37, table is in this file |
+| `kick_headroom_probe.cpp` | pass-29 "is the kick pinning the limiter"; closed in pass 30 when the hard clipper came out |
+| `cymbal_detail.py` `cymbal_diag.py` `cymbal_note_test.py` `cymbal_sweep.py` | single-experiment cymbal scripts ("NzMx 40 vs 60", "note 76 vs 65", …) from passes 9-13, all superseded by the pass-14/16/18 rework |
+| `analyse_presets.py` `analyze.py` | near-duplicates of each other, both hard-coded to 4 presets; `refcmp.py` does this properly |
+| `test_audio_render.py` `test_calibration.py` `analyze_samples.py` | **actively wrong**, see below |
+
+**The one that mattered: a render-vs-reference chain that had been lying.**
+`render_presets.cpp` printed `Run: python3 test_audio_render.py` on every run,
+and that script → `test_calibration.py` → `analyze_samples.py` all carry a
+sample→preset map binding **index 24/25 to Flute/Clarinet** — presets deleted
+back in passes 1-5.  Index 24 is GlassBowl and 25 is GuitarStr today, so every
+comparison that chain made for the last thirty-odd passes was against the wrong
+reference.  Not merely unused: wrong, and advertised by the tool everyone runs.
+`render_presets.cpp` now points at `refcmp.py` instead.  **A stale tool that
+still prints an instruction is worse than a dead one** — same lesson as the
+pass-36 out-of-range sweeps, one level up.
+
+**Deliberately KEPT** (general-purpose, or the docs say to run them):
+`plateau_probe`, `param_audit`, `note_audit`(+`.py`), `stability_sweep`,
+`render_presets`, `velocity_probe`, `knobaud`, `verify_blind`, `samegate_probe`,
+`switch_probe`, `cym_cpu_probe`, `kick_probe`, `test_dsp`, `test_hw_debug`,
+`refcmp.py`, `modal_extract.py`, `pre_hw_analysis.py`.
+
+**Left in place, needs a call** (flagged, not removed):
+- **The phase-23 auto-tuning pipeline** — `auto_tune.py`,
+  `batch_tune_runner.py`, `phase23_readiness.py`, `test_td.py`,
+  `run_tuning.sh`, `run_phase23_tuning.sh`, `test_brachetti_render.cpp`.
+  Stale the same way (Flute/Clarinet-era preset maps) and unused since ~pass
+  23, when the method became measure-first via `modal_extract.py`.  But it is
+  a documented workflow — ~190 lines of README in *two* files — so deleting it
+  is a bigger call than deleting scaffolding.
+- **`cymbal_synthesis/`** — the dense-resonator prototype that became
+  `ENGINE_CYMBAL` (`dsp_core.h` and `synth_engine.h` both say "ported from
+  cymbal_synthesis").  The port is done, and its `MERGE_FEASIBILITY.md` both
+  recommends an option that is *not* what shipped and repeats the disproved
+  "≤ 28 KB `.text`" limit.  Kept because it is the reference implementation
+  for a live engine, not dead scaffolding.
+
+Note for readers of the pass-39 entry below: it records fixing stale ranges in
+`dive_probe` and `sweep_test`, and those two files no longer exist — they were
+removed here.  The lesson in that entry still stands for the tools that remain.
+
 ### Pass 39 — `plateau_probe`, VlMllStf's clamp, and HitPos made bipolar
 
 User: *"Is there any other parameter that can be made bipolar or with wider
