@@ -27,6 +27,13 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 39 (no sound change, 41/41 byte-identical):** `VlMllStf` stopped
+  saturating its clamp (20-60 % of that knob was dead on Marimba/Timpani/Clap/
+  Handpan, at TWO separate sites), and **`HitPos` is now bipolar −98..98** —
+  25 of 41 presets shipped it on the exact floor, so on most of the library it
+  could only ever push toward the rim.  Nothing to listen for on the shipped
+  sound, but both knobs should feel different (and useful) where they used to
+  go numb.  New tool `plateau_probe` found all of it.
 - **Pass 38 (AcSnare + Koto changed — needs a listen):** the dormant `pitch_env`
   data on both is now live, by request.  **Koto is the big one** — a pluck bend
   starting 1.5 semitones sharp, difference-RMS **+2.7 dB** (i.e. the change is
@@ -144,6 +151,100 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 39 — `plateau_probe`, VlMllStf's clamp, and HitPos made bipolar
+
+User: *"Is there any other parameter that can be made bipolar or with wider
+range to check for further errors or expanded capabilities?"* → then *"Fix
+VlMllStf First, HitPos then."*  **41/41 byte-identical throughout.**
+
+**The tool first, because the answer came out of it.**  `param_audit` compares
+only the two ENDS of a range, so a clamp plateau in the middle is structurally
+invisible to it — which is how BOTH floored Inharm mappings survived to pass
+36/37 and had to be found by hand.  `plateau_probe` walks every parameter
+across its whole declared range in 11 steps, hashes each render and counts
+DISTINCT results; it also splits the count into travel below vs above each
+preset's own shipped value, so the "shipped on the floor, knob only goes one
+way" pathology reads straight off as `below=1`.  Run over 8 engine exemplars it
+reproduced every knob this file already lists as inert, and found the two below.
+(Caveat baked into its header: on ranges with fewer integers than steps —
+Partls, Model, NzFltr — the collapsed-span column is a sampling artefact.)
+
+**1. `VlMllStf` saturated its clamp at TWO sites.**  Same defect as the pass-37
+modal spread: a LINEAR term added into a hard bound, so the knob stops moving
+partway through its own travel.
+
+| site | mapping | measured dead span |
+|---|---|---|
+| legacy voice (mallet stiffness) | `clamp(base + mod·vel + rim, 0.01, 1)` | Marimba −100..−40, Clap 40..100, Handpan −100..−80 + 60..100 |
+| dense kernel (`vel_sharp`) | `clamp(0.6 + 0.8·(vs−ref), 0, 1)` | Timpani −100..−40 + 80..100 |
+
+`base_stiff` is `MlltStif × 0.02` over a 0..50 range, so it ALONE spans the
+whole legal stiffness — 5 presets ship MlltStif 50 and 4 ship under 13, and
+wherever it sits near an end VlMllStf had almost no room.  The kernel one was
+the **only** linear-into-a-clamp mapping in `RefreshKernelMods`; everything
+around it was already `knob_exp2`.
+
+Both now scale the delta into the headroom actually **remaining on the side the
+knob is moving toward**, with the delta normalised by the travel left on that
+side, so full knob travel maps to full headroom whatever the preset ships.
+Monotonic, cannot leave its bounds by construction, **no clamp needed**.
+Anchored at the shipped value (required, not stylistic: 4 presets ship
+VlMllStf 20/40/60, so pivoting at zero would re-voice them).
+
+After: every legacy exemplar returns 11 distinct renders from 11 steps.
+**Timpani returns 7, and that is NOT dead travel** — `vel_sharp` feeds
+`exc_len`, an *integer* sample count over `kExcLenMin` 2 … `kExcLenMax` 10, so
+at its velocity the mechanism can only represent ~7 values.  The knob is
+monotonic and uses everything the mechanism has.  *Honest ceiling left in
+place*: a preset shipping MlltStif 50 has no upward headroom at all, so
+VlMllStf up is legitimately inert there — move MlltStif first.
+
+**2. `HitPos` made bipolar −98..98.**  Exactly Inharm's pathology: the three
+ANCHORED consumers pivot on `d = norm − shipped`, and **25 of 41 presets ship
+HitPos at the exact floor 0**, so on a clear majority of the library the knob
+only ever pushed toward the rim.  `below=1` before on Marimba/Cymbal/Handpan;
+**11/11 distinct after**.
+
+**Unlike Inharm, the pass-35 re-centring trick does NOT apply**, and that is the
+thing to remember: HitPos also feeds two ABSOLUTE consumers, so moving the
+stored value would change the sound.  They stay floored at 0 and are inert
+below centre, which is correct rather than a missed clamp — 0 already IS
+"struck dead centre":
+- the 2D strike **radius** — and this one had to be floored explicitly,
+  because `hit_x` is consumed through a MAGNITUDE (`sqrtsum2acc`), so a
+  negative x folds onto its positive mirror and HitPos −50 would have rendered
+  identically to +50.  A bipolar range would have made the knob
+  **non-monotonic** rather than merely inert.
+- `mix_ab`, the ResA/ResB blend (ENGINE_KS only) — 0 is already all-ResA.
+
+Consequence worth knowing: on **ENGINE_NOISE** the strike radius is the only
+live HitPos consumer, so Clap's whole negative half is inert by design
+(measured: `−98..0` identical).
+
+*Remaining plateau, measured and deliberately not chased*: the six modal-env
+multipliers (`1 ± c·hit_off`, clamped) saturate in the far-negative corner on
+presets shipping HitPos high — Kick2 (ref 0.36) below −54, AcSnare (ref 0.46)
+similarly, both reading `−98..−59` identical.  Presets shipping 0 — the 25 this
+pass was FOR — only saturate below −90.  The pass-37 repair (`knob_exp2`)
+applies, but reproducing today's mid-range feel needs the coefficients
+re-derived (mode 1 would need ~4.3, not 1.55, to give today's 0.225 at
+hit_off 0.5) and that curve has been re-tuned against HW listening three times.
+**That is a voicing pass with a listen attached, not a range change.**
+
+**3. Four tools were still carrying pre-pass-36 ranges** — the same lesson that
+pass documented, and it had NOT been fully applied: `dive_probe` swept Inharm
+`{…,150,199}`, `kick_probe` and `sweep_test` both declared `Inharm 0..199`, and
+`kick_probe`/`sweep_test`/`param_audit` still had `HitPos 2..98`.  Every one of
+those out-of-range values is silently REJECTED by `setParameter`, so those
+tools were reporting results for knob positions they never set.  All updated.
+**When a range moves, grep every `.cpp` in the directory, not just the ones you
+remember touching.**
+
+Verified: 41/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**103/103**, 0 NaN/silent across 41, stability 4096 combos + 492 rolls (now
+sweeping the bipolar HitPos corner) worst |peak| 0.9900 / 0 problems.  ARM
+`.text` 50,928 → **51,108**; `.rodata`/`.data.rel.ro`/`.bss` unchanged.
 
 ### Pass 38 — AcSnare + Koto pitch_env enabled, and the tuning bug hiding behind it
 
@@ -2102,7 +2203,7 @@ struct ModalPresetConfig {
 | Model | Modal ratio template swap (9 physical models) | `kModelModalRatios` |
 | Inharm | Overtone spread around fundamental | |
 | Mterl | Upper-mode material damping | `2^(1.5·Δ)` on modes ≥ 2 |
-| HitPos | Strike-position excitation tilt (rim→upper, centre→mode1) | |
+| HitPos | Strike-position excitation tilt (rim→upper, centre→mode1) | BIPOLAR −98..98 since pass 39. 3 anchored consumers follow it both ways; the strike RADIUS and `mix_ab` are absolute and floored at 0 (inert below centre — the radius *must* stay floored or it folds) |
 
 ---
 

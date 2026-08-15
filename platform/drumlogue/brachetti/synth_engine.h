@@ -1369,6 +1369,12 @@ SynthState state;
             }
 
             case k_paramHitPos: {
+                // HitPos's SECOND absolute consumer (the strike radius in
+                // NoteOn is the first), and the floor at 0 is deliberate now
+                // that the range is bipolar (pass 39): mix_ab is a 0..1 blend
+                // of ResA into ResB, so 0 already IS the extreme (all ResA)
+                // and there is nothing below it.  Inert under centre on
+                // ENGINE_KS, like Inharm's allpass — not a missed clamp.
                 state.mix_ab = fmaxf(0.0f, fminf(1.0f, (float)value * 0.01f));
                 break;
             }
@@ -1857,7 +1863,15 @@ SynthState state;
         }
         // --- 2D DRUMHEAD STRIKE PHYSICS ---
         // 1. Calculate the physical strike location once for the entire voice
-        float hit_x = (float)m_params[k_paramHitPos] * 0.01f;
+        // FLOORED AT 0 — this is one of HitPos's two ABSOLUTE consumers, and it
+        // must not follow the knob below centre (pass 39 made the range
+        // bipolar).  hit_x is a physical distance from the centre of the head
+        // and it is consumed through a MAGNITUDE (sqrtsum2acc below), so a
+        // negative x would fold back onto its positive mirror: HitPos −50 would
+        // render identically to +50 and the knob would stop being monotonic.
+        // 0 already IS the physical extreme — struck dead centre — so there is
+        // nothing below it to reach, exactly as with Inharm's KS allpass.
+        float hit_x = fmaxf(0.0f, (float)m_params[k_paramHitPos] * 0.01f);
         float hit_y = (1.0f - v.current_velocity) * hit_x * 0.5f;
 
         // Use our fast-math approximation to find distance from center (0.0 to 1.0)
@@ -2703,7 +2717,9 @@ SynthState state;
                     // HitPos → strike locus: toward the BELL (high) = more stick
                     // ping and pitched ring, less wash; toward the EDGE (low) =
                     // more broadband wash, softer ping.
-                    float cd_hp = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
+                    // fmaxf(-1.0f, …): anchored consumer, so it must follow the
+                    // knob below centre now that HitPos is bipolar (pass 39).
+                    float cd_hp = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
                     float d_chp = cd_hp - m_modal_hitpos_ref;
                     if (d_chp < -0.001f || d_chp > 0.001f) {
                         cc.stickLevel     = fminf(3.0f, cc.stickLevel * knob_exp2(2.4f * d_chp));
@@ -3063,7 +3079,13 @@ SynthState state;
                         // modes and away from the fundamental; striking dead
                         // centre does the opposite.  Anchored at the shipped
                         // HitPos so the calibrated balance is the neutral point.
-                        float hit_off = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f))
+                        // fmaxf(-1.0f, …): anchored, follows the knob below
+                        // centre under the bipolar range (pass 39).  This is
+                        // the consumer that carries the negative half on the
+                        // 25 presets that ship HitPos 0 — below centre the
+                        // tilt runs the other way, weighting mode 1 up and the
+                        // upper modes down (a deeper "struck dead centre").
+                        float hit_off = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f))
                                       - m_modal_hitpos_ref;
                         if (hit_off < -0.001f || hit_off > 0.001f) {
                             // Coefficients doubled after HW feedback ("HitPos has
@@ -3073,6 +3095,25 @@ SynthState state;
                             // Widened ~1.6× again (HW still "too weak" after the
                             // first doubling), then ×1.5 more in the July-2026
                             // depth pass: rim vs centre is now a dramatic tilt.
+                            // KNOWN, MEASURED, DELIBERATELY NOT CHASED (pass 39):
+                            // these six are linear-into-a-clamp, so the far
+                            // NEGATIVE corner of the now-bipolar range saturates
+                            // on presets that ship HitPos high.  Kick2 (ref
+                            // 0.36) saturates below HitPos −54, AcSnare (ref
+                            // 0.46) similarly — plateau_probe reports −98..−59
+                            // identical on both.  Presets shipping HitPos 0 (25
+                            // of 41, the ones the bipolar range was FOR) only
+                            // saturate below −90, i.e. the last 8 units, so the
+                            // pathology this pass set out to fix is fixed.
+                            // The obvious repair is the pass-37 treatment —
+                            // knob_exp2 instead of 1 ± c·hit_off — but matching
+                            // the current mid-range feel needs the coefficients
+                            // re-derived (mode 1 would need ~4.3 to reproduce
+                            // today's 0.225 at hit_off 0.5, not 1.55), and this
+                            // curve has been re-tuned against HW listening
+                            // three times.  Re-shaping it is a voicing pass with
+                            // a listen attached, not a bug fix to slip into a
+                            // range change.
                             v.modal_env_1 *= fmaxf(0.08f, fminf(2.4f, 1.0f - hit_off * 1.55f));
                             v.modal_env_2 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 1.35f));
                             v.modal_env_3 *= fmaxf(0.05f, fminf(9.0f, 1.0f + hit_off * 2.40f));
@@ -3370,7 +3411,11 @@ SynthState state;
             // HitPos → beater CLICK (harder beater = brighter contact tick).  The
             // kick doesn't otherwise use the trans_* burst; borrow it for a short
             // bright tick that only appears as HitPos rises above the shipped value.
-            float khit  = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
+            // fmaxf(-1.0f, …) for consistency with the other anchored HitPos
+            // reads, but note the `d_khp > 0.001f` guard below: the beater
+            // click only ever ADDS as HitPos rises, so the negative half is
+            // inert here BY DESIGN, not by clamping.
+            float khit  = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
             float d_khp = khit - m_modal_hitpos_ref;
             if (d_khp > 0.001f) {
                 v.trans_env   = fminf(2.0f, d_khp * 3.8f);
@@ -4523,7 +4568,8 @@ private:
         // stays tall even on soft strikes; lowering it buries the knock and
         // steepens the accent response.
         float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
-        float hp = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
+        // fmaxf(-1.0f, …): anchored, follows the bipolar knob below centre.
+        float hp = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
         float vs = (float)m_params[k_paramVlMllStf] * 0.01f;
         float vr = (float)m_params[k_paramVlMllRes] * 0.01f;
         md.knock_mult = knob_exp2(3.4f * (mr - m_modal_mltres_ref) +

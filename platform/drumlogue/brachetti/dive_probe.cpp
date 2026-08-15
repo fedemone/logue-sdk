@@ -14,7 +14,7 @@ int main(int argc,char**argv){
     int preset = (argc>1)?atoi(argv[1]):2;
     printf("preset %d — dive start measured from the first half-cycles, vs Inharm\n",preset);
     printf("  Inharm   f@~3ms   f@~15ms   f@~50ms   rms250\n");
-    for(int inh : {0,25,50,100,150,199}){
+    for(int inh : {-100,-50,0,25,50,100}){
         BrachettiSynth s; unit_runtime_desc_t d={}; d.samplerate=SR; d.output_channels=2;
         d.get_num_sample_banks=mock_get_num_sample_banks;
         d.get_num_samples_for_bank=mock_get_num_samples_for_bank;

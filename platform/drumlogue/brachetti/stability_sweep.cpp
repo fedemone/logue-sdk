@@ -19,7 +19,7 @@ int main(){
     // hit-hardness knobs move together, which keeps the corner count at 2^8
     // instead of 2^10 and is also the corner that matters: full wham on top of
     // maximum velocity sensitivity is the loudest strike the unit can produce).
-    struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,2,98},{14,0,20},{15,-100,100},{17,0,20},{23,71,400},{6,-100,100}};
+    struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,-98,98},{14,0,20},{15,-100,100},{17,0,20},{23,71,400},{6,-100,100}};
     const int NP=8;
     // affected presets across all three families + a couple neighbours
     int presets[]={0,2,20, 5,7,12,28,34,6,23, 13,14,27,32,33,37};
