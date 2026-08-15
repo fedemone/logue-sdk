@@ -8,8 +8,13 @@
  *   ./render_presets [output_dir]   # default: rendered/
  *
  * Each WAV is 48000 Hz mono float32, named <idx>_<PresetName>.wav.
- * The analyze_samples.py engine can then compare rendered output against
- * reference samples for a complete closed-loop validation.
+ *
+ * To compare the output against reference samples use `refcmp.py` (centroid,
+ * flatness, T60) or `modal_extract.py` (per-mode ratios and T60s).  This used
+ * to point at analyze_samples.py / test_audio_render.py; those were removed in
+ * pass 40 because their sample→preset maps still bound index 24/25 to
+ * Flute/Clarinet, presets deleted back in passes 1-5, so every comparison they
+ * made for the last thirty-odd passes was against the wrong reference.
  */
 
 #include <cstdio>
@@ -194,6 +199,6 @@ int main(int argc, char** argv) {
         render_preset(p.idx, p.note, p.dur, path, p.name);
     }
 
-    printf("\nDone. Run: python3 test_audio_render.py %s/\n", out_dir);
+    printf("\nDone. Compare vs references: python3 refcmp.py  (after cp %s/*.wav /tmp/rc/)\n", out_dir);
     return 0;
 }
