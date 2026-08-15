@@ -2275,14 +2275,16 @@ SynthState state;
         // written against boom_env, which IS restored above.)
         //
         // Deliberately NOT a blanket restore.  Five presets carry non-zero
-        // pitch_env data: 808Sub, RackTom, AcSnare (amt 18), Koto (amt 1.5,
-        // and on ENGINE_KS it would sweep the delay line) and KickDrum (amt 9,
-        // inert — its boom reads boom_env).  Enabling all of them at once would
-        // silently re-voice three HW-approved presets that nobody asked about,
-        // so the restore is gated to the two whose sweep is intended.  Adding a
-        // preset here CHANGES ITS SOUND — that is a voicing decision, not a
-        // bug fix.
-        if (m_preset_idx == k_808Sub || m_preset_idx == k_RackTom) {
+        // pitch_env data and four of them are enabled here; **KickDrum (amt 9)
+        // is left out and loses nothing by it**, because its sweep formula is
+        // written against `boom_env`, not `pitch_env` — restoring the field
+        // would not change a sample of its output.  Adding a preset here
+        // CHANGES ITS SOUND: that is a voicing decision, not a bug fix.
+        // AcSnare and Koto were held back in pass 35 as HW-approved presets
+        // nobody had asked about, and added in pass 38 on an explicit request
+        // to hear the difference.
+        if (m_preset_idx == k_808Sub || m_preset_idx == k_RackTom ||
+            m_preset_idx == k_AcSnare || m_preset_idx == k_Koto) {
             v.pitch_env       = preset_param(preset, k_pitch_env);
             v.pitch_env_decay = preset_param(preset, k_pitch_env_decay);
             v.pitch_env_amt   = preset_param(preset, k_pitch_env_amt);
@@ -3906,7 +3908,24 @@ SynthState state;
                     float safe_cpl_b = v_safe_cpl_b;
                     if (voice.pitch_env_amt > 0.0f && voice.pitch_env > silence_threshold) {
                         float sweep_st = voice.pitch_env_amt * voice.pitch_env;
-                        float sweep_scale = fasterpowf(2.0f, -sweep_st * 0.08333333333f);
+                        // EXACT exp2f, not fasterpowf — this is TUNING, and the
+                        // approximation is catastrophic here.  `fasterpowf(2,p)`
+                        // is `fasterpow2f(p * fasterlog2f(2))`, and BOTH halves
+                        // are approximate: it returns 0.971348 at p = 0 instead
+                        // of 1.0.  Since the sweep converges to p = 0, the delay
+                        // line was left permanently 2.9 % short — the string
+                        // settled a flat HALF SEMITONE SHARP of its own note and
+                        // stayed there (measured on Koto: 261.75 → 269.44 Hz for
+                        // the full 6 s render, against 261.75/0.971457 = 269.44
+                        // predicted).  The error is −22 to −50 cents across the
+                        // whole sweep, so the bend depth was wrong too.  This is
+                        // the documented knob_exp2 trap at a site that had never
+                        // executed: the pitch_env clobber (pass 35) kept this
+                        // branch dead, so the tuning bug hid behind it until
+                        // Koto was enabled in pass 38.  Costs one exp2f per
+                        // sample for the ~240 ms the sweep runs, on KS presets
+                        // with a non-zero amt — Koto alone today.
+                        float sweep_scale = exp2f(-sweep_st * 0.08333333333f);
                         voice.resA.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
                                                                      voice.base_delay_A * m_pitch_bend_mult * sweep_scale));
                         voice.resB.delay_length = fmaxf(2.0f, fminf((float)(DELAY_BUFFER_SIZE - 1),
@@ -4044,6 +4063,21 @@ SynthState state;
                         // 175 Hz is the resting pitch at the shipped Note; boom_tune
                         // carries the note ratio so the whole drum still transposes.
                         float sweep_hz = (174.61f + voice.pitch_env_amt * voice.pitch_env) * voice.boom_tune;
+                        voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
+                    } else if (m_preset_idx == k_AcSnare) {
+                        // Head-tension drop: the stick stretches the batter head
+                        // and it relaxes back over the first few ms, so the body
+                        // pitch starts sharp and settles.  UNLIKE the three
+                        // branches above, this consumer did not previously
+                        // exist — the row's pitch_env data (amt 18 Hz,
+                        // τ ≈ 14 ms) had no reader anywhere on ENGINE_SNARE, so
+                        // restoring the fields alone would have been silent.
+                        // 175 Hz is `asn_bm`, the shipped resting pitch, so the
+                        // sweep converges to exactly the fixed boom_inc it
+                        // replaces.  boom_tune is 1.0 on this preset (nothing
+                        // writes it — TubRad's retune is kick-gated); it is kept
+                        // so all four branches share one form.
+                        float sweep_hz = (175.0f + voice.pitch_env_amt * voice.pitch_env) * voice.boom_tune;
                         voice.boom_inc = (M_TWOPI * sweep_hz) * inverse_default_sample_rate;
                     }
                     voice.boom_attack_env = fminf(1.0f, voice.boom_attack_env + voice.boom_attack_inc);

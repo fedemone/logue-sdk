@@ -27,6 +27,15 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- **Pass 38 (AcSnare + Koto changed — needs a listen):** the dormant `pitch_env`
+  data on both is now live, by request.  **Koto is the big one** — a pluck bend
+  starting 1.5 semitones sharp, difference-RMS **+2.7 dB** (i.e. the change is
+  louder than the original signal: a genuinely different sound).  AcSnare is
+  subtle by comparison at **−17.8 dB**, because its own boom attack ramp hides
+  most of the bend.  Listen for: is Koto's bend too much, and is AcSnare's
+  worth keeping at all?  **A second, older bug fell out of this** — the KS
+  sweep used `fasterpowf` for a TUNING ratio and left the string a permanent
+  **half semitone sharp**; fixed.  39/41 byte-identical.
 - **Pass 37 (no sound change):** the modal **overtone spread** was floored the
   same way the dive was — Inharm −40…−100 all rendered *identically*, collapsing
   every partial onto the fundamental.  Now exponential and live across the whole
@@ -135,6 +144,90 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 38 — AcSnare + Koto pitch_env enabled, and the tuning bug hiding behind it
+
+User: *"Add pitch_env, so I can evaluate the difference."*  Pass 35 had gated
+the `pitch_env` restore to 808Sub + RackTom and left AcSnare (amt 18) and Koto
+(amt 1.5) dormant as HW-approved presets nobody had asked about.  Both are now
+in the gate.  **39/41 renders byte-identical**; only these two changed.
+
+**"One line in the gate" was right for Koto and wrong for AcSnare.**  Koto is
+ENGINE_KS and the KS branch already reads `pitch_env` to sweep the delay line,
+so the restore alone brings it to life.  **AcSnare had no reader at all**: the
+non-KS path only *decays* `pitch_env`, and the boom sweep block covered
+KickDrum / 808Sub / RackTom only — so restoring the fields would have been
+completely silent.  It needed a fourth boom-sweep branch, written in the same
+form as 808Sub's and anchored on `asn_bm` (175 Hz) so the sweep converges to
+exactly the fixed `boom_inc` it replaces.  **Check for a consumer before
+calling dormant data a one-line fix.**
+
+**The KS sweep was mistuned, and it had never run so nobody knew.**  With Koto
+enabled, the string settled **261.75 → 269.44 Hz and stayed there for the full
+6 s render** — half a semitone sharp, permanently, with a *clean* harmonic
+series (so not instability: an honest, wrong pitch).  Cause:
+
+```
+sweep_scale = fasterpowf(2.0f, -sweep_st * 0.08333f)
+fasterpowf(x,p) = fasterpow2f(p * fasterlog2f(x))     // BOTH halves approximate
+fasterlog2f(2.0f)     = 1.057304     (exact 1.0)
+fasterpowf(2.0f,0.0f) = 0.971348     (exact 1.0)  →  −50.3 cents at the anchor
+```
+
+The sweep converges to `sweep_st = 0`, so the delay line was left permanently
+2.9 % short: `261.75 / 0.971457 = 269.44` — the measured value to four
+significant figures.  The error runs **−22 to −50 cents across the whole
+sweep**, so the bend depth was wrong too.  This is the documented `knob_exp2`
+trap (`fasterpow2f(0) ≈ 0.96`, not 1.0) at a site that had **never executed**:
+the pass-35 `pitch_env` clobber kept the branch dead, so the tuning bug hid
+behind the dead-code bug.  Now exact `exp2f`, per this file's own rule —
+*fast math for knob curves, exact math for tuning*.  Cost is one `exp2f` per
+sample for the ~240 ms the sweep runs, on KS presets with a non-zero amt,
+which today is Koto alone.
+
+**Measured, Koto** (fundamental by 2^19-point FFT; the early windows average
+over a τ ≈ 21 ms sweep, so they read below the 1.5-semitone instantaneous
+start — the pass-35 lesson about fast sweeps and FFTs applies):
+
+| window | 0-20 ms | 20-50 ms | 50-120 ms | 0.3-1.5 s | 1.5-3.0 s |
+|---|---|---|---|---|---|
+| cents vs before | **+45.4** | +21.7 | +10.9 | **+0.0** | **+0.0** |
+
+Sustained series exact (1.000 / 2.000 / 3.000 / 4.000 / 5.000 / 6.000).
+Level 250 ms RMS 0.1691 → 0.1571 (−0.64 dB), peak unchanged at 0.9827.
+**The documented "KS pitch_env shortens T60" gotcha did not reproduce** — the
+tail got slightly LONGER (t40 343 → 368 ms, t60 532 → 582 ms).  The gotcha's
+τ ≤ 21 ms rule is what keeps it in bounds, and Koto ships `pitch_env_decay`
+0.99900 = exactly that limit, so the data was written with the rule in mind.
+
+**Measured, AcSnare** — real but subtle, and the reason is its own attack ramp:
+
+```
+boom_attack_inc 0.00180 → 11.6 ms to full amplitude
+pitch_env_decay 0.99850 → τ = 13.9 ms
+```
+
+The bend is largely over before the boom is audible.  Instantaneous start is
+193 Hz, but the **amplitude-weighted mean is 179.6 Hz** against a 175 Hz rest,
+and only **76 cents** of bend remain by the time the ramp opens.
+Difference-RMS **−17.8 dB**; peak 0.9772 unchanged, 250 ms RMS +0.01 dB.  If
+the HW verdict is "can't hear it", the knob to turn is `boom_attack_inc` (the
+same value pass 34 had to fix on RackTom, for the same reason), not `amt`.
+
+**KickDrum stays out of the gate and loses nothing by it** — its sweep formula
+is written against `boom_env`, so restoring `pitch_env` there cannot change a
+sample.  That is now stated in the gate comment, so the last dormant row does
+not look like an oversight.
+
+**`note_audit` now reports Koto `peak/nom +12.0`.**  Not a mistuning — the bend
+pushes energy up the series (2nd partial 0.771 → 0.970) until the octave
+outranks the fundamental in the peak picker.  Recorded in `NOTE_AUDIT.md` so a
+later pass does not "fix" a correct tuning.
+
+Verified: 39/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**103/103**, 0 NaN/silent across 41, stability 4096 combos + 492 rolls worst
+|peak| 0.9900 / 0 problems.  ARM `.text` 50,644 → **50,928** (+284);
+`.rodata`/`.data.rel.ro`/`.bss` all unchanged.
 
 ### Pass 37 — the rest of the Inharm mappings, audited across the new range
 
@@ -1750,6 +1843,13 @@ When pitch_env_amt>0, KS delay starts short → injects zeros into feedback path
 T60. Fix: use τ≤21ms (pitch_env_decay≥0.9990) so sweep completes in attack transient.
 **NEVER use τ>50ms for KS pitch_env.**
 
+Measured in pass 38, the first time this path had ever actually run (Koto,
+amt 1.5, decay 0.99900 = exactly the τ limit): **the tail did not shorten, it
+lengthened slightly** — t40 343 → 368 ms, t60 532 → 582 ms.  So the rule works;
+keep it.  What the sweep *does* change is the harmonic balance — the 2nd
+partial rises 0.771 → 0.970 of the fundamental, which is audible as a brighter
+pluck and is why `note_audit` now picks Koto's octave as its peak.
+
 ### fasterexpf catastrophic inaccuracy
 
 `fasterexpf` catastrophically wrong for |x| < ~0.001.  `modal_decay` uses arg ~-0.00012
@@ -1776,8 +1876,20 @@ inline float knob_exp2(float x) { return (x == 0.0f) ? 1.0f : fasterpow2f(x); }
 ```
 
 Use it for knob-response curves only.  **Keep exact `exp2f`** for tuning and
-timing: note→frequency ratios, `cymbal pitch_ratio`, the kernel trigger ratio —
-same reasoning as the `fasterexpf` / `fastercosfullf` gotchas above.
+timing: note→frequency ratios, `cymbal pitch_ratio`, the kernel trigger ratio,
+**KS delay lengths** — same reasoning as the `fasterexpf` / `fastercosfullf`
+gotchas above.
+
+**`fasterpowf(2.0f, p)` is the same trap, doubled** — it expands to
+`fasterpow2f(p * fasterlog2f(2.0f))` and *both* halves are approximations:
+`fasterlog2f(2.0f)` = 1.057304, and the whole expression returns **0.971348 at
+p = 0**.  Pass 38 found it on the KS pitch sweep, where the swept quantity is a
+delay LENGTH: the sweep converges to p = 0, so the delay was left permanently
+2.9 % short and Koto settled **half a semitone sharp forever** with a perfectly
+clean harmonic series.  The error is −22 to −50 cents over the useful range, so
+it is wrong everywhere, not just at the anchor — `knob_exp2`'s `x == 0` guard
+would NOT have saved this one.  For anything whose units are pitch, use exact
+`exp2f` and accept the cycles.
 
 ### REFERENCE-ANCHOR pattern
 
@@ -1821,12 +1933,20 @@ because it is written in terms of `boom_env` (`55 + 35*boom_env`), which the
 restore block does rebuild.
 
 **Fixed for 808Sub + RackTom in pass 35** (user: *"Change 808sub"*), in the
-shared NoteOn restore block.  The restore is **gated**, not blanket: five
-presets carry non-zero pitch_env data — 808Sub, RackTom, AcSnare (amt 18),
-Koto (amt 1.5, and on ENGINE_KS it sweeps the delay line) and KickDrum (amt 9,
-inert because its boom reads `boom_env`) — so restoring unconditionally would
-silently re-voice three HW-approved presets nobody asked about.  **Adding a
-preset to that gate changes its sound**; treat it as a voicing decision.
+shared NoteOn restore block, and **extended to AcSnare + Koto in pass 38**
+(user: *"Add pitch_env, so I can evaluate the difference"*).  The restore is
+**gated**, not blanket, because **adding a preset to that gate changes its
+sound** — treat it as a voicing decision.  KickDrum (amt 9) is the one row
+still out, and it loses nothing: its sweep reads `boom_env`, so restoring
+`pitch_env` there cannot change a sample.
+
+**Restoring the fields is only half of it — check that a CONSUMER exists.**
+Pass 38 assumed both remaining presets were a one-line gate edit.  True for
+Koto (the ENGINE_KS branch already sweeps the delay line from `pitch_env`),
+false for AcSnare: on a non-KS engine the render loop only *decays*
+`pitch_env`, and the boom-sweep block had branches for KickDrum / 808Sub /
+RackTom only, so the restore alone would have been silent.  It needed a fourth
+branch.  Grep for a reader before calling dormant data live.
 
 ### GOTCHA: a stationary FFT turns a pitch GLIDE into a fake mode cluster
 

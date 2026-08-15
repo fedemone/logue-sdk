@@ -115,7 +115,16 @@ The remaining 26 presets track their note exactly (peak within ±0.1 semitone of
 nominal) and sit in a defensible register for the instrument: Kick2 65 Hz,
 Timpani 165 Hz (documented E3 = the dominant sustained partial), Taiko 87 Hz,
 Djambe 131 Hz, AcTom 110 Hz, Conga 293 Hz, Handpan 293 Hz, Marimba/Vibraphone
-523 Hz, Kalimba 349 Hz, SteelPan 262 Hz, Koto 262 Hz, GtrStr 440 Hz (A4),
+523 Hz, Kalimba 349 Hz, SteelPan 262 Hz, GtrStr 440 Hz (A4),
 GlassBowl 659 Hz, GlassBottle 1319 Hz, BellTree 1047 Hz, SlitDrum 262 Hz,
 Gong 147 Hz, TubularBell 523 Hz (its 1442 Hz strike note is the 4:5:6 bell
 partial series doing what bells do, not a mistuning).
+
+**Koto (9) reports `peak/nom +12.0` since pass 38 — that is the OCTAVE, not a
+mistuning.**  Enabling its pluck bend redistributes energy up the harmonic
+series (2nd partial 0.771 → 0.970 of the fundamental), so the audit's peak
+picker now lands on 523 Hz.  A high-resolution spectrum of the 300 ms-1.5 s
+window puts the fundamental at **261.75 Hz against a 261.63 Hz nominal**, with
+the series exact to three decimals (1.000 / 2.000 / 3.000 / 4.000), and the
++12 transpose still tracks at **+12.0**.  Do not "correct" the tuning on the
+strength of the peak column alone.
