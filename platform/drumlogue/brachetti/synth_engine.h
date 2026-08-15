@@ -1873,8 +1873,47 @@ SynthState state;
             float stif_mod   = (float)m_params[k_paramVlMllStf] * 0.01f; // -1.0 to +1.0
             // Add up to a 50% stiffness boost when striking at the absolute edge
             float rim_stiffness_boost = radius * 0.5f;
-            v.exciter.mallet_stiffness = fmaxf(0.01f, fminf(1.0f,
-                base_stiff + stif_mod * v.current_velocity + rim_stiffness_boost));
+            // ── Knob travel is scaled into the REMAINING headroom, not added
+            // into a clamp ───────────────────────────────────────────────────
+            // This used to be `clamp(base + mod*vel + rim, 0.01, 1.0)`: linear
+            // into a hard bound, which is the pass-37 defect (a mapping that
+            // saturates partway through its own travel and silently does
+            // nothing after that).  `base_stiff` is `MlltStif * 0.02` over a
+            // 0..50 range, so it ALONE spans the entire legal stiffness — and
+            // wherever a preset ships MlltStif near an end, VlMllStf ran out of
+            // room almost immediately.  Measured dead spans (plateau_probe):
+            // Marimba −100..−40, Timpani −100..−40 AND 80..100, Clap 40..100,
+            // Handpan −100..−80 AND 60..100 — 20-60 % of the knob.
+            //
+            // Now the delta is scaled by whatever headroom is actually left on
+            // the side it is moving toward, so it approaches the bound instead
+            // of hitting it: full travel is live at every MlltStif setting, and
+            // the result is monotonic and cannot leave [0.01, 1.0] by
+            // construction (no clamp needed).
+            //
+            // ANCHORED at the shipped VlMllStf, so `d == 0` for every shipped
+            // preset and `t0` reproduces the old clamped expression exactly —
+            // all 41 renders stay byte-identical.  It has to be anchored rather
+            // than pivoted at zero: 4 presets ship VlMllStf non-zero (20/40/60)
+            // and pivoting at 0 would re-voice them.
+            //
+            // Honest limit: a preset shipping MlltStif = 50 has `t0` == 1.0 and
+            // therefore NO upward headroom — the mallet is already as stiff as
+            // the exciter allows, so VlMllStf up is legitimately inert there
+            // (5 presets).  That is a real ceiling, not a mapping bug; the knob
+            // to move first is MlltStif.
+            // The delta is normalised by the travel actually LEFT on the knob
+            // on that side (a preset shipping VlMllStf 60 has only 40 units of
+            // up left, 160 of down), so full knob travel maps to full headroom
+            // at full velocity whatever the preset ships.
+            float t0 = fmaxf(0.01f, fminf(1.0f,
+                base_stiff + m_snare_vlstf_ref * v.current_velocity + rim_stiffness_boost));
+            float raw = stif_mod - m_snare_vlstf_ref;
+            float d   = ((raw >= 0.0f) ? (raw / fmaxf(1e-6f, 1.0f - m_snare_vlstf_ref))
+                                       : (raw / fmaxf(1e-6f, 1.0f + m_snare_vlstf_ref)))
+                        * v.current_velocity;
+            v.exciter.mallet_stiffness = (d >= 0.0f) ? (t0 + d * (1.0f - t0))
+                                                     : (t0 + d * (t0 - 0.01f));
         }
 
         // VlMllRes: harder hit → faster noise attack (sharper transient).
@@ -4493,7 +4532,23 @@ private:
         md.vel_knock_exp = fmaxf(0.4f, fminf(3.0f, 1.5f - 1.0f * (vr - m_kernel_vlres_ref)));
 
         // VlMllStf (±100 → ±1): velocity→sharpness amount.
-        md.vel_sharp = fmaxf(0.0f, fminf(1.0f, 0.6f + 0.8f * (vs - m_kernel_vlstf_ref)));
+        // Was `clamp(0.6 + 0.8*(vs - ref), 0, 1)` — the ONLY linear-into-a-clamp
+        // mapping in this block, everything around it is knob_exp2, and it
+        // saturated exactly the way the pass-37 modal spread did.  Timpani
+        // ships VlMllStf 40, so 0.6 + 0.8*(vs − 0.4) left the clamp reachable
+        // at vs < −0.35: measured dead spans −100..−40 and 80..100, i.e. ~40 %
+        // of the knob (plateau_probe).  vel_sharp is a normalised 0..1 depth,
+        // so it takes the same headroom scaling as the mallet stiffness above:
+        // pivot at the shipped value, then divide the delta by the travel left
+        // on that side so the knob reaches 0 and 1 exactly at its own ends and
+        // never needs a clamp.  d == 0 at shipped → 0.6 exactly, as before, so
+        // all 41 renders stay byte-identical.
+        {
+            float d = vs - m_kernel_vlstf_ref;
+            md.vel_sharp = (d >= 0.0f)
+                ? 0.6f + (d / fmaxf(1e-6f, 1.0f - m_kernel_vlstf_ref)) * 0.4f
+                : 0.6f + (d / fmaxf(1e-6f, 1.0f + m_kernel_vlstf_ref)) * 0.6f;
+        }
 
         // NzMix (0-100): noise-wedge level around the recipe.  The additive
         // term keeps the knob alive when the recipe ships with noise 0
