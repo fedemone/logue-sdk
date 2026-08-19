@@ -341,6 +341,10 @@ static void test_stability_and_level() {
         int ovr[k_total]; allDefaults(ovr);
         ovr[k_time] = 100; ovr[k_low] = 100; ovr[k_high] = 100;
         ovr[k_damp] = 1000; ovr[k_diffusion] = 100; ovr[k_wide] = 200;
+        // The longest delay the engine can ask for, so this also pins the
+        // ring buffer: a read that wrapped past the write head would replay
+        // stale audio rather than decay.
+        ovr[k_bounce] = (int)PINGPONG_MAX_MS;
         Render r = render(p, ovr, 12.0f, true);
         char buf[128];
         snprintf(buf, sizeof(buf), "(%s peak %.3f)", names[p], r.peak);
@@ -393,6 +397,128 @@ static void test_scalar_path() {
     check(finite && peak <= kLimitCeiling + 1e-3f, "37-frame blocks stay bounded", buf);
 }
 
+// VIBR is calibrated in Hz on the panel, so the engine has to deliver Hz. The
+// counter it drives is ticked once per NEON block, but was being loaded with a
+// period in samples — so every VIBR setting ran four times slow.
+static void test_vibr_rate() {
+    printf("\n[vibr] the random LFO runs at the rate VIBR asks for\n");
+    static NeonAdvancedLabirinto rv;
+    rv = NeonAdvancedLabirinto();
+    rv.init();
+    rv.loadPreset(0);
+
+    const int   vibr[]   = {1, 10, 30};              // panel value
+    const float wantHz[] = {0.1f, 1.0f, 3.0f};       // what it claims to mean
+    const float seconds  = 30.0f;
+    const int   blocks   = (int)(seconds * SR / NEON_LANES);
+
+    for (int i = 0; i < 3; i++) {
+        rv.setParameter(k_vibr, vibr[i]);
+        rv.randomLfoCounter = 0;
+        int steps = 0;
+        float prev = rv.randomLfoValue;
+        for (int b = 0; b < blocks; b++) {
+            rv.updateRandomLfo();
+            if (rv.randomLfoValue != prev) { steps++; prev = rv.randomLfoValue; }
+        }
+        const float gotHz = steps / seconds;
+        char buf[128];
+        snprintf(buf, sizeof(buf), "(VIBR=%2d: want %.2f Hz, got %.2f Hz)",
+                 vibr[i], wantHz[i], gotHz);
+        check(fabsf(gotHz - wantHz[i]) <= 0.1f * wantHz[i] + 1.0f / seconds,
+              "LFO steps at the requested rate", buf);
+    }
+}
+
+// To save cycles the engine only re-derives the filter coefficients on one block
+// in eight. With DFSN at 0 there is no modulation, so that refresh is idempotent
+// — it recomputes exactly the coefficients already in place — and *when* it
+// happens cannot possibly matter. Running the same input twice with the update
+// cycle at different phases must therefore give identical output.
+//
+// It did not: the same flag was doing double duty as "recompute" and "blend
+// 0.82*dry into the metal biquad", so metal mode switched signal paths at
+// 48000/(4*8) = 1500 Hz. That artifact is smeared by the feedback network and
+// invisible in the tail's envelope, but the phase comparison sees it exactly.
+static void test_filter_update_phase() {
+    printf("\n[metal] the coefficient-update cycle does not colour the signal\n");
+
+    const int N = (int)(4.0f * SR);
+    std::vector<float> iL(N, 0.f), iR(N, 0.f);
+    for (int k = 0; k * (int)(0.35f * SR) < N - (int)(0.5f * SR); k++)
+        hit(iL, iR, k * (int)(0.35f * SR), k % 2 == 1);
+
+    std::vector<float> out[2][2];
+    const int phases[2] = {8, 4};                    // half a cycle apart
+    for (int p = 0; p < 2; p++) {
+        static NeonAdvancedLabirinto rv;
+        rv = NeonAdvancedLabirinto();
+        rv.init();
+        rv.loadPreset(2);                            // labirinto = metal mode
+        rv.setParameter(k_diffusion, 0);             // no modulation at all
+        rv.filterUpdateCounter = phases[p];
+
+        out[p][0].assign(N, 0.f);
+        out[p][1].assign(N, 0.f);
+        for (int i = 0; i + BLK <= N; i += BLK)
+            rv.process(&iL[i], &iR[i], &out[p][0][i], &out[p][1][i], BLK);
+    }
+
+    float worst = 0.0f, peak = 0.0f;
+    for (int i = 0; i < N; i++) {
+        worst = fmaxf(worst, fabsf(out[0][0][i] - out[1][0][i]));
+        worst = fmaxf(worst, fabsf(out[0][1][i] - out[1][1][i]));
+        peak  = fmaxf(peak,  fabsf(out[0][0][i]));
+    }
+    char buf[160];
+    snprintf(buf, sizeof(buf), "(worst divergence %.2e against a %.3f peak)", worst, peak);
+    check(worst < 1e-6f, "output does not depend on the update phase", buf);
+}
+
+// PILL and DFSN both feed the modulation depth, the shimmer gain and the
+// modulation rate. Setting them in either order has to land in the same place —
+// it did not, because setPillar() derived the shimmer gain from the depth of the
+// mode it was leaving and setDiffusion() never revisited either.
+static void test_derived_state_order_independent() {
+    printf("\n[state] PILL and DFSN commute\n");
+    static NeonAdvancedLabirinto a, b;
+    bool ok = true;
+    char detail[192] = "";
+
+    for (int pill = 0; pill <= 4 && ok; pill++) {
+        for (int dfsn = 0; dfsn <= 100 && ok; dfsn += 25) {
+            a = NeonAdvancedLabirinto(); a.init(); a.loadPreset(0);
+            b = NeonAdvancedLabirinto(); b.init(); b.loadPreset(0);
+
+            a.setParameter(k_pill, pill);
+            a.setParameter(k_diffusion, dfsn);
+
+            b.setParameter(k_diffusion, dfsn);
+            b.setParameter(k_pill, pill);
+
+            if (a.modDepth != b.modDepth || a.shimmerDepth_ != b.shimmerDepth_ ||
+                a.modRate != b.modRate) {
+                ok = false;
+                snprintf(detail, sizeof(detail),
+                         "(PILL=%d DFSN=%d: depth %.5f/%.5f shimmer %.5f/%.5f rate %.5f/%.5f)",
+                         pill, dfsn, a.modDepth, b.modDepth,
+                         a.shimmerDepth_, b.shimmerDepth_, a.modRate, b.modRate);
+            }
+        }
+    }
+    check(ok, "depth, shimmer gain and mod rate are order independent", detail);
+
+    // ...and DFSN has to actually reach the shimmer, which it never did.
+    a = NeonAdvancedLabirinto(); a.init(); a.loadPreset(3);   // esotico, PILL=4
+    a.setParameter(k_diffusion, 0);
+    const float quiet = a.shimmerDepth_;
+    a.setParameter(k_diffusion, 100);
+    const float loud = a.shimmerDepth_;
+    char buf[128];
+    snprintf(buf, sizeof(buf), "(DFSN 0 -> %.4f, DFSN 100 -> %.4f)", quiet, loud);
+    check(loud > quiet, "DFSN moves the shimmer depth", buf);
+}
+
 int main() {
     printf("NeonAdvancedLabirinto host tests\n");
     test_matrices();
@@ -401,6 +527,9 @@ int main() {
     test_pingpong();
     test_stability_and_level();
     test_scalar_path();
+    test_vibr_rate();
+    test_filter_update_phase();
+    test_derived_state_order_independent();
 
     printf("\n%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -18,15 +18,15 @@
 #include <float_math.h>
 #include <algorithm>
 
-// Maximum delay line length (2 seconds at 48kHz)
-#define MAX_DELAY_SECONDS 2.0f
-#define MAX_DELAY_SAMPLES (int)(MAX_DELAY_SECONDS * 48000)
-
 // Number of FDN channels (must be multiple of 4 for NEON)
 #define FDN_CHANNELS 8
 
-// Buffer size for delay lines (power of 2 for efficient modulo)
-#define BUFFER_SIZE 65536  // 2^16
+// Delay line ring buffer; a power of two so wrapping is a mask.
+// It costs BUFFER_SIZE * FDN_CHANNELS * 4 bytes, so the size is worth being
+// honest about: 2^16 spent 2 MB holding a delay nothing could reach. 2^15 is
+// 0.68 s at 48 kHz, against a longest reachable delay of one ping-pong bank at
+// PINGPONG_MAX_MS * PINGPONG_MAX_SPREAD = 0.57 s. See the static assert below.
+#define BUFFER_SIZE 32768  // 2^15
 #define BUFFER_MASK (BUFFER_SIZE - 1)
 #define FREQ_MAX_DIV_MIN (18.333f)
 #define PREDELAY_BUFFER_SIZE 16384  // ~341ms at 48kHz
@@ -43,6 +43,10 @@
 // fast the tail jumps between speakers.
 #define PINGPONG_MIN_MS   (60.0f)
 #define PINGPONG_MAX_MS   (500.0f)
+// Longest multiplier in the per-bank spread table in updateDelayTimes(), i.e.
+// the longest delay line the engine can ever ask for is
+// PINGPONG_MAX_MS * PINGPONG_MAX_SPREAD.
+#define PINGPONG_MAX_SPREAD (1.147f)
 
 // Limiter knee. Below this level the transfer is exactly y = x; above it the
 // excess is soft-clipped, saturating at kLimitThreshold + (2/3)*(1-threshold).
@@ -55,6 +59,14 @@
 // Retuning the ping-pong bounce time therefore bends pitch like tape instead of
 // clicking, matching the pre-delay behaviour.
 #define DELAY_SLEW_COEFF (0.002f)
+
+// The read pointer trails the write pointer by the delay length plus the
+// modulation depth (at most 18 samples, from the esotico shimmer path). If that
+// ever exceeded the ring buffer the read would wrap past the write head and
+// replay stale audio, so pin the relationship here rather than trusting it.
+static_assert(PINGPONG_MAX_MS * 0.001f * PINGPONG_MAX_SPREAD * 48000.0f + 64.0f
+                  < (float)BUFFER_SIZE,
+              "delay ring buffer is too small for the longest ping-pong bounce");
 
 /**
  * OPTIMIZED: Interleaved frame structure for vld4q_f32
@@ -152,7 +164,7 @@ public:
         , lfoSpeed(1.0f)
         , randomLfoValue(0.0f)
         , randomLfoCounter(0)
-        , randomLfoPeriodSamples(48000)
+        , randomLfoPeriodBlocks(48000 / NEON_LANES)   // 1 Hz at 48 kHz
         , smoothedLfoValue(0.0f)
         , filterMode(kFilterWood)
         , noiseSeed(132465798U)
@@ -214,13 +226,10 @@ public:
      * Clear all delay lines and filter states
      */
     void clear() {
-        // Use NEON to clear efficiently
-        float32x4_t zero = vdupq_n_f32(0.0f);
-        for (int i = 0; i < BUFFER_SIZE; i++) {
-            // Clear 8 channels using 2 NEON stores
-            vst1q_f32(&delayLine[i].samples[0], zero);
-            vst1q_f32(&delayLine[i].samples[4], zero);
-        }
+        // All-zero bits is 0.0f in IEEE 754, so one memset beats 65536 vector
+        // stores here — and this runs on unit_reset()/unit_suspend(), not only
+        // at startup.
+        memset(delayLine, 0, sizeof(delayLine));
 
         writePos = 0;
 
@@ -292,8 +301,8 @@ public:
             // +-11% spread inside each bank: enough diffusion to avoid a flutter
             // echo, tight enough that the bank as a whole arrives together.
             static const float spread[FDN_CHANNELS] = {
-                0.890f, 0.963f, 1.037f, 1.110f,   // bank A (left)
-                0.926f, 1.000f, 1.074f, 1.147f    // bank B (right)
+                0.890f, 0.963f, 1.037f, 1.110f,             // bank A (left)
+                0.926f, 1.000f, 1.074f, PINGPONG_MAX_SPREAD  // bank B (right)
             };
             for (int i = 0; i < FDN_CHANNELS; i++)
                 targetDelayTimes[i] = t * spread[i];
@@ -474,9 +483,30 @@ public:
             // Map to 0=Brown, 1=Pink, 2=White, 3=Blue, 4=Violet, 5=Grey
             noiseColour = diffusion * 5.999f;
         }
-        // Modulation depth depends on pillar (as before) and DFSN (diffusion)
-        setModDepth(((pillar_ == 0) ? 0.6f : (pillar_ == 1) ? 0.15f :
-                        (pillar_ == 2) ? 0.2f : 0.1f) * diffusion);
+        updateModDepth();
+    }
+
+    /**
+     * Recompute everything derived from PILL and DFSN: the delay-modulation
+     * depth, the shimmer re-injection gain, and the modulation rate that scales
+     * with the depth.
+     *
+     * Both inputs feed all three, so both setters have to run the whole chain.
+     * setPillar() used to read modDepth to derive shimmerDepth_ one line
+     * *before* recomputing modDepth, so the shimmer gain came from the mode you
+     * had just left; and setDiffusion() touched neither shimmerDepth_ nor
+     * modRate, so DFSN did not move the shimmer at all and the modulation rate
+     * kept a stale value until VIBR or PILL was next touched.
+     */
+    void updateModDepth() {
+        // Ping-pong keeps the depth low: heavy delay-time wobble smears the
+        // bounce it exists to make audible.
+        const float pillarDepth = (pillar_ == 0) ? 0.6f :
+                                  (pillar_ == 1) ? 0.15f :
+                                  (pillar_ == 2) ? 0.2f : 0.1f;
+        setModDepth(pillarDepth * diffusion);
+        shimmerDepth_ = (pillar_ == 4) ? 0.4f * modDepth : 0.0f;
+        updateModRate();
     }
 
     /**
@@ -491,13 +521,8 @@ public:
     void setPillar(int value) {
         pillar_       = std::max(0, std::min(value, 4));
         pingPong_     = (pillar_ == 1);
-        shimmerDepth_ = (pillar_ == 4) ? 0.4f * modDepth : 0.0f;
         shimmerPhase_ = 0.0f;
-        // Modulation depth depends on pillar (as before) and DFSN (diffusion).
-        // Ping-pong keeps it low: heavy delay-time wobble smears the bounce.
-        setModDepth(((pillar_ == 0) ? 0.6f : (pillar_ == 1) ? 0.15f :
-                        (pillar_ == 2) ? 0.2f : 0.1f) * diffusion);
-        updateModRate();
+        updateModDepth();     // depth, shimmer gain and mod rate all follow PILL
         updateDelayTimes();   // ping-pong uses its own bank geometry
     }
     void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
@@ -506,7 +531,9 @@ public:
     // Uses a fixed base rate of 1.0 Hz so the result is always deterministic
     // regardless of how many times this is called.
     void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, lfoSpeed * modDepth)); }
-    void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); } // UNUSED
+    // WIDE. Applied to the mid/side split at the output of both the vector and
+    // the scalar path. Note it has no effect at PILL=0, which folds to mono.
+    void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); }
     // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
     void setShimmerFreq(float value) {
@@ -530,9 +557,11 @@ public:
         if (pillar_ == 1) updateDelayTimes();
     }
     void setPreDelay(float ms) {
-        float clampedMs = fmaxf(0.0f, fminf(340.0f, ms));
-        // Convert milliseconds to samples and store it as our new float target
-        targetPreDelaySamples = (int)(clampedMs * sampleRate / 1000.0f);
+        // Clamp against the buffer rather than a magic 340 ms, keeping a block
+        // of margin so the read pointer can never overtake the write head.
+        const float maxSamples = (float)(PREDELAY_BUFFER_SIZE - 4 * NEON_LANES);
+        targetPreDelaySamples =
+            fmaxf(0.0f, fminf(maxSamples, ms * sampleRate * 0.001f));
     }
     void setDamping(float freqHz) {
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
@@ -576,8 +605,13 @@ public:
      */
     void setLfoSpeed(float speedHz) {
         lfoSpeed = fmaxf(0.1f, fminf(3.0f, speedHz));
-        randomLfoPeriodSamples = (int)(sampleRate / lfoSpeed);
-        if (randomLfoPeriodSamples < 1) randomLfoPeriodSamples = 1;
+        // The counter is ticked once per NEON block, not once per sample, so the
+        // period has to be in blocks. It was in samples, which made VIBR run four
+        // times slower than the panel says: the advertised 0.1-3.0 Hz was really
+        // delivering 0.025-0.75 Hz. (The other per-block smoothers in this file —
+        // noiseEnvelope, DELAY_SLEW_COEFF — already account for the block rate.)
+        randomLfoPeriodBlocks = (int)(sampleRate / lfoSpeed / (float)NEON_LANES);
+        if (randomLfoPeriodBlocks < 1) randomLfoPeriodBlocks = 1;
     }
 
     void setFilterType(int preset) {
@@ -657,24 +691,6 @@ public:
         // Coefficients from RBJ cookbook.
         // standard Direct Form Biquad calculates its output using this mathematical formula:
         // y[n] = (b0 * x[n]) + (b1 * x[n-1]) + (b2 * x[n-2]) - (a1 * y[n-1]) - (a2 * y[n-2])
-        // if (filterMode == kFilterMetal) {
-        //     // METAL: Bandpass resonance for Labirinto. Unity peak gain (b0=alpha,
-        //     // b2=-alpha). The previous form (b0 = Q*alpha*makeup, Q=6, makeup=5)
-        //     // had a ~30x (+29 dB) peak that self-oscillated inside the FDN feedback
-        //     // loop — a sustained screech with no input. Metallic character now comes
-        //     // from the convex output blend + the metalState comb, keeping per-pass
-        //     // loop gain <= 1.
-        //     float Q = 6.0f;
-        //     alpha = sin_w0 / (2.0f * Q);
-
-        //     b0 = alpha;
-        //     b1 = 0.0f;
-        //     b2 = -alpha;
-
-        //     a0 = 1.0f + alpha;
-        //     a1 = -2.0f * cos_w0;
-        //     a2 = 1.0f - alpha;
-        // }
         /** The Micro-Boost "Compounding" Peaking EQ (Keep Inside Loop)
          * Instead of a bandpass filter that aggressively cuts the background,
          * you can use a standard RBJ Peaking EQ, but configured with a microscopic
@@ -773,10 +789,12 @@ public:
 
     void updateRandomLfo() {
         if (--randomLfoCounter <= 0) {
-            randomLfoCounter = randomLfoPeriodSamples;
+            randomLfoCounter = randomLfoPeriodBlocks;
             randomLfoValue = randomFloat() * 2.0f - 1.0f;
         }
-        // One-pole smoothing (~10Hz glide) to prevent filter pops
+        // One-pole smoothing to prevent filter pops when the random value steps.
+        // 0.001 per block at 48 kHz is a ~83 ms glide, comfortably shorter than
+        // the 333 ms period at the fastest VIBR setting.
         smoothedLfoValue += 0.001f * (randomLfoValue - smoothedLfoValue);
     }
 
@@ -975,11 +993,14 @@ private:
                 current_rate = microtonalRate_[ch];
                 current_depth = shimmerDepth_ * 45.0f; // Deep, slow microtonal stretch
             }
-            // to be tested this one:
-            if (filterMode == kFilterNoise) {
-                // In Noise mode, modulation controls noise colour instead of delay time
-                current_depth = noiseColour * 5.999f; // Map 0-1 to 0-5.999 for noise colour selection
-            }
+            // Noise mode used to overwrite the depth here with
+            // `noiseColour * 5.999f`, on the stated grounds that "modulation
+            // controls noise colour instead of delay time" — but current_depth
+            // *is* the delay modulation depth in samples, and noiseColour is
+            // already DFSN * 5.999 (setDiffusion), so the expression squared it
+            // and handed stellare up to 36 samples of undocumented delay wobble.
+            // Noise colour is set where it belongs; the swirl here is the same
+            // one every other mode gets.
             if (filterMode == kFilterCrystal) {
                 current_depth = modDepth * 10.0f;
             }
@@ -1020,10 +1041,16 @@ private:
             vst1q_f32(pos_vals, readPositions[ch]);
             float out_lanes[NEON_LANES];
             for (int s = 0; s < NEON_LANES; s++) {
-                // Adding a large multiple of BUFFER_SIZE guarantees the float is positive
-                // before casting to int, avoiding C++ negative-integer-truncation issues.
+                // Bias positive before the cast to avoid C++ truncation-toward-
+                // zero on negatives. One BUFFER_SIZE is enough and no more than
+                // enough: the static assert at the top of this file guarantees
+                // delay + modulation < BUFFER_SIZE. The bias used to be four
+                // times larger, which cost precision for nothing — a float has
+                // 24 mantissa bits, so at 131072 the fractional part of the read
+                // position quantises to 1/32 of a sample. At BUFFER_SIZE the
+                // interpolation gets 1/128.
                 float pos = pos_vals[s];
-                float safe_pos = pos + (float)(BUFFER_SIZE * 4);
+                float safe_pos = pos + (float)BUFFER_SIZE;
 
                 int32_t idx = (int32_t)safe_pos;
                 uint32_t base = idx & BUFFER_MASK;
@@ -1134,7 +1161,7 @@ private:
     /* then the allpass diffuses it.                                              */
     /*===========================================================================*/
     inline void applyChannelFilters4Group(float32x4_t* mixed, int c0,
-                                          bool doBiquad, bool metalBlend,
+                                          bool doBiquad,
                                           bool doMetal, bool doCrystal) {
         // [channel][time] -> [time][channel]
         float32x4_t T[NEON_LANES];
@@ -1175,10 +1202,18 @@ private:
                 // 0.73 of the signal per trip round the loop — a 27% loss that
                 // no TIME setting could recover. Add the resonance on top of a
                 // unity dry path instead: flat off-resonance, a small bump at fc.
+                // METAL used to blend 0.82*dry + 0.18*biquad here, but only on
+                // the one block in eight where the coefficients had just been
+                // re-derived — the same flag did double duty as "recompute" and
+                // "blend". That switched the signal path on and off at
+                // 48000/32 = 1500 Hz, a buzz on the preset this whole unit is
+                // named after. The blend also fought the filter's own design:
+                // the peaking EQ is deliberately pinned to a unity peak over a
+                // 0.985 baseline so the resonance compounds over many passes,
+                // and diluting it to 18% flattens that contrast to nothing.
+                // So the biquad output now stands on its own, every block.
                 if (filterMode == kFilterCrystal)
                     out = vmlaq_n_f32(in, out, 0.45f);
-                else if (metalBlend && filterMode == kFilterMetal)
-                    out = vaddq_f32(vmulq_n_f32(in, 0.82f), vmulq_n_f32(out, 0.18f));
                 T[t] = out;
             }
             vst1q_f32(&filterState1[c0], fs1);
@@ -1398,7 +1433,9 @@ private:
             float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
 
             // Branchless wrap
-            float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * NEON_LANES);
+            // One buffer of bias is enough (setPreDelay clamps the target below
+            // PREDELAY_BUFFER_SIZE) and keeps the fractional part precise.
+            float safe_pd_pos = pd_read_pos + (float)PREDELAY_BUFFER_SIZE;
             int32_t pd_idx1 = (int32_t)safe_pd_pos;
             int32_t pd_idx2 = pd_idx1 + 1;
 
@@ -1502,20 +1539,18 @@ private:
         // allpass (crystal) — all run channel-parallel on NEON via a transpose.
         //
         // Screech Fix: filter coefficients are only re-derived every 8 blocks.
-        bool doModulated;
-        if (--filterUpdateCounter <= 0) { filterUpdateCounter = 8; doModulated = true; }
-        else                            { doModulated = false; }
+        bool recalcCoeffs;
+        if (--filterUpdateCounter <= 0) { filterUpdateCounter = 8; recalcCoeffs = true; }
+        else                            { recalcCoeffs = false; }
         const bool doBiquad  = (filterMode != kFilterNoise);
-        if (doModulated && doBiquad) {
+        if (recalcCoeffs && doBiquad) {
             float fc = fmaxf(20.0f, fminf(sampleRate * 0.45f, baseFc + fcMod));
             updateFilterCoeffsAt(fc);
         }
         const bool doMetal   = (filterMode == kFilterMetal);
         const bool doCrystal = (filterMode == kFilterCrystal);
-        // metalBlend (0.82*dry + 0.18*wet at the biquad output) is only applied
-        // on blocks where the coefficients were just re-derived.
-        applyChannelFilters4Group(mixed, 0, doBiquad, doModulated, doMetal, doCrystal);
-        applyChannelFilters4Group(mixed, 4, doBiquad, doModulated, doMetal, doCrystal);
+        applyChannelFilters4Group(mixed, 0, doBiquad, doMetal, doCrystal);
+        applyChannelFilters4Group(mixed, 4, doBiquad, doMetal, doCrystal);
 
         // 3. Inject Environmental Noise (Brown, Pink, White, Blue, Violet, Grey)
         // noiseEnvelope smoothly fades noise in/out with signal activity (prevents
@@ -1723,7 +1758,7 @@ private:
         float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
 
         // Branchless wrap for safety
-        float safe_pd_pos = pd_read_pos + (float)(PREDELAY_BUFFER_SIZE * 4);
+        float safe_pd_pos = pd_read_pos + (float)PREDELAY_BUFFER_SIZE;
         int32_t pd_idx1 = (int32_t)safe_pd_pos;
         int32_t pd_idx2 = pd_idx1 + 1;
 
@@ -1937,7 +1972,6 @@ private:
 
     interleaved_frame_t delayLine[BUFFER_SIZE] __attribute__((aligned(64)));
 
-    float32x4_t hadamardCols[FDN_CHANNELS][FDN_CHANNELS/4] __attribute__((aligned(16)));  // Column-major for NEON
     float delayTimes[FDN_CHANNELS] __attribute__((aligned(16)));        // slewed, live
     float targetDelayTimes[FDN_CHANNELS] __attribute__((aligned(16)));  // requested
     float32x4_t modPhaseVec[FDN_CHANNELS] __attribute__((aligned(16)));
@@ -1962,7 +1996,7 @@ private:
     float lfoSpeed;                    // Hz (0.1..3.0)
     float randomLfoValue;              // current random output (-1..1)
     int randomLfoCounter;              // samples until next random update
-    int randomLfoPeriodSamples;        // = sampleRate / lfoSpeed
+    int randomLfoPeriodBlocks;         // = sampleRate / lfoSpeed / NEON_LANES
     float smoothedLfoValue;
 
     // Filter types (per channel, but we can use shared coeffs)
@@ -1994,7 +2028,6 @@ private:
     int filterUpdateCounter;
 
     float baseFc;                   // base cutoff frequency (Hz) for current preset/damping
-    float filterModRange;           // max modulation range (Hz) derived from DFSN and pillar
     float outputMakeup;             // per-mode wet level trim (levels dark vs resonant modes)
 };
 
