@@ -91,27 +91,49 @@ enum parameterState {
   k_paramProgram = 0,
   k_time, k_low, k_high, k_damp,
   k_wide, k_diffusion, k_pill, k_shimmer_freq,
-  k_pre_delay, k_vibr, k_bounce,
+  k_pre_delay, k_vibr, k_bounce, k_bounce_sync,
   k_total
 };
 
-static const char *k_preset_names[k_preset_number] =
+// Note divisions the ping-pong bounce can lock to, as a fraction of a quarter
+// note. With SYNC off BNCE sets the bounce time directly in milliseconds; with
+// it on the host tempo does, and BNCE is ignored. 1/8 dotted is the classic
+// ping-pong delay setting — it lands off the beat and pulls against the pattern.
+typedef enum {
+    k_sync_off = 0,
+    k_sync_16th,
+    k_sync_8th_triplet,
+    k_sync_8th,
+    k_sync_8th_dotted,
+    k_sync_quarter,
+    k_sync_count,
+} bounceSync_t;
+
+static const float k_bounce_sync_beats[k_sync_count] =
+    {0.0f, 0.25f, 1.0f / 3.0f, 0.5f, 0.75f, 1.0f};
+
+static const char *k_bounce_sync_names[k_sync_count] __attribute__((unused)) =
+    {"OFF", "1/16", "1/8T", "1/8", "1/8.", "1/4"};
+
+static const char *k_preset_names[k_preset_number] __attribute__((unused)) =
     {"foresta", "tempio", "labirinto", "esotico", "stellare"};
 // ============================================================================
 // Factory Presets
 // ============================================================================
-//    {PRESET,  TIME, LOW, HIGH, DAMP, WIDE, DFSN, PILL, SHMR, PDLY, VIBR, BNCE}
+// SYNC is 0 (off) on every preset: a preset should sound the same whatever the
+// project tempo is, so locking the bounce to the transport is opt-in.
+//    {PRESET,  TIME, LOW, HIGH, DAMP, WIDE, DFSN, PILL, SHMR, PDLY, VIBR, BNCE, SYNC}
 static const int32_t k_presets[k_preset_number][k_total] = {
     // 0: foresta - mellow, sparse, "wood" (warm lows, short, moderate decay)
-    {k_foresta,   50,  60,   40,  220,   90,   50,    3,    0,    40,  15,  180},
+    {k_foresta,   50,  60,   40,  220,   90,   50,    3,    0,    40,  15,  180,    0},
     // 1: tempio  - sombre, "stone" (heavy lows, long, dark, 6-ch)
-    {k_tempio,    70,  80,   25,  150,  150,   80,    2,   10,   10,  10,  180},
+    {k_tempio,    70,  80,   25,  150,  150,   80,    2,   10,   10,  10,  180,    0},
     // 2: labirinto - glassy tail bouncing between the speakers every BNCE ms
-    {k_labirinto, 65,  50,   55,  510,  150,   50,    1,    0,   10,  30,  190},
+    {k_labirinto, 65,  50,   55,  510,  150,   50,    1,    0,   10,  30,  190,    0},
     // 3: esotico - microtonal echoes on non-Western scale
-    {k_esotico,   58,  30,   80,  800,  80,    50,    4,    45,    0,  30,  180},
+    {k_esotico,   58,  30,   80,  800,  80,    50,    4,    45,    0,  30,  180,    0},
     // 4: stellare - long, subtle, "spacey" shimmer (8-ch + shimmer)
-    {k_stellare,  90,  70,   80,  520,  190,   8,    4,   35,   20,   5,  180},
+    {k_stellare,  90,  70,   80,  520,  190,   8,    4,   35,   20,   5,  180,    0},
 };
 
 // ============================================================================
@@ -172,6 +194,9 @@ public:
         , noiseGain(0.0f)
         , noiseEnvelope(0.0f)
         , bounceTimeMs(180.0f)
+        , bounceFreeMs(180.0f)
+        , bounceSync_(k_sync_off)
+        , tempoBpm(120.0f)
         , unifiedDecay(0.5f)
         , lowBandGain(0.5f)
         , highBandGain(0.5f)
@@ -469,6 +494,9 @@ public:
         case k_bounce: // BNCE 60..500 ms - ping-pong bounce time
             setBounceTime(value);
             break;
+        case k_bounce_sync: // SYNC 0..5 - lock the bounce to a note division
+            setBounceSync(value);
+            break;
         default:
         break;
         }
@@ -550,10 +578,55 @@ public:
      * Ping-pong bounce time in milliseconds (PILL=1). Sets how long the tail
      * spends on one side before crossing to the other; the value is the
      * delay-line length of a bank, so it is a real time, not an abstract index.
-     * Ignored by the other routing modes, which have no banks to swap.
+     * Ignored by the other routing modes, which have no banks to swap, and
+     * overridden while SYNC is locking the bounce to the host tempo.
      */
     void setBounceTime(int32_t ms) {
-        bounceTimeMs = fmaxf(PINGPONG_MIN_MS, fminf(PINGPONG_MAX_MS, (float)ms));
+        bounceFreeMs = (float)ms;
+        applyBounceTime();
+    }
+
+    /**
+     * Lock the bounce to a note division of the host tempo, or 0 to leave it on
+     * the BNCE millisecond value. On a drum machine this is what makes the
+     * ping-pong part of the pattern rather than drifting against it.
+     */
+    void setBounceSync(int32_t value) {
+        bounceSync_ = (value < 0) ? 0
+                    : (value >= (int32_t)k_sync_count) ? (int)k_sync_count - 1
+                    : (int)value;
+        applyBounceTime();
+    }
+
+    /**
+     * Host tempo, in the SDK's fixed point format: BPM integer in the upper 16
+     * bits, fraction in the lower 16.
+     *
+     * The SDK warns this can be called very often when externally synced, so it
+     * returns immediately unless the tempo actually moved and the bounce is
+     * actually following it — recomputing the bank geometry on every call would
+     * put the delay-time slew into a permanent glide.
+     */
+    void setTempo(uint32_t tempo) {
+        const float bpm = (float)tempo * (1.0f / 65536.0f);
+        if (bpm < 1.0f || bpm == tempoBpm) return;
+        tempoBpm = bpm;
+        if (bounceSync_ != k_sync_off) applyBounceTime();
+    }
+
+    /**
+     * Resolve the bounce time from whichever source owns it, clamp it to what
+     * the delay lines can hold, and re-cut the bank geometry.
+     *
+     * A tempo slow enough to put the division past PINGPONG_MAX_MS just clamps:
+     * a quarter note at 60 BPM is 1000 ms and the buffer holds 500, so the
+     * bounce stops tracking rather than folding to something arbitrary.
+     */
+    void applyBounceTime() {
+        float ms = bounceFreeMs;
+        if (bounceSync_ > (int)k_sync_off && bounceSync_ < (int)k_sync_count)
+            ms = (60000.0f / tempoBpm) * k_bounce_sync_beats[bounceSync_];
+        bounceTimeMs = fmaxf(PINGPONG_MIN_MS, fminf(PINGPONG_MAX_MS, ms));
         if (pillar_ == 1) updateDelayTimes();
     }
     void setPreDelay(float ms) {
@@ -1754,6 +1827,7 @@ private:
     // ID 9:  PDLY   0..200             default 0 (ms)
     // ID 10: VIBR   1..30              default 10   (×0.1 → 0.1..3.0 Hz)
     // ID 11: BNCE   60..500            default 180  ping-pong bounce time (ms)
+    // ID 12: SYNC   0..5               default 0    bounce note division (off)
     int32_t params_[k_total]  __attribute__((aligned(16)));
     float sampleRate;
     int writePos;
@@ -1822,7 +1896,10 @@ private:
     // Cross-feedback gains per pillar
     static const float crossGain[5];   // indexed by pillar_
 
-    float bounceTimeMs;   // ping-pong bounce period (PILL=1), from SHMR
+    float bounceTimeMs;   // ping-pong bounce period actually in force (PILL=1)
+    float bounceFreeMs;   // the BNCE parameter value, used when SYNC is off
+    int   bounceSync_;    // bounceSync_t: note division the bounce locks to
+    float tempoBpm;       // host tempo, for the synced divisions
     float unifiedDecay;   // mid-band per-pass feedback gain, from TIME
     float lowBandGain;    // per-pass gain below the DAMP crossover  (LOW)
     float highBandGain;   // per-pass gain above the DAMP crossover  (HIGH)

@@ -542,6 +542,104 @@ static void test_derived_state_order_independent() {
     check(loud > quiet, "DFSN moves the shimmer depth", buf);
 }
 
+// Render labirinto with the bounce locked to a note division of `bpm`.
+// `syncFirst` picks which of the two inputs arrives last, so both the
+// setBounceSync() and the setTempo() recompute paths get exercised.
+static Render renderTempo(int division, float bpm, bool syncFirst, float seconds) {
+    static NeonAdvancedLabirinto rv;
+    rv = NeonAdvancedLabirinto();
+    rv.init();
+    rv.loadPreset(2);                                  // labirinto: PILL=1
+    const uint32_t fixed = (uint32_t)(bpm * 65536.0f); // BPM in 16.16
+    if (syncFirst) {
+        rv.setParameter(k_bounce_sync, division);
+        rv.setTempo(fixed);
+    } else {
+        rv.setTempo(fixed);
+        rv.setParameter(k_bounce_sync, division);
+    }
+
+    const int N = (int)(seconds * SR);
+    std::vector<float> iL(N, 0.f), iR(N, 0.f);
+    hit(iL, iR, (int)(0.05f * SR), false);
+
+    Render out;
+    out.L.assign(N, 0.f);
+    out.R.assign(N, 0.f);
+    for (int i = 0; i + BLK <= N; i += BLK)
+        rv.process(&iL[i], &iR[i], &out.L[i], &out.R[i], BLK);
+    for (int i = 0; i < N; i++) {
+        if (!std::isfinite(out.L[i]) || !std::isfinite(out.R[i])) { out.finite = false; break; }
+        out.peak = fmaxf(out.peak, fmaxf(fabsf(out.L[i]), fabsf(out.R[i])));
+    }
+    return out;
+}
+
+// SYNC locks the ping-pong to the transport, which is the point of the feature
+// on a drum machine: a bounce at a note division is part of the pattern, a
+// bounce at some millisecond value drifts against it.
+static void test_tempo_sync() {
+    printf("\n[sync] SYNC locks the bounce to the host tempo\n");
+
+    // At 120 BPM a quarter note is 500 ms, so these come out at 125/250/500.
+    const int   div[]    = {k_sync_16th, k_sync_8th, k_sync_quarter};
+    const char* name[]   = {"1/16", "1/8", "1/4"};
+    const float wantMs[] = {125.0f, 250.0f, 500.0f};
+    for (int i = 0; i < 3; i++) {
+        Bounce b = bounce(renderTempo(div[i], 120.0f, true, 8.0f), 0.15f);
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(%s at 120 BPM: want %.0f ms, measured %.0f ms, strength %.2f)",
+                 name[i], wantMs[i], b.periodMs, b.strength);
+        check(b.strength > 0.2f && fabsf(b.periodMs - wantMs[i]) < 0.45f * wantMs[i],
+              "a synced division bounces at its note length", buf);
+    }
+
+    // ...and the tempo has to actually move it. 1/8 is 333 ms at 90 BPM and
+    // 188 ms at 160.
+    Bounce slow = bounce(renderTempo(k_sync_8th, 90.0f, true, 8.0f), 0.15f);
+    Bounce fast = bounce(renderTempo(k_sync_8th, 160.0f, true, 8.0f), 0.15f);
+    char buf[160];
+    snprintf(buf, sizeof(buf), "(1/8 at 90 BPM %.0f ms, at 160 BPM %.0f ms)",
+             slow.periodMs, fast.periodMs);
+    check(slow.periodMs > fast.periodMs + 40.0f, "a slower tempo bounces slower", buf);
+
+    // With SYNC off the tempo must not reach the bounce at all.
+    static NeonAdvancedLabirinto rv;
+    rv = NeonAdvancedLabirinto(); rv.init(); rv.loadPreset(2);
+    const float freeMs = rv.bounceTimeMs;
+    rv.setTempo((uint32_t)(60.0f * 65536.0f));
+    snprintf(buf, sizeof(buf), "(%.0f ms before, %.0f ms after)", freeMs, rv.bounceTimeMs);
+    check(rv.bounceTimeMs == freeMs, "tempo is ignored while SYNC is off", buf);
+
+    // Order must not matter, the same way PILL and DFSN must not.
+    static NeonAdvancedLabirinto a, b;
+    a = NeonAdvancedLabirinto(); a.init(); a.loadPreset(2);
+    b = NeonAdvancedLabirinto(); b.init(); b.loadPreset(2);
+    const uint32_t t140 = (uint32_t)(140.0f * 65536.0f);
+    a.setParameter(k_bounce_sync, k_sync_8th_dotted); a.setTempo(t140);
+    b.setTempo(t140); b.setParameter(k_bounce_sync, k_sync_8th_dotted);
+    snprintf(buf, sizeof(buf), "(%.2f ms vs %.2f ms)", a.bounceTimeMs, b.bounceTimeMs);
+    check(a.bounceTimeMs == b.bounceTimeMs, "SYNC and tempo arrive in either order", buf);
+
+    // A division longer than the delay lines can hold clamps rather than
+    // wrapping to something arbitrary: a quarter note at 60 BPM is 1000 ms.
+    static NeonAdvancedLabirinto z;
+    z = NeonAdvancedLabirinto(); z.init(); z.loadPreset(2);
+    z.setParameter(k_bounce_sync, k_sync_quarter);
+    z.setTempo((uint32_t)(60.0f * 65536.0f));
+    snprintf(buf, sizeof(buf), "(%.0f ms, ceiling %.0f ms)", z.bounceTimeMs, (float)PINGPONG_MAX_MS);
+    check(z.bounceTimeMs == PINGPONG_MAX_MS, "a tempo past the buffer clamps", buf);
+
+    // BNCE is inert while synced, and takes over again when SYNC goes off.
+    z.setParameter(k_bounce, 60);
+    const bool ignored = (z.bounceTimeMs == PINGPONG_MAX_MS);
+    z.setParameter(k_bounce_sync, k_sync_off);
+    const bool restored = (z.bounceTimeMs == PINGPONG_MIN_MS);
+    snprintf(buf, sizeof(buf), "(synced %s, released to %.0f ms)",
+             ignored ? "held" : "moved", z.bounceTimeMs);
+    check(ignored && restored, "BNCE is ignored while synced and resumes after", buf);
+}
+
 int main() {
     printf("NeonAdvancedLabirinto host tests\n");
     test_matrices();
@@ -553,6 +651,7 @@ int main() {
     test_vibr_rate();
     test_filter_update_phase();
     test_derived_state_order_independent();
+    test_tempo_sync();
 
     printf("\n%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

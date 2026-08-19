@@ -140,6 +140,9 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
     if ((id == k_paramProgram) && (value < k_preset_number)) {
         return k_preset_names[value];
     }
+    if ((id == k_bounce_sync) && (value >= 0) && (value < k_sync_count)) {
+        return k_bounce_sync_names[value];
+    }
     (void)id;
     (void)value;
     if (id == k_shimmer_freq)
@@ -157,8 +160,15 @@ __unit_callback const uint8_t* unit_get_param_bmp_value(uint8_t id, int32_t valu
     return nullptr;
 }
 
+// Tempo, for the SYNC parameter's note divisions. The SDK notes this can fire
+// often when externally synced; the engine early-outs unless the tempo actually
+// changed and the bounce is actually following it.
+__unit_callback void unit_set_tempo(uint32_t tempo) {
+    if (!s_reverb) return;
+    s_reverb->setTempo(tempo);
+}
+
 // Unused MIDI callbacks
-__unit_callback void unit_set_tempo(uint32_t tempo) { (void)tempo; }
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) { (void)note; (void)velocity; }
 __unit_callback void unit_note_off(uint8_t note) { (void)note; }
 __unit_callback void unit_gate_on(uint8_t velocity) { (void)velocity; }

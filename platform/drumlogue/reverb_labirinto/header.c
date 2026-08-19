@@ -13,10 +13,10 @@ const __unit_header unit_header_t unit_header = {
     .api         = UNIT_API_VERSION,
     .dev_id      = 0x46654465U,   // 'FeDe' - https://github.com/fedemone/logue-sdk
     .unit_id     = 0x00010000U,
-    .version     = 0x00010100U,   // v1.1.0 - adds BNCE (param count 11 -> 12)
+    .version     = 0x00010200U,   // v1.2.0 - adds SYNC (param count 12 -> 13)
     .name        = "NeonLabirinto",
     .num_presets = 0,
-    .num_params  = 12,
+    .num_params  = 13,
     .params = {
         // Page 1: Main reverb controls
         // ID 0: Preset name
@@ -45,11 +45,15 @@ const __unit_header unit_header_t unit_header = {
         { 0, 200, 0, 0, k_unit_param_type_none, 0, 0, 0, {"PDLY"} },
         // ID 10: VIBR  LFO speed for random modulation (0.1-3.0 Hz, stored as 1-30)
         { 1, 30, 10, 10, k_unit_param_type_none, 0, 0, 0, {"VIBR"} },
-        // ID 11: BNCE  ping-pong bounce time in ms (PILL=1)
+        // ID 11: BNCE  ping-pong bounce time in ms (PILL=1, ignored when SYNC is on)
         { 60, 500, 180, 180, k_unit_param_type_msec, 0, 0, 0, {"BNCE"} },
 
-        // Pages 4-6: blank padding
-        { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
+        // Page 4:
+        // ID 12: SYNC  lock the bounce to the host tempo
+        //              0=off, 1=1/16, 2=1/8T, 3=1/8, 4=1/8., 5=1/4
+        { 0, 5, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"SYNC"} },
+
+        // Rest of page 4, and pages 5-6: blank padding
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
