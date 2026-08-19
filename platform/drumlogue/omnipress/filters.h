@@ -112,11 +112,16 @@ fast_inline void sidechain_hpf_set_cutoff(sidechain_hpf_t* f, float cutoff) {
 #define DETECT_MODE_RMS  1
 #define DETECT_MODE_BLEND 2
 
+// Scalar state: the histories below are updated once per sample, in order.
+// They used to be float32x4_t, which gave each of the 4 lanes its own detector
+// advanced once per block — so a coefficient derived for 48 kHz was applied at
+// 12 kHz and every time constant ran 4x long, with the lanes free to diverge.
 typedef struct {
-    float32x4_t rms_accum;       // Running sum for RMS
-    float32x4_t peak_hold;       // Peak hold value
-    uint32x4_t hold_counter;     // Hold time counter
-    float32x4_t last_envelope;   // Previous envelope value
+    float rms_accum;             // Running mean square
+    float env_state;             // Smoothed envelope (linear)
+    float rms_alpha;             // Per-sample coefficient of the RMS window
+    uint32_t hold_counter;       // Samples left to hold before releasing
+    uint32_t hold_samples;       // Hold length in samples
     uint8_t mode;                // Detection mode
     float attack_coeff;          // Attack smoothing
     float release_coeff;         // Release smoothing
@@ -127,16 +132,17 @@ typedef struct {
  * Initialize envelope detector
  */
 fast_inline void envelope_detector_init(envelope_detector_t* env, float sr) {
-    env->rms_accum = vdupq_n_f32(0.0f);
-    env->peak_hold = vdupq_n_f32(0.0f);
-    env->hold_counter = vdupq_n_u32(0);
-    env->last_envelope = vdupq_n_f32(0.0f);
+    env->rms_accum = 0.0f;
+    env->env_state = 0.0f;
+    env->hold_counter = 0;
+    env->hold_samples = (uint32_t)(ENV_HOLD_MS * 0.001f * sr);
     env->mode = DETECT_MODE_PEAK;
     env->sample_rate = sr;
 
     // Default 10ms attack, 100ms release
     env->attack_coeff = e_expff(-1.0f / (0.01f * sr));
     env->release_coeff = e_expff(-1.0f / (0.1f * sr));
+    env->rms_alpha = 1.0f - e_expff(-1.0f / (ENV_RMS_WINDOW_MS * 0.001f * sr));
 }
 
 // Set attack/release times
@@ -147,82 +153,76 @@ fast_inline void envelope_set_attack_release(envelope_detector_t* env,
     env->release_coeff = e_expff(-1.0f / (release_ms * 0.001f * env->sample_rate));
 }
 
-// Process 4 samples through envelope detector
+// Process 4 samples through the envelope detector, one sample at a time so the
+// attack/release coefficients mean what they say.
+//
+// Peak mode used to latch: a hold counter incremented once per block, so the
+// "10ms hold" was really 417 ms, and when it expired it applied a single 0.999
+// step before resetting — about 0.009 dB of decay per 417 ms. The envelope
+// could rise but effectively never fell, so gain reduction never recovered
+// after a transient and the RELEASE control did nothing. Peak now rectifies and
+// lets the attack/release one-pole below provide the ballistics, which is what
+// makes RELEASE audible.
+//
+// Blend mode read peak_hold, which only the peak branch ever wrote — and a
+// switch runs one branch, so it was stuck at 0 and the "blend" was 0.3x RMS,
+// i.e. 10.5 dB low. It now derives peak locally like the other modes.
 fast_inline float32x4_t envelope_detect(envelope_detector_t* env,
                                         float32x4_t sidechain) {
-    float32x4_t abs_in = vabsq_f32(sidechain);
-    float32x4_t envelope;
+    float x[4], out[4];
+    vst1q_f32(x, sidechain);
 
-    switch (env->mode) {
-        case DETECT_MODE_PEAK: {
-            // Peak detection with hold
-            uint32x4_t new_peak = vcgtq_f32(abs_in, env->peak_hold);
-            env->peak_hold = vbslq_f32(new_peak, abs_in, env->peak_hold);
+    float rms_accum = env->rms_accum;
+    float state     = env->env_state;
+    uint32_t hold   = env->hold_counter;
+    const float att = env->attack_coeff;
+    const float rel = env->release_coeff;
+    const float ra  = env->rms_alpha;
+    const uint32_t hold_samples = env->hold_samples;
+    const uint8_t mode = env->mode;
 
-            // Hold counter
-            env->hold_counter = vaddq_u32(env->hold_counter, vdupq_n_u32(1));
-            uint32x4_t hold_done = vcgtq_u32(env->hold_counter, vdupq_n_u32(5000)); // 10ms hold
+    for (int i = 0; i < 4; ++i) {
+        const float ax = fabsf(x[i]);
+        float target;
 
-            // Decay peak when hold expires
-            env->peak_hold = vbslq_f32(hold_done,
-                                       vmulq_f32(env->peak_hold, vdupq_n_f32(0.999f)),
-                                       env->peak_hold);
-            env->hold_counter = vbslq_u32(hold_done, vdupq_n_u32(0), env->hold_counter);
+        switch (mode) {
+            case DETECT_MODE_RMS:
+                rms_accum += ra * (x[i] * x[i] - rms_accum);
+                target = sqrtf(rms_accum);
+                break;
 
-            envelope = env->peak_hold;
-            break;
+            case DETECT_MODE_BLEND:
+                // Peak and RMS in the SSL proportion
+                rms_accum += ra * (x[i] * x[i] - rms_accum);
+                target = 0.7f * ax + 0.3f * sqrtf(rms_accum);
+                break;
+
+            case DETECT_MODE_PEAK:
+            default:
+                target = ax;
+                break;
         }
 
-        case DETECT_MODE_RMS: {
-            // RMS with 50ms window
-            float32x4_t squared = vmulq_f32(sidechain, sidechain);
-            float alpha = 0.01f;  // 10ms time constant
-            env->rms_accum = vaddq_f32(vmulq_f32(squared, vdupq_n_f32(alpha)),
-                                       vmulq_f32(env->rms_accum, vdupq_n_f32(1.0f - alpha)));
-
-            // Guard against zero: vrsqrteq_f32(0) = INF, and 0*INF = NaN (sticky).
-            float32x4_t safe_rms = vmaxq_f32(env->rms_accum, vdupq_n_f32(1e-30f));
-            float32x4_t rsq = vrsqrteq_f32(safe_rms);
-            rsq = vmulq_f32(vrsqrtsq_f32(vmulq_f32(safe_rms, rsq), rsq), rsq);  // NR step
-            envelope = vmulq_f32(safe_rms, rsq);
-            break;
+        // Rising: attack, and re-arm the hold. Falling: sit still for the hold
+        // period, then release. Without the hold a peak detector sags between
+        // waveform peaks, and at fast release settings that ripple modulates the
+        // VCA at audio rate. This is the 10 ms hold the old code documented but
+        // never actually applied.
+        if (target > state) {
+            state = target + att * (state - target);
+            hold = hold_samples;
+        } else if (hold > 0) {
+            --hold;
+        } else {
+            state = target + rel * (state - target);
         }
-
-        case DETECT_MODE_BLEND: {
-            // Blend peak and RMS (like SSL console).
-            // Peak hold is updated in DETECT_MODE_PEAK path above; read it here
-            // without duplicating the hold logic.
-            float32x4_t peak = env->peak_hold;
-
-            float32x4_t squared = vmulq_f32(sidechain, sidechain);
-            float alpha = 0.01f;
-            env->rms_accum = vaddq_f32(vmulq_f32(squared, vdupq_n_f32(alpha)),
-                                       vmulq_f32(env->rms_accum, vdupq_n_f32(1.0f - alpha)));
-
-            float32x4_t safe_rms = vmaxq_f32(env->rms_accum, vdupq_n_f32(1e-30f));
-            float32x4_t rsq = vrsqrteq_f32(safe_rms);
-            rsq = vmulq_f32(vrsqrtsq_f32(vmulq_f32(safe_rms, rsq), rsq), rsq);  // NR step
-            float32x4_t rms = vmulq_f32(safe_rms, rsq);
-
-            envelope = vaddq_f32(vmulq_f32(peak, vdupq_n_f32(0.7f)),
-                                 vmulq_f32(rms, vdupq_n_f32(0.3f)));
-            break;
-        }
-
-        default:
-            envelope = abs_in;
+        out[i] = state;
     }
 
-    // Smooth with attack/release
-    uint32x4_t attacking = vcgtq_f32(envelope, env->last_envelope);
-    float32x4_t coeff = vbslq_f32(attacking,
-                                  vdupq_n_f32(env->attack_coeff),
-                                  vdupq_n_f32(env->release_coeff));
-
-    env->last_envelope = vaddq_f32(vmulq_f32(envelope, vsubq_f32(vdupq_n_f32(1.0f), coeff)),
-                                   vmulq_f32(env->last_envelope, coeff));
-
-    return env->last_envelope;
+    env->rms_accum = rms_accum;
+    env->env_state = state;
+    env->hold_counter = hold;
+    return vld1q_f32(out);
 }
 
 /* ---------------------------------------------------------------------------

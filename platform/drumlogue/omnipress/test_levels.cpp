@@ -14,7 +14,7 @@
  *       -o test_levels test_levels.cpp -lm
  * Run:
  *   ./test_levels            # everything
- *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|quirks
+ *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks
  */
 
 #include <cstdio>
@@ -144,6 +144,8 @@ static Result measure(double amp, double f0, int settle, int meas, int pan = 0) 
         }
     }
 
+    if (!N) return Result{};   /* settle-only call: nothing to analyse */
+
     double A[NH];
     for (int k = 1; k < NH; ++k) A[k] = 2.0 * sqrt(re[k]*re[k] + im[k]*im[k]) / N;
     double Asub = 2.0 * sqrt(sre*sre + sim*sim) / N;
@@ -165,6 +167,40 @@ static Result measure(double amp, double f0, int settle, int meas, int pan = 0) 
     r.nonfund_pct  = 100.0 * sqrt(nonfund) / (A[1] + 1e-30);
     r.sub_db       = 20.0 * log10((Asub + 1e-30) / (A[1] + 1e-30));
     return r;
+}
+
+/* Main bus and sidechain input at independent levels; returns the gain applied
+ * to the main bus at the fundamental. */
+static double measureKeyed(double amp, double key_amp, double f0,
+                           int settle, int meas) {
+    std::vector<float> in(BLOCK * NCH), out(BLOCK * 2);
+    const double w = 2.0 * M_PI * f0 / SR;
+    long n = 0;
+    double re = 0, im = 0;
+    long N = 0;
+
+    for (int phase = 0; phase < 2; ++phase) {
+        const int frames = phase ? meas : settle;
+        for (int done = 0; done < frames; done += (int)BLOCK) {
+            long n0 = n;
+            for (size_t i = 0; i < BLOCK; ++i, ++n) {
+                float m = (float)(amp * sin(w * n));
+                float k = (float)(key_amp * sin(w * n));
+                in[i*NCH+0] = m; in[i*NCH+1] = m;
+                in[i*NCH+2] = k; in[i*NCH+3] = k;
+            }
+            g_fx.Process(in.data(), out.data(), BLOCK);
+            if (phase) {
+                for (size_t i = 0; i < BLOCK; ++i) {
+                    double x = out[i*2], t = (double)(n0 + (long)i);
+                    re += x * cos(w * t); im += x * sin(w * t); N++;
+                }
+            }
+        }
+    }
+    if (!N) return 0.0;
+    double A = 2.0 * sqrt(re*re + im*im) / N;
+    return 20.0 * log10((A + 1e-30) / amp);
 }
 
 static const char* DIST_NAME[9] = {
@@ -410,6 +446,72 @@ static void section_kick() {
     }
 }
 
+/* H. Transient behaviour. Steady tones cannot see a detector that fails to
+ *    release, which is how a latching peak detector survived section A-G. */
+static void section_release() {
+    hdr("H1. RELEASE ON TRANSIENT MATERIAL\n"
+        "    200 ms hit at -3 dBFS, then a -30 dBFS tail. Gain applied to the\n"
+        "    tail, in 100 ms windows. The rows must differ with RELEASE.");
+
+    struct Case { const char* name; int mode; int slope; int release; int detect; };
+    const Case cases[] = {
+        { "Standard Peak  REL=10",   0, 58,   10, 0 },
+        { "Standard Peak  REL=200",  0, 58,  200, 0 },
+        { "Standard Peak  REL=2000", 0, 58, 2000, 0 },
+        { "Standard RMS   REL=200",  0, 58,  200, 1 },
+        { "Standard Blend REL=200",  0, 58,  200, 2 },
+        { "Distressor 4:1 REL=10",   1, 38,   10, 0 },
+        { "Distressor 4:1 REL=2000", 1, 38, 2000, 0 },
+        { "Multiband      REL=200",  2, 40,  200, 0 },
+    };
+
+    printf("  %-24s %s\n", "config", " 100ms   200    300    400    500    600    700    800");
+    for (const Case& c : cases) {
+        Params p = headerDefaults();
+        p.v[k_compressor_mode]   = c.mode;
+        p.v[k_slope]             = c.slope;
+        p.v[k_release]           = c.release;
+        p.v[k_detection_mode]    = c.detect;
+        p.v[k_attenuation_limit] = -300;
+        p.v[k_gain_limit]        = 300;
+        if (c.mode == 2) {
+            p.v[k_multiband_band_selection] = BAND_ALL;
+            p.v[k_multiband_band_threshold] = -200;
+            p.v[k_multiband_band_release]   = c.release;
+        }
+        apply(p);
+        measure(0.708, F0, 9600, 0);          /* the hit, no analysis */
+        printf("  %-24s", c.name);
+        for (int k = 0; k < 8; ++k)
+            printf(" %6.1f", measure(0.0316, F0, 0, 4800).gain_fund_db);
+        printf("\n");
+    }
+
+    hdr("H2. EXTERNAL SIDECHAIN (DETECT + 4)\n"
+        "    Main -20 dBFS, key -3 dBFS, both 1 kHz. Internal detection must\n"
+        "    ignore the key; external must duck. Multiband ducks only the band\n"
+        "    the key occupies, so it ducks less than the broadband modes.");
+    printf("  %-12s %14s %14s\n", "mode", "internal", "external");
+    for (int mode = 0; mode < 3; ++mode) {
+        Params p = headerDefaults();
+        p.v[k_compressor_mode]   = mode;
+        p.v[k_slope]             = (mode == 1) ? distressorSlopeRaw(3) : 58;
+        p.v[k_attenuation_limit] = -300;
+        p.v[k_gain_limit]        = 300;
+        if (mode == 2) {
+            p.v[k_multiband_band_selection] = BAND_ALL;
+            p.v[k_multiband_band_threshold] = -200;
+        }
+        p.v[k_detection_mode] = 0;
+        apply(p);
+        double internal = measureKeyed(0.1, 0.708, F0, SETTLE, MEAS);
+        p.v[k_detection_mode] = 4;
+        apply(p);
+        double external = measureKeyed(0.1, 0.708, F0, SETTLE, MEAS);
+        printf("  %-12s %+14.2f %+14.2f\n", MODE_NAME[mode], internal, external);
+    }
+}
+
 /* G. Mechanisms behind the numbers above. */
 static void section_quirks() {
     hdr("G1. MAKEUP GAIN ACCURACY, measured end to end through Process()\n"
@@ -571,6 +673,7 @@ int main(int argc, char** argv) {
     if (s == "all" || s == "mb")      section_mb();
     if (s == "all" || s == "drive")   section_drive();
     if (s == "all" || s == "kick")    section_kick();
+    if (s == "all" || s == "release") section_release();
     if (s == "all" || s == "quirks")  section_quirks();
     printf("\n");
     return 0;

@@ -39,6 +39,11 @@ typedef struct {
     crossover_t xover_low_mid;
     crossover_t xover_mid_high;
 
+    // Mono crossover for an external sidechain key. Only stepped when the
+    // external sidechain is selected, so internal detection costs nothing extra.
+    crossover_t xover_sc_low_mid;
+    crossover_t xover_sc_mid_high;
+
     // RESTORED STATE: Persistent time-histories for the compressors (mono-linked)
     float32x4_t comp_gain_state[NUM_OF_BANDS]; // Persistent smoothing history (dB)
     float32x4_t comp_env_state[NUM_OF_BANDS];  // Persistent pre-smoother history (Linear)
@@ -95,6 +100,8 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     // Initialize crossovers
     crossover_init(&mb->xover_low_mid, mb->xover_low_freq, sample_rate);
     crossover_init(&mb->xover_mid_high, mb->xover_high_freq, sample_rate);
+    crossover_init(&mb->xover_sc_low_mid, mb->xover_low_freq, sample_rate);
+    crossover_init(&mb->xover_sc_mid_high, mb->xover_high_freq, sample_rate);
 
     // Default band parameters
     for (int i = 0; i < NUM_OF_BANDS; i++) {
@@ -247,9 +254,13 @@ fast_inline float32x4_t process_compressor_lane(float32x4_t* gain_state, float32
     return neon_expq_f32(vmulq_f32(*gain_state, vdupq_n_f32(INV_DB_COEFF)));
 }
 
-// Processing Execution Path
+// Processing Execution Path.
+// sidechain is a mono key signal; when use_sidechain is set the band envelopes
+// are derived from it instead of from the audio, so the external input keys
+// each band through its own frequency split rather than broadband.
 fast_inline void multiband_process(multiband_t* mb,
                                    float32x4_t in_l, float32x4_t in_r,
+                                   float32x4_t sidechain, bool use_sidechain,
                                    float32x4_t* out_l, float32x4_t* out_r) {
     float32x4_t low_l, low_r;
     float32x4_t mid_l, mid_r;
@@ -275,9 +286,22 @@ fast_inline void multiband_process(multiband_t* mb,
     // ------------------------------------------------------------
     // Stage 2: Stereo-linked envelope estimation
     // ------------------------------------------------------------
-    float32x4_t inst_low  = vmaxq_f32(vabsq_f32(low_l),  vabsq_f32(low_r));
-    float32x4_t inst_mid  = vmaxq_f32(vabsq_f32(mid_l),  vabsq_f32(mid_r));
-    float32x4_t inst_high = vmaxq_f32(vabsq_f32(high_l), vabsq_f32(high_r));
+    float32x4_t inst_low, inst_mid, inst_high;
+    if (use_sidechain) {
+        // Split the key signal with its own mono tree and detect from that
+        float32x4_t sc_low, sc_rest, sc_mid, sc_high;
+        crossover_process_mono(&mb->xover_sc_low_mid, sidechain,
+                               &sc_low, &sc_rest, mb->xover_low_freq, mb->sample_rate);
+        crossover_process_mono(&mb->xover_sc_mid_high, sc_rest,
+                               &sc_mid, &sc_high, mb->xover_high_freq, mb->sample_rate);
+        inst_low  = vabsq_f32(sc_low);
+        inst_mid  = vabsq_f32(sc_mid);
+        inst_high = vabsq_f32(sc_high);
+    } else {
+        inst_low  = vmaxq_f32(vabsq_f32(low_l),  vabsq_f32(low_r));
+        inst_mid  = vmaxq_f32(vabsq_f32(mid_l),  vabsq_f32(mid_r));
+        inst_high = vmaxq_f32(vabsq_f32(high_l), vabsq_f32(high_r));
+    }
 
     float ilow[4], imid[4], ihigh[4];
     float olow[4], omid[4], ohigh[4];

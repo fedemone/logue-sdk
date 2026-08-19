@@ -9,7 +9,7 @@
 | Feature | Description |
 |---------|-------------|
 | **3 Compression Modes** | Standard, Distressor, Multiband |
-| **External Sidechain** | 4-channel input for ducking/pumping |
+| **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
 | **Drive/Wavefolder** | 5 distortion modes from soft clip to sub-octave |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
 | **NEON Optimization** | Fully vectorized for ARM Cortex-A7 |
@@ -248,6 +248,10 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | DRIVE=1 did nothing; DRIVE=2 stepped ~2 dB | Gate `drive_ > 0.01f`, plus the Overlord EQ never ran below DRIVE=2 | DRIVE=0 takes the EQ-only path; the tube blend fades in over the bottom tenth of the knob |
 | SLOPE evaluated against the previous COMP MODE | A host replaying parameters in ID order sets SLOPE (ID 1) before COMP MODE (ID 8), so the Distressor ratio stayed at its 4:1 init | `k_compressor_mode` re-applies the stored SLOPE |
 | DstrDist max was 9 | Value 9 is rejected by `setParameter` and has no display string | Max is 8 in `header.c` |
+| Peak detector latched | Hold counter incremented once per 4-sample block, so the "10 ms hold" was 417 ms and expiry applied a single 0.999 step — ~0.009 dB of decay per 417 ms. Gain reduction never recovered after a transient and RELEASE did nothing in Peak mode, the default | Rectify, then let the attack/release one-pole provide ballistics, with the intended 10 ms hold implemented in samples |
+| Blend detection was 0.3 × RMS | Its branch read `peak_hold`, which only the Peak branch wrote — and a `switch` runs one branch, so peak stayed 0 and the envelope sat 10.5 dB low, pivoting into upward gain | Blend derives peak locally |
+| Detector and Distressor gain smoother ran 4× slow | State was `float32x4_t`, giving each lane its own history advanced once per block, so per-sample coefficients were applied at 12 kHz | Sequential scalar state, as the crossovers and `standard_process` already use |
+| External sidechain unreachable | `use_external_sc_` was only ever assigned 0; the 4-channel input the unit asks for could not be selected | DETECT + 4 selects it (all 24 SDK parameter slots were already taken). Multiband splits the key through its own mono crossover so it ducks per band |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
 
