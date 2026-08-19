@@ -22,7 +22,11 @@ UINCDIR  = .
 # Compiler Flags
 #
 
-UCFLAGS = -mfpu=neon -mfloat-abi=softfp -O3 -ftree-vectorize -ffast-math
+# NOTE: the SDK Makefile never reads UCFLAGS, and the arch/FPU flags it does
+# use (-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard) are already correct for
+# the drumlogue.  Setting -mfloat-abi=softfp here looked like it was overriding
+# them but was silently ignored; had it applied it would have produced an ABI
+# mismatch at the unit boundary.  Extra defines belong in UDEFS below.
 
 ##############################################################################
 # Libraries

@@ -12,7 +12,7 @@ const __unit_header unit_header_t unit_header = {
     .api         = UNIT_API_VERSION,
     .dev_id      = 0x46654465U,   // 'FeDe'
     .unit_id     = 0x506F7274U,   // 'Port'
-    .version     = 0x00010000U,   // v1.0.0
+    .version     = 0x00020000U,   // v2.0.0
     .name        = "PortaK7",     // 8 chars max for OLED
     .num_presets = 0,             // Can add presets later
     .num_params  = 16,            // 3 full pages
@@ -34,7 +34,7 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 0, 40, k_unit_param_type_percent, 0, 0, 0, {"Drive"} },
 
         // ==========================================
-        // PAGE 2: Parametric EQ (Low / Mid)
+        // PAGE 2: Machine Character & EQ Low band
         // ==========================================
         // ID 4: dbx Mode (0 = Active, 1 = Encode Only (Bypass Decode), 2 = Off)
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"dbx NR"} },
@@ -49,7 +49,7 @@ const __unit_header unit_header_t unit_header = {
         { 0, 240, 120, 120, k_unit_param_type_strings, 0, 0, 0, {"LowGain"} },
 
         // ==========================================
-        // PAGE 3: Parametric EQ (High) & Output
+        // PAGE 3: Parametric EQ (Mid / High)
         // ==========================================
         // ID 8: Mid Frequency (20 = 200Hz, 500 = 5000Hz -> x10 mapping)
         { 20, 500, 100, 100, k_unit_param_type_strings, 0, 0, 0, {"MidHz"} },
@@ -64,13 +64,17 @@ const __unit_header unit_header_t unit_header = {
         { 0, 240, 120, 120, k_unit_param_type_strings, 0, 0, 0, {"HiGain"} },
 
 
-        // Pages 4-6: blank
+        // ==========================================
+        // PAGE 4: Noise & dbx ballistics
+        // ==========================================
         // ID 12: Crosstalk (mapped to 0.0f to 0.1f)
         { 0, 10, 0, 5, k_unit_param_type_none, 0, 0, 0, {"X-talk"} },
         // ID 13: Tape Bias Hiss (0 to 100%)
         { 0, 100, 0, 15, k_unit_param_type_percent, 0, 0, 0, {"Hiss"} },
-        { 1, 20, 8, 10, k_unit_param_type_none, 2, 1, 0, {"Attack"} },
-        { 1, 100, 5, 50, k_unit_param_type_none, 4, 1, 0, {"Release"} },
+        // ID 14: dbx detector attack, 0.1 to 100.0 ms (x0.1 ms, stored 1..1000)
+        { 1, 1000, 30, 30, k_unit_param_type_msec, 1, 1, 0, {"Attack"} },
+        // ID 15: dbx detector release, 10 to 2000 ms
+        { 10, 2000, 150, 150, k_unit_param_type_msec, 0, 0, 0, {"Release"} },
 
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
         { 0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""} },
