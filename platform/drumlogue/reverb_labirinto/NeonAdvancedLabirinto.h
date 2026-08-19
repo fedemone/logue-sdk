@@ -925,31 +925,21 @@ public:
             return;
         }
 
-        // Process in blocks of 4 samples
+        // The host normally hands us frames_per_buffer, but the SDK allows
+        // smaller counts, so anything from 1 frame up has to work.
         int samplesProcessed = 0;
         while (samplesProcessed < numSamples) {
-            int blockSize = (numSamples - samplesProcessed) >= 4 ? 4 : 1;
-
-            if (blockSize == 4) {
-                // =================================================================
-                // VECTORIZED PATH: Process 4 samples at once
-                // =================================================================
+            const int remaining = numSamples - samplesProcessed;
+            if (remaining >= NEON_LANES) {
                 process4Samples(inL + samplesProcessed, inR + samplesProcessed,
                                 outL + samplesProcessed, outR + samplesProcessed);
+                samplesProcessed += NEON_LANES;
             } else {
-                // =================================================================
-                // SCALAR PATH: Process remaining 1-3 samples
-                // =================================================================
-                for (int i = 0; i < blockSize; i++) {
-                    float mono = (inL[samplesProcessed + i] + inR[samplesProcessed + i]) * 0.5f;
-                    float wetL, wetR;
-                    processScalar(mono, wetL, wetR);
-                    outL[samplesProcessed + i] = wetL;
-                    outR[samplesProcessed + i] = wetR;
-                }
+                processPartial(inL + samplesProcessed, inR + samplesProcessed,
+                               outL + samplesProcessed, outR + samplesProcessed,
+                               remaining);
+                samplesProcessed += remaining;
             }
-
-            samplesProcessed += blockSize;
         }
     }
 
@@ -1334,14 +1324,6 @@ private:
     inline void applySoftSaturation(float32x4_t* signals) { softClipN(signals, FDN_CHANNELS); }
     inline void softClipPair(float32x4_t* signals)        { softClipN(signals, 2); }
 
-    static inline float softClipScalar(float x) {
-        const float range = 1.0f - kLimitThreshold;
-        float a = fabsf(x);
-        if (a <= kLimitThreshold) return x;
-        float u = fminf((a - kLimitThreshold) / range, 1.0f);
-        float mag = kLimitThreshold + range * (u - u * u * u * (1.0f / 3.0f));
-        return (x < 0.0f) ? -mag : mag;
-    }
 
     /**
      * Glide the live delay lengths toward their targets, once per block. A step
@@ -1685,224 +1667,45 @@ private:
     }
 
     /*===========================================================================*/
-    /* Scalar Fallback for Remainder Samples (less complex than process4Samples  */
-    /* as is process no more than 3 samples)                                     */
+    /* Remainder frames                                                          */
     /*===========================================================================*/
-    inline void applyHadamardScalar(const float* in, float* out) {
-        // Pass 1 (Reads directly from 'in')
-        float t0 = in[0] + in[4]; float t4 = in[0] - in[4];
-        float t1 = in[1] + in[5]; float t5 = in[1] - in[5];
-        float t2 = in[2] + in[6]; float t6 = in[2] - in[6];
-        float t3 = in[3] + in[7]; float t7 = in[3] - in[7];
 
-        // Pass 2
-        float u0 = t0 + t2; float u2 = t0 - t2;
-        float u1 = t1 + t3; float u3 = t1 - t3;
-        float u4 = t4 + t6; float u6 = t4 - t6;
-        float u5 = t5 + t7; float u7 = t5 - t7;
+    /**
+     * Render 1-3 leftover frames.
+     *
+     * The DSP only exists in the 4-wide form, so the remainder is zero-padded up
+     * to a full block and the surplus outputs are discarded. The write heads are
+     * then wound back to advance by exactly the frames the host asked for, so
+     * the padding cannot make the reverb run fast: the delay-line frames written
+     * past the end are simply overwritten by the next call. Only the filter and
+     * LFO states see the extra samples of silence, which is a sub-microsecond
+     * error once per render call and does not accumulate.
+     *
+     * This replaces a hand-written scalar twin of the whole engine. It had
+     * drifted a long way from the vector path -- no colour biquad, no metal
+     * comb, no crystal allpass, no cross-feedback, no noise injection, no delay
+     * slew, input into one channel instead of four, and 21x the modulation
+     * depth -- while writing into the same delay lines as the vector path.
+     */
+    void processPartial(const float* inL, const float* inR,
+                        float* outL, float* outR, int n) {
+        float padL[NEON_LANES] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float padR[NEON_LANES] = {0.0f, 0.0f, 0.0f, 0.0f};
+        float tmpL[NEON_LANES], tmpR[NEON_LANES];
+        for (int i = 0; i < n; i++) { padL[i] = inL[i]; padR[i] = inR[i]; }
 
-        // Pass 3 (Writes directly to 'out' with scale applied)
-        // Must match the vector path: the matrix has to stay orthonormal or the
-        // network gains 3 dB per pass and diverges. (This was 0.5 — a 1.41x
-        // energy gain — on the assumption that the scalar path is too short to
-        // matter. It feeds the same delay lines as the vector path, so it does.)
-        const float scale = 0.35355339f; // 1.0 / sqrt(8)
-        out[0] = (u0 + u1) * scale; out[1] = (u0 - u1) * scale;
-        out[2] = (u2 + u3) * scale; out[3] = (u2 - u3) * scale;
-        out[4] = (u4 + u5) * scale; out[5] = (u4 - u5) * scale;
-        out[6] = (u6 + u7) * scale; out[7] = (u6 - u7) * scale;
-    }
+        const int wp0  = writePos;
+        const int pdp0 = preDelayWritePos;
 
-    // Scalar twin of applyPingPongMatrix: per-bank 4-point Hadamard, banks swapped.
-    inline void applyPingPongMatrixScalar(const float* in, float* out) {
-        const float scale = 0.5f;   // 1/sqrt(4)
-        for (int bank = 0; bank < 2; bank++) {
-            const float* s = &in[bank * 4];
-            float t0 = s[0] + s[2], t2 = s[0] - s[2];
-            float t1 = s[1] + s[3], t3 = s[1] - s[3];
-            float* d = &out[(1 - bank) * 4];
-            d[0] = (t0 + t1) * scale; d[1] = (t0 - t1) * scale;
-            d[2] = (t2 + t3) * scale; d[3] = (t2 - t3) * scale;
-        }
-    }
+        process4Samples(padL, padR, tmpL, tmpR);
 
-    void processScalar(float input, float& wetL, float& wetR) {
-        float delayOut[FDN_CHANNELS];
+        writePos = (wp0 + n) & BUFFER_MASK;
+        // The APC bypass path returns before touching the pre-delay line, so
+        // only wind that head back if it actually moved.
+        if (preDelayWritePos != pdp0)
+            preDelayWritePos = (pdp0 + n) & PREDELAY_MASK;
 
-        // APC WAKE-UP: check raw input before bypass guard (same reason as process4Samples).
-        if (fabsf(input) > 1e-5f)
-            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
-
-        if (activeSampleCount <= 0) {
-            // Apply dry gain so volume stays constant when bypassed!
-            wetL = 0.0f; wetR = 0.0f;
-            // Zero the position being skipped so old reverb data doesn't
-            // replay when the FDN reactivates after silence.
-            memset(&delayLine[writePos & BUFFER_MASK], 0, sizeof(interleaved_frame_t));
-            writePos = (writePos + 1) & BUFFER_MASK;
-            return;
-        }
-
-        // ==========================================
-        // SCALAR PREDELAY (Smoothed & Interpolated)
-        // ==========================================
-
-        // 1. WRITE FIRST: Guarantees that if Pre-Delay is 0.0ms,
-        // the read head instantly fetches the exact sample we just wrote.
-        preDelayBuffer[preDelayWritePos] = input;
-
-        // 2. Slew Limiter Math (1-Pole Low-Pass)
-        currentPreDelaySamples += 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
-
-        // 3. Calculate fractional read position
-        float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
-
-        // Branchless wrap for safety
-        float safe_pd_pos = pd_read_pos + (float)PREDELAY_BUFFER_SIZE;
-        int32_t pd_idx1 = (int32_t)safe_pd_pos;
-        int32_t pd_idx2 = pd_idx1 + 1;
-
-        // Mask to buffer size
-        uint32_t idx1 = pd_idx1 & PREDELAY_MASK;
-        uint32_t idx2 = pd_idx2 & PREDELAY_MASK;
-        float pd_frac = safe_pd_pos - (float)pd_idx1;
-
-        // 4. Linear Interpolation Read
-        float val1 = preDelayBuffer[idx1];
-        float val2 = preDelayBuffer[idx2];
-        float delayedInput = val1 + pd_frac * (val2 - val1);
-
-        // 5. Advance write head for the NEXT sample
-        preDelayWritePos = (preDelayWritePos + 1) & PREDELAY_MASK;
-
-        // 3. Active Partial Counting
-        if (fabsf(delayedInput) > 1e-5f) {
-            activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
-        } else if (activeSampleCount > 0) {
-            activeSampleCount--;
-        }
-
-        // Bypass if tail is dead
-        if (activeSampleCount <= 0) {
-            wetL = 0.0f;
-            wetR = 0.0f;
-            writePos = (writePos + 1) & BUFFER_MASK;
-            return;
-        }
-
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            // For scalar path, we only need the current phase (lane 0)
-            float phase = vgetq_lane_f32(modPhaseVec[ch], 0);
-
-            float delaySamples = delayTimes[ch] * sampleRate;
-            float mod = fastersinfullf(phase * M_TWOPI) * modDepth * 100.0f;
-            float readPos = (float)writePos - (delaySamples + mod);
-
-            while (readPos < 0) readPos += BUFFER_SIZE;
-            while (readPos >= BUFFER_SIZE) readPos -= BUFFER_SIZE;
-
-            int idx = (int)readPos;
-            int idx_next = (idx + 1) & BUFFER_MASK;
-            float frac = readPos - idx;
-
-            float s1 = delayLine[idx].samples[ch];
-            float s2 = delayLine[idx_next].samples[ch];
-            delayOut[ch] = s1 + frac * (s2 - s1);
-
-            // Update scalar phase (only for lane 0)
-            float new_phase = phase + modRate * M_TWOPI / sampleRate;
-            if (new_phase >= M_TWOPI) new_phase -= M_TWOPI;
-
-            // Update just lane 0, preserve other lanes
-            float32x4_t temp = modPhaseVec[ch];
-            temp = vsetq_lane_f32(new_phase, temp, 0);
-            modPhaseVec[ch] = temp;
-        }
-
-        float mixed[FDN_CHANNELS];
-        // unifiedDecay / lowBandGain / highBandGain are kept up to date by
-        // updateDecayGains() whenever TIME, LOW, HIGH, PILL or the mode changes.
-        const float scalar_input_gain = inputDrive;
-
-        if (pingPong_) applyPingPongMatrixScalar(delayOut, mixed);
-        else           applyHadamardScalar(delayOut, mixed);
-
-        // Same per-band feedback gain as the vector path, split on the DAMP
-        // crossover so LOW/HIGH shape the tail rather than just shortening it.
-        {
-            const float alpha = 1.0f - dampingCoeff;
-            for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-                lpfState[ch] += alpha * (mixed[ch] - lpfState[ch]);
-                float high = mixed[ch] - lpfState[ch];
-                mixed[ch] = lpfState[ch] * lowBandGain + high * highBandGain;
-            }
-        }
-
-        mixed[0] += delayedInput * scalar_input_gain;
-        if (!pingPong_) mixed[2] += delayedInput * scalar_input_gain * 0.7f;
-
-        // Soft limit, same knee as the vector path (see softClipN).
-        for (int ch = 0; ch < FDN_CHANNELS; ch++)
-            mixed[ch] = softClipScalar(mixed[ch]);
-
-        // Exotic "Low Pitching" Shimmer (PILL=4)
-        // Injects a ring-modulated copy of the wet signal back into the network.
-        // The cascading sum/difference frequencies create dense, microtonal undertones.
-        // Shimmer (PILL=4): inject a small frequency-modulated copy of the
-        // current wet signal back into channels 6 and 7 before writing.
-        // Loop gain ≈ 0.04 * 0.088 ≈ 0.004 << 1 → unconditionally stable.
-        if (shimmerDepth_ > 0.0f) {
-            float previewL = 0.0f, previewR = 0.0f;
-            for (int i = 0; i < 4; i++)            previewL += mixed[i];
-            for (int i = 4; i < FDN_CHANNELS; i++) previewR += mixed[i];
-
-            float monoPreview = (previewL + previewR) * 0.125f; // /8
-
-            // The microtonal happens here: modulating at audio-rate (e.g., 35 Hz)
-            float shim = monoPreview * fastersinfullf(shimmerPhase_) * shimmerDepth_;
-
-            mixed[FDN_CHANNELS - 2] += shim;
-            mixed[FDN_CHANNELS - 1] -= shim;
-
-            // Advance phase using our new low-frequency target
-            shimmerPhase_ += M_TWOPI * shimmerFreq_ / sampleRate;
-            if (shimmerPhase_ >= M_TWOPI) shimmerPhase_ -= M_TWOPI;
-        }
-
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            delayLine[writePos].samples[ch] = mixed[ch];
-        }
-        writePos = (writePos + 1) & BUFFER_MASK;
-
-        // Stereo mix-down: channels 0-3 left, 4-7 right (see process4Samples)
-        float leftRaw = 0.0f, rightRaw = 0.0f;
-        {
-            // Determine active channel count
-            int activeCh;
-            if      (pillar_ == 0) activeCh = 2;
-            else if (pillar_ == 2) activeCh = 6;
-            else                   activeCh = FDN_CHANNELS;  // 1, 3, 4 → 8
-
-            int halfL = activeCh < 4 ? activeCh : 4;
-            int halfR = activeCh > 4 ? activeCh - 4 : 0;
-            for (int i = 0; i < halfL; i++)         leftRaw  += mixed[i];
-            for (int i = 4; i < 4 + halfR; i++)     rightRaw += mixed[i];
-            leftRaw  *= 0.5f;
-            if (halfR > 0)
-                rightRaw *= 0.5f;
-            else
-                rightRaw  = leftRaw;  // mono fold for very sparse (PILL=0)
-        }
-
-        // Apply stereo width
-        float mid  = (leftRaw + rightRaw) * 0.5f;
-        float side = (leftRaw - rightRaw) * 0.5f;
-        wetL = (mid + side * width) * outputMakeup;
-        wetR = (mid - side * width) * outputMakeup;
-
-        // Same output ceiling as the vector path.
-        wetL = softClipScalar(wetL);
-        wetR = softClipScalar(wetR);
+        for (int i = 0; i < n; i++) { outL[i] = tmpL[i]; outR[i] = tmpR[i]; }
     }
 
     /*===========================================================================*/

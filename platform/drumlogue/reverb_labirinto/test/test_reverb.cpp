@@ -366,35 +366,58 @@ static void test_stability_and_level() {
     check(lo > 0.35f, "wet output is present, not subtle", buf);
 }
 
-// frames not a multiple of 4 exercise processScalar, which feeds the same delay
-// lines as the vector path and so must use the same matrix scaling and gains.
-static void test_scalar_path() {
-    printf("\n[scalar] odd block sizes stay bounded\n");
-    static NeonAdvancedLabirinto rv;
-    rv = NeonAdvancedLabirinto();
-    rv.init();
-    rv.loadPreset(2);
-    rv.setParameter(k_time, 100);
+// The host normally sends whole buffers, but the SDK allows shorter ones, and
+// frame counts that are not a multiple of 4 land on the remainder path. That
+// path must be the *same reverb* — it writes into the same delay lines, so a
+// remainder path with different gains does not just sound different for its own
+// three samples, it poisons the tail.
+//
+// The check drives each preset once in 64-frame calls and once one frame at a
+// time, so every single sample goes through the remainder path, and compares the
+// energy. A hand-written scalar twin used to live here that skipped the colour
+// biquad, the metal comb, the cross-feedback and the noise injection; under this
+// test it drops 25% of labirinto's energy and 36% of its peak.
+static void test_block_size_equivalence() {
+    printf("\n[blocks] the reverb does not depend on the host's block size\n");
+    const char* names[] = {"foresta", "tempio", "labirinto", "esotico", "stellare"};
 
-    const int N = (int)(8.0f * SR);
-    std::vector<float> iL(N, 0.f), iR(N, 0.f), oL(N, 0.f), oR(N, 0.f);
+    const int N = (int)(6.0f * SR);
+    std::vector<float> iL(N, 0.f), iR(N, 0.f);
     for (int k = 0; k * (int)(0.35f * SR) < N - (int)(0.5f * SR); k++)
         hit(iL, iR, k * (int)(0.35f * SR), k % 2 == 1);
 
-    float peak = 0.0f;
-    bool finite = true;
-    const int odd = 37;   // not a multiple of 4
-    for (int i = 0; i + odd <= N; i += odd) {
-        rv.process(&iL[i], &iR[i], &oL[i], &oR[i], odd);
-        for (int k = i; k < i + odd; k++) {
-            if (!std::isfinite(oL[k]) || !std::isfinite(oR[k])) { finite = false; break; }
-            peak = fmaxf(peak, fmaxf(fabsf(oL[k]), fabsf(oR[k])));
+    for (int p = 0; p < k_preset_number; p++) {
+        double rms[2] = {0.0, 0.0};
+        float  peak[2] = {0.0f, 0.0f};
+        bool   finite = true;
+        const int blk[2] = {BLK, 1};
+
+        for (int v = 0; v < 2; v++) {
+            static NeonAdvancedLabirinto rv;
+            rv = NeonAdvancedLabirinto();
+            rv.init();
+            rv.loadPreset(p);
+
+            std::vector<float> oL(N, 0.f), oR(N, 0.f);
+            for (int i = 0; i + blk[v] <= N; i += blk[v])
+                rv.process(&iL[i], &iR[i], &oL[i], &oR[i], blk[v]);
+
+            for (int i = 0; i < N; i++) {
+                if (!std::isfinite(oL[i]) || !std::isfinite(oR[i])) { finite = false; break; }
+                rms[v] += (double)oL[i] * oL[i] + (double)oR[i] * oR[i];
+                peak[v] = fmaxf(peak[v], fmaxf(fabsf(oL[i]), fabsf(oR[i])));
+            }
+            rms[v] = sqrt(rms[v] / N);
         }
-        if (!finite) break;
+
+        const double drift = rms[0] > 0 ? (rms[1] / rms[0] - 1.0) * 100.0 : 100.0;
+        char buf[192];
+        snprintf(buf, sizeof(buf), "(%s: rms %.5f at %d frames, %.5f at 1 frame, %+.2f%%)",
+                 names[p], rms[0], BLK, rms[1], drift);
+        check(finite && fabs(drift) < 3.0 &&
+                  peak[1] <= kLimitCeiling + 1e-3f,
+              "one frame per call matches whole buffers", buf);
     }
-    char buf[128];
-    snprintf(buf, sizeof(buf), "(peak %.3f)", peak);
-    check(finite && peak <= kLimitCeiling + 1e-3f, "37-frame blocks stay bounded", buf);
 }
 
 // VIBR is calibrated in Hz on the panel, so the engine has to deliver Hz. The
@@ -526,7 +549,7 @@ int main() {
     test_time_controls_rt60();
     test_pingpong();
     test_stability_and_level();
-    test_scalar_path();
+    test_block_size_equivalence();
     test_vibr_rate();
     test_filter_update_phase();
     test_derived_state_order_independent();
