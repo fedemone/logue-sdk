@@ -31,6 +31,10 @@ The 8 channels are split into a left bank (0–3) and a right bank (4–7). Each
 
 **BNCE** sets the bounce time directly in milliseconds (60–500 ms). A small bank-to-bank bleed keeps the quiet side from dropping out entirely between bounces; it is scaled with BNCE so the leakage per second stays constant and a fast bounce reads as crisply as a slow one.
 
+**SYNC** locks the bounce to the host tempo instead: 1/16, 1/8T, 1/8, 1/8. or 1/4. On a drum machine this is usually what you want — a bounce at a note division is part of the pattern, a bounce at some millisecond value drifts against it. Dotted eighth is the classic ping-pong delay setting, landing off the beat and pulling against the groove. While SYNC is on BNCE is ignored, and turning SYNC back off restores it. Changing the bounce time glides rather than clicking, so tempo changes bend the tail like tape.
+
+A division longer than the delay lines can hold simply clamps at 500 ms — a quarter note at 60 BPM would be 1000 ms — so the bounce stops tracking rather than folding to something arbitrary. All five presets ship with SYNC off, so a preset sounds the same whatever the project tempo is; locking to the transport is opt-in.
+
 ### 4. Coloured Noise Injection
 When the filter mode is set to **Noise** (*stellare* preset), the reverb acts as an acoustic resonator for an internal pseudo-random noise generator. The noise color sweeps smoothly from deep Brown, through Pink and Grey (notched), up to harsh Violet. Use **DFSN** (diffusion) to shape the noise density and **DAMP** to control the noise injection gain.
 
@@ -42,7 +46,7 @@ This is a send effect, so the wet output passes through a soft limiter with a ha
 
 ## Parameter Guide
 
-NeonLabirinto has **12 parameters** across 3 pages.
+NeonLabirinto has **13 parameters** across 4 pages.
 
 ### Page 1: Main Controls
 
@@ -69,7 +73,13 @@ NeonLabirinto has **12 parameters** across 3 pages.
 | 8 | SHMR | 0–100 | Shimmer frequency, 3–55 Hz (PILL=4 only) |
 | 9 | PDLY | 0–200 ms | Slew-limited pre-delay (tape-style interpolation avoids zipper noise) |
 | 10 | VIBR | 1–30 | LFO speed for random diffusion matrix modulation (×0.1 → 0.1–3.0 Hz) |
-| 11 | BNCE | 60–500 ms | Ping-pong bounce time (PILL=1 only) |
+| 11 | BNCE | 60–500 ms | Ping-pong bounce time (PILL=1 only, ignored while SYNC is on) |
+
+### Page 4: Tempo
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 12 | SYNC | OFF, 1/16, 1/8T, 1/8, 1/8., 1/4 | Locks the bounce to a note division of the host tempo instead of BNCE |
 
 ## Factory Presets
 
@@ -107,3 +117,5 @@ cd test && make
 It checks that both feedback matrices are energy-preserving, that the limiter is transparent below its knee and bounded above it, that RT60 tracks TIME, that PILL=1 produces a periodic left/right bounce at the period BNCE asks for (and that the diffuse modes do not), and that no preset can diverge or exceed the output ceiling at extreme settings.
 
 It also pins four things that had drifted from what the panel claims: that VIBR delivers the rate in Hz that it advertises, that the output does not depend on the phase of the internal filter-coefficient update cycle (nothing may ride along on that flag), that PILL and DFSN commute — setting them in either order must leave the same modulation depth, shimmer gain and modulation rate — and that the reverb does not depend on the host's block size, checked by rendering every preset one frame per call and comparing the energy against whole buffers.
+
+For SYNC it checks that each note division actually bounces at its note length, that the tempo moves the bounce when locked and cannot reach it when not, that SYNC and the tempo may arrive in either order, that a division past the buffer clamps, and that BNCE goes inert while synced and resumes afterwards.
