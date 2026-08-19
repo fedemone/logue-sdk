@@ -56,8 +56,8 @@ enum parameters
     k_multiband_band_attack,
     k_multiband_band_release,
     k_multiband_band_makeup,
-    k_multiband_band_mute,
-    k_multiband_band_solo,
+    k_multiband_band_state,   // 0=active, 1=muted, 2=soloed (were two parameters)
+    k_multiband_crossover,    // moves both split points together
     k_num_params,
 };
 
@@ -76,9 +76,7 @@ public:
         overlord_init(&overlord_, samplerate_);
 
         // Initialize smoothing
-        smoothing_init(&smoother_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
-        gain_computer_init(&gain_comp_);
 
         // Clear parameter array
         for (int i = 0; i < k_num_params; i++) {
@@ -128,8 +126,8 @@ public:
         setParameter(k_multiband_band_attack, ATTACK_DEFAULT);       // ATTACK: 5.0 ms (fast, minimal click)
         setParameter(k_multiband_band_release, RELEASE_DEFAULT);     // RELEASE: 200 ms (punchy)
         setParameter(k_multiband_band_makeup, MAKEUP_DEFAULT);       // MAKEUP: 0 dB
-        setParameter(k_multiband_band_mute, 0);                      // MUTE off
-        setParameter(k_multiband_band_solo, 0);                      // SOLO off
+        setParameter(k_multiband_band_state, 0);                     // band active
+        setParameter(k_multiband_crossover, 50);                     // 250 Hz / 2.5 kHz
         setParameter(k_detection_mode, DETECT_MODE_PEAK);            // Detection: Peak
 
         // Reset all components
@@ -144,9 +142,7 @@ public:
         // three modes have the same detector timing and produce matching output levels.
         envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
         overlord_init(&overlord_, samplerate_);
-        smoothing_init(&smoother_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
-        gain_computer_init(&gain_comp_);
 
         use_external_sc_ = 0;
     }
@@ -370,8 +366,9 @@ private:
         // never ran at all in Standard/Multiband unless DRIVE reached 2.
         // Routing DRIVE=0 through the EQ-only path fixes both: the EQ is always
         // in circuit and the drive knob is live from its first step.
-        if (comp_mode_ == COMP_MODE_DISTRESSOR || drive_ <= 0.0f) {
-            // EQ-only (no tube saturation) — distressor provides its own distortion
+        if (comp_mode_ != COMP_MODE_STANDARD || drive_ <= 0.0f) {
+            // EQ-only: Distressor has its own distortion stage and Multiband
+            // saturates per band, so only Standard needs the broadband tube path.
             float32x4x2_t eq_out = overlord_apply_eq(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = eq_out.val[0];
             processed_r = eq_out.val[1];
@@ -567,7 +564,6 @@ public:
                 attack_coeff_ = fasterexpf(-0.02083333f / attack_ms_);  // 1 / (0.001f * samplerate_)
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
                 envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
-                smoothing_set_times(&smoother_, attack_ms_, release_ms_);
                 break;
 
             case k_release: // RELEASE (10 to 2000 ms)
@@ -575,7 +571,6 @@ public:
                 release_coeff_ = fasterexpf(-0.02083333f / release_ms_);    // 1 / (0.001f * samplerate_)
                 envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
                 envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
-                smoothing_set_times(&smoother_, attack_ms_, release_ms_);
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
 
@@ -597,6 +592,12 @@ public:
                 drive_ = value * 0.01f;
                 wavefolder_set_drive(&wavefolder_, value);
                 overlord_set_drive(&overlord_, value);
+                // Multiband saturates inside each band with its own triode
+                // voicing (softer on the lows, brighter on the highs) rather
+                // than driving one broadband stage. The field existed and was
+                // read by multiband_process but nothing ever wrote it.
+                for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
+                    multiband_set_param(&multiband_, b, 7, drive_);
                 break;
 
             case k_mix: // MIX (-100 to +100)
@@ -649,20 +650,19 @@ public:
                 handle_set_multiband_parameter(p_id, val);
                 break;
             }
-            case k_multiband_band_mute:     // BAND MUTE
+            case k_multiband_band_state:    // BAND STATE: 0=active, 1=mute, 2=solo
             {
-                float val = value != 0 ? 1.0f : 0.0f;
-                const int p_id = 5;         // param_id 5 = mute
-                handle_set_multiband_parameter(p_id, val);
+                // Mute and solo used to be separate parameters, but the mixing
+                // rule already lets solo win over mute, so the two never combined
+                // into anything a third state could not express. Merging them
+                // freed the slot the crossover control now uses.
+                handle_set_multiband_parameter(5, value == 1 ? 1.0f : 0.0f);
+                handle_set_multiband_parameter(6, value == 2 ? 1.0f : 0.0f);
                 break;
             }
-            case k_multiband_band_solo:     // BAND SOLO
-            {
-                float val = value != 0 ? 1.0f : 0.0f;
-                const int p_id = 6;         // param_id 6 = solo
-                handle_set_multiband_parameter(p_id, val);
+            case k_multiband_crossover:     // XOVER (0-100)
+                multiband_set_crossover_spread(&multiband_, static_cast<float>(value));
                 break;
-            }
             case k_compressor_mode: // COMP MODE (0=Standard, 1=Distressor, 2=Multiband)
                 if (value >= COMP_MODE_STANDARD && value < COMP_MODE_TOTAL) {
                     comp_mode_ = value;
@@ -799,17 +799,19 @@ public:
                 return handle_get_multiband_parameter(p_id);
                 break;
             }
-            case k_multiband_band_mute:     // BAND MUTE
-            {
-                const int p_id = 5;         // param_id 5 = mute
-                return handle_get_multiband_parameter(p_id);
+            case k_multiband_band_state:    // BAND STATE
+                if (value >= 0 && value <= 2) {
+                    static const char* states[] = {"On", "Mute", "Solo"};
+                    return states[value];
+                }
                 break;
-            }
-            case k_multiband_band_solo:     // BAND SOLO
+
+            case k_multiband_crossover:     // XOVER — show the split points
             {
-                const int p_id = 6;         // param_id 6 = solo
-                return handle_get_multiband_parameter(p_id);
-                break;
+                const float low = 62.5f * e_expff(value * 0.027726f);
+                snprintf(str_buf, sizeof(str_buf), "%d/%.1fk",
+                         (int)(low + 0.5f), low * 0.01f);
+                return str_buf;
             }
 
             case k_slope: // SLOPE (1.0 to 20.0) - show special cases
@@ -918,7 +920,5 @@ private:
     distressor_t distressor_;
     multiband_t multiband_;
     envelope_detector_t envelope_;
-    gain_computer_t gain_comp_;
-    smoothing_t smoother_;
     overlord_t overlord_;
 };

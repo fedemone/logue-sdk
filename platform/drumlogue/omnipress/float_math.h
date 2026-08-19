@@ -60,6 +60,7 @@
 #endif
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 #if defined(__arm__) || defined(__aarch64__)
 #include <arm_neon.h>
 #endif
@@ -942,7 +943,7 @@ float fastSqrt(float x) {
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float fasterSqrt (float x)
-{ union { float x; unsigned i; } u;
+{ union { float x; uint32_t i; } u;
     u.x = x;
     u.i = (u.i >> 1) + 0x1fbb4f2e;
     return u.x;
@@ -953,9 +954,11 @@ float fasterSqrt (float x)
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float fasterSqrt_15bits (float x)
-{   int i = *(int*) & x;
+{   int32_t i;
+    memcpy(&i, &x, sizeof(i));   // memcpy, not a cast: no strict-aliasing UB
     i = 0x5f1110a0 - (i >> 1);
-    float y = *(float*) & i;
+    float y;
+    memcpy(&y, &i, sizeof(y));
     float c = x * y;
     float d = c * y;
     y = c * (2.2825186f - d * (2.2533049f - d));
@@ -1025,15 +1028,20 @@ float Q_rsqrt( float number )
     number = 1.0e-9f;
   }
 
-	long i;
+	int32_t i;
 	float x2, y;
 	const float threehalfs = 1.5F;
 
 	x2 = number * 0.5F;
 	y  = number;
-	i  = * ( long * ) &y;                       // evil floating point bit level hacking
+	// The original reads through a `long`, which is 64-bit on LP64 hosts: it
+	// pulls in four bytes past the float and the shift then mixes that garbage
+	// into the exponent, so the result is undefined and only happens to work
+	// where the adjacent stack bytes are zero. int32_t plus memcpy is the same
+	// bit trick, correct on any target and free of strict-aliasing UB.
+	memcpy(&i, &y, sizeof(i));                  // evil floating point bit level hacking
 	i  = 0x5f3759df - ( i >> 1 );               // what the fuck?
-	y  = * ( float * ) &i;
+	memcpy(&y, &i, sizeof(y));
 	y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
 //	y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can be removed
 

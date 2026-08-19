@@ -45,8 +45,13 @@ const __unit_header unit_header_t unit_header = {
         // Page 3: Mode Selection
         // ID 8: COMP MODE  0=Standard, 1=Distressor, 2=Multiband
         { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"COMP MODE"} },    // ID 8 - Compressor mode selection
-        { -300, 0, -30, -10, k_unit_param_type_db, 1, 1, 0, {"ATT LMT"} },    // ID 9
-        { 0, 300, 30, 10, k_unit_param_type_db, 1, 1, 0, {"GAIN LMT"} },      // ID 10
+        // Omnipressor-style limits on how far the function knob may push the VCA.
+        // These shipped at -1.0/+1.0 dB, which clamped Standard mode to a 2 dB
+        // window and made it read as nearly bypassed however the SLOPE was set.
+        // -20 dB leaves room for real compression; +6 dB allows the upward side
+        // of the transfer curve without letting quiet passages run away.
+        { -300, 0, -30, -200, k_unit_param_type_db, 1, 1, 0, {"ATT LMT"} },   // ID 9
+        { 0, 300, 30, 60, k_unit_param_type_db, 1, 1, 0, {"GAIN LMT"} },      // ID 10
         //   Standard/Multiband: 0=Peak,  1=RMS,  2=Blend
         //   Distressor:         0=Basic, 1=Emph, 2=Link, 3=Emph+Link
         //   +4 on any of the above listens to the external sidechain input
@@ -76,8 +81,12 @@ const __unit_header unit_header_t unit_header = {
         // ID 21: BAND RELEASE 10..2000 ms
         { 10, 2000, 10, 200, k_unit_param_type_strings, 0, 0, 0, {"MBReles"} }, // ID 20 - ms
         { 0, 240, 0, 0, k_unit_param_type_strings, 1, 1, 0, {"MBMkup"} },         // ID 21 - dB
-        { 0, 1, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBMute"} },           // ID 22 (param none) - Mute (0=off, 1=on)
-        { 0, 1, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBSolo"} },           // ID 23 (param none) - Solo (0=off, 1=on)
+        // ID 22: band state. Solo already overrode mute in the mixer, so the two
+        // former on/off parameters carried no combination this one cannot express.
+        { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBState"} },          // ID 22 - 0=On, 1=Mute, 2=Solo
+        // ID 23: moves both crossover points together, 62.5 Hz/625 Hz at 0 up to
+        // 1 kHz/10 kHz at 100, a decade apart throughout. 50 = 250 Hz / 2.5 kHz.
+        { 0, 100, 50, 50, k_unit_param_type_strings, 0, 0, 0, {"XOVER"} },        // ID 23
 
     }
 };

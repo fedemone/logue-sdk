@@ -114,10 +114,13 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
         mb->bands[i].release_ms = 100.0f;
         mb->bands[i].mute = 0.0f;
         mb->bands[i].solo = 0.0f;
+        mb->bands[i].drive = 0.0f;
         multiband_update_coeff(mb, i);
     }
 
-    mb->env_pre_coeff  = e_expff(-1.0f / (0.001f * sample_rate));  // 1ms smoothing
+    // Decay of the per-band peak follower. ENV_HOLD_MS matches the hold the
+    // Standard/Distressor detector applies, so all three modes settle alike.
+    mb->env_pre_coeff  = e_expff(-1.0f / (ENV_HOLD_MS * 0.001f * sample_rate));
 }
 
 fast_inline void multiband_reset(multiband_t* m) {
@@ -135,6 +138,19 @@ fast_inline void multiband_set_crossover(multiband_t* mb,
     // Coefficient-only update: preserves filter state continuity at runtime
     crossover_update_coeffs(&mb->xover_low_mid,   low_freq,  mb->sample_rate);
     crossover_update_coeffs(&mb->xover_mid_high,  high_freq, mb->sample_rate);
+    crossover_update_coeffs(&mb->xover_sc_low_mid,  low_freq,  mb->sample_rate);
+    crossover_update_coeffs(&mb->xover_sc_mid_high, high_freq, mb->sample_rate);
+}
+
+// Move both split points together from one 0..100 control.
+// Log-interpolated so the knob feels even; 50 lands on the 250 Hz / 2.5 kHz
+// default. One control rather than two because the SDK caps a unit at 24
+// parameters and they were all spoken for.
+fast_inline void multiband_set_crossover_spread(multiband_t* mb, float pos) {
+    // 62.5 Hz -> 1 kHz for the low split, always a decade below the high one,
+    // so the two can never cross. pos = 50 gives the 250 Hz / 2.5 kHz default.
+    const float low = 62.5f * e_expff(pos * 0.027726f);  // 0.01 * ln(16)
+    multiband_set_crossover(mb, low, low * 10.0f);
 }
 
 // Set band parameter
@@ -161,6 +177,7 @@ fast_inline void multiband_set_param(multiband_t* mb,
         case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;
         case 5: mb->bands[band].mute = value; break;
         case 6: mb->bands[band].solo = value; break;
+        case 7: mb->bands[band].drive = value; break;
     }
 }
 
@@ -221,7 +238,14 @@ fast_inline float32x4_t pirkle_triode_engine(float32x4_t in, float drive, float*
     // Fast Hardware Reciprocal Square-Root Pipeline
     float32x4_t rsq_est = vrsqrteq_f32(denom);
     float32x4_t rsq_step = vrsqrtsq_f32(vmulq_f32(rsq_est, rsq_est), denom);
-    return vnegq_f32(vmulq_f32(v_gk, vmulq_f32(rsq_est, rsq_step))); // Includes phase inversion
+    float32x4_t out = vmulq_f32(v_gk, vmulq_f32(rsq_est, rsq_step));
+
+    // Compensate the drive gain instead of letting it through, matching the
+    // law the wavefolder uses: without this, DRIVE=100 raised the band by
+    // ~15 dB and read as a loudness control rather than a character one.
+    out = vmulq_n_f32(out, Q_rsqrt(1.0f + drive * 8.0f));
+
+    return vnegq_f32(out); // Includes phase inversion
 }
 
 // Fused branchless compressor node pulling straight from parameter cache
@@ -311,13 +335,16 @@ fast_inline void multiband_process(multiband_t* mb,
     float smid = vgetq_lane_f32(mb->comp_env_state[BAND_MID], 3);
     float shigh = vgetq_lane_f32(mb->comp_env_state[BAND_HIGH], 3);
 
-    float pre_c  = mb->env_pre_coeff;
-    float pre_1c = 1.0f - pre_c;
+    // Peak follower with a short decay, matching the peak detection Standard and
+    // Distressor use. The one-pole average this replaces read 3.9 dB (2/pi) low
+    // on a sine, so identical knob settings gave multiband noticeably less gain
+    // reduction than the other two modes.
+    const float pre_c = mb->env_pre_coeff;
 
     for (int i = 0; i < NEON_LANES; ++i) {
-        slow  = ilow[i] * pre_1c + slow * pre_c;
-        smid  = imid[i] * pre_1c + smid * pre_c;
-        shigh = ihigh[i] * pre_1c + shigh * pre_c;
+        slow  = fmaxf(ilow[i],  slow  * pre_c);
+        smid  = fmaxf(imid[i],  smid  * pre_c);
+        shigh = fmaxf(ihigh[i], shigh * pre_c);
         olow[i] = slow; omid[i] = smid; ohigh[i] = shigh;
     }
     mb->comp_env_state[BAND_LOW]  = vld1q_f32(olow);
