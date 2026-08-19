@@ -49,7 +49,10 @@ const __unit_header unit_header_t unit_header = {
         { 0, 300, 30, 10, k_unit_param_type_db, 1, 1, 0, {"GAIN LMT"} },      // ID 10
         //   Standard/Multiband: 0=Peak,  1=RMS,  2=Blend
         //   Distressor:         0=Basic, 1=Emph, 2=Link, 3=Emph+Link
-        { 0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DETECT"} },       // ID 11
+        //   +4 on any of the above listens to the external sidechain input
+        //   (SC L/R) instead of the main bus. All 24 parameter slots the SDK
+        //   allows are taken, so the sidechain source shares this control.
+        { 0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DETECT"} },       // ID 11
 
         // Page 4: Multiband / Distressor Parameters
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },     // ID 12 - Overlord

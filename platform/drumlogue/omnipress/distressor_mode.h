@@ -156,20 +156,26 @@ fast_inline void distressor_reset(distressor_t* d, float sample_rate) {
     distressor_init(d, sample_rate);
 }
 
-// Distressor-specific smoothing with opto mode support
+// Distressor-specific smoothing with opto mode support.
+// Sequential like standard_process(): the vector form gave each lane its own
+// gain history advanced once per block, so per-sample coefficients were applied
+// at a quarter rate and attack/release ran 4x long.
 fast_inline float32x4_t distressor_smooth(distressor_t* d,
                                           float32x4_t target_db,
                                           float attack_coeff,
                                           float release_coeff) {
-    // One-pole smoothing with mode-specific adjustments
-    uint32x4_t attacking = vcltq_f32(target_db, d->harmonic_state);
-    float32x4_t coeff = vbslq_f32(attacking,
-                                  vdupq_n_f32(attack_coeff),
-                                  vdupq_n_f32(release_coeff));
+    float targets[4], out[4];
+    vst1q_f32(targets, target_db);
 
-    d->harmonic_state = vaddq_f32(vmulq_f32(target_db, vsubq_f32(vdupq_n_f32(1.0f), coeff)),
-                                   vmulq_f32(d->harmonic_state, coeff));
+    float state = vgetq_lane_f32(d->harmonic_state, 3);
+    for (int i = 0; i < 4; ++i) {
+        // Gain reduction is negative, so a falling target is the attack phase
+        const float coeff = (targets[i] < state) ? attack_coeff : release_coeff;
+        state = targets[i] + coeff * (state - targets[i]);
+        out[i] = state;
+    }
 
+    d->harmonic_state = vld1q_f32(out);
     return d->harmonic_state;
 }
 

@@ -102,6 +102,30 @@ fast_inline void biquad_process4(float* z1, float* z2,
     *z1 = lz1; *z2 = lz2;
 }
 
+// Mono split for detector use — only the left-channel states are touched, so a
+// crossover_t used this way costs half of crossover_process. Used to band-split
+// an external sidechain without paying for a second stereo tree.
+fast_inline void crossover_process_mono(crossover_t* xover,
+                                        float32x4_t in,
+                                        float32x4_t* low,
+                                        float32x4_t* high,
+                                        float crossover_freq,
+                                        float sample_rate) {
+    if (fabsf(crossover_freq - xover->last_freq) > 1.0f)
+        crossover_update_coeffs(xover, crossover_freq, sample_rate);
+
+    float x[4], tmp[4], out[4];
+    vst1q_f32(x, in);
+
+    biquad_process4(&xover->l_lpf_z1,  &xover->l_lpf_z2,  xover->lpf_coeffs, x,   tmp);
+    biquad_process4(&xover->l_lpf2_z1, &xover->l_lpf2_z2, xover->lpf_coeffs, tmp, out);
+    *low = vld1q_f32(out);
+
+    biquad_process4(&xover->l_hpf_z1,  &xover->l_hpf_z2,  xover->hpf_coeffs, x,   tmp);
+    biquad_process4(&xover->l_hpf2_z1, &xover->l_hpf2_z2, xover->hpf_coeffs, tmp, out);
+    *high = vld1q_f32(out);
+}
+
 // Process stereo through crossover — L and R use fully independent filter states.
 fast_inline void crossover_process(crossover_t* xover,
                                    float32x4_t in_l,

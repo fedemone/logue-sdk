@@ -352,7 +352,9 @@ private:
             case COMP_MODE_MULTIBAND:
                 // Detectors are inside multiband_process.
                 // Redundant envelope detection is now skipped to save CPU.
-                multiband_process(&multiband_, main_l, main_r, &processed_l, &processed_r);
+                multiband_process(&multiband_, main_l, main_r,
+                                  sidechain, (has_sidechain_ && use_external_sc_) != 0,
+                                  &processed_l, &processed_r);
                 break;
 
             default:
@@ -714,6 +716,13 @@ public:
                 break;
 
             case k_detection_mode:
+                // Bit 2 selects the sidechain source. The unit already uses all
+                // 24 parameters the SDK allows (UNIT_MAX_PARAM_COUNT), so the
+                // external input rides on the spare bit of the detector control
+                // rather than taking a slot of its own — it belongs with the
+                // other detector settings anyway. Values 0-3 keep their old
+                // meaning; 4-7 are the same detector fed from SC L/R.
+                use_external_sc_ = (value & 4) ? 1 : 0;
                 if (comp_mode_ == COMP_MODE_DISTRESSOR) {
                     // Distressor detector flags bitmask: 0=Basic, 1=Emph, 2=Link, 3=Emph+Link
                     // Preserve DETECT_HPF — it is set separately by k_distressor_distortion_type.
@@ -722,8 +731,9 @@ public:
                     if (value & 2) distressor_.detector_mode |= DETECT_LINK;
                 } else {
                     // Standard / multiband: Peak=0, RMS=1, Blend=2
-                    if (value >= 0 && value <= 2) {
-                        detection_mode_ = value;
+                    const int32_t det = value & 3;
+                    if (det <= 2) {
+                        detection_mode_ = det;
                         envelope_.mode = detection_mode_;
                     }
                 }
@@ -842,12 +852,15 @@ public:
                 break;
 
             case k_detection_mode:
+                // 4-7 are the same detectors listening to the external sidechain
                 if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                    static const char* dst_det[] = {"Basic", "Emph", "Link", "Emp+Lnk"};
-                    if (value >= 0 && value <= 3) return dst_det[value];
+                    static const char* dst_det[] = {"Basic", "Emph", "Link", "Emp+Lnk",
+                                                    "BasicSC", "EmphSC", "LinkSC", "EmLnkSC"};
+                    if (value >= 0 && value <= 7) return dst_det[value];
                 } else {
-                    static const char* std_det[] = {"Peak", "RMS", "Blend"};
-                    if (value >= 0 && value <= 2) return std_det[value];
+                    static const char* std_det[] = {"Peak", "RMS", "Blend", "-",
+                                                    "PeakSC", "RMS SC", "BlndSC", "-"};
+                    if (value >= 0 && value <= 7) return std_det[value];
                 }
                 break;
         }
