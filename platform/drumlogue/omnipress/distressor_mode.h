@@ -56,6 +56,7 @@ typedef struct {
     // Opto mode state (slow release simulation)
     float opto_release_mult;  // Up to 20s in opto mode
     float opto_coeff ;        // deduced from above
+    float release_slow;       // ~3x longer, blended in as gain reduction deepens
 
     // NEW: Distressor-specific detector components
     sidechain_hpf_t detect_hpf;      // 100 Hz HPF for detector (mono / L channel)
@@ -73,6 +74,8 @@ fast_inline void update_opto_coeff(distressor_t* d, float release_coeff_) {
     // while keeping the coefficient safely in (0,1).
     d->opto_coeff = (d->opto_release_mult > 1.0f)
         ? fasterpowf(release_coeff_, 1.0f / d->opto_release_mult): release_coeff_;
+    // Second, slower time constant for the program-dependent release below.
+    d->release_slow = fasterpowf(d->opto_coeff, 1.0f / 3.0f);
 }
 
 // Initialize Distressor with detector
@@ -168,9 +171,22 @@ fast_inline float32x4_t distressor_smooth(distressor_t* d,
     vst1q_f32(targets, target_db);
 
     float state = vgetq_lane_f32(d->harmonic_state, 3);
+    const float rel_slow = d->release_slow;
+
     for (int i = 0; i < 4; ++i) {
-        // Gain reduction is negative, so a falling target is the attack phase
-        const float coeff = (targets[i] < state) ? attack_coeff : release_coeff;
+        float coeff;
+        if (targets[i] < state) {
+            // Gain reduction is negative, so a falling target is the attack phase
+            coeff = attack_coeff;
+        } else {
+            // Program-dependent release: recovery slows as gain reduction
+            // deepens, blending toward a ~3x longer time constant by -20 dB.
+            // A single exponential is what makes a digital compressor pump on
+            // dense material; the EL8 is multi-stage here.
+            float depth = -state * 0.05f;
+            depth = (depth < 0.0f) ? 0.0f : (depth > 1.0f ? 1.0f : depth);
+            coeff = release_coeff + (rel_slow - release_coeff) * depth;
+        }
         state = targets[i] + coeff * (state - targets[i]);
         out[i] = state;
     }
@@ -241,6 +257,30 @@ fast_inline float32x4_t generate_harmonics(distressor_t* d,
     }
 }
 
+// Soft knee, quadratic through the transition, hard above it.
+// Returns the effective excess to feed the ratio slope.
+//   below the knee : 0
+//   inside         : (excess + w/2)^2 / (2w)
+//   above          : excess
+fast_inline float32x4_t distressor_knee(float32x4_t excess, float width) {
+    if (width <= 0.01f) return vmaxq_f32(excess, vdupq_n_f32(0.0f));
+
+    const float32x4_t hw = vdupq_n_f32(width * 0.5f);
+    const float32x4_t t  = vaddq_f32(excess, hw);
+    const float32x4_t knee = vmulq_n_f32(vmulq_f32(t, t), 0.5f / width);
+
+    // inside the knee when |excess| < w/2
+    const uint32x4_t in_knee = vcltq_f32(vabsq_f32(excess), hw);
+    return vbslq_f32(in_knee, knee, vmaxq_f32(excess, vdupq_n_f32(0.0f)));
+}
+
+// Knee width per ratio, in dB. The EL8 is gentle at the low ratios and tightens
+// as the ratio climbs, which is most of why 2:1 sounds so unobtrusive on a bus;
+// Nuke is a brick wall and gets none.
+static const float distressor_knee_width[DIST_RATIO_TOTAL] = {
+    0.0f, 12.0f, 10.0f, 8.0f, 6.0f, 6.0f, 3.0f, 0.0f
+};
+
 // Distressor gain computer (8 unique curves)
 fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
                                                   float32x4_t envelope_db,
@@ -248,7 +288,8 @@ fast_inline float32x4_t distressor_gain_computer(distressor_t* d,
     float32x4_t gain_db = vdupq_n_f32(0.0f);
     float32x4_t thresh = vdupq_n_f32(thresh_db);
     float32x4_t excess = vsubq_f32(envelope_db, thresh);
-    excess = vmaxq_f32(excess, vdupq_n_f32(0.0f));
+    excess = distressor_knee(excess,
+                             distressor_knee_width[d->ratio_mode & (DIST_RATIO_TOTAL - 1)]);
 
     switch (d->ratio_mode) {
         case DIST_RATIO_1_1:

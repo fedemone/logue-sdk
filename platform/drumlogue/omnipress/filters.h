@@ -6,11 +6,9 @@
  *
  * Includes:
  * - Sidechain HPF (Biquad, Transposed Direct Form II)
- * - Envelope detector (Peak/RMS)
- * - Gain computer with knee
- * - Attack/release smoothing
- * Complete filter suite for OmniPress
- * Includes: Sidechain HPF, Envelope followers, Smoothing filters
+ * - Envelope detector (Peak / RMS / Blend, sample-accurate ballistics)
+ * - Shelving filters for the Overlord tone stack
+ * - linear_to_db for the threshold comparisons
  */
 
 #include <arm_neon.h>
@@ -226,156 +224,12 @@ fast_inline float32x4_t envelope_detect(envelope_detector_t* env,
 }
 
 /* ---------------------------------------------------------------------------
- * 3. GAIN COMPUTER - With soft/hard knee and ratio logic
- * --------------------------------------------------------------------------- */
-
-#define KNEE_HARD 0
-#define KNEE_SOFT 1
-#define KNEE_MEDIUM 2
-
-typedef struct {
-    float knee_width;      // dB width of soft knee
-    uint8_t knee_type;     // 0=hard, 1=soft, 2=medium
-} gain_computer_t;
-
-/**
- * Initialize gain computer
- */
-fast_inline void gain_computer_init(gain_computer_t* gc) {
-  // TODO these values are never updated - but function is now obsolete.
-  gc->knee_width = 6.0f; // 6dB soft knee
-  gc->knee_type = KNEE_MEDIUM;
-}
-
-// Compute gain reduction with knee - obsolete
-fast_inline float32x4_t gain_computer_process(gain_computer_t* gc,
-                                              float32x4_t envelope_db,
-                                              float thresh_db,
-                                              float ratio) {
-    float32x4_t thresh = vdupq_n_f32(thresh_db);
-    float32x4_t ratio_v = vdupq_n_f32(ratio);
-    float32x4_t one = vdupq_n_f32(1.0f);
-
-    // Calculate overshoot
-    float32x4_t overshoot = vsubq_f32(envelope_db, thresh);
-
-    // Apply knee based on type
-    float32x4_t gain_red;
-
-    switch (gc->knee_type) {
-        case KNEE_HARD: {
-            // Hard knee - instantaneous
-            uint32x4_t above = vcgtq_f32(envelope_db, thresh);
-            gain_red = vbslq_f32(above,
-                                 vmulq_f32(overshoot, vsubq_f32(one, vrecpeq_f32(ratio_v))),
-                                 vdupq_n_f32(0.0f));
-            break;
-        }
-
-        case KNEE_SOFT: {
-            // Soft knee - polynomial transition
-            float32x4_t knee_w = vdupq_n_f32(gc->knee_width);
-            float32x4_t knee_start = vsubq_f32(thresh, vmulq_f32(knee_w, vdupq_n_f32(0.5f)));
-            float32x4_t knee_end = vaddq_f32(thresh, vmulq_f32(knee_w, vdupq_n_f32(0.5f)));
-
-            // In knee region
-            uint32x4_t in_knee = vandq_u32(vcgtq_f32(envelope_db, knee_start),
-                                           vcltq_f32(envelope_db, knee_end));
-
-            // Above knee
-            uint32x4_t above_knee = vcgtq_f32(envelope_db, knee_end);
-
-            // AES soft-knee: GR = overshoot² / (2*knee_w) * (1 - 1/ratio)
-            // Previous code used x=(overshoot/knee_w), knee_gr=0.5*x²*(…) which
-            // gave overshoot²/knee_w² — off by factor knee_w (too little GR).
-            float32x4_t overshoot_knee = vsubq_f32(envelope_db, knee_start);
-            float32x4_t knee_gr = vmulq_f32(vmulq_f32(overshoot_knee, overshoot_knee),
-                                             fast_div_neon(vdupq_n_f32(0.5f), knee_w));
-            knee_gr = vmulq_f32(knee_gr, vsubq_f32(one, vrecpeq_f32(ratio_v)));
-
-            gain_red = vbslq_f32(in_knee, knee_gr,
-                        vbslq_f32(above_knee,
-                                 vmulq_f32(overshoot, vsubq_f32(one, vrecpeq_f32(ratio_v))),
-                                 vdupq_n_f32(0.0f)));
-            break;
-        }
-
-        case KNEE_MEDIUM:
-        default: {
-            // Medium knee - linear transition
-            float32x4_t knee_w = vdupq_n_f32(gc->knee_width);
-            float32x4_t knee_start = vsubq_f32(thresh, vmulq_f32(knee_w, vdupq_n_f32(0.5f)));
-
-            // Linear interpolation in knee region
-            float32x4_t slope = vsubq_f32(one, vrecpeq_f32(ratio_v));
-            float32x4_t in_knee_amt = fast_div_neon(vsubq_f32(envelope_db, knee_start), knee_w);
-            in_knee_amt = vmaxq_f32(vminq_f32(in_knee_amt, one), vdupq_n_f32(0.0f));
-
-            gain_red = vmulq_f32(vmulq_f32(overshoot, slope), in_knee_amt);
-            break;
-        }
-    }
-
-    return vnegq_f32(gain_red);  // Return negative dB (gain reduction)
-}
-
-/* ---------------------------------------------------------------------------
- * 4. ATTACK/RELEASE SMOOTHING - With auto time constants
- * --------------------------------------------------------------------------- */
-
-
-typedef struct {
-    float32x4_t current_gain;      // Current gain reduction (dB)
-    float attack_coeff;             // Attack smoothing coefficient
-    float release_coeff;            // Release smoothing coefficient
-    float sample_rate;
-} smoothing_t;
-
-/**
- * Initialize smoother
- */
-fast_inline void smoothing_init(smoothing_t* sm, float sr) {
-    sm->current_gain = vdupq_n_f32(0.0f);
-    sm->attack_coeff = e_expff(-1.0f / (0.01f * sr));    // 10ms default
-    sm->release_coeff = e_expff(-1.0f / (0.1f * sr));    // 100ms default
-    sm->sample_rate = sr;
-}
-
-/**
- * Process one sample of smoothing - obsolete as this is now integrated into the envelope detector, but keeping for reference.
- */
-fast_inline float32x4_t smoothing_process(smoothing_t* sm,
-                                          float32x4_t target_gain) {
-    // Determine if we're attacking or releasing
-    uint32x4_t attacking = vcltq_f32(target_gain, sm->current_gain);
-
-    // Select appropriate coefficient
-    float32x4_t coeff = vbslq_f32(attacking,
-                                  vdupq_n_f32(sm->attack_coeff),
-                                  vdupq_n_f32(sm->release_coeff));
-
-    // One-pole smoothing: y[n] = a * x[n] + (1-a) * y[n-1]
-    // But here we use: current = target*(1-coeff) + current*coeff
-    sm->current_gain = vaddq_f32(vmulq_f32(target_gain, vsubq_f32(vdupq_n_f32(1.0f), coeff)),
-                                 vmulq_f32(sm->current_gain, coeff));
-
-    return sm->current_gain;
-}
-
-/**
- * Set time constants
- */
-fast_inline void smoothing_set_times(smoothing_t* sm,
-                                     float attack_ms,
-                                     float release_ms) {
-    sm->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * sm->sample_rate));
-    sm->release_coeff = e_expff(-1.0f / (release_ms * 0.001f * sm->sample_rate));
-}
-
-
-
-/* ---------------------------------------------------------------------------
- * 5. OPERATION OVERLORD DISTORTION
+ * 3. OPERATION OVERLORD FILTERS
+ *
+ * The standalone gain computer and attack/release smoother that used to live
+ * here were never called: every mode computes its own curve inline and smooths
+ * in the dB domain. The knee logic they carried now lives in
+ * distressor_knee(), where it is actually reachable.
  * --------------------------------------------------------------------------- */
 
 // Biquad state with scalar IIR history and cached coefficients.

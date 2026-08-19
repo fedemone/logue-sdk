@@ -49,8 +49,8 @@ static Params headerDefaults() {
     p.v[k_mix]                        = 100;    /* WET */
     p.v[k_sc_hpf]                     = 20;
     p.v[k_compressor_mode]            = 0;
-    p.v[k_attenuation_limit]          = -10;    /* -1.0 dB */
-    p.v[k_gain_limit]                 = 10;     /* +1.0 dB */
+    p.v[k_attenuation_limit]          = -200;   /* -20.0 dB */
+    p.v[k_gain_limit]                 = 60;     /* +6.0 dB */
     p.v[k_detection_mode]             = 0;
     p.v[k_bass]                       = 50;
     p.v[k_treble]                     = 50;
@@ -62,8 +62,8 @@ static Params headerDefaults() {
     p.v[k_multiband_band_attack]      = 150;
     p.v[k_multiband_band_release]     = 200;
     p.v[k_multiband_band_makeup]      = 0;
-    p.v[k_multiband_band_mute]        = 0;
-    p.v[k_multiband_band_solo]        = 0;
+    p.v[k_multiband_band_state]       = 0;    /* On */
+    p.v[k_multiband_crossover]        = 50;   /* 250 Hz / 2.5 kHz */
     return p;
 }
 
@@ -254,7 +254,7 @@ static void section_gain() {
 
 /* B. Factory defaults exactly as header.c ships them. */
 static void section_default() {
-    hdr("B. FACTORY DEFAULTS (THRESH -20, SLOPE 40, ATT LMT -1 dB, GAIN LMT +1 dB)");
+    hdr("B. FACTORY DEFAULTS (THRESH -20, SLOPE 40, ATT LMT -20 dB, GAIN LMT +6 dB)");
     printf("%-12s %-9s %10s %10s %10s %8s\n",
            "mode", "in dBFS", "gain(1k)", "gain RMS", "out dBFS", "THD%");
     for (double amp : {0.01, 0.1, 0.5}) {

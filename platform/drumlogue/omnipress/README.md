@@ -12,8 +12,10 @@
 | **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
 | **Drive/Wavefolder** | 5 distortion modes from soft clip to sub-octave |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
+| **Adjustable crossover** | XOVER sweeps both multiband split points together |
+| **Soft knee** | Ratio-dependent on the Distressor: wide at 2:1, tightening to a brick wall at NUKE |
 | **NEON Optimization** | Fully vectorized for ARM Cortex-A7 |
-| **22 User Parameters** | Spread across 6 control pages |
+| **24 User Parameters** | Every slot the SDK allows, across 6 control pages |
 | **24dB/oct Crossover** | Linkwitz-Riley filters for multiband mode |
 
 ---
@@ -35,7 +37,7 @@ Emulates the Empirical Labs EL8 Distressor with its unique character:
 | Feature | Implementation |
 |---------|---------------|
 | **8 Ratios** | 1:1 (warm), 2:1, 3:1, 4:1, 6:1, 10:1 (opto), 20:1, NUKE |
-| **Distortion Modes** | Dist 2 (2nd harmonic), Dist 3 (3rd harmonic), Both |
+| **Distortion Modes** | Dist2 (2nd harmonic), Dist3 (3rd harmonic), Both, plus 5 wavefolder shapes |
 | **Opto Mode** | Extended release times up to 20 seconds |
 | **NUKE Mode** | Brick-wall limiting with 40dB+ reduction |
 | **1:1 Warm Mode** | Harmonic enhancement without compression |
@@ -52,7 +54,8 @@ Emulates the Empirical Labs EL8 Distressor with its unique character:
 
 Features:
 - **Linkwitz-Riley 24dB/oct** crossovers (phase neutral)
-- **Solo/Mute** per band
+- **Solo/Mute** per band (MBState)
+- **Sweepable crossover** (XOVER)
 - **Independent attack/release** per band
 - **Gain reduction meters** per band (future)
 
@@ -76,61 +79,62 @@ The drive amount controls both the input gain to the waveshaper and the dry/wet 
 
 ## Parameter Reference
 
-OmniPress has **22 parameters** across 6 pages.
+OmniPress uses all **24 parameters** the SDK allows (`UNIT_MAX_PARAM_COUNT`),
+across 6 pages of 4. IDs below match `header.c`.
 
 ### Page 1: Core Dynamics
 
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
-| 0 | THRESH | -60.0 to 0.0 dB | Compression threshold (x0.1 dB resolution) |
-| 1 | RATIO | 1.0 to 20.0 | Compression ratio (x0.1 resolution) |
-| 2 | ATTACK | 0.1 to 100.0 ms | Attack time (x0.1 ms resolution) |
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 0 | THRESH | -60.0 to 0.0 dB | Threshold (x0.1 dB) |
+| 1 | SLOPE | 1 to 100 | Omnipressor function knob: expansion → 1:1 → limiting → reverse. In Distressor mode it selects the 8 fixed ratios instead |
+| 2 | ATTACK | 0.1 to 100.0 ms | Attack time (x0.1 ms) |
 | 3 | RELEASE | 10 to 2000 ms | Release time |
 
 ### Page 2: Character & Output
 
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
-| 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB resolution) |
-| 5 | DRIVE | 0 to 100% | Drive/wavefolder amount |
-| 6 | MIX | -100 to +100 | Dry/Wet balance (-100=dry, 0=balanced, +100=wet) |
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
+| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Distressor: the selected DstrDist shaper · Multiband: per-band triode saturation |
+| 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
 | 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
-### Page 3: Mode & Overlord EQ
+### Page 3: Mode, Limits & Detector
 
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
 | 8 | COMP MODE | 0–2 | 0=Standard, 1=Distressor, 2=Multiband |
-| 9 | BASS | 0–100% | Overlord EQ: low-shelf gain/cut |
-| 10 | TREBLE | 0–100% | Overlord EQ: high-shelf gain/cut |
-| 11 | PRESENCE | 0–100% | Overlord EQ: upper-mid presence boost |
+| 9 | ATT LMT | -30.0 to 0.0 dB | Omnipressor attenuation limit: how far the VCA may duck |
+| 10 | GAIN LMT | 0.0 to 30.0 dB | Omnipressor gain limit: how far it may boost below threshold |
+| 11 | DETECT | 0–7 | Standard/Multiband: 0=Peak, 1=RMS, 2=Blend · Distressor: 0=Basic, 1=Emph, 2=Link, 3=Emph+Link · **+4 keys from the external sidechain input** |
 
-> **Overlord EQ** is a 3-band semi-parametric EQ applied in the dynamics chain. At 50% each band is flat (unity). Below 50% cuts, above 50% boosts.
+### Page 4: Overlord EQ & Distressor Character
 
-### Page 4: Distressor Parameters
-
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
-| 12 | DstrDIST | 0–4 | Distressor harmonic distortion: 0=None, 1=Dist2 (2nd harm), 2=Dist3 (3rd harm), 3=Both, 4=Wave |
-| 13 | DstrRATIO | 0–7 | Distressor ratio selection: 0=1:1 (warm), 1=2:1, 2=3:1, 3=4:1, 4=6:1, 5=10:1 (opto), 6=20:1, 7=NUKE |
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 12 | BASS | 0–100% | Overlord EQ low shelf (50 = flat) |
+| 13 | TREBLE | 0–100% | Overlord EQ high shelf (50 = flat) |
+| 14 | PRESENCE | 0–100% | Overlord EQ presence shelf (50 = flat) |
+| 15 | DstrDist | 0–8 | 0=Off, 1=Dist2, 2=Dist3, 3=Both, 4=Soft, 5=Hard, 6=Triangle, 7=Sine, 8=SubOctave |
 
 ### Page 5: Multiband Band Controls
 
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
-| 14 | MBand | 0–6 | Band selector: 0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All |
-| 15 | MBndThr | -60.0 to 0.0 dB | Per-band threshold (x0.1 dB resolution) |
-| 16 | MBndRto | 1.0 to 20.0 | Per-band compression ratio |
-| 17 | MBndAtk | 0.1 to 100.0 ms | Per-band attack time |
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 16 | MBand | 0–6 | Which band the per-band controls edit: 0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All |
+| 17 | MBThr | -60.0 to 0.0 dB | Per-band threshold |
+| 18 | MBRtio | 1.0 to 20.0 | Per-band ratio |
+| 19 | MBAtk | 0.1 to 100.0 ms | Per-band attack |
 
 ### Page 6: Multiband Output Controls
 
-| Param | Name | Range | Description |
-|-------|------|-------|-------------|
-| 18 | MBndRtoRel | 10 to 2000 ms | Per-band release time |
-| 19 | MBndMkp | 0.0 to 24.0 dB | Per-band makeup gain |
-| 20 | MBndMut | 0–1 | Mute selected band (0=active, 1=muted) |
-| 21 | MBndSOl | 0–1 | Solo selected band (0=normal, 1=soloed) |
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 20 | MBReles | 10 to 2000 ms | Per-band release |
+| 21 | MBMkup | 0.0 to 24.0 dB | Per-band makeup gain |
+| 22 | MBState | 0–2 | Selected band: 0=On, 1=Mute, 2=Solo |
+| 23 | XOVER | 0–100 | Moves both split points together, 62.5 Hz/625 Hz up to 1 kHz/10 kHz, always a decade apart. 50 = 250 Hz / 2.5 kHz |
 
 ---
 
@@ -223,7 +227,10 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Parameter | Values Displayed |
 |-----------|------------------|
 | COMP MODE | "Standard", "Distressor", "Multiband" |
-| DstrDIST | "None", "Dist 2", "Dist 3", "Both", "Wave" |
+| DstrDIST | "Off", "Dist2", "Dist3", "Both", "Soft", "Hard", "Trg", "Sine", "SubOct" |
+| DETECT | "Peak"/"RMS"/"Blend" (+"SC" variants) · Distressor: "Basic"/"Emph"/"Link"/"Emp+Lnk" |
+| MBState | "On", "Mute", "Solo" |
+| XOVER | e.g. "250/2.5k" |
 | DstrRATIO | "1:1 Warm", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE" |
 | MBand | "Low", "Mid", "High", "Low+Mid", "Low+High", "Mid+High", "All" |
 | MIX | "DRY" (-100), "BAL" (0), "WET" (+100) |
