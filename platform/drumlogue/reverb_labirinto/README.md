@@ -58,7 +58,7 @@ NeonLabirinto has **12 parameters** across 3 pages.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 4 | DAMP | 20–1000 | Crossover between the LOW and HIGH decay bands (×10 → 200–10000 Hz) |
-| 5 | WIDE | 0–200% | Stereo width of the reverb tail |
+| 5 | WIDE | 0–200% | Stereo width of the reverb tail (no effect at PILL=0, which folds to mono) |
 | 6 | DFSN | 0–100% | Diffusion / complexity — depth of the delay-line modulation |
 | 7 | PILL | 0–4 | Routing macro: 0=sparse(2ch), 1=ping-pong, 2=stone(6ch), 3=full(8ch), 4=shimmer |
 
@@ -89,6 +89,7 @@ NeonLabirinto has **12 parameters** across 3 pages.
 - **Branchless DSP:** Buffer wrapping and phase accumulations utilize float/bitwise arithmetic rather than `while` loops, completely eliminating Cortex-A7 branch-prediction pipeline stalls.
 - **Denormal Safety:** The engine forces `Flush-to-Zero` and `Default-NaN` in the ARM FPSCR to guarantee CPU usage never spikes when the reverb tail decays into subnormal values.
 - **Stability:** Both feedback matrices are orthonormal, and the per-pass gain is derived from the requested RT60 divided by everything else in the loop that is not unity (cross-feedback, resonant colour), capped so the round trip never exceeds 0.985.
+- **Delay memory:** The ring buffer is 2¹⁵ frames × 8 channels = 1 MB, sized against the longest delay the engine can request (one ping-pong bank at BNCE 500 ms × 1.147 ≈ 0.57 s) with room for the modulation. A `static_assert` holds the two in step, so the buffer cannot be shrunk below what BNCE can reach without the build failing.
 
 ## Building for drumlogue
 
@@ -103,3 +104,5 @@ cd test && make
 ```
 
 It checks that both feedback matrices are energy-preserving, that the limiter is transparent below its knee and bounded above it, that RT60 tracks TIME, that PILL=1 produces a periodic left/right bounce at the period BNCE asks for (and that the diffuse modes do not), and that no preset can diverge or exceed the output ceiling at extreme settings.
+
+It also pins three things that had drifted from what the panel claims: that VIBR delivers the rate in Hz that it advertises, that the output does not depend on the phase of the internal filter-coefficient update cycle (nothing may ride along on that flag), and that PILL and DFSN commute — setting them in either order must leave the same modulation depth, shimmer gain and modulation rate.
