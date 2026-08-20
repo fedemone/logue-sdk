@@ -17,17 +17,14 @@ constexpr int CROSSFADE_SAMPLES = 480;  // 10ms @ 48kHz
 constexpr int CACHE_LINE_SIZE = 64;  // ARM Cortex-A9 cache line
 constexpr int PREFETCH_DISTANCE = 4;  // Prefetch 4 samples ahead
 
-// Delay line configuration (48kHz sample rate)
-// Must be a power of 2 so DELAY_MASK = DELAY_MAX_SAMPLES - 1 works as a modulo mask.
-// Actual delays are 15-84ms (720-4032 samples); 4096 (~85ms) gives minimal headroom.
-constexpr int DELAY_MAX_SAMPLES = 4096;  // 2^12
-constexpr int DELAY_MASK = DELAY_MAX_SAMPLES - 1;  // 0x0FFF
+// NOTE: the delay line length lives in delay_line_t (PercussionSpatializer.h),
+// which is the only definition the engine uses.  The DELAY_MAX_SAMPLES /
+// DELAY_MASK pair that used to sit here was dead and its 15-84 ms comment no
+// longer described the taps (Angel reaches ~195 ms).
 
-// LFO configuration
-constexpr int LFO_TABLE_SIZE = 256;
-constexpr float LFO_MIN_RATE = 0.1f;
-constexpr float LFO_MAX_RATE = 10.0f;
-
+// Biquad filter configuration used by filters.h.  filters.h is NOT part of
+// the unit build (see config.mk) — the engine uses per-clone one-pole
+// lowpasses.  These are kept for the standalone filter tests.
 // Filter configuration - TRIBAL MODE
 constexpr float TRIBAL_MIN_FREQ = 80.0f;
 constexpr float TRIBAL_MAX_FREQ = 800.0f;
@@ -55,7 +52,7 @@ constexpr float FILTER_Q_BESSEL = 0.5f;
 
 // Parameter ranges (as per header.c)
 constexpr int PARAM_CLONES_MIN = 0;
-constexpr int PARAM_CLONES_MAX = 5;
+constexpr int PARAM_CLONES_MAX = 4;  // 5 clone sets, indices 0..4
 constexpr int PARAM_MODE_MIN = 0;
 constexpr int PARAM_MODE_MAX = 2;
 constexpr int PARAM_DEPTH_MIN = 0;

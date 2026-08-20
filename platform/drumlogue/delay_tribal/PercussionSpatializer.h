@@ -34,7 +34,11 @@
 #endif
 
 struct delay_line_t {
-    static constexpr int kLen  = 32768;
+    // Longest tap is Angel's last clone: 126 ms base * 1.20 (depth) + 10 ms
+    // (depth tilt) + 25 ms (gap) ~= 195 ms ~= 9400 samples @ 48 kHz, plus
+    // scatter and wobble.  16384 (~341 ms) leaves ample headroom; 32768 cost
+    // 256 KB of bss for nothing.
+    static constexpr int kLen  = 16384;
     static constexpr int kMask = kLen - 1;
 
     float l[kLen];
@@ -63,6 +67,10 @@ struct delay_line_t {
 };
 
 // Update the clone_t struct to include filter parameters
+// Per-clone "cold" state: everything the render loop does not touch lane-wise.
+// The filter coefficient and state, and the net gains, live only in the
+// aligned SoA arrays below — keeping a second copy here meant two stores of
+// the same value and two places to forget to clear.
 typedef struct {
     float delay_samples;
     float wobble_depth_samples;
@@ -70,8 +78,6 @@ typedef struct {
     float pan_gain_l;       // Panning gain (left)
     float pan_gain_r;       // Panning gain (right)
     float base_gain;        // Base gain before accentuation and softening
-    float net_gain_l;
-    float net_gain_r;       // Net gain (right) after all modifiers
 
     float wobble_phase;
     float wobble_rate_mul;
@@ -79,12 +85,8 @@ typedef struct {
     float wobble_sine_delta;      // Delta per sample for linear interpolation within a block
     float precalculated_delay_base; // delay_samples + scatter_samples
 
-    float lp_coef;                // One-pole LPF coefficient
-    float lp_state_l;             // One-pole LPF state (left)
-    float lp_state_r;             // One-pole LPF state (right)
     float lp_coef_base;           // Base LPF coefficient, calculated in rebuild_profile
     float lp_cutoff_rand_factor;  // Random factor applied per hit to lp_coef
-
 
     // dynamic humanization
     float hit_accent;  // Per-hit random accentuation/damping
@@ -176,8 +178,8 @@ public:
     void advance_smoothing();
 
 
-    void render_block4(const float* in, float* out);
-    void render_scalar_frame(const float* in, float* out);
+    void prepare_block(const float* in, int frames);
+    void render_frames(const float* in, float* out, int frames);
 
     static fast_inline float clamp01(float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); }
 
@@ -214,6 +216,8 @@ private:
     alignas(16) float lp_states_r_[kMaxClones];
     alignas(16) float lp_coefs_[kMaxClones];
 
+    float clone_norm_ = 1.0f;   // 1/sqrt(sum of clone gain^2): keeps the wet
+                                // sum near unity power as clones are added
     uint32_t smoothing_remaining_ = 0;
     uint32_t rng_state_ = 0x9E3779B9u;
     bool pending_profile_rebuild_ = true;

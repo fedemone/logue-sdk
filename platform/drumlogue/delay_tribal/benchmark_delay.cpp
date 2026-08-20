@@ -22,23 +22,28 @@ void benchmark_delay_line_access() {
     PercussionSpatializer spatializer;
 
     // Initialize with dummy data
-    unit_runtime_desc_t desc;
+    unit_runtime_desc_t desc = {};
+    desc.target = unit_header.target;
+    desc.api = UNIT_API_VERSION;
     desc.samplerate = 48000;
     desc.input_channels = 2;
     desc.output_channels = 2;
-    spatializer.Init(&desc);
+    if (spatializer.Init(&desc) != k_unit_err_none) {
+        printf("Init failed\n");
+        return;
+    }
 
-    // Benchmark gather operation
+    // One 4-frame block per iteration, which is the engine's native path.
+    float in[8] = {0};
+    float out[8];
     uint32_t start = read_cycle_counter();
     for (int i = 0; i < ITERATIONS; i++) {
-        // Force gather operation
-        float in[8] = {0};
-        float out[8];
-        spatializer.Process(in, out, 1);
+        in[0] = (i & 63) ? 0.0f : 0.9f;  // periodic transient
+        spatializer.Render(in, out, 4);
     }
     uint32_t end = read_cycle_counter();
 
-    printf("Cycles per sample: %d\n", (end - start) / ITERATIONS);
+    printf("Cycles per 4-frame block: %d\n", (end - start) / ITERATIONS);
 }
 
 void benchmark_lfo_generation() {
