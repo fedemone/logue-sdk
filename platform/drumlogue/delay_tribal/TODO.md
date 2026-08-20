@@ -1,5 +1,43 @@
 # Percussion Spatializer / delay_tribal
 
+## Stereo / timing bugs found by measurement (fixed)
+
+Found by driving the real engine with impulses and measuring the output, not by
+reading the code. All four predate the current work — verified against 61910f0.
+
+| Bug | Measured symptom | Root cause | Fix |
+|-----|------------------|-----------|-----|
+| **Image leaned left** | +1.7 dB at 2 clones rising to **+6.4 dB at 10**; clone 0 (the loudest) had a right gain of exactly 0.00 | Clone gains roll off loudest-first (`gain_step^i`) while pan swept monotonically left-to-right, so the loudest clone was seated hard left and the quietest hard right | `centre_out_seat()` hands out the same set of positions walking outward from the centre, so loud clones sit near the middle; plus an L/R power trim in `place_clones()` |
+| **Spread was a volume control** | Spread=0 **muted the wet path entirely**; wet level rose linearly with the knob | `pan_l/pan_r` were multiplied by `spread_` | Spread now collapses the pan *position* toward centre (`px * spread_`). Level is flat within 0.02 dB across the sweep; correlation goes 1.000 (mono) → 0.587 |
+| **Scatter barely did anything** | Full-range Scatter moved timing by <1.5 ms against 70–130 ms taps, and L/R correlation by 0.007 | `profile_.scatter_amount` is a unitless 0–0.63 *pan fraction* but was multiplied by `ms_to_smp` as if it were milliseconds. `gap_detach` was also applied twice, compounding to 7.3x at Gap=100 | New `profile_.scatter_ms` carries the real time scale (~20 ms on the last clone at Scatter=100); `gap_detach` applied once |
+| **Angel never re-scattered** | Angel's placement was static until a knob moved, despite the README's "scattered per hit" | Pan was only computed in `rebuild_profile()`, which runs on parameter change; `randomize_hit()` never touched it | `randomize_hit()` calls `place_clones()` in Angel mode |
+
+### Output limiter
+
+The cubic soft-clip (`x - x^3/3`, capped at 2/3) applied its curve from zero up:
+0.8 dB of loss at half scale and **3.5 dB at full scale even with Mix at 0**, so
+it coloured a fully dry signal. Replaced with a limiter that is transparent
+below 0.9 and bends asymptotically to a ceiling of 1.0 (`y = th + h*u/(1+u)`,
+unity value and slope at the threshold). Measured worst-case output at maximum
+drive: 0.9932 — bounded, with nothing hard-clipping.
+
+### Known residual: Angel channel balance
+
+Angel splits the bands across channels — L lowpassed, R highpassed — so its
+balance is program-dependent and no fixed gain trim can centre it for every
+input. It measures +1.4 to +2.0 dB left on impulses. Tribal and Military are
+within ±0.4 dB at every clone count. If this matters, the fix is to make Angel
+dual-band *per clone* rather than per channel, which is a voicing change.
+
+## Test suite
+
+`test_sine_input.cpp` previously contained a standalone re-implementation of the
+effect and never linked `PercussionSpatializer.cc` — it asserted only that the
+mock agreed with itself, its constants had drifted from the engine, and it
+failed on every recent commit. It now drives the real engine and locks in each
+of the fixes above.
+
+
 ## Status
 
 Signal path implemented and building for armv7-a. **Not yet tested on physical

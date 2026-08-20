@@ -75,8 +75,11 @@ typedef struct {
     float delay_samples;
     float wobble_depth_samples;
     float scatter_samples;  // Per-hit random delay offset
-    float pan_gain_l;       // Panning gain (left)
-    float pan_gain_r;       // Panning gain (right)
+    float pan_gain_l;       // Panning gain (left), HP attenuation baked in
+    float pan_gain_r;       // Panning gain (right), HP attenuation baked in
+    float hp_attn;          // HP attenuation factor, kept so Angel mode can
+                            // re-place clones per hit without recomputing the
+                            // filter frequencies
     float base_gain;        // Base gain before accentuation and softening
 
     float wobble_phase;
@@ -173,6 +176,7 @@ public:
     static constexpr uint32_t kSmoothBlocks = 120;
 
     void rebuild_profile();
+    void place_clones();     // pan placement + L/R balance trim
     void randomize_hit();
     void update_clone_dynamics();
     void advance_smoothing();
