@@ -16,6 +16,22 @@ static inline float xorshift_f32(uint32_t& s) {
     return (float)(s & 0x00FFFFFFu) / (float)0x01000000u;
 }
 
+// Fractional delay tap.
+// total_d is split with integer arithmetic: adding a large bias to the read
+// position (the old `+ kLen * 8` trick) pushed the value to ~2^18, where a
+// float only resolves 1/32 of a sample — that quantised every fractional tap
+// and flattened the wobble modulation.  Splitting here keeps full precision.
+//   A = newest-sample index minus floor(total_d), B = one sample older,
+//   out = x[A] + frac * (x[B] - x[A])
+static fast_inline void delay_tap(int write_pos, float total_d,
+                                  int& ia, int& ib, float& frac) {
+    if (total_d < 1.0f) total_d = 1.0f;
+    const int di = (int)total_d;
+    frac = total_d - (float)di;
+    ia = (write_pos - 1 - di) & delay_line_t::kMask;
+    ib = (ia - 1) & delay_line_t::kMask;
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
@@ -31,6 +47,7 @@ int8_t PercussionSpatializer::Init(const unit_runtime_desc_t* desc) {
     if (desc->input_channels != 2 || desc->output_channels != 2)
         return k_unit_err_geometry;
     sample_rate_  = desc->samplerate;
+    inverse_sample_rate_ = 1.0f / (float)sample_rate_;
     initialized_  = true;
     Reset();
     return k_unit_err_none;
@@ -348,6 +365,14 @@ void PercussionSpatializer::rebuild_profile() {
         // net_gain: apply current soft_atk (will be refreshed each block by update_clone_dynamics)
         // lp_coef_base: store for per-hit randomization
         clones_[i].lp_coef_base = clones_[i].lp_coef;
+        // Clones that come into range when the count is raised have never been
+        // through randomize_hit(); without a default their per-hit multipliers
+        // are 0 and update_clone_dynamics() mutes them until the next transient.
+        if (clones_[i].dynamic_gain_factor <= 0.0f) {
+            clones_[i].dynamic_gain_factor  = 1.0f;
+            clones_[i].hit_accent           = 1.0f;
+            clones_[i].lp_cutoff_rand_factor = 1.0f;
+        }
         float soft_fac        = (i == 0) ? 1.0f : (0.82f + 0.18f * (1.0f - soft_atk_));
         clones_[i].net_gain_l = clones_[i].base_gain * soft_fac * clones_[i].pan_gain_l; // dynamic_gain_factor applied in update_clone_dynamics
         clones_[i].net_gain_r = clones_[i].base_gain * soft_fac * clones_[i].pan_gain_r; // dynamic_gain_factor applied in update_clone_dynamics
@@ -439,12 +464,8 @@ static fast_inline void mix_clone_batch4(clone_t* clones,
         // Smooth LFO calculation
         float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
 
-        float raw_pos = (float)(delay.write - 1) - total_d;
-        float safe_pos = raw_pos + (float)(delay_line_t::kLen * 8);
-        int base_int = (int)safe_pos;
-        frs[lane] = safe_pos - (float)base_int;
-        int i0 = base_int & delay_line_t::kMask;
-        int i1 = (i0 + 1) & delay_line_t::kMask;
+        int i0, i1;
+        delay_tap(delay.write, total_d, i0, i1, frs[lane]);
 
         s0l[lane] = delay.l[i0];
         s1l[lane] = delay.l[i1];
@@ -495,12 +516,8 @@ static fast_inline void mix_clone_batch2(clone_t* clones,
         clone_t& c = clones[base + lane];
         float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
 
-        float raw_pos = (float)(delay.write - 1) - total_d;
-        float safe_pos = raw_pos + (float)(delay_line_t::kLen * 8);
-        int base_int = (int)safe_pos;
-        float fr = safe_pos - (float)base_int;
-        int i0 = base_int & delay_line_t::kMask;
-        int i1 = (i0 + 1) & delay_line_t::kMask;
+        int i0, i1; float fr;
+        delay_tap(delay.write, total_d, i0, i1, fr);
 
         float raw_dl = delay.l[i0] + (delay.l[i1] - delay.l[i0]) * fr;
         float raw_dr = delay.r[i0] + (delay.r[i1] - delay.r[i0]) * fr;
@@ -530,12 +547,8 @@ static fast_inline void mix_clone_scalar(clone_t& c,
     (void)idx; // Unused parameter
     float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
 
-    float raw_pos = (float)(delay.write - 1) - total_d;
-    float safe_pos = raw_pos + (float)(delay_line_t::kLen * 8);
-    int base_int = (int)safe_pos;
-    float fr = safe_pos - (float)base_int;
-    int i0 = base_int & delay_line_t::kMask;
-    int i1 = (i0 + 1) & delay_line_t::kMask;
+    int i0, i1; float fr;
+    delay_tap(delay.write, total_d, i0, i1, fr);
 
     float raw_dl = delay.l[i0] + (delay.l[i1] - delay.l[i0]) * fr;
     float raw_dr = delay.r[i0] + (delay.r[i1] - delay.r[i0]) * fr;
@@ -586,7 +599,7 @@ void PercussionSpatializer::render_block4(const float* in, float* out) {
     float32x4x2_t v_in = vld2q_f32(in);
     float32x4_t v_mag = vmulq_n_f32(vaddq_f32(vabsq_f32(v_in.val[0]), vabsq_f32(v_in.val[1])), 0.5f);
     #if defined(__aarch64__)
-    float mag_max = vaddvq_f32(v_mag); // Optimization: sum/max reduction
+    float mag_max = vmaxvq_f32(v_mag); // peak of the block (matches the fallback path)
     #else
     float32x2_t v_tmp = vmax_f32(vget_low_f32(v_mag), vget_high_f32(v_mag));
     float mag_max = fmaxf(vget_lane_f32(v_tmp, 0), vget_lane_f32(v_tmp, 1));
@@ -595,9 +608,6 @@ void PercussionSpatializer::render_block4(const float* in, float* out) {
     const bool transient = (mag_max > prev_mag_ * 1.9f) && (mag_max > 0.002f);
     // Decay envelope: ~10 ms half-life mapped to block rate
     prev_mag_ = fmaxf(mag_max, prev_mag_ * fasterexpf(-400.0f * inverse_sample_rate_));
-
-    // Batch delay line writes
-    for (int s = 0; s < 4; ++s) delay_.push(in[s * 2], in[s * 2 + 1]);
 
     // 3. Advance smoothing + rebuild if needed; THEN randomize on transient
     //    (ensures randomize_hit uses the freshly rebuilt profile)
@@ -629,6 +639,12 @@ void PercussionSpatializer::render_block4(const float* in, float* out) {
 
     // Calculate phase increment per sample
     for (int s = 0; s < 4; ++s) {
+        // Push then read, one frame at a time.  Writing the whole block up
+        // front left delay_.write frozen for all four frames, so every frame
+        // read the same delay-line position — the wet path was effectively
+        // sample-and-held at a quarter of the sample rate.
+        delay_.push(in[s * 2], in[s * 2 + 1]);
+
         float ol = 0.0f, orr = 0.0f;
         render_one_frame(this, s, ol, orr);
 
