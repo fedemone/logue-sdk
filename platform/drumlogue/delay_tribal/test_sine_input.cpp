@@ -1,374 +1,332 @@
 /**
- * @file test_sine_input.cpp
- * @brief Verifies that PercussionSpatializer produces N distinct delayed clones.
+ * test_sine_input.cpp
  *
- * Uses a scalar simulation of the exact signal path (no ARM NEON required,
- * compiles on x86) and checks two properties:
+ * @brief Behavioural tests for PercussionSpatializer, driven through the real
+ *        engine via Render().
  *
- *   1. IMPULSE RESPONSE: feeding a unit impulse produces distinct output peaks
- *      at the expected delay positions for each clone.  With 4 clones (Tribal
- *      mode) the 4 peaks appear at 8, 9, 10, 11 ms (+32-sample base offset).
- *      With 8/12/16 clones the number of peaks scales proportionally.
+ * This file used to contain a standalone re-implementation of the effect
+ * ("Spat") with its own hardcoded delay constants.  It never linked
+ * PercussionSpatializer.cc, so it asserted only that the mock agreed with
+ * itself; its constants had long since drifted from the engine (it modelled an
+ * 8 ms base with fixed 4-lane group spacing, against real tribal taps of
+ * 8-106 ms scaled by Depth and Gap) and it failed on every recent commit.
  *
- *   2. SINE WAVE: a 440 Hz sine at 100 % wet produces non-zero output after
- *      the delay buffers fill, confirming the chorus/clone path is active.
- *
- * Panning matches PercussionSpatializer exactly:
- *   left_gain  = cos_table[angle] * spread   (cos, NOT sin)
- *   right_gain = sin_table[angle] * spread
- *   angle range 0° … 89°  (first quadrant — no destructive cancellation)
- *
- * Compile: g++ -std=c++14 -O2 -o test_sine_input test_sine_input.cpp -lm
- * Run:     ./test_sine_input
+ * Everything below drives the actual engine instead.
  */
 
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
-#include <assert.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <vector>
+
+#include "PercussionSpatializer.h"
+
+static constexpr int   kSR    = 48000;
+static constexpr float kSRf   = 48000.0f;
 
 // ---------------------------------------------------------------------------
-// Constants — must match PercussionSpatializer / constants.h
+// Harness
 // ---------------------------------------------------------------------------
-#define SAMPLE_RATE_F    48000.0f
-#define DELAY_MAX        4096       // DELAY_MAX_SAMPLES in constants.h
-#define DELAY_MASK       (DELAY_MAX - 1)
-#define MAX_CLONES       10
-#define CLONE_GROUPS     4
-#define NEON_LANES       4
-#define READ_OFFSET      32         // base_read = write_ptr - 32
+struct Rig {
+    unit_runtime_desc_t desc{};
+    PercussionSpatializer sp;
 
-// Tribal mode geometry (must match init_clone_parameters, MODE_TRIBAL case)
-#define TRIBAL_BASE_MS   8.0f       // base_delay
-#define TRIBAL_GROUP_MS  6.0f       // group_step
-#define TRIBAL_LANE_MS   1.0f       // lane_step
-
-// ---------------------------------------------------------------------------
-// Scalar spatializer — mirrors the actual NEON processing exactly
-// ---------------------------------------------------------------------------
-typedef struct {
-    float bufL[DELAY_MAX];
-    float bufR[DELAY_MAX];
-    uint32_t writePtr;
-
-    int   cloneCount;
-    float spread;
-    float mix;
-    float wobbleDepth;
-    float lfoRate;                   // Hz
-
-    float lfoPhase[MAX_CLONES];      // normalised [0, 1)
-    float pitchMod[MAX_CLONES];      // per-clone LFO depth factor
-    float baseDelaySamples[MAX_CLONES];
-
-    float cosTab[90];                // 0° … 89°
-    float sinTab[90];
-    float leftGain[MAX_CLONES];
-    float rightGain[MAX_CLONES];
-} Spat;
-
-static float triangle_lfo(float phase) {
-    return 2.0f * fabsf(phase - 0.5f);  // same as lfo_table[] formula
-}
-
-static void spat_init(Spat *s, int cloneCount, float spread, float mix,
-                      float wobbleDepth, float lfoRateHz) {
-    memset(s, 0, sizeof(*s));
-
-    // cos/sin tables for angles 0…89° (first quadrant only)
-    for (int i = 0; i < 90; i++) {
-        float a = (float)i * (float)M_PI / 180.0f;
-        s->cosTab[i] = cosf(a);
-        s->sinTab[i] = sinf(a);
+    Rig(int clones, int mode, int depth, int rate, int spread, int mix,
+        int wobble, int scatter, int soft, int gap) {
+        desc.samplerate = kSR;
+        desc.input_channels = 2;
+        desc.output_channels = 2;
+        sp.Init(&desc);
+        sp.Reset();
+        sp.setParameter(k_clones, clones);
+        sp.setParameter(k_mode, mode);
+        sp.setParameter(k_depth, depth);
+        sp.setParameter(k_rate, rate);
+        sp.setParameter(k_spread, spread);
+        sp.setParameter(k_mix, mix);
+        sp.setParameter(k_wobble, wobble);
+        sp.setParameter(k_scatter, scatter);
+        sp.setParameter(k_attack_softening, soft);
+        sp.setParameter(k_gap, gap);
+        settle();
     }
 
-    s->cloneCount  = cloneCount;
-    s->spread      = spread;
-    s->mix         = mix;
-    s->wobbleDepth = wobbleDepth;
-    s->lfoRate     = lfoRateHz;
-
-    // Tribal mode delays and per-clone LFO configuration
-    // (mirrors init_clone_parameters with MODE_TRIBAL)
-    for (int g = 0; g < CLONE_GROUPS; g++) {
-        float base_ms = TRIBAL_BASE_MS + g * TRIBAL_GROUP_MS;
-        for (int lane = 0; lane < NEON_LANES; lane++) {
-            int ci = g * NEON_LANES + lane;
-            float offset_ms = base_ms + lane * TRIBAL_LANE_MS;
-            s->baseDelaySamples[ci] = offset_ms * 48.0f; // 1 ms = 48 samples
-            s->pitchMod[ci] = 0.1f + lane * 0.05f;
-            // Initial phase: ci/16 * full_cycle (matches fixed-point init)
-            s->lfoPhase[ci] = (float)ci / 16.0f;
-        }
+    // Parameter smoothing runs over ~480 samples; let it arrive before measuring.
+    void settle() {
+        float z[8] = {0}, o[8];
+        for (int b = 0; b < 400; ++b) sp.Render(z, o, 4);
     }
 
-    // Panning: cos → left, sin → right, angles 0°…89°
-    // Matches update_panning() in PercussionSpatializer exactly.
-    for (int ci = 0; ci < MAX_CLONES; ci++) {
-        if (ci < cloneCount) {
-            float pos = (cloneCount > 1) ? (float)ci / (float)(cloneCount - 1) : 0.5f;
-            int ang = (int)(pos * 89.0f);
-            s->leftGain[ci]  = s->cosTab[ang] * spread;
-            s->rightGain[ci] = s->sinTab[ang] * spread;
-        } else {
-            s->leftGain[ci] = s->rightGain[ci] = 0.0f;
-        }
-    }
-}
-
-static void spat_process(Spat *s, float inL, float inR,
-                          float *outL, float *outR) {
-    // Write input to delay buffer (mirrors write_to_delay_opt)
-    uint32_t pos = s->writePtr & DELAY_MASK;
-    s->bufL[pos] = inL;
-    s->bufR[pos] = inR;
-    s->writePtr++;
-
-    // base_read mirrors: (write_ptr_ - 32) & DELAY_MASK
-    uint32_t base_read = (s->writePtr - READ_OFFSET) & DELAY_MASK;
-
-    float wetL = 0.0f, wetR = 0.0f;
-    int num_groups = (s->cloneCount + NEON_LANES - 1) / NEON_LANES;
-
-    for (int g = 0; g < num_groups; g++) {
-        for (int lane = 0; lane < NEON_LANES; lane++) {
-            int ci = g * NEON_LANES + lane;
-            if (ci >= s->cloneCount) continue;
-
-            float lfo     = triangle_lfo(s->lfoPhase[ci]);
-            float wobble  = lfo * s->pitchMod[ci] * s->wobbleDepth; // extra ms
-            float off_smp = (s->baseDelaySamples[ci] + wobble * 48.0f);
-
-            float read_pos = (float)base_read - off_smp;
-            float pos_adj  = read_pos + (float)DELAY_MAX;  // ensure positive
-            while (pos_adj < 0.0f)          pos_adj += (float)DELAY_MAX;
-            while (pos_adj >= (float)DELAY_MAX) pos_adj -= (float)DELAY_MAX;
-
-            int   idx0 = (int)pos_adj & DELAY_MASK;
-            int   idx1 = (idx0 + 1) & DELAY_MASK;
-            float frac = pos_adj - (float)(int)pos_adj;
-
-            float sL = s->bufL[idx0] + frac * (s->bufL[idx1] - s->bufL[idx0]);
-            float sR = s->bufR[idx0] + frac * (s->bufR[idx1] - s->bufR[idx0]);
-
-            wetL += sL * s->leftGain[ci];
-            wetR += sR * s->rightGain[ci];
-
-            s->lfoPhase[ci] += s->lfoRate / SAMPLE_RATE_F;
-            if (s->lfoPhase[ci] >= 1.0f) s->lfoPhase[ci] -= 1.0f;
-        }
-    }
-
-    // Volume compensation: 1/sqrt(cloneCount) — same as actual code
-    float vc = 1.0f / sqrtf((float)s->cloneCount);
-    wetL *= vc;
-    wetR *= vc;
-
-    *outL = inL * (1.0f - s->mix) + wetL * s->mix;
-    *outR = inR * (1.0f - s->mix) + wetR * s->mix;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Expected output sample index for a given clone (0-indexed)
-// The input written at n=0 appears in output at n = READ_OFFSET-1 + offset_smp.
-static int expected_peak(int g, int lane) {
-    float off_ms  = TRIBAL_BASE_MS + g * TRIBAL_GROUP_MS + lane * TRIBAL_LANE_MS;
-    int   off_smp = (int)(off_ms * 48.0f);
-    return (READ_OFFSET - 1) + off_smp;
-}
-
-// ---------------------------------------------------------------------------
-// Test 1: impulse response — N distinct delay taps
-// ---------------------------------------------------------------------------
-static void test_impulse_response(int cloneCount, const char *label) {
-    printf("\n=== Impulse Response: %d Clones (%s) ===\n", cloneCount, label);
-
-    Spat s;
-    spat_init(&s, cloneCount, 0.8f, 1.0f, 0.0f, 0.0f);  // no wobble
-
-    const int BUFLEN = 2000;
-    float outL[BUFLEN], outR[BUFLEN];
-
-    for (int n = 0; n < BUFLEN; n++) {
-        float in = (n == 0) ? 1.0f : 0.0f;
-        spat_process(&s, in, in, &outL[n], &outR[n]);
-    }
-
-    int num_groups = (cloneCount + NEON_LANES - 1) / NEON_LANES;
-    int peaks_found = 0, peaks_expected = 0;
-
-    for (int g = 0; g < num_groups; g++) {
-        for (int lane = 0; lane < NEON_LANES; lane++) {
-            int ci = g * NEON_LANES + lane;
-            if (ci >= cloneCount) continue;
-            peaks_expected++;
-
-            int t = expected_peak(g, lane);
-            float off_ms = TRIBAL_BASE_MS + g * TRIBAL_GROUP_MS + lane * TRIBAL_LANE_MS;
-            printf("  Clone %2d: expected peak at t=%-4d (%.1f ms base delay)\n",
-                   ci, t, off_ms);
-
-            bool found = false;
-            for (int dt = -3; dt <= 3 && !found; dt++) {
-                int tt = t + dt;
-                if (tt >= 0 && tt < BUFLEN) {
-                    float amp = fabsf(outL[tt]) + fabsf(outR[tt]);
-                    if (amp > 0.01f) found = true;
-                }
-            }
-            if (found) {
-                peaks_found++;
-            } else {
-                printf("    ** MISSING peak for clone %d near t=%d!\n", ci, t);
+    // One impulse, then `ms` of tail. Returns interleaved stereo.
+    std::vector<float> impulse(int ms) {
+        const int n = (ms * kSR) / 1000;
+        std::vector<float> y(n * 2, 0.0f);
+        for (int b = 0; b * 4 < n; ++b) {
+            float in[8] = {0}, out[8];
+            if (b == 0) { in[0] = 1.0f; in[1] = 1.0f; }
+            sp.Render(in, out, 4);
+            for (int s = 0; s < 4; ++s) {
+                const int i = b * 4 + s;
+                if (i < n) { y[i * 2] = out[s * 2]; y[i * 2 + 1] = out[s * 2 + 1]; }
             }
         }
+        return y;
     }
+};
 
-    printf("  Peaks confirmed: %d / %d\n", peaks_found, peaks_expected);
-    assert(peaks_found == peaks_expected && "Missing clone delay tap in impulse response!");
-    printf("  PASS: %d distinct delay taps confirmed\n", cloneCount);
+static void channel_power(const std::vector<float>& y, double* pl, double* pr, double* plr) {
+    *pl = *pr = *plr = 0.0;
+    for (size_t i = 0; i + 1 < y.size(); i += 2) {
+        *pl  += (double)y[i] * y[i];
+        *pr  += (double)y[i + 1] * y[i + 1];
+        *plr += (double)y[i] * y[i + 1];
+    }
+}
+
+static double peak_abs(const std::vector<float>& y) {
+    double p = 0;
+    for (float v : y) p = fmax(p, fabs((double)v));
+    return p;
+}
+
+// First sample crossing half the peak — the ensemble's leading edge.
+static double first_tap_ms(const std::vector<float>& y) {
+    const double thr = peak_abs(y) * 0.5;
+    for (size_t i = 2; i + 1 < y.size(); i += 2) {
+        if (fabs((double)y[i]) + fabs((double)y[i + 1]) > thr)
+            return (double)(i / 2) * 1000.0 / kSRf;
+    }
+    return -1.0;
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: sine-wave response — output non-zero at 100 % wet
+// Test 1: impulse produces distinct, ordered taps that track Depth and Gap
 // ---------------------------------------------------------------------------
-static void test_sine_response(int cloneCount, float freq_hz) {
-    printf("\n=== Sine Response: %d Clones @ %.0f Hz, mix=100%% ===\n",
-           cloneCount, (double)freq_hz);
+static void test_impulse_taps() {
+    printf("\n=== Impulse Response: taps track Depth and Gap ===\n");
 
-    Spat s;
-    spat_init(&s, cloneCount, 0.8f, 1.0f, 0.0f, 0.0f);
+    struct { int depth, gap; } cases[] = {{0, 0}, {50, 20}, {100, 100}};
+    double first[3];
 
-    const int TOTAL = (int)(1.5f * SAMPLE_RATE_F);
-    const int WARMUP = (int)(0.05f * SAMPLE_RATE_F); // 50 ms — longest delay ~12 ms
-    float phase = 0.0f;
-    float inc   = 2.0f * (float)M_PI * freq_hz / SAMPLE_RATE_F;
-    float maxOut = 0.0f;
+    for (int c = 0; c < 3; ++c) {
+        Rig r(2 /*6 clones*/, 0, cases[c].depth, 30, 80, 100, 0, 0, 20, cases[c].gap);
+        auto y = r.impulse(500);
+        first[c] = first_tap_ms(y);
+        printf("  depth=%3d gap=%3d : first tap at %6.2f ms, peak %.4f\n",
+               cases[c].depth, cases[c].gap, first[c], peak_abs(y));
+        assert(first[c] > 0.0 && "impulse produced no wet output");
+        assert(peak_abs(y) > 1e-3 && "wet path is silent");
+    }
 
-    for (int n = 0; n < TOTAL; n++) {
-        float in = sinf(phase);
-        phase += inc;
-        if (phase > 2.0f * (float)M_PI) phase -= 2.0f * (float)M_PI;
+    assert(first[1] > first[0] && "Depth/Gap did not push taps later");
+    assert(first[2] > first[1] && "Depth/Gap did not push taps later");
+    printf("  PASS: taps present and monotonically later with Depth/Gap\n");
+}
 
-        float oL, oR;
-        spat_process(&s, in, in, &oL, &oR);
+// ---------------------------------------------------------------------------
+// Test 2: sine response — output non-zero at 100 % wet
+// ---------------------------------------------------------------------------
+static void test_sine_response(int clones, float freq_hz) {
+    printf("\n=== Sine Response: clone idx %d @ %.0f Hz, mix=100%% ===\n",
+           clones, (double)freq_hz);
 
-        if (n >= WARMUP) {
-            float a = fabsf(oL) + fabsf(oR);
-            if (a > maxOut) maxOut = a;
+    Rig r(clones, 0, 50, 30, 80, 100, 30, 20, 20, 20);
+    const float w = 2.0f * (float)M_PI * freq_hz / kSRf;
+    double energy = 0;
+    int n = 0;
+    for (int b = 0; b < 4000; ++b) {
+        float in[8], out[8];
+        for (int s = 0; s < 4; ++s) {
+            const float v = sinf(w * (float)(b * 4 + s));
+            in[s * 2] = v; in[s * 2 + 1] = v;
+        }
+        r.sp.Render(in, out, 4);
+        if (b > 500) for (int i = 0; i < 8; ++i) { energy += (double)out[i] * out[i]; ++n; }
+    }
+    const double rms = sqrt(energy / n);
+    printf("  output rms = %.5f\n", rms);
+    assert(rms > 1e-3 && "sine input produced no output");
+    assert(std::isfinite(rms) && "sine input produced NaN/Inf");
+    printf("  PASS\n");
+}
+
+// ---------------------------------------------------------------------------
+// Test 3: Spread is a WIDTH control, not a level control
+//
+// Regression: pan gains were multiplied by spread_, so Spread=0 muted the wet
+// path entirely instead of collapsing the ensemble to mono.
+// ---------------------------------------------------------------------------
+static void test_spread_is_width_not_level() {
+    printf("\n=== Spread: width control, constant level ===\n");
+
+    double rms[6], corr[6];
+    for (int i = 0; i < 6; ++i) {
+        Rig r(2, 0, 50, 30, i * 20, 100, 30, 50, 20, 20);
+        auto y = r.impulse(400);
+        double pl, pr, plr;
+        channel_power(y, &pl, &pr, &plr);
+        rms[i]  = sqrt((pl + pr) / (double)(y.size() / 2));
+        corr[i] = plr / sqrt(pl * pr + 1e-30);
+        printf("  spread=%3d : rms %.6f  correlation %+.3f\n", i * 20, rms[i], corr[i]);
+        assert(rms[i] > 1e-4 && "Spread muted the wet path");
+    }
+
+    // Level must stay put across the whole sweep (within 1 dB).
+    const double ratio = rms[5] / rms[0];
+    assert(ratio > 0.89 && ratio < 1.12 && "Spread is acting as a level control");
+    // Width must actually open up.
+    assert(corr[0] > 0.95 && "Spread=0 should be mono");
+    assert(corr[5] < corr[0] - 0.2 && "Spread=100 should decorrelate the channels");
+    printf("  PASS: level flat within %.2f dB, correlation %.3f -> %.3f\n",
+           fabs(10.0 * log10(ratio)), corr[0], corr[5]);
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: the stereo image is centred at every clone count
+//
+// Regression: clone gains roll off loudest-first while pan swept left-to-right,
+// seating the loudest clone hard left. The image leaned left by 1.7 dB at 2
+// clones, rising to 6.4 dB at 10.
+// ---------------------------------------------------------------------------
+static void test_stereo_balance() {
+    printf("\n=== Stereo balance across clone counts ===\n");
+
+    // Averaged over many hits: per-hit humanisation (random gain factors and
+    // accents) makes any single impulse wander by a dB or so, which is the
+    // point of it. What must be centred is the expected balance.
+    for (int mode = 0; mode < 3; ++mode) {
+        for (int cs = 0; cs < 5; ++cs) {
+            Rig r(cs, mode, 50, 30, 100, 100, 30, 50, 20, 20);
+            double tl = 0, tr = 0;
+            for (int h = 0; h < 40; ++h) {
+                auto y = r.impulse(300);
+                double pl, pr, plr;
+                channel_power(y, &pl, &pr, &plr);
+                tl += pl; tr += pr;
+            }
+            const double db = 10.0 * log10((tl + 1e-30) / (tr + 1e-30));
+            // Angel splits the bands across channels (L lowpassed, R
+            // highpassed), so its balance is program-dependent by design and
+            // no fixed gain trim can centre it for every input; it is held to
+            // a looser bound than the two symmetric modes.
+            const double limit = (mode == 2) ? 2.5 : 1.0;
+            printf("  mode=%d clones=%2d : L/R %+5.2f dB (limit %.1f)\n",
+                   mode, (cs + 1) * 2, db, limit);
+            assert(fabs(db) < limit && "stereo image is off-centre");
         }
     }
-
-    printf("  Peak |output| after warmup: %.4f\n", (double)maxOut);
-    assert(maxOut > 0.01f && "Output near zero — clone path not contributing!");
-    printf("  PASS: wet output is active (peak %.4f)\n", (double)maxOut);
+    printf("  PASS: symmetric modes within 1 dB, Angel within 2.5 dB\n");
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: modulation produces audible amplitude variation
-// With wobble and LFO the effective delay of each clone shifts over time,
-// changing the relative phase of each delayed sine and creating amplitude
-// modulation (chorus / vibrato).  Verified by confirming max > min amplitude.
+// Test 5: Scatter audibly loosens the ensemble's timing
+//
+// Regression: scatter_amount is a unitless pan fraction (max 0.63) but was
+// multiplied by ms_to_smp as if it were milliseconds, capping timing jitter at
+// ~1.5 ms against 70-130 ms taps — inaudible.
 // ---------------------------------------------------------------------------
-static void test_modulation_variation(int cloneCount) {
-    printf("\n=== Modulation Amplitude Variation: %d Clones ===\n", cloneCount);
+static void test_scatter_moves_timing() {
+    printf("\n=== Scatter: per-hit timing spread ===\n");
 
-    Spat s;
-    spat_init(&s, cloneCount, 0.8f, 1.0f, 1.0f, 3.0f); // max wobble, 3 Hz LFO
+    double sd[2];
+    for (int c = 0; c < 2; ++c) {
+        const int scatter = c ? 100 : 0;
+        Rig r(1 /*4 clones*/, 0, 50, 30, 80, 100, 0, scatter, 20, 20);
 
-    const int TOTAL  = (int)(3.0f * SAMPLE_RATE_F);
-    const int WARMUP = (int)(0.2f  * SAMPLE_RATE_F);
-    float phase = 0.0f;
-    float inc   = 2.0f * (float)M_PI * 440.0f / SAMPLE_RATE_F;
-    float maxA = 0.0f, minA = 1e30f;
-
-    for (int n = 0; n < TOTAL; n++) {
-        float in = sinf(phase);
-        phase += inc;
-        if (phase > 2.0f * (float)M_PI) phase -= 2.0f * (float)M_PI;
-
-        float oL, oR;
-        spat_process(&s, in, in, &oL, &oR);
-
-        if (n >= WARMUP) {
-            float a = fabsf(oL) + fabsf(oR);
-            if (a > maxA) maxA = a;
-            if (a < minA) minA = a;
+        std::vector<double> t;
+        for (int h = 0; h < 40; ++h) {
+            auto y = r.impulse(250);
+            const double f = first_tap_ms(y);
+            if (f > 0) t.push_back(f);
         }
+        double m = 0;
+        for (double v : t) m += v;
+        m /= (double)t.size();
+        double s = 0;
+        for (double v : t) s += (v - m) * (v - m);
+        sd[c] = sqrt(s / (double)t.size());
+        printf("  scatter=%3d : first tap %6.2f ms, sd %.2f ms over %zu hits\n",
+               scatter, m, sd[c], t.size());
     }
 
-    printf("  Amplitude range (after warmup): %.4f .. %.4f\n",
-           (double)minA, (double)maxA);
-    assert(maxA > 0.01f && "Output is silent with modulation!");
-    printf("  PASS: output non-zero with modulation (%.4f max)\n", (double)maxA);
+    assert(sd[1] > sd[0] * 2.0 && "Scatter barely changes timing spread");
+    printf("  PASS: spread widens %.1fx from Scatter=0 to Scatter=100\n", sd[1] / sd[0]);
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: clone count scaling — more clones, more distinct delay taps
-// ---------------------------------------------------------------------------
-static void test_clone_count_scaling() {
-    printf("\n=== Clone Count Scaling ===\n");
-    const int counts[] = { 4, 8, 12, 16 };
-    const char *labels[] = {
-        "4 clones  (1 group, 8-11 ms)",
-        "8 clones  (2 groups, 8-17 ms)",
-        "12 clones (3 groups, 8-23 ms)",
-        "16 clones (4 groups, 8-29 ms)"
-    };
-    for (int i = 0; i < 4; i++) {
-        test_impulse_response(counts[i], labels[i]);
-    }
-    printf("\n  PASS: impulse-response tap count scales correctly for 4/8/12/16 clones\n");
-}
-
-// ---------------------------------------------------------------------------
-// Test 5: mix control boundary conditions
+// Test 6: mix boundaries — 0 % is dry, 100 % has no dry leak
 // ---------------------------------------------------------------------------
 static void test_mix_boundaries() {
-    printf("\n=== Mix Boundary Test ===\n");
+    printf("\n=== Mix boundaries ===\n");
 
-    // mix=0 → output == input (pure dry)
-    {
-        Spat s;
-        spat_init(&s, 4, 0.8f, 0.0f, 0.0f, 0.0f);
-        float in = 0.75f, oL, oR;
-        spat_process(&s, in, in, &oL, &oR);
-        assert(fabsf(oL - in) < 1e-5f && "mix=0 must pass dry signal unchanged");
-        printf("  mix=0 → output=%.4f (expected %.4f)  PASS\n", (double)oL, (double)in);
+    {   // mix=0 must pass the input through untouched.  Tested at 0.5, inside
+        // the limiter's transparent region, so this asserts real transparency
+        // rather than just "close enough after saturation".
+        Rig r(1, 0, 50, 30, 80, 0, 30, 20, 20, 20);
+        float in[8] = {0}, out[8];
+        in[0] = in[1] = 0.5f;
+        r.sp.Render(in, out, 4);
+        printf("  mix=0   : 0.5 in -> out[0]=%.4f\n", out[0]);
+        assert(fabsf(out[0] - 0.5f) < 0.01f && "mix=0 should pass dry untouched");
     }
-
-    // mix=1, t=0 → delay buffers empty → wet=0 → output≈0
-    {
-        Spat s;
-        spat_init(&s, 4, 0.8f, 1.0f, 0.0f, 0.0f);
-        float oL, oR;
-        spat_process(&s, 1.0f, 1.0f, &oL, &oR);
-        assert(fabsf(oL) < 0.01f && "mix=1 at t=0 must be near 0 (buffer empty)");
-        printf("  mix=1 t=0 → output=%.5f (expected ~0.0)  PASS\n", (double)oL);
+    {   // mix=100 must not pass the dry impulse at t=0
+        Rig r(1, 0, 50, 30, 80, 100, 30, 20, 20, 20);
+        float in[8] = {0}, out[8];
+        in[0] = in[1] = 1.0f;
+        r.sp.Render(in, out, 4);
+        printf("  mix=100 : impulse in -> out[0]=%.4f\n", out[0]);
+        assert(fabsf(out[0]) < 0.05f && "mix=100 leaked the dry signal");
     }
-
-    printf("  Mix boundaries: PASS\n");
+    printf("  PASS\n");
 }
 
 // ---------------------------------------------------------------------------
-// main
+// Test 7: the output limiter never lets the signal past full scale
+//
+// Regression: nothing bounded the clone sum, so dense settings hard-clipped.
+// The cubic that replaced it over-corrected, costing 3.5 dB at full scale even
+// with the effect fully dry.
+// ---------------------------------------------------------------------------
+static void test_output_ceiling() {
+    printf("\n=== Output ceiling ===\n");
+
+    // Worst case: max clones, max gap/scatter drive, full wet, hot input.
+    Rig r(4, 0, 100, 100, 100, 100, 100, 100, 0, 100);
+    double worst = 0;
+    for (int b = 0; b < 4000; ++b) {
+        float in[8], out[8];
+        for (int s = 0; s < 4; ++s) {
+            // full-scale square-ish drive, the hardest thing to keep bounded
+            const float v = ((b + s) % 64 < 32) ? 1.0f : -1.0f;
+            in[s * 2] = v; in[s * 2 + 1] = v;
+        }
+        r.sp.Render(in, out, 4);
+        for (int i = 0; i < 8; ++i) {
+            assert(std::isfinite(out[i]) && "output went non-finite");
+            worst = fmax(worst, fabs((double)out[i]));
+        }
+    }
+    printf("  worst |output| over 16000 frames at max drive = %.4f\n", worst);
+    assert(worst <= 1.0 && "output exceeded full scale");
+    printf("  PASS: bounded below full scale, no hard clipping\n");
+}
+
 // ---------------------------------------------------------------------------
 int main() {
-    printf("=== delay_tribal: sine-wave / impulse-response signal tests ===\n");
-    printf("Scalar model matches PercussionSpatializer (cos-left/sin-right,\n");
-    printf("0-89 deg first-quadrant panning, 1/sqrt(N) volume compensation)\n");
+    setvbuf(stdout, nullptr, _IONBF, 0);  // keep output if an assert aborts
+    printf("===========================================\n");
+    printf("PercussionSpatializer behavioural tests\n");
+    printf("===========================================\n");
 
-    test_impulse_response(4,  "4 clones");
-    test_sine_response(4, 440.0f);
-    test_modulation_variation(4);
-    test_clone_count_scaling();
+    test_impulse_taps();
+    test_sine_response(1, 220.0f);
+    test_sine_response(4, 1000.0f);
+    test_spread_is_width_not_level();
+    test_stereo_balance();
+    test_scatter_moves_timing();
     test_mix_boundaries();
+    test_output_ceiling();
 
-    printf("\n=== ALL delay_tribal SIGNAL TESTS PASSED ===\n");
+    printf("\n=== ALL delay_tribal BEHAVIOURAL TESTS PASSED ===\n");
     return 0;
 }

@@ -39,13 +39,19 @@ enum {
     CLONE_SET_CNT = 5,
 };
 
-// Only the four fields below are consumed by the engine; the per-clone
+// Only the fields below are consumed by the engine; the per-clone
 // delay/gain/pan arrays that used to live here (50 floats) were written
 // nowhere and read nowhere — the real values live in clone_t.
 typedef struct {
     float jitter_ms;
     float pan_exponent;
+    // Unitless 0..1 fraction, used for PAN placement (pan coordinates are in
+    // [-1,1]).  Do not use this as a time — see scatter_ms.
     float scatter_amount;
+    // Per-hit timing scatter in MILLISECONDS.  scatter_amount used to do double
+    // duty here, which meant the Scatter knob only ever bought ~1.5 ms of
+    // jitter against tap times of 70-130 ms — inaudible.
+    float scatter_ms;
     pan_model_t pan_model;
 } spatial_profile_t;
 

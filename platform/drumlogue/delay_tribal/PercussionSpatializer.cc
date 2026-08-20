@@ -14,6 +14,10 @@ constexpr float twopi = 6.2831853f;
 constexpr float kWobbleMsBase  = 0.15f;
 constexpr float kWobbleMsRange = 1.80f;
 
+// Timing-scatter depth at Scatter=100, in ms, before the per-clone follower
+// weighting (up to 2.4x) and the Gap detachment factor.
+constexpr float kScatterMsFull = 8.3f;
+
 static inline float xorshift_f32(uint32_t& s) {
     s ^= s << 13;
     s ^= s >> 17;
@@ -37,14 +41,27 @@ static fast_inline void delay_tap(int write_pos, float total_d,
     ib = (ia - 1) & delay_line_t::kMask;
 }
 
-// Cubic soft saturation.  The clone sum can reach 6-8x before the mix stage
-// (10 clones x gap_boost x dynamic_gain_factor x wet_drive) and nothing used
-// to bound it, so the output hard-clipped.  Unity slope at zero, saturating
-// to +/-2/3 at |x| >= 1.
+// Output limiter.  The clone sum can reach 6-8x before the mix stage (10
+// clones x gap_boost x dynamic_gain_factor x wet_drive) and nothing used to
+// bound it, so the output hard-clipped.
+//
+// This is transparent below kLimitTh and only then bends toward a ceiling of
+// 1.0, so it never colours normal levels.  The cubic that used to sit here
+// (x - x^3/3, capped at 2/3) applied its curve from zero up: it cost 0.8 dB at
+// half scale and 3.5 dB at full scale, squashing even a fully dry signal at
+// Mix=0.
+//
+// For |x| > th:  y = th + h * u/(1+u),  u = (|x| - th)/h,  h = 1 - th.
+// Unity value and unity slope at |x| = th, asymptotic to 1.0, C1 continuous.
+static constexpr float kLimitTh = 0.9f;
+static constexpr float kLimitH  = 1.0f - kLimitTh;
+
 static fast_inline float soft_clip(float x) {
-    if (x >=  1.0f) return  0.66666667f;
-    if (x <= -1.0f) return -0.66666667f;
-    return x - x * x * x * 0.33333333f;
+    const float ax = fabsf(x);
+    if (ax <= kLimitTh) return x;   // normal levels pass through untouched
+    const float u = (ax - kLimitTh) * (1.0f / kLimitH);
+    const float y = kLimitTh + kLimitH * (u / (1.0f + u));
+    return x < 0.0f ? -y : y;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +297,11 @@ void PercussionSpatializer::rebuild_profile() {
     // Profile fields consumed by randomize_hit()
     profile_.jitter_ms      = 0.4f + depth_ * 1.6f + gap_ * 0.8f; // tightened jitter
     profile_.scatter_amount = (mode_ == MODE_ANGEL ? 0.18f : 0.08f) + scatter_ * (mode_ == MODE_ANGEL ? 0.82f : 0.55f);
+    // Timing scatter in ms.  kScatterMsFull is set so the last clone reaches
+    // ~20 ms of jitter at Scatter=100 (the *2.4 follower weighting in
+    // randomize_hit()), which is what actually reads as a loose crowd against
+    // 70-130 ms tap times.
+    profile_.scatter_ms     = scatter_ * kScatterMsFull;
     profile_.pan_exponent   = mode_pan_exponent(mode_);
     profile_.pan_model      = mode_pan_model(mode_);
 
@@ -333,39 +355,8 @@ void PercussionSpatializer::rebuild_profile() {
         // prevents metallic phasing artifacts.
         clones_[i].wobble_phase = (xorshift_f32(rng_state_) + (float)i * 0.125f) * 2.0f * M_PI;
 
-        // Pan position
-        float base_x = 0.0f;
-        switch (profile_.pan_model) {
-            case PAN_MODEL_CIRCLE: {
-                float arc = t * M_PI - 1.5707963f;
-                base_x = fastersinfullf(arc);
-                break;
-            }
-            case PAN_MODEL_LINE:
-                base_x = t * 2.0f - 1.0f;
-                break;
-            case PAN_MODEL_SCATTER: {
-                float center = t * 2.0f - 1.0f;
-                float jit    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * profile_.scatter_amount;
-                base_x       = clampf(center + jit, -1.0f, 1.0f);
-                break;
-            }
-        }
-
-        float scatter_shape = profile_.scatter_amount * (0.20f + 0.80f * t);
-        float random_off    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * scatter_shape * spread_;
-        float px            = clampf(base_x + random_off, -1.0f, 1.0f);
-        float a     = 0.5f * (px + 1.0f);
-        float pl    = fasterpowf(1.0f - a, profile_.pan_exponent);
-        float pr    = fasterpowf(a, profile_.pan_exponent);
-        // pn normalizes the pair so the sum-of-squares is 1; divide (not multiply).
-        // Multiplying by pn inverts the normalization — 4.7 dB deficit at center.
-        float pn    = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
-        float inv_pn = 1.0f / (pn + 1e-20f);
-        float pan_l = pl * inv_pn * spread_;
-        float pan_r = pr * inv_pn * spread_;
-
-        // HP/LP attenuation baked into pan_gain (eliminates per-sample division)
+        // HP/LP attenuation, baked into pan_gain by place_clones()
+        // (eliminates a per-sample division)
         float hp_hz   = hp_base * (1.0f + follower * hp_follow);
         float lp_hz   = lp_base * (1.0f - follower * (mode_ == MODE_TRIBAL ? 0.38f : 0.25f)); // wider filter dispersion
         lp_hz = clampf(lp_hz, 20.0f, 20000.0f);
@@ -377,9 +368,7 @@ void PercussionSpatializer::rebuild_profile() {
         lp_coefs_[i] = clampf(clones_[i].lp_coef_base *
                               clones_[i].lp_cutoff_rand_factor, 0.01f, 0.99f);
 
-        // Store gains without the artificial amplitude-only LPF attenuation
-        clones_[i].pan_gain_l = pan_l * hp_attn; // HPF attenuation baked in
-        clones_[i].pan_gain_r = pan_r * hp_attn; // HPF attenuation baked in
+        clones_[i].hp_attn = hp_attn;   // pan gains are applied by place_clones()
 
         // Base gain: exponential rolloff × scatter detachment
         float raw_gain       = fasterpowf(gain_step, (float)i);
@@ -388,6 +377,8 @@ void PercussionSpatializer::rebuild_profile() {
 
         clones_[i].precalculated_delay_base = fmaxf(2.0f, clones_[i].delay_samples + clones_[i].scatter_samples);
     }
+
+    place_clones();
 
     // Power normalisation.  The taps are mutually decorrelated (different
     // delays), so their powers add: without this the wet sum grew as roughly
@@ -401,6 +392,104 @@ void PercussionSpatializer::rebuild_profile() {
 
     update_clone_dynamics();   // net gains now reflect the new profile + norm
     pending_profile_rebuild_ = false;
+}
+
+// ---------------------------------------------------------------------------
+// place_clones — pan placement for every clone, plus an L/R balance trim.
+//
+// Called from rebuild_profile(), and additionally from randomize_hit() in
+// Angel mode, where the placement is meant to be re-scattered on every hit.
+// ---------------------------------------------------------------------------
+
+// Seat assignment: which of the evenly spaced stereo positions the i-th clone
+// takes.  Clones are ordered loudest-first (gain rolls off as gain_step^i), so
+// handing out positions in index order put the LOUDEST clone hard left and the
+// quietest hard right — the ensemble leaned left by 1.7 dB at 2 clones rising
+// to 6.4 dB at 10.  Walking outward from the centre instead keeps the same set
+// of positions (so each mode's spatial shape is unchanged) while seating the
+// loud clones near the middle.
+static fast_inline int centre_out_seat(int i, int n) {
+    const int half = n / 2;
+    const int rank = i >> 1;
+    return (i & 1) ? (half + rank) : (half - 1 - rank);
+}
+
+void PercussionSpatializer::place_clones() {
+    const float inv_cnt1 = 1.0f / (float)(clone_count_ > 1 ? clone_count_ - 1 : 1);
+
+    float sum_l = 0.0f, sum_r = 0.0f;
+
+    for (int i = 0; i < clone_count_; ++i) {
+        const float seat = (float)centre_out_seat(i, clone_count_) * inv_cnt1;
+
+        float base_x = 0.0f;
+        switch (profile_.pan_model) {
+            case PAN_MODEL_CIRCLE: {
+                float arc = seat * M_PI - 1.5707963f;
+                base_x = fastersinfullf(arc);
+                break;
+            }
+            case PAN_MODEL_LINE:
+                base_x = seat * 2.0f - 1.0f;
+                break;
+            case PAN_MODEL_SCATTER: {
+                float center = seat * 2.0f - 1.0f;
+                float jit    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * profile_.scatter_amount;
+                base_x       = clampf(center + jit, -1.0f, 1.0f);
+                break;
+            }
+        }
+
+        const float scatter_shape = profile_.scatter_amount * (0.20f + 0.80f * seat);
+        const float random_off    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * scatter_shape;
+
+        // Spread collapses the image toward the centre.  It used to scale the
+        // pan gains directly, which made Spread=0 mute the wet path entirely
+        // instead of collapsing it to mono.
+        const float px = clampf((base_x + random_off) * spread_, -1.0f, 1.0f);
+
+        const float a  = 0.5f * (px + 1.0f);
+        const float pl = fasterpowf(1.0f - a, profile_.pan_exponent);
+        const float pr = fasterpowf(a, profile_.pan_exponent);
+        // pn normalizes the pair so the sum-of-squares is 1; divide (not multiply).
+        // Multiplying by pn inverts the normalization — 4.7 dB deficit at center.
+        const float pn     = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
+        const float inv_pn = 1.0f / (pn + 1e-20f);
+
+        clones_[i].pan_gain_l = pl * inv_pn * clones_[i].hp_attn;
+        clones_[i].pan_gain_r = pr * inv_pn * clones_[i].hp_attn;
+
+        // Weight each clone's contribution by the power its one-pole filter
+        // actually passes, not just by its gain.  Late clones are darker, so a
+        // gain-only trim still left the channel fed by the darker clones
+        // quieter — 2 dB at two clones, where L and R come from one clone each.
+        // For y[n] = y[n-1] + a(x[n]-y[n-1]) and broadband input the power
+        // gains are a/(2-a) for the lowpass and 2(1-a)^2/(2-a) for Angel's
+        // highpass (out_r = raw - lp).
+        const float lpa   = clampf(clones_[i].lp_coef_base, 0.01f, 0.99f);
+        const float pw_lp = lpa / (2.0f - lpa);
+        const float pw_hp = 2.0f * (1.0f - lpa) * (1.0f - lpa) / (2.0f - lpa);
+        const float pw_r  = (mode_ == MODE_ANGEL) ? pw_hp : pw_lp;  // Angel highpasses R
+
+        const float gl = clones_[i].base_gain * clones_[i].pan_gain_l;
+        const float gr = clones_[i].base_gain * clones_[i].pan_gain_r;
+        sum_l += gl * gl * pw_lp;
+        sum_r += gr * gr * pw_r;
+    }
+
+    // Balance trim.  Seating alone cannot fully cancel the bias for every
+    // clone count (at 2 clones there is no centre seat), and Angel's random
+    // placement is lopsided per hit.  Equalising total L/R power costs two
+    // multiplies per clone at rebuild time and guarantees a centred image.
+    if (sum_l > 1e-12f && sum_r > 1e-12f) {
+        const float mean  = 0.5f * (sum_l + sum_r);
+        const float trim_l = my_sqrt_f(mean / sum_l);
+        const float trim_r = my_sqrt_f(mean / sum_r);
+        for (int i = 0; i < clone_count_; ++i) {
+            clones_[i].pan_gain_l *= trim_l;
+            clones_[i].pan_gain_r *= trim_r;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -418,9 +507,12 @@ void PercussionSpatializer::randomize_hit() {
         clones_[i].hit_accent = 1.0f;
 
         const float follower  = (float)i * inv_cnt1;
-        const float max_sct   = profile_.scatter_amount * (0.6f + 1.8f * follower) * gap_detach;
+        // scatter_ms, not scatter_amount: the latter is a pan fraction and
+        // capped the jitter at ~1.5 ms.  gap_detach is applied once here — it
+        // used to be multiplied in twice, compounding to 7.3x at Gap=100.
+        const float max_sct   = profile_.scatter_ms * (0.6f + 1.8f * follower) * gap_detach;
         const float clone_jit = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * max_sct;
-        clones_[i].scatter_samples = (global_jit + clone_jit) * ms_to_smp * gap_detach;
+        clones_[i].scatter_samples = (global_jit * gap_detach + clone_jit) * ms_to_smp;
         clones_[i].wobble_phase    = xorshift_f32(rng_state_) * 2.0f * M_PI;
         // Randomize LPF cutoff factor per hit (e.g., 0.7 to 1.3)
         clones_[i].lp_cutoff_rand_factor = 0.7f + xorshift_f32(rng_state_) * 0.6f; // Range 0.7 to 1.3
@@ -428,6 +520,11 @@ void PercussionSpatializer::randomize_hit() {
         clones_[i].dynamic_gain_factor = 0.7f + xorshift_f32(rng_state_) * 0.6f; // Range 0.7 to 1.3
         clones_[i].precalculated_delay_base = fmaxf(2.0f, clones_[i].delay_samples + clones_[i].scatter_samples);
     }
+
+    // Angel scatters its players on every hit, per the mode's design.  The
+    // placement used to be computed only in rebuild_profile(), so it was
+    // frozen until a parameter changed and Angel sounded as static as Tribal.
+    if (mode_ == MODE_ANGEL) place_clones();
 
     // Humanize: Pick 1 or 2 random secondary clones to accent or damp
     if (clone_count_ > 2) {
