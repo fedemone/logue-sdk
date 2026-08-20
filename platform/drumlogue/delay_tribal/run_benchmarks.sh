@@ -21,13 +21,24 @@ print_header() {
     echo -e "${BLUE}========================================${NC}"
 }
 
-# Compile and run benchmark
-g++ -O3 -mfpu=neon -mfloat-abi=softfp -o "$BUILD_DIR/bench_delay" benchmark_delay.cpp
+# The benchmark reads the ARM cycle counter and uses NEON intrinsics, so it
+# only builds for the drumlogue's armv7-a target — not for the build host.
+CXX=${CXX:-arm-linux-gnueabihf-g++}
 
-if [ $? -eq 0 ]; then
+if ! command -v "$CXX" >/dev/null 2>&1; then
+    echo -e "${YELLOW}$CXX not found — set CXX to an armv7-a C++ cross compiler${NC}"
+    exit 1
+fi
+
+"$CXX" -std=gnu++17 -O3 -march=armv7-a -mtune=cortex-a7 -marm \
+    -mfloat-abi=hard -mfpu=neon-vfpv4 \
+    -I. -I../common \
+    -o "$BUILD_DIR/bench_delay" benchmark_delay.cpp PercussionSpatializer.cc header.c
+
+print_header "Built $BUILD_DIR/bench_delay"
+echo -e "${YELLOW}Run it on the target (the cycle counter is unavailable on the host).${NC}"
+
+if [ "$(uname -m)" = "armv7l" ]; then
     print_header "Running Delay Benchmarks"
     "$BUILD_DIR/bench_delay"
-else
-    echo -e "${RED}Compilation failed${NC}"
-    exit 1
 fi

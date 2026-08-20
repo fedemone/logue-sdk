@@ -1,4 +1,9 @@
-// filters.h - SINGLE SOURCE OF TRUTH for all filter operations
+// filters.h - biquad helpers.
+//
+// NOTE: this header is NOT part of the delay_tribal unit build (it is absent
+// from config.mk and included by no engine source).  The render path uses
+// per-clone one-pole lowpasses in PercussionSpatializer.cc.  These biquads are
+// exercised only by test_biquad_filters.cpp.
 #pragma once
 
 #include <arm_neon.h>

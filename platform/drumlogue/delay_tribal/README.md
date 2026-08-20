@@ -38,6 +38,11 @@ Ten is the upper density limit, not the default texture. For percussion, the ear
 | 6 | Wobble | 0-100% | Micro detune / timing wobble depth |
 | 7 | Scatter | 0-100% | Detachment / chaos / ensemble looseness |
 | 8 | SoftAtk | 0-100% | Softens later clone attacks |
+| 9 | Gap | 0-100% | Delay separation / detachment between clones |
+
+Display strings on the device are Italian: the unit is named `Tribale`, the
+modes read `Tribale` / `Militare` / `Angeli`, and the clone sets read
+`2cloni` … `10cloni`.
 
 ### Mode behavior
 

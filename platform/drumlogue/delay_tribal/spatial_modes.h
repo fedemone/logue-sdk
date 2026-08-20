@@ -39,18 +39,11 @@ enum {
     CLONE_SET_CNT = 5,
 };
 
+// Only the four fields below are consumed by the engine; the per-clone
+// delay/gain/pan arrays that used to live here (50 floats) were written
+// nowhere and read nowhere — the real values live in clone_t.
 typedef struct {
-    float delay_ms[10];
-    float gain[10];
-    float pan_x[10];
-    float pan_l[10];
-    float pan_r[10];
-    float hp_hz;
-    float lp_hz;
     float jitter_ms;
-    float attack_soften;
-    float spread;
-    float wobble_ms;
     float pan_exponent;
     float scatter_amount;
     pan_model_t pan_model;
