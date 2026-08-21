@@ -431,7 +431,16 @@ private:
     // =========================================================================
     // Per-quad (4-frame) processing
     // =========================================================================
-    fast_inline void ProcessQuad(const float* in, float* out) {
+
+    /// Deliberately not inlined.  ProcessQuad has two call sites (the main loop
+    /// and the short-buffer tail), and letting the whole chain — both saturator
+    /// variants, both noise generators, eleven biquads — expand twice pushed
+    /// unit_render's stack frame to 2168 bytes of spill.  Every other unit in
+    /// this SDK sits under 500.  One call per four frames costs nothing next to
+    /// the work inside; keeping a single copy takes the frame to 72 bytes and
+    /// leaves far more of it in the instruction cache.
+    __attribute__((noinline, optimize("Ofast")))
+    void ProcessQuad(const float* in, float* out) {
         // Parameter smoothing: one 1-pole step per quad, ~8 ms at any rate.
         const float ks = smooth_coeff_;
         current_preamp_ += ks * (target_preamp_ - current_preamp_);
