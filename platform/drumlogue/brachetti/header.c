@@ -133,7 +133,22 @@ const __unit_header unit_header_t unit_header = {
         //
         // ×0.005 → ×0.01 keeps the reach: 100×0.01 = 1.00 against the old
         // 199×0.005 = 0.995, so full-up is the same knob as before.
-        {-100, 100, 0, 1, k_unit_param_type_strings, 0, 0, 0, {"Inharm"}},
+        // TYPE IS `none`, NOT `strings` — HW pass 41: "Inharm is not showing
+        // negative values but extremely high (wrong cast from signed to
+        // unsigned)".  Inharm was the ONLY k_unit_param_type_strings parameter
+        // in this header with a NEGATIVE min, and every bipolar parameter that
+        // displays correctly (Velocity, VlMllRes, VlMllStf, Mterl) is
+        // `type_none`.  That is the whole difference: the OS renders a
+        // `type_strings` parameter through unit_get_param_str_value() and
+        // treats its value as an unsigned selector on the way there, so -100
+        // came back as a huge positive number.  `type_none` makes the OS format
+        // the signed value itself and the custom string branch is never called.
+        //
+        // The knob now reads -100..100 directly instead of the old ×10
+        // (±1000) scaling.  That also makes it consistent with the other three
+        // bipolar knobs, which all read ±100.  No DSP change: every consumer
+        // already normalises with `value * 0.01f`.
+        {-100, 100, 0, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
 
         // Page 5: Resonator III
         // Master LOWPASS cutoff: high = open, low = dark.  Stored ÷10

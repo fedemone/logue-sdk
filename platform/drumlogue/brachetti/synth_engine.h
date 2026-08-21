@@ -383,7 +383,15 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        ratio 5.4 (2.4 kHz at the shipped note 69) = exactly the measured render
        centroid; a real triangle's audible spectrum is dominated by >5 kHz
        partials (ref centroid 8.5 kHz).  Modes 4-6 add the 4-8 kHz sheen. */
-    {2.756f, 5.404f, 9.00f, 6000.0f, 5000.0f, 3500.0f, 2500.0f, 0.15f, 0.80f, 0.55f, 0.30f, 0.85f, 6, 13.1f, 17.9f, 0.80f, 0.70f},
+    /* T60s scaled ×0.1317 in pass 41 (HW: "triangle decay is too high, 600 is
+       ok").  Dkay is a REFERENCE ANCHOR — LoadPreset captures the row's own
+       Dkay into m_modal_dkay_ref, so t60_scale is exactly 1.0 at the shipped
+       value and simply lowering the Dkay column would have changed NOTHING.
+       The knob position the user liked (Dkay 60, displayed 600) against the
+       old anchor 190 gives 2^(4.5·(0.30−0.95)) = 0.1317, so that factor is
+       baked into the T60s here and the column moved to 60 to match.  Measured:
+       t60 2175 ms → 275 ms, which reproduces the Dkay=600 render exactly. */
+    {2.756f, 5.404f, 9.00f, 790.0f, 658.0f, 461.0f, 329.0f, 0.15f, 0.80f, 0.55f, 0.30f, 0.85f, 6, 13.1f, 17.9f, 0.80f, 0.70f},
     /* k_KickDrum */ kDefaultModalPresetConfig,
     /* k_Clap */ kDefaultModalPresetConfig,
     /* k_Shaker: HW redesign — small woodblock body (bar ratio, very short) under
@@ -937,7 +945,7 @@ SynthState state;
             {  16,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000,  71},        // 16: StelPan
             {  17,  79,   0,   1, 900,  48,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800,  71},        // 17: Claves
             {  18,  67,   0,   1, 800,  42,   0,   0,   0,   4, 175,  20,   0,   0,   4,   3,1999,   3,  30,  40, 300,   0,1000,  71},        // 18: Cowbell   — clank shortened (modal cfg 500→180ms) + more strike noise (NzMx 25→40) toward the bright ref clank
-            {  19,  69,   0,   1, 900,  47,   0,   0,   0,   1, 190,  20,   0,   0,  15,   2,1999,  20,   0,  10, 300,   0,1500,  71},        // 19: Triangle  — NzMx 5→10: feeds the raised hf_branch (NoteOn) for the missing >8kHz metal sheen
+            {  19,  69,   0,   1, 900,  47,   0,   0,   0,   1,  60,  20,   0,   0,  15,   2,1999,  20,   0,  10, 300,   0,1500,  71},        // 19: Triangle  — NzMx 5→10: feeds the raised hf_branch (NoteOn) for the missing >8kHz metal sheen.  Dkay 190→60 (pass 41) moves the ANCHOR with the shortened T60s in modal_preset_configs — the two must change together or the knob just re-lengthens the ring.
             {  20,  36,   0,   1, 380,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  12,  15, 220,   0, 220,  71},        // 20: Kick Drum — (HW: ok)
             {  21,  60,   0,   1, 500,  27,   0,   0,   2,   5,  15,   5,   0,  50,  19,   0,1999,   3,   5,  95, 950,   1, 200,  71},        // 21: Clap      — multi-burst AM (~55Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 300→200 (BP 2kHz) toward ref centroid 2986Hz (was 4540)
             {  22,  84,   0,   1, 500,  45,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550,  71},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
@@ -1595,12 +1603,13 @@ SynthState state;
             static char rs_buf[8];
             snprintf(rs_buf, sizeof(rs_buf), "%d", (int)(value * 10));
             return rs_buf;
-        } else if (index == k_paramInharm) {
-            // Stored ÷10; show real ×10 value (-1000..1000).  Bipolar since
-            // pass 36 — see header.c.
-            static char ih_buf[8];
-            snprintf(ih_buf, sizeof(ih_buf), "%d", (int)(value * 10));
-            return ih_buf;
+        // NOTE: no k_paramInharm branch.  Inharm was `type_strings` and
+        // displayed value×10, which is exactly what broke it on hardware once
+        // pass 36 made it bipolar — the OS routes a `type_strings` parameter
+        // through here as an UNSIGNED selector, so -100 rendered as a huge
+        // positive number.  It is `k_unit_param_type_none` since pass 41 and
+        // the OS formats the signed value itself; this branch would never be
+        // called again and is removed rather than left to rot.
         } else if (index == k_paramCymPoly) {
             // Show the EFFECTIVE polyphony for the current preset (HW: "Poly
             // always showed 2, not updated with actual polyphony").  When a
@@ -1609,8 +1618,10 @@ SynthState state;
             int req = (value < 1) ? 1 : ((value > 4) ? 4 : (int)value);
             int eff = req;
             const EngineType pe = kPresetEngine[m_preset_idx];
-            if (pe == ENGINE_KS)              eff = 1;                    // mono string
-            else if (kernel_preset_active())  eff = (req > 2) ? 2 : req;  // 2 kettles
+            // ENGINE_KS is no longer forced to 1 (pass 41): a string preset now
+            // stacks DIFFERENT notes and only reuses a slot when the same note
+            // is replucked, so the Poly knob means what it says on Koto/GtrStr.
+            if (kernel_preset_active())       eff = (req > 2) ? 2 : req;  // 2 kettles
             if (eff != req) snprintf(pl_buf, sizeof(pl_buf), "%d(%d)", req, eff);
             else            snprintf(pl_buf, sizeof(pl_buf), "%d", eff);
             return pl_buf;
@@ -1728,8 +1739,10 @@ SynthState state;
         // pins it to one slot, and capping here would change which slot that
         // wrap lands on.
         {
-            const uint8_t cap = (kPresetEngine[m_preset_idx] == ENGINE_KS)
-                                ? (uint8_t)NUM_VOICES : m_poly;
+            // ENGINE_KS now honours the Poly knob like everything else.  It
+            // used to take the full NUM_VOICES range because GateOff pinned it
+            // to a single slot; that pin is gone (see below and in GateOff).
+            const uint8_t cap = m_poly;
             // ROLL FUSION (HW: "pressed rolls feel less smooth, Djambe
             // especially muddy").  Pass 23 let the drum families stack, which is
             // right for flams and roll TAILS but wrong for a PRESSED roll: at
@@ -1745,11 +1758,41 @@ SynthState state;
             const bool fusable = (ne == ENGINE_MEMBRANE || ne == ENGINE_SNARE ||
                                   ne == ENGINE_NOISE);
             const VoiceState& lastv = state.voices[state.next_voice_idx];
+            // DeepBs fuses over a LONGER window than everything else (HW pass
+            // 41: "not stacking hits properly, too muddy and undistinguished").
+            // It measured as stacking perfectly — 1→2→3→4 voices on repeated
+            // hits — and that is the problem, not the fix: its body is the
+            // longest membrane in the unit (t60_1 = 1800 ms), so at any normal
+            // sequencer rate four whole 1.8 s bodies overlap and the low end
+            // turns to porridge.  A real bass drum cannot do that; the beater
+            // damps the head it just struck.  So repeated strikes on the same
+            // note keep ONE body and re-excite it (energy accumulates, attack
+            // stays distinct) out to 300 ms instead of 80.  Other presets are
+            // unaffected — kRollFuseSec is still the shared constant the
+            // snare-wire continuity test keys on.
+            const float fuse_sec = (m_preset_idx == k_Taiko2) ? 0.300f : kRollFuseSec;
             const bool fuse = fusable && lastv.is_active &&
                               lastv.current_note == note &&
                               (lastv.exciter.current_frame <
-                               (uint32_t)(kRollFuseSec * default_sample_rate));
-            if (!fuse)
+                               (uint32_t)(fuse_sec * default_sample_rate));
+            // ENGINE_KS: one slot per STRING, not one per INSTRUMENT.
+            // HW pass 41: "Koto: stacking notes feels unnatural."  KS was hard
+            // mono — GateOff pinned every pluck to the same voice — so with
+            // Dkay 200 each new note chopped the previous one off mid-ring.  A
+            // koto has thirteen strings and they ring together; cutting them
+            // is the unnatural part.
+            //
+            // The original rationale (avoid same-pitch beating between
+            // overlapping plucks) only ever applied to the SAME note, so that
+            // is exactly what is kept: replucking a string reuses its slot —
+            // which is also what physically happens, the plectrum stops the
+            // string before exciting it again — while a DIFFERENT note takes
+            // its own voice and both ring on.  No time window here, unlike the
+            // roll fusion above: a string is stopped by being replucked no
+            // matter how long you waited.
+            const bool ks_same_string = (ne == ENGINE_KS) && lastv.is_active &&
+                                        lastv.current_note == note;
+            if (!fuse && !ks_same_string)
                 state.next_voice_idx = (uint8_t)((state.next_voice_idx + 1) % cap);
         }
         // ENGINE_CYMBAL voice policy: the cymbal cap (the Poly knob) bounds the
@@ -2824,7 +2867,12 @@ SynthState state;
         // ~13 Hz double-pulse with the depth fading over ~100 ms.
         if (m_preset_idx == k_Shaker) {
             v.noise_am_depth = 0.92f;
-            v.noise_am_inc   = (M_TWOPI * 17.0f) * inverse_default_sample_rate;
+            // 17 → 28 Hz (HW pass 41: "increase LFO speed for more shaking
+            // effect").  A hand shaker's bead-to-wall rate under a fast wrist
+            // is ~25-35 Hz; 17 Hz read as a slow rattle rather than shaking.
+            // MlltStif still scales this (knob_exp2 below), so the old 17 Hz
+            // is still reachable by turning it down.
+            v.noise_am_inc   = (M_TWOPI * 28.0f) * inverse_default_sample_rate;
             // decay = 1.0: the rattle LFO does NOT fade — a longer Rel must give a
             // longer RATTLE, not a smooth decaying hiss (HW: "when sound is longer
             // there's no rattle at all").  The shaker rattles for its whole tail.
@@ -3485,9 +3533,12 @@ SynthState state;
         // by m_cym_poly (the Poly knob), and the Timpani/Taiko kernel runs its own
         // 2-kettle path.  Only ENGINE_KS stays mono — reusing one string slot
         // avoids the same-pitch beating that made overlapping plucks buzz.
-        const EngineType e = kPresetEngine[m_preset_idx];
-        const bool stack = (e != ENGINE_KS);
-        if (!stack) state.next_voice_idx = NUM_VOICES - 1;
+        // ENGINE_KS used to be pinned here (`next_voice_idx = NUM_VOICES - 1`),
+        // which made it hard mono.  Pass 41 moved that decision into NoteOn,
+        // where the incoming note is actually known: a repluck of the SAME
+        // note reuses its slot (no beating, and physically what a plectrum
+        // does), a different note stacks.  GateOff cannot make that call — it
+        // only sees the note being released — so it no longer tries.
     }
 
     inline void AllNoteOff() {
