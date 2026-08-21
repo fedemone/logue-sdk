@@ -96,7 +96,7 @@ across 6 pages of 4. IDs below match `header.c`.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
-| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Distressor: the selected DstrDist shaper · Multiband: per-band triode saturation |
+| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Distressor: the selected DstrDist shaper, or the Overlord tube when DstrDist is None · Multiband: per-band triode saturation |
 | 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
 | 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
@@ -253,6 +253,7 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Sine folder used a 2-term Taylor series over ±π | Returned -2.03 instead of 0 at the fold; fundamental collapsed above DRIVE 15 | `sin_ps` from float_math.h, whose Cephes range reduction lets the fold keep folding — no clamp needed |
 | Distortion types not level-matched | Sine ran +3.9 dB hot, SubOct 2 dB quiet, at DRIVE=0 | Sine scaled by 2/π, SubOct mix renormalised — every shaper now has unity small-signal gain |
 | DRIVE=1 did nothing; DRIVE=2 stepped ~2 dB | Gate `drive_ > 0.01f`, plus the Overlord EQ never ran below DRIVE=2 | DRIVE=0 takes the EQ-only path; the tube blend fades in over the bottom tenth of the knob |
+| DRIVE was a dead knob on the factory default | Distressor bypasses its shaper at DstrDist=None (the init value) and the broadband tube was gated off for every non-Standard mode, so DRIVE 0→100 changed nothing at all in the mode most users reach for | Distressor falls through to the Overlord tube when DstrDist is None, matching Standard row for row (bench section G8) |
 | SLOPE evaluated against the previous COMP MODE | A host replaying parameters in ID order sets SLOPE (ID 1) before COMP MODE (ID 8), so the Distressor ratio stayed at its 4:1 init | `k_compressor_mode` re-applies the stored SLOPE |
 | DstrDist max was 9 | Value 9 is rejected by `setParameter` and has no display string | Max is 8 in `header.c` |
 | Peak detector latched | Hold counter incremented once per 4-sample block, so the "10 ms hold" was 417 ms and expiry applied a single 0.999 step — ~0.009 dB of decay per 417 ms. Gain reduction never recovered after a transient and RELEASE did nothing in Peak mode, the default | Rectify, then let the attack/release one-pole provide ballistics, with the intended 10 ms hold implemented in samples |

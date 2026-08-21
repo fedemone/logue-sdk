@@ -340,7 +340,9 @@ static void section_drive() {
         char title[256];
         snprintf(title, sizeof(title),
                  "D. LEVEL AND THD vs DRIVE (Distressor, ratio 1:1 so the compressor is\n"
-                 "   out of the picture; input %.0f dBFS 1 kHz)", 20*log10(amp));
+                 "   out of the picture; input %.0f dBFS 1 kHz).  DstrDist 0 (Off) is the\n"
+                 "   Overlord tube fall-through, not a bypass — compare with D2.",
+                 20*log10(amp));
         hdr(title);
         for (int dist = 0; dist <= 8; ++dist) {
             printf("\n  DstrDist %d (%s)\n", dist, DIST_NAME[dist]);
@@ -362,7 +364,11 @@ static void section_drive() {
         }
     }
 
-    hdr("D2. OVERLORD TUBE DRIVE (the DRIVE knob in Standard and Multiband mode)");
+    hdr("D2. OVERLORD TUBE DRIVE, measured in Standard mode.  The DstrDist 0\n"
+        "    (Off) block above must match this row for row: with no shaper\n"
+        "    selected the Distressor falls through to the same broadband tube,\n"
+        "    so DRIVE is never a dead knob.  Multiband is NOT this stage — it\n"
+        "    saturates inside each band instead.");
     for (double amp : {0.1, 0.5}) {
         printf("\n  input %.0f dBFS\n", 20*log10(amp));
         printf("  %6s %10s %10s %8s %7s\n", "DRIVE", "gain(1k)", "out dBFS", "THD%", "peak");
@@ -652,6 +658,35 @@ static void section_quirks() {
         p.v[k_gain_limit]        = 0;
         apply(p);
         printf("   MIX %+5d -> %+7.2f dB\n", mix, measure(0.1, F0, SETTLE, MEAS).gain_fund_db);
+    }
+
+    hdr("G8. DRIVE REACHES A STAGE IN EVERY MODE.  DstrDist = None used to\n"
+        "    bypass the Distressor's shaper while the broadband tube was gated\n"
+        "    off for any non-Standard mode, so the factory default combination\n"
+        "    (Distressor + DstrDist None) left DRIVE doing nothing at all.\n"
+        "    Distressor/None must now track Standard exactly, and DRIVE=0 must\n"
+        "    still be clean in both.");
+    printf("   %6s | %-22s | %-22s\n", "DRIVE", "Standard", "Distressor, None");
+    printf("   %6s | %10s %11s | %10s %11s\n", "", "gain dB", "THD%", "gain dB", "THD%");
+    for (int drv : {0, 1, 5, 20, 50, 100}) {
+        Params p = headerDefaults();
+        p.v[k_attenuation_limit] = 0;
+        p.v[k_gain_limit]        = 0;
+        p.v[k_drive]             = drv;
+        p.v[k_distressor_distortion_type] = DIST_MODE_CLEAN;
+
+        p.v[k_compressor_mode] = 0;
+        apply(p);
+        Result s = measure(0.1, F0, SETTLE, MEAS);
+
+        p.v[k_compressor_mode] = 1;
+        p.v[k_slope]           = distressorSlopeRaw(0);   /* 1:1, no gain reduction */
+        p.v[k_threhold]        = 0;
+        apply(p);
+        Result d = measure(0.1, F0, SETTLE, MEAS);
+
+        printf("   %6d | %+10.2f %11.2f | %+10.2f %11.2f\n",
+               drv, s.gain_fund_db, s.thd_pct, d.gain_fund_db, d.thd_pct);
     }
 }
 
