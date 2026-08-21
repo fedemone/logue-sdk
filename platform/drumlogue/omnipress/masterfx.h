@@ -366,14 +366,28 @@ private:
         // never ran at all in Standard/Multiband unless DRIVE reached 2.
         // Routing DRIVE=0 through the EQ-only path fixes both: the EQ is always
         // in circuit and the drive knob is live from its first step.
-        if (comp_mode_ != COMP_MODE_STANDARD || drive_ <= 0.0f) {
-            // EQ-only: Distressor has its own distortion stage and Multiband
-            // saturates per band, so only Standard needs the broadband tube path.
+        //
+        // Which stage DRIVE reaches depends on the mode:
+        //   Standard    - the broadband tube always.
+        //   Distressor  - the DstrDist shaper, which is where DRIVE belongs...
+        //                 except at DstrDist = None, where that shaper is bypassed
+        //                 and DRIVE would otherwise be a dead knob (the factory
+        //                 default combination).  Fall through to the tube instead,
+        //                 so the mode has a broadband drive at every DstrDist.
+        //   Multiband   - never: each band has its own triode, fed from DRIVE in
+        //                 setParameter, and stacking a broadband stage on top
+        //                 would double-saturate.
+        const bool tube_drive =
+            drive_ > 0.0f &&
+            (comp_mode_ == COMP_MODE_STANDARD ||
+             (comp_mode_ == COMP_MODE_DISTRESSOR &&
+              distressor_.dist_mode == DIST_MODE_CLEAN));
+
+        if (!tube_drive) {
             float32x4x2_t eq_out = overlord_apply_eq(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = eq_out.val[0];
             processed_r = eq_out.val[1];
         } else {
-            // Full EQ + tube drive for standard/multiband modes
             float32x4x2_t driven = overlord_process(&overlord_, processed_l, processed_r, samplerate_);
             processed_l = driven.val[0];
             processed_r = driven.val[1];
