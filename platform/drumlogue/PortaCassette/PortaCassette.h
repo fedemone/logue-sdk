@@ -66,10 +66,18 @@ static fast_inline float32x4_t fastersinfullf_ps(float32x4_t x) {
     return fastsinf_ps(arg);
 }
 
-// 1/x, ~1e-7 relative (two Newton-Raphson steps on the NEON estimate).
+// 1/x, ~1.5e-5 relative: one Newton-Raphson step on the NEON estimate.  Ample
+// for a saturator denominator, where the result is about to be squashed anyway.
+static fast_inline float32x4_t recip_fast(float32x4_t x) {
+    const float32x4_t r = vrecpeq_f32(x);
+    return vmulq_f32(r, vrecpsq_f32(x, r));
+}
+
+// 1/x, ~1e-7 relative.  Used where the decode gain has to invert the encode
+// gain closely enough that the residual is a fixed offset rather than a
+// signal-dependent modulation.
 static fast_inline float32x4_t recip_nr(float32x4_t x) {
-    float32x4_t r = vrecpeq_f32(x);
-    r = vmulq_f32(r, vrecpsq_f32(x, r));
+    const float32x4_t r = recip_fast(x);
     return vmulq_f32(r, vrecpsq_f32(x, r));
 }
 
@@ -285,10 +293,14 @@ private:
     // =========================================================================
 
     /// Turn on flush-to-zero + default-NaN so denormals cannot stall the FPU,
-    /// and hand back the previous FPSCR.  Only those two bits are touched: the
-    /// old code also set bit 22, which is the low half of RMode and quietly
-    /// switched the whole process to round-toward-plus-infinity — and never
-    /// restored it, so the host and every other unit inherited it too.
+    /// and hand back the previous FPSCR.
+    ///
+    /// Only those two bits are touched.  The old code also set bit 22, which is
+    /// the low half of RMode, not a denormal bit: it switched the process to
+    /// round-toward-plus-infinity and never put it back, so the host and every
+    /// other loaded unit inherited it.  (ARMv7 NEON always rounds to nearest
+    /// regardless of FPSCR, so the damage was confined to scalar VFP code —
+    /// which is most of a typical unit's control-rate arithmetic.)
     static fast_inline uint32_t fpu_enter_flush_to_zero() {
 #if defined(__arm__) && !defined(__aarch64__)
         uint32_t fpscr;
@@ -302,12 +314,22 @@ private:
 #endif
     }
 
+    /// Put back what we were handed, except that FZ and DN stay on.
+    ///
+    /// Leaving those two set is deliberate.  Scalar VFP has no automatic
+    /// denormal flushing, so a reverb tail decaying into subnormals costs
+    /// hundreds of cycles per operation and is a classic source of dropouts on
+    /// a shared audio thread.  The previous build left FZ on as a side effect
+    /// of its FPSCR bug; restoring it faithfully would quietly remove that
+    /// protection from whatever runs after us.  No audio code has any use for
+    /// subnormal precision, so this is the safe direction to err in.
     static fast_inline void fpu_restore(uint32_t fpscr) {
 #if defined(__arm__) && !defined(__aarch64__)
+        const uint32_t want = fpscr | (1u << 24) | (1u << 25);
         uint32_t now;
         __asm__ volatile("vmrs %0, fpscr" : "=r"(now));
-        if (now != fpscr)
-            __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
+        if (now != want)
+            __asm__ volatile("vmsr fpscr, %0" : : "r"(want));
 #else
         (void)fpscr;
 #endif
@@ -773,19 +795,21 @@ private:
         sig_r = vmlaq_n_f32(sig_r, crack_r, dust_level);
     }
 
-    /// Soft output ceiling: unity below the knee, asymptotic to 1.0 above it.
-    /// The old stage hard-clipped at +/-1, which sprays broadband aliasing over
+    /// Soft output ceiling: unity below the knee, tangent-continuous through a
+    /// quadratic knee, and exactly 1.0 once the overshoot reaches 2*range.  The
+    /// old stage hard-clipped at +/-1, which sprays broadband aliasing across
     /// the master bus precisely when the unit is being pushed.
+    ///
+    /// Written without a division: no reciprocal to refine, and an infinite
+    /// input lands on 1.0 instead of going through a 0*inf NaN.
     fast_inline float32x4_t soft_ceiling(float32x4_t x) const {
         const float32x4_t knee = vdupq_n_f32(kCeilingKnee);
         const float32x4_t a    = vabsq_f32(x);
-        // The upper bound keeps a runaway (or infinite) sample from turning the
-        // reciprocal below into a NaN; by then the output is pinned at 1.0.
         float32x4_t over = vmaxq_f32(vsubq_f32(a, knee), vdupq_n_f32(0.0f));
-        over = vminq_f32(over, vdupq_n_f32(1.0e6f));
-        // over / (1 + over/range)  ->  range as over -> inf
-        const float32x4_t den = vmlaq_n_f32(vdupq_n_f32(1.0f), over, 1.0f / kCeilingRange);
-        const float32x4_t mag = vmlaq_f32(vminq_f32(a, knee), over, recip_nr(den));
+        over = vminq_f32(over, vdupq_n_f32(2.0f * kCeilingRange));
+        // mag = min(a,knee) + over - over^2 / (4*range)
+        float32x4_t mag = vaddq_f32(vminq_f32(a, knee), over);
+        mag = vmlsq_n_f32(mag, vmulq_f32(over, over), 0.25f / kCeilingRange);
         const uint32x4_t sign = vandq_u32(vreinterpretq_u32_f32(x), vdupq_n_u32(0x80000000u));
         return vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(mag), sign));
     }
@@ -808,7 +832,7 @@ private:
         const float32x4_t denom =
             vmlaq_n_f32(vaddq_f32(vdupq_n_f32(1.0f), vabsq_f32(xb)),
                         vmulq_f32(xb, xb), 0.3f);
-        const float32x4_t sat = vmulq_f32(xb, recip_nr(denom));
+        const float32x4_t sat = vmulq_f32(xb, recip_fast(denom));
         const float32x4_t y   = vsubq_f32(sat, vdupq_n_f32(vinyl_dc_offset_));
 
         // Tracing error: the stylus cannot follow the groove wall exactly, so
@@ -835,7 +859,7 @@ private:
         d = vmlaq_f32(vdupq_n_f32(0.609347197060491e-1f), absx, d);
         d = vmlaq_f32(vdupq_n_f32(0.2464845986383725f), absx, d);
 
-        const float32x4_t mag = vmulq_f32(n, recip_nr(d));
+        const float32x4_t mag = vmulq_f32(n, recip_fast(d));
         return vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(mag), sign));
     }
 
