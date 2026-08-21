@@ -60,6 +60,22 @@
 // clicking, matching the pre-delay behaviour.
 #define DELAY_SLEW_COEFF (0.002f)
 
+// Gain slew coefficient, also applied once per 4-sample block (~10 ms time
+// constant, settling in ~50 ms). Gains reach their target faster than delay
+// lengths because a gain change carries no pitch artifact to hide — the glide
+// only has to outrun the ear's click threshold.
+#define GAIN_SLEW_COEFF (0.008f)
+
+// Ceiling on how fast a delay length may move, in samples per sample. The read
+// pointer runs at (1 - this) to (1 + this) times normal speed while a delay
+// glides, so 0.5 bounds the tape bend to an octave down / a fifth up and keeps
+// the pointer from ever stalling or reversing. See slewDelayTimes().
+#define DELAY_MAX_RATE (0.5f)
+
+// How quickly the glide rate itself may change, per block. Ramps the tape bend
+// in and out over ~4 ms so its start and end are not kinks.
+#define DELAY_RATE_EASE (0.02f)
+
 // The read pointer trails the write pointer by the delay length plus the
 // modulation depth (at most 18 samples, from the esotico shimmer path). If that
 // ever exceeded the ring buffer the read would wrap past the write head and
@@ -157,6 +173,28 @@ static inline void neon_transpose4(const float32x4_t* in, float32x4_t* out) {
 // ============================================================================
 
 class NeonAdvancedLabirinto {
+    // Material colour modes, and one stage's worth of the coefficients and
+    // filter states that realise them. Declared up here rather than down with
+    // the rest of the data because applyColour4() takes a set by reference: the
+    // engine keeps two, the live one and the one being faded out across a mode
+    // change.
+    //
+    // kFilterCrystal: bright allpass-like character for esotico (medium-Q
+    // bandpass centred higher than metal, giving a shimmering/glassy
+    // microtonal colour).
+    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterCrystal, kFilterNoise };
+
+    struct colourSet_t {
+        FilterMode mode;
+        float a0, a1, a2, b1, b2;   // shared biquad coefficients
+        // __restrict: these always point at the engine's own state arrays, which
+        // never alias the caller's block of samples. Without it the compiler has
+        // to reload the coefficients after every store.
+        float *__restrict fs1, *__restrict fs2;   // biquad z^-1 / z^-2, per channel
+        float *__restrict metal;                  // metal comb z^-1
+        float *__restrict allpass;                // crystal allpass state
+    };
+
 public:
     /*===========================================================================*/
     /* Lifecycle Methods */
@@ -168,15 +206,20 @@ public:
         , decay(0.5f)
         , diffusion(0.3f)
         , modDepth(0.1f)
+        , targetModDepth(0.1f)
         , modRate(0.5f)
         , width(1.0f)
+        , targetWidth(1.0f)
         , dampingCoeff(0.5f)
+        , targetDampingCoeff(0.5f)
         , lowDecayMult(1.0f)
         , highDecayMult(0.5f)
         , initialized(false)
         , pillar_(3)
         , pingPong_(false)
+        , pingPongBlend(0.0f)
         , shimmerDepth_(0.0f)
+        , targetShimmerDepth_(0.0f)
         , shimmerPhase_(0.0f)
         , shimmerFreq_ (35.0f)
         , preDelayWritePos(0)
@@ -198,18 +241,20 @@ public:
         , bounceSync_(k_sync_off)
         , tempoBpm(120.0f)
         , unifiedDecay(0.5f)
-        , lowBandGain(0.5f)
-        , highBandGain(0.5f)
         , meanDelay(0.1415f)
-        , inputDrive(0.4f)
         , filterUpdateCounter(0)
         , baseFc(1000.0f)
-        , outputMakeup(1.0f) {
+        , targetBaseFc(1000.0f)
+        , lowBandGain(0.5f),  targetLowBandGain(0.5f)
+        , highBandGain(0.5f), targetHighBandGain(0.5f)
+        , inputDrive(0.4f),   targetInputDrive(0.4f)
+        , outputMakeup(1.0f), targetOutputMakeup(1.0f) {
 
         updateDelayTimes();
         for (int i = 0; i < FDN_CHANNELS; i++)
             delayTimes[i] = targetDelayTimes[i];
         updateDecayGains();
+        snapGains();   // nothing is sounding yet, so start on the targets
 
         // Initialize modulation phases (store full vector per channel)
         for (int i = 0; i < FDN_CHANNELS; i++) {
@@ -223,6 +268,17 @@ public:
         memset(lpfState, 0, sizeof(float) * FDN_CHANNELS);
         memset(metalState, 0, sizeof(float) * FDN_CHANNELS);
         memset(crystalAPState, 0, sizeof(float) * FDN_CHANNELS);
+        // The outgoing colour is only read while colourXfade < 1, which cannot
+        // happen before setFilterType() has filled it, but leave nothing unset.
+        colourModeOld = filterMode;
+        crossPillarOld = pillar_;
+        monoFold = 0.0f;
+        for (int i = 0; i < FDN_CHANNELS; i++) mixWeight[i] = 1.0f;
+        oldA0 = oldA1 = oldA2 = oldB1 = oldB2 = 0.0f;
+        memset(oldFilterState1,   0, sizeof(oldFilterState1));
+        memset(oldFilterState2,   0, sizeof(oldFilterState2));
+        memset(oldMetalState,     0, sizeof(oldMetalState));
+        memset(oldCrystalAPState, 0, sizeof(oldCrystalAPState));
         updateFilterCoeffs();
 
     }
@@ -288,10 +344,10 @@ public:
         memset(microtonalRate_, 0, sizeof(microtonalRate_));
         preDelayWritePos = 0;
         activeSampleCount = 0;
-        // Snap the slewed delay lengths to their targets so a reset does not
-        // glide in from wherever the previous patch left them.
-        for (int i = 0; i < FDN_CHANNELS; i++)
-            delayTimes[i] = targetDelayTimes[i];
+        // Snap the slewed delay lengths and gains to their targets so a reset
+        // does not glide in from wherever the previous patch left them.
+        snapDelayTimes();
+        snapGains();
         // Reset LFO
         randomLfoCounter = 0;
         randomLfoValue = 0.0f;
@@ -378,8 +434,8 @@ public:
 
         // g^(1/mult): mult > 1 lengthens that band's RT60, mult < 1 shortens it.
         const float g = gMid / loopExtra;
-        lowBandGain  = fminf(ceiling, fasterpowf(g, 1.0f / lowDecayMult));
-        highBandGain = fminf(ceiling, fasterpowf(g, 1.0f / highDecayMult));
+        targetLowBandGain  = fminf(ceiling, fasterpowf(g, 1.0f / lowDecayMult));
+        targetHighBandGain = fminf(ceiling, fasterpowf(g, 1.0f / highDecayMult));
         unifiedDecay = fminf(0.995f, gMid);   // total round-trip gain, for drive
 
         // How hard to drive the network. A long tail recirculates more, so some
@@ -389,7 +445,7 @@ public:
         // onset drops a little as the tail lengthens, total energy rises a
         // little, which is how a bigger room actually behaves.
         const float gg = fminf(0.999f, unifiedDecay);
-        inputDrive = fmaxf(0.14f, 0.55f * fasterpowf(1.0f - gg * gg, 0.4f));
+        targetInputDrive = fmaxf(0.14f, 0.55f * fasterpowf(1.0f - gg * gg, 0.4f));
     }
 
     /**
@@ -533,7 +589,7 @@ public:
                                   (pillar_ == 1) ? 0.15f :
                                   (pillar_ == 2) ? 0.2f : 0.1f;
         setModDepth(pillarDepth * diffusion);
-        shimmerDepth_ = (pillar_ == 4) ? 0.4f * modDepth : 0.0f;
+        targetShimmerDepth_ = (pillar_ == 4) ? 0.4f * targetModDepth : 0.0f;
         updateModRate();
     }
 
@@ -547,21 +603,23 @@ public:
      * 4 = shimmer  (all 8 channels + subtle frequency-modulated re-injection)
      */
     void setPillar(int value) {
+        const int wasPillar = pillar_;
         pillar_       = std::max(0, std::min(value, 4));
+        if (pillar_ != wasPillar) { crossPillarOld = wasPillar; crossXfade = 0.0f; }
         pingPong_     = (pillar_ == 1);
         shimmerPhase_ = 0.0f;
         updateModDepth();     // depth, shimmer gain and mod rate all follow PILL
         updateDelayTimes();   // ping-pong uses its own bank geometry
     }
-    void setModDepth(float d) { modDepth = fmaxf(0.0f, fminf(1.0f, d)); }
+    void setModDepth(float d) { targetModDepth = fmaxf(0.0f, fminf(1.0f, d)); }
     void setModRate(float r) { modRate = fmaxf(0.1f, fminf(10.0f, r)); }
     // Recomputes modRate from scratch using current lfoSpeed and modDepth.
     // Uses a fixed base rate of 1.0 Hz so the result is always deterministic
     // regardless of how many times this is called.
-    void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, lfoSpeed * modDepth)); }
+    void updateModRate() { modRate = fmaxf(0.1f, fminf(10.0f, lfoSpeed * targetModDepth)); }
     // WIDE. Applied to the mid/side split at the output of both the vector and
     // the scalar path. Note it has no effect at PILL=0, which folds to mono.
-    void setWidth(float w) { width = fmaxf(0.0f, fminf(2.0f, w)); }
+    void setWidth(float w) { targetWidth = fmaxf(0.0f, fminf(2.0f, w)); }
     // 3 Hz to 8 Hz: Creates Cochrane's "microtonal beating" — a nervous, spicy, disconcerting chorusing.
     // 20 Hz to 55 Hz: Creates the "low pitching" cascade — thick, dark, metallic undertones that dive deeper as the reverb decays.
     void setShimmerFreq(float value) {
@@ -640,14 +698,14 @@ public:
         freqHz = fmaxf(200.0f, fminf(10000.0f, freqHz));
 	    // omega = 2π * fc / fs;  coeff ≈ 1 - omega  (first-order approx)
         float omega = 2.0f * (float)M_PI * freqHz / sampleRate;
-        dampingCoeff = e_expff(-omega);
+        targetDampingCoeff = e_expff(-omega);
         updateFilterCoeffs();   // recalc wood/stone/metal filters
         updateBaseFc();
         if (filterMode == kFilterNoise) {
             // Scale factor: steady-state noise level = noiseGain per channel.
             // Was 0.05 which made stellare's coloured noise ~0.005 = inaudible.
             // 0.35 makes it a usable wash; recirculation + soft-sat keep it bounded.
-            noiseGain = diffusion * dampingCoeff * 0.35f;
+            noiseGain = diffusion * targetDampingCoeff * 0.35f;
         }
     }
 
@@ -689,6 +747,11 @@ public:
 
     void setFilterType(int preset) {
         currentPreset = preset;   // Fix: currentPreset must track the active preset
+        // Capture the outgoing colour before anything moves: the coefficients
+        // still describe the mode that is on its way out, and its filter states
+        // are mid-tail. applyChannelFilters4Group() keeps running it against
+        // this frozen copy while colourXfade brings the new one in.
+        const FilterMode was = filterMode;
         switch (preset) {
             case k_foresta:    filterMode = kFilterWood;    break;
             case k_tempio:     filterMode = kFilterStone;   break;
@@ -703,45 +766,76 @@ public:
         // its additive blend, so it is left near unity. Starting points for HW
         // calibration.
         switch (filterMode) {
-            case kFilterWood:    outputMakeup = 2.7f; break;  // foresta
-            case kFilterStone:   outputMakeup = 2.5f; break;  // tempio (darkest)
-            case kFilterMetal:   outputMakeup = 2.4f; break;  // labirinto (tamed)
-            case kFilterCrystal: outputMakeup = 3.0f; break;  // esotico (good as-is)
-            case kFilterNoise:   outputMakeup = 2.6f; break;  // stellare
-            default:             outputMakeup = 2.0f; break;
+            case kFilterWood:    targetOutputMakeup = 2.7f; break;  // foresta
+            case kFilterStone:   targetOutputMakeup = 2.5f; break;  // tempio (darkest)
+            case kFilterMetal:   targetOutputMakeup = 2.4f; break;  // labirinto (tamed)
+            case kFilterCrystal: targetOutputMakeup = 3.0f; break;  // esotico (good as-is)
+            case kFilterNoise:   targetOutputMakeup = 2.6f; break;  // stellare
+            default:             targetOutputMakeup = 2.0f; break;
         }
+        if (filterMode != was) {
+            // Entering noise mode while something is already ringing used to slam
+            // the generator on at full level: noiseEnvelope is driven by input
+            // activity, so switching to stellare mid-pattern found it already at
+            // 1.0 and the wash appeared in one sample. Restart the envelope so
+            // the 83 ms attack that exists for exactly this purpose gets used.
+            noiseEnvelope = 0.0f;
+
+            // Hand the outgoing colour its own frozen coefficients and a copy of
+            // the states it had reached, then start the crossfade.
+            colourModeOld = was;
+            oldA0 = biquadA0; oldA1 = biquadA1; oldA2 = biquadA2;
+            oldB1 = biquadB1; oldB2 = biquadB2;
+            memcpy(oldFilterState1,   filterState1,   sizeof(oldFilterState1));
+            memcpy(oldFilterState2,   filterState2,   sizeof(oldFilterState2));
+            memcpy(oldMetalState,     metalState,     sizeof(oldMetalState));
+            memcpy(oldCrystalAPState, crystalAPState, sizeof(oldCrystalAPState));
+
+            // The incoming colour starts clean. Handing a filter the state left
+            // by a differently-shaped one is what makes it bang: those numbers
+            // are a history the new coefficients never produced, and a low-fc
+            // resonator rings on them for far longer than the crossfade lasts.
+            // The outgoing chain still owns that history, in the copies above.
+            memset(filterState1,   0, sizeof(filterState1));
+            memset(filterState2,   0, sizeof(filterState2));
+            memset(metalState,     0, sizeof(metalState));
+            memset(crystalAPState, 0, sizeof(crystalAPState));
+
+            colourXfade = 0.0f;
+        }
+
         updateBaseFc();
         updateDecayGains();   // in-loop colour headroom is mode dependent
     }
 
     void updateBaseFc() {
-        // compute base cutoff frequency from preset and dampingCoeff
+        // compute base cutoff frequency from preset and the requested damping
         float fc;
         switch (filterMode) {
             case kFilterWood:
-                fc = 1000.0f + dampingCoeff * 7000.0f;   // 1000..8000 Hz
+                fc = 1000.0f + targetDampingCoeff * 7000.0f;   // 1000..8000 Hz
                 break;
             case kFilterStone:
-                fc = 80.0f + dampingCoeff * 4920.0f;    // 80..5000 Hz
+                fc = 80.0f + targetDampingCoeff * 4920.0f;    // 80..5000 Hz
                 break;
             case kFilterMetal:
                 // 300..1300 Hz: covers kick body and snare fundamentals so
                 // drums with energy in this range trigger the metallic resonance.
-                fc = 300.0f + dampingCoeff * 1000.0f;
+                fc = 300.0f + targetDampingCoeff * 1000.0f;
                 break;
             case kFilterCrystal:
                 // 1000..3500 Hz: snare crack / hi-hat body. Stays below DAMP LPF
                 // even at moderate DAMP settings so the crystal character survives.
-                fc = 1000.0f + dampingCoeff * 2500.0f;
+                fc = 1000.0f + targetDampingCoeff * 2500.0f;
                 break;
             case kFilterNoise:
-                fc = 5000.0f + dampingCoeff * 10000.0f;
+                fc = 5000.0f + targetDampingCoeff * 10000.0f;
                 break;
             default:
                 fc = 1000.0f;
                 break;
         }
-        baseFc = fc;
+        targetBaseFc = fc;
         updateFilterCoeffs();   // initial coefficients
     }
 
@@ -922,12 +1016,35 @@ public:
         }
     }
 
+    /**
+     * Cross-feedback, crossfaded across a routing change.
+     *
+     * Both the amount and the wiring move with PILL, and both used to move in a
+     * single sample. The amount also follows BNCE, so sweeping the bounce time
+     * stepped it too: 60 ms to 500 ms is a fourfold change in the bank-to-bank
+     * bleed, and it landed in one sample for an 12% jump. The wiring is worse,
+     * because tempio and labirinto couple entirely different pairs of channels.
+     */
     void applyCrossFeedback(float32x4_t* signals) {
-        float gain = effectiveCrossGain();
+        if (crossXfade >= 0.9999f) {
+            applyCrossFeedbackAs(signals, pillar_);
+            return;
+        }
+        float32x4_t outgoing[FDN_CHANNELS];
+        for (int i = 0; i < FDN_CHANNELS; i++) outgoing[i] = signals[i];
+        applyCrossFeedbackAs(outgoing, crossPillarOld);
+        applyCrossFeedbackAs(signals,  pillar_);
+        const float w = crossXfade;
+        for (int i = 0; i < FDN_CHANNELS; i++)
+            signals[i] = vmlaq_n_f32(vmulq_n_f32(outgoing[i], 1.0f - w), signals[i], w);
+    }
+
+    void applyCrossFeedbackAs(float32x4_t* signals, int pillar) {
+        const float gain = crossGainLive;
         if (gain < 0.001f) return;
 
         float32x4_t t0, t1;
-        switch (pillar_) {
+        switch (pillar) {
             case 0: { // 2 channels — simultaneous update
                 t0 = signals[0]; t1 = signals[1];
                 signals[0] = vaddq_f32(t0, vmulq_n_f32(t1, gain));
@@ -1223,43 +1340,43 @@ private:
     /* resonant filter creates the spectral emphasis, the comb turns it metallic, */
     /* then the allpass diffuses it.                                              */
     /*===========================================================================*/
-    inline void applyChannelFilters4Group(float32x4_t* mixed, int c0,
-                                          bool doBiquad,
-                                          bool doMetal, bool doCrystal) {
-        // [channel][time] -> [time][channel]
-        float32x4_t T[NEON_LANES];
-        neon_transpose4(&mixed[c0], T);
+    /**
+     * One 4-channel group's colour stage, run against a named set of
+     * coefficients and filter states.
+     *
+     * Everything mode-dependent lives here: the resonant biquad, the metal comb
+     * and the crystal allpass. Taking the set as a parameter is what lets a mode
+     * change run the outgoing colour and the incoming one side by side for a few
+     * tens of milliseconds. Swapping the loop's filter in a single sample is not
+     * a click but a bang — measured across all twenty preset transitions it
+     * reached 167% of the tail's own level going from stellare to esotico, and
+     * exceeded 10% on thirteen of them.
+     */
+    colourSet_t liveColour() {
+        colourSet_t cs = { filterMode, biquadA0, biquadA1, biquadA2, biquadB1, biquadB2,
+                           filterState1, filterState2, metalState, crystalAPState };
+        return cs;
+    }
 
-        // ---- Frequency-dependent decay (always on) ----
-        // The 1-pole splits each channel at the DAMP crossover into a low band
-        // (the filter state) and a high band (what the filter rejected), then
-        // applies the per-band feedback gain that realises the LOW / HIGH RT60.
-        // This replaces both the old flat damping stage and the separate global
-        // `mixed[i] *= unifiedDecay` multiply: one pass, and DAMP/LOW/HIGH now
-        // mean what the parameter guide says they mean.
-        {
-            const float alpha = 1.0f - dampingCoeff;
-            float32x4_t st = vld1q_f32(&lpfState[c0]);
-            for (int t = 0; t < NEON_LANES; t++) {
-                float32x4_t d = vsubq_f32(T[t], st);
-                st = vmlaq_n_f32(st, d, alpha);
-                float32x4_t high = vsubq_f32(T[t], st);
-                T[t] = vmlaq_n_f32(vmulq_n_f32(st, lowBandGain), high, highBandGain);
-            }
-            vst1q_f32(&lpfState[c0], st);
-        }
+    colourSet_t previousColour() {
+        colourSet_t cs = { colourModeOld, oldA0, oldA1, oldA2, oldB1, oldB2,
+                           oldFilterState1, oldFilterState2,
+                           oldMetalState, oldCrystalAPState };
+        return cs;
+    }
 
+    inline void applyColour4(float32x4_t* T, int c0, const colourSet_t& cs) {
         // ---- Resonant biquad (Direct Form II Transposed), all modes but noise ----
-        if (doBiquad) {
-            float32x4_t fs1 = vld1q_f32(&filterState1[c0]);
-            float32x4_t fs2 = vld1q_f32(&filterState2[c0]);
+        if (cs.mode != kFilterNoise) {
+            float32x4_t fs1 = vld1q_f32(&cs.fs1[c0]);
+            float32x4_t fs2 = vld1q_f32(&cs.fs2[c0]);
             for (int t = 0; t < NEON_LANES; t++) {
                 float32x4_t in  = T[t];
-                float32x4_t out = vmlaq_n_f32(fs1, in, biquadA0);         // in*A0 + fs1
-                fs1 = vmlaq_n_f32(fs2, in,  biquadA1);                    // fs2 + in*A1
-                fs1 = vmlsq_n_f32(fs1, out, biquadB1);                    //   - out*B1
-                fs2 = vmulq_n_f32(in,  biquadA2);                         // in*A2
-                fs2 = vmlsq_n_f32(fs2, out, biquadB2);                    //   - out*B2
+                float32x4_t out = vmlaq_n_f32(fs1, in, cs.a0);            // in*A0 + fs1
+                fs1 = vmlaq_n_f32(fs2, in,  cs.a1);                       // fs2 + in*A1
+                fs1 = vmlsq_n_f32(fs1, out, cs.b1);                       //   - out*B1
+                fs2 = vmulq_n_f32(in,  cs.a2);                            // in*A2
+                fs2 = vmlsq_n_f32(fs2, out, cs.b2);                       //   - out*B2
                 // CRYSTAL: the bandpass on its own has a peak gain of only
                 // ~0.1, so the old convex blend (0.7*in + 0.3*bp) passed just
                 // 0.73 of the signal per trip round the loop — a 27% loss that
@@ -1275,12 +1392,12 @@ private:
                 // 0.985 baseline so the resonance compounds over many passes,
                 // and diluting it to 18% flattens that contrast to nothing.
                 // So the biquad output now stands on its own, every block.
-                if (filterMode == kFilterCrystal)
+                if (cs.mode == kFilterCrystal)
                     out = vmlaq_n_f32(in, out, 0.45f);
                 T[t] = out;
             }
-            vst1q_f32(&filterState1[c0], fs1);
-            vst1q_f32(&filterState2[c0], fs2);
+            vst1q_f32(&cs.fs1[c0], fs1);
+            vst1q_f32(&cs.fs2[c0], fs2);
         }
 
         // ---- Metal comb (metal mode only): x = (x + z^-1 * 0.18) / 1.18 ----
@@ -1288,28 +1405,71 @@ private:
         // the feedback loop, which is why metal mode used to need a blanket
         // `unifiedDecay *= 0.85` — that trim capped labirinto's RT60 well below
         // every other preset's. The comb colour is identical; only the level is.
-        if (doMetal) {
+        if (cs.mode == kFilterMetal) {
             const float kNorm = 1.0f / 1.18f;
-            float32x4_t st = vld1q_f32(&metalState[c0]);
+            float32x4_t st = vld1q_f32(&cs.metal[c0]);
             for (int t = 0; t < NEON_LANES; t++) {
                 float32x4_t d = st;
                 st = T[t];
                 T[t] = vmulq_n_f32(vmlaq_n_f32(T[t], d, 0.18f), kNorm);
             }
-            vst1q_f32(&metalState[c0], st);
+            vst1q_f32(&cs.metal[c0], st);
         }
 
         // ---- Crystal allpass (crystal mode only): y=-g*x+s; s=x+g*y ----
-        if (doCrystal) {
+        if (cs.mode == kFilterCrystal) {
             const float g = 0.35f;
-            float32x4_t st = vld1q_f32(&crystalAPState[c0]);
+            float32x4_t st = vld1q_f32(&cs.allpass[c0]);
             for (int t = 0; t < NEON_LANES; t++) {
                 float32x4_t in = T[t];
                 float32x4_t y  = vmlsq_n_f32(st, in, g);                  // st - g*in
                 st = vmlaq_n_f32(in, y, g);                               // in + g*y
                 T[t] = y;
             }
-            vst1q_f32(&crystalAPState[c0], st);
+            vst1q_f32(&cs.allpass[c0], st);
+        }
+    }
+
+    inline void applyChannelFilters4Group(float32x4_t* mixed, int c0,
+                                          const colourSet_t& live,
+                                          const colourSet_t& prev) {
+        // [channel][time] -> [time][channel]
+        float32x4_t T[NEON_LANES];
+        neon_transpose4(&mixed[c0], T);
+
+        // ---- Frequency-dependent decay (always on) ----
+        // The 1-pole splits each channel at the DAMP crossover into a low band
+        // (the filter state) and a high band (what the filter rejected), then
+        // applies the per-band feedback gain that realises the LOW / HIGH RT60.
+        // This replaces both the old flat damping stage and the separate global
+        // `mixed[i] *= unifiedDecay` multiply: one pass, and DAMP/LOW/HIGH now
+        // mean what the parameter guide says they mean.
+        //
+        // Not part of the crossfade below: this stage is the same filter in
+        // every mode, and its coefficients already move continuously.
+        {
+            const float alpha = 1.0f - dampingCoeff;
+            float32x4_t st = vld1q_f32(&lpfState[c0]);
+            for (int t = 0; t < NEON_LANES; t++) {
+                float32x4_t d = vsubq_f32(T[t], st);
+                st = vmlaq_n_f32(st, d, alpha);
+                float32x4_t high = vsubq_f32(T[t], st);
+                T[t] = vmlaq_n_f32(vmulq_n_f32(st, lowBandGain), high, highBandGain);
+            }
+            vst1q_f32(&lpfState[c0], st);
+        }
+
+        // ---- Colour, crossfaded across a mode change ----
+        if (colourXfade >= 0.9999f) {
+            applyColour4(T, c0, live);
+        } else {
+            float32x4_t outgoing[NEON_LANES];
+            for (int t = 0; t < NEON_LANES; t++) outgoing[t] = T[t];
+            applyColour4(outgoing, c0, prev);
+            applyColour4(T,        c0, live);
+            const float w = colourXfade;
+            for (int t = 0; t < NEON_LANES; t++)
+                T[t] = vmlaq_n_f32(vmulq_n_f32(outgoing[t], 1.0f - w), T[t], w);
         }
 
         // [time][channel] -> [channel][time]
@@ -1404,8 +1564,162 @@ private:
      * the same trick the pre-delay uses.
      */
     inline void slewDelayTimes() {
-        for (int i = 0; i < FDN_CHANNELS; i++)
-            delayTimes[i] += DELAY_SLEW_COEFF * (targetDelayTimes[i] - delayTimes[i]);
+        // The read pointer travels at (1 - dd) samples per output sample, where
+        // dd is how fast the delay length itself is moving. dd is therefore a
+        // pitch ratio, and the one-pole alone does not bound it: PILL crossing
+        // in or out of ping-pong moves a line 127 ms inside one 40 ms time
+        // constant (dd > 3), and BNCE swept end to end reaches dd = 9.4 — past
+        // 1, where the pointer stops and then runs backwards, scrubbing the
+        // delay line in reverse at 8x with nothing but linear interpolation to
+        // hide it. Capping dd keeps the glide a tape bend: at most an octave
+        // down, a fifth up, never reversing. Small moves never reach the cap, so
+        // nudging BNCE behaves exactly as it did.
+        // The cap alone would take the read pointer from full speed to half in a
+        // single sample the moment a large move is asked for — no jump in the
+        // signal, but a kink in its slope, which is still audible. Ease the rate
+        // itself over a few milliseconds so the bend starts and lands smoothly.
+        const float maxStep = DELAY_MAX_RATE * (float)NEON_LANES / sampleRate;
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            float want = DELAY_SLEW_COEFF * (targetDelayTimes[i] - delayTimes[i]);
+            want = fmaxf(-maxStep, fminf(maxStep, want));
+            delayStep[i] += DELAY_RATE_EASE * (want - delayStep[i]);
+            delayTimes[i] += delayStep[i];
+        }
+    }
+
+    /**
+     * Glide the gains that multiply the audio path, once per block.
+     *
+     * Delay lengths were already slewed; the gains were not, and a knob is a
+     * staircase — the drumlogue sends one value per encoder detent. Every one of
+     * these five is a plain multiply on live signal, so a step in any of them is
+     * a step in the output, which is a click:
+     *
+     *   inputDrive                   injection gain, moved by TIME (0.55 -> 0.14
+     *                                across the range, a 12 dB jump)
+     *   lowBandGain / highBandGain   per-pass feedback gain inside the loop,
+     *                                moved by TIME, LOW, HIGH and the preset
+     *   width                        scales the side signal, moved by WIDE
+     *   outputMakeup                 wet trim, moved by the preset
+     *
+     * GAIN_SLEW_COEFF is per block, so at 48 kHz the time constant is about
+     * 10 ms and a move settles in ~50 ms: too fast to feel as lag on a knob,
+     * slow enough that nothing steps.
+     */
+    inline void slewGains() {
+        inputDrive    += GAIN_SLEW_COEFF * (targetInputDrive   - inputDrive);
+        lowBandGain   += GAIN_SLEW_COEFF * (targetLowBandGain  - lowBandGain);
+        highBandGain  += GAIN_SLEW_COEFF * (targetHighBandGain - highBandGain);
+        width         += GAIN_SLEW_COEFF * (targetWidth        - width);
+        outputMakeup  += GAIN_SLEW_COEFF * (targetOutputMakeup - outputMakeup);
+
+        // Crossfade weight between the two feedback matrices, so PILL entering
+        // or leaving ping-pong bends instead of jumping. Snapped to the rails at
+        // the ends so the steady state costs one comparison, not two matrices.
+        // Shimmer re-injection. Leaving PILL=4 used to take the whole
+        // ring-modulated feedback path out in one sample, which is why entering
+        // tempio from esotico or stellare — the only two PILL=4 presets — was
+        // the worst preset transition left once the colour crossfade was in.
+        shimmerDepth_ += GAIN_SLEW_COEFF * (targetShimmerDepth_ - shimmerDepth_);
+        if (fabsf(targetShimmerDepth_ - shimmerDepth_) < 1e-5f)
+            shimmerDepth_ = targetShimmerDepth_;
+
+        // Mixdown weights and the PILL=0 mono fold.
+        {
+            const int activeCh = (pillar_ == 0) ? 2
+                               : (pillar_ == 2) ? 6 : FDN_CHANNELS;
+            const int halfL = activeCh < 4 ? activeCh : 4;
+            const int halfR = activeCh > 4 ? activeCh - 4 : 0;
+            for (int i = 0; i < FDN_CHANNELS; i++) {
+                const float t = (i < 4) ? ((i < halfL) ? 1.0f : 0.0f)
+                                        : ((i - 4 < halfR) ? 1.0f : 0.0f);
+                mixWeight[i] += GAIN_SLEW_COEFF * (t - mixWeight[i]);
+                // Land exactly on the rail: a weight left at 0.999999 would make
+                // the settled mix differ from the same patch loaded cold.
+                if (fabsf(t - mixWeight[i]) < 1e-5f) mixWeight[i] = t;
+            }
+            const float fold = (halfR == 0) ? 1.0f : 0.0f;
+            monoFold += GAIN_SLEW_COEFF * (fold - monoFold);
+            if (fabsf(fold - monoFold) < 1e-4f) monoFold = fold;
+        }
+
+        // Colour filter cutoff, and the depth of the delay modulation. Both are
+        // panel-driven and both land straight on live signal — the cutoff via
+        // the biquad it designs, the depth as a jump in the read position, which
+        // is a click in the most literal sense.
+        baseFc   += GAIN_SLEW_COEFF * (targetBaseFc   - baseFc);
+        modDepth += GAIN_SLEW_COEFF * (targetModDepth - modDepth);
+
+        // The band-split crossover. Its state is continuous but the coefficient
+        // is not: stepping it re-splits the current sample between the two
+        // bands, and when LOW and HIGH are far apart — tempio to labirinto moves
+        // both, in opposite directions, while DAMP jumps 1500 Hz to 5100 Hz —
+        // that re-split is a step in the output.
+        dampingCoeff += GAIN_SLEW_COEFF * (targetDampingCoeff - dampingCoeff);
+
+        // Cross-feedback amount (PILL picks the base, BNCE scales it) and the
+        // fade between two wirings of it.
+        crossGainLive += GAIN_SLEW_COEFF * (effectiveCrossGain() - crossGainLive);
+        if (crossXfade < 1.0f) {
+            crossXfade += GAIN_SLEW_COEFF * (1.0f - crossXfade);
+            if (crossXfade > 0.9999f) crossXfade = 1.0f;
+        }
+
+        const float wTarget = pingPong_ ? 1.0f : 0.0f;
+        pingPongBlend += GAIN_SLEW_COEFF * (wTarget - pingPongBlend);
+        if (fabsf(wTarget - pingPongBlend) < 1e-4f) pingPongBlend = wTarget;
+
+        // Same idea for the colour stage across a mode change. Once the fade
+        // completes the outgoing states are dropped, so entering a mode again
+        // starts from a clean filter rather than replaying what was in it.
+        if (colourXfade < 1.0f) {
+            colourXfade += GAIN_SLEW_COEFF * (1.0f - colourXfade);
+            if (colourXfade > 0.9999f) {
+                colourXfade = 1.0f;
+                memset(oldFilterState1,   0, sizeof(oldFilterState1));
+                memset(oldFilterState2,   0, sizeof(oldFilterState2));
+                memset(oldMetalState,     0, sizeof(oldMetalState));
+                memset(oldCrystalAPState, 0, sizeof(oldCrystalAPState));
+            }
+        }
+    }
+
+    /**
+     * Jump the slewed gains straight to their targets. Used where there is no
+     * signal to click — construction, and clear() on reset/suspend — so the
+     * engine never starts a hit with a gain still gliding up from a stale value.
+     */
+    inline void snapDelayTimes() {
+        for (int i = 0; i < FDN_CHANNELS; i++) {
+            delayTimes[i] = targetDelayTimes[i];
+            delayStep[i]  = 0.0f;
+        }
+        currentPreDelaySamples = targetPreDelaySamples;
+    }
+
+    inline void snapGains() {
+        inputDrive    = targetInputDrive;
+        lowBandGain   = targetLowBandGain;
+        highBandGain  = targetHighBandGain;
+        width         = targetWidth;
+        outputMakeup  = targetOutputMakeup;
+        shimmerDepth_ = targetShimmerDepth_;
+        dampingCoeff  = targetDampingCoeff;
+        baseFc        = targetBaseFc;
+        modDepth      = targetModDepth;
+        crossGainLive = effectiveCrossGain();
+        crossXfade    = 1.0f;
+        pingPongBlend = pingPong_ ? 1.0f : 0.0f;
+        {
+            const int activeCh = (pillar_ == 0) ? 2
+                               : (pillar_ == 2) ? 6 : FDN_CHANNELS;
+            const int halfL = activeCh < 4 ? activeCh : 4;
+            const int halfR = activeCh > 4 ? activeCh - 4 : 0;
+            for (int i = 0; i < 4; i++)             mixWeight[i] = (i < halfL) ? 1.0f : 0.0f;
+            for (int i = 4; i < FDN_CHANNELS; i++)  mixWeight[i] = (i - 4 < halfR) ? 1.0f : 0.0f;
+            monoFold = (halfR == 0) ? 1.0f : 0.0f;
+        }
+        colourXfade   = 1.0f;
     }
 
     /*===========================================================================*/
@@ -1451,8 +1765,18 @@ private:
             float32x4_t mx1 = vmaxq_f32(absIn, vextq_f32(absIn, absIn, 2));
             float mx = vgetq_lane_f32(vmaxq_f32(mx1, vextq_f32(mx1, mx1, 1)), 0);
             signal_active_4 = (mx > 1e-4f);
-            if (mx > 1e-5f)
+            if (mx > 1e-5f) {
+                // Waking from silence. Everything that glides does so to avoid
+                // bending audio that is already sounding — and there is none, so
+                // any pending glide would only make the first hit start on the
+                // wrong settings. This is also what makes a preset chosen while
+                // the pattern is stopped take effect exactly as asked: init()
+                // snaps the geometry before loadPreset() has picked it, so
+                // without this the very first hit of a session would slide into
+                // place over a few hundred milliseconds.
+                if (activeSampleCount <= 0) { snapDelayTimes(); snapGains(); }
                 activeSampleCount = (int)(sampleRate * (1.0f + decay * 5.0f));
+            }
         }
         // Noise envelope: fast attack (~83ms), slow release for smooth stellare onset/offset.
         if (signal_active_4)
@@ -1481,8 +1805,15 @@ private:
             // 1. WRITE FIRST: Guarantees 0.0ms delay instantly reads this exact sample
             preDelayBuffer[preDelayWritePos] = monoLanes[s];
 
-            // 2. Slew Limiter (1-Pole Low-Pass per sample)
-            currentPreDelaySamples += 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
+            // 2. Slew Limiter (1-Pole Low-Pass per sample), rate-limited for the
+            //    same reason the FDN delay lengths are: PDLY swept end to end is
+            //    9600 samples inside a 1000-sample time constant, which drives
+            //    the read pointer backwards at 8.6x rather than bending pitch.
+            {
+                float step = 0.001f * (targetPreDelaySamples - currentPreDelaySamples);
+                currentPreDelaySamples +=
+                    fmaxf(-DELAY_MAX_RATE, fminf(DELAY_MAX_RATE, step));
+            }
 
             // 3. Fractional Read Position
             float pd_read_pos = (float)preDelayWritePos - currentPreDelaySamples;
@@ -1567,6 +1898,7 @@ private:
         updateModulation4();
         updateRandomLfo();
         slewDelayTimes();
+        slewGains();
 
         float modAmount = diffusion * modDepth;   // diffusion is DFSN (0..1)
         float fcMod = smoothedLfoValue * modAmount * 500.0f;  // ± up to 500 Hz
@@ -1585,9 +1917,27 @@ private:
         // PILL=1 swaps the two 4-channel banks on every pass so the tail
         // physically alternates between left and right; every other mode uses
         // the fully-diffusing 8-point Hadamard.
+        //
+        // PILL is a discrete switch, but swapping the matrix outright rewrites
+        // what every delay line receives in one sample — the loudest single
+        // click left in the engine, and one the preset knob triggers too. Blend
+        // between the two over pingPongBlend instead. A convex combination of
+        // two orthonormal matrices has norm at most 1 (triangle inequality), so
+        // the transition can only lose a little energy, never add any: the tail
+        // dips imperceptibly for 50 ms rather than jumping.
         float32x4_t mixed[FDN_CHANNELS];
-        if (pingPong_) applyPingPongMatrix(delayOut, mixed);
-        else           applyHadamard4(delayOut, mixed);
+        if (pingPongBlend >= 0.9999f) {
+            applyPingPongMatrix(delayOut, mixed);
+        } else if (pingPongBlend <= 0.0001f) {
+            applyHadamard4(delayOut, mixed);
+        } else {
+            float32x4_t diffuse[FDN_CHANNELS], bounce[FDN_CHANNELS];
+            applyHadamard4(delayOut, diffuse);
+            applyPingPongMatrix(delayOut, bounce);
+            const float w = pingPongBlend;
+            for (int i = 0; i < FDN_CHANNELS; i++)
+                mixed[i] = vmlaq_n_f32(vmulq_n_f32(diffuse[i], 1.0f - w), bounce[i], w);
+        }
 
         // Per-channel IIR filter chain — frequency-dependent decay (always),
         // resonant biquad (all modes but noise), metal comb (metal), crystal
@@ -1597,15 +1947,16 @@ private:
         bool recalcCoeffs;
         if (--filterUpdateCounter <= 0) { filterUpdateCounter = 8; recalcCoeffs = true; }
         else                            { recalcCoeffs = false; }
-        const bool doBiquad  = (filterMode != kFilterNoise);
-        if (recalcCoeffs && doBiquad) {
+        if (recalcCoeffs && filterMode != kFilterNoise) {
             float fc = fmaxf(20.0f, fminf(sampleRate * 0.45f, baseFc + fcMod));
             updateFilterCoeffsAt(fc);
         }
-        const bool doMetal   = (filterMode == kFilterMetal);
-        const bool doCrystal = (filterMode == kFilterCrystal);
-        applyChannelFilters4Group(mixed, 0, doBiquad, doMetal, doCrystal);
-        applyChannelFilters4Group(mixed, 4, doBiquad, doMetal, doCrystal);
+        // Built once and shared by both groups: the sets are per-engine, not
+        // per-group, and rebuilding them per call showed up in the profile.
+        const colourSet_t live = liveColour();
+        const colourSet_t prev = previousColour();
+        applyChannelFilters4Group(mixed, 0, live, prev);
+        applyChannelFilters4Group(mixed, 4, live, prev);
 
         // 3. Inject Environmental Noise (Brown, Pink, White, Blue, Violet, Grey)
         // noiseEnvelope smoothly fades noise in/out with signal activity (prevents
@@ -1616,19 +1967,22 @@ private:
         applyCrossFeedback(mixed);
 
         // 5. Add input.
+        //
+        // Ping-pong excites the left bank only, so the very first echo is hard
+        // left and the tail starts bouncing from a known side; feeding both
+        // banks would start it centred and wash the effect out. Every other mode
+        // is diffuse enough to need excitation into more channels. The two
+        // patterns share channels 0 and 2 and differ only in 5 and 7, so fading
+        // those two on pingPongBlend is the whole crossfade — and it has to be
+        // faded, because switching the injection outright stops writing input
+        // into two of the eight delay lines in a single sample.
         float32x4_t inputVec = vmulq_f32(delayedMono, feedback);
-        if (pingPong_) {
-            // Ping-pong: excite the left bank only, so the very first echo is
-            // hard left and the tail starts bouncing from a known side. Feeding
-            // both banks would start the tail centred and wash the effect out.
-            mixed[0] = vaddq_f32(mixed[0], inputVec);
-            mixed[2] = vaddq_f32(mixed[2], vmulq_n_f32(inputVec, 0.7f));
-        } else {
-            // An FDN this diffuse needs excitation into multiple channels
-            mixed[0] = vaddq_f32(mixed[0], inputVec);
-            mixed[2] = vaddq_f32(mixed[2], vmulq_n_f32(inputVec, 0.7f));    // was 0.5f
-            mixed[5] = vaddq_f32(mixed[5], vmulq_n_f32(inputVec, -0.5f));   // was -0.3f
-            mixed[7] = vaddq_f32(mixed[7], vmulq_n_f32(inputVec, 0.35f));   // was 0.2f
+        mixed[0] = vaddq_f32(mixed[0], inputVec);
+        mixed[2] = vaddq_f32(mixed[2], vmulq_n_f32(inputVec, 0.7f));    // was 0.5f
+        const float diffuseInject = 1.0f - pingPongBlend;
+        if (diffuseInject > 0.0001f) {
+            mixed[5] = vaddq_f32(mixed[5], vmulq_n_f32(inputVec, -0.5f  * diffuseInject));
+            mixed[7] = vaddq_f32(mixed[7], vmulq_n_f32(inputVec,  0.35f * diffuseInject));
         }
 
         // 6. Soft saturation, only where the network is actually running hot.
@@ -1663,31 +2017,28 @@ private:
         // alternation lives in the feedback matrix, not in the panning.
         float32x4_t leftMix, rightMix;
         {
-            int activeCh;
-            switch (pillar_) {
-                case 0: activeCh = 2; break;
-                case 2: activeCh = 6; break;
-                default: activeCh = FDN_CHANNELS; break;  // 1, 3, 4 → 8
-            }
-
-            int halfL = activeCh < 4 ? activeCh : 4;
-            int halfR = activeCh > 4 ? activeCh - 4 : 0;
-
+            // How many channels reach the output is a PILL decision (2, 6 or 8),
+            // and changing the count outright steps the sum: esotico or stellare
+            // to tempio drops channels 6 and 7 from the right output in a single
+            // sample, which measured a 39% jump on that side. mixWeight holds
+            // one slewed 0..1 per channel instead, so channels fade out of the
+            // mix rather than vanishing from it. See slewGains().
             float32x4_t leftSum  = vdupq_n_f32(0.0f);
             float32x4_t rightSum = vdupq_n_f32(0.0f);
-            for (int i = 0; i < halfL; i++)
-                leftSum = vaddq_f32(leftSum, mixed[i]);
-            for (int i = 4; i < 4 + halfR; i++)
-                rightSum = vaddq_f32(rightSum, mixed[i]);
+            for (int i = 0; i < 4; i++)
+                leftSum  = vmlaq_n_f32(leftSum,  mixed[i], mixWeight[i]);
+            for (int i = 4; i < FDN_CHANNELS; i++)
+                rightSum = vmlaq_n_f32(rightSum, mixed[i], mixWeight[i]);
 
             // Fixed 0.5 normalization (vs 1/halfL=0.25 for 8ch) gives 6dB more output,
             // making the reverb tail immediately audible. Soft saturation above keeps
             // individual channels < 1 so summing 4 channels × 0.5 stays below 2.0.
-            leftMix = vmulq_f32(leftSum, vdupq_n_f32(0.5f));
-            if (halfR > 0)
-                rightMix = vmulq_f32(rightSum, vdupq_n_f32(0.5f));
-            else
-                rightMix = leftMix; // PILL=0: mono fold
+            leftMix  = vmulq_f32(leftSum,  vdupq_n_f32(0.5f));
+            rightMix = vmulq_f32(rightSum, vdupq_n_f32(0.5f));
+            // PILL=0 folds to mono. Slewed for the same reason as the weights.
+            if (monoFold > 0.0001f)
+                rightMix = vmlaq_n_f32(vmulq_n_f32(rightMix, 1.0f - monoFold),
+                                       leftMix, monoFold);
         }
 
         // Apply stereo width:  mid = (L+R)*0.5, side = (L-R)*0.5
@@ -1833,17 +2184,26 @@ private:
     int writePos;
     float decay;
     float diffusion;
-    float modDepth;
+    float modDepth;        // delay-modulation depth, slewed
+    float targetModDepth;  // what PILL and DFSN ask for
     float modRate;
-    float width;         // stereo width   0..2
-    float dampingCoeff;  // one-pole LPF coeff for damping
+    float width, targetWidth;   // stereo width 0..2, slewed (see slewGains())
+    float dampingCoeff;        // one-pole LPF coeff for damping, slewed
+    float targetDampingCoeff;  // what DAMP asks for
     float lowDecayMult;  // low-freq decay multiplier
     float highDecayMult; // high-freq decay multiplier
 
     bool  initialized;
     int   pillar_;        /* 0..4 - pillar count / routing mode */
     bool  pingPong_;      /* true when pillar_==1 */
-    float shimmerDepth_;  /* re-injection gain for pillar_==4 */
+    float pingPongBlend;  /* 0 = Hadamard, 1 = ping-pong; slewed (see slewGains()) */
+    float mixWeight[FDN_CHANNELS] __attribute__((aligned(16)));  /* per-channel output weight, slewed */
+    float monoFold;             /* 1 = PILL=0 mono fold, slewed */
+    float crossGainLive;        /* cross-feedback amount, slewed */
+    int   crossPillarOld;       /* wiring being faded out after a PILL change */
+    float crossXfade;           /* 1 = new wiring only; below that, blend the old in */
+    float shimmerDepth_;        /* re-injection gain for pillar_==4, slewed */
+    float targetShimmerDepth_;  /* what PILL and DFSN ask for */
     float shimmerPhase_;  /* LFO phase for shimmer (radians) */
     float shimmerFreq_; // Low audio rate for cascading undertones
 
@@ -1851,6 +2211,7 @@ private:
 
     float delayTimes[FDN_CHANNELS] __attribute__((aligned(16)));        // slewed, live
     float targetDelayTimes[FDN_CHANNELS] __attribute__((aligned(16)));  // requested
+    float delayStep[FDN_CHANNELS] __attribute__((aligned(16)));         // eased glide rate
     float32x4_t modPhaseVec[FDN_CHANNELS] __attribute__((aligned(16)));
     // new filter states
     float metalState[FDN_CHANNELS] __attribute__((aligned(16)));
@@ -1876,14 +2237,24 @@ private:
     int randomLfoPeriodBlocks;         // = sampleRate / lfoSpeed / NEON_LANES
     float smoothedLfoValue;
 
-    // Filter types (per channel, but we can use shared coeffs)
-    // kFilterCrystal: bright allpass-like character for esotico (medium-Q bandpass
-    // centred higher than metal, giving a shimmering/glassy microtonal colour)
-    enum FilterMode { kFilterWood, kFilterStone, kFilterMetal, kFilterCrystal, kFilterNoise };
+    // Filter types (per channel, but we can use shared coeffs).
+    // FilterMode itself is declared at the top of the class, next to colourSet_t.
     FilterMode filterMode;
     float biquadA0, biquadA1, biquadA2, biquadB1, biquadB2; // shared coeffs
     float filterState1[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-1
     float filterState2[FDN_CHANNELS] __attribute__((aligned(16)));  // z^-2
+
+    // The colour stage being faded out after a mode change: the mode, a frozen
+    // copy of its coefficients, and its own filter states so it keeps running
+    // independently of the incoming one. colourXfade is 1 in steady state, which
+    // costs one comparison; it only drops below on a mode change.
+    FilterMode colourModeOld;
+    float oldA0, oldA1, oldA2, oldB1, oldB2;
+    float oldFilterState1[FDN_CHANNELS] __attribute__((aligned(16)));
+    float oldFilterState2[FDN_CHANNELS] __attribute__((aligned(16)));
+    float oldMetalState[FDN_CHANNELS] __attribute__((aligned(16)));
+    float oldCrystalAPState[FDN_CHANNELS] __attribute__((aligned(16)));
+    float colourXfade;
 
     // Noise generation
     uint32_t noiseSeed;
@@ -1901,14 +2272,19 @@ private:
     int   bounceSync_;    // bounceSync_t: note division the bounce locks to
     float tempoBpm;       // host tempo, for the synced divisions
     float unifiedDecay;   // mid-band per-pass feedback gain, from TIME
-    float lowBandGain;    // per-pass gain below the DAMP crossover  (LOW)
-    float highBandGain;   // per-pass gain above the DAMP crossover  (HIGH)
     float meanDelay;      // mean delay-line length (s), sets passes/second
-    float inputDrive;     // injection gain into the network, tracks the decay
     int filterUpdateCounter;
 
-    float baseFc;                   // base cutoff frequency (Hz) for current preset/damping
-    float outputMakeup;             // per-mode wet level trim (levels dark vs resonant modes)
+    float baseFc;        // colour filter cutoff (Hz), slewed
+    float targetBaseFc;  // what the preset and DAMP ask for
+
+    // Gains that multiply live signal. Each is a live/target pair: the setters
+    // write the target, slewGains() glides the live value once per block. See
+    // slewGains() for why a step in any of these is a click.
+    float lowBandGain,   targetLowBandGain;    // per-pass gain below DAMP  (LOW)
+    float highBandGain,  targetHighBandGain;   // per-pass gain above DAMP  (HIGH)
+    float inputDrive,    targetInputDrive;     // injection gain, tracks the decay
+    float outputMakeup,  targetOutputMakeup;   // per-mode wet level trim
 };
 
 // Cross-feedback gain per routing mode. Index 1 (ping-pong) is the bleed between

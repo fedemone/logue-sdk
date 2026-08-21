@@ -519,13 +519,13 @@ static void test_derived_state_order_independent() {
             b.setParameter(k_diffusion, dfsn);
             b.setParameter(k_pill, pill);
 
-            if (a.modDepth != b.modDepth || a.shimmerDepth_ != b.shimmerDepth_ ||
+            if (a.targetModDepth != b.targetModDepth || a.targetShimmerDepth_ != b.targetShimmerDepth_ ||
                 a.modRate != b.modRate) {
                 ok = false;
                 snprintf(detail, sizeof(detail),
                          "(PILL=%d DFSN=%d: depth %.5f/%.5f shimmer %.5f/%.5f rate %.5f/%.5f)",
-                         pill, dfsn, a.modDepth, b.modDepth,
-                         a.shimmerDepth_, b.shimmerDepth_, a.modRate, b.modRate);
+                         pill, dfsn, a.targetModDepth, b.targetModDepth,
+                         a.targetShimmerDepth_, b.targetShimmerDepth_, a.modRate, b.modRate);
             }
         }
     }
@@ -534,9 +534,9 @@ static void test_derived_state_order_independent() {
     // ...and DFSN has to actually reach the shimmer, which it never did.
     a = NeonAdvancedLabirinto(); a.init(); a.loadPreset(3);   // esotico, PILL=4
     a.setParameter(k_diffusion, 0);
-    const float quiet = a.shimmerDepth_;
+    const float quiet = a.targetShimmerDepth_;
     a.setParameter(k_diffusion, 100);
-    const float loud = a.shimmerDepth_;
+    const float loud = a.targetShimmerDepth_;
     char buf[128];
     snprintf(buf, sizeof(buf), "(DFSN 0 -> %.4f, DFSN 100 -> %.4f)", quiet, loud);
     check(loud > quiet, "DFSN moves the shimmer depth", buf);
@@ -640,6 +640,195 @@ static void test_tempo_sync() {
     check(ignored && restored, "BNCE is ignored while synced and resumes after", buf);
 }
 
+/* ------------------------------------------------------------- click hunting */
+
+// A steady tone keeps the tail alive so there is always something to glitch,
+// and makes the wet output smooth enough that a one-sample discontinuity shows
+// up plainly in the second difference.
+static void tone(std::vector<float>& L, std::vector<float>& R) {
+    // Two slightly detuned tones, each on its own wrapped accumulator, under a
+    // slow tremolo so the input is not pathologically periodic.
+    float phL = 0.0f, phR = 0.0f;
+    const float twoPi = 2.0f * (float)M_PI;
+    for (size_t i = 0; i < L.size(); i++) {
+        phL += twoPi * 220.0f  / SR; if (phL > twoPi) phL -= twoPi;
+        phR += twoPi * 220.22f / SR; if (phR > twoPi) phR -= twoPi;
+        const float env = 0.75f + 0.25f * sinf(twoPi * 0.37f * (i / SR));
+        L[i] = 0.5f * env * sinf(phL);
+        R[i] = 0.5f * env * sinf(phR);
+    }
+}
+
+// Worst |y[n] - 2y[n-1] + y[n-2]| across both channels over a window, as a
+// fraction of the loudest sample in that window. A click is a step, and a step
+// is exactly what the second difference is largest on. The level is taken
+// across both channels because that is what a listener hears the click against:
+// a small jump in the quiet side of a wide tail is masked by the loud side.
+static float roughness(const std::vector<float>& L, const std::vector<float>& R,
+                       float t0, float t1) {
+    const int a = (int)(t0 * SR), b = (int)(t1 * SR);
+    float worst = 0.0f, level = 0.0f;
+    for (int i = a; i < b; i++) {
+        worst = fmaxf(worst, fabsf(L[i] - 2.0f * L[i - 1] + L[i - 2]));
+        worst = fmaxf(worst, fabsf(R[i] - 2.0f * R[i - 1] + R[i - 2]));
+        level = fmaxf(level, fmaxf(fabsf(L[i]), fabsf(R[i])));
+    }
+    return level > 0.0f ? worst / level : 0.0f;
+}
+
+// Change one parameter mid-tail and report how rough the output gets.
+static float jolt(int fromPreset, int id, int a, int b) {
+    static NeonAdvancedLabirinto rv;
+    rv = NeonAdvancedLabirinto();
+    rv.init();
+    rv.loadPreset(fromPreset);
+    if (id >= 0) rv.setParameter(id, a);
+
+    const int N = (int)(13.0f * SR);
+    std::vector<float> iL(N), iR(N), oL(N, 0.f), oR(N, 0.f);
+    tone(iL, iR);
+    const int flipAt = (int)(10.0f * SR);
+    for (int i = 0; i + BLK <= N; i += BLK) {
+        if (id >= 0 && i <= flipAt && i + BLK > flipAt) rv.setParameter(id, b);
+        rv.process(&iL[i], &iR[i], &oL[i], &oR[i], BLK);
+    }
+    return roughness(oL, oR, 10.0f, 10.4f);
+}
+
+// Nothing the panel can do may step the output. Every gain that multiplies live
+// signal is slewed, the two feedback matrices and the two colour stages are
+// crossfaded across a mode change, and the delay lengths are rate-limited so a
+// glide bends pitch instead of scrubbing the line backwards. Before that work
+// the numbers here read 12% for TIME, 9% for PDLY, 28% for the Preset knob off
+// labirinto and 167% for stellare to esotico.
+static void test_no_clicks_on_parameter_changes() {
+    printf("\n[clicks] moving a control does not step the output\n");
+
+    // What the engine's own roughness is when nobody touches anything.
+    const float idle = jolt(2, -1, 0, 0);
+    char buf[160];
+    snprintf(buf, sizeof(buf), "(idle roughness %.1f%% of level)", 100.0f * idle);
+    check(idle < 0.02f, "an untouched tail is smooth", buf);
+
+    // A knob move may not be more than a few times rougher than sitting still.
+    const float kKnobCeiling = 0.05f;
+    struct { int id; const char* nm; int a, b; } moves[] = {
+        { k_time,        "TIME 20 -> 90",   20,  90  },
+        { k_low,         "LOW 10 -> 90",    10,  90  },
+        { k_high,        "HIGH 10 -> 90",   10,  90  },
+        { k_damp,        "DAMP 200 -> 900", 200, 900 },
+        { k_wide,        "WIDE 0 -> 200",   0,   200 },
+        { k_diffusion,   "DFSN 0 -> 100",   0,   100 },
+        { k_pill,        "PILL 1 -> 4",     1,   4   },
+        { k_pill,        "PILL 4 -> 2",     4,   2   },
+        { k_pill,        "PILL 3 -> 0",     3,   0   },
+        { k_pre_delay,   "PDLY 0 -> 200",   0,   200 },
+        { k_vibr,        "VIBR 1 -> 30",    1,   30  },
+        { k_bounce,      "BNCE 60 -> 500",  60,  500 },
+        { k_bounce_sync, "SYNC 0 -> 5",     0,   5   },
+    };
+    for (size_t i = 0; i < sizeof(moves) / sizeof(moves[0]); i++) {
+        const float r = jolt(2, moves[i].id, moves[i].a, moves[i].b);
+        snprintf(buf, sizeof(buf), "(%s: %.1f%% of level)", moves[i].nm, 100.0f * r);
+        check(r < kKnobCeiling, "knob move stays smooth", buf);
+    }
+
+    // Every preset transition, including the ones that swap the material filter
+    // in and out of the feedback loop and change how many channels reach the
+    // output. A mode change costs more than a knob move and is allowed more.
+    const float kPresetCeiling = 0.08f;
+    float worst = 0.0f; int worstFrom = 0, worstTo = 0;
+    for (int from = 0; from < k_preset_number; from++) {
+        for (int to = 0; to < k_preset_number; to++) {
+            if (from == to) continue;
+            const float r = jolt(from, k_paramProgram, from, to);
+            if (r > worst) { worst = r; worstFrom = from; worstTo = to; }
+        }
+    }
+    snprintf(buf, sizeof(buf), "(worst of 20: %s -> %s at %.1f%% of level)",
+             k_preset_names[worstFrom], k_preset_names[worstTo], 100.0f * worst);
+    check(worst < kPresetCeiling, "every preset change stays smooth", buf);
+}
+
+// A delay length that moves faster than one sample per sample stops the read
+// pointer and then reverses it, scrubbing the line backwards with nothing but
+// linear interpolation to hide it. The cap keeps every glide a tape bend.
+static void test_delay_glide_is_rate_limited() {
+    printf("\n[glide] delay lengths never outrun the read pointer\n");
+
+    static NeonAdvancedLabirinto rv;
+    rv = NeonAdvancedLabirinto();
+    rv.init();
+    rv.loadPreset(2);
+
+    const int N = (int)(3.0f * SR);
+    std::vector<float> iL(N), iR(N), oL(N, 0.f), oR(N, 0.f);
+    tone(iL, iR);
+
+    float prev[FDN_CHANNELS];
+    float worst = 0.0f;
+    bool  set = false;
+    // Measurement starts after the engine is awake: the first block carrying
+    // signal deliberately snaps the geometry into place (see the [wake] test),
+    // and that snap is not a glide.
+    const int measureFrom = (int)(0.5f * SR);
+    for (int i = 0; i + BLK <= N; i += BLK) {
+        // Both ends of BNCE, then a routing change: the three biggest jumps the
+        // delay geometry can be asked to make.
+        if (i == (int)(1.0f * SR)) rv.setParameter(k_bounce, PINGPONG_MAX_MS);
+        if (i == (int)(1.8f * SR)) rv.setParameter(k_bounce, PINGPONG_MIN_MS);
+        if (i == (int)(2.4f * SR)) rv.setParameter(k_pill, 4);
+
+        for (int b = 0; b < BLK; b += NEON_LANES) {
+            if (set && i >= measureFrom)
+                for (int c = 0; c < FDN_CHANNELS; c++) {
+                    // samples of delay change per output sample
+                    const float d = fabsf(rv.delayTimes[c] - prev[c]) * SR / (float)NEON_LANES;
+                    if (d > worst) worst = d;
+                }
+            for (int c = 0; c < FDN_CHANNELS; c++) prev[c] = rv.delayTimes[c];
+            set = true;
+            rv.process(&iL[i + b], &iR[i + b], &oL[i + b], &oR[i + b], NEON_LANES);
+        }
+    }
+    char buf[128];
+    snprintf(buf, sizeof(buf), "(worst %.3f samples/sample, cap %.2f)", worst, DELAY_MAX_RATE);
+    check(worst <= DELAY_MAX_RATE * 1.001f, "delay glide respects the rate cap", buf);
+    check(worst < 1.0f, "the read pointer never stalls or reverses", buf);
+}
+
+// Everything that glides does so to avoid bending audio that is already
+// sounding. Waking from silence there is none, so the first hit of a session
+// must start on the settings the panel is showing, not slide into them.
+static void test_settings_apply_immediately_when_silent() {
+    printf("\n[wake] a preset chosen while quiet is in force on the first hit\n");
+
+    static NeonAdvancedLabirinto rv;
+    rv = NeonAdvancedLabirinto();
+    rv.init();
+    rv.loadPreset(2);            // ping-pong geometry, unlike the constructor's
+
+    float before = 0.0f;
+    for (int c = 0; c < FDN_CHANNELS; c++)
+        before = fmaxf(before, fabsf(rv.delayTimes[c] - rv.targetDelayTimes[c]));
+
+    // One block carrying signal is enough to wake the engine.
+    float inL[NEON_LANES] = {0.5f, 0.5f, 0.5f, 0.5f};
+    float inR[NEON_LANES] = {0.5f, 0.5f, 0.5f, 0.5f};
+    float outL[NEON_LANES], outR[NEON_LANES];
+    rv.process(inL, inR, outL, outR, NEON_LANES);
+
+    float after = 0.0f;
+    for (int c = 0; c < FDN_CHANNELS; c++)
+        after = fmaxf(after, fabsf(rv.delayTimes[c] - rv.targetDelayTimes[c]));
+
+    char buf[160];
+    snprintf(buf, sizeof(buf), "(off by %.1f ms before the first block, %.4f ms after)",
+             before * 1000.0f, after * 1000.0f);
+    check(before > 0.001f && after == 0.0f,
+          "the delay geometry is in force on the first block", buf);
+}
+
 int main() {
     printf("NeonAdvancedLabirinto host tests\n");
     test_matrices();
@@ -652,6 +841,9 @@ int main() {
     test_filter_update_phase();
     test_derived_state_order_independent();
     test_tempo_sync();
+    test_no_clicks_on_parameter_changes();
+    test_delay_glide_is_rate_limited();
+    test_settings_apply_immediately_when_silent();
 
     printf("\n%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
