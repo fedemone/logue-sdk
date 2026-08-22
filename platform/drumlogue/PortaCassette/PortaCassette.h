@@ -162,9 +162,10 @@ public:
         pop_env_     = 0.0f;
         big_pop_env_ = 0.0f;
 
-        current_preamp_ = target_preamp_;
-        current_drive_  = target_drive_;
-        current_mix_    = target_mix_;
+        current_preamp_     = target_preamp_;
+        current_mix_        = target_mix_;
+        current_sat_drive_  = target_sat_drive_;
+        current_sat_makeup_ = target_sat_makeup_;
 
         prng_init(1337u);
         b_update_filters_.store(true);
@@ -183,7 +184,7 @@ public:
                 b_update_filters_.store(true);  // tape model affects LPF/head coeffs
                 break;
             case k_param_preamp: target_preamp_ = 1.0f + norm * 2.0f;  break;
-            case k_param_drive:  target_drive_  = norm;                break;
+            case k_param_drive:  set_drive(norm);                      break;
             case k_param_mix:    target_mix_    = norm;                break;
             case k_param_dbx:
                 dbx_mode_ = (uint8_t)((value < 0) ? 0 : (value > k_off ? k_off : value));
@@ -370,6 +371,29 @@ private:
         b_update_filters_.store(false);
     }
 
+    /**
+     * @brief Map the Drive knob to a saturator gain and its make-up.
+     *
+     * Two things have to be right for the knob to feel like anything.
+     *
+     * The gain is exponential (1x to 12x), so equal rotation buys equal dB.  A
+     * linear 1 + 3*norm ramp barely reached the knee of the saturator, because
+     * the compander ahead of it now regulates the level toward its -18 dBFS
+     * reference instead of pinning at the encode ceiling: the operating point
+     * dropped ~18 dB but the drive range had not moved to match.
+     *
+     * The make-up falls as 1/sqrt(drive), not as 1/drive.  Full compensation
+     * looks right on paper and is wrong in practice, because the saturator is
+     * itself compressing: undoing the input gain as well removes all of the
+     * level rise and then some, and the knob reads as dead.  A half-power
+     * make-up leaves the level climbing a few dB and then flattening, which is
+     * what driving tape actually does.
+     */
+    void set_drive(float norm) {
+        target_sat_drive_  = powf(12.0f, norm);
+        target_sat_makeup_ = 0.9f / sqrtf(target_sat_drive_);
+    }
+
     fast_inline void set_attack_ms(float ms) {
         attack_ms_    = fmaxf(ms, 0.05f);
         attack_coeff_ = one_pole_coeff(attack_ms_);
@@ -443,9 +467,10 @@ private:
     void ProcessQuad(const float* in, float* out) {
         // Parameter smoothing: one 1-pole step per quad, ~8 ms at any rate.
         const float ks = smooth_coeff_;
-        current_preamp_ += ks * (target_preamp_ - current_preamp_);
-        current_drive_  += ks * (target_drive_  - current_drive_);
-        current_mix_    += ks * (target_mix_    - current_mix_);
+        current_preamp_     += ks * (target_preamp_     - current_preamp_);
+        current_mix_        += ks * (target_mix_        - current_mix_);
+        current_sat_drive_  += ks * (target_sat_drive_  - current_sat_drive_);
+        current_sat_makeup_ += ks * (target_sat_makeup_ - current_sat_makeup_);
 
         const float32x4x2_t vi = vld2q_f32(in);
         const float32x4_t dry_l = vi.val[0];
@@ -623,10 +648,8 @@ private:
     }
 
     fast_inline void drive_into_soft_saturation(float32x4_t &sig_l, float32x4_t &sig_r) {
-        const float drive = 1.0f + current_drive_ * 3.0f;
-        // Compensate most of the drive gain so the knob changes character
-        // rather than level; the residual 0.9 keeps some of tape's own bloom.
-        const float makeup = 0.9f / (1.0f + current_drive_ * 1.6f);
+        const float drive  = current_sat_drive_;
+        const float makeup = current_sat_makeup_;
         if (model_ == k_vinyl) {
             sig_l = vmulq_n_f32(vinyl_saturate(sig_l, drive, vinyl_hist_l_), makeup);
             sig_r = vmulq_n_f32(vinyl_saturate(sig_r, drive, vinyl_hist_r_), makeup);
@@ -1031,8 +1054,9 @@ private:
 
     float smooth_coeff_;
     float target_preamp_, current_preamp_;
-    float target_drive_,  current_drive_;
     float target_mix_,    current_mix_;
+    float target_sat_drive_,  current_sat_drive_;    // saturator input gain
+    float target_sat_makeup_, current_sat_makeup_;   // its make-up
     float tape_age_;
     float vinyl_bias_;
     float vinyl_dc_offset_;
