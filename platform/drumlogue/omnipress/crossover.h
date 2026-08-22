@@ -17,6 +17,7 @@
  */
 
 #include "constants.h"
+#include "float_math.h"
 #include <arm_neon.h>
 #include <math.h>
 
@@ -99,7 +100,11 @@ fast_inline void biquad_process4(float* z1, float* z2,
         lz2 = b2 * x - a2 * y;
         out[i] = y;
     }
-    *z1 = lz1; *z2 = lz2;
+    // Flush the delay line once per block rather than per sample: the state
+    // decays geometrically, so one check per 4 samples catches it just as
+    // surely and costs a quarter as much.  Without this the tree parks in the
+    // subnormal range whenever the input goes quiet and stays there.
+    *z1 = flush_denormal(lz1); *z2 = flush_denormal(lz2);
 }
 
 // Mono split for detector use — only the left-channel states are touched, so a

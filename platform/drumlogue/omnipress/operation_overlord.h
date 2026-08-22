@@ -16,6 +16,13 @@
 #include <filters.h>
 #include <cmath>
 
+// The presence shelf must sit at one frequency for both entry points. The
+// EQ-only path used 5 kHz and the drive path 5.5 kHz while sharing one biquad
+// state, so every crossing between them (DRIVE stepping off or onto zero, or a
+// COMP MODE change) recomputed the coefficients under a live delay line and
+// landed as a click.
+#define OVERLORD_PRESENCE_HZ 5000.0f
+
 // 1-pole IIR DC Blocker State Tracker
 typedef struct {
     float x_prev;
@@ -82,8 +89,8 @@ fast_inline float32x4_t dc_block_process(dc_blocker_state_t* state, float32x4_t 
     y[2] = x[2] - x[1] + R * y[1];
     y[3] = x[3] - x[2] + R * y[2];
 
-    state->x_prev = x[3];
-    state->y_prev = y[3];
+    state->x_prev = flush_denormal(x[3]);
+    state->y_prev = flush_denormal(y[3]);
 
     return vld1q_f32(y);
 }
@@ -149,9 +156,9 @@ fast_inline float32x4x2_t overlord_apply_eq(overlord_t* ov,
 
     // presence=0.5 → flat (0 dB), 0.0 → −12 dB, 1.0 → +12 dB
     float presence_gain = (ov->presence - 0.5f) * 24.0f;
-    float32x4_t out_l = high_shelf_filter(eq_l, &ov->presence_l, 5000.0f,
+    float32x4_t out_l = high_shelf_filter(eq_l, &ov->presence_l, OVERLORD_PRESENCE_HZ,
                                            presence_gain, 1.0f, sample_rate);
-    float32x4_t out_r = high_shelf_filter(eq_r, &ov->presence_r, 5000.0f,
+    float32x4_t out_r = high_shelf_filter(eq_r, &ov->presence_r, OVERLORD_PRESENCE_HZ,
                                            presence_gain, 1.0f, sample_rate);
 
     float32x4x2_t out;
@@ -257,7 +264,8 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
 
     // Track grid current envelope from Stage 2 input
     float grid_curr_l = vmeanq_f32(vmaxq_f32(v_gk_l, vdupq_n_f32(0.0f)));
-    ov->dyn_bias_l1 += alpha_bias * (grid_curr_l * -1.7f - ov->dyn_bias_l1);
+    ov->dyn_bias_l1 = flush_denormal(
+        ov->dyn_bias_l1 + alpha_bias * (grid_curr_l * -1.7f - ov->dyn_bias_l1));
 
     // 3. PHASE ALIGNMENT CORRECTION
     // Stage 2 inverted the phase. We must multiply by -1 to bring it back in-phase with dry_l
@@ -276,7 +284,8 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
     float32x4_t wet_r  = stage2_pirkle_triode(v_gk_r, 4.8f, 1.5f);
 
     float grid_curr_r = vmeanq_f32(vmaxq_f32(v_gk_r, vdupq_n_f32(0.0f)));
-    ov->dyn_bias_r1 += alpha_bias * (grid_curr_r * -1.7f - ov->dyn_bias_r1);
+    ov->dyn_bias_r1 = flush_denormal(
+        ov->dyn_bias_r1 + alpha_bias * (grid_curr_r * -1.7f - ov->dyn_bias_r1));
 
     wet_r = vnegq_f32(wet_r); // Phase correction step
     wet_r = dc_block_process(&ov->dc_r, wet_r, 0.996f);
@@ -301,8 +310,8 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
     float presence_gain = (ov->presence - 0.5f) * 24.0f;
 
     float32x4x2_t out;
-    out.val[0] = high_shelf_filter(eq_l, &ov->presence_l, 5500.0f, presence_gain, 1.0f, sample_rate);
-    out.val[1] = high_shelf_filter(eq_r, &ov->presence_r, 5500.0f, presence_gain, 1.0f, sample_rate);
+    out.val[0] = high_shelf_filter(eq_l, &ov->presence_l, OVERLORD_PRESENCE_HZ, presence_gain, 1.0f, sample_rate);
+    out.val[1] = high_shelf_filter(eq_r, &ov->presence_r, OVERLORD_PRESENCE_HZ, presence_gain, 1.0f, sample_rate);
 
     return out;
 }

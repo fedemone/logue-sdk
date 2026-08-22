@@ -1463,6 +1463,34 @@ static inline float32x4_t neon_sqrtq_f32(float32x4_t x) {
   return vmulq_f32(safe_x, inv_sqrt);
 }
 
+/**
+ * Flush a value that has decayed into the subnormal range to zero.
+ *
+ * An IIR fed silence parks its delay line in the subnormal range and keeps it
+ * there: the state decays geometrically but never reaches zero.  Arithmetic on
+ * subnormals is one to two orders of magnitude slower than on normals wherever
+ * flush-to-zero is off, and a unit cannot rely on the host's FPU mode because
+ * the render callback runs on a thread it does not own.  Measured on the
+ * multiband crossover tree, processing silence cost 44x what processing signal
+ * did -- far more than enough to overrun the audio thread between drum hits.
+ *
+ * The threshold is far below anything the output can represent, so this only
+ * ever discards values that were already inaudible.  Cost is a compare and a
+ * select per state variable.
+ */
+#define DENORMAL_FLOOR 1e-20f
+
+static inline float flush_denormal(float x) {
+  return (fabsf(x) < DENORMAL_FLOOR) ? 0.0f : x;
+}
+
+static inline float32x4_t flush_denormal_q(float32x4_t x) {
+  /* Branchless: keep the bits where |x| >= floor, zero them where it is not. */
+  return vreinterpretq_f32_u32(
+      vandq_u32(vreinterpretq_u32_f32(x),
+                vcgeq_f32(vabsq_f32(x), vdupq_n_f32(DENORMAL_FLOOR))));
+}
+
 /** @} */
 
 #endif // __float_math_h

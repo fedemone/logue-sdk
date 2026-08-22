@@ -121,6 +121,22 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     // Decay of the per-band peak follower. ENV_HOLD_MS matches the hold the
     // Standard/Distressor detector applies, so all three modes settle alike.
     mb->env_pre_coeff  = e_expff(-1.0f / (ENV_HOLD_MS * 0.001f * sample_rate));
+
+    // Everything below was left untouched here, which meant it survived a Reset:
+    // the unit relied on these landing in .bss and being zero exactly once, at
+    // load. Anything that got into the state afterwards could not be cleared.
+    for (int i = 0; i < NUM_OF_BANDS; i++) {
+        mb->comp_gain_state[i] = vdupq_n_f32(0.0f);
+        mb->comp_env_state[i]  = vdupq_n_f32(0.0f);
+        mb->tube_bias_l[i] = 0.0f;
+        mb->tube_bias_r[i] = 0.0f;
+        mb->dc_blockers_l[i].x_prev = 0.0f; mb->dc_blockers_l[i].y_prev = 0.0f;
+        mb->dc_blockers_r[i].x_prev = 0.0f; mb->dc_blockers_r[i].y_prev = 0.0f;
+    }
+    mb->low_phase_match_l.x1 = mb->low_phase_match_l.x2 = 0.0f;
+    mb->low_phase_match_l.y1 = mb->low_phase_match_l.y2 = 0.0f;
+    mb->low_phase_match_r.x1 = mb->low_phase_match_r.x2 = 0.0f;
+    mb->low_phase_match_r.y1 = mb->low_phase_match_r.y2 = 0.0f;
 }
 
 fast_inline void multiband_reset(multiband_t* m) {
@@ -207,7 +223,7 @@ fast_inline float32x4_t dc_block_lane(dc_filter_state_t* state, float32x4_t in, 
     y[1] = x[1] - x[0] + R * y[0];
     y[2] = x[2] - x[1] + R * y[1];
     y[3] = x[3] - x[2] + R * y[2];
-    state->x_prev = x[3]; state->y_prev = y[3];
+    state->x_prev = flush_denormal(x[3]); state->y_prev = flush_denormal(y[3]);
     return vld1q_f32(y);
 }
 
@@ -226,7 +242,10 @@ fast_inline float32x4_t pirkle_triode_engine(float32x4_t in, float drive, float*
     float32x2_t v_gk_sum_2 = vadd_f32(vget_low_f32(v_gk_pos), vget_high_f32(v_gk_pos));
     if (update_bias) {
         float mean_grid_current = (vget_lane_f32(v_gk_sum_2, 0) + vget_lane_f32(v_gk_sum_2, 1)) * 0.25f;
-        *bias_state += 0.003f * (mean_grid_current * -1.8f - *bias_state); // Updates bias drift integration
+        // Bias drift integration. Flushed because it decays toward zero on
+        // silence and would otherwise sit subnormal through every quiet bar.
+        *bias_state = flush_denormal(
+            *bias_state + 0.003f * (mean_grid_current * -1.8f - *bias_state));
     }
 
     // Perform continuous sigmoidal non-linear wrapping
@@ -272,7 +291,9 @@ fast_inline float32x4_t process_compressor_lane(float32x4_t* gain_state, float32
         state = targets[i] + (coeff_avg * diff) + (coeff_diff * fabsf(diff));
         out[i] = state;
     }
-    *gain_state = vld1q_f32(out);
+    // Gain reduction in dB, so this converges on exactly 0 when nothing is over
+    // threshold — approaching it through the subnormal range on the way.
+    *gain_state = flush_denormal_q(vld1q_f32(out));
 
     // Convert smoothed gain reduction from dB back to a linear scalar multiplier
     return neon_expq_f32(vmulq_f32(*gain_state, vdupq_n_f32(INV_DB_COEFF)));
@@ -347,9 +368,11 @@ fast_inline void multiband_process(multiband_t* mb,
         shigh = fmaxf(ihigh[i], shigh * pre_c);
         olow[i] = slow; omid[i] = smid; ohigh[i] = shigh;
     }
-    mb->comp_env_state[BAND_LOW]  = vld1q_f32(olow);
-    mb->comp_env_state[BAND_MID]  = vld1q_f32(omid);
-    mb->comp_env_state[BAND_HIGH] = vld1q_f32(ohigh);
+    // The follower decays geometrically toward zero, so on silence it lands in
+    // the subnormal range and stays there feeding every downstream multiply.
+    mb->comp_env_state[BAND_LOW]  = flush_denormal_q(vld1q_f32(olow));
+    mb->comp_env_state[BAND_MID]  = flush_denormal_q(vld1q_f32(omid));
+    mb->comp_env_state[BAND_HIGH] = flush_denormal_q(vld1q_f32(ohigh));
 
     // ------------------------------------------------------------
     // Stage 3: Dynamic Compression Lane processing using Parameter Cache

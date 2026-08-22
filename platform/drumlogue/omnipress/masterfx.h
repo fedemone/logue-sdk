@@ -104,6 +104,21 @@ public:
     inline void Teardown() {}
 
     inline void Reset() {
+        // Clear DSP state FIRST, then apply defaults.  This used to run the
+        // other way round, so multiband_init() wiped the per-band threshold,
+        // ratio, attack, release and makeup that the setParameter calls above
+        // it had just written, and every band came back on its own hardcoded
+        // defaults instead of the header's.
+        sc_hpf_hz_ = SC_HPF_DEFAULT;
+        gain_history_ = vdupq_n_f32(0.0f);
+        sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
+        wavefolder_init(&wavefolder_);
+        multiband_init(&multiband_, samplerate_);
+        distressor_reset(&distressor_, samplerate_);
+        overlord_init(&overlord_, samplerate_);
+        envelope_detector_init(&envelope_, samplerate_);
+        use_external_sc_ = 0;
+
         // Set default parameters
         setParameter(k_threhold, THRESH_DEFAULT);   // Thresh: -10.0 dB
         setParameter(k_slope, SLOPE_DEFAULT);       // Slope: 0.4 (4.0:1)
@@ -130,21 +145,12 @@ public:
         setParameter(k_multiband_crossover, 50);                     // 250 Hz / 2.5 kHz
         setParameter(k_detection_mode, DETECT_MODE_PEAK);            // Detection: Peak
 
-        // Reset all components
-        sc_hpf_hz_ = 80.0f;
-        gain_history_ = vdupq_n_f32(0.0f);
-        sidechain_hpf_init(&sc_hpf_, sc_hpf_hz_, samplerate_);
-        wavefolder_init(&wavefolder_);
-        multiband_init(&multiband_, samplerate_);
-        distressor_reset(&distressor_, samplerate_);
+        // Derived coefficients that depend on more than one parameter, so they
+        // have to be refreshed once the whole set is in place.
         update_opto_coeff(&distressor_, release_coeff_);
         // Sync distressor envelope detector to current user attack/release so all
         // three modes have the same detector timing and produce matching output levels.
         envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
-        overlord_init(&overlord_, samplerate_);
-        envelope_detector_init(&envelope_, samplerate_);
-
-        use_external_sc_ = 0;
     }
 
     inline void Resume() {}
@@ -446,7 +452,7 @@ private:
             smoothed[i] = state;
         }
         // Store history back to the class member vector
-        gain_history_ = vld1q_f32(smoothed);
+        gain_history_ = flush_denormal_q(vld1q_f32(smoothed));
 
         // 5. Convert smoothly changing dB back to linear gain
         float32x4_t gain_lin = neon_expq_f32(vmulq_f32(gain_history_, vdupq_n_f32(INV_DB_COEFF)));

@@ -191,7 +191,7 @@ fast_inline float32x4_t distressor_smooth(distressor_t* d,
         out[i] = state;
     }
 
-    d->harmonic_state = vld1q_f32(out);
+    d->harmonic_state = flush_denormal_q(vld1q_f32(out));
     return d->harmonic_state;
 }
 
