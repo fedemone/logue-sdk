@@ -72,6 +72,14 @@
 // the pointer from ever stalling or reversing. See slewDelayTimes().
 #define DELAY_MAX_RATE (0.5f)
 
+// How much of the crystal bandpass is summed onto the unity dry path. The
+// stage peaks at 1 + this, and the whole feedback loop is then scaled by
+// 1/(1 + this) so the peak's round trip stays at unity — so this is not a
+// character knob, it is a trade of broadband decay against resonant contrast,
+// and the contrast is the half that compounds. See CRYSTAL_RESONANCE in
+// colourPeakGain() and applyColour4().
+#define CRYSTAL_RESONANCE (0.12f)
+
 // How quickly the glide rate itself may change, per block. Ramps the tape bend
 // in and out over ~4 ms so its start and end are not kinks.
 #define DELAY_RATE_EASE (0.02f)
@@ -468,17 +476,38 @@ public:
      * Worst-case gain the per-mode colour stage adds inside the feedback loop.
      * Used to keep the loop bounded whatever TIME asks for.
      */
+    /**
+     * Peak magnitude the colour stage can reach, which the loop gain is divided
+     * by so the *total* round trip is what TIME asked for.
+     *
+     * These are measured, not reasoned about, because reasoning about them got
+     * it wrong: crystal was estimated at 1.09 from the bandpass peak alone, and
+     * the stage actually reaches 1.450. A third of excess gain at the resonant
+     * frequency does not show up as a slightly long tail — past a certain TIME
+     * the round trip exceeds unity there and esotico self-oscillates. It stayed
+     * hidden because the output limiter holds the howl at the ceiling, so every
+     * check that asked "is it bounded" said yes: at TIME=100 a single hit decayed
+     * for four seconds, turned around, and sat at 0.86 flat-topping 54% of its
+     * samples for as long as you left it.
+     *
+     * Verified by test_colour_peak_gain_is_not_understated(), which sweeps the
+     * real stage and fails if any mode returns less than it can produce. The
+     * values are flat across the DAMP range: each mode is a fixed-Q design, so
+     * moving fc moves the peak without changing its height.
+     */
     float colourPeakGain() const {
         switch (filterMode) {
-            // Crystal adds 0.45 * a Q=1.2 bandpass on top of a unity dry path.
-            // The bandpass peaks at alpha/(1+alpha) ~ 0.19 at the top of the
-            // crystal fc range (plus LFO), so the sum peaks near 1.09. Keeping
-            // that peak modest matters: the whole loop is scaled down by it, so
-            // a showier resonance would cost esotico its decay time everywhere
-            // except at the resonant frequency.
-            case kFilterCrystal: return 1.09f;
-            case kFilterNoise:   return 1.05f;  // noise injection headroom
-            default:             return 1.0f;   // metal comb is normalised
+            // CRYSTAL_RESONANCE * a Q=1.2 bandpass summed onto a unity dry
+            // path. The bandpass itself peaks at very close to 1.0, so the sum
+            // peaks at 1 + CRYSTAL_RESONANCE.
+            case kFilterCrystal: return 1.0f + CRYSTAL_RESONANCE;
+            // The comb is normalised to unity peak, but only to within the
+            // approximation of its 1/1.18 constant; it measures 1.030.
+            case kFilterMetal:   return 1.03f;
+            // Not a filter peak: the noise generator adds energy the loop gain
+            // knows nothing about, so this stays a deliberate headroom margin.
+            case kFilterNoise:   return 1.05f;
+            default:             return 1.0f;   // wood and stone are lowpasses
         }
     }
 
@@ -1393,7 +1422,7 @@ private:
                 // and diluting it to 18% flattens that contrast to nothing.
                 // So the biquad output now stands on its own, every block.
                 if (cs.mode == kFilterCrystal)
-                    out = vmlaq_n_f32(in, out, 0.45f);
+                    out = vmlaq_n_f32(in, out, CRYSTAL_RESONANCE);
                 T[t] = out;
             }
             vst1q_f32(&cs.fs1[c0], fs1);
