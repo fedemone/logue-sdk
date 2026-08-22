@@ -312,7 +312,14 @@ float m_cym_hihat_hz[16] = {
     3271.f, 3907.f, 4523.f, 5219.f, 6007.f, 6907.f, 7949.f, 9133.f,
     10501.f, 12073.f, 13879.f, 15959.f, 17041.f, 18353.f, 19141.f, 19709.f };
 ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
-    /* k_Kick2: the pre-redesign Timpani body — fundamental-dominant kettledrum thump */ {1.340f, 1.664f, 1.980f, 1100.0f, 400.0f, 200.0f, 100.0f, 0.38f, 0.95f, 0.20f, 0.12f, 0.08f, 4, 0, 0.0f},
+    /* k_Kick2: the pre-redesign Timpani body — fundamental-dominant kettledrum
+       thump.  T60s cut 40 % in pass 42 (HW request), 1100/400/200/100 →
+       660/240/120/60.  The boom carries most of this preset (boom_mix 0.85 vs
+       modal_mix 0.46) so `boom_decay` in model_param_presets moves with them —
+       both halves have to be cut or the tail only half shortens.  Dkay is NOT
+       touched: it is the reference anchor, so the shipped knob position still
+       plays exactly this data and the knob keeps its full travel either way. */
+    {1.340f, 1.664f, 1.980f, 660.0f, 240.0f, 120.0f, 60.0f, 0.38f, 0.95f, 0.20f, 0.12f, 0.08f, 4, 0, 0.0f},
     /* k_Marimba: tuned-bar ratios 1:4:10; T60 calibrated to marimba-hit-c4 */ {4.00f, 10.0f, 0.0f, 1200.0f, 350.0f, 100.0f, 0.0f, 0.18f, 0.72f, 0.50f, 0.22f, 0.0f, 3, 0, 0.0f},
     /* k_808Sub */ kDefaultModalPresetConfig,
     /* k_AcSnare: very short body ring (80ms) so the snare-wire sizzle dominates */ {1.59f, 2.14f, 2.30f, 80.0f, 50.0f, 30.0f, 18.0f, 0.24f, 0.70f, 0.50f, 0.34f, 0.20f, 4, 0, 0.0f},
@@ -467,7 +474,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
 
 float model_param_presets[k_NumPrograms][k_model_param_total]{
     /*               k_base_fm_hz, k_snare_wire_z1, k_snare_wire_z2, k_snare_wire_mix, k_snare_wire_a1, k_snare_wire_a2, k_wire_onset_env, k_wire_onset_attack, k_noise_lp_state, k_noise_band_mix, k_noise_hi_lp_state, k_noise_hi_lp_coeff, k_use_hat_filter, k_diffuser_mix, k_pitch_env, k_pitch_env_decay, k_pitch_env_amt, k_boom_inc, k_boom_env, k_boom_decay, k_boom_mix, k_boom_attack_env, k_boom_attack_inc, k_reed_nl_enabled, k_reed_nl_drive, k_snare_freq_b, k_snare_r_b, k_snare_freq_c, k_snare_r_c, k_modal_mix, k_onset_attack_ms */
-    /* k_Kick2       */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, kck_bm, 1.00000f, 0.99978f, 0.85000f,    0.00000f, 0.00300f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.46000f,    2.00000f},
+    /* k_Kick2       */ { 200.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, kck_bm, 1.00000f, 0.9996333f, 0.85000f,    0.00000f, 0.00300f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.46000f,    2.00000f},
     /* k_Marimba     */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.00000f},
     /* k_808Sub      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    1.00000f,    0.99900f,  115.00000f,    0.00589f,    1.00000f,    0.99982f,    0.60000f,    0.00000f,    0.00100f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_AcSnare     */ {   0.00000f,    0.00000f,    0.00000f, 0.85000f,    1.76000f,    0.91800f,    0.00000f,    0.00260f,    0.00000f,    0.42000f,    0.00000f,    0.86000f, false,    0.00000f,    1.00000f,    0.99850f,   18.00000f, asn_bm,    1.00000f,    0.99920f,    0.12000f,    0.00000f,    0.00180f, false,    0.00000f, 4500.00000f,    0.86000f, 7200.00000f,    0.82000f,    0.10000f,    0.00000f},
@@ -3466,6 +3473,34 @@ SynthState state;
             // 1.0, so the anchor — and byte-identity — is preserved.
             if (d_kih < -0.001f || d_kih > 0.001f)
                 v.pitch_env_amt = fmaxf(0.0f, v.pitch_env_amt * knob_exp2(2.5f * d_kih));
+
+            // ── Velocity → BALANCE trade (Kick2 ONLY) ────────────────────────
+            // HW: "velocity seems to increase the decay but not the hit."
+            // Measured cause: Kick2's attack-to-tail ratio is 0.93 / 0.93 / 0.95
+            // at velocity 127 / 64 / 30 — flat.  The master limiter pins the
+            // level, so a harder strike cannot get LOUDER; it only stays above
+            // the threshold longer, which is exactly what reads as "more decay,
+            // same hit".  Pass 30's rule: a limited bus cannot give you level,
+            // but balance is free.  So velocity now moves the BALANCE — a soft
+            // hit gets rounder and boomier, a hard one stays tight — which is
+            // what makes the difference audible as impact.
+            //
+            // SCOPED TO Kick2 deliberately.  This block is shared with 808Sub
+            // and KickDrum, and both of those are HW-approved as they stand;
+            // the user asked for Kick2 specifically and asked that "Kick"
+            // (= KickDrum, preset 20) not be touched.  One `if` keeps that
+            // promise — do not widen it without a listen on the other two.
+            //
+            // Anchored at FULL velocity: `current_velocity` is linear here (the
+            // quadratic curve is BrshSnr-only), so vd == 0 at MIDI 127 and the
+            // hardest hit is bit-for-bit what it was before.  Everything below
+            // full velocity is a deliberate change — a render at velocity 100
+            // sits at vd = 0.21.
+            if (m_preset_idx == k_Kick2) {
+                const float vd = fmaxf(0.0f, fminf(1.0f, 1.0f - v.current_velocity));
+                v.boom_mix        = fminf(1.50f, v.boom_mix * (1.0f + 0.35f * vd));
+                v.boom_attack_inc = fmaxf(0.00008f, v.boom_attack_inc * (1.0f - 0.50f * vd));
+            }
             // HitPos → beater CLICK (harder beater = brighter contact tick).  The
             // kick doesn't otherwise use the trans_* burst; borrow it for a short
             // bright tick that only appears as HitPos rises above the shipped value.

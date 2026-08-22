@@ -152,6 +152,59 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 42 — Kick2 decay −40 % and a velocity→balance trade scoped to it
+
+User: *"The Kick2 fix (velocity to balance trade on the boom) would affect also
+Kick preset?  If not let's do it.  Add to this, reduce the Kick2 preset decay
+by 40%."*  Answer: it does not have to — the kick knob-design block is shared
+by Kick2 / 808Sub / KickDrum, but the trade is behind one `if`.  **Only
+`00_Kick2.wav` changed; the other 39 renders are byte-identical**, and 808Sub
+and KickDrum measure numerically identical before and after.
+
+**Decay −40 %, and it takes TWO values.**  Kick2 is boom-dominant (boom_mix
+0.85 vs modal_mix 0.46), so cutting only one half would have halved the effect:
+- `modal_preset_configs` T60s 1100/400/200/100 → **660/240/120/60 ms**
+- `model_param_presets` `boom_decay` 0.99978 → **0.9996333** (T60 654 → 392 ms,
+  exactly ×0.6 — `T60 ∝ 1/(1−decay)`, so the cut is `(1−d)/0.6`)
+
+`Dkay` is deliberately NOT touched.  Unlike the Triangle change in pass 41 —
+where the user specified the target as a KNOB POSITION and the anchor therefore
+had to move with it — this was specified as a property of the sound, so the
+data changes and the anchor stays put.  The knob keeps its full travel either
+way.  Measured whole-hit t60 **525 → 325 ms** at velocity 127 (the 38 % vs 40 %
+gap is the 25 ms measurement bucket).  Peak 0.9778 → 0.9776, 250 ms RMS −1.4 dB.
+
+**The velocity trade, and why it is a trade rather than a boost.**  Kick2's
+attack-to-tail ratio measured 0.93 / 0.93 / 0.95 at velocity 127 / 64 / 30 —
+flat.  The master limiter pins the level, so a harder strike cannot get louder,
+it only stays above the threshold longer, which is exactly what "increases the
+decay but not the hit" describes.  Pass 30's rule applies: *a limited bus
+cannot give you level, but balance is free.*  So velocity now moves balance —
+below full velocity the boom gets weightier and its onset slower (a soft beater
+contact is longer), leaving hard hits comparatively tight:
+
+```
+vd = 1 − current_velocity                  // 0 at MIDI 127
+boom_mix        *= 1 + 0.35·vd             // soft = rounder, more body
+boom_attack_inc *= 1 − 0.50·vd             // soft = slower onset
+```
+
+Anchored at FULL velocity, which is exact here because `current_velocity` is
+linear on this preset (the quadratic curve is BrshSnr-only) — so the hardest
+hit is bit-for-bit what it was, and everything below it is the deliberate
+change.  A render at velocity 100 sits at vd = 0.21, which is why
+`00_Kick2.wav` moves.  Measured: velocity's influence on the attack/tail
+balance widens ~25 % (relative spread 1.43 → 1.79 across velocity 127→30).
+
+**Scoping is load-bearing here** — 808Sub and KickDrum are HW-approved as they
+stand and the user explicitly asked that "Kick" (= KickDrum, preset 20) not be
+touched.  Do not widen that `if` without a listen on the other two.
+
+Verified: 39/40 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**103/103**, 0 NaN/silent across 40, stability 4096 combos + 480 rolls worst
+|peak| 0.9900 / 0 problems.
+
+
 ### Pass 41 — HW batch: display, decay, stacking, the "zip", and GtrStr removed
 
 Eleven reports from the hardware.  Split across three commits; this section
