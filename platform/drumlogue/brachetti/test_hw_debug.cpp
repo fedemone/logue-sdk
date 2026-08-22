@@ -423,7 +423,7 @@ static void test_delay_roundtrip() {
     unit_runtime_desc_t desc = make_desc();
     BrachettiSynth s;
     s.Init(&desc);
-    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
     s.NoteOn(60, 127);
 
     // Inspect the allocated voice's delay_length directly.
@@ -591,7 +591,7 @@ static void test_tone_eq() {
         unit_runtime_desc_t desc = make_desc();
         BrachettiSynth s;
         s.Init(&desc);
-        s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+        s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
         s.setParameter(BrachettiSynth::k_paramTone, tone_val);
         s.GateOn(127);
         float peak = 0.0f;
@@ -729,23 +729,33 @@ static void test_energy_squelch() {
     {
         BrachettiSynth s;
         s.Init(&desc);
-    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
-        // Preset 0 has feedback_gain ≈ 0.87.  Override to near-zero so the waveguide
-        // loses energy almost instantly (one round-trip ≈ 190 samples).
-        s.state.voices[1].resA.feedback_gain = 0.001f;
-        s.state.voices[1].resB.feedback_gain = 0.001f;
-
+    s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
         s.NoteOn(60, 127);
+        // Read the slot NoteOn actually used instead of assuming one — the
+        // pass-25 T18 lesson.  This hard-coded voices[1] and broke the moment
+        // the KS reference preset changed, because the allocator owes no test a
+        // particular slot.  The override must also come AFTER NoteOn, which
+        // writes feedback_gain from the preset.  Near-zero gain makes the
+        // waveguide lose energy almost instantly (round-trip ≈ 190 samples).
+        const int vi = (int)s.state.next_voice_idx;
+        s.state.voices[vi].resA.feedback_gain = 0.001f;
+        s.state.voices[vi].resB.feedback_gain = 0.001f;
+        // Koto, unlike the retired GtrStr, also has a MODAL bank (mix 0.22).
+        // The squelch keys on mag_env, so with the modal bank still ringing the
+        // voice is correctly NOT silent and the test's premise disappears —
+        // this assertion is about the waveguide alone.  Silence the modal path
+        // so the killed waveguide really is the voice's only source.
+        s.state.voices[vi].modal_mix = 0.0f;
         // Let the exciter fire and the delay line fill for ~300 frames
         for (int i = 0; i < 300; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
         // Release the note we actually played: GateOff() releases m_ui_note,
-        // which is 69 for the GtrStr reference preset, not 60.
+        // which is 60 for the Koto reference preset (GtrStr removed pass 41).
         s.NoteOff(60);
 
         int frames_to_death = 0;
         for (int i = 0; i < 5000; ++i) {
             float buf[2]{}; s.processBlock(buf, 1);
-            if (!s.state.voices[1].is_active) { frames_to_death = i + 1; break; }
+            if (!s.state.voices[vi].is_active) { frames_to_death = i + 1; break; }
         }
 
         std::cout << "  low-gain voice killed after " << frames_to_death << " frames post-GateOff\n";
@@ -761,7 +771,7 @@ static void test_energy_squelch() {
     {
         BrachettiSynth s;
         s.Init(&desc);
-    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
         s.NoteOn(60, 127);
         for (int i = 0; i < 200; ++i) { float buf[2]{}; s.processBlock(buf, 1); }
         // Do NOT call GateOff — voice should remain active.
@@ -1018,7 +1028,7 @@ static void test_master_env_trace() {
     unit_runtime_desc_t desc = make_desc();
     BrachettiSynth s;
     s.Init(&desc);
-    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
 
     // Probe master_env by reading the voice's exciter state after each event.
     // Voice index 1 (next_voice_idx advances from 0 to 1 on first NoteOn).
@@ -1067,7 +1077,7 @@ static void test_exciter_independent_of_env() {
     unit_runtime_desc_t desc = make_desc();
     BrachettiSynth s;
     s.Init(&desc);
-    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
 
     // GateOn only — no GateOff — so master_env stays at 1.0 (sustained, ENV_DECAY)
     s.GateOn(127);
@@ -1500,7 +1510,7 @@ static void test_dkay_controls_decay() {
     auto probe_at_300ms = [&](int32_t dkay_val) -> float {
         BrachettiSynth s;
         s.Init(&desc);
-    s.LoadPreset(BrachettiSynth::k_GuitarStr);  // KS reference (program 0 is now a membrane kick)
+    s.LoadPreset(BrachettiSynth::k_Koto);  // KS reference (program 0 is now a membrane kick)
         s.setParameter(BrachettiSynth::k_paramPartls, 0); // ResA only, no coupling
         s.setParameter(BrachettiSynth::k_paramDkay,   dkay_val);
         // Mterl=30 → coeff=1.0 → loss_g_dc=1.0, LP is a passthrough.
@@ -1956,8 +1966,8 @@ static void test_preset_change_fade() {
     struct Case { int from, to; const char* name; } cases[] = {
         {13, 21, "Cymbal->Clap"},    // the 19x burst
         {14, 0,  "Gong->Kick2"},
-        {14, 25, "Gong->GtrStr"},
-        {25, 14, "GtrStr->Gong"},    // was a hard cut to silence
+        {14,  9, "Gong->Koto"},
+        { 9, 14, "Koto->Gong"},    // was a hard cut to silence
     };
 
     bool all_bounded = true, all_quiet = true;
@@ -2113,7 +2123,7 @@ static void test_cymbal_density_on_partls() {
     std::cout << "\n── T40: cymbal density on Partls ──\n";
 
     unit_runtime_desc_t desc = make_desc();
-    const int cym[] = {13, 14, 27, 32, 33, 37};
+    const int cym[] = {13, 14, 26, 31, 32, 36};   // GtrStr removed pass 41: indices >25 shifted down 1
 
     // Bank size actually handed to the resonator engine, per knob position.
     auto res_count = [&](int preset, int32_t partls) -> int {
@@ -2198,7 +2208,7 @@ static void test_reset_clears_deferred_drive() {
     BrachettiSynth s;
     s.Init(&desc);
 
-    s.LoadPreset(25);                       // GtrStr, Gain 0  -> drive 1.0
+    s.LoadPreset(9);                        // Koto, Gain 0  -> drive 1.0
     s.GateOn(110);
     run_blocks(s, 4800, 64);                // ~100 ms of ring
     const float drive_gtr = s.state.master_drive;
@@ -2213,7 +2223,7 @@ static void test_reset_clears_deferred_drive() {
     run_blocks(s, 640, 64);                 // Resume: blocks with no voice
     const float drive_settled = s.state.master_drive;
 
-    std::cout << "  GtrStr drive=" << drive_gtr
+    std::cout << "  Koto drive=" << drive_gtr
               << "  held during fade=" << drive_held
               << "  after Reset=" << drive_after_reset
               << "  after 10 blocks=" << drive_settled << "\n";

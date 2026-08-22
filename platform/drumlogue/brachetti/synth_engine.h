@@ -174,23 +174,22 @@ public:
         k_Shaker,           // 22  — woodblock body + grain-pulse noise (enveloped-LFO AM)
         k_Taiko2,           // 23  — displayed as "DeepBs": the pre-redesign Taiko membrane, HW-approved as a bass voice
         k_GlassBowl,        // 24  -sample: glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav
-        k_GuitarStr,        // 25 — reference: Karplus-Strong string at A4 for model validation
-        k_HiHatClosed,      // 26  — the pre-redesign Shaker noise voice ("a perfect closed hi-hat" per HW report)
-        k_HiHatOpen,        // 27  -sample: TightClosedHat.wav (11635Hz +/- 100Hz)
-        k_Conga,            // 28  -sample: Bongo_Conga2.wav (286Hz +/- 10Hz)
-        k_Handpan,          // 29  -sample: Tabla-Drum-Hit-D4_.wav (237Hz +/- 30Hz)
-        k_BellTree,         // 30  -sample:
-        k_SlitDrum,         // 31  -sample:
-        k_Ride,             // 32  -sample: cymbal-Ride18Inch.wav (start over 2000Hz and settles to 761Hz)
-        k_RideBell,         // 33  -sample: cymbal-RideBell20InchSabian.wav (starts over 2000Hz, settles to 867Hz)
-        k_Bongo,            // 34  -sample: Bongo_Conga_Mute4.wav (430Hz +/- 100Hz)
-        k_GlassBottle,      // 35  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
-        k_Tick,             // 36  — the pre-redesign HHat-C metallic chick + added "clack" mode (HW request)
-        k_Splash,           // 37  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
-        k_BrushSnare,       // 38  — sample: snare_brush_hard.wav, snare_brush_medium.wav, snare_brush_soft.wav. brush-swept snare: slow swish onset + ~4 Hz swirl AM + diffuse wire hiss
-        k_RimShot,          // 39  — sample: rimshot-snare.wav rimshot: hard stick crack + bright rim-ring mode cluster + tight short buzz
-        k_RackTom,          // 40  — mounted rack tom at F3 (174.6 Hz): the high drum to Ac Tom's low one.  Tighter head, shorter ring, brighter stick, less shell air.  NOT yet calibrated against a reference sample — see CLAUDE.md pass 33.
-        k_NumPrograms       // 41 — marker (count)
+        k_HiHatClosed,      // 25  — the pre-redesign Shaker noise voice ("a perfect closed hi-hat" per HW report)
+        k_HiHatOpen,        // 26  -sample: TightClosedHat.wav (11635Hz +/- 100Hz)
+        k_Conga,            // 27  -sample: Bongo_Conga2.wav (286Hz +/- 10Hz)
+        k_Handpan,          // 28  -sample: Tabla-Drum-Hit-D4_.wav (237Hz +/- 30Hz)
+        k_BellTree,         // 29  -sample:
+        k_SlitDrum,         // 30  -sample:
+        k_Ride,             // 31  -sample: cymbal-Ride18Inch.wav (start over 2000Hz and settles to 761Hz)
+        k_RideBell,         // 32  -sample: cymbal-RideBell20InchSabian.wav (starts over 2000Hz, settles to 867Hz)
+        k_Bongo,            // 33  -sample: Bongo_Conga_Mute4.wav (430Hz +/- 100Hz)
+        k_GlassBottle,      // 34  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
+        k_Tick,             // 35  — the pre-redesign HHat-C metallic chick + added "clack" mode (HW request)
+        k_Splash,           // 36  — small pitched splash cymbal (ENGINE_CYMBAL, splash anchor table)
+        k_BrushSnare,       // 37  — sample: snare_brush_hard.wav, snare_brush_medium.wav, snare_brush_soft.wav. brush-swept snare: slow swish onset + ~4 Hz swirl AM + diffuse wire hiss
+        k_RimShot,          // 38  — sample: rimshot-snare.wav rimshot: hard stick crack + bright rim-ring mode cluster + tight short buzz
+        k_RackTom,          // 39  — mounted rack tom at F3 (174.6 Hz): the high drum to Ac Tom's low one.  Tighter head, shorter ring, brighter stick, less shell air.  NOT yet calibrated against a reference sample — see CLAUDE.md pass 33.
+        k_NumPrograms       // 40 — marker (count)
     };
 
     enum ModelsIndex {
@@ -399,7 +398,6 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     {2.756f, 0.0f, 0.0f, 50.0f, 25.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Taiko2: the pre-redesign Taiko — deep long membrane, HW-approved as bass voice */ {1.59f, 2.14f, 2.90f, 1800.0f, 900.0f, 500.0f, 280.0f, 0.28f, 0.80f, 0.55f, 0.38f, 0.25f, 4, 0, 0.0f},
     /* k_GlassBowl: modes 5/6 at 6.37/8.10 for overtone content */ {2.09f, 3.35f, 4.77f, 2000.0f, 1600.0f, 1200.0f, 800.0f, 0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 6, 6.37f, 8.10f, 0.22f, 0.15f},
-    /* k_GuitarStr */ kDefaultModalPresetConfig,
     /* k_HiHatClosed: pure noise voice (the pre-redesign Shaker) — no modal body */ kDefaultModalPresetConfig,
     /* k_HiHatOpen: plate ratios for metallic shimmer */ {2.9200f,6.3700f,11.7500f,100.0000f,400.0000f,250.0000f,160.0000f,0.3000f,0.9000f,0.7500f,0.5500f,0.3500f,4,0.0000f,0.0000f},
     /* k_Conga: ref Bongo_Conga2 rings ~300 ms (render died at 70 ms) — open-tone
@@ -497,7 +495,6 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.00000f,    0.00000f},
     /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
-    /* k_GuitarStr   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_HiHatClosed */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_HiHatOpen   */ {3600.00000f,    1.00000f, 12000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    1.00000f,    0.00000f,    0.93000f, false,    0.36000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.12000f,    0.50000f},
     /* k_Conga       */ { 400.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    3.50000f},
@@ -574,7 +571,6 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_Shaker(22)       */ ENGINE_NOISE,  // grain-pulse AM + woodblock body
     /* k_Taiko2(23)       */ ENGINE_MEMBRANE,  // ex-Taiko deep membrane
     /* k_GlassBowl(24)    */ ENGINE_BAR,
-    /* k_GuitarStr(25)    */ ENGINE_KS,
     /* k_HiHatClosed(26)  */ ENGINE_NOISE,  // ex-Shaker noise voice
     /* k_HiHatOpen(27)    */ ENGINE_CYMBAL,  // dense resonator cymbal (was PLATE)
     /* k_Conga(28)        */ ENGINE_MEMBRANE,
@@ -951,22 +947,21 @@ SynthState state;
             {  22,  84,   0,   1, 500,  45,   0,   0,   2,   6,  30,   5,   0,  50,  19,   0,1999,   3,   5,  95, 940,   1, 550,  71},        // 22: Shaker    — Rel 18→19 longer tail so the now-sustained 17Hz rattle (noise_am_decay=1.0) is audible by default; raise Rel for a longer rattle
             {  23,  41,   0,   1, 250,  39,   0,   0,   1,   5, 200,  10,   0,  30,  15,   0,1999,  11,   5,   9, 550,   0, 130,  71},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
             {  24,  76,   0,   1, 700,   5,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},        // 24: GlsBwl
-            {  25,  69,   0,   0, 800,  50,   0,   0,   0,   0, 200,  28,   0,   0,  15,   0,1999,  13,   0,   0, 300,   0,1200,  71},        // 25: GtrStr    — KS reference, A4, T60≈3.3s (HW: ok)
-            {  26,  72,   0,   1, 100,  37,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800,  71},        // 26: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {  27,  79,   0,   1, 900,  49,   0,   0,   3,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 27: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
-            {  28,  62,   0,   1, 600,  43,   0,   0,   1,   5, 158,   3,   0,   0,  10,   1,1999,   9,   0,  15, 520,   0, 450,  71},        // 28: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
-            {  29,  62,   0,   1, 700,  30,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000,  71},        // 29: Handpn
-            {  30,  84,   0,   1, 900,  42,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},        // 30: BelTre
-            {  31,  60,   0,   1, 700,  27,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},        // 31: SltDrm
-            {  32,  69,   0,   1, 900,  50,   0,   0,   3,   4, 190,  28,   0,   0,  18,   1,1999,  17,   0,  66, 950,   2,1300,  71},        // 32: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {  33,  60,   0,   1, 900,  49,   0,   0,   3,   4, 200,  16,   0,   0,   8,   1,1999,   1,   0,  60, 950,   2,1300,  71},        // 33: RidBel    — bell-partial ratios 1:2:3.01:4.7
-            {  34,  50,   0,   1, 650,  41,   0,   0,   0,   5, 162, -10,   0,   0,   8,   0,1999,   0,   0,   0, 520,   0, 450,  71},        // 34: Bongo     — + wood 'tock' mode 5 in modal config
-            {  35,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},        // 35: GlsBotl   — (HW: ok)
-            {  36,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 36: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
-            {  37,  76,   0,   1, 800,  45,   0,   0,   3,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 37: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  38,  38,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 38: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
-            {  39,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71},        // 39: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
-            {  40,  53,   0,   1, 420,  36,   0,   0,   2,   5, 190,   0,   0,  52,  12,   0,1999,   6,   5,  48, 300,   0, 700,  71}       // 40: RackTom   — note 53 (F3, 174.6 Hz) = the rack tom an octave-ish over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS on this engine — LoadPreset captures each into m_modal_*_ref from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  (Mterl/TubRad additionally write resA's loss filter absolutely, but that is read only under voice_engine == ENGINE_KS, so it is dead on a membrane.)  Ring length lives in modal_preset_configs, shell in model_param_presets
+            {  25,  72,   0,   1, 100,  37,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800,  71},        // 25: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
+            {  26,  79,   0,   1, 900,  49,   0,   0,   3,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 26: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {  27,  62,   0,   1, 600,  43,   0,   0,   1,   5, 158,   3,   0,   0,  10,   1,1999,   9,   0,  15, 520,   0, 450,  71},        // 27: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
+            {  28,  62,   0,   1, 700,  30,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000,  71},        // 28: Handpn
+            {  29,  84,   0,   1, 900,  42,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},        // 29: BelTre
+            {  30,  60,   0,   1, 700,  27,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},        // 30: SltDrm
+            {  31,  69,   0,   1, 900,  50,   0,   0,   3,   4, 190,  28,   0,   0,  18,   1,1999,  17,   0,  66, 950,   2,1300,  71},        // 31: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
+            {  32,  60,   0,   1, 900,  49,   0,   0,   3,   4, 200,  16,   0,   0,   8,   1,1999,   1,   0,  60, 950,   2,1300,  71},        // 32: RidBel    — bell-partial ratios 1:2:3.01:4.7
+            {  33,  50,   0,   1, 650,  41,   0,   0,   0,   5, 162, -10,   0,   0,   8,   0,1999,   0,   0,   0, 520,   0, 450,  71},        // 33: Bongo     — + wood 'tock' mode 5 in modal config
+            {  34,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},        // 34: GlsBotl   — (HW: ok)
+            {  35,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 35: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
+            {  36,  76,   0,   1, 800,  45,   0,   0,   3,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 36: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {  37,  38,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 37: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+            {  38,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71},        // 38: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+            {  39,  53,   0,   1, 420,  36,   0,   0,   2,   5, 190,   0,   0,  52,  12,   0,1999,   6,   5,  48, 300,   0, 700,  71}       // 39: RackTom   — note 53 (F3, 174.6 Hz) = the rack tom an octave-ish over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS on this engine — LoadPreset captures each into m_modal_*_ref from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  (Mterl/TubRad additionally write resA's loss filter absolutely, but that is read only under voice_engine == ENGINE_KS, so it is dead on a membrane.)  Ring length lives in modal_preset_configs, shell in model_param_presets
         };
 
         // Preset loading always targets ResA first, then ResB, regardless of the
@@ -1142,7 +1137,7 @@ SynthState state;
             "Wodblk",  "Ac Tom", "Cymbal", "Gong",
             "Kalimba", "StelPan","Claves", "Cowbel",
             "Trngle",  "Kick",   "Clap",   "Shaker",
-            "DeepBs",  "GlsBwl", "GtrStr",
+            "DeepBs",  "GlsBwl",
             "HHat-C",  "HHat-O", "Conga",  "Handpn",
             "BelTre",  "SltDrm",
             "Ride",    "RidBel",
@@ -1759,7 +1754,7 @@ SynthState state;
                                   ne == ENGINE_NOISE);
             const VoiceState& lastv = state.voices[state.next_voice_idx];
             // DeepBs fuses over a LONGER window than everything else (HW pass
-            // 41: "not stacking hits properly, too muddy and undistinguished").
+            // 40: "not stacking hits properly, too muddy and undistinguished").
             // It measured as stacking perfectly — 1→2→3→4 voices on repeated
             // hits — and that is the problem, not the fix: its body is the
             // longest membrane in the unit (t60_1 = 1800 ms), so at any normal

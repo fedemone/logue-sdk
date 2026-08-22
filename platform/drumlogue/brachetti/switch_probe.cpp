@@ -76,11 +76,11 @@ int main() {
     D.get_num_samples_for_bank = mock_get_num_samples_for_bank;
     D.get_sample = mock_get_sample;
 
-    trial(14, "Gong",   25, "GtrStr", 50);   // CYMBAL -> KS
+    trial(14, "Gong",   9, "Koto", 50);   // CYMBAL -> KS
     trial(14, "Gong",   0,  "Kick2",  50);   // CYMBAL -> MEMBRANE
-    trial(25, "GtrStr", 14, "Gong",   69);   // KS     -> CYMBAL
-    trial(25, "GtrStr", 5,  "Timpani",69);   // KS     -> kernel (retires voices)
+    trial(9, "Koto", 14, "Gong",   69);   // KS     -> CYMBAL
+    trial(9, "Koto", 5,  "Timpani",69);   // KS     -> kernel (retires voices)
     trial(13, "Cymbal", 21, "Clap",   65);   // CYMBAL -> NOISE
-    trial(5,  "Timpani",25, "GtrStr", 52);   // kernel -> KS
+    trial(5,  "Timpani",9, "Koto", 52);   // kernel -> KS
     return 0;
 }

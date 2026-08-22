@@ -359,7 +359,7 @@ static void test_modal_ring_decay() {
     desc.get_sample = mock_get_sample;
 
     // Presets to test — all have ENGINE_BAR or long-ring ENGINE_PLATE
-    const int preset_indices[] = { 1, 4, 10, 15, 19, 26 };
+    const int preset_indices[] = { 1, 4, 10, 15, 19, 24 };
     const char* preset_labels[] = { "Marimba", "TubularBell", "Vibraphone",
                                     "Kalimba",  "Triangle",    "GlassBowl" };
 

@@ -54,8 +54,8 @@ int main() {
     D.get_sample = mock_get_sample;
 
     struct P { int idx; const char* name; } ps[] = {
-        {21, "Clap"}, {22, "Shaker"}, {26, "HHat-C"},          // ENGINE_NOISE
-        {3,  "AcSnare"}, {0, "Kick2"}, {25, "GtrStr"},          // controls
+        {21, "Clap"}, {22, "Shaker"}, {25, "HHat-C"},          // ENGINE_NOISE
+        {3,  "AcSnare"}, {0, "Kick2"}, {9, "Koto"},          // controls
         {13, "Cymbal"}, {1, "Marimba"}, {5, "Timpani"},
     };
     const int N = 8;
