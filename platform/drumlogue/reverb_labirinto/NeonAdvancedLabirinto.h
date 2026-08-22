@@ -1514,8 +1514,15 @@ private:
             mixed[FDN_CHANNELS - 1] = vsubq_f32(mixed[FDN_CHANNELS - 1], shim);
 
             // 7. Advance the master scalar phase for the next block of 4 samples
+            // Bounded wrap. This was a `while`, which is the one loop in the
+            // audio path whose trip count depended on a float: had the phase
+            // ever reached a large value or an infinity it would have spun
+            // forever inside the callback, and a hung callback is not a glitch
+            // but a dead output. inc is small enough that one subtraction always
+            // suffices, so make that structural rather than incidental.
             shimmerPhase_ += 4.0f * inc;
-            while (shimmerPhase_ >= M_TWOPI) { shimmerPhase_ -= M_TWOPI; }
+            if (shimmerPhase_ >= M_TWOPI)      shimmerPhase_ -= M_TWOPI;
+            if (!(shimmerPhase_ >= 0.0f && shimmerPhase_ < M_TWOPI)) shimmerPhase_ = 0.0f;
         }
     }
 
@@ -1866,6 +1873,22 @@ private:
         vst1q_f32(e, energy);
         float totalEnergy =
             e[0] + e[1] + e[2] + e[3];
+
+        // Watchdog. totalEnergy is the sum of squares of everything currently in
+        // the delay lines, so it is already the one number that sees the whole
+        // feedback state — a NaN anywhere makes it NaN, and a runaway makes it
+        // enormous. Testing it costs one comparison on a value we computed
+        // anyway, and it is the difference between a unit that drops out for a
+        // few milliseconds and one that has to be power-cycled: a NaN in an FDN
+        // never washes out, it circulates forever and takes the host's mix bus
+        // with it. Written inverted so NaN takes the branch.
+        if (!(totalEnergy < 1e30f)) {
+            clear();
+            float32x4_t zero = vdupq_n_f32(0.0f);
+            vst1q_f32(outL, zero);
+            vst1q_f32(outR, zero);
+            return;
+        }
 
         if (totalEnergy > 1e-8f) { // Lower threshold for smoother tail
             // Signal present: reset counter to maximum reverb tail length

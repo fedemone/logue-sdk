@@ -829,6 +829,52 @@ static void test_settings_apply_immediately_when_silent() {
           "the delay geometry is in force on the first block", buf);
 }
 
+// A NaN in a feedback delay network never washes out — it circulates forever,
+// and on hardware it takes the host's mix bus with it. The watchdog rides on the
+// energy sum the APC already computes, so it costs one comparison; what matters
+// is that it actually recovers rather than merely noticing.
+static void test_watchdog_recovers_from_poisoned_state() {
+    printf("\n[watchdog] a poisoned delay line recovers instead of wedging\n");
+
+    for (int p = 0; p < k_preset_number; p++) {
+        static NeonAdvancedLabirinto rv;
+        rv = NeonAdvancedLabirinto();
+        rv.init();
+        rv.loadPreset(p);
+
+        const int N = (int)(3.0f * SR);
+        std::vector<float> iL(N, 0.f), iR(N, 0.f), oL(N, 0.f), oR(N, 0.f);
+        tone(iL, iR);
+
+        const int poisonAt = (int)(1.0f * SR);
+        for (int i = 0; i + BLK <= N; i += BLK) {
+            if (i <= poisonAt && i + BLK > poisonAt) {
+                // Whatever the cause would have been, this is the state it lands in.
+                for (int c = 0; c < FDN_CHANNELS; c++) {
+                    rv.delayLine[rv.writePos].samples[c] = NAN;
+                    rv.delayLine[(rv.writePos + 7) & BUFFER_MASK].samples[c] = INFINITY;
+                }
+            }
+            rv.process(&iL[i], &iR[i], &oL[i], &oR[i], BLK);
+        }
+
+        bool anyBad = false;
+        for (int i = 0; i < N; i++)
+            if (!std::isfinite(oL[i]) || !std::isfinite(oR[i])) { anyBad = true; break; }
+
+        // And it must come back, not sit silent for ever after.
+        double after = 0.0;
+        const int from = (int)(2.0f * SR);
+        for (int i = from; i < N; i++) after += (double)oL[i] * oL[i] + (double)oR[i] * oR[i];
+        after = sqrt(after / (2 * (N - from)));
+
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(%s: output stayed finite, rms %.4f one second later)",
+                 k_preset_names[p], after);
+        check(!anyBad && after > 0.01, "recovers from a poisoned delay line", buf);
+    }
+}
+
 int main() {
     printf("NeonAdvancedLabirinto host tests\n");
     test_matrices();
@@ -844,6 +890,7 @@ int main() {
     test_no_clicks_on_parameter_changes();
     test_delay_glide_is_rate_limited();
     test_settings_apply_immediately_when_silent();
+    test_watchdog_recovers_from_poisoned_state();
 
     printf("\n%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
