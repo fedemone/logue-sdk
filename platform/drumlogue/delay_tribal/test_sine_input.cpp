@@ -31,7 +31,7 @@ struct Rig {
     unit_runtime_desc_t desc{};
     PercussionSpatializer sp;
 
-    Rig(int clones, int mode, int depth, int rate, int spread, int mix,
+    Rig(int clones, int mode, int rate, int spread,
         int wobble, int scatter, int soft, int gap) {
         desc.samplerate = kSR;
         desc.input_channels = 2;
@@ -40,10 +40,8 @@ struct Rig {
         sp.Reset();
         sp.setParameter(k_clones, clones);
         sp.setParameter(k_mode, mode);
-        sp.setParameter(k_depth, depth);
         sp.setParameter(k_rate, rate);
         sp.setParameter(k_spread, spread);
-        sp.setParameter(k_mix, mix);
         sp.setParameter(k_wobble, wobble);
         sp.setParameter(k_scatter, scatter);
         sp.setParameter(k_attack_softening, soft);
@@ -103,24 +101,24 @@ static double first_tap_ms(const std::vector<float>& y) {
 // Test 1: impulse produces distinct, ordered taps that track Depth and Gap
 // ---------------------------------------------------------------------------
 static void test_impulse_taps() {
-    printf("\n=== Impulse Response: taps track Depth and Gap ===\n");
+    printf("\n=== Impulse Response: taps track Gap ===\n");
 
-    struct { int depth, gap; } cases[] = {{0, 0}, {50, 20}, {100, 100}};
+    struct { int gap; } cases[] = {{0}, {45}, {100}};
     double first[3];
 
     for (int c = 0; c < 3; ++c) {
-        Rig r(2 /*6 clones*/, 0, cases[c].depth, 30, 80, 100, 0, 0, 20, cases[c].gap);
+        Rig r(2 /*6 clones*/, 0, 30, 80, 0, 0, 20, cases[c].gap);
         auto y = r.impulse(500);
         first[c] = first_tap_ms(y);
-        printf("  depth=%3d gap=%3d : first tap at %6.2f ms, peak %.4f\n",
-               cases[c].depth, cases[c].gap, first[c], peak_abs(y));
+        printf("  gap=%3d : first tap at %6.2f ms, peak %.4f\n",
+               cases[c].gap, first[c], peak_abs(y));
         assert(first[c] > 0.0 && "impulse produced no wet output");
         assert(peak_abs(y) > 1e-3 && "wet path is silent");
     }
 
-    assert(first[1] > first[0] && "Depth/Gap did not push taps later");
-    assert(first[2] > first[1] && "Depth/Gap did not push taps later");
-    printf("  PASS: taps present and monotonically later with Depth/Gap\n");
+    assert(first[1] > first[0] && "Gap did not push taps later");
+    assert(first[2] > first[1] && "Gap did not push taps later");
+    printf("  PASS: taps present and monotonically later with Gap\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +128,7 @@ static void test_sine_response(int clones, float freq_hz) {
     printf("\n=== Sine Response: clone idx %d @ %.0f Hz, mix=100%% ===\n",
            clones, (double)freq_hz);
 
-    Rig r(clones, 0, 50, 30, 80, 100, 30, 20, 20, 20);
+    Rig r(clones, 0, 30, 80, 30, 20, 20, 20);
     const float w = 2.0f * (float)M_PI * freq_hz / kSRf;
     double energy = 0;
     int n = 0;
@@ -161,7 +159,7 @@ static void test_spread_is_width_not_level() {
 
     double rms[6], corr[6];
     for (int i = 0; i < 6; ++i) {
-        Rig r(2, 0, 50, 30, i * 20, 100, 30, 50, 20, 20);
+        Rig r(2, 0, 30, i * 20, 30, 50, 20, 20);
         auto y = r.impulse(400);
         double pl, pr, plr;
         channel_power(y, &pl, &pr, &plr);
@@ -196,9 +194,12 @@ static void test_stereo_balance() {
     // point of it. What must be centred is the expected balance.
     for (int mode = 0; mode < 3; ++mode) {
         for (int cs = 0; cs < 5; ++cs) {
-            Rig r(cs, mode, 50, 30, 100, 100, 30, 50, 20, 20);
+            Rig r(cs, mode, 30, 100, 30, 50, 20, 20);
+            // Angel's balance trim eases toward centre over hits; let it
+            // converge before measuring.
+            for (int h = 0; h < 30; ++h) r.impulse(300);
             double tl = 0, tr = 0;
-            for (int h = 0; h < 40; ++h) {
+            for (int h = 0; h < 120; ++h) {
                 auto y = r.impulse(300);
                 double pl, pr, plr;
                 channel_power(y, &pl, &pr, &plr);
@@ -209,13 +210,16 @@ static void test_stereo_balance() {
             // highpassed), so its balance is program-dependent by design and
             // no fixed gain trim can centre it for every input; it is held to
             // a looser bound than the two symmetric modes.
-            const double limit = (mode == 2) ? 2.5 : 1.0;
+            // At two clones there is no centre seat and each channel is fed
+            // by a single clone, so the per-hit random cutoff leaves a ~0.9 dB
+            // residual the rebuild-time trim cannot see.
+            const double limit = (mode == 2) ? 2.0 : 1.2;
             printf("  mode=%d clones=%2d : L/R %+5.2f dB (limit %.1f)\n",
                    mode, (cs + 1) * 2, db, limit);
             assert(fabs(db) < limit && "stereo image is off-centre");
         }
     }
-    printf("  PASS: symmetric modes within 1 dB, Angel within 2.5 dB\n");
+    printf("  PASS: symmetric modes within 1.2 dB, Angel within 2 dB\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +235,7 @@ static void test_scatter_moves_timing() {
     double sd[2];
     for (int c = 0; c < 2; ++c) {
         const int scatter = c ? 100 : 0;
-        Rig r(1 /*4 clones*/, 0, 50, 30, 80, 100, 0, scatter, 20, 20);
+        Rig r(1 /*4 clones*/, 0, 30, 80, 0, scatter, 20, 20);
 
         std::vector<double> t;
         for (int h = 0; h < 40; ++h) {
@@ -254,28 +258,30 @@ static void test_scatter_moves_timing() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: mix boundaries — 0 % is dry, 100 % has no dry leak
+// Test 6: the unit is fully wet — no dry leak, and a real ensemble arrives
+//
+// Mix was removed; the first clone is the leading stroke. What must hold is
+// that nothing passes through at t=0 and that the wet arrives at a usable
+// level rather than the -13 dB the old gain staging delivered.
 // ---------------------------------------------------------------------------
-static void test_mix_boundaries() {
-    printf("\n=== Mix boundaries ===\n");
+static void test_fully_wet() {
+    printf("\n=== Fully wet: no dry leak, usable level ===\n");
 
-    {   // mix=0 must pass the input through untouched.  Tested at 0.5, inside
-        // the limiter's transparent region, so this asserts real transparency
-        // rather than just "close enough after saturation".
-        Rig r(1, 0, 50, 30, 80, 0, 30, 20, 20, 20);
-        float in[8] = {0}, out[8];
-        in[0] = in[1] = 0.5f;
-        r.sp.Render(in, out, 4);
-        printf("  mix=0   : 0.5 in -> out[0]=%.4f\n", out[0]);
-        assert(fabsf(out[0] - 0.5f) < 0.01f && "mix=0 should pass dry untouched");
-    }
-    {   // mix=100 must not pass the dry impulse at t=0
-        Rig r(1, 0, 50, 30, 80, 100, 30, 20, 20, 20);
-        float in[8] = {0}, out[8];
-        in[0] = in[1] = 1.0f;
-        r.sp.Render(in, out, 4);
-        printf("  mix=100 : impulse in -> out[0]=%.4f\n", out[0]);
-        assert(fabsf(out[0]) < 0.05f && "mix=100 leaked the dry signal");
+    Rig r(4, 0, 30, 80, 30, 45, 20, 45);
+    float in[8] = {0}, out[8];
+    in[0] = in[1] = 1.0f;
+    r.sp.Render(in, out, 4);
+    printf("  impulse in -> out[0]=%.4f at t=0 (no dry path)\n", out[0]);
+    assert(fabsf(out[0]) < 0.05f && "dry signal leaked into a fully wet unit");
+
+    for (int mode = 0; mode < 3; ++mode) {
+        Rig e(4, mode, 30, 80, 30, 45, 20, 45);
+        auto y = e.impulse(500);
+        const double pk = peak_abs(y);
+        printf("  mode=%d : wet peak %.4f (%+.1f dB) for a unit impulse\n",
+               mode, pk, 20.0 * log10(pk));
+        // The ensemble must land within 6 dB of the hit that produced it.
+        assert(pk > 0.5 && "wet ensemble is too quiet to read as drummers");
     }
     printf("  PASS\n");
 }
@@ -291,7 +297,7 @@ static void test_output_ceiling() {
     printf("\n=== Output ceiling ===\n");
 
     // Worst case: max clones, max gap/scatter drive, full wet, hot input.
-    Rig r(4, 0, 100, 100, 100, 100, 100, 100, 0, 100);
+    Rig r(4, 0, 100, 100, 100, 100, 0, 100);
     double worst = 0;
     for (int b = 0; b < 4000; ++b) {
         float in[8], out[8];
@@ -312,6 +318,59 @@ static void test_output_ceiling() {
 }
 
 // ---------------------------------------------------------------------------
+// Test 8: transient detection fires once per stroke, on every kind of source
+//
+// Everything per-hit -- velocity, timing scatter, Angel's re-placement --
+// hangs off this. Two regressions lived here: comparing raw block-peak
+// magnitude never fired at all on long-decaying sources (0/40 on a 400 ms tom),
+// and a fast envelope release shorter than the carrier half-cycle fired 20
+// times per stroke on a 60 Hz kick.
+// ---------------------------------------------------------------------------
+static void test_transient_detection() {
+    printf("\n=== Transient detection: once per stroke ===\n");
+
+    struct { const char* name; float f0, decay_ms, amp; int bpm; } srcs[] = {
+        {"kick   60 Hz 200 ms",   60.0f, 200.0f, 0.90f, 120},
+        {"kick   60 Hz 200 ms q", 60.0f, 200.0f, 0.05f, 120},
+        {"snare 200 Hz  80 ms",  200.0f,  80.0f, 0.90f, 120},
+        {"hat   800 Hz  30 ms",  800.0f,  30.0f, 0.90f, 480},
+        {"tom   120 Hz 400 ms",  120.0f, 400.0f, 0.90f, 120},
+        {"kick   60 Hz 900 ms",   60.0f, 900.0f, 0.90f, 140},
+    };
+
+    for (const auto& s : srcs) {
+        Rig r(4, 2 /*Angel re-places on every detected hit*/, 30, 100, 30, 45, 20, 45);
+
+        const int   period = (int)(kSRf * 60.0f / (float)s.bpm);
+        const float dk     = expf(-1.0f / (s.decay_ms * 0.001f * kSRf));
+        const int   hits   = 30;
+
+        float last = r.sp.get_clones()[1].pan_gain_l;
+        int   trig = 0;
+        for (int h = 0; h < hits; ++h) {
+            float env = s.amp;
+            for (int b = 0; b * 4 < period; ++b) {
+                float in[8], out[8];
+                for (int k = 0; k < 4; ++k) {
+                    const int n = b * 4 + k;
+                    const float v = env * sinf(2.0f * (float)M_PI * s.f0 * (float)n / kSRf);
+                    env *= dk;
+                    in[k * 2] = v; in[k * 2 + 1] = v;
+                }
+                r.sp.Render(in, out, 4);
+                const float pg = r.sp.get_clones()[1].pan_gain_l;
+                if (fabsf(pg - last) > 1e-9f) { ++trig; last = pg; }
+            }
+        }
+        const double per_stroke = (double)trig / hits;
+        printf("  %-22s %5.2f triggers per stroke\n", s.name, per_stroke);
+        assert(per_stroke > 0.9 && "transient detector missed strokes");
+        assert(per_stroke < 1.6 && "transient detector retriggered mid-stroke");
+    }
+    printf("  PASS: one trigger per stroke on every source\n");
+}
+
+// ---------------------------------------------------------------------------
 int main() {
     setvbuf(stdout, nullptr, _IONBF, 0);  // keep output if an assert aborts
     printf("===========================================\n");
@@ -324,8 +383,9 @@ int main() {
     test_spread_is_width_not_level();
     test_stereo_balance();
     test_scatter_moves_timing();
-    test_mix_boundaries();
+    test_fully_wet();
     test_output_ceiling();
+    test_transient_detection();
 
     printf("\n=== ALL delay_tribal BEHAVIOURAL TESTS PASSED ===\n");
     return 0;

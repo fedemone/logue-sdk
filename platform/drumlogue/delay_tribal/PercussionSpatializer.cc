@@ -18,6 +18,28 @@ constexpr float kWobbleMsRange = 1.80f;
 // weighting (up to 2.4x) and the Gap detachment factor.
 constexpr float kScatterMsFull = 8.3f;
 
+// Lowpass cutoff of the leading clone.  Effectively open, so the first arrival
+// keeps its transient; followers roll off toward lp_base * 0.5.
+constexpr float kLeaderLpHz = 15000.0f;
+
+// How fast the L/R balance trim eases toward centre on Angel's per-hit
+// re-placement.  Slow enough that individual hits keep their own offset.
+constexpr float kTrimAdapt = 0.05f;
+
+// Transient detector.  The fast envelope falls quickly enough to sit close to
+// the stroke, the slow one holds the floor across a decaying tail, and the
+// refractory window is a little under the shortest musically useful spacing.
+// The fast release has to outlast the longest carrier half-cycle the unit will
+// see, or the detector reads each cycle of a low note as a fresh onset: at
+// 220/s (4.5 ms) a 60 Hz kick retriggered 20 times per stroke, re-rolling the
+// whole ensemble mid-decay.  36/s is ~28 ms, comfortably past the 12.5 ms
+// half-cycle of a 40 Hz fundamental, while still collapsing between strokes.
+constexpr float kEnvFastRate     = 36.0f;    // ~28 ms
+constexpr float kEnvSlowRate     = 6.0f;     // ~170 ms
+constexpr float kTransientRatio  = 1.45f;
+constexpr float kTransientFloor  = 0.002f;
+constexpr float kRefractoryMs    = 30.0f;
+
 static inline float xorshift_f32(uint32_t& s) {
     s ^= s << 13;
     s ^= s >> 17;
@@ -91,7 +113,9 @@ void PercussionSpatializer::Reset() {
     if (!initialized_) return;
     delay_.clear();
     rng_state_  = 0x9E3779B9u;
-    prev_mag_   = 0.0f;
+    env_fast_   = 0.0f;
+    env_slow_   = 0.0f;
+    refractory_ = 0;
     smoothing_remaining_ = 0;
 
     // Clear filter histories to prevent pops on reset
@@ -126,7 +150,6 @@ void PercussionSpatializer::set_mode(spatial_mode_t mode) {
 }
 
 // Spatial parameters: immediate rebuild at next block boundary
-void PercussionSpatializer::set_depth(float norm)  { depth_  = clamp01(norm); pending_profile_rebuild_ = true; }
 void PercussionSpatializer::set_spread(float norm) { spread_ = clamp01(norm); pending_profile_rebuild_ = true; }
 void PercussionSpatializer::set_gap(float norm)    { gap_    = clamp01(norm); pending_profile_rebuild_ = true; }
 
@@ -138,7 +161,6 @@ void PercussionSpatializer::set_scatter(float norm) {
 
 // Dynamic parameters: smoothed, no full rebuild (update_clone_dynamics handles them)
 void PercussionSpatializer::set_rate(float norm)            { rate_target_     = 0.05f + clamp01(norm) * 9.95f; smoothing_remaining_ = kSmoothBlocks; }
-void PercussionSpatializer::set_mix(float norm)             { mix_target_      = clamp01(norm);  smoothing_remaining_ = kSmoothBlocks; }
 void PercussionSpatializer::set_wobble(float norm)          { wobble_target_   = clamp01(norm);  smoothing_remaining_ = kSmoothBlocks; }
 void PercussionSpatializer::set_attack_softening(float norm){ soft_atk_target_ = clamp01(norm);  smoothing_remaining_ = kSmoothBlocks; }
 
@@ -149,9 +171,6 @@ void PercussionSpatializer::set_delay(float in_l, float in_r) {
 // ---------------------------------------------------------------------------
 // Parameter getters
 // ---------------------------------------------------------------------------
-float PercussionSpatializer::get_depth() {
-  return depth_;
-}
 float PercussionSpatializer::get_spread() {
   return spread_;
 }
@@ -161,14 +180,11 @@ float PercussionSpatializer::get_gap() {
 float PercussionSpatializer::get_rate() {
   return rate_;
 }
-float PercussionSpatializer::get_mix() {
-  return mix_;  // smoothed value — not mix_target_ which would bypass smoothing
-}
 float PercussionSpatializer::get_wobble() {
-  return wobble_;  // smoothed value, consistent with get_mix()/get_scatter()
+  return wobble_;  // smoothed value, consistent with get_scatter()
 }
 float PercussionSpatializer::get_attack_softening() {
-  return soft_atk_;  // smoothed value, consistent with get_mix()/get_scatter()
+  return soft_atk_;  // smoothed value, consistent with get_scatter()
 }
 int PercussionSpatializer::get_clone_count() {
   return clone_count_;
@@ -211,7 +227,6 @@ void PercussionSpatializer::advance_smoothing() {
 
     const float inv_rem = 1.0f / (float)smoothing_remaining_;
     rate_     += (rate_target_     - rate_)     * inv_rem;
-    mix_      += (mix_target_      - mix_)      * inv_rem;
     wobble_   += (wobble_target_   - wobble_)   * inv_rem;
     scatter_  += (scatter_target_  - scatter_)  * inv_rem;
     soft_atk_ += (soft_atk_target_ - soft_atk_) * inv_rem;
@@ -220,7 +235,6 @@ void PercussionSpatializer::advance_smoothing() {
 
     if (--smoothing_remaining_ == 0) {
         rate_     = rate_target_;
-        mix_      = mix_target_;
         wobble_   = wobble_target_;
         scatter_  = scatter_target_;
         soft_atk_ = soft_atk_target_;
@@ -295,7 +309,7 @@ void PercussionSpatializer::rebuild_profile() {
                               (mode_ == MODE_ANGEL)    ? angel    : tribal;
 
     // Profile fields consumed by randomize_hit()
-    profile_.jitter_ms      = 0.4f + depth_ * 1.6f + gap_ * 0.8f; // tightened jitter
+    profile_.jitter_ms      = 2.0f + gap_ * 0.8f;  // Depth is fixed at 100%
     profile_.scatter_amount = (mode_ == MODE_ANGEL ? 0.18f : 0.08f) + scatter_ * (mode_ == MODE_ANGEL ? 0.82f : 0.55f);
     // Timing scatter in ms.  kScatterMsFull is set so the last clone reaches
     // ~20 ms of jitter at Scatter=100 (the *2.4 follower weighting in
@@ -305,17 +319,10 @@ void PercussionSpatializer::rebuild_profile() {
     profile_.pan_exponent   = mode_pan_exponent(mode_);
     profile_.pan_model      = mode_pan_model(mode_);
 
-    // HP/LP base frequencies and per-follower multipliers
-    float hp_base, lp_base, hp_follow;
-    if (mode_ == MODE_TRIBAL) {
-        hp_base = 60.0f; lp_base = 3500.0f; hp_follow = 0.36f;
-    } else if (mode_ == MODE_MILITARY) {
-        // Lower HP preserves the body/punch of each stroke.
-        // Was 900 Hz (killed everything below — followers became inaudible).
-        hp_base = 130.0f; lp_base = 7500.0f; hp_follow = 0.28f;
-    } else {
-        hp_base = 200.0f; lp_base = 5500.0f; hp_follow = 0.34f;
-    }
+    // Lowpass base frequency per mode.  The matching hp_base/hp_follow pair
+    // that used to sit here only ever fed a gain cut, never a filter.
+    const float lp_base = (mode_ == MODE_TRIBAL)   ? 3500.0f :
+                          (mode_ == MODE_MILITARY) ? 7500.0f : 5500.0f;
 
     // Gain rolloff: exponential avoids the linear formula going negative at i>=9
     // Military: 0.92^i — slow rolloff keeps late clones audible (ensemble presence)
@@ -344,7 +351,8 @@ void PercussionSpatializer::rebuild_profile() {
 
         // Delay and wobble (samples)
         const float gap_spread = gap_ms * (0.40f + 0.95f * t);
-        float dms = base_delay[i] * (0.70f + 0.50f * depth_) + depth_ * 10.0f * t + gap_spread;
+        // Depth is fixed at 100%: the widest arrival spread the tables allow.
+        float dms = base_delay[i] * 1.20f + 10.0f * t + gap_spread;
         clones_[i].delay_samples = fmaxf(2.0f, dms * ms_to_smp);
         clones_[i].wobble_depth_samples = wobble_ms * (0.20f + 0.30f * t) * ms_to_smp;
 
@@ -355,12 +363,18 @@ void PercussionSpatializer::rebuild_profile() {
         // prevents metallic phasing artifacts.
         clones_[i].wobble_phase = (xorshift_f32(rng_state_) + (float)i * 0.125f) * 2.0f * M_PI;
 
-        // HP/LP attenuation, baked into pan_gain by place_clones()
-        // (eliminates a per-sample division)
-        float hp_hz   = hp_base * (1.0f + follower * hp_follow);
-        float lp_hz   = lp_base * (1.0f - follower * (mode_ == MODE_TRIBAL ? 0.38f : 0.25f)); // wider filter dispersion
+        // Per-clone lowpass cutoff.  At 100% wet the first clone IS the hit the
+        // player hears, so it runs essentially open and the followers descend
+        // from there.  The old law started every clone at lp_base (3.5 kHz in
+        // Tribal) and only tilted from there, which dulled the leading edge of
+        // every stroke — the ensemble read as a soft echo rather than a hit.
+        float lp_hz   = kLeaderLpHz + follower * (lp_base * 0.50f - kLeaderLpHz);
         lp_hz = clampf(lp_hz, 20.0f, 20000.0f);
-        float hp_attn = 1.0f / (1.0f + hp_hz * 0.0012f);
+        // Follower level tilt.  This was 1/(1 + hp_hz*0.0012) — a plain gain
+        // cut standing in for a highpass that was never applied, throwing away
+        // up to 2.4 dB in Angel for no spectral benefit.  The real tone shaping
+        // is the one-pole below.
+        float hp_attn = 1.0f - 0.06f * follower;
 
         // Compute actual one-pole filter coefficient for this clone
         float lp_omega = 2.0f * M_PI * lp_hz * inverse_sample_rate_;
@@ -378,17 +392,20 @@ void PercussionSpatializer::rebuild_profile() {
         clones_[i].precalculated_delay_base = fmaxf(2.0f, clones_[i].delay_samples + clones_[i].scatter_samples);
     }
 
-    place_clones();
+    place_clones(true);
 
-    // Power normalisation.  The taps are mutually decorrelated (different
-    // delays), so their powers add: without this the wet sum grew as roughly
-    // sqrt(N) * the per-clone gain and the output stage clipped at 10 clones.
-    float sum_sq = 0.0f;
-    for (int i = 0; i < clone_count_; ++i) {
-        const float g = clones_[i].base_gain;
-        sum_sq += g * g;
-    }
-    clone_norm_ = 1.0f / my_sqrt_f(sum_sq + 1e-9f);
+    // Level normalisation.  This used to be a full power normalisation,
+    // 1/sqrt(sum of clone gains squared), which divided the whole ensemble by
+    // ~1.6 at ten clones: every drummer got quieter as drummers were added,
+    // which is precisely backwards for the effect.  The taps are separated in
+    // time — they are distinct hits, not a chord — so they rarely sum
+    // instantaneously and do not need sqrt(N) headroom reserved for them.
+    //
+    // Normalise to the loudest clone instead, so the leader always arrives at
+    // full level, and leave peak control to the output limiter.
+    float max_g = 0.0f;
+    for (int i = 0; i < clone_count_; ++i) max_g = fmaxf(max_g, clones_[i].base_gain);
+    clone_norm_ = 1.0f / (max_g + 1e-9f);
 
     update_clone_dynamics();   // net gains now reflect the new profile + norm
     pending_profile_rebuild_ = false;
@@ -414,7 +431,7 @@ static fast_inline int centre_out_seat(int i, int n) {
     return (i & 1) ? (half + rank) : (half - 1 - rank);
 }
 
-void PercussionSpatializer::place_clones() {
+void PercussionSpatializer::place_clones(bool recompute_trim) {
     const float inv_cnt1 = 1.0f / (float)(clone_count_ > 1 ? clone_count_ - 1 : 1);
 
     float sum_l = 0.0f, sum_r = 0.0f;
@@ -456,39 +473,63 @@ void PercussionSpatializer::place_clones() {
         const float pn     = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
         const float inv_pn = 1.0f / (pn + 1e-20f);
 
-        clones_[i].pan_gain_l = pl * inv_pn * clones_[i].hp_attn;
-        clones_[i].pan_gain_r = pr * inv_pn * clones_[i].hp_attn;
-
-        // Weight each clone's contribution by the power its one-pole filter
-        // actually passes, not just by its gain.  Late clones are darker, so a
-        // gain-only trim still left the channel fed by the darker clones
-        // quieter — 2 dB at two clones, where L and R come from one clone each.
-        // For y[n] = y[n-1] + a(x[n]-y[n-1]) and broadband input the power
-        // gains are a/(2-a) for the lowpass and 2(1-a)^2/(2-a) for Angel's
-        // highpass (out_r = raw - lp).
+        // Filter makeup gain.  For y[n] = y[n-1] + a(x[n]-y[n-1]) and broadband
+        // input the power gains are a/(2-a) for the lowpass and 2(1-a)^2/(2-a)
+        // for Angel's highpass (out_r = raw - lp).
+        //
+        // A one-pole lowpass has unity DC gain but its impulse peak is only a,
+        // and a is 0.22-0.50 here.  Percussion is all transient, so the filter
+        // was acting as a 5-9 dB attenuator on every clone: the single largest
+        // reason the ensemble sat far below the dry hit.  Dividing it out makes
+        // the filter a tone control instead of a level control.
         const float lpa   = clampf(clones_[i].lp_coef_base, 0.01f, 0.99f);
         const float pw_lp = lpa / (2.0f - lpa);
         const float pw_hp = 2.0f * (1.0f - lpa) * (1.0f - lpa) / (2.0f - lpa);
         const float pw_r  = (mode_ == MODE_ANGEL) ? pw_hp : pw_lp;  // Angel highpasses R
 
+        const float mk_l = 1.0f / my_sqrt_f(pw_lp + 1e-9f);
+        const float mk_r = 1.0f / my_sqrt_f(pw_r  + 1e-9f);
+
+        clones_[i].pan_gain_l = pl * inv_pn * mk_l * clones_[i].hp_attn;
+        clones_[i].pan_gain_r = pr * inv_pn * mk_r * clones_[i].hp_attn;
+
+        // Balance weights use the filter power alone: the makeup gain is
+        // already inside pan_gain, so folding it in again would double-count it.
         const float gl = clones_[i].base_gain * clones_[i].pan_gain_l;
         const float gr = clones_[i].base_gain * clones_[i].pan_gain_r;
         sum_l += gl * gl * pw_lp;
         sum_r += gr * gr * pw_r;
     }
 
-    // Balance trim.  Seating alone cannot fully cancel the bias for every
-    // clone count (at 2 clones there is no centre seat), and Angel's random
-    // placement is lopsided per hit.  Equalising total L/R power costs two
-    // multiplies per clone at rebuild time and guarantees a centred image.
+    // Balance trim.  Seating alone cannot fully cancel the bias for every clone
+    // count (at 2 clones there is no centre seat), so equalising total L/R
+    // power guarantees a centred image for two multiplies per clone.
+    //
+    // Recomputed only on rebuild.  Angel re-places its clones every hit, and
+    // re-deriving the trim each time would drag every individual hit back to
+    // centre — which is exactly the random spatial movement the mode exists to
+    // produce.  Reusing the rebuild's factors centres Angel on average while
+    // leaving each hit free to land where it fell.
     if (sum_l > 1e-12f && sum_r > 1e-12f) {
-        const float mean  = 0.5f * (sum_l + sum_r);
-        const float trim_l = my_sqrt_f(mean / sum_l);
-        const float trim_r = my_sqrt_f(mean / sum_r);
-        for (int i = 0; i < clone_count_; ++i) {
-            clones_[i].pan_gain_l *= trim_l;
-            clones_[i].pan_gain_r *= trim_r;
+        const float mean = 0.5f * (sum_l + sum_r);
+        const float want_l = my_sqrt_f(mean / sum_l);
+        const float want_r = my_sqrt_f(mean / sum_r);
+        if (recompute_trim) {
+            trim_l_ = want_l;
+            trim_r_ = want_r;
+        } else {
+            // Angel's per-hit path: ease toward balance over many hits rather
+            // than snapping to it.  Snapping would cancel the hit-to-hit
+            // movement; a single rebuild-time value would instead lock in
+            // whichever random layout happened to be current, leaving the
+            // long-term image off-centre.
+            trim_l_ += (want_l - trim_l_) * kTrimAdapt;
+            trim_r_ += (want_r - trim_r_) * kTrimAdapt;
         }
+    }
+    for (int i = 0; i < clone_count_; ++i) {
+        clones_[i].pan_gain_l *= trim_l_;
+        clones_[i].pan_gain_r *= trim_r_;
     }
 }
 
@@ -524,7 +565,7 @@ void PercussionSpatializer::randomize_hit() {
     // Angel scatters its players on every hit, per the mode's design.  The
     // placement used to be computed only in rebuild_profile(), so it was
     // frozen until a parameter changed and Angel sounded as static as Tribal.
-    if (mode_ == MODE_ANGEL) place_clones();
+    if (mode_ == MODE_ANGEL) place_clones(false);
 
     // Humanize: Pick 1 or 2 random secondary clones to accent or damp
     if (clone_count_ > 2) {
@@ -745,10 +786,39 @@ void PercussionSpatializer::prepare_block(const float* in, int frames) {
         }
     }
 
-    const bool transient = (mag_max > prev_mag_ * 1.9f) && (mag_max > 0.002f);
-    // Decay envelope: ~10 ms half-life, scaled by the actual frame count so a
-    // short tail block does not decay as much as a full one.
-    prev_mag_ = fmaxf(mag_max, prev_mag_ * fasterexpf(-400.0f * (float)frames * inverse_sample_rate_));
+    // Transient detection.
+    //
+    // This used to compare the block's peak magnitude against a decaying copy
+    // of itself.  On a raw waveform that peak swings between zero and full
+    // amplitude every half cycle, so the comparison tracked the carrier rather
+    // than the envelope: it fired reliably on short sources but never once on
+    // long-decaying ones (measured 0/40 on a 400 ms tom and a 900 ms kick),
+    // which silently disabled every per-hit behaviour -- velocity, scatter and
+    // Angel's re-placement -- for exactly the material that needs them.
+    //
+    // Two envelopes instead, both instant-attack: a fast one that follows the
+    // stroke and a slow one that holds the recent floor.  A transient is the
+    // fast envelope pulling clear of the slow one, gated by a refractory
+    // countdown so a single stroke cannot retrigger while it decays.
+    const float dt = (float)frames * inverse_sample_rate_;
+    // Fast envelope: instant attack, quick release, so it sits on the stroke.
+    env_fast_ = fmaxf(mag_max, env_fast_ * fasterexpf(-kEnvFastRate * dt));
+    // Slow envelope: lags in BOTH directions, giving the fast one something to
+    // pull clear of.  Giving this one an instant attack too (the obvious first
+    // shape) makes it greater than or equal to the fast envelope at all times,
+    // and nothing ever triggers.
+    env_slow_ += (env_fast_ - env_slow_) * (1.0f - fasterexpf(-kEnvSlowRate * dt));
+
+    bool transient = false;
+    if (refractory_ > 0) {
+        refractory_ -= frames;
+    } else if (mag_max > kTransientFloor && env_fast_ > env_slow_ * kTransientRatio) {
+        transient   = true;
+        refractory_ = (int)(kRefractoryMs * 0.001f * (float)sample_rate_);
+        // Arm against this stroke so the next hit is measured from here
+        // rather than from a stale floor.
+        env_slow_ = env_fast_;
+    }
 
     advance_smoothing();
 
@@ -784,11 +854,10 @@ void PercussionSpatializer::prepare_block(const float* in, int frames) {
 void PercussionSpatializer::render_frames(const float* in, float* out, int frames) {
     prepare_block(in, frames);
 
-    // Equal-power dry/wet.  The old linear law (in*(1-mix) + wet*mix) dipped
-    // ~3 dB at the centre of the knob.
-    const float mix_angle = get_mix() * 1.5707963f;
-    const float dry_gain  = fastercosfullf(mix_angle);
-    const float wet_gain  = fastersinfullf(mix_angle) * (1.0f + 0.18f * get_gap() + 0.12f * get_scatter());
+    // Mix is fixed at 100% wet: the ensemble is the output.  The first clone
+    // is the leading stroke, so there is no dry path to blend against.
+    const float dry_gain  = 0.0f;
+    const float wet_gain  = 1.0f + 0.18f * get_gap() + 0.12f * get_scatter();
 
     for (int s = 0; s < frames; ++s) {
         // Push then read, one frame at a time.  Writing the whole block up
@@ -841,10 +910,8 @@ void PercussionSpatializer::setParameter(uint8_t index, int32_t value) {
         case k_mode:
             set_mode((spatial_mode_t)(value < 0 ? 0 : (value >= (int)MODE_COUNT ? (int)MODE_COUNT - 1 : value)));
             break;
-        case k_depth:            set_depth(norm);            break;
         case k_rate:             set_rate(norm);             break;
         case k_spread:           set_spread(norm);           break;
-        case k_mix:              set_mix(norm);              break;
         case k_wobble:           set_wobble(norm);           break;
         case k_scatter:          set_scatter(norm);          break;
         case k_attack_softening: set_attack_softening(norm); break;
