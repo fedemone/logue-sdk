@@ -208,8 +208,10 @@ fast_inline float32x4_t suboctave_process(wavefolder_t* wf, float32x4_t in_v) {
 
     wf->last_input = vdupq_n_f32(last);
     wf->sub_phase  = vdupq_n_f32(phase);
-    wf->sub_lp_state1 = vdupq_n_f32(lp_state1); // Store LP filter state 1
-    wf->sub_lp_state2 = vdupq_n_f32(lp_state2); // Store LP filter state 2
+    // Both LP poles decay toward zero on silence, so flush them out of the
+    // subnormal range rather than letting them idle there.
+    wf->sub_lp_state1 = vdupq_n_f32(flush_denormal(lp_state1));
+    wf->sub_lp_state2 = vdupq_n_f32(flush_denormal(lp_state2));
     return vld1q_f32(buf_out);
 }
 

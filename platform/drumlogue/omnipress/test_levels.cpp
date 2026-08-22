@@ -22,6 +22,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <ctime>
 
 #include "masterfx.h"
 
@@ -687,6 +688,42 @@ static void section_quirks() {
 
         printf("   %6d | %+10.2f %11.2f | %+10.2f %11.2f\n",
                drv, s.gain_fund_db, s.thd_pct, d.gain_fund_db, d.thd_pct);
+    }
+
+    hdr("G9. COST OF SILENCE.  A decaying IIR fed silence parks its delay line\n"
+        "    in the subnormal range and stays there, and subnormal arithmetic is\n"
+        "    one to two orders of magnitude slower wherever flush-to-zero is off.\n"
+        "    Multiband holds 64 crossover states, so it used to cost 44x more to\n"
+        "    process silence than signal -- enough to overrun the audio thread\n"
+        "    between drum hits. Every ratio here must stay near 1.0x.");
+    printf("   %-30s %11s %11s %9s\n", "mode", "signal", "silence", "ratio");
+    for (int mode = 0; mode <= 2; ++mode) {
+        for (int drv : {0, 100}) {
+            Params p = headerDefaults();
+            p.v[k_compressor_mode] = mode;
+            p.v[k_drive]           = drv;
+            p.v[k_bass]            = 100;   /* keeps the Overlord EQ in circuit */
+            apply(p);
+
+            std::vector<float> in(64 * 4, 0.0f), out(64 * 2);
+            double t[2];
+            for (int phase = 0; phase < 2; ++phase) {
+                for (size_t i = 0; i < 64; ++i) {
+                    float s = phase ? 0.0f : 0.4f * sinf((float)i * 0.13f);
+                    in[i*4+0]=s; in[i*4+1]=s; in[i*4+2]=s; in[i*4+3]=s;
+                }
+                /* warm the state into the regime being measured */
+                for (int k = 0; k < 4000; ++k) g_fx.Process(in.data(), out.data(), 64);
+                clock_t c0 = clock();
+                for (int k = 0; k < 20000; ++k) g_fx.Process(in.data(), out.data(), 64);
+                t[phase] = (double)(clock() - c0) / CLOCKS_PER_SEC;
+            }
+            char lbl[64];
+            snprintf(lbl, sizeof lbl, "%s, DRIVE %d", MODE_NAME[mode], drv);
+            printf("   %-30s %9.3f s %9.3f s %8.2fx%s\n",
+                   lbl, t[0], t[1], t[1] / t[0],
+                   (t[1] / t[0] > 3.0) ? "  <-- DENORMAL STALL" : "");
+        }
     }
 }
 

@@ -76,7 +76,7 @@ fast_inline float32x4_t sidechain_hpf_process(sidechain_hpf_t* f, float32x4_t in
         lz2 = b2 * x - a2 * y;
         buf[i] = y;
     }
-    f->z1 = lz1; f->z2 = lz2;
+    f->z1 = flush_denormal(lz1); f->z2 = flush_denormal(lz2);
     return vld1q_f32(buf);
 }
 
@@ -217,8 +217,8 @@ fast_inline float32x4_t envelope_detect(envelope_detector_t* env,
         out[i] = state;
     }
 
-    env->rms_accum = rms_accum;
-    env->env_state = state;
+    env->rms_accum = flush_denormal(rms_accum);
+    env->env_state = flush_denormal(state);
     env->hold_counter = hold;
     return vld1q_f32(out);
 }
@@ -259,7 +259,18 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
                                         float gain_db,
                                         int low_shelf,
                                         float sr) {
-    if (fabsf(gain_db) < 0.01f) return in;
+    if (fabsf(gain_db) < 0.01f) {
+        // Bypass, but clear the delay line rather than leaving it stale: moving
+        // the knob back off flat used to resume the filter from whatever the
+        // state held when it was last active, which lands as a click.  Zero is
+        // not an approximation here — at 0 dB the shelf's b coefficients equal
+        // its a coefficients exactly, so the filter is an identity whose
+        // steady-state z1 and z2 are both zero.  Resuming from zero is
+        // therefore continuous, not merely tidy.
+        state->z1 = 0.0f;
+        state->z2 = 0.0f;
+        return in;
+    }
 
     // Recompute coefficients only when parameters actually change.
     if (freq != state->last_freq || gain_db != state->last_gain_db ||
@@ -315,7 +326,7 @@ fast_inline float32x4_t shelving_filter(float32x4_t in,
         lz2 = b2 * x - a2 * y;
         buf[i] = y;
     }
-    state->z1 = lz1; state->z2 = lz2;
+    state->z1 = flush_denormal(lz1); state->z2 = flush_denormal(lz2);
     return vld1q_f32(buf);
 }
 
