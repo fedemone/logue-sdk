@@ -31,18 +31,17 @@ Ten is the upper density limit, not the default texture. For percussion, the ear
 |----|------|-------|------|
 | 0 | Clones | 0-4 | Selects 2 / 4 / 6 / 8 / 10 clones |
 | 1 | Mode | 0-2 | 0=Tribal, 1=Military, 2=Angel |
-| 2 | Depth | 0-100% | Arrival-time spread between clones |
-| 3 | Rate | 0.0-10.0 Hz | Wobble rate / decorrelation motion |
-| 4 | Spread | 0-100% | Stereo width of the ensemble |
-| 5 | Mix | 0-100% | Wet/dry blend |
-| 6 | Wobble | 0-100% | Micro detune / timing wobble depth |
-| 7 | Scatter | 0-100% | Detachment / chaos / ensemble looseness |
-| 8 | SoftAtk | 0-100% | Softens later clone attacks |
-| 9 | Gap | 0-100% | Delay separation / detachment between clones |
+| 2 | Rate | 0.0-10.0 Hz | Wobble rate / decorrelation motion |
+| 3 | Spread | 0-100% | Stereo width of the ensemble |
+| 4 | Wobble | 0-100% | Micro detune / timing wobble depth |
+| 5 | Scatter | 0-100% | Detachment / chaos / ensemble looseness |
+| 6 | SoftAtk | 0-100% | Softens later clone attacks |
+| 7 | Gap | 0-100% | Arrival spacing between clones |
 
-Display strings on the device are Italian: the unit is named `Tribale`, the
-modes read `Tribale` / `Militare` / `Angeli`, and the clone sets read
-`2cloni` … `10cloni`.
+**Depth and Mix were removed.** Both are fixed at 100% internally: the arrival
+spread is always at its widest, and the unit is always fully wet. There is no
+dry path — the first clone *is* the leading stroke, which is why it runs with an
+essentially open lowpass while the followers darken behind it.
 
 ### Mode behavior
 

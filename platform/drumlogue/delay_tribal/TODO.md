@@ -1,5 +1,71 @@
 # Percussion Spatializer / delay_tribal
 
+## Hardware round 1: "almost dry only" (fixed)
+
+First hardware test reported the effect as barely audible — the ensemble sat far
+below the hit that produced it, and Angel showed no random spatial presence.
+Measured wet peak for a unit impulse at 100% wet was **-15.7 dB (Tribal)**,
+-12.9 dB (Military), -10.5 dB (Angel). Four compounding causes:
+
+| Cause | Cost | Fix |
+|-------|------|-----|
+| **One-pole lowpass acting as an attenuator.** A one-pole has unity DC gain but its impulse peak is only `a`, and `a` was 0.22-0.50. Percussion is all transient, so every clone lost 5-9 dB | -5 to -9 dB | Makeup gain `1/sqrt(power gain)` baked into the pan gains, making the filter a tone control rather than a level control |
+| **Power normalisation across clones.** `1/sqrt(sum of gains squared)` divided the ensemble by ~1.6 at ten clones — every drummer got quieter as drummers were added | -4 dB at 10 clones | Normalise to the loudest clone instead. The taps are separated in time, so they do not need sqrt(N) headroom reserved; the limiter handles peaks |
+| **`hp_attn` was a gain cut, not a filter.** `1/(1 + hp_hz*0.0012)` stood in for a highpass that was never applied | up to -2.4 dB | Replaced with a mild follower tilt; the one-pole does the real shaping |
+| **The leading clone was dulled.** Every clone started at `lp_base` (3.5 kHz in Tribal), so at 100% wet the stroke the player hears had its transient filtered off | — | The first clone now runs essentially open (15 kHz) and followers descend from there |
+
+Wet peak is now **-3.2 / -2.9 / -2.8 dB** across the three modes: roughly +13 dB
+in Tribal, and the ensemble lands within 6 dB of the hit that produced it.
+
+## Transient detection was broken for half the drum kit (fixed)
+
+Everything per-hit — velocity randomisation, timing scatter, Angel's
+re-placement — hangs off transient detection, and it was comparing the raw
+block-peak magnitude against a decaying copy of itself. A 4-sample block peak
+tracks the *carrier*, not the envelope, so:
+
+- **Long-decaying sources never triggered at all**: 0/40 on a 400 ms tom, 0/40
+  on a 900 ms kick. Every per-hit behaviour was silently disabled for exactly
+  the material that needs it most.
+- Naively fixing that with a fast envelope release then produced the opposite
+  failure — a 60 Hz kick retriggered **20 times per stroke**, re-rolling the
+  whole ensemble mid-decay, because the release was shorter than the carrier's
+  half-cycle.
+
+Now a fast envelope (instant attack, ~28 ms release — comfortably past the
+12.5 ms half-cycle of a 40 Hz fundamental) racing a slow lagging one, with a
+30 ms refractory window. Measured **exactly 1.00 triggers per stroke** on kick,
+snare, hat, tom and long kick, at both full and low level.
+
+Note the slow envelope must lag in *both* directions. Giving it an instant
+attack as well — the obvious first shape — makes it greater than or equal to the
+fast envelope at all times and nothing ever triggers.
+
+## Angel's spatial randomness was being cancelled by the balance trim (fixed)
+
+The L/R balance trim ran on every Angel re-placement, forcing each individual
+hit back to centre — precisely the hit-to-hit movement the mode exists to
+produce. The trim now eases toward centre across hits instead of snapping per
+hit, so the image is centred on average while each hit lands where it fell.
+
+Per-hit stereo position over 40 hits:
+
+| | before | after |
+|---|---|---|
+| Angel spread (sd) | 1.80 dB | **3.35 dB** |
+| Angel range | -1.3 .. +6.7 dB | **-4.3 .. +8.2 dB** |
+| Angel mean | +1.98 dB | +1.07 dB |
+
+Tribal stays at sd 1.09 dB and Military at 0.65 dB, so the modes now differ
+audibly in how much the image moves.
+
+## Depth and Mix removed
+
+Both are fixed at 100% internally. Depth always uses the widest arrival spread;
+the unit is always fully wet, so the first clone is the leading stroke. Eight
+parameters remain: Clones, Mode, Rate, Spread, Wobble, Scatter, SoftAtk, Gap.
+
+
 ## Stereo / timing bugs found by measurement (fixed)
 
 Found by driving the real engine with impulses and measuring the output, not by

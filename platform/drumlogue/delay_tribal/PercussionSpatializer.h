@@ -99,10 +99,8 @@ typedef struct {
 enum params {
     k_clones = 0,
     k_mode,
-    k_depth,
     k_rate,
     k_spread,
-    k_mix,
     k_wobble,
     k_scatter,
     k_attack_softening,
@@ -143,21 +141,17 @@ public:
     // setters and getters are by definition public
     void set_clone_count_index(int idx);
     void set_mode(spatial_mode_t mode);
-    void set_depth(float norm);
     void set_rate(float norm);
     void set_spread(float norm);
-    void set_mix(float norm);
     void set_wobble(float norm);
     void set_scatter(float norm);
     void set_attack_softening(float norm);
     void set_gap(float norm);
 
     void set_delay(float in_l, float in_r);
-    float get_depth();
     float get_spread();
     float get_gap();
     float get_rate();
-    float get_mix();
     float get_wobble();
     float get_attack_softening();
     int   get_clone_count();
@@ -176,7 +170,11 @@ public:
     static constexpr uint32_t kSmoothBlocks = 120;
 
     void rebuild_profile();
-    void place_clones();     // pan placement + L/R balance trim
+    // recompute_trim: recompute the L/R balance factors from the new layout
+    // (parameter rebuilds), or reuse the stored ones (Angel's per-hit
+    // re-placement, where re-trimming every hit would force each hit to centre
+    // and cancel the mode's random spatial movement).
+    void place_clones(bool recompute_trim);
     void randomize_hit();
     void update_clone_dynamics();
     void advance_smoothing();
@@ -200,12 +198,10 @@ private:
 
     int8_t params_[k_total] = {};
 
-    float depth_  = 0.50f;
     float spread_ = 0.80f;
     float gap_    = 0.10f;
 
     float rate_     = 1.00f;  float rate_target_     = 1.00f;
-    float mix_      = 0.42f;  float mix_target_      = 0.42f;
     float wobble_   = 0.25f;  float wobble_target_   = 0.25f;
     float scatter_  = 0.25f;  float scatter_target_  = 0.25f;
     float soft_atk_ = 0.20f;  float soft_atk_target_ = 0.20f;
@@ -220,10 +216,16 @@ private:
     alignas(16) float lp_states_r_[kMaxClones];
     alignas(16) float lp_coefs_[kMaxClones];
 
+    float trim_l_ = 1.0f;       // L/R balance factors, recomputed on rebuild
+    float trim_r_ = 1.0f;       // and reused across Angel's per-hit placement
     float clone_norm_ = 1.0f;   // 1/sqrt(sum of clone gain^2): keeps the wet
                                 // sum near unity power as clones are added
     uint32_t smoothing_remaining_ = 0;
     uint32_t rng_state_ = 0x9E3779B9u;
     bool pending_profile_rebuild_ = true;
-    float prev_mag_ = 0.0f;
+    // Transient detection: a fast envelope racing a slow one, plus a
+    // refractory countdown so one stroke cannot retrigger mid-decay.
+    float env_fast_ = 0.0f;
+    float env_slow_ = 0.0f;
+    int   refractory_ = 0;
 };
