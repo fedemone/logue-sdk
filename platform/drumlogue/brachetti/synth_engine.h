@@ -2430,7 +2430,22 @@ SynthState state;
             // Depth pass (July 2026, HW: "from subtle to live"): every coefficient
             // here was widened and its clamp opened.  All stay anchored at Δ=0, so
             // the four shipped snares are untouched and only the travel grew.
-            const float sn_decay_mult = knob_exp2(-4.0f * (sn_rel_n - m_modal_rel_ref));    // long Rel = long buzz
+            // Dkay joins Rel on the buzz tail, but ONLY on BrshSnr (HW pass 41:
+            // "BrshSnre: dkay parameter seems not have effect").  It is not
+            // "subtle" there, it is mathematically inaudible: Dkay scales the
+            // modal body's T60, and BrshSnr ships k_modal_mix = 0.0, so the
+            // bank Dkay controls is mixed in at ZERO.  There is nothing for the
+            // knob to act on.  The brush's actual voice is the noise swish, so
+            // Dkay becomes its COARSE tail control with Rel staying the fine
+            // trim — the same coarse/fine split Dkay and Rel already have on the
+            // modal engines.  Scoped to this one preset because the other three
+            // snares do have an audible body, and pass 23 deliberately kept
+            // Dkay off Rel's territory there.
+            const float sn_dk_n = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
+            const float sn_dkay_mult = (m_preset_idx == k_BrushSnare)
+                                     ? knob_exp2(-3.0f * (sn_dk_n - m_modal_dkay_ref))
+                                     : 1.0f;
+            const float sn_decay_mult = knob_exp2(-4.0f * (sn_rel_n - m_modal_rel_ref)) * sn_dkay_mult; // long Rel/Dkay = long buzz
             const float sn_mix_mult   = knob_exp2( 3.0f * (sn_mr_n  - m_modal_mltres_ref)); // ±~8× buzz mix
             const float sn_bright     = fmaxf(0.33f, fminf(3.0f, knob_exp2(1.6f * (sn_st_n - m_modal_stiff_ref)))); // ±1.6 oct
             const float sn_tight      = fmaxf(-0.12f, fminf(0.12f, (sn_vs_n - m_snare_vlstf_ref) * 0.12f));     // pole-radius shift
@@ -4171,9 +4186,28 @@ SynthState state;
                 // mallet knobs in NoteOn (0 at shipped values → bit-identical).
                 if (voice.thump_env > silence_threshold) {
                     float drop = (voice.thump_amp0 > 1e-6f) ? (voice.thump_env / voice.thump_amp0) : 0.0f;
-                    float swp  = 1.0f + 1.6f * drop;   // pitch drops ~2.6x→1x (a "dow" punch)
+                    // The pitch sweep is CUBED against the amplitude envelope,
+                    // not tied to it 1:1 (HW pass 41: 'kick "thump" is more a
+                    // "zip" sound').  Linear `drop` made the sweep last as long
+                    // as the sound: 299 → 115 Hz, about 1.4 octaves, spread
+                    // over ~20 ms — long enough to hear as a descending chirp
+                    // rather than an impact.  Cubing collapses it to ~7 ms
+                    // while the amplitude still runs its full ~60 ms, so the
+                    // sweep becomes attack CHARACTER instead of a glide.  The
+                    // width is pulled 1.6 → 1.0 (2.6× → 2.0×, i.e. a 230 Hz
+                    // start) for the same reason.
+                    float d3   = drop * drop * drop;
+                    float swp  = 1.0f + 1.0f * d3;
                     float th   = fastersinfullf(voice.thump_phase) * voice.thump_env;
-                    voice_out += th * voice.current_velocity;
+                    // Velocity drives the PUNCH superlinearly (HW: "velocity
+                    // seems to increase the decay but not the hit").  The body
+                    // is scaled linearly by velocity, so a harder hit mostly
+                    // just rang longer; giving the transient a steeper curve
+                    // makes a hard strike punch harder relative to the body,
+                    // which is what reads as "hit".  vel^1.5 via v*sqrt(v).
+                    const float vel_p = voice.current_velocity *
+                                        sqrtf(voice.current_velocity);
+                    voice_out += th * vel_p;
                     voice.thump_phase += voice.thump_inc * swp;
                     if (voice.thump_phase > (M_TWOPI)) voice.thump_phase -= (M_TWOPI);
                     voice.thump_env *= voice.thump_decay;
