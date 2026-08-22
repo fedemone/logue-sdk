@@ -278,6 +278,53 @@ private:
 
     static constexpr float kOutputGain   = 1.30f;        // ~ +2.3 dB make-up
 
+    /**
+     * @brief Per-machine character, from the published specifications.
+     *
+     *   Tascam 244 (1982)  40 Hz - 14 kHz, W&F 0.06%,          THD 1.5%
+     *   Tascam 424 (1990s) 40 Hz - 16 kHz +/-3 dB, W&F <0.05%
+     *   Tascam 488 (1988)  40 Hz - 14 kHz +/-3 dB, W&F 0.04%,  THD 1.3%,
+     *                      crosstalk 50 dB at 1 kHz without dbx
+     *
+     * All three run at 9.5 cm/s, so bandwidth is not what separates them; the
+     * 424 is the *widest* of the three, not the dullest.  What actually
+     * distinguishes them:
+     *
+     *  - The 244 has the least stable transport (0.06% against the 488's
+     *    0.04%) and the most distortion, which is most of why it sounds like
+     *    the lo-fi one.
+     *  - The 424 is the later, cleaner machine: widest response, quietest,
+     *    and steadier than the 244.
+     *  - The 488 fits eight tracks in the same 3.81 mm of tape, so each track
+     *    is about half the width of a four-track's.  That costs roughly 3 dB
+     *    of signal-to-noise and puts the tracks close enough together that
+     *    separation drops to the 50 dB in the manual.  Its transport is the
+     *    best of the three.
+     *
+     * Noise, crosstalk and wow depth are relative to the 244.
+     */
+    struct MachineSpec {
+        float lpf_hz;       // record/playback -3 dB point
+        float head_hz;      // head bump centre
+        float head_db;      // head bump amount
+        float hiss_hz;      // noise band lower corner
+        float wf_scale;     // wow & flutter depth
+        float noise_scale;  // noise floor
+        float xtalk_scale;  // inter-track bleed
+        float sat_scale;    // relative THD
+    };
+
+    static const MachineSpec& spec_for(uint8_t model) {
+        static const MachineSpec kSpecs[4] = {
+            //  lpf     head  dB    hiss   W&F   noise  xtalk  sat
+            { 14000.0f, 60.0f, 4.0f, 3500.0f, 1.00f, 1.00f, 1.00f, 1.00f },  // 244
+            { 16000.0f, 55.0f, 3.0f, 4000.0f, 0.83f, 0.70f, 0.85f, 0.80f },  // 424
+            { 14000.0f, 70.0f, 4.5f, 3000.0f, 0.67f, 1.40f, 2.20f, 0.90f },  // 488
+            { 12000.0f, 150.0f, 4.0f, 400.0f, 1.60f, 1.00f, 1.30f, 1.10f },  // vinyl
+        };
+        return kSpecs[(model < 4) ? model : 0];
+    }
+
     // RMS averaging windows.  The wideband path is deliberately slow enough not
     // to follow the ripple of a bass note; the Type II HF path is quick so
     // bright transients are caught.
@@ -487,12 +534,16 @@ private:
 
         head_bump(sig_l, sig_r);
         drive_into_soft_saturation(sig_l, sig_r);
-        tape_age(sig_l, sig_r);
 
-        // Noise sits after saturation (so Drive does not amplify it) but before
-        // the decoder (so the decoder can suppress it, as dbx does on tape).
+        // Noise sits after saturation (so Drive does not amplify it), before
+        // the playback roll-off (so it is band-limited by the machine, as tape
+        // noise is), and before the decoder (so the decoder can suppress it,
+        // as dbx does).  It used to come after the roll-off, which left a
+        // high-passed noise band running flat to Nyquist — the "whine".
         if (model_ == k_vinyl) vinyl_dust(sig_l, sig_r);
         else                   tape_hiss(sig_l, sig_r);
+
+        tape_age(sig_l, sig_r);
 
         wow_and_flutter(sig_l, sig_r);
         crosstalk(sig_l, sig_r);
@@ -648,8 +699,8 @@ private:
     }
 
     fast_inline void drive_into_soft_saturation(float32x4_t &sig_l, float32x4_t &sig_r) {
-        const float drive  = current_sat_drive_;
-        const float makeup = current_sat_makeup_;
+        const float drive  = current_sat_drive_  * sat_scale_;
+        const float makeup = current_sat_makeup_ * sat_makeup_comp_;
         if (model_ == k_vinyl) {
             sig_l = vmulq_n_f32(vinyl_saturate(sig_l, drive, vinyl_hist_l_), makeup);
             sig_r = vmulq_n_f32(vinyl_saturate(sig_r, drive, vinyl_hist_r_), makeup);
@@ -674,8 +725,8 @@ private:
     }
 
     fast_inline void wow_and_flutter(float32x4_t &sig_l, float32x4_t &sig_r) {
-        const float wow_depth     = 5.0f + tape_age_ * 25.0f;
-        const float flutter_depth = 0.8f + tape_age_ * 2.0f;
+        const float wow_depth     = (5.0f + tape_age_ * 25.0f) * wf_scale_;
+        const float flutter_depth = (0.8f + tape_age_ * 2.0f) * wf_scale_;
 
         // Both LFOs, first and last lane of the quad, in one NEON sine call.
         // Over four samples a 1.5 Hz and a 25 Hz sine are linear to well under
@@ -738,11 +789,12 @@ private:
 
     fast_inline void crosstalk(float32x4_t &sig_l, float32x4_t &sig_r) {
         if (xtalk_amount_ <= 0.0f) return;
+        const float bleed = xtalk_amount_ * xtalk_scale_;
         // Treble leaks between adjacent tape tracks far more readily than bass.
         float32x4_t bleed_l = sig_l, bleed_r = sig_r;
         biquad_process4_stereo(&xtalk_hpf_, &coeff_xtalk_hpf_, &bleed_l, &bleed_r);
-        const float32x4_t xl = vmlaq_n_f32(sig_l, bleed_r, xtalk_amount_);
-        const float32x4_t xr = vmlaq_n_f32(sig_r, bleed_l, xtalk_amount_);
+        const float32x4_t xl = vmlaq_n_f32(sig_l, bleed_r, bleed);
+        const float32x4_t xr = vmlaq_n_f32(sig_r, bleed_l, bleed);
         sig_l = xl;
         sig_r = xr;
     }
@@ -760,7 +812,7 @@ private:
         // here: the hiss is injected inside the companding loop, so when the
         // decoder is engaged it gets pulled down exactly as it would on tape.
         // (The Hiss knob used to do literally nothing in the default patch.)
-        const float hiss_scaled = hiss_amount_ * (1.0f + tape_age_ * 2.0f);
+        const float hiss_scaled = hiss_amount_ * (1.0f + tape_age_ * 2.0f) * noise_scale_;
         sig_l = vmlaq_n_f32(sig_l, nl, hiss_scaled);
         sig_r = vmlaq_n_f32(sig_r, nr, hiss_scaled);
     }
@@ -822,7 +874,7 @@ private:
         crack_l = vmlaq_f32(crack_l, white_l, v_big);
         crack_r = vmlaq_f32(crack_r, white_r, v_big);
 
-        const float dust_level = 0.06f + tape_age_ * 0.08f;
+        const float dust_level = (0.06f + tape_age_ * 0.08f) * noise_scale_;
         sig_l = vmlaq_n_f32(sig_l, crack_l, dust_level);
         sig_r = vmlaq_n_f32(sig_r, crack_r, dust_level);
     }
@@ -913,23 +965,20 @@ private:
         calc_high_shelf(&coeff_dbx_pre_, 4000.0f, +6.0f);
         calc_high_shelf(&coeff_dbx_de_,  4000.0f, -6.0f);
 
-        float lpf_hz   = 14000.0f;
-        float head_hz  = 65.0f;
-        float hiss_cut = 3500.0f;
-
-        switch (model_) {
-            case k_424:   lpf_hz = 11000.0f; head_hz =  55.0f; break;
-            case k_488:   lpf_hz =  9500.0f; head_hz =  45.0f; break;
-            case k_vinyl: lpf_hz = 12000.0f; head_hz = 150.0f; hiss_cut = 400.0f; break;
-            default: break;  // k_244
-        }
+        const MachineSpec& m = spec_for(model_);
+        wf_scale_    = m.wf_scale;
+        noise_scale_ = m.noise_scale;
+        xtalk_scale_ = m.xtalk_scale;
+        sat_scale_   = m.sat_scale;
+        // Keep a machine's relative THD from also being a level difference.
+        sat_makeup_comp_ = 1.0f / sqrtf(m.sat_scale);
 
         // Age dulls the high end: full Age drops 14 kHz to 5.6 kHz.
-        lpf_hz *= (1.0f - tape_age_ * 0.6f);
+        const float lpf_hz = m.lpf_hz * (1.0f - tape_age_ * 0.6f);
 
-        calc_peaking(&coeff_tape_head_,  head_hz, +4.0f, 1.5f);
+        calc_peaking(&coeff_tape_head_,  m.head_hz, m.head_db, 1.5f);
         calc_low_pass(&coeff_tape_lpf_,  lpf_hz,  0.707f);
-        calc_high_pass(&coeff_hiss_hpf_, hiss_cut, 0.707f);
+        calc_high_pass(&coeff_hiss_hpf_, m.hiss_hz, 0.707f);
         calc_high_pass(&coeff_dbx_hf_,   2000.0f, 0.707f);  // Type II HF path
         calc_high_pass(&coeff_xtalk_hpf_, 1500.0f, 0.5f);   // treble-biased bleed
     }
@@ -1062,6 +1111,9 @@ private:
     float vinyl_dc_offset_;
     float xtalk_amount_;
     float hiss_amount_;
+
+    // Per-machine scalings, resolved from the spec table on a model change.
+    float wf_scale_, noise_scale_, xtalk_scale_, sat_scale_, sat_makeup_comp_;
 
     // dbx detector
     float attack_ms_,  attack_coeff_;

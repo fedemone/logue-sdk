@@ -29,7 +29,7 @@ same setting with dbx Off, which is the whole point of the system.
 | 1 | PreAmp | 0–100 % | 1.0× to 3.0× into the EQ |
 | 1 | Drive | 0–100 % | 1x to 12x into the saturator, exponential, half-power make-up |
 | 2 | dbx NR | Active / EncOnly / Off | See below |
-| 2 | Model | T-244 / T-424 / T-488 / Vinyl | Head bump, tape LPF, LFO rate |
+| 2 | Model | T-244 / T-424 / T-488 / Vinyl | See below |
 | 2 | LowHz / LowGain | 20–400 Hz, ±12 dB | Peaking, Q 1.0 |
 | 3 | MidHz / MidGain | 200–5000 Hz, ±12 dB | Peaking, Q 1.5 |
 | 3 | HiHz / HiGain | 2–15 kHz, ±12 dB | Peaking, Q 1.0 |
@@ -40,6 +40,50 @@ same setting with dbx Off, which is the whole point of the system.
 
 A band sitting at exactly 0 dB is bypassed rather than run as a unity filter,
 so the default flat patch costs nothing for the EQ.
+
+## The machines
+
+The three Tascams share a tape format, a speed (9.5 cm/s) and a noise-reduction
+system, so bandwidth is not what separates them — and the 424 is the *widest*
+of the three, not the dullest. Published figures:
+
+| | 244 (1982) | 424 (1990s) | 488 (1988) |
+| --- | --- | --- | --- |
+| Response | 40 Hz–14 kHz | 40 Hz–16 kHz ±3 dB | 40 Hz–14 kHz ±3 dB |
+| Wow & flutter | 0.06 % | < 0.05 % WRMS | 0.04 % WRMS |
+| THD | 1.5 % | — | 1.3 % |
+| Crosstalk | — | — | 50 dB @ 1 kHz, no dbx |
+
+What that makes them:
+
+* **T-244** — least stable transport and the most distortion. Most of why it
+  reads as the lo-fi one.
+* **T-424** — the later, cleaner machine: widest response, quietest, steadier
+  than the 244.
+* **T-488** — eight tracks in the same 3.81 mm of tape, so each is about half
+  a four-track's width. That costs roughly 3 dB of signal-to-noise and puts
+  the tracks close enough together to hit the 50 dB separation in the manual.
+  Its transport is the best of the three.
+
+Measured on the built unit at Age 10 %, dbx off:
+
+| model | 14 kHz | noise floor | crosstalk | wow |
+| --- | --- | --- | --- | --- |
+| T-244 | −2.3 dB | −55.7 dB | −26.3 dB | 3656 ppm |
+| T-424 | −1.5 dB | −58.4 dB | −27.7 dB | 3037 ppm |
+| T-488 | −2.7 dB | −52.6 dB | −19.4 dB | 2452 ppm |
+| Vinyl | −6.8 dB | −64.3 dB | −24.0 dB | 4651 ppm |
+
+The bandwidth spread is deliberately small, because the real machines' is.
+The separation you hear is mostly noise, crosstalk and transport stability.
+
+## Noise
+
+Tape noise is injected after saturation (so Drive does not amplify it), before
+the playback roll-off (so the machine band-limits it, as it does its own
+noise), and before the decoder (so dbx reduces it). With dbx Active the floor
+sits around −73 dBFS; switch to Off or EncOnly and you get the unreduced
+−56 dBFS of a real cassette, which is the point of the mode.
 
 ## The dbx section
 
