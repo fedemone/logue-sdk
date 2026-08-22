@@ -27,7 +27,7 @@ same setting with dbx Off, which is the whole point of the system.
 | 1 | Age | 0–100 % | HF loss, wow/flutter depth, hiss floor, dust density, groove wear |
 | 1 | Mix | 0–100 % | Bit-transparent at 0 |
 | 1 | PreAmp | 0–100 % | 1.0× to 3.0× into the EQ |
-| 1 | Drive | 0–100 % | Into the saturator, level-compensated |
+| 1 | Drive | 0–100 % | 1x to 12x into the saturator, exponential, half-power make-up |
 | 2 | dbx NR | Active / EncOnly / Off | See below |
 | 2 | Model | T-244 / T-424 / T-488 / Vinyl | Head bump, tape LPF, LFO rate |
 | 2 | LowHz / LowGain | 20–400 Hz, ±12 dB | Peaking, Q 1.0 |
