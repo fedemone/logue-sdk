@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cmath>
 #include <vector>
+#include <cstring>
 
 static const float SR  = 48000.0f;
 static const int   BLK = 64;          // drumlogue render block size
@@ -875,6 +876,96 @@ static void test_watchdog_recovers_from_poisoned_state() {
     }
 }
 
+// The loop gain is divided by colourPeakGain() so the *total* round trip is
+// what TIME asked for. Understate it and the round trip exceeds unity at the
+// colour's resonant frequency: the reverb stops being a reverb and becomes an
+// oscillator. Crystal was estimated at 1.09 from the bandpass peak alone while
+// the stage reached 1.45, which is how esotico came to self-oscillate. So
+// measure the stage rather than reasoning about it.
+static void test_colour_peak_gain_is_not_understated() {
+    printf("\n[colour] the declared peak gain is not less than the real one\n");
+
+    for (int p = 0; p < k_preset_number; p++) {
+        static NeonAdvancedLabirinto rv;
+        // Each mode is a fixed-Q design, so DAMP moves the peak without changing
+        // its height; sweeping DAMP too only guards against that stopping being
+        // true.
+        float worst = 0.0f;
+        const int damps[] = { 20, 300, 1000 };
+        for (int d = 0; d < 3; d++) {
+            rv = NeonAdvancedLabirinto();
+            rv.init();
+            rv.loadPreset(p);
+            rv.setParameter(k_damp, damps[d]);
+
+            for (float f = 40.0f; f < 14000.0f; f *= 1.03f) {
+                memset(rv.filterState1,   0, sizeof(rv.filterState1));
+                memset(rv.filterState2,   0, sizeof(rv.filterState2));
+                memset(rv.metalState,     0, sizeof(rv.metalState));
+                memset(rv.crystalAPState, 0, sizeof(rv.crystalAPState));
+
+                float ph = 0.0f;
+                const int n = 4096;
+                for (int i = 0; i < n; i += NEON_LANES) {
+                    float32x4_t T[NEON_LANES];
+                    for (int t = 0; t < NEON_LANES; t++) {
+                        ph += 2.0f * (float)M_PI * f / SR;
+                        if (ph > 2.0f * (float)M_PI) ph -= 2.0f * (float)M_PI;
+                        float v[NEON_LANES];
+                        for (int c = 0; c < NEON_LANES; c++) v[c] = sinf(ph);
+                        T[t] = vld1q_f32(v);
+                    }
+                    rv.applyColour4(T, 0, rv.liveColour());
+                    if (i > n / 2)                       // past the settling time
+                        for (int t = 0; t < NEON_LANES; t++) {
+                            float o[NEON_LANES];
+                            vst1q_f32(o, T[t]);
+                            for (int c = 0; c < NEON_LANES; c++)
+                                worst = fmaxf(worst, fabsf(o[c]));
+                        }
+                }
+            }
+        }
+        const float claimed = rv.colourPeakGain();
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(%s: measured %.3f, declared %.3f)",
+                 k_preset_names[p], worst, claimed);
+        check(worst <= claimed * 1.005f, "colour peak gain is declared honestly", buf);
+    }
+}
+
+// The output limiter bounds a runaway, so "did it stay finite" and "did it stay
+// under the ceiling" both pass while the unit sits there howling. The thing that
+// actually distinguishes a reverb from an oscillator is that its tail keeps
+// getting quieter, so check that directly, at the longest decay on offer.
+static void test_no_preset_self_oscillates() {
+    printf("\n[stability] the tail keeps decaying at maximum TIME\n");
+
+    for (int p = 0; p < k_preset_number; p++) {
+        int ovr[k_total]; allDefaults(ovr);
+        ovr[k_time] = 100;
+        Render r = render(p, ovr, 25.0f, false);
+
+        // Energy in a window early in the tail, and one much later.
+        auto rms = [&](float t0, float t1) {
+            const int a = (int)(t0 * SR), b = (int)(t1 * SR);
+            double acc = 0;
+            for (int i = a; i < b; i++)
+                acc += (double)r.L[i] * r.L[i] + (double)r.R[i] * r.R[i];
+            return sqrt(acc / (2 * (b - a)));
+        };
+        const double early = rms(1.0f, 2.0f);
+        const double late  = rms(20.0f, 24.0f);
+
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(%s: %.5f at 1-2 s, %.7f at 20-24 s)",
+                 k_preset_names[p], early, late);
+        // 20 seconds after a single hit, with TIME at its longest, the tail must
+        // be a long way down — not merely bounded.
+        check(late < early * 0.05, "tail decays instead of sustaining", buf);
+    }
+}
+
 int main() {
     printf("NeonAdvancedLabirinto host tests\n");
     test_matrices();
@@ -891,6 +982,8 @@ int main() {
     test_delay_glide_is_rate_limited();
     test_settings_apply_immediately_when_silent();
     test_watchdog_recovers_from_poisoned_state();
+    test_colour_peak_gain_is_not_understated();
+    test_no_preset_self_oscillates();
 
     printf("\n%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
