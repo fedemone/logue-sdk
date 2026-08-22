@@ -41,7 +41,7 @@ int main(){
     {"AcTom",12,45},{"Conga",28,62},{"Djambe",6,48},{"Bongo",34,50},
     {"Timpani",5,52},{"Taiko",7,41},{"Cymbal",13,65},{"Ride",32,69},
     {"Marimba",1,72},{"Vibrph",10,72},{"Kalimba",15,65},
-    {"Clap",21,60},{"Shaker",22,84},{"HHat-C",26,72},{"GtrStr",25,69}};
+    {"Clap",21,60},{"Shaker",22,84},{"HHat-C",25,72},{"Koto",9,60}};
   printf("%-9s | %-22s | %-22s\n","preset","VlMllRes  -100 / +100","VlMllStf  -100 / +100");
   for(const Row&r:rows){
     auto base=R(r.i,r.nt,-1,0); double sg=rr(base);

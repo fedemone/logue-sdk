@@ -1,6 +1,6 @@
 # Note-assignment audit (August 2026)
 
-What the **Note** parameter does on each of the 41 presets, measured rather
+What the **Note** parameter does on each of the 40 presets, measured rather
 than assumed.  Reproduce with:
 
 ```bash
@@ -48,10 +48,10 @@ Measured by raising Note an octave and re-measuring: these eight move by
 | Preset | Engine | Why |
 |---|---|---|
 | 808Sub (2), KickDrum (20) | MEMBRANE | Both use the empty default modal config (`mode_count` 0), so the audible voice is the boom oscillator — and `boom_inc` is a preset constant, not a note. `TubRad` is the kick's tune control instead. |
-| AcSnare (3), MrchSnr (8), BrshSnr (38) | SNARE | The modal head is ~10 % of a snare's voice and the three wire bands are absolute Hz. The note moves only the head, and not measurably. |
-| Clap (21), Shaker (22), HHat-C (26) | NOISE | Shaped noise bursts — no pitched element at all. By design. |
+| AcSnare (3), MrchSnr (8), BrshSnr (37) | SNARE | The modal head is ~10 % of a snare's voice and the three wire bands are absolute Hz. The note moves only the head, and not measurably. |
+| Clap (21), Shaker (22), HHat-C (25) | NOISE | Shaped noise bursts — no pitched element at all. By design. |
 
-RimShot (39) is the exception among the snares: it tracks a full **+12.0**,
+RimShot (38) is the exception among the snares: it tracks a full **+12.0**,
 because its rim-ring mode cluster is loud (note 69 anchors the 877 Hz honk at
 ratio 2.0, as its preset comment says).
 
@@ -76,9 +76,9 @@ each one alters an approved sound, so they are listed for a decision.
 
 | Preset | Ships | Sounds at | Real instrument | Suggested |
 |---|---|---|---|---|
-| **Bongo (34)** | 50 (D3) | 146.7 Hz | bongo open tones sit roughly 250-600 Hz; 147 Hz is conga/tumba register | 57-62 — and see §5 |
+| **Bongo (33)** | 50 (D3) | 146.7 Hz | bongo open tones sit roughly 250-600 Hz; 147 Hz is conga/tumba register | 57-62 — and see §5 |
 | **Wodblk (11)** | 48 (C3) | 130.7 Hz | a woodblock's dominant partial is ~0.8-2.5 kHz; 131 Hz is a large slit drum (which preset 31 already is) | 79-84 |
-| **AcSnare (3)**, **BrshSnr (38)** | 38 (D2) | 73.4 Hz nominal | a snare head sounds ~180-220 Hz. **38 is the General MIDI drum-map number for Acoustic Snare**, used here as a pitch | 55-57, display only (§2: inert) |
+| **AcSnare (3)**, **BrshSnr (37)** | 38 (D2) | 73.4 Hz nominal | a snare head sounds ~180-220 Hz. **38 is the General MIDI drum-map number for Acoustic Snare**, used here as a pitch | 55-57, display only (§2: inert) |
 | **Trngle (19)** | 69 (A4) | 440.0 Hz | a triangle's lowest strong mode is ~1-2 kHz — this is the "Triangle C# ≈ 4434 Hz, ~40 semitones above render range" floor already in the README | 88-96 |
 | **Claves (17)** | 79 (G5) | 784.0 Hz | the one clave reference in `samples/` peaks at **955-975 Hz** (centroid 1750 Hz) — 4 semitones above the preset | 83, minor |
 
@@ -92,11 +92,11 @@ cowbell register and is the weakest of these calls.
 
 The render harness carries its own note list, used for every calibration score
 in `batch_reports/` and `rendered_tune/`.  It matches the shipped column on 40
-of 41 presets:
+of 40 presets:
 
 | Preset | Preset column | render_presets.cpp |
 |---|---|---|
-| **Bongo (34)** | **50** (146.8 Hz) | **57** (220.0 Hz) |
+| **Bongo (33)** | **50** (146.8 Hz) | **57** (220.0 Hz) |
 
 So Bongo was *scored* at 220 Hz and *ships* at 147 Hz.  That makes the Bongo
 row in §4 the strongest of the five: the tuning work and the shipped preset are
@@ -106,16 +106,16 @@ left for a listen rather than applied here.
 
 ## 6. Everything else
 
-Added in pass 33 and clean on both counts: **RackTom (40)** ships note 53,
+Added in pass 33 and clean on both counts: **RackTom (39)** ships note 53,
 nominal 174.6 Hz, measures **174.7 Hz (Δ +0.0 semitones)** and tracks a +12
 transpose at **+12.0** — and `render_presets.cpp` scores it at the same note 53,
 so it does not join Bongo in §5.
 
-The remaining 26 presets track their note exactly (peak within ±0.1 semitone of
+The remaining 25 presets track their note exactly (peak within ±0.1 semitone of
 nominal) and sit in a defensible register for the instrument: Kick2 65 Hz,
 Timpani 165 Hz (documented E3 = the dominant sustained partial), Taiko 87 Hz,
 Djambe 131 Hz, AcTom 110 Hz, Conga 293 Hz, Handpan 293 Hz, Marimba/Vibraphone
-523 Hz, Kalimba 349 Hz, SteelPan 262 Hz, GtrStr 440 Hz (A4),
+523 Hz, Kalimba 349 Hz, SteelPan 262 Hz,
 GlassBowl 659 Hz, GlassBottle 1319 Hz, BellTree 1047 Hz, SlitDrum 262 Hz,
 Gong 147 Hz, TubularBell 523 Hz (its 1442 Hz strike note is the 4:5:6 bell
 partial series doing what bells do, not a mistuning).
@@ -128,3 +128,10 @@ window puts the fundamental at **261.75 Hz against a 261.63 Hz nominal**, with
 the series exact to three decimals (1.000 / 2.000 / 3.000 / 4.000), and the
 +12 transpose still tracks at **+12.0**.  Do not "correct" the tuning on the
 strength of the peak column alone.
+
+## 7. GtrStr removed (pass 41)
+
+Preset 25 `GtrStr` was removed at the user's request; every index above 25
+shifted down by one, so HHat-C is 25, BrshSnr 37, RimShot 38, RackTom 39.
+Koto (9) is now the only `ENGINE_KS` preset and is the KS reference in
+`test_hw_debug`, `param_audit`, `samegate_probe` and `switch_probe`.

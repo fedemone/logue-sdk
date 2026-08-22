@@ -72,7 +72,7 @@ static const Exemplar kExemplars[] = {
     {  9, 60, "Koto"    },   // KS
     { 13, 69, "Cymbal"  },   // CYMBAL
     { 21, 60, "Clap"    },   // NOISE
-    { 29, 52, "Handpan" },   // modal-rich MEMBRANE
+    { 28, 52, "Handpan" },   // modal-rich MEMBRANE (was 29 before GtrStr removal)
 };
 static const int kNumExemplars = (int)(sizeof(kExemplars) / sizeof(kExemplars[0]));
 

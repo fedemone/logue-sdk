@@ -124,7 +124,7 @@ int main() {
 
     struct Target { const char* family; int preset; int note; };
     static const Target targets[] = {
-        {"KS      ", 25, 69},  // GtrStr
+        {"KS      ",  9, 60},  // Koto (GtrStr removed pass 41)
         {"BAR     ", 1,  72},  // Marimba
         {"MEMBRANE", 5,  40},  // Timpani
         {"MEMB-KICK", 20, 40}, // KickDrum

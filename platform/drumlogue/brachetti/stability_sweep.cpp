@@ -22,7 +22,7 @@ int main(){
     struct P{int idx;int lo;int hi;}; P ps[]={{10,0,200},{11,-10,30},{13,-98,98},{14,0,20},{15,-100,100},{17,0,20},{23,71,400},{6,-100,100}};
     const int NP=8;
     // affected presets across all three families + a couple neighbours
-    int presets[]={0,2,20, 5,7,12,28,34,6,23, 13,14,27,32,33,37};
+    int presets[]={0,2,20, 5,7,12,27,33,6,23, 13,14,26,31,32,36};  // >25 shifted (pass 41)
     int notes[]  ={36,36,36,52,45,45,50,55,48,40,69,50,79,69,60,76};
     int NPRE=sizeof(presets)/sizeof(int);
 

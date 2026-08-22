@@ -25,7 +25,7 @@ so read the row name, not the row order.)
 
 ## Current Working State
 
-- Unit **loads on hardware** (as of 081e82e); all **41** presets render clean (0 NaN/silent).
+- Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
 - **Pass 39 (no sound change, 41/41 byte-identical):** `VlMllStf` stopped
   saturating its clamp (20-60 % of that knob was dead on Marimba/Timpani/Clap/
@@ -152,6 +152,118 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 41 — HW batch: display, decay, stacking, the "zip", and GtrStr removed
+
+Eleven reports from the hardware.  Split across three commits; this section
+covers all of them, including the four not fixed and why.
+
+**`Inharm` displayed huge positive numbers instead of negatives.**  The user's
+own diagnosis (signed → unsigned) was right, and the isolating fact is that
+Inharm was the **only `k_unit_param_type_strings` parameter in header.c with a
+negative min** — every bipolar knob that displays correctly (Velocity,
+VlMllRes, VlMllStf, Mterl) is `type_none`.  The OS routes a `type_strings`
+parameter through `unit_get_param_str_value()` as an unsigned selector.  Now
+`type_none`; the custom ×10 format branch is deleted rather than left to rot.
+The knob reads −100..100 like the other three bipolar knobs.
+
+**Triangle decay 2175 → 300 ms, and the trap that makes it a two-value edit.**
+`Dkay` is a REFERENCE ANCHOR: `LoadPreset` captures the row's own Dkay into
+`m_modal_dkay_ref`, so `t60_scale` is exactly 1.0 at the shipped value and
+**lowering the Dkay column alone changes nothing**.  The factor the user's
+preferred knob position implies — 2^(4.5·(0.30−0.95)) = 0.1317 — is baked into
+the config T60s and the column moved to 60 so the anchor follows.  Verified by
+rendering the OLD build at Dkay=600: 275 ms vs the new shipped 300 ms.
+
+**Koto stacked unnaturally** because ENGINE_KS was hard mono — `GateOff` pinned
+every pluck to one slot.  The anti-beating rationale only ever applied to the
+SAME note, so that is what is kept: a repluck reuses its slot, a different note
+takes its own voice.  Measured 1→2→3→4 voices across four notes, steady 1
+across four replucks.  **The first measurement of this was wrong** and worth
+recording: a Goertzel at note 60 and note 72 "proved" stacking already worked,
+but 523 Hz is note 60's own second harmonic.  Counting active voices is the
+honest test; a harmonic-series probe cannot separate an octave from its own
+overtone.
+
+**DeepBs measured as stacking PERFECTLY — 1→2→3→4 voices — and that was the
+bug.**  Its body is the longest membrane in the unit (t60_1 = 1800 ms), so four
+overlapping bodies turn the low end to porridge; a real bass drum cannot,
+because the beater damps the head it just struck.  Same-note strikes now fuse
+out to 300 ms instead of 80.  `kRollFuseSec` is untouched for every other
+preset, so the snare-wire continuity test still keys on it.
+
+**Kick "thump" read as a "zip"** because the pitch sweep was tied 1:1 to the
+amplitude envelope (`swp = 1 + 1.6·drop`): 299 → 115 Hz, ~1.4 octaves, spread
+over the sound's whole ~60 ms life, still at 1.8× after 6 ms.  Cubed against
+the envelope and narrowed to 1.0, it is 1.125× at 6 ms — the sweep collapses in
+~7 ms and becomes attack CHARACTER instead of an audible descending chirp.
+Byte-identical because the thump layer is zero at every shipped preset.
+
+**"Velocity increases the decay but not the hit" — measured, and only half
+fixed.**  Kick2's attack-to-tail ratio is **0.93 / 0.93 / 0.95 at velocity
+127 / 64 / 30**: essentially flat.  The master limiter pins the level, so a
+harder strike cannot get louder, it only stays above the threshold longer —
+which is exactly what reads as "more decay, same hit".  The transient's
+velocity curve is now superlinear (v·√v), which moves BALANCE rather than
+level, the only thing a limited bus leaves free (pass 30's rule).  Fully
+solving it needs a velocity→balance trade on the boom, and there is **no
+velocity at which such a trade is neutral** (the velocity curve means
+`current_velocity` never reaches 1.0), so every kick render would change.
+That is a voicing decision, left for a listen.
+
+**BrshSnr's Dkay was not "subtle", it was mathematically inaudible.**  Dkay
+scales the modal body's T60 and BrshSnr ships `k_modal_mix = 0.0` — the bank it
+controls is mixed in at ZERO.  Measured t40 was **150 ms at every one of six
+Dkay positions across the full range**.  Dkay now drives the noise swish tail —
+the brush's actual voice — as the COARSE control with Rel as the fine trim.
+After: 50 / 75 / 75 / 100 / 175 / 225 ms.  Scoped to BrshSnr; AcSnare measures
+100 ms at every Dkay before and after.
+
+**GtrStr removed** (user request).  The pass-33 seven-table checklist run in
+reverse, plus every index above 25 shifted down by one.  Proof the renumbering
+is right: all 40 surviving presets render **byte-identical keyed by NAME**.
+Koto is now the only ENGINE_KS preset and takes over as the KS reference in
+`test_hw_debug`, `param_audit`, `samegate_probe`, `switch_probe` and `knobaud`.
+ARM: `.rodata` −64 B, `.bss` −200 B, `.data.rel.ro` −4 B — exactly one row.
+
+**Three tests broke on the renumbering, and each was a latent bug.**
+- **T25** (`test_dsp`) swept `{1, 4, 10, 15, 19, 26}` labelled
+  "…GlassBowl" — but GlassBowl is **24**; index 26 was HHat-C.  The test had
+  been asserting modal ring decay on the wrong preset all along and passed by
+  luck.  Fixed to 24.
+- **T40a** and `stability_sweep` carried the cymbal list `{13,14,27,32,33,37}`,
+  all four upper entries now off by one.
+- **T16a** hard-coded `voices[1]` — the exact anti-pattern pass 25 documented
+  for T18 ("read `state.next_voice_idx`, never assume an allocation order").
+  It also needed the modal bank silenced: Koto, unlike the retired GtrStr, has
+  `modal_mix` 0.22, so with the waveguide killed the voice is *correctly* still
+  sounding and the test's premise evaporates.
+
+**NOT fixed, with evidence.**
+- **The two crashes are no longer reproducible** and never reproduced here: a
+  10-simulated-minute soak of BrshSnr and Timpani (1000 hits, 76 note changes,
+  random knob moves) is clean, worst |peak| 0.98, no NaN.  Note that **no host
+  tool compiles the NEON paths** and there is no qemu in this environment, so
+  ARM code cannot be executed at all — four `__ARM_NEON` blocks are untested by
+  construction.  The kernel's NEON resonator loop was reviewed against its
+  scalar arm and is math-equivalent with in-bounds indexing.
+- **Timpani's "sporadic clicks for 8-10 s after a note change" — theory tested
+  and REJECTED.**  The obvious suspect is `ClearVoice`, which `memset`s up to
+  280 resonators to zero when a note change steals a still-ringing kettle: a
+  step discontinuity on every mode at once.  A patch that retunes the bank
+  under its own ring instead (physically what a timpani pedal does) measured
+  **no improvement in max sample-to-sample step** in any variant — 0.04047 →
+  0.03999 on Timpani, and slightly WORSE on Taiko.  Reverted rather than
+  shipped.  Note a steal needs ≥3 distinct notes in play, since two kettles
+  cover two notes; tests that alternate two notes never exercise it.
+- **SteelPan/Triangle clicks** and the GUI-stale-after-Program-change (the user
+  deferred the latter) are open.
+
+New tool: **`live_edit_probe.cpp`** — changes parameters WHILE a voice rings,
+which no existing tool did (they all configure, then strike).  Its first run
+produced 36 false positives from short percussion decaying naturally, so it
+now renders a CONTROL timeline with no edit and compares against that.
+
+
 ### Pass 40 — obsolete tools removed (no DSP change)
 
 User: *"Remove obsolete tools."*  14 files deleted, all recoverable from git
@@ -179,7 +291,7 @@ was kept even if it has not been run in twenty passes.
 `render_presets.cpp` printed `Run: python3 test_audio_render.py` on every run,
 and that script → `test_calibration.py` → `analyze_samples.py` all carry a
 sample→preset map binding **index 24/25 to Flute/Clarinet** — presets deleted
-back in passes 1-5.  Index 24 is GlassBowl and 25 is GuitarStr today, so every
+back in passes 1-5.  Index 24 is GlassBowl and 25 was GuitarStr (removed in pass 41), so every
 comparison that chain made for the last thirty-odd passes was against the wrong
 reference.  Not merely unused: wrong, and advertised by the tool everyone runs.
 `render_presets.cpp` now points at `refcmp.py` instead.  **A stale tool that
@@ -301,7 +413,7 @@ tools were reporting results for knob positions they never set.  All updated.
 remember touching.**
 
 Verified: 41/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
-**103/103**, 0 NaN/silent across 41, stability 4096 combos + 492 rolls (now
+**103/103**, 0 NaN/silent across 40, stability 4096 combos + 492 rolls (now
 sweeping the bipolar HitPos corner) worst |peak| 0.9900 / 0 problems.  ARM
 `.text` 50,928 → **51,108**; `.rodata`/`.data.rel.ro`/`.bss` unchanged.
 
@@ -385,7 +497,7 @@ outranks the fundamental in the peak picker.  Recorded in `NOTE_AUDIT.md` so a
 later pass does not "fix" a correct tuning.
 
 Verified: 39/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
-**103/103**, 0 NaN/silent across 41, stability 4096 combos + 492 rolls worst
+**103/103**, 0 NaN/silent across 40, stability 4096 combos + 492 rolls worst
 |peak| 0.9900 / 0 problems.  ARM `.text` 50,644 → **50,928** (+284);
 `.rodata`/`.data.rel.ro`/`.bss` all unchanged.
 
@@ -432,7 +544,7 @@ reach.  Both KS presets ship Inharm 0, so the negative half is byte-identical
 to shipped (the −inf above is exactly that).  Leave it.
 
 Verified: 41/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
-**103/103**, 0 NaN/silent across 41, stability 4096 combos + 492 rolls.
+**103/103**, 0 NaN/silent across 40, stability 4096 combos + 492 rolls.
 
 ### Pass 36 — `Inharm` made BIPOLAR (-100..100), which un-floors it everywhere
 
@@ -494,7 +606,7 @@ passing on a value it never set.  `stability_sweep` swept the Inharm corner
 tool that sets an out-of-range value fails silently and keeps reporting PASS.
 
 Verified: 41/41 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
-**103/103** (T27a fixed), 0 NaN/silent across 41, stability re-run with the
+**103/103** (T27a fixed), 0 NaN/silent across 40, stability re-run with the
 corrected bipolar corners.
 
 ### Pass 35 — 808Sub's pitch dive turned back on (it had never fired)
@@ -534,7 +646,7 @@ two paths were equivalent.
 
 **Exactly 1 of 41 renders changed** (`02_808Sub.wav`); the other 40 are
 byte-identical.  Verified: syntax clean, test_dsp exit 0, test_hw_debug
-**103/103**, 0 NaN/silent across 41.
+**103/103**, 0 NaN/silent across 40.
 
 **Dive depth is on `Inharm`, and the knob was re-centred** (user: *"Is it
 possible to wire the dive amount to an existing parameter?"*).  It was already
@@ -639,7 +751,7 @@ engine are otherwise absolute Hz, which is exactly why the kicks audit as
 "Note inert".
 
 Verified: **40/40 pre-existing renders byte-identical**, syntax clean, test_dsp
-exit 0, test_hw_debug **103/103**, 0 NaN/silent across 41.
+exit 0, test_hw_debug **103/103**, 0 NaN/silent across 40.
 
 ### Pass 33 — New preset 40 "RackTom", and the seven-table checklist for adding one
 
@@ -2177,7 +2289,7 @@ dies → "juxtaposed" sound.
 
 | Engine | Signal path | Presets |
 |--------|-------------|---------|
-| `ENGINE_KS` | Karplus-Strong delay + modal additive | GuitarStr, Koto |
+| `ENGINE_KS` | Karplus-Strong delay + modal additive | Koto |
 | `ENGINE_BAR` | Mallet exciter → bar modal bank | Marimba, Vibraphone, Kalimba, SteelPan, Woodblock, Claves, TubularBell, GlassBowl, GlassBottle, SlitDrum, Tick |
 | `ENGINE_MEMBRANE` | Strike exciter → circular membrane modal bank + boom osc | Kick2, 808Sub, Timpani, Djambe, Taiko, AcTom, RackTom, KickDrum, Conga, Handpan, Bongo, Taiko2 |
 | `ENGINE_SNARE` | Membrane body (short) + snare-wire resonators | AcSnare, MarchSnare, BrushSnare |
@@ -2212,22 +2324,21 @@ k_Clap(21)        ENGINE_NOISE
 k_Shaker(22)      ENGINE_NOISE     ← grain-pulse AM + woodblock body
 k_Taiko2(23)      ENGINE_MEMBRANE  ← ex-Taiko deep membrane ("DeepBs")
 k_GlassBowl(24)   ENGINE_BAR
-k_GuitarStr(25)   ENGINE_KS
-k_HiHatClosed(26) ENGINE_NOISE     ← ex-Shaker noise voice
-k_HiHatOpen(27)   ENGINE_PLATE     ← HW-approved, do not break
-k_Conga(28)       ENGINE_MEMBRANE
-k_Handpan(29)     ENGINE_MEMBRANE
-k_BellTree(30)    ENGINE_PLATE
-k_SlitDrum(31)    ENGINE_BAR
-k_Ride(32)        ENGINE_PLATE
-k_RideBell(33)    ENGINE_PLATE
-k_Bongo(34)       ENGINE_MEMBRANE
-k_GlassBottle(35) ENGINE_BAR
-k_Tick(36)        ENGINE_PLATE
-k_Splash(37)      ENGINE_CYMBAL    ← small pitched splash (dense-resonator engine)
-k_BrushSnare(38)  ENGINE_SNARE     ← "BrshSnr": brush sweep, swirl AM + diffuse wires
-k_RimShot(39)     ENGINE_SNARE     ← "RimShot": stick crack + rim-ring ping + tight buzz
-k_RackTom(40)     ENGINE_MEMBRANE  ← "RackTom": rack tom at F3, the high drum to Ac Tom's low
+k_HiHatClosed(25) ENGINE_NOISE     ← ex-Shaker noise voice
+k_HiHatOpen(26)   ENGINE_PLATE     ← HW-approved, do not break
+k_Conga(27)       ENGINE_MEMBRANE
+k_Handpan(28)     ENGINE_MEMBRANE
+k_BellTree(29)    ENGINE_PLATE
+k_SlitDrum(30)    ENGINE_BAR
+k_Ride(31)        ENGINE_PLATE
+k_RideBell(32)    ENGINE_PLATE
+k_Bongo(33)       ENGINE_MEMBRANE
+k_GlassBottle(34) ENGINE_BAR
+k_Tick(35)        ENGINE_PLATE
+k_Splash(36)      ENGINE_CYMBAL    ← small pitched splash (dense-resonator engine)
+k_BrushSnare(37)  ENGINE_SNARE     ← "BrshSnr": brush sweep, swirl AM + diffuse wires
+k_RimShot(38)     ENGINE_SNARE     ← "RimShot": stick crack + rim-ring ping + tight buzz
+k_RackTom(39)     ENGINE_MEMBRANE  ← "RackTom": rack tom at F3, the high drum to Ac Tom's low
 ```
 
 NOTE: Cymbal(13), Gong(14), HHatOpen(27), Ride(32), RideBell(33) were moved to
