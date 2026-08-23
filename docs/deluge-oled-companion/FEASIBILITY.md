@@ -3,7 +3,11 @@
 *(an open re-implementation of the "OVERFIT for Deluge" concept)*
 
 **Date:** 2026‑08‑23
-**Verdict:** **Yes — clearly feasible, and the hardest part is already solved for you by the Deluge firmware itself.**
+**Verdict:** **Yes — clearly feasible**
+
+> 📋 **Build plan:** see [PLAN.md](PLAN.md) — repo strategy, reuse matrix, module breakdown and an 11-week schedule.
+
+**Verdict detail:** **Yes — clearly feasible, and the hardest part is already solved for you by the Deluge firmware itself.**
 
 ---
 
