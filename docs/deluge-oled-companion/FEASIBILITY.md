@@ -14,7 +14,8 @@
 | Can the OVERFIT concept be recreated? | **Yes.** Everything it does rides on documented, open, already-shipping Deluge SysEx APIs. No Deluge hardware mod, no firmware patch, no reverse engineering required. |
 | Does it work on a **7‑segment** Deluge? | **Yes, and this is the killer feature.** The community firmware has an `Emulated Display` setting that makes a 7SEG unit render the *full 128×48 graphical OLED UI* into RAM. That buffer is what gets streamed over SysEx. A 7SEG Deluge can therefore drive a real graphical external screen. |
 | Screen 1 — Sunton **ESP32‑2432S032** (3.2" CYD) | **No — wrong chip.** A *classic* ESP32‑WROOM‑32: no USB‑OTG at all, so it cannot speak USB MIDI in either direction. Good panel, unreachable Deluge. §6.0 |
-| Screen 2 — Guition **JC4827W543** (4.3", 480×272) | **Yes — the best option so far**, if the listing's "LX6 / 520K RAM" is the stale copy-paste it appears to be. The real board is an ESP32‑S3‑WROOM‑1‑N4R8 with native USB on its Type‑C and an exact 3.75× fit. Verify the module marking first. §6.3 |
+| Screen 2 — Guition **JC4827W543** (4.3", 480×272) | **Yes — buy this one**, once you've confirmed the listing's "LX6 / 520K RAM" is the stale copy-paste it appears to be. Real board is an ESP32‑S3‑WROOM‑1‑N4R8: native USB on its Type‑C, a plug-in console UART, and an exact 3.75× fit. §6.3 |
+| Is there a better board? | **On paper yes, in practice no.** The Waveshare ESP32‑S3‑Touch‑LCD‑5 has 4× the flash and a 4.58" mirror, but its RGB panel has no frame RAM and burns 46 MB/s of PSRAM bandwidth forever — against a delta-driven protocol and a QSPI panel that costs nothing when nothing changes. §6.4 |
 | Effort for a working prototype | ~2–3 weekends for the core mirror (USB‑MIDI host + SysEx + OLED). Weeks more for Wi‑Fi UI / BLE MIDI / file manager parity. |
 | Parts cost | ~€30–40 per unit in single quantities. |
 | Legal risk | Low. Deluge firmware is GPLv3, DEx and Deluge‑Synth‑Editor are MIT. Don't copy OVERFIT branding/assets; the protocol is not theirs. |
@@ -300,11 +301,59 @@ Budget roughly 4 ms to flush 480×180 at RGB565 over QSPI, plus 1–3 ms for a b
 
 **Buy the `C` (capacitive) variant** if you want the XY pad — resistive is single-touch and needs pressure.
 
-### 6.4 If you'd rather not risk the listing
+### 6.4 Is there a better board?
 
-An **ESP32‑S3 devkit with two USB ports** (~€8) plus a plain 4.3" or 3.5" SPI TFT (~€8–12). More wiring, fewer surprises, and the native USB port is unambiguously yours. The 3.5" 320×480 Guition **JC3248W535** is the smaller sibling if 4.3" is too large physically.
+Yes — one, on paper. But it loses on the axis that matters most for *this* application, so the honest answer is "better specs, worse fit".
 
-**And still buy one 2.42" SSD1309 SPI OLED (~€10)** for comparison. It maps 1:1 with a `memcpy`, it's the authentic look, and per §6.1 it isn't actually smaller than the mid-size TFTs. Choosing between "authentic mono" and "big colour with touch" is a thirty-minute experiment once both are on the bench, and it isn't a decision worth making from a spec sheet.
+#### The decision axes
+
+The JC4827W543's real weaknesses are: **4 MB flash** (no 16 MB SKU), **community-reverse-engineered documentation**, and a **Type-C that sources no VBUS**. Its real strengths are a **QSPI panel** and a **plug-in console UART**. A board that beats it has to fix the first three without breaking the last two.
+
+#### The candidates
+
+| Board | Mirror size | Flash / PSRAM | Panel | Console UART | Native USB |
+|---|---|---|---|---|---|
+| **Guition JC4827W543** — 4.3", 480×272 | 3.20" @3×, **4.00"** @3.75× | 4 MB / 8 MB | **QSPI, NV3041A** | ✅ JST1.25 header (IO17/18) | ✅ Type‑C |
+| Waveshare ESP32‑S3‑Touch‑LCD‑4.3 / 4.3B — 800×480 | 3.78" @6×, 3.94" @6.25× | **16 MB** / 8 MB | RGB parallel | ❌ none | ✅ Type‑C (via FSUSB42UMX mux on the non‑B) |
+| **Waveshare ESP32‑S3‑Touch‑LCD‑5** — 5", 800×480 | 4.40" @6×, **4.58"** @6.25× | **16 MB** / 8 MB | RGB parallel | ❌ none | ✅ Type‑C |
+| Waveshare ESP32‑S3‑Touch‑LCD‑5 — 5", **1024×600** | **4.61"** @ exact 8× | **16 MB** / 8 MB | RGB parallel | ❌ none | ✅ Type‑C |
+| Waveshare ESP32‑S3‑Touch‑LCD‑7 — 7", 800×480 | 6.15" @6×, **6.41"** @6.25× | **16 MB** / 8 MB | RGB parallel | ❌ none | ✅ Type‑C |
+
+All the Waveshare boards are ESP32‑S3‑WROOM‑1‑**N16R8**, GT911 capacitive touch on GPIO 8/9 (so GPIO19/20 stay free for USB), a CH422G IO expander driving backlight and resets, a CS8501 charger with an MX1.25/PH2.0 Li‑ion connector, and a TF slot. Documentation and schematics are official and public — a genuine advantage over Guition's reverse-engineered ecosystem.
+
+#### The catch: QSPI panels have GRAM, RGB panels don't
+
+This is the finding that decides it, and it runs opposite to the spec sheet.
+
+The Guition's **NV3041A is a QSPI panel with its own frame RAM.** It self-refreshes. You push only the pixels that changed — and this application is *built* on deltas: the Deluge tells you which 8-row page band moved, so a typical update is a few kilobytes.
+
+Every Waveshare board above uses an **RGB parallel panel with no frame RAM.** The ESP32‑S3 must scan the entire framebuffer out of PSRAM continuously, forever, whether or not anything changed:
+
+| Panel | Sustained PSRAM read at 60 Hz |
+|---|---|
+| 800×480 RGB565 | **46 MB/s** |
+| 1024×600 RGB565 | **74 MB/s** |
+
+Octal PSRAM on the ESP32‑S3 delivers roughly 40–80 MB/s in practice. Now add a Wi‑Fi stack and a USB host stack contending for the same bus. The classic symptom is display flicker and tearing; ESP‑IDF's `esp_lcd` RGB driver offers bounce buffers to mitigate it, but it is a permanent tax you pay on every frame, and this project is unusually well-suited to *not* paying it.
+
+The 1024×600 option is tempting for a different reason — **1024 ÷ 128 = exactly 8**, so the mirror fills the width at integer scale with no interpolation at all, crisp square pixels. It also has the highest bandwidth bill of the lot.
+
+#### Verdict
+
+**Stay with the Guition JC4827W543C for the build.** 4.00" of mirror, a panel architecture that matches a delta-driven protocol, and a plug-in console UART you will need the moment USB‑OTG claims GPIO19/20. Its 4 MB flash is a real constraint for LVGL *plus* OTA — but this firmware is small, and it is roughly $10–18 against several times that for the Waveshare boards.
+
+**Choose the Waveshare ESP32‑S3‑Touch‑LCD‑5 instead if** you specifically want a bigger screen (4.58" vs 4.00", ~15% linear), you want 16 MB of flash, or you want official schematics. Budget time for RGB bounce-buffer tuning, and plan a console: bring UART0 out on GPIO43/44, because there is no header for it and the native USB will be busy.
+
+**Choose the 7" only if** the box lives on a desk rather than on the Deluge. A 6.41" mirror is spectacular; a 7" panel next to a Deluge is furniture.
+
+#### Two boards worth knowing about, neither a main recommendation
+
+- **Espressif ESP32‑S3‑USB‑OTG** — the only board here with a real **USB‑A host socket and proper VBUS switching**, which is exactly the awkward part of §5 Option B. Its 1.3" screen is useless as a mirror, but it is the ideal *host bridge* in a two-board build, or the cleanest possible target for the milestone‑1 spike.
+- **ESP32‑P4** boards (e.g. M5Stack Tab5) — USB 2.0 High‑Speed host, MIPI‑DSI panels, a real USB‑A port. Also: no native Wi‑Fi (needs an ESP32‑C6 companion), a much younger software stack, and several times the price. Overkill for a 128×48 monochrome mirror.
+
+### 6.4b Still buy one mono OLED
+
+A 2.42" SSD1309 SPI OLED is ~€10. It maps 1:1 with a `memcpy`, it's the authentic look, and per §6.1 it isn't actually smaller than the mid-size TFTs. Choosing between "authentic mono" and "big colour with touch" is a thirty-minute experiment once both are on the bench, not a decision to make from a spec sheet.
 
 ### 6.5 Checklist for any display you consider
 
@@ -320,7 +369,7 @@ Two practical notes carried over: a static menu on a **mono OLED** for hours is 
 
 | Item | ~Cost |
 |---|---|
-| ESP32‑S3 devkit, **N16R8 (PSRAM)**, dual USB (native + UART) — *classic ESP32 boards such as the CYD will not work, see §6.0* | €8–12 |
+| ESP32‑S3 devkit, **N16R8 (PSRAM)**, dual USB (native + UART) — bare‑board route — *classic ESP32 boards such as the CYD will not work, see §6.0* | €8–12 |
 | 2.42" SSD1309 128×64 SPI OLED | €9–14 |
 | *or* Guition **JC4827W543C** — 4.3" 480×272, ESP32‑S3‑N4R8, GT911 capacitive touch, TF slot (§6.3) | €15–25 |
 | Powered USB‑C OTG adapter, to source VBUS to the Deluge (§6.3) | €3–6 |
