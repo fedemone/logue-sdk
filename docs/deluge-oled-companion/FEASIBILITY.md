@@ -13,7 +13,7 @@
 |---|---|
 | Can the OVERFIT concept be recreated? | **Yes.** Everything it does rides on documented, open, already-shipping Deluge SysEx APIs. No Deluge hardware mod, no firmware patch, no reverse engineering required. |
 | Does it work on a **7‑segment** Deluge? | **Yes, and this is the killer feature.** The community firmware has an `Emulated Display` setting that makes a 7SEG unit render the *full 128×48 graphical OLED UI* into RAM. That buffer is what gets streamed over SysEx. A 7SEG Deluge can therefore drive a real graphical external screen. |
-| Is the linked AliExpress screen usable? | **Probably yes, but I could not open the listing** (AliExpress blocks automated fetching — 302 → 503). See §6 for a 5‑point checklist and what each likely candidate implies. If it is a **2.42" SSD1309 128×64 mono OLED, SPI**, it is the *ideal* part — pixel-exact 1:1 mapping, zero conversion code. |
+| Is the linked screen usable? | **No — wrong chip.** It is a Sunton **ESP32‑2432S032** (3.2" CYD): a *classic* ESP32‑WROOM‑32, which has **no USB‑OTG at all** and cannot speak USB MIDI in either direction. The 3.2" panel itself is fine; the board can't reach the Deluge. See §6. |
 | Effort for a working prototype | ~2–3 weekends for the core mirror (USB‑MIDI host + SysEx + OLED). Weeks more for Wi‑Fi UI / BLE MIDI / file manager parity. |
 | Parts cost | ~€30–40 per unit in single quantities. |
 | Legal risk | Low. Deluge firmware is GPLv3, DEx and Deluge‑Synth‑Editor are MIT. Don't copy OVERFIT branding/assets; the protocol is not theirs. |
@@ -172,53 +172,96 @@ Your box supplies VBUS; the Deluge finds nothing attached at boot, falls back to
 - 🔴 **Verify SysEx support before committing.** Many USB‑MIDI helper libraries only handle 3‑byte channel messages and silently drop the SysEx code-index-numbers (`0x4/0x5/0x6/0x7`). You need full multi-packet SysEx reassembly and transmission. This is the #1 integration risk in the whole project.
 
 ### Option C — DIN MIDI  (fallback only)
-`MIDICableDINPorts::sendSysex` exists, so the mirror works over 5‑pin DIN. At 31 250 baud you get ~3 125 B/s: a worst-case full frame is ~0.3 s. Deltas (tens of bytes) land in 10–50 ms, so menu text is usable but meters and waveforms will smear. **Not viable as the primary link, but a nice no-USB-port escape hatch.**
+`MIDICableDINPorts::sendSysex` exists, so the mirror works over 5‑pin DIN. At 31 250 baud you get ~3 125 B/s: a worst-case full frame is ~0.3 s. Deltas (tens of bytes) land in 10–50 ms, so menu text is usable but meters and waveforms will smear. Worse, the stream shares the Deluge's single DIN OUT with your notes and clock — **see §6.4 before choosing this.** A bench escape hatch, not a primary link.
 
 ### Bandwidth budget (Option A or B)
 Worst-case full frame ≈ 922 packed bytes → ~308 USB‑MIDI 4‑byte packets → ~1.2 kB on the wire → ~20 × 64‑byte bulk transactions ≈ 20 ms at the conservative 1 transaction/ms. Typical deltas are 1–2 orders of magnitude smaller. **The USB link is not the bottleneck; the Deluge's own 5–15 ms render loop is.** Expect 30–60 fps and ~10–30 ms of glass-to-glass latency.
 
 ---
 
-## 6. The display — can you use that AliExpress module?
+## 6. The display — the ESP32‑2432S032 ("Cheap Yellow Display", 3.2")
 
-**I could not open your link.** `it.aliexpress.com` 302‑redirects to `aliexpress.us`, which returned HTTP 503 to every automated fetch, and searching the item ID `1005011714889431` returned nothing specific. So I can't confirm what it is. Here is how to decide in 30 seconds.
+The listing is the **Sunton ESP32‑2432S032**, the 3.2" member of the "Cheap Yellow Display" (CYD) family.
 
-### Checklist — read these off the listing
+### 6.1 What the board actually is
 
-1. **OLED or TFT LCD?** OLED modules are thin glass, monochrome (white/yellow/blue), 4–7 pins, no backlight mentioned. If the listing says ILI9341 / ST7789 / "TFT" / "IPS" / "backlight", it's an LCD.
-2. **Resolution ≥ 128×48**, ideally exactly **128×64**.
-3. **SPI available?** Many 2.42" modules ship strapped for **I²C** and need a 0 Ω resistor moved. Insist on 4‑wire SPI.
-4. **Driver IC**: SSD1309 (2.42"), SSD1306 (0.96"), SH1106 (1.3"), SSD1322 (2.8" grayscale 256×64).
-5. **3.3 V logic** compatible.
-
-### Verdict by candidate
-
-| If it is… | Verdict |
+| | |
 |---|---|
-| **2.42" SSD1309 128×64 mono OLED, SPI** — most likely at €9.49 and "2.4 inch", and the near-certain match for OVERFIT's "2.4" OLED" | ✅ **Ideal.** 1:1 pixel mapping: `memcpy` the 768‑byte Deluge frame into pages 1–6 of the 1024‑byte display buffer (8 blank rows top and bottom, vertically centred) and flush. U8g2 supports SSD1309 128×64 out of the box and hands you `getBufferPtr()` in exactly this layout. |
-| 1.3" SH1106 / 0.96" SSD1306 128×64 | ✅ Works identically, but *smaller than the stock Deluge OLED* — pointless except as a bench prototype. |
-| 2.8" SSD1322 256×64 grayscale | ⚠️ Works, but 2× scaling needs 256×96 and you only have 64 rows. Either 1:1 (tiny) or non-square pixels (ugly). ~€25–35. Skip. |
-| Colour TFT (ST7789 240×240, ILI9341 320×240, ST7796 480×320) | ✅ **Also perfectly workable, and a genuinely different product.** Nearest-neighbour 2× (256×96) or 3× (384×144), plus room for extra widgets, colour theming, an on-screen XY pad. Cheaper per square inch. ❌ Loses the OLED contrast/viewing angle and the "authentic Deluge look". |
+| MCU | **ESP32‑WROOM‑32** — the *classic* dual-core Xtensa LX6 @ 240 MHz |
+| Memory | 4 MB flash, 520 KB SRAM, **no PSRAM** |
+| Display | 3.2" IPS TFT, 240×320, RGB565, **ST7789 over SPI (HSPI)** — SCK 14, MOSI 13, MISO 12, CS 15, DC 2 |
+| Touch | `…S032N` none · `…S032R` resistive XPT2046 (VSPI) · `…S032C` capacitive GT911 (I²C, SCL 32 / SDA 33 / INT 21) |
+| Extras | microSD slot, PAM8002A speaker amp, RGB LED (GPIO 4/16/17), LDR, IP5306 Li‑ion charger on JST 1.25 |
+| USB | micro‑USB **and** USB‑C — **both go to a CH340 UART bridge** |
+| Free GPIO | 22, 27 (backlight PWM), 35 (input‑only), plus 0/1/3/21 on the connectors |
 
-### The size reality check nobody mentions
+### 6.2 Verdict: 3.2" is a fine size. This board is the wrong chip.
 
-A 2.42" **128×64** panel showing only **128×48** yields a visible image of roughly **2.1" diagonal**. Against the stock Deluge OLED that's a meaningful but *modest* bump — maybe 1.6–1.8× linear. If your goal is "I can finally read it from across the room", a **3.5" 480×320 IPS at 3× scale** is bigger, cheaper, and more flexible; you're just trading OLED contrast for area. If your goal is "an authentic second Deluge screen", take the 2.42" OLED.
+🔴 **The ESP32‑WROOM‑32 has no USB‑OTG peripheral at all.** It cannot be a USB host, and it cannot even be a USB *device* — the two USB sockets are wired to a CH340 serial bridge, not to the ESP32. The soft‑USB‑host hack that exists for the classic ESP32 is limited to **low‑speed HID**; USB‑MIDI is a full‑speed bulk class and is out of reach.
 
-**My recommendation:** buy **both** (~€20 total). The rendering layer is ~50 lines either way, the SysEx layer is identical, and you'll know within an evening which one you actually want to live with.
+That deletes Options A and B from §5 outright. Only three paths remain for this specific board, and none of them is "buy it and start":
 
-### Two practical notes
+| Path | Assessment |
+|---|---|
+| **DIN MIDI** (§5 Option C) | Genuinely workable — wire an H11L1/6N138 opto on GPIO 35 (input-only is fine for MIDI IN) and MIDI OUT on GPIO 22, keeping 27 for backlight. But see §6.4: it will damage your MIDI timing. |
+| **Pair it with a €5 ESP32‑S3** doing USB host, linked by UART at 921 600 baud (~92 kB/s — a worst-case frame crosses in ~11 ms) or ESP‑NOW | Works, and you keep the touch/SD/speaker/charger. But if you're buying an S3 anyway, hanging a plain SPI TFT off it is simpler and cheaper. |
+| **Wi‑Fi second screen** for milestone 6 | The board's *best* role: an S3 box does USB host and serves frames over Wi‑Fi; the CYD is a dedicated wireless display. Also a fine bench target for writing the scaler while the S3 ships. |
 
-- **Burn-in.** A static menu on a mono OLED for hours is exactly the burn-in worst case. The Deluge firmware already has a screensaver whose canvas the mirror correctly follows (`oled.cpp:373‑390`) — respect it, and add your own dimming timeout.
-- **SPI speed.** At 8–20 MHz a full 768‑byte flush is well under 1 ms. I²C at 400 kHz is ~19 ms/frame before overhead — workable but wasteful. Use SPI.
+### 6.3 How big is the mirrored screen, really?
 
----
+This is the counter-intuitive part, and it is worth doing the arithmetic before spending money. The physical width of the mirrored image is **scale × 128 × pixel pitch** — and high-resolution small panels have a *fine* pitch that cancels out the scale factor.
+
+| Panel | Pitch | Scale | Image | Diagonal |
+|---|---|---|---|---|
+| **2.42" 128×64 mono OLED** | 0.430 mm | 1× | 55.0 × 20.6 mm | **2.31"** |
+| **3.2" 240×320 (this board)** | 0.203 mm | 2× nearest | 52.0 × 19.5 mm | **2.19"** |
+| 3.2" 240×320 | 0.203 mm | 2.5× anti-aliased | 65.0 × 24.4 mm | **2.73"** |
+| 3.5" 480×320 | 0.154 mm | 3× nearest | 59.2 × 22.2 mm | 2.49" |
+| **4.3" 480×272** | 0.198 mm | 3× nearest | 76.0 × 28.5 mm | **3.20"** |
+| 4.3" 480×272 | 0.198 mm | 3.75× anti-aliased | 95.0 × 35.6 mm | **4.00"** |
+| 4.3" 800×480 | 0.117 mm | 6× nearest | 89.9 × 33.7 mm | 3.78" |
+| 7" 800×480 | 0.191 mm | 6× nearest | 146.4 × 54.9 mm | 6.15" |
+
+Read off the two lines that matter: **a 3.2" 240×320 panel at honest 2× integer scale produces an image slightly *smaller* than a 2.42" mono OLED at 1:1.** A "3.2 inch screen" does not mean a 3.2 inch Deluge screen.
+
+*(This corrects an estimate in an earlier draft of this document, which suggested a 3.5" 480×320 at 3× would be meaningfully bigger than the OLED. It isn't — 2.49" against 2.31", an 8% linear gain.)*
+
+Two escapes from the integer-scale trap:
+
+- **Anti-aliased fractional upscaling.** On a colour TFT you are not stuck with 1-bit nearest-neighbour. Upscale the 128×48 bitmap at 2.5× or 3.75× with grayscale interpolation and it reads as clean type rather than blocky pixels — which unlocks *full panel width* on any panel. This is the single highest-value rendering trick available on a TFT and it does not exist on a mono OLED.
+- **Buy a large, low-DPI panel.** 4.3" 480×272 is the sweet spot: 3× nearest gives 3.20", 3.75× anti-aliased gives a genuine **4.00"** — nearly double the OLED's linear size and about 3× the area.
+
+### 6.4 The DIN-MIDI caveat nobody mentions
+
+If you go the DIN route on this board, understand what you are spending: **the Deluge has one DIN MIDI OUT, and the screen stream shares those 31 250 baud with your notes and your clock.** A typical delta is 50–90 bytes ≈ 16–29 ms of wire time; a full-frame resync is 64–128 ms. Injecting that into the same port that clocks your drum machine will produce audible timing jitter. It's fine on a bench, or if you don't use DIN MIDI for anything else. It is not fine in a live rig. On USB the mirror rides its own pipe and this problem does not exist.
+
+### 6.5 What to buy instead
+
+**If you want the all-in-one convenience of a CYD:** get an **ESP32‑S3** board of the same class — the Guition **JC4827W543** (4.3", 480×272, ESP32‑S3, 8 MB PSRAM, 16 MB flash, capacitive touch) or **JC3248W535** (3.5", 320×480). Per §6.3, the 4.3" 480×272 is the size winner.
+
+> ⚠️ **Verify the USB before ordering.** Many ESP32-S3 display boards route *only* a CH340 serial bridge to their USB socket and leave the chip's native USB unrouted — the Sunton ESP32‑S3 4.3" is reported to do exactly that. What you want is a board with **two USB sockets, one of them a native USB‑OTG jack**. Failing that, check that **GPIO19 (D−) and GPIO20 (D+)** are free on a header: a USB‑A socket plus a 5 V VBUS switch is then a four-wire mod.
+
+**If you'd rather keep it simple:** an ESP32‑S3 devkit with two USB ports (~€8) plus a plain 4.3"/3.5" SPI TFT (~€8–12). More wiring, fewer surprises, and the native USB port is unambiguously yours.
+
+**And still buy one 2.42" SSD1309 SPI OLED (~€10)** for comparison. It maps 1:1 with a `memcpy`, it is the authentic look, and per §6.3 it is not actually smaller than the mid-size TFTs. Deciding between "authentic mono" and "big colour with touch" is a thirty-minute experiment once both are on the bench, and it is not a decision worth making from a spec sheet.
+
+### 6.6 Checklist for any display you consider
+
+1. **Does the MCU have USB‑OTG?** ESP32‑S3, S2 or P4 — **not** classic ESP32/WROOM‑32. This is the pass/fail gate.
+2. **Is the native USB reachable?** Two USB sockets, or GPIO19/20 free.
+3. **Panel pitch × scale** — run the §6.3 arithmetic before believing the inch count.
+4. **SPI, not I²C** for mono OLEDs (many 2.42" modules ship strapped for I²C and need a 0 Ω resistor moved).
+5. **Touch**, if you want the XY-pad feature — resistive is fine for one finger, capacitive for gestures.
+
+Two practical notes carried over: a static menu on a **mono OLED** for hours is the burn-in worst case, so honour the firmware screensaver (`oled.cpp:373‑390`) and add a dimming timeout; and on any **SPI TFT**, only push the rows the delta actually touched — a `start`/`len` pair of 8-row pages at 2× is ~16 kB, about 3 ms at 40 MHz, so 30 fps+ is comfortable even without PSRAM.
 
 ## 7. Bill of materials (single unit)
 
 | Item | ~Cost |
 |---|---|
-| ESP32‑S3 devkit, **N16R8 (PSRAM)**, dual USB (native + UART) | €8–12 |
+| ESP32‑S3 devkit, **N16R8 (PSRAM)**, dual USB (native + UART) — *classic ESP32 boards such as the CYD will not work, see §6.2* | €8–12 |
 | 2.42" SSD1309 128×64 SPI OLED | €9–14 |
+| *or* 4.3" 480×272 SPI/RGB TFT with touch, or an ESP32‑S3 CYD‑class board that already carries one | €15–30 |
 | 18650 cell + holder + charge/boost (TP4056 + 5 V boost, or IP5306) | €6–10 |
 | USB‑A receptacle breakout / OTG pigtail, VBUS switch | €2–4 |
 | Rotary encoder + 2 buttons (optional local UI) | €3 |
@@ -272,6 +315,7 @@ Neither is ESP32 firmware — both are browser apps. **You are porting protocol 
 
 | Risk | Severity | Mitigation |
 |---|---|---|
+| Buying a board whose MCU has no USB‑OTG (classic ESP32 / WROOM‑32, e.g. any 2432Sxxx CYD) | 🔴 High | Hard blocker — no workaround; the soft-USB-host hack is low-speed HID only. Gate every board purchase on §6.6 item 1. |
 | ESP32 USB‑MIDI host library drops SysEx (CIN 0x4–0x7) | 🔴 High | Milestone 1 exists to find this immediately. Worst case, drive ESP‑IDF's USB Host stack directly — it's ~300 lines for a bulk‑endpoint MIDI class driver. |
 | Deluge host stack rejects your device descriptor (Option A only) | 🟠 Med | Prototype early; or switch to Option B, which sidesteps it entirely. |
 | VBUS contention at Deluge boot (Option B) | 🟠 Med | Proper VBUS load switch / e‑fuse. Don't hard-tie the rails. |
@@ -294,11 +338,12 @@ Neither is ESP32 firmware — both are browser apps. **You are porting protocol 
 
 ## 12. Bottom line
 
-The feasibility question is settled: **the Deluge streams its own screen over a documented SysEx endpoint, in a byte layout that is already the native format of the exact display panel you want to use.** An ESP32‑S3 that speaks USB‑MIDI host, decodes one RLE scheme, and blits 768 bytes is the entire minimum product — a weekend or two of work, not a research project.
+The feasibility question is settled: **the Deluge streams its own screen over a documented SysEx endpoint, in a byte layout that is already the native format of any SSD1306‑family mono OLED.** An ESP32‑S3 that speaks USB‑MIDI host, decodes one RLE scheme, and blits 768 bytes is the entire minimum product — a weekend or two of work, not a research project.
 
-The two things worth deciding before you order parts:
+Three things to settle before you order parts:
 
-1. **Which side hosts USB** — Option B (ESP32 as host) is the better product; Option A is the faster prototype. You can start on A and migrate.
-2. **Mono OLED or colour TFT** — buy one of each for €20 and settle it empirically.
+1. **The chip, before anything else.** ESP32‑**S3** (or S2/P4). A classic ESP32 has no USB‑OTG and cannot reach the Deluge at all — which is why the 3.2" CYD in §6 is out despite being a perfectly good screen.
+2. **Which side hosts USB** — Option B (ESP32 as host) is the better product; Option A is the faster prototype. You can start on A and migrate.
+3. **Mono OLED or colour TFT** — buy one of each for €20 and settle it empirically. Run the §6.3 arithmetic first: a bigger inch count does not mean a bigger Deluge screen, and anti-aliased fractional upscaling on a TFT is worth more than any integer scale factor.
 
 And the thing that actually makes this worth building for a 7‑segment Deluge is not the screen. It's `Emulated Display` + `02 00 04`.
