@@ -15,7 +15,7 @@
 | Does it work on a **7‑segment** Deluge? | **Yes, and this is the killer feature.** The community firmware has an `Emulated Display` setting that makes a 7SEG unit render the *full 128×48 graphical OLED UI* into RAM. That buffer is what gets streamed over SysEx. A 7SEG Deluge can therefore drive a real graphical external screen. |
 | Screen 1 — Sunton **ESP32‑2432S032** (3.2" CYD) | **No — wrong chip.** A *classic* ESP32‑WROOM‑32: no USB‑OTG at all, so it cannot speak USB MIDI in either direction. Good panel, unreachable Deluge. §6.0 |
 | Screen 2 — Guition **JC4827W543** (4.3", 480×272) | **Yes — buy this one**, once you've confirmed the listing's "LX6 / 520K RAM" is the stale copy-paste it appears to be. Real board is an ESP32‑S3‑WROOM‑1‑N4R8: native USB on its Type‑C, a plug-in console UART, and an exact 3.75× fit. §6.3 |
-| Is there a better board? | **On paper yes, in practice no.** The Waveshare ESP32‑S3‑Touch‑LCD‑5 has 4× the flash and a 4.58" mirror, but its RGB panel has no frame RAM and burns 46 MB/s of PSRAM bandwidth forever — against a delta-driven protocol and a QSPI panel that costs nothing when nothing changes. §6.4 |
+| Is there a better board? | **Four alternatives evaluated; the answer is still no.** Waveshare ‑5 (4.58", 16 MB) pays 46 MB/s of PSRAM bandwidth forever to an RGB panel with no frame RAM. Guition JC3248W535C (16 MB) shrinks the mirror to 3.11" and loses partial refresh. ITEAD ONX3248G035 has a CH340K and **no USB‑OTG connector at all**. §6.4 |
 | Effort for a working prototype | ~2–3 weekends for the core mirror (USB‑MIDI host + SysEx + OLED). Weeks more for Wi‑Fi UI / BLE MIDI / file manager parity. |
 | Parts cost | ~€30–40 per unit in single quantities. |
 | Legal risk | Low. Deluge firmware is GPLv3, DEx and Deluge‑Synth‑Editor are MIT. Don't copy OVERFIT branding/assets; the protocol is not theirs. |
@@ -345,6 +345,41 @@ The 1024×600 option is tempting for a different reason — **1024 ÷ 128 = exac
 **Choose the Waveshare ESP32‑S3‑Touch‑LCD‑5 instead if** you specifically want a bigger screen (4.58" vs 4.00", ~15% linear), you want 16 MB of flash, or you want official schematics. Budget time for RGB bounce-buffer tuning, and plan a console: bring UART0 out on GPIO43/44, because there is no header for it and the native USB will be busy.
 
 **Choose the 7" only if** the box lives on a desk rather than on the Deluge. A 6.41" mirror is spectacular; a 7" panel next to a Deluge is furniture.
+
+#### The two 3.5" 320×480 candidates (and why 16 MB isn't the deciding vote)
+
+Both of these fix the JC4827W543's flash constraint. Only one of them can talk to the Deluge.
+
+| | **Guition JC3248W535C_I_Y** | **ITEAD ONX3248G035 "Open Nextion"** |
+|---|---|---|
+| MCU | ESP32‑S3‑WROOM‑1 **N16R8** | ESP32‑S3**R8** |
+| Flash / PSRAM | **16 MB** / 8 MB | **16 MB** / 8 MB |
+| Panel | 3.5" 320×480 IPS, **AXS15231B QSPI** (own GRAM) | 3.5" 320×480, **ST7796** (own GRAM), 262K colours, 300 nits |
+| Touch | capacitive, **integrated into the AXS15231B** | CST826 capacitive |
+| USB | Type‑C, no CH340 reported — very likely native | 🔴 **CH340K bridge; no USB‑OTG connector exposed** |
+| Console | 2 × 4‑pin JST (1.25 mm and 1.00 mm), 2 GPIO each | 4‑pin UART0 + Grove UART1 |
+| Extras | TF slot, LiPo charging, ~12 free GPIO | camera FPC, PDM mic array, speaker, RTC, battery, IPEX antenna, microSD, Grove |
+| Price | ~$11–18 | $34.90 (promo ~$22.90) |
+| **Mirror size** | **3.11"** @3.75× | **3.11"** @3.75× |
+
+**ONX3248G035 — out, and for a new reason.** CNX Software's review is explicit: a *"CH340K USB-to-UART"* handles programming, *"this is NOT the native ESP32‑S3 USB interface, and there is no USB OTG connector exposed"* — the reviewer lists *"limits USB peripheral support"* among the board's drawbacks. This is the CYD failure mode with a twist: the chip has USB‑OTG, the board just never brings it to a connector. Unless GPIO19/20 turn out to be on the 14‑pin FPC or the 20‑pin header, it cannot host, and hand-wiring a USB‑A socket to an FPC breakout is not a nice place to start a project. Everything else about it is excellent — real vendor documentation, camera/mic/speaker/RTC/battery, Grove connectors — which makes it a **very good Wi‑Fi second screen for milestone 6**, and a poor bridge.
+
+**JC3248W535C_I_Y — a real contender, with two costs.**
+
+1. **The mirror is 3.11", not 4.00".** Same 3.75× full-width fit, but the 3.5" panel's pitch is 0.154 mm against the 4.3" panel's 0.198 mm. That's **78% of the linear size and 60% of the area**. It does leave more spare screen — 140 of 320 rows (44%) versus 92 of 272 (34%) — so there's more room for an XY pad.
+2. **Partial refresh is reportedly broken on the AXS15231B** ("only works in LVGL full-refresh mode"), and **hardware rotation is unavailable** — 0°/180° in software only, on a panel that is natively portrait. So every update costs a full 320×480 frame *plus* a software transpose to get landscape. The flush itself is cheap (307 kB at QSPI 40–80 MHz is 15.4–7.7 ms), but you lose the delta advantage that makes this protocol pleasant, and you add a per-frame rotate. Workable — 40–60 fps — just more work per frame than the 4.3" board, whose NV3041A is natively 480×272 landscape at 0° with partial addressing that works.
+
+**And on the 16 MB itself:** be clear about what it buys. An ESP‑IDF app with Wi‑Fi, a USB host stack, `esp_lcd` and a small web UI lands around 1.2–2 MB. On 4 MB, a single-app partition leaves 3 MB+ (plenty) and a dual‑OTA layout leaves ~1.5–1.9 MB per slot (tight but workable). 16 MB removes the worry entirely and gives you a LittleFS partition for web assets, fonts and presets. **It's a comfort upgrade, not a capability one** — and it shouldn't outrank a 29% bigger mirror, a natively-landscape panel, and working partial refresh.
+
+#### So, three coherent choices
+
+| If you want… | Buy | You get | You accept |
+|---|---|---|---|
+| **The biggest mirror on a delta-friendly panel** | **Guition JC4827W543C** | 4.00", QSPI + GRAM, native landscape, partial refresh, JST1.25 console | 4 MB flash |
+| Maximum flash while keeping QSPI | Guition JC3248W535C_I_Y | 3.11", 16 MB, integrated touch, LiPo charging | Full-refresh only, software rotation, smaller image |
+| Biggest mirror *and* 16 MB | Waveshare ESP32‑S3‑Touch‑LCD‑5 | 4.58", 16 MB, official schematics | RGB bandwidth (46 MB/s), no console UART header, ~3× the price |
+
+The recommendation is unchanged: **JC4827W543C**. The 3.5" boards are the right answer only if you specifically need the flash headroom more than the screen.
 
 #### Two boards worth knowing about, neither a main recommendation
 
