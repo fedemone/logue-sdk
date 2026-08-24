@@ -67,3 +67,8 @@ tools/gcc/gcc-arm-none-eabi-*
 
 # Mac ds_store
 **/.DS_Store
+# deluge-companion/ is its own separate git repository (a different,
+# unrelated project — see https://github.com/fedemone/deluge-companion),
+# checked out here only as a workspace convenience. It is intentionally not
+# part of logue-sdk's history.
+deluge-companion/
