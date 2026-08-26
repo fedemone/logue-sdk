@@ -96,15 +96,19 @@ fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
     float drive = drive_percent * 0.01f;
     wf->drive = vdupq_n_f32(drive);
 
-    // Makeup compensates the input drive gain instead of repeating it.
-    // wavefolder_process pushes the signal in by g = 1 + 19*drive; a makeup of
-    // g as well made the total gain g^2 (up to +52 dB at DRIVE=100), which
-    // slammed everything into the output limiter and turned DRIVE into a
-    // loudness control.  1/sqrt(g) splits the difference between exact
-    // compensation (1/g, which makes saturated material collapse in level) and
-    // no compensation at all, keeping the whole knob range within ~13 dB.
-    // Q_rsqrt is within 0.015 dB over g = 1..20, well below audibility.
-    wf->output_gain = vdupq_n_f32(Q_rsqrt(1.0f + drive * 19.0f));
+    // No makeup. The original bug here was applying the drive gain a second
+    // time as makeup, making the total g^2 (+52 dB at DRIVE=100); the fix for
+    // that is to apply it once, not to compensate it back out.
+    //
+    // The 1/sqrt(g) compensation that stood here overshot in the other
+    // direction. Every shaper saturates at +/-1, so scaling the output by
+    // 1/sqrt(g) scales the *ceiling* too: peak output fell to 0.224 at
+    // DRIVE=100 while the harmonic saturators, which carry no makeup, reached
+    // 1.000. Driving harder made these five modes quieter -- measured on a drum
+    // bus, Sine sat 15.3 dB below DstrDist=Off at DRIVE=100 and Soft 13.0 dB
+    // below. At unity the family matches: the spread across all nine types
+    // closes to about 3 dB there.
+    wf->output_gain = vdupq_n_f32(1.0f);
 }
 
 /**
