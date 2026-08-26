@@ -26,7 +26,11 @@ const __unit_header unit_header_t unit_header = {
         // 0.00 -> 0.33 : Expansion (Slope +3.0 down to 0.0)
         // 0.33 -> 0.66 : Compression (Slope 0.0 down to -1.0 limit)
         // 0.66 -> 1.00 : Negative Compression (Slope -1.0 down to -2.0 reverse)
-        { 1, 100, 10, 40, k_unit_param_type_none, 2, 1, 0, {"SLOPE"} },
+        // Typed as strings so getParameterStrValue is consulted: this knob means
+        // something different in each mode and the raw 0.01..1.00 readout showed
+        // none of it. Standard/Multiband now read "Exp 1.5" / "2.0:1" / "Limit" /
+        // "Rev 1.5", and Distressor reads its eight ratio steps by name.
+        { 1, 100, 10, 40, k_unit_param_type_strings, 2, 1, 0, {"SLOPE"} },
         // ID 2: ATTACK  1..1000 ms  (x0.1 ms, stored 1..1000)
         { 1, 1000, 1, 150, k_unit_param_type_msec, 1, 1, 0, {"ATTACK"} },
         // ID 3: RELEASE 10..2000 ms

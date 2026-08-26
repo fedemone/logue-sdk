@@ -708,15 +708,17 @@ public:
                 // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=SoftClip, 5=HardClip, 6=Tri, 7=Sine, 8=SubOct)
                 if (value >= 0 && value < DIST_MODE_TOTAL) {
                     distressor_.dist_mode = value;
-
-                    // Enable/disable detector HPF based on mode
-                    if (value > DIST_MODE_BOTH) {
-                        // Wavefolder removes low frequencies from the detector path
-                        distressor_.detector_mode |= DETECT_HPF;
+                    if (value > DIST_MODE_BOTH)
                         wavefolder_set_drive_type(&wavefolder_, value);
-                    } else {
-                        distressor_.detector_mode &= ~DETECT_HPF;
-                    }
+
+                    // The detector's 100 Hz HPF used to switch in here, on the
+                    // wavefolder modes only. That made the distortion selector
+                    // change the compression: on a kick-heavy bus the detector
+                    // lost most of its energy, gain reduction backed off, and
+                    // selecting Soft or Hard jumped the output 4 dB even at
+                    // DRIVE=0. Detector shaping belongs to DETECT (which offers
+                    // Emph for exactly this), not to the distortion type, so
+                    // the flag is left alone here.
                 }
                 break;
 
@@ -745,8 +747,9 @@ public:
                 use_external_sc_ = (value & 4) ? 1 : 0;
                 if (comp_mode_ == COMP_MODE_DISTRESSOR) {
                     // Distressor detector flags bitmask: 0=Basic, 1=Emph, 2=Link, 3=Emph+Link
-                    // Preserve DETECT_HPF — it is set separately by k_distressor_distortion_type.
-                    distressor_.detector_mode &= DETECT_HPF;
+                    // DETECT owns the whole detector now, DstrDist no longer
+                    // reaches in to set DETECT_HPF behind its back.
+                    distressor_.detector_mode = DETECT_NONE;
                     if (value & 1) distressor_.detector_mode |= DETECT_BAND_EMPH;
                     if (value & 2) distressor_.detector_mode |= DETECT_LINK;
                 } else {

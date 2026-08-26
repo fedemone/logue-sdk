@@ -602,9 +602,11 @@ static void section_quirks() {
     }
 
     hdr("G4. WAVEFOLDER GAIN LAW (Hard clip, in -60 dBFS so the shaper stays\n"
-        "    linear).  Pre-gain is g = 1+19d and makeup is 1/sqrt(g), so the net\n"
-        "    small-signal gain is sqrt(g): +13 dB across the knob, not +52 dB.");
-    printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "sqrt(g) dB", "delta");
+        "    linear).  The drive gain g = 1+19d is applied once and not\n"
+        "    compensated: +26 dB across the knob.  It was applied twice (g^2,\n"
+        "    +52 dB), and then over-corrected with a 1/sqrt(g) makeup that\n"
+        "    scaled the saturated ceiling down with it -- see G4b.");
+    printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "g dB", "delta");
     for (int drv : {0, 5, 10, 25, 50, 75, 100}) {
         Params p = headerDefaults();
         p.v[k_compressor_mode] = 1;
@@ -614,8 +616,32 @@ static void section_quirks() {
         p.v[k_drive]           = drv;
         apply(p);
         double m  = measure(0.001, F0, SETTLE, MEAS).gain_fund_db;
-        double th = 10.0 * log10(1.0 + 19.0 * (drv * 0.01));
+        double th = 20.0 * log10(1.0 + 19.0 * (drv * 0.01));
         printf("   %6d %+12.2f %+14.2f %+8.2f\n", drv, m, th, m - th);
+    }
+
+    hdr("G4b. SATURATED CEILING PER TYPE (in -6 dBFS, ratio 1:1).  Every shaper\n"
+        "     saturates at +/-1, so any makeup scales the ceiling as well as the\n"
+        "     small-signal gain.  Under the old 1/sqrt(g) law the five wavefolder\n"
+        "     modes peaked at 0.224 at DRIVE=100 while the harmonic saturators,\n"
+        "     which carry no makeup, reached 1.000 -- driving harder made those\n"
+        "     five quieter.  The peaks must now stay in family across the row.");
+    printf("   %-8s", "DRIVE");
+    for (int t = 0; t < 9; ++t) printf(" %7s", DIST_NAME[t]);
+    printf("\n");
+    for (int drv : {0, 25, 50, 100}) {
+        printf("   %-8d", drv);
+        for (int t = 0; t < 9; ++t) {
+            Params p = headerDefaults();
+            p.v[k_compressor_mode] = 1;
+            p.v[k_slope]           = distressorSlopeRaw(0);
+            p.v[k_threhold]        = 0;
+            p.v[k_distressor_distortion_type] = t;
+            p.v[k_drive]           = drv;
+            apply(p);
+            printf(" %7.3f", measure(0.5, F0, SETTLE, MEAS).peak);
+        }
+        printf("\n");
     }
 
     hdr("G5. PARAMETER ORDER: a host replaying IDs 0..23 sets SLOPE (1) before\n"
