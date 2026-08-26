@@ -28,6 +28,19 @@
 static const float SR  = 48000.0f;
 static const int   BLK = 64;          // drumlogue render block size
 
+// Is this float an infinity or a NaN?
+//
+// Asked on the exponent bits, not with std::isfinite, because this suite is
+// also built with -ffast-math to match how the unit ships — and that implies
+// -ffinite-math-only, under which std::isfinite(x) folds to a constant true.
+// Every finiteness assertion below was passing vacuously in that build, which
+// is precisely the build where the engine's own guards need checking.
+static bool notFinite(float x) {
+    uint32_t u;
+    memcpy(&u, &x, sizeof u);
+    return (u & 0x7F800000u) == 0x7F800000u;
+}
+
 static int g_failures = 0;
 static int g_checks   = 0;
 
@@ -99,7 +112,7 @@ static Render render(int preset, const int* overrides, float seconds, bool patte
         rv.process(&iL[i], &iR[i], &out.L[i], &out.R[i], BLK);
 
     for (int i = 0; i < N; i++) {
-        if (!std::isfinite(out.L[i]) || !std::isfinite(out.R[i])) { out.finite = false; break; }
+        if (notFinite(out.L[i]) || notFinite(out.R[i])) { out.finite = false; break; }
         out.peak = fmaxf(out.peak, fmaxf(fabsf(out.L[i]), fabsf(out.R[i])));
     }
     return out;
@@ -404,7 +417,7 @@ static void test_block_size_equivalence() {
                 rv.process(&iL[i], &iR[i], &oL[i], &oR[i], blk[v]);
 
             for (int i = 0; i < N; i++) {
-                if (!std::isfinite(oL[i]) || !std::isfinite(oR[i])) { finite = false; break; }
+                if (notFinite(oL[i]) || notFinite(oR[i])) { finite = false; break; }
                 rms[v] += (double)oL[i] * oL[i] + (double)oR[i] * oR[i];
                 peak[v] = fmaxf(peak[v], fmaxf(fabsf(oL[i]), fabsf(oR[i])));
             }
@@ -570,7 +583,7 @@ static Render renderTempo(int division, float bpm, bool syncFirst, float seconds
     for (int i = 0; i + BLK <= N; i += BLK)
         rv.process(&iL[i], &iR[i], &out.L[i], &out.R[i], BLK);
     for (int i = 0; i < N; i++) {
-        if (!std::isfinite(out.L[i]) || !std::isfinite(out.R[i])) { out.finite = false; break; }
+        if (notFinite(out.L[i]) || notFinite(out.R[i])) { out.finite = false; break; }
         out.peak = fmaxf(out.peak, fmaxf(fabsf(out.L[i]), fabsf(out.R[i])));
     }
     return out;
@@ -837,6 +850,16 @@ static void test_settings_apply_immediately_when_silent() {
 static void test_watchdog_recovers_from_poisoned_state() {
     printf("\n[watchdog] a poisoned delay line recovers instead of wedging\n");
 
+    // Each kind of poison on its own. Seeding both at once let either guard
+    // cover for the other: the engine's threshold test catches an infinity and
+    // then clear() wipes the NaN with it, so a NaN check that had stopped
+    // working still looked fine.
+    struct { const char* what; float value; } poisons[] = {
+        { "NaN",      NAN      },
+        { "infinity", INFINITY },
+        { "runaway",  1e34f    },
+    };
+    for (auto& poison : poisons)
     for (int p = 0; p < k_preset_number; p++) {
         static NeonAdvancedLabirinto rv;
         rv = NeonAdvancedLabirinto();
@@ -850,10 +873,18 @@ static void test_watchdog_recovers_from_poisoned_state() {
         const int poisonAt = (int)(1.0f * SR);
         for (int i = 0; i + BLK <= N; i += BLK) {
             if (i <= poisonAt && i + BLK > poisonAt) {
-                // Whatever the cause would have been, this is the state it lands in.
+                // Whatever the cause would have been, this is the state it lands
+                // in. It has to be planted where the read heads are about to
+                // arrive: this used to write at rv.writePos, which is the one
+                // place writeDelayLines4 overwrites on the very next block, so
+                // the poison was gone before anything could read it and the
+                // check passed no matter what the watchdog did.
                 for (int c = 0; c < FDN_CHANNELS; c++) {
-                    rv.delayLine[rv.writePos].samples[c] = NAN;
-                    rv.delayLine[(rv.writePos + 7) & BUFFER_MASK].samples[c] = INFINITY;
+                    const int d = (int)(rv.delayTimes[c] * SR);
+                    for (int k = 0; k < 2 * BLK; k++) {
+                        const uint32_t at = (uint32_t)(rv.writePos - d + k) & BUFFER_MASK;
+                        rv.delayLine[at].samples[c] = poison.value;
+                    }
                 }
             }
             rv.process(&iL[i], &iR[i], &oL[i], &oR[i], BLK);
@@ -861,7 +892,7 @@ static void test_watchdog_recovers_from_poisoned_state() {
 
         bool anyBad = false;
         for (int i = 0; i < N; i++)
-            if (!std::isfinite(oL[i]) || !std::isfinite(oR[i])) { anyBad = true; break; }
+            if (notFinite(oL[i]) || notFinite(oR[i])) { anyBad = true; break; }
 
         // And it must come back, not sit silent for ever after.
         double after = 0.0;
@@ -870,8 +901,8 @@ static void test_watchdog_recovers_from_poisoned_state() {
         after = sqrt(after / (2 * (N - from)));
 
         char buf[160];
-        snprintf(buf, sizeof(buf), "(%s: output stayed finite, rms %.4f one second later)",
-                 k_preset_names[p], after);
+        snprintf(buf, sizeof(buf), "(%s, %s: output stayed finite, rms %.4f one second later)",
+                 k_preset_names[p], poison.what, after);
         check(!anyBad && after > 0.01, "recovers from a poisoned delay line", buf);
     }
 }
@@ -966,6 +997,117 @@ static void test_no_preset_self_oscillates() {
     }
 }
 
+// A send effect returns wet. If the output correlates with its own input at a
+// short lag then some of the input is arriving unprocessed, and because the two
+// injection points both sit in the left bank it arrives on one side only. That
+// is what made the unit sound like it only reached one speaker: the left channel
+// was mostly a copy of the dry signal and the right carried the actual reverb.
+static void test_no_dry_leak_into_the_wet_output() {
+    printf("\n[wet] the output is the tail, not a copy of the input\n");
+
+    for (int p = 0; p < k_preset_number; p++) {
+        static NeonAdvancedLabirinto rv;
+        rv = NeonAdvancedLabirinto();
+        rv.init();
+        rv.loadPreset(p);
+
+        // White noise, so any lag that passes the input through stands out.
+        const int N = (int)(4.0f * SR);
+        std::vector<float> iL(N), iR(N), oL(N, 0.f), oR(N, 0.f);
+        for (int i = 0; i < N; i++) { float v = 0.4f * noise(); iL[i] = v; iR[i] = v; }
+        for (int i = 0; i + BLK <= N; i += BLK)
+            rv.process(&iL[i], &iR[i], &oL[i], &oR[i], BLK);
+
+        const int from = (int)(1.0f * SR);
+        double ii = 0;
+        for (int i = from; i < N; i++) ii += (double)iL[i] * iL[i];
+
+        double worst = 0.0;
+        for (int lag = 0; lag < (int)(0.040f * SR); lag++) {
+            double cl = 0, cr = 0, ol = 0, orr = 0;
+            for (int i = from; i < N; i++) {
+                cl += (double)oL[i] * iL[i - lag];  cr  += (double)oR[i] * iL[i - lag];
+                ol += (double)oL[i] * oL[i];        orr += (double)oR[i] * oR[i];
+            }
+            worst = fmax(worst, fabs(cl) / sqrt(ol * ii + 1e-30));
+            worst = fmax(worst, fabs(cr) / sqrt(orr * ii + 1e-30));
+        }
+
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(%s: %.3f)", k_preset_names[p], worst);
+        // A diffuse tail decorrelates from its own excitation; anything above a
+        // few percent is the input itself coming through.
+        check(worst < 0.10, "no undelayed input in the wet output", buf);
+    }
+}
+
+// Neither speaker may be systematically quieter than the other. Ping-pong is
+// allowed — required, even — to swing hard from side to side; what it may not do
+// is spend a whole part favouring one of them.
+static void test_channels_are_balanced() {
+    printf("\n[balance] neither side is systematically quieter\n");
+
+    // Every preset at its defaults, and every routing mode, over a played part.
+    for (int p = 0; p < k_preset_number; p++) {
+        Render r = render(p, nullptr, 8.0f, true);
+        double eL = 0, eR = 0;
+        for (size_t i = 0; i < r.L.size(); i++) {
+            eL += (double)r.L[i] * r.L[i]; eR += (double)r.R[i] * r.R[i];
+        }
+        const double db = 10.0 * log10((eR + 1e-30) / (eL + 1e-30));
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(%s: %+.2f dB)", k_preset_names[p], db);
+        check(fabs(db) < 3.0, "the two channels carry the same energy", buf);
+    }
+
+    for (int pill = 0; pill <= 4; pill++) {
+        int ovr[k_total]; allDefaults(ovr);
+        ovr[k_pill] = pill;
+        Render r = render(0, ovr, 8.0f, true);
+        double eL = 0, eR = 0;
+        for (size_t i = 0; i < r.L.size(); i++) {
+            eL += (double)r.L[i] * r.L[i]; eR += (double)r.R[i] * r.R[i];
+        }
+        const double db = 10.0 * log10((eR + 1e-30) / (eL + 1e-30));
+        char buf[160];
+        snprintf(buf, sizeof(buf), "(PILL=%d: %+.2f dB)", pill, db);
+        check(fabs(db) < 3.0, "the two channels carry the same energy", buf);
+    }
+
+    // The case the alternation exists for: the bounce is often locked to the
+    // tempo and the source is a drum machine, so hits land on an exact multiple
+    // of the bounce time. A handover scheme that keeps step with that puts every
+    // hit into the same bank, and one side stays quiet all the way through.
+    // Measured at +16.9 dB before the handover interval and the bank were both
+    // drawn fresh each time.
+    for (int bnce : {190, 250, 300, 500}) {
+        for (float beats : {2.0f, 4.0f}) {
+            static NeonAdvancedLabirinto rv;
+            rv = NeonAdvancedLabirinto();
+            rv.init();
+            rv.loadPreset(2);
+            rv.setParameter(k_bounce, bnce);
+
+            const float interval = bnce * 0.001f * beats;
+            const int N = (int)(20.0f * SR);
+            std::vector<float> iL(N, 0.f), iR(N, 0.f), oL(N, 0.f), oR(N, 0.f);
+            for (float t = 0.05f; t < 19.0f; t += interval) hit(iL, iR, (int)(t * SR), true);
+            for (int i = 0; i + BLK <= N; i += BLK)
+                rv.process(&iL[i], &iR[i], &oL[i], &oR[i], BLK);
+
+            double eL = 0, eR = 0;
+            for (int i = (int)SR; i < N; i++) {
+                eL += (double)oL[i] * oL[i]; eR += (double)oR[i] * oR[i];
+            }
+            const double db = 10.0 * log10((eR + 1e-30) / (eL + 1e-30));
+            char buf[160];
+            snprintf(buf, sizeof(buf), "(BNCE=%d, a hit every %.0f bounces: %+.2f dB)",
+                     bnce, beats, db);
+            check(fabs(db) < 4.0, "the bounce does not lock to the note grid", buf);
+        }
+    }
+}
+
 int main() {
     printf("NeonAdvancedLabirinto host tests\n");
     test_matrices();
@@ -984,6 +1126,8 @@ int main() {
     test_watchdog_recovers_from_poisoned_state();
     test_colour_peak_gain_is_not_understated();
     test_no_preset_self_oscillates();
+    test_no_dry_leak_into_the_wet_output();
+    test_channels_are_balanced();
 
     printf("\n%d checks, %d failed\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

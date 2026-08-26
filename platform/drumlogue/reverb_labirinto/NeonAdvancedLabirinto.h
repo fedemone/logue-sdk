@@ -66,6 +66,19 @@
 // only has to outrun the ear's click threshold.
 #define GAIN_SLEW_COEFF (0.008f)
 
+// How fast the ping-pong input hands over from one bank to the other, applied
+// once per 4-sample block. This one has to settle well inside a single bounce —
+// at the fastest bounce (60 ms) that is 720 blocks, so a ~4 ms handover spends
+// 93% of the period committed to one side. Slower and both banks are fed at
+// once and the alternation washes out; faster and the handover is a step.
+#define BANK_SWING_COEFF (0.02f)
+
+// Bounce times per input-bank handover, redrawn at every handover. The range is
+// centred a little above one bounce and is wide enough that no note grid can
+// stay in step with it. See slewGains().
+#define BANK_SWING_MIN (0.7f)
+#define BANK_SWING_MAX (1.6f)
+
 // Ceiling on how fast a delay length may move, in samples per sample. The read
 // pointer runs at (1 - this) to (1 + this) times normal speed while a delay
 // glides, so 0.5 bounds the tape bend to an octave down / a fifth up and keeps
@@ -88,6 +101,27 @@
 // modulation depth (at most 18 samples, from the esotico shimmer path). If that
 // ever exceeded the ring buffer the read would wrap past the write head and
 // replay stale audio, so pin the relationship here rather than trusting it.
+/**
+ * Is this float an infinity or a NaN?
+ *
+ * Asked through the exponent bits rather than a comparison, because this unit
+ * is built with -ffast-math (see the platform Makefile) and that implies
+ * -ffinite-math-only: the compiler is then entitled to assume no operand is
+ * ever NaN or infinite, and it uses the entitlement. Compiled that way,
+ * `!(x < 1e30f)` is false for a NaN, `!(x >= 0.0f && x < k)` is false for a
+ * NaN, and `!std::isfinite(x)` is false for both a NaN and an infinity. Every
+ * float-comparison spelling of this test silently stops testing.
+ *
+ * Integer arithmetic carries no such assumption, so this keeps working. The
+ * memcpy is the well-defined spelling of the type pun and compiles to a
+ * register move.
+ */
+static inline bool isNotFinite(float x) {
+    uint32_t u;
+    memcpy(&u, &x, sizeof u);
+    return (u & 0x7F800000u) == 0x7F800000u;
+}
+
 static_assert(PINGPONG_MAX_MS * 0.001f * PINGPONG_MAX_SPREAD * 48000.0f + 64.0f
                   < (float)BUFFER_SIZE,
               "delay ring buffer is too small for the longest ping-pong bounce");
@@ -226,6 +260,7 @@ public:
         , pillar_(3)
         , pingPong_(false)
         , pingPongBlend(0.0f)
+        , bankSeed_(2463534242U), bankCountdown_(0.0f), bankTarget_(0.0f), bankSwing_(0.0f)
         , shimmerDepth_(0.0f)
         , targetShimmerDepth_(0.0f)
         , shimmerPhase_(0.0f)
@@ -264,10 +299,7 @@ public:
         updateDecayGains();
         snapGains();   // nothing is sounding yet, so start on the targets
 
-        // Initialize modulation phases (store full vector per channel)
         for (int i = 0; i < FDN_CHANNELS; i++) {
-	    // Initialize all 4 lanes to the same starting phase
-            modPhaseVec[i] = vdupq_n_f32(0.0f);
             filterState1[i] = 0.0f;
             filterState2[i] = 0.0f;
         }
@@ -322,19 +354,6 @@ public:
 
         writePos = 0;
 
-        // Reset modulation phases with proper per-lane offsets
-	    // lane k = k * incPerSample so sequential
-        // samples start at phase 0, inc, 2*inc, 3*inc
-        float incPerSample = modRate * M_TWOPI / sampleRate;
-        float32x4_t init_phases = {
-            0.0f,
-            incPerSample,
-            2.0f * incPerSample,
-            3.0f * incPerSample
-        };
-        for (int i = 0; i < FDN_CHANNELS; i++) {
-            modPhaseVec[i] = init_phases;
-        }
 
         memset(metalState, 0, sizeof(float) * FDN_CHANNELS);
         memset(crystalAPState, 0, sizeof(float) * FDN_CHANNELS);
@@ -791,16 +810,21 @@ public:
         }
         // Per-mode wet makeup. The dark LPF modes (wood/stone) and the noise mode
         // produce far less output than the resonant metal/crystal modes, so they
-        // are leveled up here. Crystal (esotico) already sits at a good level via
-        // its additive blend, so it is left near unity. Starting points for HW
-        // calibration.
+        // are leveled up here.
+        //
+        // Re-derived once the stereo tap stopped summing the injected input:
+        // that copy of the dry signal was a large part of what these were
+        // levelling against, so with it gone every mode came out quieter, and
+        // stone came out quieter still because PILL=2 now splits its six
+        // channels three and three instead of four and two. Measured to put the
+        // five presets within about a decibel of each other at their defaults.
         switch (filterMode) {
-            case kFilterWood:    targetOutputMakeup = 2.7f; break;  // foresta
-            case kFilterStone:   targetOutputMakeup = 2.5f; break;  // tempio (darkest)
-            case kFilterMetal:   targetOutputMakeup = 2.4f; break;  // labirinto (tamed)
-            case kFilterCrystal: targetOutputMakeup = 3.0f; break;  // esotico (good as-is)
-            case kFilterNoise:   targetOutputMakeup = 2.6f; break;  // stellare
-            default:             targetOutputMakeup = 2.0f; break;
+            case kFilterWood:    targetOutputMakeup = 3.5f; break;  // foresta
+            case kFilterStone:   targetOutputMakeup = 3.9f; break;  // tempio (darkest)
+            case kFilterMetal:   targetOutputMakeup = 2.2f; break;  // labirinto (tamed)
+            case kFilterCrystal: targetOutputMakeup = 4.2f; break;  // esotico
+            case kFilterNoise:   targetOutputMakeup = 3.2f; break;  // stellare
+            default:             targetOutputMakeup = 2.8f; break;
         }
         if (filterMode != was) {
             // Entering noise mode while something is already ringing used to slam
@@ -994,6 +1018,32 @@ public:
         smoothedLfoValue += 0.001f * (randomLfoValue - smoothedLfoValue);
     }
 
+    /**
+     * Draws for the ping-pong input-bank handover, on a generator of their own.
+     *
+     * Sharing randomFloat() with the noise source looked free and was not: the
+     * noise generator consumes a fixed number of draws per block, so a handover
+     * every N blocks samples the xorshift sequence at a fixed stride. A fixed
+     * stride through a linear generator is itself linear, and the top bit of the
+     * result came out neither fair nor aperiodic — every bounce time picked up a
+     * standing bias, up to 17 dB, that did not shrink with a longer part. An
+     * independent stream costs one word of state and one xorshift per handover,
+     * which is a few times a second.
+     */
+    inline uint32_t bankRandom() {
+        bankSeed_ ^= bankSeed_ << 13;
+        bankSeed_ ^= bankSeed_ >> 17;
+        bankSeed_ ^= bankSeed_ << 5;
+        // Avalanche the state before returning it. Each handover takes two
+        // draws — how long it lasts, then which bank — and raw xorshift32 output
+        // words are a linear function of one another, so the second draw was
+        // partly predictable from the first: long intervals kept landing on the
+        // same side, which is a standing imbalance rather than a fair coin. One
+        // multiply and a shift is enough to break that.
+        uint32_t y = bankSeed_ * 2654435761u;
+        return y ^ (y >> 15);
+    }
+
     // basic cyclic pseudo-random values
     float randomFloat() {
         noiseSeed ^= noiseSeed << 13;
@@ -1164,126 +1214,88 @@ public:
 
 private:
     /*===========================================================================*/
-    /* OPTIMIZED: vld4-based delay line reading with vectorized interpolation */
+    /* Delay line reads, with the swirl/shimmer modulation applied to the read   */
+    /* pointer.                                                                  */
+    /*                                                                           */
+    /* This is the most expensive stage in the callback — it was 27% of the       */
+    /* instructions before the two changes below — and unlike the filter and      */
+    /* matrix stages it does not get four times cheaper on NEON, because every    */
+    /* channel reads a different part of the buffer at a different offset. That   */
+    /* makes it the place where saved work is actually worth something.           */
     /*===========================================================================*/
     void readDelayLines4(float32x4_t* out) {
-        // Calculate base read positions for all 4 samples
-        float32x4_t baseReadPos = {
-            (float)writePos,
-            (float)(writePos + 1),
-            (float)(writePos + 2),
-            (float)(writePos + 3)
-        };
-        float32x4_t mods[FDN_CHANNELS];
-        // DELAY READ POINTER CALCULATIONS
-        float32x4_t readPositions[FDN_CHANNELS];
-        uint32_t baseIndices[FDN_CHANNELS][NEON_LANES];
-        float fracParts[FDN_CHANNELS][NEON_LANES];
+        // ------------------------------------------------------------------
+        // 1. Modulation: one sine per channel per block, not four.
+        //
+        // The old code built a four-lane phase ramp per channel and called
+        // sin_ps on it — eight vector sines per four output samples, two per
+        // sample, to track an LFO running below 10 Hz. Over one block that
+        // ramp moves the read pointer by at most 0.04 samples at the most
+        // extreme rate and depth the controls allow, which is a third of what
+        // the interpolation itself can even represent. So evaluate the sine
+        // once per channel at the block's phase and hold it for the block.
+        //
+        // Eight scalars are two vectors, so the whole network's modulation now
+        // costs two sin_ps calls per block instead of eight.
+        // ------------------------------------------------------------------
+        const bool  microtonal = (currentPreset == k_esotico);
+        const float swirlDepth = (filterMode == kFilterCrystal) ? modDepth * 10.0f
+                                                                : modDepth * 4.7f;
+        const float shimDepth  = shimmerDepth_ * 45.0f;  // deep, slow microtonal stretch
 
-        // ====================================================================
-        // DYNAMIC NEON MODULATION (SWIRL & COCHRANE SHIMMER)
-        // ====================================================================
-
+        float angles[FDN_CHANNELS] __attribute__((aligned(16)));
+        float mods[FDN_CHANNELS]   __attribute__((aligned(16)));
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            // Rates are normalised phase per sample. swirlRate_ is 0.2-0.9 Hz
+            // over the sample rate; the default used to be a literal 0.5 — half
+            // a cycle per sample, an LFO at Nyquist, which is not a swirl but a
+            // +-1 sample alternation on the read pointer.
+            const float rate = microtonal ? microtonalRate_[ch]
+                                          : swirlRate_[ch] * (1.0f + modRate);
+            const float base = channelPhase_[ch];
+            angles[ch] = base * (float)M_TWOPI;
+            float next = base + rate * (float)NEON_LANES;
+            if (next > 1.0f) next -= 1.0f;
+            channelPhase_[ch] = next;
+        }
+        vst1q_f32(&mods[0], sin_ps(vld1q_f32(&angles[0])));
+        vst1q_f32(&mods[4], sin_ps(vld1q_f32(&angles[4])));
 
-            // 1. Select Rate and Depth based on current Mode.
-            //    Rates are in normalized phase per sample: swirlRate_ is 0.2-0.9 Hz
-            //    and microtonalRate_ is the 18-EDO set, both already divided by
-            //    the sample rate. The default used to be a literal 0.5 — half a
-            //    cycle per sample, i.e. an LFO running at Nyquist, which is not a
-            //    swirl at all but a +-1 sample alternation on the read pointer.
-            //    Every preset except esotico/stellare got that instead of chorus.
-            float current_rate  = swirlRate_[ch] * (1.0f + modRate);
-            float current_depth = modDepth * 4.7f;
+        const float depth = microtonal ? shimDepth : swirlDepth;
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) mods[ch] *= depth;
 
-            // use shimmer only on the last two presets, not available for all
-            if (currentPreset == k_esotico) {
-                // Cochrane 18-EDO Shimmer Mode
-                current_rate = microtonalRate_[ch];
-                current_depth = shimmerDepth_ * 45.0f; // Deep, slow microtonal stretch
-            }
-            // Noise mode used to overwrite the depth here with
-            // `noiseColour * 5.999f`, on the stated grounds that "modulation
-            // controls noise colour instead of delay time" — but current_depth
-            // *is* the delay modulation depth in samples, and noiseColour is
-            // already DFSN * 5.999 (setDiffusion), so the expression squared it
-            // and handed stellare up to 36 samples of undocumented delay wobble.
-            // Noise colour is set where it belongs; the swirl here is the same
-            // one every other mode gets.
-            if (filterMode == kFilterCrystal) {
-                current_depth = modDepth * 10.0f;
-            }
+        // ------------------------------------------------------------------
+        // 2. The reads themselves.
+        //
+        // Lane s reads at (writePos + s) - delay - modulation. With the
+        // modulation now constant across the block those four positions are
+        // exactly one sample apart, so a single index and a single fraction
+        // serve all four lanes — and lane s and lane s+1 share a tap, so five
+        // loads cover what used to take eight. The bias by BUFFER_SIZE before
+        // the cast avoids C++ truncation-toward-zero on negatives; one is
+        // enough and no more than enough, since the static assert at the top of
+        // this file guarantees delay + modulation < BUFFER_SIZE. A larger bias
+        // would cost precision for nothing: a float has 24 mantissa bits, so
+        // the fractional part of the read position quantises to 1/128 of a
+        // sample at BUFFER_SIZE and to 1/32 at four times it.
+        // ------------------------------------------------------------------
+        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
+            const float delaySamples = delayTimes[ch] * sampleRate;
+            const float safe = (float)writePos - delaySamples - mods[ch]
+                             + (float)BUFFER_SIZE;
+            const int32_t i0   = (int32_t)safe;
+            const float   frac = safe - (float)i0;
+            const uint32_t b   = (uint32_t)i0 & BUFFER_MASK;
 
-            // 2. Generate the 4 sequential phases for this NEON block
-            float base = channelPhase_[ch];
-            float32x4_t phase_offsets = { 0.0f, current_rate, current_rate * 2.0f, current_rate * 3.0f };
-            float32x4_t phases = vaddq_f32(vdupq_n_f32(base), phase_offsets);
+            float tap[NEON_LANES + 1];
+            for (int k = 0; k <= NEON_LANES; k++)
+                tap[k] = delayLine[(b + k) & BUFFER_MASK].samples[ch];
 
-            // 3. Advance the stored scalar phase for the next audio block
-            float next_phase = base + (current_rate * 4.0f);
-            if (next_phase > 1.0f) next_phase -= 1.0f; // Wrap 0.0 to 1.0
-            channelPhase_[ch] = next_phase;
+            float lanes[NEON_LANES];
+            for (int s = 0; s < NEON_LANES; s++)
+                lanes[s] = tap[s] + frac * (tap[s + 1] - tap[s]);
 
-            // 4. Convert normalized phase [0, 1] to Radians [0, 2π]
-            float32x4_t angles = vmulq_f32(phases, vdupq_n_f32(M_PI * 2.0f));
-
-            // 5. Compute NEON sine approximation
-            float32x4_t sin_vals = sin_ps(angles);
-
-            // 6. Scale by modulation depth (in samples)
-            mods[ch] = vmulq_f32(sin_vals, vdupq_n_f32(current_depth));
-        // }
-
-        // ====================================================================
-        // DELAY READ POINTER CALCULATIONS
-        // ====================================================================
-
-        // for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float delaySamples = delayTimes[ch] * sampleRate;
-
-            // Subtract delay length AND our new dynamic modulation
-            readPositions[ch] = vsubq_f32(baseReadPos,
-                vaddq_f32(vdupq_n_f32(delaySamples), mods[ch]));
-
-            // Wrap to [0, BUFFER_SIZE)
-            float pos_vals[NEON_LANES];
-            vst1q_f32(pos_vals, readPositions[ch]);
-            float out_lanes[NEON_LANES];
-            for (int s = 0; s < NEON_LANES; s++) {
-                // Bias positive before the cast to avoid C++ truncation-toward-
-                // zero on negatives. One BUFFER_SIZE is enough and no more than
-                // enough: the static assert at the top of this file guarantees
-                // delay + modulation < BUFFER_SIZE. The bias used to be four
-                // times larger, which cost precision for nothing — a float has
-                // 24 mantissa bits, so at 131072 the fractional part of the read
-                // position quantises to 1/32 of a sample. At BUFFER_SIZE the
-                // interpolation gets 1/128.
-                float pos = pos_vals[s];
-                float safe_pos = pos + (float)BUFFER_SIZE;
-
-                int32_t idx = (int32_t)safe_pos;
-                uint32_t base = idx & BUFFER_MASK;
-                // Store the wrapped index so we can read from it!
-                baseIndices[ch][s] = base;
-                fracParts[ch][s] = safe_pos - (float)idx;
-            // }
-        // }
-
-        // Read each channel independently: each channel has its own read position
-        // (baseIndices[ch][s]) so we cannot share a single vld4q_f32 across channels.
-        // Scalar interpolation per channel avoids the previous cross-frame read bug.
-        // for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-
-            // for (int s = 0; s < NEON_LANES; s++) {
-                uint32_t idx0 = baseIndices[ch][s] & BUFFER_MASK;
-                uint32_t idx1 = (idx0 + 1) & BUFFER_MASK;
-                float frac = fracParts[ch][s];
-                float s0 = delayLine[idx0].samples[ch];
-                float s1 = delayLine[idx1].samples[ch];
-                out_lanes[s] = s0 + frac * (s1 - s0);
-            }
-
-            out[ch] = vld1q_f32(out_lanes);
+            out[ch] = vld1q_f32(lanes);
         }
     }
 
@@ -1551,7 +1563,8 @@ private:
             // suffices, so make that structural rather than incidental.
             shimmerPhase_ += 4.0f * inc;
             if (shimmerPhase_ >= M_TWOPI)      shimmerPhase_ -= M_TWOPI;
-            if (!(shimmerPhase_ >= 0.0f && shimmerPhase_ < M_TWOPI)) shimmerPhase_ = 0.0f;
+            if (isNotFinite(shimmerPhase_) ||
+                !(shimmerPhase_ >= 0.0f && shimmerPhase_ < M_TWOPI)) shimmerPhase_ = 0.0f;
         }
     }
 
@@ -1563,6 +1576,21 @@ private:
      * does not quietly attenuate the reverb tail at normal levels.
      */
     inline void softClipN(float32x4_t* signals, int n) {
+        // Below the knee this function is the identity, and below the knee is
+        // where the signal spends almost all of its time — so ask first. Folding
+        // n vectors down to one maximum costs about a tenth of running the curve
+        // on them, and the answer is nearly always "nothing to do". It is also
+        // slightly more faithful when it fires: the sign-restoring divide below
+        // leaves a small error on every sample it touches, including ones that
+        // were never going to be clipped, and this path does not touch them.
+        {
+            float32x4_t peak = vabsq_f32(signals[0]);
+            for (int i = 1; i < n; i++) peak = vmaxq_f32(peak, vabsq_f32(signals[i]));
+            float p[NEON_LANES];
+            vst1q_f32(p, peak);
+            if (fmaxf(fmaxf(p[0], p[1]), fmaxf(p[2], p[3])) <= kLimitThreshold) return;
+        }
+
         const float32x4_t thr  = vdupq_n_f32(kLimitThreshold);
         const float32x4_t zero = vdupq_n_f32(0.0f);
         const float32x4_t one  = vdupq_n_f32(1.0f);
@@ -1664,8 +1692,15 @@ private:
         {
             const int activeCh = (pillar_ == 0) ? 2
                                : (pillar_ == 2) ? 6 : FDN_CHANNELS;
-            const int halfL = activeCh < 4 ? activeCh : 4;
-            const int halfR = activeCh > 4 ? activeCh - 4 : 0;
+            // Split the active channels evenly between the sides. The old
+            // `min(activeCh,4)` / `activeCh-4` gave PILL=2 four channels on the
+            // left and two on the right, and since both sides are scaled by the
+            // same fixed 0.5 below, that is a 4-versus-2 sum: tempio measured
+            // 4.0 dB down on the right for no reason but the arithmetic. Six
+            // channels means three a side. PILL=0's two-channel case keeps its
+            // all-left split because it mono-folds immediately after.
+            const int halfL = (activeCh <= 2) ? activeCh : activeCh / 2;
+            const int halfR = (activeCh <= 2) ? 0        : activeCh / 2;
             for (int i = 0; i < FDN_CHANNELS; i++) {
                 const float t = (i < 4) ? ((i < halfL) ? 1.0f : 0.0f)
                                         : ((i - 4 < halfR) ? 1.0f : 0.0f);
@@ -1704,6 +1739,73 @@ private:
         const float wTarget = pingPong_ ? 1.0f : 0.0f;
         pingPongBlend += GAIN_SLEW_COEFF * (wTarget - pingPongBlend);
         if (fabsf(wTarget - pingPongBlend) < 1e-4f) pingPongBlend = wTarget;
+
+        // Which bank the input is fed into, alternating at the bounce rate.
+        //
+        // The feedback matrix writes each bank into the other one, so energy put
+        // into the left bank first reaches the *right* output, one delay later.
+        // Feeding the left bank always — which is what the old code did — makes
+        // the right output the loud side of every single bounce: it carries the
+        // odd-numbered ones and the left gets the even, so over any tail the
+        // right side is ahead by exactly one bounce's worth of decay. Measured
+        // on labirinto that is 10.2 dB, and 17.5 dB at BNCE=500. No amount of
+        // stereo width fixes it, because it is not a width problem — one speaker
+        // really is getting less of the reverb than the other.
+        //
+        // A static split cannot fix it either: solving for equal long-run totals
+        // gives injectL == injectR, which is a symmetric network with no bounce
+        // left in it at all. So alternate instead. Each bounce period the input
+        // enters the other bank, which mirrors the series and balances the two
+        // sides exactly, while any one transient still bounces as hard as before
+        // — it just starts from whichever side the network happened to be on
+        // when it was played.
+        //
+        // The handover is deliberately NOT one per bounce. The bounce is often
+        // locked to the tempo (see SYNC) and the machine driving this is a drum
+        // machine, so hits arrive on a grid that is an exact multiple of the
+        // bounce — and against a one-per-bounce handover an even multiple lands
+        // every hit in the same bank, which is the original defect back again
+        // with extra steps. Swept, that reached +16.9 dB at BNCE=500 with hits
+        // every 2 s, and +11.8 dB at BNCE=250 with hits every 0.5 s.
+        //
+        // Nothing requires the handover to track the bounce: the alternation
+        // itself lives in the feedback matrix, and the injection bank only picks
+        // which side a given hit starts on. What it must not do is stay in step
+        // with the grid the hits arrive on. Two things had to go for that:
+        //
+        //   - the period. A fixed one bounce per handover puts every hit on an
+        //     even multiple in the same bank: +16.9 dB at BNCE=500 with hits
+        //     every 2 s. Scaling by the golden ratio removes the exact locks but
+        //     not the near ones, which still measured +12.9 dB.
+        //   - the strict left/right/left toggle. Even with a jittered period the
+        //     bank is a function of how many handovers have elapsed, so a grid
+        //     near an even number of them stays put for as long as the jitter
+        //     takes to random-walk clear — about fifteen handovers, five seconds
+        //     at BNCE=300, which is longer than the phrase. +6 dB survived.
+        //
+        // So neither: draw both the interval and the bank fresh each time. The
+        // bank is then independent of everything, and the residual is an honest
+        // coin-flip imbalance that shrinks with the length of the part.
+        //
+        // The audible consequence is that which speaker a hit starts from
+        // varies, rather than always being the same one. The depth of the bounce
+        // is untouched — that is the matrix's doing, not this.
+        if (pingPongBlend > 0.0001f) {
+            bankCountdown_ -= (float)NEON_LANES;
+            if (bankCountdown_ <= 0.0f || isNotFinite(bankCountdown_)) {
+                const uint32_t r = bankRandom();
+                const float u = (float)(r >> 8) * (1.0f / 16777216.0f);   // [0,1)
+                const float bounces = BANK_SWING_MIN
+                                    + u * (BANK_SWING_MAX - BANK_SWING_MIN);
+                bankCountdown_ = fmaxf(1.0f, bounceTimeMs * 0.001f * sampleRate * bounces);
+                bankTarget_    = (bankRandom() & 0x80000000u) ? 1.0f : 0.0f;
+            }
+        }
+        // One-poled so the handover takes a few ms rather than a sample.
+        // BANK_SWING_COEFF is deliberately faster than GAIN_SLEW_COEFF: this has
+        // to settle well inside one bounce, or both banks are fed at once and
+        // the alternation washes out.
+        bankSwing_ += BANK_SWING_COEFF * (bankTarget_ - bankSwing_);
 
         // Same idea for the colour stage across a mode change. Once the fade
         // completes the outgoing states are dropped, so entering a mode again
@@ -1749,8 +1851,15 @@ private:
         {
             const int activeCh = (pillar_ == 0) ? 2
                                : (pillar_ == 2) ? 6 : FDN_CHANNELS;
-            const int halfL = activeCh < 4 ? activeCh : 4;
-            const int halfR = activeCh > 4 ? activeCh - 4 : 0;
+            // Split the active channels evenly between the sides. The old
+            // `min(activeCh,4)` / `activeCh-4` gave PILL=2 four channels on the
+            // left and two on the right, and since both sides are scaled by the
+            // same fixed 0.5 below, that is a 4-versus-2 sum: tempio measured
+            // 4.0 dB down on the right for no reason but the arithmetic. Six
+            // channels means three a side. PILL=0's two-channel case keeps its
+            // all-left split because it mono-folds immediately after.
+            const int halfL = (activeCh <= 2) ? activeCh : activeCh / 2;
+            const int halfR = (activeCh <= 2) ? 0        : activeCh / 2;
             for (int i = 0; i < 4; i++)             mixWeight[i] = (i < halfL) ? 1.0f : 0.0f;
             for (int i = 4; i < FDN_CHANNELS; i++)  mixWeight[i] = (i - 4 < halfR) ? 1.0f : 0.0f;
             monoFold = (halfR == 0) ? 1.0f : 0.0f;
@@ -1910,8 +2019,17 @@ private:
         // anyway, and it is the difference between a unit that drops out for a
         // few milliseconds and one that has to be power-cycled: a NaN in an FDN
         // never washes out, it circulates forever and takes the host's mix bus
-        // with it. Written inverted so NaN takes the branch.
-        if (!(totalEnergy < 1e30f)) {
+        // with it.
+        //
+        // The NaN half of that has to be asked for on the bits. This was
+        // `!(totalEnergy < 1e30f)`, written inverted on the understanding that
+        // NaN fails every comparison and so takes the branch — true of the
+        // language, false of this build, which is compiled -ffast-math and
+        // therefore -ffinite-math-only. Under those flags the inverted
+        // comparison is folded to `totalEnergy >= 1e30f` and a NaN takes the
+        // branch no longer. The runaway half still needs the threshold, so keep
+        // both tests.
+        if (isNotFinite(totalEnergy) || totalEnergy >= 1e30f) {
             clear();
             float32x4_t zero = vdupq_n_f32(0.0f);
             vst1q_f32(outL, zero);
@@ -1945,9 +2063,9 @@ private:
         }
 
         // =================================================================
-        // 5. Advance modulation phases for the next block (after read so phases aren't clobbered)
+        // 5. Advance the per-block state for the next block (after the reads, so
+        //    nothing here clobbers a phase this block still needs)
         // =================================================================
-        updateModulation4();
         updateRandomLfo();
         slewDelayTimes();
         slewGains();
@@ -2018,6 +2136,48 @@ private:
         // 4. Apply cross‑channel feedback
         applyCrossFeedback(mixed);
 
+        // 4b. Tap the stereo output HERE, before the input is injected below.
+        //
+        // The network state is what this unit is for. The input is not part of
+        // it: injecting it into mixed[] and then summing mixed[] for the output
+        // put an undelayed copy of the dry signal straight into the left
+        // channel, because both injection points (channels 0 and 2) live in the
+        // left bank. It measured a 0.99 correlation with the dry input on
+        // labirinto, 0.97 on tempio, 0.92 on esotico — that is not a reverb tail
+        // with some input in it, that is the input with some tail on top. It
+        // also pinned the left output at the limiter ceiling on every impulse
+        // (0.9333 from a single unit sample, on all five presets), so the loud
+        // side was clipping on every hit.
+        //
+        // On a wet-only send like this one the result is a unit whose left
+        // channel is mostly dry and whose right channel carries the reverb, and
+        // on the drumlogue — where the hardware adds its own dry — that reads as
+        // the effect only reaching one speaker. It also flattened the ping-pong:
+        // the left half of every bounce was buried under a dry copy that does
+        // not bounce.
+        //
+        // Everything the tail is made of — matrix, colour, noise, cross-feedback
+        // — is already in mixed[] at this point. What moving the tap up skips is
+        // the in-loop saturator (step 6), which the output limiter at the end of
+        // this function duplicates, and the shimmer (step 7), which injects
+        // +shim into channel 6 and -shim into channel 7 and therefore sums to
+        // exactly zero in the right output anyway; it is heard on the next pass
+        // through the matrix either way.
+        float32x4_t leftSum  = vdupq_n_f32(0.0f);
+        float32x4_t rightSum = vdupq_n_f32(0.0f);
+        {
+            // How many channels reach the output is a PILL decision (2, 6 or 8),
+            // and changing the count outright steps the sum: esotico or stellare
+            // to tempio drops channels 6 and 7 from the right output in a single
+            // sample, which measured a 39% jump on that side. mixWeight holds
+            // one slewed 0..1 per channel instead, so channels fade out of the
+            // mix rather than vanishing from it. See slewGains().
+            for (int i = 0; i < 4; i++)
+                leftSum  = vmlaq_n_f32(leftSum,  mixed[i], mixWeight[i]);
+            for (int i = 4; i < FDN_CHANNELS; i++)
+                rightSum = vmlaq_n_f32(rightSum, mixed[i], mixWeight[i]);
+        }
+
         // 5. Add input.
         //
         // Ping-pong excites the left bank only, so the very first echo is hard
@@ -2028,9 +2188,20 @@ private:
         // those two on pingPongBlend is the whole crossfade — and it has to be
         // faded, because switching the injection outright stops writing input
         // into two of the eight delay lines in a single sample.
+        // In ping-pong the entry bank alternates at the bounce rate — see the
+        // note in slewGains() for why it has to. injL and injR sum to 1, so the
+        // drive into the network is the same whichever side is being fed, and
+        // the pair collapses to the old left-only injection whenever the mode is
+        // not ping-pong (bankSwing_ is gated by pingPongBlend).
         float32x4_t inputVec = vmulq_f32(delayedMono, feedback);
-        mixed[0] = vaddq_f32(mixed[0], inputVec);
-        mixed[2] = vaddq_f32(mixed[2], vmulq_n_f32(inputVec, 0.7f));    // was 0.5f
+        const float injR = pingPongBlend * bankSwing_;
+        const float injL = 1.0f - injR;
+        mixed[0] = vaddq_f32(mixed[0], vmulq_n_f32(inputVec, injL));
+        mixed[2] = vaddq_f32(mixed[2], vmulq_n_f32(inputVec, 0.7f * injL));  // was 0.5f
+        if (injR > 0.0001f) {
+            mixed[4] = vaddq_f32(mixed[4], vmulq_n_f32(inputVec, injR));
+            mixed[6] = vaddq_f32(mixed[6], vmulq_n_f32(inputVec, 0.7f * injR));
+        }
         const float diffuseInject = 1.0f - pingPongBlend;
         if (diffuseInject > 0.0001f) {
             mixed[5] = vaddq_f32(mixed[5], vmulq_n_f32(inputVec, -0.5f  * diffuseInject));
@@ -2067,21 +2238,11 @@ private:
         // Channels 0-3 feed the left output and 4-7 the right, for every mode.
         // In ping-pong that split is what makes the bank swap audible; the
         // alternation lives in the feedback matrix, not in the panning.
+        //
+        // leftSum and rightSum were accumulated at step 4b, before the input was
+        // injected — see the note there for why.
         float32x4_t leftMix, rightMix;
         {
-            // How many channels reach the output is a PILL decision (2, 6 or 8),
-            // and changing the count outright steps the sum: esotico or stellare
-            // to tempio drops channels 6 and 7 from the right output in a single
-            // sample, which measured a 39% jump on that side. mixWeight holds
-            // one slewed 0..1 per channel instead, so channels fade out of the
-            // mix rather than vanishing from it. See slewGains().
-            float32x4_t leftSum  = vdupq_n_f32(0.0f);
-            float32x4_t rightSum = vdupq_n_f32(0.0f);
-            for (int i = 0; i < 4; i++)
-                leftSum  = vmlaq_n_f32(leftSum,  mixed[i], mixWeight[i]);
-            for (int i = 4; i < FDN_CHANNELS; i++)
-                rightSum = vmlaq_n_f32(rightSum, mixed[i], mixWeight[i]);
-
             // Fixed 0.5 normalization (vs 1/halfL=0.25 for 8ch) gives 6dB more output,
             // making the reverb tail immediately audible. Soft saturation above keeps
             // individual channels < 1 so summing 4 channels × 0.5 stays below 2.0.
@@ -2120,26 +2281,6 @@ private:
         // Store wet signal directly (hardware handles dry+wet blend)
         vst1q_f32(outL, wetL);
         vst1q_f32(outR, wetR);
-    }
-
-    void updateModulation4() {
-        float incPerSample = modRate * M_TWOPI / sampleRate;
-        float32x4_t blockAdvance = vdupq_n_f32(4.0f * incPerSample);
-        float32x4_t twoPi = vdupq_n_f32(M_TWOPI);
-
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            float32x4_t newPhases = vaddq_f32(modPhaseVec[ch], blockAdvance);
-
-            // Wrap to [0, 2π) using truncate-toward-zero floor
-            float32x4_t div = vmulq_f32(newPhases, vdupq_n_f32(1.0f / (M_TWOPI)));
-            float32x4_t floor_f = vcvtq_f32_s32(vcvtq_s32_f32(div));
-            newPhases = vsubq_f32(newPhases, vmulq_f32(floor_f, twoPi));
-
-            uint32x4_t neg = vcltq_f32(newPhases, vdupq_n_f32(0.0f));
-            newPhases = vbslq_f32(neg, vaddq_f32(newPhases, twoPi), newPhases);
-
-            modPhaseVec[ch] = newPhases;
-        }
     }
 
     /*===========================================================================*/
@@ -2249,6 +2390,10 @@ private:
     int   pillar_;        /* 0..4 - pillar count / routing mode */
     bool  pingPong_;      /* true when pillar_==1 */
     float pingPongBlend;  /* 0 = Hadamard, 1 = ping-pong; slewed (see slewGains()) */
+    uint32_t bankSeed_;     /* handover RNG, independent of the noise source */
+    float bankCountdown_;   /* samples until the next input-bank handover */
+    float bankTarget_;      /* 0 = feed the left bank, 1 = the right */
+    float bankSwing_;       /* one-poled bankTarget_; what the injection uses */
     float mixWeight[FDN_CHANNELS] __attribute__((aligned(16)));  /* per-channel output weight, slewed */
     float monoFold;             /* 1 = PILL=0 mono fold, slewed */
     float crossGainLive;        /* cross-feedback amount, slewed */
@@ -2264,7 +2409,6 @@ private:
     float delayTimes[FDN_CHANNELS] __attribute__((aligned(16)));        // slewed, live
     float targetDelayTimes[FDN_CHANNELS] __attribute__((aligned(16)));  // requested
     float delayStep[FDN_CHANNELS] __attribute__((aligned(16)));         // eased glide rate
-    float32x4_t modPhaseVec[FDN_CHANNELS] __attribute__((aligned(16)));
     // new filter states
     float metalState[FDN_CHANNELS] __attribute__((aligned(16)));
     float crystalAPState[FDN_CHANNELS] __attribute__((aligned(16)));

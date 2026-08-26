@@ -1,3 +1,4 @@
 build/
 *.drmlgunit
 test/test_reverb
+test/test_reverb_fast
