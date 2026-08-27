@@ -15,7 +15,7 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 52,612 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
+Current shipping tree: `.text` 52,676 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
 `.bss` 107,884.  **The "28 KB / 30 KB" limit this file used to assert here was
 never true** — see the constraint section. Watch the numbers for regressions;
 do not contort code to hit an imaginary ceiling.
@@ -27,6 +27,13 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **107/107**.
+- **Pass 44 (BrshSnr changed — needs a listen):** its head was mixed in at
+  **zero** (`k_modal_mix = 0.0`), so the "resonance" the HW report asked for
+  did not exist; it now has one, at **Note 55 (196 Hz)** instead of 38 (73 Hz,
+  the GM drum-map number used as a pitch).  Velocity now moves character, not
+  just level — its mappings were reading a curve that only spans 0.08..0.72.
+  Listen for: is the head now too tom-like (turn `modal_mix` down: 0.14 → 8.5 dB
+  of resonance, 0.10 → 5.3 dB), and does a soft stroke read as a sweep?
 - **Pass 43 (Timpani + Taiko changed by one LSB — listen to a NOTE CHANGE):**
   the reported "changing note → clicks / audio interface stops" was a **CPU**
   fault, not a signal one: a note change ran two full 280-mode banks and put
@@ -162,6 +169,72 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 44 — BrshSnr: the head was mixed in at ZERO, and velocity saw a third of a knob
+
+HW: *"sound is too much explosion like, too much chaotic, rather than soft hit
+with resonance.  Even with negative velocity hit is too hard (it's just
+lowering the volume not softening)."*  Two claims, two separate causes, both
+measured (`brush_probe.cpp`, new).  **1 of 40 renders changed.**
+
+**"No resonance" was literal: `k_modal_mix = 0.0`.**  The preset had a fully
+calibrated head — 4 modes, ratios 1.59 / 2.14 / 2.30 — that `NoteOn` built on
+every strike and then multiplied by zero.  Everything you could hear was noise
+through three low-Q wire bands, which is also the "chaotic": measured spectral
+flatness **0.23-0.29** against AcSnare's 0.08-0.16, i.e. two to four times
+closer to white noise.
+
+Fixing the mix alone was not enough, and the reason is the second half of §4 of
+`NOTE_AUDIT.md`: **BrshSnr ships Note 38, which is the General MIDI drum-map
+NUMBER used as a pitch** — 73.4 Hz, a sub-thud, where a snare head sounds
+180-220 Hz.  So the head is now audible AND at Note **55 (G3, 196 Hz)**, the
+value that audit had already recommended.  That recommendation was labelled
+"display only" because the note was inert; it stopped being cosmetic the moment
+the head became audible.  Body T60 110 → 210 ms so it breathes under the swish.
+
+| | before | after |
+|---|---|---|
+| head resonance, 120-500 Hz over the band median | **4.3 dB** (no head — noise-floor structure) | **11.9 dB @ 198 Hz** |
+| centroid across velocity 127→30 | 3294 → 2896 (**−11 %**) | 3275 → 2448 (**−25 %**) |
+| flatness across velocity 127→30 | 0.288 → 0.227 (−21 %) | 0.290 → **0.134** (−54 %) |
+| attack share at low velocity | **rises** 0.186 → 0.308 | 0.204 → 0.272 |
+
+**Why velocity was a volume control, exactly.**  BrshSnr has its own quadratic
+velocity curve (`0.08 + 0.64·v²`, pass 19 round 2), so `current_velocity` only
+ever spans **0.08..0.72** — and every character mapping downstream was written
+against it as though it spanned 0..1.  `noise_band_mix` was
+`min(0.32, 0.20 + 0.10·vqb)`, i.e. a real range of **0.208..0.272**: a knob
+with 6 % of its travel connected.  Normalising back to 0..1 first
+(`vbn = (vqb − 0.08) × 1.5625`) and re-spanning gives 0.08..0.27 — the hard hit
+lands where it always did, the soft one is nearly pure air.
+
+**A soft brush also ARRIVES more slowly.**  `k_onset_attack_ms` was a fixed
+2 ms, so a quiet stroke still had a contact transient and read as a hit rather
+than a sweep — which is precisely "the hit is too hard, it's just lowering the
+volume".  The onset now scales 2 ms (accent) → 18 ms (crawl).  Verified
+same-tick-safe: gate_on+gate_off in one tick renders **bit-identical** to a
+held gate at both velocity 127 and 30, so the longer ramp does not walk into
+the same-tick killer.
+
+**Note the lesson, because it generalises past this preset.**  A per-preset
+velocity CURVE and the mappings that consume `current_velocity` are coupled:
+compress the curve and you silently compress every mapping downstream.  Pass 19
+added the curve, pass 41 read the mappings and found them "subtle".  They were
+not subtle, they were scaled by 0.64 and offset by 0.08.  **Grep for
+`current_velocity` consumers whenever a velocity curve changes.**
+
+*Deliberately NOT chased*: the timbre matches its (now-absent) reference —
+`render_presets.cpp`'s own note records the brush refs at flatness ≈ 0.31 and
+centroid ≈ 4.2 kHz, and the shipped hard hit measures 0.29 / 3.3 kHz.  So the
+hard stroke was never spectrally wrong and was left alone; what was wrong was
+that every stroke sounded like the hard one.  `modal_mix` 0.20 is the value to
+turn if HW says the head is now too tom-like — 0.14 gives 8.5 dB of resonance
+and 0.10 gives 5.3 dB.
+
+Verified: 39/40 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**107/107**, 0 NaN/silent across 40, stability 4096 combos + 480 rolls worst
+|peak| 0.9900 / 0 problems.  ARM `.text` 52,612 → **52,676** (+64); everything
+else unchanged.
 
 ### Pass 43 — Timpani's note-change clicks were CPU, not signal
 

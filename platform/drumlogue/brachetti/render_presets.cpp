@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
         { 34,  88, 2.0f, "GlsBotl"  },
         { 35,  79, 1.0f, "Tick"     },
         { 36,  76, 3.0f, "Splash"   },
-        { 37,  38, 2.0f, "BrshSnr"  },
+        { 37,  55, 2.0f, "BrshSnr"  },
         { 38,  69, 1.0f, "RimShot"  },
         { 39,  53, 2.0f, "RackTom"  },
     };

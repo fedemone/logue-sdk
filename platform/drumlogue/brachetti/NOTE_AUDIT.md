@@ -48,8 +48,19 @@ Measured by raising Note an octave and re-measuring: these eight move by
 | Preset | Engine | Why |
 |---|---|---|
 | 808Sub (2), KickDrum (20) | MEMBRANE | Both use the empty default modal config (`mode_count` 0), so the audible voice is the boom oscillator — and `boom_inc` is a preset constant, not a note. `TubRad` is the kick's tune control instead. |
-| AcSnare (3), MrchSnr (8), BrshSnr (37) | SNARE | The modal head is ~10 % of a snare's voice and the three wire bands are absolute Hz. The note moves only the head, and not measurably. |
+| AcSnare (3), MrchSnr (8), ~~BrshSnr (37)~~ | SNARE | The modal head is ~10 % of a snare's voice and the three wire bands are absolute Hz. The note moves only the head, and not measurably. |
 | Clap (21), Shaker (22), HHat-C (25) | NOISE | Shaped noise bursts — no pitched element at all. By design. |
+
+**BrshSnr (37) left this list in pass 44** — it shipped `k_modal_mix = 0.0`, so
+its head was not merely quiet, it was mixed in at ZERO.  Giving it a real head
+(0.20) makes the Note live: measured 146.7 / 196.2 / 261.9 / 392.4 Hz against
+nominals of 146.8 / 196.0 / 261.6 / 392.0 at notes 50 / 55 / 60 / 67.
+
+**`note_audit` still reports it `+12c +0.0`, and that is the audit's blind spot,
+not a mistuning** — its peak and centroid metrics are both dominated by the
+2.1 kHz wire band, which is absolute Hz and cannot move.  Measure the head in a
+120-500 Hz window to see it.  So the eight-preset count above is now seven by
+mechanism and eight by this tool's metric; trust the mechanism.
 
 RimShot (38) is the exception among the snares: it tracks a full **+12.0**,
 because its rim-ring mode cluster is loud (note 69 anchors the 877 Hz honk at
@@ -78,7 +89,8 @@ each one alters an approved sound, so they are listed for a decision.
 |---|---|---|---|---|
 | **Bongo (33)** | 50 (D3) | 146.7 Hz | bongo open tones sit roughly 250-600 Hz; 147 Hz is conga/tumba register | 57-62 — and see §5 |
 | **Wodblk (11)** | 48 (C3) | 130.7 Hz | a woodblock's dominant partial is ~0.8-2.5 kHz; 131 Hz is a large slit drum (which preset 31 already is) | 79-84 |
-| **AcSnare (3)**, **BrshSnr (37)** | 38 (D2) | 73.4 Hz nominal | a snare head sounds ~180-220 Hz. **38 is the General MIDI drum-map number for Acoustic Snare**, used here as a pitch | 55-57, display only (§2: inert) |
+| **AcSnare (3)** | 38 (D2) | 73.4 Hz nominal | a snare head sounds ~180-220 Hz. **38 is the General MIDI drum-map number for Acoustic Snare**, used here as a pitch | 55-57, display only (§2: inert) |
+| ~~**BrshSnr (37)**~~ | ~~38~~ → **55 (G3)** | **196.0 Hz** | **DONE in pass 44** — the recommendation above was applied when the preset got an audible head. It was free to apply *because* the note had been inert; now it is the head's pitch and no longer cosmetic. | — |
 | **Trngle (19)** | 69 (A4) | 440.0 Hz | a triangle's lowest strong mode is ~1-2 kHz — this is the "Triangle C# ≈ 4434 Hz, ~40 semitones above render range" floor already in the README | 88-96 |
 | **Claves (17)** | 79 (G5) | 784.0 Hz | the one clave reference in `samples/` peaks at **955-975 Hz** (centroid 1750 Hz) — 4 semitones above the preset | 83, minor |
 
@@ -129,7 +141,14 @@ the series exact to three decimals (1.000 / 2.000 / 3.000 / 4.000), and the
 +12 transpose still tracks at **+12.0**.  Do not "correct" the tuning on the
 strength of the peak column alone.
 
-## 7. GtrStr removed (pass 41)
+## 7. BrshSnr's Note is live, and the harness follows it (pass 44)
+
+Both numbers moved together, so §5's one-preset disagreement does not gain a
+second row: the preset column is 55 and `render_presets.cpp` scores BrshSnr at
+55.  **When a preset's Note changes, change both** — that is the whole point of
+§5, and Bongo is the standing example of what happens when only one moves.
+
+## 8. GtrStr removed (pass 41)
 
 Preset 25 `GtrStr` was removed at the user's request; every index above 25
 shifted down by one, so HHat-C is 25, BrshSnr 37, RimShot 38, RackTom 39.
