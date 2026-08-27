@@ -2252,6 +2252,89 @@ static void test_reset_clears_deferred_drive() {
            "down for ~20 ms");
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T42 — a Timpani/Taiko note change must not run two full mode banks
+//
+//   HW: "Timpani: changing note while playing leads to silence (audio
+//   interface crash)", later "changing note leads to sporadic clicks for the
+//   next 8-10 seconds".  Pass 41 looked for a waveform discontinuity, found
+//   none, and rejected its own theory.  The cause is CPU, not signal: a note
+//   change is always simultaneous with a strike, the strike resets a kettle's
+//   mode bound to the full bank, and the old note keeps ringing on the other
+//   kettle — so the unit's dominant per-sample cost DOUBLES (measured 110 vs
+//   55 µs/block in kernel_cpu_probe) and stays doubled for ~7 s, which is the
+//   reported window.
+//
+//   Pass 43 bounds it: only the newest kettle runs a full bank, the older one
+//   keeps its measured skeleton and has its dense fill damped away.  These
+//   assertions are on the BOUND, not on timing, so they mean the same thing on
+//   any machine.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_kernel_note_change_cost() {
+    std::cout << "\n── T42: kernel note change stays inside its mode budget ──\n";
+
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.LoadPreset(5);                                  // Timpani, 280 modes
+    const int full = s.m_drum_kernel.ModeCount();
+
+    s.setParameter(BrachettiSynth::k_paramNote, 52);
+    s.GateOn(110); s.GateOff();
+    run_blocks(s, 4800, 64);                          // ~100 ms of ring
+    const int one_kettle = s.m_drum_kernel.LiveModes();
+
+    // The reported action: change the note while the first is still ringing.
+    s.setParameter(BrachettiSynth::k_paramNote, 57);
+    s.GateOn(110); s.GateOff();
+    int peak = 0;
+    for (int b = 0; b < 200; ++b) {                   // ~270 ms
+        run_blocks(s, 64, 64);
+        const int live = s.m_drum_kernel.LiveModes();
+        if (live > peak) peak = live;
+    }
+    const int settled = s.m_drum_kernel.LiveModes();
+
+    std::cout << "  full bank=" << full
+              << "  one kettle=" << one_kettle
+              << "  peak after note change=" << peak
+              << "  settled=" << settled
+              << "  (two full banks would be " << (2 * full) << ")\n";
+
+    result("T42a a note change settles below two full mode banks",
+           settled < 2 * full && settled > full,
+           "either the fill damping stopped working (two full banks = the CPU "
+           "level that crashed the audio interface) or the older kettle is "
+           "being cut entirely, which loses the two-note overlap");
+    result("T42b both kettles are still sounding after the change",
+           s.m_drum_kernel.LiveVoices() == 2,
+           "the older kettle was retired outright — a note change should damp "
+           "the previous drum's wash, not mute the drum");
+    result("T42c the newest kettle keeps its FULL bank",
+           settled >= full,
+           "the note just struck is running a thinned bank; the damping is "
+           "being applied to the wrong kettle");
+
+    // The mechanism must not fire when there is nothing to make room for:
+    // repeating the SAME note retriggers one kettle in place.
+    BrachettiSynth s2;
+    s2.Init(&desc);
+    s2.LoadPreset(5);
+    s2.setParameter(BrachettiSynth::k_paramNote, 52);
+    for (int i = 0; i < 4; ++i) {
+        s2.GateOn(110); s2.GateOff();
+        run_blocks(s2, 2400, 64);
+    }
+    std::cout << "  4 strikes on ONE note: live voices="
+              << s2.m_drum_kernel.LiveVoices()
+              << " modes=" << s2.m_drum_kernel.LiveModes() << "\n";
+    result("T42d repeating a note does not trigger fill damping",
+           s2.m_drum_kernel.LiveVoices() == 1 &&
+           s2.m_drum_kernel.LiveModes() == full,
+           "a roll on one drum is being treated as a note change and losing "
+           "its wash");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -2298,6 +2381,7 @@ int main() {
     test_velocity_knob();
     test_cymbal_density_on_partls();
     test_reset_clears_deferred_drive();
+    test_kernel_note_change_cost();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

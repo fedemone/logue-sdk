@@ -15,8 +15,8 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 50,644 · `.rodata` 34,384 · `.data.rel.ro` 472 ·
-`.bss` 107,764.  **The "28 KB / 30 KB" limit this file used to assert here was
+Current shipping tree: `.text` 52,612 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
+`.bss` 107,884.  **The "28 KB / 30 KB" limit this file used to assert here was
 never true** — see the constraint section. Watch the numbers for regressions;
 do not contort code to hit an imaginary ceiling.
 (Pass 32 listed the third figure as `.data`; the section actually carrying the
@@ -26,7 +26,18 @@ so read the row name, not the row order.)
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **103/103**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **107/107**.
+- **Pass 43 (Timpani + Taiko changed by one LSB — listen to a NOTE CHANGE):**
+  the reported "changing note → clicks / audio interface stops" was a **CPU**
+  fault, not a signal one: a note change ran two full 280-mode banks and put
+  the unit at the level that crashed the hardware in pass 29.  A note change
+  now costs **1.20x** a single kettle instead of 1.97x.  Listen for: does the
+  previous drum thin out too much when you change note?  Both kettles still
+  sound — the old one's dense wash is damped over ~40 ms, its pitched skeleton
+  rings on.  Single hits are unchanged to within one 16-bit LSB.
+- **HW-confirmed closed (pass 42 follow-up):** SteelPan and Triangle clicks are
+  no longer reproducible.  The Timpani note-change fault was still live at that
+  point and is what pass 43 addresses.
 - **Pass 39 (no sound change, 41/41 byte-identical):** `VlMllStf` stopped
   saturating its clamp (20-60 % of that knob was dead on Marimba/Timpani/Clap/
   Handpan, at TWO separate sites), and **`HitPos` is now bipolar −98..98** —
@@ -151,6 +162,111 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 43 — Timpani's note-change clicks were CPU, not signal
+
+HW, twice: *"Timpani: changing note while playing leads to silence (audio
+interface crash)"*, then *"changing note leads to sporadic clicks for the next
+8-10 seconds"*.  Pass 41 hunted a waveform discontinuity, measured no
+improvement from the obvious `ClearVoice` fix, and correctly refused to ship
+it.  **The theory was not merely unproven, it was the wrong category.**
+
+**The measurement that settles it** (new tool `kernel_cpu_probe.cpp`, all
+figures one run, same machine, with the cymbal family as the normaliser):
+
+| | before | after |
+|---|---|---|
+| Timpani, 1 kettle | 45.9 µs/block | 44.4 |
+| **Timpani, 2 kettles (a note change)** | **90.6** | **53.5** |
+| ratio 2 kettles / 1 kettle | **1.97x** | **1.20x** |
+| Taiko, 2 kettles | 24.1 | 14.3 |
+| Cymbal, 2 voices @ max bank | 44.3 | 44.5 |
+
+The last row is the calibration and the reason these host numbers mean
+anything: pass 30 measured the cymbal build that **crashed the hardware** at
+95.6 µs against a last-known-good 49.7 µs, and this host reproduces that
+known-good level to within 1 %.  So **a Timpani note change was landing at the
+CPU level that had already been proven to stop the audio interface**, and
+holding it there for ~7 s — which is the reported 8-10 second window, measured
+directly (`LiveVoices() >= 2` until t = 9.01 s after a change at t = 2.00 s).
+
+**Why a note change specifically.**  A note change is always simultaneous with
+a strike, a strike resets a kettle's mode bound to the full bank, and the old
+note keeps ringing on the other kettle — so the unit's dominant per-sample term
+(280 biquads on Timpani) runs **twice**.  Nothing else in the unit doubles like
+that.  Taiko escapes the worst of it with 72 modes, which is exactly why the
+report names Timpani and not Taiko.
+
+Three changes, in increasing order of how much they buy:
+
+**1. The `gain[]` array is dead weight for >99 % of a ring.**  `exc_len` is at
+most 40 samples, so after the strike burst `e` is exactly 0 and `gain[m] * e`
+contributes nothing — yet the loop still loaded a 280-float array and issued a
+multiply-add per mode per sample.  Split into two arms on `e != 0.0f`.
+Bit-exact (`x + g*0 == x`), one fifth of the loop's memory traffic.
+
+**2. Mode retirement.**  A mode whose envelope is below `kRetireEps` (1e-5,
+i.e. −100 dB, *below the 16-bit LSB of 3.05e-5*) is still stepped every sample
+for as long as the kettle lives.  On Timpani that is most of the bank most of
+the time: the 224-mode fill above the measured skeleton has T60 620-1670 ms
+against the skeleton's ~1.9 s, so by 2 s after a strike only ~70 of 280 modes
+carry anything.  A schedule computed at rebuild time (`n = ln(eps/P)/ln(r)`,
+suffix-maxed over NEON groups of 4) lets each kettle walk its bound down.
+Shared by both kettles — r and amp are pitch-invariant by design, which is the
+whole point of the base tables.
+
+**On its own this bought only 11 %, and the reason is worth recording**: in a
+played passage a strike every 500 ms resets the bound to full, so natural
+retirement helps a *tail* and does nothing for the *peak* — and the peak is
+what the hardware was complaining about.  Do not stop at the elegant fix.
+
+**3. The one that actually fixed it: only the newest kettle runs a full bank.**
+When a new note takes the second kettle, the older kettle keeps its measured
+skeleton (the same `n/5` split `SelectedModes` already calls "always sounds")
+and its dense upper fill is **damped away** — 25 ms T60, walked out of the loop
+in step with the fade over 40 ms.  Steady two-note cost 2x280 → 280+56.
+
+Damped rather than dropped for two reasons.  A scaled pole radius is
+continuous, so there is no step to click on; and the fade is masked anyway,
+because *the event that triggers it is a full-velocity strike on the other
+kettle*.  The damping is folded into `DeriveVoiceRange` and the glide loop
+rather than applied once to the coefficient arrays, so an amortized rebuild
+landing mid-fade cannot restore the undamped poles.  Applying it is a pole
+SCALE (`a1 *= d, a2 *= d*d`) not a re-derive: a second bank of sin/cos inside
+`NoteOn`, next to the new kettle's own `RetuneVoice`, would have put a CPU
+spike at the exact moment the mechanism exists to relieve.  Verified
+byte-identical to the re-derive version.
+
+**Sound cost, measured.**  38 of 40 renders byte-identical; Timpani and Taiko
+differ by **exactly one 16-bit LSB at their largest sample** (`max|d|` =
+3.05e-5, whole-render difference-RMS −88.6 and −90.9 dB).  The retirement
+threshold sits below the DAC's own resolution, so what it discards could never
+have been represented.  Fill damping does not touch these renders at all —
+`render_presets` strikes once, so a second kettle never exists.
+
+**What a note change now sounds like:** the previous drum's dense wash is
+damped over ~40 ms while its pitched skeleton rings on normally.  Both kettles
+still sound (**T42b** asserts it) — this is a damped wash, not a muted drum.
+If the HW verdict is that the old note now thins out too much, the knob is
+`kFillDampRate` (lower = slower) or `m_skeleton_padded`'s `n/5` split; if it is
+still clicking, the remaining peak is the single block at the strike itself,
+where both banks are briefly full.
+
+Also new: **`click_probe.cpp`**, which finds clicks properly — pass 41 used max
+sample-to-sample step, and that metric cannot answer the question: a 90 Hz
+kettle at full amplitude has a legitimate per-sample step of ~0.02, one number
+per render hides anything sporadic, and the largest step in any percussion
+render is the strike. It high-passes at 8 kHz, flags HF spikes against a running
+median, excludes the 60 ms after each known strike, and renders a CONTROL
+timeline. Timpani measures **0 events at 3x, 6 at 2x, unchanged before and after**
+— i.e. the clicks were never in the rendered signal, which is itself the
+evidence for the CPU explanation.
+
+Verified: 38/40 byte-identical, syntax clean, test_dsp exit 0, test_hw_debug
+**107/107** (T42a-d new), 0 NaN/silent across 40, stability 4096 combos + 480
+rolls worst |peak| 0.9900 / 0 problems.  ARM `.text` 51,380 → 52,612 (+1,232);
+`.bss` 107,564 → 107,884 (+320 = the schedule plus the per-kettle bounds);
+`.rodata` and `.data.rel.ro` unchanged.
 
 ### Pass 42 — Kick2 decay −40 % and a velocity→balance trade scoped to it
 
