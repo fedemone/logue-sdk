@@ -429,7 +429,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     {2.92f, 6.37f, 11.75f, 300.0f, 200.0f, 120.0f, 80.0f, 0.20f, 0.80f, 0.50f, 0.30f, 0.20f, 4, 0.0f, 0.0f},
     /* k_BrushSnare: softer/darker body than AcSnare (brush barely moves the head);
        ring slightly longer (110ms) so the head tone breathes under the swish */
-    {1.59f, 2.14f, 2.30f, 110.0f, 60.0f, 35.0f, 20.0f, 0.20f, 0.60f, 0.42f, 0.26f, 0.15f, 4, 0, 0.0f},
+    {1.59f, 2.14f, 2.30f, 210.0f, 130.0f, 70.0f, 40.0f, 0.20f, 0.60f, 0.42f, 0.26f, 0.15f, 4, 0, 0.0f},
     /* k_RimShot: DATA-DRIVEN from rimshot-snare.wav — measured peaks
        877/945/1017/1107 Hz (the woody honk cluster) + 1754 + 2785 Hz, t40
        45 ms, centroid 3.1 kHz, <300 Hz ≈ 1% of energy.  At the shipped note
@@ -523,7 +523,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        noise SVF is a band-pass at ~4.9 kHz (NzFltr=1) instead of the old
        2.5 kHz high-pass; band_mix centred ~0.62 (velocity-tilted in NoteOn);
        wire mix 0.10 (a whisper of buzz, not a ring); modal body 0.02. */
-    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.00000f,    2.00000f},
+    /* k_BrushSnare  */ {   0.00000f,    0.00000f,    0.00000f,    0.10000f,    1.76000f,    0.91800f,    1.00000f,    0.00080f,    0.00000f,    0.70000f,    0.00000f,    0.35000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 3600.00000f,    0.78000f, 6300.00000f,    0.72000f,    0.20000f,    2.00000f},
     /* k_RimShot     */ {   0.00000f,    0.00000f,    0.00000f,    0.45000f,    1.76000f,    0.91800f,    0.00000f,    0.01000f,    0.00000f,    0.55000f,    0.00000f,    0.80000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f, 5000.00000f,    0.84000f, 8200.00000f,    0.78000f,    0.26000f,    0.00000f},
     /* k_RackTom: the BOOM is this preset's fundamental, not a support layer —
        it is the only oscillator here that can glide, and the reference's whole
@@ -966,7 +966,7 @@ SynthState state;
             {  34,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},        // 34: GlsBotl   — (HW: ok)
             {  35,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},        // 35: Tick      — the pre-redesign HHat-C chick + clack mode (modal cfg)
             {  36,  76,   0,   1, 800,  45,   0,   0,   3,   4, 200,  28,   0,   0,  18,   1,1999,  15,   5,  62, 640,   2,1200,  71},        // 36: Splash    — small pitched splash (ENGINE_CYMBAL)
-            {  37,  38,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 37: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+            {  37,  55,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},        // 37: BrshSnr   — DATA-DRIVEN (corrected brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
             {  38,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71},        // 38: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
             {  39,  53,   0,   1, 420,  36,   0,   0,   2,   5, 190,   0,   0,  52,  12,   0,1999,   6,   5,  48, 300,   0, 700,  71}       // 39: RackTom   — note 53 (F3, 174.6 Hz) = the rack tom an octave-ish over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS on this engine — LoadPreset captures each into m_modal_*_ref from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  (Mterl/TubRad additionally write resA's loss filter absolutely, but that is read only under voice_engine == ENGINE_KS, so it is dead on a membrane.)  Ring length lives in modal_preset_configs, shell in model_param_presets
         };
@@ -2434,10 +2434,13 @@ SynthState state;
             // the four shipped snares are untouched and only the travel grew.
             // Dkay joins Rel on the buzz tail, but ONLY on BrshSnr (HW pass 41:
             // "BrshSnre: dkay parameter seems not have effect").  It is not
-            // "subtle" there, it is mathematically inaudible: Dkay scales the
-            // modal body's T60, and BrshSnr ships k_modal_mix = 0.0, so the
-            // bank Dkay controls is mixed in at ZERO.  There is nothing for the
-            // knob to act on.  The brush's actual voice is the noise swish, so
+            // "subtle" there, it was mathematically inaudible: Dkay scales the
+            // modal body's T60, and BrshSnr USED TO ship k_modal_mix = 0.0, so
+            // the bank Dkay controls was mixed in at ZERO.  There was nothing
+            // for the knob to act on.  (Pass 44 gave the preset a real head at
+            // k_modal_mix 0.20, so Dkay now moves the body as well; the two
+            // roles agree — Dkay is the coarse decay of the whole voice — so
+            // this mapping stays.)  The brush's main voice is the noise swish, so
             // Dkay becomes its COARSE tail control with Rel staying the fine
             // trim — the same coarse/fine split Dkay and Rel already have on the
             // modal engines.  Scoped to this one preset because the other three
@@ -2548,21 +2551,37 @@ SynthState state;
         // create snap and must go: (1) the fast high-band burst (a ~6 ms bright
         // click at onset), (2) too much bright high-branch content, (3) a
         // resonant wire ring.  A faint ~5 Hz flutter models the straws' contact.
+        float brush_onset_scale = 1.0f;   // consumed by the onset block below
         if (m_preset_idx == k_BrushSnare) {
             v.noise_am_depth = 0.15f;
             v.noise_am_inc   = (M_TWOPI * 5.0f) * inverse_default_sample_rate; // slow rattle (HW: "rattle must be slower")
             v.noise_am_decay = 1.0f;                    // subtle flutter persists
             v.noise_am_phase = M_3_PI_2;             // full level on frame 0
+            // BrshSnr's velocity curve is the QUADRATIC one set above, so
+            // `current_velocity` only ever spans 0.08..0.72 — and every mapping
+            // written against it therefore saw a third of a knob.  HW pass 41:
+            // "even with negative velocity the hit is too hard, it's just
+            // lowering the volume not softening", and the measurement agreed:
+            // across velocity 127→30 the peak fell 8 dB while the centroid moved
+            // 11 % and t40 5 %.  Normalise back to 0..1 first so the character
+            // mappings below get the whole stroke, not a slice of it.
             const float vqb = fmaxf(0.0f, fminf(1.0f, v.current_velocity));
+            const float vbn = fmaxf(0.0f, fminf(1.0f, (vqb - 0.08f) * 1.5625f));
             // No bright click: the "high" burst decays WITH the soft body instead
             // of snapping in ~6 ms.  This is the single biggest "shack"->"chuff".
             v.exciter.noise_env_hi.decay_rate = v.exciter.noise_env.decay_rate;
             // Darker/softer split — mostly the low (breathy) branch, little of the
-            // bright high branch, so the puff reads as air not sizzle.
-            v.exciter.noise_band_mix = fminf(0.32f, 0.20f + 0.10f * vqb);
+            // bright high branch, so the puff reads as air not sizzle.  The range
+            // was 0.208..0.272 (inaudible); a soft stroke is now almost pure air
+            // and only an accent brings the bright branch up.
+            v.exciter.noise_band_mix = 0.08f + 0.19f * vbn;
+            // …and it ARRIVES more slowly.  A brush drawn softly across a head
+            // has no contact transient at all; the fixed 2 ms onset is what made
+            // a quiet stroke still read as a hit rather than a sweep.
+            brush_onset_scale = 1.0f + 8.0f * (1.0f - vbn);
         }
         {
-            float atk_ms = preset_param(preset, k_onset_attack_ms);
+            float atk_ms = preset_param(preset, k_onset_attack_ms) * brush_onset_scale;
             if (atk_ms > 0.001f) {
                 v.onset_env = 0.0f;
                 v.onset_inc = 1000.0f / (atk_ms * default_sample_rate);
