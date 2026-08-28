@@ -45,7 +45,7 @@ constexpr float LFO_PHASE_OFFSET = 0.25f;
 // various constants
 // ============================================================================
 constexpr float DEFAULT_VELOCITY_GAIN = 1.0f;
-constexpr float DEFAULT_MASTER_GAIN   = 2.30f;
+constexpr float DEFAULT_MASTER_GAIN   = 4.59f;  // 2.30f +6dB (was too quiet)
 constexpr float CLAP_ATTACK_TIME = 0.00035f;
 
 // ============================================================================

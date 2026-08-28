@@ -308,6 +308,12 @@ static void test_synth_basics() {
         report_fail("synth output audible and soft-clipped below 1.0", d);
     }
 
+    // The +6dB master gain bump keeps the kick's tail above the silence
+    // threshold a little longer, so allow a short extra render window
+    // instead of requiring idle at exactly kRenderLen.
+    if (!fm_perc_synth_is_idle(&g_synth))
+        render_synth_peak(&g_synth, EFFEMD_SILENCE_SAMPLES, nullptr);
+
     if (fm_perc_synth_is_idle(&g_synth))
         report_pass("synth returns to idle after decay");
     else

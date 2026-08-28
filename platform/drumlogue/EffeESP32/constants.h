@@ -55,4 +55,4 @@ constexpr float SEMITONE_RATIO = 1.0594630943592953f;
 // Voice pool / output
 // ----------------------------------------------------------------------------
 constexpr int   MAX_VOICES     = 8;     // polyphony of the drum allocator
-constexpr float MASTER_GAIN    = 0.5f;  // output headroom (single hits ~0.4..0.9)
+constexpr float MASTER_GAIN    = 1.41f;  // 0.5f +9dB (was too quiet)

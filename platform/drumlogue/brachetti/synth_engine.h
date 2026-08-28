@@ -733,7 +733,12 @@ SynthState state;
             state.voices[i].exciter.hat_filter.hp = 0.0f;
         }
 
-        state.master_gain  = 1.5f;  // HW: "+0.5" louder overall (soft-clip + brickwall absorb it)
+        // 1.5 -> 2.3: as loud as the bus can take before the master limiter's
+        // dynamic-range guarantee (T39c: a ghosted hit must stay under 60% of
+        // a neutral one) starts to erode — the limiter's soft knee compresses
+        // loud hits much harder than quiet ones, so pushing gain further in
+        // narrows velocity sensitivity rather than adding audible level.
+        state.master_gain  = 2.3f;  // was low overall; +~3.7dB, capped by T39c
         state.master_drive = 1.0f;
         // Reset() kills every voice, so a master drive deferred behind a
         // preset-change fade has nothing left to wait for — and unlike
