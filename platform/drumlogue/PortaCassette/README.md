@@ -1,5 +1,7 @@
 # PortaCassette (`PortaK7`)
 
+> **Disclaimer:** PortaCassette is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 A Tascam Portastudio / vinyl emulation master effect for the KORG drumlogue.
 Four machine voicings, a 3-band parametric EQ, tape saturation, wow & flutter,
 crosstalk, noise, and a dbx-style companding noise-reduction loop that the rest

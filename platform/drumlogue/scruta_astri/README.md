@@ -1,4 +1,7 @@
 # ScrutaAstri
+
+> **Disclaimer:** ScrutaAstri is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 A Korg drumlogue port of the Moffenzeef Stargazer drone synthesizer, supercharged with audio-rate modulations, morphing filters, and a chaotic Polivoks emulation.
 
 ## Overview

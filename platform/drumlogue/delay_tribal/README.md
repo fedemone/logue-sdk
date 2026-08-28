@@ -1,3 +1,7 @@
+# delay_tribal
+
+> **Disclaimer:** delay_tribal is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 ## Percussion ensemble design
 
 The effect is not a classic chorus. It is a **micro-ensemble** that turns a single percussion hit into the perception of multiple drummers.

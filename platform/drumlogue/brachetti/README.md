@@ -1,5 +1,7 @@
 # Brachetti (Drumlogue Bare-Metal DSP)
 
+> **Disclaimer:** Brachetti is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 > Formerly **RipplerX-Waveguide**; renamed in honour of quick-change
 > performer Arturo Brachetti (July 2026).  `dev_id`/`unit_id` are unchanged,
 > so the renamed unit replaces an installed RipplerX build in place.

@@ -6,6 +6,25 @@
 
 This repository contains all the files and tools needed to build custom oscillators and effects for the [prologue](https://www.korg.com/products/synthesizers/prologue), [minilogue xd](https://www.korg.com/products/synthesizers/minilogue_xd), [Nu:Tekt NTS-1 digital kit](https://www.korg.com/products/dj/nts_1), [Nu:Tekt NTS-1 digital kit mkII](https://www.korg.com/products/synthesizers/nts_1_mk2), [microKORG2](https://www.korg.com/products/synthesizers/microkorg2) synthesizers, the [Nu:Tekt NTS-3 kaoss pad kit](https://www.korg.com/products/dj/nts_3), and [drumlogue](https://www.korg.com/products/drums/drumlogue) drum machine.
 
+This is a personal fork of KORG's official [logue-sdk](https://github.com/korginc/logue-sdk) that additionally hosts a number of custom, independently developed synth and effect units (for example, but not limited to, `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti` and `delay_tribal` under [platform/drumlogue/](platform/drumlogue/)). **Please read the [Disclaimer](#disclaimer) below before downloading, building, installing, or using any of them.**
+
+## Disclaimer
+
+The custom synth and effect units distributed from this repository are **unofficial, independently developed, third-party projects**. They are not created, reviewed, tested, certified, endorsed, or supported by KORG Inc. or any other hardware manufacturer named or implied in this repository. Product and platform names (e.g. "KORG", "drumlogue", "prologue", "minilogue", "Nu:Tekt", "NTS-1", "NTS-3", "microKORG") are trademarks of their respective owners and are used here solely to identify hardware compatibility; no affiliation, sponsorship, or endorsement is claimed or implied.
+
+These units are experimental, hobbyist software, distributed for free with **no guarantee of correctness, stability, sound quality, safety, or compatibility** with any past, current, or future firmware or hardware revision. Nothing here is a finished, quality-assured commercial product.
+
+By downloading, building, installing, or using any unit, source code, or tool from this repository, you acknowledge and agree that:
+
+* Everything is provided **"AS IS" and "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND**, express or implied, including but not limited to the implied warranties of merchantability, fitness for a particular purpose, title, and non-infringement.
+* **Use is entirely at your own risk.** You are solely responsible for evaluating the risks of installing and running third-party unit files on your hardware before doing so.
+* Neither the developer(s) of these units, nor this repository's maintainer(s), nor any third party who distributes, mirrors, or hosts them (collectively, the "developers and distributors") shall be held liable for any damage, malfunction, defect, data loss, bricked or degraded hardware, hearing damage or other injury from unexpected audio behavior, lost time, lost revenue, or any other direct, indirect, incidental, special, exemplary, or consequential damages of any kind arising out of, or in any way connected with, the download, build, installation, or use (or inability to use) of this software — even if advised in advance of the possibility of such damages, and regardless of the legal theory (contract, tort, negligence, or otherwise) under which liability is asserted.
+* No official technical support, maintenance, or bug-fix commitment is implied by publishing this code. Any support offered by the developer(s) is provided on a purely best-effort, voluntary basis and is entirely separate from, and not a substitute for, official support channels from KORG or any other hardware manufacturer.
+* Units, source files, and documentation in this repository may be changed, renamed, moved, or removed at any time without prior notice.
+* Where local law does not allow the exclusion or limitation of certain warranties or liabilities, the above exclusions and limitations apply only to the maximum extent permitted by that law.
+
+If you do not agree with these terms, do not download, build, install, or use any of the units or code made available through this repository.
+
 ## What's New
 
 A new web-based simulator for NTS-1 mkii and NTS-3 in [websim](websim/). 
