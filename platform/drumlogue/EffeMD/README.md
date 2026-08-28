@@ -1,5 +1,7 @@
 # EffeMD — Machinedrum-style FM Percussion Synth for Korg Drumlogue
 
+> **Disclaimer:** EffeMD is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 EffeMD is a **percussive FM synth** for the Korg drumlogue, built around the
 eleven EFM (Elektron FM) drum models from
 [ctag-fh-kiel/md-drum-synth](https://github.com/ctag-fh-kiel/md-drum-synth),

@@ -4,6 +4,8 @@
 
 下記ディレクトリに [drumlogue](https://www.korg.com/jp/products/drums/drumlogue/) で使用できるシンセやエフェクトのビルドに必要なファイルが全て揃っています.
 
+> **免責事項:** このディレクトリ内の一部のプロジェクト（`EffeESP32`, `EffeMD`, `PortaCassette`, `brachetti`, `delay_tribal`, `omnipress`, `reverb_labirinto`, `reverb_light`, `scruta_astri`）は、非公式かつ独自に開発されたシンセ/エフェクトユニットであり、KORGとは提携・サポート関係にありません。これらは「現状有姿」で提供され、正常動作の保証はなく、開発者および配布者は使用に起因する損害、欠陥、問題について一切の責任を負いません。詳細な条件は[トップレベルの免責事項](../../README_ja.md#免責事項)をご覧ください。
+
 #### 互換性に関して
 
 SDK version 2.0-0 でビルドされた user units (ビルド済みのカスタムコードバイナリ）を実行するためには, version 1.00以降のファームウェアが製品本体にインストールされている必要があります.

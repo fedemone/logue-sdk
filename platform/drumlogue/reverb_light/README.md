@@ -1,5 +1,7 @@
 # LuceAlNeon – Parallel Multi-Effects Reverb for drumlogue
 
+> **Disclaimer:** LuceAlNeon is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 **LuceAlNeon** (Neon Light) is a highly unconventional, true-stereo reverb plugin for the KORG drumlogue. Moving away from standard room simulation, it utilizes a barebones acoustic delay matrix that splits into five entirely independent, parallel DSP pathways. Instead of simply filtering a reverb tail, LuceAlNeon synthesizes sub-harmonics, granular pops, and harmonic distortion directly from the acoustic space.
 
 ## Architectural & DSP Design Choices

@@ -1,5 +1,7 @@
 # EffeESP32 — 6-Operator FM Drum Synth for KORG drumlogue
 
+> **Disclaimer:** EffeESP32 is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 EffeESP32 is a polyphonic **6-operator FM percussion synthesizer** unit for the
 KORG drumlogue. It is a port of Evgeny "Copych" Aslovskiy's
 [ESP32-S3 FM Drum Synth](https://github.com/copych/ESP32-S3_FM_Drum_Synth) FM

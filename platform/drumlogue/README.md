@@ -6,6 +6,8 @@
 
 All source files needed to build custom synths and effects for the [drumlogue](https://www.korg.com/products/drums/drumlogue) exist under this directory.
 
+> **Disclaimer:** Several projects under this directory (`EffeESP32`, `EffeMD`, `PortaCassette`, `brachetti`, `delay_tribal`, `omnipress`, `reverb_labirinto`, `reverb_light`, `scruta_astri`) are unofficial, independently developed synth and effect units, not affiliated with or supported by KORG. They are provided "as is", with no guarantee of correct operation, and neither the developer(s) nor any distributor(s) accept liability for any damage, defect, or problem resulting from their use. See the [top-level Disclaimer](../../README.md#disclaimer) for the full terms.
+
 #### Compatibility Notes
 
 Firmware version >= 1.00 is required to run user units built with SDK version 2.0-0.

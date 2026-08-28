@@ -1,5 +1,7 @@
 # README.md - OmniPress Master Compressor for KORG drumlogue
 
+> **Disclaimer:** OmniPress is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
 ## Overview
 
 **OmniPress** is a character master bus compressor for the KORG drumlogue, loosely inspired by the **Eventide Omnipressor** and **Empirical Labs EL8 Distressor**. It features **three distinct compression modes** in a single unit, taking advantage of the drumlogue's 4-channel master effect input for external sidechain processing.
