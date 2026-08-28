@@ -29,6 +29,9 @@ constexpr float Mid_Note_Freq = 69.0f;
 constexpr float Audio_Rate_Freq = 100000.0f;
 constexpr float percent_normalizer = 0.01f;
 constexpr int neon_lanes = 4;
+// m_master_vol tops out at 1.0 (unity), so it can't add headroom on its own;
+// this is a fixed +6dB post-gain to fix overall low output level.
+constexpr float Output_Gain_Boost = 1.995f;
 
 class alignas(16) ScrutaAstri {
 public:
@@ -823,6 +826,9 @@ public:
                 m_master_vol = fmaxf(0.0f, fminf(1.0f, m_master_vol_base + m_volume_mod_multiplier));
                 // Apply master volume
                 v_out = vmulq_n_f32(v_out, m_master_vol);
+                v_out = vmulq_n_f32(v_out, Output_Gain_Boost);
+                // Boost can push a hot signal past +-1.0; clamp for safety.
+                v_out = vminq_f32(vmaxq_f32(v_out, vdupq_n_f32(-1.0f)), vdupq_n_f32(1.0f));
 
                 // Extract back to memory
                 float out_arr[neon_lanes];
@@ -849,7 +855,8 @@ public:
             distorted = fast_tanh( fast_tanh( distorted * 1.2f ) ) * 0.9f;
             distorted -= dc_bias * 0.9f;
 
-            float master_out = distorted * m_master_vol;
+            float master_out = distorted * m_master_vol * Output_Gain_Boost;
+            master_out = fmaxf(-1.0f, fminf(1.0f, master_out));
             size_t out_i = out_idx_buffer[b];
 
             main_out[out_i * 2]     = master_out;

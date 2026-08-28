@@ -135,10 +135,11 @@ static void test_param_audit() {
     result("T0b master_drive >= 1.0 (Gain=0 preset gives unity, not mute)", drv_ok,
            "master_drive < 1 would attenuate signal below audibility");
 
-    // master_gain is a fixed boot constant (1.5 since the 9th HW pass "+0.5"
-    // loudness bump), never changed by any parameter.
-    bool mg_ok = std::fabs(st.master_gain - 1.5f) < 1e-6f;
-    result("T0c master_gain == 1.5 (fixed boot constant, not UI-changed)", mg_ok,
+    // master_gain is a fixed boot constant (2.3 since the loudness bump
+    // capped by T39c's velocity-dynamics guarantee), never changed by any
+    // parameter.
+    bool mg_ok = std::fabs(st.master_gain - 2.3f) < 1e-6f;
+    result("T0c master_gain == 2.3 (fixed boot constant, not UI-changed)", mg_ok,
            "master_gain changed unexpectedly");
 }
 
