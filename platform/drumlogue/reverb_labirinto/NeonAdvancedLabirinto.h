@@ -818,11 +818,20 @@ public:
         // stone came out quieter still because PILL=2 now splits its six
         // channels three and three instead of four and two. Measured to put the
         // five presets within about a decibel of each other at their defaults.
+        //
+        // Crystal got a further push on top of that parity pass. esotico's
+        // default is voiced short and low-band-light (TIME 58, LOW 0.8x) so the
+        // tail stays airy rather than boomy on the cymbals/hats/metallic
+        // percussion it's aimed at — but that same shaping makes it read as
+        // quieter than the others on real material even though its peak is
+        // matched on a single transient. Raising TIME/LOW/DAMP would fix the
+        // loudness by fighting the shimmer character; raising the makeup here
+        // instead keeps the decay shape and just turns the whole preset up.
         switch (filterMode) {
             case kFilterWood:    targetOutputMakeup = 3.5f; break;  // foresta
             case kFilterStone:   targetOutputMakeup = 3.9f; break;  // tempio (darkest)
             case kFilterMetal:   targetOutputMakeup = 2.2f; break;  // labirinto (tamed)
-            case kFilterCrystal: targetOutputMakeup = 4.2f; break;  // esotico
+            case kFilterCrystal: targetOutputMakeup = 5.5f; break;  // esotico (boosted further, see above)
             case kFilterNoise:   targetOutputMakeup = 3.2f; break;  // stellare
             default:             targetOutputMakeup = 2.8f; break;
         }
