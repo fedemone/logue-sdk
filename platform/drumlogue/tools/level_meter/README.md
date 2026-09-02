@@ -63,20 +63,22 @@ velocity 127:
 
 | unit | peak dBFS | LUFS | mean LUFS | n |
 | --- | --- | --- | --- | --- |
-| ScrutaAstri | −9.37 … **0.00** | −11.5 … −0.3 | **−1.1** | 25 programs |
-| EffeMD | −2.39 … **0.00** | −12.3 … −2.2 | **−8.3** | 13 instruments |
+| ScrutaAstri *(before)* | −9.37 … **0.00** | −11.5 … +3.9 | **−0.7** | 24 programs |
+| ScrutaAstri *(now)* | −11.29 … −0.97 | −13.5 … +2.0 | **−2.5** | 24 programs |
+| EffeMD | −2.39 … −1.17 | −12.9 … −2.2 | **−8.6** | 13 instruments |
 | Brachetti | −0.77 … −0.09 | −29.4 … −4.9 | **−13.5** | 40 presets |
 | EffeESP32 *(before)* | −14.87 … **0.00** | −21.6 … −0.4 | **−13.5** | 59 instruments |
 | EffeESP32 *(now)* | −9.86 … −0.16 | −16.6 … +1.9 | **−9.6** | 59 instruments |
 
 Two things fall out of that table:
 
-* The spread between units is about **12 LU**, and inside a single unit it is up
+* The spread between units is about **13 LU**, and inside a single unit it is up
   to **25 LU**. There is no single global gain correction: ScrutaAstri is more
-  than 12 LU *louder* than Brachetti and already clipping, so anything added on
-  top of it is pure distortion.
-* Every unit except EffeESP32 already peaks within 0.8 dB of full scale, so a
-  plain multiplier has nowhere to go. The deficit is crest factor, not level.
+  than 12 LU *louder* than Brachetti, so anything added on top of it is pure
+  distortion.
+* In the *(before)* rows every unit but EffeESP32 already peaked within 0.8 dB of
+  full scale, so a plain multiplier had nowhere to go. The deficit is crest
+  factor, not level — which is what the output stage below addresses.
 
 ## Calibrating a unit
 
@@ -108,3 +110,28 @@ To try a different trim without editing the source:
 ```sh
 EXTRA_FLAGS=-DMASTER_GAIN_OVERRIDE=3.16f ./run.sh ../../EffeESP32
 ```
+
+ScrutaAstri went through the same stage. Its problem was the opposite one: the
+double tanh ahead of the output is already bounded to ±0.9, and `Output_Gain_Boost`
+drove that into a hard clamp at ±1.0, so 23 of 24 programs measured 0.00 dBFS at a
+crest factor of 2.6–3.6 dB — a square wave. It also left 0.06–0.11 of DC on the bus
+(−19 to −24 dBFS on nearly every program). With the DC blocker and the soft knee in
+place nothing flat-tops any more (peaks −0.97 … −1.53 dBFS, crest 3.2–4.3 dB) and the
+DC is down at −38 … −87 dBFS.
+
+`Output_Gain_Boost` against the measured mean, if the level itself needs moving:
+
+| `Output_Gain_Boost` | mean LUFS | loudest program LUFS |
+| --- | --- | --- |
+| **1.995** *(shipped)* | **−2.5** | +2.0 |
+| 1.412 | −4.9 | −0.5 |
+| 1.000 | −7.9 | −3.5 |
+| 0.708 | −10.9 | −6.5 |
+| 0.501 | −13.9 | −9.5 |
+
+ScrutaAstri is a *continuous* drone, so it is not directly comparable with the
+percussive units above: those measure the loudness of a single hit, which the
+BS.1770 gate reports without the silence around it, while the drone is at its
+measured level the whole time. A drone matched to a drum unit on this meter will
+sit noticeably louder in a pattern, which is why it is left at the top of the
+table rather than trimmed to the −9 LUFS house target.

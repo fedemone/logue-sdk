@@ -16,6 +16,7 @@
 #include <arm_neon.h>
 #include "float_math.h"
 #include "unit.h"
+#include "output_stage.h"  // shared calibrated output stage
 
 // Bring in our Session 1 components
 #include "wavetables.h"
@@ -29,9 +30,19 @@ constexpr float Mid_Note_Freq = 69.0f;
 constexpr float Audio_Rate_Freq = 100000.0f;
 constexpr float percent_normalizer = 0.01f;
 constexpr int neon_lanes = 4;
-// m_master_vol tops out at 1.0 (unity), so it can't add headroom on its own;
-// this is a fixed +6dB post-gain to fix overall low output level.
+// Post-gain feeding the output stage (common/output_stage.h).  The double
+// tanh ahead of it is already bounded to +-0.9, so this used to drive a hard
+// clamp at +-1.0: 23 of 24 programs measured 0.00 dBFS with a crest factor of
+// 2.6-3.6 dB, i.e. a square wave.  The soft knee behind it is bounded by 0.995
+// for any finite input, so the gain now buys RMS instead of flat tops.
+// Calibrated with platform/drumlogue/tools/level_meter -- see that README.
 constexpr float Output_Gain_Boost = 1.995f;
+
+// One-pole DC blocker on the output, ~10 Hz at 48 kHz (R = 1 - 2*pi*fc/fs).
+// The asymmetric Sherman/Polivoks path plus the double tanh leaves 0.06-0.11
+// of DC on the bus (-19 to -24 dBFS on nearly every program), which is
+// inaudible, offsets the DAC and costs about 1 dB of headroom for nothing.
+constexpr float DC_Blocker_R = 0.998691f;
 
 class alignas(16) ScrutaAstri {
 public:
@@ -90,6 +101,9 @@ public:
 
         m_srr_counter = 0.0f;
         m_srr_hold_val = 0.0f;
+
+        m_dc_x1 = 0.0f;
+        m_dc_y1 = 0.0f;
 
         m_osc1_filter_target = k_filter1; // Default to Sherman Sandwich path
         m_osc2_filter_target = k_filter2;
@@ -317,8 +331,12 @@ public:
                 m_crystal_drone.set_noise(value);
                 m_metal_drone.set_noise(value);
                 break;
-            // FIX: 300% Volume Headroom!
-            case k_paramMastrVol: m_master_vol_base = ((float)value * percent_normalizer) * 3.0f; break;
+            // 0..100 -> 0..1.  The x3 that used to be here put the base at 2.4
+            // for the header default of 80, and m_master_vol is clamped to 1.0:
+            // everything above 33 was the same volume, and the LFO 3 master-VCA
+            // tremolo (m_volume_mod_multiplier, |.| <= 1, added to the base)
+            // could never pull it back under the clamp, so it did nothing.
+            case k_paramMastrVol: m_master_vol_base = (float)value * percent_normalizer; break;
             // FIX: Cutoff 10x Trick
             case k_paramF1Cutoff: m_f1_base_hz = (float)value * 10.0f; break;
             case k_paramF2Cutoff: m_f2_base_hz = (float)value * 10.0f; break;
@@ -434,6 +452,18 @@ public:
             case 4: return fasterpow2f(1.8f); // +1.8 octaves (intentionally non-musical)
             default: return 1.0f;
         }
+    }
+
+    /**
+     * One-pole DC blocker: y[n] = x[n] - x[n-1] + R * y[n-1].
+     * Recursive, so it cannot be vectorized across the NEON lanes; it runs on
+     * the four lanes after they are extracted, which is scalar code anyway.
+     */
+    fast_inline float dc_block(float x) {
+        const float y = x - m_dc_x1 + DC_Blocker_R * m_dc_y1;
+        m_dc_x1 = x;
+        m_dc_y1 = y;
+        return y;
     }
 
     inline void processBlock(float* __restrict main_out, size_t frames) {
@@ -827,18 +857,19 @@ public:
                 // Apply master volume
                 v_out = vmulq_n_f32(v_out, m_master_vol);
                 v_out = vmulq_n_f32(v_out, Output_Gain_Boost);
-                // Boost can push a hot signal past +-1.0; clamp for safety.
-                v_out = vminq_f32(vmaxq_f32(v_out, vdupq_n_f32(-1.0f)), vdupq_n_f32(1.0f));
 
                 // Extract back to memory
                 float out_arr[neon_lanes];
                 vst1q_f32(out_arr, v_out);
 
-                // Write to the audio output interleaving
+                // Write to the audio output interleaving.  The DC blocker is
+                // recursive, so it stays scalar; the soft knee then bounds the
+                // result without flat-topping it (see common/output_stage.h).
                 for(int b = 0; b < neon_lanes; b++) {
+                    const float s = dl::soft_knee(dc_block(out_arr[b]));
                     size_t out_i = out_idx_buffer[b];
-                    main_out[out_i * 2]     = out_arr[b];
-                    main_out[out_i * 2 + 1] = out_arr[b];
+                    main_out[out_i * 2]     = s;
+                    main_out[out_i * 2 + 1] = s;
                 }
 
                 buf_idx = 0; // Reset micro-buffer
@@ -856,7 +887,7 @@ public:
             distorted -= dc_bias * 0.9f;
 
             float master_out = distorted * m_master_vol * Output_Gain_Boost;
-            master_out = fmaxf(-1.0f, fminf(1.0f, master_out));
+            master_out = dl::soft_knee(dc_block(master_out));
             size_t out_i = out_idx_buffer[b];
 
             main_out[out_i * 2]     = master_out;
@@ -896,6 +927,10 @@ private:
     float m_osc2_mix = 0.5f;
     float m_master_vol = 0.5f;
     float m_master_vol_base = 0.5f;
+
+    // DC blocker state (see dc_block()).
+    float m_dc_x1 = 0.0f;
+    float m_dc_y1 = 0.0f;
     float m_lfo1_rate_base = 1.0f;
     float m_f1_drive_base = 0.0f;
     float m_f2_drive_base = 0.0f;
