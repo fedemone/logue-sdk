@@ -80,6 +80,27 @@ Two things fall out of that table:
   full scale, so a plain multiplier had nowhere to go. The deficit is crest
   factor, not level — which is what the output stage below addresses.
 
+## Harmonic cost — `harmonics.py`
+
+Loudness says what a change to an output stage bought. It says nothing about
+what it cost, and the two have to be read together: a memoryless waveshaper on a
+low-frequency decay manufactures odd harmonics, which is the "brittle /
+distorted long decay" failure mode, and no loudness metric shows it.
+
+Render a baseline and a candidate to WAV and compare:
+
+```sh
+./run.sh ../../brachetti 60 127 3 /tmp/base
+EXTRA_FLAGS=-DSOME_GAIN=2.0f ./run.sh ../../brachetti 60 127 3 /tmp/cand
+./harmonics.py /tmp/base /tmp/cand
+```
+
+It locates the fundamental in the sustained body (skipping the first 40 ms so
+the strike does not dominate), pins the candidate to the *baseline's*
+fundamental so the two are comparable, and reports H2–H5 against it plus the
+total energy above 250 Hz. `HARM_F0_BAND=25:300` overrides the search band.
+Needs numpy.
+
 ## Calibrating a unit
 
 1. `./run.sh ../../<unit>` and read the mean LUFS.
