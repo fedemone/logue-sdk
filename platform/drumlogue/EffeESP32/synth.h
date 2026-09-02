@@ -27,6 +27,7 @@
 #endif
 
 #include "unit.h"
+#include "output_stage.h"  // shared calibrated output stage
 #include "constants.h"
 #include "float_math.h"
 #include "fm_voice6.h"
@@ -290,12 +291,15 @@ private:
                 l = vmlaq_n_f32(l, s, voices_[active[a]].getPanL());
                 r = vmlaq_n_f32(r, s, voices_[active[a]].getPanR());
             }
-            // interleave L/R into stereo output. MASTER_GAIN was raised for
-            // loudness, so clamp to +-1 here (the loudest patches were already
-            // close to unity at the old gain; this keeps them from wrapping).
+            // Interleave L/R into stereo output through the shared output
+            // stage.  This replaced a hard clamp at +-1: MASTER_GAIN is set for
+            // loudness, and the loudest patches (RailBel, PedHat) were already
+            // at the ceiling, so a clamp flat-topped their attack while the
+            // quiet ones stayed 20 dB down.  The soft knee is transparent below
+            // 0.70 and asymptotic to 0.995, so nothing is ever flat-topped.
             float32x4x2_t st;
-            st.val[0] = vminq_f32(vmaxq_f32(vmulq_f32(l, g), vdupq_n_f32(-1.0f)), vdupq_n_f32(1.0f));
-            st.val[1] = vminq_f32(vmaxq_f32(vmulq_f32(r, g), vdupq_n_f32(-1.0f)), vdupq_n_f32(1.0f));
+            st.val[0] = dl::soft_knee_q(vmulq_f32(l, g));
+            st.val[1] = dl::soft_knee_q(vmulq_f32(r, g));
             vst2q_f32(&out[i * 2], st);
         }
         for (; i < n; ++i) {
@@ -305,7 +309,8 @@ private:
                 l += s * voices_[active[a]].getPanL();
                 r += s * voices_[active[a]].getPanR();
             }
-            out[i * 2] = clip1m1f(l * MASTER_GAIN); out[i * 2 + 1] = clip1m1f(r * MASTER_GAIN);
+            out[i * 2] = dl::soft_knee(l * MASTER_GAIN);
+            out[i * 2 + 1] = dl::soft_knee(r * MASTER_GAIN);
         }
 #else
         for (int i = 0; i < n; ++i) {
@@ -315,7 +320,8 @@ private:
                 l += s * voices_[active[a]].getPanL();
                 r += s * voices_[active[a]].getPanR();
             }
-            out[i * 2] = clip1m1f(l * MASTER_GAIN); out[i * 2 + 1] = clip1m1f(r * MASTER_GAIN);
+            out[i * 2] = dl::soft_knee(l * MASTER_GAIN);
+            out[i * 2 + 1] = dl::soft_knee(r * MASTER_GAIN);
         }
 #endif
     }

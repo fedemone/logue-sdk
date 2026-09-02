@@ -55,4 +55,13 @@ constexpr float SEMITONE_RATIO = 1.0594630943592953f;
 // Voice pool / output
 // ----------------------------------------------------------------------------
 constexpr int   MAX_VOICES     = 8;     // polyphony of the drum allocator
-constexpr float MASTER_GAIN    = 1.41f;  // 0.5f +9dB (was too quiet)
+// Voice-mix gain feeding the output stage (common/output_stage.h).  This is a
+// loudness trim, not a peak trim: the soft knee behind it is bounded by 0.995
+// for any finite input, so raising this buys RMS instead of clipping.
+// Calibrated with platform/drumlogue/tools/level_meter -- see that README for
+// the measured before/after table.
+#ifndef MASTER_GAIN_OVERRIDE
+constexpr float MASTER_GAIN    = 2.51f;  // 0.5f +14dB (1.41f measured -13.6 LUFS)
+#else
+constexpr float MASTER_GAIN    = MASTER_GAIN_OVERRIDE;
+#endif

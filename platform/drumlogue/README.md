@@ -18,6 +18,7 @@ Firmware version >= 1.00 is required to run user units built with SDK version 2.
  * [dummy-delfx/](dummy-delfx/) : User delay effect project template.
  * [dummy-revfx/](dummy-revfx/) : User reverb effect project template.
  * [dummy-masterfx/](dummy-masterfx/) : User master effect project template.
+ * [tools/level_meter/](tools/level_meter/) : Host-side level and loudness meter for user synth units, so a unit's level in a mix is a number at build time instead of a surprise on hardware.
 
 ### Setting up the Development Environment (Docker Only)
 
