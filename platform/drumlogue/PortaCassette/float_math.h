@@ -808,6 +808,17 @@ float e_expf(float x) {
  */
 static inline __attribute__((optimize("Ofast"), always_inline))
 float e_expff(float x) {
+  /* (1 + x/1024)^1024 converges to exp(x) only while the base stays
+   * non-negative.  Below x = -2048 the base is < -1, and the *even* power turns
+   * a decaying exponential back into a growing one: e_expff(-2047) returns
+   * 0.3677 -- exp(-1), a plausible wrong answer rather than an obvious one --
+   * e_expff(-2048) returns exactly 1, e_expff(-2057) returns 7790, and it is
+   * +Inf by -2500.  A short time constant is all it takes to walk in there;
+   * this cost EffeMD's clap a full-scale DC blast and then NaN.  exp(-1024) is
+   * already 0 in single precision, so the clamp is exact everywhere the series
+   * was valid, and it maps a -Inf argument (a zero time constant) to 0 rather
+   * than +Inf. */
+  if (x <= -1024.0f) return 0.0f;
   x = 1.0 + x / 1024;
   x *= x; x *= x; x *= x; x *= x;
   x *= x; x *= x; x *= x; x *= x;
