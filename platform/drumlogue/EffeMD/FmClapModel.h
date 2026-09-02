@@ -11,14 +11,24 @@ public:
     // void loadParameters() override {
     //     is >> f_b >> f_m >> I >> d_m >> d1 >> d2 >> clap_count >> clap_interval >> fhp >> bm;
     // }
+    // Member order below matches the declaration order (see -Wreorder).  Every
+    // member is initialized here: target_fhp / target_Q in particular must
+    // start *equal* to fhp / Q, otherwise the one-pole smoother in Process()
+    // drags the band-pass towards a target nobody set.
     FmClapModel(void) : f_b(800.0f), f_m(800.0f), I(40.0f), d_m(0.05f),
-                        d1(0.02f), d2(0.3f), clap_count(3), clap_interval(0.012f),
-                        fhp(400.0f), bm(0.9f), noise(0.6f), mod_phase(0.0f), car_phase(0.0f),
+                        d1(0.02f), d2(0.3f),
+                        clap_count(3), clap_stage(0),
+                        clap_interval(0.012f), clap_timer(0.0f),
+                        fhp(400.0f), target_fhp(400.0f),
+                        Q(1.0f), target_Q(1.0f),
+                        bm(0.9f), noise(0.6f),
+                        mod_phase(0.0f), car_phase(0.0f),
                         prev_mod(0.0f), t(0.0f), t_fm(0.0f), omega_m(0.0f), omega_c(0.0f),
                         x1(0.0f), x2(0.0f), y1(0.0f), y2(0.0f),
-                        b0(0.0f), b1(0.0f), b2(0.0f), a1(0.0f), a2(0.0f), Q(1.0f),
+                        b0(0.0f), b1(0.0f), b2(0.0f), a1(0.0f), a2(0.0f),
                         active(false) {
         drum_rng_seed(&rng_, 0xC1A90001u);
+        updateFilterCoeffs(fhp, Q);
     };
     ~FmClapModel (void) override {};
 

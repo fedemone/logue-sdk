@@ -68,7 +68,6 @@ velocity 127:
 | Brachetti | −0.77 … −0.09 | −29.4 … −4.9 | **−13.5** | 40 presets |
 | EffeESP32 *(before)* | −14.87 … **0.00** | −21.6 … −0.4 | **−13.5** | 59 instruments |
 | EffeESP32 *(now)* | −9.86 … −0.16 | −16.6 … +1.9 | **−9.6** | 59 instruments |
-| RipplerX | silent | — | — | 28 presets |
 
 Two things fall out of that table:
 

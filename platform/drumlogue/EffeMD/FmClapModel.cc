@@ -12,9 +12,14 @@ void FmClapModel::Init() {
     float white = drum_rng_bipolar(&rng_);
     mod_phase = car_phase = HALF_PI + white * 0.2f;
     prev_mod = 0.0f;
-    b0 = b1 = b2 = a1 = a2 = 0.0f;
     // x_prev = y_prev = 0.0f;
     x2 = x1 = y2 = y1 = 0.0f;
+    // Clear the delay line but keep valid coefficients: the smoother in
+    // Process() only recomputes them while fhp/Q are still moving, so zeroing
+    // them here would mute the clap body whenever the filter is already
+    // settled on its target.  Init() deliberately does not touch target_fhp /
+    // target_Q -- a knob moved just before the trigger must still take effect.
+    updateFilterCoeffs(fhp, Q);
     active = true;
 }
 
@@ -24,9 +29,19 @@ void FmClapModel::Trigger() {
 }
 
 void FmClapModel::updateFilterCoeffs(float fc, float q) {
-    if (q < 0.1f) q = 0.1f;
+    // Clamp both arguments into the region where the RBJ band-pass is stable.
+    // Below ~20 Hz the poles collapse onto z = 1 and fastersinfullf() returns a
+    // small *negative* number, which makes alpha negative, a2 = (1-alpha)/
+    // (1+alpha) > 1 and the biquad divergent -- it reaches full-scale DC in
+    // under a second and Inf/NaN shortly after.
+    if (fc < CLAP_BPF_FC_MIN) fc = CLAP_BPF_FC_MIN;
+    if (fc > CLAP_BPF_FC_MAX) fc = CLAP_BPF_FC_MAX;
+    if (q  < CLAP_BPF_Q_MIN)  q  = CLAP_BPF_Q_MIN;
+    if (q  > CLAP_BPF_Q_MAX)  q  = CLAP_BPF_Q_MAX;
+
     float w0 = 2.0f * PI * fc * INV_SAMPLE_RATE;
     float alpha = fastersinfullf(w0) * 0.5f / q;
+    if (alpha < 0.0f) alpha = 0.0f;   // guard the sine approximation's error
     float inv_a0 = 1.0f / (1.0f + alpha);
 
     b0 = alpha * inv_a0;
@@ -60,9 +75,17 @@ float FmClapModel::Process() {
 
     // prepare
     float decay = (clap_stage < clap_count) ? d1 : d2;
-    if ((target_fhp != fhp) || (target_Q != Q)) {
+    // Smooth towards the knob targets.  Exact equality would never be reached
+    // by a one-pole, so snap once the remaining distance is inaudible; that
+    // ends the per-sample coefficient update instead of letting fhp and Q
+    // creep on into denormals.
+    if ((fabsf(target_fhp - fhp) > 0.01f) || (fabsf(target_Q - Q) > 1e-4f)) {
         fhp += 0.001f * (target_fhp - fhp); // smooth transition to avoid destabilizing the filter
         Q   += 0.001f * (target_Q - Q);
+        updateFilterCoeffs(fhp, Q);
+    } else if ((target_fhp != fhp) || (target_Q != Q)) {
+        fhp = target_fhp;
+        Q   = target_Q;
         updateFilterCoeffs(fhp, Q);
     }
     
@@ -146,6 +169,11 @@ void FmClapModel::loadPreset(uint8_t idx) {
           break;
         // case 2: - maybe in the future
     }
+    // A preset writes fhp/Q directly, so the smoother targets have to follow;
+    // otherwise Process() immediately starts pulling the preset value back
+    // towards a stale target.
+    target_fhp = fhp;
+    target_Q   = Q;
     updateFilterCoeffs(fhp, Q);
 };
 

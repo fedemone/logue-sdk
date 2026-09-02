@@ -422,7 +422,14 @@ int main() {
         {"FmKick",       &g_synth.kick,       false},
         {"FmSnare",      &g_synth.snare,      false},
         {"FmTom",        &g_synth.tom,        false},
-        {"FmClap",       &g_synth.clap,       false},
+        // Preset 0 sets the clap tail to d2 = 0.30 s, so the band-passed noise
+        // body is still at -32 dBFS one second after the trigger (measured:
+        // 0.080 at 0.5 s, 0.015 at 1.0 s, 0.003 at 1.5 s).  That is the
+        // preset's own decay, not a stuck voice -- the 1 s bucket only fits
+        // models whose tail is under ~0.25 s (the documented DkB default of 50
+        // gives d2 = 0.22 s and a 0.005 tail).  Check it against the 6 s
+        // budget, which still asserts it reaches silence.
+        {"FmClap",       &g_synth.clap,       true},
         {"FmRimshot",    &g_synth.rimshot,    false},
         {"FmCowbell",    &g_synth.cowbell,    false},
         {"FmCymbal",     &g_synth.cymbal,     false},

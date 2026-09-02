@@ -778,6 +778,15 @@ static inline __attribute__((optimize("Ofast"), always_inline)) float e_expf(flo
  * @note Adapted from https://codingforspeed.com/using-faster-exponential-approximation/
  */
 static inline __attribute__((optimize("Ofast"), always_inline)) float e_expff(float x) {
+  /* (1 + x/1024)^1024 converges to exp(x) only while the base stays
+   * non-negative.  At x = -1024 the base is 0; below x = -2048 it is < -1, and
+   * the *even* power turns a decaying exponential into a large positive number
+   * that reaches +Inf by x = -2500 -- e_expff(-2057) is 7790, not ~0.  Any
+   * caller with a short time constant walks into it (EffeMD's clap attack,
+   * tau = 350 us, crosses -2048 after only 0.72 s of note).  exp(-1024) is 0
+   * in single precision anyway, so clamping is exact wherever the series was
+   * already valid and removes the trap. */
+  if (x <= -1024.0f) return 0.0f;
   x = 1.0 + x / 1024;
   x *= x;
   x *= x;

@@ -48,6 +48,18 @@ constexpr float DEFAULT_VELOCITY_GAIN = 1.0f;
 constexpr float DEFAULT_MASTER_GAIN   = 4.59f;  // 2.30f +6dB (was too quiet)
 constexpr float CLAP_ATTACK_TIME = 0.00035f;
 
+// FmClap band-pass body filter.  The centre frequency and Q are smoothed
+// towards their targets one sample at a time, so both the smoothed value and
+// the target must stay inside these bounds: an RBJ band-pass degenerates into
+// a double pole on the unit circle as fc -> 0, and the fast sine used for the
+// coefficients turns slightly negative for very small arguments, which pushes
+// the poles *outside* it.  Clamping the arguments keeps the biquad stable for
+// every reachable parameter value.
+constexpr float CLAP_BPF_FC_MIN = 20.0f;
+constexpr float CLAP_BPF_FC_MAX = 2000.0f;
+constexpr float CLAP_BPF_Q_MIN  = 0.1f;
+constexpr float CLAP_BPF_Q_MAX  = 4.0f;
+
 // ============================================================================
 // LFO targets
 // ============================================================================
