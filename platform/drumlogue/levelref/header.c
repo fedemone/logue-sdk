@@ -23,33 +23,28 @@ const __unit_header unit_header_t unit_header = {
         // Format: min, max, center, default, type, fractional, frac. type, <reserved>, name
 
         // Page 1
-        // Which reference signal to generate.  Pink noise is the default: it is
-        // the only one of these whose spectrum resembles the material it is
-        // being compared against, so it is the one to judge by ear.
+        // Which reference signal to generate.  Pink noise is the one to judge
+        // by ear -- its spectrum resembles the material being compared against
+        // -- but it is also the most peak-limited: see TgtLUFS.
         {0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Signal"}},
-        // Target loudness in LUFS.  Calibrated per signal (see synth.h), so
-        // -20 here really does measure -20 LUFS on the bus.  Not every signal
-        // reaches every value: see ActLUFS.
-        {-40, 0, -20, -20, k_unit_param_type_none, 0, 0, 0, {"TgtLUFS"}},
-        // The loudness actually being delivered, in LUFS.  Not a control.  It
-        // equals TgtLUFS until the request passes what the signal can reach
-        // without clipping, and then stops -- PinkNz stops at -10, Sine100 at
-        // -2, Sine1k and WhitNz go the whole way to 0.  Read it, not TgtLUFS,
-        // when taking a measurement: it shares page 1 with TgtLUFS so the two
-        // can be compared without paging, and a ceiling is seen rather than
-        // mistaken for a level.
-        {-40, 0, -20, -20, k_unit_param_type_none, 0, 0, 0, {"ActLUFS"}},
+        // Target loudness, as an index: 0 is -40 LUFS, 40 is 0 LUFS.  Declared
+        // as a strings parameter so the unit formats the display itself, and so
+        // shows the loudness it is DELIVERING rather than the one requested --
+        // with "MAX" when the signal's ceiling has been reached.  A read-out
+        // parameter cannot do that job: unit_param_t has no read-only flag, so
+        // every parameter is a turnable knob whose displayed value is the one
+        // the drumlogue sent, which makes a read-out indistinguishable from a
+        // control that does nothing.  This unit had one, and it cost a hardware
+        // session: the knob moved, the number moved, the level did not.
+        {0, 40, 20, 20, k_unit_param_type_strings, 0, 0, 0, {"TgtLUFS"}},
         // Drone: sounds continuously from load, no note needed -- the mode to
         // use when comparing against a looping pattern.
         // Gated: follows note on/off, for checking the track's note path.
         {0, 1, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Mode"}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
 
         // Page 2
-        // Read-back of the peak level the current setting produces, in dBFS
-        // (negative).  Not a control.  With the target capped to what the
-        // signal can deliver this can no longer warn of a clip, so it is
-        // headroom information rather than a warning, and sits off page 1.
-        {-99, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {"PeakdB"}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
