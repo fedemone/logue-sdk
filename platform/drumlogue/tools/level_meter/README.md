@@ -68,7 +68,8 @@ velocity 127:
 | EffeMD | −2.39 … −1.17 | −12.9 … −2.2 | **−8.6** | 13 instruments |
 | Brachetti | −0.77 … −0.09 | −29.4 … −4.9 | **−13.5** | 40 presets |
 | EffeESP32 *(before)* | −14.87 … **0.00** | −21.6 … −0.4 | **−13.5** | 59 instruments |
-| EffeESP32 *(now)* | −9.86 … −0.16 | −16.6 … +1.9 | **−9.6** | 59 instruments |
+| EffeESP32 *(knee only)* | −9.86 … −0.16 | −16.6 … +1.9 | **−9.6** | 59 instruments |
+| EffeESP32 *(now, bus limiter)* | −9.86 … −0.24 | −20.6 … −2.2 | **−11.8** | 59 instruments |
 
 Two things fall out of that table:
 
@@ -153,6 +154,22 @@ EffeESP32 was calibrated this way. `MASTER_GAIN` against the measured mean:
 
 At 2.51 the unit gained 3.9 LU **and** stopped clipping: 15 of its 59
 instruments used to pin the hard clamp at 0.00 dBFS, and none do now.
+
+**That table is superseded, and it is worth understanding why.** Read on its own
+it says a memoryless knee bought 3.9 LU for free. It did not: it bought them by
+waveshaping, and this meter cannot see the difference. At `MASTER_GAIN` 2.51 the
+loudest EffeESP32 instruments were driving the knee up to 6.7× past full scale,
+which is a distortion box, not a limiter — measured at 30–50 % THD+N on a
+*single* Splash or ClHat hit, and worse on every stacked one. EffeESP32 now runs
+a look-ahead limiter (`dl::PeakLimiter`) in front of the knee, which gives back
+2.2 LU of the mean and 19–29 dB of distortion on the metallic instruments.
+`MASTER_GAIN` is unchanged at 2.51; with a limiter behind it, raising it further
+buys almost nothing (5.01 moves the mean by 0.6 LU) because the peak is held.
+
+The general lesson is the one this file already draws elsewhere: a loudness
+number says what a change bought and never what it cost. Read it against
+`harmonics.py` for single hits, and against
+[`stack_meter`](../stack_meter) for polyphonic ones.
 To try a different trim without editing the source:
 
 ```sh

@@ -70,6 +70,7 @@ public:
     Synth() {
         for (int i = 0; i < MAX_VOICES; ++i) voices_[i].setSampleRate(SAMPLE_RATE);
         for (int i = 0; i < P_COUNT; ++i) params_[i] = 0;
+        limiter_.init(SAMPLE_RATE, LIMIT_CEILING, LIMIT_RELEASE_S);
         load_instrument(1);   // boot on the Kick
     }
     ~Synth() {}
@@ -78,6 +79,7 @@ public:
         if (desc->samplerate != 48000) return k_unit_err_samplerate;
         if (desc->output_channels != 2) return k_unit_err_geometry;
         for (int i = 0; i < MAX_VOICES; ++i) voices_[i].setSampleRate(SAMPLE_RATE);
+        limiter_.init(SAMPLE_RATE, LIMIT_CEILING, LIMIT_RELEASE_S);
         load_instrument(1);
         return k_unit_err_none;
     }
@@ -86,7 +88,8 @@ public:
     inline void Resume()   {}
     inline void Suspend()  {}
     inline void Reset() {
-        for (int i = 0; i < MAX_VOICES; ++i) voices_[i].noteOff();
+        for (int i = 0; i < MAX_VOICES; ++i) voices_[i].silence();
+        limiter_.reset();
         load_instrument(params_[P_INSTR]);
     }
 
@@ -252,14 +255,31 @@ private:
     }
 
     // ---- voice allocation --------------------------------------------------
+    // Choke-and-reallocate.  A hit on a note that is still sounding used to
+    // re-use that very voice, and FmVoice6::noteOn() reset()s every operator
+    // phase, every feedback memory and the SVF state -- so a retrigger cut a
+    // still-ringing tail to zero in one sample (measured at 0.93 of full scale
+    // on a Crash1 struck every 250 ms against its 6 s decay), which is a step
+    // discontinuity, i.e. a click.  Measured on that roll, the RMS of the 1 ms
+    // after a retrigger was 0.38x the 1 ms before it; it is now 0.95x.
+    //
+    // Now the sounding voice is faded out over the envelope's ~20 ms semi-fast
+    // release and the new hit starts on a voice of its own.  The mono-per-note
+    // choke itself is kept deliberately -- it is how a drum part is expected to
+    // behave, and letting a 6 s cymbal layer on every step would eat the
+    // polyphony -- so what changed is only how the previous hit ends, not that
+    // it ends.  If the pool is full the faded voice is also the cheapest steal
+    // candidate (it scores highest, see FmVoice6::getStealScore), so a roll
+    // that outruns the polyphony degrades back to re-using its own voice rather
+    // than cutting an unrelated one.
     int allocate_voice(uint8_t note) {
-        // Re-use a voice already playing this note (mono-per-note choke).
         for (int i = 0; i < MAX_VOICES; ++i)
-            if (voices_[i].isActive() && voices_[i].getNote() == note) return i;
+            if (voices_[i].isActive() && voices_[i].getNote() == note)
+                voices_[i].noteChoke();
         // Prefer a free voice.
         for (int i = 0; i < MAX_VOICES; ++i)
             if (!voices_[i].isActive()) return i;
-        // Otherwise steal the lowest-scoring voice.
+        // Otherwise steal the most expendable voice.
         int best = 0; float bestScore = voices_[0].getStealScore();
         for (int i = 1; i < MAX_VOICES; ++i) {
             float s = voices_[i].getStealScore();
@@ -269,61 +289,87 @@ private:
     }
 
     // ---- block render + NEON mix ------------------------------------------
+    //
+    // Output chain:  voices -> pan/mix x MASTER_GAIN -> limiter -> soft knee.
+    //
+    // The mix used to go straight into dl::soft_knee().  That works for one
+    // voice and falls apart for several, because the knee is a *memoryless*
+    // waveshaper: its incremental slope collapses above the knee point
+    // ((span/(over+span))^2, so ~3% at twice the threshold), and every extra
+    // voice pushes the sum further along that curve.  Measured before this
+    // stage existed, with the loudest single hits already driving the shaper up
+    // to 6.7x full scale (Splash): against the linear voice mix, one Splash hit
+    // came out with its distortion 9.9 dB below the signal and four stacked
+    // hits 6.2 dB below it -- roughly half the output.  The same renders now
+    // measure -38.8 and -37.6 dB (tools/stack_meter).
+    //
+    // On a kick that reads as "fat" -- one dominant low partial, so the shaper
+    // only adds harmonics of it.  On a cymbal or a gong, hundreds of dense
+    // inharmonic partials, it manufactures every intermodulation product
+    // between every pair of them, which is exactly the broadband harshness that
+    // made stacked metallic hits unusable.
+    //
+    // dl::PeakLimiter rides a gain instead, so the spectrum is left alone and
+    // only the level moves.  The knee stays behind it, with its threshold at
+    // the limiter's ceiling, so it is unity in normal operation and only
+    // catches the little that leaks past the look-ahead window.
     fast_inline void render_block(float* __restrict out, int n) {
         int active[MAX_VOICES]; int na = 0;
         for (int i = 0; i < MAX_VOICES; ++i)
             if (voices_[i].isActive()) active[na++] = i;
 
-        if (na == 0) { memset(out, 0, (size_t)n * 2 * sizeof(float)); return; }
-
-        for (int a = 0; a < na; ++a)
-            voices_[active[a]].processBlock(scratch_[a], n);
+        if (na == 0) {
+            // Still run the output chain: the limiter holds a look-ahead delay
+            // line, so skipping it here would clip the last 32 samples off the
+            // tail of every sound.
+            memset(out, 0, (size_t)n * 2 * sizeof(float));
+        } else {
+            for (int a = 0; a < na; ++a)
+                voices_[active[a]].processBlock(scratch_[a], n);
 
 #if defined(EFFEESP32_USE_NEON)
-        // NEON pan/mix: accumulate all voice buffers into stereo, 4 frames/iter.
-        const float32x4_t g = vdupq_n_f32(MASTER_GAIN);
-        int i = 0;
-        for (; i + 4 <= n; i += 4) {
-            float32x4_t l = vdupq_n_f32(0.0f);
-            float32x4_t r = vdupq_n_f32(0.0f);
-            for (int a = 0; a < na; ++a) {
-                float32x4_t s = vld1q_f32(&scratch_[a][i]);
-                l = vmlaq_n_f32(l, s, voices_[active[a]].getPanL());
-                r = vmlaq_n_f32(r, s, voices_[active[a]].getPanR());
+            // NEON pan/mix: accumulate all voice buffers into stereo, 4 frames/iter.
+            const float32x4_t g = vdupq_n_f32(MASTER_GAIN);
+            int i = 0;
+            for (; i + 4 <= n; i += 4) {
+                float32x4_t l = vdupq_n_f32(0.0f);
+                float32x4_t r = vdupq_n_f32(0.0f);
+                for (int a = 0; a < na; ++a) {
+                    float32x4_t s = vld1q_f32(&scratch_[a][i]);
+                    l = vmlaq_n_f32(l, s, voices_[active[a]].getPanL());
+                    r = vmlaq_n_f32(r, s, voices_[active[a]].getPanR());
+                }
+                float32x4x2_t st;
+                st.val[0] = vmulq_f32(l, g);
+                st.val[1] = vmulq_f32(r, g);
+                vst2q_f32(&out[i * 2], st);
             }
-            // Interleave L/R into stereo output through the shared output
-            // stage.  This replaced a hard clamp at +-1: MASTER_GAIN is set for
-            // loudness, and the loudest patches (RailBel, PedHat) were already
-            // at the ceiling, so a clamp flat-topped their attack while the
-            // quiet ones stayed 20 dB down.  The soft knee is transparent below
-            // 0.70 and asymptotic to 0.995, so nothing is ever flat-topped.
-            float32x4x2_t st;
-            st.val[0] = dl::soft_knee_q(vmulq_f32(l, g));
-            st.val[1] = dl::soft_knee_q(vmulq_f32(r, g));
-            vst2q_f32(&out[i * 2], st);
-        }
-        for (; i < n; ++i) {
-            float l = 0.0f, r = 0.0f;
-            for (int a = 0; a < na; ++a) {
-                float s = scratch_[a][i];
-                l += s * voices_[active[a]].getPanL();
-                r += s * voices_[active[a]].getPanR();
+            for (; i < n; ++i) {
+                float l = 0.0f, r = 0.0f;
+                for (int a = 0; a < na; ++a) {
+                    float s = scratch_[a][i];
+                    l += s * voices_[active[a]].getPanL();
+                    r += s * voices_[active[a]].getPanR();
+                }
+                out[i * 2] = l * MASTER_GAIN;
+                out[i * 2 + 1] = r * MASTER_GAIN;
             }
-            out[i * 2] = dl::soft_knee(l * MASTER_GAIN);
-            out[i * 2 + 1] = dl::soft_knee(r * MASTER_GAIN);
-        }
 #else
-        for (int i = 0; i < n; ++i) {
-            float l = 0.0f, r = 0.0f;
-            for (int a = 0; a < na; ++a) {
-                float s = scratch_[a][i];
-                l += s * voices_[active[a]].getPanL();
-                r += s * voices_[active[a]].getPanR();
+            for (int i = 0; i < n; ++i) {
+                float l = 0.0f, r = 0.0f;
+                for (int a = 0; a < na; ++a) {
+                    float s = scratch_[a][i];
+                    l += s * voices_[active[a]].getPanL();
+                    r += s * voices_[active[a]].getPanR();
+                }
+                out[i * 2] = l * MASTER_GAIN;
+                out[i * 2 + 1] = r * MASTER_GAIN;
             }
-            out[i * 2] = dl::soft_knee(l * MASTER_GAIN);
-            out[i * 2 + 1] = dl::soft_knee(r * MASTER_GAIN);
-        }
 #endif
+        }
+
+        limiter_.processStereo(out, (size_t)n);
+        knee_.processStereo(out, (size_t)n);
     }
 
     static int   clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -333,6 +379,10 @@ private:
     static float feedback_delta_from(int pct)  { return (pct * 0.01f - 1.0f) * 3.5f; }
 
     // ---- state -------------------------------------------------------------
+    dl::PeakLimiter limiter_;
+    // Safety net behind the limiter: unity below LIMIT_CEILING, asymptotic to
+    // 0.995, so nothing is ever flat-topped even if the look-ahead is outrun.
+    const dl::OutputStage knee_{0.0f, LIMIT_CEILING, dl::kOutCeilDefault};
     FmVoice6        voices_[MAX_VOICES];
     fm_drum_patch_t working_;
     int16_t         params_[P_COUNT];

@@ -23,7 +23,9 @@ parameters then edit that cached copy in real time.
   from the original `Drumkit_default.json`.
 - **Per-voice SVF morph filter** (low → band → high) with resonance and drive.
 - **AHDSR envelope** per voice.
-- **8-voice polyphony** with note-aware allocation and steal-by-score.
+- **8-voice polyphony** with note-aware allocation, click-free choke and
+  steal-by-score.
+- **Look-ahead bus limiter** so stacked voices change level, not spectrum.
 - **NEON-accelerated** block mix/pan stage; auto-vectorized DSP build flags.
 - Real-time safe: **no heap allocation**, deterministic, fixed-size scratch.
 
@@ -73,6 +75,84 @@ single NEON pass applies per-voice L/R pan gains and the master gain while
 interleaving into the stereo output (`vst2q_f32`). The FM graph itself is
 inherently serial (each modulator feeds the next operator's phase), so SIMD is
 applied at the mix stage rather than across the operator chain.
+
+### Output stage
+
+```
+voices → pan/mix × MASTER_GAIN → dl::PeakLimiter → dl::soft_knee → out
+```
+
+Both stages come from [`common/output_stage.h`](../common/output_stage.h).
+
+The mix used to go straight into the soft knee. That is fine for one voice and
+falls apart for several, because the knee is a **memoryless waveshaper**: above
+its threshold the incremental slope collapses, and the bus level of a
+polyphonic unit is roughly proportional to how many voices are sounding. The
+loudest single hits were already driving it 6.7× past full scale, so a stack
+went far enough along that curve that the shaper was the dominant thing in the
+signal path.
+
+That is heard very differently depending on the material. A kick is one dominant
+low partial, so waveshaping it only manufactures harmonics of that partial and
+reads as "fat". A cymbal or a gong is hundreds of dense inharmonic partials, so
+the same shaper manufactures an intermodulation product for every pair of them —
+broadband, atonal, and exactly the harshness that made stacked metallic hits
+unusable. Cymbals are the worst case twice over: their crest factor is about
+3 dB against a kick's 14 dB, so the whole waveform sits above the knee rather
+than just the transient.
+
+`dl::PeakLimiter` rides a gain instead, so the spectrum is untouched and only
+the level moves. It is feed-forward with a 32-sample (0.67 ms) look-ahead, so
+the gain is already down when the peak that asked for it is emitted, and it is
+exactly transparent while the bus stays under `LIMIT_CEILING`. The knee sits
+behind it with its threshold *at* that ceiling, so it is unity in normal
+operation and only catches what leaks past the look-ahead window.
+
+Measured with [`tools/stack_meter`](../tools/stack_meter), against the linear
+voice mix at velocity 127:
+
+| instrument | voices | before | after |
+| --- | ---: | ---: | ---: |
+| Splash | 1 | −9.9 dB | **−38.8 dB** |
+| Splash | 4 | −6.2 dB | **−37.6 dB** |
+| ChinaCy | 4 | −6.4 dB | **−35.6 dB** |
+| Crash1 | 4 | −8.7 dB | **−35.5 dB** |
+| Kick | 4 | −10.9 dB | **−20.8 dB** |
+
+On the Kick's 49.8 Hz decay, `level_meter/harmonics.py` puts the manufactured
+energy above 250 Hz **39.1 dB** lower than before.
+
+The cost is 2.2 LU of measured loudness (mean −9.57 → −11.75 LUFS, and up to
+9 LU on the instruments that were being shaped hardest), which is the part of
+the old level that was distortion. Peaks went from a −0.16 … −2.7 dBFS spread to
+a uniform ceiling at −0.24 dBFS. The trade is deliberate: see the note in
+[`tools/level_meter/README.md`](../tools/level_meter/README.md) about not
+chasing unit loudness with gain — on hardware the level difference is a quarter
+turn of the synth track's volume knob.
+
+### Voice allocation
+
+Eight voices, mono-per-note, steal-by-score.
+
+A hit on a note that is still sounding **chokes** that voice — a ~20 ms
+semi-fast release — and starts on a voice of its own. It used to re-use the
+voice directly, and `noteOn()` resets every operator phase, every feedback
+memory and the SVF state, so a retrigger cut a still-ringing tail to zero in a
+single sample. On a Crash1 struck every 250 ms against its 6 s decay the tail
+was at 0.93 of full scale when that happened; the RMS of the 1 ms after the
+retrigger measured 0.38× the 1 ms before it, which is the click. It now
+measures 0.95×.
+
+The choke itself is kept: mono-per-note is how a drum part is expected to
+behave, and letting a 6 s cymbal layer on every step would eat the polyphony.
+
+When the pool is full the most expendable voice is stolen. The score keeps the
+upstream ordering by envelope stage (a voice being faded out goes before one
+still decaying, and one that has only just been triggered is never stolen) but
+no longer multiplies by the current level, which used to steal the *loudest*,
+least-decayed voice in a stage — the most audible choice available. A voice that
+was just choked scores highest, so a roll that outruns the polyphony degrades
+back to re-using its own voice instead of cutting an unrelated one.
 
 ### Instrument model
 
