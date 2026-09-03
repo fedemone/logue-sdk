@@ -149,12 +149,38 @@ public:
     }
     void noteOff()  { env_.end(Adsr::END_REGULAR); }
     void noteChoke(){ env_.end(Adsr::END_SEMI_FAST); }
+    // Immediate, unconditional silence, for unit_reset(): the SDK asks for
+    // active notes deactivated, envelopes back to neutral and oscillator phases
+    // reset.  noteOff() only starts a release, which on a 6 s cymbal leaves the
+    // unit sounding for six seconds after the host has reset it.
+    void silence()  { env_.end(Adsr::END_NOW); reset(); }
 
     bool    isActive() const { return env_.isRunning(); }
     uint8_t getNote()  const { return note_; }
+
+    // Higher score == steal this voice first.  A voice that has only just been
+    // triggered is never stolen (score 0); past that, a voice already being
+    // faded out goes before one still decaying, and within a stage the *least*
+    // audible voice goes first.
+    //
+    // The previous form was env_.getPenalty() * velocityVol_, i.e. the segment
+    // weight times the current level, so within a stage it stole the loudest,
+    // least-decayed voice before a quiet one -- the most audible choice the
+    // allocator could make.  The segment ordering is kept exactly as it was.
     float   getStealScore() const {
         if (!isActive()) return 1e6f;
-        return env_.getPenalty() * velocityVol_;
+        float w;
+        switch (env_.getCurrentSegment()) {
+            case Adsr::ADSR_SEG_ATTACK:
+            case Adsr::ADSR_SEG_HOLD:              w = 0.0f; break;
+            case Adsr::ADSR_SEG_DECAY:             w = 0.2f; break;
+            case Adsr::ADSR_SEG_RELEASE:           w = 0.4f; break;
+            case Adsr::ADSR_SEG_SUSTAIN:           w = 0.5f; break;
+            case Adsr::ADSR_SEG_FAST_RELEASE:      w = 0.7f; break;
+            case Adsr::ADSR_SEG_SEMI_FAST_RELEASE: w = 0.9f; break;
+            default:                               w = 0.5f; break;
+        }
+        return w / (1.0f + env_.getVal() * velocityVol_);
     }
 
     // ---- block render ------------------------------------------------------

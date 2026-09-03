@@ -65,3 +65,34 @@ constexpr float MASTER_GAIN    = 2.51f;  // 0.5f +14dB (1.41f measured -13.6 LUF
 #else
 constexpr float MASTER_GAIN    = MASTER_GAIN_OVERRIDE;
 #endif
+
+// Bus limiter (common/output_stage.h, dl::PeakLimiter).  The voice mix is
+// polyphonic, so its level is proportional to how many voices are sounding;
+// without a gain stage that tracks that, every extra voice drives the soft knee
+// behind it further into waveshaping, which on dense inharmonic material
+// (cymbals, gongs) is heard as harshness rather than as loudness.  The limiter
+// rides the gain instead, so stacking changes the level and not the spectrum.
+//
+// LIMIT_CEILING is also the knee's threshold, so the knee is exactly unity
+// under the limiter and only catches the little that leaks past it.
+// Measured with platform/drumlogue/tools/level_meter: 0.90 -> -12.10 LUFS mean,
+// 0.95 -> -11.75, 0.97 -> -11.63, and at 0.95 the loudest instrument still peaks
+// at -0.24 dBFS.  0.97 buys 0.12 LU more and leaves the knee behind it only
+// 0.025 of span to work in, so 0.95 is the better trade.
+#ifndef LIMIT_CEILING_OVERRIDE
+constexpr float LIMIT_CEILING  = 0.95f;
+#else
+constexpr float LIMIT_CEILING  = LIMIT_CEILING_OVERRIDE;
+#endif
+// Release.  Must stay well above the period of the lowest content the engine
+// makes (SubKick's 24 Hz fundamental is 42 ms), or the follower modulates the
+// waveform and becomes a distortion source itself.  Measured with
+// tools/level_meter/harmonics.py on the Kick's 49.8 Hz decay: at 120 ms the
+// energy above 250 Hz sits at -71.6 dB against the fundamental, at 20 ms it
+// rises to -39.3 dB -- 32 dB of manufactured harmonics to buy 0.84 LU, which is
+// the wrong side of that trade.
+#ifndef LIMIT_RELEASE_S_OVERRIDE
+constexpr float LIMIT_RELEASE_S = 0.12f;
+#else
+constexpr float LIMIT_RELEASE_S = LIMIT_RELEASE_S_OVERRIDE;
+#endif

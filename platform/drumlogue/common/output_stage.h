@@ -134,4 +134,117 @@ class OutputStage {
   float ceil_;
 };
 
+
+/**
+ * Look-ahead peak limiter for a stereo bus.
+ *
+ * Why this exists next to the knee above
+ * --------------------------------------
+ * `soft_knee` is a memoryless waveshaper.  That is the right tool for a peak:
+ * it acts on the handful of samples that overshoot and it cannot duck the body
+ * of a sound behind its own transient.  It is the wrong tool for *sustained*
+ * overdrive, and a polyphonic unit produces exactly that -- every extra voice
+ * multiplies the bus level, so the shaper ends up bending the whole waveform
+ * instead of its tips.
+ *
+ * How bad that is depends entirely on the material.  Waveshaping one dominant
+ * low partial (a kick) manufactures harmonics of it and reads as "fat".
+ * Waveshaping a dense inharmonic spectrum (a cymbal, a gong, several voices at
+ * once) manufactures every intermodulation product between every pair of
+ * partials, which is broadband, atonal, and reads as harsh.  Measured on
+ * EffeESP32 before this stage existed, against its own linear voice mix: one
+ * Splash hit came out with its distortion 9.9 dB below the signal and four
+ * stacked hits 6.2 dB below it.  With this stage in front of the knee the same
+ * renders measure -38.8 and -37.6 dB.  See platform/drumlogue/tools/stack_meter.
+ *
+ * A limiter fixes that by riding a *gain* instead of bending the samples: the
+ * spectrum is untouched, only the level moves.  This one is feed-forward with a
+ * fixed look-ahead, so the gain has already come down by the time the peak that
+ * caused it is emitted, and there is no overshoot to shape:
+ *
+ *     bus -> [ look-ahead limiter ] -> [ soft knee ] -> out
+ *
+ * Put the knee behind it, with its threshold at or above this stage's ceiling.
+ * The limiter then does the work and the knee only catches what leaks through.
+ *
+ * Cost: `kLookahead` samples of latency (0.67 ms at 48 kHz) and about ten
+ * scalar flops per sample.  The detector is stereo-linked (it follows
+ * max(|L|,|R|)) so the stereo image cannot shift while it acts, and the whole
+ * stage is exactly transparent -- gain stays at 1.0 -- while the bus stays
+ * under `ceiling`, so quiet material is untouched.
+ *
+ * Real-time safe: fixed-size state, no allocation, no branches on data beyond a
+ * pair of selects.
+ */
+class PeakLimiter {
+ public:
+  /** 32 samples = 0.67 ms at 48 kHz. */
+  static constexpr int kLookahead = 32;
+
+  /**
+   * @param sample_rate  host rate, Hz.
+   * @param ceiling      level the bus is held at, in the domain this stage sees
+   *                     (i.e. after whatever master gain precedes it).
+   * @param release_s    how fast gain returns.  Keep this longer than the
+   *                     period of the lowest content the unit produces -- a
+   *                     follower faster than that modulates the waveform and
+   *                     becomes a distortion generator itself.  A 32 Hz kick
+   *                     needs at least ~31 ms; 120 ms leaves margin.
+   */
+  void init(float sample_rate, float ceiling = 0.9f, float release_s = 0.12f) {
+    ceiling_ = ceiling;
+    // The gain must reach its target within the look-ahead window, so that the
+    // peak which asked for it is already scaled when it leaves the delay line.
+    // tau = kLookahead/4 samples puts it within 2% after a full window.
+    atk_ = 1.0f - expf(-4.0f / (float)kLookahead);
+    rel_ = 1.0f - expf(-1.0f / (release_s * sample_rate));
+    reset();
+  }
+
+  void reset() {
+    for (int i = 0; i < kLookahead * 2; ++i) delay_[i] = 0.0f;
+    widx_ = 0;
+    env_ = 0.0f;
+    gain_ = 1.0f;
+  }
+
+  /** Largest gain reduction currently applied, as a linear factor (1 = none). */
+  float gain() const { return gain_; }
+
+  /** In-place over an interleaved stereo buffer of `frames` frames. */
+  inline void processStereo(float* __restrict buf, size_t frames) {
+    float env = env_, gain = gain_;
+    const float ceiling = ceiling_, atk = atk_, rel = rel_;
+    int w = widx_;
+    for (size_t i = 0; i < frames; ++i) {
+      const float l = buf[2 * i], r = buf[2 * i + 1];
+      const float a = fmaxf(fabsf(l), fabsf(r));
+      // Peak follower: instant attack, exponential release.
+      env = (a > env) ? a : env + (a - env) * rel;
+      if (env < 1e-20f) env = 0.0f;  // keep the tail out of denormal territory
+      const float target = (env > ceiling) ? ceiling / env : 1.0f;
+      // Down fast (inside the look-ahead window), up slowly.
+      gain += (target - gain) * ((target < gain) ? atk : rel);
+      // Emit the delayed sample under the gain that its own peak asked for.
+      buf[2 * i] = delay_[2 * w] * gain;
+      buf[2 * i + 1] = delay_[2 * w + 1] * gain;
+      delay_[2 * w] = l;
+      delay_[2 * w + 1] = r;
+      w = (w + 1 == kLookahead) ? 0 : w + 1;
+    }
+    env_ = env;
+    gain_ = gain;
+    widx_ = w;
+  }
+
+ private:
+  float delay_[kLookahead * 2] = {0.0f};
+  int widx_ = 0;
+  float env_ = 0.0f;
+  float gain_ = 1.0f;
+  float ceiling_ = 0.9f;
+  float atk_ = 0.1f;
+  float rel_ = 1e-4f;
+};
+
 }  // namespace dl

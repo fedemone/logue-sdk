@@ -30,6 +30,23 @@ instructions for the next agent.
 - **Synth controller** (`synth.h`): instrument cache + override-on-touch params,
   8-voice allocator with steal-by-score, chunked block render, **NEON pan/mix**
   (`vld1q`/`vmlaq_n`/`vst2q`) with scalar fallback, master gain for headroom.
+- **Polyphonic output stage**: the voice mix now goes through
+  `dl::PeakLimiter` (new, in `common/output_stage.h`) before the soft knee. The
+  knee alone is a memoryless waveshaper, and a polyphonic bus drives it in
+  proportion to the number of sounding voices, so stacked hits were being
+  waveshaped rather than limited — inaudible-as-distortion on a kick, and
+  broadband intermodulation on the dense inharmonic spectra of cymbals and
+  gongs. Distortion against the linear voice mix dropped 19–29 dB on the
+  metallic instruments (`tools/stack_meter`), at a cost of 2.2 LU of measured
+  loudness that was itself distortion. See the README's *Output stage*.
+- **Click-free retrigger**: a hit on a sounding note chokes that voice over
+  ~20 ms and takes a fresh one, instead of re-using it and resetting every
+  operator phase and the SVF under a live tail. Steal score no longer prefers
+  the loudest voice in an envelope stage. See the README's *Voice allocation*.
+- **`unit_reset()` now silences**: it called `noteOff()`, which starts a release
+  — six seconds of cymbal after the host has reset the unit. The SDK asks for
+  active notes deactivated and oscillator phases reset, which is what
+  `FmVoice6::silence()` does.
 - **24-parameter GUI** (`header.c`) with proper SDK param types (strings, semi,
   percent, pan, msec, hertz, on/off, **midi_note**).
 - **Trigger Note** (param 22): each instrument carries its canonical MIDI note
@@ -67,9 +84,12 @@ instructions for the next agent.
    `.drmlgunit` is accepted (`dev_id` `0x46654465`, `unit_id` `0x34`, version
    `1.0.0`) and audibly correct.
 2. **Tune levels/voicing** against the original ESP32 firmware. `MASTER_GAIN`
-   (constants.h, 0.5) is a first guess; per-patch `volume` came straight from the
-   JSON (some are 2.0). Check the loudest patches (Ride, OpHat) for clipping with
-   the drumlogue master path.
+   (constants.h) is now 2.51 and calibrated with `tools/level_meter`; per-patch
+   `volume` came straight from the JSON (some are 2.0). Nothing clips any more —
+   the whole table peaks at −0.24 dBFS — but the loudest instruments still take
+   up to 17 dB of gain reduction from the bus limiter on a single hit, because
+   the patch levels span 26 dB. If that reads as squashed on hardware, the knob
+   to turn is `MASTER_GAIN`, not `LIMIT_CEILING`.
 3. **Choke groups**: the original `FmDrumPatch` has `chokeGroup` (e.g. open vs
    closed hi-hat). It is currently dropped. Re-add `chokeGroup` to the patch
    struct + generator and implement choking in the allocator.
@@ -108,8 +128,12 @@ instructions for the next agent.
       restores its exact values. Could be smoothed with a "first-load" guard.
 - [ ] **True 4-voice SIMD FM** is not attempted (data-dependent routing per
       algorithm). Only the mix stage is vectorized.
-- [ ] No automated test is committed; `/tmp/test_effeesp32.cc` is throwaway.
-      Consider adding a `tools/` host test that stubs `arm_neon.h`.
+- [ ] No automated *unit* test is committed; `/tmp/test_effeesp32.cc` is
+      throwaway. Two host measurement harnesses now are, though, and both
+      cross-compile the real NEON build and run it under qemu:
+      `platform/drumlogue/tools/level_meter` (loudness, peak, DC, harmonic cost)
+      and `platform/drumlogue/tools/stack_meter` (polyphonic distortion,
+      retrigger continuity).
 
 ---
 
