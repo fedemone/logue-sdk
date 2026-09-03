@@ -36,7 +36,11 @@ git config core.autocrlf input
  ```
  $ cd /mnt/d/my/path
 ```
- 3. Update the scripts to correct paths (e.g. /app/ => /mnt/c/app/)
+ Note: do **not** rewrite the `/app/...` paths inside the scripts. Those name
+ the helper programs *inside* the container, not files on the host, and
+ prefixing them with a drive mount stops the scripts running at all. Only the
+ bind-mount source needs translating, and the scripts now do that themselves
+ (see Windows Troubleshooting Notes below).
 
 ### Setup
 
@@ -298,41 +302,57 @@ The `build` command can be used to build projects for any platform. Unless more 
 
 #### Windows Troubleshooting Notes
 
-If you're on **Windows with Docker Desktop using WSL2 backend** and encounter mount errors when running `build -l` (e.g., `[Err] Could not find platform root directory at '/workspace/drumlogue'`), the issue is likely that Docker Desktop's WSL2 distro cannot access your project drive. This is particularly common when your SDK is on an external drive (USB, SD card, etc.).
+If `build -l` reports missing platform roots:
 
-**Solution:**
+```
+[Err] Could not find platform root directory at '/workspace/drumlogue'
+```
 
-1. **Mount your drive in WSL2** (if not auto-mounted):
-   - From PowerShell (as Administrator):
-   ```powershell
-   wsl --cd / mkdir -p /mnt/e
-   wsl --cd / mount -t drvfs E: /mnt/e
-   ```
-   (Replace `E:` with your actual drive letter)
+then `/workspace` is empty. Docker's `-v` creates an empty directory when the
+bind-mount source cannot be resolved on the host, so a wrong source path is
+never reported as an error — it yields a container with nothing in it, and the
+first complaint arrives from `build`, several steps later.
 
-2. **Mount your drive in Docker Desktop's internal WSL distro:**
-   ```powershell
-   wsl -d docker-desktop sh -c "mkdir -p /mnt/e && mount -t drvfs E: /mnt/e"
-   ```
+`run_interactive.sh` and `run_cmd.sh` now probe the mount before starting the
+environment, and stop with an explanation rather than handing you an empty one.
+They try two bind-mount sources, in this order:
 
-3. **Clean Docker cache** (if paths have been cached):
-   ```powershell
-   docker system prune -a --volumes
-   docker run --rm -v /mnt/e/path/to/your/platform:/test alpine ls /test
-   ```
-   Verify that this shows your actual platform directories, not an empty mount.
+| bind-mount source | works when |
+| --- | --- |
+| `D:/path/to/platform` | on Docker Desktop generally — it translates Windows paths itself, so nothing has to be set up and the path survives a reboot |
+| `/mnt/d/path/to/platform` | only while `D:` is mounted inside Docker Desktop's own `docker-desktop` WSL distro |
 
-4. **Rebuild the container:**
-   ```bash
-   ./build_image.sh
-   ```
+Earlier versions of these scripts used the second form exclusively. It depends
+on a mount that **is lost on restart, and whenever an external drive is
+unplugged** — the usual reason a setup that worked yesterday fails today, and
+especially likely with the SDK on a USB drive or SD card.
 
-5. **Run the interactive shell again:**
-   ```bash
-   ./run_interactive.sh
-   ```
+**If both sources fail**, Docker Desktop cannot see the drive at all. Mount it
+inside Docker Desktop's own WSL distro, from PowerShell:
 
-**Note:** These WSL2 mounts are temporary and will be lost on restart or if you unplug an external drive. For external drives, you may need to repeat steps 1-2 after each boot.
+```powershell
+wsl -d docker-desktop sh -c "mkdir -p /mnt/d && mount -t drvfs D: /mnt/d"
+```
+
+(replacing `D:` with your drive letter), then run the script again.
+
+To check a source path by hand:
+
+```bash
+docker run --rm -v D:/path/to/platform:/test alpine ls /test
+```
+
+That must list `drumlogue`, `minilogue-xd` and the other platform directories.
+An empty listing is the silent-empty-mount case above.
+
+Two things not worth doing, both of which this document used to recommend:
+
+- Mounting the drive in your **default** WSL distro (`wsl --cd / mount -t drvfs
+  ...`) achieves nothing here. The Docker daemon runs in the `docker-desktop`
+  distro and never consults your default one.
+- `docker system prune -a --volumes` does not help, and deletes every image you
+  have — including the SDK image, which then has to be rebuilt with
+  `./build_image.sh`. Mount paths are not cached, so there is nothing to clear.
 
  * Building a specific project
 

@@ -45,6 +45,8 @@ if [ -z "$(command -v realpath)" ]; then
     source ${SCRIPT_DIR}/inc/realpath
 fi
 
+source ${SCRIPT_DIR}/inc/platform_mount
+
 IMAGE_VERSION="latest"
 IMAGE_NAME_DEFAULT="xiashj/logue-sdk"
 IMAGE_NAME_FALLBACK="logue-sdk-dev-env"
@@ -112,28 +114,6 @@ if [ ! -d "${PLATFORM_PATH}" ]; then
     exit 1
 fi
 
-
-# Normalize path for Docker Desktop on Windows
-PLATFORM_MOUNT="${PLATFORM_PATH}"
-UNAME_S=$(uname -s 2>/dev/null || echo "")
-PREFIX=''
-
-if [[ "${OSTYPE}" == msys* || "${OSTYPE}" == cygwin* || "${UNAME_S}" =~ MINGW ]]; then
-    # Running in Git Bash/MSYS2 on Windows with Docker Desktop WSL2 backend
-    if [[ "${PLATFORM_PATH}" =~ ^/([a-z])/ ]]; then
-        # Convert /d/path to /mnt/d/path for Docker WSL2 backend
-        DRIVE_LETTER=$(echo "${PLATFORM_PATH:1:1}" | tr '[:lower:]' '[:lower:]')
-        REST_PATH="${PLATFORM_PATH:2}"
-        PREFIX="/mnt/${DRIVE_LETTER}"
-        PLATFORM_MOUNT="${PREFIX}${REST_PATH}"
-    fi
-elif [[ "${PLATFORM_PATH}" =~ ^([A-Za-z]): ]]; then
-    # Running from PowerShell/CMD - convert D:\path to /mnt/d/path
-    DRIVE_LETTER=$(echo "${PLATFORM_PATH:0:1}" | tr '[:upper:]' '[:lower:]')
-    REST_PATH=$(echo "${PLATFORM_PATH:2}" | sed 's|\\|/|g')
-    PREFIX="/mnt/${DRIVE_LETTER}"
-    PLATFORM_MOUNT="${PREFIX}${REST_PATH}"
-fi
 if [ ! -z "${OPT_LIST}" ]; then
     if [ ! -z "${CMD}" ]; then
         echo "[Warn] Arguments overriden by -l/--list option: ${CMD}" 1>&2
@@ -148,9 +128,10 @@ fi
 
 # Mount platform directory at /workspace as expected by container build scripts
 export MSYS_NO_PATHCONV=1
-APP_PATH='/app/cmd_entry'
-if [ ! -d "${PREFIX}${APP_PATH}" ]; then
-    echo "[Err] Could not find app directory at '${PREFIX}${APP_PATH}'" 1>&2
-    exit 1
-fi
-docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it "${IMAGE_NAME}:${IMAGE_VERSION}" "${PREFIX}${APP_PATH}" "${CMD}"
+
+# Resolve, and verify, the host path Docker binds at /workspace. A wrong source
+# path is not an error to Docker -- it mounts an empty directory -- so this is
+# checked here rather than being discovered later as a missing platform root.
+resolve_platform_mount || exit 1
+
+docker run --rm -v "${PLATFORM_MOUNT}:/workspace" -h logue-sdk -it "${IMAGE_NAME}:${IMAGE_VERSION}" /app/cmd_entry ${CMD}
