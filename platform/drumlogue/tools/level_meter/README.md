@@ -80,6 +80,33 @@ Two things fall out of that table:
   full scale, so a plain multiplier had nowhere to go. The deficit is crest
   factor, not level — which is what the output stage below addresses.
 
+### Settled on hardware: do not chase this table with gain
+
+The numbers above are worth having — they caught ScrutaAstri hard-clipping and
+EffeESP32 sitting 4 LU low — but the *original* complaint they were gathered to
+answer, that the synth track is quieter than the drumlogue's own instruments,
+turned out not to be a unit-level problem at all. Measured with
+[`levelref`](../../levelref) on hardware at matched faders:
+
+* All four units were **indistinguishable in level by ear**, despite spanning
+  11 LU in this table.
+* **KORG's own official Nano synth is equally quiet.** A unit none of this code
+  touches shows the same deficit, so the deficit is the drumlogue's user-synth
+  track, not the units on it.
+* The working fix is about a quarter turn more on the synth track's volume knob.
+
+So use this table to stop a unit *wasting* the headroom it has — clipping, DC,
+a dead volume control, an unintended 4 LU trim — and not to push a unit's mean
+loudness upward. In particular **Brachetti is deliberately left alone.** Its
+−29.4 … −4.9 LU spread reads like a defect and is not: every preset already
+peaks within 0.8 dB of full scale, so the spread is crest factor, and the
+high-crest presets are RimShot (42.1 dB), Wodblk (39.1), HHat-C (36.1) and
+Cowbel (33.1) — clicks, which are supposed to be quiet on a loudness meter.
+`output_stage.h` says the same thing in its own words: *"Do NOT normalise per
+preset or per instrument: the level differences between a kick and a triangle
+are musical."* The measured options for raising it are recorded below; all of
+them buy an inaudible change at a measurable distortion cost.
+
 ## Harmonic cost — `harmonics.py`
 
 Loudness says what a change to an output stage bought. It says nothing about

@@ -43,6 +43,7 @@
 #include <cstddef>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 #include "unit.h"
 
@@ -51,8 +52,8 @@
  * channels, and its crest factor in dB.  MEASURED with tools/level_meter
  * (gated BS.1770) against this exact generator -- not derived on paper.  The
  * first table is what makes the TgtLUFS knob mean what it says; the second
- * lets PeakdB warn about a clipping setting before it happens.  Re-measure
- * both if a generator changes.
+ * sets each signal's ceiling, the loudest target it reaches with its peak
+ * still under full scale.  Re-measure both if a generator changes.
  */
 static constexpr float kSignalLufsAtUnity[5] = {
     -5.68f,   // PinkNz   (Kellet economy pink, normalized -- see Generate)
@@ -85,9 +86,7 @@ class LevelRef {
   enum ParamIndex : uint8_t {
     k_param_signal = 0,
     k_param_target,
-    k_param_actual,
     k_param_mode,
-    k_param_peak,
     k_param_count = 24
   };
 
@@ -125,7 +124,7 @@ class LevelRef {
       float s = amp_ * Generate();
       // Reference signals must stay linear, so there is no soft clip here;
       // this only stops a nonsensical setting reaching the DAC past full
-      // scale.  The PeakdB read-out says when a setting is close.
+      // scale.  PeakSafeTarget() is what keeps it from ever being reached.
       if (s > 0.999f) s = 0.999f;
       else if (s < -0.999f) s = -0.999f;
       out[i * 2] = s;
@@ -160,27 +159,29 @@ class LevelRef {
         ClampTargetToPeakSafe();
         UpdateAmplitude();
         break;
-      case k_param_target:
-        requested_lufs_ = (value < -40) ? -40 : ((value > 0) ? 0 : value);
+      case k_param_target: {
+        // Index, not a level: 0 is -40 LUFS, 40 is 0 LUFS.  The parameter is
+        // typed strings so the unit can render the delivered level itself.
+        const int32_t i = (value < 0) ? 0 : ((value > 40) ? 40 : value);
+        requested_lufs_ = i - 40;
         target_lufs_ = requested_lufs_;
         ClampTargetToPeakSafe();
         UpdateAmplitude();
         break;
+      }
       case k_param_mode:
         mode_ = (value != 0) ? 1 : 0;
         break;
       default:
-        break;   // ActLUFS and PeakdB are read-outs, not controls
+        break;
     }
   }
 
   inline int32_t getParameterValue(uint8_t index) const {
     switch (index) {
       case k_param_signal: return signal_;
-      case k_param_target: return requested_lufs_;
-      case k_param_actual: return target_lufs_;
+      case k_param_target: return requested_lufs_ + 40;
       case k_param_mode:   return mode_;
-      case k_param_peak:   return peak_dbfs_;
       default:             return 0;
     }
   }
@@ -189,10 +190,27 @@ class LevelRef {
     static const char* const kSignalNames[k_sig_count] = {
         "PinkNz", "Sine1k", "Sine100", "WhitNz", "Silence"};
     static const char* const kModeNames[2] = {"Drone", "Gated"};
+    // The SDK states the returned pointer is not cached past the next call, so
+    // one reused buffer is sanctioned.  What is emitted is never longer than
+    // "-40 MAX", which keeps it inside what the other string tables here
+    // already use; the buffer is oversized only so the formatting is provably
+    // untruncated to the compiler.
+    static char buf[20];
     switch (index) {
       case k_param_signal:
         if (value >= 0 && value < k_sig_count) return kSignalNames[value];
         break;
+      case k_param_target: {
+        if (value < 0 || value > 40) break;
+        const int32_t asked = value - 40;
+        const int32_t got = PeakSafeTarget(asked);
+        // Show what is coming out, and say so when that is all there is.  The
+        // alternative -- showing the request -- is what let PinkNz read 0 while
+        // -10 LUFS came out for the top ten steps of the knob.
+        if (asked > got) snprintf(buf, sizeof buf, "%d MAX", (int)got);
+        else             snprintf(buf, sizeof buf, "%d", (int)got);
+        return buf;
+      }
       case k_param_mode:
         if (value >= 0 && value < 2) return kModeNames[value];
         break;
@@ -231,23 +249,21 @@ class LevelRef {
    * about its own level.  The request and the delivered value are now separate,
    * and ActLUFS reports the second, so a ceiling is visible instead of silent.
    */
-  inline void ClampTargetToPeakSafe() {
-    if (signal_ == k_sig_silence) return;
+  /** The requested target, reduced to what the current signal can deliver. */
+  inline int32_t PeakSafeTarget(int32_t asked) const {
+    if (signal_ == k_sig_silence) return asked;
     const int32_t max_target = (int32_t)floorf(kSignalLufsAtUnity[signal_]
                                                - kSignalPeakAtUnityDb[signal_]);
-    if (target_lufs_ > max_target) target_lufs_ = max_target;
+    return (asked > max_target) ? max_target : asked;
   }
 
+  inline void ClampTargetToPeakSafe() { target_lufs_ = PeakSafeTarget(target_lufs_); }
+
   inline void UpdateAmplitude() {
-    if (signal_ == k_sig_silence) { amp_ = 0.0f; peak_dbfs_ = -99; return; }
+    if (signal_ == k_sig_silence) { amp_ = 0.0f; return; }
     // amp such that the generator's output measures target_lufs_.
     const float delta_db = (float)target_lufs_ - kSignalLufsAtUnity[signal_];
     amp_ = powf(10.0f, delta_db * (1.0f / 20.0f));
-    // The generator is scaled by (target - LUFS at unity), so its peak moves
-    // by the same amount:  peak = target - LUFS_at_unity + peak_at_unity.
-    const float peak_db = delta_db + kSignalPeakAtUnityDb[signal_];
-    int32_t p = (int32_t)lrintf(peak_db);
-    peak_dbfs_ = (p > 0) ? 0 : ((p < -99) ? -99 : p);
   }
 
   inline float White() {
@@ -298,7 +314,6 @@ class LevelRef {
   int32_t requested_lufs_ = -20;
   int32_t target_lufs_ = -20;
   int32_t mode_ = 0;
-  int32_t peak_dbfs_ = 0;
 
   float amp_ = 0.0f;
   float phase_ = 0.0f;

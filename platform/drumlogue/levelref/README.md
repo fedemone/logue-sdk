@@ -28,18 +28,16 @@ by putting a signal of known loudness on the synth track.
    no note, no sequencer step required.
 3. Put a drum pattern on another track. Set **both** track faders to the same
    position, and note where they are.
-4. Turn `TgtLUFS` up until the noise and the drums sound equally loud, then read
-   **`ActLUFS`** for the answer — not `TgtLUFS`. The two agree until the request
-   passes what the signal can deliver, and `ActLUFS` is the one that tells the
-   truth when it does.
-5. If `ActLUFS` stops at **−10** while the drums are still louder, pink noise has
-   run out of range (see the ceiling table below) — a real result, and one worth
-   noting: it means the drum bus is hotter than −10 LUFS. Switch `Signal` to
-   `WhitNz`, which reaches 0 LUFS, and carry on. Your `TgtLUFS` setting is kept
-   across the change, so the knob picks up where it was.
+4. Turn `TgtLUFS` until the noise and the drums sound equally loud, and read the
+   number off it. `TgtLUFS` shows **the loudness being delivered**, not the one
+   requested, so what is on the screen is what is on the bus.
+5. If it reads `-10 MAX` and the drums are still louder, pink noise has run out
+   of range — a result in itself: the drum bus is hotter than −10 LUFS. Switch
+   `Signal` to `WhitNz`, which reaches 0 LUFS, and carry on from the same knob
+   position.
 
-The `ActLUFS` value you land on **is the drum bus's loudness**, in the same units
-the meter reports for every synth unit here. Then:
+The value you land on **is the drum bus's loudness**, in the same units the
+meter reports for every synth unit here. Then:
 
 * If it lands near, say, −10 LUFS, the synth units measured below are genuinely
   short by the difference, and calibrating them is the fix.
@@ -52,38 +50,50 @@ Use `Sine100` instead of `PinkNz` to compare specifically against a kick — a
 level problem that is really a low-frequency masking problem shows up as a large
 disagreement between the two answers.
 
-## Result so far
+## Result
 
-Run on hardware, matched faders, `PinkNz` / `Drone`: the drums and the noise
-**only began to match at pink noise's ceiling**, `ActLUFS` = −10 LUFS, and even
-there the match was approximate rather than exact.
+Run on hardware, matched faders, the answer came out as the **second** case
+above: the deficit is not in the units.
 
-So the drum bus is at **−10 LUFS or hotter**, which is a lower bound, not the
-answer — the instrument ran out of range before the drums did. Repeating it with
-`WhitNz`, which reaches 0 LUFS, is what turns it into a figure. Against that
-bound the table further down already says something useful: EffeMD (−8.6) and
-EffeESP32 (−9.6) are level with the drums, ScrutaAstri (−2.5) is well above
-them, and only Brachetti (−13.2 mean) is short.
+* Matching pink noise against the drums needed the synth track's own volume
+  knob about **a quarter turn further** than the other instruments.
+* Every user synth unit is affected equally — Brachetti, EffeMD, EffeESP32 and
+  ScrutaAstri were indistinguishable in level on hardware, despite measuring
+  11 dB apart here.
+* **KORG's own official Nano synth is just as quiet.** That is the decisive
+  one: a unit none of this code touches has the same deficit, so the deficit
+  belongs to the drumlogue's user-synth track, not to any unit on it.
 
-That first run was taken before `ActLUFS` existed, when the knob still read up to
-0 while −10 LUFS came out. Which is how this defect was found, and why the
-delivered level now has a display of its own.
+So no unit-side gain change is worth making. The quarter turn is the fix, and
+the useful work is making sure a unit does not *waste* the headroom it has —
+which is what the fixes recorded in the other READMEs here are about (
+ScrutaAstri no longer hard-clipping, EffeMD no longer emitting NaN, EffeESP32's
+trim). Brachetti is deliberately left alone: raising it would buy an inaudible
+change at a measurable distortion cost, and the per-preset spread that looks
+like a defect is crest factor, which is the instrument (see the cautions below).
 
 ## Parameters
 
 | # | Name | Range | Meaning |
 |---|---|---|---|
 | 0 | `Signal` | PinkNz / Sine1k / Sine100 / WhitNz / Silence | Which reference to generate. Pink noise is the default: it is the only one whose spectrum resembles the material it is being compared against, so it is the one to judge by ear |
-| 1 | `TgtLUFS` | −40 … 0 | The loudness you are **asking** for, gated BS.1770. Calibrated per signal, so within range the number on the screen is the number a meter reads back |
-| 2 | `ActLUFS` | −40 … 0 | Read-out: **the loudness actually being delivered**. Equals `TgtLUFS` until the request passes what the signal can reach without clipping, then stops. This is the number to record |
-| 3 | `Mode` | Drone / Gated | Drone sounds continuously from load; Gated follows note on/off |
-| 4 | `PeakdB` | −99 … 0 | Read-out on page 2: the peak level the current setting produces, in dBFS |
+| 1 | `TgtLUFS` | −40 … 0 LUFS | **The loudness being delivered**, gated BS.1770. Calibrated per signal, so the number on the screen is the number a meter reads back. Reads `-10 MAX` and similar where the signal's ceiling has been reached |
+| 2 | `Mode` | Drone / Gated | Drone sounds continuously from load; Gated follows note on/off |
 
-`ActLUFS` **stops** at the loudest value each signal can reach with its peak
-still under full scale — a reference that distorts is worse than no reference.
-`TgtLUFS` keeps your request, so raising it past a ceiling costs nothing and
-switching to a signal with the range to honour it takes effect immediately. The
-ceiling is the signal's crest factor, not a scaling choice:
+There are no read-out parameters, deliberately. `unit_param_t` has no read-only
+flag, so every parameter is a knob the user can turn, and the drumlogue displays
+the value it sent — which makes a read-out indistinguishable from a control that
+does nothing. This unit shipped one (`ActLUFS`) for exactly one revision, and it
+cost a hardware session: the knob moved, the number moved, the level did not.
+`TgtLUFS` is typed `strings` instead, so the unit renders its own display and
+that display is the delivered level.
+
+`TgtLUFS` **stops** at the loudest value each signal can reach with its peak
+still under full scale — a reference that distorts is worse than no reference —
+and says `MAX` when it has. Your position on the knob is kept, so raising it
+past a ceiling costs nothing and switching to a signal with the range to honour
+it takes effect immediately. The ceiling is the signal's crest factor, not a
+scaling choice:
 
 | Signal | crest | highest exact `TgtLUFS` | peak there |
 |---|---|---|---|
@@ -126,13 +136,23 @@ The per-signal calibration constants in `synth.h` (`kSignalLufsAtUnity`,
 `kSignalPeakAtUnityDb`) were **measured against this exact generator**, not
 derived on paper. Re-measure both if a generator changes.
 
-The parameter contract — that `TgtLUFS` reports the request, `ActLUFS` reports
-what is delivered, and a ceiling is never mistaken for a level — is pinned by
-`test_levelref.cc`, which needs no NEON and no hardware:
+The parameter contract — that `TgtLUFS` displays what is delivered rather than
+what was asked for, that a ceiling is marked rather than hidden, and that the
+header carries no read-out parameter for that mistake to return to — is pinned
+by `test_levelref.cc`, which needs no NEON and no hardware:
 
 ```sh
-g++ -std=c++14 -O2 -I . -I ../common -o test_levelref test_levelref.cc -lm
+g++ -std=c++14 -O2 -I . -I ../common -o test_levelref test_levelref.cc header.c -lm
 ./test_levelref
+```
+
+The meter shows the same thing end to end, the display agreeing with the
+measurement above the ceiling as well as below it:
+
+```
+30   30:-10        -0.89    -12.96    -10.00    -43.38     12.1
+31   31:-10 MAX    -0.89    -12.96    -10.00    -43.38     12.1
+40   40:-10 MAX    -0.89    -12.96    -10.00    -43.38     12.1
 ```
 
 ## What to compare against
