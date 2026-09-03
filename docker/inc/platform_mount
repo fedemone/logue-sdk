@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# Resolve the host path that Docker should bind-mount at /workspace, and verify
+# that it actually arrives inside the container.
+#
+# Docker's -v silently creates an empty directory when the source path does not
+# exist on the host, so a wrong path is never reported as an error. It surfaces
+# later, and misleadingly, as the container's own build command saying
+#
+#   [Err] Could not find platform root directory at '/workspace/drumlogue'
+#
+# On Windows the source path has to be translated, and there is more than one
+# form that can work, so rather than guessing this builds the candidates, probes
+# them, and fails with the reason instead of handing back a broken container.
+#
+# Expects: PLATFORM_PATH, IMAGE_NAME, IMAGE_VERSION
+# Sets:    PLATFORM_MOUNT
+#
+
+# Candidate bind-mount sources for PLATFORM_PATH, most durable first.
+platform_mount_candidates () {
+    local drive rest uname_s
+
+    case "${PLATFORM_PATH}" in
+        [A-Za-z]:*)
+            # PowerShell / CMD style: D:\Fede\... A drive letter is unambiguous
+            # on any host, so this needs no shell sniffing.
+            rest="${PLATFORM_PATH//\\//}"
+            echo "${rest}"
+            drive=$(echo "${PLATFORM_PATH:0:1}" | tr '[:upper:]' '[:lower:]')
+            echo "/mnt/${drive}${rest:2}"
+            return
+            ;;
+    esac
+
+    # A leading /d/ means a drive only under Git Bash / MSYS2. On Linux it is an
+    # ordinary directory, so identify the shell before rewriting anything.
+    uname_s=$(uname -s 2>/dev/null || echo "")
+    if [[ "${OSTYPE}" == msys* || "${OSTYPE}" == cygwin* \
+          || "${uname_s}" =~ MINGW || "${uname_s}" =~ CYGWIN ]]; then
+        case "${PLATFORM_PATH}" in
+            /[A-Za-z]/*)
+                drive="${PLATFORM_PATH:1:1}"
+                rest="${PLATFORM_PATH:2}"
+                # Windows drive form. Docker Desktop translates this itself, so
+                # it needs no WSL mount of its own and survives both a reboot
+                # and a replugged external drive.
+                echo "$(echo "${drive}" | tr '[:lower:]' '[:upper:]'):${rest}"
+                # A mount made by hand inside Docker Desktop's docker-desktop
+                # WSL distro. Works only while that mount is present, and it is
+                # lost on restart, so it is the fallback rather than the default.
+                echo "/mnt/$(echo "${drive}" | tr '[:upper:]' '[:lower:]')${rest}"
+                return
+                ;;
+        esac
+    fi
+
+    echo "${PLATFORM_PATH}"
+}
+
+# True when bind-mounting $1 actually puts the platform tree at /workspace.
+# Uses the SDK image so the probe never has to pull anything, and overrides its
+# interactive entrypoint so nothing is printed.
+platform_mount_works () {
+    MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /bin/sh \
+        -v "$1:/workspace" "${IMAGE_NAME}:${IMAGE_VERSION}" \
+        -c '[ -d /workspace/drumlogue ]' > /dev/null 2>&1
+}
+
+# Set PLATFORM_MOUNT to the first candidate that mounts. Returns non-zero, with
+# an explanation on stderr, when none of them do.
+resolve_platform_mount () {
+    local candidates count c drive drive_up drive_lo
+
+    candidates=$(platform_mount_candidates)
+    count=$(echo "${candidates}" | wc -l)
+
+    # A lone POSIX path is taken on trust: probing costs a container start, and
+    # on Linux and macOS there is nothing to disambiguate.
+    if [ "${count}" -eq 1 ]; then
+        PLATFORM_MOUNT="${candidates}"
+        return 0
+    fi
+
+    if ! docker image inspect "${IMAGE_NAME}:${IMAGE_VERSION}" > /dev/null 2>&1; then
+        echo "[Err] Cannot probe the mount: image '${IMAGE_NAME}:${IMAGE_VERSION}' is" 1>&2
+        echo "[Err] unavailable. Check that Docker is running, then build the image" 1>&2
+        echo "[Err] with ./build_image.sh" 1>&2
+        return 1
+    fi
+
+    while IFS= read -r c; do
+        if platform_mount_works "${c}"; then
+            PLATFORM_MOUNT="${c}"
+            return 0
+        fi
+    done <<< "${candidates}"
+
+    drive=$(echo "${PLATFORM_PATH}" | sed -E 's|^/([A-Za-z])/.*|\1|; s|^([A-Za-z]):.*|\1|')
+    drive_up=$(echo "${drive}" | tr '[:lower:]' '[:upper:]')
+    drive_lo=$(echo "${drive}" | tr '[:upper:]' '[:lower:]')
+    echo "[Err] Docker cannot reach the platform directory. Neither of these" 1>&2
+    echo "[Err] bind-mount sources put it at /workspace:" 1>&2
+    while IFS= read -r c; do
+        echo "[Err]   ${c}" 1>&2
+    done <<< "${candidates}"
+    echo "[Err]" 1>&2
+    echo "[Err] Docker Desktop most likely cannot see drive ${drive_up}:. Mount it in" 1>&2
+    echo "[Err] Docker Desktop's own WSL distro, from PowerShell:" 1>&2
+    echo "[Err]   wsl -d docker-desktop sh -c \"mkdir -p /mnt/${drive_lo} && mount -t drvfs ${drive_up}: /mnt/${drive_lo}\"" 1>&2
+    echo "[Err] and run this script again. See the Windows Troubleshooting notes" 1>&2
+    echo "[Err] in docker/README.md." 1>&2
+    return 1
+}
