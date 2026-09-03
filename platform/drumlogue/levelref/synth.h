@@ -85,6 +85,7 @@ class LevelRef {
   enum ParamIndex : uint8_t {
     k_param_signal = 0,
     k_param_target,
+    k_param_actual,
     k_param_mode,
     k_param_peak,
     k_param_count = 24
@@ -152,11 +153,16 @@ class LevelRef {
     switch (index) {
       case k_param_signal:
         signal_ = (value < 0) ? 0 : ((value >= k_sig_count) ? k_sig_count - 1 : value);
+        // Re-apply the request to the new signal rather than carrying the old
+        // signal's clamp over: moving off PinkNz onto a signal with the range
+        // to honour the request should honour it.
+        target_lufs_ = requested_lufs_;
         ClampTargetToPeakSafe();
         UpdateAmplitude();
         break;
       case k_param_target:
-        target_lufs_ = (value < -40) ? -40 : ((value > 0) ? 0 : value);
+        requested_lufs_ = (value < -40) ? -40 : ((value > 0) ? 0 : value);
+        target_lufs_ = requested_lufs_;
         ClampTargetToPeakSafe();
         UpdateAmplitude();
         break;
@@ -164,14 +170,15 @@ class LevelRef {
         mode_ = (value != 0) ? 1 : 0;
         break;
       default:
-        break;   // k_param_peak is a read-out, not a control
+        break;   // ActLUFS and PeakdB are read-outs, not controls
     }
   }
 
   inline int32_t getParameterValue(uint8_t index) const {
     switch (index) {
       case k_param_signal: return signal_;
-      case k_param_target: return target_lufs_;
+      case k_param_target: return requested_lufs_;
+      case k_param_actual: return target_lufs_;
       case k_param_mode:   return mode_;
       case k_param_peak:   return peak_dbfs_;
       default:             return 0;
@@ -212,8 +219,17 @@ class LevelRef {
    * capped at the loudest value this signal can reach with its peak still
    * under full scale.  It is a property of the signal's crest factor, not of
    * the scaling: pink noise runs 12.1 dB peak-to-RMS, so it cannot be taken
-   * past about -9 LUFS however it is normalized.  getParameterValue() returns
-   * the capped value, so the knob stops where the signal does.
+   * past -10 LUFS however it is normalized.  Measured ceilings, per signal:
+   *
+   *   PinkNz   -10 LUFS      Sine1k     0 LUFS
+   *   Sine100   -2 LUFS      WhitNz     0 LUFS
+   *
+   * This used to rely on getParameterValue() returning the capped value so
+   * that "the knob stops where the signal does".  It does not: the drumlogue
+   * displays the value it sent, so PinkNz sat at -10 LUFS while the knob read
+   * anything up to 0 -- ten steps of a measurement instrument quietly lying
+   * about its own level.  The request and the delivered value are now separate,
+   * and ActLUFS reports the second, so a ceiling is visible instead of silent.
    */
   inline void ClampTargetToPeakSafe() {
     if (signal_ == k_sig_silence) return;
@@ -275,6 +291,11 @@ class LevelRef {
   }
 
   int32_t signal_ = k_sig_pink;
+  // What the knob was set to, and what the signal can actually deliver. They
+  // differ whenever the request is above the current signal's ceiling; keeping
+  // both means the knob is never fought, the shortfall is visible on ActLUFS,
+  // and a request survives a signal change instead of being lost to a clamp.
+  int32_t requested_lufs_ = -20;
   int32_t target_lufs_ = -20;
   int32_t mode_ = 0;
   int32_t peak_dbfs_ = 0;
