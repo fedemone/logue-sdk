@@ -1728,17 +1728,48 @@ static void test_roll_fusion() {
            spaced > 1,
            "Spaced strokes are choking one voice — fuse window is too wide");
 
-    // Sustained families are excluded: for a cymbal swell or a marimba roll the
-    // overlap IS the sound (HW: "important for cymbals").
-    s.Init(&desc); s.LoadPreset(13);  // Cymbal (ENGINE_CYMBAL, capped at 2)
-    int cym = roll_max_voices(s, 69, 45.0f, 8);
+    // Sustained families are excluded from the fuse window: for a cymbal swell
+    // or a marimba roll the overlap IS the sound (HW: "important for
+    // cymbals").  For ENGINE_BAR that still means voices.
+    //
+    // For ENGINE_CYMBAL it no longer does, and the reason is worth keeping.
+    // This used to assert `cym >= 2` — a fast roll on a crash had to spread
+    // over voices.  It did, and what it produced was the ping-pong: two slots
+    // taking alternate strokes, so the stroke-to-stroke level WOBBLED
+    // (measured on a 45 ms roll: 0.245 0.296 0.295 0.315 0.306 0.327 0.313
+    // 0.332 — up, down, up, down) and every third stroke landed on a voice
+    // that was still ringing and cut it.  A cymbal is one piece of metal; the
+    // overlap that matters is its own ring continuing under the next stroke,
+    // which is what cymbal_note_on's retainRing path provides and what the
+    // same-note rule in NoteOn now guarantees.  On one voice the same roll
+    // swells monotonically (0.203 0.264 0.301 0.323 0.335 0.342 0.346 0.348)
+    // and measures BRIGHTER (centroid 16.2 kHz vs 12.7 kHz) with a twentieth
+    // of the sub-100 Hz energy.  So the property to protect is the SWELL, not
+    // the voice count.
+    s.Init(&desc); s.LoadPreset(13);  // Cymbal (ENGINE_CYMBAL)
+    s.state.next_voice_idx = 0;
+    float prev = 0.0f, first = 0.0f, last = 0.0f;
+    bool swells = true;
+    const int roll_gap = (int)(0.045f * 48000.0f);
+    for (int k = 0; k < 8; ++k) {
+        s.NoteOn(69, 110); s.NoteOff(69);
+        const float p = run_blocks(s, roll_gap, 64);
+        if (k == 0) first = p;
+        // A swell never gives back more than a hair between strokes.
+        if (k > 0 && p < prev * 0.98f) swells = false;
+        prev = p; last = p;
+    }
+    int cym = 0;
+    for (int i = 0; i < NUM_VOICES; ++i) if (s.state.voices[i].is_active) ++cym;
     s.Init(&desc); s.LoadPreset(1);   // Marimba (ENGINE_BAR)
     int bar = roll_max_voices(s, 60, 45.0f, 8);
-    std::cout << "  Cymbal fast roll: voices=" << cym
+    std::cout << "  Cymbal fast roll: voices=" << cym << " peak " << first
+              << " -> " << last << (swells ? " (monotone)" : " (WOBBLES)")
               << "   Marimba fast roll: voices=" << bar << "\n";
-    result("T35c sustained families keep stacking on a fast roll",
-           cym >= 2 && bar >= 2,
-           "Roll fusion leaked into a sustained engine — cymbal swells and "
+    result("T35c a cymbal roll swells; a marimba roll stacks",
+           swells && last >= first && cym == 1 && bar >= 2,
+           "Either the cymbal roll is wobbling stroke to stroke (the voice "
+           "ping-pong is back) or roll fusion leaked into ENGINE_BAR, where "
            "marimba rolls need the overlap");
 }
 
@@ -1766,6 +1797,20 @@ static void test_roll_fusion() {
 //   cymbal voices to be roughly twice the only CPU level this unit has field
 //   evidence for.  What must hold is that hits ACCUMULATE rather than replace
 //   each other, which is what the HW report was actually about.
+//
+//   HW REPORTED IT AGAIN after all of that, and the ledger showed why: the two
+//   voices the budget can afford take alternate strikes for ever (0 1 0 1 0 1),
+//   so from the third strike on every hit lands on a ringing voice and the
+//   listener hears two gongs being restarted, not four gongs piling up.  The
+//   rule is now the one ENGINE_KS already has for a re-plucked string: a gong
+//   is ONE piece of metal, so a re-strike on the SAME note re-excites its own
+//   voice (retainRing carries the ring, the driver envelopes and the noise bed
+//   across), and only a DIFFERENT note asks for a slot of its own.  So what is
+//   asserted below is what the report was about — successive strikes must
+//   ADD (level and drive envelope both rise), the ring must survive them, and
+//   the strike must still be audible ON TOP of what is already sounding —
+//   plus the parts that did not change: different notes still get their own
+//   voices, a steal still takes the oldest, and the cost stays in budget.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_cymbal_stacking() {
     std::cout << "\n── T36: Cymbal/gong voice stacking ──\n";
@@ -1773,20 +1818,24 @@ static void test_cymbal_stacking() {
     unit_runtime_desc_t desc = make_desc();
     BrachettiSynth s;
 
-    // Gong strikes 300 ms apart must accumulate on distinct voices for as long
-    // as the cost budget can afford another one.
+    // ── T36a: repeated strikes on ONE gong accumulate ──────────────────────
+    // Four strikes 300 ms apart on the same note.  They must land on one slot
+    // (one plate), each must raise the level rather than restart it, and the
+    // low driver envelope — the thing the old code zeroed on every re-strike,
+    // so that the wash collapsed and took 0.25 s to come back — must climb.
     s.Init(&desc); s.LoadPreset(14);        // Gong (ENGINE_CYMBAL)
     s.state.next_voice_idx = 0;
     uint32_t used = 0u;
     int worst_cost = 0;
-    bool reused_immediately = false;
-    int prev_idx = -1;
+    bool level_grows = true, env_grows = true, strike_audible = true;
+    float prev_peak = 0.0f, prev_env = 0.0f;
     for (int k = 0; k < 4; ++k) {
+        const int idx_before = (int)s.state.next_voice_idx;
+        const float before = s.state.voices[idx_before].cymbal.active
+                           ? s.state.voices[idx_before].cymbal.magEnv : 0.0f;
         s.NoteOn(50, 110);
         s.NoteOff(50);                      // gate on+off in one tick
         const int idx = (int)s.state.next_voice_idx;
-        if (idx == prev_idx) reused_immediately = true;
-        prev_idx = idx;
         used |= (1u << idx);
         int cost = 0;
         for (int i = 0; i < NUM_VOICES; ++i)
@@ -1794,20 +1843,43 @@ static void test_cymbal_stacking() {
                 cost += BrachettiSynth::kCymVoiceFixedLanes +
                         (int)s.state.voices[i].cymbal.resCount;
         if (cost > worst_cost) worst_cost = cost;
-        run_blocks(s, (int)(0.300f * 48000.0f), 64);
+        const float pk = run_blocks(s, (int)(0.300f * 48000.0f), 64);
+        const CymbalVoice& cv = s.state.voices[idx].cymbal;
+        const float env = (1.0f - cv.lowAtk) * cv.lowDec;
+        if (k > 0) {
+            if (pk  < prev_peak * 0.98f) level_grows   = false;
+            if (env < prev_env  * 0.98f) env_grows     = false;
+            // The strike itself has to be heard over the ring it lands on.
+            if (pk < before * 2.0f)      strike_audible = false;
+        }
+        prev_peak = pk; prev_env = env;
     }
     int distinct = 0;
     for (int i = 0; i < NUM_VOICES; ++i) if (used & (1u << i)) ++distinct;
-    std::cout << "  4 gong hits (300 ms apart): distinct voices=" << distinct
+    std::cout << "  4 gong hits (300 ms apart): slots used=" << distinct
+              << "  peak " << prev_peak << "  lowEnv " << prev_env
               << "  worst cost=" << worst_cost
               << " (budget " << BrachettiSynth::kCymCostBudget << ")\n";
-    result("T36a repeated gong hits accumulate on distinct voices",
-           distinct >= 2 && !reused_immediately,
-           "Gong hits are not stacking — repeated strikes are reusing the slot "
-           "they just struck instead of accumulating");
+    result("T36a repeated gong hits accumulate on one plate",
+           distinct == 1 && level_grows && env_grows && strike_audible,
+           "Gong hits are not accumulating — either they are being spread over "
+           "slots that then steal each other, or the re-strike is resetting "
+           "the driver envelope so the wash collapses on every hit");
 
-    // Every voice is now younger than kCymStealProtectSec, so the 5th strike
-    // must take the OLDEST slot.  Voice 0 was struck first, so it is the oldest.
+    // ── T36b: DIFFERENT notes still get their own voices, and a steal past
+    // the budget still takes the oldest ────────────────────────────────────
+    s.Init(&desc); s.LoadPreset(14);
+    s.state.next_voice_idx = 0;
+    uint32_t used_n = 0u;
+    for (int k = 0; k < 3; ++k) {
+        s.NoteOn((uint8_t)(45 + k * 5), 110);
+        s.NoteOff((uint8_t)(45 + k * 5));
+        used_n |= (1u << s.state.next_voice_idx);
+        run_blocks(s, (int)(0.300f * 48000.0f), 64);
+    }
+    int distinct_n = 0;
+    for (int i = 0; i < NUM_VOICES; ++i) if (used_n & (1u << i)) ++distinct_n;
+
     uint8_t oldest = 0;
     uint32_t oldest_age = 0u;
     for (int i = 0; i < NUM_VOICES; ++i) {
@@ -1826,17 +1898,24 @@ static void test_cymbal_stacking() {
             youngest = (uint8_t)i;
         }
     }
-    s.NoteOn(50, 110);
-    s.NoteOff(50);
-    std::cout << "  5th hit stole voice " << (int)s.state.next_voice_idx
+    // A fourth, again-new note is past what the budget can afford, so it must
+    // steal — and it must take the OLDEST voice, never the one just struck.
+    s.NoteOn(60, 110);
+    s.NoteOff(60);
+    std::cout << "  3 different notes: slots used=" << distinct_n
+              << "; 4th note stole voice " << (int)s.state.next_voice_idx
               << " (oldest=" << (int)oldest << ", youngest=" << (int)youngest << ")\n";
-    result("T36b over the cap the OLDEST cymbal voice is stolen",
-           s.state.next_voice_idx == oldest && s.state.next_voice_idx != youngest,
-           "Voice stealing is eating the freshest strike — the magEnv ranking "
-           "inverts while a slow-attack cymbal is still blooming");
+    result("T36b different notes stack, and a steal takes the OLDEST voice",
+           distinct_n >= 2 && s.state.next_voice_idx == oldest &&
+           s.state.next_voice_idx != youngest,
+           "Either a differently-pitched cymbal no longer gets its own voice, "
+           "or voice stealing is eating the freshest strike — the magEnv "
+           "ranking inverts while a slow-attack cymbal is still blooming");
 
-    // CPU guard: the aggregate bank must respect the budget even at the
-    // maximum density setting with every voice ringing.
+    // ── T36c: CPU guard ────────────────────────────────────────────────────
+    // The aggregate bank must respect the budget even at the maximum density
+    // setting with every voice ringing.  Distinct notes, because same-note
+    // strikes now share a voice and would not exercise the budget at all.
     s.Init(&desc); s.LoadPreset(13);        // Cymbal: largest base bank (96)
     // Density is Partls on the cymbal family now (7 = 60 %, the old Rsntrs
     // maximum).  Slot 3 is the Velocity knob — setting THAT to 60 would leave
@@ -1846,8 +1925,8 @@ static void test_cymbal_stacking() {
     s.state.next_voice_idx = 0;
     int budget_worst = 0;
     for (int k = 0; k < 8; ++k) {
-        s.NoteOn(69, 127);
-        s.NoteOff(69);
+        s.NoteOn((uint8_t)(60 + k), 127);
+        s.NoteOff((uint8_t)(60 + k));
         int cost = 0;
         for (int i = 0; i < NUM_VOICES; ++i)
             if (s.state.voices[i].is_active && s.state.voices[i].cymbal.active)
@@ -1866,6 +1945,77 @@ static void test_cymbal_stacking() {
            budget_worst <= limit,
            "Cymbal stack is over the CPU budget — this is what crashed the HW "
            "audio interface after pass 26 raised the cap from 2 voices to 4");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T43: the cymbal bank is never driven below its own lowest mode
+//
+//   HW: "multiple gong hits ... sound is muddy."  The mud was being
+//   SYNTHESISED, by a mechanism that only shows itself on repeated strikes.
+//   A 2-pole resonator with a constant numerator has a DC gain of
+//   b0/(1-a1-a2) — 42 for the gong's lowest lane (150 Hz, r = 0.99987) against
+//   4313 at its own resonance, i.e. only ~40 dB down.  Both things feeding
+//   that bank carry near-DC energy: `thwack` is a UNIPOLAR contact burst
+//   (20 ms on the gong, so almost all of its energy is under 50 Hz) and the
+//   noise driver is PINK, which by construction has more energy in 10-25 Hz
+//   than in 120-200 Hz.  Each strike parks a lump of sub-mode energy in the
+//   lanes with the most gain, it rings for a second, and it PILES UP: measured
+//   before the fix, 8 gong strikes 300 ms apart put 25 % of the total output
+//   energy under 100 Hz (one strike: 4 %) and dragged the spectral centroid
+//   from 833 Hz down to 269 Hz.  It is inaudible as pitch and it eats the
+//   whole limiter, so everything that IS audible gets quieter and duller.
+//
+//   The guard is a two-pole highpass at kCymDriveHpHz on the drive.  This test
+//   is the thing that must not regress: under a repeated strike the energy
+//   below 100 Hz stays a small share of the total.  Measured with a cascade of
+//   one-poles rather than an FFT so the test stays dependency-free.
+// ════════════════════════════════════════════════════════════════════════════
+static void test_cymbal_subsonic() {
+    std::cout << "\n── T43: no sub-mode energy in the cymbal drive ──\n";
+    unit_runtime_desc_t desc = make_desc();
+
+    struct Case { int preset; uint8_t note; const char* name; float limit; };
+    // Splash/HHat-O sit so far above 100 Hz that anything at all down there is
+    // a defect; the gong's own lowest mode is 150 Hz, so it is allowed more.
+    // Limits are set between the measured before and after on each preset, so
+    // each row actually fails against the pre-fix build:
+    //   Gong 8.5 % -> 1.7 %,  Cymbal 8.4 % -> 0.5 %,  RidBel 15.2 % -> 0.2 %.
+    const Case cases[] = { {14, 50, "Gong", 0.04f}, {13, 65, "Cymbal", 0.03f},
+                           {32, 60, "RidBel", 0.03f} };
+    bool all_clean = true;
+    for (const Case& c : cases) {
+        BrachettiSynth s;
+        s.Init(&desc); s.LoadPreset((uint8_t)c.preset);
+        // 4-pole one-pole cascade at 100 Hz = the "is it subsonic" detector.
+        const float k = 6.28318530717958647692f * 100.0f / 48000.0f;
+        float z[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        double lo_e = 0.0, tot_e = 0.0;
+        float buf[128];
+        for (int hit = 0; hit < 8; ++hit) {
+            s.NoteOn(c.note, 110);
+            s.NoteOff(c.note);
+            for (int b = 0; b < 225; ++b) {          // 225 * 64 = 300 ms
+                std::memset(buf, 0, sizeof(buf));
+                s.processBlock(buf, 64);
+                for (int i = 0; i < 64; ++i) {
+                    const float x = buf[i * 2];
+                    float y = x;
+                    for (int n = 0; n < 4; ++n) { z[n] += k * (y - z[n]); y = z[n]; }
+                    lo_e  += (double)y * y;
+                    tot_e += (double)x * x;
+                }
+            }
+        }
+        const float share = (tot_e > 0.0) ? (float)(lo_e / tot_e) : 0.0f;
+        std::cout << "  " << c.name << ": 8 strikes, energy under 100 Hz = "
+                  << (share * 100.0f) << " % (limit " << (c.limit * 100.0f) << " %)\n";
+        if (share > c.limit) all_clean = false;
+    }
+    result("T43 repeated cymbal strikes do not pile up sub-mode energy",
+           all_clean,
+           "Sub-100 Hz energy is accumulating across strikes — the bank is "
+           "being driven with a DC component again (unipolar stick burst, or "
+           "the pink driver's sub-audio tail) and its lowest lanes amplify it");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2377,6 +2527,7 @@ int main() {
     test_retrigger_consistency();
     test_roll_fusion();
     test_cymbal_stacking();
+    test_cymbal_subsonic();
     test_noise_same_tick_gate();
     test_preset_change_fade();
     test_velocity_knob();
