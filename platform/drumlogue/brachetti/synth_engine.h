@@ -1818,11 +1818,32 @@ SynthState state;
         //      still swelling, i.e. the loudest thing about to happen);
         //   2. only genuinely faded tails are candidates; if every voice is
         //      still young the OLDEST one goes, never the one just struck.
+        //
+        // HW AGAIN, after both of those: "multiple hits still do not stack
+        // correctly."  They did not, and the ledger says why — 8 gong strikes
+        // 300 ms apart allocate slot 0, slot 1, then 0, 1, 0, 1, 0, 1.  Two
+        // voices at the default density cost 2 x (124 + 32) = 312 of the 368
+        // lane budget, so the third strike can never afford a slot and steals;
+        // with every voice inside the 0.6 s protect window it steals the
+        // OLDEST, which is the one two strikes back.  Every strike from the
+        // third on therefore lands on top of a ring, alternating, for ever.
+        //
+        // The missing rule is the one ENGINE_KS already has for a re-plucked
+        // string, and it is the same physics: a gong is ONE piece of metal.
+        // Striking it again does not produce a second gong, it puts more
+        // energy into the one that is already ringing — which is precisely
+        // what cymbal_note_on's retainRing path now does properly (the ring,
+        // the driver envelopes and the noise bed all carry across the strike).
+        // So a re-strike ON THE SAME NOTE re-excites its own voice, and only a
+        // DIFFERENT note — a different-sized instrument — asks for a slot of
+        // its own.  Repeated strikes then cost ONE voice instead of two, which
+        // is also why the budget stops binding on exactly the gesture that
+        // used to break it.
         if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
             const int cap = (int)m_cym_poly;
             const uint32_t protect =
                 (uint32_t)(kCymStealProtectSec * default_sample_rate);
-            int active = 0, freeIdx = -1, faded = -1, oldest = -1;
+            int active = 0, freeIdx = -1, faded = -1, oldest = -1, same = -1;
             int busy_cost = 0;
             float wmag = 1e9f;
             uint32_t oldage = 0u;
@@ -1831,6 +1852,13 @@ SynthState state;
                 if (cv.is_active && cv.cymbal.active) {
                     ++active;
                     busy_cost += kCymVoiceFixedLanes + (int)cv.cymbal.resCount;
+                    // fade_mul < 1 = a voice the PREVIOUS preset left ringing
+                    // and that LoadPreset is fading out (pass 28).  It is not
+                    // this preset's plate, so it must not be re-excited — that
+                    // would cancel its fade and build the new preset's bank on
+                    // top of the old one's ring.
+                    if (same < 0 && cv.current_note == note &&
+                        cv.fade_mul >= 1.0f) same = i;
                     if (cv.cymbal.sampleIndex >= protect && cv.cymbal.magEnv < wmag) {
                         wmag = cv.cymbal.magEnv; faded = i;
                     }
@@ -1848,7 +1876,8 @@ SynthState state;
             // for the fixed cost that dominates a cymbal voice.
             const bool affordable =
                 (busy_cost + kCymVoiceFixedLanes + kCymMinResonators) <= kCymCostBudget;
-            if (active < cap && affordable && freeIdx >= 0)
+            if (same >= 0)                      state.next_voice_idx = (uint8_t)same;
+            else if (active < cap && affordable && freeIdx >= 0)
                                                 state.next_voice_idx = (uint8_t)freeIdx;
             else if (faded >= 0)                state.next_voice_idx = (uint8_t)faded;
             else if (oldest >= 0)               state.next_voice_idx = (uint8_t)oldest;
@@ -2657,9 +2686,28 @@ SynthState state;
                     ref_note = 60;
                     break;
                 case k_Gong:
+                    // hfTilt 2.4 (the last value) — see the hfTilt note below
+                    // and in CymbalConfig.  A flat bank under the pink driver
+                    // was leaving this preset with NO metal at all: measured
+                    // over the whole render, 0.2 % of its energy sat above
+                    // 1 kHz and 0.0 % above 3 kHz, against 28 % and 60 % on
+                    // the crash, and the spectral centroid was 190 Hz.  The
+                    // enum's own reference note for this preset says the
+                    // sample "starts with 800 Hz and settles to 1680 Hz"; the
+                    // render was an order of magnitude under that, which is
+                    // what "muddy" means here.  A flat resGain is not a flat
+                    // RESPONSE: a 2-pole resonator with a constant numerator
+                    // peaks at b0/((1-r)|1-r e^-2jw|), which for r = 0.9999 is
+                    // 32 dB louder at 162 Hz than at 8 kHz, and the pink
+                    // driver tilts it further.  2.4 counters both.  Now the
+                    // centroid RISES across the note — 353 Hz over the first
+                    // 250 ms, 996 Hz over 0.25-1 s, 2040 Hz over 1-2 s, the
+                    // tam-tam bloom the reference describes — over a body that
+                    // is still a quarter to a third in 100-300 Hz.
+                    // Mterl still moves it either way from here.
                     cc = { m_cym_gong_hz, 16, 80, 150.f, 14000.f, 2.4f,
                            0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
-                           0.126f, 0.22f, 0.010f, 0.15f };
+                           0.126f, 0.22f, 0.010f, 0.15f, 2.4f };
                     ref_note = 50;
                     break;
                 case k_HiHatOpen:
@@ -2690,8 +2738,11 @@ SynthState state;
             // measured ~1-1.4 kHz body centroid vs ~6-7 kHz in the reference
             // samples — the flat-gain bank under the pink (−3 dB/oct) driver
             // reads dark/tonal.  hfTilt=1 counters the driver tilt exactly.
-            // HHat-O ("do not break"), Gong (deliberately tonal) and Splash
-            // keep the legacy flat bank (hfTilt stays 0).
+            // HHat-O ("do not break") and Splash keep the legacy flat bank
+            // (hfTilt stays 0).  Gong used to be listed here as "deliberately
+            // tonal"; it measured at a 190 Hz centroid with nothing at all
+            // above 3 kHz, which is not tonal, and it now carries its own tilt
+            // in the config above.
             if (m_preset_idx == k_Cymbal || m_preset_idx == k_Ride ||
                 m_preset_idx == k_RideBell) {
                 // Over-whiten past 1.0: the thwack burst and swept one-pole park
@@ -2872,16 +2923,28 @@ SynthState state;
                 // because stickLevel feeds both the resonator drive and the
                 // direct tap and would land on the thwack squared.
                 //
-                // Gong is already correctly placed and is left alone.  HHat-O
-                // is equally quiet by measurement but is flagged
+                // HHat-O is equally quiet by measurement but is flagged
                 // "HW-approved, do not break" in CLAUDE.md, so its level is
                 // deliberately NOT touched here — raise it only on an explicit
                 // listen.
+                //
+                // Gong used to be the one preset here at trim 1.0, on the
+                // pass-30 finding that it was "already correctly placed" at
+                // +3.6 dB against the unit mean.  It was placed there by its
+                // own defect: a bank with no HF and a subsonic lump under it
+                // is a dense low drone, which is the loudest thing a
+                // limiter-bounded bus can carry — it measured 11.6 dB over the
+                // crash at a crest factor of 3.2 against the crash's 11.9,
+                // i.e. it was not louder, it was flatter.  With the drive
+                // cleaned up and the bank tilted it reads as a struck
+                // instrument (crest 22) and needs real gain to sit with the
+                // family again.
                 float cym_trim = 1.0f;
                 switch (m_preset_idx) {
                     case k_Cymbal:   cym_trim = 3.2f; break;
                     case k_Ride:     cym_trim = 2.9f; break;
                     case k_RideBell: cym_trim = 2.1f; break;
+                    case k_Gong:     cym_trim = 2.0f; break;
                     case k_Splash:   cym_trim = 1.4f; break;
                     default: break;
                 }

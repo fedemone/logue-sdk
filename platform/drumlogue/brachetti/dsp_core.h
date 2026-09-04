@@ -154,6 +154,19 @@ struct WaveguideState {
 // density the FDN used to add, so the comb is not needed and would blow the
 // per-voice RAM budget.
 enum { kCymbalMaxResonators = 112 };
+// Corner of the cymbal output rumble filter (two cascaded one-poles).  40 Hz
+// sits an octave and a half under the gong's 150 Hz fLo — the lowest anchor
+// anywhere in the family — so the filter is inaudible on the instrument and
+// removes only the subsonic energy documented at its use site.
+static constexpr float kCymRumbleHz   = 40.0f;
+static constexpr float kCymRumbleCoef = 6.28318530717958647692f * kCymRumbleHz *
+                                        k_dsp_inv_sample_rate;
+// Corner of the two-pole subsonic guard on the resonator DRIVE.  Set at the
+// lowest anchor frequency in the whole family (the gong's 150 Hz fLo) — see
+// the long note at its use site in cymbal_process.
+static constexpr float kCymDriveHpHz   = 150.0f;
+static constexpr float kCymDriveHpCoef = 6.28318530717958647692f * kCymDriveHpHz *
+                                         k_dsp_inv_sample_rate;
 static_assert(kCymbalMaxResonators % 4 == 0, "kCymbalMaxResonators must be a multiple of 4 for NEON loop safety");
 
 // Parameter bundle passed by value from NoteOn (never stored persistently, so
@@ -172,7 +185,7 @@ struct CymbalConfig {
     // weighted by sqrt(f / 2 kHz), which exactly counters the pink driver's
     // −3 dB/oct amplitude tilt so the wash reads white-bright like the
     // reference cymbals (~6-7 kHz body centroid) instead of ~1.3 kHz dark.
-    // Left 0 for presets whose balance is HW-approved (HHat-O, Gong, Splash);
+    // Left 0 for presets whose balance is HW-approved (HHat-O, Splash);
     // aggregate initializers with 17 values default this to 0.
     float hfTilt;
 };
@@ -214,7 +227,8 @@ struct CymbalVoice {
     float resY2[kCymbalMaxResonators]   = {};
     float resGain[kCymbalMaxResonators] = {};
 
-    float lpState = 0.0f, hpLowState = 0.0f, dcState = 0.0f;
+    float lpState = 0.0f, hpLowState = 0.0f, dcState = 0.0f, dcState2 = 0.0f;
+    float driveHp1 = 0.0f, driveHp2 = 0.0f;
     float pinkState[7] = {};
     float pmPhase[3]   = {};
 
@@ -237,6 +251,14 @@ struct CymbalVoice {
     // grinding through it until endSample (4 voices x full banks over long
     // gong-length tails overloaded the target: HW audio crash).
     float magEnv = 0.0f;
+
+    // The seed the ringing bank was built from.  A re-strike (retainRing) must
+    // rebuild the SAME frequencies, or every lane it keeps ringing is retuned
+    // under its own vibration: NoteOn's seed folds in the MIDI velocity, so two
+    // strikes of different force used to hand the same plate two different
+    // detune sets.  Kept per voice rather than recomputed because only the
+    // voice knows which strike built the bank it is still ringing with.
+    uint32_t bankSeed = 0u;
 };
 
 // --- cymbal helpers (all noteOn-time except where marked per-sample) ---------
@@ -277,18 +299,33 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     // bounded past 1.0 (velocityGain grows, decays lengthen, and maxCutoff is
     // re-clamped to 0.45·sr by cym_pole_coeff).
     c.velocity = fmaxf(0.01f, fminf(2.0f, velocity));
-    c.rng = seed ? seed : 0x12345678u;
+    // Level the two noise drivers are sitting at RIGHT NOW, read before the
+    // envelope state below is overwritten.  Zero on a fresh voice.
+    const float lowEnvHeld  = retainRing ? (1.0f - c.lowAtk) * c.lowDec : 0.0f;
+    const float highEnvHeld = retainRing ? (1.0f - c.hiAtk)  * c.hiDec  : 0.0f;
+    // A re-strike rebuilds the bank from the seed the RINGING bank was built
+    // from, so the lanes it keeps alive below stay on their own frequencies.
+    if (!retainRing) c.bankSeed = seed ? seed : 0x12345678u;
+    c.rng = c.bankSeed;
     c.sampleIndex = 0u;
     c.active = true;
     c.fade = 1.0f;
     c.fadeMul = 1.0f;
-    c.lpState = c.hpLowState = c.dcState = 0.0f;
+    // Driver filter/noise state survives a re-strike for the same reason the
+    // resonators do: these are the wash that is still sounding.  Zeroing them
+    // silences the noise bed for a full driver attack (0.25 s on the gong) and
+    // steps the DC blocker, which is most of why a re-struck cymbal used to
+    // read as "the previous hit disappeared".
+    if (!retainRing) {
+        c.lpState = c.hpLowState = c.dcState = c.dcState2 = 0.0f;
+        c.driveHp1 = c.driveHp2 = 0.0f;
+        c.pmVal = c.pmStep = 0.0f;
+        for (int i = 0; i < 7; ++i) c.pinkState[i] = 0.0f;
+    }
     // ctrlCount 0 makes the first process() sample take the control-rate
     // branch, so lpCoeff/hpCoeff are always valid before they are read.
     c.ctrlCount = 0u;
     c.lpCoeff = c.hpCoeff = 0.0f;
-    c.pmVal = c.pmStep = 0.0f;
-    for (int i = 0; i < 7; ++i) c.pinkState[i] = 0.0f;
     c.directNoiseLevel = cfg.directNoiseLevel;
 
     c.velocityGain = 0.25f + 0.75f * c.velocity * sqrtf(c.velocity);
@@ -296,7 +333,15 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     // Driver envelope time constants (constant for the note).
     const float decay     = cfg.decaySec     * ringDecayScale * (0.45f + 0.70f * c.velocity);
     const float highDecay = cfg.highDecaySec * ringDecayScale * (0.5f  + 0.70f * c.velocity);
-    c.lowAtk = c.lowDec = c.hiAtk = c.hiDec = 1.0f;
+    // env = (1 - atk) * dec, with atk and dec both decaying from 1.  A fresh
+    // strike starts at env = 0 and blooms over lowAttackSec.  A RE-strike must
+    // start where the voice already is and bloom from there: dec goes back to
+    // 1 (the strike refills the reservoir) and atk is placed so that env is
+    // exactly continuous across the strike.  lowEnvHeld/highEnvHeld are 0 on a
+    // fresh voice, so this reproduces `atk = dec = 1` bit-for-bit and the
+    // shipped single-hit renders are untouched.
+    c.lowAtk = 1.0f - fminf(1.0f, lowEnvHeld);   c.lowDec = 1.0f;
+    c.hiAtk  = 1.0f - fminf(1.0f, highEnvHeld);  c.hiDec  = 1.0f;
     c.lowAtkMul = cym_env_mul(cfg.lowAttackSec, sr);
     c.lowDecMul = cym_env_mul(decay, sr);
     c.hiAtkMul  = cym_env_mul(cfg.highAttackSec, sr);
@@ -489,7 +534,33 @@ static inline float cymbal_process(CymbalVoice& c) {
     const float pmDepth = c.pmDepthBase * strikeEnv;
     const float pmGain  = 1.0f + pmDepth * pm * 0.22f;
     const float pmExciter = pmDepth * 0.035f * pm;
-    const float drive = (loDriver + hiDriver + thwack + pmExciter) * pmGain;
+    float drive = (loDriver + hiDriver + thwack + pmExciter) * pmGain;
+    // ── Subsonic guard on the bank drive ───────────────────────────────────
+    // A 2-pole resonator with a constant numerator has a DC gain of
+    // b0/(1-a1-a2), which for the lowest lane of a gong (150 Hz, r = 0.99987)
+    // is 42 — while its gain AT resonance is 4313.  So drive energy near DC is
+    // only ~40 dB down on drive energy at the mode itself, and everything that
+    // reaches this line has some: `thwack` is a UNIPOLAR contact burst (20 ms
+    // on the gong, so nearly all of its energy is under 50 Hz) and `loDriver`
+    // is pink noise, which by construction has more energy in 10-25 Hz than in
+    // 120-200 Hz.  Each strike therefore parks a lump of sub-mode energy in
+    // the lanes with the most gain, and it rings for a second — so it PILES UP
+    // across repeated strikes.  Measured on the shipping build, energy under
+    // 100 Hz for ONE strike against EIGHT 300 ms apart: RidBel 2.7 % -> 25.0 %,
+    // Cymbal 1.7 % -> 13.5 %, Ride 2.5 % -> 9.7 %, Gong 5.6 % -> 9.1 % (the
+    // gong reads lower only because it had so little else).  It is inaudible
+    // as pitch and it eats the master limiter, so everything that IS audible
+    // gets quieter and duller with every hit.  That is the "repeated hits
+    // sound muddy" report, and it is not a mix problem — the mud is being
+    // synthesised.  T43 is the regression test.
+    //
+    // Two cascaded one-poles at kCymDriveHpHz: DC is removed outright, 25 Hz
+    // is -31 dB and 60 Hz -19 dB, while the lowest anchor any preset in the
+    // family uses (the gong's 150 Hz) pays 6 dB and the next one up (crash,
+    // 343 Hz) pays 1.5 dB.  Nothing in the family HAS a mode below 150 Hz, so
+    // everything this removes is energy the bank was never meant to receive.
+    c.driveHp1 += kCymDriveHpCoef * (drive - c.driveHp1);  drive -= c.driveHp1;
+    c.driveHp2 += kCymDriveHpCoef * (drive - c.driveHp2);  drive -= c.driveHp2;
 
     float res = 0.0f;
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -544,8 +615,25 @@ static inline float cymbal_process(CymbalVoice& c) {
     // Direct stick tap raised 0.07 -> 0.12: the "tang" contact click on top of
     // the mode excitation the burst already provides through the bank.
     float out = res + loDriver * c.directNoiseLevel + thwack * 0.12f;
-    c.dcState += 0.001f * (out - c.dcState);
-    out = (out - c.dcState) * 0.9f;
+    // Rumble filter (was a single 7.6 Hz DC blocker).  Two things reach the
+    // output BELOW the lowest resonator in the bank and neither is a cymbal:
+    // the direct `loDriver` tap is lowpassed PINK noise, which by definition
+    // carries more energy in 10-25 Hz than in 120-200 Hz, and a repeated
+    // strike turns the 20 ms stick burst into a pulse train whose harmonics
+    // start at the strike rate.  Both bypass the drive guard above, so they
+    // need their own: with that guard in place but this filter reverted to its
+    // old 7.6 Hz corner, a gong struck 8 times 300 ms apart still puts 12 % of
+    // the passage energy under 25 Hz and 17 % under 100 Hz.  With it: 0.4 %
+    // and 2.5 %, and the passage centroid rises 586 -> 696 Hz.
+    //
+    // Two cascaded one-poles at kCymRumbleHz: -16 dB at 17 Hz against -0.6 dB
+    // at 150 Hz, the lowest anchor any preset in the family uses (the gong;
+    // crash starts at 343 Hz, ride 481, splash 1123, hat 3271), so it removes
+    // only what nothing here is meant to produce.
+    c.dcState  += kCymRumbleCoef * (out - c.dcState);
+    out -= c.dcState;
+    c.dcState2 += kCymRumbleCoef * (out - c.dcState2);
+    out = (out - c.dcState2) * 0.9f;
     out *= c.velocityGain;
 
     // Panic fade (fadeMul < 1 only after AllNoteOff).

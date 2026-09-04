@@ -7,16 +7,18 @@
 
 ## Dev Branch
 
-`claude/brachetti-cymbal-velocity-2y8gsi` on `fedemone/logue-sdk`
-(previous work landed from `claude/brachetti-review-rename-rhad77`,
+`claude/gong-preset-stacking-bqiqyw` on `fedemone/logue-sdk`
+(previous work landed from `claude/brachetti-cymbal-velocity-2y8gsi`,
+`claude/brachetti-review-rename-rhad77`,
 `claude/snare-drum-realism-optimization-y4hrhf` and
 `claude/eager-galileo-2fho84`).
 
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 52,676 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
-`.bss` 107,884.  **The "28 KB / 30 KB" limit this file used to assert here was
+Current shipping tree: `.text` 52,964 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
+`.bss` 107,948.  (Pass 45: `.text` +288 B, `.bss` +64 B — four new floats per
+cymbal voice; `.rodata`/`.data.rel.ro` unchanged.)  **The "28 KB / 30 KB" limit this file used to assert here was
 never true** — see the constraint section. Watch the numbers for regressions;
 do not contort code to hit an imaginary ceiling.
 (Pass 32 listed the third figure as `.data`; the section actually carrying the
@@ -26,7 +28,18 @@ so read the row name, not the row order.)
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **107/107**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **108/108**.
+- **Pass 45 (the six ENGINE_CYMBAL presets changed — the Gong a LOT, needs a
+  listen):** the HW report "multiple gong hits do not stack correctly and the
+  sound is muddy" came back after passes 26 and 30 both aimed at it, and both
+  were measuring the wrong thing.  Three real defects, all measured — see the
+  pass entry.  Listen for: is the Gong now too bright (its `Mterl` knob still
+  moves the tilt both ways from the new setting, 1.4 to 5.0), is its new level
+  right against the rest of the kit, and does a repeated strike read as ONE
+  gong being driven harder rather than several being restarted?  **HHat-O is
+  the one to check for damage** — it is flagged "do not break", and although
+  its shipped voicing is untouched, the two new filters take it 0.5 dB down and
+  its sub-100 Hz energy to zero.  New tool `gong_probe`; new test T43.
 - **Pass 44 (BrshSnr changed — needs a listen):** its head was mixed in at
   **zero** (`k_modal_mix = 0.0`), so the "resonance" the HW report asked for
   did not exist; it now has one, at **Note 55 (196 Hz)** instead of 38 (73 Hz,
@@ -169,6 +182,148 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 45 — the gong: it was not stacking, and the mud was being synthesised
+
+Third pass on one HW report — *"multiple hits do not stack correctly and the
+sound is muddy"* — after pass 26 rewrote the steal ranking for it and pass 30
+re-costed the CPU budget for it.  Both of those measured voice indices and
+microseconds.  Neither ever rendered the passage, and the passage is where all
+three defects live.  New tool `gong_probe.cpp` renders it and prints a voice
+ledger, a strike-over-ring ratio and a band split.
+
+**1. It really was not stacking, and the ledger says so in one line.**  Eight
+gong strikes 300 ms apart allocate slots `0 1 0 1 0 1 0 1`.  Two voices at the
+default density cost `2 x (124 + 32) = 312` of the 368-lane budget, so from the
+third strike on nothing is ever affordable and every strike steals; inside the
+0.6 s protect window the steal takes the OLDEST, which is the voice from two
+strikes ago.  So the instrument is permanently two gongs being restarted in
+alternation.  Measured strike-over-ring (peak in the 30 ms after a strike over
+the level just before it): **1.5-2.3**.
+
+The missing rule is the one `ENGINE_KS` has had since pass 41 for a re-plucked
+string, and it is the same physics: **a gong is one piece of metal**.  A
+re-strike on the SAME note now re-excites its own voice; only a DIFFERENT note
+asks for a slot of its own.  Strike-over-ring **13-18**, one voice instead of
+two, and `cym_cpu_probe` puts repeated strikes at **14.1 µs/block against
+29.0** — the gesture that has been the CPU worry since pass 29 now costs half
+of what it did.
+
+**2. A re-strike was zeroing the wash it was landing on.**  `retainRing`
+(pass 26) kept `resY1/resY2` but `cymbal_note_on` still reset the two driver
+envelopes to `atk = dec = 1`, i.e. **env = 0**, and cleared `lpState`,
+`hpLowState`, `dcState` and the pink-noise state.  A gong's low driver takes
+`lowAttackSec` 0.25 s and its high driver 0.50 s to reopen, so every re-strike
+killed the noise bed dead and spent the next third of a second climbing back.
+At any normal playing rate it never got there: traced across 8 strikes, the low
+driver sat at 0.59 and the high driver never reached its own attack.  The
+envelopes are now placed so the level is **exactly continuous** across the
+strike (`atk = 1 - env_held`, `dec = 1`, which reproduces `atk = dec = 1`
+bit-for-bit on a fresh voice) and the filter states carry.  Traced now: low
+0.79, high 0.65, both climbing.  A re-strike also rebuilds the bank from the
+**seed the ringing bank was built from** (new `CymbalVoice::bankSeed`) —
+`NoteOn`'s seed folds in the MIDI velocity, so two strikes of different force
+used to retune every lane the voice was keeping alive, under its own vibration.
+
+**3. The mud is synthesised, and it is a DC problem.**  A 2-pole resonator with
+a constant numerator has DC gain `b0/(1-a1-a2)` — for the gong's lowest lane
+(150 Hz, r = 0.99987) that is **42**, against **4313** at its own resonance, so
+near-DC drive energy is only ~40 dB down on drive energy at the mode.  Both
+things feeding that bank carry it: `thwack` is a **unipolar** contact burst
+(20 ms on the gong, so nearly all its energy is under 50 Hz) and the noise
+driver is **pink**, which by construction has more energy in 10-25 Hz than in
+120-200 Hz.  Every strike parks a lump of sub-mode energy in the lanes with the
+most gain, it rings for a second, and it **piles up**.  Energy under 100 Hz,
+one strike vs eight 300 ms apart, on the shipping build:
+
+| preset | 1 strike | 8 strikes |
+|---|---|---|
+| RidBel | 2.7 % | **25.0 %** |
+| Cymbal | 1.7 % | **13.5 %** |
+| Ride   | 2.5 % | **9.7 %** |
+| Gong   | 5.6 % | **9.1 %** |
+
+It is subsonic, so it is never heard as pitch — it just eats the master
+limiter, and everything that IS audible gets quieter and duller with each hit.
+Two guards, both two cascaded one-poles: **on the drive** at 150 Hz (the lowest
+anchor frequency anywhere in the family, so nothing in the family has a mode
+below it) and **on the output** at 40 Hz, replacing the old 7.6 Hz DC blocker,
+for the two direct taps that bypass the bank.  Each was verified to earn its
+place: with only the drive guard, a gong passage still puts 12 % of its energy
+under 25 Hz.  **T43** is the regression test; it fails on the pre-fix build on
+all three presets it checks.
+
+**4. And then the gong had no metal in it at all.**  With the drive clean, the
+remaining problem was plain: over a whole render, **0.2 % of the gong's energy
+sat above 1 kHz and 0.0 % above 3 kHz**, against 28 % and 60 % on the crash.
+Its centroid was **190 Hz**.  The enum's own reference note for the preset says
+the sample "starts with 800 Hz and settles to 1680 Hz", and `REALISM_REVIEW.md`
+measured the reference at 1147/815 Hz against a render of 393/505 — and both
+documents wrote it off as "deliberately tonal".  It is not tonal, it is dark:
+`hfTilt` was 0, and a flat `resGain` is not a flat RESPONSE — the same
+`b0/((1-r)|1-r e^-2jw|)` peak gain is **32 dB louder at 162 Hz than at 8 kHz**,
+and the pink driver tilts it further.  `hfTilt = 2.4` (crash is 3.0, the rides
+2.0).  Single strike now: whole-render centroid **1939 Hz**, and — the part
+that matters — it **RISES** across the note, 353 Hz over the first 250 ms,
+996 Hz over 0.25-1 s, 2040 Hz over 1-2 s.  That is the bloom the reference
+describes, over a body still a quarter to a third in 100-300 Hz.  Sweeping `highAttackSec` 0.50/0.20/0.08 moved the attack centroid
+by 3 Hz, so the shipped attack times are left alone; the darkness was never
+there.
+
+**5. Level.**  Gong was the one preset on `cym_trim` 1.0, on pass 30's finding
+that it was "already correctly placed" at +3.6 dB against the unit mean.  It
+was placed there by its own defect: it measured **11.6 dB over the crash at a
+crest factor of 3.2** (the crash's is 11.9) — not louder, flatter, because a
+dense low drone is the loudest thing a limiter-bounded bus can carry.  Repeated
+strikes took it to crest **1.95**, which is a drone with no strikes in it at
+all.  `cym_trim` 2.0 puts it back with the family: rms 0.038 vs Cymbal 0.034
+and Ride 0.041, peak 0.84, crest **22**.
+
+**Gong, before → after** (single strike / 8 strikes 300 ms apart):
+
+| | centroid | crest | <100 Hz | 1-3 kHz | 3-8 kHz |
+|---|---|---|---|---|---|
+| before, 1 strike  | 190 Hz | 4.5 | 5.6 % | 0.2 % | 0.0 % |
+| after,  1 strike  | **1939 Hz** | **20.2** | **0.2 %** | **21.0 %** | **23.6 %** |
+| before, 8 strikes | 171 Hz | 2.2 | 10.9 % | 0.1 % | 0.0 % |
+| after,  8 strikes | **573 Hz** | **8.9** | **3.2 %** | **3.5 %** | **5.9 %** |
+
+**Blast radius: exactly the six ENGINE_CYMBAL presets.**  34 of 40 renders are
+byte-identical; the six that changed are 13/14/26/31/32/36.  Difference-RMS
+against the old render: Gong +0.1 dB (a different sound), Cymbal −2.4, Ride
+−2.3, RidBel −1.3, Splash −6.5, **HHat-O −7.5** — the smallest change of the
+five, but HHat-O is flagged "do not break", so note what it did get: level
+−0.5 dB and its sub-100 Hz energy to zero.  Nothing about its voicing was
+touched.
+
+**Two tests were rewritten because their premise was the defect.**
+- **T35c** asserted a fast cymbal roll spreads over ≥ 2 voices ("the overlap IS
+  the sound").  It did — by ping-pong, and the measured result was a
+  stroke-to-stroke level WOBBLE (0.245 0.296 0.295 0.315 0.306 0.327 0.313
+  0.332).  On one re-excited voice the same roll swells monotonically (0.203
+  0.264 0.301 0.323 0.335 0.342 0.346 0.348) and measures brighter (centroid
+  16.2 kHz vs 12.7) with a twentieth of the sub-100 Hz energy.  It now asserts
+  the SWELL, and that ENGINE_BAR still stacks.
+- **T36a** asserted "distinct voices ≥ 2".  It now asserts what the report was
+  about: one plate, level rising, driver envelope rising, and the strike
+  audible over the ring.  **T36b** moved to distinct notes (same-note strikes
+  no longer exercise a steal) and still asserts the oldest voice goes.
+Both fail against the pre-fix build.
+
+**Found and NOT fixed (no sound change, recorded so it is not re-derived):**
+`CymbalConfig::maxHz` is **dead** — `cymbal_note_on` clamps to a hard
+`fHi = 20000.0f` and never reads it, so half of the `Mterl` -> "metal
+brightness" mapping (`cc.maxHz *= knob_exp2(1.3 * d_cmt)`) does nothing.  The
+`hfTilt` half is live and carries that knob.
+
+Verified: 34/40 renders byte-identical and 0 NaN/silent, `test_dsp` exit 0,
+`test_hw_debug` **108/108**, `stability_sweep` 4096 combos + 480 rolls with 0
+problems and worst |peak| 0.9900, host syntax clean, all 18 probe tools build,
+`plateau_probe` shows no knob-travel change on the cymbal family, and the ARM
+cross-build measures `.text` 52,676 → 52,964, `.rodata` unchanged, `.bss`
+107,884 → 107,948 (four floats per voice: `bankSeed`, `dcState2`, `driveHp1`,
+`driveHp2`).
+
 
 ### Pass 44 — BrshSnr: the head was mixed in at ZERO, and velocity saw a third of a knob
 
@@ -543,8 +698,8 @@ pass-36 out-of-range sweeps, one level up.
 **Deliberately KEPT** (general-purpose, or the docs say to run them):
 `plateau_probe`, `param_audit`, `note_audit`(+`.py`), `stability_sweep`,
 `render_presets`, `velocity_probe`, `knobaud`, `verify_blind`, `samegate_probe`,
-`switch_probe`, `cym_cpu_probe`, `kick_probe`, `test_dsp`, `test_hw_debug`,
-`refcmp.py`, `modal_extract.py`, `pre_hw_analysis.py`.
+`switch_probe`, `cym_cpu_probe`, `gong_probe`, `kick_probe`, `test_dsp`,
+`test_hw_debug`, `refcmp.py`, `modal_extract.py`, `pre_hw_analysis.py`.
 
 **Left in place, needs a call** (flagged, not removed):
 - **The phase-23 auto-tuning pipeline** — `auto_tune.py`,
@@ -2272,6 +2427,14 @@ g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
 g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
     plateau_probe.cpp -o /tmp/plateau_probe
 /tmp/plateau_probe
+
+# ENGINE_CYMBAL repeated-strike probe — voice ledger, strike-over-ring ratio
+# and band split for a PASSAGE, which is the only place the pass-45 defects
+# show (a single strike looks fine and cym_cpu_probe/T36 only see indices and
+# microseconds).  Pass a directory to also dump the WAVs.
+g++ -std=c++17 -O2 -I. -I.. -I../common -I../../common -DRUNTIME_COMMON_H_ \
+    gong_probe.cpp -o /tmp/gong_probe
+/tmp/gong_probe                # or: /tmp/gong_probe /tmp/wavs
 
 # Note-assignment audit — renders each preset AT ITS OWN shipped Note through
 # GateOn() (render_presets.cpp uses its own hard-coded notes and cannot see
