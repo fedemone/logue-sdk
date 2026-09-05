@@ -247,6 +247,70 @@ measured 208 resonators at max density (then `Rsntrs` = 60, now `Partls` = 7;
 budget 240).  Regression-tested as
 **T36** in `test_hw_debug.cpp` (T36a fails against the pre-fix code).
 
+
+##### Pass 45 — it still was not stacking, and the mud was synthesised
+
+> **Superseded in part by pass 46.**  The reference recordings were restored to
+> `samples/` and they overturn item 4 below: `Chinese-Gong.wav` measures a
+> 196 Hz power centroid with 0.0 % of its energy above 3 kHz, so the render
+> pass 45 "fixed" was already a close match for its own reference, and the
+> `hfTilt` moved the preset onto the *other*, brighter gong in `samples/`.  The
+> tilt and trim are reverted; the subsonic guard is kept with its corner moved
+> 150 Hz → 55 Hz.  See `CLAUDE.md`, pass 46.
+>
+> **HW verdict: half accepted.**  *"Stacking is better, but sound has
+> degraded."*  Items 1 and 2 (the stacking work) are accepted and are provably
+> tonally free — with items 3-5 backed out, all 40 preset renders are
+> byte-identical to the pre-pass build.  Items 3-5 (the subsonic guards and the
+> gong's `hfTilt` / `cym_trim`) are rejected on the listen and are what pass 46
+> has to revisit.  The measured back-off ladder, the four independent revert
+> points and the ranked hypotheses are in `CLAUDE.md` under "HW verdict on
+> pass 45".  The blocker there is that `samples/` has no gong reference, so the
+> spectral target came from two written references in this repo that contradict
+> each other.
+
+
+The report came back a third time (*"multiple hits do not stack correctly and
+the sound is muddy"*).  Both earlier passes measured voice indices and CPU; the
+passage itself was never rendered, and that is where the defects were.
+`gong_probe.cpp` renders it — voice ledger, strike-over-ring ratio, band split.
+
+1. **The ping-pong was never gone.**  Two voices at the default density cost
+   `2 x (124 + 32) = 312` of the 368-lane budget, so from the third strike on
+   nothing is affordable, every strike steals, and inside the 0.6 s protect
+   window it steals the OLDEST — the voice from two strikes back.  Eight gong
+   strikes allocate `0 1 0 1 0 1 0 1` for ever.  Fix: the `ENGINE_KS` rule from
+   pass 41, for the same reason — a gong is ONE piece of metal, so a re-strike
+   on the same note re-excites its own voice and only a different note takes a
+   slot.  Strike-over-ring 1.5-2.3 → **13-18**; repeated-strike CPU 29.0 →
+   **14.1 µs/block**.
+2. **A re-strike zeroed the wash it landed on.**  `retainRing` kept the
+   resonators but the driver envelopes were still reset to `env = 0` and the
+   filter/noise state cleared — and the gong's drivers take 0.25 s and 0.50 s
+   to reopen.  Both are now continuous across the strike, and the bank is
+   rebuilt from the seed the *ringing* bank was built from so its lanes are not
+   retuned under their own vibration.
+3. **The mud is a DC problem.**  A 2-pole resonator with a constant numerator
+   has DC gain 42 on the gong's lowest lane against 4313 at resonance — only
+   ~40 dB down — and both drivers carry near-DC energy (`thwack` is a unipolar
+   20 ms burst, the noise is pink).  It piles up: energy under 100 Hz went from
+   2.7 % on one RidBel strike to 25.0 % on eight.  Two two-pole guards, on the
+   drive at 150 Hz and on the output at 40 Hz (replacing the 7.6 Hz DC
+   blocker).  T43 is the regression test.
+4. **The gong had no metal in it.**  0.2 % of its energy above 1 kHz, 0.0 %
+   above 3 kHz, centroid 190 Hz — while its own reference is 815-1680 Hz.  It
+   was `hfTilt = 0`, documented as "deliberately tonal"; a flat `resGain` is
+   not a flat response (32 dB more gain at 162 Hz than at 8 kHz).  `hfTilt =
+   2.4`: centroid 1939 Hz, and rising across the note — 353 → 996 → 2040 Hz
+   over the first 250 ms / 0.25-1 s / 1-2 s.
+5. **Level.**  Gong measured 11.6 dB over the crash at crest 3.2 — not louder,
+   flatter.  `cym_trim` 1.0 → 2.0 now that it has a transient again (crest 22).
+
+Byte-identity: 34/40; the six that changed are the ENGINE_CYMBAL presets.
+`CymbalConfig::maxHz` was found **dead** (the bank clamps to a hard 20 kHz and
+never reads it), so half the `Mterl` → brightness mapping does nothing; left
+as-is, the `hfTilt` half carries that knob.
+
 #### Roll fusion — the exception to stacking
 
 Stacking is right for flams and roll *tails* and wrong for a **pressed roll**.
@@ -264,7 +328,9 @@ the one still rattling.
 | Same note, drum family, gap < `kRollFuseSec` (80 ms) | **reuse** the last voice — one continuous roll |
 | Gap ≥ `kRollFuseSec` | **stack** (round-robin, as above) |
 | Different note | **stack** — a fast pitched figure is not a roll |
-| `ENGINE_CYMBAL`, `ENGINE_BAR`, `ENGINE_PLATE` | **always stack** — for a cymbal swell or marimba roll the overlap *is* the sound |
+| `ENGINE_BAR`, `ENGINE_PLATE` | **always stack** — for a marimba roll the overlap *is* the sound |
+| `ENGINE_CYMBAL`, same note | **re-excite** that voice (pass 45) — a cymbal is one piece of metal, so the overlap it needs is its own ring continuing under the next stroke, not a second copy of itself; `retainRing` carries the ring, the driver envelopes and the noise bed across the strike |
+| `ENGINE_CYMBAL`, different note | **stack** — a different-sized instrument gets its own voice |
 
 `kRollFuseSec` is a single constant shared by the fusion test and the snare
 wire-state restore, so the two can never disagree about what counts as a roll.

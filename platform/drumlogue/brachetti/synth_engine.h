@@ -1818,11 +1818,32 @@ SynthState state;
         //      still swelling, i.e. the loudest thing about to happen);
         //   2. only genuinely faded tails are candidates; if every voice is
         //      still young the OLDEST one goes, never the one just struck.
+        //
+        // HW AGAIN, after both of those: "multiple hits still do not stack
+        // correctly."  They did not, and the ledger says why — 8 gong strikes
+        // 300 ms apart allocate slot 0, slot 1, then 0, 1, 0, 1, 0, 1.  Two
+        // voices at the default density cost 2 x (124 + 32) = 312 of the 368
+        // lane budget, so the third strike can never afford a slot and steals;
+        // with every voice inside the 0.6 s protect window it steals the
+        // OLDEST, which is the one two strikes back.  Every strike from the
+        // third on therefore lands on top of a ring, alternating, for ever.
+        //
+        // The missing rule is the one ENGINE_KS already has for a re-plucked
+        // string, and it is the same physics: a gong is ONE piece of metal.
+        // Striking it again does not produce a second gong, it puts more
+        // energy into the one that is already ringing — which is precisely
+        // what cymbal_note_on's retainRing path now does properly (the ring,
+        // the driver envelopes and the noise bed all carry across the strike).
+        // So a re-strike ON THE SAME NOTE re-excites its own voice, and only a
+        // DIFFERENT note — a different-sized instrument — asks for a slot of
+        // its own.  Repeated strikes then cost ONE voice instead of two, which
+        // is also why the budget stops binding on exactly the gesture that
+        // used to break it.
         if (kPresetEngine[m_preset_idx] == ENGINE_CYMBAL) {
             const int cap = (int)m_cym_poly;
             const uint32_t protect =
                 (uint32_t)(kCymStealProtectSec * default_sample_rate);
-            int active = 0, freeIdx = -1, faded = -1, oldest = -1;
+            int active = 0, freeIdx = -1, faded = -1, oldest = -1, same = -1;
             int busy_cost = 0;
             float wmag = 1e9f;
             uint32_t oldage = 0u;
@@ -1831,6 +1852,13 @@ SynthState state;
                 if (cv.is_active && cv.cymbal.active) {
                     ++active;
                     busy_cost += kCymVoiceFixedLanes + (int)cv.cymbal.resCount;
+                    // fade_mul < 1 = a voice the PREVIOUS preset left ringing
+                    // and that LoadPreset is fading out (pass 28).  It is not
+                    // this preset's plate, so it must not be re-excited — that
+                    // would cancel its fade and build the new preset's bank on
+                    // top of the old one's ring.
+                    if (same < 0 && cv.current_note == note &&
+                        cv.fade_mul >= 1.0f) same = i;
                     if (cv.cymbal.sampleIndex >= protect && cv.cymbal.magEnv < wmag) {
                         wmag = cv.cymbal.magEnv; faded = i;
                     }
@@ -1848,7 +1876,8 @@ SynthState state;
             // for the fixed cost that dominates a cymbal voice.
             const bool affordable =
                 (busy_cost + kCymVoiceFixedLanes + kCymMinResonators) <= kCymCostBudget;
-            if (active < cap && affordable && freeIdx >= 0)
+            if (same >= 0)                      state.next_voice_idx = (uint8_t)same;
+            else if (active < cap && affordable && freeIdx >= 0)
                                                 state.next_voice_idx = (uint8_t)freeIdx;
             else if (faded >= 0)                state.next_voice_idx = (uint8_t)faded;
             else if (oldest >= 0)               state.next_voice_idx = (uint8_t)oldest;
@@ -2657,6 +2686,30 @@ SynthState state;
                     ref_note = 60;
                     break;
                 case k_Gong:
+                    // hfTilt stays 0 here, and pass 46 put it back after pass
+                    // 45 set it to 2.4.  Worth the space, because the mistake
+                    // is instructive: pass 45 called a 190 Hz centroid with
+                    // nothing above 3 kHz "objectively wrong" on the strength
+                    // of two written notes in this repo, having no recording to
+                    // check against (samples/ was gitignored — see
+                    // samples/README.md).  The recording says otherwise.
+                    // Chinese-Gong.wav, the reference this preset is named
+                    // after, measures a 196 Hz power centroid with 0.0 % of its
+                    // energy above 3 kHz — i.e. the render pass 45 "fixed" was
+                    // already a close match for it, and the tilt moved the
+                    // preset onto the OTHER gong in samples/ (Gong-long-G#.wav,
+                    // centroid 2473 Hz, a different instrument).  On refcmp's
+                    // metric the sustain was right before and wrong after:
+                    // reference 815 Hz, pre-45 728 Hz, pass-45 3225 Hz.
+                    //
+                    // What IS off is the attack — reference 1147 Hz early
+                    // against 437 rendered — and hfTilt cannot buy it.  A
+                    // static per-lane gain moves both windows together, and
+                    // nothing in the bank's decay separates them either (see
+                    // the rejected hfDamp note in dsp_core.h).  Attack
+                    // brightness has to come from the STRIKE — stickLevel,
+                    // thwackSec, the shimmer band — not from a bank-wide tilt.
+                    // Mterl still moves the tilt either way from here.
                     cc = { m_cym_gong_hz, 16, 80, 150.f, 14000.f, 2.4f,
                            0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
                            0.126f, 0.22f, 0.010f, 0.15f };
@@ -2690,8 +2743,12 @@ SynthState state;
             // measured ~1-1.4 kHz body centroid vs ~6-7 kHz in the reference
             // samples — the flat-gain bank under the pink (−3 dB/oct) driver
             // reads dark/tonal.  hfTilt=1 counters the driver tilt exactly.
-            // HHat-O ("do not break"), Gong (deliberately tonal) and Splash
-            // keep the legacy flat bank (hfTilt stays 0).
+            // HHat-O ("do not break"), Gong and Splash keep the legacy flat
+            // bank (hfTilt stays 0).  The gong's place in that list is now
+            // backed by its recording rather than by the phrase "deliberately
+            // tonal": Chinese-Gong.wav measures a 196 Hz power centroid with
+            // 0.0 % above 3 kHz, so a flat bank is what it should have.  Read
+            // the long note on the gong's config above before changing it.
             if (m_preset_idx == k_Cymbal || m_preset_idx == k_Ride ||
                 m_preset_idx == k_RideBell) {
                 // Over-whiten past 1.0: the thwack burst and swept one-pole park
@@ -2872,16 +2929,26 @@ SynthState state;
                 // because stickLevel feeds both the resonator drive and the
                 // direct tap and would land on the thwack squared.
                 //
-                // Gong is already correctly placed and is left alone.  HHat-O
-                // is equally quiet by measurement but is flagged
+                // HHat-O is equally quiet by measurement but is flagged
                 // "HW-approved, do not break" in CLAUDE.md, so its level is
                 // deliberately NOT touched here — raise it only on an explicit
                 // listen.
+                //
+                // Gong 1.15.  Pass 30 found it "already correctly placed" at
+                // trim 1.0; pass 45 raised it to 2.0 to compensate for the
+                // level its bank tilt gave away, and that compensation went
+                // back out with the tilt.  What remains is a real 2.4 dB: the
+                // subsonic guard removes energy that was inaudible as pitch but
+                // WAS feeding the master limiter, so the preset got quieter
+                // without getting cleaner-sounding.  1.15 puts the loudness
+                // back exactly where it was (rms 0.1781 against the pre-guard
+                // 0.1820) — it buys back what the filter took and nothing more.
                 float cym_trim = 1.0f;
                 switch (m_preset_idx) {
                     case k_Cymbal:   cym_trim = 3.2f; break;
                     case k_Ride:     cym_trim = 2.9f; break;
                     case k_RideBell: cym_trim = 2.1f; break;
+                    case k_Gong:     cym_trim = 1.15f; break;
                     case k_Splash:   cym_trim = 1.4f; break;
                     default: break;
                 }
