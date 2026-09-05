@@ -250,6 +250,18 @@ budget 240).  Regression-tested as
 
 ##### Pass 45 — it still was not stacking, and the mud was synthesised
 
+> **HW verdict: half accepted.**  *"Stacking is better, but sound has
+> degraded."*  Items 1 and 2 (the stacking work) are accepted and are provably
+> tonally free — with items 3-5 backed out, all 40 preset renders are
+> byte-identical to the pre-pass build.  Items 3-5 (the subsonic guards and the
+> gong's `hfTilt` / `cym_trim`) are rejected on the listen and are what pass 46
+> has to revisit.  The measured back-off ladder, the four independent revert
+> points and the ranked hypotheses are in `CLAUDE.md` under "HW verdict on
+> pass 45".  The blocker there is that `samples/` has no gong reference, so the
+> spectral target came from two written references in this repo that contradict
+> each other.
+
+
 The report came back a third time (*"multiple hits do not stack correctly and
 the sound is muddy"*).  Both earlier passes measured voice indices and CPU; the
 passage itself was never rendered, and that is where the defects were.
