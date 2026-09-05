@@ -29,17 +29,25 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **108/108**.
-- **Pass 45 (the six ENGINE_CYMBAL presets changed — the Gong a LOT, needs a
-  listen):** the HW report "multiple gong hits do not stack correctly and the
-  sound is muddy" came back after passes 26 and 30 both aimed at it, and both
-  were measuring the wrong thing.  Three real defects, all measured — see the
-  pass entry.  Listen for: is the Gong now too bright (its `Mterl` knob still
-  moves the tilt both ways from the new setting, 1.4 to 5.0), is its new level
-  right against the rest of the kit, and does a repeated strike read as ONE
-  gong being driven harder rather than several being restarted?  **HHat-O is
-  the one to check for damage** — it is flagged "do not break", and although
-  its shipped voicing is untouched, the two new filters take it 0.5 dB down and
-  its sub-100 Hz energy to zero.  New tool `gong_probe`; new test T43.
+- **Pass 45 — HALF ACCEPTED, HALF REJECTED ON HW.**  Verdict: *"stacking is
+  better, but sound has degraded."*  The pass fixed two separable things and
+  only the first is wanted:
+  - **Stacking (KEEP).**  Accepted on HW.  Same-note re-excitation + re-strike
+    continuity.  **Tonally free: measured 40/40 byte-identical to the pre-pass
+    build on the single-strike renders** — it only changes what a repeat does.
+  - **Tone (REJECTED).**  The subsonic guards + the Gong's `hfTilt` 2.4 and
+    `cym_trim` 2.0.  Measured cleaner and brighter; heard as worse.  The ear
+    wins.  **Everything the report is about lives in these two changes.**
+
+  **The branch as it stands ships the rejected tone.**  Reverting to the
+  accepted half is a ~6-line change (variant B in the pass-46 backlog below)
+  and lands a build that is strictly better than the pre-pass one.  That is the
+  recommendation; merging as-is is a decision to keep the new voicing.
+
+  Pass-46 backlog, the measured back-off ladder, and the four independent
+  revert points are in the pass-45 entry under "HW verdict".  **The single
+  most useful thing anyone can do next is drop a gong reference WAV into
+  `samples/`** — see "what is missing" there.
 - **Pass 44 (BrshSnr changed — needs a listen):** its head was mixed in at
   **zero** (`k_modal_mix = 0.0`), so the "resonance" the HW report asked for
   did not exist; it now has one, at **Note 55 (196 Hz)** instead of 38 (73 Hz,
@@ -323,6 +331,110 @@ problems and worst |peak| 0.9900, host syntax clean, all 18 probe tools build,
 cross-build measures `.text` 52,676 → 52,964, `.rodata` unchanged, `.bss`
 107,884 → 107,948 (four floats per voice: `bankSeed`, `dcState2`, `driveHp1`,
 `driveHp2`).
+
+#### HW verdict on pass 45 — *"stacking is better, but sound has degraded"*
+
+Half accepted.  The stacking work is in; the voicing is not.  Recorded here in
+full so pass 46 starts from the measurements rather than re-deriving them.
+
+**What that verdict pins down, precisely.**  The pass made four separable
+changes, and only two of them can touch the tone.  The stacking pair is
+provably tonally neutral: with the two tonal changes backed out (variant B
+below) and BOTH stacking fixes left in, all **40/40 preset renders are
+byte-identical to the pre-pass build**.  So "sound has degraded" is entirely
+attributable to (3) the subsonic guards and (4) the Gong's `hfTilt`/`cym_trim`.
+
+**The four changes, and how to back each one out independently:**
+
+| # | change | file / anchor | tonal? |
+|---|---|---|---|
+| 1 | re-strike continuity (`lowEnvHeld`/`highEnvHeld`, the `if (!retainRing)` state guards, `bankSeed`) | `dsp_core.h`, `cymbal_note_on` | no — byte-identical on a fresh voice by construction |
+| 2 | same-note re-excitation | `synth_engine.h`, the `same` branch in the ENGINE_CYMBAL voice policy | no — only changes what a repeat does |
+| 3 | subsonic guards | `dsp_core.h`, `kCymDriveHpHz = 150.0f` and `kCymRumbleHz = 40.0f` (the latter replaced a single 7.6 Hz pole) | **yes, all six presets** |
+| 4 | Gong voicing | `synth_engine.h`, the gong `cc` initialiser's last value (`hfTilt` 2.4) and `case k_Gong: cym_trim = 2.0f` | **yes, Gong only** |
+
+`kCymDriveHpHz = 0.0f` disables (3)'s drive half exactly (the one-poles never
+move, so the two subtractions become no-ops).
+
+**Measured back-off ladder.**  Gong, single strike | eight strikes 300 ms
+apart.  Bands are % of total energy.
+
+| variant | rms | peak | crest | centroid | <100 | 100-300 | 300-1k | 1-3k | >3k |
+|---|---|---|---|---|---|---|---|---|---|
+| **A** as committed (HP150 / rumble40 / tilt 2.4 / x2.0) | 0.038 | 0.84 | 22.1 | 1588 | 0.2 | 28.8 | 30.7 | 19.9 | 20.4 |
+| | 0.096 | 0.86 | 8.9 | 696 | 2.5 | 60.0 | 24.1 | 4.9 | 8.5 |
+| **B** stacking fixes only — **40/40 byte-identical to pre-pass** | 0.219 | 0.98 | 4.5 | 190 | 5.6 | 89.4 | 4.8 | 0.2 | 0.0 |
+| | 0.455 | 0.98 | 2.2 | 167 | 8.3 | 88.3 | 3.4 | 0.1 | 0.0 |
+| **C** + guards, no tilt/trim | 0.165 | 0.95 | 5.8 | 232 | 0.2 | 87.7 | 11.5 | 0.6 | 0.1 |
+| | 0.383 | 0.96 | 2.5 | 200 | 0.5 | 92.3 | 7.1 | 0.1 | 0.0 |
+| **D** + guards, half tilt (1.2 / x1.4) | 0.078 | 0.89 | 11.5 | 400 | 0.2 | 67.8 | 25.7 | 4.9 | 1.4 |
+| | 0.198 | 0.91 | 4.6 | 255 | 0.7 | 82.6 | 15.5 | 0.8 | 0.4 |
+| **E** as D but drive HP at 80 Hz | 0.103 | 0.93 | 9.1 | 316 | 0.8 | 78.2 | 17.4 | 2.9 | 0.8 |
+| | 0.260 | 0.94 | 3.6 | 221 | 1.9 | 87.5 | 9.8 | 0.5 | 0.2 |
+
+Reproducing a row is four literal edits at the anchors in the table above,
+then `gong_probe` — it prints these same columns for whatever is in the tree.
+No variant script is checked in; the ladder was measured on throwaway copies.
+
+**Ranked hypotheses for WHY it degraded** — these are hypotheses with a
+measurement attached, not conclusions; nobody has A/B'd them on hardware.
+
+1. **`hfTilt` 2.4 is too much, and it is the prime suspect.**  It is the only
+   change that moves anything by an order of magnitude, and what it moves is
+   the body: the 100-300 Hz share goes **89 % → 29 %**.  A gong that loses
+   two-thirds of its body band reads as a thin crash however "correct" the
+   centroid is.  Variant D halves it.  Note the trim only restores the TOTAL
+   level, not the body — the low lanes are attenuated ~12x in absolute terms
+   and the trim multiplies everything back up together.
+2. **The 150 Hz drive guard is set at the worst possible corner for this one
+   preset.**  It was chosen at the family minimum — which IS the gong's own
+   `fLo`, so the gong pays **6 dB on its lowest lane** while every other preset
+   pays ≤ 1.5 dB.  That is a second, independent cut to exactly the band
+   hypothesis 1 already thinned.  Variant E moves it to 80 Hz: the gong pays
+   ~1.5 dB and sub-100 Hz energy still lands at 0.8 % instead of 5.6 %.
+3. **It is simply quieter.**  Peak 0.98 → 0.84 and rms 0.219 → 0.038, i.e.
+   **−15 dB**.  `cym_trim` 2.0 restored the balance against the CYMBAL FAMILY,
+   which is not the same as restoring it against the kit the user actually
+   plays, and "quieter" is heard as "worse" more often than not.  The trade is
+   real and bounded: more trim re-pins the limiter and gives the crest back
+   (that is exactly the 4.5-crest drone the pass removed), so this one cannot
+   be won outright — it has to be placed by ear.
+4. **The 150.0 Hz clamp pile-up is now exposed.**  `fLo` is 150 Hz and the
+   lowest anchor is 162 Hz with ±2.4 semitones of jitter, which reaches 141 Hz
+   — so a share of the lowest lanes are clamped to *exactly* 150.0 Hz every
+   strike.  Measured, 150.0 Hz is the single strongest line in the spectrum,
+   **+7 dB over its neighbours**.  It was buried in a wall of low energy
+   before; with the body thinned it is exposed and would read as a honk on one
+   pitch.  Cheap fix to try: drop the gong's `minHz` below its lowest jittered
+   anchor (141 Hz) so nothing clamps at all.
+5. **Same-note fusion halves a roll's density.**  Probably NOT the complaint —
+   the stacking half was accepted — but it is the one accepted change that
+   could still cost something, and a fast roll measured ~1 dB louder on the old
+   two-voice path.  If the degradation is specifically "rolls feel thinner",
+   the targeted fix is to keep same-note re-excitation only in the STEAL
+   branch (leave the free-slot branch ahead of it), so a second voice is still
+   taken while one is affordable and only the third strike onward re-excites.
+
+**What is missing, and it is the real blocker.**  There is no gong reference in
+`samples/` — it holds one clave mp3.  Every spectral target in this pass came
+from two *written* references in the repo, and **they disagree**: the `k_Gong`
+enum comment says the sample "starts with 800 Hz and settles to 1680 Hz"
+(rising), while `REALISM_REVIEW.md`'s `refcmp` row records 1147/815 Hz
+(falling).  The pass matched the rising one.  That choice was a coin-flip
+dressed up as a measurement, and it is very likely where the tone went wrong.
+**Drop a gong WAV into `samples/` and pass 46 can use `modal_extract.py` and
+`refcmp.py` instead of guessing** — that is worth more than any of the five
+hypotheses above.
+
+**What a next listen should answer** (the verdict as given cannot be acted on):
+is it too bright, too thin, too quiet, or is there a ringing note that stands
+out?  Those four point at hypotheses 1, 2, 3 and 4 respectively.  `Mterl` is a
+live A/B on hypothesis 1 without a rebuild — it moves the gong's tilt across
+1.4 to 5.0 around the shipped 2.4.
+
+**Also still open from this pass** (no sound change, recorded in the entry
+above): `CymbalConfig::maxHz` is dead — the bank clamps to a hard 20 kHz and
+never reads it — so half the `Mterl` mapping does nothing.
 
 
 ### Pass 44 — BrshSnr: the head was mixed in at ZERO, and velocity saw a third of a knob
