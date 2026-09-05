@@ -2,12 +2,25 @@
 """Generate drum_patches.h for the EffeESP32 drumlogue unit from the original
 copych ESP32-S3 FM Drum Synth drumkit JSON.
 
-Selection rules (per task spec):
-  - Notes 35..81 are the 47 General-MIDI percussion instruments and are always
-    imported, using the GM names from GmDrums.h.
-  - Notes 0..34 and 82..127 are non-GM slots; import them only when they carry
-    a *meaningful* (non-empty name) and *unique* parameter set (not a duplicate
-    of an already-imported patch), giving them descriptive short names.
+Selection rules:
+  - Notes 35..81 are the 47 slots a General-MIDI percussion map addresses, and
+    are always imported.
+  - Notes 0..34 and 82..127 are the remaining slots; import them only when they
+    carry a *meaningful* (non-empty name) and *unique* parameter set (not a
+    duplicate of an already-imported patch).
+
+Naming: from the kit's own `name` field, NOT from the GM map.  Drumkit_default
+is not a General MIDI kit -- it just occupies those slots -- and labelling it
+with GM names named a different instrument than the slot actually holds in 27
+of the 47 cases.  Slot 51, "Ride Cymbal 1" under the GM map, is the kit's
+"Closed Hat" with a 4.4 s decay; 52 is a "Deep Tom", 53 a "Snare Body", 56 a
+"Noise Bell", 70 a "Chime".  The GM slot number is kept in the C comment for
+traceability.
+
+The kit reuses names heavily (seven slots are "Bongo", six "Tom"), so a repeated
+name is numbered in slot order -- Tom1..Tom6 ascend in pitch, as the GM map's
+tom slots do.  Numbering runs over the whole selection, so a name appearing both
+in and outside the GM range is numbered once across both.
 """
 #
 # Usage:
@@ -78,25 +91,40 @@ GM = {
     81: ("OTrngl",   "Open Triangle"),
 }
 
-# Compact names for the extra (non-GM) named slots.
-EXTRA = {
-    "Sub Kick":   "SubKick",
-    "Noise Clap": "NzClap",
-    "Closed Hat": "ClHat2",
-    "Deep Tom":   "DeepTom",
-    "Snare Body": "SnBody",
-    "Snare Noise":"SnNoise",
-    "Metal Stack":"MtlStk",
-    "Twirl":      "Twirl",
-    "Glass Bell": "GlasBel",
-    "HighQ":      "HighQ",
-    "SnareSlap":  "SnSlap",
-    "Noise Bell": "NzBell",
-    "Chime":      "Chime",
-    "Tight Clap": "TgtClap",
-    "Tick Click": "TickClk",
-    "Glass FX":   "GlasFX",
-    "Rail bell":  "RailBel",
+# Kit name -> panel label.  Two forms: the first is used when the name occurs
+# once in the selection, the second is the base for a numeric suffix when it
+# occurs more than once (kept to 6 chars so "base + digit" stays within the 7
+# the OLED shows).  Anything not listed falls back to stripped-and-truncated.
+KIT_LABEL = {
+    "BassDrum":    ("BassDrm", "BassDr"),
+    "Kick":        ("Kick",    "Kick"),
+    "SideStick":   ("SideStk", "SidStk"),
+    "AccSnare":    ("AccSnar", "AcSnar"),
+    "Hand Claps":  ("HndClap", "HndClp"),
+    "Snare Body":  ("SnBody",  "SnBody"),
+    "Snare Noise": ("SnNoise", "SnNois"),
+    "SnareSlap":   ("SnrSlap", "SnSlap"),
+    "Tom":         ("Tom",     "Tom"),
+    "Deep Tom":    ("DeepTom", "DpTom"),
+    "Bongo":       ("Bongo",   "Bongo"),
+    "Hi Hat":      ("HiHat",   "HiHat"),
+    "Closed Hat":  ("ClosHat", "ClHat"),
+    "Crash 1":     ("Crash1",  "Crash"),
+    "Cymbal":      ("Cymbal",  "Cymbal"),
+    "Noise Bell":  ("NoisBel", "NzBell"),
+    "Glass Bell":  ("GlasBel", "GlasBl"),
+    "Glass FX":    ("GlassFX", "GlasFX"),
+    "Metal Stack": ("MtlStak", "MtlStk"),
+    "Rail bell":   ("RailBel", "RailBl"),
+    "Chime":       ("Chime",   "Chime"),
+    "Tight Clap":  ("TgtClap", "TgtClp"),
+    "Noise Clap":  ("NoisClp", "NzClap"),
+    "Tick Click":  ("TickClk", "TickCl"),
+    "Sub Kick":    ("SubKick", "SubKck"),
+    "Whistle":     ("Whistle", "Whistl"),
+    "Guiro":       ("Guiro",   "Guiro"),
+    "Twirl":       ("Twirl",   "Twirl"),
+    "HighQ":       ("HighQ",   "HighQ"),
 }
 
 def param_key(p):
@@ -109,34 +137,51 @@ def param_key(p):
             round(p["filterFreq"],2), round(p["filterReso"],4),
             round(p["filterMorph"],4), ops)
 
-selected = []      # list of (short_name, full_name, patch_dict, midi_note)
+# 1) pick the patches, in slot order, before naming any of them: a repeated kit
+#    name has to be numbered over the whole selection, not per range.
+picked = []        # list of (patch_dict, midi_note, gm_label or None)
 seen = set()
 
-# 1) GM range 35..81
-for n in range(35, 82):
-    p = patches[n]
-    short, full = GM[n]
-    selected.append((short, full, p, n))
-    seen.add(param_key(p))
+for n in range(35, 82):                       # slots a GM percussion map addresses
+    picked.append((patches[n], n, GM[n][1]))
+    seen.add(param_key(patches[n]))
 
-# 2) extras 0..34 and 82..127, only meaningful + unique
 for n in list(range(0, 35)) + list(range(82, 128)):
     p = patches[n]
-    name = p["name"].strip()
-    if not name:
+    if not p["name"].strip():
         continue
     k = param_key(p)
     if k in seen:
         continue
     seen.add(k)
-    short = EXTRA.get(name, re.sub(r"[^A-Za-z0-9]", "", name)[:7] or "Perc")
-    # keep display names unique
-    base, used = short, {s for s, _, _, _ in selected}
-    suffix = 2
-    while short in used:
-        short = (base[:6] + str(suffix))
-        suffix += 1
-    selected.append((short, name, p, n))
+    picked.append((p, n, None))
+
+# 2) label from the kit's own name, numbering repeats in slot order.
+counts = {}
+for p, _, _ in picked:
+    counts[p["name"].strip()] = counts.get(p["name"].strip(), 0) + 1
+
+selected = []      # list of (short_name, full_name, patch_dict, midi_note)
+used_idx = {}
+for p, n, gm_label in picked:
+    kit = p["name"].strip()
+    uniq, base = KIT_LABEL.get(kit, (None, None))
+    if uniq is None:
+        uniq = re.sub(r"[^A-Za-z0-9]", "", kit)[:7] or "Perc"
+        base = uniq[:6]
+    if counts[kit] == 1:
+        short = uniq
+    else:
+        used_idx[kit] = used_idx.get(kit, 0) + 1
+        short = f"{base}{used_idx[kit]}"
+    assert len(short) <= 7, (short, kit)
+    # Provenance in the generated comment: the kit's name, the source slot, and
+    # the GM instrument that slot would be under a General MIDI map -- which is
+    # usually something else entirely.
+    full = f"{kit} (slot {n}" + (f", GM {gm_label}" if gm_label else "") + ")"
+    selected.append((short, full, p, n))
+
+assert len({s for s, _, _, _ in selected}) == len(selected), "duplicate panel label"
 
 WF = {0:"WF_SINE",1:"WF_COSINE",2:"WF_TRIANGLE",3:"WF_SQUARE",4:"WF_SAW",
       # original has 10 waveforms; the negative variants fold onto base shapes.
@@ -213,5 +258,7 @@ with open(dst, "w") as out:
     out.write("\n".join(lines) + "\n")
 
 print(f"Wrote {dst}")
-print(f"Total instruments: {len(selected)} (47 GM + {len(selected)-47} extras)")
-print("Extras:", [s for s,_,_,_ in selected[47:]])
+print(f"Total instruments: {len(selected)} "
+      f"({sum(1 for _,_,_,n in selected if 35 <= n <= 81)} from slots 35-81 + "
+      f"{sum(1 for _,_,_,n in selected if n < 35 or n > 81)} from the rest)")
+print("Labels:", ", ".join(s for s, _, _, _ in selected))

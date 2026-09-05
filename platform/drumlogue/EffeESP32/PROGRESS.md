@@ -43,10 +43,26 @@ instructions for the next agent.
   ~20 ms and takes a fresh one, instead of re-using it and resetting every
   operator phase and the SVF under a live tail. Steal score no longer prefers
   the loudest voice in an envelope stage. See the README's *Voice allocation*.
-- **`unit_reset()` now silences**: it called `noteOff()`, which starts a release
-  — six seconds of cymbal after the host has reset the unit. The SDK asks for
-  active notes deactivated and oscillator phases reset, which is what
-  `FmVoice6::silence()` does.
+- **`unit_reset()` now silences, and no longer reloads the patch**: it called
+  `noteOff()` (a release — six seconds of cymbal after the host has reset the
+  unit) *and* `load_instrument()`, which re-copies the patch over the working
+  cache and rewrites the knob array, so every reset silently threw away the
+  user's edits. The SDK asks for notes deactivated and phases reset but says
+  parameter values "should not be reset to their default values".
+- **Decay/Release range raised to 8000 ms.** Ten patches store 2.8–8.0 s, so
+  `load_instrument()` was clamping the *displayed* value to the old 2000 ms max
+  while the engine ran the real 6 s — the panel disagreed with what you heard,
+  and the knob could not shorten those tails without first jumping them to 2 s.
+- **`MASTER_GAIN` 2.51 → 0.71.** At 2.51 a single hit arrived 6–17 dB past the
+  output ceiling, so the stage held it flat until the envelope had fallen that
+  far: Crash1 delivered 0.51 dB of its 6.50 dB natural fall over the first
+  second — a cymbal with no envelope. It now delivers 6.47 dB. Costs 7.7 LU of
+  mean loudness (−11.75 → −19.48 LUFS); see the README table for the full curve.
+- **Instrument labels now come from the kit, not from GM.**
+  `Drumkit_default.json` is not a General MIDI kit; labelling slots 35–81 with
+  GM names named a different instrument than the slot holds in 27 of 47 cases
+  (slot 51, "Ride Cymbal 1", is the kit's "Closed Hat" with a 4.4 s decay).
+  Order, count, trigger notes and the numeric data are unchanged.
 - **24-parameter GUI** (`header.c`) with proper SDK param types (strings, semi,
   percent, pan, msec, hertz, on/off, **midi_note**).
 - **Trigger Note** (param 22): each instrument carries its canonical MIDI note
@@ -84,12 +100,15 @@ instructions for the next agent.
    `.drmlgunit` is accepted (`dev_id` `0x46654465`, `unit_id` `0x34`, version
    `1.0.0`) and audibly correct.
 2. **Tune levels/voicing** against the original ESP32 firmware. `MASTER_GAIN`
-   (constants.h) is now 2.51 and calibrated with `tools/level_meter`; per-patch
-   `volume` came straight from the JSON (some are 2.0). Nothing clips any more —
-   the whole table peaks at −0.24 dBFS — but the loudest instruments still take
-   up to 17 dB of gain reduction from the bus limiter on a single hit, because
-   the patch levels span 26 dB. If that reads as squashed on hardware, the knob
-   to turn is `MASTER_GAIN`, not `LIMIT_CEILING`.
+   (constants.h) is 0.71, chosen so a single hit clears the output ceiling on
+   its own and the limiter only acts on stacks; the measured loudness/envelope
+   curve is in the README. Nothing clips (worst peak −0.35 dBFS, no non-finite
+   samples at 8 voices on any of the 59). The unit now measures −19.5 LUFS mean,
+   which is quiet against the rest of the repo — that is deliberate, but it is
+   the number to revisit first if it does not sit right on hardware.
+   Per-patch `volume` came straight from the JSON and spans 26 dB; the loudest
+   patches produce voices above unity on their own (slot 55 peaks at 2.68 with
+   no master gain at all), which is what forces the trade.
 3. **Choke groups**: the original `FmDrumPatch` has `chokeGroup` (e.g. open vs
    closed hi-hat). It is currently dropped. Re-add `chokeGroup` to the patch
    struct + generator and implement choking in the allocator.
@@ -122,10 +141,15 @@ instructions for the next agent.
 - [ ] **All 24 parameter slots are now used** — adding a feature means
       repurposing/encoding an existing one (as the Filter param already encodes
       both filter state and carrier waveform).
-- [ ] **Startup timbre nuance**: at boot the runtime sets every param to its
-      header `init`, overriding the loaded instrument's stored values for that
-      one boot sound (same behavior as EffeMD). Re-selecting the instrument
-      restores its exact values. Could be smoothed with a "first-load" guard.
+- [ ] **Load-order dependence** (was "startup timbre nuance"): at boot the
+      runtime pushes every parameter, so whichever it pushes *after* index 0
+      overrides the instrument's stored values — a freshly loaded Crash1 has the
+      header's 200 ms decay, while the same instrument selected by hand has its
+      own 6 s. Re-selecting the instrument always restores the patch. The SDK
+      has no unit→host parameter push (the host polls `unit_get_param_value`),
+      so a unit that rewrites its own parameters is inherently fighting the host
+      here; smoothing it means changing the override-on-touch model, not adding
+      a guard.
 - [ ] **True 4-voice SIMD FM** is not attempted (data-dependent routing per
       algorithm). Only the mix stage is vectorized.
 - [ ] No automated *unit* test is committed; `/tmp/test_effeesp32.cc` is

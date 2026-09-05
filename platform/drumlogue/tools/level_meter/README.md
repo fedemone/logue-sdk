@@ -69,7 +69,8 @@ velocity 127:
 | Brachetti | −0.77 … −0.09 | −29.4 … −4.9 | **−13.5** | 40 presets |
 | EffeESP32 *(before)* | −14.87 … **0.00** | −21.6 … −0.4 | **−13.5** | 59 instruments |
 | EffeESP32 *(knee only)* | −9.86 … −0.16 | −16.6 … +1.9 | **−9.6** | 59 instruments |
-| EffeESP32 *(now, bus limiter)* | −9.86 … −0.24 | −20.6 … −2.2 | **−11.8** | 59 instruments |
+| EffeESP32 *(bus limiter, gain 2.51)* | −9.86 … −0.24 | −20.6 … −2.2 | **−11.8** | 59 instruments |
+| EffeESP32 *(now, gain 0.71)* | −20.6 … −0.35 | −27.6 … −6.0 | **−19.5** | 59 instruments |
 
 Two things fall out of that table:
 
@@ -163,8 +164,12 @@ which is a distortion box, not a limiter — measured at 30–50 % THD+N on a
 *single* Splash or ClHat hit, and worse on every stacked one. EffeESP32 now runs
 a look-ahead limiter (`dl::PeakLimiter`) in front of the knee, which gives back
 2.2 LU of the mean and 19–29 dB of distortion on the metallic instruments.
-`MASTER_GAIN` is unchanged at 2.51; with a limiter behind it, raising it further
-buys almost nothing (5.01 moves the mean by 0.6 LU) because the peak is held.
+`MASTER_GAIN` has since gone the other way, to 0.71, for a reason this meter is
+equally blind to. A limiter holds a signal at the ceiling for as long as the
+signal is over it, so a hit arriving 6–17 dB past the ceiling comes out with its
+envelope flat for as long as that takes to decay — a full second on a 6 s
+cymbal. Loudness cannot see it; only the shape of the hit can. The measured
+curve is in [EffeESP32's README](../../EffeESP32/README.md#output-stage).
 
 The general lesson is the one this file already draws elsewhere: a loudness
 number says what a change bought and never what it cost. Read it against
