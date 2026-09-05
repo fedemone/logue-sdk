@@ -30,6 +30,39 @@ instructions for the next agent.
 - **Synth controller** (`synth.h`): instrument cache + override-on-touch params,
   8-voice allocator with steal-by-score, chunked block render, **NEON pan/mix**
   (`vld1q`/`vmlaq_n`/`vst2q`) with scalar fallback, master gain for headroom.
+- **Polyphonic output stage**: the voice mix now goes through
+  `dl::PeakLimiter` (new, in `common/output_stage.h`) before the soft knee. The
+  knee alone is a memoryless waveshaper, and a polyphonic bus drives it in
+  proportion to the number of sounding voices, so stacked hits were being
+  waveshaped rather than limited — inaudible-as-distortion on a kick, and
+  broadband intermodulation on the dense inharmonic spectra of cymbals and
+  gongs. Distortion against the linear voice mix dropped 19–29 dB on the
+  metallic instruments (`tools/stack_meter`), at a cost of 2.2 LU of measured
+  loudness that was itself distortion. See the README's *Output stage*.
+- **Click-free retrigger**: a hit on a sounding note chokes that voice over
+  ~20 ms and takes a fresh one, instead of re-using it and resetting every
+  operator phase and the SVF under a live tail. Steal score no longer prefers
+  the loudest voice in an envelope stage. See the README's *Voice allocation*.
+- **`unit_reset()` now silences, and no longer reloads the patch**: it called
+  `noteOff()` (a release — six seconds of cymbal after the host has reset the
+  unit) *and* `load_instrument()`, which re-copies the patch over the working
+  cache and rewrites the knob array, so every reset silently threw away the
+  user's edits. The SDK asks for notes deactivated and phases reset but says
+  parameter values "should not be reset to their default values".
+- **Decay/Release range raised to 8000 ms.** Ten patches store 2.8–8.0 s, so
+  `load_instrument()` was clamping the *displayed* value to the old 2000 ms max
+  while the engine ran the real 6 s — the panel disagreed with what you heard,
+  and the knob could not shorten those tails without first jumping them to 2 s.
+- **`MASTER_GAIN` 2.51 → 0.71.** At 2.51 a single hit arrived 6–17 dB past the
+  output ceiling, so the stage held it flat until the envelope had fallen that
+  far: Crash1 delivered 0.51 dB of its 6.50 dB natural fall over the first
+  second — a cymbal with no envelope. It now delivers 6.47 dB. Costs 7.7 LU of
+  mean loudness (−11.75 → −19.48 LUFS); see the README table for the full curve.
+- **Instrument labels now come from the kit, not from GM.**
+  `Drumkit_default.json` is not a General MIDI kit; labelling slots 35–81 with
+  GM names named a different instrument than the slot holds in 27 of 47 cases
+  (slot 51, "Ride Cymbal 1", is the kit's "Closed Hat" with a 4.4 s decay).
+  Order, count, trigger notes and the numeric data are unchanged.
 - **24-parameter GUI** (`header.c`) with proper SDK param types (strings, semi,
   percent, pan, msec, hertz, on/off, **midi_note**).
 - **Trigger Note** (param 22): each instrument carries its canonical MIDI note
@@ -67,9 +100,15 @@ instructions for the next agent.
    `.drmlgunit` is accepted (`dev_id` `0x46654465`, `unit_id` `0x34`, version
    `1.0.0`) and audibly correct.
 2. **Tune levels/voicing** against the original ESP32 firmware. `MASTER_GAIN`
-   (constants.h, 0.5) is a first guess; per-patch `volume` came straight from the
-   JSON (some are 2.0). Check the loudest patches (Ride, OpHat) for clipping with
-   the drumlogue master path.
+   (constants.h) is 0.71, chosen so a single hit clears the output ceiling on
+   its own and the limiter only acts on stacks; the measured loudness/envelope
+   curve is in the README. Nothing clips (worst peak −0.35 dBFS, no non-finite
+   samples at 8 voices on any of the 59). The unit now measures −19.5 LUFS mean,
+   which is quiet against the rest of the repo — that is deliberate, but it is
+   the number to revisit first if it does not sit right on hardware.
+   Per-patch `volume` came straight from the JSON and spans 26 dB; the loudest
+   patches produce voices above unity on their own (slot 55 peaks at 2.68 with
+   no master gain at all), which is what forces the trade.
 3. **Choke groups**: the original `FmDrumPatch` has `chokeGroup` (e.g. open vs
    closed hi-hat). It is currently dropped. Re-add `chokeGroup` to the patch
    struct + generator and implement choking in the allocator.
@@ -102,14 +141,23 @@ instructions for the next agent.
 - [ ] **All 24 parameter slots are now used** — adding a feature means
       repurposing/encoding an existing one (as the Filter param already encodes
       both filter state and carrier waveform).
-- [ ] **Startup timbre nuance**: at boot the runtime sets every param to its
-      header `init`, overriding the loaded instrument's stored values for that
-      one boot sound (same behavior as EffeMD). Re-selecting the instrument
-      restores its exact values. Could be smoothed with a "first-load" guard.
+- [ ] **Load-order dependence** (was "startup timbre nuance"): at boot the
+      runtime pushes every parameter, so whichever it pushes *after* index 0
+      overrides the instrument's stored values — a freshly loaded Crash1 has the
+      header's 200 ms decay, while the same instrument selected by hand has its
+      own 6 s. Re-selecting the instrument always restores the patch. The SDK
+      has no unit→host parameter push (the host polls `unit_get_param_value`),
+      so a unit that rewrites its own parameters is inherently fighting the host
+      here; smoothing it means changing the override-on-touch model, not adding
+      a guard.
 - [ ] **True 4-voice SIMD FM** is not attempted (data-dependent routing per
       algorithm). Only the mix stage is vectorized.
-- [ ] No automated test is committed; `/tmp/test_effeesp32.cc` is throwaway.
-      Consider adding a `tools/` host test that stubs `arm_neon.h`.
+- [ ] No automated *unit* test is committed; `/tmp/test_effeesp32.cc` is
+      throwaway. Two host measurement harnesses now are, though, and both
+      cross-compile the real NEON build and run it under qemu:
+      `platform/drumlogue/tools/level_meter` (loudness, peak, DC, harmonic cost)
+      and `platform/drumlogue/tools/stack_meter` (polyphonic distortion,
+      retrigger continuity).
 
 ---
 
