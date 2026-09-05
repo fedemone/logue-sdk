@@ -32,11 +32,18 @@ const __unit_header unit_header_t unit_header = {
         {0, 17, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Algo"}},
         {0, 2000, 0, 1, k_unit_param_type_msec, 0, 0, 0, {"Attack"}},
         {0, 2000, 0, 0, k_unit_param_type_msec, 0, 0, 0, {"Hold"}},
-        {0, 2000, 0, 200, k_unit_param_type_msec, 0, 0, 0, {"Decay"}},
+        // Decay/Release run to 8000 ms because the patch data does: ten
+        // instruments store 2.8-8.0 s (Crash2 8.0, RailBel 6.3, OTrngl 6.27,
+        // RideBel 6.16, Crash1 6.0, Ride1 4.4, Ride2 3.7, ChinaCy 3.1 ...).
+        // With the old 2000 ms max, load_instrument() clamped the *displayed*
+        // value to 2000 while the engine went on running the real 6 s, so the
+        // panel disagreed with what you heard and the knob could not be used to
+        // shorten those tails without first jumping them down to 2 s.
+        {0, 8000, 0, 200, k_unit_param_type_msec, 0, 0, 0, {"Decay"}},
 
         // Page 3 — envelope tail & velocity
         {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"Sustain"}},
-        {0, 2000, 0, 100, k_unit_param_type_msec, 0, 0, 0, {"Release"}},
+        {0, 8000, 0, 100, k_unit_param_type_msec, 0, 0, 0, {"Release"}},
         {0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"VeloMod"}},
         // Filter + carrier waveform selector (string table, -4..5):
         //   0  = filter off (patch waveform)   1 = filter on (patch waveform)

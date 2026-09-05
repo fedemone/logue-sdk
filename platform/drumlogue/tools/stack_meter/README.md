@@ -140,6 +140,24 @@ there is the limiter's gain moving inside the window, not a bent waveform.
 49.8 Hz decay the energy above 250 Hz — the "brittle distorted decay" signature —
 drops by **39.1 dB**.
 
-The cost was 2.2 LU of measured loudness (mean −9.57 → −11.75 LUFS), which is
-the part of the old level that was manufactured distortion. Peaks went from
-−0.16 … −2.7 dBFS to a uniform ceiling at −0.24 dBFS.
+Both sides of that table were rendered at the unit's then-current `MASTER_GAIN`
+of 2.51, so the limiter is compared with the knee at equal drive.
+
+### The measurement this tool does *not* make
+
+Distortion is only half of it. A limiter holds a signal at the ceiling for as
+long as the signal is over it, so a hit that arrives 6 dB past the ceiling comes
+out flat until its own envelope has fallen 6 dB. On a 6 s cymbal that is a full
+second with no decay audible — a worse artefact than the distortion it replaced,
+and invisible to every number above, because a flat cymbal is a perfectly clean
+one.
+
+Watch the envelope as well: render a hit, take the RMS in 100 ms windows, and
+compare the fall against a linear-gain render of the same hit. EffeESP32's
+`MASTER_GAIN` came down from 2.51 to 0.71 on exactly that measurement — Crash1
+was delivering 0.51 dB of its 6.50 dB natural first-second fall, and now
+delivers 6.47 dB. Its README carries the curve.
+
+A limiter that never engages on a single hit is the goal. If it is engaging
+there, the master gain is too high, and no amount of release tuning fixes it —
+a faster release tracks the envelope more closely and flattens it harder.

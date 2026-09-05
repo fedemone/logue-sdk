@@ -87,10 +87,16 @@ public:
     inline void Teardown() {}
     inline void Resume()   {}
     inline void Suspend()  {}
+    // unit_reset(): silence only.  It used to call load_instrument() as well,
+    // which re-copies the patch over the working cache *and* rewrites the knob
+    // array -- so every reset (a unit swap, and whenever the host resets around
+    // the transport) silently threw away the user's edits and put the patch
+    // values back.  The SDK is explicit that a reset deactivates notes and
+    // resets envelopes and oscillator phases but that "parameter values should
+    // not be reset to their default values".
     inline void Reset() {
         for (int i = 0; i < MAX_VOICES; ++i) voices_[i].silence();
         limiter_.reset();
-        load_instrument(params_[P_INSTR]);
     }
 
     // ---- audio render ------------------------------------------------------
@@ -196,9 +202,9 @@ private:
         params_[P_ALGO]      = working_.algo;
         params_[P_ATTACK]    = clampi((int)(working_.attack  * 1000.0f + 0.5f), 0, 2000);
         params_[P_HOLD]      = clampi((int)(working_.hold    * 1000.0f + 0.5f), 0, 2000);
-        params_[P_DECAY]     = clampi((int)(working_.decay   * 1000.0f + 0.5f), 0, 2000);
+        params_[P_DECAY]     = clampi((int)(working_.decay   * 1000.0f + 0.5f), 0, 8000);
         params_[P_SUSTAIN]   = clampi((int)(working_.sustain * 100.0f + 0.5f), 0, 100);
-        params_[P_RELEASE]   = clampi((int)(working_.release * 1000.0f + 0.5f), 0, 2000);
+        params_[P_RELEASE]   = clampi((int)(working_.release * 1000.0f + 0.5f), 0, 8000);
         params_[P_VELOMOD]   = clampi((int)(working_.veloMod * 100.0f + 0.5f), 0, 100);
         base_carrier_wf_     = working_.ops[0].waveform;   // for waveform override reset
         params_[P_FILTER]    = working_.useFilter ? 1 : 0; // 0/1 = patch carrier waveform

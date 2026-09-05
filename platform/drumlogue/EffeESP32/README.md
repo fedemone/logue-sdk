@@ -18,9 +18,10 @@ parameters then edit that cached copy in real time.
 
 - **6-operator FM voice** with **18 selectable algorithms** (carrier/modulator/
   amplitude-modulator routings), exactly as in the upstream `FmVoice6`.
-- **59 instrument patches**: the 47 General-MIDI percussion sounds (notes 35–81)
-  plus 12 unique non-GM extras (Sub Kick, Glass FX, Rail bell, …), all converted
-  from the original `Drumkit_default.json`.
+- **59 instrument patches** converted from the original `Drumkit_default.json`:
+  the 47 slots a General-MIDI map addresses (35–81) plus 12 unique ones from the
+  rest. **Labelled from the kit's own names, not from GM** — see
+  [Instrument names](#instrument-names).
 - **Per-voice SVF morph filter** (low → band → high) with resonance and drive.
 - **AHDSR envelope** per voice.
 - **8-voice polyphony** with note-aware allocation, click-free choke and
@@ -109,26 +110,56 @@ behind it with its threshold *at* that ceiling, so it is unity in normal
 operation and only catches what leaks past the look-ahead window.
 
 Measured with [`tools/stack_meter`](../tools/stack_meter), against the linear
-voice mix at velocity 127:
+voice mix at velocity 127, both sides at the old `MASTER_GAIN` of 2.51 so the
+limiter is compared with the knee at equal drive:
 
-| instrument | voices | before | after |
+| instrument (slot) | voices | knee | limiter |
 | --- | ---: | ---: | ---: |
-| Splash | 1 | −9.9 dB | **−38.8 dB** |
-| Splash | 4 | −6.2 dB | **−37.6 dB** |
-| ChinaCy | 4 | −6.4 dB | **−35.6 dB** |
-| Crash1 | 4 | −8.7 dB | **−35.5 dB** |
-| Kick | 4 | −10.9 dB | **−20.8 dB** |
+| Cymbal1 (55) | 1 | −9.9 dB | **−38.8 dB** |
+| Cymbal1 (55) | 4 | −6.2 dB | **−37.6 dB** |
+| DpTom1 (52) | 4 | −6.4 dB | **−35.6 dB** |
+| Crash1 (49) | 4 | −8.7 dB | **−35.5 dB** |
+| Kick (36) | 4 | −10.9 dB | **−20.8 dB** |
 
 On the Kick's 49.8 Hz decay, `level_meter/harmonics.py` puts the manufactured
 energy above 250 Hz **39.1 dB** lower than before.
 
-The cost is 2.2 LU of measured loudness (mean −9.57 → −11.75 LUFS, and up to
-9 LU on the instruments that were being shaped hardest), which is the part of
-the old level that was distortion. Peaks went from a −0.16 … −2.7 dBFS spread to
-a uniform ceiling at −0.24 dBFS. The trade is deliberate: see the note in
+#### Headroom, and why `MASTER_GAIN` is 0.71
+
+A limiter can only hold a signal at the ceiling for as long as the signal is
+over it, so how far past the ceiling a hit *arrives* decides how much of its own
+envelope survives. `MASTER_GAIN` was 2.51, picked to reach a −9 LUFS mean
+through the old waveshaper. At that setting one Crash1 hit at velocity 127
+arrives 6.4 dB past the ceiling, so the output is held perfectly flat until the
+envelope has fallen 6.4 dB — a full second on a 6 s cymbal, before any decay is
+audible. That is heard as a cymbal with no envelope at all, and it is worse with
+a limiter than it was with the knee, because a limiter levels better.
+
+No limiter tuning avoids it. A faster release tracks the envelope more closely
+and flattens it *harder* (measured 0.10 dB of Crash1's 6.50 dB natural fall at a
+40 ms release, against 0.51 dB at 120 ms). The only lever is drive.
+
+Fall delivered out of the natural fall, over the first second of a single hit at
+velocity 127, against the mean loudness it costs:
+
+| `MASTER_GAIN` | mean LUFS | Crash1 | ClHat1 (slot 51) | Cymbal1 (slot 55) |
+| --- | ---: | ---: | ---: | ---: |
+| 2.51 | −11.75 | 0.51 / 6.50 | 2.66 / 8.08 | 16.3 / 32.6 |
+| 1.41 | −14.32 | 4.82 / 6.50 | 2.73 / 8.08 | 21.3 / 32.6 |
+| 1.00 | −16.79 | 6.47 / 6.50 | 3.57 / 8.08 | 24.2 / 32.6 |
+| **0.71** | **−19.48** | **6.47 / 6.50** | **5.48 / 8.08** | **27.2 / 32.6** |
+| 0.50 | −22.41 | 6.47 / 6.50 | 8.08 / 8.08 | 30.3 / 32.6 |
+
+At 0.71 a single hit no longer touches the limiter at all on most instruments —
+Crash1 peaks at −4.6 dBFS — and the limiter is back to being what it should be,
+a safety net that only engages when voices stack. Stacking behaves properly as a
+result: two Crash1 voices now deliver +5.5 dB where the ideal is +6.0 dB, where
+at 2.51 they delivered +1.6 dB because the stage was already brickwalled by one.
+
+The level this gives up was never real. See the note in
 [`tools/level_meter/README.md`](../tools/level_meter/README.md) about not
-chasing unit loudness with gain — on hardware the level difference is a quarter
-turn of the synth track's volume knob.
+chasing unit loudness with gain — on hardware the difference is a quarter turn
+of the synth track's volume knob.
 
 ### Voice allocation
 
@@ -162,6 +193,38 @@ settings, and six `{ratio, detune, feedback, volume, waveform}` operator slots.
 `drum_patches.h` is **auto-generated** from the upstream drumkit JSON by
 `tools/gen_patches.py` and must not be hand-edited.
 
+### Instrument names
+
+`Drumkit_default.json` is **not a General MIDI kit**. It fills the slots a GM
+percussion map addresses, but what it puts in them is its own arrangement, and
+the two disagree in 27 of the 47 cases. The instrument list used to be labelled
+from the GM map anyway, so the panel named a different instrument than the slot
+actually holds — most confusingly:
+
+| slot | GM would call it | the kit's own patch | decay |
+| ---: | --- | --- | ---: |
+| 51 | Ride Cymbal 1 | **Closed Hat** | 4.4 s |
+| 52 | Chinese Cymbal | **Deep Tom** | 3.1 s |
+| 53 | Ride Bell | **Snare Body** | 6.2 s |
+| 54 | Tambourine | **Snare Noise** | 0.6 s |
+| 56 | Cowbell | **Noise Bell** | 0.3 s |
+| 70 | Maracas | **Chime** | 0.3 s |
+| 75 | Claves | **Sub Kick** | 0.3 s |
+| 80/81 | Mute/Open Triangle | **Glass Bell** | 0.3 / 6.3 s |
+
+Labels now come from the kit's `name` field. The kit reuses names heavily, so a
+repeated name is numbered in slot order — `Tom1…Tom6` ascend in pitch, as the GM
+tom slots do, and `Bongo1…Bongo7` follow slots 60–66. The GM slot is kept in
+each patch's C comment for traceability.
+
+**Instrument order and sounds are unchanged**, so an existing pattern plays the
+same sound; only the label moved. Four slots are exact duplicates of another
+(`Bongo1`/`Bongo4`/`Bongo6`/`Bongo7`, and `Whistl1`/`Whistl2`) — that is the
+kit's own content, kept so the slot numbering still lines up with the source.
+
+The numeric patch data was verified against the JSON field by field and is a
+faithful copy; only the labels were ever wrong.
+
 ### Parameters (24)
 
 | # | Name | Type | Range | Maps to |
@@ -173,9 +236,9 @@ settings, and six `{ratio, detune, feedback, volume, waveform}` operator slots.
 | 4 | Algo | strings | 0–17 | FM algorithm |
 | 5 | Attack | ms | 0–2000 | envelope attack |
 | 6 | Hold | ms | 0–2000 | envelope hold |
-| 7 | Decay | ms | 0–2000 | envelope decay |
+| 7 | Decay | ms | 0–8000 | envelope decay |
 | 8 | Sustain | % | 0–100 | envelope sustain |
-| 9 | Release | ms | 0–2000 | envelope release |
+| 9 | Release | ms | 0–8000 | envelope release |
 | 10 | VeloMod | % | 0–100 | velocity → level depth |
 | 11 | Filter | strings | −4…5 | SVF on/off **+** carrier waveform (see below) |
 | 12 | FltFrq | Hz | 20–20000 | SVF cutoff |
@@ -211,11 +274,16 @@ Six pages of four parameters each.
 - **Algo** — FM algorithm 0–17 (the operator routing graph). Changing it is the
   single biggest timbral move; see `fm_voice6.h` for each graph.
 - **Attack / Hold / Decay** — front of the AHDSR envelope, in milliseconds.
+  Decay runs to 8000 ms because the patch data does: ten instruments store
+  2.8–8.0 s (Cymbal2 8.0, RailBl 6.3, GlasBl2 6.27, SnBody2 6.16, Crash1 6.0,
+  ClHat1 4.4). The range used to stop at 2000, so the panel showed 2000 while
+  the engine went on running the real 6 s.
 
 **Page 3 — Envelope tail & dynamics**
 - **Sustain** — envelope sustain level (0 % for one-shot drums; raise it for
   sustained tones that ring until note-off).
-- **Release** — release time after note-off, in milliseconds.
+- **Release** — release time after note-off, in milliseconds (0–8000, same
+  reason as Decay).
 - **VeloMod** — how much MIDI velocity scales the level (0 % = velocity ignored,
   100 % = fully velocity-dependent).
 - **Filter** — combined **SVF enable + carrier-waveform** selector. The string
