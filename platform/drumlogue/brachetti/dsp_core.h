@@ -161,10 +161,21 @@ enum { kCymbalMaxResonators = 112 };
 static constexpr float kCymRumbleHz   = 40.0f;
 static constexpr float kCymRumbleCoef = 6.28318530717958647692f * kCymRumbleHz *
                                         k_dsp_inv_sample_rate;
-// Corner of the two-pole subsonic guard on the resonator DRIVE.  Set at the
-// lowest anchor frequency in the whole family (the gong's 150 Hz fLo) — see
-// the long note at its use site in cymbal_process.
-static constexpr float kCymDriveHpHz   = 150.0f;
+// Corner of the two-pole subsonic guard on the resonator DRIVE — see the long
+// note at its use site in cymbal_process.
+//
+// Pass 45 set this to 150 Hz, "the lowest anchor frequency in the whole
+// family", which sounded principled and was the worst possible choice for the
+// one preset that reaches that low: it put the corner ON the gong's own fLo,
+// so the gong paid 6 dB on its lowest lane while every other preset paid under
+// 1.5 dB.  Pass 46 measured the actual reference recording — Chinese-Gong.wav
+// has 0.0 % of its energy below 60 Hz and 68.8 % in ONE mode at 91.5 Hz — so
+// the thing to remove sits well under 60 Hz and the corner belongs there, not
+// at 150.  At 55 Hz the guard still takes 25 Hz down 15 dB and DC to nothing,
+// while the gong's body comes back: measured power centroid 225 -> 201 Hz
+// against the reference's 198, the 100-300 Hz share 89.2 % -> 93.2 %, and the
+// preset gets 1.7 dB louder instead of thinner.
+static constexpr float kCymDriveHpHz   = 55.0f;
 static constexpr float kCymDriveHpCoef = 6.28318530717958647692f * kCymDriveHpHz *
                                          k_dsp_inv_sample_rate;
 static_assert(kCymbalMaxResonators % 4 == 0, "kCymbalMaxResonators must be a multiple of 4 for NEON loop safety");
@@ -189,6 +200,21 @@ struct CymbalConfig {
     // aggregate initializers with 17 values default this to 0.
     float hfTilt;
 };
+
+// TRIED AND REJECTED (pass 46), so it is not re-attempted: a per-lane
+// `hfDamp` giving higher lanes a shorter T60 (lane decay scaled by
+// (1 kHz / f)^hfDamp).  The theory was that the bank's ONE shared `r` is why
+// a static `hfTilt` cannot brighten the strike without also brightening the
+// sustain — real metal damps high modes faster, and every `ModalPresetConfig`
+// in this unit already gives descending per-mode T60s.  Measured, it moves the
+// late centroid the WRONG WAY (3225 -> 3375 -> 3666 Hz as hfDamp goes
+// 0 -> 0.3 -> 1.0) because these resonators are CONTINUOUSLY DRIVEN, not
+// impulse-excited: lowering a lane's `r` widens its bandwidth and raises its
+// `b0`, so the lane passes more of the broadband driver than it loses in peak
+// gain.  At `hfTilt = 0` it darkens the tail by 8 % (728 -> 672 Hz), which
+// does not pay for a `powf`+`expf` per lane per strike.  The sustain's
+// brightness comes from the tilted tap being fed by a full-band driver, so
+// nothing about the BANK's decay can separate attack from sustain.
 
 struct CymbalVoice {
     bool     active       = false;

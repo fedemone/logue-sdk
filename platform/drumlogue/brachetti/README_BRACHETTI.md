@@ -250,6 +250,14 @@ budget 240).  Regression-tested as
 
 ##### Pass 45 — it still was not stacking, and the mud was synthesised
 
+> **Superseded in part by pass 46.**  The reference recordings were restored to
+> `samples/` and they overturn item 4 below: `Chinese-Gong.wav` measures a
+> 196 Hz power centroid with 0.0 % of its energy above 3 kHz, so the render
+> pass 45 "fixed" was already a close match for its own reference, and the
+> `hfTilt` moved the preset onto the *other*, brighter gong in `samples/`.  The
+> tilt and trim are reverted; the subsonic guard is kept with its corner moved
+> 150 Hz → 55 Hz.  See `CLAUDE.md`, pass 46.
+>
 > **HW verdict: half accepted.**  *"Stacking is better, but sound has
 > degraded."*  Items 1 and 2 (the stacking work) are accepted and are provably
 > tonally free — with items 3-5 backed out, all 40 preset renders are

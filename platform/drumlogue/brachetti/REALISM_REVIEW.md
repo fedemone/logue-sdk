@@ -168,13 +168,18 @@ energy (thwack burst, swept one-pole), so the shipped values are 3.0 (Cymbal)
 and 2.0 (Ride/RidBel).  HHat-O ("do not break"), Gong (deliberately tonal)
 and Splash keep the legacy flat bank.
 
-> **Corrected in pass 45.**  "Gong (deliberately tonal)" was wrong, and the
-> table below has the evidence this review did not act on: 0.2 % of the gong's
-> energy sat above 1 kHz and 0.0 % above 3 kHz, at a centroid of 190 Hz,
-> against a reference of 1147/815 Hz.  A flat `resGain` is not a flat
-> RESPONSE — the 2-pole peak gain `b0/((1-r)|1-r e^-2jw|)` is 32 dB louder at
-> 162 Hz than at 8 kHz — so the flat bank was not tonal, it was dark.  Gong now
-> ships `hfTilt = 2.4`.
+> **Pass 45 "corrected" this and was itself wrong; pass 46 reverted it.**
+> Pass 45 read the row below as proof the gong was too dark and shipped
+> `hfTilt = 2.4`.  It had no reference to check against (`samples/` was
+> gitignored) and the recording says the opposite: `Chinese-Gong.wav` measures
+> a **196 Hz power centroid with 0.0 % of its energy above 3 kHz**, which is
+> what the render already was.  The row's own 1147/815 numbers are
+> magnitude-weighted over `refcmp`'s windows and are not comparable with a
+> power-weighted band split — reading one as the other is what produced the
+> error.  What the row does say correctly is that the **attack** is too dark
+> (1147 reference against 393 rendered) while the **sustain** was right (815
+> against 505); a bank-wide tilt cannot fix one without the other.  Gong is
+> back to `hfTilt = 0`.
 
 **Snare round 2**: BrshSnr velocity-compressed (0.30–0.72), swish onset
 ~100 ms, wires resting on the head (`k_wire_onset_env=1` → no crack burst).
@@ -440,7 +445,7 @@ Conga 480 Hz / t40 180 ms, RimShot 3125 Hz / 49 ms, MrchSnr 4741 Hz /
 | Ride    | 4027 / 6115 | 11167 / 11075 | 0.001 → 0.554 | 0.96 → 2.93 s |
 | RidBel  | 4111 / 5830 | 10963 / 11039 | 0.001 → 0.548 | 0.73 → 3.29 s |
 | HHat-O  | 9149 / 7146 | 11057 / 11096 | 0.013 → 0.544 | 0.77 → 0.64 s |
-| Gong    | 393 / 505   | 1147 / 815    | ~~tonal by design~~ — see the pass-45 correction above; this row is the evidence it was dark, not tonal | 4.03 → 1.28 s |
+| Gong    | 393 / 505   | 1147 / 815    | attack too dark, sustain right — see the pass-46 note above | 4.03 → 1.28 s |
 | Timpani | 608 / 337   | 756 / 646     | tonal ✓ | 1.53 → 1.12 s |
 
 ### Ranked realism backlog (next HW pass candidates — no sound changes made
@@ -456,9 +461,10 @@ Conga 480 Hz / t40 180 ms, RimShot 3125 Hz / 49 ms, MrchSnr 4741 Hz /
    octave stacks so upper ringers get wider bandwidth (noise-like), (c) more
    `jitterSemis` on the octave-stacked copies.  Per-preset gating mandatory:
    HHat-O is HW-approved ("do not break").  ("Gong is deliberately tonal" also
-   stood here — see the correction above; it ships `hfTilt = 2.4` since pass
-   45, and item (a) of this list was done for the whole family in that pass,
-   as a two-pole subsonic guard rather than a level change.)
+   stood here; pass 46 measured the reference and it is dark by DESIGN after
+   all — 0.0 % above 3 kHz — so the phrase was right for the wrong reason and
+   the preset keeps `hfTilt = 0`.  Item (a) of this list was done for the whole
+   family in pass 45, as a two-pole subsonic guard rather than a level change.)
 2. **Crash/Ride ring length** — t40 883/1309 ms vs refs ~2263/1900+ ms and
    refcmp T60 0.62-0.96 s vs 2.3-3.3 s.  `decaySec` / `ringDecayScale` trims
    (the 8 s endSample cap leaves room).  Cheap table change; HW gate says
