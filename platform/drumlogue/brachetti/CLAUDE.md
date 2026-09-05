@@ -379,13 +379,42 @@ No variant script is checked in; the ladder was measured on throwaway copies.
 **Ranked hypotheses for WHY it degraded** — these are hypotheses with a
 measurement attached, not conclusions; nobody has A/B'd them on hardware.
 
-1. **`hfTilt` 2.4 is too much, and it is the prime suspect.**  It is the only
-   change that moves anything by an order of magnitude, and what it moves is
-   the body: the 100-300 Hz share goes **89 % → 29 %**.  A gong that loses
-   two-thirds of its body band reads as a thin crash however "correct" the
-   centroid is.  Variant D halves it.  Note the trim only restores the TOTAL
-   level, not the body — the low lanes are attenuated ~12x in absolute terms
-   and the trim multiplies everything back up together.
+1. **The tail is four times too bright, and a static `hfTilt` cannot fix
+   that — the bank has ONE decay for every lane.**  Sharpened after the pass,
+   once `refcmp.py` was repaired (below).  On refcmp's own windows (0-100 ms
+   and 300-700 ms), against the reference row recorded in `REALISM_REVIEW.md`:
+
+   | | early | late |
+   |---|---|---|
+   | reference | 1147 Hz | 815 Hz |
+   | pre-pass render | 393 Hz | 505 Hz |
+   | pass-45 render | **1206 Hz** | **3225 Hz** |
+
+   So the pass **fixed the attack and broke the sustain**: early is now on the
+   reference (1206 vs 1147), late overshoots by **4x** and, worse, goes the
+   wrong DIRECTION — the reference falls 1147 → 815, the render rises 1206 →
+   3225.  Lowering `hfTilt` alone cannot correct that, because it is a static
+   per-lane gain: it moves both windows together and cannot make a spectrum
+   darken over time.
+
+   The structural reason is one line in `cymbal_note_on`: `r` is computed
+   **once**, outside the lane loop, and every lane from 150 Hz to 8.9 kHz gets
+   `a1 = 2r·cos(w)`, `a2 = -r²`.  One shared T60 for the whole bank.  Real
+   metal damps high modes faster, and **this unit already knows that** — the
+   modal engine's `ModalPresetConfig` gives every preset descending per-mode
+   T60s (Cymbal 1800/1300/950/700 ms, Kick2 660/240/120/60).  ENGINE_CYMBAL is
+   the one bank that does not.  Leading pass-46 candidate: make `r`
+   frequency-dependent (shorter ring for the upper lanes) and then re-fit
+   `hfTilt` against it.  That gives a bright strike over a body that darkens
+   as it decays, which is both what the reference measures and what a tam-tam
+   does.
+
+   The blunter reading also stands and is cheaper to try first: `hfTilt` 2.4
+   takes the 100-300 Hz body share from **89 % → 29 %**, and a gong that loses
+   two-thirds of its body reads as a thin crash however "correct" its centroid
+   is.  Variant D halves it.  Note the trim restores the TOTAL level, not the
+   body — the low lanes are attenuated ~12x in absolute terms and the trim
+   multiplies everything back up together.
 2. **The 150 Hz drive guard is set at the worst possible corner for this one
    preset.**  It was chosen at the family minimum — which IS the gong's own
    `fLo`, so the gong pays **6 dB on its lowest lane** while every other preset
@@ -425,6 +454,32 @@ dressed up as a measurement, and it is very likely where the tone went wrong.
 **Drop a gong WAV into `samples/` and pass 46 can use `modal_extract.py` and
 `refcmp.py` instead of guessing** — that is worth more than any of the five
 hypotheses above.
+
+Why the directory is empty, what to upload, and the persistence trap are now
+written up in **`samples/README.md`**.  Short version: `.gitignore`'s bare
+`*.wav` is unanchored, so a rule whose own comment scopes it to "rendered WAV
+output" also swallowed every reference recording, and they were never committed
+— `git log --all -- '*.wav'` finds nothing under `brachetti/`, so there is no
+recovering them from history.  And because web sessions are ephemeral, a WAV
+uploaded while the rule stands is gone again with the container; either narrow
+the rule so `samples/*.wav` is tracked, or plan to upload at the start of every
+session that needs one.
+
+**Two tool defects that the missing samples were HIDING** (both fixed alongside
+this note):
+- `refcmp.py` still carried pre-pass-41 preset indices — Ride pointed at 32
+  (now RidBel), RidBel at 33 (now Bongo), HHat-O at 27 (now Conga).  Exactly
+  the renumbering defect class pass 41 found in T25, T40a and
+  `stability_sweep`, and it survived four more passes **because the tool could
+  not run at all without references, so nothing ever reported it**.  It now
+  locates renders by NAME (`*_Gong.wav`), takes the render directory as
+  `argv[1]`, and says so when a reference is missing.
+- The `samples/` manifest lives in the `ProgramIndex` enum as free-text
+  comments and had never been collected anywhere actionable.  It is now a
+  priority-ordered checklist in `samples/README.md`, along with two
+  discrepancies worth settling before anyone re-tunes against them: the enum
+  attributes a *closed*-hat recording to the *open* hat (preset 26), and no
+  provenance or licence is recorded for any of these files.
 
 **What a next listen should answer** (the verdict as given cannot be acted on):
 is it too bright, too thin, too quiet, or is there a ringing note that stands
