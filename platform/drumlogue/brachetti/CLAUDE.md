@@ -16,9 +16,9 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 52,964 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
-`.bss` 107,948.  (Pass 45: `.text` +288 B, `.bss` +64 B — four new floats per
-cymbal voice; `.rodata`/`.data.rel.ro` unchanged.)  **The "28 KB / 30 KB" limit this file used to assert here was
+Current shipping tree: `.text` 52,940 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
+`.bss` 107,948.  (Passes 45-46 together: `.text` +264 B, `.bss` +64 B — four new
+floats per cymbal voice; `.rodata`/`.data.rel.ro` unchanged.)  **The "28 KB / 30 KB" limit this file used to assert here was
 never true** — see the constraint section. Watch the numbers for regressions;
 do not contort code to hit an imaginary ceiling.
 (Pass 32 listed the third figure as `.data`; the section actually carrying the
@@ -29,25 +29,35 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **108/108**.
-- **Pass 45 — HALF ACCEPTED, HALF REJECTED ON HW.**  Verdict: *"stacking is
-  better, but sound has degraded."*  The pass fixed two separable things and
-  only the first is wanted:
-  - **Stacking (KEEP).**  Accepted on HW.  Same-note re-excitation + re-strike
+- **Pass 46 — the reference samples arrived and overturned pass 45's premise.**
+  `samples/` is populated again (67 WAVs, committed).  Measuring the actual
+  recording says pass 45's tonal half was wrong at the root, not merely
+  overcooked: **`Chinese-Gong.wav` measures a 196 Hz power centroid with 0.0 %
+  of its energy above 3 kHz** — which is what the pre-pass-45 render already
+  was.  The gong's `hfTilt` and `cym_trim` are reverted.  What survives from
+  pass 45 is the stacking work (accepted on HW) and the subsonic guard, whose
+  corner moved 150 Hz → 55 Hz once the reference showed the gong's dominant
+  mode is at **91.5 Hz**.  Net against the pre-45 build the user liked: same
+  tone (centroid 190 → 205 Hz, reference 198), same loudness (rms 0.2186 →
+  0.2128), and the sub-100 Hz junk gone — **5.6 % → 1.1 %** on one strike,
+  **9.1 % → 1.6 %** on eight.  Needs a listen, but it should read as "what I
+  had, minus the mud".
+- **Two big open findings, both first measurable today** — see the pass-46
+  entry: the gong rings **~4x too long** (T60 4.98 s against the reference's
+  1.28 s), which is the most likely remaining cause of the original "muddy on
+  repeated hits"; and the bank **cannot produce the reference's dominant
+  partial at all** (91.5 Hz, 68.8 % of its energy, against our `fLo` of 150 Hz).
+- **Pass 45 — HALF ACCEPTED, HALF REJECTED ON HW; the rejected half is now
+  reverted by pass 46.**  Verdict was: *"stacking is better, but sound has
+  degraded."*
+  - **Stacking (KEPT).**  Accepted on HW.  Same-note re-excitation + re-strike
     continuity.  **Tonally free: measured 40/40 byte-identical to the pre-pass
     build on the single-strike renders** — it only changes what a repeat does.
-  - **Tone (REJECTED).**  The subsonic guards + the Gong's `hfTilt` 2.4 and
-    `cym_trim` 2.0.  Measured cleaner and brighter; heard as worse.  The ear
-    wins.  **Everything the report is about lives in these two changes.**
-
-  **The branch as it stands ships the rejected tone.**  Reverting to the
-  accepted half is a ~6-line change (variant B in the pass-46 backlog below)
-  and lands a build that is strictly better than the pre-pass one.  That is the
-  recommendation; merging as-is is a decision to keep the new voicing.
-
-  Pass-46 backlog, the measured back-off ladder, and the four independent
-  revert points are in the pass-45 entry under "HW verdict".  **The single
-  most useful thing anyone can do next is drop a gong reference WAV into
-  `samples/`** — see "what is missing" there.
+  - **Tone (REVERTED in pass 46).**  The gong's `hfTilt` 2.4 and `cym_trim`
+    2.0.  Measured cleaner and brighter; heard as worse; and then measured
+    against the real recording as simply wrong.
+  - **Subsonic guards (KEPT, corner corrected).**  The one tonal change that
+    survived contact with the reference.
 - **Pass 44 (BrshSnr changed — needs a listen):** its head was mixed in at
   **zero** (`k_modal_mix = 0.0`), so the "resonance" the HW report asked for
   did not exist; it now has one, at **Note 55 (196 Hz)** instead of 38 (73 Hz,
@@ -190,6 +200,127 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 46 — the recording arrived, and it says pass 45 was wrong at the root
+
+`samples/` is populated again — 67 reference WAVs, committed this time.  The
+first thing they were used for was checking pass 45, and the answer is not
+"overcooked", it is **the premise was false**.
+
+**Pass 45 asserted a defect it could not see.**  It called the gong's 190 Hz
+centroid with 0.0 % of its energy above 3 kHz "objectively wrong", on the
+strength of two written notes in this repo, because there was no recording to
+check against.  Measured today:
+
+| | power centroid | 3-8 kHz | >8 kHz |
+|---|---|---|---|
+| `Chinese-Gong.wav` (the reference this preset is named after) | **196 Hz** | **0.0 %** | **0.0 %** |
+| pre-pass-45 render | 190 Hz | 0.0 % | 0.0 % |
+| pass-45 render | 1939 Hz | 23.6 % | 4.0 % |
+
+The render pass 45 "fixed" was already a close match for its own reference.  On
+`refcmp`'s metric the same story, and it locates the error precisely — the
+**sustain was right before and wrong after**:
+
+| | early | late |
+|---|---|---|
+| reference | 1147 Hz | **815 Hz** |
+| pre-45 | 393 | **505** |
+| pass-45 | 1206 | **3225** |
+
+**The two "references" in this repo are two different instruments, and nobody
+had noticed.**  `samples/` holds both gongs the enum names:
+
+- **`Chinese-Gong.wav`** — power centroid 196 Hz, **0.0 % above 3 kHz**,
+  T60 1.28 s, dominant partial **91.5 Hz** carrying 68.8 % of the energy
+  (then 328, 658, 739, 342, 674, 725, 1375 Hz).  A big dark tam-tam.
+- **`Gong-long-G#.wav`** — power centroid 2473 Hz, **38 % above 3 kHz**, 3.2 s+,
+  fundamental 324/269 Hz with a 1604 Hz partial as loud as it.  Bright, and it
+  is what the enum comment "starts with 800 Hz and settles to 1680 Hz"
+  describes — the rising profile pass 45 chased belongs to the OTHER gong.
+
+`refcmp.py` names `Chinese-Gong.wav`, and so does the enum, first.  So the
+preset is the dark one, and pass 45 moved it onto the bright one.
+
+**Reverted:** gong `hfTilt` 2.4 → 0, `cym_trim` 2.0 → 1.15 (see below).
+
+**Kept, with its corner corrected: the subsonic guard.**  This is the one
+tonal change from pass 45 that survives contact with the reference, because the
+reference has **0.0 % of its energy below 60 Hz** — the sub-mode lump really is
+not part of a gong.  But pass 45 set the corner at 150 Hz, "the lowest anchor
+frequency in the whole family", which sounded principled and was the worst
+possible choice for the only preset that reaches that low: it put the corner ON
+the gong's own `fLo`, costing it 6 dB on its lowest lane while every other
+preset paid under 1.5 dB.  At **55 Hz** the guard still takes 25 Hz down 15 dB
+and DC to nothing, and the body comes back — power centroid 225 → 201 Hz
+against the reference's 198, the 100-300 Hz share 89.2 % → 93.2 %.
+
+**`cym_trim` 1.15, and it is not a fudge.**  The guard removes energy that was
+inaudible as pitch but WAS feeding the master limiter, so the preset lost a
+real 2.4 dB.  1.15 buys back exactly that and nothing more: rms 0.1781 against
+the pre-guard 0.1820.
+
+**Net for the gong, against the pre-45 build the user liked:**
+
+| | rms | peak | crest | centroid | <100 Hz, 1 strike | <100 Hz, 8 strikes |
+|---|---|---|---|---|---|---|
+| pre-45 | 0.2186 | 0.980 | 4.48 | 190 Hz | 5.6 % | 9.1 % |
+| pass-45 (rejected) | 0.0380 | 0.838 | 22.07 | 1588 Hz | 0.2 % | 2.5 % |
+| **pass-46** | **0.2128** | **0.973** | **4.57** | **205 Hz** | **1.1 %** | **1.6 %** |
+
+Same tone, same loudness, mud gone.  Reference centroid is 198 Hz.
+
+**TRIED AND REJECTED, with the measurement — do not re-attempt.**  The pass-45
+write-up named "frequency-dependent ring damping" as its leading candidate: the
+bank computes `r` once for every lane from 150 Hz to 8.9 kHz, real metal damps
+high modes faster, and every `ModalPresetConfig` in this unit already gives
+descending per-mode T60s.  Implemented as a `CymbalConfig::hfDamp` scaling lane
+T60 by `(1 kHz / f)^hfDamp`, it moves the late centroid the **wrong way**:
+3225 → 3375 → 3666 Hz as hfDamp goes 0 → 0.3 → 1.0.  These resonators are
+**continuously driven, not impulse-excited** — lowering a lane's `r` widens its
+bandwidth and raises its `b0`, so it passes more of the broadband driver than
+it loses in peak gain.  At `hfTilt = 0` it darkens the tail by 8 % (728 → 672
+Hz), which does not pay for a `powf`+`expf` per lane per strike.  Removed; the
+reasoning is kept as a comment in `dsp_core.h` so it is not re-derived.
+`highDecaySec` was swept too (1.20 / 0.35 / 0.15) and moves the late centroid
+by under 7 %.  **Nothing in the bank's decay separates attack from sustain**,
+because the sustain's brightness is the tilted tap being fed by a full-band
+driver.
+
+**Two open findings, both measurable for the first time today.**
+
+1. **The gong rings about four times too long.**  T60 4.98 s against the
+   reference's 1.28 s.  Nobody could check this before.  At any playing rate
+   that is several whole tails overlapping — a 300 ms pattern stacks roughly
+   sixteen of them — and it is now the most likely remaining cause of the
+   ORIGINAL "muddy on repeated hits" report, which the subsonic guard only
+   partly addressed.  Levers: `decaySec` (1.70), the `ring_scale` argument
+   (1.0 here; HHat-O already uses 0.55), and the shared `ringDecay`.  Sweeping
+   `decaySec` 1.70 → 0.80 → 0.50 pulls the late centroid 574 → 496 → 417 Hz
+   and T60 4.78 → 3.23 → 3.17 s, so `decaySec` alone does not get there — the
+   bank's own `ringDecay` and the magnitude squelch hold the floor.  This is a
+   character change and wants a listen, not a fit.
+2. **The bank cannot produce the reference's dominant partial.**
+   `Chinese-Gong.wav` puts **68.8 % of its energy in one mode at 91.5 Hz**;
+   our `fLo` is 150 Hz and the lowest anchor is 162 Hz, so the model has never
+   been able to render it — it is an octave high.  The reference's partials
+   (91.5, 166.5, 328/342, 658/674/692/725/739, 1375/1392) are also a much
+   sparser, more clustered set than our 16 dense anchors.  Re-anchoring is the
+   change that would actually make this preset sound like a big gong, and it
+   is a voicing decision — it moves the instrument's perceived pitch and size,
+   and interacts with `ref_note` and the Note knob.  **Ask before doing it.**
+
+**Also worth deciding: which gong is this preset supposed to be?**  Both
+recordings are in `samples/` now.  The dark one is what the code is named for
+and what the current voicing matches; the bright one is what the enum comment
+describes.  They are different instruments and the preset can only be one.
+
+Verified: 34/40 renders byte-identical to the PRE-pass-45 build (the six
+ENGINE_CYMBAL presets differ, by the subsonic guard), 0 NaN/silent, `test_dsp`
+exit 0, `test_hw_debug` **108/108** (T43 passes at the new corner with the gong
+at 1.08 % under 100 Hz against its 4 % limit and 8.52 % pre-fix),
+`stability_sweep` 4096 combos + 480 rolls, 0 problems, worst |peak| 0.9900.
+
 
 ### Pass 45 — the gong: it was not stacking, and the mud was being synthesised
 
@@ -376,8 +507,20 @@ Reproducing a row is four literal edits at the anchors in the table above,
 then `gong_probe` — it prints these same columns for whatever is in the tree.
 No variant script is checked in; the ladder was measured on throwaway copies.
 
-**Ranked hypotheses for WHY it degraded** — these are hypotheses with a
-measurement attached, not conclusions; nobody has A/B'd them on hardware.
+**Ranked hypotheses for WHY it degraded** — these were hypotheses with a
+measurement attached.  **Pass 46 tested them against the actual recording and
+the answer was none of the above: the premise was wrong, not the amount.**
+Kept as written, with outcomes, because the reasoning is still the map of this
+bank's behaviour:
+- (1) was **half right and half disproved** — the tail IS four times too bright
+  (3225 vs 815 Hz), but the proposed cause and fix, a frequency-dependent ring
+  decay, measured backwards; see the pass-46 entry.
+- (2) was **confirmed and fixed** — the 150 Hz corner was on the gong's own
+  `fLo`, and the reference put the real target under 60 Hz.  Now 55 Hz.
+- (3) was **confirmed and fixed** — `cym_trim` 1.15 buys back what the guard
+  took, measured.
+- (4) and (5) are **moot with the tilt reverted** and untested.
+
 
 1. **The tail is four times too bright, and a static `hfTilt` cannot fix
    that — the bank has ONE decay for every lane.**  Sharpened after the pass,

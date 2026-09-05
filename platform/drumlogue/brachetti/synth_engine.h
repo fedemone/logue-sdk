@@ -2686,28 +2686,33 @@ SynthState state;
                     ref_note = 60;
                     break;
                 case k_Gong:
-                    // hfTilt 2.4 (the last value) — see the hfTilt note below
-                    // and in CymbalConfig.  A flat bank under the pink driver
-                    // was leaving this preset with NO metal at all: measured
-                    // over the whole render, 0.2 % of its energy sat above
-                    // 1 kHz and 0.0 % above 3 kHz, against 28 % and 60 % on
-                    // the crash, and the spectral centroid was 190 Hz.  The
-                    // enum's own reference note for this preset says the
-                    // sample "starts with 800 Hz and settles to 1680 Hz"; the
-                    // render was an order of magnitude under that, which is
-                    // what "muddy" means here.  A flat resGain is not a flat
-                    // RESPONSE: a 2-pole resonator with a constant numerator
-                    // peaks at b0/((1-r)|1-r e^-2jw|), which for r = 0.9999 is
-                    // 32 dB louder at 162 Hz than at 8 kHz, and the pink
-                    // driver tilts it further.  2.4 counters both.  Now the
-                    // centroid RISES across the note — 353 Hz over the first
-                    // 250 ms, 996 Hz over 0.25-1 s, 2040 Hz over 1-2 s, the
-                    // tam-tam bloom the reference describes — over a body that
-                    // is still a quarter to a third in 100-300 Hz.
-                    // Mterl still moves it either way from here.
+                    // hfTilt stays 0 here, and pass 46 put it back after pass
+                    // 45 set it to 2.4.  Worth the space, because the mistake
+                    // is instructive: pass 45 called a 190 Hz centroid with
+                    // nothing above 3 kHz "objectively wrong" on the strength
+                    // of two written notes in this repo, having no recording to
+                    // check against (samples/ was gitignored — see
+                    // samples/README.md).  The recording says otherwise.
+                    // Chinese-Gong.wav, the reference this preset is named
+                    // after, measures a 196 Hz power centroid with 0.0 % of its
+                    // energy above 3 kHz — i.e. the render pass 45 "fixed" was
+                    // already a close match for it, and the tilt moved the
+                    // preset onto the OTHER gong in samples/ (Gong-long-G#.wav,
+                    // centroid 2473 Hz, a different instrument).  On refcmp's
+                    // metric the sustain was right before and wrong after:
+                    // reference 815 Hz, pre-45 728 Hz, pass-45 3225 Hz.
+                    //
+                    // What IS off is the attack — reference 1147 Hz early
+                    // against 437 rendered — and hfTilt cannot buy it.  A
+                    // static per-lane gain moves both windows together, and
+                    // nothing in the bank's decay separates them either (see
+                    // the rejected hfDamp note in dsp_core.h).  Attack
+                    // brightness has to come from the STRIKE — stickLevel,
+                    // thwackSec, the shimmer band — not from a bank-wide tilt.
+                    // Mterl still moves the tilt either way from here.
                     cc = { m_cym_gong_hz, 16, 80, 150.f, 14000.f, 2.4f,
                            0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
-                           0.126f, 0.22f, 0.010f, 0.15f, 2.4f };
+                           0.126f, 0.22f, 0.010f, 0.15f };
                     ref_note = 50;
                     break;
                 case k_HiHatOpen:
@@ -2738,11 +2743,12 @@ SynthState state;
             // measured ~1-1.4 kHz body centroid vs ~6-7 kHz in the reference
             // samples — the flat-gain bank under the pink (−3 dB/oct) driver
             // reads dark/tonal.  hfTilt=1 counters the driver tilt exactly.
-            // HHat-O ("do not break") and Splash keep the legacy flat bank
-            // (hfTilt stays 0).  Gong used to be listed here as "deliberately
-            // tonal"; it measured at a 190 Hz centroid with nothing at all
-            // above 3 kHz, which is not tonal, and it now carries its own tilt
-            // in the config above.
+            // HHat-O ("do not break"), Gong and Splash keep the legacy flat
+            // bank (hfTilt stays 0).  The gong's place in that list is now
+            // backed by its recording rather than by the phrase "deliberately
+            // tonal": Chinese-Gong.wav measures a 196 Hz power centroid with
+            // 0.0 % above 3 kHz, so a flat bank is what it should have.  Read
+            // the long note on the gong's config above before changing it.
             if (m_preset_idx == k_Cymbal || m_preset_idx == k_Ride ||
                 m_preset_idx == k_RideBell) {
                 // Over-whiten past 1.0: the thwack burst and swept one-pole park
@@ -2928,23 +2934,21 @@ SynthState state;
                 // deliberately NOT touched here — raise it only on an explicit
                 // listen.
                 //
-                // Gong used to be the one preset here at trim 1.0, on the
-                // pass-30 finding that it was "already correctly placed" at
-                // +3.6 dB against the unit mean.  It was placed there by its
-                // own defect: a bank with no HF and a subsonic lump under it
-                // is a dense low drone, which is the loudest thing a
-                // limiter-bounded bus can carry — it measured 11.6 dB over the
-                // crash at a crest factor of 3.2 against the crash's 11.9,
-                // i.e. it was not louder, it was flatter.  With the drive
-                // cleaned up and the bank tilted it reads as a struck
-                // instrument (crest 22) and needs real gain to sit with the
-                // family again.
+                // Gong 1.15.  Pass 30 found it "already correctly placed" at
+                // trim 1.0; pass 45 raised it to 2.0 to compensate for the
+                // level its bank tilt gave away, and that compensation went
+                // back out with the tilt.  What remains is a real 2.4 dB: the
+                // subsonic guard removes energy that was inaudible as pitch but
+                // WAS feeding the master limiter, so the preset got quieter
+                // without getting cleaner-sounding.  1.15 puts the loudness
+                // back exactly where it was (rms 0.1781 against the pre-guard
+                // 0.1820) — it buys back what the filter took and nothing more.
                 float cym_trim = 1.0f;
                 switch (m_preset_idx) {
                     case k_Cymbal:   cym_trim = 3.2f; break;
                     case k_Ride:     cym_trim = 2.9f; break;
                     case k_RideBell: cym_trim = 2.1f; break;
-                    case k_Gong:     cym_trim = 2.0f; break;
+                    case k_Gong:     cym_trim = 1.15f; break;
                     case k_Splash:   cym_trim = 1.4f; break;
                     default: break;
                 }
