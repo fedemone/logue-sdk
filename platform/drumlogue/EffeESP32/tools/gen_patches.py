@@ -3,24 +3,35 @@
 copych ESP32-S3 FM Drum Synth drumkit JSON.
 
 Selection rules:
-  - Notes 35..81 are the 47 slots a General-MIDI percussion map addresses, and
-    are always imported.
-  - Notes 0..34 and 82..127 are the remaining slots; import them only when they
-    carry a *meaningful* (non-empty name) and *unique* parameter set (not a
-    duplicate of an already-imported patch).
+  - Notes 35..81 are the 47 General-MIDI percussion instruments and are always
+    imported, using the GM names.
+  - Notes 0..34 and 82..127 are non-GM slots; import them only when they carry
+    a *meaningful* (non-empty name) and *unique* parameter set (not a duplicate
+    of an already-imported patch), giving them descriptive short names.
 
-Naming: from the kit's own `name` field, NOT from the GM map.  Drumkit_default
-is not a General MIDI kit -- it just occupies those slots -- and labelling it
-with GM names named a different instrument than the slot actually holds in 27
-of the 47 cases.  Slot 51, "Ride Cymbal 1" under the GM map, is the kit's
-"Closed Hat" with a 4.4 s decay; 52 is a "Deep Tom", 53 a "Snare Body", 56 a
-"Noise Bell", 70 a "Chime".  The GM slot number is kept in the C comment for
-traceability.
+Naming: from the GM map, NOT from the kit's `name` field.  This was briefly
+changed to use the kit's names and had to be changed back; the evidence that
+the GM slot is the real identity and the `name` field is not:
 
-The kit reuses names heavily (seven slots are "Bongo", six "Tom"), so a repeated
-name is numbered in slot order -- Tom1..Tom6 ascend in pitch, as the GM map's
-tom slots do.  Numbering runs over the whole selection, so a name appearing both
-in and outside the GM range is numbered once across both.
+  - Slots 35..50 carry GM's own instrument names verbatim in `name`:
+    35 BassDrum, 36 Kick, 37 SideStick, 38 AccSnare, 39 Hand Claps, 41/43/45/
+    47/48/50 Tom, 42/44/46 Hi Hat, 49 Crash 1.  A kit that merely "occupied"
+    the GM slots would not line up for sixteen consecutive ones.
+  - Slots 88..127 repeat one 13-entry sequence (Sub Kick, Noise Clap, Closed
+    Hat, Deep Tom, Snare Body, Snare Noise, Metal Stack, Noise Bell, Chime,
+    Tight Clap, Tick Click, Glass FX, Rail bell) three times over, each round
+    byte-identical in dec/rel/vol.  Those are the editor's *starting patches*.
+    `name` records which template a slot was seeded from, not what it became.
+  - Where a name and its GM slot disagree, the parameters side with the slot:
+    55 "Cymbal" has a 1.5 s decay (GM Splash) and 57 "Cymbal" an 8.0 s decay
+    (GM Crash 2); 51 "Closed Hat" rings for 4.4 s (GM Ride Cymbal 1); 53
+    "Snare Body" for 6.1 s (GM Ride Bell); 60..66 are all "Bongo" and GM has
+    seven hand drums there.  A closed hat does not ring for four seconds.
+
+VOICING overrides (see VOICE_EDITS): a handful of imported slots keep envelope
+or algorithm values that are wrong for what the slot is on this instrument.
+They are applied *after* selection so the instrument list, its order and the
+duplicate filter stay keyed to the untouched source data.
 """
 #
 # Usage:
@@ -91,40 +102,62 @@ GM = {
     81: ("OTrngl",   "Open Triangle"),
 }
 
-# Kit name -> panel label.  Two forms: the first is used when the name occurs
-# once in the selection, the second is the base for a numeric suffix when it
-# occurs more than once (kept to 6 chars so "base + digit" stays within the 7
-# the OLED shows).  Anything not listed falls back to stripped-and-truncated.
-KIT_LABEL = {
-    "BassDrum":    ("BassDrm", "BassDr"),
-    "Kick":        ("Kick",    "Kick"),
-    "SideStick":   ("SideStk", "SidStk"),
-    "AccSnare":    ("AccSnar", "AcSnar"),
-    "Hand Claps":  ("HndClap", "HndClp"),
-    "Snare Body":  ("SnBody",  "SnBody"),
-    "Snare Noise": ("SnNoise", "SnNois"),
-    "SnareSlap":   ("SnrSlap", "SnSlap"),
-    "Tom":         ("Tom",     "Tom"),
-    "Deep Tom":    ("DeepTom", "DpTom"),
-    "Bongo":       ("Bongo",   "Bongo"),
-    "Hi Hat":      ("HiHat",   "HiHat"),
-    "Closed Hat":  ("ClosHat", "ClHat"),
-    "Crash 1":     ("Crash1",  "Crash"),
-    "Cymbal":      ("Cymbal",  "Cymbal"),
-    "Noise Bell":  ("NoisBel", "NzBell"),
-    "Glass Bell":  ("GlasBel", "GlasBl"),
-    "Glass FX":    ("GlassFX", "GlasFX"),
-    "Metal Stack": ("MtlStak", "MtlStk"),
-    "Rail bell":   ("RailBel", "RailBl"),
-    "Chime":       ("Chime",   "Chime"),
-    "Tight Clap":  ("TgtClap", "TgtClp"),
-    "Noise Clap":  ("NoisClp", "NzClap"),
-    "Tick Click":  ("TickClk", "TickCl"),
-    "Sub Kick":    ("SubKick", "SubKck"),
-    "Whistle":     ("Whistle", "Whistl"),
-    "Guiro":       ("Guiro",   "Guiro"),
-    "Twirl":       ("Twirl",   "Twirl"),
-    "HighQ":       ("HighQ",   "HighQ"),
+# Compact names for the extra (non-GM) named slots.
+EXTRA = {
+    "Sub Kick":   "SubKick",
+    "Noise Clap": "NzClap",
+    "Closed Hat": "ClHat2",
+    "Deep Tom":   "DeepTom",
+    "Snare Body": "SnBody",
+    "Snare Noise":"SnNoise",
+    "Metal Stack":"MtlStk",
+    "Twirl":      "Twirl",
+    "Glass Bell": "GlasBel",
+    "HighQ":      "HighQ",
+    "SnareSlap":  "SnSlap",
+    "Noise Bell": "NzBell",
+    "Chime":      "Chime",
+    "Tight Clap": "TgtClap",
+    "Tick Click": "TickClk",
+    "Glass FX":   "GlasFX",
+    "Rail bell":  "RailBel",
+}
+
+# Voicing overrides, keyed by source slot: {slot: {field: value}}.
+#
+# The imported kit was authored for a machine with no polyphony ceiling and no
+# 16-step grid in front of it.  Sixteen of its slots ring for 2.8-8.0 s, which
+# on a drumlogue part means every step of a pattern is still sounding when the
+# next one lands: the part reads as one continuous wash rather than as hits,
+# and the voice pool spends itself on tails nobody hears.  These are the slots
+# where that was audible on hardware.
+#
+# `dec` and `rel` are always set together.  They are one control as far as the
+# ear is concerned here: the sequencer gates a step off almost immediately, so
+# the envelope leaves DECAY for RELEASE within a few ms of the hit and it is
+# `rel` that shapes the whole audible tail (see Adsr::end / noteOff).  Setting
+# `dec` alone would move the number on the panel and change nothing you can
+# hear.  The source kit sets them equal on nearly every patch for the same
+# reason.
+#
+# `alg` re-voices the operator routing where the shortened envelope exposed
+# a structure that only worked as a long ring.
+VOICE_EDITS = {
+    # --- 600 ms: the cymbals, so a crash is a crash and not a drone ---------
+    49:  {"dec": 0.6,  "rel": 0.6},                 # Crash1   (was 6.000)
+    51:  {"dec": 0.6,  "rel": 0.6},                 # Ride1    (was 4.398)
+    55:  {"dec": 0.6,  "rel": 0.6},                 # Splash   (was 1.500)
+    57:  {"dec": 0.6,  "rel": 0.6},                 # Crash2   (was 8.000)
+    59:  {"dec": 0.6,  "rel": 0.6},                 # Ride2    (was 3.665)
+    # --- 50 ms: short, percussive slots the kit left ringing ----------------
+    52:  {"dec": 0.05, "rel": 0.05},                # ChinaCy  (was 3.128)
+    53:  {"dec": 0.05, "rel": 0.05, "alg": 17},     # RideBel  (was 6.113)
+    58:  {"dec": 0.05, "rel": 0.05},                # Vibrslp  (was 2.798)
+    62:  {"dec": 0.05, "rel": 0.05},                # MHConga  (was 0.070)
+    67:  {"dec": 0.05, "rel": 0.05, "alg": 9},      # HiAgogo  (was 0.350)
+    81:  {"dec": 0.05, "rel": 0.05},                # OTrngl   (was 6.270)
+    87:  {"dec": 0.05, "rel": 0.05, "alg": 1},      # RailBel  (was 6.300)
+    100: {"dec": 0.05, "rel": 0.05, "alg": 0},      # RailBe2  (was 6.300)
 }
 
 def param_key(p):
@@ -137,51 +170,52 @@ def param_key(p):
             round(p["filterFreq"],2), round(p["filterReso"],4),
             round(p["filterMorph"],4), ops)
 
-# 1) pick the patches, in slot order, before naming any of them: a repeated kit
-#    name has to be numbered over the whole selection, not per range.
-picked = []        # list of (patch_dict, midi_note, gm_label or None)
+selected = []      # list of (short_name, full_name, patch_dict, midi_note)
 seen = set()
 
-for n in range(35, 82):                       # slots a GM percussion map addresses
-    picked.append((patches[n], n, GM[n][1]))
-    seen.add(param_key(patches[n]))
+# 1) GM range 35..81
+for n in range(35, 82):
+    p = patches[n]
+    short, full = GM[n]
+    selected.append((short, full, p, n))
+    seen.add(param_key(p))
 
+# 2) extras 0..34 and 82..127, only meaningful + unique
 for n in list(range(0, 35)) + list(range(82, 128)):
     p = patches[n]
-    if not p["name"].strip():
+    name = p["name"].strip()
+    if not name:
         continue
     k = param_key(p)
     if k in seen:
         continue
     seen.add(k)
-    picked.append((p, n, None))
-
-# 2) label from the kit's own name, numbering repeats in slot order.
-counts = {}
-for p, _, _ in picked:
-    counts[p["name"].strip()] = counts.get(p["name"].strip(), 0) + 1
-
-selected = []      # list of (short_name, full_name, patch_dict, midi_note)
-used_idx = {}
-for p, n, gm_label in picked:
-    kit = p["name"].strip()
-    uniq, base = KIT_LABEL.get(kit, (None, None))
-    if uniq is None:
-        uniq = re.sub(r"[^A-Za-z0-9]", "", kit)[:7] or "Perc"
-        base = uniq[:6]
-    if counts[kit] == 1:
-        short = uniq
-    else:
-        used_idx[kit] = used_idx.get(kit, 0) + 1
-        short = f"{base}{used_idx[kit]}"
-    assert len(short) <= 7, (short, kit)
-    # Provenance in the generated comment: the kit's name, the source slot, and
-    # the GM instrument that slot would be under a General MIDI map -- which is
-    # usually something else entirely.
-    full = f"{kit} (slot {n}" + (f", GM {gm_label}" if gm_label else "") + ")"
-    selected.append((short, full, p, n))
+    short = EXTRA.get(name, re.sub(r"[^A-Za-z0-9]", "", name)[:7] or "Perc")
+    # keep display names unique
+    base, used = short, {s for s, _, _, _ in selected}
+    suffix = 2
+    while short in used:
+        short = (base[:6] + str(suffix))
+        suffix += 1
+    selected.append((short, name, p, n))
 
 assert len({s for s, _, _, _ in selected}) == len(selected), "duplicate panel label"
+
+# 3) apply the voicing overrides.  After selection, so that the instrument list
+#    and the duplicate filter above stay keyed to the untouched source data --
+#    an edit that made two slots identical must not silently drop one of them.
+#    Patch dicts are shared with `patches`, so copy before writing.
+edited = {}
+for i, (short, full, p, n) in enumerate(selected):
+    if n not in VOICE_EDITS:
+        continue
+    p = dict(p)
+    for field, value in VOICE_EDITS[n].items():
+        p[field] = value
+    selected[i] = (short, full, p, n)
+    edited[short] = n
+missing = sorted(set(VOICE_EDITS) - set(edited.values()))
+assert not missing, f"VOICE_EDITS names slots that are not imported: {missing}"
 
 WF = {0:"WF_SINE",1:"WF_COSINE",2:"WF_TRIANGLE",3:"WF_SQUARE",4:"WF_SAW",
       # original has 10 waveforms; the negative variants fold onto base shapes.
@@ -207,6 +241,10 @@ lines.append(" *")
 lines.append(" * Layout mirrors the original FmDrumPatch (FmPatch.h): a flat struct of")
 lines.append(" * fixed parameters.  Selecting an instrument copies one of these structs")
 lines.append(" * into the synth working cache; the UI then edits the cached copy.")
+lines.append(" *")
+lines.append(" * Entries marked `[voiced]` carry a decay/release (and sometimes algorithm)")
+lines.append(" * override from the generator's VOICE_EDITS table rather than the source")
+lines.append(" * kit's value; the comment gives the original.")
 lines.append(" */")
 lines.append("")
 lines.append('#include "fm_voice6.h"')
@@ -220,7 +258,13 @@ for short, full, p, note in selected:
         ops.append(f"{{ {f(o['ratio'])}, {f(o['detune'])}, {f(o['fb'])}, "
                    f"{f(o['vol'])}, {WF[int(o['wave'])]} }}")
     ops_str = ",\n      ".join(ops)
-    lines.append(f"  /* {full} */")
+    note_txt = ""
+    if note in VOICE_EDITS:
+        orig = patches[note]
+        was = [f"{k} {orig[k]:g}" if k != "alg" else f"alg {orig[k]}"
+               for k in VOICE_EDITS[note]]
+        note_txt = "  [voiced] was " + ", ".join(was)
+    lines.append(f"  /* {full}{note_txt} */")
     lines.append("  {")
     lines.append(f"    {int(p['alg'])}, {f(p['freq'])}, {f(p['vol'])}, {f(p['pan'])},")
     lines.append(f"    {f(p['atk'])}, {f(p['hold'])}, {f(p['dec'])}, {f(p['sus'])}, {f(p['rel'])},")
@@ -262,3 +306,4 @@ print(f"Total instruments: {len(selected)} "
       f"({sum(1 for _,_,_,n in selected if 35 <= n <= 81)} from slots 35-81 + "
       f"{sum(1 for _,_,_,n in selected if n < 35 or n > 81)} from the rest)")
 print("Labels:", ", ".join(s for s, _, _, _ in selected))
+print("Voiced:", ", ".join(f"{s}(slot {n})" for s, n in sorted(edited.items(), key=lambda kv: kv[1])))

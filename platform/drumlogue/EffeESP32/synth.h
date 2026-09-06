@@ -183,10 +183,37 @@ public:
     inline const uint8_t* getParameterBmpValue(uint8_t, int32_t) const { return nullptr; }
 
     // ---- presets -----------------------------------------------------------
-    inline void LoadPreset(uint8_t idx) { (void)idx; current_preset_ = idx; }
-    inline uint8_t getPresetIndex() const { return current_preset_; }
+    //
+    // The 59 instruments are exposed a second time, as presets.  This is not a
+    // convenience: it is the only path the SDK gives a unit for changing its
+    // own exposed parameter values in a way the host will notice.
+    //
+    // Selecting an instrument has to rewrite Level/Algo/Attack/Decay/Release/
+    // filter/op levels, because that is what distinguishes a Kick from a
+    // Crash.  Driven from the Instr *knob* it does rewrite them -- in the unit.
+    // But the host owns the parameter store the panel draws from and that a
+    // project saves, and nothing in the API pushes a value the other way: the
+    // runtime descriptor carries only the sample-bank accessors, and the host
+    // re-reads unit_get_param_value() when it draws a page, not when some
+    // other parameter changes.  So the panel kept showing the previous
+    // instrument's envelope, and the next value the host pushed for a knob the
+    // user touched was its own stale one, which put that envelope back.
+    //
+    // unit_load_preset() is the documented exception.  From the drumlogue SDK
+    // README, "Presets": "loading a preset can cause exposed parameters to
+    // change value as a side effect" -- i.e. the host expects the whole
+    // parameter set to have moved and refreshes accordingly.  Selecting the
+    // instrument from the preset UI therefore lands its own values on the
+    // panel; the Instr knob is kept as-is for automation and for anyone who
+    // has it mapped, and the two stay in sync because both funnel through
+    // load_instrument() and getPresetIndex() reports the instrument actually
+    // loaded rather than a separately tracked index.
+    inline void LoadPreset(uint8_t idx) {
+        if (idx < DRUM_INST_COUNT) load_instrument(idx);
+    }
+    inline uint8_t getPresetIndex() const { return (uint8_t)params_[P_INSTR]; }
     static inline const char* getPresetName(uint8_t idx) {
-        return (idx == 0) ? "Init" : nullptr;
+        return (idx < DRUM_INST_COUNT) ? g_drum_inst_names[idx] : nullptr;
     }
 
 private:
@@ -397,6 +424,5 @@ private:
     float           feedback_delta_ = 0.0f;
     fmo_waveform_t  base_carrier_wf_ = WF_SINE;
     uint8_t         assigned_note_ = 36;
-    uint8_t         current_preset_ = 0;
     alignas(16) float scratch_[MAX_VOICES][EFFEESP32_MAX_BLOCK];
 };

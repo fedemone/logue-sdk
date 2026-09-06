@@ -19,9 +19,11 @@ parameters then edit that cached copy in real time.
 - **6-operator FM voice** with **18 selectable algorithms** (carrier/modulator/
   amplitude-modulator routings), exactly as in the upstream `FmVoice6`.
 - **59 instrument patches** converted from the original `Drumkit_default.json`:
-  the 47 slots a General-MIDI map addresses (35–81) plus 12 unique ones from the
-  rest. **Labelled from the kit's own names, not from GM** — see
-  [Instrument names](#instrument-names).
+  the 47 General-MIDI percussion slots (35–81) plus 12 unique ones from the rest,
+  thirteen of them re-voiced for a step sequencer — see
+  [Voicing edits](#voicing-edits).
+- **Also exposed as 59 presets**, which is what lets an instrument's own envelope
+  reach the panel — see [Instrument selection and the panel](#instrument-selection-and-the-panel).
 - **Per-voice SVF morph filter** (low → band → high) with resonance and drive.
 - **AHDSR envelope** per voice.
 - **8-voice polyphony** with note-aware allocation, click-free choke and
@@ -115,9 +117,9 @@ limiter is compared with the knee at equal drive:
 
 | instrument (slot) | voices | knee | limiter |
 | --- | ---: | ---: | ---: |
-| Cymbal1 (55) | 1 | −9.9 dB | **−38.8 dB** |
-| Cymbal1 (55) | 4 | −6.2 dB | **−37.6 dB** |
-| DpTom1 (52) | 4 | −6.4 dB | **−35.6 dB** |
+| Splash (55) | 1 | −9.9 dB | **−38.8 dB** |
+| Splash (55) | 4 | −6.2 dB | **−37.6 dB** |
+| ChinaCy (52) | 4 | −6.4 dB | **−35.6 dB** |
 | Crash1 (49) | 4 | −8.7 dB | **−35.5 dB** |
 | Kick (36) | 4 | −10.9 dB | **−20.8 dB** |
 
@@ -142,13 +144,18 @@ and flattens it *harder* (measured 0.10 dB of Crash1's 6.50 dB natural fall at a
 Fall delivered out of the natural fall, over the first second of a single hit at
 velocity 127, against the mean loudness it costs:
 
-| `MASTER_GAIN` | mean LUFS | Crash1 | ClHat1 (slot 51) | Cymbal1 (slot 55) |
+| `MASTER_GAIN` | mean LUFS | Crash1 | Ride1 (slot 51) | Splash (slot 55) |
 | --- | ---: | ---: | ---: | ---: |
 | 2.51 | −11.75 | 0.51 / 6.50 | 2.66 / 8.08 | 16.3 / 32.6 |
 | 1.41 | −14.32 | 4.82 / 6.50 | 2.73 / 8.08 | 21.3 / 32.6 |
 | 1.00 | −16.79 | 6.47 / 6.50 | 3.57 / 8.08 | 24.2 / 32.6 |
 | **0.71** | **−19.48** | **6.47 / 6.50** | **5.48 / 8.08** | **27.2 / 32.6** |
 | 0.50 | −22.41 | 6.47 / 6.50 | 8.08 / 8.08 | 30.3 / 32.6 |
+
+(Measured before the [voicing edits](#voicing-edits), i.e. with Crash1 still at
+a 6 s decay — which is the condition that made the flattening audible. The
+shorter envelopes have not changed which `MASTER_GAIN` is right, only how much
+is at stake if it is wrong.)
 
 At 0.71 a single hit no longer touches the limiter at all on most instruments —
 Crash1 peaks at −4.6 dBFS — and the limiter is back to being what it should be,
@@ -193,37 +200,94 @@ settings, and six `{ratio, detune, feedback, volume, waveform}` operator slots.
 `drum_patches.h` is **auto-generated** from the upstream drumkit JSON by
 `tools/gen_patches.py` and must not be hand-edited.
 
-### Instrument names
+### Instrument names, and why they come from the GM map
 
-`Drumkit_default.json` is **not a General MIDI kit**. It fills the slots a GM
-percussion map addresses, but what it puts in them is its own arrangement, and
-the two disagree in 27 of the 47 cases. The instrument list used to be labelled
-from the GM map anyway, so the panel named a different instrument than the slot
-actually holds — most confusingly:
+Slots 35–81 are labelled from the General MIDI percussion map. This was briefly
+changed to label them from each patch's own `name` field in the kit JSON, on the
+reading that the kit merely *occupied* the GM slots. That was wrong, it shipped,
+and it is recorded here so it does not get "fixed" a third time.
 
-| slot | GM would call it | the kit's own patch | decay |
-| ---: | --- | --- | ---: |
-| 51 | Ride Cymbal 1 | **Closed Hat** | 4.4 s |
-| 52 | Chinese Cymbal | **Deep Tom** | 3.1 s |
-| 53 | Ride Bell | **Snare Body** | 6.2 s |
-| 54 | Tambourine | **Snare Noise** | 0.6 s |
-| 56 | Cowbell | **Noise Bell** | 0.3 s |
-| 70 | Maracas | **Chime** | 0.3 s |
-| 75 | Claves | **Sub Kick** | 0.3 s |
-| 80/81 | Mute/Open Triangle | **Glass Bell** | 0.3 / 6.3 s |
+`name` is the **seed patch** a slot was started from in the upstream editor, not
+what the slot became:
 
-Labels now come from the kit's `name` field. The kit reuses names heavily, so a
-repeated name is numbered in slot order — `Tom1…Tom6` ascend in pitch, as the GM
-tom slots do, and `Bongo1…Bongo7` follow slots 60–66. The GM slot is kept in
-each patch's C comment for traceability.
+- Slots 35–50 carry GM's own instrument names verbatim — 35 `BassDrum`,
+  36 `Kick`, 37 `SideStick`, 38 `AccSnare`, 39 `Hand Claps`, 41/43/45/47/48/50
+  `Tom`, 42/44/46 `Hi Hat`, 49 `Crash 1`. Sixteen consecutive slots do not line
+  up with GM by accident.
+- Slots 88–127 are one 13-entry sequence repeated three times (`Sub Kick`,
+  `Noise Clap`, `Closed Hat`, `Deep Tom`, `Snare Body`, `Snare Noise`,
+  `Metal Stack`, `Noise Bell`, `Chime`, `Tight Clap`, `Tick Click`, `Glass FX`,
+  `Rail bell`), each round identical in `dec`/`rel`/`vol`. Those are the
+  editor's starting patches, still carrying their template names.
+- Where a name and its GM slot disagree, **the parameters side with the slot**:
 
-**Instrument order and sounds are unchanged**, so an existing pattern plays the
-same sound; only the label moved. Four slots are exact duplicates of another
-(`Bongo1`/`Bongo4`/`Bongo6`/`Bongo7`, and `Whistl1`/`Whistl2`) — that is the
-kit's own content, kept so the slot numbering still lines up with the source.
+  | slot | GM | kit `name` | decay | which one the data matches |
+  | ---: | --- | --- | ---: | --- |
+  | 51 | Ride Cymbal 1 | `Closed Hat` | 4.4 s | a closed hat does not ring 4 s |
+  | 53 | Ride Bell | `Snare Body` | 6.1 s | a ride bell does |
+  | 55 | Splash Cymbal | `Cymbal` | 1.5 s | short cymbal = splash |
+  | 57 | Crash Cymbal 2 | `Cymbal` | 8.0 s | long cymbal = crash |
+  | 60–66 | 7 hand drums | all `Bongo` | — | GM has exactly 7 there |
 
-The numeric patch data was verified against the JSON field by field and is a
-faithful copy; only the labels were ever wrong.
+Two slots named `Cymbal`, one 1.5 s and one 8.0 s, sitting exactly on GM's
+Splash and Crash 2, settle it on their own.
+
+The GM label is therefore the instrument's identity; the kit's `name` is kept in
+each patch's C comment for traceability, and `EXTRA` in the generator supplies
+short names for the 12 non-GM slots, where `name` is all there is.
+
+Four slots are exact duplicates of another (`HiBongo`/`OHConga`/`HiTimbl`/
+`LoTimbl`, and `SWhistl`/`LWhistl`) — the kit's own content, kept so the slot
+numbering still lines up with the source.
+
+### Voicing edits
+
+Thirteen imported slots are shipped with a decay/release — and on four of them
+an algorithm — that is not the kit's. The table lives in `VOICE_EDITS` in
+`tools/gen_patches.py` and is applied after selection, so the instrument list,
+its order, the trigger notes and the duplicate filter all stay keyed to the
+untouched source data. Each edited entry is marked `[voiced]` in the generated
+header with its original values.
+
+| instrument (slot) | decay/release | was | algo |
+| --- | ---: | ---: | ---: |
+| Crash1 (49) | 600 ms | 6.000 s | — |
+| Ride1 (51) | 600 ms | 4.398 s | — |
+| Splash (55) | 600 ms | 1.500 s | — |
+| Crash2 (57) | 600 ms | 8.000 s | — |
+| Ride2 (59) | 600 ms | 3.665 s | — |
+| ChinaCy (52) | 50 ms | 3.128 s | — |
+| RideBel (53) | 50 ms | 6.113 s | 10 → **17** |
+| Vibrslp (58) | 50 ms | 2.798 s | — |
+| MHConga (62) | 50 ms | 0.070 s | — |
+| HiAgogo (67) | 50 ms | 0.350 s | 2 → **9** |
+| OTrngl (81) | 50 ms | 6.270 s | — |
+| RailBel (87) | 50 ms | 6.300 s | 10 → **1** |
+| RailBe2 (100) | 50 ms | 6.300 s | 10 → **0** |
+
+The kit was authored for a machine with no polyphony ceiling and no 16-step grid
+in front of it; sixteen of its slots ring for 2.8–8.0 s, which on a drumlogue
+part means every step is still sounding when the next one lands.
+
+**Decay and release are always set together** — they are one control here. The
+sequencer gates a step off within a few ms of the hit, so the envelope leaves
+`ADSR_SEG_DECAY` for `ADSR_SEG_RELEASE` almost immediately and it is *release*
+that shapes the whole audible tail. Measured on the untouched instruments, tail
+length to −60 dB tracks release and ignores decay:
+
+| instrument | decay | release | tail |
+| --- | ---: | ---: | ---: |
+| Cabasa | 600 ms | 300 ms | 0.302 s |
+| Claves | 300 ms | 200 ms | 0.198 s |
+| HiWdBlk | 120 ms | 50 ms | 0.058 s |
+| LoBongo | 356 ms | 551 ms | 0.548 s |
+
+Setting decay alone would move the number on the panel and change nothing you
+can hear. The source kit sets the two equal on nearly every patch for the same
+reason.
+
+The numeric patch data is otherwise a faithful copy of the JSON, verified field
+by field.
 
 ### Parameters (24)
 
@@ -249,10 +313,45 @@ faithful copy; only the labels were ever wrong.
 | 22 | Note | midi note | 0–127 | trigger note (reloads to the instrument's GM note) |
 | 23 | Feedbk | % | 0–200 | global operator-feedback macro (100 % = patch) |
 
-> **Override-on-touch:** selecting an instrument (param 0) copies all of its
-> stored values into both the working cache and the knob array, so the panel
-> reflects the patch. Moving any other knob overrides just that field. (As on
-> EffeMD, the currently displayed page only refreshes after you switch pages.)
+> **Override-on-touch:** selecting an instrument copies all of its stored values
+> into both the working cache and the knob array. Moving any other knob overrides
+> just that field.
+
+### Instrument selection and the panel
+
+The 59 instruments are exposed **twice**: as the `Instr` parameter, and as the
+unit's 59 presets. That is not duplication for its own sake — the preset path is
+the only one that gets an instrument's own values onto the panel.
+
+Selecting an instrument has to rewrite Level, Algo, the whole envelope, the
+filter and the six operator levels, because that is what makes a Kick a Kick and
+a Crash a Crash. Driven from the `Instr` knob it does rewrite them, but only
+*inside the unit*. The host owns the parameter store the panel draws from and a
+project saves, and the drumlogue API has no call in the unit → host direction:
+`unit_runtime_desc_t` carries the sample-bank accessors and nothing else, and the
+host re-reads `unit_get_param_value()` when it draws a page, not when some other
+parameter changes. So the panel kept showing the previous instrument's envelope,
+and the next value the host pushed for a knob you touched was its own stale one,
+which put that envelope back.
+
+`unit_load_preset()` is the documented exception. From the drumlogue SDK README,
+*Presets*: "loading a preset can cause exposed parameters to change value as a
+side effect" — the host expects the whole parameter set to have moved and
+refreshes accordingly. **Pick the instrument from the preset UI and its own
+values land on the panel.**
+
+The `Instr` knob is kept as-is, for automation and for anyone who has it mapped.
+The two stay in sync: both funnel through `load_instrument()`, and
+`unit_get_preset_index()` reports the instrument actually loaded rather than a
+separately tracked index. As on EffeMD, the page you are looking at refreshes
+after you switch pages.
+
+A project saved before this change stores preset index 0 (the unit had one
+preset). The SDK defines a preset as "a base configuration on top of which
+exposed parameters can be further modified", i.e. the preset is applied first
+and the stored parameters after it, so such a project still comes back on its
+saved `Instr` — but if a part ever opens on the wrong instrument after loading
+an old project, re-selecting it is the fix.
 
 ---
 
@@ -274,16 +373,21 @@ Six pages of four parameters each.
 - **Algo** — FM algorithm 0–17 (the operator routing graph). Changing it is the
   single biggest timbral move; see `fm_voice6.h` for each graph.
 - **Attack / Hold / Decay** — front of the AHDSR envelope, in milliseconds.
-  Decay runs to 8000 ms because the patch data does: ten instruments store
-  2.8–8.0 s (Cymbal2 8.0, RailBl 6.3, GlasBl2 6.27, SnBody2 6.16, Crash1 6.0,
-  ClHat1 4.4). The range used to stop at 2000, so the panel showed 2000 while
-  the engine went on running the real 6 s.
+  Decay runs to 8000 ms, four times the longest value the patch table now holds
+  (Twirl, 1.95 s). The range was raised when ten instruments still stored
+  2.8–8.0 s and the panel was showing a clamped 2000 while the engine ran the
+  real 6 s; the [voicing edits](#voicing-edits) have since shortened those, so
+  nothing is clamped either way. It stays at 8000 because that is now the only
+  way to get a long tail — with Crash1 shipping at 600 ms, dialling a six-second
+  crash back in is a knob move.
 
 **Page 3 — Envelope tail & dynamics**
 - **Sustain** — envelope sustain level (0 % for one-shot drums; raise it for
   sustained tones that ring until note-off).
 - **Release** — release time after note-off, in milliseconds (0–8000, same
-  reason as Decay).
+  reason as Decay). On a step sequencer this, not Decay, is what sets the
+  audible length of a hit: the gate ends within a few ms and the envelope
+  spends the rest of its life in release.
 - **VeloMod** — how much MIDI velocity scales the level (0 % = velocity ignored,
   100 % = fully velocity-dependent).
 - **Filter** — combined **SVF enable + carrier-waveform** selector. The string
