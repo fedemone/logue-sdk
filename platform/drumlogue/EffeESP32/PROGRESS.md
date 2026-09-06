@@ -49,20 +49,49 @@ instructions for the next agent.
   cache and rewrites the knob array, so every reset silently threw away the
   user's edits. The SDK asks for notes deactivated and phases reset but says
   parameter values "should not be reset to their default values".
-- **Decay/Release range raised to 8000 ms.** Ten patches store 2.8–8.0 s, so
+- **Decay/Release range raised to 8000 ms.** Ten patches stored 2.8–8.0 s, so
   `load_instrument()` was clamping the *displayed* value to the old 2000 ms max
   while the engine ran the real 6 s — the panel disagreed with what you heard,
   and the knob could not shorten those tails without first jumping them to 2 s.
+  The voicing edits below have since shortened those patches (longest is now
+  Twirl at 1.95 s), so nothing is clamped either way; the range stays at 8000
+  because it is now the only way to dial a long tail back in.
 - **`MASTER_GAIN` 2.51 → 0.71.** At 2.51 a single hit arrived 6–17 dB past the
   output ceiling, so the stage held it flat until the envelope had fallen that
   far: Crash1 delivered 0.51 dB of its 6.50 dB natural fall over the first
   second — a cymbal with no envelope. It now delivers 6.47 dB. Costs 7.7 LU of
   mean loudness (−11.75 → −19.48 LUFS); see the README table for the full curve.
-- **Instrument labels now come from the kit, not from GM.**
-  `Drumkit_default.json` is not a General MIDI kit; labelling slots 35–81 with
-  GM names named a different instrument than the slot holds in 27 of 47 cases
-  (slot 51, "Ride Cymbal 1", is the kit's "Closed Hat" with a 4.4 s decay).
-  Order, count, trigger notes and the numeric data are unchanged.
+- **Instrument labels come from the GM map** — reverted, after a pass that
+  relabelled them from each patch's `name` field in the kit JSON shipped and was
+  wrong. `name` is the *seed patch* a slot was started from in the upstream
+  editor, not what the slot became: slots 35–50 carry GM's own names verbatim
+  for sixteen consecutive entries, slots 88–127 are one 13-entry template
+  sequence repeated three times, and where a name and its slot disagree the
+  parameters side with the slot (two slots named `Cymbal`, 1.5 s and 8.0 s,
+  sitting exactly on GM's Splash and Crash 2). Order, count, trigger notes and
+  the numeric data were unchanged through both passes. See the README's
+  *Instrument names*.
+- **Voicing edits (`VOICE_EDITS` in `tools/gen_patches.py`).** Thirteen slots
+  ship with a decay/release the kit did not give them, and four of those with a
+  different algorithm: 600 ms on Crash1/Ride1/Splash/Crash2/Ride2, 50 ms on
+  ChinaCy/RideBel/Vibrslp/MHConga/HiAgogo/OTrngl/RailBel/RailBe2. The kit was
+  authored without a 16-step grid in front of it and sixteen of its slots ring
+  for 2.8–8.0 s, so every step was still sounding when the next one landed.
+  Decay and release are always set together: the sequencer gates a step off
+  within a few ms, so release shapes the whole audible tail and setting decay
+  alone would move the panel number and change nothing audible (measured — see
+  the README table). Applied *after* selection, so the instrument list, order,
+  trigger notes and the duplicate filter stay keyed to the untouched source.
+- **Instruments also exposed as 59 presets.** `unit_load_preset()` is the only
+  call the drumlogue API gives a unit for changing its *other* exposed parameter
+  values with the host's knowledge — the SDK README says loading a preset "can
+  cause exposed parameters to change value as a side effect", and there is no
+  unit → host parameter push anywhere in `unit_runtime_desc_t`. Driven from the
+  `Instr` knob, an instrument change rewrote the envelope inside the unit only,
+  so the panel went on showing the previous instrument's values and the host's
+  next push of a touched knob put them back. Picking the instrument from the
+  preset UI now lands its own values on the panel; `Instr` is kept for
+  automation and both funnel through `load_instrument()`.
 - **24-parameter GUI** (`header.c`) with proper SDK param types (strings, semi,
   percent, pan, msec, hertz, on/off, **midi_note**).
 - **Trigger Note** (param 22): each instrument carries its canonical MIDI note
@@ -103,9 +132,12 @@ instructions for the next agent.
    (constants.h) is 0.71, chosen so a single hit clears the output ceiling on
    its own and the limiter only acts on stacks; the measured loudness/envelope
    curve is in the README. Nothing clips (worst peak −0.35 dBFS, no non-finite
-   samples at 8 voices on any of the 59). The unit now measures −19.5 LUFS mean,
+   samples at 8 voices on any of the 59). The unit now measures −20.5 LUFS mean,
    which is quiet against the rest of the repo — that is deliberate, but it is
-   the number to revisit first if it does not sit right on hardware.
+   the number to revisit first if it does not sit right on hardware. (It was
+   −19.5 before the voicing edits; shorter envelopes carry less energy through
+   the gated 400 ms LUFS window, so about 1 LU of that drop is the shortening
+   itself rather than a level change.)
    Per-patch `volume` came straight from the JSON and spans 26 dB; the loudest
    patches produce voices above unity on their own (slot 55 peaks at 2.68 with
    no master gain at all), which is what forces the trade.
@@ -141,15 +173,19 @@ instructions for the next agent.
 - [ ] **All 24 parameter slots are now used** — adding a feature means
       repurposing/encoding an existing one (as the Filter param already encodes
       both filter state and carrier waveform).
-- [ ] **Load-order dependence** (was "startup timbre nuance"): at boot the
-      runtime pushes every parameter, so whichever it pushes *after* index 0
-      overrides the instrument's stored values — a freshly loaded Crash1 has the
-      header's 200 ms decay, while the same instrument selected by hand has its
-      own 6 s. Re-selecting the instrument always restores the patch. The SDK
-      has no unit→host parameter push (the host polls `unit_get_param_value`),
-      so a unit that rewrites its own parameters is inherently fighting the host
-      here; smoothing it means changing the override-on-touch model, not adding
-      a guard.
+- [ ] **Load-order dependence, at boot** (was "startup timbre nuance"): at boot
+      the runtime pushes every parameter, so whichever it pushes *after* index 0
+      overrides the instrument's stored values — a freshly loaded Crash1 gets
+      the header's 200 ms decay, while the same instrument selected by hand gets
+      its own. Selecting the instrument **from the preset UI** now restores the
+      patch reliably (that is what `unit_load_preset` is for; see the README's
+      *Instrument selection and the panel*), and so does re-selecting it with
+      the `Instr` knob as far as the engine is concerned. What is left is only
+      the first-boot state, before anything is selected. The SDK has no
+      unit → host parameter push at all — `unit_runtime_desc_t` carries the
+      sample-bank accessors and nothing else — so a unit that rewrites its own
+      parameters has exactly one sanctioned way to tell the host about it, and
+      it is the preset call.
 - [ ] **True 4-voice SIMD FM** is not attempted (data-dependent routing per
       algorithm). Only the mix stage is vectorized.
 - [ ] No automated *unit* test is committed; `/tmp/test_effeesp32.cc` is

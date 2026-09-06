@@ -17,7 +17,13 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x34U,        // unique among FeDe units (EffeMD = 0x33)
     .version = 0x00010000U,  // v1.0.0
     .name = "EffeESP32",
-    .num_presets = 1,
+    // The 59 instruments are exposed twice: as the Instr parameter, and as
+    // presets.  Only the preset path lets a unit change its other exposed
+    // parameter values with the host's knowledge, so it is what puts an
+    // instrument's own envelope on the panel (see Synth::LoadPreset).
+    // Keep this, and the Instr max below, equal to DRUM_INST_COUNT - the
+    // patch table is generated, this header is not.
+    .num_presets = 59,
     .num_params = 24,
     .params = {
         // {min, max, center, init, type, frac, frac_mode, reserved, {name}}
@@ -32,13 +38,15 @@ const __unit_header unit_header_t unit_header = {
         {0, 17, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Algo"}},
         {0, 2000, 0, 1, k_unit_param_type_msec, 0, 0, 0, {"Attack"}},
         {0, 2000, 0, 0, k_unit_param_type_msec, 0, 0, 0, {"Hold"}},
-        // Decay/Release run to 8000 ms because the patch data does: ten
-        // instruments store 2.8-8.0 s (Crash2 8.0, RailBel 6.3, OTrngl 6.27,
-        // RideBel 6.16, Crash1 6.0, Ride1 4.4, Ride2 3.7, ChinaCy 3.1 ...).
-        // With the old 2000 ms max, load_instrument() clamped the *displayed*
-        // value to 2000 while the engine went on running the real 6 s, so the
-        // panel disagreed with what you heard and the knob could not be used to
-        // shorten those tails without first jumping them down to 2 s.
+        // Decay/Release run to 8000 ms, four times the longest value the patch
+        // table now holds (Twirl, 1.95 s).  The range was raised when ten
+        // instruments still stored 2.8-8.0 s and load_instrument() was clamping
+        // the *displayed* value to 2000 while the engine ran the real 6 s; the
+        // generator's VOICE_EDITS have since shortened those, so nothing is
+        // clamped either way.  It stays at 8000 because that is now the only
+        // way to get a long tail: with Crash1 shipping at 600 ms, dialling a
+        // six-second crash back in is a knob move, and a 2000 ms ceiling would
+        // take it away.
         {0, 8000, 0, 200, k_unit_param_type_msec, 0, 0, 0, {"Decay"}},
 
         // Page 3 — envelope tail & velocity

@@ -11,6 +11,10 @@
  * Layout mirrors the original FmDrumPatch (FmPatch.h): a flat struct of
  * fixed parameters.  Selecting an instrument copies one of these structs
  * into the synth working cache; the UI then edits the cached copy.
+ *
+ * Entries marked `[voiced]` carry a decay/release (and sometimes algorithm)
+ * override from the generator's VOICE_EDITS table rather than the source
+ * kit's value; the comment gives the original.
  */
 
 #include "fm_voice6.h"
@@ -18,7 +22,7 @@
 #define DRUM_INST_COUNT 59
 
 static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
-  /* BassDrum (slot 35, GM Acoustic Bass Drum) */
+  /* Acoustic Bass Drum */
   {
     3, 32.0f, 1.68f, 0.0f,
     0.0f, 0.0f, 0.6005f, 0.0f, 0.6005f,
@@ -30,7 +34,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.15f, 0.0f, 0.0f, 0.06f, WF_COSINE },
       { 0.07f, 0.0f, 0.9f, 0.43f, WF_SAW } }
   },
-  /* Kick (slot 36, GM Bass Drum 1) */
+  /* Bass Drum 1 */
   {
     3, 46.0f, 1.6f, 0.0f,
     0.001f, 0.005f, 0.795f, 0.0f, 0.77f,
@@ -42,7 +46,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.05f, 1.5f, 0.0f, 0.27f, WF_SINE },
       { 0.0f, 0.5f, 0.0f, 0.23f, WF_SAW } }
   },
-  /* SideStick (slot 37, GM Side Stick) */
+  /* Side Stick */
   {
     3, 290.0f, 1.6f, 0.0f,
     0.0f, 0.0f, 0.08f, 0.0f, 0.08f,
@@ -54,7 +58,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.7f, 0.0f, 6.4f, 0.71f, WF_SAW },
       { 1.11f, 0.0f, 5.8f, 0.08f, WF_SINE } }
   },
-  /* AccSnare (slot 38, GM Acoustic Snare) */
+  /* Acoustic Snare */
   {
     3, 222.0f, 1.0f, 0.0f,
     0.0f, 0.0f, 0.85f, 0.0f, 0.85f,
@@ -66,7 +70,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 8.2f, 0.8f, WF_SINE },
       { 0.79f, 0.0f, 6.35f, 0.01f, WF_SINE } }
   },
-  /* Hand Claps (slot 39, GM Hand Clap) */
+  /* Hand Clap */
   {
     14, 124.0f, 1.6f, 0.0f,
     0.02f, 0.007f, 0.254f, 0.0f, 0.254f,
@@ -78,7 +82,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.005f, 0.0f, 7.25f, 1.005f, WF_SINE },
       { 1.04f, 0.0f, 4.2f, 0.58f, WF_SINE } }
   },
-  /* Snare Body (slot 40, GM Electric Snare) */
+  /* Electric Snare */
   {
     3, 260.0f, 1.0f, 0.0f,
     0.002f, 0.01f, 0.25f, 0.0f, 0.25f,
@@ -90,7 +94,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 7.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.0f, WF_SINE } }
   },
-  /* Tom (slot 41, GM Low Floor Tom) */
+  /* Low Floor Tom */
   {
     3, 65.0f, 1.0f, -0.21f,
     0.0f, 0.01f, 0.828f, 0.005f, 0.828f,
@@ -102,7 +106,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, 1.3f, 0.0f, 0.61f, WF_SAW },
       { 0.79f, 0.0f, 0.0f, 0.09f, WF_SINE } }
   },
-  /* Hi Hat (slot 42, GM Closed Hi-Hat) */
+  /* Closed Hi-Hat */
   {
     2, 1817.0f, 1.1f, 0.16f,
     0.01f, 0.0f, 0.173f, 0.0f, 0.181f,
@@ -114,7 +118,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 3.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 4.0f, 0.0f, 3.0f, 0.8f, WF_SINE } }
   },
-  /* Tom (slot 43, GM High Floor Tom) */
+  /* High Floor Tom */
   {
     3, 100.0f, 1.0f, -0.2f,
     0.0f, 0.01f, 0.828f, 0.005f, 0.828f,
@@ -126,7 +130,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
       { 0.5f, 0.0f, 0.0f, 0.02f, WF_SINE } }
   },
-  /* Hi Hat (slot 44, GM Pedal Hi-Hat) */
+  /* Pedal Hi-Hat */
   {
     2, 1817.0f, 0.78f, 0.15f,
     0.025f, 0.004f, 0.205f, 0.0f, 0.205f,
@@ -138,7 +142,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 3.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 4.0f, 0.0f, 3.0f, 0.8f, WF_SINE } }
   },
-  /* Tom (slot 45, GM Low Tom) */
+  /* Low Tom */
   {
     3, 135.0f, 1.0f, -0.15f,
     0.0f, 0.01f, 0.828f, 0.005f, 0.828f,
@@ -150,7 +154,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
       { 0.5f, 0.0f, 0.0f, 0.02f, WF_SINE } }
   },
-  /* Hi Hat (slot 46, GM Open Hi-Hat) */
+  /* Open Hi-Hat */
   {
     3, 3931.0f, 1.0f, 0.15f,
     0.01f, 0.042f, 1.325f, 0.0f, 1.332f,
@@ -162,7 +166,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.09f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 2.88f, 0.0f, 0.0f, 0.54f, WF_COSINE } }
   },
-  /* Tom (slot 47, GM Low-Mid Tom) */
+  /* Low-Mid Tom */
   {
     3, 210.0f, 1.0f, -0.1f,
     0.0f, 0.01f, 0.828f, 0.005f, 0.828f,
@@ -174,7 +178,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
       { 0.5f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
-  /* Tom (slot 48, GM Hi-Mid Tom) */
+  /* Hi-Mid Tom */
   {
     3, 320.0f, 1.0f, -0.06f,
     0.0f, 0.01f, 0.828f, 0.005f, 0.828f,
@@ -186,10 +190,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
       { 0.5f, 0.0f, 0.0f, 0.01f, WF_TRIANGLE } }
   },
-  /* Crash 1 (slot 49, GM Crash Cymbal 1) */
+  /* Crash Cymbal 1  [voiced] was dec 6, rel 6 */
   {
     6, 1866.0f, 0.7f, -0.18f,
-    0.01f, 0.01f, 6.0f, 0.0f, 6.0f,
+    0.01f, 0.01f, 0.6f, 0.0f, 0.6f,
     0.5f, 1, 1300.0f, 0.0f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.11f, 0.0f, 0.0f, 0.42f, WF_SQUARE },
@@ -198,7 +202,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 3.8f, 0.5f, WF_SQUARE },
       { 2.11f, 0.0f, 0.0f, 0.25f, WF_SQUARE } }
   },
-  /* Tom (slot 50, GM High Tom) */
+  /* High Tom */
   {
     3, 400.0f, 1.0f, 0.0f,
     0.0f, 0.01f, 0.655f, 0.005f, 0.671f,
@@ -210,10 +214,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
       { 0.42f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
-  /* Closed Hat (slot 51, GM Ride Cymbal 1) */
+  /* Ride Cymbal 1  [voiced] was dec 4.398, rel 4.408 */
   {
     12, 991.0f, 1.54f, 0.14f,
-    0.001f, 0.005f, 4.398f, 0.0f, 4.408f,
+    0.001f, 0.005f, 0.6f, 0.0f, 0.6f,
     0.5f, 1, 9751.0f, 0.0f, 0.92f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.07f, 0.0f, 0.0f, 0.22f, WF_SQUARE },
@@ -222,10 +226,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.99f, 0.0f, 0.0f, 0.08f, WF_SQUARE },
       { 0.55f, 0.0f, 0.0f, 0.12f, WF_SINE } }
   },
-  /* Deep Tom (slot 52, GM Chinese Cymbal) */
+  /* Chinese Cymbal  [voiced] was dec 3.128, rel 3.128 */
   {
     3, 1163.0f, 1.5f, -0.1f,
-    0.029f, 0.003f, 3.128f, 0.0f, 3.128f,
+    0.029f, 0.003f, 0.05f, 0.0f, 0.05f,
     0.5f, 1, 13262.0f, 0.0f, 0.01f,
     { { 1.0f, 0.0f, 6.2f, 0.35f, WF_SINE },
       { 1.04f, 0.0f, 6.8f, 0.8f, WF_SINE },
@@ -234,10 +238,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.61f, 0.0f, 0.0f, 0.26f, WF_SINE },
       { 2.44f, 0.0f, 0.0f, 0.8f, WF_SQUARE } }
   },
-  /* Snare Body (slot 53, GM Ride Bell) */
+  /* Ride Bell  [voiced] was dec 6.113, rel 6.156, alg 10 */
   {
-    10, 2178.0f, 0.32f, -0.11f,
-    0.004f, 0.0f, 6.113f, 0.0f, 6.156f,
+    17, 2178.0f, 0.32f, -0.11f,
+    0.004f, 0.0f, 0.05f, 0.0f, 0.05f,
     0.5f, 1, 3779.0f, 0.01f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_COSINE },
       { 1.46f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -246,7 +250,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.95f, 0.0f, 0.0f, 0.03f, WF_SINE },
       { 1.4f, 0.0f, 0.0f, 0.03f, WF_SINE } }
   },
-  /* Snare Noise (slot 54, GM Tambourine) */
+  /* Tambourine */
   {
     14, 8474.0f, 1.02f, 0.0f,
     0.034f, 0.009f, 0.628f, 0.0f, 0.63f,
@@ -258,10 +262,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.39f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 2.37f, 0.0f, 0.0f, 0.05f, WF_SQUARE } }
   },
-  /* Cymbal (slot 55, GM Splash Cymbal) */
+  /* Splash Cymbal  [voiced] was dec 1.5, rel 1.5 */
   {
     11, 1284.0f, 1.4f, -0.08f,
-    0.0f, 0.01f, 1.5f, 0.0f, 1.5f,
+    0.0f, 0.01f, 0.6f, 0.0f, 0.6f,
     0.5f, 1, 4125.0f, 0.01f, 1.0f,
     { { 0.97f, 0.0f, 6.1f, 0.8f, WF_SINE },
       { 1.06f, -4.3f, 3.1f, 0.04f, WF_SINE },
@@ -270,7 +274,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.39f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.28f, 0.0f, 5.5f, 0.1f, WF_SINE } }
   },
-  /* Noise Bell (slot 56, GM Cowbell) */
+  /* Cowbell */
   {
     3, 357.0f, 1.0f, 0.0f,
     0.002f, 0.0f, 0.284f, 0.0f, 0.283f,
@@ -282,10 +286,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 3.25f, 0.0f, 0.0f, 0.05f, WF_SQUARE },
       { 1.0f, 0.0f, 0.0f, 0.05f, WF_SQUARE } }
   },
-  /* Cymbal (slot 57, GM Crash Cymbal 2) */
+  /* Crash Cymbal 2  [voiced] was dec 8, rel 8 */
   {
     11, 1509.0f, 1.0f, -0.17f,
-    0.0f, 0.01f, 8.0f, 0.0f, 8.0f,
+    0.0f, 0.01f, 0.6f, 0.0f, 0.6f,
     0.5f, 1, 4125.0f, 0.01f, 1.0f,
     { { 1.04f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.06f, -4.3f, 5.5f, 0.03f, WF_SINE },
@@ -294,10 +298,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.39f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.28f, 0.0f, 6.1f, 0.03f, WF_SINE } }
   },
-  /* Tight Clap (slot 58, GM Vibraslap) */
+  /* Vibraslap  [voiced] was dec 2.798, rel 2.798 */
   {
     14, 1373.0f, 1.0f, 0.0f,
-    0.023f, 0.005f, 2.798f, 0.0f, 2.798f,
+    0.023f, 0.005f, 0.05f, 0.0f, 0.05f,
     0.5f, 1, 1377.0f, 0.86f, 0.58f,
     { { 1.0f, 0.0f, 10.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -306,10 +310,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 1.13f, 0.0f, 9.0f, 0.55f, WF_SINE } }
   },
-  /* Tick Click (slot 59, GM Ride Cymbal 2) */
+  /* Ride Cymbal 2  [voiced] was dec 3.665, rel 3.725 */
   {
     3, 776.0f, 0.58f, 0.0f,
-    0.001f, 0.0f, 3.665f, 0.0f, 3.725f,
+    0.001f, 0.0f, 0.6f, 0.0f, 0.6f,
     0.5f, 1, 1873.0f, 0.01f, 1.0f,
     { { 1.02f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 2.0f, 0.0f, 1.0f, 0.8f, WF_SINE },
@@ -318,7 +322,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.11f, 0.0f, 2.5f, 0.05f, WF_SINE },
       { 1.87f, 0.0f, 3.5f, 0.05f, WF_SINE } }
   },
-  /* Bongo (slot 60, GM Hi Bongo) */
+  /* Hi Bongo */
   {
     2, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -330,7 +334,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Bongo (slot 61, GM Low Bongo) */
+  /* Low Bongo */
   {
     2, 135.0f, 1.46f, 0.22f,
     0.01f, 0.0f, 0.356f, 0.0f, 0.551f,
@@ -342,10 +346,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.397f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Bongo (slot 62, GM Mute Hi Conga) */
+  /* Mute Hi Conga  [voiced] was dec 0.07, rel 0.07 */
   {
     2, 211.0f, 1.6f, 0.23f,
-    0.001f, 0.0f, 0.07f, 0.0f, 0.07f,
+    0.001f, 0.0f, 0.05f, 0.0f, 0.05f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
@@ -354,7 +358,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.98f, 0.0f, 1.9f, 0.06f, WF_TRIANGLE } }
   },
-  /* Bongo (slot 63, GM Open Hi Conga) */
+  /* Open Hi Conga */
   {
     2, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -366,7 +370,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Bongo (slot 64, GM Low Conga) */
+  /* Low Conga */
   {
     2, 127.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -378,7 +382,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Bongo (slot 65, GM High Timbale) */
+  /* High Timbale */
   {
     2, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -390,7 +394,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Bongo (slot 66, GM Low Timbale) */
+  /* Low Timbale */
   {
     2, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -402,10 +406,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Snare Noise (slot 67, GM High Agogo) */
+  /* High Agogo  [voiced] was dec 0.35, rel 0.466, alg 2 */
   {
-    2, 472.0f, 1.0f, 0.0f,
-    0.1f, 0.126f, 0.35f, 0.0f, 0.466f,
+    9, 472.0f, 1.0f, 0.0f,
+    0.1f, 0.126f, 0.05f, 0.0f, 0.05f,
     0.5f, 0, 1425.0f, 1.0f, 0.56f,
     { { 1.0f, 0.0f, 0.9f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 1.0f, 0.8f, WF_SINE },
@@ -414,7 +418,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.13f, WF_SAW } }
   },
-  /* Metal Stack (slot 68, GM Low Agogo) */
+  /* Low Agogo */
   {
     2, 359.0f, 1.0f, 0.0f,
     0.1f, 0.262f, 0.607f, 0.0f, 0.6f,
@@ -426,7 +430,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 3.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, -0.5f, 0.0f, 0.21f, WF_COSINE } }
   },
-  /* Noise Bell (slot 69, GM Cabasa) */
+  /* Cabasa */
   {
     7, 800.0f, 1.0f, 0.0f,
     0.002f, 0.01f, 0.6f, 0.0f, 0.3f,
@@ -438,7 +442,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 3.0f, 0.0f, 2.0f, 0.8f, WF_SINE } }
   },
-  /* Chime (slot 70, GM Maracas) */
+  /* Maracas */
   {
     2, 3102.0f, 1.2f, 0.0f,
     0.241f, 0.0f, 0.342f, 0.0f, 0.334f,
@@ -450,7 +454,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 4.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 3.54f, 0.0f, 5.1f, 0.07f, WF_SINE } }
   },
-  /* Whistle (slot 71, GM Short Whistle) */
+  /* Short Whistle */
   {
     14, 2355.0f, 1.42f, 0.0f,
     0.102f, 0.03f, 0.15f, 0.0f, 0.15f,
@@ -462,7 +466,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 0.0f, 2.5f, 0.0f, 0.17f, WF_COSINE } }
   },
-  /* Whistle (slot 72, GM Long Whistle) */
+  /* Long Whistle */
   {
     14, 2355.0f, 1.42f, 0.0f,
     0.102f, 0.2f, 0.15f, 0.0f, 0.15f,
@@ -474,7 +478,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 0.0f, 2.5f, 0.0f, 0.17f, WF_COSINE } }
   },
-  /* Guiro (slot 73, GM Short Guiro) */
+  /* Short Guiro */
   {
     17, 660.0f, 1.0f, 0.0f,
     0.005f, 0.078f, 0.282f, 0.0f, 0.288f,
@@ -486,7 +490,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.79f, 0.0f, 0.0f, 0.41f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
-  /* Guiro (slot 74, GM Long Guiro) */
+  /* Long Guiro */
   {
     17, 660.0f, 1.0f, 0.0f,
     0.005f, 0.103f, 0.404f, 0.0f, 0.558f,
@@ -498,7 +502,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.79f, 0.0f, 0.0f, 0.45f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
-  /* Sub Kick (slot 75, GM Claves) */
+  /* Claves */
   {
     0, 55.0f, 1.0f, 0.0f,
     0.001f, 0.01f, 0.3f, 0.0f, 0.2f,
@@ -510,7 +514,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 3.0f, 0.8f, WF_SQUARE } }
   },
-  /* Noise Clap (slot 76, GM Hi Wood Block) */
+  /* Hi Wood Block */
   {
     1, 650.0f, 1.0f, 0.0f,
     0.001f, 0.005f, 0.12f, 0.0f, 0.05f,
@@ -522,7 +526,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 4.6f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.8f, 0.8f, WF_SINE } }
   },
-  /* Closed Hat (slot 77, GM Low Wood Block) */
+  /* Low Wood Block */
   {
     2, 3200.0f, 1.0f, 0.0f,
     0.001f, 0.005f, 0.12f, 0.0f, 0.06f,
@@ -534,7 +538,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 2.0f, 0.0f, 4.5f, 0.8f, WF_SQUARE } }
   },
-  /* Deep Tom (slot 78, GM Mute Cuica) */
+  /* Mute Cuica */
   {
     3, 180.0f, 1.0f, 0.0f,
     0.002f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -546,7 +550,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.5f, 0.0f, 1.2f, 0.8f, WF_SINE },
       { 2.0f, 0.0f, 1.5f, 0.8f, WF_SINE } }
   },
-  /* Snare Body (slot 79, GM Open Cuica) */
+  /* Open Cuica */
   {
     4, 210.0f, 1.0f, 0.0f,
     0.002f, 0.01f, 0.25f, 0.0f, 0.25f,
@@ -558,7 +562,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.5f, 0.0f, 1.8f, 0.8f, WF_SINE },
       { 3.0f, 0.0f, 4.0f, 0.8f, WF_SINE } }
   },
-  /* Glass Bell (slot 80, GM Mute Triangle) */
+  /* Mute Triangle */
   {
     3, 2420.0f, 0.6f, 0.0f,
     0.0f, 0.01f, 0.3f, 0.0f, 0.3f,
@@ -570,10 +574,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 2.2f, 0.0f, 0.19f, WF_SINE },
       { 1.43f, 0.0f, 0.0f, 0.09f, WF_COSINE } }
   },
-  /* Glass Bell (slot 81, GM Open Triangle) */
+  /* Open Triangle  [voiced] was dec 6.27, rel 6.229 */
   {
     3, 2420.0f, 0.6f, 0.0f,
-    0.0f, 0.01f, 6.27f, 0.0f, 6.229f,
+    0.0f, 0.01f, 0.05f, 0.0f, 0.05f,
     0.5f, 0, 4125.0f, 0.01f, 1.0f,
     { { 1.04f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.43f, WF_SINE },
@@ -582,7 +586,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 2.2f, 0.0f, 0.19f, WF_SINE },
       { 1.43f, 0.0f, 0.0f, 0.09f, WF_COSINE } }
   },
-  /* HighQ (slot 0) */
+  /* HighQ */
   {
     2, 10.0f, 2.0f, 0.0f,
     0.0f, 0.0f, 0.05f, 0.0f, 0.05f,
@@ -594,7 +598,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 4.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.75f, WF_SAW } }
   },
-  /* Snare Noise (slot 28) */
+  /* Snare Noise */
   {
     5, 200.0f, 1.0f, 0.0f,
     0.005f, 0.01f, 0.35f, 0.0f, 0.3f,
@@ -606,7 +610,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Metal Stack (slot 29) */
+  /* Metal Stack */
   {
     6, 1200.0f, 1.0f, 0.0f,
     0.005f, 0.01f, 0.6f, 0.0f, 0.6f,
@@ -618,7 +622,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 3.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 4.0f, 0.0f, 3.0f, 0.8f, WF_SINE } }
   },
-  /* Twirl (slot 30) */
+  /* Twirl */
   {
     17, 1064.0f, 0.32f, 0.0f,
     1.303f, 0.554f, 1.33f, 0.5f, 1.947f,
@@ -630,7 +634,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 0.0f, 0.03f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.04f, WF_SINE } }
   },
-  /* Sub Kick (slot 32) */
+  /* Sub Kick */
   {
     3, 53.0f, 1.0f, 0.0f,
     0.0f, 0.013f, 0.953f, 0.0f, 0.93f,
@@ -642,7 +646,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 0.0f, 0.0f, WF_SINE },
       { 0.01f, 0.0f, 0.0f, 0.03f, WF_SINE } }
   },
-  /* SnareSlap (slot 34) */
+  /* SnareSlap */
   {
     6, 272.0f, 1.0f, 0.0f,
     0.005f, 0.01f, 0.566f, 0.0f, 0.569f,
@@ -654,7 +658,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.23f, 0.0f, 0.1f, 0.03f, WF_SINE },
       { 0.81f, 0.0f, 0.0f, 0.03f, WF_SINE } }
   },
-  /* Chime (slot 83) */
+  /* Chime */
   {
     8, 1000.0f, 1.0f, 0.0f,
     0.002f, 0.01f, 1.0f, 0.0f, 0.9f,
@@ -666,7 +670,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 4.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 5.0f, 0.0f, 3.0f, 0.8f, WF_SINE } }
   },
-  /* Tight Clap (slot 84) */
+  /* Tight Clap */
   {
     9, 600.0f, 1.0f, 0.0f,
     0.001f, 0.005f, 0.15f, 0.0f, 0.12f,
@@ -678,7 +682,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Tick Click (slot 85) */
+  /* Tick Click */
   {
     10, 1500.0f, 1.0f, 0.0f,
     0.001f, 0.005f, 0.1f, 0.0f, 0.08f,
@@ -690,7 +694,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 4.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 3.0f, 0.8f, WF_SINE } }
   },
-  /* Glass FX (slot 86) */
+  /* Glass FX */
   {
     11, 1700.0f, 1.0f, 0.0f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
@@ -702,10 +706,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Rail bell (slot 87) */
+  /* Rail bell  [voiced] was dec 6.3, rel 6.1, alg 10 */
   {
-    10, 2000.0f, 1.0f, 0.0f,
-    0.01f, 0.0f, 6.3f, 0.0f, 6.1f,
+    1, 2000.0f, 1.0f, 0.0f,
+    0.01f, 0.0f, 0.05f, 0.0f, 0.05f,
     0.5f, 0, 16000.0f, 0.5f, 0.0f,
     { { 1.047f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.481f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
@@ -714,10 +718,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.397f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 2.49f, 0.0f, 0.0f, 0.8f, WF_SQUARE } }
   },
-  /* Rail bell (slot 100) */
+  /* Rail bell  [voiced] was dec 6.3, rel 6.1, alg 10 */
   {
-    10, 2000.0f, 1.0f, 0.0f,
-    0.01f, 0.0f, 6.3f, 0.0f, 6.1f,
+    0, 2000.0f, 1.0f, 0.0f,
+    0.01f, 0.0f, 0.05f, 0.0f, 0.05f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.047f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.481f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
@@ -729,14 +733,14 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
 };
 
 static const char* const g_drum_inst_names[DRUM_INST_COUNT] = {
-  "BassDrm", "Kick", "SideStk", "AccSnar", "HndClap", "SnBody1", "Tom1", "HiHat1",
-  "Tom2", "HiHat2", "Tom3", "HiHat3", "Tom4", "Tom5", "Crash1", "Tom6", "ClHat1",
-  "DpTom1", "SnBody2", "SnNois1", "Cymbal1", "NzBell1", "Cymbal2", "TgtClp1",
-  "TickCl1", "Bongo1", "Bongo2", "Bongo3", "Bongo4", "Bongo5", "Bongo6", "Bongo7",
-  "SnNois2", "MtlStk1", "NzBell2", "Chime1", "Whistl1", "Whistl2", "Guiro1",
-  "Guiro2", "SubKck1", "NoisClp", "ClHat2", "DpTom2", "SnBody3", "GlasBl1", "GlasBl2",
-  "HighQ", "SnNois3", "MtlStk2", "Twirl", "SubKck2", "SnrSlap", "Chime2", "TgtClp2",
-  "TickCl2", "GlassFX", "RailBl1", "RailBl2",
+  "ABassDr", "Kick", "SideStk", "Snare", "Clap", "ElSnare", "LFlrTom", "ClHat",
+  "HFlrTom", "PedHat", "LowTom", "OpHat", "LMidTom", "HMidTom", "Crash1", "HighTom",
+  "Ride1", "ChinaCy", "RideBel", "Tambrn", "Splash", "Cowbell", "Crash2", "Vibrslp",
+  "Ride2", "HiBongo", "LoBongo", "MHConga", "OHConga", "LoConga", "HiTimbl",
+  "LoTimbl", "HiAgogo", "LoAgogo", "Cabasa", "Maracas", "SWhistl", "LWhistl",
+  "SGuiro", "LGuiro", "Claves", "HiWdBlk", "LoWdBlk", "MCuica", "OCuica", "MTrngl",
+  "OTrngl", "HighQ", "SnNoise", "MtlStk", "Twirl", "SubKick", "SnSlap", "Chime",
+  "TgtClap", "TickClk", "GlasFX", "RailBel", "RailBe2",
 };
 
 static const uint8_t g_drum_inst_notes[DRUM_INST_COUNT] = {
