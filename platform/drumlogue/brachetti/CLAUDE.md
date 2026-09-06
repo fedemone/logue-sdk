@@ -201,6 +201,97 @@ needs its modes calibrated — measure first, guess last.
 
 ## HW Pass History (most recent first)
 
+### Pass 46 addendum — the gong's lineage, checked against the prototype
+
+Prompted by the HW note: *"Gong preset was crafted after the cymbal_synthesis
+(modeled after Gong-long-G#.wav), but possibly that is outdated. Please check
+latest changes in the Gong preset, as it sounded OK some time ago."*  No code
+changed here; this is what the check found.
+
+**The lineage is confirmed, and the port is a thinner copy.**
+`cymbal_synthesis/realistic_cymbals.cpp`'s `PRESET_GONG` config is
+value-for-value the one in `synth_engine.h`, with three deltas: `resonators`
+96 → 80, `stickLevel` 0.22 → 0.32, and the comb section dropped.  A fourth
+delta is the one that bites: the port then multiplies the bank by the `Partls`
+density knob, so **the shipped preset renders 32 lanes where the prototype
+rendered 96**.
+
+**"Modeled after Gong-long-G#.wav" is an intention that was never achieved —
+by the prototype or by any port.**  Measured:
+
+| | power centroid | 100-300 Hz | 1-3 kHz | >3 kHz | T60 |
+|---|---|---|---|---|---|
+| `Gong-long-G#.wav` (the stated model) | **2480 Hz** | 11.5 % | 40.6 % | **38.3 %** | 3.18 s |
+| prototype render | 216 Hz | 66.0 % | 0.9 % | **0.0 %** | 1.34 s |
+| port, pre-pass-45 | 187 Hz | 90.0 % | 0.2 % | 0.0 % | 4.98 s |
+| port, pass-46 | 201 Hz | 93.2 % | 0.3 % | 0.0 % | 4.98 s |
+
+The prototype is DARK.  It has nothing above 3 kHz, exactly like every port
+since.  So the reference it was aimed at and the sound it produced have never
+matched, and **that reframes pass 45**: brightening the gong was moving TOWARD
+the documented design intent, and it was rejected on the listen.  Intent and
+preference disagree here, and only a listen can settle which one the preset is
+supposed to serve.  All three candidates are different instruments:
+`Gong-long-G#.wav` (bright, the stated model), the prototype's own render
+(dark, dense), and `Chinese-Gong.wav` (dark, what pass 46 currently matches).
+
+**Recent changes to the gong, exhaustively.**  History under `brachetti/` is
+squashed, so what is actually visible is short: `b78a942` (28 Aug) raised
+`state.master_gain` **1.5 → 2.3** across the whole unit, and then passes 45-46.
+Nothing else has touched this preset in recorded history.
+
+`b78a942` is worth flagging as a suspect for "it sounded OK some time ago",
+because it was a global loudness bump with no per-preset listen and the gong is
+the preset least able to absorb one — it has the least transient content in the
+unit, so it sits on the limiter continuously.  Measured on the gong alone:
+
+| master_gain | rms | peak | crest | T60 | spectrum |
+|---|---|---|---|---|---|
+| 2.3 (current) | 0.1781 | 0.97 | 5.4 | 4.98 s | unchanged |
+| 1.5 (before) | 0.1424 | 0.96 | 6.7 | 4.10 s | unchanged |
+| 1.0 | 0.1119 | 0.94 | 8.4 | 3.93 s | unchanged |
+
+So it costs crest and stretches the tail but does not move the spectrum.  Real,
+but too small on its own to explain a preset going from OK to not-OK — and it
+is a UNIT-WIDE constant, so lowering it for the gong's sake would quieten the
+other 39 presets.  Left alone pending a decision.
+
+**The bigger gap is older than any of that: the port never sounded like the
+prototype.**  At the RAW voice, before Brachetti's master chain, with my
+subsonic guards disabled so this is the pre-pass-45 port:
+
+| | <100 Hz | 100-300 | 300-1k | T60 | crest |
+|---|---|---|---|---|---|
+| prototype (96 lanes) | **18.1 %** | 66.0 % | **15.0 %** | **1.34 s** | **30.7** |
+| port, guards off (32 lanes) | 5.6 % | 89.7 % | 4.5 % | 2.73 s | 12.6 |
+| port, pass-46 (32 lanes) | 1.2 % | 92.6 % | 5.9 % | 3.35 s | 12.6 |
+
+The port is narrower, longer and far less peaky than the thing it was ported
+from, and that predates every pass in this branch.  **Density is a third of
+it**: forcing the gong's bank to the prototype's 96 lanes moves 300-1k from
+5.9 % → 9.6 % and the power centroid 203 → 222 Hz (prototype 216), and
+lengthens `late` 423 → 590 Hz (prototype 699).  It does not close the sub-100
+gap (3.0 % against 18.1 %) or the T60 gap (3.09 s against 1.34 s), so
+**something else in the port is still unaccounted for** — say so rather than
+claim the port is understood.
+
+**Ruled out by measurement, so nobody re-tests them:** the dropped comb section
+(rendering the prototype with `comb` 0.25 vs 0.0 is identical to three decimal
+places — `combLevel` 0.14 × the 0.12 output scale is inaudible); the
+prototype's `ampAttackSec`/`ampDecaySec`/`ampSustainLevel` config fields (dead
+in the prototype too — only `ampReleaseSec` is read, and only to fit a fixed
+render length); and my own subsonic guards, which account for the 5.6 % → 1.2 %
+sub-100 change but none of the older gap.
+
+**Restoring bank density is the one concrete, low-risk lever this check
+produced, and pass 45 already paid for it.**  96 lanes costs 124 + 96 = 220
+against the 368-lane budget, so one voice fits comfortably where two would not
+— and same-note re-excitation means repeated strikes now use ONE voice, which
+is exactly the case the old budget was sized for.  Host cost per voice rises
+about 26 % (21.9 ns fixed + 0.1035 ns/lane), less on ARM where NEON makes the
+resonator loop relatively cheaper.  **Not done — it changes the sound, and this
+preset has had enough changes made to it without a listen.**
+
 ### Pass 46 — the recording arrived, and it says pass 45 was wrong at the root
 
 `samples/` is populated again — 67 reference WAVs, committed this time.  The
