@@ -1676,13 +1676,33 @@ SynthState state;
     // cymbal voice charges kCymVoiceFixedLanes PLUS its resonators.
     static constexpr int kCymVoiceFixedLanes = 124;
 
-    // The ceiling is the pre-pass-26 worst case — 2 voices at the largest bank
-    // the Rsntrs knob can ask for (60 lanes) — because that is the only cymbal
-    // CPU level this unit has field evidence for: it ran for 25 passes without
-    // an audio crash, and the first report of one came after pass 26 doubled
-    // it.  At the default Rsntrs this allows 2 stacked cymbal voices; a third
-    // is only affordable if the banks are small enough to pay for it.
-    static constexpr int kCymCostBudget = 2 * (kCymVoiceFixedLanes + 60);  // 368
+    // The ceiling was the pre-pass-26 worst case — 2 voices at the largest bank
+    // the Rsntrs knob could ask for (60 lanes) = 368 — because that was the
+    // only cymbal CPU level this unit had field evidence for: it ran for 25
+    // passes without an audio crash, and the first report of one came after
+    // pass 26 doubled it.
+    //
+    // 440 (pass 46), for two reasons that are both about the case the old
+    // number was sized against no longer existing:
+    //   1. Repeated strikes used to cost TWO voices, ping-ponging between
+    //      slots.  Since pass 45 a re-strike on the same note re-excites its
+    //      own voice, so the gesture the budget was really protecting against
+    //      now costs ONE voice — measured 29.0 -> 14.1 µs/block.
+    //   2. The gong's bank went back to the density it was ported from (32 ->
+    //      96 lanes), and at 368 that pushed a second DIFFERENTLY-PITCHED gong
+    //      out of the budget entirely: 220 + 124 + 32 = 376 > 368, so distinct
+    //      notes collapsed onto one voice.  That is the defect this whole
+    //      branch started from, reintroduced through the back door.
+    //
+    // The raise is cheap because the bank is nearly free and the VOICE is what
+    // costs: measured on the real processBlock, taking the gong from 32 to 96
+    // lanes moves one voice 13,990 -> 14,345 ns/block (+2.5 %), and a second
+    // full voice adds ~2,000 ns.  Two 96-lane gong voices measure ~16.4
+    // µs/block against pass 30's 49.7 µs last-known-good level and 95.6 µs
+    // crash level.  The 2-voice ceiling is unchanged for every preset in the
+    // family — a third voice is still denied (gong 440 + 124 + 32 = 596 > 440;
+    // crash at max density 360 + 124 + 32 = 516 > 440).
+    static constexpr int kCymCostBudget = 440;
 
     // Smallest bank that still reads as a cymbal rather than a chord.
     static constexpr int kCymMinResonators = 32;
@@ -2710,7 +2730,23 @@ SynthState state;
                     // brightness has to come from the STRIKE — stickLevel,
                     // thwackSec, the shimmer band — not from a bank-wide tilt.
                     // Mterl still moves the tilt either way from here.
-                    cc = { m_cym_gong_hz, 16, 80, 150.f, 14000.f, 2.4f,
+                    //
+                    // 240 is NOT a bank size — it is the prototype's bank size
+                    // divided by the shipped density.  `resonators` is the count
+                    // at 100 % `Partls`, and the knob only spans 25-60 %, so the
+                    // 80 this used to hold rendered 80 x 0.40 = 32 lanes against
+                    // `cymbal_synthesis`'s 96.  The port has been running the
+                    // gong at a THIRD of the density it was ported from since
+                    // the port was written; 240 x 0.40 = 96 restores it at the
+                    // shipped knob position.  Measured against the prototype:
+                    // 300 Hz-1 kHz 5.9 % -> 9.6 % (prototype 15.0 %), power
+                    // centroid 203 -> 222 Hz (prototype 216), refcmp `late`
+                    // 423 -> 590 Hz (prototype 699).  Above `Partls` 4 the
+                    // request exceeds kCymbalMaxResonators and flattens at 112 —
+                    // a real plateau on the top three knob positions, accepted
+                    // because raising the cap costs .bss on all four voices for
+                    // a range nothing asks for.
+                    cc = { m_cym_gong_hz, 16, 240, 150.f, 14000.f, 2.4f,
                            0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
                            0.126f, 0.22f, 0.010f, 0.15f };
                     ref_note = 50;
@@ -2934,21 +2970,22 @@ SynthState state;
                 // deliberately NOT touched here — raise it only on an explicit
                 // listen.
                 //
-                // Gong 1.15.  Pass 30 found it "already correctly placed" at
-                // trim 1.0; pass 45 raised it to 2.0 to compensate for the
-                // level its bank tilt gave away, and that compensation went
-                // back out with the tilt.  What remains is a real 2.4 dB: the
-                // subsonic guard removes energy that was inaudible as pitch but
-                // WAS feeding the master limiter, so the preset got quieter
-                // without getting cleaner-sounding.  1.15 puts the loudness
-                // back exactly where it was (rms 0.1781 against the pre-guard
-                // 0.1820) — it buys back what the filter took and nothing more.
+                // Gong 1.28, and it is entirely make-up gain for two changes
+                // that each removed real level without changing the voicing:
+                // the subsonic guard (energy that was inaudible as pitch but WAS
+                // feeding the master limiter) and the denser bank (1/sqrt(N)
+                // normalisation spreads the same energy over 96 lanes instead
+                // of 32).  Together 1.4 dB.  1.28 lands rms 0.1737 and T60
+                // 4.99 s against the pre-pass-45 build's 0.1820 and 4.98 s —
+                // i.e. the same length, 0.4 dB down.  1.40 matches the level
+                // exactly but stretches T60 to 5.22 s by pushing the limiter
+                // harder, and length is the thing this preset can least afford.
                 float cym_trim = 1.0f;
                 switch (m_preset_idx) {
                     case k_Cymbal:   cym_trim = 3.2f; break;
                     case k_Ride:     cym_trim = 2.9f; break;
                     case k_RideBell: cym_trim = 2.1f; break;
-                    case k_Gong:     cym_trim = 1.15f; break;
+                    case k_Gong:     cym_trim = 1.28f; break;
                     case k_Splash:   cym_trim = 1.4f; break;
                     default: break;
                 }

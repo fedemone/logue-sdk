@@ -42,11 +42,22 @@ so read the row name, not the row order.)
   0.2128), and the sub-100 Hz junk gone — **5.6 % → 1.1 %** on one strike,
   **9.1 % → 1.6 %** on eight.  Needs a listen, but it should read as "what I
   had, minus the mud".
-- **Two big open findings, both first measurable today** — see the pass-46
-  entry: the gong rings **~4x too long** (T60 4.98 s against the reference's
-  1.28 s), which is the most likely remaining cause of the original "muddy on
-  repeated hits"; and the bank **cannot produce the reference's dominant
-  partial at all** (91.5 Hz, 68.8 % of its energy, against our `fLo` of 150 Hz).
+- **Pass 46b — the gong's bank density is back to what it was ported from
+  (needs a listen).**  HW pointed at the `cymbal_synthesis` lineage; the check
+  found the port had been rendering the gong at **32 lanes against the
+  prototype's 96** ever since it was written, because `resonators` is the count
+  at 100 % `Partls` and the knob only reaches 60 %.  Restored, and it recovers
+  most of what separated the port from the prototype: 300 Hz-1 kHz **5.5 % ->
+  13.3 %** (prototype 15.0 %), refcmp `late` **575 -> 718 Hz** (prototype 699),
+  power centroid 201 -> 227 (prototype 216).  `kCymCostBudget` 368 -> 440 to
+  keep two differently-pitched gongs affordable at the new size — measured, two
+  96-lane voices cost **27.8 µs/block against the two 32-lane voices' 29.0**,
+  because the bank is nearly free and the VOICE is what costs.
+- **Two open findings** — see the pass-46 entry: the gong still rings **~4x too
+  long** (T60 4.99 s against the reference's 1.28 s), the most likely remaining
+  cause of the original "muddy on repeated hits"; and the bank **cannot produce
+  the reference's dominant partial at all** (91.5 Hz, 68.8 % of its energy,
+  against our `fLo` of 150 Hz).
 - **Pass 45 — HALF ACCEPTED, HALF REJECTED ON HW; the rejected half is now
   reverted by pass 46.**  Verdict was: *"stacking is better, but sound has
   degraded."*
@@ -200,6 +211,71 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 46b — the gong's bank was running at a third of its ported density
+
+Acting on the addendum below, with the HW decision "dark, but restore density".
+
+**The defect.**  `CymbalConfig::resonators` is the bank size at 100 % `Partls`,
+and the `Partls` knob only spans 25-60 %.  The gong shipped `resonators = 80`,
+so at the shipped `Partls = 3` (40 %) it rendered **32 lanes** — against
+`cymbal_synthesis`'s **96**.  The port has been a third as dense as the
+prototype since the day it was written, and the same arithmetic applies to the
+whole family (crash 96 -> 38, ride 88 -> 35), which is worth knowing but was
+not touched here.
+
+**The fix, and why the number looks wrong.**  `resonators` is now **240**, which
+is larger than `kCymbalMaxResonators` (112) and is meant to be: it is the
+prototype's 96 divided by the shipped 40 % density.  Above `Partls = 4` the
+request exceeds the cap and flattens at 112 — a genuine plateau on the top three
+knob positions, accepted rather than raising the cap, which would cost .bss on
+all four voices for range nothing asks for.
+
+**Measured, against the prototype it was ported from:**
+
+| | power centroid | <100 Hz | 100-300 | 300 Hz-1 kHz | refcmp late |
+|---|---|---|---|---|---|
+| prototype (96 lanes) | 216 Hz | 18.1 % | 66.0 % | **15.0 %** | **699 Hz** |
+| port pre-45 (32) | 187 | 5.6 | 90.0 | 4.2 | 478 |
+| port pass-46 (32) | 201 | 0.9 | 93.2 | 5.5 | 575 |
+| **port pass-46b (96)** | **227** | 2.0 | 84.1 | **13.3** | **718** |
+
+The body the port never had is back.  What still does not match is the
+prototype's 18 % under 100 Hz and its 1.34 s T60 — see the open findings.
+
+**`kCymCostBudget` 368 -> 440, and the raise is cheaper than it looks.**  At 96
+lanes a gong voice costs 124 + 96 = 220, and 220 + 124 + 32 = 376 > 368, so a
+second DIFFERENTLY-PITCHED gong stopped being affordable and distinct notes
+collapsed onto one voice — the defect this branch started from, coming back
+through the back door.  T36b caught it.  Measured on the real `processBlock`:
+
+| | lanes | ns/block |
+|---|---|---|
+| 1 gong voice, 32 lanes | 156 | 13,990 |
+| 1 gong voice, 96 lanes | 220 | 14,345 |
+| 2 gong voices, 96 lanes each | 440 | **27,753** |
+
+Taking one voice from 32 to 96 lanes costs **2.5 %**; two full voices cost
+**27.8 µs/block against the two 32-lane voices' 29.0** before this pass.  The
+bank is nearly free and the VOICE is what costs — which is the same finding
+`kCymVoiceFixedLanes` encodes, applied in the other direction for once.  Both
+grounds for the old 368 have also gone: it was sized when repeated strikes cost
+two ping-ponging voices, and since pass 45 they cost one.  The 2-voice ceiling
+is unchanged for every preset (a third is still denied: gong 596 > 440, crash
+at max density 516 > 440), and pass 30's field levels are 49.7 µs last-known-
+good and 95.6 µs crash, both well clear.
+
+**`cym_trim` 1.15 -> 1.28**, entirely make-up gain: the subsonic guard and the
+1/sqrt(N) normalisation over 96 lanes instead of 32 each removed real level
+without changing the voicing, together 1.4 dB.  1.28 lands rms 0.1737 / T60
+4.99 s against the pre-pass-45 build's 0.1820 / 4.98 s — same length, 0.4 dB
+down.  1.40 matches the level exactly but stretches T60 to 5.22 s, and length is
+what this preset can least afford.
+
+Verified: 34/40 renders byte-identical to the pre-pass-45 build, 0 NaN/silent,
+`test_dsp` exit 0, `test_hw_debug` **108/108**, `stability_sweep` 4096 combos +
+480 rolls, 0 problems, worst |peak| 0.9900, host syntax clean.  ARM unchanged
+at `.text` 52,940 · `.rodata` 34,320 · `.data.rel.ro` 468 · `.bss` 107,948.
 
 ### Pass 46 addendum — the gong's lineage, checked against the prototype
 
