@@ -20,6 +20,13 @@ is a lookup table plus a few bytes of state. An RP2040 has 264 KB of SRAM and tw
 133 MHz cores; the RP2350 ("Pico 2") has 520 KB. Memory and CPU are **not** the
 constraint. USB topology is.
 
+> **A buildable implementation now exists** in [`pico/`](pico/): the portable,
+> host-unit-tested translation logic (`translator.c` + `midi_parse.c`) plus the
+> Pico SDK glue, with DIN I/O as the default and USB host as a documented opt-in.
+> Because the logic is the same as the Python tool and is covered by tests, you
+> can **skip the Linux prototype** — set your map in `pico/config.*` and flash.
+> See [`pico/README.md`](pico/README.md).
+
 ---
 
 ## 1. The core problem: USB roles
@@ -205,11 +212,14 @@ lowest and most predictable latency, and your I/O is DIN or single-USB-in.
 | Must be USB↔USB (drumlogue TO HOST) | **Pico only if committed to C+TinyUSB**; otherwise **Linux Pi Zero 2 W** | C / (Python on Linux) |
 | Want network config, discovery tools, many devices | **Linux Pi** | Python (this tool as-is) |
 
-The Python tool in this folder already runs today on any Linux Pi. A Pico port is
-a worthwhile, cheaper productionization **once your setup is settled** and you know
-which ports you're committing to — do the discovery on the Linux Pi with
-`--monitor`/`--probe`, then bake the resulting map into a Pico if you want the
-appliance.
+The Pico firmware in [`pico/`](pico/) is the recommended path when your I/O is DIN
+or single-USB-in: it's cheaper, faster, and lower-jitter than a Linux Pi, and its
+logic is host-unit-tested so **the Linux prototype is optional**. You only need to
+know which drumlogue channel drives which track before flashing — discover that
+once by ear (the [choke/probe test](README.md#does-choke-work-on-your-unit)) or on
+any computer with the Python tool's `--probe`, then bake the map into
+`pico/config.*`. Reach for a Linux Pi only if you actually need one of the
+features in §6 (notably two-USB-device hosting, or runtime discovery/monitoring).
 
 See also: [MIDI latency analysis](midi-latency.md) — the Pico path wins on jitter,
 which matters more than raw latency for feel.

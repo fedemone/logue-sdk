@@ -14,6 +14,7 @@ no MIDI actuator).
 | [`midi_translator.py`](midi_translator.py) | The tool itself (all behaviour driven by the `CONFIG` block) |
 | [`midi-routing-and-sdk-limits.md`](midi-routing-and-sdk-limits.md) | *Why* the four MIDI issues can't be fixed in an SDK unit (firmware-encryption evidence, unit surface) |
 | [`pi-pico-port.md`](pi-pico-port.md) | Evaluation of a Raspberry Pi **Pico** rewrite in C / CircuitPython (is a Linux Pi overkill?) |
+| [`pico/`](pico/) | **Buildable Pico (RP2040/RP2350) firmware** — the microcontroller port, with host-tested logic. See [`pico/README.md`](pico/README.md). |
 | [`midi-latency.md`](midi-latency.md) | MIDI latency analysis and how to keep it low |
 | [`requirements.txt`](requirements.txt) | Python dependencies (`mido`, `python-rtmidi`) |
 

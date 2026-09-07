@@ -1,0 +1,4 @@
+# Pico build artifacts
+build/
+# Host unit-test binary
+test/test_core
