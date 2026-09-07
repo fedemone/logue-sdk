@@ -189,12 +189,15 @@ Suitable hosts for the translator: a computer or Raspberry Pi (e.g. Python +
 Bome BomeBox, MIDI Solutions, mioXL, …); or a DAW MIDI-effect / script (Ableton MIDI
 tools, Logic Scripter, Bitwig).
 
-**A working implementation of the Pi/Python host lives in
-[`../tools/midi_translator/`](../tools/midi_translator/).** It provides the drum
-fan-out (#2/#3), the drums+synth split (#4), and choke emulation (#1, subject to
-the note-off test below), plus `--list`/`--monitor`/`--probe` modes to discover
-your controller's output and the drumlogue's per-track channels. See its
-[README](../tools/midi_translator/README.md).
+**A working implementation of the Pi/Python host lives alongside this document**
+(see [`README.md`](README.md) and [`midi_translator.py`](midi_translator.py)). It
+provides the drum fan-out (#2/#3), the drums+synth split (#4), and choke emulation
+(#1, subject to the note-off test below), plus `--list`/`--monitor`/`--probe` modes
+to discover your controller's output and the drumlogue's per-track channels.
+
+Related notes in this folder: [hardware & wiring](README.md#hardware--wiring),
+the [Raspberry Pi Pico port evaluation](pi-pico-port.md), and the
+[MIDI latency analysis](midi-latency.md).
 
 ### Choke hardware test (5 minutes, settles issue #1)
 

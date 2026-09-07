@@ -4,9 +4,9 @@ drumlogue MIDI translator
 =========================
 
 A small, standalone MIDI processor to work around the drumlogue MIDI limitations
-that cannot be fixed from the logue SDK (see
-platform/drumlogue/docs/midi-routing-and-sdk-limits.md). It sits between your
-controller/DAW and the drumlogue, and:
+that cannot be fixed from the logue SDK (see the co-located
+midi-routing-and-sdk-limits.md). It sits between your controller/DAW and the
+drumlogue, and:
 
   * fans a single "drums" channel out to the drumlogue's per-track channels,
     with a note map you define (fixes the illogical single-channel note map),
