@@ -7,6 +7,16 @@ box with deterministic latency and no OS to maintain. Why a microcontroller and
 when a Linux Pi is worth it: [`../pi-pico-port.md`](../pi-pico-port.md). Latency:
 [`../midi-latency.md`](../midi-latency.md).
 
+> ⚠️ **Status: paused — transport not decided. Read [`STATUS.md`](STATUS.md) first.**
+> The translation **logic is done and host-tested**; the Pico **I/O transport is
+> not settled**. Two corrections to the sections below:
+> 1. **The Pico has no 5-pin DIN jack.** DIN needs an add-on circuit, so the
+>    "DIN is the easy default" framing below is **roadmap**, not the starting
+>    point. DIN details below are kept for when we add that add-on.
+> 2. **We're starting with USB**, but a full controller→Pico→drumlogue USB link
+>    needs a **second USB port** (PIO-USB or a hub) — the complication that made
+>    us pause. Options and the plan are in [`STATUS.md`](STATUS.md).
+
 > **No Linux prototype needed.** The translation logic here is the same logic as
 > the Python tool, and it's covered by host unit tests (below). Set your note map
 > and channels in `config.c` / `config.h` and flash — you can skip the Raspberry
