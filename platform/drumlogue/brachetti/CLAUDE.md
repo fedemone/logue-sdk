@@ -53,11 +53,12 @@ so read the row name, not the row order.)
   keep two differently-pitched gongs affordable at the new size — measured, two
   96-lane voices cost **27.8 µs/block against the two 32-lane voices' 29.0**,
   because the bank is nearly free and the VOICE is what costs.
-- **Two open findings** — see the pass-46 entry: the gong still rings **~4x too
-  long** (T60 4.99 s against the reference's 1.28 s), the most likely remaining
-  cause of the original "muddy on repeated hits"; and the bank **cannot produce
-  the reference's dominant partial at all** (91.5 Hz, 68.8 % of its energy,
-  against our `fLo` of 150 Hz).
+- **Two open findings** — see the pass-46 entry: the gong's tail is long, but
+  **most of that is the master limiter, not the voice** (corrected below —
+  bypassing the limiter takes t-20 dB from 3.25 s to 2.12 s and crest from 5.6
+  to 19.6, against the reference's 0.91 s and 9.1); and the bank **cannot
+  produce the reference's dominant partial at all** (91.5 Hz, 68.8 % of its
+  energy, against our `fLo` of 150 Hz).
 - **Pass 45 — HALF ACCEPTED, HALF REJECTED ON HW; the rejected half is now
   reverted by pass 46.**  Verdict was: *"stacking is better, but sound has
   degraded."*
@@ -456,17 +457,46 @@ driver.
 
 **Two open findings, both measurable for the first time today.**
 
-1. **The gong rings about four times too long.**  T60 4.98 s against the
-   reference's 1.28 s.  Nobody could check this before.  At any playing rate
-   that is several whole tails overlapping — a 300 ms pattern stacks roughly
-   sixteen of them — and it is now the most likely remaining cause of the
-   ORIGINAL "muddy on repeated hits" report, which the subsonic guard only
-   partly addressed.  Levers: `decaySec` (1.70), the `ring_scale` argument
-   (1.0 here; HHat-O already uses 0.55), and the shared `ringDecay`.  Sweeping
-   `decaySec` 1.70 → 0.80 → 0.50 pulls the late centroid 574 → 496 → 417 Hz
-   and T60 4.78 → 3.23 → 3.17 s, so `decaySec` alone does not get there — the
-   bank's own `ringDecay` and the magnitude squelch hold the floor.  This is a
-   character change and wants a listen, not a fit.
+1. **The gong's tail is long, and the decay CONSTANTS are not what makes it
+   long.**  Stated first as "rings about four times too long" (T60 4.98 s
+   against the reference's 1.28 s); that number is right but most of it is a
+   measurement artefact, and the correction matters because it changes which
+   lever works.
+
+   `refcmp`'s T60 is "last sample above 3 % of PEAK", so anything that squashes
+   the peak inflates it.  The master limiter squashes this preset hard — it has
+   the least transient content in the unit.  Measured, with the limiter
+   bypassed and the bus dropped to match:
+
+   | | t-20 dB | crest |
+   |---|---|---|
+   | reference `Chinese-Gong.wav` | 0.91 s | 9.1 |
+   | `cymbal_synthesis` prototype (no master chain) | 0.14 s | 30.5 |
+   | ours, limiter bypassed | 2.12 s | 19.6 |
+   | ours, as shipped | 3.25 s | 5.6 |
+
+   So roughly a third of the apparent length is the limiter crushing the attack
+   (crest 19.6 → 5.6), and the rest is a voice that really is about twice the
+   reference's length.
+
+   **The existing decay controls barely touch it.**  `ring_scale` scales all
+   three decay constants at once — the low driver, the high driver and the bank
+   `ringDecay` — and is exactly the "shorten the whole ring" control (HHat-O
+   ships 0.55).  Sweeping the gong 1.0 → 0.6 → 0.4 → 0.3 moves the RAW
+   pre-limiter t-20 only 1.00 → 0.90 → 0.78 → 0.77 s.  A 3.3x cut in every
+   decay constant buys 23 %.  `decaySec` alone behaves the same way.  So
+   whatever holds this tail up is NOT the envelopes, and tuning them is a dead
+   end — **do not spend another pass on `decaySec`/`ring_scale`.**
+
+   That is the case for an **output amplitude envelope** (the ADSR the
+   prototype's config declares and never uses): it multiplies the voice output
+   directly, so it works regardless of what is sustaining the bank, which is
+   precisely why it succeeds where `ring_scale` fails.  Two constraints if
+   anyone builds it: it must be TIME-based from the strike, never gate-based —
+   the Drumlogue fires gate on+off in one tick and the family deliberately has
+   no release envelope for that reason (see the panic-fade note in
+   `CymbalVoice`) — and it cannot fix the crushed transient, which is a level
+   problem, not an envelope one.
 2. **The bank cannot produce the reference's dominant partial.**
    `Chinese-Gong.wav` puts **68.8 % of its energy in one mode at 91.5 Hz**;
    our `fLo` is 150 Hz and the lowest anchor is 162 Hz, so the model has never
