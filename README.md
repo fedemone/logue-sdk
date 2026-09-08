@@ -6,7 +6,7 @@
 
 This repository contains all the files and tools needed to build custom oscillators and effects for the [prologue](https://www.korg.com/products/synthesizers/prologue), [minilogue xd](https://www.korg.com/products/synthesizers/minilogue_xd), [Nu:Tekt NTS-1 digital kit](https://www.korg.com/products/dj/nts_1), [Nu:Tekt NTS-1 digital kit mkII](https://www.korg.com/products/synthesizers/nts_1_mk2), [microKORG2](https://www.korg.com/products/synthesizers/microkorg2) synthesizers, the [Nu:Tekt NTS-3 kaoss pad kit](https://www.korg.com/products/dj/nts_3), and [drumlogue](https://www.korg.com/products/drums/drumlogue) drum machine.
 
-This is a personal fork of KORG's official [logue-sdk](https://github.com/korginc/logue-sdk) that additionally hosts a number of custom, independently developed synth and effect units (for example, but not limited to, `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti` and `delay_tribal` under [platform/drumlogue/](platform/drumlogue/)). **Please read the [Disclaimer](#disclaimer) below before downloading, building, installing, or using any of them.**
+This is a personal fork of KORG's official [logue-sdk](https://github.com/korginc/logue-sdk) that additionally hosts a number of custom, independently developed synth and effect units (for example, but not limited to, `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti`, `Percussio` and `delay_tribal` under [platform/drumlogue/](platform/drumlogue/)). **Please read the [Disclaimer](#disclaimer) below before downloading, building, installing, or using any of them.**
 
 ## Disclaimer
 

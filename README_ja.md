@@ -4,7 +4,7 @@
 
 このリポジトリには [prologue](https://www.korg.com/jp/products/synthesizers/prologue/), [minilogue xd](https://www.korg.com/jp/products/synthesizers/minilogue_xd/), [Nu:Tekt NTS-1 digital kit](https://www.korg.com/jp/products/dj/nts_1/), [Nu:Tekt NTS-1 digital kit mkII](https://www.korg.com/jp/products/synthesizers/nts_1_mk2), [microKORG2](https://www.korg.com/products/synthesizers/microkorg2) synthesizers, the [Nu:Tekt NTS-3 kaoss pad kit](https://www.korg.com/jp/products/dj/nts_3), and [drumlogue](https://www.korg.com/jp/products/drums/drumlogue/) の6製品で使用できる自作オシレーターやエフェクトのビルドに必要なファイルが全て揃っています.
 
-このリポジトリは KORG 公式の [logue-sdk](https://github.com/korginc/logue-sdk) の個人フォークであり、独自に開発された非公式のシンセ/エフェクトユニット（例: [platform/drumlogue/](platform/drumlogue/) 以下の `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti`, `delay_tribal` など）も併せて公開しています。**これらをダウンロード、ビルド、インストール、使用する前に、必ず下記の[免責事項](#免責事項)をお読みください。**
+このリポジトリは KORG 公式の [logue-sdk](https://github.com/korginc/logue-sdk) の個人フォークであり、独自に開発された非公式のシンセ/エフェクトユニット（例: [platform/drumlogue/](platform/drumlogue/) 以下の `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti`, `Percussio`, `delay_tribal` など）も併せて公開しています。**これらをダウンロード、ビルド、インストール、使用する前に、必ず下記の[免責事項](#免責事項)をお読みください。**
 
 ## 免責事項
 
