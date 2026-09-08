@@ -185,6 +185,49 @@ static void test_env_base() {
 
 /*===========================================================================*/
 
+/**
+ * clm::Phasor leans on float_math.h's si_floorf(), which in every drumlogue
+ * copy of that header used to be (float)((uint32_t)x) -- undefined for negative
+ * input, and negative input is exactly what an FM deviation larger than the
+ * carrier increment produces.  Pin both helpers against libm so this unit
+ * cannot be built against a copy that has drifted back.
+ */
+static void test_float_math_floor() {
+  banner("float_math.h si_floorf / si_ceilf agree with libm");
+
+  int wrong = 0;
+  float worst = 0.0f;
+  for (double x = -1000.0; x <= 1000.0; x += 0.0009765625) {  // exact binary step
+    const float v = (float)x;
+    const float df = si_floorf(v) - std::floor(v);
+    const float dc = si_ceilf(v) - std::ceil(v);
+    if (df != 0.0f || dc != 0.0f) {
+      ++wrong;
+      worst = std::fmax(worst, std::fmax(std::fabs(df), std::fabs(dc)));
+    }
+  }
+  check(wrong == 0, "si_floorf/si_ceilf disagree with libm at %d points, worst by %g", wrong,
+        (double)worst);
+
+  // And the wrap built on it: an increment far larger than one period, in both
+  // directions, must still land in [0, 1).
+  clm::Phasor ph;
+  ph.clear();
+  bool ok = true;
+  for (int i = 0; i < 20000; ++i) {
+    const float inc = (i & 1) ? -37.4159f : 41.5926f;
+    const float p = ph.advance(inc);
+    if (!(p >= 0.0f && p < 1.0f) || !std::isfinite(p)) {
+      check(false, "Phasor left [0,1) at step %d: %g", i, (double)p);
+      ok = false;
+      break;
+    }
+  }
+  if (ok) std::printf("  Phasor stayed in [0,1) over 20000 alternating +-40-period jumps\n");
+}
+
+/*===========================================================================*/
+
 static void test_oscil() {
   banner("clm::Oscil frequency and amplitude over a 2 s decay");
 
@@ -562,6 +605,7 @@ int main() {
   test_header_matches_preset0();
   test_ks_lengths();
   test_env_base();
+  test_float_math_floor();
   test_oscil();
   test_twopole_norm();
   test_karplus_blend();

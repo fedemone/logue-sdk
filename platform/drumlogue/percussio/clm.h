@@ -396,22 +396,23 @@ struct Phasor {
   /**
    * Advance and wrap to [0, 1).
    *
-   * GOTCHA: this deliberately does not use float_math.h's si_floorf(), which is
-   * (float)((uint32_t)x) and therefore wrong -- undefined, in fact -- for any
-   * negative argument.  An FM deviation larger than the carrier increment makes
-   * the instantaneous increment negative, which is routine (index 5 at ratio
-   * 1.4 already does it), and si_floorf turned every one of those samples into
-   * a NaN.  The truncation below is signed and corrected downwards, and the
-   * caller clamps the increment so the int32 cast cannot overflow.
+   * The increment is clamped first, which is what keeps si_floorf() inside the
+   * signed-32-bit domain its own docstring restricts it to.  It needs the room:
+   * true FM displaces the carrier's increment by index * inc_mod, so at index
+   * 10 and ratio 16 the instantaneous increment is 160x the carrier's and
+   * routinely negative.
+   *
+   * HISTORY: si_floorf() used to be (float)((uint32_t)x) in every drumlogue
+   * copy of float_math.h, which is undefined for negative input -- it returned
+   * 2^32 -- so every one of those samples came back NaN.  The fix restored
+   * KORG's own implementation from the prologue/minilogue-xd/NTS-1 copies,
+   * which was correct all along; test_dsp.cpp checks it against libm so this
+   * unit cannot be built against a copy that has drifted back.
    */
   fast_inline float advance(float inc) {
     float p = phase + clipminmaxf(-1.0e6f, inc, 1.0e6f);
-    if (p >= 1.0f || p < 0.0f) {
-      const int32_t k = (int32_t)p;
-      p -= (float)((p < 0.0f) ? (k - 1) : k);
-      if (p >= 1.0f) p -= 1.0f;   // rounding can land exactly on 1
-      if (p < 0.0f) p = 0.0f;
-    }
+    p -= si_floorf(p);
+    if (p >= 1.0f) p = 0.0f;  // rounding can land exactly on 1
     phase = p;
     return p;
   }

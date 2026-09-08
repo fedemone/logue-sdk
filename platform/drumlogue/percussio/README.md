@@ -460,13 +460,14 @@ rest would show:
 
 ## Notes for anyone editing this
 
-* **`si_floorf()` in `float_math.h` is `(float)((uint32_t)x)`** and is therefore
-  wrong for any negative argument. An FM deviation larger than the carrier
-  increment makes the instantaneous increment negative — index 5 at ratio 1.4
-  already does it — and every one of those samples came back NaN.
-  `clm::Phasor::advance()` does its own signed wrap for that reason. The helper
-  is left alone here because eight other units share copies of that file and
-  changing its semantics is their call, not this unit's.
+* **`si_floorf()` used to be `(float)((uint32_t)x)`** in every drumlogue copy
+  of `float_math.h`, which is undefined for negative input — it returned 2³² —
+  and an FM deviation larger than the carrier increment makes the instantaneous
+  increment negative routinely (index 5 at ratio 1.4 already does it), so every
+  one of those samples came back NaN. All ten drumlogue copies now carry KORG's
+  own implementation from the prologue / minilogue-xd / NTS-1 copies, which was
+  correct all along. `test_dsp.cpp` pins both helpers against libm so this unit
+  cannot be built against a copy that has drifted back.
 * **Voices are one-shot.** They run for `Decay` and free themselves; note-off
   and gate-off do nothing. That is what the CLM instruments do — every one takes
   a duration and stops — and it also sidesteps the drumlogue firing `gate_on`
@@ -483,6 +484,22 @@ rest would show:
   state matrix has determinant 1, so the amplitude cannot drift over the 2 s
   decays the bells need; the direct form does. The test checks the peak after
   2 s at four frequencies.
+* **`Reso` is a pole radius, so bandwidth is fixed in Hz, not in Q.** That is
+  faithful — `subtract-pp` takes `r` — but it means a two-pole preset played two
+  octaves up quadruples its Q, from 0.65 to 2.6 at `Reso` 99.00% and 100 Hz. If
+  that is ever worth changing, Tim Stilson's 2006 dissertation
+  ([*Efficiently-Variable Non-Oversampled Algorithms in Virtual-Analog Music
+  Synthesis — A Root-Locus Perspective*](https://ccrma.stanford.edu/~stilti/papers/TimStilsonPhDThesis2006.pdf),
+  ch. 3) is the reference for constant-Q designs, and its ch. 2 is the reference
+  for the other extension the source page wanted and never did — "filters with
+  time-varying coefficients to change the frequency characteristics of the sound
+  over time". A swept resonance must not be swept in this direct form; §2.4 and
+  §3.2 are about which structures take modulation well.
+  Its §2.2.2 warning about direct-form coefficient sensitivity was checked
+  against this code and does not bite: over the whole `Freq` × `Reso` range the
+  float32 coefficients realise the requested pole to within **0.5 cents** and
+  the requested T60 to within **0.01%**. That sensitivity is a fixed-point
+  problem, not a 24-bit-mantissa one.
 
 ## Source
 
