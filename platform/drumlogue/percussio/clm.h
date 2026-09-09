@@ -276,6 +276,52 @@ struct OneZero {
 };
 
 /**
+ * A one-pole tone control, for the engines that do not already spend `Coef` on
+ * a filter of their own.
+ *
+ *   low-pass    y = (1-b) x + b y1                unity at DC
+ *   high-pass   y = a0 (x - x1) + b y1, a0=(1+b)/2, unity at Nyquist
+ *
+ * both with b = e^(-2 pi fc / fs), so the knob moves a corner rather than a
+ * coefficient.  CLM's one-pole is the low-pass here with a0 left at 1, which
+ * is why subtract-op needs an amplitude of .4 against a b1 of 0.9; a tone
+ * control that changes the level as you turn it is not a tone control, and
+ * unlike subtract-op there is no published amplitude to be faithful to.
+ *
+ * The obvious alternative -- take `Coef` straight as the pole and normalise
+ * whichever end of the band the pole leaves alone -- is worse than it looks on
+ * the high-pass side: a pole at -0.95 normalised at Nyquist puts a bell at
+ * 1.4 kHz 32 dB down, because the whole audible band is on the stopband side
+ * of a 6 dB/octave rise that only reaches unity at 24 kHz.
+ */
+struct Tone {
+  float a0 = 1.0f, a1 = 0.0f, b1 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+
+  inline void clear() { x1 = 0.0f; y1 = 0.0f; }
+  inline void set(float fc, float fs, bool hp) {
+    const float b = expf(-2.0f * M_PI * clipminmaxf(1.0f, fc, 0.45f * fs) / fs);
+    b1 = b;
+    if (hp) {
+      a0 = 0.5f * (1.0f + b);
+      a1 = -a0;
+    } else {
+      a0 = 1.0f - b;
+      a1 = 0.0f;
+    }
+  }
+  fast_inline float process(float x) {
+    float y = a0 * x + a1 * x1 + b1 * y1;
+    // The granular engine really is silent between grains, so this recursion
+    // can be left to decay into denormals with nothing to drive it out.  See
+    // kDenormal: a .so never gets crtfastmath.o's flush-to-zero setup.
+    if (si_fabsf(y) < kDenormal) y = 0.0f;
+    x1 = x;
+    y1 = y;
+    return y;
+  }
+};
+
+/**
  * CLM `two-pole` / `ppolar`: a resonator with poles at r * e^(+-j*theta),
  *
  *     y[n] = g * x[n] + 2 r cos(theta) y[n-1] - r^2 y[n-2]
@@ -374,6 +420,22 @@ struct Oscil {
     eps = 2.0f * sinf(h);
     x = cosf(h);
     y = 0.0f;
+  }
+
+  /**
+   * Retune without restarting.  `set` reseeds the state to a known phase, which
+   * is what a note-on wants and exactly what a pitch envelope must not do; this
+   * moves only the rotation angle and leaves the oscillator where it is.
+   *
+   * The coupled form conserves x^2 + y^2 - eps*x*y, so changing eps in place
+   * moves the amplitude a little.  The bound is |d(eps)|/4 per step and the
+   * steps are small, which is well under the level the pitch envelope is
+   * moving things by anyway; renormalising would cost a square root per
+   * partial per step.
+   */
+  inline void setFreq(float w) {
+    w = clipminmaxf(1.0e-6f, w, M_PI * 0.999f);
+    eps = 2.0f * sinf(0.5f * w);
   }
 
   fast_inline float process() {

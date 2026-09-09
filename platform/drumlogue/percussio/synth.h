@@ -233,7 +233,33 @@ class Percussio {
     p.coef = params_[k_coef] * 0.01f;
     p.radius = params_[k_reso] * 0.0001f;
     p.freq_hz = (float)params_[k_freq];
-    p.noise_rate = params_[k_nserate] * 0.01f;
+
+    // The page passes 0.49 to every randh it makes, and no preset ever wanted
+    // anything else, so the rate is fixed here and the knob it used to have is
+    // the pitch envelope instead.
+    p.noise_rate = kRandhRate;
+
+    // Punch is in semitones at the attack: full scale is two octaves.
+    p.punch = params_[k_punch] * 0.024f;
+
+    // Coef is the page's filter coefficient on the two subtractive models that
+    // take one, and a tone control on everything else -- the engines that read
+    // it and the engines that ignore it are disjoint, so one knob covers both.
+    //
+    // In the tone role the number is read as a corner rather than as a pole,
+    // so that turning it further from zero always filters more: negative low-
+    // passes from 18 kHz down to 60 Hz, positive high-passes from 20 Hz up to
+    // 8 kHz, both logarithmically, both flat at zero.
+    const bool coef_is_the_filter =
+        (method == kSubtract) && (model == kOnePole || model == kOneZero);
+    const int16_t cf = params_[k_coef];
+    p.tone_hp = (cf > 0);
+    if (coef_is_the_filter || cf == 0) {
+      p.tone_fc = 0.0f;
+    } else {
+      const float u = (float)((cf < 0) ? -cf : cf) * (1.0f / 99.0f);
+      p.tone_fc = p.tone_hp ? (20.0f * powf(400.0f, u)) : (18000.0f * powf(1.0f / 300.0f, u));
+    }
 
     p.fm_ratio = params_[k_ratio] * 0.001f;
     p.index1 = params_[k_index1] * 0.01f;

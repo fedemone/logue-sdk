@@ -428,6 +428,255 @@ static Synth& engine() {
   return s;
 }
 
+/*===========================================================================*/
+
+/** Render into a caller's buffer, so two renders can be compared sample by
+ *  sample rather than only by their statistics. */
+static void renderTo(Synth& s, float* mono, int frames) {
+  static float buf[2 * 512];
+  int done = 0;
+  while (done < frames) {
+    const int n = (frames - done > 512) ? 512 : (frames - done);
+    std::memset(buf, 0, sizeof(float) * 2 * n);
+    s.Render(buf, n);
+    for (int i = 0; i < n; ++i) mono[done + i] = buf[2 * i];
+    done += n;
+  }
+}
+
+/** Sign changes per second: for a sine this is exactly twice the frequency. */
+static double zeroCrossRate(const float* x, int from, int to) {
+  int c = 0;
+  for (int i = from + 1; i < to; ++i)
+    if ((x[i] >= 0.0f) != (x[i - 1] >= 0.0f)) ++c;
+  return (double)c * 48000.0 / (double)(to - from);
+}
+
+/** Normalised autocorrelation at one lag: a narrower band is more periodic. */
+static double autocorr(const float* x, int n, int lag) {
+  double r0 = 0.0, rk = 0.0;
+  for (int i = 0; i < n - lag; ++i) {
+    r0 += (double)x[i] * x[i];
+    rk += (double)x[i] * x[i + lag];
+  }
+  return (r0 > 1.0e-12) ? (rk / r0) : 0.0;
+}
+
+/**
+ * The pitch envelope in closed form, averaged over a window:
+ *
+ *     f(t) = f0 * 2^(d * e^(-t/tau) / 12)
+ *
+ * which is what the zero-crossing rate over that window measures.
+ */
+static double meanFreq(double f0, double semis, double tau, double t0, double t1) {
+  const int n = 4096;
+  double acc = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double t = t0 + (t1 - t0) * ((double)i + 0.5) / (double)n;
+    acc += f0 * std::pow(2.0, semis * std::exp(-t / tau) / 12.0);
+  }
+  return acc / (double)n;
+}
+
+/** Mean absolute first difference over RMS: a cheap brightness proxy. */
+static double brightness(const float* x, int n) {
+  double d = 0.0, e = 0.0;
+  for (int i = 1; i < n; ++i) {
+    d += std::fabs((double)x[i] - x[i - 1]);
+    e += (double)x[i] * x[i];
+  }
+  return (e > 1.0e-12) ? (d / (double)(n - 1) / std::sqrt(e / (double)(n - 1))) : 0.0;
+}
+
+static float g_a[48000];
+static float g_b[48000];
+
+/*===========================================================================*/
+
+/**
+ * The two constant-Q models.  Their whole claim is that they cost nothing where
+ * a preset already sits and change only what happens when it is moved, so the
+ * first half of this is an exact comparison and not a statistical one.
+ */
+/** Re-Init the shared engine, which reseeds every voice's RNG.  Two noise
+ *  renders are only comparable sample for sample if they start there. */
+static Synth& reseeded() {
+  Synth& s = engine();
+  unit_runtime_desc_t d;
+  std::memset(&d, 0, sizeof(d));
+  d.samplerate = 48000;
+  d.output_channels = 2;
+  d.frames_per_buffer = 64;
+  s.Init(&d);
+  return s;
+}
+
+static void test_constant_q() {
+  banner("TwoPolQ and TunedNsQ: identical at the anchor, constant Q away from it");
+
+  Synth& s = engine();
+  const int n = 24000;
+
+  struct Case {
+    int preset, plain, cq;
+    const char* name;
+  };
+  const Case cases[] = {
+      {11, pcs::kTwoPole, pcs::kTwoPoleQ, "Subtr TwoPole/TwoPolQ"},
+      {28, pcs::kTunedNoise, pcs::kTunedNoiseQ, "Addit TunedNs/TunedNsQ"},
+  };
+
+  for (const Case& c : cases) {
+    // At note 60 with no punch the pitch ratio is 1, so r^1 is r.
+    reseeded().LoadPreset((uint8_t)c.preset);
+    s.setParameter(pcs::k_model, c.plain);
+    s.NoteOn(60, 127);
+    renderTo(s, g_a, n);
+
+    reseeded().LoadPreset((uint8_t)c.preset);
+    s.setParameter(pcs::k_model, c.cq);
+    s.NoteOn(60, 127);
+    renderTo(s, g_b, n);
+
+    check(std::memcmp(g_a, g_b, sizeof(float) * n) == 0,
+          "%s: the Q model is not bit-identical at note 60", c.name);
+  }
+
+  // Two octaves up, a fixed radius keeps its bandwidth in hertz, so against a
+  // centre four times higher it is four times narrower -- and a narrower band
+  // is a more periodic signal.  Held at Q the band widens with the note, so its
+  // autocorrelation at the centre period has to come out lower.
+  reseeded().LoadPreset(11);
+  s.setParameter(pcs::k_model, pcs::kTwoPole);
+  s.NoteOn(84, 127);
+  renderTo(s, g_a, n);
+
+  reseeded().LoadPreset(11);
+  s.setParameter(pcs::k_model, pcs::kTwoPoleQ);
+  s.NoteOn(84, 127);
+  renderTo(s, g_b, n);
+
+  // Preset 11 is Freq 100 Hz, and note 84 is two octaves up.
+  const int lag = (int)(48000.0 / 400.0 + 0.5);
+  const double ra = autocorr(g_a, n, lag), rb = autocorr(g_b, n, lag);
+  std::printf("  note 84, autocorrelation at the centre period: fixed r %.3f, held Q %.3f\n", ra,
+              rb);
+  check(ra > rb + 0.05, "at note 84 the Q model is not the broader band (%.3f vs %.3f)", ra, rb);
+}
+
+/*===========================================================================*/
+
+/**
+ * The pitch envelope: depth in semitones at the attack, falling exponentially
+ * with a time constant of ModDcy of the duration.  Measured on an FM carrier
+ * with both indices at zero, which is a bare sine, so twice the zero-crossing
+ * rate is the frequency and nothing else.
+ */
+static void test_punch() {
+  banner("Punch is 24 semitones at full scale, decaying over ModDcy of the note");
+
+  Synth& s = engine();
+  const int f0 = 100;
+
+  const int knob[] = {0, 250, 500, 1000};
+  const float semis[] = {0.0f, 6.0f, 12.0f, 24.0f};
+
+  for (int k = 0; k < 4; ++k) {
+    s.AllNoteOff();
+    s.LoadPreset(29);  // ChwnBell: FM, and long enough to hold a pitch still
+    s.setParameter(pcs::k_index1, 0);
+    s.setParameter(pcs::k_index2, 0);  // no modulation: a bare carrier
+    s.setParameter(pcs::k_freq, f0);
+    s.setParameter(pcs::k_decay, 4000);
+    s.setParameter(pcs::k_moddcy, 99);  // tau is 3.96 s, so 200 ms is flat
+    s.setParameter(pcs::k_attack, 0);
+    s.setParameter(pcs::k_hold, 990);
+    s.setParameter(pcs::k_punch, knob[k]);
+    s.NoteOn(60, 127);
+    renderTo(s, g_a, 9600);
+
+    // The zero-crossing rate over a window is the mean frequency over it, and
+    // the pitch is still falling, so the closed form has to be averaged the
+    // same way rather than read at t = 0.
+    const double got = zeroCrossRate(g_a, 480, 9600) * 0.5;
+    const double want = meanFreq((double)f0, (double)semis[k], 0.99 * 4.0, 0.01, 0.2);
+    std::printf("  Punch %5.1f%% -> %7.2f Hz (want %7.2f, %+.2f%%)\n", knob[k] * 0.1, got, want,
+                100.0 * (got - want) / want);
+    check(std::fabs(got - want) < 0.02 * want, "Punch %d: %.2f Hz, wanted %.2f", knob[k], got,
+          want);
+  }
+
+  // And the time constant.  ModDcy 25% of a 2 s note is 500 ms, so one time
+  // constant in is 24 * e^-1 = 8.83 semitones above the settled note.
+  s.AllNoteOff();
+  s.LoadPreset(29);
+  s.setParameter(pcs::k_index1, 0);
+  s.setParameter(pcs::k_index2, 0);
+  s.setParameter(pcs::k_freq, f0);
+  s.setParameter(pcs::k_decay, 2000);
+  s.setParameter(pcs::k_moddcy, 25);
+  s.setParameter(pcs::k_attack, 0);
+  s.setParameter(pcs::k_hold, 990);
+  s.setParameter(pcs::k_punch, 1000);
+  s.NoteOn(60, 127);
+  renderTo(s, g_a, 48000);
+
+  const int lo = (int)(0.45 * 48000.0), hi = (int)(0.55 * 48000.0);
+  const double got = zeroCrossRate(g_a, lo, hi) * 0.5;
+  const double want = meanFreq((double)f0, 24.0, 0.25 * 2.0, 0.45, 0.55);
+  std::printf("  at one time constant: %7.2f Hz (want %7.2f, %+.2f%%)\n", got, want,
+              100.0 * (got - want) / want);
+  check(std::fabs(got - want) < 0.05 * want, "at tau: %.2f Hz, wanted %.2f", got, want);
+}
+
+/*===========================================================================*/
+
+/**
+ * The tone control.  Unity in the passband is the part that matters: a knob
+ * that changes the level as you turn it cannot be used while listening.
+ */
+static void test_tone() {
+  banner("Coef as a tone control: unity in the passband, monotonic in brightness");
+
+  // Low-pass: the settled response to DC must be 1.  High-pass: the settled
+  // response to the alternating sequence, which is Nyquist, must be 1.
+  for (float fc : {60.0f, 400.0f, 4000.0f, 18000.0f}) {
+    clm::Tone lp, hp;
+    lp.set(fc, 48000.0f, false);
+    hp.set(fc, 48000.0f, true);
+    float ylp = 0.0f, yhp = 0.0f;
+    for (int i = 0; i < 400000; ++i) {
+      ylp = lp.process(1.0f);
+      yhp = hp.process((i & 1) ? -1.0f : 1.0f);
+    }
+    check(std::fabs(ylp - 1.0f) < 1.0e-3f, "low-pass at %g Hz: DC gain %.6f", (double)fc,
+          (double)ylp);
+    check(std::fabs(std::fabs(yhp) - 1.0f) < 1.0e-3f, "high-pass at %g Hz: Nyquist gain %.6f",
+          (double)fc, (double)std::fabs(yhp));
+  }
+
+  // And through the unit, on a bank of sinusoids that spends no Coef of its own.
+  Synth& s = engine();
+  const int n = 24000;
+  double prev = -1.0, lo = 0.0, hi = 0.0;
+  for (int c : {-95, -50, -10, 0, 10, 50, 95}) {
+    s.AllNoteOff();
+    s.LoadPreset(21);  // TubBell1: additive, so Coef is free to be the tone
+    s.setParameter(pcs::k_coef, c);
+    s.NoteOn(60, 127);
+    renderTo(s, g_a, n);
+    const double b = brightness(g_a, n);
+    std::printf("  Coef %4d -> brightness %.4f\n", c, b);
+    check(b >= prev - 1.0e-4, "Coef %d is darker than the setting below it (%.4f vs %.4f)", c, b,
+          prev);
+    prev = b;
+    if (c == -95) lo = b;
+    if (c == 95) hi = b;
+  }
+  check(hi > lo * 1.3, "the tone control spans only %.4f to %.4f", lo, hi);
+}
+
 static void test_all_presets() {
   banner("every preset renders: finite, audible, bounded");
 
@@ -611,6 +860,9 @@ int main() {
   test_karplus_blend();
   test_randh_rate();
   test_all_presets();
+  test_constant_q();
+  test_punch();
+  test_tone();
   test_notes_and_voices();
   test_param_strings();
   test_param_sweep();

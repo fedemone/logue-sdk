@@ -17,6 +17,13 @@ electronic crash cymbal. Percussio implements all five as selectable engines and
 ships each of those sounds as a preset carrying its original numbers, with the
 `with-sound` call it came from in the comment beside it.
 
+Three controls have no equivalent on the page, because the page is a study of
+five synthesis techniques and this is an instrument for a drum machine: a pitch
+envelope (`Punch`), a pair of constant-Q resonators, and a tone control on the
+engines that have a spare coefficient. They are all off in the fifty-five
+published presets, which render bit-identical without them; nine further presets
+exist to show what they do.
+
 This is deliberately **not** another physical-modelling drum synth — for that,
 see [Brachetti](../brachetti/) in this same directory. The engines here are the
 textbook algorithms as the page describes them: a `randh` noise source into a
@@ -43,13 +50,15 @@ strings change with `Method`.
 randh (0.49 fs)  ->  one-pole | two-pole | one-zero  ->  amp env
 ```
 
-Random-hold noise into one of three CLM filters. `Coef` is the one-pole's `b1`
+Random-hold noise into one of three CLM filters, plus a fourth model that is
+not the page's. `Coef` is the one-pole's `b1`
 or the one-zero's `a1`, and its **sign chooses the response**: on `OnePole`,
 `b1 > 0` high-passes and `b1 < 0` low-passes (CLM's sign convention, `y[n] =
 a0 x[n] - b1 y[n-1]`); on `OneZero` it is the other way round. `TwoPole` ignores
 `Coef` and uses `Freq` and `Reso` instead.
 
-`OnePole` and `OneZero` have no frequency of their own — the page's brushed
+`TwoPolQ` is `TwoPole` with `Reso` read as a Q instead of a pole radius; see
+*Holding Q* below. `OnePole` and `OneZero` have no frequency of their own — the page's brushed
 snares and rattles are unpitched by construction — so on those two the note
 moves the **rate randh is held at** instead, which is the one thing that does
 set their spectrum. Lower notes give a coarser, darker noise. On `TwoPole` the
@@ -75,6 +84,7 @@ takes the first N of the bank, low to high, so it works as a brightness control.
 | `NseFlr` | `add-partials :noise-amp` | one wideband `randh` under the bank |
 | `NsyFrq` | `add-noisy-freqs` | one `randh` per partial, at that partial's frequency |
 | `TunedNs` | `add-noise` | `ppolar` resonators driven by noise **instead of** oscillators |
+| `TunedNsQ` | — | `add-noise` with the resonators held at Q; see *Holding Q* |
 
 ### FM — `drum-fm.ins`
 
@@ -135,14 +145,14 @@ table says which.
 | 5 | `Hold` | 2 | all | end of the plateau, % of `Decay` |
 | 6 | `Curve` | 2 | all | CLM `env :base` |
 | 7 | `Tune` | 2 | all | ±24 semitones on top of the note |
-| 8 | `Coef` | 3 | Subtr `OnePole`/`OneZero` | filter coefficient ×100, signed |
-| 9 | `Reso` | 3 | Subtr `TwoPole`, Addit `TunedNs` | pole radius r |
+| 8 | `Coef` | 3 | Subtr `OnePole`/`OneZero`; tone control on every other engine | filter coefficient ×100, signed |
+| 9 | `Reso` | 3 | Subtr `TwoPole`/`TwoPolQ`, Addit `TunedNs`/`TunedNsQ` | pole radius r, or a Q on the two `Q` models |
 | 10 | `Freq` | 3 | Subtr `TwoPole`, Addit ratio banks, FM | reference frequency at note 60 |
-| 11 | `NseRate` | 3 | Subtr, Addit `NseFlr` | `randh` rate as % of fs; the page uses 49 |
+| 11 | `Punch` | 3 | Subtr, Addit, FM | pitch-envelope depth; 100.0% is two octaves |
 | 12 | `Ratio` | 4 | FM | modulator / carrier |
 | 13 | `Index1` | 4 | FM | index floor |
 | 14 | `Index2` | 4 | FM | index ceiling |
-| 15 | `ModDcy` | 4 | FM | modulator envelope breakpoint, % |
+| 15 | `ModDcy` | 4 | FM, and `Punch` on all engines | modulator envelope breakpoint, % — and the pitch envelope's time constant |
 | 16 | `Bank` | 5 | Addit | which published spectrum |
 | 17 | `Partial` | 5 | Addit | how many of its partials, low to high |
 | 18 | `NseAmp` | 5 | Addit `NseFlr`/`NsyFrq` | noise amplitude |
@@ -173,7 +183,97 @@ decay a base **above** 1 holds and then falls off a cliff, and a base **below**
 stops rather than a hit that decays. The sub-1 entries on the knob are the
 ordinary percussive decay the page never uses.
 
+
+## Three controls the page does not have
+
+The page is a comparison of synthesis techniques; every one of its instruments
+holds its pitch, spends its filter coefficient on the algorithm, and leaves the
+resonator's bandwidth wherever `r` puts it. A drum machine wants otherwise. All
+three of the additions below are **off in the fifty-five published presets** —
+each of those renders sample-for-sample identical to the unit without them,
+which the tests check — and none of them cost a parameter, because all
+twenty-four were already spoken for.
+
+### Punch — a pitch envelope
+
+`Punch` is the depth of an exponential pitch drop, in semitones at the attack:
+100.0% is two octaves. It falls with a time constant of `ModDcy` of the
+duration, which is the same knob that times the FM modulator envelope, because
+it is the same question — how fast the modulation gets out of the way.
+
+```
+f(t) = f * 2^( Punch * 24 * e^(-t / (ModDcy * Decay)) / 12 )
+```
+
+It is the ingredient a resonator and an envelope cannot supply between them, and
+it is what separates a drum that *hits* from one that merely starts. What it
+moves depends on the engine:
+
+| engine | what the punch bends |
+|---|---|
+| Subtr `TwoPole`/`TwoPolQ` | the resonator's centre frequency |
+| Subtr `OnePole`/`OneZero` | the `randh` rate — the only thing that sets their spectrum |
+| Additive | every partial in the bank, together, so the bank stays in tune with itself |
+| FM | carrier and modulator together, so the ratio holds |
+| Karplus-Strong, Granular | nothing: an integer wavetable and a unit-speed grain reader do not bend without resampling, and they ignore the punch rather than click on it |
+
+Coefficients are far too dear to recompute per sample, so the envelope steps
+every 64 samples — 1.33 ms, well inside the ear's pitch-integration window. A
+preset with `Punch` at zero never enters that path and pays nothing, which is
+why the engine costs below are unchanged.
+
+The slot used to be `NseRate`. Every `randh` on the page is made at 0.49 of the
+sample rate and no preset ever moved it, so the rate is now fixed there and the
+knob buys a pitch envelope instead.
+
+### Holding Q — `TwoPolQ` and `TunedNsQ`
+
+`Reso` is a pole radius, which is what `subtract-pp` and `add-noise` are passed
+and what the page means. A radius fixes the resonator's **bandwidth in hertz**,
+so the same knob is a different filter at every pitch: at `Reso` 99.00% the band
+is 154 Hz wide wherever it sits, which is Q 0.65 at 100 Hz and Q 26 at 4 kHz. A
+preset played two octaves up quadruples its Q, and a noise band turns into a
+pitch.
+
+The two `Q` models hold the bandwidth proportional to the centre frequency
+instead. Since `BW = -(fs/π) ln r`, that means `ln r` proportional to `f`:
+
+```
+r_eff = r ^ (f / f_anchor)
+```
+
+anchored on the preset's own pitch — which makes it **the identity at note 60
+with no punch**. `TwoPolQ` and `TwoPole` are the same filter there, sample for
+sample, and differ only once the sound is moved; the same for `TunedNsQ` and
+`TunedNs`. That is why they are models rather than a global switch: the choice
+belongs to the sound, and it costs nothing to offer both.
+
+Constant-Q across *partials* — every resonator in a bank at the same Q rather
+than the same radius — is a different change again, and would alter `NsyBsDrm`
+where it stands. It is not here.
+
+### `Coef` as a tone control
+
+`Coef` is `subtract-op`'s `b1` and `subtract-oz`'s `a1`, and the other three
+engines never read it. Since the engines that spend it and the engines that
+ignore it are disjoint, the same knob is a tone control everywhere else: a
+one-pole, gain-normalised, negative low-passing and positive high-passing, flat
+at zero.
+
+In that role the number is read as a **corner** rather than as a pole, so that
+turning it further from zero always filters more: `-99` low-passes at 60 Hz and
+`-1` at 18 kHz; `+99` high-passes at 8 kHz and `+1` at 20 Hz, both
+logarithmically. Taking `Coef` straight as the pole and normalising whichever
+end of the band it leaves alone is worse than it looks on the high-pass side — a
+pole at −0.95 normalised at Nyquist puts a bell at 1.4 kHz 32 dB down, because
+the whole audible band is on the stopband side of a 6 dB/octave rise that only
+reaches unity at 24 kHz. Measured through `TubBell1`, the corner mapping moves
+the spectral centroid from 843 Hz to 1644 Hz across the knob and leaves the
+level alone in the middle of it.
+
 ## Presets
+
+Fifty-five from the page, then nine that are not.
 
 | # | preset | engine / model | LUFS | the call it comes from |
 |---|---|---|---|---|
@@ -232,6 +332,15 @@ ordinary percussive decay the page never uses.
 | 52 | `BrknCym2` | Granular / CymRev | -15.33 | `(grani 0 4 5 "turkish-cymbal-1.snd" ... :grain-density 20 :reverse t)` |
 | 53 | `RhytBel1` | Granular / BellRev | -23.10 | `(grani 0 2 10 "tubular-bell.snd" :grain-envelope '(0 1 100 0) :amp-envelope '(0 1 50 1 100 0) :grain-density 4 :reverse t)` |
 | 54 | `RhytBel2` | Granular / Bell | -17.22 | `(grani 2 2 10 "tubular-bell.snd" ... :grain-density 8 :reverse t)` |
+| 55 | `PunchKik` | Subtractive / TwoPolQ | -15.11 | not on the page — 14 semitones of drop over 24 ms, Coef low-passing |
+| 56 | `PunchTom` | Subtractive / TwoPolQ | -11.92 | not on the page — the same an octave and a half up, to be played across the pads |
+| 57 | `TightSnr` | Subtractive / OnePole | -14.63 | not on the page — `subtract-op` with no attack, no plateau and a 0.01 base |
+| 58 | `TightHat` | Subtractive / OneZero | -16.15 | not on the page — 60 ms of one-zero high-pass |
+| 59 | `SubKick` | FM / Dec 0 | -16.72 | not on the page — ratio 1, punch on the carrier, index falling into it |
+| 60 | `ZapPerc` | FM / Dec .2 | -13.79 | not on the page — 19 semitones in 10 ms at ratio 3.5 |
+| 61 | `QBassDrm` | Additive / TunedNsQ | -14.34 | not on the page — `NsyBsDrm`'s bank held at Q, with a pitch drop |
+| 62 | `ClickBel` | Additive / Pure | -14.33 | not on the page — the 16384-point bell tilted bright, with a strike transient |
+| 63 | `DarkGong` | Additive / Pure | -17.06 | not on the page — the gong with the top taken off it |
 
 ## What differs from the page, and why
 
@@ -437,7 +546,7 @@ ARM cross-build (`-march=armv7-a -mtune=cortex-a7 -marm -Os`, gcc 14 rather than
 the vendor's, so `.text` will move a little):
 
 ```
-.text 10156   .rodata 2304   .data.rel.ro 3188   .data 4   .bss 397264
+.text 11672   .rodata 2400   .data.rel.ro 3676   .data 4   .bss 397520
 ```
 
 `.bss` is nearly all two things: four 12288-sample Karplus-Strong wavetables
@@ -484,17 +593,31 @@ rest would show:
   state matrix has determinant 1, so the amplitude cannot drift over the 2 s
   decays the bells need; the direct form does. The test checks the peak after
   2 s at four frequencies.
+* **The `randh` rate is fixed at 0.49.** Every `randh` the page makes is made
+  at 0.49 of the sample rate and not one of its fifty-odd calls moves it, so the
+  knob that used to carry it is the pitch envelope instead. Nothing any preset
+  stored changed: 49 was the only value in the column.
+* **`Coef` is also a tone control.** On `subtract-op` and `subtract-oz` it is
+  the page's own coefficient and nothing has changed; on the other four engines,
+  which never read it, the same number drives a gain-normalised one-pole. See
+  *Three controls the page does not have*.
 * **`Reso` is a pole radius, so bandwidth is fixed in Hz, not in Q.** That is
-  faithful — `subtract-pp` takes `r` — but it means a two-pole preset played two
-  octaves up quadruples its Q, from 0.65 to 2.6 at `Reso` 99.00% and 100 Hz. If
-  that is ever worth changing, Tim Stilson's 2006 dissertation
+  faithful — `subtract-pp` takes `r` — and it stays the default: a two-pole
+  preset played two octaves up quadruples its Q, from 0.65 to 2.6 at `Reso`
+  99.00% and 100 Hz. `TwoPolQ` and `TunedNsQ` are the other reading, offered
+  beside it rather than in place of it. Tim Stilson's 2006 dissertation
   ([*Efficiently-Variable Non-Oversampled Algorithms in Virtual-Analog Music
   Synthesis — A Root-Locus Perspective*](https://ccrma.stanford.edu/~stilti/papers/TimStilsonPhDThesis2006.pdf),
-  ch. 3) is the reference for constant-Q designs, and its ch. 2 is the reference
+  ch. 3) is the reference for the constant-Q designs, and its ch. 2 is the
+  reference
   for the other extension the source page wanted and never did — "filters with
   time-varying coefficients to change the frequency characteristics of the sound
   over time". A swept resonance must not be swept in this direct form; §2.4 and
-  §3.2 are about which structures take modulation well.
+  §3.2 are about which structures take modulation well. `Punch` does move the
+  two-pole's coefficients, at 1.33 ms steps under a smooth envelope and with the
+  RMS normalisation holding the level across the sweep, which is mild enough to
+  be inaudible here — but a *fast* resonance sweep is exactly the case that
+  would want the structure ch. 3 recommends instead.
   Its §2.2.2 warning about direct-form coefficient sensitivity was checked
   against this code and does not bite: over the whole `Freq` × `Reso` range the
   float32 coefficients realise the requested pole to within **0.5 cents** and

@@ -39,6 +39,14 @@ static constexpr uint32_t kMaxGrains = 8;
 /** Grain source length, pre-rendered once in Synth::Init(). */
 static constexpr uint32_t kGrainSrcLen = 48000;
 
+/** The rate every randh on the page is held at: 0.49 of the sample rate. */
+static constexpr float kRandhRate = 0.49f;
+
+/** How often the pitch envelope moves coefficients, in samples.  1.33 ms is
+ *  well inside the ear's pitch-integration window and keeps the cost of
+ *  retuning a 32-partial bank down to something a drumlogue can afford. */
+static constexpr uint32_t kPunchHop = 64;
+
 enum Method : uint8_t {
   kSubtract = 0,
   kAdditive,
@@ -48,8 +56,10 @@ enum Method : uint8_t {
   kNumMethods
 };
 
-enum SubtractModel : uint8_t { kOnePole = 0, kTwoPole, kOneZero, kNumSubtractModels };
-enum AdditiveModel : uint8_t { kPure = 0, kNoiseFloor, kNoisyFreqs, kTunedNoise, kNumAdditiveModels };
+enum SubtractModel : uint8_t { kOnePole = 0, kTwoPole, kOneZero, kTwoPoleQ, kNumSubtractModels };
+enum AdditiveModel : uint8_t {
+  kPure = 0, kNoiseFloor, kNoisyFreqs, kTunedNoise, kTunedNoiseQ, kNumAdditiveModels
+};
 enum FmModel : uint8_t { kModDecayTail = 0, kModDecayZero, kModRise, kNumFmModels };
 enum KsModel : uint8_t { kKsRandom = 0, kKsSine, kKsConst, kNumKsModels };
 enum GrainModel : uint8_t { kGrainBell = 0, kGrainBellRev, kGrainCym, kGrainCymRev, kNumGrainModels };
@@ -63,6 +73,9 @@ struct VoiceParams {
   float env_base;     // CLM env :base
   float freq_hz;      // engine reference frequency at note 60
   float note_ratio;   // 2^((note - 60 + tune) / 12)
+  float punch;        // pitch-envelope depth, semitones at the attack
+  float tone_fc;      // tone-control corner in Hz; 0 when the engine spends Coef
+  bool tone_hp;       // true high-passes, false low-passes
   // subtractive
   float coef;         // one-pole b1 / one-zero a1
   float radius;       // two-pole / ppolar r
@@ -103,6 +116,7 @@ class Voice {
     op_.clear();
     oz_.clear();
     tp_.clear();
+    tone_.clear();
     for (uint32_t i = 0; i < n_part_; ++i) res_[i].clear();
     n_part_ = 0;
     n_grains_ = 0;
@@ -134,6 +148,26 @@ class Voice {
 
     buildAmpEnv();
 
+    // The pitch envelope.  Depth is in semitones and it falls exponentially
+    // with a time constant of ModDcy of the duration -- the same knob that
+    // times the FM modulator envelope, because it is the same idea: how fast
+    // the modulation gets out of the way.
+    const_q_ = (p_.method == kSubtract && p_.model == kTwoPoleQ) ||
+               (p_.method == kAdditive && p_.model == kTunedNoiseQ);
+    punch_semis_ = (p_.punch > 0.0f) ? p_.punch : 0.0f;
+    punch_env_ = 1.0f;
+    punch_ratio_ = 1.0f;
+    punch_next_ = kPunchHop;
+    if (punch_semis_ > 0.0f) {
+      const float tau = clipminmaxf(1.0f, p_.mod_break * (float)p_.dur, 1.0e7f);
+      punch_dec_ = expf(-(float)kPunchHop / tau);
+      punch_ratio_ = exp2f(punch_semis_ * (1.0f / 12.0f));
+    }
+
+    tone_.clear();
+    tone_on_ = (p_.tone_fc > 0.0f);
+    if (tone_on_) tone_.set(p_.tone_fc, kSampleRate, p_.tone_hp);
+
     switch (p_.method) {
       case kSubtract: triggerSubtract(); break;
       case kAdditive: triggerAdditive(); break;
@@ -154,6 +188,16 @@ class Voice {
       return 0.0f;
     }
 
+    // The pitch envelope moves filter and oscillator coefficients, which are
+    // far too dear to recompute per sample, so it steps every kPunchHop.  A
+    // preset with no punch never enters here and pays nothing.
+    if (punch_semis_ > 0.0f && pos_ >= punch_next_) {
+      punch_env_ *= punch_dec_;
+      punch_ratio_ = exp2f(punch_semis_ * punch_env_ * (1.0f / 12.0f));
+      retune();
+      punch_next_ = pos_ + kPunchHop;
+    }
+
     float s;
     switch (p_.method) {
       case kSubtract: s = renderSubtract(); break;
@@ -162,6 +206,8 @@ class Voice {
       case kKarplus: s = renderKarplus(); break;
       default: s = renderGranular(); break;
     }
+
+    if (tone_on_) s = tone_.process(s);
 
     s *= amp_env_.process(pos_) * p_.amp;
 
@@ -216,6 +262,76 @@ class Voice {
   }
 
   /*-------------------------------------------------------------------------*/
+  /* Pitch envelope and the constant-Q resonators                            */
+  /*-------------------------------------------------------------------------*/
+
+  bool twoPole() const { return p_.model == kTwoPole || p_.model == kTwoPoleQ; }
+  bool tunedNoise() const { return p_.model == kTunedNoise || p_.model == kTunedNoiseQ; }
+
+  /** Where the note is right now: the played transposition times the punch. */
+  fast_inline float pitch() const { return p_.note_ratio * punch_ratio_; }
+
+  /**
+   * `Reso` is a pole radius, which fixes the resonator's bandwidth in hertz --
+   * that is what subtract-pp and add-noise are passed and it is what the page
+   * means.  The Q models hold the bandwidth proportional to the centre
+   * frequency instead, so the resonator keeps its Q wherever the note puts it.
+   *
+   * A two-pole's bandwidth is BW = -(fs/pi) ln r, so BW proportional to f means
+   * ln r proportional to f, i.e. r = r0^(f/f0).  Anchored on the preset's own
+   * pitch, which makes it the identity at note 60 with no punch: a Q model and
+   * its plain counterpart are the same filter there, and differ only once the
+   * sound is moved.
+   */
+  float radiusNow() const {
+    if (!const_q_) return p_.radius;
+    if (p_.radius <= 0.0f || p_.radius >= 1.0f) return p_.radius;
+    return powf(p_.radius, clipminmaxf(1.0f / 64.0f, pitch(), 64.0f));
+  }
+
+  void setPartial(uint32_t i, float f, float r, bool noisy) {
+    const float w = M_TWOPI * clipminmaxf(0.01f, f, 0.45f * kSampleRate) * kInvSampleRate;
+    if (noisy)
+      res_[i].set(w, r);
+    else
+      osc_[i].setFreq(w);
+    if (p_.model == kNoisyFreqs)
+      part_n_[i].setRate(clipminmaxf(0.001f, f * kInvSampleRate, 0.5f));
+  }
+
+  /** Move whatever the current engine tunes to the pitch envelope's new value. */
+  void retune() {
+    switch (p_.method) {
+      case kSubtract:
+        if (twoPole()) {
+          const float f = clipminmaxf(1.0f, p_.freq_hz * pitch(), 0.45f * kSampleRate);
+          tp_.set(M_TWOPI * f * kInvSampleRate, radiusNow());
+        } else {
+          // One-pole and one-zero have no frequency of their own, so the punch
+          // moves the same thing the note moves: the rate randh is held at.
+          noise_.setRate(clipminmaxf(0.001f, p_.noise_rate * pitch(), 0.5f));
+        }
+        break;
+      case kAdditive: {
+        const float r = radiusNow();
+        const bool noisy = tunedNoise();
+        for (uint32_t i = 0; i < n_part_; ++i)
+          setPartial(i, part_f_[i] * punch_ratio_, r, noisy);
+        break;
+      }
+      case kFm:
+        inc_c_ = inc_c_base_ * punch_ratio_;
+        inc_m_ = inc_m_base_ * punch_ratio_;
+        break;
+      default:
+        // A Karplus-Strong wavetable is an integer number of samples and the
+        // grain reader steps the source by one, so neither bends without
+        // resampling.  Both ignore the punch rather than click on it.
+        break;
+    }
+  }
+
+  /*-------------------------------------------------------------------------*/
   /* Subtractive -- drum-subtract.ins                                        */
   /*-------------------------------------------------------------------------*/
 
@@ -226,17 +342,17 @@ class Voice {
     op_.set(1.0f, p_.coef);
     oz_.set(1.0f, p_.coef);
 
-    if (p_.model == kTwoPole) {
+    if (twoPole()) {
       // The note transposes the resonance; the noise rate stays put.
-      const float f = p_.freq_hz * p_.note_ratio;
-      tp_.set(M_TWOPI * f * kInvSampleRate, p_.radius);
+      const float f = clipminmaxf(1.0f, p_.freq_hz * pitch(), 0.45f * kSampleRate);
+      tp_.set(M_TWOPI * f * kInvSampleRate, radiusNow());
       noise_.setRate(clipminmaxf(0.001f, p_.noise_rate, 0.5f));
     } else {
       // One-pole and one-zero have no frequency of their own -- the page's
       // op/oz sounds are unpitched by construction.  The note therefore moves
       // the one thing that does set their spectrum: the rate randh is held at.
       // Slower holds mean a coarser, darker noise.
-      noise_.setRate(clipminmaxf(0.001f, p_.noise_rate * p_.note_ratio, 0.5f));
+      noise_.setRate(clipminmaxf(0.001f, p_.noise_rate * pitch(), 0.5f));
     }
   }
 
@@ -244,7 +360,8 @@ class Voice {
     const float n = noise_.process();
     switch (p_.model) {
       case kOnePole: return op_.process(n);
-      case kTwoPole: return tp_.process(n);
+      case kTwoPole:
+      case kTwoPoleQ: return tp_.process(n);
       default: return oz_.process(n);
     }
   }
@@ -262,18 +379,23 @@ class Voice {
 
     const float nyquist = 0.45f * kSampleRate;
     const float f0 = (b.kind == banks::kRatio) ? (p_.freq_hz * p_.note_ratio) : p_.note_ratio;
+    const bool noisy = tunedNoise();
+    const float r = radiusNow();
 
     n_part_ = 0;
     float sum = 0.0f;
     for (uint32_t i = 0; i < want && n_part_ < banks::kMaxPartials; ++i) {
+      // Which partials play is decided at the settled pitch, so a partial does
+      // not appear and disappear as the pitch envelope falls through Nyquist.
       const float f = b.f[i] * f0;
       if (f >= nyquist || f <= 0.0f) continue;
       const float a = b.a[i];
       part_a_[n_part_] = a;
-      const float w = M_TWOPI * f * kInvSampleRate;
-      if (p_.model == kTunedNoise) {
+      part_f_[n_part_] = f;
+      const float w = M_TWOPI * clipminmaxf(0.01f, f * punch_ratio_, nyquist) * kInvSampleRate;
+      if (noisy) {
         res_[n_part_].clear();
-        res_[n_part_].set(w, p_.radius);
+        res_[n_part_].set(w, r);
       } else {
         osc_[n_part_].set(w);
       }
@@ -290,6 +412,7 @@ class Voice {
   fast_inline float renderAdditive() {
     float acc = 0.0f;
     switch (p_.model) {
+      case kTunedNoiseQ:
       case kTunedNoise: {
         // add-noise: ppolar resonators driven by randh instead of oscillators.
         const float n = noise_.process();
@@ -320,8 +443,10 @@ class Voice {
     ph_c_.clear();
     ph_m_.clear();
     const float fc = clipminmaxf(1.0f, p_.freq_hz * p_.note_ratio, 0.45f * kSampleRate);
-    inc_c_ = fc * kInvSampleRate;
-    inc_m_ = fc * p_.fm_ratio * kInvSampleRate;
+    inc_c_base_ = fc * kInvSampleRate;
+    inc_m_base_ = fc * p_.fm_ratio * kInvSampleRate;
+    inc_c_ = inc_c_base_ * punch_ratio_;
+    inc_m_ = inc_m_base_ * punch_ratio_;
 
     // The modulator envelope: (0 1 MD .2 100 0), (0 1 MD 0 100 0) or
     // (0 0 MD 1 100 0), which are the three shapes the page's fm calls use.
@@ -471,16 +596,24 @@ class Voice {
   clm::OnePole op_;
   clm::OneZero oz_;
   clm::TwoPole tp_;
+  clm::Tone tone_;
+  bool tone_on_ = false;
+
+  bool const_q_ = false;
+  float punch_semis_ = 0.0f, punch_env_ = 1.0f, punch_dec_ = 0.0f, punch_ratio_ = 1.0f;
+  uint32_t punch_next_ = 0;
 
   uint32_t n_part_ = 0;
   float part_norm_ = 1.0f;
   float part_a_[banks::kMaxPartials];
+  float part_f_[banks::kMaxPartials];
   clm::Oscil osc_[banks::kMaxPartials];
   clm::TwoPole res_[banks::kMaxPartials];
   clm::Randh part_n_[banks::kMaxPartials];
 
   clm::Phasor ph_c_, ph_m_;
   float inc_c_ = 0.0f, inc_m_ = 0.0f;
+  float inc_c_base_ = 0.0f, inc_m_base_ = 0.0f;
 
   float ks_buf_[kKsMaxLen];
   uint32_t ks_p_ = 2, ks_i_ = 0, ks_thresh_ = 0;

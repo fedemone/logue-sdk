@@ -18,7 +18,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x50657263U,  // 'Perc' - unique among FeDe units
     .version = 0x00010000U,  // v1.0.0 -- version 0 is rejected at load on drumlogue
     .name = "Percussio",
-    .num_presets = 55,
+    .num_presets = 64,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_mode, <reserved>, name
@@ -47,8 +47,12 @@ const __unit_header unit_header_t unit_header = {
         // Page 1 -- voice
         // Synthesis technique: subtractive, additive, FM, Karplus-Strong, granular.
         {0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Method"}},
-        // Variant within the technique; the strings change with Method.
-        {0, 3, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
+        // Variant within the technique; the strings change with Method.  Two of
+        // the entries are not on the page: TwoPolQ and TunedNsQ read Reso as a Q
+        // instead of a pole radius, so a sound keeps its character when it is
+        // transposed.  They live here rather than on a knob of their own because
+        // all twenty-four parameters are spoken for.
+        {0, 4, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
         // CLM's duration argument.  10 s covers Chowning's bell.
         {5, 10000, 0, 200, k_unit_param_type_msec, 0, 0, 0, {"Decay"}},
         {0, 1000, 0, 400, k_unit_param_type_percent, 1, 1, 0, {"Level"}},
@@ -60,22 +64,32 @@ const __unit_header unit_header_t unit_header = {
         {0, 10, 0, 5, k_unit_param_type_strings, 0, 0, 0, {"Curve"}},
         {-24, 24, 0, 0, k_unit_param_type_semi, 0, 0, 0, {"Tune"}},
 
-        // Page 3 -- noise source and resonator
+        // Page 3 -- resonator, tone and punch
         // one-pole b1 / one-zero a1, in hundredths.  Sign selects the response.
+        // On Subtr OnePole/OneZero this is the page's own filter coefficient; on
+        // every other engine, which never spends it, the same number drives a
+        // gain-normalised one-pole tone tilt after the voice.  0 is flat.
         {-99, 99, 0, 90, k_unit_param_type_none, 0, 0, 0, {"Coef"}},
         // Pole radius r, for two-pole (subtract-pp) and ppolar (add-noise).
         {0, 9999, 0, 9900, k_unit_param_type_percent, 2, 1, 0, {"Reso"}},
         // Reference frequency at note 60: two-pole centre, FM carrier, and the
         // fundamental of the ratio-based additive banks.
         {20, 8000, 0, 400, k_unit_param_type_hertz, 0, 0, 0, {"Freq"}},
-        // randh rate as a percentage of the sample rate; the page uses 49%.
-        {1, 50, 0, 49, k_unit_param_type_percent, 0, 0, 0, {"NseRate"}},
+        // Pitch-envelope depth: 100.0% is two octaves at the attack, falling
+        // exponentially with a time constant of ModDcy of the duration.  The
+        // page has no equivalent -- its instruments hold their pitch -- and it
+        // is what makes a drum hit rather than start.  This slot used to carry
+        // the randh rate, which every one of the page's calls leaves at 0.49
+        // and no preset ever moved; the rate is now fixed there.
+        {0, 1000, 0, 0, k_unit_param_type_percent, 1, 1, 0, {"Punch"}},
 
         // Page 4 -- FM (Chowning, JAES 1973)
         {0, 16000, 0, 1400, k_unit_param_type_none, 3, 1, 0, {"Ratio"}},
         {0, 1000, 0, 0, k_unit_param_type_none, 2, 1, 0, {"Index1"}},
         {0, 1000, 0, 100, k_unit_param_type_none, 2, 1, 0, {"Index2"}},
-        // Modulator envelope breakpoint, as a percentage of the duration.
+        // Modulator envelope breakpoint, as a percentage of the duration -- and
+        // the time constant of the pitch envelope, on every engine.  Both are
+        // the same question: how fast the modulation gets out of the way.
         {1, 99, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"ModDcy"}},
 
         // Page 5 -- additive
