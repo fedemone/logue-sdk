@@ -332,7 +332,7 @@ Fifty-five from the page, then nine that are not.
 | 52 | `BrknCym2` | Granular / CymRev | -15.33 | `(grani 0 4 5 "turkish-cymbal-1.snd" ... :grain-density 20 :reverse t)` |
 | 53 | `RhytBel1` | Granular / BellRev | -23.10 | `(grani 0 2 10 "tubular-bell.snd" :grain-envelope '(0 1 100 0) :amp-envelope '(0 1 50 1 100 0) :grain-density 4 :reverse t)` |
 | 54 | `RhytBel2` | Granular / Bell | -17.22 | `(grani 2 2 10 "tubular-bell.snd" ... :grain-density 8 :reverse t)` |
-| 55 | `PunchKik` | Subtractive / TwoPolQ | -15.11 | not on the page — 14 semitones of drop over 24 ms, Coef low-passing |
+| 55 | `PunchKik` | Subtractive / TwoPolQ | -15.33 | not on the page — 14 semitones of drop over 24 ms, Coef low-passing |
 | 56 | `PunchTom` | Subtractive / TwoPolQ | -11.92 | not on the page — the same an octave and a half up, to be played across the pads |
 | 57 | `TightSnr` | Subtractive / OnePole | -14.63 | not on the page — `subtract-op` with no attack, no plateau and a 0.01 base |
 | 58 | `TightHat` | Subtractive / OneZero | -16.15 | not on the page — 60 ms of one-zero high-pass |

@@ -341,7 +341,7 @@ static const Preset kPresets[] = {
     // Q models, and Coef read as a tone tilt on the engines that ignore it.
     // A kick: subtract-pp held at Q, 14 semitones of pitch drop over 24 ms,
     // and Coef reading as a tone tilt because a two-pole never spends it.
-    {"PunchKik", {0, 3, 400, 900, 0, 0, 1, 0, -40, 9990, 60, 600, 1400, 0, 100, 6, 0, 100, 0, 0,
+    {"PunchKik", {0, 3, 400, 900, 0, 0, 1, 0, -40, 9950, 60, 600, 1400, 0, 100, 6, 0, 100, 0, 0,
                   5000, 1741, 20, 100}},
     // The same idea an octave and a half up.  Play it across the pad: the Q
     // model is what keeps the top of the range from turning into a whistle.
