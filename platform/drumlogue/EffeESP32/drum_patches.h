@@ -154,10 +154,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
       { 0.5f, 0.0f, 0.0f, 0.02f, WF_SINE } }
   },
-  /* Open Hi-Hat */
+  /* Open Hi-Hat  [voiced] was rel 1.332 */
   {
     3, 3931.0f, 1.0f, 0.15f,
-    0.01f, 0.042f, 1.325f, 0.0f, 1.332f,
+    0.01f, 0.042f, 1.325f, 0.0f, 0.18f,
     0.5f, 1, 4337.0f, 0.0f, 1.0f,
     { { 1.02f, 0.0f, 0.0f, 0.39f, WF_SQUARE },
       { 1.16f, 0.0f, 4.7f, 0.85f, WF_SINE },
@@ -193,7 +193,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
   /* Crash Cymbal 1  [voiced] was dec 6, rel 6 */
   {
     6, 1866.0f, 0.7f, -0.18f,
-    0.01f, 0.01f, 0.6f, 0.0f, 0.6f,
+    0.01f, 0.01f, 0.6f, 0.0f, 0.33f,
     0.5f, 1, 1300.0f, 0.0f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.11f, 0.0f, 0.0f, 0.42f, WF_SQUARE },
@@ -229,7 +229,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
   /* Chinese Cymbal  [voiced] was dec 3.128, rel 3.128 */
   {
     3, 1163.0f, 1.5f, -0.1f,
-    0.029f, 0.003f, 0.05f, 0.0f, 0.05f,
+    0.029f, 0.003f, 0.05f, 0.0f, 0.6f,
     0.5f, 1, 13262.0f, 0.0f, 0.01f,
     { { 1.0f, 0.0f, 6.2f, 0.35f, WF_SINE },
       { 1.04f, 0.0f, 6.8f, 0.8f, WF_SINE },
@@ -241,7 +241,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
   /* Ride Bell  [voiced] was dec 6.113, rel 6.156, alg 10 */
   {
     17, 2178.0f, 0.32f, -0.11f,
-    0.004f, 0.0f, 0.05f, 0.0f, 0.05f,
+    0.004f, 0.0f, 0.05f, 0.0f, 0.6f,
     0.5f, 1, 3779.0f, 0.01f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_COSINE },
       { 1.46f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -301,7 +301,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
   /* Vibraslap  [voiced] was dec 2.798, rel 2.798 */
   {
     14, 1373.0f, 1.0f, 0.0f,
-    0.023f, 0.005f, 0.05f, 0.0f, 0.05f,
+    0.023f, 0.005f, 0.05f, 0.0f, 0.18f,
     0.5f, 1, 1377.0f, 0.86f, 0.58f,
     { { 1.0f, 0.0f, 10.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -349,7 +349,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
   /* Mute Hi Conga  [voiced] was dec 0.07, rel 0.07 */
   {
     2, 211.0f, 1.6f, 0.23f,
-    0.001f, 0.0f, 0.05f, 0.0f, 0.05f,
+    0.001f, 0.0f, 0.05f, 0.0f, 0.33f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
@@ -610,10 +610,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Metal Stack */
+  /* Metal Stack  [voiced] was rel 0.6, alg 6 */
   {
-    6, 1200.0f, 1.0f, 0.0f,
-    0.005f, 0.01f, 0.6f, 0.0f, 0.6f,
+    13, 1200.0f, 1.0f, 0.0f,
+    0.005f, 0.01f, 0.6f, 0.0f, 0.33f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.5f, 0.0f, 2.5f, 0.8f, WF_SINE },

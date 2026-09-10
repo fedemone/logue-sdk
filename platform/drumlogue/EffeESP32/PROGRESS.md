@@ -71,17 +71,18 @@ instructions for the next agent.
   sitting exactly on GM's Splash and Crash 2). Order, count, trigger notes and
   the numeric data were unchanged through both passes. See the README's
   *Instrument names*.
-- **Voicing edits (`VOICE_EDITS` in `tools/gen_patches.py`).** Thirteen slots
-  ship with a decay/release the kit did not give them, and four of those with a
-  different algorithm: 600 ms on Crash1/Ride1/Splash/Crash2/Ride2, 50 ms on
-  ChinaCy/RideBel/Vibrslp/MHConga/HiAgogo/OTrngl/RailBel/RailBe2. The kit was
-  authored without a 16-step grid in front of it and sixteen of its slots ring
-  for 2.8–8.0 s, so every step was still sounding when the next one landed.
-  Decay and release are always set together: the sequencer gates a step off
-  within a few ms, so release shapes the whole audible tail and setting decay
-  alone would move the panel number and change nothing audible (measured — see
-  the README table). Applied *after* selection, so the instrument list, order,
-  trigger notes and the duplicate filter stay keyed to the untouched source.
+- **Voicing edits (`VOICE_EDITS` in `tools/gen_patches.py`).** Fifteen slots
+  ship with an envelope the kit did not give them, five of those with a
+  different algorithm. The kit was authored without a 16-step grid in front of
+  it and sixteen of its slots ring for 2.8–8.0 s, so every step was still
+  sounding when the next one landed. Release is the length control — the
+  sequencer gates a step off within a few ms, so the envelope is in RELEASE for
+  almost all of its audible life and the tail tracks `rel`, not `dec`
+  (measured; see the README table). Decay still sets the level release starts
+  from, so it is changed only where the body of the hit needs changing (OpHat
+  and MtlStk keep the kit's decay and get a shorter release only). Applied
+  *after* selection, so the instrument list, order, trigger notes and the
+  duplicate filter stay keyed to the untouched source.
 - **Instruments also exposed as 59 presets.** `unit_load_preset()` is the only
   call the drumlogue API gives a unit for changing its *other* exposed parameter
   values with the host's knowledge — the SDK README says loading a preset "can

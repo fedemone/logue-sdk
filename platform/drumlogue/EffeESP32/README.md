@@ -20,7 +20,7 @@ parameters then edit that cached copy in real time.
   amplitude-modulator routings), exactly as in the upstream `FmVoice6`.
 - **59 instrument patches** converted from the original `Drumkit_default.json`:
   the 47 General-MIDI percussion slots (35–81) plus 12 unique ones from the rest,
-  thirteen of them re-voiced for a step sequencer — see
+  fifteen of them re-voiced for a step sequencer — see
   [Voicing edits](#voicing-edits).
 - **Also exposed as 59 presets**, which is what lets an instrument's own envelope
   reach the panel — see [Instrument selection and the panel](#instrument-selection-and-the-panel).
@@ -242,38 +242,44 @@ numbering still lines up with the source.
 
 ### Voicing edits
 
-Thirteen imported slots are shipped with a decay/release — and on four of them
-an algorithm — that is not the kit's. The table lives in `VOICE_EDITS` in
+Fifteen imported slots ship with a decay, a release — and on five of them an
+algorithm — that is not the kit's. The table lives in `VOICE_EDITS` in
 `tools/gen_patches.py` and is applied after selection, so the instrument list,
 its order, the trigger notes and the duplicate filter all stay keyed to the
 untouched source data. Each edited entry is marked `[voiced]` in the generated
 header with its original values.
 
-| instrument (slot) | decay/release | was | algo |
-| --- | ---: | ---: | ---: |
-| Crash1 (49) | 600 ms | 6.000 s | — |
-| Ride1 (51) | 600 ms | 4.398 s | — |
-| Splash (55) | 600 ms | 1.500 s | — |
-| Crash2 (57) | 600 ms | 8.000 s | — |
-| Ride2 (59) | 600 ms | 3.665 s | — |
-| ChinaCy (52) | 50 ms | 3.128 s | — |
-| RideBel (53) | 50 ms | 6.113 s | 10 → **17** |
-| Vibrslp (58) | 50 ms | 2.798 s | — |
-| MHConga (62) | 50 ms | 0.070 s | — |
-| HiAgogo (67) | 50 ms | 0.350 s | 2 → **9** |
-| OTrngl (81) | 50 ms | 6.270 s | — |
-| RailBel (87) | 50 ms | 6.300 s | 10 → **1** |
-| RailBe2 (100) | 50 ms | 6.300 s | 10 → **0** |
+| instrument (slot) | decay | release | kit had | algo | measured tail |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Crash1 (49) | 600 ms | **330 ms** | 6.000 / 6.000 s | — | 0.335 s |
+| Ride1 (51) | 600 ms | 600 ms | 4.398 / 4.408 s | — | 0.607 s |
+| Splash (55) | 600 ms | 600 ms | 1.500 / 1.500 s | — | 0.595 s |
+| Crash2 (57) | 600 ms | 600 ms | 8.000 / 8.000 s | — | 0.568 s |
+| Ride2 (59) | 600 ms | 600 ms | 3.665 / 3.725 s | — | 0.529 s |
+| ChinaCy (52) | 50 ms | **600 ms** | 3.128 / 3.128 s | — | 0.572 s |
+| RideBel (53) | 50 ms | **600 ms** | 6.113 / 6.156 s | 10 → **17** | 0.504 s |
+| OpHat (46) | *1325 ms* | **180 ms** | 1.325 / 1.332 s | — | 0.185 s |
+| MtlStk (29) | *600 ms* | **330 ms** | 0.600 / 0.600 s | 6 → **13** | 0.334 s |
+| Vibrslp (58) | 50 ms | **180 ms** | 2.798 / 2.798 s | — | 0.187 s |
+| MHConga (62) | 50 ms | **330 ms** | 0.070 / 0.070 s | — | 0.271 s |
+| HiAgogo (67) | 50 ms | 50 ms | 0.350 / 0.466 s | 2 → **9** | 0.051 s |
+| OTrngl (81) | 50 ms | 50 ms | 6.270 / 6.229 s | — | 0.060 s |
+| RailBel (87) | 50 ms | 50 ms | 6.300 / 6.100 s | 10 → **1** | 0.060 s |
+| RailBe2 (100) | 50 ms | 50 ms | 6.300 / 6.100 s | 10 → **0** | 0.060 s |
+
+*Italic* decay = the kit's own value, kept. Tails are to −60 dB with a 10 ms
+gate, i.e. driven the way the sequencer drives a part.
 
 The kit was authored for a machine with no polyphony ceiling and no 16-step grid
 in front of it; sixteen of its slots ring for 2.8–8.0 s, which on a drumlogue
 part means every step is still sounding when the next one lands.
 
-**Decay and release are always set together** — they are one control here. The
-sequencer gates a step off within a few ms of the hit, so the envelope leaves
-`ADSR_SEG_DECAY` for `ADSR_SEG_RELEASE` almost immediately and it is *release*
-that shapes the whole audible tail. Measured on the untouched instruments, tail
-length to −60 dB tracks release and ignores decay:
+#### Release is the length control; decay is the body
+
+The sequencer gates a step off within a few ms of the hit, so the envelope
+leaves `ADSR_SEG_DECAY` for `ADSR_SEG_RELEASE` almost immediately and it is
+*release* that shapes the whole audible tail. Measured on untouched
+instruments, tail length to −60 dB tracks release and ignores decay:
 
 | instrument | decay | release | tail |
 | --- | ---: | ---: | ---: |
@@ -282,9 +288,21 @@ length to −60 dB tracks release and ignores decay:
 | HiWdBlk | 120 ms | 50 ms | 0.058 s |
 | LoBongo | 356 ms | 551 ms | 0.548 s |
 
-Setting decay alone would move the number on the panel and change nothing you
-can hear. The source kit sets the two equal on nearly every patch for the same
-reason.
+Decay is not dead, though, and the two are not interchangeable. Decay runs for
+the length of the gate, so it sets the level release *starts from*. A 50 ms
+decay has already taken the envelope well down by the time the gate ends, so
+the tail behind it is quieter — and measures shorter than its nominal release —
+than the same release behind a long decay. Compare the rows above: ChinaCy and
+Ride1 both ask for a 600 ms release, but ChinaCy's 50 ms decay brings it to
+−60 dB in 0.572 s against Ride1's 0.607 s, and it gets there from a lower
+level. In short:
+
+- **long decay + short release** — a clean, full-level hit that stops (OpHat).
+- **short decay + long release** — a soft swell, quieter than its length
+  suggests (ChinaCy, RideBel).
+
+So decay is changed only where the body of the hit is what needs changing, and
+left at the kit's value otherwise.
 
 The numeric patch data is otherwise a faithful copy of the JSON, verified field
 by field.

@@ -132,32 +132,42 @@ EXTRA = {
 # and the voice pool spends itself on tails nobody hears.  These are the slots
 # where that was audible on hardware.
 #
-# `dec` and `rel` are always set together.  They are one control as far as the
-# ear is concerned here: the sequencer gates a step off almost immediately, so
-# the envelope leaves DECAY for RELEASE within a few ms of the hit and it is
-# `rel` that shapes the whole audible tail (see Adsr::end / noteOff).  Setting
-# `dec` alone would move the number on the panel and change nothing you can
-# hear.  The source kit sets them equal on nearly every patch for the same
-# reason.
+# `rel` is the length control.  The sequencer gates a step off within a few ms
+# of the hit, so the envelope leaves DECAY for RELEASE almost immediately and
+# `rel` shapes the whole audible tail (see Adsr::end / noteOff).  Measured on
+# untouched instruments: Cabasa (dec 600, rel 300) tails at 0.302 s, HiWdBlk
+# (120/50) at 0.058 s -- the tail follows `rel` and ignores `dec`.
 #
-# `alg` re-voices the operator routing where the shortened envelope exposed
-# a structure that only worked as a long ring.
+# `dec` is not dead, though, and the two are not interchangeable.  Decay runs
+# for the length of the gate, so it sets the level release *starts from*: a
+# 50 ms decay has already taken the envelope well down by the time the gate
+# ends, and the tail that follows is both shorter-sounding and quieter than the
+# same `rel` behind a 1.3 s decay.  Short decay + long release is a soft swell;
+# long decay + short release is a clean, full-level hit that stops.  So `dec`
+# is set only where the body of the hit is what needs changing, and left at the
+# kit's value otherwise.
+#
+# `alg` re-voices the operator routing where a changed envelope exposed a
+# structure that only worked as a long ring.
 VOICE_EDITS = {
-    # --- 600 ms: the cymbals, so a crash is a crash and not a drone ---------
-    49:  {"dec": 0.6,  "rel": 0.6},                 # Crash1   (was 6.000)
-    51:  {"dec": 0.6,  "rel": 0.6},                 # Ride1    (was 4.398)
-    55:  {"dec": 0.6,  "rel": 0.6},                 # Splash   (was 1.500)
-    57:  {"dec": 0.6,  "rel": 0.6},                 # Crash2   (was 8.000)
-    59:  {"dec": 0.6,  "rel": 0.6},                 # Ride2    (was 3.665)
-    # --- 50 ms: short, percussive slots the kit left ringing ----------------
-    52:  {"dec": 0.05, "rel": 0.05},                # ChinaCy  (was 3.128)
-    53:  {"dec": 0.05, "rel": 0.05, "alg": 17},     # RideBel  (was 6.113)
-    58:  {"dec": 0.05, "rel": 0.05},                # Vibrslp  (was 2.798)
-    62:  {"dec": 0.05, "rel": 0.05},                # MHConga  (was 0.070)
-    67:  {"dec": 0.05, "rel": 0.05, "alg": 9},      # HiAgogo  (was 0.350)
-    81:  {"dec": 0.05, "rel": 0.05},                # OTrngl   (was 6.270)
-    87:  {"dec": 0.05, "rel": 0.05, "alg": 1},      # RailBel  (was 6.300)
-    100: {"dec": 0.05, "rel": 0.05, "alg": 0},      # RailBe2  (was 6.300)
+    # --- cymbals: a crash that is a crash and not a drone -------------------
+    49:  {"dec": 0.6,  "rel": 0.33},                # Crash1   (was 6.000/6.000)
+    51:  {"dec": 0.6,  "rel": 0.6},                 # Ride1    (was 4.398/4.408)
+    55:  {"dec": 0.6,  "rel": 0.6},                 # Splash   (was 1.500/1.500)
+    57:  {"dec": 0.6,  "rel": 0.6},                 # Crash2   (was 8.000/8.000)
+    59:  {"dec": 0.6,  "rel": 0.6},                 # Ride2    (was 3.665/3.725)
+    52:  {"dec": 0.05, "rel": 0.6},                 # ChinaCy  (was 3.128/3.128)
+    53:  {"dec": 0.05, "rel": 0.6,  "alg": 17},     # RideBel  (was 6.113/6.156)
+    # --- release only: the body of the hit is already right -----------------
+    46:  {"rel": 0.18},                             # OpHat    (was 1.332, dec 1.325 kept)
+    29:  {"rel": 0.33, "alg": 13},                  # MtlStk   (was 0.600, dec 0.600 kept)
+    # --- short, percussive slots the kit left ringing -----------------------
+    58:  {"dec": 0.05, "rel": 0.18},                # Vibrslp  (was 2.798/2.798)
+    62:  {"dec": 0.05, "rel": 0.33},                # MHConga  (was 0.070/0.070)
+    67:  {"dec": 0.05, "rel": 0.05, "alg": 9},      # HiAgogo  (was 0.350/0.466)
+    81:  {"dec": 0.05, "rel": 0.05},                # OTrngl   (was 6.270/6.229)
+    87:  {"dec": 0.05, "rel": 0.05, "alg": 1},      # RailBel  (was 6.300/6.100)
+    100: {"dec": 0.05, "rel": 0.05, "alg": 0},      # RailBe2  (was 6.300/6.100)
 }
 
 def param_key(p):
