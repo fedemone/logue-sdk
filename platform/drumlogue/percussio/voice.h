@@ -42,6 +42,29 @@ static constexpr uint32_t kGrainSrcLen = 48000;
 /** The rate every randh on the page is held at: 0.49 of the sample rate. */
 static constexpr float kRandhRate = 0.49f;
 
+/**
+ * CLM's default sample rate in 1998, which is the rate every number on the page
+ * was chosen at.
+ *
+ * A filter coefficient is a normalised-frequency quantity: b1, a1 and r say
+ * where a pole or zero sits relative to the sample rate, not relative to the
+ * ear.  Ported verbatim to 48 kHz they land 48000/22050 = 2.18x higher, which
+ * makes every two-pole 2.18x too broad -- NsyBass2 comes out at Q 0.65 where
+ * the page has Q 1.42, so a noisy bass is just noise -- and pushes the one-pole
+ * and one-zero emphasis, which sits just under the page's 11 kHz Nyquist, out
+ * past 24 kHz where nobody can hear it.  That is what collapses the eleven
+ * op/oz sounds into one: measured, their spectral centroids span 2.13x at the
+ * page's rate and only 1.58x at 48 kHz.
+ *
+ * The wavetable lengths already carry this correction (see kKsRateScale).  The
+ * subtractive chain gets it by running where it was designed to run, at 22050,
+ * and interpolating up; add-noise's resonators sit at measured absolute
+ * frequencies instead, so there the rate is translated into the coefficient.
+ */
+static constexpr float kClmRate = 22050.0f;
+static constexpr float kInvClmRate = 1.0f / kClmRate;
+static constexpr float kClmRateRatio = kClmRate / kSampleRate;
+
 /** How often the pitch envelope moves coefficients, in samples.  1.33 ms is
  *  well inside the ear's pitch-integration window and keeps the cost of
  *  retuning a 32-partial bank down to something a drumlogue can afford. */
@@ -284,9 +307,14 @@ class Voice {
    * sound is moved.
    */
   float radiusNow() const {
-    if (!const_q_) return p_.radius;
     if (p_.radius <= 0.0f || p_.radius >= 1.0f) return p_.radius;
-    return powf(p_.radius, clipminmaxf(1.0f / 64.0f, pitch(), 64.0f));
+    float e = const_q_ ? clipminmaxf(1.0f / 64.0f, pitch(), 64.0f) : 1.0f;
+    // add-noise's ppolar resonators sit at frequencies measured off a recording,
+    // so they cannot be moved to the page's sample rate the way the subtractive
+    // chain is; the rate goes into the coefficient instead.  r^(22050/48000)
+    // realises the page's bandwidth in hertz, and hence its Q, exactly.
+    if (p_.method == kAdditive) e *= kClmRateRatio;
+    return (e == 1.0f) ? p_.radius : powf(p_.radius, e);
   }
 
   void setPartial(uint32_t i, float f, float r, bool noisy) {
@@ -304,8 +332,8 @@ class Voice {
     switch (p_.method) {
       case kSubtract:
         if (twoPole()) {
-          const float f = clipminmaxf(1.0f, p_.freq_hz * pitch(), 0.45f * kSampleRate);
-          tp_.set(M_TWOPI * f * kInvSampleRate, radiusNow());
+          const float f = clipminmaxf(1.0f, p_.freq_hz * pitch(), 0.45f * kClmRate);
+          tp_.set(M_TWOPI * f * kInvClmRate, radiusNow());
         } else {
           // One-pole and one-zero have no frequency of their own, so the punch
           // moves the same thing the note moves: the rate randh is held at.
@@ -342,10 +370,14 @@ class Voice {
     op_.set(1.0f, p_.coef);
     oz_.set(1.0f, p_.coef);
 
+    sub_ph_ = 1.0f;  // force a first subchain sample on the first output sample
+    sub_prev_ = 0.0f;
+    sub_cur_ = 0.0f;
+
     if (twoPole()) {
       // The note transposes the resonance; the noise rate stays put.
-      const float f = clipminmaxf(1.0f, p_.freq_hz * pitch(), 0.45f * kSampleRate);
-      tp_.set(M_TWOPI * f * kInvSampleRate, radiusNow());
+      const float f = clipminmaxf(1.0f, p_.freq_hz * pitch(), 0.45f * kClmRate);
+      tp_.set(M_TWOPI * f * kInvClmRate, radiusNow());
       noise_.setRate(clipminmaxf(0.001f, p_.noise_rate, 0.5f));
     } else {
       // One-pole and one-zero have no frequency of their own -- the page's
@@ -356,7 +388,8 @@ class Voice {
     }
   }
 
-  fast_inline float renderSubtract() {
+  /** One sample of randh -> filter, at the rate the page's coefficients mean. */
+  fast_inline float subStep() {
     const float n = noise_.process();
     switch (p_.model) {
       case kOnePole: return op_.process(n);
@@ -364,6 +397,22 @@ class Voice {
       case kTwoPoleQ: return tp_.process(n);
       default: return oz_.process(n);
     }
+  }
+
+  /**
+   * The whole subtractive chain runs at 22050 Hz and is linearly interpolated
+   * up to 48 kHz, which is what makes b1, a1, r and the randh rate mean at the
+   * output what they mean on the page.  It costs 0.46 filter evaluations per
+   * output sample rather than one, so it is also cheaper than getting it wrong.
+   */
+  fast_inline float renderSubtract() {
+    sub_ph_ += kClmRateRatio;
+    while (sub_ph_ >= 1.0f) {
+      sub_ph_ -= 1.0f;
+      sub_prev_ = sub_cur_;
+      sub_cur_ = subStep();
+    }
+    return sub_prev_ + (sub_cur_ - sub_prev_) * sub_ph_;
   }
 
   /*-------------------------------------------------------------------------*/
@@ -599,6 +648,7 @@ class Voice {
   clm::Tone tone_;
   bool tone_on_ = false;
 
+  float sub_ph_ = 1.0f, sub_prev_ = 0.0f, sub_cur_ = 0.0f;
   bool const_q_ = false;
   float punch_semis_ = 0.0f, punch_env_ = 1.0f, punch_dec_ = 0.0f, punch_ratio_ = 1.0f;
   uint32_t punch_next_ = 0;

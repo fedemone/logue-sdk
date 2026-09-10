@@ -175,7 +175,11 @@ attack segment and 1 otherwise; `M` is 1 (a plateau) on every engine but FM,
 where it is 0.2 — every `fm` call on the page ends `50 .2 100 0`, and there `S`
 is 0.8.
 
-`Curve` is CLM's `:base`, and it is worth knowing which way it runs. CLM
+`Curve` is CLM's `:base`, and it is worth knowing which way it runs — the
+direction is pinned in `test_dsp.cpp` against Bill Schottstaedt's own published
+`envelope-interp` values (base 32 at x = 0.1 on a rising ramp gives 0.013362,
+base 0.012 gives 0.361775; this unit reproduces both to five figures), because
+it is the sort of thing that is easy to get backwards and impossible to notice. CLM
 interpolates a segment as `y = y0 + (y1-y0)(base^u - 1)/(base - 1)`, so on a
 decay a base **above** 1 holds and then falls off a cliff, and a base **below**
 1 drops fast and tails. The page's noise instruments default to `:amp-env-base
@@ -231,7 +235,7 @@ knob buys a pitch envelope instead.
 `Reso` is a pole radius, which is what `subtract-pp` and `add-noise` are passed
 and what the page means. A radius fixes the resonator's **bandwidth in hertz**,
 so the same knob is a different filter at every pitch: at `Reso` 99.00% the band
-is 154 Hz wide wherever it sits, which is Q 0.65 at 100 Hz and Q 26 at 4 kHz. A
+is 70 Hz wide wherever it sits, which is Q 1.4 at 100 Hz and Q 57 at 4 kHz. A
 preset played two octaves up quadruples its Q, and a noise band turns into a
 pitch.
 
@@ -277,68 +281,68 @@ Fifty-five from the page, then nine that are not.
 
 | # | preset | engine / model | LUFS | the call it comes from |
 |---|---|---|---|---|
-| 0 | `BrshSnr1` | Subtractive / OnePole | -10.70 | `(subtract-op 0 .2 .4 '(0 0 5 1 100 0) :b1 0.9 :amp-env-base 10)` |
-| 1 | `BrshSnr2` | Subtractive / OnePole | -2.91 | `(subtract-op 0 .5 .6 '(0 0 5 1 100 0) :b1 0.9 :amp-env-base 1000)` |
-| 2 | `BrshSnr3` | Subtractive / OnePole | -0.93 | `(subtract-op 0 1 .6 '(0 0 2 1 100 0) :b1 0.9 :amp-env-base 100000)` |
-| 3 | `BrshSnr4` | Subtractive / OneZero | -8.26 | `(subtract-oz 0 .25 .4 '(0 0 5 1 100 0) :a1 -0.5 :amp-env-base 10)` |
-| 4 | `BrshSnr5` | Subtractive / OneZero | -2.11 | `(subtract-oz 0 .5 .6 '(0 0 5 1 100 0) :a1 -0.5 :amp-env-base 1000)` |
-| 5 | `SnareOP` | Subtractive / OnePole | -10.43 | `(subtract-op 0 .2 .3 '(0 1 100 0) :b1 0.2 :amp-env-base 100)` |
-| 6 | `SnareOZ` | Subtractive / OneZero | -10.44 | `(subtract-oz 0 .2 .3 '(0 1 100 0) :a1 -0.2 :amp-env-base 100)` |
-| 7 | `SnareLoP` | Subtractive / OnePole | -8.85 | `(subtract-op 0 .2 .3 '(0 1 100 0) :b1 -0.2 :amp-env-base 100)  -- low-pass` |
-| 8 | `SnareLoZ` | Subtractive / OneZero | -8.80 | `(subtract-oz 0 .2 .3 '(0 1 100 0) :a1 0.2 :amp-env-base 100)   -- low-pass` |
-| 9 | `SnarePP` | Subtractive / TwoPole | -13.44 | `(subtract-pp 0 .2 .2 '(0 1 100 0) :r 0.2 :frequency 400)` |
-| 10 | `NsyBass1` | Subtractive / TwoPole | -3.14 | `(subtract-pp 0 .5 .02 '(0 0 5 1 100 0) :r .9 :frequency 100 :amp-env-base 1000)` |
-| 11 | `NsyBass2` | Subtractive / TwoPole | -5.51 | `(subtract-pp 0 .5 .002 '(0 1 10 1 100 0) :r .99 :frequency 100 :amp-env-base 1000)` |
-| 12 | `NsyBass3` | Subtractive / TwoPole | -4.49 | `(subtract-pp 0 .5 .0007 '(0 1 10 1 100 0) :r .999 :frequency 100 :amp-env-base 1000)` |
-| 13 | `RattleP` | Subtractive / OnePole | -15.36 | `(subtract-op 0 .2 .2 '(0 0 30 1 50 1 100 0) :b1 0.5)` |
-| 14 | `RattleZ` | Subtractive / OneZero | -14.99 | `(subtract-oz 0 .2 .2 '(0 0 30 1 50 1 100 0) :a1 -0.5)` |
-| 15 | `BlwBottl` | Subtractive / TwoPole | -2.31 | `(subtract-pp 0 1 .0004 '(0 1 70 1 100 0) :amp-env-base 1000 :frequency 400 :r .9999)` |
-| 16 | `FireCrkr` | Subtractive / TwoPole | 0.03 | `(subtract-pp 0 .4 .1 '(0 1 100 0) :r 0.7 :frequency 4000 :amp-env-base 1000000)` |
-| 17 | `SteelDrm` | Additive / Pure | -12.82 | `(add-partials 0 .5 300 .5 steel-drum)   -- default amp-env (0 0 5 1 10 1 100 0)` |
-| 18 | `ClockBel` | Additive / Pure | -10.28 | `(add-partials 0 2 300 .5 low-bell :amp-env '(0 1 10 1 90 .05 100 0)) which passes .03 where the page passes .05.` |
-| 19 | `OddChime` | Additive / Pure | -8.81 | `(add-partials 0 1 1300 .5 odd-chime :amp-env '(0 1 10 1 100 0))` |
-| 20 | `EvnChime` | Additive / Pure | -8.92 | `(add-partials 0 1 1300 .5 even-chime :amp-env '(0 1 10 1 100 0))` |
-| 21 | `TubBell1` | Additive / Pure | -10.43 | `(add-freqs 0 2 .1 bell :amp-env '(0 1 10 1 100 0))   -- 16384-point FFT` |
-| 22 | `TubBell2` | Additive / Pure | -10.56 | `(add-freqs 0 2 .1 bell ...)   -- 65536-point FFT, the page's favourite` |
-| 23 | `TubBell3` | Additive / Pure | -10.02 | `(add-freqs 0 2 .1 bell ...)   -- 262144-point FFT` |
-| 24 | `SmallGng` | Additive / Pure | -13.97 | `(add-freqs 0 1 .1 gong :amp-env '(0 0 1 1 10 1 100 0))` |
-| 25 | `TurkCym1` | Additive / Pure | -16.72 | `(add-freqs 0 1 .1 cymbal :amp-env '(0 1 10 1 100 0))   -- 262144-point FFT` |
-| 26 | `TurkCym2` | Additive / Pure | -14.22 | `(add-freqs 0 1 .1 cymbal ...)   -- 16384-point FFT` |
-| 27 | `NsyTCym` | Additive / NsyFrq | -15.38 | `(add-noisy-freqs 0 1 .1 cymbal 1 :amp-env '(0 1 10 1 100 0))` |
-| 28 | `NsyBsDrm` | Additive / TunedNs | -9.27 | `(add-noise 0 .5 .0005 '(100 1 200 .5 400 .2) :amp-env '(0 0 1 1 10 1 100 0) :r .99)` |
-| 29 | `ChwnBell` | FM / Dec .2 | 0.28 | `(fm 0 10 1 200 1.4 :car-env '(0 1 50 .2 100 0) :mod-env '(0 1 50 .2 100 0) :mod-index2 1)` |
-| 30 | `WoodDrum` | FM / Dec 0 | -5.94 | `(fm 0 .2 1 200 1.4 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 1 12 0 100 0) :mod-index2 .2)` |
-| 31 | `WoodDrm2` | FM / Dec 0 | -5.94 | `(fm 0 .2 1 200 0.6875 ...)   -- Ratio is thousandths, so 0.6875 stores as 0.688` |
-| 32 | `MetlChim` | FM / Dec .2 | -7.12 | `(fm 0 1 .5 1000 2.005 :car-env '(0 1 50 .2 100 0) :mod-env '(0 1 25 .2 100 0) :mod-index2 1)` |
-| 33 | `Marimba` | FM / Dec .2 | -5.96 | `(fm 0 .2 1 400 2.4 :car-env '(0 0.8 10 1 50 .2 100 0) :mod-env '(0 1 50 .2 100 0) :mod-index2 .2)` |
-| 34 | `DnceBas1` | FM / Dec 0 | -8.15 | `(fm 0 .5 5 50 1.4 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 1 12 0 100 0) :mod-index2 .2)   -- amplitude 5 clamps to 100%` |
-| 35 | `DnceBas2` | FM / Dec 0 | -7.58 | `(fm i .4 5 80 0.6875 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 1 12 0 100 0) :mod-index2 2.5)` |
-| 36 | `FMBrshSn` | FM / Dec .2 | -10.92 | `(fm 0 .3 .5 200 1.4 :car-env '(0 1 10 1 50 .2 100 0) :mod-env '(0 1 50 .2 100 0) :mod-index1 2 :mod-index2 1) the one page envelope where the two disagree.` |
-| 37 | `ShetMetl` | FM / Rise | -4.79 | `(fm 0 1 1 40 2.2 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 0 12 1 100 0) :mod-index2 2)` |
-| 38 | `KSSnare1` | Karplus-Strong / Random | -13.09 | `(drum-ks 0 .5 :p 800 :b 0.5)         -- default duration 2, amp-env (0 1 100 1)` |
-| 39 | `KSSnare2` | Karplus-Strong / Random | -12.07 | `(drum-ks 0 .5 :p 1000 :b 0.6)` |
-| 40 | `KSCymbl1` | Karplus-Strong / Random | -5.67 | `(drum-ks 0 .5 :p 4000 :b 1 :amp-env '(0 1 90 1 100 0))` |
-| 41 | `KSCymbl2` | Karplus-Strong / Random | -9.74 | `(drum-ks 0 .5 :p 2000 :b 1 :amp-env '(0 1 80 0 100 0))` |
-| 42 | `MetPlnk1` | Karplus-Strong / Random | -17.12 | `(drum-ks 0 .5 :p 100 :b .98 :amp-env '(0 1 90 1 100 0))` |
-| 43 | `MetPlnk2` | Karplus-Strong / Random | -21.19 | `(drum-ks 0 .5 :p 20 :b .997)` |
-| 44 | `MetPlnk3` | Karplus-Strong / Random | -16.86 | `(drum-ks 0 .5 :p 50 :b .99)` |
-| 45 | `MetPlnk4` | Karplus-Strong / Random | -16.53 | `(drum-ks 0 .5 :p 150 :b .99 :amp-env '(0 1 90 1 100 0))` |
-| 46 | `MetPlnk5` | Karplus-Strong / Random | -22.19 | `(drum-ks 0 .5 :p 25 :b 1)` |
-| 47 | `Pluck1` | Karplus-Strong / Random | -17.01 | `(drum-ks 0 .5 :p 40 :b 0 :amp-env '(0 1 90 1 100 0))` |
-| 48 | `Pluck2` | Karplus-Strong / Random | -14.14 | `(drum-ks 0 1 :p 25 :b 0)` |
-| 49 | `Pluck3` | Karplus-Strong / Random | -12.46 | `(drum-ks 0 .5 :p 200 :b 0 :amp-env '(0 1 50 1 100 0) :duration 2)` |
-| 50 | `Pluck4` | Karplus-Strong / Random | -11.72 | `(drum-ks 0 .5 :p 400 :b 0 :amp-env '(0 1 50 1 100 0) :duration 2)` |
-| 51 | `BrknCym1` | Granular / Cymbal | -15.83 | `(grani 0 2 20 "turkish-cymbal-1.snd" :grain-envelope '(0 1 100 0) :amp-envelope '(0 0 10 1 100 0))` |
-| 52 | `BrknCym2` | Granular / CymRev | -15.33 | `(grani 0 4 5 "turkish-cymbal-1.snd" ... :grain-density 20 :reverse t)` |
-| 53 | `RhytBel1` | Granular / BellRev | -23.10 | `(grani 0 2 10 "tubular-bell.snd" :grain-envelope '(0 1 100 0) :amp-envelope '(0 1 50 1 100 0) :grain-density 4 :reverse t)` |
-| 54 | `RhytBel2` | Granular / Bell | -17.22 | `(grani 2 2 10 "tubular-bell.snd" ... :grain-density 8 :reverse t)` |
-| 55 | `PunchKik` | Subtractive / TwoPolQ | -15.33 | not on the page — 14 semitones of drop over 24 ms, Coef low-passing |
-| 56 | `PunchTom` | Subtractive / TwoPolQ | -11.92 | not on the page — the same an octave and a half up, to be played across the pads |
-| 57 | `TightSnr` | Subtractive / OnePole | -14.63 | not on the page — `subtract-op` with no attack, no plateau and a 0.01 base |
-| 58 | `TightHat` | Subtractive / OneZero | -16.15 | not on the page — 60 ms of one-zero high-pass |
+| 0 | `BrshSnr1` | Subtractive / OnePole | -16.19 | `(subtract-op 0 .2 .4 '(0 0 5 1 100 0) :b1 0.9 :amp-env-base 10)` |
+| 1 | `BrshSnr2` | Subtractive / OnePole | -8.02 | `(subtract-op 0 .5 .6 '(0 0 5 1 100 0) :b1 0.9 :amp-env-base 1000)` |
+| 2 | `BrshSnr3` | Subtractive / OnePole | -5.93 | `(subtract-op 0 1 .6 '(0 0 2 1 100 0) :b1 0.9 :amp-env-base 100000)` |
+| 3 | `BrshSnr4` | Subtractive / OneZero | -13.14 | `(subtract-oz 0 .25 .4 '(0 0 5 1 100 0) :a1 -0.5 :amp-env-base 10)` |
+| 4 | `BrshSnr5` | Subtractive / OneZero | -6.55 | `(subtract-oz 0 .5 .6 '(0 0 5 1 100 0) :a1 -0.5 :amp-env-base 1000)` |
+| 5 | `SnareOP` | Subtractive / OnePole | -15.14 | `(subtract-op 0 .2 .3 '(0 1 100 0) :b1 0.2 :amp-env-base 100)` |
+| 6 | `SnareOZ` | Subtractive / OneZero | -15.08 | `(subtract-oz 0 .2 .3 '(0 1 100 0) :a1 -0.2 :amp-env-base 100)` |
+| 7 | `SnareLoP` | Subtractive / OnePole | -13.38 | `(subtract-op 0 .2 .3 '(0 1 100 0) :b1 -0.2 :amp-env-base 100)  -- low-pass` |
+| 8 | `SnareLoZ` | Subtractive / OneZero | -13.37 | `(subtract-oz 0 .2 .3 '(0 1 100 0) :a1 0.2 :amp-env-base 100)   -- low-pass` |
+| 9 | `SnarePP` | Subtractive / TwoPole | -17.94 | `(subtract-pp 0 .2 .2 '(0 1 100 0) :r 0.2 :frequency 400)` |
+| 10 | `NsyBass1` | Subtractive / TwoPole | -7.03 | `(subtract-pp 0 .5 .02 '(0 0 5 1 100 0) :r .9 :frequency 100 :amp-env-base 1000)` |
+| 11 | `NsyBass2` | Subtractive / TwoPole | -7.99 | `(subtract-pp 0 .5 .002 '(0 1 10 1 100 0) :r .99 :frequency 100 :amp-env-base 1000)` |
+| 12 | `NsyBass3` | Subtractive / TwoPole | -5.84 | `(subtract-pp 0 .5 .0007 '(0 1 10 1 100 0) :r .999 :frequency 100 :amp-env-base 1000)` |
+| 13 | `RattleP` | Subtractive / OnePole | -20.35 | `(subtract-op 0 .2 .2 '(0 0 30 1 50 1 100 0) :b1 0.5)` |
+| 14 | `RattleZ` | Subtractive / OneZero | -19.68 | `(subtract-oz 0 .2 .2 '(0 0 30 1 50 1 100 0) :a1 -0.5)` |
+| 15 | `BlwBottl` | Subtractive / TwoPole | -5.58 | `(subtract-pp 0 1 .0004 '(0 1 70 1 100 0) :amp-env-base 1000 :frequency 400 :r .9999)` |
+| 16 | `FireCrkr` | Subtractive / TwoPole | -3.77 | `(subtract-pp 0 .4 .1 '(0 1 100 0) :r 0.7 :frequency 4000 :amp-env-base 1000000)` |
+| 17 | `SteelDrm` | Additive / Pure | -15.83 | `(add-partials 0 .5 300 .5 steel-drum)   -- default amp-env (0 0 5 1 10 1 100 0)` |
+| 18 | `ClockBel` | Additive / Pure | -13.29 | `(add-partials 0 2 300 .5 low-bell :amp-env '(0 1 10 1 90 .05 100 0)) which passes .03 where the page passes .05.` |
+| 19 | `OddChime` | Additive / Pure | -11.82 | `(add-partials 0 1 1300 .5 odd-chime :amp-env '(0 1 10 1 100 0))` |
+| 20 | `EvnChime` | Additive / Pure | -11.93 | `(add-partials 0 1 1300 .5 even-chime :amp-env '(0 1 10 1 100 0))` |
+| 21 | `TubBell1` | Additive / Pure | -13.44 | `(add-freqs 0 2 .1 bell :amp-env '(0 1 10 1 100 0))   -- 16384-point FFT` |
+| 22 | `TubBell2` | Additive / Pure | -13.57 | `(add-freqs 0 2 .1 bell ...)   -- 65536-point FFT, the page's favourite` |
+| 23 | `TubBell3` | Additive / Pure | -13.03 | `(add-freqs 0 2 .1 bell ...)   -- 262144-point FFT` |
+| 24 | `SmallGng` | Additive / Pure | -16.98 | `(add-freqs 0 1 .1 gong :amp-env '(0 0 1 1 10 1 100 0))` |
+| 25 | `TurkCym1` | Additive / Pure | -19.73 | `(add-freqs 0 1 .1 cymbal :amp-env '(0 1 10 1 100 0))   -- 262144-point FFT` |
+| 26 | `TurkCym2` | Additive / Pure | -17.23 | `(add-freqs 0 1 .1 cymbal ...)   -- 16384-point FFT` |
+| 27 | `NsyTCym` | Additive / NsyFrq | -18.39 | `(add-noisy-freqs 0 1 .1 cymbal 1 :amp-env '(0 1 10 1 100 0))` |
+| 28 | `NsyBsDrm` | Additive / TunedNs | -13.84 | `(add-noise 0 .5 .0005 '(100 1 200 .5 400 .2) :amp-env '(0 0 1 1 10 1 100 0) :r .99)` |
+| 29 | `ChwnBell` | FM / Dec .2 | -2.70 | `(fm 0 10 1 200 1.4 :car-env '(0 1 50 .2 100 0) :mod-env '(0 1 50 .2 100 0) :mod-index2 1)` |
+| 30 | `WoodDrum` | FM / Dec 0 | -8.96 | `(fm 0 .2 1 200 1.4 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 1 12 0 100 0) :mod-index2 .2)` |
+| 31 | `WoodDrm2` | FM / Dec 0 | -8.95 | `(fm 0 .2 1 200 0.6875 ...)   -- Ratio is thousandths, so 0.6875 stores as 0.688` |
+| 32 | `MetlChim` | FM / Dec .2 | -10.13 | `(fm 0 1 .5 1000 2.005 :car-env '(0 1 50 .2 100 0) :mod-env '(0 1 25 .2 100 0) :mod-index2 1)` |
+| 33 | `Marimba` | FM / Dec .2 | -8.97 | `(fm 0 .2 1 400 2.4 :car-env '(0 0.8 10 1 50 .2 100 0) :mod-env '(0 1 50 .2 100 0) :mod-index2 .2)` |
+| 34 | `DnceBas1` | FM / Dec 0 | -11.16 | `(fm 0 .5 5 50 1.4 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 1 12 0 100 0) :mod-index2 .2)   -- amplitude 5 clamps to 100%` |
+| 35 | `DnceBas2` | FM / Dec 0 | -10.59 | `(fm i .4 5 80 0.6875 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 1 12 0 100 0) :mod-index2 2.5)` |
+| 36 | `FMBrshSn` | FM / Dec .2 | -13.93 | `(fm 0 .3 .5 200 1.4 :car-env '(0 1 10 1 50 .2 100 0) :mod-env '(0 1 50 .2 100 0) :mod-index1 2 :mod-index2 1) the one page envelope where the two disagree.` |
+| 37 | `ShetMetl` | FM / Rise | -7.80 | `(fm 0 1 1 40 2.2 :car-env '(0 .8 20 1 50 .2 100 0) :mod-env '(0 0 12 1 100 0) :mod-index2 2)` |
+| 38 | `KSSnare1` | Karplus-Strong / Random | -16.11 | `(drum-ks 0 .5 :p 800 :b 0.5)         -- default duration 2, amp-env (0 1 100 1)` |
+| 39 | `KSSnare2` | Karplus-Strong / Random | -14.86 | `(drum-ks 0 .5 :p 1000 :b 0.6)` |
+| 40 | `KSCymbl1` | Karplus-Strong / Random | -8.89 | `(drum-ks 0 .5 :p 4000 :b 1 :amp-env '(0 1 90 1 100 0))` |
+| 41 | `KSCymbl2` | Karplus-Strong / Random | -12.62 | `(drum-ks 0 .5 :p 2000 :b 1 :amp-env '(0 1 80 0 100 0))` |
+| 42 | `MetPlnk1` | Karplus-Strong / Random | -18.83 | `(drum-ks 0 .5 :p 100 :b .98 :amp-env '(0 1 90 1 100 0))` |
+| 43 | `MetPlnk2` | Karplus-Strong / Random | -23.50 | `(drum-ks 0 .5 :p 20 :b .997)` |
+| 44 | `MetPlnk3` | Karplus-Strong / Random | -21.21 | `(drum-ks 0 .5 :p 50 :b .99)` |
+| 45 | `MetPlnk4` | Karplus-Strong / Random | -20.23 | `(drum-ks 0 .5 :p 150 :b .99 :amp-env '(0 1 90 1 100 0))` |
+| 46 | `MetPlnk5` | Karplus-Strong / Random | -28.56 | `(drum-ks 0 .5 :p 25 :b 1)` |
+| 47 | `Pluck1` | Karplus-Strong / Random | -22.62 | `(drum-ks 0 .5 :p 40 :b 0 :amp-env '(0 1 90 1 100 0))` |
+| 48 | `Pluck2` | Karplus-Strong / Random | -21.96 | `(drum-ks 0 1 :p 25 :b 0)` |
+| 49 | `Pluck3` | Karplus-Strong / Random | -17.06 | `(drum-ks 0 .5 :p 200 :b 0 :amp-env '(0 1 50 1 100 0) :duration 2)` |
+| 50 | `Pluck4` | Karplus-Strong / Random | -14.58 | `(drum-ks 0 .5 :p 400 :b 0 :amp-env '(0 1 50 1 100 0) :duration 2)` |
+| 51 | `BrknCym1` | Granular / Cymbal | -18.84 | `(grani 0 2 20 "turkish-cymbal-1.snd" :grain-envelope '(0 1 100 0) :amp-envelope '(0 0 10 1 100 0))` |
+| 52 | `BrknCym2` | Granular / CymRev | -18.24 | `(grani 0 4 5 "turkish-cymbal-1.snd" ... :grain-density 20 :reverse t)` |
+| 53 | `RhytBel1` | Granular / BellRev | -26.11 | `(grani 0 2 10 "tubular-bell.snd" :grain-envelope '(0 1 100 0) :amp-envelope '(0 1 50 1 100 0) :grain-density 4 :reverse t)` |
+| 54 | `RhytBel2` | Granular / Bell | -20.23 | `(grani 2 2 10 "tubular-bell.snd" ... :grain-density 8 :reverse t)` |
+| 55 | `PunchKik` | Subtractive / TwoPolQ | -14.08 | not on the page — 14 semitones of drop over 24 ms, Coef low-passing |
+| 56 | `PunchTom` | Subtractive / TwoPolQ | -13.68 | not on the page — the same an octave and a half up, to be played across the pads |
+| 57 | `TightSnr` | Subtractive / OnePole | -16.44 | not on the page — `subtract-op` with no attack, no plateau and a 0.01 base |
+| 58 | `TightHat` | Subtractive / OneZero | -17.92 | not on the page — 60 ms of one-zero high-pass |
 | 59 | `SubKick` | FM / Dec 0 | -16.72 | not on the page — ratio 1, punch on the carrier, index falling into it |
 | 60 | `ZapPerc` | FM / Dec .2 | -13.79 | not on the page — 19 semitones in 10 ms at ratio 3.5 |
-| 61 | `QBassDrm` | Additive / TunedNsQ | -14.34 | not on the page — `NsyBsDrm`'s bank held at Q, with a pitch drop |
+| 61 | `QBassDrm` | Additive / TunedNsQ | -15.18 | not on the page — `NsyBsDrm`'s bank held at Q, with a pitch drop |
 | 62 | `ClickBel` | Additive / Pure | -14.33 | not on the page — the 16384-point bell tilted bright, with a strike transient |
 | 63 | `DarkGong` | Additive / Pure | -17.06 | not on the page — the gong with the top taken off it |
 
@@ -546,7 +550,7 @@ ARM cross-build (`-march=armv7-a -mtune=cortex-a7 -marm -Os`, gcc 14 rather than
 the vendor's, so `.text` will move a little):
 
 ```
-.text 11672   .rodata 2400   .data.rel.ro 3676   .data 4   .bss 397520
+.text 11840   .rodata 2400   .data.rel.ro 3676   .data 4   .bss 398096
 ```
 
 `.bss` is nearly all two things: four 12288-sample Karplus-Strong wavetables
@@ -593,6 +597,30 @@ rest would show:
   state matrix has determinant 1, so the amplitude cannot drift over the 2 s
   decays the bells need; the direct form does. The test checks the peak after
   2 s at four frequencies.
+* **Every filter runs at the page's sample rate, 22050 Hz.** This is the one
+  that matters most, and getting it wrong is what a first hardware test caught.
+  CLM's default rate in 1998 was 22050, and `b1`, `a1`, `r` and the `randh`
+  rate are all **normalised-frequency** quantities — they say where a pole,
+  zero or hold-rate sits *relative to the sample rate*. Ported verbatim to
+  48 kHz they land 48000/22050 = 2.18x higher, and two things follow:
+
+  * every two-pole comes out 2.18x too broad. `NsyBass2` is Q 0.65 where the
+    page has Q 1.42, `FireCrkr` 0.73 against 1.60, `BlwBottl` 262 against 570
+    — a noisy bass becomes just noise.
+  * the one-pole and one-zero emphasis, which sits just under the page's
+    11 kHz Nyquist, moves out past 24 kHz where nobody can hear it. That is
+    what collapses the eleven `op`/`oz` sounds into one another: measured over
+    the eleven, spectral flatness spanned **0.467–0.570** — all of them
+    reading as plain noise — where at the page's rate it spans **0.077–0.353**.
+
+  The subtractive chain therefore runs at 22050 Hz and is linearly interpolated
+  up, which costs 0.46 filter evaluations per output sample instead of one and
+  makes every coefficient mean at the output what it means on the page.
+  `add-noise`'s `ppolar` resonators sit at frequencies measured off a
+  recording and cannot be moved to another rate, so there the translation goes
+  into the coefficient instead: `r^(22050/48000)` realises the page's bandwidth
+  in hertz, and hence its Q, exactly. The Karplus-Strong lengths already
+  carried this correction (see `kKsRateScale`); the filters did not, and now do.
 * **The `randh` rate is fixed at 0.49.** Every `randh` the page makes is made
   at 0.49 of the sample rate and not one of its fifty-odd calls moves it, so the
   knob that used to carry it is the pitch envelope instead. Nothing any preset
@@ -603,7 +631,7 @@ rest would show:
   *Three controls the page does not have*.
 * **`Reso` is a pole radius, so bandwidth is fixed in Hz, not in Q.** That is
   faithful — `subtract-pp` takes `r` — and it stays the default: a two-pole
-  preset played two octaves up quadruples its Q, from 0.65 to 2.6 at `Reso`
+  preset played two octaves up quadruples its Q, from 1.4 to 5.7 at `Reso`
   99.00% and 100 Hz. `TwoPolQ` and `TunedNsQ` are the other reading, offered
   beside it rather than in place of it. Tim Stilson's 2006 dissertation
   ([*Efficiently-Variable Non-Oversampled Algorithms in Virtual-Analog Music

@@ -192,6 +192,47 @@ static void test_env_base() {
  * carrier increment produces.  Pin both helpers against libm so this unit
  * cannot be built against a copy that has drifted back.
  */
+/**
+ * CLM's `:base`, pinned against Bill Schottstaedt's own published numbers.
+ *
+ * From the sndclm documentation, for the rising ramp '(0 0  1 1):
+ *
+ *     > (envelope-interp .1 '(0 0 1 1) 32.0)
+ *     0.0133617278184869
+ *     > (envelope-interp .1 '(0 0 1 1) .012)
+ *     0.361774730775292
+ *
+ * These settle the direction of the control, which is worth having nailed down:
+ * a base above 1 starts slowly, so on a DECAY it holds near full and then falls
+ * off a cliff, and a base below 1 is the ordinary percussive fast-then-tail.
+ * The page's noise instruments all use 10 and up, which is why they are sizzles
+ * that stop rather than hits that decay -- that is the page, not a port bug.
+ */
+static void test_clm_base_against_clm() {
+  banner("clm::Env :base matches CLM's published envelope-interp values");
+
+  struct Row {
+    float base;
+    double want;
+  };
+  const Row rows[] = {{32.0f, 0.0133617278184869}, {0.012f, 0.361774730775292},
+                      {1.0f, 0.1}};
+  for (const Row& r : rows) {
+    clm::Env e;
+    const float xs[2] = {0.0f, 1.0f};
+    const float ys[2] = {0.0f, 1.0f};
+    e.setPoints(xs, ys, 2, r.base);
+    e.trigger(10000);
+    float got = 0.0f;
+    for (uint32_t i = 0; i <= 1000; ++i) got = e.process(i);  // x = 0.1
+    std::printf("  base %-8g -> %.12f (CLM: %.12f)\n", (double)r.base, (double)got, r.want);
+    check(std::fabs((double)got - r.want) < 2.0e-5, "base %g: %.9f, CLM says %.9f", (double)r.base,
+          (double)got, r.want);
+  }
+}
+
+/*===========================================================================*/
+
 static void test_float_math_floor() {
   banner("float_math.h si_floorf / si_ceilf agree with libm");
 
@@ -854,6 +895,7 @@ int main() {
   test_header_matches_preset0();
   test_ks_lengths();
   test_env_base();
+  test_clm_base_against_clm();
   test_float_math_floor();
   test_oscil();
   test_twopole_norm();
