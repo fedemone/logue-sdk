@@ -11,7 +11,7 @@
  * Changes from original FmOperator.h:
  *   - C struct + static inline (no C++ class, no std::string/vector)
  *   - ESP32/Arduino/IRAM_ATTR dependencies removed
- *   - Waveform is a plain enum (no display name methods)
+ *   - Waveform is a plain enum (no display name methods), all ten shapes
  *   - SIN_FUNC_NORM  -> fastersinfullf() from float_math.h
  *   - fast_floorf    -> fmo_frac() using (int) cast (safe for positive values)
  *   - DIV_SAMPLE_RATE -> 1.0f / 48000.0f
@@ -21,7 +21,8 @@
  *   - Phase in normalized [0, 1) convention
  *   - MOD_RANGE = 16.0: modulator output is scaled by 16 when added to phase
  *   - fm_level = 0.1 * 161^volume - 0.1: exponential (DX7-style) depth curve
- *   - feedback_  = 1 / 2^(7 - fb): DX7-style feedback parameter (fb in 0..7)
+ *   - feedback_  = 1 / 2^(7 - fb): DX7-style feedback parameter (fb in 0..10,
+ *     so the depth runs 0 .. 8, not 0 .. 1)
  */
 
 #include "float_math.h"
@@ -29,13 +30,24 @@
 
 #define FMO_MOD_RANGE 16.0f
 
+/* Upstream FmOperator::setFeedback() applies no clamp at all; its editor
+ * (MenuStructure.h) offers 0..10, and the stock kit uses values up to 10.0.
+ * The port used to clamp at 7, which capped feedback depth at 1.0 and cost
+ * up to 8x the intended amount on six imported instruments. */
+#define FMO_FB_MAX 10.0f
+
 typedef enum {
-    WF_SINE     = 0,
-    WF_COSINE   = 1,
-    WF_TRIANGLE = 2,
-    WF_SQUARE   = 3,
-    WF_SAW      = 4,
-    WF_COUNT    = 5
+    WF_SINE         = 0,
+    WF_COSINE       = 1,
+    WF_TRIANGLE     = 2,
+    WF_SQUARE       = 3,
+    WF_SAW          = 4,
+    WF_NEG_SINE     = 5,
+    WF_NEG_COSINE   = 6,
+    WF_NEG_TRIANGLE = 7,
+    WF_NEG_SQUARE   = 8,
+    WF_NEG_SAW      = 9,
+    WF_COUNT        = 10
 } fmo_waveform_t;
 
 typedef struct {
@@ -45,7 +57,7 @@ typedef struct {
     float ratio;
     float detune;
 
-    float fb;         /* DX7-style feedback parameter 0..7 */
+    float fb;         /* DX7-style feedback parameter 0..10 */
     float feedback_;  /* = 1 / 2^(7 - fb), computed from fb */
     float fb_mod;     /* external multiplier, default 1.0 */
     float fb_mult;    /* fb_mod * feedback_ */
@@ -84,14 +96,44 @@ static inline float fmo_wf_saw(float t) {
     return t * 2.0f - 1.0f;
 }
 
+/* The sign-inverted half of the table.  These are not cosmetic: negating a
+ * modulator shifts its contribution to the carrier phase by half a cycle, so a
+ * patch that sums several modulators (or feeds one back) lands on a different
+ * waveform entirely.  19 of the 59 imported instruments use one. */
+
+static inline float fmo_wf_negsine(float t) {
+    return -fmo_wf_sine(t);
+}
+
+static inline float fmo_wf_negcos(float t) {
+    return -fmo_wf_cos(t);
+}
+
+static inline float fmo_wf_negtriangle(float t) {
+    return 1.0f - 4.0f * si_fabsf(t - 0.5f);
+}
+
+static inline float fmo_wf_negsquare(float t) {
+    return (t < 0.5f) ? -1.0f : 1.0f;
+}
+
+static inline float fmo_wf_negsaw(float t) {
+    return 1.0f - t * 2.0f;
+}
+
 static inline float fmo_wf_render(fmo_waveform_t wf, float t) {
     switch (wf) {
-        case WF_SINE:     return fmo_wf_sine(t);
-        case WF_COSINE:   return fmo_wf_cos(t);
-        case WF_TRIANGLE: return fmo_wf_triangle(t);
-        case WF_SQUARE:   return fmo_wf_square(t);
-        case WF_SAW:      return fmo_wf_saw(t);
-        default:          return fmo_wf_sine(t);
+        case WF_SINE:         return fmo_wf_sine(t);
+        case WF_COSINE:       return fmo_wf_cos(t);
+        case WF_TRIANGLE:     return fmo_wf_triangle(t);
+        case WF_SQUARE:       return fmo_wf_square(t);
+        case WF_SAW:          return fmo_wf_saw(t);
+        case WF_NEG_SINE:     return fmo_wf_negsine(t);
+        case WF_NEG_COSINE:   return fmo_wf_negcos(t);
+        case WF_NEG_TRIANGLE: return fmo_wf_negtriangle(t);
+        case WF_NEG_SQUARE:   return fmo_wf_negsquare(t);
+        case WF_NEG_SAW:      return fmo_wf_negsaw(t);
+        default:              return fmo_wf_sine(t);
     }
 }
 
@@ -123,8 +165,10 @@ static inline float fmo_frac(float x) {
  * ------------------------------------------------------------------------- */
 
 static inline void fmo_update_phase_inc(fm_op_t* op) {
+    /* No clamp to >= 0: several kit patches give a ratio-0 "noise" operator a
+     * negative detune, which upstream runs as a slow backwards phase sweep.
+     * Clamping it to zero froze the phase and turned the operator into DC. */
     float freq = op->base_freq * op->ratio + op->detune;
-    if (freq < 0.0f) freq = 0.0f;
     op->phase_inc = freq * INV_SAMPLE_RATE;
 }
 
@@ -144,7 +188,7 @@ static inline void fmo_set_detune(fm_op_t* op, float hz) {
 }
 
 static inline void fmo_set_feedback(fm_op_t* op, float fb) {
-    op->fb = (fb < 0.0f) ? 0.0f : ((fb > 7.0f) ? 7.0f : fb);
+    op->fb = (fb < 0.0f) ? 0.0f : ((fb > FMO_FB_MAX) ? FMO_FB_MAX : fb);
     op->feedback_ = (op->fb == 0.0f) ? 0.0f : fasterpow2f(op->fb - 7.0f);
     op->fb_mult = op->fb_mod * op->feedback_;
 }
@@ -186,8 +230,10 @@ static inline void fmo_reset(fm_op_t* op) {
  * Returns normalized phase t ∈ [0, 1) with modulation and feedback applied. */
 static inline float fmo_advance(fm_op_t* op, float mod_in, float pitch) {
     op->phase += op->phase_inc * pitch;
-    /* Remove integer part (handles phase_inc * pitch up to ~2.0) */
-    if (op->phase >= 1.0f) op->phase -= (float)(int)op->phase;
+    /* Keep the running phase in [0, 1) in both directions.  Wrapping here is
+     * equivalent to upstream's wrap-at-output (they differ by whole cycles)
+     * and keeps a backwards-running operator from drifting out of precision. */
+    if (op->phase >= 1.0f || op->phase < 0.0f) op->phase = fmo_frac(op->phase);
     float t = op->phase + mod_in * FMO_MOD_RANGE + op->fb_mult * op->last_out;
     return fmo_frac(t);
 }

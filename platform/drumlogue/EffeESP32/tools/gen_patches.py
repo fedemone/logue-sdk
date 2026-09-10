@@ -28,10 +28,18 @@ the GM slot is the real identity and the `name` field is not:
     "Snare Body" for 6.1 s (GM Ride Bell); 60..66 are all "Bongo" and GM has
     seven hand drums there.  A closed hat does not ring for four seconds.
 
-VOICING overrides (see VOICE_EDITS): a handful of imported slots keep envelope
-or algorithm values that are wrong for what the slot is on this instrument.
-They are applied *after* selection so the instrument list, its order and the
-duplicate filter stay keyed to the untouched source data.
+The kit's own parameter values are imported verbatim -- they are the authored
+settings and are assumed correct.  Where the port sounded wrong, the fault was
+in the engine, not the data: waveforms 5..9 were folded onto 0..4, operator
+feedback was clamped at 7 when the kit goes to 10, pan was linear instead of
+equal-power, and a negative effective operator frequency was clamped to zero.
+Those are fixed in fm_operator.h / fm_voice6.h; see README "Import fidelity".
+
+VOICING overrides (see VOICE_EDITS) are the one deliberate departure, and they
+are *not* corrections of bad data: the kit's long cymbal tails are right for
+the original's pad-triggered playing, and too long for a step sequencer driving
+a part.  They are applied *after* selection so the instrument list, its order
+and the duplicate filter stay keyed to the untouched source data.
 """
 #
 # Usage:
@@ -227,9 +235,12 @@ for i, (short, full, p, n) in enumerate(selected):
 missing = sorted(set(VOICE_EDITS) - set(edited.values()))
 assert not missing, f"VOICE_EDITS names slots that are not imported: {missing}"
 
-WF = {0:"WF_SINE",1:"WF_COSINE",2:"WF_TRIANGLE",3:"WF_SQUARE",4:"WF_SAW",
-      # original has 10 waveforms; the negative variants fold onto base shapes.
-      5:"WF_SINE",6:"WF_COSINE",7:"WF_TRIANGLE",8:"WF_SQUARE",9:"WF_SAW"}
+# All ten upstream shapes.  These used to fold 5..9 onto 0..4, which silently
+# dropped the sign inversion on 19 of the 59 imported instruments.
+WF = {0:"WF_SINE",     1:"WF_COSINE",     2:"WF_TRIANGLE",
+      3:"WF_SQUARE",   4:"WF_SAW",        5:"WF_NEG_SINE",
+      6:"WF_NEG_COSINE", 7:"WF_NEG_TRIANGLE", 8:"WF_NEG_SQUARE",
+      9:"WF_NEG_SAW"}
 
 def f(x):
     s = f"{float(x):.6g}"
