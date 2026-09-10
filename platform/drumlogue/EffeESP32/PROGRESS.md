@@ -100,7 +100,7 @@ instructions for the next agent.
   slot index for the extras). Selecting an instrument reloads `Note` to that
   value; `GateOn` triggers the assigned note.
 - **Feedbk macro** (param 23): global operator-feedback control, 0–200 %
-  (100 % = patch). Additive ±3.5 offset in the FM feedback domain (clamped 0–7),
+  (100 % = patch). Additive ±3.5 offset in the FM feedback domain (clamped 0–10),
   so it adds grit even to zero-feedback patches. Applied at note-on
   (`FmVoice6::addFeedback`).
 - **Combined Filter selector** (param 11, range −4…5): folds the SVF on/off flag
@@ -108,6 +108,27 @@ instructions for the next agent.
   `0`/`1` keep the patch waveform; string labels (`Off`, `On Saw`, …) shown via
   `getParameterStrValue`. Chosen over an ADSR-model switch (the alternative
   envelope was a placeholder with no musical intent — see design discussion).
+- **Import fidelity pass** (in response to "if we have to correct them, we
+  probably made an error during import" — correct, we had). Diffed the port
+  against upstream at the same commit the kit JSON came from (6e47275). The
+  JSON→struct field mapping, `adsr.h`, `svf_filter.h` and all 18 algorithm
+  graphs are exact. Four engine-side narrowings were not, and each one is the
+  kind of simplification that looks harmless when written:
+  - **Waveforms 5–9 folded onto 0–4**, dropping the sign inversion. Harmless on
+    a lone carrier, not on a modulator (half-cycle phase shift into the
+    carrier). Reached **19 of the 59** instruments, Crash1 among them.
+  - **Operator feedback clamped to 0–7**, but `feedback_ = 1/2^(7−fb)` makes
+    `fb` an exponent and the kit goes to 10 — up to 8× too little feedback on 6
+    instruments. Upstream applies no clamp; its own editor offers 0–10.
+  - **Linear pan** where upstream is equal-power (`sin_lut` is a full-cycle
+    sine indexed in turns), putting the kit's 21 off-centre slots up to 3 dB
+    loud against the rest.
+  - **Effective operator frequency clamped to ≥ 0**, freezing the phase of the
+    ratio-0/negative-detune "noise" operator into DC on 5 toms and LoAgogo.
+  All four fixed; `MASTER_GAIN` 0.71 → 0.50 (= 0.71/√2) so the drive into the
+  limiter is unchanged. Mean loudness −20.51 → −20.49 LUFS, worst peak −0.39
+  dBFS, tails within 19 ms of before, 59/59 instruments still report every
+  reflected parameter inside its declared header range.
 - **Verification:**
   - Compiles for the real target (`armv7-a`, `-mfpu=neon-vfpv4`) with
     `arm-linux-gnueabihf-g++`; links to a `.drmlgunit` shared object exporting
@@ -130,9 +151,9 @@ instructions for the next agent.
    `.drmlgunit` is accepted (`dev_id` `0x46654465`, `unit_id` `0x34`, version
    `1.0.0`) and audibly correct.
 2. **Tune levels/voicing** against the original ESP32 firmware. `MASTER_GAIN`
-   (constants.h) is 0.71, chosen so a single hit clears the output ceiling on
+   (constants.h) is 0.50, chosen so a single hit clears the output ceiling on
    its own and the limiter only acts on stacks; the measured loudness/envelope
-   curve is in the README. Nothing clips (worst peak −0.35 dBFS, no non-finite
+   curve is in the README. Nothing clips (worst peak −0.39 dBFS, no non-finite
    samples at 8 voices on any of the 59). The unit now measures −20.5 LUFS mean,
    which is quiet against the rest of the repo — that is deliberate, but it is
    the number to revisit first if it does not sit right on hardware. (It was
@@ -145,8 +166,10 @@ instructions for the next agent.
 3. **Choke groups**: the original `FmDrumPatch` has `chokeGroup` (e.g. open vs
    closed hi-hat). It is currently dropped. Re-add `chokeGroup` to the patch
    struct + generator and implement choking in the allocator.
-4. **Pan from patch**: original stores per-patch `pan`; we load it, but the
-   non-GM repeats are mostly centered. Verify stereo image.
+4. **Pan from patch**: original stores per-patch `pan`; we load it and now
+   apply upstream's equal-power law (see the import-fidelity bullet). Only 21
+   of the 128 source slots are off centre and none past |0.23|, so the image is
+   narrow by design — verify on hardware.
 
 ## TODO / Known limitations
 
@@ -163,10 +186,10 @@ instructions for the next agent.
 - [ ] **Choke groups not implemented** (hi-hats won't cut each other).
 - [ ] **Reverb send dropped** — drumlogue has its own master FX; `reverbSend`
       from the JSON is intentionally ignored.
-- [ ] **Waveforms 5–9** (negative sine/cos/tri/sqr/saw) fold onto their positive
-      base shapes in the generator (`fm_operator.h` only defines 5 waveforms).
-      Add the 5 negative variants to `fmo_waveform_t` + `fmo_wf_render` for full
-      fidelity, then update `WF` map in `tools/gen_patches.py`.
+- [x] ~~**Waveforms 5–9** fold onto their positive base shapes~~ — done.
+      `fmo_waveform_t` now carries all ten shapes, `fmo_wf_render` dispatches
+      them and the generator's `WF` map is the identity. This was not cosmetic;
+      see the import-fidelity bullet above.
 - [ ] **Operator ratios/detune not individually exposed** in the UI (the 6 op
       *levels*, a global Detune and a global Feedbk macro are). The carrier
       *waveform* is now exposed via the combined Filter selector (op 0 only); a

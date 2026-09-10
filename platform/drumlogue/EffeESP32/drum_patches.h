@@ -31,8 +31,8 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.18f, 0.0f, 0.0f, 0.68f, WF_COSINE },
-      { 0.15f, 0.0f, 0.0f, 0.06f, WF_COSINE },
-      { 0.07f, 0.0f, 0.9f, 0.43f, WF_SAW } }
+      { 0.15f, 0.0f, 0.0f, 0.06f, WF_NEG_COSINE },
+      { 0.07f, 0.0f, 0.9f, 0.43f, WF_NEG_SAW } }
   },
   /* Bass Drum 1 */
   {
@@ -55,7 +55,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 1.7f, 0.0f, 6.4f, 0.71f, WF_SAW },
+      { 1.7f, 0.0f, 6.4f, 0.71f, WF_NEG_SAW },
       { 1.11f, 0.0f, 5.8f, 0.08f, WF_SINE } }
   },
   /* Acoustic Snare */
@@ -78,7 +78,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     { { 1.005f, 0.0f, 7.15f, 1.005f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 0.92f, 0.0f, 0.0f, 0.67f, WF_SAW },
+      { 0.92f, 0.0f, 0.0f, 0.67f, WF_NEG_SAW },
       { 1.005f, 0.0f, 7.25f, 1.005f, WF_SINE },
       { 1.04f, 0.0f, 4.2f, 0.58f, WF_SINE } }
   },
@@ -127,7 +127,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 1.0f, 0.075f, WF_SINE },
       { 1.0f, 0.0f, 1.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.79f, WF_TRIANGLE },
-      { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
+      { 0.0f, -2.5f, 0.0f, 0.4f, WF_NEG_SAW },
       { 0.5f, 0.0f, 0.0f, 0.02f, WF_SINE } }
   },
   /* Pedal Hi-Hat */
@@ -151,7 +151,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 1.0f, 0.075f, WF_SINE },
       { 1.0f, 0.0f, 1.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.79f, WF_TRIANGLE },
-      { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
+      { 0.0f, -2.5f, 0.0f, 0.4f, WF_NEG_SAW },
       { 0.5f, 0.0f, 0.0f, 0.02f, WF_SINE } }
   },
   /* Open Hi-Hat  [voiced] was rel 1.332 */
@@ -164,7 +164,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 2.5f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 2.09f, 0.0f, 2.5f, 0.8f, WF_SINE },
-      { 2.88f, 0.0f, 0.0f, 0.54f, WF_COSINE } }
+      { 2.88f, 0.0f, 0.0f, 0.54f, WF_NEG_COSINE } }
   },
   /* Low-Mid Tom */
   {
@@ -175,7 +175,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 1.0f, 0.075f, WF_SINE },
       { 1.0f, 0.0f, 1.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.79f, WF_TRIANGLE },
-      { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
+      { 0.0f, -2.5f, 0.0f, 0.4f, WF_NEG_SAW },
       { 0.5f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
   /* Hi-Mid Tom */
@@ -187,7 +187,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 1.0f, 0.075f, WF_SINE },
       { 1.0f, 0.0f, 1.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.79f, WF_TRIANGLE },
-      { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
+      { 0.0f, -2.5f, 0.0f, 0.4f, WF_NEG_SAW },
       { 0.5f, 0.0f, 0.0f, 0.01f, WF_TRIANGLE } }
   },
   /* Crash Cymbal 1  [voiced] was dec 6, rel 6 */
@@ -199,8 +199,8 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.11f, 0.0f, 0.0f, 0.42f, WF_SQUARE },
       { 1.57f, 0.0f, 8.0f, 0.8f, WF_SINE },
       { 1.0f, 4.2f, 5.3f, 0.38f, WF_SINE },
-      { 1.0f, 0.0f, 3.8f, 0.5f, WF_SQUARE },
-      { 2.11f, 0.0f, 0.0f, 0.25f, WF_SQUARE } }
+      { 1.0f, 0.0f, 3.8f, 0.5f, WF_NEG_SQUARE },
+      { 2.11f, 0.0f, 0.0f, 0.25f, WF_NEG_SQUARE } }
   },
   /* High Tom */
   {
@@ -211,7 +211,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 1.0f, 0.075f, WF_SINE },
       { 1.0f, 0.0f, 1.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.79f, WF_TRIANGLE },
-      { 0.0f, -2.5f, 0.0f, 0.4f, WF_SAW },
+      { 0.0f, -2.5f, 0.0f, 0.4f, WF_NEG_SAW },
       { 0.42f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
   /* Ride Cymbal 1  [voiced] was dec 4.398, rel 4.408 */
@@ -257,8 +257,8 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     0.5f, 1, 5573.0f, 0.0f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.4f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
-      { 0.01f, -5.1f, 0.0f, 0.26f, WF_TRIANGLE },
-      { 0.01f, 0.0f, 0.0f, 0.35f, WF_TRIANGLE },
+      { 0.01f, -5.1f, 0.0f, 0.26f, WF_NEG_TRIANGLE },
+      { 0.01f, 0.0f, 0.0f, 0.35f, WF_NEG_TRIANGLE },
       { 1.39f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 2.37f, 0.0f, 0.0f, 0.05f, WF_SQUARE } }
   },
@@ -279,7 +279,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     3, 357.0f, 1.0f, 0.0f,
     0.002f, 0.0f, 0.284f, 0.0f, 0.283f,
     0.5f, 0, 16000.0f, 0.5f, 0.0f,
-    { { 1.0f, 0.0f, 0.0f, 0.49f, WF_TRIANGLE },
+    { { 1.0f, 0.0f, 0.0f, 0.49f, WF_NEG_TRIANGLE },
       { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.01f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -306,7 +306,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     { { 1.0f, 0.0f, 10.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 0.02f, -5.0f, 0.0f, 1.0f, WF_SAW },
+      { 0.02f, -5.0f, 0.0f, 1.0f, WF_NEG_SAW },
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 1.13f, 0.0f, 9.0f, 0.55f, WF_SINE } }
   },
@@ -416,7 +416,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 1.5f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
       { 1.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
-      { 0.0f, 0.0f, 0.0f, 0.13f, WF_SAW } }
+      { 0.0f, 0.0f, 0.0f, 0.13f, WF_NEG_SAW } }
   },
   /* Low Agogo */
   {
@@ -459,24 +459,24 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     14, 2355.0f, 1.42f, 0.0f,
     0.102f, 0.03f, 0.15f, 0.0f, 0.15f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
-    { { 1.0f, 0.0f, 0.0f, 0.96f, WF_SINE },
+    { { 1.0f, 0.0f, 0.0f, 0.96f, WF_NEG_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.03f, 4.1f, 3.2f, 1.0f, WF_COSINE },
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
-      { 0.0f, 2.5f, 0.0f, 0.17f, WF_COSINE } }
+      { 0.0f, 2.5f, 0.0f, 0.17f, WF_NEG_COSINE } }
   },
   /* Long Whistle */
   {
     14, 2355.0f, 1.42f, 0.0f,
     0.102f, 0.2f, 0.15f, 0.0f, 0.15f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
-    { { 1.0f, 0.0f, 0.0f, 0.96f, WF_SINE },
+    { { 1.0f, 0.0f, 0.0f, 0.96f, WF_NEG_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.03f, 4.1f, 3.2f, 1.0f, WF_COSINE },
       { 2.2f, 0.0f, 2.0f, 0.8f, WF_SINE },
-      { 0.0f, 2.5f, 0.0f, 0.17f, WF_COSINE } }
+      { 0.0f, 2.5f, 0.0f, 0.17f, WF_NEG_COSINE } }
   },
   /* Short Guiro */
   {
@@ -485,7 +485,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     0.5f, 0, 1245.0f, 0.0f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.4f, 0.0f, 0.0f, 0.01f, WF_SINE },
-      { 0.11f, 0.0f, 0.5f, 1.0f, WF_SAW },
+      { 0.11f, 0.0f, 0.5f, 1.0f, WF_NEG_SAW },
       { 0.0f, 1.1f, 0.0f, 0.1f, WF_SINE },
       { 1.79f, 0.0f, 0.0f, 0.41f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.01f, WF_SINE } }
@@ -497,8 +497,8 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     0.5f, 0, 1245.0f, 0.0f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.4f, 0.0f, 0.0f, 0.01f, WF_SINE },
-      { 0.05f, 0.0f, 0.5f, 1.0f, WF_SAW },
-      { 0.05f, 0.4f, 0.0f, 0.03f, WF_SQUARE },
+      { 0.05f, 0.0f, 0.5f, 1.0f, WF_NEG_SAW },
+      { 0.05f, 0.4f, 0.0f, 0.03f, WF_NEG_SQUARE },
       { 1.79f, 0.0f, 0.0f, 0.45f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.01f, WF_SINE } }
   },
@@ -630,7 +630,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 2.04f, 0.0f, 0.0f, 0.07f, WF_SINE },
       { 0.0f, 6.7f, 0.0f, 1.0f, WF_COSINE },
-      { 0.0f, 0.3f, 0.0f, 0.21f, WF_SINE },
+      { 0.0f, 0.3f, 0.0f, 0.21f, WF_NEG_SINE },
       { 1.0f, 0.0f, 0.0f, 0.03f, WF_SINE },
       { 1.0f, 0.0f, 0.0f, 0.04f, WF_SINE } }
   },

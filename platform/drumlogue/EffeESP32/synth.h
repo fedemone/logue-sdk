@@ -408,7 +408,7 @@ private:
     static int   clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
     static float semitone_ratio(int semi)      { return fasterpow2f((float)semi * (1.0f / 12.0f)); }
     // Feedbk %: 100 = patch (neutral), 0 = none, 200 = +grit. Maps to a ±3.5
-    // offset in the operator feedback domain (fmo clamps to 0..7).
+    // offset in the operator feedback domain (fmo clamps to 0..10).
     static float feedback_delta_from(int pct)  { return (pct * 0.01f - 1.0f) * 3.5f; }
 
     // ---- state -------------------------------------------------------------

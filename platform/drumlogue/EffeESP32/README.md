@@ -17,7 +17,8 @@ parameters then edit that cached copy in real time.
 ## Features
 
 - **6-operator FM voice** with **18 selectable algorithms** (carrier/modulator/
-  amplitude-modulator routings), exactly as in the upstream `FmVoice6`.
+  amplitude-modulator routings) and all **10 operator waveforms**, exactly as in
+  the upstream `FmVoice6` — see [Import fidelity](#import-fidelity).
 - **59 instrument patches** converted from the original `Drumkit_default.json`:
   the 47 General-MIDI percussion slots (35–81) plus 12 unique ones from the rest,
   fifteen of them re-voiced for a step sequencer — see
@@ -126,7 +127,7 @@ limiter is compared with the knee at equal drive:
 On the Kick's 49.8 Hz decay, `level_meter/harmonics.py` puts the manufactured
 energy above 250 Hz **39.1 dB** lower than before.
 
-#### Headroom, and why `MASTER_GAIN` is 0.71
+#### Headroom, and why `MASTER_GAIN` is 0.50
 
 A limiter can only hold a signal at the ceiling for as long as the signal is
 over it, so how far past the ceiling a hit *arrives* decides how much of its own
@@ -141,27 +142,46 @@ No limiter tuning avoids it. A faster release tracks the envelope more closely
 and flattens it *harder* (measured 0.10 dB of Crash1's 6.50 dB natural fall at a
 40 ms release, against 0.51 dB at 120 ms). The only lever is drive.
 
-Fall delivered out of the natural fall, over the first second of a single hit at
-velocity 127, against the mean loudness it costs:
+That is the measurement that set the constant, and it was taken when Crash1
+still had a 6 s decay:
 
 | `MASTER_GAIN` | mean LUFS | Crash1 | Ride1 (slot 51) | Splash (slot 55) |
 | --- | ---: | ---: | ---: | ---: |
 | 2.51 | −11.75 | 0.51 / 6.50 | 2.66 / 8.08 | 16.3 / 32.6 |
 | 1.41 | −14.32 | 4.82 / 6.50 | 2.73 / 8.08 | 21.3 / 32.6 |
 | 1.00 | −16.79 | 6.47 / 6.50 | 3.57 / 8.08 | 24.2 / 32.6 |
-| **0.71** | **−19.48** | **6.47 / 6.50** | **5.48 / 8.08** | **27.2 / 32.6** |
+| 0.71 | −19.48 | 6.47 / 6.50 | 5.48 / 8.08 | 27.2 / 32.6 |
 | 0.50 | −22.41 | 6.47 / 6.50 | 8.08 / 8.08 | 30.3 / 32.6 |
 
-(Measured before the [voicing edits](#voicing-edits), i.e. with Crash1 still at
-a 6 s decay — which is the condition that made the flattening audible. The
-shorter envelopes have not changed which `MASTER_GAIN` is right, only how much
-is at stake if it is wrong.)
+(Fall delivered out of the natural fall, over the first second of a single hit
+at velocity 127.)
 
-At 0.71 a single hit no longer touches the limiter at all on most instruments —
-Crash1 peaks at −4.6 dBFS — and the limiter is back to being what it should be,
-a safety net that only engages when voices stack. Stacking behaves properly as a
-result: two Crash1 voices now deliver +5.5 dB where the ideal is +6.0 dB, where
-at 2.51 they delivered +1.6 dB because the stage was already brickwalled by one.
+Since then the [voicing edits](#voicing-edits) took those tails down to well
+under a second — the fall-over-one-second metric no longer separates the rows,
+because the instruments are silent by then — and the
+[import-fidelity fixes](#import-fidelity) raised the bus by 3 dB. Measured
+again, on the current engine and the current kit, against how many of the 59
+instruments send a single velocity-127 hit past `LIMIT_CEILING` before the
+limiter touches it:
+
+| `MASTER_GAIN` | mean LUFS | past the ceiling | worst overshoot |
+| --- | ---: | ---: | ---: |
+| 2.51 | −12.67 | 56 / 59 | +18.8 dB |
+| 1.41 | −13.74 | 38 / 59 | +13.8 dB |
+| 1.00 | −15.41 | 19 / 59 | +10.9 dB |
+| 0.71 | −17.80 | 9 / 59 | +7.9 dB |
+| **0.50** | **−20.49** | **7 / 59** | **+4.8 dB** |
+| 0.45 | −21.33 | 4 / 59 | +3.9 dB |
+
+0.50 is 0.71/√2, so it is the same drive into the limiter that the first
+measurement chose — the 3 dB is handed back, not spent. The mean moved
+−20.51 → −20.49 LUFS across the whole change.
+
+At 0.50 a single hit does not touch the limiter on most instruments — Crash1
+peaks at −5.5 dBFS — and the limiter is back to being what it should be, a
+safety net that only engages when voices stack. Stacking behaves properly as a
+result: two Crash1 voices deliver +5.0 dB where the ideal is +6.0 dB, where at
+2.51 they delivered +1.6 dB because the stage was already brickwalled by one.
 
 The level this gives up was never real. See the note in
 [`tools/level_meter/README.md`](../tools/level_meter/README.md) about not
@@ -240,10 +260,63 @@ Four slots are exact duplicates of another (`HiBongo`/`OHConga`/`HiTimbl`/
 `LoTimbl`, and `SWhistl`/`LWhistl`) — the kit's own content, kept so the slot
 numbering still lines up with the source.
 
+### Import fidelity
+
+The kit's numbers are the authored settings and are treated as correct. Where
+the port sounded wrong, the fault was in the **engine**, not the data — four
+places where this port quietly narrowed what the upstream operator can do. All
+four are fixed; they are listed here because each one is the kind of thing that
+looks like a harmless simplification when you write it.
+
+| what the port did | what upstream does | reached |
+| --- | --- | ---: |
+| folded waveforms 5–9 onto 0–4 | ten shapes, five of them sign-inverted | **19 / 59** |
+| clamped operator feedback to 0–7 | no clamp; its editor offers 0–10 | 6 / 59 |
+| linear (equal-gain) pan | equal-power, `sin(π/4·(1 ± pan))` | 21 slots |
+| clamped effective operator frequency to ≥ 0 | lets the phase run backwards | 6 / 59 |
+
+- **Waveforms.** `Waveform` upstream is `{Sine, Cosine, Triangle, Square, Saw,
+  NegSine, NegCosine, NegTriangle, NegSquare, NegSaw}`. Folding the negatives
+  onto their base shapes reads as harmless — a sign flip is inaudible on a lone
+  carrier. It is not harmless on a *modulator*: negating one shifts its
+  contribution to the carrier's phase by half a cycle, so a patch that sums
+  several modulators lands on a different waveform. Crash1 is the clearest
+  case: algorithm 6 sums three modulators into one carrier and two of them are
+  `NegSquare`.
+- **Feedback.** `feedback_ = 1 / 2^(7 − fb)`, so `fb` is an exponent, and
+  clamping it at 7 caps the depth at 1.0. The kit goes to 10, i.e. a depth of
+  8 — Vibrslp's op0 was running at 1/8 of its intended feedback, SnSlap's op3
+  likewise, Splash's op3 at 1/3. Feedback is what makes these voices noisy, so
+  the clamp did not make them tamer, it made them a different instrument.
+- **Pan.** Upstream's `sin_lut()` is a full-cycle sine indexed in turns, so its
+  `setPan` is the standard equal-power law: 0.707 per side at centre. The
+  linear law here is 0.5 per side, which put the 21 off-centre instruments of
+  the kit up to 3 dB loud against the rest.
+- **Negative frequency.** Several patches give a ratio-0 "noise" operator a
+  negative detune, which upstream runs as a slow backwards phase sweep.
+  Clamping to zero froze the phase and turned the operator into DC — five toms
+  and LoAgogo.
+
+Fixing these raised the bus by very nearly exactly 3 dB (the pan law dominates),
+so `MASTER_GAIN` went 0.71 → 0.50 = 0.71/√2 to keep the drive into the limiter
+where it was measured; see `constants.h`. Mean loudness across the 59
+instruments moved −20.51 → −20.49 LUFS, i.e. nothing.
+
+Everything else is verified equal: the JSON field mapping matches upstream's
+`DrumkitStorage::deserializePatch` name for name, `adsr.h` is identical in
+every coefficient, `svf_filter.h` is a direct port, and the 18 algorithm graphs
+are reproduced verbatim. One deliberate deviation remains: upstream computes
+`veloMult_ = velocity × veloMod` and then never uses it, so `veloMod` is dead
+there and velocity scales the voice linearly. This port applies it
+(`1 − veloMod·(1 − vel)`), which is identical at velocity 127 and gentler
+below.
+
 ### Voicing edits
 
 Fifteen imported slots ship with a decay, a release — and on five of them an
-algorithm — that is not the kit's. The table lives in `VOICE_EDITS` in
+algorithm — that is not the kit's. Unlike the engine bugs above these are **not
+corrections of bad data**: the kit's long tails are right for the instrument it
+was written for, and wrong for a step sequencer driving a part. The table lives in `VOICE_EDITS` in
 `tools/gen_patches.py` and is applied after selection, so the instrument list,
 its order, the trigger notes and the duplicate filter all stay keyed to the
 untouched source data. Each edited entry is marked `[voiced]` in the generated
@@ -256,11 +329,11 @@ header with its original values.
 | Splash (55) | 600 ms | 600 ms | 1.500 / 1.500 s | — | 0.595 s |
 | Crash2 (57) | 600 ms | 600 ms | 8.000 / 8.000 s | — | 0.568 s |
 | Ride2 (59) | 600 ms | 600 ms | 3.665 / 3.725 s | — | 0.529 s |
-| ChinaCy (52) | 50 ms | **600 ms** | 3.128 / 3.128 s | — | 0.572 s |
+| ChinaCy (52) | 50 ms | **600 ms** | 3.128 / 3.128 s | — | 0.571 s |
 | RideBel (53) | 50 ms | **600 ms** | 6.113 / 6.156 s | 10 → **17** | 0.504 s |
 | OpHat (46) | *1325 ms* | **180 ms** | 1.325 / 1.332 s | — | 0.185 s |
 | MtlStk (29) | *600 ms* | **330 ms** | 0.600 / 0.600 s | 6 → **13** | 0.334 s |
-| Vibrslp (58) | 50 ms | **180 ms** | 2.798 / 2.798 s | — | 0.187 s |
+| Vibrslp (58) | 50 ms | **180 ms** | 2.798 / 2.798 s | — | 0.184 s |
 | MHConga (62) | 50 ms | **330 ms** | 0.070 / 0.070 s | — | 0.271 s |
 | HiAgogo (67) | 50 ms | 50 ms | 0.350 / 0.466 s | 2 → **9** | 0.051 s |
 | OTrngl (81) | 50 ms | 50 ms | 6.270 / 6.229 s | — | 0.060 s |
@@ -294,7 +367,7 @@ decay has already taken the envelope well down by the time the gate ends, so
 the tail behind it is quieter — and measures shorter than its nominal release —
 than the same release behind a long decay. Compare the rows above: ChinaCy and
 Ride1 both ask for a 600 ms release, but ChinaCy's 50 ms decay brings it to
-−60 dB in 0.572 s against Ride1's 0.607 s, and it gets there from a lower
+−60 dB in 0.571 s against Ride1's 0.607 s, and it gets there from a lower
 level. In short:
 
 - **long decay + short release** — a clean, full-level hit that stops (OpHat).
@@ -305,7 +378,7 @@ So decay is changed only where the body of the hit is what needs changing, and
 left at the kit's value otherwise.
 
 The numeric patch data is otherwise a faithful copy of the JSON, verified field
-by field.
+by field — see [Import fidelity](#import-fidelity).
 
 ### Parameters (24)
 

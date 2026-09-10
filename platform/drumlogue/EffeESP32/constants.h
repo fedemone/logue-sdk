@@ -57,36 +57,41 @@ constexpr float SEMITONE_RATIO = 1.0594630943592953f;
 constexpr int   MAX_VOICES     = 8;     // polyphony of the drum allocator
 // Voice-mix gain feeding the output stage (common/output_stage.h).
 //
-// This is a HEADROOM trim, not a loudness trim, and that is the whole point of
-// its value.  It was 2.51, chosen to push the mean to the -9 LUFS house target
-// through the old memoryless knee.  At that setting a single hit at velocity
-// 127 arrives 6.4 dB (Crash1), 12 dB (the slot-51 hat) or 17 dB (Cymbal1) past
-// the output ceiling -- so the stage has to hold it there until the envelope
-// itself has fallen that far, which on a 6 s cymbal is a full second of
-// perfectly flat output before any decay is audible.  Measured fall over the
-// first second of a Crash1 hit: 6.50 dB unprocessed, 0.51 dB delivered.  That
-// is the "continuous noise with no envelope" failure, and no limiter tuning
-// avoids it: a faster release tracks the envelope more closely and flattens it
-// harder (measured 0.10 dB delivered at a 40 ms release).
+// This is a HEADROOM trim, not a loudness trim.  It was 2.51, chosen to push
+// the mean to the -9 LUFS house target through the old memoryless knee; at that
+// setting a single hit at velocity 127 arrives up to 18.8 dB past the output
+// ceiling, so the stage has to hold it there until the envelope has fallen that
+// far -- flat output first, decay afterwards.  That is the "continuous noise
+// with no envelope" failure, and no limiter tuning avoids it: a faster release
+// tracks the envelope more closely and flattens it harder.  The only lever is
+// drive.
 //
-// The only lever is drive.  Measured with tools/level_meter and
-// tools/stack_meter, fall delivered out of the natural fall over the first
-// second, single hit at velocity 127:
+// Measured with tools/level_meter (mean loudness over all 59 instruments) and
+// tools/stack_meter (peak of the unlimited voice mix for one hit at velocity
+// 127, against LIMIT_CEILING), on the current engine and the current kit:
 //
-//   MASTER_GAIN   mean LUFS   Crash1        slot-51 hat   Cymbal1 (Splash slot)
-//   2.51           -11.75     0.51 / 6.50   2.66 / 8.08   16.3 / 32.6
-//   1.41           -14.32     4.82 / 6.50   2.73 / 8.08   21.3 / 32.6
-//   1.00           -16.79     6.47 / 6.50   3.57 / 8.08   24.2 / 32.6
-//   0.71 (now)     -19.48     6.47 / 6.50   5.48 / 8.08   27.2 / 32.6
-//   0.50           -22.41     6.47 / 6.50   8.08 / 8.08   30.3 / 32.6
+//   MASTER_GAIN   mean LUFS   past the ceiling   worst overshoot
+//   2.51           -12.67        56 / 59            +18.8 dB
+//   1.41           -13.74        38 / 59            +13.8 dB
+//   1.00           -15.41        19 / 59            +10.9 dB
+//   0.71           -17.80         9 / 59             +7.9 dB
+//   0.50 (now)     -20.49         7 / 59             +4.8 dB
+//   0.45           -21.33         4 / 59             +3.9 dB
 //
-// 0.71 leaves the limiter as what it should be -- a safety net for stacking --
+// 0.50 leaves the limiter as what it should be -- a safety net for stacking --
 // instead of the thing that shapes every single hit.  The level it gives up was
 // never real: see tools/level_meter/README.md on why unit loudness here is not
 // worth chasing, and that on hardware the difference is a quarter turn of the
 // synth track's volume knob.
+//
+// It was 0.71 until the import-fidelity fixes (see README "Import fidelity"),
+// which raised the bus by very nearly exactly 3 dB: the pan law went from
+// linear to the equal-power one upstream uses, and a centre-panned voice is
+// 0.707 per side there against 0.5 here.  0.50 is 0.71 / sqrt(2), so the drive
+// into the limiter -- the thing this constant actually sets -- is unchanged,
+// and the measured mean moved -20.51 -> -20.49 LUFS across the whole change.
 #ifndef MASTER_GAIN_OVERRIDE
-constexpr float MASTER_GAIN    = 0.71f;
+constexpr float MASTER_GAIN    = 0.50f;
 #else
 constexpr float MASTER_GAIN    = MASTER_GAIN_OVERRIDE;
 #endif

@@ -124,11 +124,15 @@ public:
         for (auto& op : ops_) fmo_set_feedback(&op, op.fb + delta);
     }
 
+    // Equal-power pan, as upstream: its sin_lut() is a full-cycle sine indexed
+    // in turns, so setPan(p) there is sin(pi/4 * (1 +/- p)).  The port used a
+    // linear (equal-gain) law, which is 3 dB down at centre and therefore put
+    // the 21 off-centre instruments of the kit that much louder than the rest.
     void setPan(float pan) {
-        pan_  = pan;
-        float p = (pan + 1.0f) * 0.5f;     // 0..1
-        panR_ = p;
-        panL_ = 1.0f - p;
+        pan  = (pan < -1.0f) ? -1.0f : ((pan > 1.0f) ? 1.0f : pan);
+        pan_ = pan;
+        panR_ = fastersinfullf((0.125f + 0.125f * pan) * M_TWOPI);
+        panL_ = fastersinfullf((0.125f - 0.125f * pan) * M_TWOPI);
     }
     float getPanL() const { return panL_; }
     float getPanR() const { return panR_; }
