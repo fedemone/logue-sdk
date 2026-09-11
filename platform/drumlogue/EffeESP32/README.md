@@ -313,10 +313,19 @@ below.
 
 ### Voicing edits
 
-Fifteen imported slots ship with a decay, a release — and on five of them an
-algorithm — that is not the kit's. Unlike the engine bugs above these are **not
-corrections of bad data**: the kit's long tails are right for the instrument it
-was written for, and wrong for a step sequencer driving a part. The table lives in `VOICE_EDITS` in
+Twenty-four imported slots ship with something that is not the kit's value.
+They fall into two groups, for two different reasons, and neither is a
+correction of an import error — those are all in [Import fidelity](#import-fidelity).
+
+**Envelope edits (15 slots)** are a playing-context choice: the kit's long tails
+are right for the machine it was written for and wrong for a step sequencer
+driving a part.
+
+**Template-slot voicings (10 slots)** are different. The kit author voiced slots
+35–62 and then left the rest sitting on whichever patch the editor seeded them
+from — which is why slots 63–66 are byte-identical to slot 60 and slot 77 is a
+"Closed Hat" at 3200 Hz. For those there is no authored setting to be faithful
+to, so choosing one is not overriding the author. The table lives in `VOICE_EDITS` in
 `tools/gen_patches.py` and is applied after selection, so the instrument list,
 its order, the trigger notes and the duplicate filter all stay keyed to the
 untouched source data. Each edited entry is marked `[voiced]` in the generated
@@ -330,7 +339,7 @@ header with its original values.
 | Crash2 (57) | 600 ms | 600 ms | 8.000 / 8.000 s | — | 0.568 s |
 | Ride2 (59) | 600 ms | 600 ms | 3.665 / 3.725 s | — | 0.529 s |
 | ChinaCy (52) | 50 ms | **600 ms** | 3.128 / 3.128 s | — | 0.571 s |
-| RideBel (53) | 50 ms | **600 ms** | 6.113 / 6.156 s | 10 → **17** | 0.504 s |
+| RideBel (53) | 600 ms | 600 ms | 6.113 / 6.156 s | — | 0.580 s |
 | OpHat (46) | *1325 ms* | **180 ms** | 1.325 / 1.332 s | — | 0.185 s |
 | MtlStk (29) | *600 ms* | **330 ms** | 0.600 / 0.600 s | 6 → **13** | 0.334 s |
 | Vibrslp (58) | 50 ms | **180 ms** | 2.798 / 2.798 s | — | 0.184 s |
@@ -342,6 +351,64 @@ header with its original values.
 
 *Italic* decay = the kit's own value, kept. Tails are to −60 dB with a 10 ms
 gate, i.e. driven the way the sequencer drives a part.
+
+#### The template slots, and the operator that emits nothing
+
+Six of these slots (60, 61, 63–66) ran on **algorithm 2**, whose only modulator
+is op5 — and in the editor's default operator set op5 has ratio 0 *and* detune
+0. Its phase increment is therefore zero, and its feedback loop is seeded at
+`last_out = 0`, so `sin(fb · 0) = 0` forever: **the operator emits exactly
+nothing**. The carrier is never modulated and the slot is a bare sine at its
+base frequency. A bare sine with a 5 ms attack is a synth "boop", not a hand
+drum. MHConga is the control that proves the mechanism — same algorithm 2, but
+its op5 has ratio 0.98, so it modulates, and it sounds like a conga.
+
+The other four had the opposite problem: a live modulator at the kit's operator
+volume of 0.8, which through `fm_level = 0.1·161^0.8 − 0.1 ≈ 5.77` and
+`MOD_RANGE = 16` is a modulation index near **92** — past where FM is a tone at
+all.
+
+Two numbers separate the two failure modes. **Off-fundamental** is the share of
+spectral energy outside ±15 % of the base frequency — near zero means a bare
+sine. **Flatness** is the spectral flatness measure, 0 for a pure tone and 1 for
+white noise. Both are measured with a 10 ms gate.
+
+| instrument (slot) | change | kit had | off-fund. | flatness | centroid |
+| --- | --- | --- | ---: | ---: | ---: |
+| HiBongo (60) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
+| LoBongo (61) | algo **1**, op5 vol **0.30** | algo 2, 0.8 | 0 → 22 % | 0.00 → 0.15 | 131 → 4388 Hz |
+| OHConga (63) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
+| LoConga (64) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 124 → 216 Hz |
+| HiTimbl (65) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
+| LoTimbl (66) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
+| Cabasa (69) | low-pass **6 kHz**, level 0.63 | filter off | 50 → 54 % | 0.83 → **0.56** | 11771 → 7279 Hz |
+| LoWdBlk (77) | op6 vol **0.30** | 0.8 | 99 → **30 %** | 0.73 → 0.47 | 8371 → 9391 Hz |
+| GlasFX (86) | op2/4/6 vol **0.25** | 0.8 | 99 → 96 % | 0.83 → **0.07** | 11847 → 9495 Hz |
+| RideBel (53) | level **1.00** | 0.32 | — | — | −33.5 → −21.1 LUFS |
+
+Algorithm 1 rings ops 0, 4 and 5 as *carriers*, so the silent op5 costs nothing
+and op4 supplies the inharmonic partial a drum needs. Where the problem was too
+much index instead, the lever is operator volume, not the algorithm: every
+other algorithm available to these patches either rings the raw modulator as a
+carrier, or — like 12 and 13 — references none of the live operators at all and
+emits a mathematically pure sine, which is the *same* defect as the bongos, not
+a fix for it.
+
+Cabasa is the exception that needed the filter: it is a shaker, so broadband is
+correct, but its noise comes from op2 waveshaping a feedback chain rather than
+from modulation index, so operator volume does not reach it — only the top
+octave of hiss had to go. For calibration, instruments never reported as wrong
+measure 0.001 flatness (HiWdBlk, a near-pure sine at 650 Hz) to 0.28 (OTrngl);
+pitch matters as much as purity, which is why a pure sine passes at 650 Hz and
+does not at 211 Hz.
+
+RideBel's level is here, but its real defect was an algorithm: this unit briefly
+shipped it on algorithm 17, which drives its carrier at an index near 92 and
+turned the bell into hiss — 14.2 kHz centroid, 0.67 flatness, −33.5 LUFS, i.e.
+the "outputs no sound" report. The kit's own algorithm 10 uses ops 4 and 5
+(volume 0.03) as near-silent modulators and rings ops 0, 1 and 2 as carriers:
+4.3 kHz, 0.015 flatness. Restored, with the level the kit's 6 s ring no longer
+pays for, it measures −21.1 LUFS against a −20.5 kit mean.
 
 The kit was authored for a machine with no polyphony ceiling and no 16-step grid
 in front of it; sixteen of its slots ring for 2.8–8.0 s, which on a drumlogue
@@ -359,7 +426,7 @@ instruments, tail length to −60 dB tracks release and ignores decay:
 | Cabasa | 600 ms | 300 ms | 0.302 s |
 | Claves | 300 ms | 200 ms | 0.198 s |
 | HiWdBlk | 120 ms | 50 ms | 0.058 s |
-| LoBongo | 356 ms | 551 ms | 0.548 s |
+| LoBongo | 356 ms | 551 ms | 0.544 s |
 
 Decay is not dead, though, and the two are not interchangeable. Decay runs for
 the length of the gate, so it sets the level release *starts from*. A 50 ms
@@ -372,7 +439,7 @@ level. In short:
 
 - **long decay + short release** — a clean, full-level hit that stops (OpHat).
 - **short decay + long release** — a soft swell, quieter than its length
-  suggests (ChinaCy, RideBel).
+  suggests (ChinaCy).
 
 So decay is changed only where the body of the hit is what needs changing, and
 left at the kit's value otherwise.

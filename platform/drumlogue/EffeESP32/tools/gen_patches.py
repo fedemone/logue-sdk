@@ -165,7 +165,13 @@ VOICE_EDITS = {
     57:  {"dec": 0.6,  "rel": 0.6},                 # Crash2   (was 8.000/8.000)
     59:  {"dec": 0.6,  "rel": 0.6},                 # Ride2    (was 3.665/3.725)
     52:  {"dec": 0.05, "rel": 0.6},                 # ChinaCy  (was 3.128/3.128)
-    53:  {"dec": 0.05, "rel": 0.6,  "alg": 17},     # RideBel  (was 6.113/6.156)
+    # RideBel: algorithm 17 drives its carrier at a modulation index near 92 and
+    # turns the bell into broadband hiss -- measured spectral centroid 14.2 kHz,
+    # flatness 0.67, -33.5 LUFS, which is the "outputs no sound" report.  The
+    # kit's own algorithm 10 uses ops 4/5 (volume 0.03) as near-silent
+    # modulators and rings ops 0/1/2 as carriers: 4.3 kHz, flatness 0.015.  Back
+    # to the kit's, with the level the kit's 6 s ring no longer pays for.
+    53:  {"dec": 0.6,  "rel": 0.6,  "vol": 1.0},    # RideBel  (was 6.113/6.156, alg 17 tried)
     # --- release only: the body of the hit is already right -----------------
     46:  {"rel": 0.18},                             # OpHat    (was 1.332, dec 1.325 kept)
     29:  {"rel": 0.33, "alg": 13},                  # MtlStk   (was 0.600, dec 0.600 kept)
@@ -176,6 +182,49 @@ VOICE_EDITS = {
     81:  {"dec": 0.05, "rel": 0.05},                # OTrngl   (was 6.270/6.229)
     87:  {"dec": 0.05, "rel": 0.05, "alg": 1},      # RailBel  (was 6.300/6.100)
     100: {"dec": 0.05, "rel": 0.05, "alg": 0},      # RailBe2  (was 6.300/6.100)
+
+    # --- unvoiced template slots: giving the carrier something to say -------
+    # Slots 60..66 and 86 all carry the editor's default operator set, in which
+    # op5 has ratio 0 AND detune 0.  Its phase increment is therefore zero and
+    # its feedback loop is seeded at last_out = 0, so sin(fb * 0) = 0 forever:
+    # the operator emits exactly nothing.  Algorithm 2 uses op5 as its only
+    # modulator, so the carrier is never modulated and the slot is a bare sine
+    # at its base frequency -- measured flatness 0.000, centroid == fundamental.
+    # A bare sine with a 5 ms attack is the "zapping, feel not correct" report.
+    # Algorithm 1 instead rings ops 0, 4 and 5 as carriers, so the silent op5
+    # costs nothing and op4 (ratio 2.5) supplies the inharmonic partial a hand
+    # drum needs.  MHConga is the control: same algorithm 2, but its op5 has
+    # ratio 0.98, so it modulates, and it was not reported.
+    60:  {"alg": 1},                                # HiBongo  (was alg 2)
+    # LoBongo was seeded from the Rail bell template, so its live operators are
+    # squares at bell ratios -- there is no drum-like partial to reach for.
+    # Algorithm 1 rings op4 (ratio 1.397 square) alongside the carrier; at the
+    # kit's 0.8 that is 67% off-fundamental and far too bright for a 135 Hz
+    # drum, at 0.30 it is 22% and gives the bare sine a body.  (Algorithm 0,
+    # considered first, rings only op0 and the silent op5: bit-identical timbre
+    # to the kit's algorithm 2, 3 dB down. A level change, not a voicing one.)
+    61:  {"alg": 1, "opvol": {4: 0.30}},            # LoBongo  (was alg 2, op5 vol 0.8)
+    63:  {"alg": 1},                                # OHConga  (was alg 2)
+    64:  {"alg": 1},                                # LoConga  (was alg 2)
+    65:  {"alg": 1},                                # HiTimbl  (was alg 2)
+    66:  {"alg": 1},                                # LoTimbl  (was alg 2)
+    # GlasFX has live modulators at volume 0.8, i.e. fm_level 5.77 and a
+    # modulation index of 5.77 * MOD_RANGE = 92 -- past where FM is a tone at
+    # all (centroid 11.8 kHz, flatness 0.83).  0.25 brings the index to ~4.
+    86:  {"opvol": {1: 0.25, 3: 0.25, 5: 0.25}},    # GlasFX   (was alg 11, ops 0.8)
+    # LoWdBlk is the "Closed Hat" template at 3200 Hz on algorithm 2, whose op5
+    # (ratio 2, square, volume 0.8) is a live modulator at index 92: 98.8% of
+    # its energy is off the fundamental.  Same lever as GlasFX -- op5 at 0.30
+    # brings the index to ~5 and the off-fundamental share to 30%.  NOT an
+    # algorithm change: every other algorithm here either rings op5 as a raw
+    # 6.4 kHz square (66%) or, like 12 and 13, references none of the live
+    # operators at all and emits a mathematically pure sine -- which is the
+    # defect this block exists to fix, not a fix for it.
+    77:  {"opvol": {5: 0.30}},                      # LoWdBlk  (was op6 vol 0.8)
+    # Cabasa is a shaker, so broadband is right, but its energy sits at 11.8 kHz
+    # -- hiss rather than beads.  Its noise comes from op2 waveshaping a
+    # feedback chain, so modulator volume does not reach it; a low-pass does.
+    69:  {"flt": 1, "filterFreq": 6000.0, "vol": 0.63},
 }
 
 def param_key(p):
@@ -229,7 +278,12 @@ for i, (short, full, p, n) in enumerate(selected):
         continue
     p = dict(p)
     for field, value in VOICE_EDITS[n].items():
-        p[field] = value
+        if field == "opvol":                 # {op index: volume}
+            p["ops"] = [dict(o) for o in p["ops"]]
+            for op_i, op_v in value.items():
+                p["ops"][op_i]["vol"] = op_v
+        else:
+            p[field] = value
     selected[i] = (short, full, p, n)
     edited[short] = n
 missing = sorted(set(VOICE_EDITS) - set(edited.values()))
@@ -263,9 +317,10 @@ lines.append(" * Layout mirrors the original FmDrumPatch (FmPatch.h): a flat str
 lines.append(" * fixed parameters.  Selecting an instrument copies one of these structs")
 lines.append(" * into the synth working cache; the UI then edits the cached copy.")
 lines.append(" *")
-lines.append(" * Entries marked `[voiced]` carry a decay/release (and sometimes algorithm)")
-lines.append(" * override from the generator's VOICE_EDITS table rather than the source")
-lines.append(" * kit's value; the comment gives the original.")
+lines.append(" * Entries marked `[voiced]` carry an override from the generator's")
+lines.append(" * VOICE_EDITS table rather than the source kit's value -- envelope times,")
+lines.append(" * algorithm, patch or operator volume, or filter settings.  The comment")
+lines.append(" * gives the original for each field that was overridden.")
 lines.append(" */")
 lines.append("")
 lines.append('#include "fm_voice6.h"')
@@ -282,8 +337,13 @@ for short, full, p, note in selected:
     note_txt = ""
     if note in VOICE_EDITS:
         orig = patches[note]
-        was = [f"{k} {orig[k]:g}" if k != "alg" else f"alg {orig[k]}"
-               for k in VOICE_EDITS[note]]
+        was = []
+        for k in VOICE_EDITS[note]:
+            if k == "opvol":
+                was += [f"op{i+1} vol {orig['ops'][i]['vol']:g}"
+                        for i in VOICE_EDITS[note][k]]
+            else:
+                was.append(f"{k} {orig[k]:g}")
         note_txt = "  [voiced] was " + ", ".join(was)
     lines.append(f"  /* {full}{note_txt} */")
     lines.append("  {")

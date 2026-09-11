@@ -12,9 +12,10 @@
  * fixed parameters.  Selecting an instrument copies one of these structs
  * into the synth working cache; the UI then edits the cached copy.
  *
- * Entries marked `[voiced]` carry a decay/release (and sometimes algorithm)
- * override from the generator's VOICE_EDITS table rather than the source
- * kit's value; the comment gives the original.
+ * Entries marked `[voiced]` carry an override from the generator's
+ * VOICE_EDITS table rather than the source kit's value -- envelope times,
+ * algorithm, patch or operator volume, or filter settings.  The comment
+ * gives the original for each field that was overridden.
  */
 
 #include "fm_voice6.h"
@@ -238,10 +239,10 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.61f, 0.0f, 0.0f, 0.26f, WF_SINE },
       { 2.44f, 0.0f, 0.0f, 0.8f, WF_SQUARE } }
   },
-  /* Ride Bell  [voiced] was dec 6.113, rel 6.156, alg 10 */
+  /* Ride Bell  [voiced] was dec 6.113, rel 6.156, vol 0.32 */
   {
-    17, 2178.0f, 0.32f, -0.11f,
-    0.004f, 0.0f, 0.05f, 0.0f, 0.6f,
+    10, 2178.0f, 1.0f, -0.11f,
+    0.004f, 0.0f, 0.6f, 0.0f, 0.6f,
     0.5f, 1, 3779.0f, 0.01f, 1.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_COSINE },
       { 1.46f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -322,9 +323,9 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.11f, 0.0f, 2.5f, 0.05f, WF_SINE },
       { 1.87f, 0.0f, 3.5f, 0.05f, WF_SINE } }
   },
-  /* Hi Bongo */
+  /* Hi Bongo  [voiced] was alg 2 */
   {
-    2, 211.0f, 1.42f, 0.23f,
+    1, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -334,16 +335,16 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Low Bongo */
+  /* Low Bongo  [voiced] was alg 2, op5 vol 0.8 */
   {
-    2, 135.0f, 1.46f, 0.22f,
+    1, 135.0f, 1.46f, 0.22f,
     0.01f, 0.0f, 0.356f, 0.0f, 0.551f,
     0.5f, 0, 16000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.481f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.109f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 2.49f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
-      { 1.397f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
+      { 1.397f, 0.0f, 0.0f, 0.3f, WF_SQUARE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
   /* Mute Hi Conga  [voiced] was dec 0.07, rel 0.07 */
@@ -358,9 +359,9 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.98f, 0.0f, 1.9f, 0.06f, WF_TRIANGLE } }
   },
-  /* Open Hi Conga */
+  /* Open Hi Conga  [voiced] was alg 2 */
   {
-    2, 211.0f, 1.42f, 0.23f,
+    1, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -370,9 +371,9 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Low Conga */
+  /* Low Conga  [voiced] was alg 2 */
   {
-    2, 127.0f, 1.42f, 0.23f,
+    1, 127.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -382,9 +383,9 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* High Timbale */
+  /* High Timbale  [voiced] was alg 2 */
   {
-    2, 211.0f, 1.42f, 0.23f,
+    1, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -394,9 +395,9 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Low Timbale */
+  /* Low Timbale  [voiced] was alg 2 */
   {
-    2, 211.0f, 1.42f, 0.23f,
+    1, 211.0f, 1.42f, 0.23f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -430,11 +431,11 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 3.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, -0.5f, 0.0f, 0.21f, WF_COSINE } }
   },
-  /* Cabasa */
+  /* Cabasa  [voiced] was flt 0, filterFreq 20000, vol 1 */
   {
-    7, 800.0f, 1.0f, 0.0f,
+    7, 800.0f, 0.63f, 0.0f,
     0.002f, 0.01f, 0.6f, 0.0f, 0.3f,
-    0.5f, 0, 20000.0f, 0.5f, 0.0f,
+    0.5f, 1, 6000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
@@ -526,7 +527,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.0f, 0.0f, 4.6f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.8f, 0.8f, WF_SINE } }
   },
-  /* Low Wood Block */
+  /* Low Wood Block  [voiced] was op6 vol 0.8 */
   {
     2, 3200.0f, 1.0f, 0.0f,
     0.001f, 0.005f, 0.12f, 0.0f, 0.06f,
@@ -536,7 +537,7 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 2.0f, 0.0f, 4.5f, 0.8f, WF_SQUARE } }
+      { 2.0f, 0.0f, 4.5f, 0.3f, WF_SQUARE } }
   },
   /* Mute Cuica */
   {
@@ -694,17 +695,17 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 4.0f, 0.0f, 2.5f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 3.0f, 0.8f, WF_SINE } }
   },
-  /* Glass FX */
+  /* Glass FX  [voiced] was op2 vol 0.8, op4 vol 0.8, op6 vol 0.8 */
   {
     11, 1700.0f, 1.0f, 0.0f,
     0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
+      { 0.5f, 0.0f, 0.5f, 0.25f, WF_SINE },
       { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
-      { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
+      { 2.0f, 0.0f, 2.0f, 0.25f, WF_SINE },
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
-      { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
+      { 0.0f, 0.0f, 4.5f, 0.25f, WF_SINE } }
   },
   /* Rail bell  [voiced] was dec 6.3, rel 6.1, alg 10 */
   {
