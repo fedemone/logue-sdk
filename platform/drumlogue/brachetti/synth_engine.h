@@ -97,6 +97,20 @@ static constexpr float    kMasterLimRelMs   = 20.0f;
 static constexpr float    kMasterLimRelCoef =
     1.0f / (kMasterLimRelMs * 0.001f * 48000.0f);
 
+#ifdef BRACHETTI_MASTER_PROBE
+// Host-only master-stage diagnostics (see stack_probe.cpp).  Compiled out of
+// the shipping unit entirely: nothing in this block exists unless a probe
+// defines the five globals and the macro.
+extern float g_mp_bus_peak;   // peak |voice bus| arriving at Stage 4b
+extern float g_mp_pre_peak;   // peak |x| after master filter + drive
+extern float g_mp_gr_min;     // smallest gain the soft knee applied
+extern long  g_mp_wall_hits;  // samples the safety brickwall actually clamped
+extern float g_mp_trim;       // extra bus trim, 1.0 = shipping behaviour
+extern bool  g_mp_bypass;     // true = skip the knee and the brickwall
+extern long  g_mp_samples;    // samples through the master stage
+extern long  g_mp_pinned;     // ...of which flattened onto the gain curve
+#endif
+
 // Stage-2 pilot defaults (override-able at compile time for quick sweeps).
 #define STAGE2_MODAL_RATIO_2    2.80f
 #define STAGE2_MODAL_ENV1       0.9f
@@ -403,7 +417,13 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
     /* k_Shaker: HW redesign — small woodblock body (bar ratio, very short) under
        the grain-pulse noise; the enveloped-LFO AM lives in NoteOn/processBlock. */
     {2.756f, 0.0f, 0.0f, 50.0f, 25.0f, 0.0f, 0.0f, 0.15f, 0.80f, 0.50f, 0.0f, 0.0f, 2, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Taiko2: the pre-redesign Taiko — deep long membrane, HW-approved as bass voice */ {1.59f, 2.14f, 2.90f, 1800.0f, 900.0f, 500.0f, 280.0f, 0.28f, 0.80f, 0.55f, 0.38f, 0.25f, 4, 0, 0.0f},
+    /* k_Taiko2 (DeepBs): the pre-redesign Taiko — deep membrane, HW-approved as
+       a bass voice.  T60s scaled by 500/1800 for the HW request "DeepBs decay
+       to 500 ms": 1800/900/500/280 -> 500/250/140/78.  One factor for all four
+       keeps the decay SHAPE (the upper modes still die first, which is what
+       makes it a struck head and not an organ); k_boom_decay in
+       model_param_presets is cut to the same 500 ms in the same pass. */
+    {1.59f, 2.14f, 2.90f, 575.0f, 287.0f, 161.0f, 90.0f, 0.28f, 0.80f, 0.55f, 0.38f, 0.25f, 4, 0, 0.0f},
     /* k_GlassBowl: modes 5/6 at 6.37/8.10 for overtone content */ {2.09f, 3.35f, 4.77f, 2000.0f, 1600.0f, 1200.0f, 800.0f, 0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 6, 6.37f, 8.10f, 0.22f, 0.15f},
     /* k_HiHatClosed: pure noise voice (the pre-redesign Shaker) — no modal body */ kDefaultModalPresetConfig,
     /* k_HiHatOpen: plate ratios for metallic shimmer */ {2.9200f,6.3700f,11.7500f,100.0000f,400.0000f,250.0000f,160.0000f,0.3000f,0.9000f,0.7500f,0.5500f,0.3500f,4,0.0000f,0.0000f},
@@ -494,13 +514,28 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
     /* k_Claves      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.18000f,    0.50000f},
     /* k_Cowbell     */ { 900.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.45000f,    0.00000f,    0.75000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.22000f,    0.00000f},
     /* k_Triangle    */ {1800.00000f,    0.00000f,    0.00000f,    0.00000f,    1.26000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.15000f,    0.00000f,    0.96000f, false,    0.16000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.40000f,    0.00000f},
-    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f,    0.99982f, 0.70000f,    0.00000f,    0.00350f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    2.00000f},
+    /* k_KickDrum: boom_decay 0.99982 -> 0.99990949 (HW request: "set Kick
+       program decay to 1590 ms").  T60 = ln(0.001)/ln(decay), so 0.99982 was
+       799 ms and the whole preset measured t-60 = 810 ms — the boom IS this
+       preset, k_modal_mix is 0 and modal_preset_configs[k_KickDrum] is the
+       empty default, so there is no second half to cut here the way Kick2 and
+       DeepBs have one.  Dkay is deliberately NOT moved with it, for the reason
+       spelled out on k_Kick2's config: it is the reference anchor, so the
+       shipped knob position plays exactly this data either way. */
+    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f, 0.99990835f, 0.70000f,    0.00000f,    0.00350f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    2.00000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Shaker: modal_mix 0.04→0 — the woodblock body was a struck "tok" at onset
        (HW: "too much hit sound, should not be there").  Shaker = pure rattling
        noise (AM-modulated), no pitched hit. */
     /* k_Shaker      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.00000f,    0.00000f},
-    /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f,    0.99981f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
+    /* k_Taiko2 (DeepBs): boom_decay 0.99981 -> 0.99971222 (HW request: "DeepBs
+       decay to 500 ms").  757 ms -> 500 ms.  BOTH halves move, the same rule
+       k_Kick2's config states: this preset's tail was the MODAL bank's
+       (t60_1 = 1800 ms against a 757 ms boom), so it measured t-60 = 1665 ms,
+       and cutting only the boom would have left the ring where it was.  The
+       four T60s in modal_preset_configs[k_Taiko2] are scaled by the same
+       500/1800 alongside this. */
+    /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f, 0.99974975f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
     /* k_HiHatClosed */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_HiHatOpen   */ {3600.00000f,    1.00000f, 12000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    1.00000f,    0.00000f,    0.93000f, false,    0.36000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.12000f,    0.50000f},
@@ -594,6 +629,61 @@ EngineType kPresetEngine[k_NumPrograms] = {
     /* k_RimShot(39)      */ ENGINE_SNARE,  // rimshot crack + rim-ring ping
     /* k_RackTom(40)      */ ENGINE_MEMBRANE,  // mounted rack tom (high drum to Ac Tom's low)
 };
+
+// Preset → output trim.  The one number that gain-stages a preset into the
+// master limiter; see "Pass 47" in CLAUDE.md and calib_probe.cpp, which
+// generates this table.
+//
+// WHY IT EXISTS.  Stage 4b is a peak limiter with a 0.99 ceiling, and before
+// this table the voice bus reached it between 0.5x and 116x full scale — a
+// 47 dB spread across the library, with a MEASURED single-preset worst case of
+// 13.4x for the BODY of a note (Cowbell), not for its strike.  Nothing
+// downstream can be transparent across that, and what the limiter actually did
+// with it was not limiting: with 20-40 dB of gain reduction standing on the
+// whole note it held the output AT the ceiling for hundreds of milliseconds,
+// so (measured, 10 ms frames, Marimba at its own note and velocity 127) the
+// output envelope read 0, -8, -6, -4, -2, 0, 0, 0 ... dB — a duck into the
+// strike and then a swell back to the wall that stayed there for half a
+// second, where the voice itself decays -14, -14, -15, -16, -18, -24, -42 dB.
+// The instrument's decay never happened, every new strike ducked whatever was
+// still ringing, and stacked notes (which is where HW heard it) drove the
+// residual that no smooth gain can explain to within 5-19 dB of the signal.
+//
+// HOW IT IS CALIBRATED.  On the note's BODY, not its strike: the peak over
+// [10 ms, 1 s] at velocity 127 on the preset's own Note, put onto 1.0 — just
+// at the limiter's kMasterLimThr.  A mallet transient limited by 15 dB for
+// 2 ms is what percussion mastering does and is inaudible; a body held 20 dB
+// down for 500 ms is the defect.  The strike keeps the headroom above the
+// threshold and the limiter goes back to catching peaks.
+//
+// It is clamped to <= 1 by construction: this only ever gives back drive the
+// master stage could not use.  The eight presets that already fitted (Timpani
+// and Taiko, which run the kernel's own master stage, plus Cymbal, Claves,
+// HHat-O, Ride, RidBel) keep exactly 1.0 and render bit-identically.
+//
+// NOTE: must be 'static' only (no const/constexpr) — same .rodata rule as the
+// tables above.
+float kPresetOutTrim[k_NumPrograms] = {
+    /* 0  Kick2   */ 0.17723f, /* 1  Marmba  */ 0.10119f,
+    /* 2  808Sub  */ 0.23543f, /* 3  AcSnre  */ 0.15723f,
+    /* 4  TblrBel */ 0.43644f, /* 5  Timpni  */ 1.00000f,
+    /* 6  Djambe  */ 0.22951f, /* 7  Taiko   */ 1.00000f,
+    /* 8  MrchSnr */ 0.21522f, /* 9  Koto    */ 0.09094f,
+    /* 10 Vibrph  */ 0.40992f, /* 11 Wodblk  */ 0.87743f,
+    /* 12 Ac Tom  */ 0.25143f, /* 13 Cymbal  */ 1.00000f,
+    /* 14 Gong    */ 0.24606f, /* 15 Kalimba */ 0.31945f,
+    /* 16 StelPan */ 0.11435f, /* 17 Claves  */ 1.00000f,
+    /* 18 Cowbel  */ 0.07475f, /* 19 Trngle  */ 0.16818f,
+    /* 20 Kick    */ 0.19391f, /* 21 Clap    */ 0.74056f,
+    /* 22 Shaker  */ 0.20227f, /* 23 DeepBs  */ 0.16751f,
+    /* 24 GlsBwl  */ 0.29981f, /* 25 HHat-C  */ 0.57970f,
+    /* 26 HHat-O  */ 1.00000f, /* 27 Conga   */ 0.54896f,
+    /* 28 Handpn  */ 0.30738f, /* 29 BelTre  */ 0.40060f,
+    /* 30 SltDrm  */ 0.45822f, /* 31 Ride    */ 1.00000f,
+    /* 32 RidBel  */ 1.00000f, /* 33 Bongo   */ 0.56574f,
+    /* 34 GlsBotl */ 0.40581f, /* 35 Tick    */ 0.71282f,
+    /* 36 Splash  */ 0.92942f, /* 37 BrshSnr */ 0.20091f,
+    /* 38 RimShot */ 0.37612f, /* 39 RackTom */ 0.35711f};
 
 // ModelsIndex → modal frequency-ratio template: modes 2..6 relative to the
 // fundamental.  Used by the modal engines (BAR/MEMBRANE/SNARE/PLATE) when the
@@ -748,6 +838,8 @@ SynthState state;
         // after Resume() installs the drive of whatever preset was mid-fade
         // when the unit was suspended, on top of the one actually loaded.
         m_pending_drive    = -1.0f;
+        m_pending_trim     = -1.0f;   // same reason; m_out_trim itself belongs
+                                      // to the loaded preset and survives a Reset
         // Master-stage state dies with the voices too: a limiter envelope left
         // high would ride the first strike after Resume() down for ~20 ms, and
         // a non-zero idle counter would keep the master chain spinning on an
@@ -884,6 +976,7 @@ SynthState state;
         // current preset must stay no-ops so shipped renders are unaffected.
         const bool preset_changed = (idx != m_preset_idx);
         const float prev_drive = state.master_drive;
+        const float prev_trim  = m_out_trim;
         if (preset_changed) {
             const float fmul = cym_env_mul(kPresetFadeTauSec, default_sample_rate);
             for (int i = 0; i < NUM_VOICES; ++i) {
@@ -1085,13 +1178,26 @@ SynthState state;
         // block can re-arm it, so the queue only ever holds the drive of the
         // preset now loading.  (Reset() has no such loop — see the explicit
         // clear there.)
-        if (preset_changed && state.master_drive != prev_drive) {
+        //
+        // The output trim is deferred on exactly the same terms — it is the
+        // other half of the master-stage gain, and it moves further than the
+        // drive does (up to 22 dB between two presets), so a fading tail that
+        // took the incoming trim would step audibly.
+        m_out_trim = kPresetOutTrim[idx];
+        if (preset_changed &&
+            (state.master_drive != prev_drive || m_out_trim != prev_trim)) {
             bool fading = false;
             for (int i = 0; i < NUM_VOICES; ++i)
                 if (state.voices[i].is_active && state.voices[i].fade_mul < 1.0f) fading = true;
             if (fading) {
-                m_pending_drive  = state.master_drive;
-                state.master_drive = prev_drive;
+                if (state.master_drive != prev_drive) {
+                    m_pending_drive  = state.master_drive;
+                    state.master_drive = prev_drive;
+                }
+                if (m_out_trim != prev_trim) {
+                    m_pending_trim = m_out_trim;
+                    m_out_trim     = prev_trim;
+                }
             }
         }
 
@@ -4048,11 +4154,14 @@ SynthState state;
 
         // Release a master drive deferred behind a preset-change fade as soon
         // as the last fading voice has retired.
-        if (m_pending_drive >= 0.0f) {
+        if (m_pending_drive >= 0.0f || m_pending_trim >= 0.0f) {
             bool fading = false;
             for (int i = 0; i < NUM_VOICES; ++i)
                 if (state.voices[i].is_active && state.voices[i].fade_mul < 1.0f) fading = true;
-            if (!fading) { state.master_drive = m_pending_drive; m_pending_drive = -1.0f; }
+            if (!fading) {
+                if (m_pending_drive >= 0.0f) { state.master_drive = m_pending_drive; m_pending_drive = -1.0f; }
+                if (m_pending_trim  >= 0.0f) { m_out_trim = m_pending_trim; m_pending_trim = -1.0f; }
+            }
         }
 
         // ── The voice bus is MONO; only main_out[i*2] carries it ──────────────
@@ -4704,14 +4813,39 @@ SynthState state;
         // out = x * (limit(env)/env) is still bounded by kMasterLimCeil BY
         // CONSTRUCTION — the brickwall stays pure safety — while the waveform
         // shape inside a cycle is preserved and the harmonics are not created.
+        // One master-stage gain, hoisted: the Gain knob's drive times the
+        // preset's calibrated output trim.  Neither can change inside a block
+        // (setParameter runs on the UI thread and the deferred drive/trim are
+        // released above), so this is also one multiply per sample instead of
+        // two.
+        const float stage_gain = state.master_drive * m_out_trim;
         for (size_t i = 0; i < frames; ++i) {
             float x = state.master_filter.process(main_out[i * 2]);
-            x *= state.master_drive;
+#ifdef BRACHETTI_MASTER_PROBE
+            if (fabsf(main_out[i * 2]) > g_mp_bus_peak) g_mp_bus_peak = fabsf(main_out[i * 2]);
+            x *= g_mp_trim;
+#endif
+            x *= stage_gain;
             const float ax = fabsf(x);
+#ifdef BRACHETTI_MASTER_PROBE
+            if (ax > g_mp_pre_peak) g_mp_pre_peak = ax;
+            ++g_mp_samples;
+            // The instant-attack branch firing while above the threshold means
+            // this sample's gain is y(|x|)/|x| — i.e. the sample is placed
+            // ON the static curve.  That is a waveshaper, not a limiter.
+            if (ax > state.master_lim_env && ax > kMasterLimThr) ++g_mp_pinned;
+#endif
             state.master_lim_env = (ax > state.master_lim_env)
                 ? ax
                 : state.master_lim_env + (ax - state.master_lim_env) * kMasterLimRelCoef;
             float a = state.master_lim_env;
+#ifdef BRACHETTI_MASTER_PROBE
+            if (g_mp_bypass) {
+                main_out[i * 2] = x;
+                main_out[i * 2 + 1] = x;
+                continue;
+            }
+#endif
             if (a > kMasterLimThr) {
                 // Soft knee that asymptotes to kMasterLimCeil BY CONSTRUCTION:
                 //     y = thr + span * over / (over + span),   over = a - thr
@@ -4732,7 +4866,13 @@ SynthState state;
                 const float y =
                     kMasterLimThr + kMasterLimSpan * over / (over + kMasterLimSpan);
                 x *= y / a;                 // one gain for the whole cycle
+#ifdef BRACHETTI_MASTER_PROBE
+                if (y / a < g_mp_gr_min) g_mp_gr_min = y / a;
+#endif
             }
+#ifdef BRACHETTI_MASTER_PROBE
+            if (fabsf(x) > kMasterLimCeil) ++g_mp_wall_hits;
+#endif
             x = fmaxf(-kMasterLimCeil, fminf(kMasterLimCeil, x));
             main_out[i * 2]     = x;
             main_out[i * 2 + 1] = x;
@@ -4885,6 +5025,12 @@ private:
     // cymbal performance/CPU controls.
     // Master drive queued behind a preset-change fade (-1 = nothing pending).
     float m_pending_drive = -1.0f;
+    // Per-preset output trim (kPresetOutTrim) and its preset-change deferral,
+    // which mirrors m_pending_drive one-for-one: the trim is a master-stage
+    // gain like the drive is, so letting the incoming preset's trim hit the
+    // outgoing preset's fading tail would step that tail by up to 22 dB.
+    float m_out_trim = 1.0f;
+    float m_pending_trim = -1.0f;
     uint8_t m_poly = 4;            // global voice cap (1-4, Poly knob)
     uint8_t m_cym_poly = 4;        // cymbal-family cap (= m_poly; CPU is bounded
                                    // by kCymCostBudget, not by voice count)
