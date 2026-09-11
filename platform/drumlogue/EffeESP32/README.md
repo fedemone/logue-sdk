@@ -256,9 +256,12 @@ The GM label is therefore the instrument's identity; the kit's `name` is kept in
 each patch's C comment for traceability, and `EXTRA` in the generator supplies
 short names for the 12 non-GM slots, where `name` is all there is.
 
-Four slots are exact duplicates of another (`HiBongo`/`OHConga`/`HiTimbl`/
-`LoTimbl`, and `SWhistl`/`LWhistl`) — the kit's own content, kept so the slot
-numbering still lines up with the source.
+The kit shipped `HiBongo`, `OHConga`, `HiTimbl` and `LoTimbl` byte-identical —
+four differently named instruments on the same operators at 211 Hz — because it
+never voiced those slots. They are separated in
+[Voicing edits](#the-template-slots-and-the-operator-that-emits-nothing).
+`SWhistl`/`LWhistl` are still exact duplicates: the kit's own content, kept so
+the slot numbering lines up with the source.
 
 ### Import fidelity
 
@@ -321,7 +324,7 @@ correction of an import error — those are all in [Import fidelity](#import-fid
 are right for the machine it was written for and wrong for a step sequencer
 driving a part.
 
-**Template-slot voicings (10 slots)** are different. The kit author voiced slots
+**Template-slot voicings (9 slots)** are different. The kit author voiced slots
 35–62 and then left the rest sitting on whichever patch the editor seeded them
 from — which is why slots 63–66 are byte-identical to slot 60 and slot 77 is a
 "Closed Hat" at 3200 Hz. For those there is no authored setting to be faithful
@@ -355,15 +358,16 @@ gate, i.e. driven the way the sequencer drives a part.
 #### The template slots, and the operator that emits nothing
 
 Six of these slots (60, 61, 63–66) ran on **algorithm 2**, whose only modulator
-is op5 — and in the editor's default operator set op5 has ratio 0 *and* detune
+is op6 — and in the editor's default operator set op6 has ratio 0 *and* detune
 0. Its phase increment is therefore zero, and its feedback loop is seeded at
 `last_out = 0`, so `sin(fb · 0) = 0` forever: **the operator emits exactly
 nothing**. The carrier is never modulated and the slot is a bare sine at its
 base frequency. A bare sine with a 5 ms attack is a synth "boop", not a hand
 drum. MHConga is the control that proves the mechanism — same algorithm 2, but
-its op5 has ratio 0.98, so it modulates, and it sounds like a conga.
+its op6 has ratio 0.98, so it modulates, and it sounds like a conga.
+(Operators are numbered op1…op6 here, as on the panel.)
 
-The other four had the opposite problem: a live modulator at the kit's operator
+Three more slots had the opposite problem: a live modulator at the kit's operator
 volume of 0.8, which through `fm_level = 0.1·161^0.8 − 0.1 ≈ 5.77` and
 `MOD_RANGE = 16` is a modulation index near **92** — past where FM is a tone at
 all.
@@ -373,22 +377,43 @@ spectral energy outside ±15 % of the base frequency — near zero means a bare
 sine. **Flatness** is the spectral flatness measure, 0 for a pure tone and 1 for
 white noise. Both are measured with a 10 ms gate.
 
+**The noise group**, where a live modulator sat at the kit's operator volume:
+
 | instrument (slot) | change | kit had | off-fund. | flatness | centroid |
 | --- | --- | --- | ---: | ---: | ---: |
-| HiBongo (60) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
-| LoBongo (61) | algo **1**, op5 vol **0.30** | algo 2, 0.8 | 0 → 22 % | 0.00 → 0.15 | 131 → 4388 Hz |
-| OHConga (63) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
-| LoConga (64) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 124 → 216 Hz |
-| HiTimbl (65) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
-| LoTimbl (66) | algo **1** | algo 2 | 0 → 50 % | 0.00 → 0.00 | 205 → 359 Hz |
 | Cabasa (69) | low-pass **6 kHz**, level 0.63 | filter off | 50 → 54 % | 0.83 → **0.56** | 11771 → 7279 Hz |
 | LoWdBlk (77) | op6 vol **0.30** | 0.8 | 99 → **30 %** | 0.73 → 0.47 | 8371 → 9391 Hz |
 | GlasFX (86) | op2/4/6 vol **0.25** | 0.8 | 99 → 96 % | 0.83 → **0.07** | 11847 → 9495 Hz |
 | RideBel (53) | level **1.00** | 0.32 | — | — | −33.5 → −21.1 LUFS |
 
-Algorithm 1 rings ops 0, 4 and 5 as *carriers*, so the silent op5 costs nothing
-and op4 supplies the inharmonic partial a drum needs. Where the problem was too
-much index instead, the lever is operator volume, not the algorithm: every
+**The hand-drum family**, all six on algorithm 1, then spread into the ladder GM
+implies. The kit gave 60/63/65/66 the same operators at the same 211 Hz, so
+there was nothing to preserve; the levers are base frequency, op5's volume (the
+2.5× partial — 0 % of it is a bare fundamental, 80 % is 50 % off-fundamental)
+and release, with patch volume compensating the level op5 carries.
+
+| instrument (slot) | freq | op5 vol | release | off-fund. | centroid | tail | what it is |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| HiBongo (60) | 211 → **250** Hz | 0.65 | 150 ms | 40 % | 407 Hz | 0.157 s | macho, small and tight |
+| LoBongo (61) | 135 → **180** Hz | 0.55, → **sine** | 220 ms | 32 % | 203 Hz | 0.222 s | hembra, a fourth below |
+| MHConga (62) | 211 Hz *(kit)* | — | 330 ms | 8 % | 379 Hz | 0.271 s | muted — short, and above the open tone |
+| OHConga (63) | 211 → **190** Hz | 0.35 | 350 ms | 16 % | 269 Hz | 0.352 s | open tone, warmer, rings |
+| LoConga (64) | 127 Hz *(kit)* | 0.25 | 400 ms | 9 % | 168 Hz | 0.401 s | tumba, deepest and warmest |
+| LoTimbl (66) | 211 → **225** Hz | 0.72 | 620 ms | 45 % | 374 Hz | 0.617 s | metal shell — bright, long |
+| HiTimbl (65) | 211 → **290** Hz | 0.80 *(kit)* | 700 ms | 50 % | 494 Hz | 0.694 s | metal shell — brightest, longest |
+
+Pitch rises bongos → congas → timbales in the GM order, brightness and ring
+length rise with the shell material, and muting MHConga puts it *above* the open
+conga, which is what muting a drum does. Loudness across the family lands
+between −21.1 and −23.6 LUFS. LoBongo needed one extra lever: it was seeded from
+the Rail bell template, so every operator but the carrier is a square, and
+ringing one as the partial put its centroid at 4.8 kHz against 168–494 Hz for
+its siblings. Its op5 is switched to a sine so it contributes a partial rather
+than a harmonic stack.
+
+Algorithm 1 rings ops 1, 5 and 6 as *carriers*, so the silent op6 costs nothing
+and op5 (ratio 2.5) supplies the inharmonic partial a drum needs. Where the
+problem was too much index instead, the lever is operator volume, not the algorithm: every
 other algorithm available to these patches either rings the raw modulator as a
 carrier, or — like 12 and 13 — references none of the live operators at all and
 emits a mathematically pure sine, which is the *same* defect as the bongos, not

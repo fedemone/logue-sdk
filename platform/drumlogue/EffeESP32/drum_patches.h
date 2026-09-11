@@ -13,9 +13,11 @@
  * into the synth working cache; the UI then edits the cached copy.
  *
  * Entries marked `[voiced]` carry an override from the generator's
- * VOICE_EDITS table rather than the source kit's value -- envelope times,
- * algorithm, patch or operator volume, or filter settings.  The comment
- * gives the original for each field that was overridden.
+ * VOICE_EDITS table rather than the source kit's value -- base frequency,
+ * envelope times, algorithm, patch volume, filter settings, or an
+ * operator's volume or waveform.  The comment gives the original for
+ * each field that was overridden; operators are numbered op1..op6, as
+ * on the panel.
  */
 
 #include "fm_voice6.h"
@@ -323,28 +325,28 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.11f, 0.0f, 2.5f, 0.05f, WF_SINE },
       { 1.87f, 0.0f, 3.5f, 0.05f, WF_SINE } }
   },
-  /* Hi Bongo  [voiced] was alg 2 */
+  /* Hi Bongo  [voiced] was alg 2, freq 211, op5 vol 0.8, rel 0.3, vol 1.42 */
   {
-    1, 211.0f, 1.42f, 0.23f,
-    0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
+    1, 250.0f, 1.58f, 0.23f,
+    0.005f, 0.01f, 0.4f, 0.0f, 0.15f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
       { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
       { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
-      { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
+      { 2.5f, 0.0f, 3.0f, 0.65f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Low Bongo  [voiced] was alg 2, op5 vol 0.8 */
+  /* Low Bongo  [voiced] was alg 2, freq 135, op5 vol 0.8, op5 wave 3, rel 0.551, vol 1.46 */
   {
-    1, 135.0f, 1.46f, 0.22f,
-    0.01f, 0.0f, 0.356f, 0.0f, 0.551f,
+    1, 180.0f, 1.55f, 0.22f,
+    0.01f, 0.0f, 0.356f, 0.0f, 0.22f,
     0.5f, 0, 16000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 1.481f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 1.109f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
       { 2.49f, 0.0f, 0.0f, 0.8f, WF_SQUARE },
-      { 1.397f, 0.0f, 0.0f, 0.3f, WF_SQUARE },
+      { 1.397f, 0.0f, 0.0f, 0.55f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
   /* Mute Hi Conga  [voiced] was dec 0.07, rel 0.07 */
@@ -359,10 +361,34 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.98f, 0.0f, 1.9f, 0.06f, WF_TRIANGLE } }
   },
-  /* Open Hi Conga  [voiced] was alg 2 */
+  /* Open Hi Conga  [voiced] was alg 2, freq 211, op5 vol 0.8, rel 0.3, vol 1.42 */
   {
-    1, 211.0f, 1.42f, 0.23f,
-    0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
+    1, 190.0f, 1.99f, 0.23f,
+    0.005f, 0.01f, 0.4f, 0.0f, 0.35f,
+    0.5f, 0, 20000.0f, 0.5f, 0.0f,
+    { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
+      { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
+      { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
+      { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
+      { 2.5f, 0.0f, 3.0f, 0.35f, WF_SINE },
+      { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
+  },
+  /* Low Conga  [voiced] was alg 2, op5 vol 0.8, rel 0.3, vol 1.42 */
+  {
+    1, 127.0f, 2.0f, 0.23f,
+    0.005f, 0.01f, 0.4f, 0.0f, 0.4f,
+    0.5f, 0, 20000.0f, 0.5f, 0.0f,
+    { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
+      { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
+      { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
+      { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
+      { 2.5f, 0.0f, 3.0f, 0.25f, WF_SINE },
+      { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
+  },
+  /* High Timbale  [voiced] was alg 2, freq 211, rel 0.3 */
+  {
+    1, 290.0f, 1.42f, 0.23f,
+    0.005f, 0.01f, 0.4f, 0.0f, 0.7f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
@@ -371,40 +397,16 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Low Conga  [voiced] was alg 2 */
+  /* Low Timbale  [voiced] was alg 2, freq 211, op5 vol 0.8, rel 0.3, vol 1.42 */
   {
-    1, 127.0f, 1.42f, 0.23f,
-    0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
+    1, 225.0f, 1.49f, 0.23f,
+    0.005f, 0.01f, 0.4f, 0.0f, 0.62f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
     { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
       { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
       { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
       { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
-      { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
-      { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
-  },
-  /* High Timbale  [voiced] was alg 2 */
-  {
-    1, 211.0f, 1.42f, 0.23f,
-    0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
-    0.5f, 0, 20000.0f, 0.5f, 0.0f,
-    { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
-      { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
-      { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
-      { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
-      { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
-  },
-  /* Low Timbale  [voiced] was alg 2 */
-  {
-    1, 211.0f, 1.42f, 0.23f,
-    0.005f, 0.01f, 0.4f, 0.0f, 0.3f,
-    0.5f, 0, 20000.0f, 0.5f, 0.0f,
-    { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
-      { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
-      { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
-      { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
-      { 2.5f, 0.0f, 3.0f, 0.8f, WF_SINE },
+      { 2.5f, 0.0f, 3.0f, 0.72f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
   /* High Agogo  [voiced] was dec 0.35, rel 0.466, alg 2 */
