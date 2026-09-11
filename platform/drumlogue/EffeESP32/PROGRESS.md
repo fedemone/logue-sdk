@@ -129,6 +129,34 @@ instructions for the next agent.
   limiter is unchanged. Mean loudness −20.51 → −20.49 LUFS, worst peak −0.39
   dBFS, tails within 19 ms of before, 59/59 instruments still report every
   reflected parameter inside its declared header range.
+- **Voicing pass on the unvoiced template slots.** Reported: RideBel silent;
+  OHConga / LoConga / HiTimbl / LoTimbl / Cabasa / LoWdBlk / GlasFX "zapping,
+  really too much, feel not correct"; HiBongo should be algorithm 1 and LoBongo
+  algorithm 0. Measured rather than guessed, and it turned out to be two
+  opposite failure modes:
+  - **Bare sine (too little).** Slots 60/61/63..66 run algorithm 2, whose only
+    modulator is op5 — and in the editor's default operator set op5 has ratio 0
+    *and* detune 0, so its phase increment is zero and its feedback loop is
+    seeded at last_out = 0: sin(fb·0) = 0 forever, the operator emits exactly
+    nothing, and the carrier is a bare sine. MHConga is the control (same
+    algorithm, op5 ratio 0.98, never reported). Fixed with algorithm 1, which
+    rings ops 0/4/5 as carriers so op4 supplies a partial.
+  - **Index ~92 (too much).** Cabasa / LoWdBlk / GlasFX have a live modulator
+    at the kit's operator volume 0.8, i.e. fm_level 5.77 × MOD_RANGE 16. Fixed
+    by lowering modulator volume (0.25–0.30), not by changing the algorithm.
+  - **RideBel** was this unit's own fault: an earlier voicing edit put it on
+    algorithm 17, index ~92, 14.2 kHz centroid, 0.67 flatness, −33.5 LUFS —
+    which is what "outputs no sound" was. Back to the kit's algorithm 10 plus
+    the level its 6 s ring used to pay for: −21.1 LUFS.
+  - LoBongo's requested algorithm 0 measured as a no-op (rings only op0 and the
+    silent op5 — bit-identical timbre to algorithm 2, 3 dB down); user chose
+    algorithm 1 with op5 at 0.30 instead.
+  - Presets kept and `Instr` left clamped, both by decision: `unit_load_preset`
+    is the only unit → host parameter push the SDK has, and the host clamps
+    parameter values, so a wrapping `Instr` knob is not implementable without
+    declaring the parameter over several laps of 59.
+  - `VOICE_EDITS` now also carries patch volume, filter fields and per-operator
+    volumes (`opvol`), so all of this stays in the generator.
 - **Verification:**
   - Compiles for the real target (`armv7-a`, `-mfpu=neon-vfpv4`) with
     `arm-linux-gnueabihf-g++`; links to a `.drmlgunit` shared object exporting
