@@ -9,6 +9,15 @@
 ## Overview
 Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. **40 presets** spanning strings, bars, membranes, metallic plates, cymbals, snares, and idiophones.
 
+The 40 presets are selected with the **`Program`** parameter, not through the
+SDK's preset-recall slots: `.num_presets` is deliberately `0` in `header.c`.
+Both routes called the same `LoadPreset()`, and `Program` is the one worth
+keeping — being an ordinary parameter it is stored with the pattern,
+sequencer-automatable and motion-recordable, which the preset slots are not.
+(Practical consequence for tooling: `tools/level_meter/run.sh` reads
+`.num_presets`, so measure this unit with its sweep mode —
+`./run.sh ../../brachetti 60 127 -1 /tmp/out 0 40`.)
+
 Six engine families route each preset to its own signal path
 (`kPresetEngine[]` in `synth_engine.h` is the authority):
 
@@ -87,6 +96,60 @@ NoteOn / Gate trigger
 ---
 
 ## Key Architectural Decisions & Quirks
+
+### Master gain staging — `kPresetOutTrim[]`
+
+One float per preset, applied in Stage 4b alongside the `Gain` drive.  It is
+the difference between a master stage that *limits* and one that *levels*.
+
+Before it existed, the voice bus reached Stage 4b anywhere between **0.5× and
+116× full scale** depending on the preset, and the worst cases were not strike
+transients — Cowbell's steady **body** arrived at 13.4× and Marimba's at 9.9×.
+A peak limiter with a 0.99 ceiling answers that with 20-40 dB of gain reduction
+standing on the whole note, which does not sound like limiting.  It sounds like
+the note has no decay: the output is pinned AT the ceiling until the voice
+finally drops below the threshold, each new strike ducks whatever is still
+ringing and then swells back up, and on stacked notes the pumping is the
+loudest thing in the mix.  That was the hardware report *"most of the
+instruments seem to be clipping a bit (possibly on stacking notes)"*.
+
+The trim is calibrated on the note's **body**, not its peak: the peak over
+[10 ms, 1 s] at velocity 127 on the preset's own Note is put on 1.0, just at
+`kMasterLimThr`.  Limiting a 2 ms mallet transient by 15 dB is what percussion
+mastering does and is inaudible; holding a body 20 dB down for half a second is
+the defect.  Calibrating on the peak instead was measured and rejected — it
+costs 10 LU of loudness to buy the same thing.
+
+It is clamped to `≤ 1`, so it only ever gives back drive the master stage could
+not use.  Eight presets already fitted and keep exactly 1.0 (Timpani and Taiko
+run the kernel's own master stage; Cymbal, Claves, HHat-O, Ride, RidBel and
+Splash were already under the ceiling), and those render bit-identically.
+
+`calib_probe.cpp` regenerates the table and is idempotent — it composes the
+trim already in the tree back into what it prints — so re-running it after a
+voicing change reprints only the entries that moved.  **Changing a preset's
+decay or level means recalibrating it**; that is not optional bookkeeping, an
+uncalibrated entry puts that preset back into the levelling regime.
+
+### "Decay" is a rendered T60, not the `Dkay` knob
+
+`Dkay` is a **reference anchor**: `LoadPreset` captures the preset's own `Dkay`
+column into `m_modal_dkay_ref`, so `t60_scale` is exactly 1 at the shipped
+value.  Editing that column therefore changes *where the knob sits* and nothing
+about the sound.  A preset's actual decay lives in `k_boom_decay`
+(`model_param_presets`) and the four `t60_*_ms` (`modal_preset_configs`), and
+on a preset where both are audible **both have to move or only half the tail
+shortens** — see the note on `modal_preset_configs[k_Kick2]`.
+
+`decay_probe.cpp` measures the real thing (time from the loudest 5 ms frame
+down 60 dB, struck at velocity 127 on the preset's own Note).  It agrees with
+the convention quoted elsewhere in the source: `boom_decay = 0.99972` is
+documented as "T60 ≈ 515 ms" on RackTom, and the probe measures RackTom at
+500 ms.
+
+Current values for the two presets tuned by request: **Kick 1575 ms** (boom
+only — its `k_modal_mix` is 0) and **DeepBs 495 ms** (boom *and* the modal
+bank, whose 1800 ms `t60_1` was the real tail).
 
 ### Allpass formula — critical sign convention
 The allpass is `H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`.  

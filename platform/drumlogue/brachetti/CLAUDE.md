@@ -16,9 +16,12 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 52,940 · `.rodata` 34,320 · `.data.rel.ro` 468 ·
-`.bss` 107,948.  (Passes 45-46 together: `.text` +264 B, `.bss` +64 B — four new
-floats per cymbal voice; `.rodata`/`.data.rel.ro` unchanged.)  **The "28 KB / 30 KB" limit this file used to assert here was
+Current shipping tree: `.text` 53,152 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
+`.bss` 108,124.  (Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
+40-float `kPresetOutTrim`.  It is a non-static class member like the other
+preset tables, so the ARRAY lives in the object in `.bss` and its initialiser
+list in `.rodata`; that is why both rows move by 40 floats.  Passes 45-46
+together: `.text` +264 B, `.bss` +64 B — four new floats per cymbal voice.)  **The "28 KB / 30 KB" limit this file used to assert here was
 never true** — see the constraint section. Watch the numbers for regressions;
 do not contort code to hit an imaginary ceiling.
 (Pass 32 listed the third figure as `.data`; the section actually carrying the
@@ -29,6 +32,16 @@ so read the row name, not the row order.)
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
 - DSP unit tests: **PASS** (exit 0); `test_hw_debug` **108/108**.
+- **Pass 47 — the master stage is gain-staged; not yet heard on hardware.**
+  The bus reached the limiter at up to 116x full scale, so it levelled the
+  library instead of limiting it: presets were held AT the ceiling for hundreds
+  of ms and had no decay.  `kPresetOutTrim[40]` puts every preset's BODY on the
+  limiter threshold; gain reduction falls 15-35 dB, stacked-note distortion
+  falls 6-18 dB, the kick harmonic numbers pass 29 chased fall 30-50 dB, and
+  the cost is 4.4 LU of mean loudness that was the limiter refusing to let
+  notes decay.  Also in the pass: `.num_presets` is 0 (Program is the preset
+  control), and Kick/DeepBs decay is 1575/495 ms against the 1590/500 asked
+  for.  Full entry below.
 - **Pass 46 — the reference samples arrived and overturned pass 45's premise.**
   `samples/` is populated again (67 WAVs, committed).  Measuring the actual
   recording says pass 45's tonal half was wrong at the root, not merely
@@ -212,6 +225,153 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 47 — the master limiter was never limiting; it was levelling
+
+Three HW notes, and the first two turn out to be one job:
+
+> * most of the instruments seems to be clipping a bit (possibly on stacking
+>   notes). Notable "Marmba", "Trngle", "StlPan" and "Handpn"
+> * remove the number of presets, as "Program" parameter is doing exactly the
+>   same job.
+> * Set Kick program decay to 1590ms, DeepBs decay to 500ms
+
+**The defect: there was no gain staging between the voice bus and Stage 4b.**
+`render_presets.cpp` cannot show it — it plays ONE note at velocity 100 and a
+single voice is comfortable — so `stack_probe.cpp` was written to play a chord
+and report what the master stage actually receives.  Measured, at velocity 127
+on each preset's own Note with the knee bypassed, the bus arrives at the
+limiter between **0.5x and 116x full scale — a 47 dB spread**, and the worst
+case is not a transient: **Cowbell's BODY is 13.4x**, Koto's 11.0x, Marimba's
+9.9x, StelPan's 8.7x, DeepBs's 8.7x.
+
+Nothing downstream can be transparent across that, and what the limiter did
+with it was not limiting.  With 20-40 dB of gain reduction standing on the
+whole note, an instant-attack/20 ms-release follower is a leveller: it holds
+the output AT the ceiling until the voice finally drops under the threshold.
+Measured on Marimba, 10 ms frames, dB relative to the first frame:
+
+```
+              0-2  2-5  5-10 10-20 20-50 50-150 150-500 500-1500 ms
+shipping       0   -12  -11   -8    -2     -0      -0     -8      <- pinned
+the voice      0   -14  -14  -15   -16    -18     -24    -42      <- decays
+```
+
+That is the whole report in one table: the instrument's decay never happened,
+each strike ducked whatever was still ringing and then swelled back to the
+wall, and on a stack the artefact is the loudest thing in the render.  A
+residual metric that divides out any gain a 1 ms-smoothed limiter could have
+applied — so it scores compression DEPTH at zero and waveshaping honestly —
+put four stacked notes at **-7.4 dB (Cowbell), -9.4 (MrchSnr), -9.6 (808Sub),
+-10.8 (BelTre), -12.1 (Marimba)** relative to the signal.  Ten to fifteen
+percent distortion is exactly "clipping a bit".
+
+**The fix: `kPresetOutTrim[40]`, calibrated on the BODY, not the peak.**
+One float per preset, applied in Stage 4b next to the Gain drive (hoisted out
+of the sample loop, so it costs nothing — it replaces a per-sample multiply
+with a per-block one).  `calib_probe.cpp` generates it: strike the preset at
+velocity 127 on its own Note, take the peak over **[10 ms, 1 s]** and put that
+on **1.0**, just at `kMasterLimThr`.
+
+Why the body and not the peak: limiting a 2 ms mallet transient by 15 dB is
+what percussion mastering does and is inaudible, while holding a body 20 dB
+down for 500 ms is the defect.  Calibrating on the peak instead was measured
+and rejected — it costs **10 LU** of loudness to buy the same thing, because
+it drags the body down with the transient.
+
+The trim is clamped to `<= 1` by construction: this only ever gives back drive
+the master stage could not use.  Eight presets already fitted — Timpani and
+Taiko (kernel path, its own master stage, untouched), Cymbal, Claves, HHat-O,
+Ride, RidBel — and keep exactly 1.0.  `harmonics.py` reports `+0.0` on every
+one of them: **bit-identical**.
+
+It is deferred behind the preset-change fade exactly like `master_drive`, and
+for a stronger reason: the trim moves up to 22 dB between two presets, so a
+fading tail that took the incoming trim would step audibly.
+
+**Measured, before -> after:**
+
+| | before | after |
+|---|---|---|
+| bus into the limiter, Marimba | 9.4x | unchanged (it is the VOICE) |
+| gain reduction, Marimba 1 note | -34.7 dB | -14.9 dB |
+| gain reduction, StelPan / Handpn | -20.9 / -11.2 dB | -2.7 / -1.7 dB |
+| stacked-note distortion, Cowbell | -7.4 dB | -25.2 dB |
+| stacked-note distortion, MrchSnr | -9.4 dB | -19.2 dB |
+| stacked-note distortion, Marimba | -12.1 dB | -19.1 dB |
+| stacked-note distortion, Handpn | -20.5 dB | -28.4 dB |
+| crest factor, Marimba x4 | 4.4 | 7.8 |
+| crest factor, Trngle x4 | 7.0 | 13.2 |
+| `harmonics.py` Kick2 H3 / H5 / >250 Hz | baseline | **-40.4 / -38.5 / -31.7 dB** |
+| `harmonics.py` 808Sub H3 / H5 / >250 Hz | baseline | **-48.7 / -54.3 / -33.3 dB** |
+| envelope-fidelity error vs the voice, mean | 2.48 dB | 0.56 dB |
+| mean LUFS (note 60 / note 36, vel 127) | -13.29 / -13.82 | **-17.68 / -18.18** |
+| sample peak, worst preset | -0.09 dBFS | -0.13 dBFS |
+
+**The loudness is the price, it is the right price, and this repo has already
+settled the argument.**  4.4 LU of the old mean was the limiter refusing to let
+the notes decay.  `tools/level_meter/README.md` records that on hardware, at
+matched faders, all four user units were indistinguishable by ear and KORG's
+own Nano synth is equally quiet — the deficit is the drumlogue's user-synth
+track, not the units on it, and the fix is a quarter turn on its volume knob.
+The same file says what this table IS for: *"use this table to stop a unit
+wasting the headroom it has — clipping, DC, a dead volume control"*.  That is
+this pass.
+
+Note also what the trim is NOT: it is not per-preset loudness normalisation,
+which `output_stage.h` forbids ("the level differences between a kick and a
+triangle are musical").  It equalises where each preset's body ENTERS the
+limiter; the LUFS spread across the library is 17 LU after it, against 24.5
+before, and what closed is the part that was the limiter pinning the loud
+presets rather than the instruments differing.
+
+**The pass-29 waveshaper argument is not reopened by this.**  Pass 29 moved
+Stage 4b from a memoryless curve to a gain envelope because the curve
+manufactured harmonics on the kick boom (808Sub H4 -21.5 -> -7.4 dB).  Both
+shapes are bad when fed 10-50x over the ceiling; neither is the root cause.
+With the drive staged correctly the gain envelope has 15-35 dB less work to do
+and the harmonic numbers above fall away on their own.  Do not swap the stage.
+
+**Second note — `.num_presets` is 0.**  `header.c` exposed 40 SDK preset slots
+AND a `Program` parameter, both calling the same `LoadPreset()`.  Program is
+the one that survives: it is a normal parameter, so it is stored with the
+pattern, sequencer-automatable and motion-recordable, none of which the preset
+slots are.  Same arrangement as `reverb_labirinto`.  The
+`unit_get_preset_index`/`_name`/`unit_load_preset` callbacks in `unit.cc` are
+kept and still correct; `.num_presets` is what decides whether the OS draws the
+UI.  **This changes how `tools/level_meter/run.sh` must be invoked** — it reads
+`.num_presets` and now sees one preset, so use its sweep mode:
+`./run.sh ../../brachetti 60 127 -1 /tmp/out 0 40`.
+
+**Third note — Kick 1590 ms, DeepBs 500 ms.**  "Decay" here is the rendered
+T60, not the Dkay knob: Dkay is a REFERENCE ANCHOR (`m_modal_dkay_ref` is
+captured from the preset's own row, so `t60_scale` is exactly 1 at the shipped
+value) and moving its column changes where the knob sits and nothing else.
+`decay_probe.cpp` measures the real thing — time from the loudest 5 ms frame
+down 60 dB — and agrees with the convention the codebase already quotes
+(`boom_decay` 0.99972 is documented as "T60 ~ 515 ms" on RackTom; the probe
+measures RackTom at 500 ms).
+
+* **Kick** (`k_KickDrum`) was **810 ms**.  Its `k_modal_mix` is 0 and its modal
+  config is the empty default, so the boom IS the preset and one number moves:
+  `k_boom_decay` 0.99982 -> **0.99990835**.  Measures **1575 ms**.
+* **DeepBs** (`k_Taiko2`) was **1665 ms** — and that tail was the MODAL bank's
+  (`t60_1` 1800 ms against a 757 ms boom), so cutting the boom alone would have
+  left the ring where it was.  Both halves move, the rule `k_Kick2`'s config
+  already states: the four T60s scale by one factor (1800/900/500/280 ->
+  575/287/161/90, which keeps the decay SHAPE — upper modes still die first)
+  and `k_boom_decay` goes 0.99981 -> **0.99974975**.  Measures **495 ms**.
+* Dkay is NOT moved with either, per the rule on `k_Kick2`'s config.
+* Changing a preset's decay moves its body level, so **`kPresetOutTrim` was
+  recalibrated afterwards** — Kick 0.20651 -> 0.19391, DeepBs 0.11552 ->
+  0.16751.  `calib_probe.cpp` is idempotent (it composes the trim it measured
+  through), so re-running it on the finished tree reprints the same table; that
+  is the check that the two are in step.
+
+**Verified:** `test_dsp` exit 0, `test_hw_debug` 108/108, 40/40 presets render
+clean, `plateau_probe` finds the **same 18 dead-knob entries** as before (no
+knob regression), ARM `.text` 53,152 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
+`.bss` 108,124.  **Not yet heard on hardware.**
 
 ### Pass 46b — the gong's bank was running at a third of its ported density
 
@@ -2942,6 +3102,46 @@ g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
 g++ -std=c++17 -O2 -I. -I.. -I../common -I../../common -DRUNTIME_COMMON_H_ \
     gong_probe.cpp -o /tmp/gong_probe
 /tmp/gong_probe                # or: /tmp/gong_probe /tmp/wavs
+
+# ── MASTER-STAGE PROBES (pass 47) ───────────────────────────────────────────
+# These three need -DBRACHETTI_MASTER_PROBE, which compiles a handful of
+# diagnostic counters into Stage 4b (bus peak, pre-limiter peak, smallest gain
+# applied, brickwall hits, and the count of samples the instant-attack branch
+# placed ON the static curve).  The block does not exist in the shipping unit:
+# without the macro there is no reference to any of it.
+#
+# "Is it clipping when I stack notes?"  render_presets.cpp CANNOT answer this —
+# one note at velocity 100 is comfortable for any preset.  stack_probe plays a
+# chord (up to 4 notes 120 ms apart at velocity 127) and reports what the
+# master stage received and what it had to do about it.
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    -DBRACHETTI_MASTER_PROBE stack_probe.cpp -o /tmp/stack_probe
+/tmp/stack_probe                # or: /tmp/stack_probe /tmp/wavs
+
+# Regenerate kPresetOutTrim[].  IDEMPOTENT — it composes the trim already in
+# the tree back into what it prints, so running it on a calibrated tree
+# reprints the same table and only a preset whose VOICING changed moves.  Run
+# it after any change to a preset's decay or level and paste the two or three
+# lines that differ.
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    -DBRACHETTI_MASTER_PROBE calib_probe.cpp -o /tmp/calib_probe
+/tmp/calib_probe                # or: /tmp/calib_probe 1.5  (body target)
+
+# Rendered decay time (t-20/t-40/t-60 from the loudest 5 ms frame), which is
+# what a "set X's decay to N ms" request means — NOT the Dkay knob, which is a
+# reference anchor and moves nothing on its own.  No probe macro needed.
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    decay_probe.cpp -o /tmp/decay_probe
+/tmp/decay_probe                # all 40, or: /tmp/decay_probe 20 23
+
+# ── LOUDNESS / HARMONIC COST (tools/level_meter, cross-built + qemu) ────────
+#   apt-get install -y --no-install-recommends g++-arm-linux-gnueabihf qemu-user
+# NOTE the trailing `0 40`: run.sh reads .num_presets, which is 0 since pass 47,
+# so preset mode sees ONE preset.  Sweep the Program parameter instead.
+cd ../tools/level_meter
+./run.sh ../../brachetti 60 127 -1 /tmp/cand 0 40     # gated BS.1770 per preset
+./harmonics.py /tmp/base /tmp/cand                    # what a change COST
+HARM_F0_BAND=25:300 ./harmonics.py /tmp/base36 /tmp/cand36   # kick band
 
 # Note-assignment audit — renders each preset AT ITS OWN shipped Note through
 # GateOn() (render_presets.cpp uses its own hard-coded notes and cannot see

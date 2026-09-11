@@ -16,7 +16,19 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x5265736fU,                                // 'Reso'
     .version = 0x00010000U,
     .name = "Brachetti",
-    .num_presets = 40,
+    // ZERO ON PURPOSE, and it must stay zero (HW: "remove the number of
+    // presets, as Program is doing exactly the same job").  A non-zero
+    // .num_presets makes the OS draw its own preset-recall UI on top of this
+    // unit and drive it through unit_load_preset(), which calls exactly the
+    // same BrachettiSynth::LoadPreset() the Program parameter below calls --
+    // two controls, one mechanism, and two places for the displayed preset and
+    // the sounding preset to disagree.  Program is the one that stays: it is a
+    // normal parameter, so it is stored with the pattern, sequencer-automatable
+    // and motion-recordable, none of which the preset slots are.
+    // The unit_get_preset_index/name/load callbacks in unit.cc are kept (they
+    // cost nothing and stay correct if an OS asks anyway); this field is what
+    // decides whether the UI appears.  Same arrangement as reverb_labirinto.
+    .num_presets = 0,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
@@ -46,9 +58,10 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 1: Program and sample selection
         // Max MUST be k_NumPrograms-1.  It is also the only thing stopping the
-        // OS from handing LoadPreset an out-of-range index, and .num_presets
-        // above must agree with both — all three move together when a preset
-        // is added (pass 33 added RackTom at 40).
+        // OS from handing LoadPreset an out-of-range index, so it moves when a
+        // preset is added (pass 33 added RackTom at 40).  It no longer has to
+        // agree with .num_presets — that is 0 now, see the note above — but
+        // LoadPreset's own range guard is the backstop either way.
         {0, 39, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         // Ex Bank/Sample (PCM layering removed): global performance controls.
