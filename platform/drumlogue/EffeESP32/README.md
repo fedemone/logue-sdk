@@ -405,7 +405,16 @@ and release, with patch volume compensating the level op5 carries.
 Pitch rises bongos → congas → timbales in the GM order, brightness and ring
 length rise with the shell material, and muting MHConga puts it *above* the open
 conga, which is what muting a drum does. Loudness across the family lands
-between −21.1 and −23.6 LUFS. LoBongo needed one extra lever: it was seeded from
+between −21.1 and −23.6 LUFS.
+
+MHConga took a level edit to get there. The 50 ms decay that makes it read as
+muted also cost it 5 LU against its siblings (−26.9 against −21.1…−23.6), far
+enough to vanish underneath them. Raising it without lengthening it means patch
+volume to the 2.0 the `Level` knob tops out at, plus the carrier op1 from the
+kit's 0.8 to the 1.0 `fmo_set_volume` clamps at — together **+3.9 dB, the whole
+budget available**, taking it to −23.1 LUFS with the tail untouched at 0.271 s.
+Its peak lands at −1.9 dBFS, still clear of `LIMIT_CEILING`, so a single hit
+never engages the limiter; stacked, it does, which is what the limiter is for. LoBongo needed one extra lever: it was seeded from
 the Rail bell template, so every operator but the carrier is a square, and
 ringing one as the partial put its centroid at 4.8 kHz against 168–494 Hz for
 its siblings. Its op5 is switched to a sine so it contributes a partial rather

@@ -349,12 +349,12 @@ static const fm_drum_patch_t g_drum_patches[DRUM_INST_COUNT] = {
       { 1.397f, 0.0f, 0.0f, 0.55f, WF_SINE },
       { 0.0f, 0.0f, 4.5f, 0.8f, WF_SINE } }
   },
-  /* Mute Hi Conga  [voiced] was dec 0.07, rel 0.07 */
+  /* Mute Hi Conga  [voiced] was dec 0.07, rel 0.07, vol 1.6, op1 vol 0.8 */
   {
-    2, 211.0f, 1.6f, 0.23f,
+    2, 211.0f, 2.0f, 0.23f,
     0.001f, 0.0f, 0.05f, 0.0f, 0.33f,
     0.5f, 0, 20000.0f, 0.5f, 0.0f,
-    { { 1.0f, 0.0f, 0.0f, 0.8f, WF_SINE },
+    { { 1.0f, 0.0f, 0.0f, 1.0f, WF_SINE },
       { 0.5f, 0.0f, 0.5f, 0.8f, WF_SINE },
       { 1.2f, 0.0f, 0.5f, 0.8f, WF_SINE },
       { 2.0f, 0.0f, 2.0f, 0.8f, WF_SINE },
