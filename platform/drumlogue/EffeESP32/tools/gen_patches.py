@@ -181,7 +181,14 @@ VOICE_EDITS = {
     29:  {"rel": 0.33, "alg": 13},                  # MtlStk   (was 0.600, dec 0.600 kept)
     # --- short, percussive slots the kit left ringing -----------------------
     58:  {"dec": 0.05, "rel": 0.18},                # Vibrslp  (was 2.798/2.798)
-    62:  {"dec": 0.05, "rel": 0.33},                # MHConga  (was 0.070/0.070)
+    # MHConga: the 50 ms decay that makes it read as muted also cost it 5 LU
+    # against the rest of the hand-drum family (-26.9 against -21.1..-23.6), far
+    # enough to disappear under them.  Level only, length untouched: patch
+    # volume to the 2.0 the Level knob tops out at, and the carrier op1 from the
+    # kit's 0.8 to 1.0, which fm_operator clamps at.  That is the whole +3.9 dB
+    # available without lengthening it -- peak -5.8 -> -1.9 dBFS, still clear of
+    # LIMIT_CEILING, tail unchanged at 0.271 s.
+    62:  {"dec": 0.05, "rel": 0.33, "vol": 2.0, "opvol": {0: 1.0}},  # MHConga (was 0.070/0.070, vol 1.6)
     67:  {"dec": 0.05, "rel": 0.05, "alg": 9},      # HiAgogo  (was 0.350/0.466)
     81:  {"dec": 0.05, "rel": 0.05},                # OTrngl   (was 6.270/6.229)
     87:  {"dec": 0.05, "rel": 0.05, "alg": 1},      # RailBel  (was 6.300/6.100)

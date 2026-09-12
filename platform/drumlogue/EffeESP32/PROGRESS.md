@@ -159,7 +159,11 @@ instructions for the next agent.
     180 Hz / 220 ms, MHConga 211 Hz / 330 ms (kit pitch; muting raises pitch,
     so it correctly sits above the open conga), OHConga 190 Hz / 350 ms,
     LoConga 127 Hz / 400 ms, LoTimbl 225 Hz / 620 ms, HiTimbl 290 Hz / 700 ms.
-    Loudness across the family −21.1 to −23.6 LUFS. LoBongo needed one extra
+    Loudness across the family −21.1 to −23.6 LUFS. MHConga needed a level edit
+    to reach that band: its 50 ms decay had it 5 LU down, and raising it without
+    lengthening it costs the whole available budget — patch volume to 2.0 (the
+    `Level` knob's max) plus carrier op1 from 0.8 to 1.0 (`fmo_set_volume`'s
+    clamp), +3.9 dB, −26.9 -> −23.1 LUFS, tail unchanged at 0.271 s. LoBongo needed one extra
     lever: seeded from the Rail bell template, every operator but its carrier
     is a square, so ringing one as the partial put its centroid at 4.8 kHz
     against 168..494 Hz for its siblings; its op5 is switched to a sine.
