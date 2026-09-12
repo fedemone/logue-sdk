@@ -67,7 +67,7 @@ velocity 127:
 | ScrutaAstri *(now)* | −11.29 … −0.97 | −13.5 … +2.0 | **−2.5** | 24 programs |
 | EffeMD | −2.39 … −1.17 | −12.9 … −2.2 | **−8.6** | 13 instruments |
 | Brachetti *(before pass 47)* | −0.77 … −0.09 | −29.4 … −4.9 | **−13.5** | 40 presets |
-| Brachetti *(now)* | −2.18 … −0.11 | −29.5 … −8.1 | **−17.7** | 40 presets |
+| Brachetti *(now)* | −2.16 … −0.11 | −29.4 … −7.8 | **−16.1** | 40 presets |
 | EffeESP32 *(before)* | −14.87 … **0.00** | −21.6 … −0.4 | **−13.5** | 59 instruments |
 | EffeESP32 *(knee only)* | −9.86 … −0.16 | −16.6 … +1.9 | **−9.6** | 59 instruments |
 | EffeESP32 *(bus limiter, gain 2.51)* | −9.86 … −0.24 | −20.6 … −2.2 | **−11.8** | 59 instruments |
@@ -110,17 +110,21 @@ normalise per preset or per instrument: the level differences between a kick
 and a triangle are musical."* The measured options for raising it are recorded
 below; all of them buy an inaudible change at a measurable distortion cost.
 
-> **Brachetti moved down 4.4 LU in its pass 47, and that is this section's
+> **Brachetti moved down 2.8 LU in its pass 47, and that is this section's
 > other half at work, not a contradiction of it.** The unit was *wasting* its
 > headroom: its voice bus reached the master limiter at up to 116× full scale,
 > so the limiter held every loud preset AT the ceiling for hundreds of
 > milliseconds instead of letting it decay. Per-preset output trims put each
-> preset's body on the limiter threshold; 4.4 LU of the old mean was the
-> missing decay, and what it bought is 6–18 dB less stacked-note distortion and
-> 30–50 dB off the kick harmonics this page's `harmonics.py` exists to catch.
-> The trims equalise where a preset ENTERS the limiter, not its loudness — the
-> library's LUFS spread is still 17 LU wide afterwards. See
+> preset's body on the limiter threshold; the lost LU was the missing decay,
+> and what it bought is 3–15 dB less stacked-note distortion and 10–45 dB off
+> the kick harmonics this page's `harmonics.py` exists to catch. The trims
+> equalise where a preset ENTERS the limiter, not its loudness — the library's
+> LUFS spread is still 21.6 LU wide afterwards. See
 > `platform/drumlogue/brachetti/CLAUDE.md`, pass 47.
+>
+> The trade is a single constant there (the calibration's *body target*), so if
+> this table is what you are reading it by: 1.0 gives −17.7 LUFS mean, the
+> shipping 1.5 gives −16.1, and no trim at all gave −13.3 with the clipping.
 >
 > Brachetti also sets `.num_presets = 0` now (its `Program` parameter selects
 > the preset), so `run.sh` sees one preset. Measure it in sweep mode:

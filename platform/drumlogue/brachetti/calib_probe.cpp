@@ -26,14 +26,14 @@
  *   g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
  *       -DBRACHETTI_MASTER_PROBE calib_probe.cpp -o /tmp/calib_probe
  * Run:
- *   /tmp/calib_probe            # prints the table, ready to paste
- *   /tmp/calib_probe 1.5        # with a different body target
+ *   /tmp/calib_probe            # 1.5, the shipping target; ready to paste
+ *   /tmp/calib_probe 1.0        # a different body target
  *
  * It is IDEMPOTENT: the probe measures what the engine currently delivers,
  * which already includes kPresetOutTrim, so it composes the trim it measured
  * through back into what it prints.  Running it against a calibrated tree
  * reprints the same table; running it after changing a preset's voicing
- * (pass 47 changed Kick's and DeepBs's decay, which moves their body level)
+ * (Kick's and DeepBs's decay changes move their body level)
  * reprints that preset's entry corrected.
  */
 #include <cstdio>
@@ -57,7 +57,9 @@ static const float kDur  = 6.0f;    // covers every preset's body window
 static const float kBodyLo = 0.010f, kBodyHi = 1.000f;
 
 int main(int argc, char** argv) {
-    const float target = (argc > 1) ? (float)atof(argv[1]) : 1.0f;
+    // Default is the SHIPPING body target, so a bare run reproduces the
+    // table in synth_engine.h rather than a different calibration.
+    const float target = (argc > 1) ? (float)atof(argv[1]) : 1.5f;
     const int total = (int)(kDur * kSR);
     const int lo = (int)(kBodyLo * kSR), hi = (int)(kBodyHi * kSR);
     std::vector<float> body(BrachettiSynth::k_NumPrograms, 0.f), attack(BrachettiSynth::k_NumPrograms, 0.f),

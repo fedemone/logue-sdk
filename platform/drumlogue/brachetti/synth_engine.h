@@ -423,7 +423,7 @@ ModalPresetConfig modal_preset_configs[k_NumPrograms] = {
        keeps the decay SHAPE (the upper modes still die first, which is what
        makes it a struck head and not an organ); k_boom_decay in
        model_param_presets is cut to the same 500 ms in the same pass. */
-    {1.59f, 2.14f, 2.90f, 575.0f, 287.0f, 161.0f, 90.0f, 0.28f, 0.80f, 0.55f, 0.38f, 0.25f, 4, 0, 0.0f},
+    {1.59f, 2.14f, 2.90f, 534.0f, 266.0f, 149.0f, 84.0f, 0.28f, 0.80f, 0.55f, 0.38f, 0.25f, 4, 0, 0.0f},
     /* k_GlassBowl: modes 5/6 at 6.37/8.10 for overtone content */ {2.09f, 3.35f, 4.77f, 2000.0f, 1600.0f, 1200.0f, 800.0f, 0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 6, 6.37f, 8.10f, 0.22f, 0.15f},
     /* k_HiHatClosed: pure noise voice (the pre-redesign Shaker) — no modal body */ kDefaultModalPresetConfig,
     /* k_HiHatOpen: plate ratios for metallic shimmer */ {2.9200f,6.3700f,11.7500f,100.0000f,400.0000f,250.0000f,160.0000f,0.3000f,0.9000f,0.7500f,0.5500f,0.3500f,4,0.0000f,0.0000f},
@@ -522,7 +522,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        DeepBs have one.  Dkay is deliberately NOT moved with it, for the reason
        spelled out on k_Kick2's config: it is the reference anchor, so the
        shipped knob position plays exactly this data either way. */
-    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f, 0.99990835f, 0.70000f,    0.00000f,    0.00350f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    2.00000f},
+    /* k_KickDrum    */ {   0.00000f,    0.00000f,    0.00000f,    0.03000f,    1.20000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.05000f, false,    0.00000f,    1.00000f,    0.99890f,    9.00000f, kck_bm,    1.00000f, 0.99990448f, 0.70000f,    0.00000f,    0.00350f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    2.00000f},
     /* k_Clap        */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_Shaker: modal_mix 0.04→0 — the woodblock body was a struck "tok" at onset
        (HW: "too much hit sound, should not be there").  Shaker = pure rattling
@@ -535,7 +535,7 @@ float model_param_presets[k_NumPrograms][k_model_param_total]{
        and cutting only the boom would have left the ring where it was.  The
        four T60s in modal_preset_configs[k_Taiko2] are scaled by the same
        500/1800 alongside this. */
-    /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f, 0.99974975f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
+    /* k_Taiko2      */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.02000f,    0.00000f,    0.00000f,    0.00000f, tak_bm,    1.00000f, 0.99973035f,    0.58000f,    0.00000f,    0.00220f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.28000f,    4.00000f},
     /* k_GlassBowl   */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.20000f,    0.00000f},
     /* k_HiHatClosed */ {   0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f},
     /* k_HiHatOpen   */ {3600.00000f,    1.00000f, 12000.00000f,    0.00000f,    0.00000f,    0.80000f,    0.00000f,    0.00000f,    0.00000f,    1.00000f,    0.00000f,    0.93000f, false,    0.36000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, false,    0.00000f,    0.00000f,    0.00000f,    0.00000f,    0.00000f, 0.12000f,    0.50000f},
@@ -650,40 +650,56 @@ EngineType kPresetEngine[k_NumPrograms] = {
 // residual that no smooth gain can explain to within 5-19 dB of the signal.
 //
 // HOW IT IS CALIBRATED.  On the note's BODY, not its strike: the peak over
-// [10 ms, 1 s] at velocity 127 on the preset's own Note, put onto 1.0 — just
-// at the limiter's kMasterLimThr.  A mallet transient limited by 15 dB for
-// 2 ms is what percussion mastering does and is inaudible; a body held 20 dB
-// down for 500 ms is the defect.  The strike keeps the headroom above the
-// threshold and the limiter goes back to catching peaks.
+// [10 ms, 1 s] at velocity 127 on the preset's own Note, put onto the BODY
+// TARGET — near the limiter's kMasterLimThr.  A mallet transient limited by
+// 15 dB for 2 ms is what percussion mastering does and is inaudible; a body
+// held 20 dB down for 500 ms is the defect.  The strike keeps the headroom
+// above the threshold and the limiter goes back to catching peaks.
+//
+// THE BODY TARGET IS THE CLIPPING/LOUDNESS DIAL, and it is the probe's only
+// argument — `/tmp/calib_probe 1.5` regenerates this whole table from it, so
+// re-trading the two is one command and a paste.  Measured over the library:
+//
+//     target      mean LUFS   stacked-note distortion   presets left at 1.0
+//     1.0          -17.7            -22.3 dB                    8
+//     1.5 (ships)  -16.1            -20.6 dB                   12
+//     no trim      -13.3            -13.7 dB                   40
+//
+// This table is at 1.5, set on HW request to give a measured part of the
+// clipping back for level.  Kick and DeepBs are COUPLED to the target — their
+// decays were asked for by ear (1590 / 495 ms) and the limiter's grip on the
+// tail moves the measured value — so changing it means re-converging those two
+// against decay_probe.  See CLAUDE.md pass 47.
 //
 // It is clamped to <= 1 by construction: this only ever gives back drive the
-// master stage could not use.  The eight presets that already fitted (Timpani
-// and Taiko, which run the kernel's own master stage, plus Cymbal, Claves,
-// HHat-O, Ride, RidBel) keep exactly 1.0 and render bit-identically.
+// master stage could not use, so raising the target never pushes a preset past
+// where it already sat.  At 1.5 twelve presets keep exactly 1.0 (Timpani and
+// Taiko, which run the kernel's own master stage, plus Cymbal, Claves, Clap,
+// HHat-O, Ride, RidBel, Tick, Splash and Wodblk) and render bit-identically.
 //
 // NOTE: must be 'static' only (no const/constexpr) — same .rodata rule as the
 // tables above.
 float kPresetOutTrim[k_NumPrograms] = {
-    /* 0  Kick2   */ 0.17723f, /* 1  Marmba  */ 0.10119f,
-    /* 2  808Sub  */ 0.23543f, /* 3  AcSnre  */ 0.15723f,
-    /* 4  TblrBel */ 0.43644f, /* 5  Timpni  */ 1.00000f,
-    /* 6  Djambe  */ 0.22951f, /* 7  Taiko   */ 1.00000f,
-    /* 8  MrchSnr */ 0.21522f, /* 9  Koto    */ 0.09094f,
-    /* 10 Vibrph  */ 0.40992f, /* 11 Wodblk  */ 0.87743f,
-    /* 12 Ac Tom  */ 0.25143f, /* 13 Cymbal  */ 1.00000f,
-    /* 14 Gong    */ 0.24606f, /* 15 Kalimba */ 0.31945f,
-    /* 16 StelPan */ 0.11435f, /* 17 Claves  */ 1.00000f,
-    /* 18 Cowbel  */ 0.07475f, /* 19 Trngle  */ 0.16818f,
-    /* 20 Kick    */ 0.19391f, /* 21 Clap    */ 0.74056f,
-    /* 22 Shaker  */ 0.20227f, /* 23 DeepBs  */ 0.16751f,
-    /* 24 GlsBwl  */ 0.29981f, /* 25 HHat-C  */ 0.57970f,
-    /* 26 HHat-O  */ 1.00000f, /* 27 Conga   */ 0.54896f,
-    /* 28 Handpn  */ 0.30738f, /* 29 BelTre  */ 0.40060f,
-    /* 30 SltDrm  */ 0.45822f, /* 31 Ride    */ 1.00000f,
-    /* 32 RidBel  */ 1.00000f, /* 33 Bongo   */ 0.56574f,
-    /* 34 GlsBotl */ 0.40581f, /* 35 Tick    */ 0.71282f,
-    /* 36 Splash  */ 0.92942f, /* 37 BrshSnr */ 0.20091f,
-    /* 38 RimShot */ 0.37612f, /* 39 RackTom */ 0.35711f};
+    /* 0  Kick2   */ 0.26584f, /* 1  Marmba  */ 0.15178f,
+    /* 2  808Sub  */ 0.35315f, /* 3  AcSnre  */ 0.23584f,
+    /* 4  TblrBel */ 0.65466f, /* 5  Timpni  */ 1.00000f,
+    /* 6  Djambe  */ 0.34426f, /* 7  Taiko   */ 1.00000f,
+    /* 8  MrchSnr */ 0.32283f, /* 9  Koto    */ 0.13641f,
+    /* 10 Vibrph  */ 0.61489f, /* 11 Wodblk  */ 1.00000f,
+    /* 12 Ac Tom  */ 0.37714f, /* 13 Cymbal  */ 1.00000f,
+    /* 14 Gong    */ 0.36908f, /* 15 Kalimba */ 0.47918f,
+    /* 16 StelPan */ 0.17152f, /* 17 Claves  */ 1.00000f,
+    /* 18 Cowbel  */ 0.11212f, /* 19 Trngle  */ 0.25227f,
+    /* 20 Kick    */ 0.29166f, /* 21 Clap    */ 1.00000f,
+    /* 22 Shaker  */ 0.30340f, /* 23 DeepBs  */ 0.26320f,
+    /* 24 GlsBwl  */ 0.44971f, /* 25 HHat-C  */ 0.86956f,
+    /* 26 HHat-O  */ 1.00000f, /* 27 Conga   */ 0.82344f,
+    /* 28 Handpn  */ 0.46107f, /* 29 BelTre  */ 0.60091f,
+    /* 30 SltDrm  */ 0.68733f, /* 31 Ride    */ 1.00000f,
+    /* 32 RidBel  */ 1.00000f, /* 33 Bongo   */ 0.84861f,
+    /* 34 GlsBotl */ 0.60871f, /* 35 Tick    */ 1.00000f,
+    /* 36 Splash  */ 1.00000f, /* 37 BrshSnr */ 0.30136f,
+    /* 38 RimShot */ 0.56418f, /* 39 RackTom */ 0.53567f};
 
 // ModelsIndex → modal frequency-ratio template: modes 2..6 relative to the
 // fundamental.  Used by the modal engines (BAR/MEMBRANE/SNARE/PLATE) when the

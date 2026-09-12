@@ -114,16 +114,28 @@ loudest thing in the mix.  That was the hardware report *"most of the
 instruments seem to be clipping a bit (possibly on stacking notes)"*.
 
 The trim is calibrated on the note's **body**, not its peak: the peak over
-[10 ms, 1 s] at velocity 127 on the preset's own Note is put on 1.0, just at
-`kMasterLimThr`.  Limiting a 2 ms mallet transient by 15 dB is what percussion
-mastering does and is inaudible; holding a body 20 dB down for half a second is
-the defect.  Calibrating on the peak instead was measured and rejected — it
-costs 10 LU of loudness to buy the same thing.
+[10 ms, 1 s] at velocity 127 on the preset's own Note is put on a single **body
+target**, near `kMasterLimThr`.  Limiting a 2 ms mallet transient by 15 dB is
+what percussion mastering does and is inaudible; holding a body 20 dB down for
+half a second is the defect.  Calibrating on the peak instead was measured and
+rejected — it costs 10 LU of loudness to buy the same thing.
+
+**That body target is the one dial for the clipping-versus-loudness trade**, and
+the whole table regenerates from it (`/tmp/calib_probe 1.5`).  Measured across
+the library:
+
+| body target | mean LUFS | stacked-note distortion | presets left untrimmed |
+|---|---|---|---|
+| 1.0 | −17.7 | −22.3 dB | 8 |
+| **1.5** (ships) | **−16.1** | **−20.6 dB** | **12** |
+| no trim | −13.3 | −13.7 dB | 40 |
 
 It is clamped to `≤ 1`, so it only ever gives back drive the master stage could
-not use.  Eight presets already fitted and keep exactly 1.0 (Timpani and Taiko
-run the kernel's own master stage; Cymbal, Claves, HHat-O, Ride, RidBel and
-Splash were already under the ceiling), and those render bit-identically.
+not use — raising the target never pushes a preset past where it already was,
+it just stops trimming it.  At the shipping target twelve presets sit at exactly
+1.0 (Timpani and Taiko run the kernel's own master stage; Cymbal, Claves, Clap,
+HHat-O, Ride, RidBel, Tick, Splash and Wodblk were already under the ceiling),
+and those render bit-identically.
 
 `calib_probe.cpp` regenerates the table and is idempotent — it composes the
 trim already in the tree back into what it prints — so re-running it after a
@@ -147,9 +159,16 @@ the convention quoted elsewhere in the source: `boom_decay = 0.99972` is
 documented as "T60 ≈ 515 ms" on RackTom, and the probe measures RackTom at
 500 ms.
 
-Current values for the two presets tuned by request: **Kick 1575 ms** (boom
+Current values for the two presets tuned by request: **Kick 1590 ms** (boom
 only — its `k_modal_mix` is 0) and **DeepBs 495 ms** (boom *and* the modal
 bank, whose 1800 ms `t60_1` was the real tail).
+
+These two are **coupled to `kPresetOutTrim`** and cannot be tuned independently
+of it: changing a decay moves the preset's body level, which changes its trim,
+and changing the trim changes how hard the limiter rides the tail, which moves
+the measured decay back.  Moving the body target therefore means re-running
+"re-tune the T60 data → regenerate the trim → re-measure" for these two until
+`decay_probe` and `calib_probe` both stop moving.
 
 ### Allpass formula — critical sign convention
 The allpass is `H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`.  
