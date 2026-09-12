@@ -16,7 +16,7 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 53,152 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
+Current shipping tree: `.text` 53,128 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
 `.bss` 108,124.  (Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
 40-float `kPresetOutTrim`.  It is a non-static class member like the other
 preset tables, so the ARRAY lives in the object in `.bss` and its initialiser
@@ -37,11 +37,14 @@ so read the row name, not the row order.)
   library instead of limiting it: presets were held AT the ceiling for hundreds
   of ms and had no decay.  `kPresetOutTrim[40]` puts every preset's BODY on the
   limiter threshold; gain reduction falls 15-35 dB, stacked-note distortion
-  falls 6-18 dB, the kick harmonic numbers pass 29 chased fall 30-50 dB, and
-  the cost is 4.4 LU of mean loudness that was the limiter refusing to let
-  notes decay.  Also in the pass: `.num_presets` is 0 (Program is the preset
-  control), and Kick/DeepBs decay is 1575/495 ms against the 1590/500 asked
-  for.  Full entry below.
+  falls 3-15 dB, the kick harmonic numbers pass 29 chased fall 10-45 dB, and
+  the cost is 2.8 LU of mean loudness that was the limiter refusing to let
+  notes decay.  **The body target is one constant** — `kBodyTarget` is what
+  `calib_probe.cpp` takes as its argument, and the whole table regenerates from
+  it, so the clipping/loudness trade is a single dial.  It shipped at 1.0 and
+  was moved to **1.5** on request, which is 1.6 LU louder for 2-5 dB of the
+  distortion given back.  Also in the pass: `.num_presets` is 0 (Program is the
+  preset control), and Kick/DeepBs decay is 1590/495 ms.  Full entry below.
 - **Pass 46 — the reference samples arrived and overturned pass 45's premise.**
   `samples/` is populated again (67 WAVs, committed).  Measuring the actual
   recording says pass 45's tonal half was wrong at the root, not merely
@@ -271,7 +274,7 @@ One float per preset, applied in Stage 4b next to the Gain drive (hoisted out
 of the sample loop, so it costs nothing — it replaces a per-sample multiply
 with a per-block one).  `calib_probe.cpp` generates it: strike the preset at
 velocity 127 on its own Note, take the peak over **[10 ms, 1 s]** and put that
-on **1.0**, just at `kMasterLimThr`.
+on the **body target**, which is the probe's one argument.
 
 Why the body and not the peak: limiting a 2 ms mallet transient by 15 dB is
 what percussion mastering does and is inaudible, while holding a body 20 dB
@@ -279,38 +282,63 @@ down for 500 ms is the defect.  Calibrating on the peak instead was measured
 and rejected — it costs **10 LU** of loudness to buy the same thing, because
 it drags the body down with the transient.
 
+**The body target is the clipping/loudness dial, and it is one number.**
+`/tmp/calib_probe <target>` regenerates the whole table from it; nothing else
+in the unit has to move.  Measured over the library (mean LUFS at note 60,
+mean waveshaping residual on four stacked notes):
+
+| body target | mean LUFS | dist x1 | dist x4 | trims pinned at 1.0 |
+|---|---|---|---|---|
+| 1.0 | −17.68 | −33.7 dB | −22.3 dB | 8 |
+| **1.5 (shipping)** | **−16.05** | **−31.4 dB** | **−20.6 dB** | **12** |
+| no trim (before) | −13.29 | −25.5 dB | −13.7 dB | 40 |
+
+1.0 was the first calibration; **1.5 is what ships**, chosen on HW request to
+trade a measured amount of the clipping back for level.  It keeps roughly
+three quarters of the distortion improvement for 1.6 LU of the 4.4 LU the
+first calibration cost.  If it still reads as over-limited on hardware, drop
+the target and regenerate; if it reads as quiet, raise it.  That is the whole
+adjustment.
+
 The trim is clamped to `<= 1` by construction: this only ever gives back drive
-the master stage could not use.  Eight presets already fitted — Timpani and
-Taiko (kernel path, its own master stage, untouched), Cymbal, Claves, HHat-O,
-Ride, RidBel — and keep exactly 1.0.  `harmonics.py` reports `+0.0` on every
-one of them: **bit-identical**.
+the master stage could not use, so raising the target does not push a preset
+past where it already was — it just stops trimming it.  At 1.5, **twelve**
+presets sit at exactly 1.0 (Timpani and Taiko on the kernel path, plus Cymbal,
+Claves, Clap, HHat-O, Ride, RidBel, Tick, Splash, Wodblk) and `harmonics.py`
+reports `+0.0` on every one: **bit-identical**.
 
 It is deferred behind the preset-change fade exactly like `master_drive`, and
 for a stronger reason: the trim moves up to 22 dB between two presets, so a
 fading tail that took the incoming trim would step audibly.
 
-**Measured, before -> after:**
+**Measured, before -> after** (the middle column is the 1.0 calibration, kept
+so the cost of the 1.5 retarget is visible rather than asserted):
 
-| | before | after |
-|---|---|---|
-| bus into the limiter, Marimba | 9.4x | unchanged (it is the VOICE) |
-| gain reduction, Marimba 1 note | -34.7 dB | -14.9 dB |
-| gain reduction, StelPan / Handpn | -20.9 / -11.2 dB | -2.7 / -1.7 dB |
-| stacked-note distortion, Cowbell | -7.4 dB | -25.2 dB |
-| stacked-note distortion, MrchSnr | -9.4 dB | -19.2 dB |
-| stacked-note distortion, Marimba | -12.1 dB | -19.1 dB |
-| stacked-note distortion, Handpn | -20.5 dB | -28.4 dB |
-| crest factor, Marimba x4 | 4.4 | 7.8 |
-| crest factor, Trngle x4 | 7.0 | 13.2 |
-| `harmonics.py` Kick2 H3 / H5 / >250 Hz | baseline | **-40.4 / -38.5 / -31.7 dB** |
-| `harmonics.py` 808Sub H3 / H5 / >250 Hz | baseline | **-48.7 / -54.3 / -33.3 dB** |
-| envelope-fidelity error vs the voice, mean | 2.48 dB | 0.56 dB |
-| mean LUFS (note 60 / note 36, vel 127) | -13.29 / -13.82 | **-17.68 / -18.18** |
-| sample peak, worst preset | -0.09 dBFS | -0.13 dBFS |
+| | before | target 1.0 | **target 1.5 (ships)** |
+|---|---|---|---|
+| bus into the limiter, Marimba | 9.4x | \<- unchanged, it is the VOICE | |
+| gain reduction, Marimba 1 note | -34.7 dB | -14.9 dB | **-18.4 dB** |
+| gain reduction, StelPan / Handpn | -20.9 / -11.2 dB | -2.7 / -1.7 dB | **-5.9 / -4.8 dB** |
+| stacked-note distortion, Cowbell | -7.4 dB | -25.2 dB | **-22.8 dB** |
+| stacked-note distortion, MrchSnr | -9.4 dB | -19.2 dB | **-16.7 dB** |
+| stacked-note distortion, Marimba | -12.1 dB | -19.1 dB | **-17.0 dB** |
+| stacked-note distortion, Trngle | -13.9 dB | -19.6 dB | **-17.5 dB** |
+| stacked-note distortion, StlPan | -20.5 dB | -27.4 dB | **-22.4 dB** |
+| stacked-note distortion, Handpn | -20.5 dB | -28.4 dB | **-24.3 dB** |
+| `harmonics.py` Kick2 H3 / H5 / >250 Hz | baseline | -40.4 / -38.5 / -31.7 | **-13.8 / -13.3 / -10.7 dB** |
+| `harmonics.py` 808Sub H3 / H5 / >250 Hz | baseline | -48.7 / -54.3 / -33.3 | **-28.0 / -33.2 / -23.5 dB** |
+| mean LUFS (note 60 / note 36, vel 127) | -13.29 / -13.82 | -17.68 / -18.18 | **-16.05 / -16.47** |
+| sample peak, worst preset | -0.09 dBFS | -0.13 dBFS | **-0.11 dBFS** |
 
-**The loudness is the price, it is the right price, and this repo has already
-settled the argument.**  4.4 LU of the old mean was the limiter refusing to let
-the notes decay.  `tools/level_meter/README.md` records that on hardware, at
+(Envelope-fidelity error against the voice was 2.48 dB before and 0.56 dB at
+target 1.0; the 1.5 figures above are the ones that matter for the shipping
+tree and the envelope metric is not re-derived for it — the gain-reduction and
+distortion columns say the same thing more directly.)
+
+**The loudness is the price, and this repo has already settled how much of it
+matters.**  2.8 LU of the old mean was the limiter refusing to let the notes
+decay (4.4 LU at the first calibration, 1.6 of which the 1.5 retarget bought
+back).  `tools/level_meter/README.md` records that on hardware, at
 matched faders, all four user units were indistinguishable by ear and KORG's
 own Nano synth is equally quiet — the deficit is the drumlogue's user-synth
 track, not the units on it, and the fix is a quarter turn on its volume knob.
@@ -321,7 +349,7 @@ this pass.
 Note also what the trim is NOT: it is not per-preset loudness normalisation,
 which `output_stage.h` forbids ("the level differences between a kick and a
 triangle are musical").  It equalises where each preset's body ENTERS the
-limiter; the LUFS spread across the library is 17 LU after it, against 24.5
+limiter; the LUFS spread across the library is 21.6 LU after it, against 24.5
 before, and what closed is the part that was the limiter pinning the loud
 presets rather than the instruments differing.
 
@@ -354,24 +382,34 @@ measures RackTom at 500 ms).
 
 * **Kick** (`k_KickDrum`) was **810 ms**.  Its `k_modal_mix` is 0 and its modal
   config is the empty default, so the boom IS the preset and one number moves:
-  `k_boom_decay` 0.99982 -> **0.99990835**.  Measures **1575 ms**.
+  `k_boom_decay` 0.99982 -> **0.99990448**.  Measures **1590 ms**.
 * **DeepBs** (`k_Taiko2`) was **1665 ms** — and that tail was the MODAL bank's
   (`t60_1` 1800 ms against a 757 ms boom), so cutting the boom alone would have
   left the ring where it was.  Both halves move, the rule `k_Kick2`'s config
   already states: the four T60s scale by one factor (1800/900/500/280 ->
-  575/287/161/90, which keeps the decay SHAPE — upper modes still die first)
-  and `k_boom_decay` goes 0.99981 -> **0.99974975**.  Measures **495 ms**.
+  534/266/149/84, which keeps the decay SHAPE — upper modes still die first)
+  and `k_boom_decay` goes 0.99981 -> **0.99973035**.  Measures **495 ms**.
 * Dkay is NOT moved with either, per the rule on `k_Kick2`'s config.
-* Changing a preset's decay moves its body level, so **`kPresetOutTrim` was
-  recalibrated afterwards** — Kick 0.20651 -> 0.19391, DeepBs 0.11552 ->
-  0.16751.  `calib_probe.cpp` is idempotent (it composes the trim it measured
-  through), so re-running it on the finished tree reprints the same table; that
-  is the check that the two are in step.
+* **The decay and the trim are COUPLED, and both had to be solved together.**
+  Changing a decay moves the preset's body level, which changes its trim; and
+  changing the trim changes how hard the limiter rides the tail, which moves
+  the MEASURED decay back.  At body target 1.0 the pair settled at 1575/495 ms;
+  the 1.5 retarget drives the tails harder and pushed them straight back out to
+  1630/550 ms, so the loop was run to convergence at the new target — three
+  iterations of "re-tune the T60 data, regenerate the trim, re-measure" — and
+  lands at **1590/495 ms** with `kPresetOutTrim` reprinting unchanged.  Anyone
+  moving the body target again must redo this for these two presets; nothing
+  else in the library has a number that was asked for by ear.
+* `calib_probe.cpp` is idempotent (it composes the trim it measured through),
+  so re-running it on the finished tree reprints the same table.  That is the
+  check that the two are in step, and it is what convergence above means.
 
-**Verified:** `test_dsp` exit 0, `test_hw_debug` 108/108, 40/40 presets render
-clean, `plateau_probe` finds the **same 18 dead-knob entries** as before (no
-knob regression), ARM `.text` 53,152 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
-`.bss` 108,124.  **Not yet heard on hardware.**
+**Verified** (at the shipping body target of 1.5): `test_dsp` exit 0,
+`test_hw_debug` 108/108, 40/40 presets render clean, `plateau_probe` finds the
+**same 18 dead-knob entries** as before the pass (no knob regression), worst
+sample peak -0.11 dBFS (nothing pinned at 0.00), ARM `.text` 53,128 ·
+`.rodata` 34,480 · `.data.rel.ro` 468 · `.bss` 108,124, and `nm` finds no
+`g_mp_*` symbol in the shipping ELF.  **Not yet heard on hardware.**
 
 ### Pass 46b — the gong's bank was running at a third of its ported density
 
