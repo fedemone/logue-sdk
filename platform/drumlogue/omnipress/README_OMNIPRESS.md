@@ -1,0 +1,322 @@
+# README.md - OmniPress Master Compressor for KORG drumlogue
+
+> **Disclaimer:** OmniPress is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
+## Overview
+
+**OmniPress** is a character master bus compressor for the KORG drumlogue, loosely inspired by the **Eventide Omnipressor** and **Empirical Labs EL8 Distressor**. It features **three distinct compression modes** in a single unit, taking advantage of the drumlogue's 4-channel master effect input for external sidechain processing.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **3 Compression Modes** | Standard, Distressor, Multiband |
+| **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
+| **Drive/Wavefolder** | 5 distortion modes from soft clip to sub-octave |
+| **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
+| **Adjustable crossover** | XOVER sweeps both multiband split points together |
+| **Soft knee** | Ratio-dependent on the Distressor: wide at 2:1, tightening to a brick wall at NUKE |
+| **NEON Optimization** | Fully vectorized for ARM Cortex-A7 |
+| **24 User Parameters** | Every slot the SDK allows, across 6 control pages |
+| **24dB/oct Crossover** | Linkwitz-Riley filters for multiband mode |
+
+---
+
+## Compression Modes
+
+### Mode 0: Standard Compressor
+A versatile, clean compressor with all the essentials:
+- **Threshold**: -60 to 0 dB
+- **Ratio**: 1:1 to 20:1
+- **Attack**: 0.1 to 100 ms
+- **Release**: 10 to 2000 ms
+- **Soft/Hard Knee** selectable
+- **Peak/RMS detection** with blend
+
+### Mode 1: Distressor Mode
+Emulates the Empirical Labs EL8 Distressor with its unique character:
+
+| Feature | Implementation |
+|---------|---------------|
+| **8 Ratios** | 1:1 (warm), 2:1, 3:1, 4:1, 6:1, 10:1 (opto), 20:1, NUKE |
+| **Distortion Modes** | Dist2 (2nd harmonic), Dist3 (3rd harmonic), Both, plus 5 wavefolder shapes |
+| **Opto Mode** | Extended release times up to 20 seconds |
+| **NUKE Mode** | Brick-wall limiting with 40dB+ reduction |
+| **1:1 Warm Mode** | Harmonic enhancement without compression |
+
+### Mode 2: Multiband Compressor
+3-band compression with independent controls:
+
+| Band | Frequency Range | Independent Controls |
+|------|----------------|---------------------|
+| **Low** | 20 - 250 Hz | Threshold, Ratio, Makeup |
+| **Mid** | 250 - 2500 Hz | Threshold, Ratio, Makeup |
+| **High** | 2500 - 20 kHz | Threshold, Ratio, Makeup |
+| **All** | Full range | Global adjustments |
+
+Features:
+- **Linkwitz-Riley 24dB/oct** crossovers (phase neutral)
+- **Solo/Mute** per band (MBState)
+- **Sweepable crossover** (XOVER)
+- **Independent attack/release** per band
+- **Gain reduction meters** per band (future)
+
+---
+
+## Drive/Wavefolder (5 Modes)
+
+The drive stage offers 5 distinct character modes, controllable via the DRIVE parameter (0-100%):
+
+| Mode | Name | Description | Character |
+|------|------|-------------|-----------|
+| **0** | Soft Clip | Tanh approximation | Tube-like saturation |
+| **1** | Hard Clip | Brick-wall limiter | Digital distortion |
+| **2** | Triangle Folder | Wavefolding | Synth-like aggression |
+| **3** | Sine Folder | Sinusoidal folding | Smooth, complex harmonics |
+| **4** | Sub-Octave | Zero-crossing square wave | Gritty, synth bass |
+
+The drive amount controls both the input gain to the waveshaper and the dry/wet blend for parallel processing.
+
+---
+
+## Parameter Reference
+
+OmniPress uses all **24 parameters** the SDK allows (`UNIT_MAX_PARAM_COUNT`),
+across 6 pages of 4. IDs below match `header.c`.
+
+### Page 1: Core Dynamics
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 0 | THRESH | -60.0 to 0.0 dB | Threshold (x0.1 dB) |
+| 1 | SLOPE | 1 to 100 | Omnipressor function knob: expansion → 1:1 → limiting → reverse. In Distressor mode it selects the 8 fixed ratios instead |
+| 2 | ATTACK | 0.1 to 100.0 ms | Attack time (x0.1 ms) |
+| 3 | RELEASE | 10 to 2000 ms | Release time |
+
+### Page 2: Character & Output
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
+| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Distressor: the selected DstrDist shaper, or the Overlord tube when DstrDist is None · Multiband: per-band triode saturation |
+| 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
+| 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
+
+### Page 3: Mode, Limits & Detector
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 8 | COMP MODE | 0–2 | 0=Standard, 1=Distressor, 2=Multiband |
+| 9 | ATT LMT | -30.0 to 0.0 dB | Omnipressor attenuation limit: how far the VCA may duck |
+| 10 | GAIN LMT | 0.0 to 30.0 dB | Omnipressor gain limit: how far it may boost below threshold |
+| 11 | DETECT | 0–7 | Standard/Multiband: 0=Peak, 1=RMS, 2=Blend · Distressor: 0=Basic, 1=Emph, 2=Link, 3=Emph+Link · **+4 keys from the external sidechain input** |
+
+### Page 4: Overlord EQ & Distressor Character
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 12 | BASS | 0–100% | Overlord EQ low shelf (50 = flat) |
+| 13 | TREBLE | 0–100% | Overlord EQ high shelf (50 = flat) |
+| 14 | PRESENCE | 0–100% | Overlord EQ presence shelf (50 = flat) |
+| 15 | DstrDist | 0–8 | 0=Off, 1=Dist2, 2=Dist3, 3=Both, 4=Soft, 5=Hard, 6=Triangle, 7=Sine, 8=SubOctave |
+
+### Page 5: Multiband Band Controls
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 16 | MBand | 0–6 | Which band the per-band controls edit: 0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All |
+| 17 | MBThr | -60.0 to 0.0 dB | Per-band threshold |
+| 18 | MBRtio | 1.0 to 20.0 | Per-band ratio |
+| 19 | MBAtk | 0.1 to 100.0 ms | Per-band attack |
+
+### Page 6: Multiband Output Controls
+
+| ID | Name | Range | Description |
+|----|------|-------|-------------|
+| 20 | MBReles | 10 to 2000 ms | Per-band release |
+| 21 | MBMkup | 0.0 to 24.0 dB | Per-band makeup gain |
+| 22 | MBState | 0–2 | Selected band: 0=On, 1=Mute, 2=Solo |
+| 23 | XOVER | 0–100 | Moves both split points together, 62.5 Hz/625 Hz up to 1 kHz/10 kHz, always a decade apart. 50 = 250 Hz / 2.5 kHz |
+
+---
+
+## Signal Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         INPUT (4-channel)                         │
+│              [Main L, Main R, Sidechain L, Sidechain R]           │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      SIDECHAIN SELECT                             │
+│              External (SC L/R) or Internal (Main L/R)             │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      SIDECHAIN HPF (20-500 Hz)                    │
+│                    12dB/oct Bessel filter                         │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     ENVELOPE DETECTOR                             │
+│              Peak / RMS / Blend with attack/release               │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        MODE SELECTOR                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │  STANDARD    │  │  DISTRESSOR  │  │  MULTIBAND   │           │
+│  │  • Ratio     │  │  • 8 Ratios  │  │  • Crossover │           │
+│  │  • Knee      │  │  • Opto      │  │  • 3 Bands   │           │
+│  │  • Smoothing │  │  • Harmonics │  │  • Indep Comp│           │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
+└─────────┼─────────────────┼─────────────────┼─────────────────────┘
+          ▼                 ▼                 ▼
+    Gain Reduction    Gain Reduction    Band Gains
+          └─────────────┬─────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   OVERLORD EQ (BASS/TREBLE/PRESENCE)              │
+│              3-band semi-parametric tonal shaping                 │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     DRIVE / WAVEFOLDER (5 modes)                  │
+│          Soft Clip │ Hard Clip │ Triangle │ Sine │ SubOctave      │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      DRY/WET MIX (Parallel)                       │
+│                   Blend processed with original                    │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       MAKEUP GAIN (0-24 dB)                       │
+└─────────────────────────┬───────────────────────────────────────┘
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         OUTPUT (Stereo)                            │
+│                      Compressed and character-rich                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## NEON Optimization Strategy
+
+All processing is vectorized to process **4 samples simultaneously**:
+
+```c
+// Load 4 stereo frames with sidechain
+float32x4x4_t interleaved = vld4q_f32(in_p);
+float32x4_t main_l = interleaved.val[0];  // L0, L1, L2, L3
+float32x4_t main_r = interleaved.val[1];  // R0, R1, R2, R3
+float32x4_t sc_l   = interleaved.val[2];  // SC L0, SC L1, SC L2, SC L3
+float32x4_t sc_r   = interleaved.val[3];  // SC R0, SC R1, SC R2, SC R3
+
+// Process all 4 samples in parallel
+float32x4_t envelope = envelope_detect(&envelope_, main_l, sidechain);
+float32x4_t gain_db = gain_computer_process(&gain_comp_, envelope_db, thresh_db_, ratio_);
+```
+
+Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
+
+---
+
+## Parameter String Display
+
+| Parameter | Values Displayed |
+|-----------|------------------|
+| COMP MODE | "Standard", "Distressor", "Multiband" |
+| DstrDIST | "Off", "Dist2", "Dist3", "Both", "Soft", "Hard", "Trg", "Sine", "SubOct" |
+| DETECT | "Peak"/"RMS"/"Blend" (+"SC" variants) · Distressor: "Basic"/"Emph"/"Link"/"Emp+Lnk" |
+| MBState | "On", "Mute", "Solo" |
+| XOVER | e.g. "250/2.5k" |
+| DstrRATIO | "1:1 Warm", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE" |
+| MBand | "Low", "Mid", "High", "Low+Mid", "Low+High", "Mid+High", "All" |
+| MIX | "DRY" (-100), "BAL" (0), "WET" (+100) |
+
+---
+
+## Bug Fixes Applied
+
+| Bug | Symptom | Fix |
+|-----|---------|-----|
+| Multiband gain-reduction polarity inverted | Multiband mode acted as a downward expander (attenuated quiet signals, passed loud ones) | `excess = env_dB − threshold_dB` with clamp to ≥ 0; was `thresh − env` |
+| ratio=0 hard-limit returned +100 dB | NUKE mode at ratio=0 blew up output | `gain_red = 100.0f` before negation; was `-100.0f` |
+| Multiband 7 dB quieter than the other modes | Switching COMP MODE to Multiband dropped the level | `MASTER_SUM_SCALING` 0.45 → 1.0; the Linkwitz-Riley tree already reconstructs to unity |
+| Detector fed `L+R` instead of `0.5*(L+R)` | Threshold 6 dB optimistic on mono material, and different from Multiband's per-band detector | Average the sidechain in `process_block` |
+| MAKEUP built from `fasterpowf` | 0.25 dB insertion loss at MAKEUP=0, 24.0 dB delivered as 23.69 dB | `e_expff(dB * INV_DB_COEFF)` — 0.033 dB worst case (master, per-band, and the shelving-filter gain) |
+| `linear_to_db` interpolated the raw mantissa | 0.52 dB of error landing straight on the Standard/Distressor threshold; Multiband duplicated the same bit-trick at 0.17 dB | Shared `neon_log2q_f32` in float_math.h, minimax cubic, 0.005 dB |
+| Wavefolder applied the drive gain twice | Total gain `(1+19d)²` = +52 dB at DRIVE=100, pinning everything to the output limiter | Makeup is `Q_rsqrt(g)`, so net small-signal gain is `sqrt(g)` (+13 dB across the knob) |
+| Triangle folder inverted polarity | `y = -x` throughout the linear region, so the wet path cancelled the dry one at partial MIX (-37 dB at BAL) | Return `1 - |…|` instead of `|…| - 1` |
+| Triangle folder never folded negative peaks | `vcvtq_s32_f32` truncates toward zero, so the modulo went negative; mode was indistinguishable from Hard clip | Floor the quotient before the modulo |
+| Sine folder used a 2-term Taylor series over ±π | Returned -2.03 instead of 0 at the fold; fundamental collapsed above DRIVE 15 | `sin_ps` from float_math.h, whose Cephes range reduction lets the fold keep folding — no clamp needed |
+| Distortion types not level-matched | Sine ran +3.9 dB hot, SubOct 2 dB quiet, at DRIVE=0 | Sine scaled by 2/π, SubOct mix renormalised — every shaper now has unity small-signal gain |
+| DRIVE=1 did nothing; DRIVE=2 stepped ~2 dB | Gate `drive_ > 0.01f`, plus the Overlord EQ never ran below DRIVE=2 | DRIVE=0 takes the EQ-only path; the tube blend fades in over the bottom tenth of the knob |
+| DRIVE was a dead knob on the factory default | Distressor bypasses its shaper at DstrDist=None (the init value) and the broadband tube was gated off for every non-Standard mode, so DRIVE 0→100 changed nothing at all in the mode most users reach for | Distressor falls through to the Overlord tube when DstrDist is None, matching Standard row for row (bench section G8) |
+| Denormals stalled the audio thread on silence | Every decaying IIR parks its delay line in the subnormal range and stays there. Multiband holds 64 crossover states alone, and measured **44× more CPU to process silence than signal** — clicks between drum hits, and an overrun on a loaded machine | `flush_denormal` / `flush_denormal_q` at each state store; the ratio is now 1.0× (bench section G9) |
+| Shelving filter left a stale delay line when flat | `fabsf(gain_db) < 0.01f` returned early without updating state, so moving BASS/TREBLE/PRESENCE back off flat resumed the filter from however long ago it was last active — a click | Clear the state on bypass. At 0 dB the shelf's b coefficients equal its a coefficients, so the identity filter's steady state really is zero — resuming is continuous |
+| Presence shelf ran at two frequencies | 5 kHz in the EQ-only path, 5.5 kHz in the drive path, sharing one biquad state, so crossing between them recomputed coefficients under a live delay line | One `OVERLORD_PRESENCE_HZ` for both |
+| `multiband_init` never cleared its filter state | Crossover, envelope, gain, tube-bias and DC-blocker state survived a Reset — they were only ever zeroed by landing in `.bss` at load, so nothing could clear them afterwards | Zero all of it in `multiband_init` |
+| `Reset()` wiped the parameters it had just set | `multiband_init` ran *after* the per-band `setParameter` calls, so every band came back on its hardcoded defaults rather than the header's | Clear DSP state first, then apply defaults |
+| Wavefolder makeup scaled the saturated ceiling | Every shaper saturates at ±1, so a `1/sqrt(g)` makeup scaled the ceiling with it: peak fell to 0.224 at DRIVE=100 while the harmonic saturators reached 1.000. Driving harder made those five modes **quieter** — on a drum bus Sine sat 15.3 dB below DstrDist=Off | Apply the drive once and don't compensate. Worst-case spread across the nine types drops from 16.1 dB to 4.7 dB (bench G4b) |
+| DstrDist switched a filter into the detector | Selecting a wavefolder mode also enabled the detector's 100 Hz HPF, so on a kick-heavy bus gain reduction backed off and the output jumped ~4 dB — the distortion selector was changing the compression | Detector shaping belongs to DETECT (which has Emph for this); DstrDist no longer touches `detector_mode` |
+| SLOPE gave no readout of what it selected | Typed `k_unit_param_type_none`, so the host showed a bare 0.01–1.00 while the knob was really selecting 8 Distressor ratios or an Omnipressor curve | Typed `k_unit_param_type_strings` so the existing per-mode display is used: "2.0:1", "Limit", "Rev 1.5", or the Distressor ratio by name |
+| SLOPE evaluated against the previous COMP MODE | A host replaying parameters in ID order sets SLOPE (ID 1) before COMP MODE (ID 8), so the Distressor ratio stayed at its 4:1 init | `k_compressor_mode` re-applies the stored SLOPE |
+| DstrDist max was 9 | Value 9 is rejected by `setParameter` and has no display string | Max is 8 in `header.c` |
+| Peak detector latched | Hold counter incremented once per 4-sample block, so the "10 ms hold" was 417 ms and expiry applied a single 0.999 step — ~0.009 dB of decay per 417 ms. Gain reduction never recovered after a transient and RELEASE did nothing in Peak mode, the default | Rectify, then let the attack/release one-pole provide ballistics, with the intended 10 ms hold implemented in samples |
+| Blend detection was 0.3 × RMS | Its branch read `peak_hold`, which only the Peak branch wrote — and a `switch` runs one branch, so peak stayed 0 and the envelope sat 10.5 dB low, pivoting into upward gain | Blend derives peak locally |
+| Detector and Distressor gain smoother ran 4× slow | State was `float32x4_t`, giving each lane its own history advanced once per block, so per-sample coefficients were applied at 12 kHz | Sequential scalar state, as the crossovers and `standard_process` already use |
+| External sidechain unreachable | `use_external_sc_` was only ever assigned 0; the 4-channel input the unit asks for could not be selected | DETECT + 4 selects it (all 24 SDK parameter slots were already taken). Multiband splits the key through its own mono crossover so it ducks per band |
+
+Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
+
+```
+g++ -std=c++14 -O2 -I test_portable -I . -I ../common -o test_levels test_levels.cpp -lm
+./test_levels
+```
+
+All three modes now measure 0.00 dB insertion gain, and all nine distortion
+types sit within 0.9 dB of each other at DRIVE=0.
+
+## Future Expansion
+
+The architecture supports easy addition of:
+
+1. **More band parameters** (Attack, Release per band)
+2. **Knee control** (0-100% softness)
+3. **Detection mode** (Peak/RMS/Blend)
+4. **Stereo link** adjustment
+5. **Lookahead** (up to 10ms)
+6. **Sidechain listen** mode
+7. **8 factory presets** for common use cases
+
+---
+
+## Technical Specifications
+
+| Specification | Value |
+|---------------|-------|
+| Sample Rate | 48 kHz fixed |
+| Input Channels | 4 (Main L/R + Sidechain L/R) |
+| Output Channels | 2 (Stereo) |
+| Parameters | 22 |
+| CPU Target | < 2% @ 1GHz |
+| Memory | ~4 KB |
+| Crossover | Linkwitz-Riley 24dB/oct |
+| Drive Modes | 5 types |
+
+---
+
+## Credits & Inspiration
+
+- **Eventide Omnipressor** (1970s) - Reverse compression concept
+- **Empirical Labs EL8 Distressor** - Ratio modes and harmonic distortion
+- **SSL Console** - Multiband architecture
+- **SHARC Audio Elements** - DSP building block patterns
+
+---
+
+**OmniPress** brings studio-grade dynamics processing to the KORG drumlogue, with three compressors in one and enough character to satisfy any genre.

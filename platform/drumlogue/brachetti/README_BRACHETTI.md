@@ -1,11 +1,22 @@
 # Brachetti (Drumlogue Bare-Metal DSP)
 
-> Named in honour of quick-change
+> **Disclaimer:** Brachetti is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+
+> Formerly **RipplerX-Waveguide**; renamed in honour of quick-change
 > performer Arturo Brachetti (July 2026).  `dev_id`/`unit_id` are unchanged,
 > so the renamed unit replaces an installed RipplerX build in place.
 
 ## Overview
 Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. **40 presets** spanning strings, bars, membranes, metallic plates, cymbals, snares, and idiophones.
+
+The 40 presets are selected with the **`Program`** parameter, not through the
+SDK's preset-recall slots: `.num_presets` is deliberately `0` in `header.c`.
+Both routes called the same `LoadPreset()`, and `Program` is the one worth
+keeping — being an ordinary parameter it is stored with the pattern,
+sequencer-automatable and motion-recordable, which the preset slots are not.
+(Practical consequence for tooling: `tools/level_meter/run.sh` reads
+`.num_presets`, so measure this unit with its sweep mode —
+`./run.sh ../../brachetti 60 127 -1 /tmp/out 0 40`.)
 
 Six engine families route each preset to its own signal path
 (`kPresetEngine[]` in `synth_engine.h` is the authority):
@@ -58,14 +69,14 @@ NoteOn / Gate trigger
           ┌────────────────┴────────────────┐
           │ (A/B Split, optional coupling)  │
           ▼                                 ▼
-┌──────────────────────┐       ┌───────────────────────┐
-│ RESONATOR A          │◄─────►│ RESONATOR B           │
+┌──────────────────────┐       ┌──────────────────────┐
+│ RESONATOR A          │◄─────►│ RESONATOR B          │
 │ ├─ 4096-sample delay │       │ ├─ 4096-sample delay  │
 │ ├─ Allpass dispersion│       │ ├─ Allpass dispersion │
 │ ├─ 1-pole LP loss    │       │ ├─ 1-pole LP loss     │
-│ ├─ loss_g_dc / hf    │       │ └─ Optional (Partls≥1)│
-│ │  split sustain vs  │       └───────────────────────┘
-│ │  brightness        │
+│ ├─ loss_g_dc / hf   │       │ └─ Optional (Partls≥1)│
+│ │  split sustain vs  │       └──────────────────────┘
+│ │  brightness         │
 │ └─ Pitch compensation│
 │    (LP + AP group    │
 │     delay subtracted)│
@@ -85,6 +96,79 @@ NoteOn / Gate trigger
 ---
 
 ## Key Architectural Decisions & Quirks
+
+### Master gain staging — `kPresetOutTrim[]`
+
+One float per preset, applied in Stage 4b alongside the `Gain` drive.  It is
+the difference between a master stage that *limits* and one that *levels*.
+
+Before it existed, the voice bus reached Stage 4b anywhere between **0.5× and
+116× full scale** depending on the preset, and the worst cases were not strike
+transients — Cowbell's steady **body** arrived at 13.4× and Marimba's at 9.9×.
+A peak limiter with a 0.99 ceiling answers that with 20-40 dB of gain reduction
+standing on the whole note, which does not sound like limiting.  It sounds like
+the note has no decay: the output is pinned AT the ceiling until the voice
+finally drops below the threshold, each new strike ducks whatever is still
+ringing and then swells back up, and on stacked notes the pumping is the
+loudest thing in the mix.  That was the hardware report *"most of the
+instruments seem to be clipping a bit (possibly on stacking notes)"*.
+
+The trim is calibrated on the note's **body**, not its peak: the peak over
+[10 ms, 1 s] at velocity 127 on the preset's own Note is put on a single **body
+target**, near `kMasterLimThr`.  Limiting a 2 ms mallet transient by 15 dB is
+what percussion mastering does and is inaudible; holding a body 20 dB down for
+half a second is the defect.  Calibrating on the peak instead was measured and
+rejected — it costs 10 LU of loudness to buy the same thing.
+
+**That body target is the one dial for the clipping-versus-loudness trade**, and
+the whole table regenerates from it (`/tmp/calib_probe 1.5`).  Measured across
+the library:
+
+| body target | mean LUFS | stacked-note distortion | presets left untrimmed |
+|---|---|---|---|
+| 1.0 | −17.7 | −22.3 dB | 8 |
+| **1.5** (ships) | **−16.1** | **−20.6 dB** | **12** |
+| no trim | −13.3 | −13.7 dB | 40 |
+
+It is clamped to `≤ 1`, so it only ever gives back drive the master stage could
+not use — raising the target never pushes a preset past where it already was,
+it just stops trimming it.  At the shipping target twelve presets sit at exactly
+1.0 (Timpani and Taiko run the kernel's own master stage; Cymbal, Claves, Clap,
+HHat-O, Ride, RidBel, Tick, Splash and Wodblk were already under the ceiling),
+and those render bit-identically.
+
+`calib_probe.cpp` regenerates the table and is idempotent — it composes the
+trim already in the tree back into what it prints — so re-running it after a
+voicing change reprints only the entries that moved.  **Changing a preset's
+decay or level means recalibrating it**; that is not optional bookkeeping, an
+uncalibrated entry puts that preset back into the levelling regime.
+
+### "Decay" is a rendered T60, not the `Dkay` knob
+
+`Dkay` is a **reference anchor**: `LoadPreset` captures the preset's own `Dkay`
+column into `m_modal_dkay_ref`, so `t60_scale` is exactly 1 at the shipped
+value.  Editing that column therefore changes *where the knob sits* and nothing
+about the sound.  A preset's actual decay lives in `k_boom_decay`
+(`model_param_presets`) and the four `t60_*_ms` (`modal_preset_configs`), and
+on a preset where both are audible **both have to move or only half the tail
+shortens** — see the note on `modal_preset_configs[k_Kick2]`.
+
+`decay_probe.cpp` measures the real thing (time from the loudest 5 ms frame
+down 60 dB, struck at velocity 127 on the preset's own Note).  It agrees with
+the convention quoted elsewhere in the source: `boom_decay = 0.99972` is
+documented as "T60 ≈ 515 ms" on RackTom, and the probe measures RackTom at
+500 ms.
+
+Current values for the two presets tuned by request: **Kick 1590 ms** (boom
+only — its `k_modal_mix` is 0) and **DeepBs 495 ms** (boom *and* the modal
+bank, whose 1800 ms `t60_1` was the real tail).
+
+These two are **coupled to `kPresetOutTrim`** and cannot be tuned independently
+of it: changing a decay moves the preset's body level, which changes its trim,
+and changing the trim changes how hard the limiter rides the tail, which moves
+the measured decay back.  Moving the body target therefore means re-running
+"re-tune the T60 data → regenerate the trim → re-measure" for these two until
+`decay_probe` and `calib_probe` both stop moving.
 
 ### Allpass formula — critical sign convention
 The allpass is `H(z) = (c + z⁻¹) / (1 + c·z⁻¹)`.  
