@@ -13,17 +13,25 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x53637275U,      // 'Scru'
     .version = 0x00010000U,
     .name = "ScrtAstr",          // Max 8 chars on OLED
-    .num_presets = 97,           // NOTE aligned to first param
+    .num_presets = 242,          // NOTE aligned to first param
     .num_params = 24,
     .params = {
         // Page 1: Base
-        // Decode program ranges:
-        // 0-23: Normal
-        // 24-47: Osc 1 Reversed
-        // 48-71: Osc 2 Reversed
-        // 72-94: Both Reversed
-        // 95-96: drone engine
-        {0, 96, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Prgrm"}},
+        // Decode program ranges (see Prog_* in synth.h). Every program fully
+        // determines scan direction and both filter modes, so nothing latches.
+        //   0-23   : forward scan            | both filters lowpass
+        //   24-47  : Osc 1 reversed          | both filters lowpass
+        //   48-71  : Osc 2 reversed          | both filters lowpass
+        //   72-95  : both reversed           | both filters lowpass
+        //   96-119 : forward | filter 1 highpass
+        //   120-143: forward | filter 1 bandpass
+        //   144-167: forward | filter 1 notch
+        //   168-191: forward | filter 2 highpass
+        //   192-215: forward | filter 2 bandpass
+        //   216-239: forward | filter 2 notch
+        //   240-241: drone engines (crystal, metal)
+        // Within every band the modulation target is still Program % 24.
+        {0, 241, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Prgrm"}},
         {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
         {0, 256, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O1Wave"}},    // value aligned to wavetables.h
         {0, 256, 0, 0, k_unit_param_type_none, 0, 0, 0, {"O2Wave"}},    // value aligned to wavetables.h
