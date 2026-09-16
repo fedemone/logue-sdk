@@ -117,9 +117,9 @@ static void test_filter_modes(void) {
 /* ---------------------------------------------------------------------------
  * 2. Filter 2 howls only above the F2Res threshold
  * ------------------------------------------------------------------------ */
-static float gate_db(int f2res) {
+static float gate_db(int f1res, int f2res, int cmos) {
     /* Preset 12 gates Osc 1 with an AR strike; Osc 2 is muted, so between
-       strikes the whole engine is fed silence and only filter 2 can still ring. */
+       strikes the whole engine is fed silence and only a filter can still ring. */
     ScrutaAstri s;
     unit_runtime_desc_t d = {};
     d.samplerate = 48000;
@@ -128,7 +128,9 @@ static float gate_db(int f2res) {
     common_patch(s);
     s.setParameter(ScrutaAstri::k_paramOsc2Mix, 0);
     s.setParameter(ScrutaAstri::k_paramF2Cutoff, 610);
+    s.setParameter(ScrutaAstri::k_paramF1Reso, f1res);
     s.setParameter(ScrutaAstri::k_paramF2Reso, f2res);
+    s.setParameter(ScrutaAstri::k_paramCMOSDist, cmos);
     s.setParameter(ScrutaAstri::k_paramL1Rate, 50);
     s.setParameter(ScrutaAstri::k_paramL1Wave, LFO_AR_PERC);
     s.setParameter(ScrutaAstri::k_paramL1Depth, 100);
@@ -154,15 +156,35 @@ static float gate_db(int f2res) {
 
 static void test_howl(void) {
     const int res[] = { 0, 40, 67, 80, 100 };
-    float g[5];
+    float g2[5], g1[5];
+
+    printf("  filter 2, driven from F2Res:\n");
     for (int i = 0; i < 5; ++i) {
-        g[i] = gate_db(res[i]);
-        printf("  F2Res %3d -> gate %6.1f dB   %s\n", res[i], g[i],
-               g[i] < -40.0f ? "silent between strikes" : "filter 2 keeps sounding");
+        g2[i] = gate_db(0, res[i], 0);
+        printf("    F2Res %3d -> gate %6.1f dB   %s\n", res[i], g2[i],
+               g2[i] < -40.0f ? "silent between strikes" : "filter 2 keeps sounding");
     }
-    CHECK(g[0] < -40.0f, "F2Res 0 does not go silent (%.1f dB) -- filter 2 still howls by default", g[0]);
-    CHECK(g[1] < -40.0f, "F2Res 40 does not go silent (%.1f dB)", g[1]);
-    CHECK(g[4] > -40.0f, "F2Res 100 goes silent (%.1f dB) -- the howl is unreachable", g[4]);
+    CHECK(g2[0] < -40.0f, "F2Res 0 does not go silent (%.1f dB) -- filter 2 still howls by default", g2[0]);
+    CHECK(g2[1] < -40.0f, "F2Res 40 does not go silent (%.1f dB)", g2[1]);
+    CHECK(g2[4] > -40.0f, "F2Res 100 goes silent (%.1f dB) -- the howl is unreachable", g2[4]);
+
+    printf("  filter 1, driven from F1Res:\n");
+    for (int i = 0; i < 5; ++i) {
+        g1[i] = gate_db(res[i], 0, 0);
+        printf("    F1Res %3d -> gate %6.1f dB   %s\n", res[i], g1[i],
+               g1[i] < -40.0f ? "silent between strikes" : "filter 1 keeps sounding");
+    }
+    /* F1Res above 0 also raises filter 1's drive, which is what used to put its
+       integrators through fast_tanh and set it singing on its own. */
+    CHECK(g1[0] < -40.0f, "F1Res 0 does not go silent (%.1f dB) -- filter 1 still howls by default", g1[0]);
+    CHECK(g1[1] < -40.0f, "F1Res 40 does not go silent (%.1f dB) -- drive alone is setting filter 1 off", g1[1]);
+    CHECK(g1[2] < -40.0f, "F1Res 67 does not go silent (%.1f dB) -- the threshold is leaking", g1[2]);
+    CHECK(g1[4] > -40.0f, "F1Res 100 goes silent (%.1f dB) -- filter 1's howl is unreachable", g1[4]);
+
+    /* Maximum distortion drives filter 1 hard without asking for a howl. */
+    const float gc = gate_db(0, 0, 100);
+    printf("  CMOS 100, both resonances 0 -> gate %6.1f dB\n", gc);
+    CHECK(gc < -40.0f, "full distortion stops the gate reaching silence (%.1f dB)", gc);
 }
 
 /* ---------------------------------------------------------------------------

@@ -15,6 +15,14 @@ constexpr float kStabilitySafetyMargin = 0.98f;
 // high and the resonance low.
 constexpr float kTanhLoopGuard = 8.0f / 3.0f;
 
+// The MorphingFilter's saturated path is a different loop: fast_tanh() is on
+// both integrators but the damping term stays linear, which works out to
+// 2.25f^2 + 3fq < 4.  That solves to exactly 2/3 of the linear f_max, so the
+// same sqrt is reused and scaled.  Only the drive>0, sherman_asym<=0 branch
+// runs through the tanh -- the clean and wavefolder branches integrate
+// linearly and the unscaled guard is right for them.
+constexpr float kMorphTanhGuardScale = 2.0f / 3.0f;
+
 // Self-oscillation, van der Pol style.  Damping is scaled by
 //
 //     1 - howl * (1 + kHowlExcess) * max(0, 1 - state^2 * kHowlSoften)
@@ -33,10 +41,13 @@ constexpr float kTanhLoopGuard = 8.0f / 3.0f;
 constexpr float kHowlExcess = 1.0f;
 constexpr float kHowlSoften = 0.62f;
 
-// Ceiling on the Polivoks integrator states.  The damping law above is what
-// actually sets the amplitude; this is insurance so no combination of howl,
-// drive and audio-rate cutoff modulation can send the states to infinity.
+// Ceilings on the integrator states.  The damping law above is what actually
+// sets the amplitude; these are insurance so no combination of howl, drive and
+// audio-rate cutoff modulation can send the states to infinity.  The
+// MorphingFilter's is looser because its wavefolder legitimately drives the
+// states harder than the Polivoks loop ever does.
 constexpr float kPolivoksStateLimit = 4.0f;
+constexpr float kMorphStateLimit = 8.0f;
 constexpr float kWaveFoldingThreshold = 1.2f;
 constexpr float kWaveFoldingMarker = 2 * kWaveFoldingThreshold;
 
@@ -74,6 +85,15 @@ struct MorphingFilter {
     float sherman_asym = 0.0f;    // 0.0 (Symmetrical) to 1.0 (Asymmetrical)
     float lfo_res_mod = 0.0f;     // How much LFO3 rips the resonance apart
 
+    // 0.0 = provably stable, decays to silence on zero input.
+    // 1.0 = negative damping, so it self-oscillates on a bounded limit cycle.
+    // Driven from F1Res in synth.h, the same way F2Res drives the Polivoks.
+    float howl = 0.0f;
+
+    // NOTE: set_coeffs() picks its stability guard from `drive` and
+    // `sherman_asym`, because those decide whether the integrators run through
+    // fast_tanh.  Set them before calling it, not after.
+
     // Euler SVF State
     float low = 0.0f;
     float band = 0.0f;
@@ -101,6 +121,13 @@ struct MorphingFilter {
         // (no-drive) SVF path has no integrator saturation to limit feedback, so it
         // explodes immediately. Clamp f to the max safe value for the current q.
         float f_max = fasterSqrt_15bits(q * q + 4.0f) - q;
+
+        // The saturated branch needs a tighter limit: fast_tanh's 1.5 small-signal
+        // gain on both integrators makes the real condition 2.25f^2 + 3fq < 4.  Used
+        // unscaled, this filter self-oscillated at zero input whenever drive was up
+        // and the cutoff was high -- which is any patch with CMOS or F1Res above 0.
+        if (drive > 0.0f && sherman_asym <= 0.0f) f_max *= kMorphTanhGuardScale;
+
         if (f > f_max * kStabilitySafetyMargin) f = f_max * kStabilitySafetyMargin;
     }
 
@@ -110,6 +137,15 @@ struct MorphingFilter {
         // Dynamic Resonance (Damping decreases as LFO pushes)
         float current_q = q * (1.0f - (lfo_val * lfo_res_mod * 0.5f));
         current_q = fmaxf(q_limit, current_q); // Prevent total self-oscillation collapse
+
+        // Amplitude-limited negative damping -- same law as the Polivoks, sensed
+        // on `band` because that is this topology's resonant state.  Applied after
+        // the clamp above: that clamp exists to stop the LFO collapsing the damping
+        // by accident, which is not what howl is doing.
+        if (howl > 0.0f) {
+            const float soften = fmaxf(0.0f, 1.0f - band * band * kHowlSoften);
+            current_q *= (1.0f - howl * (1.0f + kHowlExcess) * soften);
+        }
 
         // STAGE 3: Sherman Asymmetrical Wavefolding (Pre-Filter)
         if (sherman_asym > 0.0f) {
@@ -132,6 +168,11 @@ struct MorphingFilter {
             band += f * high;
             low  += f * band;
         }
+
+        // Insurance for the self-oscillating and wavefolder paths; on the stable
+        // ones the states never come near this.
+        band = fmaxf(-kMorphStateLimit, fminf(kMorphStateLimit, band));
+        low  = fmaxf(-kMorphStateLimit, fminf(kMorphStateLimit, low));
 
         // Notch calculation
         float notch = high + low;
