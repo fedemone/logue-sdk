@@ -1,7 +1,7 @@
 /**
  * @file test_rhythm.cpp
- * @brief Filter modes from the program, filter 2's opt-in howl, and the
- *        rhythmic add-ons.
+ * @brief Filter modes from the program, the opt-in howl on both filters, the
+ *        rhythmic add-ons, and the CMOS Sherman zone.
  *
  * Covers:
  *   1. Filter modes are a pure function of the program number. Visiting the
@@ -13,6 +13,10 @@
  *      unconditionally, so nothing downstream could ever be quiet.
  *   3. The rhythmic add-ons are inert until LFO 1 or LFO 2 carries a strike
  *      shape, each one changes the sound, and none of them breaks the output.
+ *   4. CMOS above 66 engages the Sherman wavefolder. The zone was inert for as
+ *      long as its asymmetry divided by the wrong constant, and inert is hard
+ *      to notice by ear on a knob that is already saturating -- so it is
+ *      measured as harmonic content, which folding adds and level does not.
  *
  * Compile: arm-linux-gnueabihf-g++ -O2 -march=armv7-a -mtune=cortex-a7 -marm \
  *            -mfloat-abi=hard -mfpu=neon-vfpv4 -fno-math-errno -Wno-psabi \
@@ -317,6 +321,77 @@ static void test_addons(void) {
           " so the below-8 gate is not holding", qHi * 100.0f);
 }
 
+/* ---------------------------------------------------------------------------
+ * 4. The CMOS Sherman zone
+ * ------------------------------------------------------------------------ */
+/* Zero crossings per second. The wavefolder tears extra crossings into the
+   waveform; a gain or makeup change cannot, which is what makes this tell a
+   live wavefolder apart from a merely louder one. */
+static float crossings(int cmos, int *bad_out, float *peak_out) {
+    ScrutaAstri s;
+    unit_runtime_desc_t d = {};
+    d.samplerate = 48000;
+    d.output_channels = 2;
+    s.Init(&d);
+    common_patch(s);
+    /* Both filters wide open: the wavefolder's product is harmonic content high
+       above the fundamental, and a 5 kHz lowpass removes the evidence. */
+    s.setParameter(ScrutaAstri::k_paramF1Cutoff, 1000);
+    s.setParameter(ScrutaAstri::k_paramF2Cutoff, 1000);
+    s.setParameter(ScrutaAstri::k_paramCMOSDist, cmos);
+    s.setParameter(ScrutaAstri::k_paramProgram, 0);
+    s.NoteOn(36, 127);
+
+    float buf[2 * BLOCK];
+    for (int b = 0; b < 300; ++b) s.processBlock(buf, BLOCK);
+
+    int zx = 0, n = 0, bad = 0;
+    float prev = 0.0f, pk = 0.0f;
+    for (int b = 0; b < 1200; ++b) {
+        s.processBlock(buf, BLOCK);
+        for (int i = 0; i < BLOCK; ++i) {
+            float v = buf[2 * i];
+            if (isnan(v) || isinf(v) || fabsf(v) > 1.0f) bad++;
+            if (fabsf(v) > pk) pk = fabsf(v);
+            if ((v >= 0.0f) != (prev >= 0.0f)) zx++;
+            prev = v;
+            n++;
+        }
+    }
+    *bad_out = bad;
+    *peak_out = pk;
+    return zx * 48000.0f / (float)n;
+}
+
+static void test_sherman(void) {
+    const int cmos[] = { 0, 40, 66, 67, 85, 100 };
+    float zx[6], pk[6];
+    int bad[6];
+    for (int i = 0; i < 6; ++i) {
+        zx[i] = crossings(cmos[i], &bad[i], &pk[i]);
+        printf("  CMOS %3d -> %6.0f zero crossings/s   peak %.4f   bad %d\n",
+               cmos[i], zx[i], pk[i], bad[i]);
+        CHECK(bad[i] == 0, "CMOS %d produced %d non-finite or clipping samples", cmos[i], bad[i]);
+    }
+    /* 0..66 is flat: Moog saturation rounds the waveform, it does not fold it,
+       so it adds no crossings. The asymmetry only ramps from 0 at 67, and the
+       fold threshold is not reached often until it is well up, so 67 itself is
+       a few percent and the evidence is at the top of the zone. If the divisor
+       regressed, every value from 67 up would sit back down at the 66 figure. */
+    CHECK(zx[2] < zx[0] * 1.3f,
+          "CMOS 66 already looks folded (%.0f vs %.0f crossings/s at 0) --"
+          " the zone border has moved", zx[2], zx[0]);
+    CHECK(zx[4] > zx[2] * 1.5f,
+          "CMOS 85 adds no harmonics over 66 (%.0f vs %.0f crossings/s) --"
+          " the wavefolder is not engaging", zx[4], zx[2]);
+    CHECK(zx[5] > zx[2] * 2.0f,
+          "CMOS 100 adds little over 66 (%.0f vs %.0f crossings/s) --"
+          " the Sherman zone is not ramping", zx[5], zx[2]);
+    CHECK(zx[5] > zx[3],
+          "the Sherman zone is not monotonic (67 -> %.0f, 100 -> %.0f crossings/s)",
+          zx[3], zx[5]);
+}
+
 int main(void) {
     printf("=== ScrutaAstri program layout / howl / rhythm tests ===\n");
     printf("\n=== 1. Filter modes follow the program and do not latch ===\n");
@@ -325,6 +400,8 @@ int main(void) {
     test_howl();
     printf("\n=== 3. Rhythmic add-ons ===\n");
     test_addons();
+    printf("\n=== 4. CMOS Sherman zone engages above 66 ===\n");
+    test_sherman();
 
     if (failures == 0) {
         printf("\n=== ALL ScrutaAstri RHYTHM TESTS PASSED ===\n");
