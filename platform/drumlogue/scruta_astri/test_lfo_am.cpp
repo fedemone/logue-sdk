@@ -161,25 +161,28 @@ int main(void) {
         CHECK(off.bad == 0, "depth 0 produced %d non-finite or clipping samples", off.bad);
     }
 
-    printf("\n=== AM gates to silence once filter 2 is not self-oscillating ===\n");
+    printf("\n=== AM gates to silence at every cutoff, unless F2Res asks for the howl ===\n");
     {
-        /* The Polivoks emulation self-oscillates by design and sits downstream of
-           both oscillators, so at the header-default cutoff it floors the gate no
-           matter how hard the AM works. Raising F2Res or lowering F2Cut settles it. */
-        AmResult howl = run_am(12, ScrutaAstri::k_paramL1Wave, LFO_AR_PERC,
-                               ScrutaAstri::k_paramL1Depth, 100, 0, 610, 0);
-        AmResult calm = run_am(12, ScrutaAstri::k_paramL1Wave, LFO_AR_PERC,
-                               ScrutaAstri::k_paramL1Depth, 100, 0, 610, 60);
+        /* Filter 2 sits downstream of both oscillators, so if it sings on its
+           own nothing upstream can make the engine quiet. It is stable below the
+           F2Res howl threshold, which is what lets the strike have a gap.
+           test_rhythm.cpp covers the threshold itself. */
+        AmResult deflt = run_am(12, ScrutaAstri::k_paramL1Wave, LFO_AR_PERC,
+                                ScrutaAstri::k_paramL1Depth, 100, 0, 610, 0);
+        AmResult mid = run_am(12, ScrutaAstri::k_paramL1Wave, LFO_AR_PERC,
+                              ScrutaAstri::k_paramL1Depth, 100, 0, 610, 60);
         AmResult low = run_am(12, ScrutaAstri::k_paramL1Wave, LFO_AR_PERC,
                               ScrutaAstri::k_paramL1Depth, 100, 0, 120, 0);
-        printf("  preset 12, F2Cut 6100 F2Res 0   (defaults): gate %6.1f dB\n", gate_db(howl));
-        printf("  preset 12, F2Cut 6100 F2Res 60            : gate %6.1f dB\n", gate_db(calm));
+        printf("  preset 12, F2Cut 6100 F2Res 0   (defaults): gate %6.1f dB\n", gate_db(deflt));
+        printf("  preset 12, F2Cut 6100 F2Res 60            : gate %6.1f dB\n", gate_db(mid));
         printf("  preset 12, F2Cut 1200 F2Res 0             : gate %6.1f dB\n", gate_db(low));
-        CHECK(gate_db(calm) < -40.0f,
-              "AM does not gate at F2Res 60 (%.1f dB) -- the beat is gone", gate_db(calm));
+        CHECK(gate_db(deflt) < -40.0f,
+              "AM does not gate at the header defaults (%.1f dB) -- the beat is gone", gate_db(deflt));
+        CHECK(gate_db(mid) < -40.0f,
+              "AM does not gate at F2Res 60 (%.1f dB) -- the beat is gone", gate_db(mid));
         CHECK(gate_db(low) < -40.0f,
               "AM does not gate at F2Cut 1200 (%.1f dB) -- the beat is gone", gate_db(low));
-        CHECK(howl.bad == 0 && calm.bad == 0 && low.bad == 0, "AM produced bad samples");
+        CHECK(deflt.bad == 0 && mid.bad == 0 && low.bad == 0, "AM produced bad samples");
     }
 
     printf("\n=== AM on Osc 2 (preset 15) modulates but cannot gate ===\n");
@@ -196,7 +199,7 @@ int main(void) {
     {
         int bad = 0;
         float buf[2 * BLOCK];
-        for (int prog = 0; prog <= 96; ++prog) {
+        for (int prog = 0; prog <= 241; ++prog) {
             for (int wave = 0; wave < LFO_WAVE_COUNT; ++wave) {
                 ScrutaAstri synth;
                 unit_runtime_desc_t desc = {};
@@ -230,7 +233,7 @@ int main(void) {
                 }
             }
         }
-        printf("  97 presets x %d shapes, 0.2 s each: %d bad samples\n", LFO_WAVE_COUNT, bad);
+        printf("  242 presets x %d shapes, 0.2 s each: %d bad samples\n", LFO_WAVE_COUNT, bad);
         CHECK(bad == 0, "engine produced %d non-finite or clipping samples", bad);
     }
 

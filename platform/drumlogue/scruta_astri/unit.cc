@@ -42,6 +42,24 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
         return buf;
     }
 
+    // Programs carry three things at once now -- modulation target, scan
+    // direction and filter mode -- and there are 242 of them, so show what the
+    // number actually selects instead of making it be memorised.
+    if (id == ScrutaAstri::k_paramProgram) {
+        if (value >= 240) return (value >= 241) ? "Drn Metal" : "Drn Crstl";
+
+        static const char * const k_dir[4] = { "Fwd", "R1", "R2", "R12" };
+        static const char * const k_mode[6] = { "F1Hi", "F1Bd", "F1No",
+                                                "F2Hi", "F2Bd", "F2No" };
+        const int target = (int)(value % 24);
+        if (value < 96) {
+            snprintf(buf, sizeof(buf), "%d %s LP", target, k_dir[value / 24]);
+        } else {
+            snprintf(buf, sizeof(buf), "%d %s", target, k_mode[(value - 96) / 24]);
+        }
+        return buf;
+    }
+
     // Format SubOctave cleanly
     if (id == ScrutaAstri::k_paramO2SubOct) {
         if (value == 0) return "Unison";
