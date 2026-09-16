@@ -476,8 +476,14 @@ public:
                 } else {
                     m_cmos_gain = 2.0f;
                     m_cmos_filter_drive = 2.0f;
-                    // Update base with the parameter calculation
-                    m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) / (percent_normalizer - MOOG_SHERMAN_BORDER)) * 2.0f;
+                    // Sherman territory: asymmetry ramps 0 -> 2 across 66..100.
+                    // This used to divide by (percent_normalizer - 66), i.e. by
+                    // -65.99, where 100 was meant: the whole zone came out
+                    // negative, filter1.sherman_asym clamped it to 0 and the
+                    // wavefolder never ran, while the makeup it derives fell to
+                    // 0.485 instead of rising to 2.0.  CMOS 67..100 was inert.
+                    m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) /
+                                           (100.0f - MOOG_SHERMAN_BORDER)) * 2.0f;
                     m_sherman_makeup = 1.0f + m_sherman_asym_base * 0.5f;
                 }
                 break;
