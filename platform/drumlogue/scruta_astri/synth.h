@@ -96,6 +96,9 @@ public:
         m_f1_mod_multiplier = 1.0f;
         m_f2_mod_multiplier = 1.0f;
 
+        m_osc1_am_depth = 0.0f;
+        m_osc2_am_depth = 0.0f;
+
         filter1.mode = mode_low; // Lowpass
         filter2.mode = mode_low; // Lowpass
 
@@ -154,15 +157,11 @@ public:
                 // other to be processed runtime in processBlock() as they use directly
                 // the lfo values, that are not available here.
                 switch (mod_target) {
-                    case k_paramL1Wave: filter1.mode =
-                        (filter_mode)((m_params[k_paramL1Wave] + (int)(m_lfo1_mod_val * 10.0f))
-                                      % mode_last);
-                        break;
-                    case k_paramL2Wave: filter2.mode =
-                        (filter_mode)((m_params[k_paramL2Wave]  + (int)(m_lfo2_mod_val * 10.0f))
-                                      % mode_last);
-                        break;
-
+                    // NOTE: k_paramL1Wave / k_paramL2Wave used to hijack the LFO wave
+                    // knob as a filter-mode selector here and in processBlock.  The mode
+                    // it wrote was latched state that survived the next program change,
+                    // so it could not be reasoned about from the panel.  Those presets
+                    // now do amplitude modulation instead -- see processBlock.
                     case k_paramL1Depth:
                         m_lfo1_mod_val = m_lfo1_depth;
                         break;
@@ -286,7 +285,7 @@ public:
                 break;
             }
 
-            // -- LFO Waves (Updated UI maximum to 8 in header.c)
+            // -- LFO Waves (UI maximum is 10 in header.c: 0..LFO_WAVE_COUNT-1)
             case k_paramL1Wave: lfo1.wave_type = value % LFO_WAVE_COUNT; break;
             case k_paramL2Wave: lfo2.wave_type = value % LFO_WAVE_COUNT; break;
             case k_paramL3Wave: lfo3.wave_type = value % LFO_WAVE_COUNT; break;
@@ -520,6 +519,8 @@ public:
                 m_srr_mod_offset = 0.0f;
                 m_mix2_mod_offset = 0.0f;
                 m_osc2_fm_mult = 1.0f;
+                m_osc1_am_depth = 0.0f;
+                m_osc2_am_depth = 0.0f;
                 // reset assignment - to avoid remembering in case of preset change
                 m_osc1_filter_target = k_filter_both;
                 m_osc2_filter_target = k_filter_both;
@@ -597,9 +598,17 @@ public:
                         // Do NOT accumulate into m_osc2_target_hz — it would grow to Inf.
                         m_osc2_fm_mult = fasterpow2f(lfo_presence * 2.0f);
                         break;
-                    case k_paramL1Wave: filter1.mode = (filter_mode)(m_params[k_paramL1Wave] % mode_last);
+                    // AM: LFO 1 rings Osc 1's amplitude, LFO 2 rings Osc 2's.  Depth
+                    // comes from the matching LFO depth knob.  Only the depth is picked
+                    // up here; the multiply itself happens per sample in the oscillator
+                    // section below, where l1_val / l2_val are current instead of up to
+                    // APC_FACTOR samples stale -- an envelope shape at a fast rate would
+                    // otherwise be quantised into steps.
+                    case k_paramL1Wave:
+                        m_osc1_am_depth = m_lfo1_depth;
                         break;
-                    case k_paramL2Wave: filter2.mode = (filter_mode)(m_params[k_paramL2Wave] % mode_last);
+                    case k_paramL2Wave:
+                        m_osc2_am_depth = m_lfo2_depth;
                         break;
                     case k_paramOsc1Wave: {
                             int base_wave1 = m_params[k_paramOsc1Wave];
@@ -727,6 +736,14 @@ public:
                     o1_val = osc1.process();
                 }
                 float out_osc1 = fmaxf(0.0f, fminf(1.0f, o1_val * 0.5f + m_mix1_mod_offset));
+                // Amplitude modulation (preset k_paramL1Wave).  l1_val is bipolar, so
+                // it is folded to a 0..1 gain: gain = 1 - depth/2 * (1 - l1_val).  At
+                // depth 0 this is exactly 1.0 and the oscillator is untouched; at depth
+                // 1 it tracks the LFO from silence to unity.  With LFO_AR_PERC or
+                // LFO_ADSR_STACCATO that full swing is a strike followed by silence,
+                // which is what turns the drone into a beat.  Bounded by 1.0 for every
+                // depth, so AM can only remove level, never push the output stage.
+                out_osc1 *= 1.0f - 0.5f * m_osc1_am_depth * (1.0f - l1_val);
                 sig1_raw = out_osc1;
 
                 // Oscillator 2 Morphing
@@ -752,6 +769,10 @@ public:
 
                 float dynamic_mix = fmaxf(0.0f, fminf(1.0f, m_osc2_mix + m_mix2_mod_offset));
                 float out_osc2 = o2_val * dynamic_mix;
+                // Amplitude modulation (preset k_paramL2Wave), same fold as Osc 1 but
+                // driven by LFO 2.  Two independent rates on the two oscillators is what
+                // makes cross-rhythms possible: set L1Rate and L2Rate 3:2 apart.
+                out_osc2 *= 1.0f - 0.5f * m_osc2_am_depth * (1.0f - l2_val);
 
                 // Mapping logic
                 f1_in += out_osc1 *
@@ -971,6 +992,8 @@ private:
     float m_mix2_mod_offset = 0.0f;
     float m_pitch_mod_multiplier = 1.0f;
     float m_osc2_fm_mult = 1.0f;        // FM via LFO for k_paramO2Detune preset
+    float m_osc1_am_depth = 0.0f;       // AM via LFO 1 for k_paramL1Wave preset
+    float m_osc2_am_depth = 0.0f;       // AM via LFO 2 for k_paramL2Wave preset
     float m_osc2_suboct_target_mult = 1.0f;
     float m_osc2_suboct_smooth_mult = 1.0f;
     float m_osc2_suboct_slew = 0.0025f;

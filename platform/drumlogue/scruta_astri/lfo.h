@@ -12,8 +12,30 @@ enum LFOWaveform {
     LFO_SINE,
     LFO_PULSE_25,
     LFO_SMOOTH_RANDOM,
+    LFO_AR_PERC,       // cyclic short AR strike (percussive)
+    LFO_ADSR_STACCATO, // cyclic longer ADSR (staccato)
     LFO_WAVE_COUNT
 };
+
+// Segment boundaries for the two cyclic envelope shapes, as fractions of one
+// LFO cycle.  Keeping them proportional rather than in absolute milliseconds
+// means one shape covers the whole exponential rate range: at 4 Hz the AR
+// strike is a 75 ms click, at 0.5 Hz it is a swell, at audio rate it becomes
+// an AM waveform.  The reciprocals are precomputed so the audio path has no
+// divisions.
+constexpr float kArAttackEnd = 0.02f;   // 2% of the cycle
+constexpr float kArDecayEnd = 0.30f;    // decays out by 30%, then silence
+constexpr float kArAttackRcp = 1.0f / kArAttackEnd;
+constexpr float kArDecayRcp = 1.0f / (kArDecayEnd - kArAttackEnd);
+
+constexpr float kAdsrAttackEnd = 0.04f;
+constexpr float kAdsrDecayEnd = 0.16f;
+constexpr float kAdsrSustainEnd = 0.55f;
+constexpr float kAdsrReleaseEnd = 0.75f; // 25% gap before the next strike
+constexpr float kAdsrSustainLvl = 0.5f;
+constexpr float kAdsrAttackRcp = 1.0f / kAdsrAttackEnd;
+constexpr float kAdsrDecayRcp = 1.0f / (kAdsrDecayEnd - kAdsrAttackEnd);
+constexpr float kAdsrReleaseRcp = 1.0f / (kAdsrReleaseEnd - kAdsrSustainEnd);
 
 struct FastLFO {
     float phase = 0.0f;
@@ -68,6 +90,40 @@ struct FastLFO {
                     float target = ((float)(int32_t)rand_seed / 2147483648.0f);
                     current_val = (current_val * 0.7f) + (target * 0.3f);
                 }
+                break;
+            }
+            case LFO_AR_PERC: { // Percussive strike: fast attack, cubic decay, silence
+                // Unlike LFO_EXP_DECAY, which decays across the whole cycle and so
+                // never goes quiet, this one is done by 30% and rests until the next
+                // strike.  That gap is what makes a repeat read as a beat.
+                float env;
+                if (phase < kArAttackEnd) {
+                    env = phase * kArAttackRcp;
+                } else if (phase < kArDecayEnd) {
+                    const float t = 1.0f - (phase - kArAttackEnd) * kArDecayRcp;
+                    env = t * t * t; // cubic stand-in for an exponential decay
+                } else {
+                    env = 0.0f;
+                }
+                current_val = env * 2.0f - 1.0f;
+                break;
+            }
+            case LFO_ADSR_STACCATO: { // Longer note-shaped envelope with a gap
+                float env;
+                if (phase < kAdsrAttackEnd) {
+                    env = phase * kAdsrAttackRcp;
+                } else if (phase < kAdsrDecayEnd) {
+                    const float t = 1.0f - (phase - kAdsrAttackEnd) * kAdsrDecayRcp;
+                    env = kAdsrSustainLvl + (1.0f - kAdsrSustainLvl) * (t * t);
+                } else if (phase < kAdsrSustainEnd) {
+                    env = kAdsrSustainLvl;
+                } else if (phase < kAdsrReleaseEnd) {
+                    const float t = 1.0f - (phase - kAdsrSustainEnd) * kAdsrReleaseRcp;
+                    env = kAdsrSustainLvl * t * t;
+                } else {
+                    env = 0.0f;
+                }
+                current_val = env * 2.0f - 1.0f;
                 break;
             }
             default:
