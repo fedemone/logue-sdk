@@ -505,6 +505,9 @@ public:
                 m_f1_q_base = Q_Limit + ((float)value * 0.04f);
                 m_f1_q = m_f1_q_base;
                 filter1.set_coeffs(m_f1_base_hz, m_f1_q, Audio_Rate_Freq);
+                // Top third of the knob hands filter 1 over to self-oscillation,
+                // exactly as F2Res does for filter 2. See Howl_Threshold.
+                filter1.howl = howl_for_reso(value);
                 // BUT we also track a drive base for the LFO to modulate later
                 m_f1_drive_base = (value * percent_normalizer) * 5.0f;
                 break;
@@ -518,10 +521,7 @@ public:
                 // Top third of the knob hands filter 2 over to self-oscillation;
                 // below the threshold it is stable and goes properly silent on a
                 // silent input.
-                filter2.howl = ((float)value <= Howl_Threshold)
-                    ? 0.0f
-                    : Howl_Takeoff + (1.0f - Howl_Takeoff) *
-                                     (((float)value - Howl_Threshold) / Howl_Range);
+                filter2.howl = howl_for_reso(value);
                 break;
         }
     }
@@ -616,6 +616,15 @@ public:
         l1_val = (l1_raw * (1.0f - ring1_mod_amount)) + (l1_multiplied * ring1_mod_amount);
         l2_val = (l2_raw * (1.0f - ring2_mod_amount)) + (l2_multiplied * ring2_mod_amount);
         l3_val = (l3_raw * (1.0f - ring3_mod_amount)) + (l3_multiplied * ring3_mod_amount);
+    }
+
+    // Maps a resonance knob onto a filter's howl amount.  Both filters take off
+    // at Howl_Takeoff, so the knob is mapped onto that..1.0 rather than 0..1:
+    // the whole top third is useful travel instead of only its last few steps.
+    inline float howl_for_reso(int32_t value) {
+        if ((float)value <= Howl_Threshold) return 0.0f;
+        return Howl_Takeoff +
+               (1.0f - Howl_Takeoff) * (((float)value - Howl_Threshold) / Howl_Range);
     }
 
     inline float lfo_rate_from_param(float param_value) {
@@ -1031,8 +1040,6 @@ public:
                 f1_mod_hz *= fasterpow2f(m_rh_env * Rh_Pluck_Octaves);
             }
 
-            filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
-
             // Calculate dynamic asymmetry using tracked Osc 1 value
             float dynamic_asym = m_sherman_asym_base + (sig1_raw * m_asym_mod_depth * 2.0f);
 
@@ -1045,6 +1052,12 @@ public:
             // Combine CMOS drive (from k_paramCMOSDist) with resonance drive and LFO drive.
             // m_cmos_filter_drive is the only source that survives across APC cycles.
             filter1.drive = fmaxf(0.0f, fminf(5.0f, m_cmos_filter_drive + m_f1_drive_base + (m_drv1_mod_multiplier * 5.0f)));
+
+            // set_coeffs picks its stability guard from drive and sherman_asym --
+            // they decide whether the integrators run through fast_tanh -- so it
+            // has to come after both, not before.
+            filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
+
             float f1_out = filter1.process(f1_in, l3_val);
 
             // 6. THE CRUSH SANDWICH
