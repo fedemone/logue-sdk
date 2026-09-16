@@ -44,6 +44,89 @@ constexpr float Output_Gain_Boost = 1.995f;
 // inaudible, offsets the DAC and costs about 1 dB of headroom for nothing.
 constexpr float DC_Blocker_R = 0.998691f;
 
+// Program layout.  Everything the program selects is recomputed from the
+// program number on every change, so none of it is state that can outlive a
+// preset switch.
+//
+//   0..95    one of 4 scan-direction bands x 24 modulation targets.
+//            Both filters lowpass.  Unchanged from before this layout existed.
+//   96..239  forward scan, 24 modulation targets, one of 6 filter-mode bands:
+//            filter 1 highpass / bandpass / notch, then filter 2 the same.
+//            The other filter stays lowpass.
+//   240      crystal drone        241  metal drone
+constexpr int32_t Prog_Mode_Base = 96;   // first program that selects a filter mode
+constexpr int32_t Prog_Mode_Bands = 6;   // F1 hp/bp/notch, then F2 hp/bp/notch
+constexpr int32_t Prog_Drone_Base = Prog_Mode_Base + Prog_Mode_Bands * 24; // 240
+constexpr int32_t Prog_Last = Prog_Drone_Base + 1;                         // 241
+
+// F2Res doubles as the filter-2 self-oscillation control.  Below the threshold
+// the Polivoks emulation is provably stable (see kTanhLoopGuard in filter.h);
+// above it the howl ramps in, so the screaming is somewhere you choose to go
+// rather than the filter's resting state.
+//
+// filter2.howl takes off at 1/(1+kHowlExcess) = 0.5 and is an amplitude ramp
+// above that, so the knob is mapped onto 0.5..1.0 rather than 0..1: the whole
+// top third of F2Res is useful travel instead of only its last few steps.  The
+// jump to 0.5 at the threshold is not a jump in what you hear -- the limit
+// cycle starts at zero amplitude there and grows from it.
+constexpr float Howl_Threshold = 67.0f;
+constexpr float Howl_Range = 100.0f - Howl_Threshold;
+constexpr float Howl_Takeoff = 0.5f;
+
+// How far the F1Reso / F2Reso modulation targets swing resonance either side of
+// the knob.  Q runs 0.707..4.707, so 2.0 is a wide but bounded sweep.
+constexpr float Reso_Mod_Depth = 2.0f;
+
+// ---------------------------------------------------------------------------
+// Rhythmic add-ons
+//
+// Eight extras that only exist while LFO 1 or LFO 2 carries one of the two
+// strike shapes (AR strike / ADSR staccato).  Without a strike there is no
+// rhythm for them to hang on, so they stay out of the way.
+//
+// Which ones are live is read from knobs on every change rather than stored:
+//
+//   L3Wave % RHYTHMIC_ADD_ONS   picks the primary add-on, always
+//   O1Wave                      picks a second, but only when parked below 8
+//   O2Wave                      picks a third, on the same condition
+//
+// The three picks are OR'd into a bitmask, so they stack: aim them at the same
+// number for one add-on, spread them for three.  Gating the oscillator wave
+// knobs on "below 8" is what keeps them usable as timbre controls -- the other
+// 248 wavetables select no add-on at all, so choosing a waveform does not
+// silently rearrange the rhythm.
+#define RHYTHMIC_ADD_ONS 8
+
+enum RhythmAddOn {
+    k_rhSeqSync = 0,  // LFO phases restart on each sequencer step
+    k_rhEuclid,       // a 16-step pattern skips strikes, so it is a rhythm not a metronome
+    k_rhSrrZap,       // each strike slams the sample rate down
+    k_rhBitSnap,      // each strike collapses the bit depth
+    k_rhFilterPluck,  // each strike plucks filter 1 upward
+    k_rhNoiseBurst,   // each strike fires a burst of noise
+    k_rhSHPitch,      // each strike picks a new pitch
+    k_rhAccent        // strikes cycle loud / soft
+};
+
+// 16-step patterns, LSB = step 0, selected by the active program so motion
+// sequencing can change the rhythm without another knob.
+constexpr uint16_t Euclid_Patterns[RHYTHMIC_ADD_ONS] = {
+    0x1111, // 4 on the floor
+    0x5555, // straight eighths
+    0x2449, // E(5,16)
+    0x4949, // tresillo, doubled
+    0x0841, // E(3,16), sparse
+    0x54A5, // E(7,16)
+    0x0101, // half notes
+    0xFFFF  // every step
+};
+
+constexpr float Rh_Accent_Levels[4] = { 1.0f, 0.45f, 0.75f, 0.45f };
+constexpr float Rh_Noise_Level = 0.5f;      // burst level into filter 1
+constexpr float Rh_Srr_Depth = 0.9f;        // how far a strike pulls the SRR rate down
+constexpr float Rh_Pluck_Octaves = 3.0f;    // filter 1 lift at the peak of a strike
+constexpr float Rh_SH_Semitones = 0.5f;     // +-6 semitones of sample-and-hold pitch
+
 class alignas(16) ScrutaAstri {
 public:
      enum ParamIndex {
@@ -80,6 +163,75 @@ public:
         return k_unit_err_none;
     }
 
+    // Scan direction and both filter modes, as a pure function of the program.
+    // Nothing here reads or preserves previous state, so leaving a program always
+    // undoes whatever it selected -- that is what keeps the filter modes out of
+    // the latched limbo the old LFO-wave hijack put them in.
+    inline void applyProgramLayout(int32_t program) {
+        const int32_t dir_band = (program < Prog_Mode_Base) ? (program / k_paramLast) : 0;
+        m_osc1_dir = (dir_band == 1 || dir_band == 3) ? -1.0f : 1.0f;
+        m_osc2_dir = (dir_band >= 2) ? -1.0f : 1.0f;
+
+        filter1.mode = mode_low;
+        filter2.mode = mode_low;
+
+        if (program >= Prog_Mode_Base && program < Prog_Drone_Base) {
+            static const filter_mode k_modes[3] = { mode_high, mode_band, mode_notch };
+            const int32_t band = (program - Prog_Mode_Base) / k_paramLast; // 0..5
+            const filter_mode m = k_modes[band % 3];
+            if (band < 3) filter1.mode = m; else filter2.mode = m;
+        }
+    }
+
+    // Recomputed whenever one of the selecting knobs moves; never stored across
+    // a program change.  Zero means no add-on is live and the audio path skips
+    // all of this.
+    inline void updateRhythmMask() {
+        const bool armed = (lfo1.wave_type >= LFO_AR_PERC) || (lfo2.wave_type >= LFO_AR_PERC);
+        if (!armed) {
+            m_rh_mask = 0;
+            m_rh_euclid_gate = 1.0f;
+            m_rh_accent = 1.0f;
+            m_rh_pitch_mult = 1.0f;
+            m_rh_env = 0.0f;
+            return;
+        }
+        uint8_t mask = (uint8_t)(1u << (lfo3.wave_type % RHYTHMIC_ADD_ONS));
+        const int32_t w1 = m_params[k_paramOsc1Wave];
+        const int32_t w2 = m_params[k_paramOsc2Wave];
+        if (w1 < RHYTHMIC_ADD_ONS) mask |= (uint8_t)(1u << (w1 % RHYTHMIC_ADD_ONS));
+        if (w2 < RHYTHMIC_ADD_ONS) mask |= (uint8_t)(1u << (w2 % RHYTHMIC_ADD_ONS));
+        m_rh_mask = mask;
+    }
+
+    inline bool rhythmOn(RhythmAddOn a) const { return (m_rh_mask & (1u << a)) != 0; }
+
+    inline uint32_t rhythmRand() {
+        m_rh_seed ^= m_rh_seed << 13;
+        m_rh_seed ^= m_rh_seed >> 17;
+        m_rh_seed ^= m_rh_seed << 5;
+        return m_rh_seed;
+    }
+
+    // Once per strike, at the top of the driving LFO's cycle.
+    inline void rhythmTrigger() {
+        ++m_rh_step;
+
+        m_rh_euclid_gate = 1.0f;
+        if (rhythmOn(k_rhEuclid)) {
+            const uint16_t pat = Euclid_Patterns[m_params[k_paramProgram] % RHYTHMIC_ADD_ONS];
+            m_rh_euclid_gate = ((pat >> (m_rh_step & 15)) & 1u) ? 1.0f : 0.0f;
+        }
+
+        m_rh_accent = rhythmOn(k_rhAccent) ? Rh_Accent_Levels[m_rh_step & 3] : 1.0f;
+
+        m_rh_pitch_mult = 1.0f;
+        if (rhythmOn(k_rhSHPitch)) {
+            const float r = (float)(int32_t)rhythmRand() / 2147483648.0f; // -1..1
+            m_rh_pitch_mult = fasterpow2f(r * Rh_SH_Semitones);
+        }
+    }
+
     inline void Reset() {
         // Zero out memory without destroying default struct values
         osc1.phase = 0.0f;
@@ -96,8 +248,18 @@ public:
         m_f1_mod_multiplier = 1.0f;
         m_f2_mod_multiplier = 1.0f;
 
-        filter1.mode = mode_low; // Lowpass
-        filter2.mode = mode_low; // Lowpass
+        m_osc1_am_depth = 0.0f;
+        m_osc2_am_depth = 0.0f;
+
+        m_rh_env = 0.0f;
+        m_rh_prev_phase = 0.0f;
+        m_rh_step = 0;
+        m_rh_euclid_gate = 1.0f;
+        m_rh_accent = 1.0f;
+        m_rh_pitch_mult = 1.0f;
+
+        applyProgramLayout(m_params[k_paramProgram]);
+        updateRhythmMask();
 
         m_srr_counter = 0.0f;
         m_srr_hold_val = 0.0f;
@@ -154,15 +316,11 @@ public:
                 // other to be processed runtime in processBlock() as they use directly
                 // the lfo values, that are not available here.
                 switch (mod_target) {
-                    case k_paramL1Wave: filter1.mode =
-                        (filter_mode)((m_params[k_paramL1Wave] + (int)(m_lfo1_mod_val * 10.0f))
-                                      % mode_last);
-                        break;
-                    case k_paramL2Wave: filter2.mode =
-                        (filter_mode)((m_params[k_paramL2Wave]  + (int)(m_lfo2_mod_val * 10.0f))
-                                      % mode_last);
-                        break;
-
+                    // NOTE: k_paramL1Wave / k_paramL2Wave used to hijack the LFO wave
+                    // knob as a filter-mode selector here and in processBlock.  The mode
+                    // it wrote was latched state that survived the next program change,
+                    // so it could not be reasoned about from the panel.  Those presets
+                    // now do amplitude modulation instead -- see processBlock.
                     case k_paramL1Depth:
                         m_lfo1_mod_val = m_lfo1_depth;
                         break;
@@ -192,21 +350,18 @@ public:
                     default:
                         break;
                 }
-                // Decode ranges:
-                // 0-23: Normal
-                // 24-47: Osc 1 Reversed
-                // 48-71: Osc 2 Reversed
-                // 72-95: Both Reversed
-                int preset = value % 96;
-                m_osc1_dir = (preset >= k_paramLast && preset < 2*k_paramLast) || (preset >= 3*k_paramLast) ? -1.0f : 1.0f;
-                m_osc2_dir = (preset >= 2*k_paramLast) ? -1.0f : 1.0f;
+                // Scan direction and filter modes, both derived from the program.
+                applyProgramLayout(value);
+                // The euclidean pattern is chosen by the program too.
+                updateRhythmMask();
+                m_rh_step = 0;
 
                 // Force frequency target updates
                 updateOscillators();
 
                 // Entering drone preset: re-init FDN state and sync all drone controls
                 // from current knob positions so the FDN starts fresh on every entry.
-                if (value >= 95) {
+                if (value >= Prog_Drone_Base) {
                     m_crystal_drone.init(false);
                     m_metal_drone.init(true);
                     m_crystal_drone.set_note(m_base_hz);
@@ -229,6 +384,7 @@ public:
                 break;
             }
             case k_paramOsc1Wave: {
+                updateRhythmMask();
                 if (value != m_osc1_target_wave_idx) {
                     m_osc1_prev_wave_idx = m_osc1_current_wave_idx;
                     m_osc1_target_wave_idx = value;
@@ -239,6 +395,7 @@ public:
                 break;
             }
             case k_paramOsc2Wave: {
+                updateRhythmMask();
                 if (value != m_osc2_target_wave_idx) {
                     m_osc2_prev_wave_idx = m_osc2_current_wave_idx;
                     m_osc2_target_wave_idx = value;
@@ -286,10 +443,12 @@ public:
                 break;
             }
 
-            // -- LFO Waves (Updated UI maximum to 8 in header.c)
-            case k_paramL1Wave: lfo1.wave_type = value % LFO_WAVE_COUNT; break;
-            case k_paramL2Wave: lfo2.wave_type = value % LFO_WAVE_COUNT; break;
-            case k_paramL3Wave: lfo3.wave_type = value % LFO_WAVE_COUNT; break;
+            // -- LFO Waves (UI maximum is 10 in header.c: 0..LFO_WAVE_COUNT-1)
+            // L1 / L2 arm the rhythmic add-ons when they carry a strike shape;
+            // L3 picks which one. See updateRhythmMask().
+            case k_paramL1Wave: lfo1.wave_type = value % LFO_WAVE_COUNT; updateRhythmMask(); break;
+            case k_paramL2Wave: lfo2.wave_type = value % LFO_WAVE_COUNT; updateRhythmMask(); break;
+            case k_paramL3Wave: lfo3.wave_type = value % LFO_WAVE_COUNT; updateRhythmMask(); break;
 
             // -- LFO Depths (0.0 to 1.0)
             case k_paramL1Depth: m_lfo1_depth = (float)value * percent_normalizer; break;
@@ -317,8 +476,14 @@ public:
                 } else {
                     m_cmos_gain = 2.0f;
                     m_cmos_filter_drive = 2.0f;
-                    // Update base with the parameter calculation
-                    m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) / (percent_normalizer - MOOG_SHERMAN_BORDER)) * 2.0f;
+                    // Sherman territory: asymmetry ramps 0 -> 2 across 66..100.
+                    // This used to divide by (percent_normalizer - 66), i.e. by
+                    // -65.99, where 100 was meant: the whole zone came out
+                    // negative, filter1.sherman_asym clamped it to 0 and the
+                    // wavefolder never ran, while the makeup it derives fell to
+                    // 0.485 instead of rising to 2.0.  CMOS 67..100 was inert.
+                    m_sherman_asym_base = ((float)(value - MOOG_SHERMAN_BORDER) /
+                                           (100.0f - MOOG_SHERMAN_BORDER)) * 2.0f;
                     m_sherman_makeup = 1.0f + m_sherman_asym_base * 0.5f;
                 }
                 break;
@@ -343,17 +508,26 @@ public:
             // -- Filters Base (Resonance 0-100 -> Q 0.707 to 5.0)
             case k_paramF1Reso:
                 // We still set true resonance normally on knob turn (calculated once per block)
-                m_f1_q = Q_Limit + ((float)value * 0.04f);
+                m_f1_q_base = Q_Limit + ((float)value * 0.04f);
+                m_f1_q = m_f1_q_base;
                 filter1.set_coeffs(m_f1_base_hz, m_f1_q, Audio_Rate_Freq);
+                // Top third of the knob hands filter 1 over to self-oscillation,
+                // exactly as F2Res does for filter 2. See Howl_Threshold.
+                filter1.howl = howl_for_reso(value);
                 // BUT we also track a drive base for the LFO to modulate later
                 m_f1_drive_base = (value * percent_normalizer) * 5.0f;
                 break;
             case k_paramF2Reso:
                 // We still set true resonance normally on knob turn (calculated once per block)
-                m_f2_q =Q_Limit + ((float)value / 25.0f);
+                m_f2_q_base = Q_Limit + ((float)value / 25.0f);
+                m_f2_q = m_f2_q_base;
                 filter2.set_coeffs(m_f2_base_hz, m_f2_q, Audio_Rate_Freq);
                 // BUT we also track a drive base for the LFO to modulate later
                 m_f2_drive_base = (value * percent_normalizer) * 5.0f;
+                // Top third of the knob hands filter 2 over to self-oscillation;
+                // below the threshold it is stable and goes properly silent on a
+                // silent input.
+                filter2.howl = howl_for_reso(value);
                 break;
         }
     }
@@ -364,6 +538,16 @@ public:
         updateOscillators();
         m_crystal_drone.set_note(m_base_hz);
         m_metal_drone.set_note(m_base_hz);
+
+        // k_rhSeqSync: restart the LFOs on every sequencer step.  Free-running
+        // strikes drift against the pattern, which is the difference between a
+        // beat that lands and one that is merely nearby.
+        if (rhythmOn(k_rhSeqSync)) {
+            lfo1.phase = 0.0f;
+            lfo2.phase = 0.0f;
+            lfo3.phase = 0.0f;
+            m_rh_prev_phase = 0.0f;
+        }
     }
 
     inline void updateOscillators() {
@@ -440,6 +624,15 @@ public:
         l3_val = (l3_raw * (1.0f - ring3_mod_amount)) + (l3_multiplied * ring3_mod_amount);
     }
 
+    // Maps a resonance knob onto a filter's howl amount.  Both filters take off
+    // at Howl_Takeoff, so the knob is mapped onto that..1.0 rather than 0..1:
+    // the whole top third is useful travel instead of only its last few steps.
+    inline float howl_for_reso(int32_t value) {
+        if ((float)value <= Howl_Threshold) return 0.0f;
+        return Howl_Takeoff +
+               (1.0f - Howl_Takeoff) * (((float)value - Howl_Threshold) / Howl_Range);
+    }
+
     inline float lfo_rate_from_param(float param_value) {
         return 0.01f * fasterpowf(Audio_Rate_Freq, param_value * percent_normalizer);
     }
@@ -474,10 +667,10 @@ public:
         float lfo_presence = 0.0f;
         const float dc_bias = 0.005f; // adjust to taste (0.001-0.01 works)
 
-        // Source selection: preset 95 = crystal drone, preset 96 = metal drone
+        // Source selection: the last two programs are the two drone engines.
         const int32_t prog_preset = m_params[k_paramProgram];
-        const bool use_drone = (prog_preset == 95 || prog_preset == 96);
-        const bool use_metal_drone = (prog_preset == 96);
+        const bool use_drone = (prog_preset >= Prog_Drone_Base);
+        const bool use_metal_drone = (prog_preset >= Prog_Last);
 
         for (size_t i = 0; i < frames; ++i) {
 
@@ -486,6 +679,31 @@ public:
             float l2_val;
             float l3_val;
             ring_modulation(l1_val, l2_val, l3_val);
+
+            // 1b. RHYTHM ENVELOPE
+            // Whichever of LFO 1 / LFO 2 carries a strike shape drives the
+            // add-ons.  The euclidean gate and the accent are folded straight
+            // back into that LFO's value, so a skipped step is skipped
+            // everywhere the LFO goes -- the AM included -- rather than only in
+            // the add-ons hanging off it.
+            float rh_pitch = 1.0f;
+            if (m_rh_mask) {
+                const bool from1 = (lfo1.wave_type >= LFO_AR_PERC);
+                const float phase = from1 ? lfo1.phase : lfo2.phase;
+                if (phase < m_rh_prev_phase) rhythmTrigger();
+                m_rh_prev_phase = phase;
+
+                const float raw = from1 ? l1_val : l2_val;
+                const float shaped01 = (raw + 1.0f) * 0.5f * m_rh_euclid_gate * m_rh_accent;
+                if (from1) l1_val = shaped01 * 2.0f - 1.0f;
+                else       l2_val = shaped01 * 2.0f - 1.0f;
+
+                // Unipolar and scaled by its own depth knob, so the add-ons come
+                // up on the same control the AM uses.
+                m_rh_env = shaped01 * (from1 ? m_lfo1_depth : m_lfo2_depth);
+                rh_pitch = m_rh_pitch_mult;
+            }
+
             // 2 FREQUENCY UPDATES
             // Store previous phase states
             float pre_phase1 = osc1.phase;
@@ -494,9 +712,12 @@ public:
             // Update frequency every sample if pitch mod is active OR we are slewing the suboctave.
             // This eliminates stepping sounds during sub-octave transitions.
             bool is_suboct_slewing = fabsf(m_osc2_suboct_smooth_mult - m_osc2_suboct_target_mult) > 0.0001f;
-            if (m_pitch_mod_multiplier != 1.0f || is_suboct_slewing) {
-                osc1.set_frequency(m_osc1_target_hz * m_pitch_mod_multiplier, SAMPLE_RATE_F);
-                osc2.set_frequency(m_osc2_target_hz * m_osc2_suboct_smooth_mult * m_pitch_mod_multiplier, SAMPLE_RATE_F);
+            // k_rhSHPitch folds in here: it is a per-strike pitch multiplier, so
+            // it rides alongside the existing pitch modulation.
+            const float pitch_mult = m_pitch_mod_multiplier * rh_pitch;
+            if (pitch_mult != 1.0f || is_suboct_slewing) {
+                osc1.set_frequency(m_osc1_target_hz * pitch_mult, SAMPLE_RATE_F);
+                osc2.set_frequency(m_osc2_target_hz * m_osc2_suboct_smooth_mult * pitch_mult, SAMPLE_RATE_F);
             }
 
             if (is_suboct_slewing) {
@@ -520,6 +741,8 @@ public:
                 m_srr_mod_offset = 0.0f;
                 m_mix2_mod_offset = 0.0f;
                 m_osc2_fm_mult = 1.0f;
+                m_osc1_am_depth = 0.0f;
+                m_osc2_am_depth = 0.0f;
                 // reset assignment - to avoid remembering in case of preset change
                 m_osc1_filter_target = k_filter_both;
                 m_osc2_filter_target = k_filter_both;
@@ -597,9 +820,17 @@ public:
                         // Do NOT accumulate into m_osc2_target_hz — it would grow to Inf.
                         m_osc2_fm_mult = fasterpow2f(lfo_presence * 2.0f);
                         break;
-                    case k_paramL1Wave: filter1.mode = (filter_mode)(m_params[k_paramL1Wave] % mode_last);
+                    // AM: LFO 1 rings Osc 1's amplitude, LFO 2 rings Osc 2's.  Depth
+                    // comes from the matching LFO depth knob.  Only the depth is picked
+                    // up here; the multiply itself happens per sample in the oscillator
+                    // section below, where l1_val / l2_val are current instead of up to
+                    // APC_FACTOR samples stale -- an envelope shape at a fast rate would
+                    // otherwise be quantised into steps.
+                    case k_paramL1Wave:
+                        m_osc1_am_depth = m_lfo1_depth;
                         break;
-                    case k_paramL2Wave: filter2.mode = (filter_mode)(m_params[k_paramL2Wave] % mode_last);
+                    case k_paramL2Wave:
+                        m_osc2_am_depth = m_lfo2_depth;
                         break;
                     case k_paramOsc1Wave: {
                             int base_wave1 = m_params[k_paramOsc1Wave];
@@ -678,11 +909,16 @@ public:
                     // -----------------------------------------------------
                     // 3. THE "FAKE RESONANCE" (CPU-Safe Filter Drive)
                     // -----------------------------------------------------
+                    // Resonance modulation is an offset from where the knob is,
+                    // not an accumulation onto the running value: `q += lfo` every
+                    // APC cycle is a random walk with nothing resetting it, so
+                    // within a second the resonance had wandered off the knob
+                    // entirely and never came back.
                     case k_paramF1Reso:
-                        m_f1_q += lfo1_presence * 0.1;
+                        m_f1_q = fmaxf(Q_Limit, m_f1_q_base + lfo1_presence * Reso_Mod_Depth);
                         break;
-                        case k_paramF2Reso:
-                        m_f1_q += lfo2_presence * 0.1;
+                    case k_paramF2Reso:
+                        m_f2_q = fmaxf(Q_Limit, m_f2_q_base + lfo2_presence * Reso_Mod_Depth);
                         break;
                         case k_paramO2SubOct:
                         m_drv1_mod_multiplier = lfo1_presence;
@@ -727,6 +963,14 @@ public:
                     o1_val = osc1.process();
                 }
                 float out_osc1 = fmaxf(0.0f, fminf(1.0f, o1_val * 0.5f + m_mix1_mod_offset));
+                // Amplitude modulation (preset k_paramL1Wave).  l1_val is bipolar, so
+                // it is folded to a 0..1 gain: gain = 1 - depth/2 * (1 - l1_val).  At
+                // depth 0 this is exactly 1.0 and the oscillator is untouched; at depth
+                // 1 it tracks the LFO from silence to unity.  With LFO_AR_PERC or
+                // LFO_ADSR_STACCATO that full swing is a strike followed by silence,
+                // which is what turns the drone into a beat.  Bounded by 1.0 for every
+                // depth, so AM can only remove level, never push the output stage.
+                out_osc1 *= 1.0f - 0.5f * m_osc1_am_depth * (1.0f - l1_val);
                 sig1_raw = out_osc1;
 
                 // Oscillator 2 Morphing
@@ -752,13 +996,17 @@ public:
 
                 float dynamic_mix = fmaxf(0.0f, fminf(1.0f, m_osc2_mix + m_mix2_mod_offset));
                 float out_osc2 = o2_val * dynamic_mix;
+                // Amplitude modulation (preset k_paramL2Wave), same fold as Osc 1 but
+                // driven by LFO 2.  Two independent rates on the two oscillators is what
+                // makes cross-rhythms possible: set L1Rate and L2Rate 3:2 apart.
+                out_osc2 *= 1.0f - 0.5f * m_osc2_am_depth * (1.0f - l2_val);
 
                 // Mapping logic
                 f1_in += out_osc1 *
                             ((m_osc1_filter_target == k_filter1) || (m_osc1_filter_target == k_filter_both)) +
                          out_osc2 *
                             ((m_osc2_filter_target == k_filter1) || (m_osc2_filter_target == k_filter_both));
-                f2_in += out_osc2 *
+                f2_in += out_osc1 *
                             ((m_osc1_filter_target == k_filter2) || (m_osc1_filter_target == k_filter_both)) +
                          out_osc2 *
                             ((m_osc2_filter_target == k_filter2) || (m_osc2_filter_target == k_filter_both));
@@ -768,13 +1016,22 @@ public:
                 // Bidirectional phase wrap detection
                 bool osc1_wrapped = (m_osc1_dir > 0.0f) ? (osc1.phase < pre_phase1) : (osc1.phase > pre_phase1);
                 if (osc1_wrapped) {
-                    osc1.set_frequency(m_osc1_target_hz, SAMPLE_RATE_F);
+                    osc1.set_frequency(m_osc1_target_hz * rh_pitch, SAMPLE_RATE_F);
                 }
 
                 bool osc2_wrapped = (m_osc2_dir > 0.0f) ? (osc2.phase < pre_phase2) : (osc2.phase > pre_phase2);
                 if (osc2_wrapped) {
-                    osc2.set_frequency(m_osc2_target_hz * m_osc2_suboct_smooth_mult * m_osc2_fm_mult, SAMPLE_RATE_F);
+                    osc2.set_frequency(m_osc2_target_hz * m_osc2_suboct_smooth_mult * m_osc2_fm_mult * rh_pitch,
+                                       SAMPLE_RATE_F);
                 }
+            }
+
+            // 4b. k_rhNoiseBurst: an unpitched hit on top of the oscillators.
+            // Goes in ahead of filter 1 so the filter shapes it into a hat or a
+            // snare rather than leaving it as raw white noise.
+            if (rhythmOn(k_rhNoiseBurst) && m_rh_env > 0.0f) {
+                const float n = (float)(int32_t)rhythmRand() / 2147483648.0f;
+                f1_in += n * m_rh_env * Rh_Noise_Level;
             }
 
             // 5. FILTER 1
@@ -783,7 +1040,11 @@ public:
             float f1_mod_hz = m_f1_base_hz * m_f1_lfo_mult;
             f1_mod_hz *= m_f1_mod_multiplier;
 
-            filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
+            // k_rhFilterPluck: the strike lifts filter 1 by up to three octaves,
+            // which is the 808-tom trick -- a pitched thump from a cutoff sweep.
+            if (rhythmOn(k_rhFilterPluck)) {
+                f1_mod_hz *= fasterpow2f(m_rh_env * Rh_Pluck_Octaves);
+            }
 
             // Calculate dynamic asymmetry using tracked Osc 1 value
             float dynamic_asym = m_sherman_asym_base + (sig1_raw * m_asym_mod_depth * 2.0f);
@@ -797,11 +1058,22 @@ public:
             // Combine CMOS drive (from k_paramCMOSDist) with resonance drive and LFO drive.
             // m_cmos_filter_drive is the only source that survives across APC cycles.
             filter1.drive = fmaxf(0.0f, fminf(5.0f, m_cmos_filter_drive + m_f1_drive_base + (m_drv1_mod_multiplier * 5.0f)));
+
+            // set_coeffs picks its stability guard from drive and sherman_asym --
+            // they decide whether the integrators run through fast_tanh -- so it
+            // has to come after both, not before.
+            filter1.set_coeffs(f1_mod_hz, m_f1_q, SAMPLE_RATE_F);
+
             float f1_out = filter1.process(f1_in, l3_val);
 
             // 6. THE CRUSH SANDWICH
-            // Apply APC offset to SRR rate, clamping to avoid reversed counters
-            float dynamic_srr = fmaxf(0.001f, fminf(1.0f, m_srr_rate + m_srr_mod_offset));
+            // Apply APC offset to SRR rate, clamping to avoid reversed counters.
+            // k_rhSrrZap drags the rate down on each strike: the aliasing that
+            // comes back up is a percussive timbre change, and unlike an
+            // amplitude gate it survives whatever filter 2 is doing.
+            float srr_offset = m_srr_mod_offset;
+            if (rhythmOn(k_rhSrrZap)) srr_offset -= m_rh_env * Rh_Srr_Depth;
+            float dynamic_srr = fmaxf(0.001f, fminf(1.0f, m_srr_rate + srr_offset));
             m_srr_counter += dynamic_srr;
 
             if (m_srr_counter >= 1.0f) {
@@ -810,8 +1082,13 @@ public:
             }
             float crushed_sig = m_srr_hold_val;
 
-            if (m_brr_steps < 65536.0f) {
-                crushed_sig = roundf(crushed_sig * m_brr_steps) / m_brr_steps;
+            // k_rhBitSnap: collapse toward 3 bits at the peak of a strike.
+            float brr_steps = m_brr_steps;
+            if (rhythmOn(k_rhBitSnap)) {
+                brr_steps = fminf(brr_steps, 8.0f + (1.0f - m_rh_env) * 4096.0f);
+            }
+            if (brr_steps < 65536.0f) {
+                crushed_sig = roundf(crushed_sig * brr_steps) / brr_steps;
             }
 
             // 7. FILTER 2 - Polivoks
@@ -938,8 +1215,10 @@ private:
 
     float m_f1_base_hz = 10000.0f;
     float m_f1_q = Q_Limit;
+    float m_f1_q_base = Q_Limit;
     float m_f2_base_hz = 10000.0f;
     float m_f2_q = Q_Limit;
+    float m_f2_q_base = Q_Limit;
 
     // Filter Asymmetry Base State
     float m_sherman_asym_base = 0.0f;
@@ -971,6 +1250,19 @@ private:
     float m_mix2_mod_offset = 0.0f;
     float m_pitch_mod_multiplier = 1.0f;
     float m_osc2_fm_mult = 1.0f;        // FM via LFO for k_paramO2Detune preset
+    float m_osc1_am_depth = 0.0f;       // AM via LFO 1 for k_paramL1Wave preset
+    float m_osc2_am_depth = 0.0f;       // AM via LFO 2 for k_paramL2Wave preset
+
+    // Rhythmic add-ons (see RHYTHMIC_ADD_ONS).  m_rh_mask is 0 whenever neither
+    // LFO 1 nor LFO 2 carries a strike shape, and the audio path skips all of it.
+    uint8_t m_rh_mask = 0;
+    float m_rh_env = 0.0f;              // 0..1 strike envelope, scaled by its depth knob
+    float m_rh_prev_phase = 0.0f;       // for detecting the driving LFO's wrap
+    uint32_t m_rh_step = 0;             // strike counter, drives euclid and accent
+    uint32_t m_rh_seed = 22222227UL;    // RNG for the noise burst and S&H pitch
+    float m_rh_euclid_gate = 1.0f;
+    float m_rh_accent = 1.0f;
+    float m_rh_pitch_mult = 1.0f;
     float m_osc2_suboct_target_mult = 1.0f;
     float m_osc2_suboct_smooth_mult = 1.0f;
     float m_osc2_suboct_slew = 0.0025f;

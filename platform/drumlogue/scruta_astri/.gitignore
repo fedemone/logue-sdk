@@ -1,3 +1,5 @@
 test_dsp_run
 test_dsp
 test_stability
+test_lfo_am
+test_rhythm
