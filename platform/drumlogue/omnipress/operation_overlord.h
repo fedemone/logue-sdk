@@ -15,6 +15,7 @@
 #include <arm_neon.h>
 #include <filters.h>
 #include <cmath>
+#include "drive_slam.h"
 
 // The presence shelf must sit at one frequency for both entry points. The
 // EQ-only path used 5 kHz and the drive path 5.5 kHz while sharing one biquad
@@ -23,11 +24,9 @@
 // landed as a click.
 #define OVERLORD_PRESENCE_HZ 5000.0f
 
-// 1-pole IIR DC Blocker State Tracker
-typedef struct {
-    float x_prev;
-    float y_prev;
-} dc_blocker_state_t;
+// dc_blocker_state_t, dc_block_process() and vmeanq_f32() now live in
+// filters.h: the Distressor's slam stage needs the same DC blocker, and one
+// copy shared by both beats two that can drift apart.
 
 typedef struct {
     // EQ Filter States (Separate per channel to eliminate crosstalk)
@@ -50,6 +49,7 @@ typedef struct {
 
     // Parameters
     float drive;          // 0.0 to 1.0
+    float slam_gain;      // extra preamp push above the slam knee (1.0 = off)
     float bass;           // 0.0 to 1.0
     float treble;         // 0.0 to 1.0
     float blend;          // 0.0 to 1.0
@@ -59,6 +59,7 @@ typedef struct {
 // Initialize state-space coefficients
 fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     ov->drive = 0.0f;
+    ov->slam_gain = 1.0f;
     ov->bass = 0.5f;
     ov->treble = 0.5f;
     ov->blend = 0.0f;   // matches drive = 0 under the fade-in law in overlord_set_drive
@@ -79,34 +80,19 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     ov->dyn_bias_l2 = 0.0f; ov->dyn_bias_r2 = 0.0f;
 }
 
-// Unrolled 4-lane IIR DC Blocker (Restores dynamic symmetry downstream)
-fast_inline float32x4_t dc_block_process(dc_blocker_state_t* state, float32x4_t in, float R) {
-    float x[4], y[4];
-    vst1q_f32(x, in);
-
-    y[0] = x[0] - state->x_prev + R * state->y_prev;
-    y[1] = x[1] - x[0] + R * y[0];
-    y[2] = x[2] - x[1] + R * y[1];
-    y[3] = x[3] - x[2] + R * y[2];
-
-    state->x_prev = flush_denormal(x[3]);
-    state->y_prev = flush_denormal(y[3]);
-
-    return vld1q_f32(y);
-}
-
-// Helper to extract the mean of a 4-sample vector for envelope sidechains
-fast_inline float vmeanq_f32(float32x4_t vec) {
-    float32x2_t sum2 = vadd_f32(vget_low_f32(vec), vget_high_f32(vec));
-    return (vget_lane_f32(sum2, 0) + vget_lane_f32(sum2, 1)) * 0.25f;
-}
-
 /**
- * Set drive amount (0-100%)
+ * Set drive amount (0-100%) and slam amount (0-1, see drive_slam.h).
+ *
+ * The tube is the Distressor's drive stage whenever DstrDist is None -- the
+ * factory default -- so it gets the slam region too.  `slam` arrives as 0 from
+ * Standard mode, which keeps that mode's drive law exactly as it was.
  */
-fast_inline void overlord_set_drive(overlord_t* ov, float drive_percent) {
+fast_inline void overlord_set_drive(overlord_t* ov, float drive_percent, float slam) {
     float drive = drive_percent * 0.01f;
     ov->drive = drive;
+    // Applied to the preamp only: the triode behind it is already deep in
+    // saturation by the knee, and doubling up there just costs headroom.
+    ov->slam_gain = drive_slam_gain(slam, drive_slam_voicing[SLAM_FAMILY_TUBE].gain_max);
 
     // The tube stages have ~2 dB of insertion loss even as drive approaches
     // zero, so engaging them produced an audible step at the first click of the
@@ -245,7 +231,7 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
 
     // Macro Gain Staging
     float drive_sq = ov->drive * ov->drive;
-    float32x4_t v_drive_stage1 = vdupq_n_f32(1.0f + (drive_sq * 35.0f)); // Warm preamp push
+    float32x4_t v_drive_stage1 = vdupq_n_f32((1.0f + (drive_sq * 35.0f)) * ov->slam_gain); // Warm preamp push
     float32x4_t v_drive_stage2 = vdupq_n_f32(1.0f + (ov->drive * 4.5f)); // Harder triode slam
 
     float32x4_t v_static_bias2 = vdupq_n_f32(-0.18f); // Triode operating cutoff point

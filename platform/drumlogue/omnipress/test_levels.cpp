@@ -14,7 +14,7 @@
  *       -o test_levels test_levels.cpp -lm
  * Run:
  *   ./test_levels            # everything
- *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks
+ *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam
  */
 
 #include <cstdio>
@@ -168,6 +168,38 @@ static Result measure(double amp, double f0, int settle, int meas, int pan = 0) 
     r.nonfund_pct  = 100.0 * sqrt(nonfund) / (A[1] + 1e-30);
     r.sub_db       = 20.0 * log10((Asub + 1e-30) / (A[1] + 1e-30));
     return r;
+}
+
+/* Mean (DC) and peak of the output for a steady sine input. */
+static void measureDC(double amp, double f0, int settle, int meas,
+                      double* mean_out, double* peak_out) {
+    std::vector<float> in(BLOCK * NCH), out(BLOCK * 2);
+    const double w = 2.0 * M_PI * f0 / SR;
+    long n = 0;
+    double sum = 0, peak = 0;
+    long N = 0;
+
+    for (int phase = 0; phase < 2; ++phase) {
+        const int frames = phase ? meas : settle;
+        for (int done = 0; done < frames; done += (int)BLOCK) {
+            for (size_t i = 0; i < BLOCK; ++i, ++n) {
+                float v = (float)(amp * sin(w * n));
+                in[i*NCH+0] = v; in[i*NCH+1] = v;
+                in[i*NCH+2] = v; in[i*NCH+3] = v;
+            }
+            g_fx.Process(in.data(), out.data(), BLOCK);
+            if (phase) {
+                for (size_t i = 0; i < BLOCK; ++i) {
+                    double x = out[i*2];
+                    sum += x;
+                    if (fabs(x) > peak) peak = fabs(x);
+                    N++;
+                }
+            }
+        }
+    }
+    *mean_out = N ? sum / N : 0.0;
+    *peak_out = peak;
 }
 
 /* Main bus and sidechain input at independent levels; returns the gain applied
@@ -605,7 +637,11 @@ static void section_quirks() {
         "    linear).  The drive gain g = 1+19d is applied once and not\n"
         "    compensated: +26 dB across the knob.  It was applied twice (g^2,\n"
         "    +52 dB), and then over-corrected with a 1/sqrt(g) makeup that\n"
-        "    scaled the saturated ceiling down with it -- see G4b.");
+        "    scaled the saturated ceiling down with it -- see G4b.\n"
+        "    Past DRIVE_SLAM_KNEE the slam multiplies g geometrically, so the\n"
+        "    theory column carries drive_slam_gain() too; the bias and trim are\n"
+        "    not in play at -60 dBFS (the bias is a fraction of an envelope this\n"
+        "    small, and the trim is what the last column has to absorb).");
     printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "g dB", "delta");
     for (int drv : {0, 5, 10, 25, 50, 75, 100}) {
         Params p = headerDefaults();
@@ -616,7 +652,11 @@ static void section_quirks() {
         p.v[k_drive]           = drv;
         apply(p);
         double m  = measure(0.001, F0, SETTLE, MEAS).gain_fund_db;
-        double th = 20.0 * log10(1.0 + 19.0 * (drv * 0.01));
+        const float slam = drive_slam_amount(drv * 0.01f);
+        const slam_voicing_t& v = drive_slam_voicing[SLAM_FAMILY_SAT];
+        double th = 20.0 * log10((1.0 + 19.0 * (drv * 0.01))
+                                 * drive_slam_gain(slam, v.gain_max)
+                                 * (1.0f + slam * (v.trim - 1.0f)));
         printf("   %6d %+12.2f %+14.2f %+8.2f\n", drv, m, th, m - th);
     }
 
@@ -625,7 +665,9 @@ static void section_quirks() {
         "     small-signal gain.  Under the old 1/sqrt(g) law the five wavefolder\n"
         "     modes peaked at 0.224 at DRIVE=100 while the harmonic saturators,\n"
         "     which carry no makeup, reached 1.000 -- driving harder made those\n"
-        "     five quieter.  The peaks must now stay in family across the row.");
+        "     five quieter.  The peaks must now stay in family across the row.\n"
+        "     At DRIVE 100 the slam trim also pulls the whole row off 1.000, so\n"
+        "     the output limiter stops being the thing doing the distorting.");
     printf("   %-8s", "DRIVE");
     for (int t = 0; t < 9; ++t) printf(" %7s", DIST_NAME[t]);
     printf("\n");
@@ -691,11 +733,15 @@ static void section_quirks() {
         "    bypass the Distressor's shaper while the broadband tube was gated\n"
         "    off for any non-Standard mode, so the factory default combination\n"
         "    (Distressor + DstrDist None) left DRIVE doing nothing at all.\n"
-        "    Distressor/None must now track Standard exactly, and DRIVE=0 must\n"
-        "    still be clean in both.");
+        "    Distressor/None must track Standard exactly up to DRIVE_SLAM_KNEE\n"
+        "    (they are the same tube), and DRIVE=0 must still be clean in both.\n"
+        "    Above the knee they separate on purpose: the slam region belongs to\n"
+        "    the Distressor, so the last row is the one place these two columns\n"
+        "    are meant to disagree -- more THD on the Distressor side, at a\n"
+        "    comparable level.");
     printf("   %6s | %-22s | %-22s\n", "DRIVE", "Standard", "Distressor, None");
     printf("   %6s | %10s %11s | %10s %11s\n", "", "gain dB", "THD%", "gain dB", "THD%");
-    for (int drv : {0, 1, 5, 20, 50, 100}) {
+    for (int drv : {0, 1, 5, 20, 50, 60, 100}) {
         Params p = headerDefaults();
         p.v[k_attenuation_limit] = 0;
         p.v[k_gain_limit]        = 0;
@@ -712,8 +758,9 @@ static void section_quirks() {
         apply(p);
         Result d = measure(0.1, F0, SETTLE, MEAS);
 
-        printf("   %6d | %+10.2f %11.2f | %+10.2f %11.2f\n",
-               drv, s.gain_fund_db, s.thd_pct, d.gain_fund_db, d.thd_pct);
+        printf("   %6d | %+10.2f %11.2f | %+10.2f %11.2f%s\n",
+               drv, s.gain_fund_db, s.thd_pct, d.gain_fund_db, d.thd_pct,
+               (drv * 0.01f > DRIVE_SLAM_KNEE) ? "   <-- slam region" : "");
     }
 
     hdr("G9. COST OF SILENCE.  A decaying IIR fed silence parks its delay line\n"
@@ -753,6 +800,106 @@ static void section_quirks() {
     }
 }
 
+/* S. The slam region: what DRIVE past DRIVE_SLAM_KNEE actually buys. */
+static void section_slam() {
+    hdr("S1. THE SLAM REGION (Distressor, ratio 1:1, in -20 dBFS 1 kHz -- a\n"
+        "    realistic drum-bus level).  Below DRIVE 60 nothing here is armed\n"
+        "    and these rows must match the old linear drive law exactly.  Above\n"
+        "    it the pre-gain goes geometric and a program-dependent bias shifts\n"
+        "    the duty cycle, so THD keeps climbing after the shaper has already\n"
+        "    saturated -- which is the whole point, since a bounded shaper fed\n"
+        "    more of the same gain simply stops changing.\n"
+        "    Watch three things: THD roughly triples from 60 to 100, the output\n"
+        "    level stays inside a couple of dB (the knob is buying character,\n"
+        "    not level), and peak stays off 1.000 (the output limiter is not\n"
+        "    doing the distorting).");
+    for (int dist = 0; dist <= 8; ++dist) {
+        printf("\n  DstrDist %d (%s)\n", dist, DIST_NAME[dist]);
+        printf("  %6s %10s %10s %8s %7s\n",
+               "DRIVE", "gain(1k)", "out dBFS", "THD%", "peak");
+        for (int drive : {40, 50, 60, 70, 80, 90, 100}) {
+            Params p = headerDefaults();
+            p.v[k_compressor_mode] = 1;
+            p.v[k_slope]           = distressorSlopeRaw(0);
+            p.v[k_threhold]        = 0;
+            p.v[k_distressor_distortion_type] = dist;
+            p.v[k_drive]           = drive;
+            apply(p);
+            Result r = measure(0.1, F0, SETTLE, MEAS);
+            printf("  %6d %+10.2f %+10.2f %8.2f %7.3f%s\n",
+                   drive, r.gain_fund_db, r.rms_dbfs, r.thd_pct, r.peak,
+                   (drive == 60) ? "   <-- knee" : "");
+        }
+    }
+
+    hdr("S2. THE SLAM IS DISTRESSOR-ONLY.  Standard and Multiband share the same\n"
+        "    DRIVE knob but not the slam region, so their DRIVE 60 -> 100 rows\n"
+        "    must be byte-identical to what they measured before it existed.\n"
+        "    in -20 dBFS 1 kHz, limits wide open.");
+    for (int mode : {0, 2}) {
+        printf("\n  %s\n", MODE_NAME[mode]);
+        printf("  %6s %10s %10s %8s\n", "DRIVE", "gain(1k)", "out dBFS", "THD%");
+        for (int drive : {60, 80, 100}) {
+            Params p = headerDefaults();
+            p.v[k_compressor_mode]   = mode;
+            p.v[k_attenuation_limit] = 0;
+            p.v[k_gain_limit]        = 0;
+            p.v[k_drive]             = drive;
+            if (mode == 2) {
+                p.v[k_multiband_band_selection] = BAND_ALL;
+                p.v[k_multiband_band_threshold] = 0;
+                p.v[k_multiband_band_ratio]     = 10;
+            }
+            apply(p);
+            Result r = measure(0.1, F0, SETTLE, MEAS);
+            printf("  %6d %+10.2f %+10.2f %8.2f\n",
+                   drive, r.gain_fund_db, r.rms_dbfs, r.thd_pct);
+        }
+    }
+
+    hdr("S2b. PARAMETER ORDER.  The slam depends on three parameters at once --\n"
+        "     DRIVE (ID 5) for how far in, COMP MODE (ID 8) for whether there is\n"
+        "     a slam region at all, and DstrDist (ID 15) for which voicing -- so\n"
+        "     a host replaying IDs 0..23 in order arms it from a state where the\n"
+        "     other two are still whatever Reset() left behind.  Both columns\n"
+        "     must agree.  in -20 dBFS, DRIVE 100.");
+    printf("   %-8s %12s %12s %12s %12s\n",
+           "DstrDist", "mode-first", "THD%", "ID-order", "THD%");
+    for (int dist = 0; dist <= 8; ++dist) {
+        Params p = headerDefaults();
+        p.v[k_compressor_mode] = 1;
+        p.v[k_slope]           = distressorSlopeRaw(0);
+        p.v[k_threhold]        = 0;
+        p.v[k_distressor_distortion_type] = dist;
+        p.v[k_drive]           = 100;
+        apply(p);        Result a = measure(0.1, F0, SETTLE, MEAS);
+        applyIdOrder(p); Result b = measure(0.1, F0, SETTLE, MEAS);
+        printf("   %-8s %+12.2f %12.2f %+12.2f %12.2f%s\n",
+               DIST_NAME[dist], a.rms_dbfs, a.thd_pct, b.rms_dbfs, b.thd_pct,
+               (fabs(a.rms_dbfs - b.rms_dbfs) > 0.05) ? "   <-- MISMATCH" : "");
+    }
+
+    hdr("S3. NO DC LEFT ON THE BUS.  The slam biases the shaper deliberately, so\n"
+        "    the stage behind it has to take the offset back out -- a master FX\n"
+        "    that parks DC on the output steals headroom from everything after\n"
+        "    it.  Mean output over a whole number of cycles, DRIVE 100.");
+    printf("  %-9s %14s %14s\n", "DstrDist", "mean out", "mean/peak");
+    for (int dist = 0; dist <= 8; ++dist) {
+        Params p = headerDefaults();
+        p.v[k_compressor_mode] = 1;
+        p.v[k_slope]           = distressorSlopeRaw(0);
+        p.v[k_threhold]        = 0;
+        p.v[k_distressor_distortion_type] = dist;
+        p.v[k_drive]           = 100;
+        apply(p);
+        double mean, peak;
+        measureDC(0.1, F0, SETTLE, MEAS, &mean, &peak);
+        printf("  %-9s %+14.6f %+14.4f%s\n", DIST_NAME[dist], mean,
+               (peak > 0) ? mean / peak : 0.0,
+               (peak > 0 && fabs(mean / peak) > 0.02) ? "   <-- DC ON THE BUS" : "");
+    }
+}
+
 /* ========================================================================= */
 
 int main(int argc, char** argv) {
@@ -773,6 +920,7 @@ int main(int argc, char** argv) {
     if (s == "all" || s == "kick")    section_kick();
     if (s == "all" || s == "release") section_release();
     if (s == "all" || s == "quirks")  section_quirks();
+    if (s == "all" || s == "slam")    section_slam();
     printf("\n");
     return 0;
 }

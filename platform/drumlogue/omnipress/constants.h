@@ -216,6 +216,66 @@ constexpr float MAKEUP_GAIN_MAX_LINEAR = 15.85f;    // 24 dB in linear
 constexpr float MAKEUP_GAIN_MIN_LINEAR = 1.0f;      // 0 dB
 
 // ============================================================================
+// DRIVE Slam Region (Distressor mode only)
+// ============================================================================
+// Past DRIVE_SLAM_KNEE the Distressor's drive stops being a character control
+// and starts being a destruction control.  See drive_slam.h for why a bounded
+// shaper needs more than extra gain to keep changing above this point.
+
+constexpr float DRIVE_SLAM_KNEE = 0.60f;   // knob position where the slam starts
+
+// Bias ahead of the shaper at full slam, as a fraction of the drive stage's
+// input envelope, before the per-family share below.  0.45 of a mean-rectified
+// envelope is about 0.29 of a sine's peak, which moves the duty cycle to
+// roughly 60/40 -- an audible second harmonic, and never far enough to bias
+// the waveform clear of the clipping point altogether.
+constexpr float DRIVE_SLAM_BIAS = 0.45f;
+constexpr float DRIVE_SLAM_BIAS_ATK_MS = 15.0f;   // let transients through first
+constexpr float DRIVE_SLAM_BIAS_REL_MS = 250.0f;  // then bloom, and hold
+
+// DC blocker that follows the biased clipping. 0.9985 puts the corner near
+// 11 Hz, low enough to leave kick fundamentals alone.
+constexpr float DRIVE_SLAM_DC_POLE = 0.9985f;
+
+// ----------------------------------------------------------------------------
+// Per-family voicing
+// ----------------------------------------------------------------------------
+// The nine DstrDist settings reach three structurally different stages, and
+// the same slam settings do not suit all three.
+//
+//   SAT   the harmonic saturators and the soft/hard clippers.  Bounded and
+//         monotone, so they need a great deal of gain to travel from their
+//         knee to the square-wave regime, take the full bias, and then need
+//         trimming because a square is a lot louder than the sine that made
+//         it.
+//   FOLD  the triangle and sine folders.  Their transfer curve is periodic:
+//         gain adds folds linearly and they are already past 100% THD at the
+//         top of the knob, so they need no extra gain at all, only a little
+//         bias to break the fold pattern's symmetry -- and no trim, because
+//         folding does not raise the level the way clipping does.
+//   TUBE  the Overlord fall-through at DstrDist = None.  Two cascaded stages
+//         that compound, plus its own grid-current bias tracker, so it needs
+//         less of everything than a bare saturator.
+typedef enum {
+    SLAM_FAMILY_TUBE,
+    SLAM_FAMILY_SAT,
+    SLAM_FAMILY_FOLD,
+    SLAM_FAMILY_TOTAL,
+} SlamFamily;
+
+typedef struct {
+    float gain_max;    // extra pre-gain at DRIVE = 100 (1.0 = none)
+    float bias_scale;  // share of DRIVE_SLAM_BIAS this family takes
+    float trim;        // output trim at full slam
+} slam_voicing_t;
+
+static const slam_voicing_t drive_slam_voicing[SLAM_FAMILY_TOTAL] = {
+    /* TUBE */ {  6.0f, 0.50f, 0.80f },
+    /* SAT  */ { 24.0f, 1.00f, 0.65f },
+    /* FOLD */ {  1.0f, 0.15f, 1.00f },
+};
+
+// ============================================================================
 // NEON Vector Constants
 // ============================================================================
 

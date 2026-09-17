@@ -28,6 +28,7 @@
 #include "constants.h"
 #include "filters.h"
 #include "wavefolder.h"
+#include "drive_slam.h"
 #include "operation_overlord.h"
 #include "distressor_mode.h"
 #include "multiband.h"
@@ -74,6 +75,7 @@ public:
         distressor_init(&distressor_, samplerate_);
         multiband_init(&multiband_, samplerate_);
         overlord_init(&overlord_, samplerate_);
+        slam_init(&slam_, samplerate_);
 
         // Initialize smoothing
         envelope_detector_init(&envelope_, samplerate_);
@@ -116,6 +118,7 @@ public:
         multiband_init(&multiband_, samplerate_);
         distressor_reset(&distressor_, samplerate_);
         overlord_init(&overlord_, samplerate_);
+        slam_init(&slam_, samplerate_);
         envelope_detector_init(&envelope_, samplerate_);
         use_external_sc_ = 0;
 
@@ -276,6 +279,40 @@ private:
         }
     }
 
+    /**
+     * Re-arm the drive stage.
+     *
+     * DRIVE feeds a different shaper in each mode and the slam region belongs
+     * to the Distressor only, so the cached pre-gains depend on both the DRIVE
+     * knob and COMP MODE.  A host replaying a stored program walks the
+     * parameter IDs in order and therefore sets DRIVE (ID 5) before COMP MODE
+     * (ID 8), so both handlers call this rather than either computing the
+     * gains itself.
+     *
+     * Standard and Multiband pass slam = 0, which leaves every law in this
+     * chain exactly where it was before the slam region existed.
+     */
+    fast_inline void refresh_drive_stage() {
+        const float slam = (comp_mode_ == COMP_MODE_DISTRESSOR)
+                             ? drive_slam_amount(drive_)
+                             : 0.0f;
+        const float drive_percent = drive_ * 100.0f;
+
+        // Which stage DRIVE is actually reaching decides how much bias and trim
+        // the slam applies -- see drive_slam_voicing in constants.h.
+        slam_set(&slam_, slam, drive_slam_family(distressor_.dist_mode));
+        wavefolder_set_drive(&wavefolder_, drive_percent, slam);
+        distressor_set_drive(&distressor_, drive_percent, slam);
+        overlord_set_drive(&overlord_, drive_percent, slam);
+
+        // Multiband saturates inside each band with its own triode voicing
+        // (softer on the lows, brighter on the highs) rather than driving one
+        // broadband stage. The field existed and was read by multiband_process
+        // but nothing ever wrote it.
+        for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
+            multiband_set_param(&multiband_, b, 7, drive_);
+    }
+
     fast_inline const char* handle_get_multiband_parameter(int p_id) const {
         float value = 0.0f;
         static char str_buf[16];
@@ -399,6 +436,16 @@ private:
             processed_r = driven.val[1];
         }
 
+        // =================================================================
+        // 6. SLAM OUTPUT STAGE
+        // =================================================================
+        // Closes the bias slam_bias() opened at the head of the drive chain:
+        // biased clipping leaves DC behind, and the trim keeps the region on
+        // the right side of the output limiter so what changes above DRIVE 60
+        // is the character and not just the level.  Disarmed outside the
+        // Distressor's slam region, where it costs one predictable branch.
+        slam_output(&slam_, &processed_l, &processed_r);
+
         float32x4x2_t result;
         result.val[0] = processed_l;
         result.val[1] = processed_r;
@@ -486,6 +533,12 @@ private:
         float32x4_t comp_l = vmulq_f32(main_l, gain_lin);
         float32x4_t comp_r = vmulq_f32(main_r, gain_lin);
 
+        // Slam bias, ahead of whichever shaper DstrDist selects -- including
+        // None, where the signal falls through to the Overlord tube and picks
+        // it up there.  Disarmed below DRIVE_SLAM_KNEE.  slam_output() in
+        // process_block() removes the DC it leaves behind.
+        slam_bias(&slam_, &comp_l, &comp_r);
+
         // Apply saturation to the COMPRESSED signal (not raw input).
 
         switch (distressor_.dist_mode) {
@@ -506,14 +559,15 @@ private:
             case DIST_MODE_DIST2:
             case DIST_MODE_DIST3:
             case DIST_MODE_BOTH: {
-                // sat_drive range: 1x (DRIVE=0) to 40x (DRIVE=100) — pushes the
-                // signal into the saturator nonlinear region.
+                // Pre-gain cached by distressor_set_drive(): 1x (DRIVE=0) to
+                // 40x (DRIVE=100) below the slam knee, then geometric on top
+                // of that up to 960x, which is what carries these saturators
+                // from their knee into the square-wave regime.
                 // makeup = 1.0 keeps output level comparable to the input so
                 // harmonic character is always audible. The output hard-clip limiter
                 // prevents clipping. Do NOT divide by sat_drive (old formula made
                 // the distorted output quieter than dry, masking the effect).
-                float sat_drive = 1.0f + drive_ * 39.0f; // Wider range for more bite
-                float32x4_t drv = vdupq_n_f32(sat_drive);
+                const float32x4_t drv = distressor_.sat_drive;
                 *out_l = generate_harmonics(&distressor_,
                                             vmulq_f32(comp_l, drv),
                                             distressor_.dist_mode);
@@ -610,14 +664,7 @@ public:
 
             case k_drive: // DRIVE (0 to 100%)
                 drive_ = value * 0.01f;
-                wavefolder_set_drive(&wavefolder_, value);
-                overlord_set_drive(&overlord_, value);
-                // Multiband saturates inside each band with its own triode
-                // voicing (softer on the lows, brighter on the highs) rather
-                // than driving one broadband stage. The field existed and was
-                // read by multiband_process but nothing ever wrote it.
-                for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
-                    multiband_set_param(&multiband_, b, 7, drive_);
+                refresh_drive_stage();
                 break;
 
             case k_mix: // MIX (-100 to +100)
@@ -698,6 +745,10 @@ public:
                     // (ID 8): without this the distressor ratio stayed at its 4:1
                     // init no matter where the knob was.
                     setParameter(k_slope, raw_params_[k_slope]);
+                    // DRIVE (ID 5) is replayed before this for the same reason,
+                    // and only the Distressor has a slam region, so the drive
+                    // stage has to be re-armed once the mode is known.
+                    refresh_drive_stage();
                 }
                 break;
 
@@ -719,6 +770,10 @@ public:
                     // DRIVE=0. Detector shaping belongs to DETECT (which offers
                     // Emph for exactly this), not to the distortion type, so
                     // the flag is left alone here.
+
+                    // The slam's bias budget depends on which shaper family
+                    // DRIVE is reaching, so selecting one re-arms the stage.
+                    refresh_drive_stage();
                 }
                 break;
 
@@ -864,6 +919,21 @@ public:
                 }
                 break;
 
+            case k_drive: // DRIVE - flag the Distressor's slam region
+                // Everywhere else this is a plain percentage, but in Distressor
+                // mode the knob crosses into a different job at DRIVE_SLAM_KNEE:
+                // past it the shapers are driven geometrically and biased, and
+                // what the knob buys stops being warmth and starts being
+                // destruction.  A knob whose behaviour changes partway along
+                // should say where, the same way SLOPE names its regions.
+                if (comp_mode_ == COMP_MODE_DISTRESSOR &&
+                    drive_slam_amount(value * 0.01f) > 0.0f) {
+                    snprintf(str_buf, sizeof(str_buf), "SLAM %d", (int)value);
+                } else {
+                    snprintf(str_buf, sizeof(str_buf), "%d%%", (int)value);
+                }
+                return str_buf;
+
             case k_mix: // MIX - show DRY/BAL/WET
                 if (value <= -100) return "DRY";
                 if (value >= 100) return "WET";
@@ -944,4 +1014,5 @@ private:
     multiband_t multiband_;
     envelope_detector_t envelope_;
     overlord_t overlord_;
+    slam_t slam_;
 };

@@ -358,3 +358,45 @@ fast_inline float32x4_t low_shelf_filter(float32x4_t in,
 fast_inline float32x4_t linear_to_db(float32x4_t linear) {
   return vmulq_n_f32(neon_log2q_f32(linear), 6.0206f); // 20 * log10(2)
 }
+
+/* ---------------------------------------------------------------------------
+ * 5. DC BLOCKER - 1-pole IIR, shared by every asymmetric drive stage
+ *
+ * Any stage that clips or biases one half of the waveform differently from the
+ * other leaves a DC offset behind.  This used to live in operation_overlord.h,
+ * where the tube stage was the only asymmetric shaper; the Distressor's slam
+ * region needs the same thing, so it moved to the shared header rather than
+ * being written twice.
+ * --------------------------------------------------------------------------- */
+
+typedef struct {
+    float x_prev;
+    float y_prev;
+} dc_blocker_state_t;
+
+fast_inline void dc_blocker_init(dc_blocker_state_t* s) {
+    s->x_prev = 0.0f;
+    s->y_prev = 0.0f;
+}
+
+// Unrolled 4-lane IIR DC Blocker (Restores dynamic symmetry downstream)
+fast_inline float32x4_t dc_block_process(dc_blocker_state_t* state, float32x4_t in, float R) {
+    float x[4], y[4];
+    vst1q_f32(x, in);
+
+    y[0] = x[0] - state->x_prev + R * state->y_prev;
+    y[1] = x[1] - x[0] + R * y[0];
+    y[2] = x[2] - x[1] + R * y[1];
+    y[3] = x[3] - x[2] + R * y[2];
+
+    state->x_prev = flush_denormal(x[3]);
+    state->y_prev = flush_denormal(y[3]);
+
+    return vld1q_f32(y);
+}
+
+// Helper to extract the mean of a 4-sample vector for envelope sidechains
+fast_inline float vmeanq_f32(float32x4_t vec) {
+    float32x2_t sum2 = vadd_f32(vget_low_f32(vec), vget_high_f32(vec));
+    return (vget_lane_f32(sum2, 0) + vget_lane_f32(sum2, 1)) * 0.25f;
+}
