@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include "float_math.h"
 #include "constants.h"
+#include "drive_slam.h"
 
 /**
  * Simple Xorshift PRNG for real-time use
@@ -51,7 +52,9 @@ fast_inline uint32_t prng_simple_next(prng_simple_t* prng) {
  */
 typedef struct {
     uint32_t mode;           // 0-4
-    float32x4_t drive;       // Drive amount (0.0 to 1.0)
+    float drive_knob;        // Drive amount (0.0 to 1.0)
+    float slam;              // Slam amount (0.0 to 1.0), see drive_slam.h
+    float32x4_t pre_gain;    // Cached gain into the shaper, slam folded in
     float32x4_t output_gain; // Makeup after drive
 
     // Sub-octave state
@@ -70,7 +73,9 @@ typedef struct {
  */
 fast_inline void wavefolder_init(wavefolder_t* wf) {
     wf->mode = DRIVE_MODE_SOFT_CLIP;
-    wf->drive = vdupq_n_f32(0.0f);
+    wf->drive_knob = 0.0f;
+    wf->slam = 0.0f;
+    wf->pre_gain = vdupq_n_f32(1.0f);
     wf->output_gain = vdupq_n_f32(1.0f);
     wf->sub_phase = vdupq_n_f32(0.0f);
     wf->last_input = vdupq_n_f32(0.0f);
@@ -83,18 +88,39 @@ fast_inline void wavefolder_init(wavefolder_t* wf) {
 }
 
 /**
+ * Recompute the cached gain into the shaper.
+ *
+ * Base law: g = 1+drive*19 gives 1x at drive=0 (passthrough) to 20x at
+ * drive=100%.  Above the slam knee that is multiplied by drive_slam_gain(),
+ * which depends on the shaper family: the triangle and sine folders already
+ * add a fold for every unit of gain and are past 100% THD at the top of the
+ * knob, so they get a fraction of what the saturators need to get there.
+ *
+ * Both the drive knob and the mode feed this, and the host may set them in
+ * either order, so both setters call it rather than either computing the gain.
+ */
+fast_inline void wavefolder_refresh_gain(wavefolder_t* wf) {
+    const float base = 1.0f + wf->drive_knob * 19.0f;
+    const float gain_max = drive_slam_voicing[drive_slam_family(wf->mode)].gain_max;
+    wf->pre_gain = vdupq_n_f32(base * drive_slam_gain(wf->slam, gain_max));
+}
+
+/**
  * Set drive type
  */
 fast_inline void wavefolder_set_drive_type(wavefolder_t* wf, int mode) {
-  if ((mode > DIST_MODE_BOTH) && (mode < DIST_MODE_TOTAL))
+  if ((mode > DIST_MODE_BOTH) && (mode < DIST_MODE_TOTAL)) {
     wf->mode = mode;
+    wavefolder_refresh_gain(wf);
+  }
 }
 /**
- * Set drive amount (0-100%)
+ * Set drive amount (0-100%) and slam amount (0-1, see drive_slam.h)
  */
-fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent) {
-    float drive = drive_percent * 0.01f;
-    wf->drive = vdupq_n_f32(drive);
+fast_inline void wavefolder_set_drive(wavefolder_t* wf, float drive_percent, float slam) {
+    wf->drive_knob = drive_percent * 0.01f;
+    wf->slam = slam;
+    wavefolder_refresh_gain(wf);
 
     // No makeup. The original bug here was applying the drive gain a second
     // time as makeup, making the total g^2 (+52 dB at DRIVE=100); the fix for
@@ -227,10 +253,9 @@ fast_inline float32x4x2_t wavefolder_process(wavefolder_t *wf,
                                              float32x4_t in_r) {
   float32x4x2_t out;
 
-  // Apply drive gain: g = 1+drive*19 gives 1x at drive=0 (passthrough) to 20x
-  // at drive=100%.  wavefolder_set_drive caches the matching 1/sqrt(g) makeup,
-  // so the knob adds character rather than 52 dB of level.
-  const float32x4_t g = vmlaq_f32(vdupq_n_f32(1.0f), wf->drive, vdupq_n_f32(19.0f));
+  // Drive gain, cached by wavefolder_refresh_gain() so the slam law's expf()
+  // never runs on the audio thread.
+  const float32x4_t g = wf->pre_gain;
   float32x4_t driven_l = vmulq_f32(in_l, g);
   float32x4_t driven_r = vmulq_f32(in_r, g);
 

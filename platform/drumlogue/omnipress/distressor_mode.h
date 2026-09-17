@@ -10,6 +10,7 @@
 #include <math.h>
 #include "filters.h"
 #include "constants.h"
+#include "drive_slam.h"
 
 // Detector modes (bit flags)
 #define DETECT_NONE      0
@@ -53,6 +54,9 @@ typedef struct {
     float32x4_t harmonic_state;
     float32x4_t last_input;
 
+    // Cached pre-gain into generate_harmonics(), slam law folded in
+    float32x4_t sat_drive;
+
     // Opto mode state (slow release simulation)
     float opto_release_mult;  // Up to 20s in opto mode
     float opto_coeff ;        // deduced from above
@@ -89,6 +93,7 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     d->release_coeff = e_expff(-1.0f / (d->release_ms * 0.001f * sample_rate));
     d->harmonic_state = vdupq_n_f32(0.0f);
     d->last_input = vdupq_n_f32(0.0f);
+    d->sat_drive = vdupq_n_f32(1.0f);
     d->opto_release_mult = 1.0f;
     d->opto_coeff = 0.0f;   // to be updated according to opto_release_mult
     d->detector_state = vdupq_n_f32(0.0f);
@@ -205,6 +210,21 @@ fast_inline void distressor_set_ratio(distressor_t* d, uint8_t mode) {
     } else {
         d->opto_release_mult = 1.0f;
     }
+}
+
+/**
+ * Cache the pre-gain feeding the DIST2/DIST3/BOTH saturators.
+ *
+ * Base law: 1x at DRIVE=0 to 40x at DRIVE=100, which on a -20 dBFS bus only
+ * reaches the knee of a bounded saturator.  Above DRIVE_SLAM_KNEE the slam
+ * multiplier carries it the rest of the way into the square-wave regime; see
+ * drive_slam.h.  Computed here rather than per block so the slam law's expf()
+ * stays off the audio thread.
+ */
+fast_inline void distressor_set_drive(distressor_t* d, float drive_percent, float slam) {
+    const float base = 1.0f + drive_percent * 0.01f * 39.0f;
+    d->sat_drive = vdupq_n_f32(
+        base * drive_slam_gain(slam, drive_slam_voicing[SLAM_FAMILY_SAT].gain_max));
 }
 
 // Generate 2nd/3rd harmonics using bounded asymmetric/symmetric saturators.

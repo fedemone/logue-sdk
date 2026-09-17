@@ -13,6 +13,7 @@
 | **3 Compression Modes** | Standard, Distressor, Multiband |
 | **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
 | **Drive/Wavefolder** | 5 distortion modes from soft clip to sub-octave |
+| **Slam region** | In Distressor mode, DRIVE above 60% drives the shapers geometrically and biases them, roughly tripling the harmonic content across the top of the knob without making it louder |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
 | **Adjustable crossover** | XOVER sweeps both multiband split points together |
 | **Soft knee** | Ratio-dependent on the Distressor: wide at 2:1, tightening to a brick wall at NUKE |
@@ -79,6 +80,64 @@ The drive amount controls both the input gain to the waveshaper and the dry/wet 
 
 ---
 
+## The Slam Region (Distressor, DRIVE above 60)
+
+Every shaper in the unit is bounded — soft clip, both harmonic saturators and
+the tube all converge on ±1, and the folders on their fold pattern — while the
+drive law feeding them was linear in the knob (`g = 1 + 19d` for the wavefolder,
+`1 + 39d` for the harmonic saturators). The whole top half of DRIVE was
+therefore worth about 4 dB of extra push, which on a −20 dBFS bus left the
+shapers barely into their knee: DRIVE 60 → 100 moved Soft from 12.8% to 16.9%
+THD. What little did change arrived mostly as level — +17 dB of fundamental
+across the knob — and the ear discounts level, so the knob read as a volume
+control with a bit of thickening.
+
+From **DRIVE 60 up, in Distressor mode only**, three things change:
+
+| | What it does | Why a bounded shaper needs it |
+|---|---|---|
+| **Geometric pre-gain** | Up to ×24 on top of the old law (×960 total for the harmonic saturators) | Linear gain gives a vanishing number of dB per click near the top. Geometric gain makes every click worth the same push, which is what carries each saturating type from its knee into the square-wave regime |
+| **Program-dependent bias** | A DC offset ahead of the shaper, tracking the drive stage's envelope (15 ms attack, 250 ms release) | Once a stage is fully saturated more gain genuinely cannot change the waveform — a square is a square. Moving the level it clips *around* still can: it shifts the duty cycle, which brings in the even harmonics and the hollow, nasal quality of a hard-biased fuzz. A fixed offset would be nothing next to a few hundred times gain, so it has to follow the envelope — which also makes it breathe with the program, the way grid blocking does in the tube stage next door |
+| **Output trim** | Up to −3.7 dB | The point is to hear character rather than level. Without it the region parks on the output limiter and every type collapses into the same clipped mush |
+
+Below 60 all three are inert, so DRIVE 0–60 measures exactly as it did before,
+and Standard and Multiband — which never arm the slam — are untouched.
+
+The nine DstrDist settings reach three structurally different stages, so each
+takes its own share (`drive_slam_voicing` in `constants.h`):
+
+| Family | DstrDist | Pre-gain | Bias | Trim |
+|--------|----------|----------|------|------|
+| **SAT** | Dist2, Dist3, Both, Soft, Hard, SubOct | ×24 | full | −3.7 dB |
+| **FOLD** | Trg, Sine | ×1 | 15% | none |
+| **TUBE** | Off (Overlord fall-through) | ×6 | 50% | −1.9 dB |
+
+The folders need no extra gain: their transfer curve is periodic, so gain adds
+folds linearly and they are already past 100% THD at the top of the knob — only
+a little bias, to break the fold pattern's symmetry. The tube is two cascaded
+stages that compound and carries its own bias tracker, so it needs less of
+everything than a bare saturator.
+
+Measured on a 1 kHz sine at −20 dBFS, Distressor at 1:1 so the compressor is out
+of the picture (`./test_levels slam`):
+
+| DstrDist | THD at 60 | THD at 100 | out at 60 | out at 100 |
+|----------|-----------|------------|-----------|------------|
+| Off | 32.7% | 49.6% | −5.2 dBFS | −6.1 dBFS |
+| Dist2 | 24.6% | 52.1% | −3.9 dBFS | −2.6 dBFS |
+| Dist3 | 18.7% | 58.1% | −4.6 dBFS | −4.4 dBFS |
+| Both | 17.9% | 56.7% | −4.0 dBFS | −3.4 dBFS |
+| Soft | 12.8% | 54.8% | −7.2 dBFS | −4.7 dBFS |
+| Hard | 8.7% | 63.6% | −2.0 dBFS | −4.1 dBFS |
+| SubOct | 12.8% | 54.8% | −7.1 dBFS | −4.5 dBFS |
+
+A symmetric square wave is 48% THD, so the saturating families now cross into
+and past it. On a synthetic drum bus the high-frequency energy relative to the
+total rises about 2 dB from the knee to 100 while the RMS stays within 1.5 dB of
+where it was — which is the trade the region is for.
+
+---
+
 ## Parameter Reference
 
 OmniPress uses all **24 parameters** the SDK allows (`UNIT_MAX_PARAM_COUNT`),
@@ -98,7 +157,7 @@ across 6 pages of 4. IDs below match `header.c`.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
-| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Distressor: the selected DstrDist shaper, or the Overlord tube when DstrDist is None · Multiband: per-band triode saturation |
+| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Distressor: the selected DstrDist shaper, or the Overlord tube when DstrDist is None · Multiband: per-band triode saturation. **In Distressor mode, past 60% the knob enters the [slam region](#the-slam-region-distressor-drive-above-60) and reads "SLAM 75"** |
 | 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
 | 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
@@ -236,6 +295,7 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | DstrRATIO | "1:1 Warm", "2:1", "3:1", "4:1", "6:1", "Opto", "20:1", "NUKE" |
 | MBand | "Low", "Mid", "High", "Low+Mid", "Low+High", "Mid+High", "All" |
 | MIX | "DRY" (-100), "BAL" (0), "WET" (+100) |
+| DRIVE | "45%" · in Distressor above the knee, "SLAM 75" |
 
 ---
 
@@ -269,6 +329,7 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Peak detector latched | Hold counter incremented once per 4-sample block, so the "10 ms hold" was 417 ms and expiry applied a single 0.999 step — ~0.009 dB of decay per 417 ms. Gain reduction never recovered after a transient and RELEASE did nothing in Peak mode, the default | Rectify, then let the attack/release one-pole provide ballistics, with the intended 10 ms hold implemented in samples |
 | Blend detection was 0.3 × RMS | Its branch read `peak_hold`, which only the Peak branch wrote — and a `switch` runs one branch, so peak stayed 0 and the envelope sat 10.5 dB low, pivoting into upward gain | Blend derives peak locally |
 | Detector and Distressor gain smoother ran 4× slow | State was `float32x4_t`, giving each lane its own history advanced once per block, so per-sample coefficients were applied at 12 kHz | Sequential scalar state, as the crossovers and `standard_process` already use |
+| DRIVE went dead above about 60% | Every shaper is bounded, and the drive law was linear in the knob, so the top 40% was worth ~4 dB of push. At a −20 dBFS bus level DRIVE 60 → 100 moved Soft from 12.8% to 16.9% THD, and most of what did change arrived as +17 dB of level rather than harmonics — the knob read as a volume control | A slam region above DRIVE 60 in Distressor mode: geometric pre-gain, a program-dependent bias that shifts the duty cycle once the shaper is saturated, and an output trim so the region buys character instead of level. THD at DRIVE 100 goes 16.9% → 54.8% on Soft, 23.6% → 63.6% on Hard, at the same loudness and off the output limiter (bench section S) |
 | External sidechain unreachable | `use_external_sc_` was only ever assigned 0; the 4-channel input the unit asks for could not be selected | DETECT + 4 selects it (all 24 SDK parameter slots were already taken). Multiband splits the key through its own mono crossover so it ducks per band |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
@@ -280,6 +341,11 @@ g++ -std=c++14 -O2 -I test_portable -I . -I ../common -o test_levels test_levels
 
 All three modes now measure 0.00 dB insertion gain, and all nine distortion
 types sit within 0.9 dB of each other at DRIVE=0.
+
+`./test_levels slam` covers the slam region on its own: the sweep across the
+knee, the proof that Standard and Multiband are unaffected, that a host
+replaying parameters in ID order arms it identically, and that nothing leaves
+DC on the bus.
 
 ## Future Expansion
 

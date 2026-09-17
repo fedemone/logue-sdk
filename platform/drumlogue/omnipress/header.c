@@ -40,7 +40,11 @@ const __unit_header unit_header_t unit_header = {
         // ID 4: MAKEUP  0.0..24.0 dB  (x0.1, stored 0..240)
         { 0, 240, 0, 0, k_unit_param_type_db, 1, 1, 0, {"MAKEUP"} },
         // ID 5: DRIVE   0-100%
-        { 0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"DRIVE"} },
+        // Typed as strings, like SLOPE, so getParameterStrValue is consulted:
+        // in Distressor mode this knob crosses into its slam region partway
+        // along (see DRIVE_SLAM_KNEE) and the readout says so -- "60%" below
+        // it, "SLAM 75" above.  Every other mode reads as a plain percentage.
+        { 0, 100, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DRIVE"} },
         // ID 6: MIX  -100 (DRY) .. +100 (WET)
         { -100, 100, 0, 100, k_unit_param_type_drywet, 0, 0, 0, {"MIX"} },
         // ID 7: SC HPF  20..500 Hz
