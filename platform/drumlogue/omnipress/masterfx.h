@@ -38,28 +38,28 @@ enum parameters
 {
     k_threhold,
     k_slope,
-    k_attack,
-    k_release,
+    k_attack,                      // also every Multiband band's attack
+    k_release,                     // also every Multiband band's release
     k_makeup,
     k_drive,
     k_mix,
     k_sc_hpf,
-    k_compressor_mode,
+    k_compressor_mode,             // panel: 0=Standard, 1=Multiband
     k_attenuation_limit,
     k_gain_limit,
     k_detection_mode,              // envelope detector type: 0=Peak, 1=RMS, 2=Blend
     k_bass,
     k_treble,
     k_presence,
-    k_distressor_distortion_type, // includes wavefolder character (soft/hard/tri/sine/suboctave)
-    k_multiband_band_selection,
-    k_multiband_band_threshold,
-    k_multiband_band_ratio,
-    k_multiband_band_attack,
-    k_multiband_band_release,
-    k_multiband_band_makeup,
-    k_multiband_band_state,   // 0=active, 1=muted, 2=soloed (were two parameters)
-    k_multiband_crossover,    // moves both split points together
+    k_band_solo_mute,              // was DstrDist: Off / solo one band / mute one band
+    k_band_low_threshold,
+    k_band_mid_threshold,
+    k_band_high_threshold,
+    k_crossover_low,               // low/mid split, 62.5 Hz..1 kHz
+    k_band_low_ratio,
+    k_band_mid_ratio,
+    k_band_high_ratio,
+    k_crossover_high,              // mid/high split, 1 kHz..16 kHz
     k_num_params,
 };
 
@@ -138,15 +138,18 @@ public:
         setParameter(k_bass, 50);                                    // BASS: flat (matches header.c init)
         setParameter(k_treble, 50);                                  // TREBLE: flat (matches header.c init)
         setParameter(k_presence, 50);                                // PRESENCE: centre (matches header.c init)
-        setParameter(k_distressor_distortion_type, DIST_MODE_CLEAN); // DSTR DIST: None
-        setParameter(k_multiband_band_selection, BAND_LOW);          // BAND SEL: Low
-        setParameter(k_multiband_band_threshold, BAND_THRESH_DEFAULT);  // L THRESH: -20.0 dB (BAND_THRESH_DEFAULT)
-        setParameter(k_multiband_band_ratio, SLOPE_DEFAULT);         // L RATIO: 4.0
-        setParameter(k_multiband_band_attack, ATTACK_DEFAULT);       // ATTACK: 5.0 ms (fast, minimal click)
-        setParameter(k_multiband_band_release, RELEASE_DEFAULT);     // RELEASE: 200 ms (punchy)
-        setParameter(k_multiband_band_makeup, MAKEUP_DEFAULT);       // MAKEUP: 0 dB
-        setParameter(k_multiband_band_state, 0);                     // band active
-        setParameter(k_multiband_crossover, 50);                     // 250 Hz / 2.5 kHz
+        // The Distressor engine is off the panel; Reset() leaves it on its own
+        // default (DstrDist = Off) for the bench and for whoever revives it.
+        setDistressorDistortion(DIST_MODE_CLEAN);
+        setParameter(k_band_solo_mute, SOLO_MUTE_OFF);               // every band plays
+        setParameter(k_band_low_threshold,  BAND_THRESH_DEFAULT);    // -20.0 dB
+        setParameter(k_band_mid_threshold,  BAND_THRESH_DEFAULT);
+        setParameter(k_band_high_threshold, BAND_THRESH_DEFAULT);
+        setParameter(k_crossover_low,  XOVER_LOW_KNOB_DEFAULT);      // 250 Hz
+        setParameter(k_band_low_ratio,  BAND_RATIO_DEFAULT);         // 4.0:1
+        setParameter(k_band_mid_ratio,  BAND_RATIO_DEFAULT);
+        setParameter(k_band_high_ratio, BAND_RATIO_DEFAULT);
+        setParameter(k_crossover_high, XOVER_HIGH_KNOB_DEFAULT);     // 2.5 kHz
         setParameter(k_detection_mode, DETECT_MODE_PEAK);            // Detection: Peak
 
         // Derived coefficients that depend on more than one parameter, so they
@@ -370,16 +373,10 @@ private:
         slam_clear_state(&slam_);
     }
 
-    fast_inline void handle_set_multiband_parameter(int p_id, float val) {
-        if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
-            multiband_set_param(&multiband_, BAND_LOW, p_id, val);
-        }
-        if (band_select_ == BAND_MID || band_select_ == BAND_LOW_MID || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
-            multiband_set_param(&multiband_, BAND_MID, p_id, val);
-        }
-        if (band_select_ == BAND_HIGH || band_select_ == BAND_LOW_HI || band_select_ == BAND_MID_HI || band_select_ == BAND_ALL) {
-            multiband_set_param(&multiband_, BAND_HIGH, p_id, val);
-        }
+    /** Write one per-band setting (multiband_set_param id) to all three bands. */
+    fast_inline void set_all_bands(int p_id, float val) {
+        for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
+            multiband_set_param(&multiband_, b, p_id, val);
     }
 
     /**
@@ -414,29 +411,6 @@ private:
         // but nothing ever wrote it.
         for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
             multiband_set_param(&multiband_, b, 7, drive_);
-    }
-
-    fast_inline const char* handle_get_multiband_parameter(int p_id) const {
-        float value = 0.0f;
-        static char str_buf[16];
-        if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
-            value = multiband_get_param(&multiband_, BAND_LOW, p_id);
-        }
-        if (band_select_ == BAND_MID || band_select_ == BAND_MID_HI) {
-            value = multiband_get_param(&multiband_, BAND_MID, p_id);
-        }
-        if (band_select_ == BAND_HIGH) {
-            value = multiband_get_param(&multiband_, BAND_HIGH, p_id);
-        }
-        // I would have liked to has all the three values shown together, but it's not possible.
-        // choose the lower one if multiple bands selected, since it's more likely to be audible and relevant for the user.
-        static const char *bands[] = {"L", "M", "H", "LM", "LH", "MH", "All"};
-        if (band_select_ < BAND_TOTAL) {
-            snprintf(str_buf, sizeof(str_buf), "%s:%.1f", bands[band_select_], value);
-        } else {
-            snprintf(str_buf, sizeof(str_buf), "---");
-        }
-        return str_buf;
     }
 
     /**
@@ -751,15 +725,17 @@ public:
                 }
                 break;
 
-            case k_attack: // ATTACK (0.1 to 100.0 ms)
+            case k_attack: // ATTACK (0.1 to 100.0 ms), every mode and every band
                 attack_ms_ = value * 0.1f;
                 attack_coeff_ = ballistics_coeff(attack_ms_, samplerate_);
+                set_all_bands(3, attack_ms_);
                 break;
 
-            case k_release: // RELEASE (10 to 2000 ms)
+            case k_release: // RELEASE (10 to 2000 ms), every mode and every band
                 release_ms_ = static_cast<float>(value);
                 release_coeff_ = ballistics_coeff(release_ms_, samplerate_);
                 update_opto_coeff(&distressor_, release_coeff_);
+                set_all_bands(4, release_ms_);
                 break;
 
             case k_makeup: // MAKEUP (0.0 to 24.0 dB)
@@ -791,103 +767,38 @@ public:
                 break;
 
             /*===========================================================================*/
-            /* Multiband Parameters */
+            /* Multiband Parameters: one knob per band, no selector */
             /*===========================================================================*/
-            case k_multiband_band_selection: // BAND SEL (0-6) - for multiband mode
-                band_select_ = value;
+            // These replaced a band selector (MBand) in front of shared
+            // Thr/Ratio/Atk/Rel/Makeup/State knobs, whose readout could show
+            // one band at a time.  ATTACK and RELEASE (page 1) now set every
+            // band, and per-band makeup is gone in favour of MAKEUP.
+            case k_band_low_threshold:
+            case k_band_mid_threshold:
+            case k_band_high_threshold:
+                multiband_set_param(&multiband_, index - k_band_low_threshold, 0, value * 0.1f);
                 break;
-            case k_multiband_band_threshold: // L THRESH (multiband low threshold) - param_id=0
-            {
-                const float val = value * 0.1f;
-                const int p_id = 0;
-                handle_set_multiband_parameter(p_id, val);
+            case k_band_low_ratio:
+            case k_band_mid_ratio:
+            case k_band_high_ratio:
+                multiband_set_param(&multiband_, index - k_band_low_ratio, 1, value * 0.1f);
                 break;
-            }
-            case k_multiband_band_ratio: // L RATIO (multiband low ratio) - param_id=1
-            {
-                const float val = value * 0.1f;
-                const int p_id = 1;
-                handle_set_multiband_parameter(p_id, val);
+            case k_crossover_low:
+                multiband_set_crossover_low(&multiband_, static_cast<float>(value));
                 break;
-            }
-            case k_multiband_band_attack:  // BAND ATTACK
-            {
-                float val = value * 0.1f;   // raw is 1-1000 → 0.1-100 ms
-                const int p_id = 3;         // param_id 3 = attack_ms in multiband_set_param
-                handle_set_multiband_parameter(p_id, val);
+            case k_crossover_high:
+                multiband_set_crossover_high(&multiband_, static_cast<float>(value));
                 break;
-            }
-            case k_multiband_band_release:  // BAND RELEASE
-            {
-                float val = value;          // raw ms
-                const int p_id = 4;         // param_id 4 = release_ms
-                handle_set_multiband_parameter(p_id, val);
-                break;
-            }
-            case k_multiband_band_makeup:   // BAND MAKEUP
-            {
-                float val = value * 0.1f;   // 0-240 → 0-24 dB
-                const int p_id = 2;         // param_id 2 = makeup_db
-                handle_set_multiband_parameter(p_id, val);
-                break;
-            }
-            case k_multiband_band_state:    // BAND STATE: 0=active, 1=mute, 2=solo
-            {
-                // Mute and solo used to be separate parameters, but the mixing
-                // rule already lets solo win over mute, so the two never combined
-                // into anything a third state could not express. Merging them
-                // freed the slot the crossover control now uses.
-                handle_set_multiband_parameter(5, value == 1 ? 1.0f : 0.0f);
-                handle_set_multiband_parameter(6, value == 2 ? 1.0f : 0.0f);
-                break;
-            }
-            case k_multiband_crossover:     // XOVER (0-100)
-                multiband_set_crossover_spread(&multiband_, static_cast<float>(value));
-                break;
-            case k_compressor_mode: // COMP MODE (0=Standard, 1=Distressor, 2=Multiband)
-                if (value >= COMP_MODE_STANDARD && value < COMP_MODE_TOTAL) {
-                    comp_mode_ = value;
-                    if (comp_mode_ == COMP_MODE_DISTRESSOR) {
-                        // Distressor expects at least 0.05ms attack
-                        attack_ms_ = fmaxf(attack_ms_, 0.05f);
-                        attack_coeff_ = ballistics_coeff(attack_ms_, samplerate_);
-                    }
-                    // SLOPE means something different in each mode, so re-read it
-                    // here.  A host replaying a stored program walks the parameter
-                    // IDs in order and therefore sets SLOPE (ID 1) before COMP MODE
-                    // (ID 8): without this the distressor ratio stayed at its 4:1
-                    // init no matter where the knob was.
-                    setParameter(k_slope, raw_params_[k_slope]);
-                    // DRIVE (ID 5) is replayed before this for the same reason,
-                    // and only the Distressor has a slam region, so the drive
-                    // stage has to be re-armed once the mode is known.
-                    refresh_drive_stage();
-                }
+            case k_band_solo_mute:
+                multiband_set_solo_mute(&multiband_,
+                                        (value >= 0 && value < SOLO_MUTE_TOTAL) ? value : SOLO_MUTE_OFF);
                 break;
 
-            /*===========================================================================*/
-            /* Distressor Parameters */
-            /*===========================================================================*/
-            case k_distressor_distortion_type:
-                // DSTR MODE (0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=SoftClip, 5=HardClip, 6=Tri, 7=Sine, 8=SubOct)
-                if (value >= 0 && value < DIST_MODE_TOTAL) {
-                    distressor_.dist_mode = value;
-                    if (value > DIST_MODE_BOTH)
-                        wavefolder_set_drive_type(&wavefolder_, value);
-
-                    // The detector's 100 Hz HPF used to switch in here, on the
-                    // wavefolder modes only. That made the distortion selector
-                    // change the compression: on a kick-heavy bus the detector
-                    // lost most of its energy, gain reduction backed off, and
-                    // selecting Soft or Hard jumped the output 4 dB even at
-                    // DRIVE=0. Detector shaping belongs to DETECT (which offers
-                    // Emph for exactly this), not to the distortion type, so
-                    // the flag is left alone here.
-
-                    // The slam's bias budget depends on which shaper family
-                    // DRIVE is reaching, so selecting one re-arms the stage.
-                    refresh_drive_stage();
-                }
+            case k_compressor_mode: // COMP MODE: 0=Standard, 1=Multiband
+                // Anything else is Multiband too: a program saved when this
+                // read 0=Standard, 1=Distressor, 2=Multiband comes back on a
+                // mode that exists rather than on the shelved one.
+                setEngineMode(value == 0 ? COMP_MODE_STANDARD : COMP_MODE_MULTIBAND);
                 break;
 
             /*===========================================================================*/
@@ -932,6 +843,65 @@ public:
         }
     }
 
+    /*===========================================================================*/
+    /* Engine API not on the panel                                               */
+    /*===========================================================================*/
+    // The drumlogue reaches the unit only through setParameter(), so nothing
+    // below is reachable from the instrument.  It is how the bench -- and
+    // anyone reviving the Distressor -- selects an engine mode the panel no
+    // longer offers.
+
+    /**
+     * Select the compressor engine: COMP_MODE_STANDARD, COMP_MODE_DISTRESSOR
+     * or COMP_MODE_MULTIBAND.  The panel's COMP MODE maps onto the first and
+     * last of these.
+     */
+    inline void setEngineMode(uint8_t mode) {
+        if (mode >= COMP_MODE_TOTAL) return;
+        comp_mode_ = mode;
+        if (comp_mode_ == COMP_MODE_DISTRESSOR) {
+            // Distressor expects at least 0.05ms attack
+            attack_ms_ = fmaxf(attack_ms_, 0.05f);
+            attack_coeff_ = ballistics_coeff(attack_ms_, samplerate_);
+        }
+        // SLOPE and DETECT mean something different in each mode, so re-read
+        // them here.  A host replaying a stored program walks the parameter
+        // IDs in order and therefore sets SLOPE (ID 1) before COMP MODE
+        // (ID 8): without this the distressor ratio stayed at its 4:1 init no
+        // matter where the knob was.
+        setParameter(k_slope, raw_params_[k_slope]);
+        setParameter(k_detection_mode, raw_params_[k_detection_mode]);
+        // DRIVE (ID 5) is replayed before this for the same reason, and only
+        // the Distressor has a slam region, so the drive stage has to be
+        // re-armed once the mode is known.
+        refresh_drive_stage();
+    }
+
+    /**
+     * The Distressor's distortion type -- what DstrDist (ID 15) selected
+     * before that slot became SoloMute: 0=Off (the Overlord tube), 1=Dist2,
+     * 2=Dist3, 3=Both, 4=Soft, 5=Hard, 6=Trg, 7=Sine, 8=SubOct.
+     */
+    inline void setDistressorDistortion(int32_t value) {
+        if (value < 0 || value >= DIST_MODE_TOTAL) return;
+        distressor_.dist_mode = value;
+        if (value > DIST_MODE_BOTH)
+            wavefolder_set_drive_type(&wavefolder_, value);
+
+        // The detector's 100 Hz HPF used to switch in here, on the wavefolder
+        // modes only. That made the distortion selector change the
+        // compression: on a kick-heavy bus the detector lost most of its
+        // energy, gain reduction backed off, and selecting Soft or Hard jumped
+        // the output 4 dB even at DRIVE=0. Detector shaping belongs to DETECT
+        // (which offers Emph for exactly this), not to the distortion type.
+
+        // The slam's bias budget depends on which shaper family DRIVE is
+        // reaching, so selecting one re-arms the stage.
+        refresh_drive_stage();
+    }
+
+    inline uint8_t getEngineMode() const { return comp_mode_; }
+
     inline int32_t getParameterValue(uint8_t index) const {
         // FIXED: Bounds check on parameter index
         if (index < k_num_params) {
@@ -944,66 +914,36 @@ public:
         static char str_buf[16];
 
         switch (index) {
-            case k_compressor_mode: // COMP MODE
-              if (value >= COMP_MODE_STANDARD && value < COMP_MODE_TOTAL) {
-                static const char *modes[] = {"Stndrd", "Dstrssr", "Mltibnd"};
-                return modes[value];
-              }
-                break;
-
-            case k_multiband_band_selection: // BAND SEL
-                if (value >= 0 && value < BAND_TOTAL) {
-                    static const char *bands[] = {
-                        "Low", "Mid", "High", "LwMid", "LwHi", "MdHi", "All"};
-                    return bands[value];
+            case k_compressor_mode: // COMP MODE (panel values)
+                if (value >= 0 && value <= 1) {
+                    static const char *modes[] = {"Stndrd", "Mltibnd"};
+                    return modes[value];
                 }
                 break;
 
-
-            case k_multiband_band_threshold: // L THRESH (multiband low threshold) - param_id=0
-            {
-                const int p_id = 0;
-                return handle_get_multiband_parameter(p_id);
-                break;
-            }
-            case k_multiband_band_ratio: // L RATIO (multiband low ratio) - param_id=1
-            {
-                const int p_id = 1;
-                return handle_get_multiband_parameter(p_id);
-                break;
-            }
-            case k_multiband_band_attack:  // BAND ATTACK
-            {
-                const int p_id = 3;         // param_id 3 = attack_ms in multiband_set_param
-                return handle_get_multiband_parameter(p_id);
-                break;
-            }
-            case k_multiband_band_release:  // BAND RELEASE
-            {
-                const int p_id = 4;         // param_id 4 = release_ms
-                return handle_get_multiband_parameter(p_id);
-                break;
-            }
-            case k_multiband_band_makeup:   // BAND MAKEUP
-            {
-                const int p_id = 2;         // param_id 2 = makeup_db
-                return handle_get_multiband_parameter(p_id);
-                break;
-            }
-            case k_multiband_band_state:    // BAND STATE
-                if (value >= 0 && value <= 2) {
-                    static const char* states[] = {"On", "Mute", "Solo"};
-                    return states[value];
+            case k_band_solo_mute:
+                if (value >= 0 && value < SOLO_MUTE_TOTAL) {
+                    static const char* sm[] = {"Off", "Lo-Solo", "Mi-Solo", "Hi-Solo",
+                                               "Lo-Mute", "Mi-Mute", "Hi-Mute"};
+                    return sm[value];
                 }
                 break;
 
-            case k_multiband_crossover:     // XOVER — show the split points
-            {
-                const float low = 62.5f * e_expff(value * 0.027726f);
-                snprintf(str_buf, sizeof(str_buf), "%d/%.1fk",
-                         (int)(low + 0.5f), low * 0.01f);
+            case k_band_low_ratio:
+            case k_band_mid_ratio:
+            case k_band_high_ratio:
+                snprintf(str_buf, sizeof(str_buf), "%.1f:1", value * 0.1f);
                 return str_buf;
-            }
+
+            case k_crossover_low:
+                snprintf(str_buf, sizeof(str_buf), "%dHz",
+                         (int)(multiband_xover_knob_hz(XOVER_LOW_HZ_MIN, (float)value) + 0.5f));
+                return str_buf;
+
+            case k_crossover_high:
+                snprintf(str_buf, sizeof(str_buf), "%.1fkHz",
+                         multiband_xover_knob_hz(XOVER_HIGH_HZ_MIN, (float)value) * 0.001f);
+                return str_buf;
 
             case k_slope: // SLOPE (1.0 to 20.0) - show special cases
                 {
@@ -1051,12 +991,6 @@ public:
                 if (value <= -100) return "DRY";
                 if (value >= 100) return "WET";
                 if (abs(value) < 10) return "BAL";
-                break;
-
-            case k_distressor_distortion_type: // DSTR MODE
-                if (value >= DIST_MODE_CLEAN && value < DIST_MODE_TOTAL) {
-                    return distressor_dist_strings[value];
-                }
                 break;
 
             case k_detection_mode:
@@ -1116,7 +1050,6 @@ private:
 
     // Mode flags
     uint8_t comp_mode_;          // 0=Standard, 1=Distressor, 2=Multiband
-    uint8_t band_select_;        // 0=Low, 1=Mid, 2=High, 3=All
     uint8_t use_external_sc_;    // 0=internal, 1=external sidechain
     uint8_t detection_mode_;     // 0=peak, 1=RMS, 2=blend
 

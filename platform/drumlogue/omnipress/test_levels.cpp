@@ -14,10 +14,12 @@
  *       -o test_levels test_levels.cpp -lm
  * Run:
  *   ./test_levels            # everything
- *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam|recover
+ *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam|recover|panel
  *
- * Section R (recover) is a pass/fail check, and the exit status is non-zero
- * if any of its rows fail; every other section is a measurement to read.
+ * Sections R (recover) and M (panel) are pass/fail checks, and the exit status
+ * is non-zero if any of their rows fail; every other section is a measurement
+ * to read.  The Distressor is off the panel but not out of the source: the
+ * sections that measure it select it through MasterFX::setEngineMode().
  */
 
 #include <cstdio>
@@ -44,54 +46,94 @@ static const int    SR    = 48000;
 static const size_t BLOCK = 64;
 static const int    NCH   = 4; /* drumlogue master FX input: L R SC-L SC-R */
 
-struct Params { int32_t v[k_num_params]; };
+/* v[] is the panel.  mode and dist are what the panel no longer reaches: the
+ * engine (0 = Standard, 1 = Distressor, 2 = Multiband, as CompMode numbers
+ * them) and the Distressor's distortion type.  The bench still drives the
+ * Distressor through MasterFX::setEngineMode()/setDistressorDistortion() so
+ * that its code keeps being measured while it is off the panel. */
+struct Params { int32_t v[k_num_params]; int mode; int dist; };
 
 /* The .init column of unit_header in header.c */
 static Params headerDefaults() {
     Params p{};
-    p.v[k_threhold]                   = -200;   /* -20.0 dB */
-    p.v[k_slope]                      = 40;
-    p.v[k_attack]                     = 150;    /* 15.0 ms */
-    p.v[k_release]                    = 200;    /* 200 ms  */
-    p.v[k_makeup]                     = 0;
-    p.v[k_drive]                      = 0;
-    p.v[k_mix]                        = 100;    /* WET */
-    p.v[k_sc_hpf]                     = 20;
-    p.v[k_compressor_mode]            = 0;
-    p.v[k_attenuation_limit]          = -200;   /* -20.0 dB */
-    p.v[k_gain_limit]                 = 60;     /* +6.0 dB */
-    p.v[k_detection_mode]             = 0;
-    p.v[k_bass]                       = 50;
-    p.v[k_treble]                     = 50;
-    p.v[k_presence]                   = 50;
-    p.v[k_distressor_distortion_type] = 0;
-    p.v[k_multiband_band_selection]   = 0;
-    p.v[k_multiband_band_threshold]   = -200;
-    p.v[k_multiband_band_ratio]       = 40;
-    p.v[k_multiband_band_attack]      = 150;
-    p.v[k_multiband_band_release]     = 200;
-    p.v[k_multiband_band_makeup]      = 0;
-    p.v[k_multiband_band_state]       = 0;    /* On */
-    p.v[k_multiband_crossover]        = 50;   /* 250 Hz / 2.5 kHz */
+    p.v[k_threhold]            = -200;   /* -20.0 dB */
+    p.v[k_slope]               = 40;
+    p.v[k_attack]              = 150;    /* 15.0 ms */
+    p.v[k_release]             = 200;    /* 200 ms  */
+    p.v[k_makeup]              = 0;
+    p.v[k_drive]               = 0;
+    p.v[k_mix]                 = 100;    /* WET */
+    p.v[k_sc_hpf]              = 20;
+    p.mode = 0;
+    p.v[k_attenuation_limit]   = -200;   /* -20.0 dB */
+    p.v[k_gain_limit]          = 60;     /* +6.0 dB */
+    p.v[k_detection_mode]      = 0;
+    p.v[k_bass]                = 50;
+    p.v[k_treble]              = 50;
+    p.v[k_presence]            = 50;
+    p.v[k_band_solo_mute]      = 0;      /* Off */
+    p.v[k_band_low_threshold]  = -200;
+    p.v[k_band_mid_threshold]  = -200;
+    p.v[k_band_high_threshold] = -200;
+    p.v[k_crossover_low]       = 50;     /* 250 Hz */
+    p.v[k_band_low_ratio]      = 40;     /* 4.0:1 */
+    p.v[k_band_mid_ratio]      = 40;
+    p.v[k_band_high_ratio]     = 40;
+    p.v[k_crossover_high]      = 33;     /* 2.5 kHz */
+    p.mode = 0;
+    p.dist = 0;
     return p;
 }
 
-/* COMP MODE first and SLOPE last: setParameter(k_slope) branches on comp_mode_,
- * and the per-band values are routed by the current band selection. */
+/* The three per-band knobs of one kind at once */
+static void setBandThresholds(Params& p, int32_t raw) {
+    p.v[k_band_low_threshold] = p.v[k_band_mid_threshold] = p.v[k_band_high_threshold] = raw;
+}
+static void setBandRatios(Params& p, int32_t raw) {
+    p.v[k_band_low_ratio] = p.v[k_band_mid_ratio] = p.v[k_band_high_ratio] = raw;
+}
+
+/* Select the engine p.mode asks for, the way the unit would see it: the
+ * panel's COMP MODE for Standard and Multiband, the engine API for the
+ * Distressor. */
+static void selectEngine(const Params& p) {
+    if (p.mode == COMP_MODE_DISTRESSOR) {
+        g_fx.setEngineMode(COMP_MODE_DISTRESSOR);
+        g_fx.setDistressorDistortion(p.dist);
+    } else {
+        g_fx.setParameter(k_compressor_mode, p.mode == COMP_MODE_MULTIBAND ? 1 : 0);
+    }
+}
+
+/* Engine first and SLOPE last: setParameter(k_slope) branches on the engine. */
 static void apply(const Params& p) {
     g_fx.Reset();
-    g_fx.setParameter(k_compressor_mode, p.v[k_compressor_mode]);
-    g_fx.setParameter(k_multiband_band_selection, p.v[k_multiband_band_selection]);
+    selectEngine(p);
     for (int i = 0; i < k_num_params; ++i)
-        if (i != k_compressor_mode && i != k_slope && i != k_multiband_band_selection)
+        if (i != k_compressor_mode && i != k_slope)
             g_fx.setParameter(i, p.v[i]);
     g_fx.setParameter(k_slope, p.v[k_slope]);
 }
 
-/* How a host replays a stored preset: strictly by parameter ID */
+/* How a host replays a stored preset: strictly by parameter ID.  For the
+ * Distressor the engine is selected where COMP MODE (ID 8) sits, and the
+ * distortion type where DstrDist (ID 15) used to, so the order the drive
+ * stage is armed in is the one a stored program would have used. */
 static void applyIdOrder(const Params& p) {
     g_fx.Reset();
-    for (int i = 0; i < k_num_params; ++i) g_fx.setParameter(i, p.v[i]);
+    for (int i = 0; i < k_num_params; ++i) {
+        if (i == k_compressor_mode && p.mode == COMP_MODE_DISTRESSOR) {
+            g_fx.setEngineMode(COMP_MODE_DISTRESSOR);
+            continue;
+        }
+        if (i == k_compressor_mode) {
+            g_fx.setParameter(i, p.mode == COMP_MODE_MULTIBAND ? 1 : 0);
+            continue;
+        }
+        if (i == k_band_solo_mute && p.mode == COMP_MODE_DISTRESSOR)
+            g_fx.setDistressorDistortion(p.dist);
+        g_fx.setParameter(i, p.v[i]);
+    }
 }
 
 /* SLOPE raw value that selects distressor ratio index 0..7 */
@@ -274,14 +316,13 @@ static void section_gain() {
     for (double amp : {0.01, 0.1, 0.5}) {
         for (int mode = 0; mode < 3; ++mode) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode]   = mode;
+            p.mode = mode;
             p.v[k_attenuation_limit] = 0;
             p.v[k_gain_limit]        = 0;
             if (mode == 1) p.v[k_slope] = distressorSlopeRaw(0);
             if (mode == 2) {
-                p.v[k_multiband_band_selection] = BAND_ALL;
-                p.v[k_multiband_band_threshold] = 0;
-                p.v[k_multiband_band_ratio]     = 10;
+                setBandThresholds(p, 0);
+                setBandRatios(p, 10);
             }
             apply(p);
             Result r = measure(amp, F0, SETTLE, MEAS);
@@ -301,7 +342,7 @@ static void section_default() {
     for (double amp : {0.01, 0.1, 0.5}) {
         for (int mode = 0; mode < 3; ++mode) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode] = mode;
+            p.mode = mode;
             apply(p);
             Result r = measure(amp, F0, SETTLE, MEAS);
             printf("%-12s %-9.1f %+10.2f %+10.2f %+10.2f %8.3f\n",
@@ -320,14 +361,14 @@ static void section_matched() {
 
     Params p = headerDefaults();
     p.v[k_threhold] = -300; p.v[k_attenuation_limit] = -300; p.v[k_gain_limit] = 300;
-    p.v[k_compressor_mode] = 0; p.v[k_slope] = 58;
+    p.mode = 0; p.v[k_slope] = 58;
     apply(p);
     Result r = measure(0.5, F0, SETTLE, MEAS);
     printf("%-12s %-12s %+10.2f %+10.2f %+10.2f\n",
            MODE_NAME[0], "SLOPE 58", r.gain_fund_db, r.gain_rms_db, r.rms_dbfs);
 
     p = headerDefaults();
-    p.v[k_threhold] = -300; p.v[k_compressor_mode] = 1;
+    p.v[k_threhold] = -300; p.mode = 1;
     p.v[k_slope] = distressorSlopeRaw(3);
     apply(p);
     r = measure(0.5, F0, SETTLE, MEAS);
@@ -335,10 +376,9 @@ static void section_matched() {
            MODE_NAME[1], "4:1", r.gain_fund_db, r.gain_rms_db, r.rms_dbfs);
 
     p = headerDefaults();
-    p.v[k_compressor_mode] = 2;
-    p.v[k_multiband_band_selection] = BAND_ALL;
-    p.v[k_multiband_band_threshold] = -300;
-    p.v[k_multiband_band_ratio]     = 40;
+    p.mode = 2;
+    setBandThresholds(p, -300);
+    setBandRatios(p, 40);
     apply(p);
     r = measure(0.5, F0, SETTLE, MEAS);
     printf("%-12s %-12s %+10.2f %+10.2f %+10.2f\n",
@@ -349,14 +389,13 @@ static void section_matched() {
 static void section_mb() {
     hdr("E. MULTIBAND SUMMING LOSS");
     printf("  makeup needed for unity (all bands, no GR):\n");
-    printf("  %-10s %10s %10s\n", "MBMkup dB", "gain(1k)", "out dBFS");
+    printf("  %-10s %10s %10s\n", "MAKEUP dB", "gain(1k)", "out dBFS");
     for (int mk : {0, 30, 60, 69, 75, 90}) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode] = 2;
-        p.v[k_multiband_band_selection] = BAND_ALL;
-        p.v[k_multiband_band_threshold] = 0;
-        p.v[k_multiband_band_ratio]     = 10;
-        p.v[k_multiband_band_makeup]    = mk;
+        p.mode = 2;
+        setBandThresholds(p, 0);
+        setBandRatios(p, 10);
+        p.v[k_makeup] = mk;
         apply(p);
         Result r = measure(0.1, F0, SETTLE, MEAS);
         printf("  %-10.1f %+10.2f %+10.2f\n", mk * 0.1, r.gain_fund_db, r.rms_dbfs);
@@ -365,10 +404,9 @@ static void section_mb() {
     printf("  %-10s %10s %10s\n", "tone Hz", "gain(1k)", "phase deg");
     for (double f : {100.0, 250.0, 600.0, 1000.0, 2500.0, 6000.0}) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode] = 2;
-        p.v[k_multiband_band_selection] = BAND_ALL;
-        p.v[k_multiband_band_threshold] = 0;
-        p.v[k_multiband_band_ratio]     = 10;
+        p.mode = 2;
+        setBandThresholds(p, 0);
+        setBandRatios(p, 10);
         apply(p);
         Result r = measure(0.1, f, SETTLE, MEAS);
         printf("  %-10.0f %+10.2f %+10.1f\n", f, r.gain_fund_db, r.phase_deg);
@@ -391,10 +429,10 @@ static void section_drive() {
                    "DRIVE", "gain(1k)", "out dBFS", "THD%", "nonfnd%", "sub f/2", "peak");
             for (int drive : {0,1,2,3,5,8,10,15,20,30,50,70,100}) {
                 Params p = headerDefaults();
-                p.v[k_compressor_mode] = 1;
+                p.mode = 1;
                 p.v[k_slope]           = distressorSlopeRaw(0);
                 p.v[k_threhold]        = 0;
-                p.v[k_distressor_distortion_type] = dist;
+                p.dist = dist;
                 p.v[k_drive]           = drive;
                 apply(p);
                 Result r = measure(amp, F0, SETTLE, MEAS);
@@ -415,7 +453,7 @@ static void section_drive() {
         printf("  %6s %10s %10s %8s %7s\n", "DRIVE", "gain(1k)", "out dBFS", "THD%", "peak");
         for (int drive : {0,1,2,3,5,8,10,15,20,30,50,70,100}) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode]   = 0;
+            p.mode = 0;
             p.v[k_attenuation_limit] = 0;
             p.v[k_gain_limit]        = 0;
             p.v[k_drive]             = drive;
@@ -441,10 +479,10 @@ static void section_kick() {
             int d1=-1,d5=-1,d10=-1,dc=-1; double g0=0,t0=0,g100=0;
             for (int drv = 0; drv <= 100; ++drv) {
                 Params p = headerDefaults();
-                p.v[k_compressor_mode] = 1;
+                p.mode = 1;
                 p.v[k_slope]           = distressorSlopeRaw(0);
                 p.v[k_threhold]        = 0;
-                p.v[k_distressor_distortion_type] = dist;
+                p.dist = dist;
                 p.v[k_drive]           = drv;
                 apply(p);
                 Result m = measure(amp, F0, QSETTLE, QMEAS);
@@ -472,7 +510,7 @@ static void section_kick() {
         int d1=-1,d5=-1,d10=-1; double g0=0,t0=0,g100=0;
         for (int drv = 0; drv <= 100; ++drv) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode]   = 0;
+            p.mode = 0;
             p.v[k_attenuation_limit] = 0;
             p.v[k_gain_limit]        = 0;
             p.v[k_drive]             = drv;
@@ -517,16 +555,14 @@ static void section_release() {
     printf("  %-24s %s\n", "config", " 100ms   200    300    400    500    600    700    800");
     for (const Case& c : cases) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode]   = c.mode;
+        p.mode = c.mode;
         p.v[k_slope]             = c.slope;
         p.v[k_release]           = c.release;
         p.v[k_detection_mode]    = c.detect;
         p.v[k_attenuation_limit] = -300;
         p.v[k_gain_limit]        = 300;
         if (c.mode == 2) {
-            p.v[k_multiband_band_selection] = BAND_ALL;
-            p.v[k_multiband_band_threshold] = -200;
-            p.v[k_multiband_band_release]   = c.release;
+            setBandThresholds(p, -200);
         }
         apply(p);
         measure(0.708, F0, 9600, 0);          /* the hit, no analysis */
@@ -543,13 +579,12 @@ static void section_release() {
     printf("  %-12s %14s %14s\n", "mode", "internal", "external");
     for (int mode = 0; mode < 3; ++mode) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode]   = mode;
+        p.mode = mode;
         p.v[k_slope]             = (mode == 1) ? distressorSlopeRaw(3) : 58;
         p.v[k_attenuation_limit] = -300;
         p.v[k_gain_limit]        = 300;
         if (mode == 2) {
-            p.v[k_multiband_band_selection] = BAND_ALL;
-            p.v[k_multiband_band_threshold] = -200;
+            setBandThresholds(p, -200);
         }
         p.v[k_detection_mode] = 0;
         apply(p);
@@ -568,7 +603,7 @@ static void section_quirks() {
     printf("   %-9s %12s %14s %12s\n", "MAKEUP", "measured", "e_expff", "fasterpowf");
     for (int raw : {0, 30, 60, 120, 180, 240}) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode]   = 0;
+        p.mode = 0;
         p.v[k_attenuation_limit] = 0;
         p.v[k_gain_limit]        = 0;
         p.v[k_makeup]            = raw;
@@ -608,14 +643,13 @@ static void section_quirks() {
         "    threshold -30 dB, ~4:1, limits +/-30 dB, in -6 dBFS");
     for (int mode = 0; mode < 3; ++mode) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode]   = mode;
+        p.mode = mode;
         p.v[k_threhold]          = -300;
         p.v[k_attenuation_limit] = -300;
         p.v[k_gain_limit]        = 300;
         p.v[k_slope]             = (mode == 1) ? distressorSlopeRaw(3) : 58;
         if (mode == 2) {
-            p.v[k_multiband_band_selection] = BAND_ALL;
-            p.v[k_multiband_band_threshold] = -300;
+            setBandThresholds(p, -300);
         }
         apply(p); double mono = measure(0.5, F0, SETTLE, MEAS, 0).gain_fund_db;
         apply(p); double left = measure(0.5, F0, SETTLE, MEAS, 1).gain_fund_db;
@@ -628,14 +662,13 @@ static void section_quirks() {
     for (int mode : {0, 2}) {
         for (int drv : {0, 1, 2}) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode]   = mode;
+            p.mode = mode;
             p.v[k_drive]             = drv;
             p.v[k_attenuation_limit] = 0;
             p.v[k_gain_limit]        = 0;
             if (mode == 2) {
-                p.v[k_multiband_band_selection] = BAND_ALL;
-                p.v[k_multiband_band_threshold] = 0;
-                p.v[k_multiband_band_ratio]     = 10;
+                setBandThresholds(p, 0);
+                setBandRatios(p, 10);
             }
             apply(p);
             printf("   %-10s DRIVE %3d -> %+7.2f dB\n",
@@ -655,10 +688,10 @@ static void section_quirks() {
     printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "g dB", "delta");
     for (int drv : {0, 5, 10, 25, 50, 75, 100}) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode] = 1;
+        p.mode = 1;
         p.v[k_slope]           = distressorSlopeRaw(0);
         p.v[k_threhold]        = 0;
-        p.v[k_distressor_distortion_type] = DRIVE_MODE_HARD_CLIP;
+        p.dist = DRIVE_MODE_HARD_CLIP;
         p.v[k_drive]           = drv;
         apply(p);
         double m  = measure(0.001, F0, SETTLE, MEAS).gain_fund_db;
@@ -685,10 +718,10 @@ static void section_quirks() {
         printf("   %-8d", drv);
         for (int t = 0; t < 9; ++t) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode] = 1;
+            p.mode = 1;
             p.v[k_slope]           = distressorSlopeRaw(0);
             p.v[k_threhold]        = 0;
-            p.v[k_distressor_distortion_type] = t;
+            p.dist = t;
             p.v[k_drive]           = drv;
             apply(p);
             printf(" %7.3f", measure(0.5, F0, SETTLE, MEAS).peak);
@@ -701,7 +734,7 @@ static void section_quirks() {
     static const char* rn[8] = {"1:1","2:1","3:1","4:1","6:1","Opto","20:1","NUKE"};
     for (int idx : {0, 3, 7}) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode] = 1;
+        p.mode = 1;
         p.v[k_slope]           = distressorSlopeRaw(idx);
         p.v[k_threhold]        = -300;
         apply(p);        double a = measure(0.5, F0, SETTLE, MEAS).gain_fund_db;
@@ -715,10 +748,10 @@ static void section_quirks() {
     printf("   %-8s %10s %11s %14s\n", "type", "gain dB", "phase deg", "MIX=BAL gain");
     for (int dist = 0; dist <= 8; ++dist) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode] = 1;
+        p.mode = 1;
         p.v[k_slope]           = distressorSlopeRaw(0);
         p.v[k_threhold]        = 0;
-        p.v[k_distressor_distortion_type] = dist;
+        p.dist = dist;
         apply(p);
         Result w = measure(0.1, F0, SETTLE, MEAS);
         p.v[k_mix] = 0;
@@ -731,7 +764,7 @@ static void section_quirks() {
     hdr("G7. MIX LAW (MAKEUP is applied to the wet path only)");
     for (int mix : {-100, -50, 0, 50, 100}) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode]   = 0;
+        p.mode = 0;
         p.v[k_mix]               = mix;
         p.v[k_attenuation_limit] = 0;
         p.v[k_gain_limit]        = 0;
@@ -756,13 +789,13 @@ static void section_quirks() {
         p.v[k_attenuation_limit] = 0;
         p.v[k_gain_limit]        = 0;
         p.v[k_drive]             = drv;
-        p.v[k_distressor_distortion_type] = DIST_MODE_CLEAN;
+        p.dist = DIST_MODE_CLEAN;
 
-        p.v[k_compressor_mode] = 0;
+        p.mode = 0;
         apply(p);
         Result s = measure(0.1, F0, SETTLE, MEAS);
 
-        p.v[k_compressor_mode] = 1;
+        p.mode = 1;
         p.v[k_slope]           = distressorSlopeRaw(0);   /* 1:1, no gain reduction */
         p.v[k_threhold]        = 0;
         apply(p);
@@ -783,7 +816,7 @@ static void section_quirks() {
     for (int mode = 0; mode <= 2; ++mode) {
         for (int drv : {0, 100}) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode] = mode;
+            p.mode = mode;
             p.v[k_drive]           = drv;
             p.v[k_bass]            = 100;   /* keeps the Overlord EQ in circuit */
             apply(p);
@@ -829,10 +862,10 @@ static void section_slam() {
                "DRIVE", "gain(1k)", "out dBFS", "THD%", "peak");
         for (int drive : {40, 50, 60, 70, 80, 90, 100}) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode] = 1;
+            p.mode = 1;
             p.v[k_slope]           = distressorSlopeRaw(0);
             p.v[k_threhold]        = 0;
-            p.v[k_distressor_distortion_type] = dist;
+            p.dist = dist;
             p.v[k_drive]           = drive;
             apply(p);
             Result r = measure(0.1, F0, SETTLE, MEAS);
@@ -851,14 +884,13 @@ static void section_slam() {
         printf("  %6s %10s %10s %8s\n", "DRIVE", "gain(1k)", "out dBFS", "THD%");
         for (int drive : {60, 80, 100}) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode]   = mode;
+            p.mode = mode;
             p.v[k_attenuation_limit] = 0;
             p.v[k_gain_limit]        = 0;
             p.v[k_drive]             = drive;
             if (mode == 2) {
-                p.v[k_multiband_band_selection] = BAND_ALL;
-                p.v[k_multiband_band_threshold] = 0;
-                p.v[k_multiband_band_ratio]     = 10;
+                setBandThresholds(p, 0);
+                setBandRatios(p, 10);
             }
             apply(p);
             Result r = measure(0.1, F0, SETTLE, MEAS);
@@ -877,10 +909,10 @@ static void section_slam() {
            "DstrDist", "mode-first", "THD%", "ID-order", "THD%");
     for (int dist = 0; dist <= 8; ++dist) {
         Params p = headerDefaults();
-        p.v[k_compressor_mode] = 1;
+        p.mode = 1;
         p.v[k_slope]           = distressorSlopeRaw(0);
         p.v[k_threhold]        = 0;
-        p.v[k_distressor_distortion_type] = dist;
+        p.dist = dist;
         p.v[k_drive]           = 100;
         apply(p);        Result a = measure(0.1, F0, SETTLE, MEAS);
         applyIdOrder(p); Result b = measure(0.1, F0, SETTLE, MEAS);
@@ -904,10 +936,10 @@ static void section_slam() {
         bool dc = false;
         for (int drive : {0, 10, 30, 50, 60, 80, 100}) {
             Params p = headerDefaults();
-            p.v[k_compressor_mode] = 1;
+            p.mode = 1;
             p.v[k_slope]           = distressorSlopeRaw(0);
             p.v[k_threhold]        = 0;
-            p.v[k_distressor_distortion_type] = dist;
+            p.dist = dist;
             p.v[k_drive]           = drive;
             apply(p);
             double mean, peak;
@@ -1001,12 +1033,11 @@ static void section_recover() {
     auto params = [](const Cfg& c) {
         Params p = headerDefaults();
         p.v[k_threhold] = -114;  p.v[k_attack] = 32;  p.v[k_release] = 224;
-        p.v[k_compressor_mode] = c.mode;
+        p.mode = c.mode;
         p.v[k_slope] = (c.mode == 1) ? distressorSlopeRaw(4) : 40;   /* 6:1 */
-        p.v[k_distressor_distortion_type] = c.dist;
+        p.dist = c.dist;
         p.v[k_drive] = c.drive;
         p.v[k_mix] = c.mix;
-        if (c.mode == 2) p.v[k_multiband_band_selection] = BAND_ALL;
         return p;
     };
     auto row = [](const char* what, const RecoverResult& ref, const RecoverResult& r,
@@ -1053,6 +1084,168 @@ static void section_recover() {
     printf("\n  %s\n", g_recover_failures ? "RECOVERY: FAILED" : "RECOVERY: all rows ok");
 }
 
+
+/* M. The Multiband panel: one knob per band, two crossovers, SoloMute.
+ *
+ * Pass/fail, like R.  Every check reads the unit through its panel the way the
+ * drumlogue does -- setParameter() with the header's raw values -- and
+ * measures what comes out, so a knob wired to the wrong band, a crossover that
+ * moves the other split, or a SoloMute value that silences the wrong band
+ * fails here. */
+static int g_panel_failures = 0;
+
+static void panelCheck(bool ok, const char* what, const char* detail) {
+    printf("   %-52s %s %s\n", what, ok ? "ok      " : "<-- FAIL", detail);
+    if (!ok) ++g_panel_failures;
+}
+
+static Params multibandFlat() {
+    Params p = headerDefaults();
+    p.mode = COMP_MODE_MULTIBAND;
+    setBandThresholds(p, 0);       /* no gain reduction anywhere */
+    setBandRatios(p, 10);
+    return p;
+}
+
+static void section_panel() {
+    char buf[96];
+    hdr("M. MULTIBAND PANEL (pass/fail).  -20 dBFS tones, one per band:\n"
+        "    100 Hz (Low), 1 kHz (Mid), 8 kHz (High) at the default splits.");
+
+    const double tone[3] = { 100.0, 1000.0, 8000.0 };
+    const char* band[3] = { "Low", "Mid", "High" };
+
+    /* M1. SoloMute: exactly the band it names is soloed or muted. */
+    printf("\n  M1. SoloMute\n");
+    for (int sel = 0; sel < SOLO_MUTE_TOTAL; ++sel) {
+        double g[3];
+        for (int b = 0; b < 3; ++b) {
+            Params p = multibandFlat();
+            p.v[k_band_solo_mute] = sel;
+            apply(p);
+            g[b] = measure(0.1, tone[b], SETTLE / 2, MEAS / 2).gain_fund_db;
+        }
+        bool ok = true;
+        for (int b = 0; b < 3; ++b) {
+            const bool plays = (sel == SOLO_MUTE_OFF) ||
+                               (sel >= SOLO_LOW && sel <= SOLO_HIGH && b == sel - SOLO_LOW) ||
+                               (sel >= MUTE_LOW && sel <= MUTE_HIGH && b != sel - MUTE_LOW);
+            ok = ok && (plays ? fabs(g[b]) < 1.0 : g[b] < -20.0);
+        }
+        snprintf(buf, sizeof(buf), "(Low %+6.1f  Mid %+6.1f  High %+6.1f dB)", g[0], g[1], g[2]);
+        char what[64];
+        snprintf(what, sizeof(what), "%-8s plays exactly the bands it should",
+                 g_fx.getParameterStrValue(k_band_solo_mute, sel));
+        panelCheck(ok, what, buf);
+    }
+
+    /* M2. Each threshold and ratio knob reaches its own band and no other. */
+    printf("\n  M2. One knob per band\n");
+    for (int k = 0; k < 3; ++k) {
+        double g[3];
+        for (int b = 0; b < 3; ++b) {
+            Params p = multibandFlat();
+            p.v[k_band_low_threshold + k] = -400;   /* -40 dB */
+            p.v[k_band_low_ratio + k]     = 200;    /* 20:1 */
+            apply(p);
+            g[b] = measure(0.1, tone[b], SETTLE / 2, MEAS / 2).gain_fund_db;
+        }
+        bool ok = true;
+        for (int b = 0; b < 3; ++b) ok = ok && ((b == k) ? g[b] < -10.0 : fabs(g[b]) < 1.0);
+        snprintf(buf, sizeof(buf), "(Low %+6.1f  Mid %+6.1f  High %+6.1f dB)", g[0], g[1], g[2]);
+        char what[64];
+        snprintf(what, sizeof(what), "%s Thresh/Ratio compress the %s band only", band[k], band[k]);
+        panelCheck(ok, what, buf);
+    }
+
+    /* M3. The splits move independently.  A 500 Hz tone is Mid at the
+     * default 250 Hz low split and Low once Xover Lo passes it; a 4 kHz tone
+     * is High at the default 2.5 kHz high split and Mid once Xover Hi passes
+     * it.  Soloing the band it should be in tells which side it landed on. */
+    printf("\n  M3. Crossovers\n");
+    struct XCase { const char* what; int knob_id; int knob; int solo; double f; bool in; };
+    const XCase xc[] = {
+        { "500 Hz is Mid at Xover Lo 50 (250Hz)",   k_crossover_low,  50, SOLO_MID,  500.0, true  },
+        { "500 Hz is Low at Xover Lo 100 (1000Hz)", k_crossover_low, 100, SOLO_LOW,  500.0, true  },
+        { "4 kHz is High at Xover Hi 33 (2.5kHz)",  k_crossover_high, 33, SOLO_HIGH, 4000.0, true },
+        { "4 kHz is Mid at Xover Hi 100 (16kHz)",   k_crossover_high,100, SOLO_MID,  4000.0, true },
+        { "Xover Hi leaves the low split alone",    k_crossover_high,100, SOLO_LOW,  100.0, true  },
+        { "Xover Lo leaves the high split alone",   k_crossover_low,   0, SOLO_HIGH, 8000.0, true },
+    };
+    for (const XCase& c : xc) {
+        Params p = multibandFlat();
+        p.v[c.knob_id] = c.knob;
+        p.v[k_band_solo_mute] = c.solo;
+        apply(p);
+        const double g = measure(0.1, c.f, SETTLE / 2, MEAS / 2).gain_fund_db;
+        snprintf(buf, sizeof(buf), "(%+6.1f dB)", g);
+        panelCheck(c.in ? g > -3.5 : g < -20.0, c.what, buf);
+    }
+
+    /* M4. A program stored under the old COMP MODE numbering (0=Standard,
+     * 1=Distressor, 2=Multiband) comes back on a mode that is on the panel. */
+    printf("\n  M4. Old programs and the shelved engine\n");
+    for (int v : {0, 1, 2}) {
+        g_fx.Reset();
+        g_fx.setParameter(k_compressor_mode, v);
+        const int want = v == 0 ? COMP_MODE_STANDARD : COMP_MODE_MULTIBAND;
+        snprintf(buf, sizeof(buf), "(engine %d)", g_fx.getEngineMode());
+        char what[64];
+        snprintf(what, sizeof(what), "stored COMP MODE %d selects %s", v,
+                 want == COMP_MODE_STANDARD ? "Standard" : "Multiband");
+        panelCheck(g_fx.getEngineMode() == want, what, buf);
+    }
+    {
+        /* No ID sequence a host can send reaches the Distressor. */
+        bool reached = false;
+        for (int v = -2; v <= 8 && !reached; ++v) {
+            g_fx.Reset();
+            g_fx.setParameter(k_compressor_mode, v);
+            for (int sm = 0; sm < SOLO_MUTE_TOTAL; ++sm) g_fx.setParameter(k_band_solo_mute, sm);
+            reached = g_fx.getEngineMode() == COMP_MODE_DISTRESSOR;
+        }
+        panelCheck(!reached, "the Distressor is unreachable from the panel", "");
+    }
+
+    /* M5. ATTACK and RELEASE (page 1) now drive every band. */
+    printf("\n  M5. Page-1 ballistics reach Multiband\n");
+    {
+        double tail[2];
+        const int rels[2] = { 50, 2000 };
+        for (int k = 0; k < 2; ++k) {
+            Params p = headerDefaults();
+            p.mode = COMP_MODE_MULTIBAND;
+            setBandThresholds(p, -200);
+            p.v[k_release] = rels[k];
+            apply(p);
+            measure(0.708, F0, 9600, 0);                  /* a 200 ms hit */
+            tail[k] = measure(0.0316, F0, 4800, 4800).gain_fund_db;  /* 100-200 ms after */
+        }
+        snprintf(buf, sizeof(buf), "(RELEASE 50: %+.1f dB, 2000: %+.1f dB)", tail[0], tail[1]);
+        panelCheck(tail[1] < tail[0] - 6.0, "RELEASE 2000 holds the gain reduction, 50 lets go", buf);
+    }
+
+    /* M6. What the panel shows. */
+    printf("\n  M6. Readouts\n");
+    /* One call per printf: the unit hands back a single static buffer, which
+     * the SDK allows -- the host never holds on to the pointer. */
+    struct Readout { const char* name; int id; int v[3]; int n; };
+    const Readout ro[] = {
+        { "COMP MODE",  k_compressor_mode, {0, 1, 0},     2 },
+        { "SoloMute",   k_band_solo_mute,  {0, 1, 4},     3 },
+        { "Xover Lo",   k_crossover_low,   {0, 50, 100},  3 },
+        { "Xover Hi",   k_crossover_high,  {0, 33, 100},  3 },
+        { "Mid Ratio",  k_band_mid_ratio,  {10, 40, 200}, 3 },
+    };
+    for (const Readout& r : ro) {
+        printf("     %-10s", r.name);
+        for (int k = 0; k < r.n; ++k)
+            printf("  %4d -> %-9s", r.v[k], g_fx.getParameterStrValue(r.id, r.v[k]));
+        printf("\n");
+    }
+    printf("\n  %s\n", g_panel_failures ? "PANEL: FAILED" : "PANEL: all checks ok");
+}
+
 /* ========================================================================= */
 
 int main(int argc, char** argv) {
@@ -1075,6 +1268,7 @@ int main(int argc, char** argv) {
     if (s == "all" || s == "quirks")  section_quirks();
     if (s == "all" || s == "slam")    section_slam();
     if (s == "all" || s == "recover") section_recover();
+    if (s == "all" || s == "panel")   section_panel();
     printf("\n");
-    return g_recover_failures ? 1 : 0;
+    return (g_recover_failures || g_panel_failures) ? 1 : 0;
 }
