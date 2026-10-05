@@ -658,7 +658,9 @@ static void section_quirks() {
     }
 
     hdr("G3. DRIVE IS LIVE FROM ITS FIRST STEP.  The old gate was 'drive_ > 0.01f',\n"
-        "    so DRIVE=1 was identical to 0 and DRIVE=2 arrived with a ~2 dB step.");
+        "    so DRIVE=1 was identical to 0 and DRIVE=2 arrived with a ~2 dB step.\n"
+        "    The drive stages are level-matched now, so live shows as THD and the\n"
+        "    level must not step at all.");
     for (int mode : {0, 2}) {
         for (int drv : {0, 1, 2}) {
             Params p = headerDefaults();
@@ -671,21 +673,22 @@ static void section_quirks() {
                 setBandRatios(p, 10);
             }
             apply(p);
-            printf("   %-10s DRIVE %3d -> %+7.2f dB\n",
-                   MODE_NAME[mode], drv, measure(0.1, F0, SETTLE, MEAS).gain_fund_db);
+            const Result r = measure(0.1, F0, SETTLE, MEAS);
+            printf("   %-10s DRIVE %3d -> %+7.2f dB  THD %6.3f%%\n",
+                   MODE_NAME[mode], drv, r.gain_fund_db, r.thd_pct);
         }
     }
 
-    hdr("G4. WAVEFOLDER GAIN LAW (Hard clip, in -60 dBFS so the shaper stays\n"
-        "    linear).  The drive gain g = 1+19d is applied once and not\n"
-        "    compensated: +26 dB across the knob.  It was applied twice (g^2,\n"
-        "    +52 dB), and then over-corrected with a 1/sqrt(g) makeup that\n"
-        "    scaled the saturated ceiling down with it -- see G4b.\n"
-        "    Past DRIVE_SLAM_KNEE the slam multiplies g geometrically, so the\n"
-        "    theory column carries drive_slam_gain() too; the bias and trim are\n"
-        "    not in play at -60 dBFS (the bias is a fraction of an envelope this\n"
-        "    small, and the trim is what the last column has to absorb).");
-    printf("   %6s %12s %14s %8s\n", "DRIVE", "measured dB", "g dB", "delta");
+    hdr("G4. WAVEFOLDER GAIN LAW, HANDED BACK (Hard clip, in -60 dBFS so the\n"
+        "    shaper stays linear).  The drive gain g = 1+19d -- times\n"
+        "    drive_slam_gain() past DRIVE_SLAM_KNEE -- is what pushes the signal\n"
+        "    into the shaper, and the level matching behind it hands all of it\n"
+        "    back, so 'measured' must read 0 dB however large g gets.  History:\n"
+        "    g was applied twice (+52 dB), then over-corrected with a 1/sqrt(g)\n"
+        "    makeup, then left uncompensated (+26 dB across the knob, and the\n"
+        "    whole of the theory column at -60 dBFS).  A matcher whose gain floor\n"
+        "    sat above -g left this table +13.6 dB hot at DRIVE 100.");
+    printf("   %6s %12s %14s\n", "DRIVE", "measured dB", "g dB");
     for (int drv : {0, 5, 10, 25, 50, 75, 100}) {
         Params p = headerDefaults();
         p.mode = 1;
@@ -698,9 +701,9 @@ static void section_quirks() {
         const float slam = drive_slam_amount(drv * 0.01f);
         const slam_voicing_t& v = drive_slam_voicing[SLAM_FAMILY_SAT];
         double th = 20.0 * log10((1.0 + 19.0 * (drv * 0.01))
-                                 * drive_slam_gain(slam, v.gain_max)
-                                 * (1.0f + slam * (v.trim - 1.0f)));
-        printf("   %6d %+12.2f %+14.2f %+8.2f\n", drv, m, th, m - th);
+                                 * drive_slam_gain(slam, v.gain_max));
+        printf("   %6d %+12.2f %+14.2f%s\n", drv, m, th,
+               (fabs(m) > 0.5) ? "   <-- NOT HANDED BACK" : "");
     }
 
     hdr("G4b. SATURATED CEILING PER TYPE (in -6 dBFS, ratio 1:1).  Every shaper\n"
@@ -708,9 +711,10 @@ static void section_quirks() {
         "     small-signal gain.  Under the old 1/sqrt(g) law the five wavefolder\n"
         "     modes peaked at 0.224 at DRIVE=100 while the harmonic saturators,\n"
         "     which carry no makeup, reached 1.000 -- driving harder made those\n"
-        "     five quieter.  The peaks must now stay in family across the row.\n"
-        "     At DRIVE 100 the slam trim also pulls the whole row off 1.000, so\n"
-        "     the output limiter stops being the thing doing the distorting.");
+        "     five quieter.  The peaks must now stay in family across the row,\n"
+        "     and with every drive stage level-matched none of them comes near\n"
+        "     1.000, so the output limiter is never the thing doing the\n"
+        "     distorting.");
     printf("   %-8s", "DRIVE");
     for (int t = 0; t < 9; ++t) printf(" %7s", DIST_NAME[t]);
     printf("\n");
@@ -974,7 +978,7 @@ static bool nonfinite(float x) {         /* bit test: robust under -ffast-math *
 
 enum Spoil { SPOIL_NONE, SPOIL_INPUT, SPOIL_ENVELOPE, SPOIL_DISTRESSOR_ENV,
              SPOIL_TUBE_DC, SPOIL_CROSSOVER, SPOIL_SLAM_DC, SPOIL_DRIVE_DC,
-             SPOIL_DRIVE_LEVEL };
+             SPOIL_DRIVE_LEVEL, SPOIL_TUBE_LEVEL };
 
 struct RecoverResult { double rms_db; long bad; uint32_t trips; };
 
@@ -1001,7 +1005,8 @@ static RecoverResult runSpoiled(const Params& p, Spoil spoil, float value) {
                 case SPOIL_CROSSOVER:      g_fx.multiband_.xover_low_mid.l_lpf_z1 = value; break;
                 case SPOIL_SLAM_DC:        g_fx.slam_.dc_l.y_prev = value; break;
                 case SPOIL_DRIVE_DC:       g_fx.distressor_.out_dc_l.y_prev = value; break;
-                case SPOIL_DRIVE_LEVEL:    g_fx.distressor_.level_out = value; break;
+                case SPOIL_DRIVE_LEVEL:    g_fx.distressor_.level.out = value; break;
+                case SPOIL_TUBE_LEVEL:     g_fx.overlord_.level.out = value; break;
                 default: break;
             }
         }
@@ -1068,6 +1073,7 @@ static void section_recover() {
         { "envelope",   0, SPOIL_ENVELOPE },        /* finite-but-silent case */
         { "dstr env",   4, SPOIL_DISTRESSOR_ENV },  /* likewise */
         { "tube DC",    1, SPOIL_TUBE_DC },
+        { "tube lvl",   1, SPOIL_TUBE_LEVEL },
         { "slam DC",    2, SPOIL_SLAM_DC },         /* the tube path's */
         { "drive DC",   4, SPOIL_DRIVE_DC },        /* the shapers' */
         { "drive lvl",  4, SPOIL_DRIVE_LEVEL },
@@ -1091,7 +1097,7 @@ static void section_recover() {
  * drumlogue does -- setParameter() with the header's raw values -- and
  * measures what comes out, so a knob wired to the wrong band, a crossover that
  * moves the other split, or a SoloMute value that silences the wrong band
- * fails here. */
+ * fails here -- and so does a DRIVE that moves the level (M6). */
 static int g_panel_failures = 0;
 
 static void panelCheck(bool ok, const char* what, const char* detail) {
@@ -1239,8 +1245,45 @@ static void section_panel() {
         panelCheck(tail[1] < tail[0] - 6.0, "RELEASE 2000 holds the gain reduction, 50 lets go", buf);
     }
 
-    /* M6. What the panel shows. */
-    printf("\n  M6. Readouts\n");
+    /* M6. DRIVE changes the character, not the level.  Every drive stage is
+     * level-matched (DRIVE_LEVEL_* in constants.h): unmatched, Standard's
+     * tube took a -20 dBFS bus up 18.7 dB by DRIVE 100 and Dist2 ended in a
+     * full-scale square.  Quiet (still linear in the shaper), working and hot
+     * levels: within 1 dB of DRIVE 0, with THD climbing at the working ones. */
+    printf("\n  M6. DRIVE changes character, not level\n");
+    struct DCase { const char* what; int mode; int dist; };
+    const DCase dc[] = {
+        { "Standard (Overlord tube)",      COMP_MODE_STANDARD,   0 },
+        { "Distressor Dist2 (bench only)", COMP_MODE_DISTRESSOR, DIST_MODE_DIST2 },
+    };
+    for (const DCase& c : dc) {
+        for (double amp : {0.001, 0.1, 0.5}) {
+            double worst = 0.0, thd0 = 0.0, thd100 = 0.0;
+            for (int drv : {0, 30, 67, 100}) {
+                Params p = headerDefaults();
+                p.mode = c.mode;
+                p.dist = c.dist;
+                p.v[k_threhold] = 0;                       /* no gain reduction */
+                p.v[k_attenuation_limit] = 0;
+                p.v[k_gain_limit] = 0;
+                if (c.mode == COMP_MODE_DISTRESSOR) p.v[k_slope] = distressorSlopeRaw(0);
+                p.v[k_drive] = drv;
+                apply(p);
+                const Result r = measure(amp, F0, SETTLE / 2, MEAS / 2);
+                if (fabs(r.gain_rms_db) > fabs(worst)) worst = r.gain_rms_db;
+                if (drv == 0)   thd0 = r.thd_pct;
+                if (drv == 100) thd100 = r.thd_pct;
+            }
+            const bool live = (amp < 0.01) || (thd100 > thd0 + 10.0);
+            snprintf(buf, sizeof(buf), "(worst %+5.2f dB, THD %.1f%% -> %.1f%%)", worst, thd0, thd100);
+            char what[80];
+            snprintf(what, sizeof(what), "%s, in %.0f dBFS", c.what, 20.0 * log10(amp));
+            panelCheck(fabs(worst) < 1.0 && live, what, buf);
+        }
+    }
+
+    /* M7. What the panel shows. */
+    printf("\n  M7. Readouts\n");
     /* One call per printf: the unit hands back a single static buffer, which
      * the SDK allows -- the host never holds on to the pointer. */
     struct Readout { const char* name; int id; int v[3]; int n; };

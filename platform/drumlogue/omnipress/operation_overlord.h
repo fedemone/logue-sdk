@@ -24,6 +24,13 @@
 // landed as a click.
 #define OVERLORD_PRESENCE_HZ 5000.0f
 
+// Stage 2's operating point and its negative-side shape.  Named because
+// overlord_clear_state() needs the triode's idle output, not only the
+// processing loop.
+#define OVERLORD_STAGE2_BIAS      (-0.18f)
+#define OVERLORD_STAGE2_SHAPE_POS 4.8f
+#define OVERLORD_STAGE2_SHAPE_NEG 1.5f
+
 // dc_blocker_state_t, dc_block_process() and vmeanq_f32() now live in
 // filters.h: the Distressor's slam stage needs the same DC blocker, and one
 // copy shared by both beats two that can drift apart.
@@ -47,6 +54,9 @@ typedef struct {
     float dyn_bias_l2; // Stage 2 Dynamic Bias Tracking (Left)
     float dyn_bias_r2; // Stage 2 Dynamic Bias Tracking (Right)
 
+    // Level matching behind the tube (DRIVE_LEVEL_* in constants.h)
+    level_match_t level;
+
     // Parameters
     float drive;          // 0.0 to 1.0
     float slam_gain;      // extra preamp push above the slam knee (1.0 = off)
@@ -68,12 +78,24 @@ fast_inline void overlord_clear_state(overlord_t* ov) {
     biquad_clear_state(&ov->treble_boost_r);
     biquad_clear_state(&ov->presence_r);
 
-    dc_blocker_init(&ov->dc_l);
-    dc_blocker_init(&ov->dc_r);
+    // Start the DC blockers where they settle with no signal.  The triode
+    // idles at OVERLORD_STAGE2_BIAS, so its output carries a constant of
+    // about -0.176 (stage2 inverts, overlord_process inverts back); from a
+    // zeroed state the blocker turned that into a 5 ms DC transient every
+    // time the tube first engaged -- a thump under the first DRIVE click --
+    // and the level matching behind it, which remembers loud for 200 ms,
+    // then turned quiet material down for a second or two.  With x_prev at
+    // the idle value the step never happens.
+    const float b = OVERLORD_STAGE2_BIAS;
+    const float idle = b / sqrtf(1.0f + OVERLORD_STAGE2_SHAPE_NEG * b * b);
+    ov->dc_l.x_prev = idle; ov->dc_l.y_prev = 0.0f;
+    ov->dc_r.x_prev = idle; ov->dc_r.y_prev = 0.0f;
 
     // Tubes back at their quiescent state (no dynamic bias shift)
     ov->dyn_bias_l1 = 0.0f; ov->dyn_bias_r1 = 0.0f;
     ov->dyn_bias_l2 = 0.0f; ov->dyn_bias_r2 = 0.0f;
+
+    level_match_clear(&ov->level);
 }
 
 // Initialize state-space coefficients
@@ -92,6 +114,7 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     biquad_init_state(&ov->treble_boost_r);
     biquad_init_state(&ov->presence_r);
 
+    level_match_init(&ov->level, sample_rate);
     overlord_clear_state(ov);
 }
 
@@ -109,10 +132,11 @@ fast_inline void overlord_set_drive(overlord_t* ov, float drive_percent, float s
     // saturation by the knee, and doubling up there just costs headroom.
     ov->slam_gain = drive_slam_gain(slam, drive_slam_voicing[SLAM_FAMILY_TUBE].gain_max);
 
-    // The tube stages have ~2 dB of insertion loss even as drive approaches
+    // The tube stages had ~2 dB of insertion loss even as drive approaches
     // zero, so engaging them produced an audible step at the first click of the
-    // knob.  Fading the parallel blend in over the bottom tenth of the range
-    // turns that step into a ramp; from DRIVE=10 up this is fully wet as before.
+    // knob.  Level matching now takes that loss out too, but the bottom tenth
+    // of the range still fades the parallel blend in, so the tube's character
+    // arrives as a ramp rather than at the first click.
     ov->blend = (drive < 0.1f) ? (drive * 10.0f) : 1.0f;
 }
 
@@ -249,7 +273,7 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
     float32x4_t v_drive_stage1 = vdupq_n_f32((1.0f + (drive_sq * 35.0f)) * ov->slam_gain); // Warm preamp push
     float32x4_t v_drive_stage2 = vdupq_n_f32(1.0f + (ov->drive * 4.5f)); // Harder triode slam
 
-    float32x4_t v_static_bias2 = vdupq_n_f32(-0.18f); // Triode operating cutoff point
+    float32x4_t v_static_bias2 = vdupq_n_f32(OVERLORD_STAGE2_BIAS); // Triode operating cutoff point
     const float alpha_bias = 0.0025f;                 // Capacitor discharge tracker
 
     // ==========================================
@@ -261,7 +285,7 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
 
     // 2. Cascade into the dynamic-bias Pirkle triode stage
     float32x4_t v_gk_l = vaddq_f32(vmulq_f32(pre_l, v_drive_stage2), vaddq_f32(v_static_bias2, vdupq_n_f32(ov->dyn_bias_l1)));
-    float32x4_t wet_l  = stage2_pirkle_triode(v_gk_l, 4.8f, 1.5f);
+    float32x4_t wet_l  = stage2_pirkle_triode(v_gk_l, OVERLORD_STAGE2_SHAPE_POS, OVERLORD_STAGE2_SHAPE_NEG);
 
     // Track grid current envelope from Stage 2 input
     float grid_curr_l = vmeanq_f32(vmaxq_f32(v_gk_l, vdupq_n_f32(0.0f)));
@@ -282,7 +306,7 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
     float32x4_t pre_r = stage1_continuous_preamp(dry_r, v_drive_stage1, 0.12f);
 
     float32x4_t v_gk_r = vaddq_f32(vmulq_f32(pre_r, v_drive_stage2), vaddq_f32(v_static_bias2, vdupq_n_f32(ov->dyn_bias_r1)));
-    float32x4_t wet_r  = stage2_pirkle_triode(v_gk_r, 4.8f, 1.5f);
+    float32x4_t wet_r  = stage2_pirkle_triode(v_gk_r, OVERLORD_STAGE2_SHAPE_POS, OVERLORD_STAGE2_SHAPE_NEG);
 
     float grid_curr_r = vmeanq_f32(vmaxq_f32(v_gk_r, vdupq_n_f32(0.0f)));
     ov->dyn_bias_r1 = flush_denormal(
@@ -290,6 +314,17 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
 
     wet_r = vnegq_f32(wet_r); // Phase correction step
     wet_r = dc_block_process(&ov->dc_r, wet_r, 0.996f);
+
+    // ==========================================
+    // LEVEL MATCHING
+    // ==========================================
+    // Hand the tube's output back at the level that went into it, so DRIVE
+    // buys harmonics and not loudness: unmatched, the two stages' gain took a
+    // -20 dBFS bus up 18.7 dB by DRIVE 100.  Matched on the wet path alone,
+    // before the blend, so the fade-in at the bottom of the knob crossfades
+    // between two signals at the same level, and before the tone stack, so
+    // BASS/TREBLE/PRESENCE still change the level they are meant to.
+    level_match_process(&ov->level, dry_l, dry_r, &wet_l, &wet_r);
 
     // ==========================================
     // POST FILTERS & LINEAR PARALLEL BLEND

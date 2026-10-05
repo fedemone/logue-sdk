@@ -72,14 +72,10 @@ typedef struct {
     envelope_detector_t distressor_env;  // Dedicated envelope detector
     float32x4_t detector_state;
 
-    // Drive stage output (see DIST_LEVEL_* in constants.h)
+    // Drive stage output: DC blocker, then level matching (constants.h)
     dc_blocker_state_t out_dc_l;
     dc_blocker_state_t out_dc_r;
-    float level_in;           // mean-square follower on what enters the shaper
-    float level_out;          // ...and on what leaves it, after the DC blocker
-    float level_gain;         // their ratio, as an amplitude
-    float level_attack;       // per-block coefficients
-    float level_release;
+    level_match_t level;
 
 } distressor_t;
 
@@ -131,15 +127,10 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     // ATTACK, RELEASE, the opto release and the program-dependent release.
     envelope_set_level_follower(&d->distressor_env);
 
-    // Drive stage output: the followers run once per 4-sample block.
-    const float block_rate = sample_rate * (1.0f / NEON_LANES);
-    d->level_attack  = ballistics_coeff(DIST_LEVEL_ATTACK_MS,  block_rate);
-    d->level_release = ballistics_coeff(DIST_LEVEL_RELEASE_MS, block_rate);
+    // Drive stage output
     dc_blocker_init(&d->out_dc_l);
     dc_blocker_init(&d->out_dc_r);
-    d->level_in   = 0.0f;
-    d->level_out  = 0.0f;
-    d->level_gain = 1.0f;
+    level_match_init(&d->level, sample_rate);
 }
 
 // Distressor-specific mono/summed envelope detector.
@@ -198,9 +189,7 @@ fast_inline float32x4_t distressor_detect_stereo(distressor_t* d,
 fast_inline void distressor_clear_state(distressor_t* d) {
     dc_blocker_init(&d->out_dc_l);
     dc_blocker_init(&d->out_dc_r);
-    d->level_in   = 0.0f;
-    d->level_out  = 0.0f;
-    d->level_gain = 1.0f;
+    level_match_clear(&d->level);
     d->harmonic_state = vdupq_n_f32(0.0f);
     d->last_input     = vdupq_n_f32(0.0f);
     d->detector_state = vdupq_n_f32(0.0f);
@@ -332,32 +321,14 @@ fast_inline float32x4_t generate_harmonics(distressor_t* d,
  * What every DstrDist shaper needs behind it: take out the DC an asymmetric
  * or biased shaper leaves, then hand back the level that went in.  `ref_l`
  * and `ref_r` are the signal as it entered the drive stage, before the slam
- * bias and the drive gain.  See DIST_LEVEL_* in constants.h for why.
+ * bias and the drive gain.  See DRIVE_LEVEL_* and DIST_DC_POLE in constants.h.
  */
 fast_inline void distressor_drive_output(distressor_t* d,
                                          float32x4_t ref_l, float32x4_t ref_r,
                                          float32x4_t* l, float32x4_t* r) {
     *l = dc_block_process(&d->out_dc_l, *l, DIST_DC_POLE);
     *r = dc_block_process(&d->out_dc_r, *r, DIST_DC_POLE);
-
-    const float in_ms  = 0.5f * (vmeanq_f32(vmulq_f32(ref_l, ref_l)) +
-                                 vmeanq_f32(vmulq_f32(ref_r, ref_r)));
-    const float out_ms = 0.5f * (vmeanq_f32(vmulq_f32(*l, *l)) +
-                                 vmeanq_f32(vmulq_f32(*r, *r)));
-    float c = (in_ms > d->level_in) ? d->level_attack : d->level_release;
-    d->level_in = flush_denormal(in_ms + c * (d->level_in - in_ms));
-    c = (out_ms > d->level_out) ? d->level_attack : d->level_release;
-    d->level_out = flush_denormal(out_ms + c * (d->level_out - out_ms));
-
-    // Below the floor there is nothing to match, and a ratio of two noise
-    // floors is not a gain anyone wants applied, so hold the last one.
-    if (d->level_in > DIST_LEVEL_FLOOR && d->level_out > DIST_LEVEL_FLOOR) {
-        float g = sqrtf(d->level_in / d->level_out);
-        d->level_gain = (g < DIST_LEVEL_GAIN_MIN) ? DIST_LEVEL_GAIN_MIN
-                      : (g > DIST_LEVEL_GAIN_MAX) ? DIST_LEVEL_GAIN_MAX : g;
-    }
-    *l = vmulq_n_f32(*l, d->level_gain);
-    *r = vmulq_n_f32(*r, d->level_gain);
+    level_match_process(&d->level, ref_l, ref_r, l, r);
 }
 
 // Soft knee, quadratic through the transition, hard above it.

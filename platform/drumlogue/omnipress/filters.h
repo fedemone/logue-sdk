@@ -427,3 +427,100 @@ fast_inline float vmeanq_f32(float32x4_t vec) {
     float32x2_t sum2 = vadd_f32(vget_low_f32(vec), vget_high_f32(vec));
     return (vget_lane_f32(sum2, 0) + vget_lane_f32(sum2, 1)) * 0.25f;
 }
+
+/* ---------------------------------------------------------------------------
+ * 6. DRIVE STAGE LEVEL MATCHING - see DRIVE_LEVEL_* in constants.h
+ *
+ * Shared by the Overlord tube and the Distressor's shapers, so the two cannot
+ * drift apart.  Runs once per 4-sample block.
+ * --------------------------------------------------------------------------- */
+
+typedef struct {
+    float in;        // fast follower (attack/release) on what enters the stage
+    float out;       // ...and on what leaves it
+    float in_slow;   // slow symmetric average of the same two powers
+    float out_slow;
+    float gain;      // what was applied last block
+    float attack;    // per-block coefficients
+    float release;
+    float slow;
+} level_match_t;
+
+fast_inline void level_match_clear(level_match_t* lm) {
+    lm->in       = 0.0f;
+    lm->out      = 0.0f;
+    lm->in_slow  = 0.0f;
+    lm->out_slow = 0.0f;
+    lm->gain     = 1.0f;
+}
+
+fast_inline void level_match_init(level_match_t* lm, float sample_rate) {
+    const float block_rate = sample_rate * (1.0f / NEON_LANES);
+    lm->attack  = ballistics_coeff(DRIVE_LEVEL_ATTACK_MS,  block_rate);
+    lm->release = ballistics_coeff(DRIVE_LEVEL_RELEASE_MS, block_rate);
+    lm->slow    = ballistics_coeff(DRIVE_LEVEL_SLOW_MS,    block_rate);
+    level_match_clear(lm);
+}
+
+/** Any follower gone non-finite?  See the watchdog in MasterFX::Process(). */
+fast_inline bool level_match_is_nonfinite(const level_match_t* lm) {
+    return is_nonfinite(lm->in) || is_nonfinite(lm->out) ||
+           is_nonfinite(lm->in_slow) || is_nonfinite(lm->out_slow) ||
+           is_nonfinite(lm->gain);
+}
+
+fast_inline float level_match_ratio(float in, float out) {
+    const float g = sqrtf(in / out);
+    return (g < DRIVE_LEVEL_GAIN_MIN) ? DRIVE_LEVEL_GAIN_MIN
+         : (g > DRIVE_LEVEL_GAIN_MAX) ? DRIVE_LEVEL_GAIN_MAX : g;
+}
+
+/**
+ * Scale *l / *r (the drive stage's output) back to the level of ref_l / ref_r
+ * (its input).
+ *
+ * Two estimates, and the smaller wins.  The slow one is the ratio of the two
+ * sides' average power over ~half a second: that is what loudness follows,
+ * and it is the one in charge while the knob sits still.  It cannot be the
+ * only one, because it takes that half second to notice DRIVE going up, and
+ * the bus would swell for as long.  The fast one -- peak followers on the raw
+ * 4-sample block power, 1 ms attack -- notices within a couple of ms, but it
+ * matches peak power: a saturating stage lowers the peak-to-average ratio,
+ * and a block's power swings with the waveform (0 to twice the average on a
+ * sine, much less on the squared-off wave a shaper makes), so on its own it
+ * left drums 4-5 dB and sines 1.5-2 dB louder than they went in.  Both of
+ * those bias it upwards, so as a ceiling on the slow one it costs nothing in
+ * steady state and still catches every turn of the knob.
+ */
+fast_inline void level_match_process(level_match_t* lm,
+                                     float32x4_t ref_l, float32x4_t ref_r,
+                                     float32x4_t* l, float32x4_t* r) {
+    const float in_ms  = 0.5f * (vmeanq_f32(vmulq_f32(ref_l, ref_l)) +
+                                 vmeanq_f32(vmulq_f32(ref_r, ref_r)));
+    const float out_ms = 0.5f * (vmeanq_f32(vmulq_f32(*l, *l)) +
+                                 vmeanq_f32(vmulq_f32(*r, *r)));
+
+    float c = (in_ms > lm->in) ? lm->attack : lm->release;
+    lm->in = flush_denormal(in_ms + c * (lm->in - in_ms));
+    c = (out_ms > lm->out) ? lm->attack : lm->release;
+    lm->out = flush_denormal(out_ms + c * (lm->out - out_ms));
+
+    lm->in_slow  = flush_denormal(in_ms  + lm->slow * (lm->in_slow  - in_ms));
+    lm->out_slow = flush_denormal(out_ms + lm->slow * (lm->out_slow - out_ms));
+
+    // Below the floor there is nothing to match, and a ratio of two noise
+    // floors is not a gain anyone wants applied, so hold the last one.  A NaN
+    // follower fails these tests too and freezes the gain without ever
+    // reaching the output, which is why the watchdog asks
+    // level_match_is_nonfinite() directly.
+    if (lm->in > DRIVE_LEVEL_FLOOR && lm->out > DRIVE_LEVEL_FLOOR) {
+        float g = level_match_ratio(lm->in, lm->out);
+        if (lm->in_slow > DRIVE_LEVEL_FLOOR && lm->out_slow > DRIVE_LEVEL_FLOOR) {
+            const float g_slow = level_match_ratio(lm->in_slow, lm->out_slow);
+            if (g_slow < g) g = g_slow;
+        }
+        lm->gain = g;
+    }
+    *l = vmulq_n_f32(*l, lm->gain);
+    *r = vmulq_n_f32(*r, lm->gain);
+}
