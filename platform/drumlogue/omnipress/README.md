@@ -331,6 +331,7 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Detector and Distressor gain smoother ran 4× slow | State was `float32x4_t`, giving each lane its own history advanced once per block, so per-sample coefficients were applied at 12 kHz | Sequential scalar state, as the crossovers and `standard_process` already use |
 | DRIVE went dead above about 60% | Every shaper is bounded, and the drive law was linear in the knob, so the top 40% was worth ~4 dB of push. At a −20 dBFS bus level DRIVE 60 → 100 moved Soft from 12.8% to 16.9% THD, and most of what did change arrived as +17 dB of level rather than harmonics — the knob read as a volume control | A slam region above DRIVE 60 in Distressor mode: geometric pre-gain, a program-dependent bias that shifts the duty cycle once the shaper is saturated, and an output trim so the region buys character instead of level. THD at DRIVE 100 goes 16.9% → 54.8% on Soft, 23.6% → 63.6% on Hard, at the same loudness and off the output limiter (bench section S) |
 | External sidechain unreachable | `use_external_sc_` was only ever assigned 0; the 4-channel input the unit asks for could not be selected | DETECT + 4 selects it (all 24 SDK parameter slots were already taken). Multiband splits the key through its own mono crossover so it ducks per band |
+| One bad sample on the bus could silence the drumlogue | Nothing guarded the input or the state. Every stage is an IIR, the detector takes any finite value at face value, and the master FX sees every other unit's output: measured on the shipped ARM build, one +Inf sample left Multiband at -300 dBFS until the unit was reloaded and one 1e20 sample silenced Distressor (Dist2, DRIVE 67, WET) for 9 s. Whether a NaN washes out was left to what `-ffast-math` made of each comparison: Standard and Distressor happened to recover on ARM, and a host build of the same source latched in every mode | An input guard drops non-finite samples and clamps the rest to ±16 (+24 dBFS), with the test on the exponent bits so `-ffast-math` cannot fold it. A watchdog checks the wet path and the detector state once per render; if anything has gone non-finite it clears the audio-rate state, keeping every parameter including the per-band Multiband values, and outputs one silent buffer instead of a dead unit (bench section R) |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
 
@@ -346,6 +347,14 @@ types sit within 0.9 dB of each other at DRIVE=0.
 knee, the proof that Standard and Multiband are unaffected, that a host
 replaying parameters in ID order arms it identically, and that nothing leaves
 DC on the bus.
+
+`./test_levels recover` is pass/fail and sets the exit status: one NaN, ±Inf,
+1e30 or 1e20 sample on the bus in each mode, with the output three seconds
+later required to match an untouched run, and NaN planted directly in the
+detector, tube, slam and crossover state to prove the watchdog clears it. The
+NEON shim propagates NaN through `vmaxq_f32`/`vminq_f32` the way the hardware
+does, tested on the bits, since the DSP is compiled `Ofast` and an `x != x`
+test would be folded away.
 
 ## Future Expansion
 

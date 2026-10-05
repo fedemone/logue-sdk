@@ -56,6 +56,26 @@ typedef struct {
     float presence;       // 0.0 to 1.0
 } overlord_t;
 
+/**
+ * Return the tone stack, DC blockers and grid-bias trackers to silence,
+ * keeping the EQ settings, drive and the cached shelf coefficients.
+ */
+fast_inline void overlord_clear_state(overlord_t* ov) {
+    biquad_clear_state(&ov->bass_boost_l);
+    biquad_clear_state(&ov->treble_boost_l);
+    biquad_clear_state(&ov->presence_l);
+    biquad_clear_state(&ov->bass_boost_r);
+    biquad_clear_state(&ov->treble_boost_r);
+    biquad_clear_state(&ov->presence_r);
+
+    dc_blocker_init(&ov->dc_l);
+    dc_blocker_init(&ov->dc_r);
+
+    // Tubes back at their quiescent state (no dynamic bias shift)
+    ov->dyn_bias_l1 = 0.0f; ov->dyn_bias_r1 = 0.0f;
+    ov->dyn_bias_l2 = 0.0f; ov->dyn_bias_r2 = 0.0f;
+}
+
 // Initialize state-space coefficients
 fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     ov->drive = 0.0f;
@@ -72,12 +92,7 @@ fast_inline void overlord_init(overlord_t* ov, float sample_rate) {
     biquad_init_state(&ov->treble_boost_r);
     biquad_init_state(&ov->presence_r);
 
-    ov->dc_l.x_prev = 0.0f; ov->dc_l.y_prev = 0.0f;
-    ov->dc_r.x_prev = 0.0f; ov->dc_r.y_prev = 0.0f;
-
-    // Initialize tubes at quiescent state (no dynamic bias shift)
-    ov->dyn_bias_l1 = 0.0f; ov->dyn_bias_r1 = 0.0f;
-    ov->dyn_bias_l2 = 0.0f; ov->dyn_bias_r2 = 0.0f;
+    overlord_clear_state(ov);
 }
 
 /**

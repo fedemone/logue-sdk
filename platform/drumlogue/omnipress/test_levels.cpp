@@ -14,7 +14,10 @@
  *       -o test_levels test_levels.cpp -lm
  * Run:
  *   ./test_levels            # everything
- *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam
+ *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam|recover
+ *
+ * Section R (recover) is a pass/fail check, and the exit status is non-zero
+ * if any of its rows fail; every other section is a measurement to read.
  */
 
 #include <cstdio>
@@ -24,7 +27,12 @@
 #include <vector>
 #include <ctime>
 
+// Section R corrupts the DSP state directly to prove the watchdog clears it,
+// which needs the private members. Opening the class up is contained to this
+// translation unit; nothing else here touches them.
+#define private public
 #include "masterfx.h"
+#undef private
 
 /* =========================================================================
  * Host emulation
@@ -900,6 +908,134 @@ static void section_slam() {
     }
 }
 
+
+/* R. Recovery from a bad sample.
+ *
+ * OmniPress is the master: everything the drumlogue plays passes through it,
+ * so a state it cannot get out of is a silent instrument.  Before the input
+ * guard and watchdog, one NaN on the bus latched this host build for good in
+ * every mode; on the shipped ARM build, where -ffast-math decided differently,
+ * one +Inf left Multiband at -300 dBFS for good and one finite 1e20 sample
+ * silenced Distressor for 9 s.  Each row
+ * here plays a -10 dBFS 220 Hz tone through the reported
+ * settings (THRESH -11.4, ATTACK 3.2 ms, RELEASE 224 ms), spoils it once, and
+ * compares the output 3 s later against an identical run that was left alone.
+ */
+static int g_recover_failures = 0;
+
+static bool nonfinite(float x) {         /* bit test: robust under -ffast-math */
+    uint32_t u; memcpy(&u, &x, sizeof u);
+    return (u & 0x7F800000u) == 0x7F800000u;
+}
+
+enum Spoil { SPOIL_NONE, SPOIL_INPUT, SPOIL_ENVELOPE, SPOIL_DISTRESSOR_ENV,
+             SPOIL_TUBE_DC, SPOIL_CROSSOVER, SPOIL_SLAM_DC };
+
+struct RecoverResult { double rms_db; long bad; uint32_t trips; };
+
+static RecoverResult runSpoiled(const Params& p, Spoil spoil, float value) {
+    apply(p);
+    const uint32_t trips0 = g_fx.getGuardTrips();
+    std::vector<float> in(BLOCK * NCH), out(BLOCK * 2);
+    const double w = 2.0 * M_PI * 220.0 / SR;
+    const long spoil_at = SR / 2, from = spoil_at + 3 * SR, to = from + SR / 2;
+    long n = 0, bad = 0, N = 0;
+    double ss = 0;
+    while (n < to) {
+        const long n0 = n;
+        for (size_t i = 0; i < BLOCK; ++i, ++n) {
+            float v = (float)(0.316 * sin(w * n));
+            if (spoil == SPOIL_INPUT && n == spoil_at) v = value;
+            for (int c = 0; c < NCH; ++c) in[i*NCH + c] = v;
+        }
+        if (n0 <= spoil_at && spoil_at < n) {
+            switch (spoil) {
+                case SPOIL_ENVELOPE:       g_fx.envelope_.env_state = value; break;
+                case SPOIL_DISTRESSOR_ENV: g_fx.distressor_.distressor_env.env_state = value; break;
+                case SPOIL_TUBE_DC:        g_fx.overlord_.dc_l.y_prev = value; break;
+                case SPOIL_CROSSOVER:      g_fx.multiband_.xover_low_mid.l_lpf_z1 = value; break;
+                case SPOIL_SLAM_DC:        g_fx.slam_.dc_l.y_prev = value; break;
+                default: break;
+            }
+        }
+        g_fx.Process(in.data(), out.data(), BLOCK);
+        for (size_t i = 0; i < BLOCK * 2; ++i) {
+            if (nonfinite(out[i])) { ++bad; continue; }
+            if (n0 >= from) { ss += (double)out[i] * out[i]; ++N; }
+        }
+    }
+    RecoverResult r;
+    r.rms_db = 10.0 * log10(ss / (N ? N : 1) + 1e-30);
+    r.bad = bad;
+    r.trips = g_fx.getGuardTrips() - trips0;
+    return r;
+}
+
+static void section_recover() {
+    struct Cfg { const char* name; int mode; int dist; int drive; int mix; };
+    const Cfg cfgs[] = {
+        { "Standard   DRIVE 0  ",   0, 0,  0, 100 },
+        { "Standard   DRIVE 67 ",   0, 0, 67, 100 },
+        { "Dstr Off   DRIVE 67 ",   1, 0, 67, 100 },
+        { "Dstr Dist2 DRIVE 0  ",   1, 1,  0, 100 },
+        { "Dstr Dist2 DRIVE 67 ",   1, 1, 67, 100 },
+        { "Dstr Dist2 DRIVE 67 BAL", 1, 1, 67, 0 },
+        { "Multiband  DRIVE 0  ",   2, 0,  0, 100 },
+        { "Multiband  DRIVE 67 ",   2, 0, 67, 100 },
+    };
+    auto params = [](const Cfg& c) {
+        Params p = headerDefaults();
+        p.v[k_threhold] = -114;  p.v[k_attack] = 32;  p.v[k_release] = 224;
+        p.v[k_compressor_mode] = c.mode;
+        p.v[k_slope] = (c.mode == 1) ? distressorSlopeRaw(4) : 40;   /* 6:1 */
+        p.v[k_distressor_distortion_type] = c.dist;
+        p.v[k_drive] = c.drive;
+        p.v[k_mix] = c.mix;
+        if (c.mode == 2) p.v[k_multiband_band_selection] = BAND_ALL;
+        return p;
+    };
+    auto row = [](const char* what, const RecoverResult& ref, const RecoverResult& r,
+                  bool expect_trip) {
+        const bool level_ok = fabs(r.rms_db - ref.rms_db) < 0.5;
+        const bool ok = level_ok && r.bad == 0 && (!expect_trip || r.trips > 0);
+        printf("   %-10s %9.2f %9.2f %8ld %6u   %s\n", what, ref.rms_db, r.rms_db,
+               r.bad, r.trips, ok ? "ok" : "<-- FAIL");
+        if (!ok) ++g_recover_failures;
+    };
+
+    hdr("R1. ONE BAD SAMPLE ON THE BUS.  Out 3 s later vs. an untouched run;\n"
+        "    must match within 0.5 dB with no non-finite sample anywhere.");
+    const float pokes[]       = { NAN, INFINITY, -INFINITY, 1e30f, 1e20f };
+    const char* poke_names[]  = { "NaN", "+Inf", "-Inf", "1e30", "1e20" };
+    for (const Cfg& c : cfgs) {
+        printf("\n  %s\n   %-10s %9s %9s %8s %6s\n", c.name, "spoil", "ref dB", "out dB", "nonfin", "trips");
+        const RecoverResult ref = runSpoiled(params(c), SPOIL_NONE, 0.0f);
+        for (int k = 0; k < 5; ++k)
+            row(poke_names[k], ref, runSpoiled(params(c), SPOIL_INPUT, pokes[k]), false);
+    }
+
+    hdr("R2. A NaN THAT STARTS INSIDE.  The input guard cannot see these, so the\n"
+        "    watchdog has to: state is poisoned directly, the output must stay\n"
+        "    finite, the watchdog must trip, and the level must come back.");
+    struct Inside { const char* name; int cfg; Spoil spoil; };
+    const Inside inside[] = {
+        { "envelope",   0, SPOIL_ENVELOPE },        /* finite-but-silent case */
+        { "dstr env",   4, SPOIL_DISTRESSOR_ENV },  /* likewise */
+        { "tube DC",    1, SPOIL_TUBE_DC },
+        { "slam DC",    4, SPOIL_SLAM_DC },
+        { "crossover",  6, SPOIL_CROSSOVER },
+    };
+    printf("   %-10s %9s %9s %8s %6s\n", "state", "ref dB", "out dB", "nonfin", "trips");
+    for (const Inside& t : inside) {
+        const Cfg& c = cfgs[t.cfg];
+        const RecoverResult ref = runSpoiled(params(c), SPOIL_NONE, 0.0f);
+        /* The block that carries the NaN is zeroed whole, but none of it may
+         * leave as a non-finite sample. */
+        row(t.name, ref, runSpoiled(params(c), t.spoil, NAN), true);
+    }
+    printf("\n  %s\n", g_recover_failures ? "RECOVERY: FAILED" : "RECOVERY: all rows ok");
+}
+
 /* ========================================================================= */
 
 int main(int argc, char** argv) {
@@ -921,6 +1057,7 @@ int main(int argc, char** argv) {
     if (s == "all" || s == "release") section_release();
     if (s == "all" || s == "quirks")  section_quirks();
     if (s == "all" || s == "slam")    section_slam();
+    if (s == "all" || s == "recover") section_recover();
     printf("\n");
-    return 0;
+    return g_recover_failures ? 1 : 0;
 }

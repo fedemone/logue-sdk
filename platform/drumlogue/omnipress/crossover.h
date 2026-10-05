@@ -72,10 +72,8 @@ fast_inline void crossover_update_coeffs(crossover_t* xover, float freq_hz, floa
     xover->last_freq = freq_hz;
 }
 
-// Initialize crossover — also resets all filter states (startup only).
-fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_rate) {
-    crossover_update_coeffs(xover, freq_hz, sample_rate);
-
+// Zero every filter state, keeping the coefficients.
+fast_inline void crossover_clear_state(crossover_t* xover) {
     xover->l_lpf_z1  = xover->l_lpf_z2  = 0.0f;
     xover->l_lpf2_z1 = xover->l_lpf2_z2 = 0.0f;
     xover->l_hpf_z1  = xover->l_hpf_z2  = 0.0f;
@@ -84,6 +82,12 @@ fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_
     xover->r_lpf2_z1 = xover->r_lpf2_z2 = 0.0f;
     xover->r_hpf_z1  = xover->r_hpf_z2  = 0.0f;
     xover->r_hpf2_z1 = xover->r_hpf2_z2 = 0.0f;
+}
+
+// Initialize crossover — also resets all filter states (startup only).
+fast_inline void crossover_init(crossover_t* xover, float freq_hz, float sample_rate) {
+    crossover_update_coeffs(xover, freq_hz, sample_rate);
+    crossover_clear_state(xover);
 }
 
 // Process 4 consecutive time samples through a biquad (Transposed Direct Form II).

@@ -89,6 +89,33 @@ fast_inline void multiband_update_coeff(multiband_t* mb, int band) {
     mb->bands[band].release_coeff = e_expff(-1.0f / (mb->bands[band].release_ms * 0.001f * mb->sample_rate));
 }
 
+/**
+ * Zero every audio-rate history -- crossovers, detectors, gain smoothers, tube
+ * bias, DC blockers, phase match -- and leave the per-band settings and the
+ * crossover coefficients alone.  MasterFX calls this on its own when a
+ * non-finite value has got into the state, which must not cost the user the
+ * per-band thresholds, ratios and times they dialled in.
+ */
+fast_inline void multiband_clear_state(multiband_t* mb) {
+    crossover_clear_state(&mb->xover_low_mid);
+    crossover_clear_state(&mb->xover_mid_high);
+    crossover_clear_state(&mb->xover_sc_low_mid);
+    crossover_clear_state(&mb->xover_sc_mid_high);
+
+    for (int i = 0; i < NUM_OF_BANDS; i++) {
+        mb->comp_gain_state[i] = vdupq_n_f32(0.0f);
+        mb->comp_env_state[i]  = vdupq_n_f32(0.0f);
+        mb->tube_bias_l[i] = 0.0f;
+        mb->tube_bias_r[i] = 0.0f;
+        mb->dc_blockers_l[i].x_prev = 0.0f; mb->dc_blockers_l[i].y_prev = 0.0f;
+        mb->dc_blockers_r[i].x_prev = 0.0f; mb->dc_blockers_r[i].y_prev = 0.0f;
+    }
+    mb->low_phase_match_l.x1 = mb->low_phase_match_l.x2 = 0.0f;
+    mb->low_phase_match_l.y1 = mb->low_phase_match_l.y2 = 0.0f;
+    mb->low_phase_match_r.x1 = mb->low_phase_match_r.x2 = 0.0f;
+    mb->low_phase_match_r.y1 = mb->low_phase_match_r.y2 = 0.0f;
+}
+
 // Initialize multiband compressor
 fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     mb->sample_rate = sample_rate;
@@ -122,21 +149,10 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     // Standard/Distressor detector applies, so all three modes settle alike.
     mb->env_pre_coeff  = e_expff(-1.0f / (ENV_HOLD_MS * 0.001f * sample_rate));
 
-    // Everything below was left untouched here, which meant it survived a Reset:
-    // the unit relied on these landing in .bss and being zero exactly once, at
-    // load. Anything that got into the state afterwards could not be cleared.
-    for (int i = 0; i < NUM_OF_BANDS; i++) {
-        mb->comp_gain_state[i] = vdupq_n_f32(0.0f);
-        mb->comp_env_state[i]  = vdupq_n_f32(0.0f);
-        mb->tube_bias_l[i] = 0.0f;
-        mb->tube_bias_r[i] = 0.0f;
-        mb->dc_blockers_l[i].x_prev = 0.0f; mb->dc_blockers_l[i].y_prev = 0.0f;
-        mb->dc_blockers_r[i].x_prev = 0.0f; mb->dc_blockers_r[i].y_prev = 0.0f;
-    }
-    mb->low_phase_match_l.x1 = mb->low_phase_match_l.x2 = 0.0f;
-    mb->low_phase_match_l.y1 = mb->low_phase_match_l.y2 = 0.0f;
-    mb->low_phase_match_r.x1 = mb->low_phase_match_r.x2 = 0.0f;
-    mb->low_phase_match_r.y1 = mb->low_phase_match_r.y2 = 0.0f;
+    // The state used to be left untouched here, which meant it survived a
+    // Reset: the unit relied on it landing in .bss and being zero exactly once,
+    // at load. Anything that got into the state afterwards could not be cleared.
+    multiband_clear_state(mb);
 }
 
 fast_inline void multiband_reset(multiband_t* m) {

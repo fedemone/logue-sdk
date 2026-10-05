@@ -84,6 +84,13 @@ fast_inline void slam_init(slam_t* s, float sample_rate) {
     dc_blocker_init(&s->dc_r);
 }
 
+/** Return the bias tracker and DC blockers to silence, keeping the voicing. */
+fast_inline void slam_clear_state(slam_t* s) {
+    s->env = 0.0f;
+    dc_blocker_init(&s->dc_l);
+    dc_blocker_init(&s->dc_r);
+}
+
 /**
  * How far into the slam region the knob is: 0 at and below the knee, 1 at
  * DRIVE = 100.

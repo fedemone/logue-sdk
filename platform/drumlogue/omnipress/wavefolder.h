@@ -69,6 +69,18 @@ typedef struct {
 } wavefolder_t;
 
 /**
+ * Return the sub-octave tracker and its smoothing filters to silence, keeping
+ * the mode and the cached gains.
+ */
+fast_inline void wavefolder_clear_state(wavefolder_t* wf) {
+    wf->sub_phase = vdupq_n_f32(0.0f);
+    wf->last_input = vdupq_n_f32(0.0f);
+    wf->sub_lp_state1 = vdupq_n_f32(0.0f); // sub-octave LP filter state 1
+    wf->sub_lp_state2 = vdupq_n_f32(0.0f); // sub-octave LP filter state 2
+    wf->zero_cross = vdupq_n_u32(0);
+}
+
+/**
  * Initialize wavefolder
  */
 fast_inline void wavefolder_init(wavefolder_t* wf) {
@@ -77,11 +89,7 @@ fast_inline void wavefolder_init(wavefolder_t* wf) {
     wf->slam = 0.0f;
     wf->pre_gain = vdupq_n_f32(1.0f);
     wf->output_gain = vdupq_n_f32(1.0f);
-    wf->sub_phase = vdupq_n_f32(0.0f);
-    wf->last_input = vdupq_n_f32(0.0f);
-    wf->sub_lp_state1 = vdupq_n_f32(0.0f); // Initialize sub-octave LP filter state 1
-    wf->sub_lp_state2 = vdupq_n_f32(0.0f); // Initialize sub-octave LP filter state 2
-    wf->zero_cross = vdupq_n_u32(0);
+    wavefolder_clear_state(wf);
 
     // Initialize PRNG with fixed seed
     prng_simple_init(&wf->prng, 0x9E3779B9);
