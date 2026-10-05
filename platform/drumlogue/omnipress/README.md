@@ -14,7 +14,7 @@ A third engine, modelled on the **Empirical Labs EL8 Distressor**, is still in t
 |---------|-------------|
 | **2 Compression Modes** | Standard (Omnipressor transfer curve) and Multiband (3 bands) |
 | **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
-| **Drive** | Overlord tube stage in Standard, a per-band triode in Multiband |
+| **Drive** | Overlord tube stage in Standard (level-matched: DRIVE changes the character, not the level), a per-band triode in Multiband |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
 | **Multiband on the panel** | One threshold and one ratio knob per band, two independent crossover points, and a Solo/Mute selector — no band selector in front of shared knobs |
 | **Exact ballistics** | ATTACK and RELEASE are applied once, by the gain smoother, in both modes and to every band |
@@ -61,6 +61,68 @@ the Thr/Ratio/Atk/Rel/Makeup/State knobs then edited, and the readout could show
 only one band; the two crossover points moved together, a decade apart, from one
 XOVER knob; and page 1's ATTACK and RELEASE did nothing in Multiband. Per-band
 attack, release and makeup gave way to the global controls to make room.
+
+---
+
+## DRIVE: character, not level
+
+Every shaper behind DRIVE is bounded, so once it saturates its output level is
+its own ceiling, whatever went in: DRIVE was a volume knob. On a −20 dBFS bus the
+Overlord tube that Standard's DRIVE reaches added **+18.7 dB** by DRIVE 100 (and
++5 dB on a −6 dBFS one), so turning it up mostly bought loudness, and the ear
+discounts loudness. No fixed makeup law can fix that, because how far a shaper
+saturates depends on the programme — this unit's history is 1/g (driving harder
+made it quieter), then 1/√g (still quieter), then none (louder).
+
+So the drive stage measures its own input and output and hands back the ratio
+(`level_match_process()` in `filters.h`, constants `DRIVE_LEVEL_*`). Two
+estimates of that ratio run side by side, and the smaller one wins:
+
+* **The level** is the ratio of the two sides' *average* power over ~500 ms
+  (symmetric one-poles, identical on both sides). Average power is what
+  loudness follows, and with both sides averaged alike the ratio is the stage's
+  gain, not anything about the programme's rhythm, so the beat does not pump.
+* **A ceiling** is the ratio of *peak* power, from followers with an instant
+  attack and a 200 ms release. It notices DRIVE going up within the same
+  4-sample block, which the 500 ms average could not, so turning the knob never
+  pushes peaks above where they were. On its own it would match peaks, and a
+  saturating stage lowers the peak-to-average ratio, so drums came out 4–5 dB
+  louder on average; as a ceiling that bias only lifts it out of the way.
+* The gain is clamped to −70…+12 dB. The floor has to reach below the stage's
+  own small-signal gain (up to ~60 dB at DRIVE 100) or quiet material still
+  linear in the shaper — a reverb tail — comes back louder than it went in: at
+  −40 dB a −60 dBFS tone came out 13.6 dB hot.
+
+The tube is matched on its wet path, before the parallel fade-in at the bottom of
+the knob and before the tone stack, so BASS/TREBLE/PRESENCE still change the
+level they are meant to. Its DC blocker now starts where it settles with no
+signal: the triode idles at a −0.18 bias, and from a zeroed state the blocker
+turned that into a 5 ms DC transient every time the tube first engaged, which
+the level matching then took for programme and turned quiet material down for a
+second or two.
+
+Measured:
+
+| | before | now |
+|---|---|---|
+| Standard, −20 dBFS sine, DRIVE 0 → 100 | +18.7 dB | within 0.03 dB (THD 0 → 42%) |
+| Standard, −6 dBFS sine, DRIVE 0 → 100 | +5.0 dB | within 0.03 dB (THD 0 → 48%) |
+| Synthetic drum bus, DRIVE 0 → 100 | +5.5 dB | +0.4 dB (and peaks 1.00 → 0.37) |
+| Reported chain on the ARM build (Rings → NeonLabirinto → OmniPress), DRIVE 0 → 67 | +11.4 dB | −17.3 → −17.0 dBFS, peaks 1.00 → 0.32 |
+
+Two things you will hear. At equal loudness, heavy drive trades punch for
+density: on a drum bus the kick's attack sits up to ~8 dB lower relative to the
+rest of the beat at DRIVE 100, which is what saturation does and what the old
+level jump was hiding. And an *instant* jump in DRIVE — a program recall, not
+turning the encoder — lets the body of the first beat through up to ~6 dB
+fuller for a few hundred ms while the 500 ms average catches up (the kick's
+peak does not move: that is the ceiling's job); from the second beat it has
+settled. Turning the knob moves in steps the average follows, at most ~2 dB
+fuller while it moves.
+
+Bench: `./test_levels panel` M6 (pass/fail: within 1 dB of DRIVE 0 from −60 to
+−6 dBFS while THD climbs), G3, G4. Multiband's per-band triodes are not
+level-matched; they keep their own static compensation.
 
 ---
 
@@ -132,7 +194,7 @@ From **DRIVE 60 up, in Distressor mode only**, three things change:
 |---|---|---|
 | **Geometric pre-gain** | Up to ×24 on top of the old law (×960 total for the harmonic saturators) | Linear gain gives a vanishing number of dB per click near the top. Geometric gain makes every click worth the same push, which is what carries each saturating type from its knee into the square-wave regime |
 | **Program-dependent bias** | A DC offset ahead of the shaper, tracking the drive stage's envelope (15 ms attack, 250 ms release) | Once a stage is fully saturated more gain genuinely cannot change the waveform — a square is a square. Moving the level it clips *around* still can: it shifts the duty cycle, which brings in the even harmonics and the hollow, nasal quality of a hard-biased fuzz. A fixed offset would be nothing next to a few hundred times gain, so it has to follow the envelope — which also makes it breathe with the program, the way grid blocking does in the tube stage next door |
-| **Output trim** | Up to −1.9 dB, tube path only | The point is to hear character rather than level. The DstrDist shapers no longer need it: their level is held continuously by the drive stage's level matching (see below), which a fixed trim in front of it could not change |
+| **Output trim** | None any more | It was there so the region bought character rather than level. Every drive stage is level-matched now (see [DRIVE: character, not level](#drive-character-not-level)), which a fixed trim in front of it could not change, so no voicing asks for one |
 
 Below 60 all three are inert, and Standard and Multiband — which never arm the
 slam — are untouched.
@@ -147,21 +209,16 @@ region:
   design and leave an offset at any drive. Below the knee nothing used to remove
   it: on the reported chain Dist2 parked up to +0.22 of DC on the master bus
   (+20–25% of peak between DRIVE 10 and 60).
-* **Level matching.** A bounded shaper's output level, once it saturates, is its
-  own ceiling whatever went in, so the old law turned a −20 dBFS bus into a
-  −4 dBFS one by DRIVE 60, and at SLAM 67 the whole bus into a full-scale
-  square pinned on the output limiter. No fixed makeup can fix that, because how
-  far a shaper saturates depends on the programme — the history here is 1/g
-  (quieter as you drive), then 1/√g (still quieter), then none (louder). So the
-  stage measures its own input and output with two identical mean-square
-  followers (5 ms attack, 200 ms release) and applies their ratio, clamped to
-  −40…+12 dB. Fast attack, so turning DRIVE up cannot blast the bus for more than
-  a few ms; identical ballistics on both sides, so the ratio is the shaper's gain
-  at the current level and drums do not pump.
+* **Level matching**, the same `level_match_t` the tube uses (see
+  [DRIVE: character, not level](#drive-character-not-level)). Unmatched, the old
+  law turned a −20 dBFS bus into a −4 dBFS one by DRIVE 60, and at SLAM 67 the
+  whole bus into a full-scale square pinned on the output limiter.
 
 DRIVE now changes the character and not the level: THD climbs exactly as it did
-(Dist2 24% → 52% from 60 to 100) while the output stays within about 2.5 dB of
-DRIVE 0 for every type.
+(Dist2 24% → 52% from 60 to 100) while the six saturating types come out
+within 0.3 dB of where they went in (the folders and SubOct within 1.6 dB:
+their output is spikier than their input, so the peak ceiling holds them a
+little under).
 
 The nine DstrDist settings reach three structurally different stages, so each
 takes its own share (`drive_slam_voicing` in `constants.h`):
@@ -170,7 +227,7 @@ takes its own share (`drive_slam_voicing` in `constants.h`):
 |--------|----------|----------|------|------|
 | **SAT** | Dist2, Dist3, Both, Soft, Hard, SubOct | ×24 | full | none (level matched) |
 | **FOLD** | Trg, Sine | ×1 | 15% | none (level matched) |
-| **TUBE** | Off (Overlord fall-through) | ×6 | 50% | −1.9 dB |
+| **TUBE** | Off (Overlord fall-through) | ×6 | 50% | none (level matched) |
 
 The folders need no extra gain: their transfer curve is periodic, so gain adds
 folds linearly and they are already past 100% THD at the top of the knob — only
@@ -183,6 +240,23 @@ of the picture (`./test_levels slam`):
 
 | DstrDist | THD at 60 | THD at 100 | out at 60 | out at 100 | before level matching (60 / 100) |
 |----------|-----------|------------|-----------|------------|------------|
+| Off (tube) | 32.7% | 49.6% | −23.0 dBFS | −22.7 dBFS | −5.2 / −6.1 dBFS |
+| Dist2 | 24.0% | 52.1% | −23.0 dBFS | −23.0 dBFS | −3.9 / −2.6 dBFS |
+| Dist3 | 18.7% | 58.1% | −23.0 dBFS | −23.0 dBFS | −4.6 / −4.4 dBFS |
+| Both | 17.9% | 56.7% | −23.0 dBFS | −23.0 dBFS | −4.0 / −3.4 dBFS |
+| Soft | 12.8% | 54.8% | −23.0 dBFS | −23.0 dBFS | −7.2 / −4.7 dBFS |
+| Hard | 8.7% | 63.6% | −23.0 dBFS | −23.0 dBFS | −2.0 / −4.1 dBFS |
+| SubOct | 12.8% | 54.8% | −23.9 dBFS | −24.4 dBFS | −7.1 / −4.5 dBFS |
+
+(A −20 dBFS-peak sine is −23 dBFS RMS, so every stage now comes out where the
+signal went in; the tube reads −22.7 at DRIVE 100 because the slam's bias rides
+in on its input and the matcher counts that DC as input power, and SubOct sits
+lower because its output is spikier than its input and the peak ceiling holds
+it under.) A
+symmetric square wave is 48% THD, so the saturating families cross into and
+past it.
+
+----------|-----------|------------|-----------|------------|------------|
 | Off | 32.7% | 49.6% | −5.2 dBFS | −6.1 dBFS | (tube, unchanged) |
 | Dist2 | 24.0% | 52.1% | −22.9 dBFS | −22.9 dBFS | −3.9 / −2.6 dBFS |
 | Dist3 | 18.7% | 58.1% | −22.0 dBFS | −23.0 dBFS | −4.6 / −4.4 dBFS |
@@ -217,7 +291,7 @@ across 6 pages of 4. IDs below match `header.c`.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
-| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage · Multiband: per-band triode saturation |
+| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage, level-matched, so the knob changes the character and not the level · Multiband: per-band triode saturation |
 | 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
 | 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
@@ -396,6 +470,7 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | ATTACK and RELEASE did nothing in the gain smoother | Standard and Distressor built the smoother's coefficients with `fasterexpf`, a piecewise-linear fit that cannot exceed 0.9713 — a 0.7 ms time constant whatever the knob said — and Standard's smoother was written `y += c·(x − y)`, which with c near 1 jumps almost all the way every sample. The detectors carried the user's times instead, so ATTACK/RELEASE acted on the level rather than the gain, and the Distressor's Opto release and program-dependent release never did anything | One structure in every mode, as Multiband always had: the detector is a plain level follower (0.05 ms attack, 10 ms hold, 10 ms release) and the gain smoother carries ATTACK and RELEASE, once, exactly. Opto now really releases 5.7× slower (bench H1). Steady-state levels moved by at most 0.02 dB |
 | Long releases froze gain reduction for good | `e_expff` forms `1 + x/1024` first, which rounds to exactly 1.0 once \|x\| < 3·10⁻⁵, so every time constant past ~0.7 s came out as a coefficient of 1.0: in Multiband, RELEASE ≥ 700 ms let a band's gain reduction deepen on every hit and never recover. Shorter ones were quantised (224 ms ran as 171 ms) | Every time-constant coefficient now comes from `ballistics_coeff()` (libm `expf`, parameter changes only) |
 | Dist2 put DC on the bus and turned it into a square wave | Dist2 and Both are asymmetric and nothing removed their offset below the slam knee (up to +0.22 of DC, +25% of peak); and with no makeup a saturated shaper outputs its ceiling, so DRIVE was a +16–20 dB volume knob that ended in a full-scale square on the output limiter | `distressor_drive_output()`: a DC blocker and programme-dependent level matching behind every DstrDist shaper at every DRIVE (see *Drive stage output*). Bench S3 now sweeps the whole knob for DC instead of only DRIVE 100 |
+| Standard's DRIVE was a volume knob | The Overlord tube has no makeup and saturates to its own ceiling, so DRIVE 100 took a −20 dBFS bus up 18.7 dB (+5 dB at −6 dBFS, +11.4 dB on the reported chain at DRIVE 67); its DC blocker also started from zero, so the triode's −0.18 idle bias came out as a 5 ms DC thump the first time the tube engaged | The tube is level-matched on its wet path by the same `level_match_t` the Distressor's shapers use: average power over ~500 ms sets the level, an instant peak ceiling catches every turn of the knob (see *DRIVE: character, not level*). Within 0.03 dB of DRIVE 0 from −60 to −6 dBFS while THD still climbs to 42–48%; the reported chain stays at −17 dBFS. The DC blocker starts at the idle value, so engaging the tube is silent (bench M6, G3, G4) |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
 

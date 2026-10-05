@@ -287,44 +287,55 @@ typedef struct {
     float trim;        // output trim at full slam
 } slam_voicing_t;
 
-// The trim is only applied on the TUBE path now: the DstrDist shapers (SAT and
-// FOLD) are level-matched continuously by the drive stage's auto-level (see
-// DIST_LEVEL_* below), which a fixed trim in front of it could not change.
+// No family takes a trim any more: every drive stage is level-matched
+// continuously behind its shaper (DRIVE_LEVEL_* below), and a fixed trim in
+// front of that could not change the level anyway.  The field stays so a
+// voicing can still ask for one.
 static const slam_voicing_t drive_slam_voicing[SLAM_FAMILY_TOTAL] = {
-    /* TUBE */ {  6.0f, 0.50f, 0.80f },
+    /* TUBE */ {  6.0f, 0.50f, 1.00f },
     /* SAT  */ { 24.0f, 1.00f, 1.00f },
     /* FOLD */ {  1.0f, 0.15f, 1.00f },
 };
 
 // ----------------------------------------------------------------------------
-// Distressor drive stage output (every DstrDist setting but Off)
+// Drive stage level matching (the Overlord tube, and every DstrDist shaper)
 // ----------------------------------------------------------------------------
-// Two things every shaper here needs behind it, at every DRIVE setting, and
-// that only the slam region (DRIVE > 60) used to get:
+// Every shaper here is bounded, so once it saturates its output level is the
+// shaper's own ceiling, whatever went in: DRIVE was a volume knob.  Measured
+// on a -20 dBFS bus, the Overlord tube that Standard's DRIVE reaches added
+// +18.7 dB by DRIVE 100; Dist2 added 16 dB by DRIVE 60 and at SLAM 67 turned
+// the whole bus into a full-scale square pinned on the output limiter.  No
+// fixed makeup law can fix that, because how far a shaper saturates depends
+// on the programme: the history here is 1/g (driving harder made it quieter),
+// then 1/sqrt(g) (still quieter), then none (louder).
 //
-//  * A DC blocker.  Dist2 and Both are asymmetric by design, so they leave an
-//    offset at any drive: measured on the reported chain, Dist2 parked up to
-//    +0.22 of DC on the master bus between DRIVE 1 and 60, where nothing
-//    removed it.  Same corner as the slam's blocker.
-//
-//  * Level matching.  Every shaper is bounded, so once it saturates its output
-//    level is the shaper's ceiling, whatever went in -- a -20 dBFS bus came out
-//    16 dB louder at DRIVE 60, and at SLAM 67 the whole bus became a
-//    full-scale square pinned on the output limiter.  No fixed makeup law can
-//    fix that, because how far a shaper saturates depends on the programme:
-//    the history here is 1/g (driving harder made it quieter), then 1/sqrt(g)
-//    (still quieter), then none (louder).  So the stage measures its own input
-//    and output and applies their ratio: a mean-square follower on each, with
-//    identical ballistics, so the ratio is the shaper's gain at the current
-//    level rather than anything about the programme's rhythm.  Fast attack, so
-//    turning DRIVE up cannot blast the bus for longer than a few ms; slow
-//    release, so the gain does not pump between hits.
-constexpr float DIST_DC_POLE           = DRIVE_SLAM_DC_POLE;
-constexpr float DIST_LEVEL_ATTACK_MS   = 5.0f;
-constexpr float DIST_LEVEL_RELEASE_MS  = 200.0f;
-constexpr float DIST_LEVEL_FLOOR       = 1e-10f;  // mean square, -100 dBFS: hold below
-constexpr float DIST_LEVEL_GAIN_MIN    = 0.01f;   // -40 dB
-constexpr float DIST_LEVEL_GAIN_MAX    = 4.0f;    // +12 dB
+// So each drive stage measures its own input and output and applies their
+// ratio (level_match_process in filters.h).  The ratio of the two sides'
+// average power over ~half a second sets the level, since that is what
+// loudness follows; a fast peak-power ratio (1 ms attack, 200 ms release)
+// rides above it as a ceiling, so turning DRIVE up cannot swell the bus for
+// longer than a couple of ms.  Both sides of each estimate share their ballistics,
+// so what is matched is the stage's gain, not the programme's rhythm.  DRIVE
+// then changes the character and not the level.
+constexpr float DRIVE_LEVEL_ATTACK_MS  = 0.02f;   // the fast ceiling: effectively instant
+
+constexpr float DRIVE_LEVEL_RELEASE_MS = 200.0f;
+constexpr float DRIVE_LEVEL_SLOW_MS    = 500.0f;  // symmetric: the average-power match
+constexpr float DRIVE_LEVEL_FLOOR      = 1e-10f;  // mean square, -100 dBFS: hold below
+// The floor has to reach below the stages' own small-signal gain, or quiet
+// material -- a reverb tail, still linear in the shaper -- is handed back
+// louder than it went in: at -40 dB, DRIVE 100 left a -60 dBFS tone 13.6 dB
+// hot.  The SAT pre-gain tops out at x960 (+59.6 dB) and the tube's two
+// stages at about the same, so -70 dB clears both.
+constexpr float DRIVE_LEVEL_GAIN_MIN   = 3.16e-4f; // -70 dB
+constexpr float DRIVE_LEVEL_GAIN_MAX   = 4.0f;    // +12 dB
+
+// The DstrDist shapers also need a DC blocker behind them at every DRIVE
+// setting, not only in the slam region: Dist2 and Both are asymmetric by
+// design, and on the reported chain Dist2 parked up to +0.22 of DC on the
+// master bus between DRIVE 1 and 60.  Same corner as the slam's blocker.  (The
+// tube has its own, inside overlord_process.)
+constexpr float DIST_DC_POLE = DRIVE_SLAM_DC_POLE;
 
 // ============================================================================
 // NEON Vector Constants

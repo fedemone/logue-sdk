@@ -348,8 +348,8 @@ private:
         return is_nonfinite(envelope_.env_state) ||
                is_nonfinite(envelope_.rms_accum) ||
                is_nonfinite(distressor_.distressor_env.env_state) ||
-               is_nonfinite(distressor_.level_in) ||
-               is_nonfinite(distressor_.level_out) ||
+               level_match_is_nonfinite(&distressor_.level) ||
+               level_match_is_nonfinite(&overlord_.level) ||
                is_nonfinite(sc_hpf_.z1) || is_nonfinite(sc_hpf_.z2) ||
                is_nonfinite(slam_.env);
     }
@@ -521,10 +521,9 @@ private:
         // 6. SLAM OUTPUT STAGE
         // =================================================================
         // Closes the bias slam_bias() opened at the head of the drive chain:
-        // biased clipping leaves DC behind, and the trim keeps the region on
-        // the right side of the output limiter so what changes above DRIVE 60
-        // is the character and not just the level.  Disarmed outside the
-        // Distressor's slam region, where it costs one predictable branch.
+        // biased clipping leaves DC behind.  (Level is the tube's own level
+        // matching's job now; no voicing asks for a trim.)  Disarmed outside
+        // the Distressor's slam region, where it costs one predictable branch.
         // The DstrDist shapers have their own DC blocker and level matching
         // (distressor_drive_output), so this is the tube path's alone.
         if (tube_drive)
