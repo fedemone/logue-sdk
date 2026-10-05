@@ -847,6 +847,62 @@ static void test_settings_apply_immediately_when_silent() {
 // and on hardware it takes the host's mix bus with it. The watchdog rides on the
 // energy sum the APC already computes, so it costs one comparison; what matters
 // is that it actually recovers rather than merely noticing.
+// clear() is what unit_reset(), unit_suspend() and the watchdog all call, and
+// it used to zero the per-channel LFO *rates* along with their phases. Only
+// init() ever wrote the rates back, so after the first reset or suspend every
+// channel's modulation stood still: no swirl on any preset, and esotico's
+// 18-EDO Doppler shimmer -- the whole point of that preset -- frozen until the
+// unit was reloaded. Nothing else checked, because every other test starts
+// from a fresh init().
+static void test_modulation_survives_clear() {
+    printf("\n[reset] clear() keeps the modulation running\n");
+    static NeonAdvancedLabirinto fresh, used;
+    fresh = NeonAdvancedLabirinto(); fresh.init(); fresh.loadPreset(3);   // esotico
+    used  = NeonAdvancedLabirinto(); used.init();  used.loadPreset(3);
+
+    const int N = (int)(1.0f * SR);
+    std::vector<float> iL(N, 0.f), iR(N, 0.f), oL(N, 0.f), oR(N, 0.f);
+    tone(iL, iR);
+    for (int i = 0; i + BLK <= N; i += BLK)
+        used.process(&iL[i], &iR[i], &oL[i], &oR[i], BLK);
+    used.clear();                        // as the host's reset/suspend does
+
+    bool same = true, moving = true;
+    char detail[160] = "";
+    for (int c = 0; c < FDN_CHANNELS; c++) {
+        if (used.swirlRate_[c] != fresh.swirlRate_[c] ||
+            used.microtonalRate_[c] != fresh.microtonalRate_[c] ||
+            used.channelPhase_[c] != fresh.channelPhase_[c]) {
+            same = false;
+            snprintf(detail, sizeof(detail), "(ch %d: swirl %.3g/%.3g microtonal %.3g/%.3g)", c,
+                     used.swirlRate_[c], fresh.swirlRate_[c],
+                     used.microtonalRate_[c], fresh.microtonalRate_[c]);
+        }
+        if (!(used.microtonalRate_[c] > 0.0f) || !(used.swirlRate_[c] > 0.0f)) moving = false;
+    }
+    check(moving, "every channel still has a non-zero LFO rate after clear()", detail);
+    check(same, "clear() leaves the LFOs exactly where init() puts them", detail);
+
+    // ...and it is audible: from the same starting point, a cleared unit and
+    // a fresh one have to render the same tail.
+    std::vector<float> aL(N, 0.f), aR(N, 0.f), bL(N, 0.f), bR(N, 0.f);
+    std::vector<float> hL(N, 0.f), hR(N, 0.f);
+    hit(hL, hR, (int)(0.05f * SR), false);
+    for (int i = 0; i + BLK <= N; i += BLK) {
+        fresh.process(&hL[i], &hR[i], &aL[i], &aR[i], BLK);
+        used.process(&hL[i], &hR[i], &bL[i], &bR[i], BLK);
+    }
+    double diff = 0.0, ref = 0.0;
+    for (int i = 0; i < N; i++) {
+        diff += (aL[i] - bL[i]) * (aL[i] - bL[i]) + (aR[i] - bR[i]) * (aR[i] - bR[i]);
+        ref  += aL[i] * aL[i] + aR[i] * aR[i];
+    }
+    char buf[96];
+    snprintf(buf, sizeof(buf), "(difference %.1f dB below the tail)",
+             10.0 * log10((ref + 1e-30) / (diff + 1e-30)));
+    check(diff < ref * 1e-4, "a cleared esotico sounds like a fresh one", buf);
+}
+
 static void test_watchdog_recovers_from_poisoned_state() {
     printf("\n[watchdog] a poisoned delay line recovers instead of wedging\n");
 
@@ -1124,6 +1180,7 @@ int main() {
     test_delay_glide_is_rate_limited();
     test_settings_apply_immediately_when_silent();
     test_watchdog_recovers_from_poisoned_state();
+    test_modulation_survives_clear();
     test_colour_peak_gain_is_not_understated();
     test_no_preset_self_oscillates();
     test_no_dry_leak_into_the_wet_output();

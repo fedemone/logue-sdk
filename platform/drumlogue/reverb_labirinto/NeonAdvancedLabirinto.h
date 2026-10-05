@@ -122,6 +122,52 @@ static inline bool isNotFinite(float x) {
     return (u & 0x7F800000u) == 0x7F800000u;
 }
 
+/**
+ * Flush-to-zero and default-NaN for the length of one render, and the caller's
+ * mode back afterwards.
+ *
+ * FZ is wanted because the tail decays geometrically into the subnormal range,
+ * where the scalar VFP paths (the colour biquads, the band-split filters) run
+ * far slower than on normal numbers; NEON already flushes on ARMv7, VFP does
+ * not unless asked.  DN is wanted so a NaN cannot carry an odd payload around
+ * the network before the watchdog sees it.
+ *
+ * Two things this used to get wrong, both invisible on the bench because the
+ * host build compiles this out:
+ *
+ *  - It set bit 22 for DN.  On ARMv7 DN is bit 25; bits 23:22 are RMode, and
+ *    bit 22 alone selects round-towards-plus-infinity.  Measured on the ARM
+ *    build under QEMU, FPSCR read 0x0140xxxx after a render: FZ plus RP.
+ *
+ *  - It never put anything back.  The render callback runs on the drumlogue's
+ *    audio thread, which every other unit and the firmware's own engine share,
+ *    so from the first block after this unit was selected every scalar float
+ *    operation on that thread -- the synth's, the master FX's, the firmware's
+ *    mixer -- rounded up instead of to nearest, until a power cycle.  No unit
+ *    owns that thread's arithmetic; this one now only borrows it.
+ *
+ * Only the FZ and DN bits are restored, so the condition and cumulative
+ * exception flags the render actually produced are left as they are.
+ */
+struct AudioFpuScope {
+#if defined(__arm__) && defined(__ARM_FP)
+    static constexpr uint32_t kFZ = 1u << 24;
+    static constexpr uint32_t kDN = 1u << 25;
+    uint32_t prev;
+    AudioFpuScope() {
+        __asm__ volatile("vmrs %0, fpscr" : "=r"(prev) : : "memory");
+        const uint32_t want = prev | kFZ | kDN;
+        if (want != prev) __asm__ volatile("vmsr fpscr, %0" : : "r"(want) : "memory");
+    }
+    ~AudioFpuScope() {
+        uint32_t now;
+        __asm__ volatile("vmrs %0, fpscr" : "=r"(now) : : "memory");
+        const uint32_t restored = (now & ~(kFZ | kDN)) | (prev & (kFZ | kDN));
+        if (restored != now) __asm__ volatile("vmsr fpscr, %0" : : "r"(restored) : "memory");
+    }
+#endif
+};
+
 static_assert(PINGPONG_MAX_MS * 0.001f * PINGPONG_MAX_SPREAD * 48000.0f + 64.0f
                   < (float)BUFFER_SIZE,
               "delay ring buffer is too small for the longest ping-pong bounce");
@@ -366,10 +412,16 @@ public:
 
         // Reset pre delay line
         memset(preDelayBuffer, 0, sizeof(preDelayBuffer));
-        memset(channelPhase_, 0, sizeof(channelPhase_));
-        memset(swirlRate_, 0, sizeof(swirlRate_));
-        memset(microtonalRate_, 0, sizeof(microtonalRate_));
         preDelayWritePos = 0;
+        // Restart the modulation LFOs from their staggered phases. This used to
+        // zero the per-channel *rates* along with the phases, and only init()
+        // ever wrote them back -- so every unit_reset(), every unit_suspend()
+        // and every watchdog trip left all eight channels with a rate of zero:
+        // no swirl on any preset, and esotico's 18-EDO Doppler shimmer, the
+        // thing that preset is, frozen until the unit was reloaded. The rates
+        // are constants of the sample rate, not state; rebuilding them here is
+        // the same table init() builds.
+        initMicrotonalShimmer();
         activeSampleCount = 0;
         // Snap the slewed delay lengths and gains to their targets so a reset
         // does not glide in from wherever the previous patch left them.
@@ -1187,14 +1239,10 @@ public:
                  float* outL, float* outR,
                  int numSamples) {
 
-        // enable Flush-to-Zero (FTZ) and Default-NaN (DN) mode in the
-        // ARM Floating Point Status and Control Register (FPSCR)
-        #if defined(__arm__) || defined(__aarch64__)
-            uint32_t fpscr;
-            __asm__ volatile("vmrs %0, fpscr" : "=r"(fpscr));
-            fpscr |= (1 << 24) | (1 << 22); // Set FZ (bit 24) and DN (bit 22)
-            __asm__ volatile("vmsr fpscr, %0" : : "r"(fpscr));
-        #endif
+        // Flush-to-zero and default-NaN for this render only; the caller's
+        // FPU mode is back in force on every way out of this function.
+        AudioFpuScope fpu;
+        (void)fpu;
 
 	    // Safety check
         if (!initialized) {
