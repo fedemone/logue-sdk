@@ -194,6 +194,16 @@ constexpr float ENV_RELEASE_DEFAULT_MS = 100.0f;
 constexpr float ENV_HOLD_MS = 10.0f;                // Peak hold time
 constexpr float ENV_RMS_WINDOW_MS = 50.0f;          // RMS window size
 
+// Level-detector ballistics for Standard and Distressor.  The detector only
+// finds the level -- near-instant attack, then the 10 ms hold and a 10 ms
+// release -- and ATTACK/RELEASE are applied once, by the gain smoother behind
+// it, which is how Multiband has always worked.  Both stages used to claim the
+// user's times: the detector honoured them and the smoother, built from
+// fasterexpf (which cannot return more than 0.9713) and in Standard written
+// as y += c*(x - y) instead of y = x + c*(y - x), quietly did nothing.
+constexpr float DETECTOR_ATTACK_MS  = 0.05f;
+constexpr float DETECTOR_RELEASE_MS = ENV_HOLD_MS;
+
 // ============================================================================
 // Gain Computer Constants
 // ============================================================================
@@ -280,11 +290,44 @@ typedef struct {
     float trim;        // output trim at full slam
 } slam_voicing_t;
 
+// The trim is only applied on the TUBE path now: the DstrDist shapers (SAT and
+// FOLD) are level-matched continuously by the drive stage's auto-level (see
+// DIST_LEVEL_* below), which a fixed trim in front of it could not change.
 static const slam_voicing_t drive_slam_voicing[SLAM_FAMILY_TOTAL] = {
     /* TUBE */ {  6.0f, 0.50f, 0.80f },
-    /* SAT  */ { 24.0f, 1.00f, 0.65f },
+    /* SAT  */ { 24.0f, 1.00f, 1.00f },
     /* FOLD */ {  1.0f, 0.15f, 1.00f },
 };
+
+// ----------------------------------------------------------------------------
+// Distressor drive stage output (every DstrDist setting but Off)
+// ----------------------------------------------------------------------------
+// Two things every shaper here needs behind it, at every DRIVE setting, and
+// that only the slam region (DRIVE > 60) used to get:
+//
+//  * A DC blocker.  Dist2 and Both are asymmetric by design, so they leave an
+//    offset at any drive: measured on the reported chain, Dist2 parked up to
+//    +0.22 of DC on the master bus between DRIVE 1 and 60, where nothing
+//    removed it.  Same corner as the slam's blocker.
+//
+//  * Level matching.  Every shaper is bounded, so once it saturates its output
+//    level is the shaper's ceiling, whatever went in -- a -20 dBFS bus came out
+//    16 dB louder at DRIVE 60, and at SLAM 67 the whole bus became a
+//    full-scale square pinned on the output limiter.  No fixed makeup law can
+//    fix that, because how far a shaper saturates depends on the programme:
+//    the history here is 1/g (driving harder made it quieter), then 1/sqrt(g)
+//    (still quieter), then none (louder).  So the stage measures its own input
+//    and output and applies their ratio: a mean-square follower on each, with
+//    identical ballistics, so the ratio is the shaper's gain at the current
+//    level rather than anything about the programme's rhythm.  Fast attack, so
+//    turning DRIVE up cannot blast the bus for longer than a few ms; slow
+//    release, so the gain does not pump between hits.
+constexpr float DIST_DC_POLE           = DRIVE_SLAM_DC_POLE;
+constexpr float DIST_LEVEL_ATTACK_MS   = 5.0f;
+constexpr float DIST_LEVEL_RELEASE_MS  = 200.0f;
+constexpr float DIST_LEVEL_FLOOR       = 1e-10f;  // mean square, -100 dBFS: hold below
+constexpr float DIST_LEVEL_GAIN_MIN    = 0.01f;   // -40 dB
+constexpr float DIST_LEVEL_GAIN_MAX    = 4.0f;    // +12 dB
 
 // ============================================================================
 // NEON Vector Constants

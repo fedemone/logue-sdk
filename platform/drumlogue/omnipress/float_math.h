@@ -1518,6 +1518,23 @@ static inline int is_nonfinite(float x) {
   return (u & 0x7F800000u) == 0x7F800000u;
 }
 
+/**
+ * Per-sample coefficient of a one-pole with time constant `ms`, for the form
+ * y = x + c * (y - x).  Only ever computed on a parameter change, so it can
+ * afford libm, and it has to:
+ *
+ *  - fasterexpf is a piecewise-linear fit that cannot return more than 0.9713
+ *    near zero -- a 0.7 ms time constant whatever was asked for;
+ *  - e_expff forms 1 + x/1024 first, and in single precision that rounds to
+ *    exactly 1.0 once |x| < ~3e-5.  Every time constant past ~0.7 s came out
+ *    as a coefficient of 1.0 -- a smoother that never moves again, so gain
+ *    reduction could deepen but never recover -- and shorter ones were
+ *    quantised (224 ms ran as 171 ms).
+ */
+static inline float ballistics_coeff(float ms, float sample_rate) {
+  return expf(-1.0f / (ms * 0.001f * sample_rate));
+}
+
 /** All-ones in every lane that holds an infinity or a NaN, zero elsewhere. */
 static inline uint32x4_t nonfinite_mask_q(float32x4_t x) {
   const uint32x4_t exponent = vdupq_n_u32(0x7F800000u);

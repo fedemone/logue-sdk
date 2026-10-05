@@ -85,8 +85,11 @@ typedef struct {
 
 
 fast_inline void multiband_update_coeff(multiband_t* mb, int band) {
-    mb->bands[band].attack_coeff  = e_expff(-1.0f / (mb->bands[band].attack_ms * 0.001f * mb->sample_rate));
-    mb->bands[band].release_coeff = e_expff(-1.0f / (mb->bands[band].release_ms * 0.001f * mb->sample_rate));
+    // ballistics_coeff, not e_expff: e_expff returned exactly 1.0 for any
+    // release past ~0.7 s, so a band's gain reduction could deepen on every
+    // hit and never come back.
+    mb->bands[band].attack_coeff  = ballistics_coeff(mb->bands[band].attack_ms,  mb->sample_rate);
+    mb->bands[band].release_coeff = ballistics_coeff(mb->bands[band].release_ms, mb->sample_rate);
 }
 
 /**
@@ -147,7 +150,7 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
 
     // Decay of the per-band peak follower. ENV_HOLD_MS matches the hold the
     // Standard/Distressor detector applies, so all three modes settle alike.
-    mb->env_pre_coeff  = e_expff(-1.0f / (ENV_HOLD_MS * 0.001f * sample_rate));
+    mb->env_pre_coeff  = ballistics_coeff(ENV_HOLD_MS, sample_rate);
 
     // The state used to be left untouched here, which meant it survived a
     // Reset: the unit relied on it landing in .bss and being zero exactly once,

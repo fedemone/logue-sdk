@@ -144,9 +144,9 @@ fast_inline void envelope_detector_init(envelope_detector_t* env, float sr) {
     env->sample_rate = sr;
 
     // Default 10ms attack, 100ms release
-    env->attack_coeff = e_expff(-1.0f / (0.01f * sr));
-    env->release_coeff = e_expff(-1.0f / (0.1f * sr));
-    env->rms_alpha = 1.0f - e_expff(-1.0f / (ENV_RMS_WINDOW_MS * 0.001f * sr));
+    env->attack_coeff = ballistics_coeff(10.0f, sr);
+    env->release_coeff = ballistics_coeff(100.0f, sr);
+    env->rms_alpha = 1.0f - ballistics_coeff(ENV_RMS_WINDOW_MS, sr);
 }
 
 /** Return the detector to silence, keeping its mode and time constants. */
@@ -160,8 +160,16 @@ fast_inline void envelope_detector_clear(envelope_detector_t* env) {
 fast_inline void envelope_set_attack_release(envelope_detector_t* env,
                                              float attack_ms,
                                              float release_ms) {
-    env->attack_coeff = e_expff(-1.0f / (attack_ms * 0.001f * env->sample_rate));
-    env->release_coeff = e_expff(-1.0f / (release_ms * 0.001f * env->sample_rate));
+    env->attack_coeff = ballistics_coeff(attack_ms, env->sample_rate);
+    env->release_coeff = ballistics_coeff(release_ms, env->sample_rate);
+}
+
+/**
+ * Make the detector a plain level follower (see DETECTOR_ATTACK_MS): ATTACK
+ * and RELEASE are the gain smoother's business, not the detector's.
+ */
+fast_inline void envelope_set_level_follower(envelope_detector_t* env) {
+    envelope_set_attack_release(env, DETECTOR_ATTACK_MS, DETECTOR_RELEASE_MS);
 }
 
 // Process 4 samples through the envelope detector, one sample at a time so the

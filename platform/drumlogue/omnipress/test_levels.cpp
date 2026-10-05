@@ -509,7 +509,9 @@ static void section_release() {
         { "Standard Blend REL=200",  0, 58,  200, 2 },
         { "Distressor 4:1 REL=10",   1, 38,   10, 0 },
         { "Distressor 4:1 REL=2000", 1, 38, 2000, 0 },
+        { "Distressor Opto REL=200", 1, 63,  200, 0 },
         { "Multiband      REL=200",  2, 40,  200, 0 },
+        { "Multiband      REL=2000", 2, 40, 2000, 0 },
     };
 
     printf("  %-24s %s\n", "config", " 100ms   200    300    400    500    600    700    800");
@@ -887,24 +889,34 @@ static void section_slam() {
                (fabs(a.rms_dbfs - b.rms_dbfs) > 0.05) ? "   <-- MISMATCH" : "");
     }
 
-    hdr("S3. NO DC LEFT ON THE BUS.  The slam biases the shaper deliberately, so\n"
-        "    the stage behind it has to take the offset back out -- a master FX\n"
-        "    that parks DC on the output steals headroom from everything after\n"
-        "    it.  Mean output over a whole number of cycles, DRIVE 100.");
-    printf("  %-9s %14s %14s\n", "DstrDist", "mean out", "mean/peak");
+    hdr("S3. NO DC LEFT ON THE BUS.  Dist2 and Both are asymmetric and the slam\n"
+        "    biases every shaper, so the stage behind them has to take the offset\n"
+        "    back out -- a master FX that parks DC on the output steals headroom\n"
+        "    from everything after it.  Mean/peak of the output over a whole\n"
+        "    number of cycles, across the knob: this used to look only at DRIVE\n"
+        "    100, where the slam's blocker happened to run, and Dist2 sat at\n"
+        "    +20% of peak at DRIVE 50 unseen.");
+    printf("  %-9s", "DstrDist");
+    for (int drive : {0, 10, 30, 50, 60, 80, 100}) printf(" %8d", drive);
+    printf("\n");
     for (int dist = 0; dist <= 8; ++dist) {
-        Params p = headerDefaults();
-        p.v[k_compressor_mode] = 1;
-        p.v[k_slope]           = distressorSlopeRaw(0);
-        p.v[k_threhold]        = 0;
-        p.v[k_distressor_distortion_type] = dist;
-        p.v[k_drive]           = 100;
-        apply(p);
-        double mean, peak;
-        measureDC(0.1, F0, SETTLE, MEAS, &mean, &peak);
-        printf("  %-9s %+14.6f %+14.4f%s\n", DIST_NAME[dist], mean,
-               (peak > 0) ? mean / peak : 0.0,
-               (peak > 0 && fabs(mean / peak) > 0.02) ? "   <-- DC ON THE BUS" : "");
+        printf("  %-9s", DIST_NAME[dist]);
+        bool dc = false;
+        for (int drive : {0, 10, 30, 50, 60, 80, 100}) {
+            Params p = headerDefaults();
+            p.v[k_compressor_mode] = 1;
+            p.v[k_slope]           = distressorSlopeRaw(0);
+            p.v[k_threhold]        = 0;
+            p.v[k_distressor_distortion_type] = dist;
+            p.v[k_drive]           = drive;
+            apply(p);
+            double mean, peak;
+            measureDC(0.1, F0, SETTLE, MEAS, &mean, &peak);
+            const double r = (peak > 0) ? mean / peak : 0.0;
+            printf(" %+7.2f%%", 100.0 * r);
+            if (fabs(r) > 0.02) dc = true;
+        }
+        printf("%s\n", dc ? "   <-- DC ON THE BUS" : "");
     }
 }
 
@@ -929,7 +941,8 @@ static bool nonfinite(float x) {         /* bit test: robust under -ffast-math *
 }
 
 enum Spoil { SPOIL_NONE, SPOIL_INPUT, SPOIL_ENVELOPE, SPOIL_DISTRESSOR_ENV,
-             SPOIL_TUBE_DC, SPOIL_CROSSOVER, SPOIL_SLAM_DC };
+             SPOIL_TUBE_DC, SPOIL_CROSSOVER, SPOIL_SLAM_DC, SPOIL_DRIVE_DC,
+             SPOIL_DRIVE_LEVEL };
 
 struct RecoverResult { double rms_db; long bad; uint32_t trips; };
 
@@ -955,6 +968,8 @@ static RecoverResult runSpoiled(const Params& p, Spoil spoil, float value) {
                 case SPOIL_TUBE_DC:        g_fx.overlord_.dc_l.y_prev = value; break;
                 case SPOIL_CROSSOVER:      g_fx.multiband_.xover_low_mid.l_lpf_z1 = value; break;
                 case SPOIL_SLAM_DC:        g_fx.slam_.dc_l.y_prev = value; break;
+                case SPOIL_DRIVE_DC:       g_fx.distressor_.out_dc_l.y_prev = value; break;
+                case SPOIL_DRIVE_LEVEL:    g_fx.distressor_.level_out = value; break;
                 default: break;
             }
         }
@@ -1022,7 +1037,9 @@ static void section_recover() {
         { "envelope",   0, SPOIL_ENVELOPE },        /* finite-but-silent case */
         { "dstr env",   4, SPOIL_DISTRESSOR_ENV },  /* likewise */
         { "tube DC",    1, SPOIL_TUBE_DC },
-        { "slam DC",    4, SPOIL_SLAM_DC },
+        { "slam DC",    2, SPOIL_SLAM_DC },         /* the tube path's */
+        { "drive DC",   4, SPOIL_DRIVE_DC },        /* the shapers' */
+        { "drive lvl",  4, SPOIL_DRIVE_LEVEL },
         { "crossover",  6, SPOIL_CROSSOVER },
     };
     printf("   %-10s %9s %9s %8s %6s\n", "state", "ref dB", "out dB", "nonfin", "trips");
