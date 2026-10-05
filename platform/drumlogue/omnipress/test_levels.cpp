@@ -1196,6 +1196,20 @@ static void section_panel() {
         panelCheck(g_fx.getEngineMode() == want, what, buf);
     }
     {
+        /* A program saved under the old layout, replayed by ID: the values
+         * that were MBand, MBThr, MBRtio, MBAtk, MBReles, MBMkup, MBState and
+         * XOVER land on the new IDs 16-23.  Whatever they mean now, the two
+         * splits must stay in their own ranges and in order. */
+        g_fx.Reset();
+        const int32_t old_ids_16_23[8] = { 6, -200, 40, 150, 200, 240, 2, 50 };
+        g_fx.setParameter(k_compressor_mode, 2);
+        for (int i = 0; i < 8; ++i) g_fx.setParameter(16 + i, old_ids_16_23[i]);
+        const float lo = g_fx.multiband_.xover_low_freq, hi = g_fx.multiband_.xover_high_freq;
+        snprintf(buf, sizeof(buf), "(low %.0f Hz, high %.0f Hz)", lo, hi);
+        panelCheck(lo >= 62.0f && lo <= 1000.5f && hi >= 999.5f && hi <= 16001.0f && lo <= hi,
+                   "an old program's IDs 16-23 cannot cross the splits", buf);
+    }
+    {
         /* No ID sequence a host can send reaches the Distressor. */
         bool reached = false;
         for (int v = -2; v <= 8 && !reached; ++v) {

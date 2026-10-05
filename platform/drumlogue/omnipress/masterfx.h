@@ -373,6 +373,10 @@ private:
         slam_clear_state(&slam_);
     }
 
+    static inline int32_t clamp_raw(int32_t v, int32_t lo, int32_t hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+
     /** Write one per-band setting (multiband_set_param id) to all three bands. */
     fast_inline void set_all_bands(int p_id, float val) {
         for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
@@ -773,21 +777,28 @@ public:
             // Thr/Ratio/Atk/Rel/Makeup/State knobs, whose readout could show
             // one band at a time.  ATTACK and RELEASE (page 1) now set every
             // band, and per-band makeup is gone in favour of MAKEUP.
+            //
+            // Each value is clamped to its header range: a program saved under
+            // the old layout carries old values in IDs 15-23 (MBAtk's 150 lands
+            // on Xover Lo, which would put the low split at 4 kHz, above the
+            // high one), and the firmware is not known to clamp them for us.
             case k_band_low_threshold:
             case k_band_mid_threshold:
             case k_band_high_threshold:
-                multiband_set_param(&multiband_, index - k_band_low_threshold, 0, value * 0.1f);
+                multiband_set_param(&multiband_, index - k_band_low_threshold, 0,
+                                    clamp_raw(value, -600, 0) * 0.1f);
                 break;
             case k_band_low_ratio:
             case k_band_mid_ratio:
             case k_band_high_ratio:
-                multiband_set_param(&multiband_, index - k_band_low_ratio, 1, value * 0.1f);
+                multiband_set_param(&multiband_, index - k_band_low_ratio, 1,
+                                    clamp_raw(value, 10, 200) * 0.1f);
                 break;
             case k_crossover_low:
-                multiband_set_crossover_low(&multiband_, static_cast<float>(value));
+                multiband_set_crossover_low(&multiband_, static_cast<float>(clamp_raw(value, 0, 100)));
                 break;
             case k_crossover_high:
-                multiband_set_crossover_high(&multiband_, static_cast<float>(value));
+                multiband_set_crossover_high(&multiband_, static_cast<float>(clamp_raw(value, 0, 100)));
                 break;
             case k_band_solo_mute:
                 multiband_set_solo_mute(&multiband_,
