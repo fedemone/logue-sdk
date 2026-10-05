@@ -51,8 +51,10 @@ const __unit_header unit_header_t unit_header = {
         { 20, 500, 20, 20, k_unit_param_type_hertz, 0, 0, 0, {"SC HPF"} },
 
         // Page 3: Mode Selection
-        // ID 8: COMP MODE  0=Standard, 1=Distressor, 2=Multiband
-        { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"COMP MODE"} },    // ID 8 - Compressor mode selection
+        // ID 8: COMP MODE  0=Standard, 1=Multiband.  The Distressor engine is
+        // still in the source (distressor_mode.h, drive_slam.h, wavefolder.h)
+        // and on the bench, but no longer on the panel -- see README.
+        { 0, 1, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"COMP MODE"} },    // ID 8 - Compressor mode selection
         // Omnipressor-style limits on how far the function knob may push the VCA.
         // These shipped at -1.0/+1.0 dB, which clamped Standard mode to a 2 dB
         // window and made it read as nearly bypassed however the SLOPE was set.
@@ -60,41 +62,37 @@ const __unit_header unit_header_t unit_header = {
         // of the transfer curve without letting quiet passages run away.
         { -300, 0, -30, -200, k_unit_param_type_db, 1, 1, 0, {"ATT LMT"} },   // ID 9
         { 0, 300, 30, 60, k_unit_param_type_db, 1, 1, 0, {"GAIN LMT"} },      // ID 10
-        //   Standard/Multiband: 0=Peak,  1=RMS,  2=Blend
-        //   Distressor:         0=Basic, 1=Emph, 2=Link, 3=Emph+Link
+        //   Standard: 0=Peak, 1=RMS, 2=Blend (Multiband has its own per-band
+        //   peak followers and only reads the +4 bit). The Distressor engine,
+        //   bench only, reads 0=Basic, 1=Emph, 2=Link, 3=Emph+Link.
         //   +4 on any of the above listens to the external sidechain input
         //   (SC L/R) instead of the main bus. All 24 parameter slots the SDK
         //   allows are taken, so the sidechain source shares this control.
         { 0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DETECT"} },       // ID 11
 
-        // Page 4: Multiband / Distressor Parameters
+        // Page 4: Overlord EQ, and Multiband solo/mute
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"BASS"} },     // ID 12 - Overlord
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"TREBLE"} },   // ID 13 - Overlord
         { 0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"PRESENCE"} }, // ID 14 - Overlord
-        // ID 15: DSTR DIST  0=None, 1=2nd harm, 2=3rd harm, 3=Both, 4=soft clip, 5=hard clip, 6=triangle, 7=sine, 8=suboctave
-        // Max is 8: DIST_MODE_TOTAL is 9, so setParameter rejects 9 and it has no display string.
-        { 0, 8, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"DstrDist"} },    // ID 15 - Distressor distortion type
+        // ID 15: Multiband solo/mute. One band at a time: 0=Off, 1-3 solo
+        // Low/Mid/High, 4-6 mute Low/Mid/High. This slot was DstrDist, and it
+        // replaces both the MBand selector and MBState.
+        { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"SoloMute"} },   // ID 15
 
-        // Page 5: Multiband per-band parameters
-        // ID 17: BAND SEL  0=Low, 1=Mid, 2=High, 3=Low+Mid, 4=Low+High, 5=Mid+High, 6=All
-        { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBand"} },       // ID 16
-        // ID 18: BAND THRESH  -60.0..0.0 dB  (per-band threshold)
-        { -600, 0, -600, -200, k_unit_param_type_strings, 1, 1, 0, {"MBThr"} },  // ID 17 - dB
-        // ID 19: BAND RATIO   1.0..20.0:1
-        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"MBRtio"} },      // ID 18 - ratio (param none)
-        // ID 20: BAND ATTACK  1..1000 ms
-        { 1, 1000, 1, 150, k_unit_param_type_strings, 1, 1, 0, {"MBAtk"} },      // ID 19 - ms
+        // Page 5: Multiband thresholds, one knob per band, and the low split
+        { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"Lo Thresh"} },  // ID 16
+        { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"Mid Thresh"} }, // ID 17
+        { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"Hi Thresh"} },  // ID 18
+        // ID 19: low/mid split, 62.5 Hz at 0 to 1 kHz at 100, log; 50 = 250 Hz
+        { 0, 100, 0, 50, k_unit_param_type_strings, 0, 0, 0, {"Xover Lo"} },    // ID 19
 
-        // Page 6:
-        // ID 21: BAND RELEASE 10..2000 ms
-        { 10, 2000, 10, 200, k_unit_param_type_strings, 0, 0, 0, {"MBReles"} }, // ID 20 - ms
-        { 0, 240, 0, 0, k_unit_param_type_strings, 1, 1, 0, {"MBMkup"} },         // ID 21 - dB
-        // ID 22: band state. Solo already overrode mute in the mixer, so the two
-        // former on/off parameters carried no combination this one cannot express.
-        { 0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"MBState"} },          // ID 22 - 0=On, 1=Mute, 2=Solo
-        // ID 23: moves both crossover points together, 62.5 Hz/625 Hz at 0 up to
-        // 1 kHz/10 kHz at 100, a decade apart throughout. 50 = 250 Hz / 2.5 kHz.
-        { 0, 100, 50, 50, k_unit_param_type_strings, 0, 0, 0, {"XOVER"} },        // ID 23
+        // Page 6: Multiband ratios, one knob per band, and the high split
+        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"Lo Ratio"} },  // ID 20 - 1.0..20.0:1
+        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"Mid Ratio"} }, // ID 21
+        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"Hi Ratio"} },  // ID 22
+        // ID 23: mid/high split, 1 kHz at 0 to 16 kHz at 100, log; 33 = 2.5 kHz.
+        // The two ranges meet only at 1 kHz, so the splits can never cross.
+        { 0, 100, 0, 33, k_unit_param_type_strings, 0, 0, 0, {"Xover Hi"} },    // ID 23
 
     }
 };

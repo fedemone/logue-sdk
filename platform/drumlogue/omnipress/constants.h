@@ -81,10 +81,6 @@ constexpr int GAIN_MIN = 0;
 constexpr int GAIN_MAX = 300;
 constexpr int GAIN_DEFAULT = GAIN_MAX;    // Standard mode
 
-constexpr int BAND_SEL_MIN = 0;
-constexpr int BAND_SEL_MAX = 6;
-constexpr int BAND_SEL_DEFAULT = 0;     // Low band
-
 constexpr int BAND_THRESH_MIN = -600;   // -60.0 dB
 constexpr int BAND_THRESH_MAX = 0;      // 0 dB
 constexpr int BAND_THRESH_DEFAULT = -200; // -20.0 dB
@@ -107,22 +103,6 @@ typedef enum {
     COMP_MODE_MULTIBAND   ,
     COMP_MODE_TOTAL
 } CompMode;
-
-// ============================================================================
-// Band Selection IDs
-// ============================================================================
-
-// Band selection for parameters
-typedef enum {
-    BAND_LOW    ,
-    BAND_MID    ,
-    BAND_HIGH   ,
-    BAND_LOW_MID,
-    BAND_LOW_HI ,
-    BAND_MID_HI ,
-    BAND_ALL    ,
-    BAND_TOTAL  ,
-}   BandSelection;
 
 // ============================================================================
 // Distressor Mode IDs
@@ -179,6 +159,23 @@ typedef enum {
 // ============================================================================
 // Multiband Crossover Frequencies
 // ============================================================================
+
+// Xover Lo (ID 19) and Xover Hi (ID 23) are 0..100 knobs, logarithmic, each
+// spanning four octaves: 62.5 Hz..1 kHz and 1 kHz..16 kHz.  The ranges meet
+// only at 1 kHz, so the low split can never land above the high one.
+constexpr float XOVER_LOW_HZ_MIN    = 62.5f;
+constexpr float XOVER_HIGH_HZ_MIN   = 1000.0f;
+constexpr float XOVER_KNOB_LOG_SPAN = 0.027725887f;   // ln(16) / 100
+constexpr int   XOVER_LOW_KNOB_DEFAULT  = 50;         // 250 Hz
+constexpr int   XOVER_HIGH_KNOB_DEFAULT = 33;         // 2.50 kHz
+
+// SoloMute (ID 15): one band soloed or muted at a time
+typedef enum {
+    SOLO_MUTE_OFF,
+    SOLO_LOW, SOLO_MID, SOLO_HIGH,
+    MUTE_LOW, MUTE_MID, MUTE_HIGH,
+    SOLO_MUTE_TOTAL,
+} SoloMute;
 
 constexpr float XOVER_LOW_FREQ_DEFAULT = 250.0f;   // Low/Mid crossover
 constexpr float XOVER_HIGH_FREQ_DEFAULT = 2500.0f; // Mid/High crossover

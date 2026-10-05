@@ -24,7 +24,9 @@
 #define AUDIO_DIST2      (1 << 1)  // 2nd harmonic
 #define AUDIO_DIST3      (1 << 2)  // 3rd harmonic
 
-// Distressor Mode String Display
+// Distressor Mode String Display.  Unused while the Distressor is off the
+// panel (DstrDist's slot is SoloMute now); kept for whoever puts it back.
+__attribute__((unused))
 static const char *distressor_dist_strings[DIST_MODE_TOTAL] = {
     "Off",   // 0 - Clean
     "Dist2", // 1 - Tube-like 2nd harmonic

@@ -177,15 +177,33 @@ fast_inline void multiband_set_crossover(multiband_t* mb,
     crossover_update_coeffs(&mb->xover_sc_mid_high, high_freq, mb->sample_rate);
 }
 
-// Move both split points together from one 0..100 control.
-// Log-interpolated so the knob feels even; 50 lands on the 250 Hz / 2.5 kHz
-// default. One control rather than two because the SDK caps a unit at 24
-// parameters and they were all spoken for.
-fast_inline void multiband_set_crossover_spread(multiband_t* mb, float pos) {
-    // 62.5 Hz -> 1 kHz for the low split, always a decade below the high one,
-    // so the two can never cross. pos = 50 gives the 250 Hz / 2.5 kHz default.
-    const float low = 62.5f * e_expff(pos * 0.027726f);  // 0.01 * ln(16)
-    multiband_set_crossover(mb, low, low * 10.0f);
+// Each split point on its own 0..100 knob, log-interpolated so the knob feels
+// even (see XOVER_* in constants.h). These used to move together, a decade
+// apart, from one XOVER control, because all 24 parameter slots were taken;
+// taking the Distressor off the panel freed the slot for the second one.
+fast_inline float multiband_xover_knob_hz(float min_hz, float knob) {
+    return min_hz * expf(knob * XOVER_KNOB_LOG_SPAN);
+}
+
+fast_inline void multiband_set_crossover_low(multiband_t* mb, float knob) {
+    multiband_set_crossover(mb, multiband_xover_knob_hz(XOVER_LOW_HZ_MIN, knob),
+                            mb->xover_high_freq);
+}
+
+fast_inline void multiband_set_crossover_high(multiband_t* mb, float knob) {
+    multiband_set_crossover(mb, mb->xover_low_freq,
+                            multiband_xover_knob_hz(XOVER_HIGH_HZ_MIN, knob));
+}
+
+// One band soloed or muted at a time (SoloMute in constants.h); everything
+// else plays.  Solo already won over mute in the mixer, so a single selector
+// expresses every combination the old per-band MBState could reach that
+// matters on a master bus.
+fast_inline void multiband_set_solo_mute(multiband_t* mb, int sel) {
+    for (int b = BAND_LOW; b <= BAND_HIGH; ++b) {
+        mb->bands[b].solo = (sel == SOLO_LOW + b) ? 1.0f : 0.0f;
+        mb->bands[b].mute = (sel == MUTE_LOW + b) ? 1.0f : 0.0f;
+    }
 }
 
 // Set band parameter
