@@ -152,9 +152,11 @@ public:
         // Derived coefficients that depend on more than one parameter, so they
         // have to be refreshed once the whole set is in place.
         update_opto_coeff(&distressor_, release_coeff_);
-        // Sync distressor envelope detector to current user attack/release so all
-        // three modes have the same detector timing and produce matching output levels.
-        envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
+        // Both detectors are plain level followers in every mode -- the gain
+        // smoothers carry ATTACK and RELEASE (see DETECTOR_ATTACK_MS) -- which
+        // also keeps the three modes' detectors timed alike.
+        envelope_set_level_follower(&envelope_);
+        envelope_set_level_follower(&distressor_.distressor_env);
     }
 
     inline void Resume() {}
@@ -334,12 +336,17 @@ private:
 
     /**
      * The recursive state whose corruption does not show up in the output as
-     * a NaN, only as silence -- see the watchdog at the end of Process().
+     * a NaN, only as silence or as a gain frozen where it was -- see the
+     * watchdog at the end of Process().  The drive stage's level followers
+     * belong here: a NaN follower fails the floor test, so the level gain
+     * just stops updating, and nothing downstream ever sees a bad sample.
      */
     inline bool state_is_nonfinite() const {
         return is_nonfinite(envelope_.env_state) ||
                is_nonfinite(envelope_.rms_accum) ||
                is_nonfinite(distressor_.distressor_env.env_state) ||
+               is_nonfinite(distressor_.level_in) ||
+               is_nonfinite(distressor_.level_out) ||
                is_nonfinite(sc_hpf_.z1) || is_nonfinite(sc_hpf_.z2) ||
                is_nonfinite(slam_.env);
     }
@@ -540,7 +547,10 @@ private:
         // the right side of the output limiter so what changes above DRIVE 60
         // is the character and not just the level.  Disarmed outside the
         // Distressor's slam region, where it costs one predictable branch.
-        slam_output(&slam_, &processed_l, &processed_r);
+        // The DstrDist shapers have their own DC blocker and level matching
+        // (distressor_drive_output), so this is the tube path's alone.
+        if (tube_drive)
+            slam_output(&slam_, &processed_l, &processed_r);
 
         float32x4x2_t result;
         result.val[0] = processed_l;
@@ -590,8 +600,12 @@ private:
             bool is_attack = fabsf(targets[i]) > fabsf(state);
             float coeff = is_attack ? attack_coeff_ : release_coeff_;
 
-            // Single pole IIR filter
-            state = state + coeff * (targets[i] - state);
+            // Single pole IIR filter.  The coefficient is the fraction of the
+            // distance *kept* each sample, so it multiplies (state - target);
+            // this read state += coeff * (target - state), which with coeff
+            // near 1 jumped 97-99% of the way every sample and made ATTACK
+            // and RELEASE do nothing here.
+            state = targets[i] + coeff * (state - targets[i]);
             smoothed[i] = state;
         }
         // Store history back to the class member vector
@@ -628,6 +642,9 @@ private:
 
         float32x4_t comp_l = vmulq_f32(main_l, gain_lin);
         float32x4_t comp_r = vmulq_f32(main_r, gain_lin);
+        // What enters the drive stage, for its level matching below.
+        const float32x4_t drive_in_l = comp_l;
+        const float32x4_t drive_in_r = comp_r;
 
         // Slam bias, ahead of whichever shaper DstrDist selects -- including
         // None, where the signal falls through to the Overlord tube and picks
@@ -674,10 +691,15 @@ private:
             }
             case DIST_MODE_CLEAN:
             default:
+                // The Overlord tube takes it from here (process_block), with
+                // its own DC blocker and the slam's trim behind it.
                 *out_l = comp_l;
                 *out_r = comp_r;
-                break;
+                return;
         }
+
+        // Every shaper above: DC out, level back to what went in.
+        distressor_drive_output(&distressor_, drive_in_l, drive_in_r, out_l, out_r);
     }
 
 public:
@@ -731,16 +753,12 @@ public:
 
             case k_attack: // ATTACK (0.1 to 100.0 ms)
                 attack_ms_ = value * 0.1f;
-                attack_coeff_ = fasterexpf(-0.02083333f / attack_ms_);  // 1 / (0.001f * samplerate_)
-                envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
-                envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
+                attack_coeff_ = ballistics_coeff(attack_ms_, samplerate_);
                 break;
 
             case k_release: // RELEASE (10 to 2000 ms)
                 release_ms_ = static_cast<float>(value);
-                release_coeff_ = fasterexpf(-0.02083333f / release_ms_);    // 1 / (0.001f * samplerate_)
-                envelope_set_attack_release(&envelope_, attack_ms_, release_ms_);
-                envelope_set_attack_release(&distressor_.distressor_env, attack_ms_, release_ms_);
+                release_coeff_ = ballistics_coeff(release_ms_, samplerate_);
                 update_opto_coeff(&distressor_, release_coeff_);
                 break;
 
@@ -832,8 +850,7 @@ public:
                     if (comp_mode_ == COMP_MODE_DISTRESSOR) {
                         // Distressor expects at least 0.05ms attack
                         attack_ms_ = fmaxf(attack_ms_, 0.05f);
-                        attack_coeff_ =
-                            fasterexpf(-0.02083333f / (attack_ms_)); // 1 / (0.001f * samplerate_)
+                        attack_coeff_ = ballistics_coeff(attack_ms_, samplerate_);
                     }
                     // SLOPE means something different in each mode, so re-read it
                     // here.  A host replaying a stored program walks the parameter

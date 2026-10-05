@@ -70,16 +70,32 @@ typedef struct {
     envelope_detector_t distressor_env;  // Dedicated envelope detector
     float32x4_t detector_state;
 
+    // Drive stage output (see DIST_LEVEL_* in constants.h)
+    dc_blocker_state_t out_dc_l;
+    dc_blocker_state_t out_dc_r;
+    float level_in;           // mean-square follower on what enters the shaper
+    float level_out;          // ...and on what leaves it, after the DC blocker
+    float level_gain;         // their ratio, as an amplitude
+    float level_attack;       // per-block coefficients
+    float level_release;
+
 } distressor_t;
 
 fast_inline void update_opto_coeff(distressor_t* d, float release_coeff_) {
     // Opto mode slows release by raising the coefficient to 1/mult power,
     // which is equivalent to multiplying the release time constant by mult
     // while keeping the coefficient safely in (0,1).
+    //
+    // c^(1/m) = exp(ln(c) / m), exactly.  This was fasterpowf, whose log2 is
+    // biased by up to +0.057 near 1 and whose exp2 cannot exceed 0.9713 there,
+    // so for every real release coefficient (0.9999 and up) both results came
+    // out near 0.97 -- a 0.7 ms release -- and neither the opto mode nor the
+    // program-dependent release below ever did anything.  Runs on parameter
+    // changes only, so libm is affordable.
     d->opto_coeff = (d->opto_release_mult > 1.0f)
-        ? fasterpowf(release_coeff_, 1.0f / d->opto_release_mult): release_coeff_;
+        ? expf(logf(release_coeff_) / d->opto_release_mult) : release_coeff_;
     // Second, slower time constant for the program-dependent release below.
-    d->release_slow = fasterpowf(d->opto_coeff, 1.0f / 3.0f);
+    d->release_slow = expf(logf(d->opto_coeff) * (1.0f / 3.0f));
 }
 
 // Initialize Distressor with detector
@@ -89,8 +105,8 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     d->detector_mode = DETECT_NONE;
     d->attack_ms = 0.5f;      // Much faster than standard (0.5ms)
     d->release_ms = 200.0f;
-    d->attack_coeff = e_expff(-1.0f / (d->attack_ms * 0.001f * sample_rate));
-    d->release_coeff = e_expff(-1.0f / (d->release_ms * 0.001f * sample_rate));
+    d->attack_coeff = ballistics_coeff(d->attack_ms, sample_rate);
+    d->release_coeff = ballistics_coeff(d->release_ms, sample_rate);
     d->harmonic_state = vdupq_n_f32(0.0f);
     d->last_input = vdupq_n_f32(0.0f);
     d->sat_drive = vdupq_n_f32(1.0f);
@@ -109,8 +125,19 @@ fast_inline void distressor_init(distressor_t* d, float sample_rate) {
     // Initialize distressor envelope detector
     envelope_detector_init(&d->distressor_env, sample_rate);
 
-    // Set faster attack/release for distressor detector
-    envelope_set_attack_release(&d->distressor_env, d->attack_ms, d->release_ms);
+    // The detector only follows the level; the gain smoother behind it carries
+    // ATTACK, RELEASE, the opto release and the program-dependent release.
+    envelope_set_level_follower(&d->distressor_env);
+
+    // Drive stage output: the followers run once per 4-sample block.
+    const float block_rate = sample_rate * (1.0f / NEON_LANES);
+    d->level_attack  = ballistics_coeff(DIST_LEVEL_ATTACK_MS,  block_rate);
+    d->level_release = ballistics_coeff(DIST_LEVEL_RELEASE_MS, block_rate);
+    dc_blocker_init(&d->out_dc_l);
+    dc_blocker_init(&d->out_dc_r);
+    d->level_in   = 0.0f;
+    d->level_out  = 0.0f;
+    d->level_gain = 1.0f;
 }
 
 // Distressor-specific mono/summed envelope detector.
@@ -167,6 +194,11 @@ fast_inline float32x4_t distressor_detect_stereo(distressor_t* d,
  * user's settings in place.
  */
 fast_inline void distressor_clear_state(distressor_t* d) {
+    dc_blocker_init(&d->out_dc_l);
+    dc_blocker_init(&d->out_dc_r);
+    d->level_in   = 0.0f;
+    d->level_out  = 0.0f;
+    d->level_gain = 1.0f;
     d->harmonic_state = vdupq_n_f32(0.0f);
     d->last_input     = vdupq_n_f32(0.0f);
     d->detector_state = vdupq_n_f32(0.0f);
@@ -292,6 +324,38 @@ fast_inline float32x4_t generate_harmonics(distressor_t* d,
         default:
             return in;
     }
+}
+
+/**
+ * What every DstrDist shaper needs behind it: take out the DC an asymmetric
+ * or biased shaper leaves, then hand back the level that went in.  `ref_l`
+ * and `ref_r` are the signal as it entered the drive stage, before the slam
+ * bias and the drive gain.  See DIST_LEVEL_* in constants.h for why.
+ */
+fast_inline void distressor_drive_output(distressor_t* d,
+                                         float32x4_t ref_l, float32x4_t ref_r,
+                                         float32x4_t* l, float32x4_t* r) {
+    *l = dc_block_process(&d->out_dc_l, *l, DIST_DC_POLE);
+    *r = dc_block_process(&d->out_dc_r, *r, DIST_DC_POLE);
+
+    const float in_ms  = 0.5f * (vmeanq_f32(vmulq_f32(ref_l, ref_l)) +
+                                 vmeanq_f32(vmulq_f32(ref_r, ref_r)));
+    const float out_ms = 0.5f * (vmeanq_f32(vmulq_f32(*l, *l)) +
+                                 vmeanq_f32(vmulq_f32(*r, *r)));
+    float c = (in_ms > d->level_in) ? d->level_attack : d->level_release;
+    d->level_in = flush_denormal(in_ms + c * (d->level_in - in_ms));
+    c = (out_ms > d->level_out) ? d->level_attack : d->level_release;
+    d->level_out = flush_denormal(out_ms + c * (d->level_out - out_ms));
+
+    // Below the floor there is nothing to match, and a ratio of two noise
+    // floors is not a gain anyone wants applied, so hold the last one.
+    if (d->level_in > DIST_LEVEL_FLOOR && d->level_out > DIST_LEVEL_FLOOR) {
+        float g = sqrtf(d->level_in / d->level_out);
+        d->level_gain = (g < DIST_LEVEL_GAIN_MIN) ? DIST_LEVEL_GAIN_MIN
+                      : (g > DIST_LEVEL_GAIN_MAX) ? DIST_LEVEL_GAIN_MAX : g;
+    }
+    *l = vmulq_n_f32(*l, d->level_gain);
+    *r = vmulq_n_f32(*r, d->level_gain);
 }
 
 // Soft knee, quadratic through the transition, hard above it.
