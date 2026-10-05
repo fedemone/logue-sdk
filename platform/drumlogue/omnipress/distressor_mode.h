@@ -160,6 +160,23 @@ fast_inline float32x4_t distressor_detect_stereo(distressor_t* d,
     return envelope_detect(&d->distressor_env, linked);
 }
 
+/**
+ * Return every audio-rate history to silence -- gain smoother, detector
+ * filters, envelope -- keeping ratio, distortion type, detector flags and the
+ * time constants.  Unlike distressor_reset(), this is safe to call with the
+ * user's settings in place.
+ */
+fast_inline void distressor_clear_state(distressor_t* d) {
+    d->harmonic_state = vdupq_n_f32(0.0f);
+    d->last_input     = vdupq_n_f32(0.0f);
+    d->detector_state = vdupq_n_f32(0.0f);
+    sidechain_hpf_clear(&d->detect_hpf);
+    sidechain_hpf_clear(&d->detect_hpf_r);
+    sidechain_hpf_clear(&d->detect_emph);
+    sidechain_hpf_clear(&d->detect_emph_r);
+    envelope_detector_clear(&d->distressor_env);
+}
+
 fast_inline void distressor_reset(distressor_t* d, float sample_rate) {
     distressor_init(d, sample_rate);
 }

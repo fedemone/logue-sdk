@@ -17,6 +17,7 @@
 typedef float        float32x4_t __attribute__((vector_size(16)));
 typedef float        float32x2_t __attribute__((vector_size(8)));
 typedef uint32_t     uint32x4_t  __attribute__((vector_size(16)));
+typedef uint32_t     uint32x2_t  __attribute__((vector_size(8)));
 typedef int32_t      int32x4_t   __attribute__((vector_size(16)));
 
 typedef struct { float32x4_t val[2]; } float32x4x2_t;
@@ -64,6 +65,10 @@ NSHIM void vst2q_f32(float* p, float32x4x2_t v){
 NSHIM float32x2_t vget_low_f32(float32x4_t a){ return (float32x2_t){a[0], a[1]}; }
 NSHIM float32x2_t vget_high_f32(float32x4_t a){ return (float32x2_t){a[2], a[3]}; }
 NSHIM float32x2_t vadd_f32(float32x2_t a, float32x2_t b){ return a + b; }
+#define vget_lane_u32(v, i)  ((v)[(i)])
+NSHIM uint32x2_t vget_low_u32(uint32x4_t a){ return (uint32x2_t){a[0], a[1]}; }
+NSHIM uint32x2_t vget_high_u32(uint32x4_t a){ return (uint32x2_t){a[2], a[3]}; }
+NSHIM uint32x2_t vorr_u32(uint32x2_t a, uint32x2_t b){ return a | b; }
 
 /* ---- float arithmetic ---- */
 NSHIM float32x4_t vaddq_f32(float32x4_t a, float32x4_t b){ return a + b; }
@@ -75,11 +80,25 @@ NSHIM float32x4_t vnegq_f32(float32x4_t a){ return -a; }
 NSHIM float32x4_t vabsq_f32(float32x4_t a){
     float32x4_t r; for (int i=0;i<4;++i) r[i] = fabsf(a[i]); return r;
 }
+/* VMAX/VMIN return the default NaN when either operand is a NaN.  A plain
+ * `a > b ? a : b` hands back the other operand instead, so a NaN reaching the
+ * output limiter would read as a clean full-scale sample here while the
+ * hardware sends a NaN on to the bus.  The NaN test is on the bits: the DSP
+ * code is compiled under optimize("Ofast") (see fast_inline), which folds
+ * `x != x` to false once this is inlined into it. */
+NSHIM int nshim_isnan(float x){
+    uint32_t u; memcpy(&u, &x, sizeof u);
+    return (u & 0x7F800000u) == 0x7F800000u && (u & 0x007FFFFFu) != 0u;
+}
 NSHIM float32x4_t vmaxq_f32(float32x4_t a, float32x4_t b){
-    float32x4_t r; for (int i=0;i<4;++i) r[i] = a[i] > b[i] ? a[i] : b[i]; return r;
+    float32x4_t r;
+    for (int i=0;i<4;++i) r[i] = (nshim_isnan(a[i]) || nshim_isnan(b[i])) ? NAN : (a[i] > b[i] ? a[i] : b[i]);
+    return r;
 }
 NSHIM float32x4_t vminq_f32(float32x4_t a, float32x4_t b){
-    float32x4_t r; for (int i=0;i<4;++i) r[i] = a[i] < b[i] ? a[i] : b[i]; return r;
+    float32x4_t r;
+    for (int i=0;i<4;++i) r[i] = (nshim_isnan(a[i]) || nshim_isnan(b[i])) ? NAN : (a[i] < b[i] ? a[i] : b[i]);
+    return r;
 }
 
 /* ---- reciprocal / rsqrt (exact; see header comment) ---- */
@@ -128,6 +147,9 @@ NSHIM uint32x4_t vcgeq_f32(float32x4_t a, float32x4_t b){
 }
 NSHIM uint32x4_t vcgtq_u32(uint32x4_t a, uint32x4_t b){
     uint32x4_t r; for (int i=0;i<4;++i) r[i] = a[i] >  b[i] ? 0xFFFFFFFFu : 0u; return r;
+}
+NSHIM uint32x4_t vceqq_u32(uint32x4_t a, uint32x4_t b){
+    uint32x4_t r; for (int i=0;i<4;++i) r[i] = a[i] == b[i] ? 0xFFFFFFFFu : 0u; return r;
 }
 NSHIM uint32x4_t vtstq_u32(uint32x4_t a, uint32x4_t b){
     uint32x4_t r; for (int i=0;i<4;++i) r[i] = (a[i] & b[i]) ? 0xFFFFFFFFu : 0u; return r;

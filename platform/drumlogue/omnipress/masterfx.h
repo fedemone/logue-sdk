@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <arm_neon.h>
 
 #include "unit.h"
@@ -176,6 +177,10 @@ public:
         float combined_wet_gain_s = mix_ * makeup_lin_scalar;
         float dry_gain_s = 1.0f - mix_;
 
+        // Every lane of the wet path that came out non-finite this call, OR-ed
+        // together and tested once at the end -- see the watchdog below.
+        uint32x4_t nonfinite = vdupq_n_u32(0);
+
         // =================================================================
         // Process complete blocks of 4 samples
         // =================================================================
@@ -185,16 +190,16 @@ public:
             if (has_sidechain_) {
                 // 4-channel: [L0,R0,SL0,SR0, L1,R1,SL1,SR1, ...] = 16 floats
                 float32x4x4_t interleaved = vld4q_f32(in_p);
-                main_l = interleaved.val[0];
-                main_r = interleaved.val[1];
-                sc_l   = interleaved.val[2];
-                sc_r   = interleaved.val[3];
+                main_l = sanitize_input(interleaved.val[0]);
+                main_r = sanitize_input(interleaved.val[1]);
+                sc_l   = sanitize_input(interleaved.val[2]);
+                sc_r   = sanitize_input(interleaved.val[3]);
                 in_p += 16;
             } else {
                 // 2-channel: [L0,R0, L1,R1, L2,R2, L3,R3] = 8 floats
                 float32x4x2_t stereo = vld2q_f32(in_p);
-                main_l = stereo.val[0];
-                main_r = stereo.val[1];
+                main_l = sanitize_input(stereo.val[0]);
+                main_r = sanitize_input(stereo.val[1]);
                 sc_l   = main_l;
                 sc_r   = main_r;
                 in_p += 8;
@@ -206,6 +211,9 @@ public:
 
             // Process 4 samples
             float32x4x2_t processed = process_block(main_l, main_r, sc_l, sc_r);
+            nonfinite = vorrq_u32(nonfinite,
+                                  vorrq_u32(nonfinite_mask_q(processed.val[0]),
+                                            nonfinite_mask_q(processed.val[1])));
 
             // Mix stage: Apply makeup gain to processed (wet) signal only
             float32x4x2_t mixed;
@@ -235,11 +243,11 @@ public:
         while (frames_remaining > 0) {
             float main_l, main_r, sc_l, sc_r;
             if (has_sidechain_) {
-                main_l = in_p[0]; main_r = in_p[1];
-                sc_l   = in_p[2]; sc_r   = in_p[3];
+                main_l = sanitize_input_s(in_p[0]); main_r = sanitize_input_s(in_p[1]);
+                sc_l   = sanitize_input_s(in_p[2]); sc_r   = sanitize_input_s(in_p[3]);
                 in_p += 4;
             } else {
-                main_l = in_p[0]; main_r = in_p[1];
+                main_l = sanitize_input_s(in_p[0]); main_r = sanitize_input_s(in_p[1]);
                 sc_l   = main_l;  sc_r   = main_r;
                 in_p += 2;
             }
@@ -250,6 +258,9 @@ public:
             float32x4x2_t processed = process_block(
                 vdupq_n_f32(main_l), vdupq_n_f32(main_r),
                 vdupq_n_f32(sc_l),   vdupq_n_f32(sc_r));
+            nonfinite = vorrq_u32(nonfinite,
+                                  vorrq_u32(nonfinite_mask_q(processed.val[0]),
+                                            nonfinite_mask_q(processed.val[1])));
 
             float out_l_s = dry_l * dry_gain_s + vgetq_lane_f32(processed.val[0], 0) * combined_wet_gain_s;
             float out_r_s = dry_r * dry_gain_s + vgetq_lane_f32(processed.val[1], 0) * combined_wet_gain_s;
@@ -261,12 +272,97 @@ public:
             out_p += 2;
             frames_remaining--;
         }
+
+        // =================================================================
+        // Watchdog
+        // =================================================================
+        // Every stage here is an IIR -- detector, gain smoother, tone stack,
+        // crossovers, DC blockers, bias trackers -- and a NaN that gets into
+        // one need never wash out.  Whether it does is up to the optimizer:
+        // under -ffast-math each comparison it meets may or may not discard
+        // it.  Measured on the shipped ARM build, one +Inf sample on the bus
+        // left Multiband at -300 dBFS for good, while Standard and Distressor
+        // let a few bad samples out and recovered; a host build of the same
+        // source latched in every mode.  This is the master FX, the last thing
+        // before the outputs, so a latched OmniPress is a silent drumlogue,
+        // and luck is not a design.
+        // The input guard above stops anything upstream from starting that;
+        // this catches anything that starts in here.
+        //
+        // The detector state is asked directly as well as the output, because
+        // a NaN envelope does not reach the output as a NaN: neon_log2q_f32
+        // reads it as ~770 dB, the gain computer turns that into -650 dB, and
+        // the unit goes quiet with every sample perfectly finite.
+        const uint32x2_t nf2 = vorr_u32(vget_low_u32(nonfinite), vget_high_u32(nonfinite));
+        if ((vget_lane_u32(nf2, 0) | vget_lane_u32(nf2, 1)) || state_is_nonfinite()) {
+            clear_dsp_state();
+            memset(out, 0, frames * 2 * sizeof(float));
+            ++guard_trips_;
+        }
     }
+
+    /** Times the watchdog has had to clear the DSP state since load. */
+    inline uint32_t getGuardTrips() const { return guard_trips_; }
 
 private:
     /*===========================================================================*/
     /* Private Processing Methods */
     /*===========================================================================*/
+
+    /**
+     * Input guard: a non-finite sample becomes silence, and anything louder
+     * than INPUT_CEILING is clamped to it.
+     *
+     * OmniPress listens to the whole bus -- every part, both send returns and
+     * the drumlogue's own engine -- so it is the one unit that sees every
+     * other unit's mistakes, and as the master it is the one whose own mistake
+     * silences everything.  A momentary bad block upstream is a click if it
+     * passes through and a dead instrument if it latches in here, so it is
+     * stopped at the door.  The test is on the exponent bits (see
+     * nonfinite_mask_q) because this unit is built with -ffast-math.
+     */
+    fast_inline float32x4_t sanitize_input(float32x4_t x) {
+        x = vbslq_f32(nonfinite_mask_q(x), vdupq_n_f32(0.0f), x);
+        return vmaxq_f32(vdupq_n_f32(-INPUT_CEILING),
+                         vminq_f32(vdupq_n_f32(INPUT_CEILING), x));
+    }
+
+    static inline float sanitize_input_s(float x) {
+        if (is_nonfinite(x)) return 0.0f;
+        return fmaxf(-INPUT_CEILING, fminf(INPUT_CEILING, x));
+    }
+
+    /**
+     * The recursive state whose corruption does not show up in the output as
+     * a NaN, only as silence -- see the watchdog at the end of Process().
+     */
+    inline bool state_is_nonfinite() const {
+        return is_nonfinite(envelope_.env_state) ||
+               is_nonfinite(envelope_.rms_accum) ||
+               is_nonfinite(distressor_.distressor_env.env_state) ||
+               is_nonfinite(sc_hpf_.z1) || is_nonfinite(sc_hpf_.z2) ||
+               is_nonfinite(slam_.env);
+    }
+
+    /**
+     * Return every audio-rate history to silence and keep every setting.
+     *
+     * Reset() is no use for this: it puts the parameters back to their header
+     * defaults, and the watchdog must not cost the user their patch -- least
+     * of all the per-band Multiband values, which raw_params_ cannot restore
+     * because it only remembers the last band selection written.
+     */
+    inline void clear_dsp_state() {
+        gain_history_ = vdupq_n_f32(0.0f);
+        sidechain_hpf_clear(&sc_hpf_);
+        envelope_detector_clear(&envelope_);
+        wavefolder_clear_state(&wavefolder_);
+        distressor_clear_state(&distressor_);
+        multiband_clear_state(&multiband_);
+        overlord_clear_state(&overlord_);
+        slam_clear_state(&slam_);
+    }
+
     fast_inline void handle_set_multiband_parameter(int p_id, float val) {
         if (band_select_ == BAND_LOW || band_select_ == BAND_LOW_MID || band_select_ == BAND_LOW_HI || band_select_ == BAND_ALL) {
             multiband_set_param(&multiband_, BAND_LOW, p_id, val);
@@ -1015,4 +1111,6 @@ private:
     envelope_detector_t envelope_;
     overlord_t overlord_;
     slam_t slam_;
+
+    uint32_t guard_trips_ = 0;   // watchdog clears since load
 };

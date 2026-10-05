@@ -1502,6 +1502,28 @@ static inline float32x4_t flush_denormal_q(float32x4_t x) {
                 vcgeq_f32(vabsq_f32(x), vdupq_n_f32(DENORMAL_FLOOR))));
 }
 
+/**
+ * Is this an infinity or a NaN?
+ *
+ * Asked on the exponent bits, because the unit is built with -ffast-math and
+ * that implies -ffinite-math-only: the compiler may then assume no float is
+ * ever NaN or infinite, and folds isnan(), isfinite() and every inverted
+ * comparison (`!(x < big)`) that was meant to catch one.  Integer arithmetic
+ * carries no such assumption.  Note also that flush_denormal() above passes a
+ * NaN straight through -- `fabsf(NaN) < floor` is false -- so it is no guard.
+ */
+static inline int is_nonfinite(float x) {
+  uint32_t u;
+  memcpy(&u, &x, sizeof u);
+  return (u & 0x7F800000u) == 0x7F800000u;
+}
+
+/** All-ones in every lane that holds an infinity or a NaN, zero elsewhere. */
+static inline uint32x4_t nonfinite_mask_q(float32x4_t x) {
+  const uint32x4_t exponent = vdupq_n_u32(0x7F800000u);
+  return vceqq_u32(vandq_u32(vreinterpretq_u32_f32(x), exponent), exponent);
+}
+
 /** @} */
 
 #endif // __float_math_h

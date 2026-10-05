@@ -216,6 +216,17 @@ constexpr float MAKEUP_GAIN_MAX_LINEAR = 15.85f;    // 24 dB in linear
 constexpr float MAKEUP_GAIN_MIN_LINEAR = 1.0f;      // 0 dB
 
 // ============================================================================
+// Input guard
+// ============================================================================
+// Largest magnitude MasterFX::Process() accepts on any input channel: +24 dBFS,
+// far above anything a drum machine's bus carries, and low enough that the
+// detector climbs out of whatever it saw within about a second at typical
+// RELEASE settings.  Without a ceiling the detector takes any finite value at
+// face value: measured on the ARM build, one 1e20 sample on the bus silenced
+// Distressor (Dist2, DRIVE 67, WET) for 9 s, which on stage is a crash.
+constexpr float INPUT_CEILING = 16.0f;
+
+// ============================================================================
 // DRIVE Slam Region (Distressor mode only)
 // ============================================================================
 // Past DRIVE_SLAM_KNEE the Distressor's drive stops being a character control
