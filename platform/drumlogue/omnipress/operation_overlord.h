@@ -27,7 +27,7 @@
 // Stage 2's operating point and its negative-side shape.  Named because
 // overlord_clear_state() needs the triode's idle output, not only the
 // processing loop.
-#define OVERLORD_STAGE2_BIAS      (-0.18f)
+#define OVERLORD_STAGE2_BIAS      TUBE_STAGE2_BIAS   // shared with Multiband, constants.h
 #define OVERLORD_STAGE2_SHAPE_POS 4.8f
 #define OVERLORD_STAGE2_SHAPE_NEG 1.5f
 
@@ -270,18 +270,18 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
 
     // Macro Gain Staging
     float drive_sq = ov->drive * ov->drive;
-    float32x4_t v_drive_stage1 = vdupq_n_f32((1.0f + (drive_sq * 35.0f)) * ov->slam_gain); // Warm preamp push
-    float32x4_t v_drive_stage2 = vdupq_n_f32(1.0f + (ov->drive * 4.5f)); // Harder triode slam
+    float32x4_t v_drive_stage1 = vdupq_n_f32((1.0f + (drive_sq * TUBE_STAGE1_GAIN)) * ov->slam_gain); // Warm preamp push
+    float32x4_t v_drive_stage2 = vdupq_n_f32(1.0f + (ov->drive * TUBE_STAGE2_GAIN)); // Harder triode slam
 
     float32x4_t v_static_bias2 = vdupq_n_f32(OVERLORD_STAGE2_BIAS); // Triode operating cutoff point
-    const float alpha_bias = 0.0025f;                 // Capacitor discharge tracker
+    const float alpha_bias = TUBE_BIAS_ALPHA;         // Capacitor discharge tracker
 
     // ==========================================
     // CHANNEL LEFT HYBRID LAYER
     // ==========================================
 
     // 1. Run through smooth, non-inverting rational preamp stage
-    float32x4_t pre_l = stage1_continuous_preamp(dry_l, v_drive_stage1, 0.12f); // Mild asymmetric warming
+    float32x4_t pre_l = stage1_continuous_preamp(dry_l, v_drive_stage1, TUBE_STAGE1_BIAS); // Mild asymmetric warming
 
     // 2. Cascade into the dynamic-bias Pirkle triode stage
     float32x4_t v_gk_l = vaddq_f32(vmulq_f32(pre_l, v_drive_stage2), vaddq_f32(v_static_bias2, vdupq_n_f32(ov->dyn_bias_l1)));
@@ -290,30 +290,30 @@ fast_inline float32x4x2_t overlord_process(overlord_t* ov, float32x4_t in_l, flo
     // Track grid current envelope from Stage 2 input
     float grid_curr_l = vmeanq_f32(vmaxq_f32(v_gk_l, vdupq_n_f32(0.0f)));
     ov->dyn_bias_l1 = flush_denormal(
-        ov->dyn_bias_l1 + alpha_bias * (grid_curr_l * -1.7f - ov->dyn_bias_l1));
+        ov->dyn_bias_l1 + alpha_bias * (grid_curr_l * -TUBE_GRID_BIAS - ov->dyn_bias_l1));
 
     // 3. PHASE ALIGNMENT CORRECTION
     // Stage 2 inverted the phase. We must multiply by -1 to bring it back in-phase with dry_l
     wet_l = vnegq_f32(wet_l);
 
     // 4. Clear accumulated offset shifts via IIR DC Blocker
-    wet_l = dc_block_process(&ov->dc_l, wet_l, 0.996f);
+    wet_l = dc_block_process(&ov->dc_l, wet_l, TUBE_DC_POLE);
 
     // ==========================================
     // CHANNEL RIGHT HYBRID LAYER
     // ==========================================
 
-    float32x4_t pre_r = stage1_continuous_preamp(dry_r, v_drive_stage1, 0.12f);
+    float32x4_t pre_r = stage1_continuous_preamp(dry_r, v_drive_stage1, TUBE_STAGE1_BIAS);
 
     float32x4_t v_gk_r = vaddq_f32(vmulq_f32(pre_r, v_drive_stage2), vaddq_f32(v_static_bias2, vdupq_n_f32(ov->dyn_bias_r1)));
     float32x4_t wet_r  = stage2_pirkle_triode(v_gk_r, OVERLORD_STAGE2_SHAPE_POS, OVERLORD_STAGE2_SHAPE_NEG);
 
     float grid_curr_r = vmeanq_f32(vmaxq_f32(v_gk_r, vdupq_n_f32(0.0f)));
     ov->dyn_bias_r1 = flush_denormal(
-        ov->dyn_bias_r1 + alpha_bias * (grid_curr_r * -1.7f - ov->dyn_bias_r1));
+        ov->dyn_bias_r1 + alpha_bias * (grid_curr_r * -TUBE_GRID_BIAS - ov->dyn_bias_r1));
 
     wet_r = vnegq_f32(wet_r); // Phase correction step
-    wet_r = dc_block_process(&ov->dc_r, wet_r, 0.996f);
+    wet_r = dc_block_process(&ov->dc_r, wet_r, TUBE_DC_POLE);
 
     // ==========================================
     // LEVEL MATCHING

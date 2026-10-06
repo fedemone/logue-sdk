@@ -81,13 +81,16 @@ constexpr int GAIN_MIN = 0;
 constexpr int GAIN_MAX = 300;
 constexpr int GAIN_DEFAULT = GAIN_MAX;    // Standard mode
 
-constexpr int BAND_THRESH_MIN = -600;   // -60.0 dB
-constexpr int BAND_THRESH_MAX = 0;      // 0 dB
-constexpr int BAND_THRESH_DEFAULT = -200; // -20.0 dB
+// Lo/Mid/Hi Thresh are offsets from THRESH, so page 1 sets all three pivots
+// at once and 0 means "where Standard would pivot".
+constexpr int BAND_OFFSET_MIN = -300;    // -30.0 dB
+constexpr int BAND_OFFSET_MAX = 300;     // +30.0 dB
+constexpr int BAND_OFFSET_DEFAULT = 0;
 
+// Lo/Mid/Hi Ratio are in series with SLOPE's curve; 1:1 follows SLOPE exactly.
 constexpr int BAND_RATIO_MIN = 10;      // 1.0:1
 constexpr int BAND_RATIO_MAX = 200;     // 20.0:1
-constexpr int BAND_RATIO_DEFAULT = 40;  // 4.0:1
+constexpr int BAND_RATIO_DEFAULT = 10;  // 1.0:1
 
 // Page 4: Distressor Mode
 constexpr int DSTR_MODE_MIN = 0;
@@ -336,6 +339,19 @@ constexpr float DRIVE_LEVEL_GAIN_MAX   = 4.0f;    // +12 dB
 // master bus between DRIVE 1 and 60.  Same corner as the slam's blocker.  (The
 // tube has its own, inside overlord_process.)
 constexpr float DIST_DC_POLE = DRIVE_SLAM_DC_POLE;
+
+// ----------------------------------------------------------------------------
+// The Overlord tube's drive law, shared by Standard's broadband tube
+// (operation_overlord.h) and Multiband's per-band tubes (multiband.h), so a
+// DRIVE value means the same push in both modes.
+// ----------------------------------------------------------------------------
+constexpr float TUBE_STAGE1_GAIN = 35.0f;    // preamp:  1 + 35 d^2
+constexpr float TUBE_STAGE1_BIAS = 0.12f;    // its fixed asymmetry
+constexpr float TUBE_STAGE2_GAIN = 4.5f;     // triode:  1 + 4.5 d
+constexpr float TUBE_STAGE2_BIAS = -0.18f;   // the triode's operating point
+constexpr float TUBE_BIAS_ALPHA  = 0.0025f;  // grid-current bias tracker, per block
+constexpr float TUBE_GRID_BIAS   = 1.7f;     // ...and how far grid current shifts it
+constexpr float TUBE_DC_POLE     = 0.996f;   // DC blocker behind the tube
 
 // ============================================================================
 // NEON Vector Constants

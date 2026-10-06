@@ -4,7 +4,7 @@
 
 ## Overview
 
-**OmniPress** is a character master bus compressor for the KORG drumlogue, loosely inspired by the **Eventide Omnipressor**. The panel offers **two compression modes** — Standard and Multiband — and takes advantage of the drumlogue's 4-channel master effect input for external sidechain processing.
+**OmniPress** is a character master bus compressor for the KORG drumlogue, loosely inspired by the **Eventide Omnipressor**. The panel offers **two compression modes** — Standard, and Multiband, which runs Standard's curve once per band — and takes advantage of the drumlogue's 4-channel master effect input for external sidechain processing.
 
 A third engine, modelled on the **Empirical Labs EL8 Distressor**, is still in the source and on the bench but no longer on the panel: see [Shelved: the Distressor engine](#shelved-the-distressor-engine).
 
@@ -12,55 +12,88 @@ A third engine, modelled on the **Empirical Labs EL8 Distressor**, is still in t
 
 | Feature | Description |
 |---------|-------------|
-| **2 Compression Modes** | Standard (Omnipressor transfer curve) and Multiband (3 bands) |
+| **2 Compression Modes** | Standard (Omnipressor transfer curve) and Multiband (the same curve, per band, 3 bands) |
 | **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
-| **Drive** | Overlord tube stage in Standard (level-matched: DRIVE changes the character, not the level), a per-band triode in Multiband |
+| **Drive** | Overlord tube: broadband in Standard, one per band in Multiband — same drive law, level-matched in both, so DRIVE changes the character and not the level |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
-| **Multiband on the panel** | One threshold and one ratio knob per band, two independent crossover points, and a Solo/Mute selector — no band selector in front of shared knobs |
-| **Exact ballistics** | ATTACK and RELEASE are applied once, by the gain smoother, in both modes and to every band |
+| **Multiband on the panel** | Page 1 sets every band; one offset and one ratio knob per band move it from there; two independent crossover points, and a Solo/Mute selector |
+| **Exact ballistics** | ATTACK and RELEASE are applied once, by the gain smoother, in both modes and to every band — attack while the level rises, release while it falls |
 | **Bad-sample guard** | A NaN, infinity or absurd sample on the bus cannot latch the master; a watchdog clears the state if anything goes wrong inside |
 | **NEON Optimization** | Fully vectorized for ARM Cortex-A7 |
 | **24 User Parameters** | Every slot the SDK allows, across 6 control pages |
-| **24dB/oct Crossover** | Linkwitz-Riley filters for multiband mode |
+| **24dB/oct Crossover** | Linkwitz-Riley, phase-compensated so the three bands sum flat |
 
 ---
 
 ## Compression Modes
 
 ### Mode 0: Standard Compressor
-A versatile, clean compressor with all the essentials:
-- **Threshold**: -60 to 0 dB
-- **Ratio**: 1:1 to 20:1
-- **Attack**: 0.1 to 100 ms
-- **Release**: 10 to 2000 ms
-- **Soft/Hard Knee** selectable
+An Omnipressor-style function knob over one broadband detector:
+- **Threshold**: -60 to 0 dB — the pivot of the curve
+- **SLOPE**: expansion → 1:1 → compression → limiting → reverse, on both sides
+  of the pivot (below it, compression lifts quiet material toward the
+  threshold), bounded by **ATT LMT** and **GAIN LMT**
+- **Attack**: 0.1 to 100 ms, **Release**: 10 to 2000 ms
 - **Peak/RMS detection** with blend
 
-### Mode 1: Multiband Compressor
-Three bands split by Linkwitz-Riley 24 dB/oct crossovers, each with its own
-compressor and triode saturation, all on the panel at once:
+### Mode 1: Multiband — Standard, per band
+Three bands split by Linkwitz-Riley 24 dB/oct crossovers, each running
+**Standard's curve on its own level**. Page 1 means the same thing in both
+modes, so switching COMP MODE keeps the character and moves it into the bands:
 
-| Band | Default range | On the panel |
-|------|---------------|--------------|
-| **Low** | up to 250 Hz | Lo Thresh, Lo Ratio |
-| **Mid** | 250 Hz – 2.5 kHz | Mid Thresh, Mid Ratio |
-| **High** | above 2.5 kHz | Hi Thresh, Hi Ratio |
+| Control | In Multiband |
+|---------|--------------|
+| **THRESH** | Every band's pivot. **Lo/Mid/Hi Thresh** are offsets from it, −30…+30 dB; at +0.0 a band pivots where Standard would |
+| **SLOPE** | Every band's curve. **Lo/Mid/Hi Ratio** is a second ratio in series on top: at 1.0:1 a band follows SLOPE exactly, at 4.0:1 it compresses four times harder than SLOPE alone (SLOPE 2:1 + Ratio 2:1 measures 3.9:1) |
+| **ATT LMT / GAIN LMT** | Every band's limits. GAIN LMT 0 makes the bands downward-only |
+| **ATTACK / RELEASE** | Every band's gain smoother |
+| **DRIVE** | An Overlord tube per band, with Standard's drive law and each band's voicing (softer lows, brighter highs), level-matched band by band — see [DRIVE](#drive-character-not-level) |
+| **MAKEUP, MIX, BASS/TREBLE/PRESENCE** | After the bands, as in Standard |
+
+| Band | Default range |
+|------|---------------|
+| **Low** | up to 250 Hz |
+| **Mid** | 250 Hz – 2.5 kHz |
+| **High** | above 2.5 kHz |
 
 - **Xover Lo** moves the low/mid split over 62.5 Hz – 1 kHz, **Xover Hi** the
   mid/high split over 1 kHz – 16 kHz. The ranges meet only at 1 kHz, so the
   splits can never cross.
 - **SoloMute** solos or mutes one band at a time: Off, Lo-Solo, Mi-Solo,
-  Hi-Solo, Lo-Mute, Mi-Mute, Hi-Mute.
-- **ATTACK** and **RELEASE** on page 1 set all three bands; **MAKEUP** and
-  **DRIVE** are global (DRIVE feeds each band's own triode voicing).
-- Each band's detector is a peak follower; the gain smoother behind it carries
-  the ballistics.
+  Hi-Solo, Lo-Mute, Mi-Mute, Hi-Mute. It acts after the drive stage, so muting
+  a band does not disturb its tube.
+- Each band's detector is a peak follower on max(|L|, |R|); the gain smoother
+  behind it carries the ballistics.
 
-Until this layout the per-band controls sat behind a band selector (MBand) that
-the Thr/Ratio/Atk/Rel/Makeup/State knobs then edited, and the readout could show
-only one band; the two crossover points moved together, a decade apart, from one
-XOVER knob; and page 1's ATTACK and RELEASE did nothing in Multiband. Per-band
-attack, release and makeup gave way to the global controls to make room.
+At the factory settings a −20 dBFS 1 kHz tone comes out of Multiband within
+0.3 dB of Standard, and each band, soloed, follows Standard's curve within
+0.6 dB at every SLOPE from Exp to Rev (bench M8). What Multiband adds is that
+each band finds its own level: a band with little in it is lifted toward the
+threshold just as Standard lifts a quiet passage, so with GAIN LMT open the
+quiet parts of the spectrum come up (the "upward" half of an upward/downward
+multiband), and a pure tone's −32 dB spill into the next band comes up with
+it. GAIN LMT is the knob for how far.
+
+**Why it changed.** On the drumlogue the previous Multiband seemed not to
+compress and DRIVE seemed to do nothing, and both were true at bus level:
+
+* Its bands only compressed *downward*, above absolute thresholds of −20 dB, and
+  a band carries only part of the bus — on a −26 dBFS drum bus going from 4:1
+  to 20:1 changed the output by 0.2 dB. THRESH and SLOPE, the two knobs that
+  made Standard audible, did nothing there.
+* Its per-band triodes ran a third of Standard's distortion at the same DRIVE
+  (4–18% THD at −20 dBFS against 6–44%) and moved the level by +5 dB on quiet
+  material and −5 dB on loud, so DRIVE read as a volume change; DRIVE 1 was a
+  dead first step.
+* The low band skipped the all-pass that a three-band Linkwitz-Riley tree needs
+  to sum flat (the mid and high bands get it from the second split), and a 38 Hz
+  DC blocker sat on the output: about ±0.35 dB of ripple around the splits and
+  −0.6 dB at 100 Hz even at 1:1. Both are gone; the sum is flat to 0.02 dB.
+
+Before this, per-band controls sat behind a band selector (MBand); then one
+absolute threshold and one downward-only ratio per band. Programs saved with
+either layout load with their old values in IDs 16-22 clamped to the new
+ranges.
 
 ---
 
@@ -120,9 +153,15 @@ peak does not move: that is the ceiling's job); from the second beat it has
 settled. Turning the knob moves in steps the average follows, at most ~2 dB
 fuller while it moves.
 
-Bench: `./test_levels panel` M6 (pass/fail: within 1 dB of DRIVE 0 from −60 to
-−6 dBFS while THD climbs), G3, G4. Multiband's per-band triodes are not
-level-matched; they keep their own static compensation.
+Multiband's tubes are matched the same way, one band at a time (the three
+matchers run side by side in NEON lanes), so DRIVE never moves the balance
+between the bands either. With the same drive law they now distort like
+Standard's tube: at −20 dBFS, 6/28/42% THD at DRIVE 23/50/100 on a 1 kHz tone
+against Standard's 6/28/42%, and the level stays within 0.35 dB; on the drum
+bus DRIVE 67 moves the level by 0.06 dB.
+
+Bench: `./test_levels panel` M6 (pass/fail, both modes: within 1 dB of DRIVE 0
+from −60 to −6 dBFS while THD climbs), G3, G4.
 
 ---
 
@@ -256,20 +295,6 @@ it under.) A
 symmetric square wave is 48% THD, so the saturating families cross into and
 past it.
 
-----------|-----------|------------|-----------|------------|------------|
-| Off | 32.7% | 49.6% | −5.2 dBFS | −6.1 dBFS | (tube, unchanged) |
-| Dist2 | 24.0% | 52.1% | −22.9 dBFS | −22.9 dBFS | −3.9 / −2.6 dBFS |
-| Dist3 | 18.7% | 58.1% | −22.0 dBFS | −23.0 dBFS | −4.6 / −4.4 dBFS |
-| Both | 17.9% | 56.7% | −22.1 dBFS | −23.0 dBFS | −4.0 / −3.4 dBFS |
-| Soft | 12.8% | 54.8% | −22.3 dBFS | −23.0 dBFS | −7.2 / −4.7 dBFS |
-| Hard | 8.7% | 63.6% | −22.4 dBFS | −23.0 dBFS | −2.0 / −4.1 dBFS |
-| SubOct | 12.8% | 54.8% | −23.5 dBFS | −24.1 dBFS | −7.1 / −4.5 dBFS |
-
-(A −20 dBFS-peak sine is −23 dBFS RMS, so the shapers now come out where the
-signal went in.) A symmetric square wave is 48% THD, so the saturating families
-cross into and past it. The Off row is the Overlord tube that Standard shares,
-whose level law is unchanged.
-
 ---
 
 ## Parameter Reference
@@ -281,8 +306,8 @@ across 6 pages of 4. IDs below match `header.c`.
 
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
-| 0 | THRESH | -60.0 to 0.0 dB | Threshold (x0.1 dB) — Standard |
-| 1 | SLOPE | 1 to 100 | Omnipressor function knob: expansion → 1:1 → limiting → reverse — Standard |
+| 0 | THRESH | -60.0 to 0.0 dB | Threshold (x0.1 dB) — Standard, and every Multiband band's pivot |
+| 1 | SLOPE | 1 to 100 | Omnipressor function knob: expansion → 1:1 → limiting → reverse — Standard, and every Multiband band |
 | 2 | ATTACK | 0.1 to 100.0 ms | Attack of the gain smoother — Standard and every Multiband band |
 | 3 | RELEASE | 10 to 2000 ms | Release of the gain smoother — Standard and every Multiband band |
 
@@ -291,7 +316,7 @@ across 6 pages of 4. IDs below match `header.c`.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
-| 5 | DRIVE | 0 to 100% | Standard: Overlord tube stage, level-matched, so the knob changes the character and not the level · Multiband: per-band triode saturation |
+| 5 | DRIVE | 0 to 100% | Overlord tube, level-matched, so the knob changes the character and not the level — broadband in Standard, one per band in Multiband |
 | 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
 | 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
@@ -300,8 +325,8 @@ across 6 pages of 4. IDs below match `header.c`.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 8 | COMP MODE | 0–1 | 0=Standard, 1=Multiband (a program stored as 2 also loads Multiband) |
-| 9 | ATT LMT | -30.0 to 0.0 dB | Omnipressor attenuation limit: how far the VCA may duck — Standard |
-| 10 | GAIN LMT | 0.0 to 30.0 dB | Omnipressor gain limit: how far it may boost below threshold — Standard |
+| 9 | ATT LMT | -30.0 to 0.0 dB | Omnipressor attenuation limit: how far the VCA may duck — both modes, every band |
+| 10 | GAIN LMT | 0.0 to 30.0 dB | Omnipressor gain limit: how far it may boost below threshold — both modes, every band (0 = Multiband downward-only) |
 | 11 | DETECT | 0–7 | Standard: 0=Peak, 1=RMS, 2=Blend · **+4 keys from the external sidechain input** (Multiband reads only the +4) |
 
 ### Page 4: Overlord EQ & Solo/Mute
@@ -317,23 +342,22 @@ across 6 pages of 4. IDs below match `header.c`.
 
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
-| 16 | Lo Thresh | -60.0 to 0.0 dB | Low band threshold |
-| 17 | Mid Thresh | -60.0 to 0.0 dB | Mid band threshold |
-| 18 | Hi Thresh | -60.0 to 0.0 dB | High band threshold |
+| 16 | Lo Thresh | -30.0 to +30.0 dB | Low band pivot, relative to THRESH |
+| 17 | Mid Thresh | -30.0 to +30.0 dB | Mid band pivot, relative to THRESH |
+| 18 | Hi Thresh | -30.0 to +30.0 dB | High band pivot, relative to THRESH |
 | 19 | Xover Lo | 0–100 | Low/mid split, 62.5 Hz – 1 kHz, logarithmic. 50 = 250 Hz |
 
 ### Page 6: Multiband Ratios
 
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
-| 20 | Lo Ratio | 1.0 to 20.0 | Low band ratio |
-| 21 | Mid Ratio | 1.0 to 20.0 | Mid band ratio |
-| 22 | Hi Ratio | 1.0 to 20.0 | High band ratio |
+| 20 | Lo Ratio | 1.0 to 20.0 | Low band ratio, in series with SLOPE (1.0 = SLOPE alone) |
+| 21 | Mid Ratio | 1.0 to 20.0 | Mid band ratio, in series with SLOPE |
+| 22 | Hi Ratio | 1.0 to 20.0 | High band ratio, in series with SLOPE |
 | 23 | Xover Hi | 0–100 | Mid/high split, 1 kHz – 16 kHz, logarithmic. 33 = 2.5 kHz |
 
-All three band thresholds default to -20 dB. Before this layout the factory
-reset put -20 dB on the Low band only and left Mid and High at an invisible
--10 dB, so a default Multiband now compresses a little more.
+Offsets default to +0.0 dB and ratios to 1.0:1, so a default Multiband is
+Standard's curve in each band.
 
 ---
 
@@ -365,11 +389,14 @@ reset put -20 dB on the Low band only and left Mid and High at an invisible
 │  ┌──────────────────────────┐   ┌──────────────────────────┐     │
 │  │  STANDARD                │   │  MULTIBAND               │     │
 │  │  • Peak/RMS/Blend level  │   │  • LR4 split, Xover Lo/Hi│     │
-│  │    follower              │   │  • per-band peak follower│     │
-│  │  • Omnipressor curve     │   │  • per-band Thresh/Ratio │     │
-│  │  • gain smoother:        │   │  • gain smoother:        │     │
-│  │    ATTACK / RELEASE      │   │    ATTACK / RELEASE      │     │
-│  │                          │   │  • per-band triode DRIVE │     │
+│  │    follower              │   │    (+ low-band all-pass) │     │
+│  │  • Omnipressor curve     │   │  • per-band peak follower│     │
+│  │    (THRESH, SLOPE, LMTs) │   │  • the same curve per    │     │
+│  │  • gain smoother:        │   │    band, + offset, Ratio │     │
+│  │    ATTACK / RELEASE      │   │  • gain smoother:        │     │
+│  │                          │   │    ATTACK / RELEASE      │     │
+│  │                          │   │  • per-band tube DRIVE,  │     │
+│  │                          │   │    level-matched         │     │
 │  │                          │   │  • SoloMute              │     │
 │  └────────────┬─────────────┘   └────────────┬─────────────┘     │
 └───────────────┼──────────────────────────────┼───────────────────┘
@@ -414,7 +441,28 @@ float32x4_t envelope = envelope_detect(&envelope_, main_l, sidechain);
 float32x4_t gain_db = gain_computer_process(&gain_comp_, envelope_db, thresh_db_, ratio_);
 ```
 
-Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
+### CPU
+
+The drumlogue runs the synth, both send effects, this unit and its own engine
+on one audio thread. With Rings at polyphony 4 beside NeonLabirinto (polyphony 2
+on its *labirinto* preset) it crackled and then stopped, so every instruction
+here is someone else's headroom. Measured on the ARM build under QEMU, in
+instructions per 64-frame render (the budget is 1.33 ms):
+
+| Mode | before | now |
+|------|--------|-----|
+| Standard, DRIVE 0 (the factory default) | 4,200 | 4,300 |
+| Standard, DRIVE 23 | 5,700 | 5,800 |
+| Multiband, DRIVE 0 | 17,000 | 7,000 |
+| Multiband, DRIVE 23 | 17,100 | 10,400 |
+
+Multiband used to run its sixteen crossover biquads per sample one at a time in
+scalar code — 43% of the mode. They now run four at a time (L/R × low-pass/
+high-pass in one vector), and the detectors, gain smoothers, DC blockers and
+level matchers run the three bands side by side, which pays for the per-band
+tubes, their level matching and the low band's all-pass with room to spare.
+For scale: Rings at SympStrQ measures about 43,000–48,000 and NeonLabirinto
+16,000–18,000 (it was 29,000–31,000).
 
 ---
 
@@ -428,6 +476,7 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Xover Lo | "63Hz" … "250Hz" … "1000Hz" |
 | Xover Hi | "1.0kHz" … "2.5kHz" … "16.0kHz" |
 | Lo/Mid/Hi Ratio | "4.0:1" |
+| Lo/Mid/Hi Thresh | "+0.0dB", "-6.0dB" (offset from THRESH) |
 | SLOPE | "Exp 1.5" / "2.0:1" / "Limit" / "Rev 1.5" |
 | MIX | "DRY" (-100), "BAL" (0), "WET" (+100) |
 | DRIVE | "45%" |
@@ -471,6 +520,11 @@ Performance target: **< 200 cycles per sample** (< 2% CPU on 1GHz ARM Cortex-A7)
 | Long releases froze gain reduction for good | `e_expff` forms `1 + x/1024` first, which rounds to exactly 1.0 once \|x\| < 3·10⁻⁵, so every time constant past ~0.7 s came out as a coefficient of 1.0: in Multiband, RELEASE ≥ 700 ms let a band's gain reduction deepen on every hit and never recover. Shorter ones were quantised (224 ms ran as 171 ms) | Every time-constant coefficient now comes from `ballistics_coeff()` (libm `expf`, parameter changes only) |
 | Dist2 put DC on the bus and turned it into a square wave | Dist2 and Both are asymmetric and nothing removed their offset below the slam knee (up to +0.22 of DC, +25% of peak); and with no makeup a saturated shaper outputs its ceiling, so DRIVE was a +16–20 dB volume knob that ended in a full-scale square on the output limiter | `distressor_drive_output()`: a DC blocker and programme-dependent level matching behind every DstrDist shaper at every DRIVE (see *Drive stage output*). Bench S3 now sweeps the whole knob for DC instead of only DRIVE 100 |
 | Standard's DRIVE was a volume knob | The Overlord tube has no makeup and saturates to its own ceiling, so DRIVE 100 took a −20 dBFS bus up 18.7 dB (+5 dB at −6 dBFS, +11.4 dB on the reported chain at DRIVE 67); its DC blocker also started from zero, so the triode's −0.18 idle bias came out as a 5 ms DC thump the first time the tube engaged | The tube is level-matched on its wet path by the same `level_match_t` the Distressor's shapers use: average power over ~500 ms sets the level, an instant peak ceiling catches every turn of the knob (see *DRIVE: character, not level*). Within 0.03 dB of DRIVE 0 from −60 to −6 dBFS while THD still climbs to 42–48%; the reported chain stays at −17 dBFS. The DC blocker starts at the idle value, so engaging the tube is silent (bench M6, G3, G4) |
+| A hit after a quiet passage rode in on RELEASE | The gain smoother called it "attack" when the gain moved away from 0 dB. That is right above the threshold and wrong below it: after a quiet passage the gain sits at +GAIN LMT, a hit landing just over the threshold asks for a gain nearer 0 dB, and it got the RELEASE time — at Rev 9.8 a hit 3 dB over came out ~9 dB above the curve for 200 ms. An expander likewise closed on ATTACK and opened on RELEASE | Attack while the level is rising, whichever way that moves the gain (the sign of the curve says which). Both modes; 20 ms after such a hit both now sit on the static curve (bench M8) |
+| Multiband barely compressed on the drumlogue | Downward-only bands above absolute −20 dB thresholds: a band carries part of the bus, so at bus level little crossed them — 4:1 vs 20:1 was 0.2 dB on a −26 dBFS drum bus — and THRESH and SLOPE did nothing in this mode | Standard's curve per band: THRESH + offset is each pivot, SLOPE the curve with each band's Ratio in series, the limits shared. A default Multiband lands within 0.3 dB of Standard on a tone; on the drum bus the ratio knobs now span −1.4 to −6.3 dB |
+| Multiband did not sum flat | The low band missed the all-pass the second split puts on the other two, and a 38 Hz DC blocker sat on the output: ±0.35 dB around the splits, −0.6 dB at 100 Hz, at 1:1 | All-pass on the low band at the high split; DC blockers only behind the tubes. Flat to 0.02 dB, 40 Hz – 12 kHz |
+| Multiband's DRIVE was weak and moved the level | One triode stage per band at a third of Standard's drive, with a static makeup: 4–18% THD at −20 dBFS against Standard's 6–44%, +5 dB on quiet material, −5 dB on loud; DRIVE 1 gated off | The Overlord's two-stage law per band, level-matched band by band, faded in over the bottom tenth of the knob like Standard's. Same THD as Standard within a few percent, level within 0.35 dB, live from DRIVE 1 |
+| Multiband cost four times Standard | Sixteen scalar biquads per sample | NEON, four filters per vector and the bands in lanes: 17k → 7k instructions per render (10k with DRIVE) |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
 
@@ -493,7 +547,11 @@ DC on the bus.
 value plays exactly the bands it names, each threshold and ratio knob
 compresses its own band and no other, each crossover moves its own split,
 programs stored under the old COMP MODE numbering load a panel mode, no panel
-value reaches the Distressor, and page-1 RELEASE reaches every band.
+value reaches the Distressor, page-1 RELEASE reaches every band, DRIVE holds
+the level in both modes (M6), and Multiband follows page 1 (M8): each band,
+soloed, on Standard's curve at every SLOPE; THRESH moving every pivot; a band
+Ratio stacking on SLOPE; the bands summing flat from 40 Hz to 12 kHz; and a hit
+after silence taking the ATTACK time in both modes.
 
 `./test_levels recover` is pass/fail and sets the exit status too: one NaN, ±Inf,
 1e30 or 1e20 sample on the bus in each mode, with the output three seconds
@@ -528,7 +586,7 @@ The architecture supports easy addition of:
 | CPU Target | < 2% @ 1GHz |
 | Memory | ~4 KB |
 | Crossover | Linkwitz-Riley 24dB/oct |
-| Drive | Overlord tube (Standard), per-band triode (Multiband) |
+| Drive | Overlord tube: broadband (Standard), per band (Multiband) |
 
 ---
 
