@@ -15,6 +15,8 @@ struct float32x4x4_t { float32x4_t val[4]; };
 static inline float32x4_t vld1q_f32(const float* p) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=p[i]; return r; }
 static inline void vst1q_f32(float* p, float32x4_t a) { for (int i=0;i<4;i++) p[i]=a.v[i]; }
 static inline float32x4_t vdupq_n_f32(float x) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=x; return r; }
+static inline float32x4_t vld1q_dup_f32(const float* p) { return vdupq_n_f32(*p); }
+static inline float32x4_t vld1q_lane_f32(const float* p, float32x4_t a, int n) { a.v[n]=*p; return a; }
 static inline float32x4_t vaddq_f32(float32x4_t a, float32x4_t b) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=a.v[i]+b.v[i]; return r; }
 static inline float32x4_t vsubq_f32(float32x4_t a, float32x4_t b) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=a.v[i]-b.v[i]; return r; }
 static inline float32x4_t vmulq_f32(float32x4_t a, float32x4_t b) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=a.v[i]*b.v[i]; return r; }
@@ -35,6 +37,7 @@ static inline uint32x4_t vcltq_f32(float32x4_t a, float32x4_t b) { uint32x4_t r;
 static inline uint32x4_t vcgtq_f32(float32x4_t a, float32x4_t b) { uint32x4_t r; for (int i=0;i<4;i++) r.v[i]= (a.v[i]>b.v[i])?0xFFFFFFFFu:0u; return r; }
 static inline float32x4_t vbslq_f32(uint32x4_t m, float32x4_t a, float32x4_t b) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]= m.v[i]?a.v[i]:b.v[i]; return r; }
 static inline int32x4_t vcvtq_s32_f32(float32x4_t a) { int32x4_t r; for (int i=0;i<4;i++) r.v[i]=(int32_t)a.v[i]; return r; }
+static inline void vst1q_s32(int32_t* p, int32x4_t a) { for (int i=0;i<4;i++) p[i]=a.v[i]; }
 static inline float32x4_t vcvtq_f32_s32(int32x4_t a) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=(float)a.v[i]; return r; }
 static inline float32x4_t vrecpeq_f32(float32x4_t a) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=1.0f/a.v[i]; return r; }
 static inline float32x4_t vrecpsq_f32(float32x4_t a, float32x4_t b) { float32x4_t r; for (int i=0;i<4;i++) r.v[i]=2.0f-a.v[i]*b.v[i]; return r; }
