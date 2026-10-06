@@ -142,11 +142,11 @@ public:
         // default (DstrDist = Off) for the bench and for whoever revives it.
         setDistressorDistortion(DIST_MODE_CLEAN);
         setParameter(k_band_solo_mute, SOLO_MUTE_OFF);               // every band plays
-        setParameter(k_band_low_threshold,  BAND_THRESH_DEFAULT);    // -20.0 dB
-        setParameter(k_band_mid_threshold,  BAND_THRESH_DEFAULT);
-        setParameter(k_band_high_threshold, BAND_THRESH_DEFAULT);
+        setParameter(k_band_low_threshold,  BAND_OFFSET_DEFAULT);    // at THRESH
+        setParameter(k_band_mid_threshold,  BAND_OFFSET_DEFAULT);
+        setParameter(k_band_high_threshold, BAND_OFFSET_DEFAULT);
         setParameter(k_crossover_low,  XOVER_LOW_KNOB_DEFAULT);      // 250 Hz
-        setParameter(k_band_low_ratio,  BAND_RATIO_DEFAULT);         // 4.0:1
+        setParameter(k_band_low_ratio,  BAND_RATIO_DEFAULT);         // 1.0:1 = SLOPE alone
         setParameter(k_band_mid_ratio,  BAND_RATIO_DEFAULT);
         setParameter(k_band_high_ratio, BAND_RATIO_DEFAULT);
         setParameter(k_crossover_high, XOVER_HIGH_KNOB_DEFAULT);     // 2.5 kHz
@@ -351,7 +351,8 @@ private:
                level_match_is_nonfinite(&distressor_.level) ||
                level_match_is_nonfinite(&overlord_.level) ||
                is_nonfinite(sc_hpf_.z1) || is_nonfinite(sc_hpf_.z2) ||
-               is_nonfinite(slam_.env);
+               is_nonfinite(slam_.env) ||
+               multiband_state_is_nonfinite(&multiband_);
     }
 
     /**
@@ -377,10 +378,13 @@ private:
         return v < lo ? lo : (v > hi ? hi : v);
     }
 
-    /** Write one per-band setting (multiband_set_param id) to all three bands. */
-    fast_inline void set_all_bands(int p_id, float val) {
-        for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
-            multiband_set_param(&multiband_, b, p_id, val);
+    /**
+     * Hand page 1's curve to Multiband: SLOPE's function slope, THRESH and the
+     * two limits are the same knobs in both modes (see multiband.h).
+     */
+    fast_inline void refresh_multiband_curve() {
+        multiband_set_curve(&multiband_, function_slope_, thresh_db_,
+                            atten_limit_db_, gain_limit_db_);
     }
 
     /**
@@ -409,12 +413,10 @@ private:
         distressor_set_drive(&distressor_, drive_percent, slam);
         overlord_set_drive(&overlord_, drive_percent, slam);
 
-        // Multiband saturates inside each band with its own triode voicing
-        // (softer on the lows, brighter on the highs) rather than driving one
-        // broadband stage. The field existed and was read by multiband_process
-        // but nothing ever wrote it.
-        for (int b = BAND_LOW; b <= BAND_HIGH; ++b)
-            multiband_set_param(&multiband_, b, 7, drive_);
+        // Multiband drives a tube per band, with the Overlord's law and each
+        // band's own voicing (softer on the lows, brighter on the highs),
+        // level-matched band by band -- see multiband_drive().
+        multiband_set_drive(&multiband_, drive_);
     }
 
     /**
@@ -498,7 +500,7 @@ private:
         //                 and DRIVE would otherwise be a dead knob (the factory
         //                 default combination).  Fall through to the tube instead,
         //                 so the mode has a broadband drive at every DstrDist.
-        //   Multiband   - never: each band has its own triode, fed from DRIVE in
+        //   Multiband   - never: each band has its own tube, fed from DRIVE in
         //                 setParameter, and stacking a broadband stage on top
         //                 would double-saturate.
         const bool tube_drive =
@@ -571,10 +573,21 @@ private:
         // Fetch the scalar history from the last lane of the previous block
         float state = vgetq_lane_f32(gain_history_, 3);
 
+        const float slope = function_slope_;
         for (int i = 0; i < 4; ++i) {
-            // Evaluate ballistics based on whether audio is demanding MORE or LESS gain modification
-            // If the target is moving further away from 0dB unity, we are in the "Attack" phase of the effect.
-            bool is_attack = fabsf(targets[i]) > fabsf(state);
+            // Attack while the level is rising, release while it falls --
+            // whichever way that moves the gain.  The curve has a sign
+            // (compression and reversal pull the gain down as the level rises,
+            // expansion pushes it up), so "rising" is the gain moving the way
+            // the slope points.  This used to be "attack when the gain moves
+            // away from 0 dB", which is right above the threshold and wrong
+            // below it: after a quiet passage the gain sits at +GAIN LMT, and
+            // a hit landing just over the threshold asks for a gain nearer
+            // 0 dB, so it was let through on the RELEASE time -- at Rev 9.8 a
+            // hit 3 dB over threshold came out ~9 dB above the curve for 200 ms
+            // -- and an expander closed on ATTACK and opened on RELEASE, the
+            // wrong way round for a gate.  Multiband's bands use the same rule.
+            bool is_attack = (targets[i] - state) * slope > 0.0f;
             float coeff = is_attack ? attack_coeff_ : release_coeff_;
 
             // Single pole IIR filter.  The coefficient is the fraction of the
@@ -693,8 +706,9 @@ public:
             /*===========================================================================*/
             /* General Parameters */
             /*===========================================================================*/
-            case k_threhold: // THRESH (-60.0 to 0.0 dB)
+            case k_threhold: // THRESH (-60.0 to 0.0 dB), and every band's pivot
                 thresh_db_ = value * 0.1f;
+                refresh_multiband_curve();
                 break;
 
             case k_slope: // RATIO: map 0 to 100 into 0.0 to 1.0 representing the physical knob turn
@@ -725,20 +739,22 @@ public:
                         // Slopes from -1.0 down to -2.0 (Extreme reverse sucking envelope)
                         function_slope_ = -1.0f - ((knob - 0.666f) * 3);
                     }
+                    // The same curve, per band, in Multiband
+                    refresh_multiband_curve();
                 }
                 break;
 
             case k_attack: // ATTACK (0.1 to 100.0 ms), every mode and every band
                 attack_ms_ = value * 0.1f;
                 attack_coeff_ = ballistics_coeff(attack_ms_, samplerate_);
-                set_all_bands(3, attack_ms_);
+                multiband_set_ballistics(&multiband_, attack_ms_, release_ms_);
                 break;
 
             case k_release: // RELEASE (10 to 2000 ms), every mode and every band
                 release_ms_ = static_cast<float>(value);
                 release_coeff_ = ballistics_coeff(release_ms_, samplerate_);
                 update_opto_coeff(&distressor_, release_coeff_);
-                set_all_bands(4, release_ms_);
+                multiband_set_ballistics(&multiband_, attack_ms_, release_ms_);
                 break;
 
             case k_makeup: // MAKEUP (0.0 to 24.0 dB)
@@ -748,11 +764,13 @@ public:
                 // 23.69 dB.  e_expff holds 0.033 dB over the whole range.
                 makeup_lin_scalar = e_expff(makeup_db_ * INV_DB_COEFF);
                 break;
-            case k_attenuation_limit: // ATTEN LIMIT (-30.0 to 0.0 dB)
+            case k_attenuation_limit: // ATTEN LIMIT (-30.0 to 0.0 dB), every band too
                 atten_limit_db_ = value * 0.1f;
+                refresh_multiband_curve();
                 break;
-            case k_gain_limit: // GAIN LIMIT (0.0 to 30.0 dB)
+            case k_gain_limit: // GAIN LIMIT (0.0 to 30.0 dB), every band too
                 gain_limit_db_ = value * 0.1f;
+                refresh_multiband_curve();
                 break;
 
             case k_drive: // DRIVE (0 to 100%)
@@ -774,24 +792,26 @@ public:
             /*===========================================================================*/
             // These replaced a band selector (MBand) in front of shared
             // Thr/Ratio/Atk/Rel/Makeup/State knobs, whose readout could show
-            // one band at a time.  ATTACK and RELEASE (page 1) now set every
-            // band, and per-band makeup is gone in favour of MAKEUP.
+            // one band at a time.  Page 1 -- THRESH, SLOPE, ATTACK, RELEASE,
+            // and ATT LMT / GAIN LMT on page 3 -- sets every band; these knobs
+            // move a band away from it.  Per-band makeup is gone in favour of
+            // MAKEUP.
             //
             // Each value is clamped to its header range: a program saved under
-            // the old layout carries old values in IDs 15-23 (MBAtk's 150 lands
+            // an older layout carries old values in IDs 15-23 (MBAtk's 150 lands
             // on Xover Lo, which would put the low split at 4 kHz, above the
             // high one), and the firmware is not known to clamp them for us.
-            case k_band_low_threshold:
+            case k_band_low_threshold:   // offset from THRESH, -30..+30 dB
             case k_band_mid_threshold:
             case k_band_high_threshold:
-                multiband_set_param(&multiband_, index - k_band_low_threshold, 0,
-                                    clamp_raw(value, -600, 0) * 0.1f);
+                multiband_set_band_offset(&multiband_, index - k_band_low_threshold,
+                                          clamp_raw(value, BAND_OFFSET_MIN, BAND_OFFSET_MAX) * 0.1f);
                 break;
-            case k_band_low_ratio:
+            case k_band_low_ratio:       // in series with SLOPE, 1.0..20.0
             case k_band_mid_ratio:
             case k_band_high_ratio:
-                multiband_set_param(&multiband_, index - k_band_low_ratio, 1,
-                                    clamp_raw(value, 10, 200) * 0.1f);
+                multiband_set_band_ratio(&multiband_, index - k_band_low_ratio,
+                                         clamp_raw(value, BAND_RATIO_MIN, BAND_RATIO_MAX) * 0.1f);
                 break;
             case k_crossover_low:
                 multiband_set_crossover_low(&multiband_, static_cast<float>(clamp_raw(value, 0, 100)));
@@ -945,6 +965,12 @@ public:
                 snprintf(str_buf, sizeof(str_buf), "%.1f:1", value * 0.1f);
                 return str_buf;
 
+            case k_band_low_threshold:   // an offset from THRESH: always signed
+            case k_band_mid_threshold:
+            case k_band_high_threshold:
+                snprintf(str_buf, sizeof(str_buf), "%+.1fdB", value * 0.1f);
+                return str_buf;
+
             case k_crossover_low:
                 snprintf(str_buf, sizeof(str_buf), "%dHz",
                          (int)(multiband_xover_knob_hz(XOVER_LOW_HZ_MIN, (float)value) + 0.5f));
@@ -1041,14 +1067,14 @@ private:
     int32_t raw_params_[k_num_params]  __attribute__((aligned(16)));
 
     // Floating-point parameters
-    float thresh_db_;
-    float function_slope_;
-    float attack_ms_;
-    float release_ms_;
+    float thresh_db_ = 0.0f;
+    float function_slope_ = 0.0f;
+    float attack_ms_ = 10.0f;
+    float release_ms_ = 100.0f;
     float makeup_db_;
     float makeup_lin_scalar;
-    float atten_limit_db_;
-    float gain_limit_db_;
+    float atten_limit_db_ = -30.0f;
+    float gain_limit_db_ = 30.0f;
     float drive_;
     float mix_;   // 0.0 = dry, 1.0 = wet
     float sc_hpf_hz_;

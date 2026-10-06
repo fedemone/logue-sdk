@@ -2,12 +2,31 @@
 /*
  * File: multiband.h
  *
- * 3-band compressor with independent controls
- * Based on SHARC Audio Elements multiband compressor architecture
+ * Three-band Omnipressor: Standard mode's transfer curve, run once per band.
+ *
+ * The panel's page 1 means the same thing in both modes.  Each band pivots at
+ * THRESH plus its own offset (Lo/Mid/Hi Thresh), follows SLOPE's curve --
+ * expansion, compression, limiting or reversal, on both sides of the pivot,
+ * bounded by ATT LMT and GAIN LMT -- with its own Ratio in series on top, and
+ * is smoothed with ATTACK/RELEASE.  At offsets of 0 and ratios of 1:1 every
+ * band does exactly what Standard does to the whole signal, so switching
+ * COMP MODE keeps the character and moves it into the bands.
+ *
+ * DRIVE reaches a tube per band, with the Overlord's drive law (operation_
+ * overlord.h), level-matched band by band so DRIVE never moves the balance.
+ *
+ * Layout.  Everything recursive -- the crossover, the detectors, the gain
+ * smoothers, the DC blockers -- runs one sample at a time with the bands (or
+ * band x channel) in NEON lanes; the scalar code this replaces ran sixteen
+ * biquads per sample one by one and cost 17k instructions per 64-frame render.
+ *
+ *   crossover        [L R L R]       -> [lowL lowR | restL restR]   (split 1)
+ *                    [restL restR x2] -> [midL midR | highL highR]   (split 2)
+ *   band signals     v1 = [lowL lowR midL midR], v2 = [highL highR 0 0]
+ *   band dynamics    [low mid high -]
  */
 
 #include <arm_neon.h>
-#include "crossover.h"
 #include "constants.h"
 #include "float_math.h"
 
@@ -15,142 +34,339 @@
 #define BAND_MID 1
 #define BAND_HIGH 2
 #define NUM_OF_BANDS (3)
-// The Linkwitz-Riley tree reconstructs to unity, so the band sum needs no
-// trim: the 0.45 that used to live here left multiband mode 7 dB quieter than
-// Standard and Distressor at identical settings.  Transient overshoot from the
-// crossover phase response is caught by the output limiter in MasterFX::Process.
-const float MASTER_SUM_SCALING = 1.0f;
 
-// State structures for IIR components
-// State tracker for phase compensation biquads
+/* ---------------------------------------------------------------------------
+ * Biquads, one per lane (transposed direct form II)
+ * ------------------------------------------------------------------------- */
+
+typedef struct { float b0, b1, b2, a1, a2; } biquad_coeffs_t;
+typedef struct { float32x4_t b0, b1, b2, a1, a2; } bq4_coeffs_t;
+typedef struct { float32x4_t z1, z2; } bq4_state_t;
+typedef struct { float32x2_t b0, b1, b2, a1, a2; } bq2_coeffs_t;
+typedef struct { float32x2_t z1, z2; } bq2_state_t;
+
+fast_inline float32x4_t bq4_tick(bq4_state_t* s, const bq4_coeffs_t* c, float32x4_t x) {
+    const float32x4_t y = vmlaq_f32(s->z1, c->b0, x);
+    s->z1 = vmlsq_f32(vmlaq_f32(s->z2, c->b1, x), c->a1, y);
+    s->z2 = vmlsq_f32(vmulq_f32(c->b2, x), c->a2, y);
+    return y;
+}
+
+fast_inline float32x2_t bq2_tick(bq2_state_t* s, const bq2_coeffs_t* c, float32x2_t x) {
+    const float32x2_t y = vmla_f32(s->z1, c->b0, x);
+    s->z1 = vmls_f32(vmla_f32(s->z2, c->b1, x), c->a1, y);
+    s->z2 = vmls_f32(vmul_f32(c->b2, x), c->a2, y);
+    return y;
+}
+
+enum { RBJ_LOWPASS, RBJ_HIGHPASS, RBJ_ALLPASS };
+
+/**
+ * Butterworth (Q = 1/sqrt 2) low-pass, high-pass or all-pass.  Two of the
+ * first two in series are a Linkwitz-Riley 24 dB/oct pair, and that pair sums
+ * to exactly the third: LP^2 + HP^2 = (1 + s^4)/D^2 = (s^2 - sqrt2 s + 1)/D,
+ * which survives the bilinear transform unchanged.  The crossover leans on
+ * that identity -- see multiband_t::ap.
+ */
+static inline biquad_coeffs_t rbj_butterworth(int type, float hz, float sample_rate) {
+    const float w0 = 2.0f * (float)M_PI * hz / sample_rate;
+    const float c = cosf(w0);
+    const float alpha = sinf(w0) * 0.70710678f;          // sin(w0) / (2 Q)
+    const float inv_a0 = 1.0f / (1.0f + alpha);
+    biquad_coeffs_t k;
+    switch (type) {
+        case RBJ_LOWPASS:
+            k.b0 = 0.5f * (1.0f - c) * inv_a0; k.b1 = (1.0f - c) * inv_a0; k.b2 = k.b0; break;
+        case RBJ_HIGHPASS:
+            k.b0 = 0.5f * (1.0f + c) * inv_a0; k.b1 = -(1.0f + c) * inv_a0; k.b2 = k.b0; break;
+        default:
+            k.b0 = (1.0f - alpha) * inv_a0; k.b1 = -2.0f * c * inv_a0; k.b2 = 1.0f; break;
+    }
+    k.a1 = -2.0f * c * inv_a0;
+    k.a2 = (1.0f - alpha) * inv_a0;
+    return k;
+}
+
+/* One Linkwitz-Riley split of a stereo signal: lanes L-LP, R-LP, L-HP, R-HP. */
 typedef struct {
-    float x1, x2, y1, y2;
-} phase_apf_state_t;
+    bq4_coeffs_t c;
+    bq4_state_t  s1, s2;       // the two cascaded Butterworth stages
+} lr4_stereo_t;
 
-// DC blocker state representation to eliminate asymmetric waveshaper offsets
+/* The same for the mono sidechain key: lanes LP, HP. */
 typedef struct {
-    float x_prev;
-    float y_prev;
-} dc_filter_state_t;
+    bq2_coeffs_t c;
+    bq2_state_t  s1, s2;
+} lr4_mono_t;
 
-// Complete standalone multiband structure preserving all independent controls
+fast_inline void lr4_stereo_design(lr4_stereo_t* x, float hz, float sample_rate) {
+    const biquad_coeffs_t lp = rbj_butterworth(RBJ_LOWPASS,  hz, sample_rate);
+    const biquad_coeffs_t hp = rbj_butterworth(RBJ_HIGHPASS, hz, sample_rate);
+    x->c.b0 = (float32x4_t){lp.b0, lp.b0, hp.b0, hp.b0};
+    x->c.b1 = (float32x4_t){lp.b1, lp.b1, hp.b1, hp.b1};
+    x->c.b2 = (float32x4_t){lp.b2, lp.b2, hp.b2, hp.b2};
+    x->c.a1 = (float32x4_t){lp.a1, lp.a1, hp.a1, hp.a1};
+    x->c.a2 = (float32x4_t){lp.a2, lp.a2, hp.a2, hp.a2};
+}
+
+fast_inline void lr4_mono_design(lr4_mono_t* x, float hz, float sample_rate) {
+    const biquad_coeffs_t lp = rbj_butterworth(RBJ_LOWPASS,  hz, sample_rate);
+    const biquad_coeffs_t hp = rbj_butterworth(RBJ_HIGHPASS, hz, sample_rate);
+    x->c.b0 = (float32x2_t){lp.b0, hp.b0};
+    x->c.b1 = (float32x2_t){lp.b1, hp.b1};
+    x->c.b2 = (float32x2_t){lp.b2, hp.b2};
+    x->c.a1 = (float32x2_t){lp.a1, hp.a1};
+    x->c.a2 = (float32x2_t){lp.a2, hp.a2};
+}
+
+/* ---------------------------------------------------------------------------
+ * Per-band tube voicing.  The drive law is the Overlord's (constants.h,
+ * TUBE_*); only the triode's transfer shape differs per band: softer on the
+ * lows so the kick thickens rather than farts out, brighter on the highs.
+ * ------------------------------------------------------------------------- */
+constexpr float BAND_TUBE_SHAPE_POS[NUM_OF_BANDS] = {3.2f, 5.5f, 6.0f};
+constexpr float BAND_TUBE_SHAPE_NEG[NUM_OF_BANDS] = {1.1f, 1.8f, 2.5f};
+
 typedef struct {
-    // Crossover network filters
-    crossover_t xover_low_mid;
-    crossover_t xover_mid_high;
+    // ---- crossover -------------------------------------------------------
+    lr4_stereo_t split_lo;       // low | rest, at xover_low_freq
+    lr4_stereo_t split_hi;       // mid | high, at xover_high_freq
+    // The low band is the only one that skips split_hi, so on its own it
+    // misses the all-pass phase that split_hi puts on the other two, and the
+    // three did not sum flat: mid + high = HP1 * AP2 but low = LP1, not
+    // LP1 * AP2.  This all-pass at the high split puts it back, and the sum
+    // becomes AP1 * AP2 -- flat.  The slot for it existed and was never filled.
+    bq2_coeffs_t ap_c;
+    bq2_state_t  ap_s;
+    lr4_mono_t   sc_lo, sc_hi;   // the external key's own tree (detection only)
 
-    // Mono crossover for an external sidechain key. Only stepped when the
-    // external sidechain is selected, so internal detection costs nothing extra.
-    crossover_t xover_sc_low_mid;
-    crossover_t xover_sc_mid_high;
+    // ---- dynamics, lanes = [low mid high -] ---------------------------------
+    float32x4_t env;             // peak follower, linear
+    float32x4_t gain_db;         // smoothed gain
+    float32x4_t slope;           // each band's curve: (1 + f) / ratio - 1
+    float32x4_t thresh;          // THRESH + offset, dB
 
-    // RESTORED STATE: Persistent time-histories for the compressors (mono-linked)
-    float32x4_t comp_gain_state[NUM_OF_BANDS]; // Persistent smoothing history (dB)
-    float32x4_t comp_env_state[NUM_OF_BANDS];  // Persistent pre-smoother history (Linear)
+    // ---- drive stage, lanes = [lowL lowR midL midR] and [highL highR - -] --
+    float32x4_t dyn_bias[2];     // grid-current bias trackers
+    float32x4_t dc_x[2], dc_y[2];
+    float32x4_t idle[2];         // the tube's output with no signal
+    float32x4_t shape_pos[2], shape_neg[2];
+    // level matching, lanes = [low mid high -]
+    float32x4_t lm_in, lm_out, lm_in_slow, lm_out_slow, lm_gain;
+    bool        drive_on;        // the stage ran last block
 
-    // Phase alignment networks for the Low band to match Mid/High crossover group delays
-    phase_apf_state_t low_phase_match_l;
-    phase_apf_state_t low_phase_match_r;
+    // ---- solo / mute, per lane of the two band vectors -----------------------
+    float32x4_t weight[2];
 
-    // Persistent state histories for per-channel distortion DC Blockers
-    dc_filter_state_t dc_blockers_l[NUM_OF_BANDS];
-    dc_filter_state_t dc_blockers_r[NUM_OF_BANDS];
+    // ---- settings ---------------------------------------------------------
+    float master_slope;          // SLOPE's function slope (MasterFX::function_slope_)
+    float master_thresh;         // THRESH, dB
+    float atten_db, boost_db;    // ATT LMT, GAIN LMT
+    float band_offset[NUM_OF_BANDS];
+    float band_ratio[NUM_OF_BANDS];
+    float att_coeff, rel_coeff;  // ATTACK / RELEASE, per sample
+    float env_pre_coeff;         // detector decay
+    float lm_attack, lm_release, lm_slow;   // level matching, per block
+    float drive;                 // 0..1
+    float drive_g1, drive_g2;    // the two stages' gains
+    float blend;                 // parallel fade-in at the bottom of the knob
 
-    // Persistent state histories for dynamic tube bias modeling
-    float tube_bias_l[NUM_OF_BANDS];
-    float tube_bias_r[NUM_OF_BANDS];
-
-    // Independent parameters per band accessible by external APIs
-    struct {
-        float thresh_db;
-        float ratio;
-        float gr_slope;            // Pre-calculated gain reduction slope: (1.0 - 1.0/ratio)
-        float makeup_db;
-        float makeup_gain_linear;
-        float attack_ms;
-        float release_ms;
-        float mute;
-        float solo;
-        float attack_coeff;
-        float release_coeff;
-        float drive;               // Multi-feature integration: Saturation control per band
-    } bands[NUM_OF_BANDS];
-
-    // Crossover tracking variables
-    float xover_low_freq;
+    float xover_low_freq;        // asked for
     float xover_high_freq;
-    float env_pre_coeff;
+    float designed_low;          // what the coefficients are for
+    float designed_high;
     float sample_rate;
 } multiband_t;
 
+/* ---------------------------------------------------------------------------
+ * Settings
+ * ------------------------------------------------------------------------- */
 
-fast_inline void multiband_update_coeff(multiband_t* mb, int band) {
-    // ballistics_coeff, not e_expff: e_expff returned exactly 1.0 for any
-    // release past ~0.7 s, so a band's gain reduction could deepen on every
-    // hit and never come back.
-    mb->bands[band].attack_coeff  = ballistics_coeff(mb->bands[band].attack_ms,  mb->sample_rate);
-    mb->bands[band].release_coeff = ballistics_coeff(mb->bands[band].release_ms, mb->sample_rate);
+/** Rebuild the per-band curve from SLOPE, THRESH and the band knobs. */
+fast_inline void multiband_update_curve(multiband_t* mb) {
+    float s[4] = {0.0f, 0.0f, 0.0f, 0.0f}, t[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (int b = 0; b < NUM_OF_BANDS; ++b) {
+        // A ratio in series with SLOPE's curve.  SLOPE's output slope is
+        // 1 + f (f = +3 expands 1:4, 0 is 1:1, -1 limits, -2 reverses), and a
+        // second compressor at r:1 divides it by r -- exact when the two pivot
+        // at the same point, which they do here.
+        s[b] = (1.0f + mb->master_slope) / mb->band_ratio[b] - 1.0f;
+        t[b] = mb->master_thresh + mb->band_offset[b];
+    }
+    mb->slope  = vld1q_f32(s);
+    mb->thresh = vld1q_f32(t);
+}
+
+fast_inline void multiband_set_curve(multiband_t* mb, float slope, float thresh_db,
+                                     float atten_db, float boost_db) {
+    mb->master_slope  = slope;
+    mb->master_thresh = thresh_db;
+    mb->atten_db      = atten_db;
+    mb->boost_db      = boost_db;
+    multiband_update_curve(mb);
+}
+
+fast_inline void multiband_set_band_offset(multiband_t* mb, int band, float db) {
+    if (band < 0 || band >= NUM_OF_BANDS) return;
+    mb->band_offset[band] = db;
+    multiband_update_curve(mb);
+}
+
+fast_inline void multiband_set_band_ratio(multiband_t* mb, int band, float ratio) {
+    if (band < 0 || band >= NUM_OF_BANDS) return;
+    mb->band_ratio[band] = (ratio < 1.0f) ? 1.0f : ratio;
+    multiband_update_curve(mb);
+}
+
+fast_inline void multiband_set_ballistics(multiband_t* mb, float attack_ms, float release_ms) {
+    mb->att_coeff = ballistics_coeff(attack_ms,  mb->sample_rate);
+    mb->rel_coeff = ballistics_coeff(release_ms, mb->sample_rate);
+}
+
+/** DRIVE, 0..1: the Overlord's law, so a DRIVE value means the same push in both modes. */
+fast_inline void multiband_set_drive(multiband_t* mb, float drive) {
+    mb->drive    = drive;
+    mb->drive_g1 = 1.0f + drive * drive * TUBE_STAGE1_GAIN;
+    mb->drive_g2 = 1.0f + drive * TUBE_STAGE2_GAIN;
+    mb->blend    = (drive < 0.1f) ? drive * 10.0f : 1.0f;
+}
+
+// Each split point on its own 0..100 knob, log-interpolated so the knob feels
+// even (see XOVER_* in constants.h).
+fast_inline float multiband_xover_knob_hz(float min_hz, float knob) {
+    return min_hz * expf(knob * XOVER_KNOB_LOG_SPAN);
+}
+
+// Only the requested frequency is written here; multiband_process() redesigns
+// the filters on the audio thread, so a knob turn can never land half a set of
+// coefficients under a running filter.
+fast_inline void multiband_set_crossover_low(multiband_t* mb, float knob) {
+    mb->xover_low_freq = multiband_xover_knob_hz(XOVER_LOW_HZ_MIN, knob);
+}
+
+fast_inline void multiband_set_crossover_high(multiband_t* mb, float knob) {
+    mb->xover_high_freq = multiband_xover_knob_hz(XOVER_HIGH_HZ_MIN, knob);
+}
+
+// One band soloed or muted at a time (SoloMute in constants.h); everything
+// else plays.  Applied after the drive stage, so muting a band does not
+// disturb its tube or its level matching.
+fast_inline void multiband_set_solo_mute(multiband_t* mb, int sel) {
+    float w[NUM_OF_BANDS];
+    const bool solo = (sel >= SOLO_LOW && sel <= SOLO_HIGH);
+    for (int b = 0; b < NUM_OF_BANDS; ++b) {
+        if (solo) w[b] = (sel == SOLO_LOW + b) ? 1.0f : 0.0f;
+        else      w[b] = (sel == MUTE_LOW + b) ? 0.0f : 1.0f;
+    }
+    mb->weight[0] = (float32x4_t){w[BAND_LOW], w[BAND_LOW], w[BAND_MID], w[BAND_MID]};
+    mb->weight[1] = (float32x4_t){w[BAND_HIGH], w[BAND_HIGH], 0.0f, 0.0f};
+}
+
+/* ---------------------------------------------------------------------------
+ * State
+ * ------------------------------------------------------------------------- */
+
+fast_inline void multiband_design(multiband_t* mb) {
+    const float lo = mb->xover_low_freq, hi = mb->xover_high_freq;
+    lr4_stereo_design(&mb->split_lo, lo, mb->sample_rate);
+    lr4_stereo_design(&mb->split_hi, hi, mb->sample_rate);
+    lr4_mono_design(&mb->sc_lo, lo, mb->sample_rate);
+    lr4_mono_design(&mb->sc_hi, hi, mb->sample_rate);
+    const biquad_coeffs_t ap = rbj_butterworth(RBJ_ALLPASS, hi, mb->sample_rate);
+    mb->ap_c.b0 = vdup_n_f32(ap.b0); mb->ap_c.b1 = vdup_n_f32(ap.b1);
+    mb->ap_c.b2 = vdup_n_f32(ap.b2); mb->ap_c.a1 = vdup_n_f32(ap.a1);
+    mb->ap_c.a2 = vdup_n_f32(ap.a2);
+    mb->designed_low  = lo;
+    mb->designed_high = hi;
+}
+
+/** Put the drive stage where it sits with no signal: no DC step, no level memory. */
+fast_inline void multiband_prime_drive(multiband_t* mb) {
+    const float32x4_t zero = vdupq_n_f32(0.0f);
+    for (int k = 0; k < 2; ++k) {
+        mb->dyn_bias[k] = zero;
+        mb->dc_x[k] = mb->idle[k];
+        mb->dc_y[k] = zero;
+    }
+    mb->lm_in = mb->lm_out = mb->lm_in_slow = mb->lm_out_slow = zero;
+    mb->lm_gain = vdupq_n_f32(1.0f);
 }
 
 /**
- * Zero every audio-rate history -- crossovers, detectors, gain smoothers, tube
- * bias, DC blockers, phase match -- and leave the per-band settings and the
- * crossover coefficients alone.  MasterFX calls this on its own when a
- * non-finite value has got into the state, which must not cost the user the
- * per-band thresholds, ratios and times they dialled in.
+ * Return every audio-rate history to silence and keep every setting.
+ * MasterFX's watchdog calls this when a non-finite value has got in, which
+ * must not cost the user their per-band settings.
  */
 fast_inline void multiband_clear_state(multiband_t* mb) {
-    crossover_clear_state(&mb->xover_low_mid);
-    crossover_clear_state(&mb->xover_mid_high);
-    crossover_clear_state(&mb->xover_sc_low_mid);
-    crossover_clear_state(&mb->xover_sc_mid_high);
-
-    for (int i = 0; i < NUM_OF_BANDS; i++) {
-        mb->comp_gain_state[i] = vdupq_n_f32(0.0f);
-        mb->comp_env_state[i]  = vdupq_n_f32(0.0f);
-        mb->tube_bias_l[i] = 0.0f;
-        mb->tube_bias_r[i] = 0.0f;
-        mb->dc_blockers_l[i].x_prev = 0.0f; mb->dc_blockers_l[i].y_prev = 0.0f;
-        mb->dc_blockers_r[i].x_prev = 0.0f; mb->dc_blockers_r[i].y_prev = 0.0f;
-    }
-    mb->low_phase_match_l.x1 = mb->low_phase_match_l.x2 = 0.0f;
-    mb->low_phase_match_l.y1 = mb->low_phase_match_l.y2 = 0.0f;
-    mb->low_phase_match_r.x1 = mb->low_phase_match_r.x2 = 0.0f;
-    mb->low_phase_match_r.y1 = mb->low_phase_match_r.y2 = 0.0f;
+    const float32x4_t zero = vdupq_n_f32(0.0f);
+    const float32x2_t zero2 = vdup_n_f32(0.0f);
+    mb->split_lo.s1.z1 = mb->split_lo.s1.z2 = zero;
+    mb->split_lo.s2.z1 = mb->split_lo.s2.z2 = zero;
+    mb->split_hi.s1.z1 = mb->split_hi.s1.z2 = zero;
+    mb->split_hi.s2.z1 = mb->split_hi.s2.z2 = zero;
+    mb->ap_s.z1 = mb->ap_s.z2 = zero2;
+    mb->sc_lo.s1.z1 = mb->sc_lo.s1.z2 = zero2;
+    mb->sc_lo.s2.z1 = mb->sc_lo.s2.z2 = zero2;
+    mb->sc_hi.s1.z1 = mb->sc_hi.s1.z2 = zero2;
+    mb->sc_hi.s2.z1 = mb->sc_hi.s2.z2 = zero2;
+    mb->env = zero;
+    mb->gain_db = zero;
+    multiband_prime_drive(mb);
+    mb->drive_on = false;
 }
 
-// Initialize multiband compressor
+/** Anything in the state gone non-finite?  See the watchdog in MasterFX::Process(). */
+fast_inline bool multiband_state_is_nonfinite(const multiband_t* mb) {
+    uint32x4_t m = vorrq_u32(nonfinite_mask_q(mb->env), nonfinite_mask_q(mb->gain_db));
+    m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->lm_in), nonfinite_mask_q(mb->lm_out)));
+    m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->lm_in_slow), nonfinite_mask_q(mb->lm_out_slow)));
+    m = vorrq_u32(m, nonfinite_mask_q(mb->lm_gain));
+    for (int k = 0; k < 2; ++k) {
+        m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->dyn_bias[k]), nonfinite_mask_q(mb->dc_x[k])));
+        m = vorrq_u32(m, nonfinite_mask_q(mb->dc_y[k]));
+    }
+    const uint32x2_t m2 = vorr_u32(vget_low_u32(m), vget_high_u32(m));
+    return (vget_lane_u32(m2, 0) | vget_lane_u32(m2, 1)) != 0;
+}
+
 fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     mb->sample_rate = sample_rate;
+    mb->xover_low_freq  = XOVER_LOW_FREQ_DEFAULT;
+    mb->xover_high_freq = XOVER_HIGH_FREQ_DEFAULT;
+    multiband_design(mb);
 
-    // Default crossover frequencies
-    mb->xover_low_freq  = 250.0f;
-    mb->xover_high_freq = 2500.0f;
+    // Decay of the per-band peak follower. ENV_HOLD_MS matches the release
+    // Standard's detector applies, so both modes settle alike.
+    mb->env_pre_coeff = ballistics_coeff(ENV_HOLD_MS, sample_rate);
+    const float block_rate = sample_rate * (1.0f / NEON_LANES);
+    mb->lm_attack  = ballistics_coeff(DRIVE_LEVEL_ATTACK_MS,  block_rate);
+    mb->lm_release = ballistics_coeff(DRIVE_LEVEL_RELEASE_MS, block_rate);
+    mb->lm_slow    = ballistics_coeff(DRIVE_LEVEL_SLOW_MS,    block_rate);
 
-    // Initialize crossovers
-    crossover_init(&mb->xover_low_mid, mb->xover_low_freq, sample_rate);
-    crossover_init(&mb->xover_mid_high, mb->xover_high_freq, sample_rate);
-    crossover_init(&mb->xover_sc_low_mid, mb->xover_low_freq, sample_rate);
-    crossover_init(&mb->xover_sc_mid_high, mb->xover_high_freq, sample_rate);
-
-    // Default band parameters
-    for (int i = 0; i < NUM_OF_BANDS; i++) {
-        mb->bands[i].thresh_db = -10.0f;
-        mb->bands[i].ratio = 4.0f;
-        mb->bands[i].gr_slope = 0.75f;
-        mb->bands[i].makeup_db = 0.0f;
-        mb->bands[i].makeup_gain_linear = 1.0f;   // 0 dB
-        mb->bands[i].attack_ms = 10.0f;
-        mb->bands[i].release_ms = 100.0f;
-        mb->bands[i].mute = 0.0f;
-        mb->bands[i].solo = 0.0f;
-        mb->bands[i].drive = 0.0f;
-        multiband_update_coeff(mb, i);
+    // Per-lane tube shapes, and the output each band's tube settles on with no
+    // signal: stage 1 is offset to idle at zero, so stage 2 sees only its own
+    // bias, b / sqrt(1 + shape_neg b^2).
+    float pos[NUM_OF_BANDS], neg[NUM_OF_BANDS], idle[NUM_OF_BANDS];
+    for (int b = 0; b < NUM_OF_BANDS; ++b) {
+        pos[b] = BAND_TUBE_SHAPE_POS[b];
+        neg[b] = BAND_TUBE_SHAPE_NEG[b];
+        idle[b] = TUBE_STAGE2_BIAS / sqrtf(1.0f + neg[b] * TUBE_STAGE2_BIAS * TUBE_STAGE2_BIAS);
     }
+    mb->shape_pos[0] = (float32x4_t){pos[0], pos[0], pos[1], pos[1]};
+    mb->shape_pos[1] = (float32x4_t){pos[2], pos[2], pos[2], pos[2]};
+    mb->shape_neg[0] = (float32x4_t){neg[0], neg[0], neg[1], neg[1]};
+    mb->shape_neg[1] = (float32x4_t){neg[2], neg[2], neg[2], neg[2]};
+    mb->idle[0] = (float32x4_t){idle[0], idle[0], idle[1], idle[1]};
+    mb->idle[1] = (float32x4_t){idle[2], idle[2], 0.0f, 0.0f};
 
-    // Decay of the per-band peak follower. ENV_HOLD_MS matches the hold the
-    // Standard/Distressor detector applies, so all three modes settle alike.
-    mb->env_pre_coeff  = ballistics_coeff(ENV_HOLD_MS, sample_rate);
+    for (int b = 0; b < NUM_OF_BANDS; ++b) {
+        mb->band_offset[b] = 0.0f;
+        mb->band_ratio[b]  = 1.0f;
+    }
+    multiband_set_curve(mb, 0.0f, 0.0f, -30.0f, 30.0f);
+    multiband_set_ballistics(mb, 10.0f, 100.0f);
+    multiband_set_drive(mb, 0.0f);
+    multiband_set_solo_mute(mb, SOLO_MUTE_OFF);
 
     // The state used to be left untouched here, which meant it survived a
     // Reset: the unit relied on it landing in .bss and being zero exactly once,
@@ -158,339 +374,236 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     multiband_clear_state(mb);
 }
 
-fast_inline void multiband_reset(multiband_t* m) {
-    multiband_init(m, m->sample_rate);
+/* ---------------------------------------------------------------------------
+ * Processing
+ * ------------------------------------------------------------------------- */
+
+/** [a b c d] -> [a a b b] and [c c - -]: band values onto the band x channel lanes. */
+fast_inline float32x4_t bands_to_lanes_lo(float32x4_t v) {
+    const float32x2x2_t z = vzip_f32(vget_low_f32(v), vget_low_f32(v));
+    return vcombine_f32(z.val[0], z.val[1]);
+}
+fast_inline float32x4_t bands_to_lanes_hi(float32x4_t v) {
+    return vcombine_f32(vdup_lane_f32(vget_high_f32(v), 0), vdup_n_f32(0.0f));
 }
 
-// Set crossover frequencies — updates coefficients without resetting filter states.
-// This avoids the audible click/pop that zeroing the biquad delay lines would cause.
-fast_inline void multiband_set_crossover(multiband_t* mb,
-                                         float low_freq,
-                                         float high_freq) {
-    mb->xover_low_freq  = low_freq;
-    mb->xover_high_freq = high_freq;
-
-    // Coefficient-only update: preserves filter state continuity at runtime
-    crossover_update_coeffs(&mb->xover_low_mid,   low_freq,  mb->sample_rate);
-    crossover_update_coeffs(&mb->xover_mid_high,  high_freq, mb->sample_rate);
-    crossover_update_coeffs(&mb->xover_sc_low_mid,  low_freq,  mb->sample_rate);
-    crossover_update_coeffs(&mb->xover_sc_mid_high, high_freq, mb->sample_rate);
+/** Sum of each band's two lanes: [lowL lowR midL midR], [highL highR - -] -> [low mid high 0]. */
+fast_inline float32x4_t lanes_to_bands(float32x4_t v1, float32x4_t v2) {
+    const float32x2_t lm = vpadd_f32(vget_low_f32(v1), vget_high_f32(v1));
+    const float32x2_t h  = vpadd_f32(vget_low_f32(v2), vdup_n_f32(0.0f));
+    return vcombine_f32(lm, h);
 }
 
-// Each split point on its own 0..100 knob, log-interpolated so the knob feels
-// even (see XOVER_* in constants.h). These used to move together, a decade
-// apart, from one XOVER control, because all 24 parameter slots were taken;
-// taking the Distressor off the panel freed the slot for the second one.
-fast_inline float multiband_xover_knob_hz(float min_hz, float knob) {
-    return min_hz * expf(knob * XOVER_KNOB_LOG_SPAN);
+/** sqrt(a / b), from the NEON estimates plus Newton steps (block rate, ratio only). */
+fast_inline float32x4_t sqrt_ratio_q(float32x4_t a, float32x4_t b) {
+    float32x4_t r = vrecpeq_f32(b);
+    r = vmulq_f32(vrecpsq_f32(b, r), r);
+    r = vmulq_f32(vrecpsq_f32(b, r), r);
+    const float32x4_t q = vmaxq_f32(vmulq_f32(a, r), vdupq_n_f32(1e-30f));
+    float32x4_t e = vrsqrteq_f32(q);
+    e = vmulq_f32(vrsqrtsq_f32(vmulq_f32(q, e), e), e);
+    e = vmulq_f32(vrsqrtsq_f32(vmulq_f32(q, e), e), e);
+    return vmulq_f32(q, e);
 }
 
-fast_inline void multiband_set_crossover_low(multiband_t* mb, float knob) {
-    multiband_set_crossover(mb, multiband_xover_knob_hz(XOVER_LOW_HZ_MIN, knob),
-                            mb->xover_high_freq);
+/**
+ * Overlord tube, one vector of band x channel lanes: the rational preamp
+ * (stage1_continuous_preamp) into the dynamic-bias triode (stage2_pirkle_
+ * triode), phase restored.  `gk_pos` accumulates the triode's grid current for
+ * the bias trackers.
+ */
+fast_inline float32x4_t band_tube(const multiband_t* mb, int k, float32x4_t x, float32x4_t* gk_pos) {
+    const float32x4_t one = vdupq_n_f32(1.0f);
+    // Stage 1: x g1 + b over 1 + |x g1 + b|, offset so it idles at zero
+    const float32x4_t biased = vmlaq_n_f32(vdupq_n_f32(TUBE_STAGE1_BIAS), x, mb->drive_g1);
+    const float32x4_t den1 = vaddq_f32(one, vabsq_f32(biased));
+    float32x4_t r = vrecpeq_f32(den1);
+    r = vmulq_f32(vrecpsq_f32(den1, r), r);
+    const float32x4_t pre = vsubq_f32(vmulq_f32(biased, r),
+        vdupq_n_f32(TUBE_STAGE1_BIAS / (1.0f + TUBE_STAGE1_BIAS)));
+    // Stage 2: the triode, biased by its static point and its grid-current tracker
+    const float32x4_t gk = vmlaq_n_f32(vaddq_f32(vdupq_n_f32(TUBE_STAGE2_BIAS), mb->dyn_bias[k]),
+                                       pre, mb->drive_g2);
+    *gk_pos = vaddq_f32(*gk_pos, vmaxq_f32(gk, vdupq_n_f32(0.0f)));
+    const float32x4_t shape = vbslq_f32(vcgtq_f32(gk, vdupq_n_f32(0.0f)),
+                                        mb->shape_pos[k], mb->shape_neg[k]);
+    const float32x4_t den2 = vmlaq_f32(one, vmulq_f32(gk, gk), shape);
+    float32x4_t e = vrsqrteq_f32(den2);
+    e = vmulq_f32(vrsqrtsq_f32(vmulq_f32(e, e), den2), e);
+    // The triode inverts and overlord_process inverts it back; both cancel here.
+    return vmulq_f32(gk, e);
 }
 
-fast_inline void multiband_set_crossover_high(multiband_t* mb, float knob) {
-    multiband_set_crossover(mb, mb->xover_low_freq,
-                            multiband_xover_knob_hz(XOVER_HIGH_HZ_MIN, knob));
-}
+/**
+ * The drive stage for one block: tube, DC blocker and level matching per band,
+ * then the parallel blend.  v1/v2 are the compressed bands, per sample, and
+ * are replaced by the driven ones.
+ */
+fast_inline void multiband_drive(multiband_t* mb, float32x4_t v1[NEON_LANES], float32x4_t v2[NEON_LANES]) {
+    if (!mb->drive_on) { multiband_prime_drive(mb); mb->drive_on = true; }
 
-// One band soloed or muted at a time (SoloMute in constants.h); everything
-// else plays.  Solo already won over mute in the mixer, so a single selector
-// expresses every combination the old per-band MBState could reach that
-// matters on a master bus.
-fast_inline void multiband_set_solo_mute(multiband_t* mb, int sel) {
-    for (int b = BAND_LOW; b <= BAND_HIGH; ++b) {
-        mb->bands[b].solo = (sel == SOLO_LOW + b) ? 1.0f : 0.0f;
-        mb->bands[b].mute = (sel == MUTE_LOW + b) ? 1.0f : 0.0f;
+    const float32x4_t zero = vdupq_n_f32(0.0f);
+    float32x4_t w1[NEON_LANES], w2[NEON_LANES];
+    float32x4_t pin1 = zero, pin2 = zero, pout1 = zero, pout2 = zero;
+    float32x4_t gk1 = zero, gk2 = zero;
+    for (int t = 0; t < NEON_LANES; ++t) {
+        const float32x4_t a = band_tube(mb, 0, v1[t], &gk1);
+        const float32x4_t b = band_tube(mb, 1, v2[t], &gk2);
+        // DC blocker (the tube's own corner), one lane per band x channel
+        const float32x4_t ya = vmlaq_n_f32(vsubq_f32(a, mb->dc_x[0]), mb->dc_y[0], TUBE_DC_POLE);
+        const float32x4_t yb = vmlaq_n_f32(vsubq_f32(b, mb->dc_x[1]), mb->dc_y[1], TUBE_DC_POLE);
+        mb->dc_x[0] = a; mb->dc_y[0] = ya;
+        mb->dc_x[1] = b; mb->dc_y[1] = yb;
+        w1[t] = ya; w2[t] = yb;
+        pin1  = vmlaq_f32(pin1,  v1[t], v1[t]);
+        pin2  = vmlaq_f32(pin2,  v2[t], v2[t]);
+        pout1 = vmlaq_f32(pout1, ya, ya);
+        pout2 = vmlaq_f32(pout2, yb, yb);
+    }
+    // (Lanes 2-3 of the high vector carry no band: the tube idles there, and
+    // lanes_to_bands() and bands_to_lanes_hi() leave them out of everything.)
+
+    // Grid-current bias trackers, once per block, as overlord_process does it
+    const float alpha = TUBE_BIAS_ALPHA;
+    mb->dyn_bias[0] = vmlaq_n_f32(mb->dyn_bias[0],
+        vsubq_f32(vmulq_n_f32(gk1, -TUBE_GRID_BIAS * 0.25f), mb->dyn_bias[0]), alpha);
+    mb->dyn_bias[1] = vmlaq_n_f32(mb->dyn_bias[1],
+        vsubq_f32(vmulq_n_f32(gk2, -TUBE_GRID_BIAS * 0.25f), mb->dyn_bias[1]), alpha);
+    mb->dyn_bias[0] = flush_denormal_q(mb->dyn_bias[0]);
+    mb->dyn_bias[1] = flush_denormal_q(vcombine_f32(vget_low_f32(mb->dyn_bias[1]), vdup_n_f32(0.0f)));
+
+    // Level matching per band, level_match_process()'s law with the bands in
+    // lanes: mean power over the block and both channels, a fast follower used
+    // as a ceiling over a slow symmetric one, floor and clamp.
+    const float32x4_t pin  = vmulq_n_f32(lanes_to_bands(pin1,  pin2),  0.125f);
+    const float32x4_t pout = vmulq_n_f32(lanes_to_bands(pout1, pout2), 0.125f);
+    const float32x4_t att = vdupq_n_f32(mb->lm_attack), rel = vdupq_n_f32(mb->lm_release);
+    float32x4_t c = vbslq_f32(vcgtq_f32(pin, mb->lm_in), att, rel);
+    mb->lm_in = flush_denormal_q(vmlaq_f32(pin, c, vsubq_f32(mb->lm_in, pin)));
+    c = vbslq_f32(vcgtq_f32(pout, mb->lm_out), att, rel);
+    mb->lm_out = flush_denormal_q(vmlaq_f32(pout, c, vsubq_f32(mb->lm_out, pout)));
+    mb->lm_in_slow  = flush_denormal_q(vmlaq_n_f32(pin,  vsubq_f32(mb->lm_in_slow,  pin),  mb->lm_slow));
+    mb->lm_out_slow = flush_denormal_q(vmlaq_n_f32(pout, vsubq_f32(mb->lm_out_slow, pout), mb->lm_slow));
+
+    const float32x4_t floor = vdupq_n_f32(DRIVE_LEVEL_FLOOR);
+    const uint32x4_t fast_ok = vandq_u32(vcgtq_f32(mb->lm_in, floor), vcgtq_f32(mb->lm_out, floor));
+    const uint32x4_t slow_ok = vandq_u32(vcgtq_f32(mb->lm_in_slow, floor), vcgtq_f32(mb->lm_out_slow, floor));
+    float32x4_t g = sqrt_ratio_q(mb->lm_in, mb->lm_out);
+    g = vbslq_f32(slow_ok, vminq_f32(g, sqrt_ratio_q(mb->lm_in_slow, mb->lm_out_slow)), g);
+    g = vmaxq_f32(vdupq_n_f32(DRIVE_LEVEL_GAIN_MIN), vminq_f32(vdupq_n_f32(DRIVE_LEVEL_GAIN_MAX), g));
+    mb->lm_gain = vbslq_f32(fast_ok, g, mb->lm_gain);
+
+    // Blend against the clean band, after matching, as the Overlord does.
+    const float32x4_t wg1 = vmulq_n_f32(bands_to_lanes_lo(mb->lm_gain), mb->blend);
+    const float32x4_t wg2 = vmulq_n_f32(bands_to_lanes_hi(mb->lm_gain), mb->blend);
+    const float dry = 1.0f - mb->blend;
+    for (int t = 0; t < NEON_LANES; ++t) {
+        v1[t] = vmlaq_f32(vmulq_n_f32(v1[t], dry), w1[t], wg1);
+        v2[t] = vmlaq_f32(vmulq_n_f32(v2[t], dry), w2[t], wg2);
     }
 }
 
-// Set band parameter
-fast_inline void multiband_set_param(multiband_t* mb,
-                                     uint8_t band,
-                                     uint8_t param_id,
-                                     float value) {
-    if (band > BAND_HIGH) return;
-
-    switch (param_id) {
-        case 0: mb->bands[band].thresh_db = value; break;
-        case 1:
-            mb->bands[band].ratio = value;
-            mb->bands[band].gr_slope = (value <= 0.05f) ? 1.0f : (1.0f - 1.0f / value);
-            break;
-        case 2:
-            mb->bands[band].makeup_db = value;
-            // fasterpowf(10, 0) returns 0.9713, so simply touching MAKEUP used to
-            // cost 0.25 dB, rising to 0.31 dB at the top of the range.  e_expff is
-            // within 0.033 dB over the whole 0..24 dB span.
-            mb->bands[band].makeup_gain_linear = e_expff(value * INV_DB_COEFF);
-            break;
-        case 3: mb->bands[band].attack_ms = value; multiband_update_coeff(mb, band); break;
-        case 4: mb->bands[band].release_ms = value; multiband_update_coeff(mb, band); break;
-        case 5: mb->bands[band].mute = value; break;
-        case 6: mb->bands[band].solo = value; break;
-        case 7: mb->bands[band].drive = value; break;
-    }
-}
-
-// Get band parameter
-fast_inline float multiband_get_param(const multiband_t* mb,
-                                      uint8_t band,
-                                      uint8_t param_id) {
-    if (band > BAND_HIGH) return 0.0f;
-
-    switch (param_id) {
-        case 0: return mb->bands[band].thresh_db;
-        case 1: return mb->bands[band].ratio;
-        case 2: return mb->bands[band].makeup_db;
-        case 3: return mb->bands[band].attack_ms;
-        case 4: return mb->bands[band].release_ms;
-        case 5: return mb->bands[band].mute;
-        case 6: return mb->bands[band].solo;
-        default: return 0.0f;
-    }
-}
-
-// Micro-targeted DC Blocker to sanitize baseline offset shift
-fast_inline float32x4_t dc_block_lane(dc_filter_state_t* state, float32x4_t in, float R) {
-    float x[4], y[4];
-    vst1q_f32(x, in);
-    y[0] = x[0] - state->x_prev + R * state->y_prev;
-    y[1] = x[1] - x[0] + R * y[0];
-    y[2] = x[2] - x[1] + R * y[1];
-    y[3] = x[3] - x[2] + R * y[2];
-    state->x_prev = flush_denormal(x[3]); state->y_prev = flush_denormal(y[3]);
-    return vld1q_f32(y);
-}
-
-// Pirkle Asymmetric Dynamic Triode Core
-fast_inline float32x4_t pirkle_triode_engine(float32x4_t in, float drive, float* bias_state,
-                                             float shape_pos, float shape_neg, bool update_bias) {
-    float32x4_t v_zero = vdupq_n_f32(0.0f);
-    float32x4_t v_one  = vdupq_n_f32(1.0f);
-
-    // Apply Drive + Static cut point + Dynamic envelope bias shift
-    float32x4_t v_drive = vdupq_n_f32(1.0f + (drive * 8.0f));
-    float32x4_t v_gk = vaddq_f32(vmulq_f32(in, v_drive), vaddq_f32(vdupq_n_f32(-0.15f), vdupq_n_f32(*bias_state)));
-
-    // Extract dynamic grid rectification current (Pirkle Addendum A19)
-    float32x4_t v_gk_pos = vmaxq_f32(v_gk, v_zero);
-    float32x2_t v_gk_sum_2 = vadd_f32(vget_low_f32(v_gk_pos), vget_high_f32(v_gk_pos));
-    if (update_bias) {
-        float mean_grid_current = (vget_lane_f32(v_gk_sum_2, 0) + vget_lane_f32(v_gk_sum_2, 1)) * 0.25f;
-        // Bias drift integration. Flushed because it decays toward zero on
-        // silence and would otherwise sit subnormal through every quiet bar.
-        *bias_state = flush_denormal(
-            *bias_state + 0.003f * (mean_grid_current * -1.8f - *bias_state));
-    }
-
-    // Perform continuous sigmoidal non-linear wrapping
-    // Optimized denominator calculation using vector bit-selection
-    float32x4_t v_gk2 = vmulq_f32(v_gk, v_gk);
-    float32x4_t v_shape = vbslq_f32(vcgtq_f32(v_gk, v_zero), vdupq_n_f32(shape_pos), vdupq_n_f32(shape_neg));
-    float32x4_t denom = vmlaq_f32(v_one, v_gk2, v_shape);
-
-    // Fast Hardware Reciprocal Square-Root Pipeline
-    float32x4_t rsq_est = vrsqrteq_f32(denom);
-    float32x4_t rsq_step = vrsqrtsq_f32(vmulq_f32(rsq_est, rsq_est), denom);
-    float32x4_t out = vmulq_f32(v_gk, vmulq_f32(rsq_est, rsq_step));
-
-    // Compensate the drive gain instead of letting it through, matching the
-    // law the wavefolder uses: without this, DRIVE=100 raised the band by
-    // ~15 dB and read as a loudness control rather than a character one.
-    out = vmulq_n_f32(out, Q_rsqrt(1.0f + drive * 8.0f));
-
-    return vnegq_f32(out); // Includes phase inversion
-}
-
-// Fused branchless compressor node pulling straight from parameter cache
-fast_inline float32x4_t process_compressor_lane(float32x4_t* gain_state, float32x4_t env_linear,
-                                                float thresh_db, float gr_slope,
-                                                float att_coeff, float rel_coeff) {
-    // 1. Convert smoothed envelope to clean dB values
-    float32x4_t db_env = vmulq_n_f32(neon_log2q_f32(vmaxq_f32(env_linear, vdupq_n_f32(1e-5f))), 6.0206f);
-    float32x4_t excess = vmaxq_f32(vsubq_f32(db_env, vdupq_n_f32(thresh_db)), vdupq_n_f32(0.0f));
-
-    // 2. Standard gain computer equation using pre-calculated slope
-    float32x4_t target_gr_db = vmulq_n_f32(vnegq_f32(excess), gr_slope);
-
-    // 3. Sequential vector tracking for ballistics
-    float targets[4], out[4];
-    vst1q_f32(targets, target_gr_db);
-    float state = vgetq_lane_f32(*gain_state, 3);
-
-    const float coeff_avg  = 0.5f * (att_coeff + rel_coeff);
-    const float coeff_diff = 0.5f * (att_coeff - rel_coeff);
-
-    for(int i = 0; i < NEON_LANES; ++i) {
-        float diff = state - targets[i];
-        state = targets[i] + (coeff_avg * diff) + (coeff_diff * fabsf(diff));
-        out[i] = state;
-    }
-    // Gain reduction in dB, so this converges on exactly 0 when nothing is over
-    // threshold — approaching it through the subnormal range on the way.
-    *gain_state = flush_denormal_q(vld1q_f32(out));
-
-    // Convert smoothed gain reduction from dB back to a linear scalar multiplier
-    return neon_expq_f32(vmulq_f32(*gain_state, vdupq_n_f32(INV_DB_COEFF)));
-}
-
-// Processing Execution Path.
-// sidechain is a mono key signal; when use_sidechain is set the band envelopes
-// are derived from it instead of from the audio, so the external input keys
-// each band through its own frequency split rather than broadband.
+/**
+ * One 4-sample block.  `sidechain` is the mono key; with use_sidechain the
+ * band envelopes come from its own split instead of the audio, so the external
+ * input keys each band through its own frequency range.
+ */
 fast_inline void multiband_process(multiband_t* mb,
                                    float32x4_t in_l, float32x4_t in_r,
                                    float32x4_t sidechain, bool use_sidechain,
                                    float32x4_t* out_l, float32x4_t* out_r) {
-    float32x4_t low_l, low_r;
-    float32x4_t mid_l, mid_r;
-    float32x4_t high_l, high_r;
-    float32x4_t temp_l, temp_r;
-    float32x4_t unused_l, unused_r;
+    if (mb->xover_low_freq != mb->designed_low || mb->xover_high_freq != mb->designed_high)
+        multiband_design(mb);
 
-    // ------------------------------------------------------------
-    // Stage 1: Frequency band splitting via Linkwitz Tree
-    // ------------------------------------------------------------
-    crossover_process(&mb->xover_low_mid, in_l, in_r,
-                      &low_l, &low_r,
-                      &unused_l, &unused_r,
-                      &temp_l, &temp_r,
-                      mb->xover_low_freq, mb->sample_rate);
+    const float32x2_t zero2 = vdup_n_f32(0.0f);
+    const float32x4x2_t lr = vzipq_f32(in_l, in_r);     // [L0 R0 L1 R1], [L2 R2 L3 R3]
+    const float32x2_t frame[NEON_LANES] = {
+        vget_low_f32(lr.val[0]), vget_high_f32(lr.val[0]),
+        vget_low_f32(lr.val[1]), vget_high_f32(lr.val[1]) };
+    float key[NEON_LANES];
+    vst1q_f32(key, sidechain);
 
-    crossover_process(&mb->xover_mid_high, temp_l, temp_r,
-                      &mid_l, &mid_r,
-                      &unused_l, &unused_r,
-                      &high_l, &high_r,
-                      mb->xover_high_freq, mb->sample_rate);
+    // ---- split, and each band's instantaneous level ------------------------
+    float32x4_t v1[NEON_LANES], v2[NEON_LANES], inst[NEON_LANES];
+    for (int t = 0; t < NEON_LANES; ++t) {
+        const float32x4_t x1 = vcombine_f32(frame[t], frame[t]);
+        const float32x4_t y1 = bq4_tick(&mb->split_lo.s2, &mb->split_lo.c,
+                                        bq4_tick(&mb->split_lo.s1, &mb->split_lo.c, x1));
+        const float32x2_t rest = vget_high_f32(y1);
+        const float32x4_t y2 = bq4_tick(&mb->split_hi.s2, &mb->split_hi.c,
+                                        bq4_tick(&mb->split_hi.s1, &mb->split_hi.c,
+                                                 vcombine_f32(rest, rest)));
+        const float32x2_t low = bq2_tick(&mb->ap_s, &mb->ap_c, vget_low_f32(y1));
+        v1[t] = vcombine_f32(low, vget_low_f32(y2));
+        v2[t] = vcombine_f32(vget_high_f32(y2), zero2);
 
-    // ------------------------------------------------------------
-    // Stage 2: Stereo-linked envelope estimation
-    // ------------------------------------------------------------
-    float32x4_t inst_low, inst_mid, inst_high;
-    if (use_sidechain) {
-        // Split the key signal with its own mono tree and detect from that
-        float32x4_t sc_low, sc_rest, sc_mid, sc_high;
-        crossover_process_mono(&mb->xover_sc_low_mid, sidechain,
-                               &sc_low, &sc_rest, mb->xover_low_freq, mb->sample_rate);
-        crossover_process_mono(&mb->xover_sc_mid_high, sc_rest,
-                               &sc_mid, &sc_high, mb->xover_high_freq, mb->sample_rate);
-        inst_low  = vabsq_f32(sc_low);
-        inst_mid  = vabsq_f32(sc_mid);
-        inst_high = vabsq_f32(sc_high);
-    } else {
-        inst_low  = vmaxq_f32(vabsq_f32(low_l),  vabsq_f32(low_r));
-        inst_mid  = vmaxq_f32(vabsq_f32(mid_l),  vabsq_f32(mid_r));
-        inst_high = vmaxq_f32(vabsq_f32(high_l), vabsq_f32(high_r));
+        if (use_sidechain) {
+            const float32x2_t k1 = bq2_tick(&mb->sc_lo.s2, &mb->sc_lo.c,
+                                            bq2_tick(&mb->sc_lo.s1, &mb->sc_lo.c, vld1_dup_f32(&key[t])));
+            const float32x2_t k2 = bq2_tick(&mb->sc_hi.s2, &mb->sc_hi.c,
+                                            bq2_tick(&mb->sc_hi.s1, &mb->sc_hi.c, vdup_lane_f32(k1, 1)));
+            // k1 = [low, rest], k2 = [mid, high] -> [low mid high 0]
+            inst[t] = vabsq_f32(vcombine_f32(vtrn_f32(k1, k2).val[0],
+                                             vtrn_f32(k2, zero2).val[1]));
+        } else {
+            // max(|L|, |R|) per band
+            const float32x4_t a1 = vabsq_f32(v1[t]);
+            inst[t] = vcombine_f32(vpmax_f32(vget_low_f32(a1), vget_high_f32(a1)),
+                                   vpmax_f32(vabs_f32(vget_high_f32(y2)), zero2));
+        }
     }
 
-    float ilow[4], imid[4], ihigh[4];
-    float olow[4], omid[4], ohigh[4];
-    vst1q_f32(ilow, inst_low); vst1q_f32(imid, inst_mid); vst1q_f32(ihigh, inst_high);
-
-    float slow = vgetq_lane_f32(mb->comp_env_state[BAND_LOW], 3);
-    float smid = vgetq_lane_f32(mb->comp_env_state[BAND_MID], 3);
-    float shigh = vgetq_lane_f32(mb->comp_env_state[BAND_HIGH], 3);
-
-    // Peak follower with a short decay, matching the peak detection Standard and
-    // Distressor use. The one-pole average this replaces read 3.9 dB (2/pi) low
-    // on a sine, so identical knob settings gave multiband noticeably less gain
-    // reduction than the other two modes.
-    const float pre_c = mb->env_pre_coeff;
-
-    for (int i = 0; i < NEON_LANES; ++i) {
-        slow  = fmaxf(ilow[i],  slow  * pre_c);
-        smid  = fmaxf(imid[i],  smid  * pre_c);
-        shigh = fmaxf(ihigh[i], shigh * pre_c);
-        olow[i] = slow; omid[i] = smid; ohigh[i] = shigh;
+    // ---- per-band gain: Standard's curve and ballistics, bands in lanes -----
+    const float32x4_t pre_c  = vdupq_n_f32(mb->env_pre_coeff);
+    const float32x4_t att    = vdupq_n_f32(mb->att_coeff);
+    const float32x4_t rel    = vdupq_n_f32(mb->rel_coeff);
+    const float32x4_t lo_lim = vdupq_n_f32(mb->atten_db);
+    const float32x4_t hi_lim = vdupq_n_f32(mb->boost_db);
+    const float32x4_t zero   = vdupq_n_f32(0.0f);
+    float32x4_t env = mb->env, g_db = mb->gain_db;
+    for (int t = 0; t < NEON_LANES; ++t) {
+        env = vmaxq_f32(inst[t], vmulq_f32(env, pre_c));
+        const float32x4_t env_db =
+            vmulq_n_f32(neon_log2q_f32(vmaxq_f32(env, vdupq_n_f32(1e-5f))), 6.0206f);
+        float32x4_t target = vmulq_f32(mb->slope, vsubq_f32(env_db, mb->thresh));
+        target = vminq_f32(vmaxq_f32(target, lo_lim), hi_lim);
+        // Attack while the level is rising, whichever way that moves the gain
+        // -- see MasterFX::standard_process(), which shares the rule.
+        const uint32x4_t rising = vcgtq_f32(vmulq_f32(vsubq_f32(target, g_db), mb->slope), zero);
+        g_db = vmlaq_f32(target, vbslq_f32(rising, att, rel), vsubq_f32(g_db, target));
+        const float32x4_t g = neon_expq_f32(vmulq_n_f32(g_db, INV_DB_COEFF));
+        v1[t] = vmulq_f32(v1[t], bands_to_lanes_lo(g));
+        v2[t] = vmulq_f32(v2[t], bands_to_lanes_hi(g));
     }
-    // The follower decays geometrically toward zero, so on silence it lands in
-    // the subnormal range and stays there feeding every downstream multiply.
-    mb->comp_env_state[BAND_LOW]  = flush_denormal_q(vld1q_f32(olow));
-    mb->comp_env_state[BAND_MID]  = flush_denormal_q(vld1q_f32(omid));
-    mb->comp_env_state[BAND_HIGH] = flush_denormal_q(vld1q_f32(ohigh));
+    mb->env     = flush_denormal_q(env);
+    mb->gain_db = flush_denormal_q(g_db);
 
-    // ------------------------------------------------------------
-    // Stage 3: Dynamic Compression Lane processing using Parameter Cache
-    // ------------------------------------------------------------
-    // Dynamic values of ratio, threshold, and coefficients are explicitly utilized here
-    float32x4_t gain_low = process_compressor_lane(&mb->comp_gain_state[BAND_LOW], mb->comp_env_state[BAND_LOW],
-                                                   mb->bands[BAND_LOW].thresh_db, mb->bands[BAND_LOW].gr_slope,
-                                                   mb->bands[BAND_LOW].attack_coeff, mb->bands[BAND_LOW].release_coeff);
+    // ---- drive ----------------------------------------------------------------
+    if (mb->drive > 0.0f) multiband_drive(mb, v1, v2);
+    else                  mb->drive_on = false;
 
-    float32x4_t gain_mid = process_compressor_lane(&mb->comp_gain_state[BAND_MID], mb->comp_env_state[BAND_MID],
-                                                   mb->bands[BAND_MID].thresh_db, mb->bands[BAND_MID].gr_slope,
-                                                   mb->bands[BAND_MID].attack_coeff, mb->bands[BAND_MID].release_coeff);
-
-    float32x4_t gain_high = process_compressor_lane(&mb->comp_gain_state[BAND_HIGH], mb->comp_env_state[BAND_HIGH],
-                                                    mb->bands[BAND_HIGH].thresh_db, mb->bands[BAND_HIGH].gr_slope,
-                                                    mb->bands[BAND_HIGH].attack_coeff, mb->bands[BAND_HIGH].release_coeff);
-
-    // Apply calculated compressor gain reductions
-    low_l  = vmulq_f32(low_l,  gain_low);  low_r  = vmulq_f32(low_r,  gain_low);
-    mid_l  = vmulq_f32(mid_l,  gain_mid);  mid_r  = vmulq_f32(mid_r,  gain_mid);
-    high_l = vmulq_f32(high_l, gain_high); high_r = vmulq_f32(high_r, gain_high);
-
-    // ------------------------------------------------------------
-    // Stage 4: Integrated Pirkle Waveshaping & Offset Sanitization
-    // ------------------------------------------------------------
-    // Optimization: Only run expensive triode simulation if drive is non-zero.
-    // Mono-linking bias states per band to reduce CPU cycles.
-    float32x4_t sat_l_low, sat_l_mid, sat_l_high;
-    float32x4_t sat_r_low, sat_r_mid, sat_r_high;
-
-    if (mb->bands[BAND_LOW].drive > 0.01f) {
-      sat_l_low = pirkle_triode_engine(low_l, mb->bands[BAND_LOW].drive,
-                                       &mb->tube_bias_l[BAND_LOW], 3.2f, 1.1f, true);
-      sat_r_low = pirkle_triode_engine(low_r, mb->bands[BAND_LOW].drive,
-                                       &mb->tube_bias_l[BAND_LOW], 3.2f, 1.1f, false);
-    } else {
-      sat_l_low = vnegq_f32(low_l);
-      sat_r_low = vnegq_f32(low_r);
+    // ---- solo / mute, and the sum ------------------------------------------------
+    float32x2_t o[NEON_LANES];
+    for (int t = 0; t < NEON_LANES; ++t) {
+        const float32x4_t s = vmlaq_f32(vmulq_f32(v1[t], mb->weight[0]), v2[t], mb->weight[1]);
+        // [lowL+highL, lowR+highR, midL, midR] -> [L, R]
+        o[t] = vadd_f32(vget_low_f32(s), vget_high_f32(s));
     }
+    const float32x4x2_t u = vuzpq_f32(vcombine_f32(o[0], o[1]), vcombine_f32(o[2], o[3]));
+    *out_l = u.val[0];
+    *out_r = u.val[1];
 
-    if (mb->bands[BAND_MID].drive > 0.01f) {
-      sat_l_mid = pirkle_triode_engine(mid_l, mb->bands[BAND_MID].drive,
-                                       &mb->tube_bias_l[BAND_MID], 5.5f, 1.8f, true);
-      sat_r_mid = pirkle_triode_engine(mid_r, mb->bands[BAND_MID].drive,
-                                       &mb->tube_bias_l[BAND_MID], 5.5f, 1.8f, false);
-    } else {
-      sat_l_mid = vnegq_f32(mid_l);
-      sat_r_mid = vnegq_f32(mid_r);
+#if !defined(__arm__)
+    // On silence the filter states decay into the subnormal range.  ARMv7's
+    // NEON runs flush-to-zero whatever FPSCR says, so on the drumlogue they
+    // simply become zero and this would be wasted work; the x86 host bench
+    // keeps them, at ~10x the cost (test_levels G9).
+    bq4_state_t* st[4] = { &mb->split_lo.s1, &mb->split_lo.s2, &mb->split_hi.s1, &mb->split_hi.s2 };
+    for (bq4_state_t* q : st) { q->z1 = flush_denormal_q(q->z1); q->z2 = flush_denormal_q(q->z2); }
+    for (int k = 0; k < 2; ++k) mb->dc_y[k] = flush_denormal_q(mb->dc_y[k]);
+    for (int i = 0; i < 2; ++i) {
+        float* z = (i == 0) ? (float*)&mb->ap_s.z1 : (float*)&mb->ap_s.z2;
+        z[0] = flush_denormal(z[0]); z[1] = flush_denormal(z[1]);
     }
-
-    if (mb->bands[BAND_HIGH].drive > 0.01f) {
-      sat_l_high = pirkle_triode_engine(high_l, mb->bands[BAND_HIGH].drive,
-                                        &mb->tube_bias_l[BAND_HIGH], 6.0f, 2.5f, true);
-      sat_r_high = pirkle_triode_engine(high_r, mb->bands[BAND_HIGH].drive,
-                                        &mb->tube_bias_l[BAND_HIGH], 6.0f, 2.5f, false);
-    } else {
-      sat_l_high = vnegq_f32(high_l);
-      sat_r_high = vnegq_f32(high_r);
-    }
-    // Correct the common-cathode native inversion signature
-    sat_l_low  = vnegq_f32(sat_l_low);  sat_r_low  = vnegq_f32(sat_r_low);
-    sat_l_mid  = vnegq_f32(sat_l_mid);  sat_r_mid  = vnegq_f32(sat_r_mid);
-    sat_l_high = vnegq_f32(sat_l_high); sat_r_high = vnegq_f32(sat_r_high);
-
-    // ------------------------------------------------------------
-    // [Optional Phase APF Processing for sat_l_low/sat_r_low executes here]
-    // ------------------------------------------------------------
-
-    // ------------------------------------------------------------
-    // Stage 5: Apply Dynamic Makeup Gain & Mute/Solo Rules
-    // ------------------------------------------------------------
-    int any_solo   = (mb->bands[BAND_LOW].solo  > 0.0f || mb->bands[BAND_MID].solo > 0.0f || mb->bands[BAND_HIGH].solo > 0.0f);
-    float low_act  = (mb->bands[BAND_LOW].solo  > 0.0f || (!any_solo && mb->bands[BAND_LOW].mute  == 0.0f)) ? mb->bands[BAND_LOW].makeup_gain_linear  : 0.0f;
-    float mid_act  = (mb->bands[BAND_MID].solo  > 0.0f || (!any_solo && mb->bands[BAND_MID].mute  == 0.0f)) ? mb->bands[BAND_MID].makeup_gain_linear  : 0.0f;
-    float high_act = (mb->bands[BAND_HIGH].solo > 0.0f || (!any_solo && mb->bands[BAND_HIGH].mute == 0.0f)) ? mb->bands[BAND_HIGH].makeup_gain_linear : 0.0f;
-
-    // Structural summation with master headroom scaling (0.45x) to prevent clipping across summed bands.
-    *out_l = vmulq_n_f32(vaddq_f32(vaddq_f32(vmulq_n_f32(sat_l_low, low_act), vmulq_n_f32(sat_l_mid, mid_act)), vmulq_n_f32(sat_l_high, high_act)), MASTER_SUM_SCALING);
-    *out_r = vmulq_n_f32(vaddq_f32(vaddq_f32(vmulq_n_f32(sat_r_low, low_act), vmulq_n_f32(sat_r_mid, mid_act)), vmulq_n_f32(sat_r_high, high_act)), MASTER_SUM_SCALING);
-
-    // Apply master DC blocking once at the end of the chain to save significant CPU cycles.
-    *out_l = dc_block_lane(&mb->dc_blockers_l[0], *out_l, 0.995f);
-    *out_r = dc_block_lane(&mb->dc_blockers_r[0], *out_r, 0.995f);
+#endif
 }

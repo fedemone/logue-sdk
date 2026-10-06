@@ -79,17 +79,22 @@ const __unit_header unit_header_t unit_header = {
         // replaces both the MBand selector and MBState.
         { 0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"SoloMute"} },   // ID 15
 
-        // Page 5: Multiband thresholds, one knob per band, and the low split
-        { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"Lo Thresh"} },  // ID 16
-        { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"Mid Thresh"} }, // ID 17
-        { -600, 0, -600, -200, k_unit_param_type_db, 1, 1, 0, {"Hi Thresh"} },  // ID 18
+        // Page 5: Multiband thresholds, one knob per band, and the low split.
+        // Offsets from THRESH, -30.0..+30.0 dB: THRESH moves all three pivots
+        // and 0 pivots where Standard would.  Typed as strings so the readout
+        // can carry its sign ("+0.0dB", "-6.0dB").
+        { -300, 300, 0, 0, k_unit_param_type_strings, 1, 1, 0, {"Lo Thresh"} },  // ID 16
+        { -300, 300, 0, 0, k_unit_param_type_strings, 1, 1, 0, {"Mid Thresh"} }, // ID 17
+        { -300, 300, 0, 0, k_unit_param_type_strings, 1, 1, 0, {"Hi Thresh"} },  // ID 18
         // ID 19: low/mid split, 62.5 Hz at 0 to 1 kHz at 100, log; 50 = 250 Hz
         { 0, 100, 0, 50, k_unit_param_type_strings, 0, 0, 0, {"Xover Lo"} },    // ID 19
 
-        // Page 6: Multiband ratios, one knob per band, and the high split
-        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"Lo Ratio"} },  // ID 20 - 1.0..20.0:1
-        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"Mid Ratio"} }, // ID 21
-        { 10, 200, 10, 40, k_unit_param_type_strings, 1, 1, 0, {"Hi Ratio"} },  // ID 22
+        // Page 6: Multiband ratios, one knob per band, and the high split.
+        // In series with SLOPE's curve: 1.0:1 follows SLOPE exactly, 4.0:1
+        // compresses that band four times harder than SLOPE alone.
+        { 10, 200, 10, 10, k_unit_param_type_strings, 1, 1, 0, {"Lo Ratio"} },  // ID 20 - 1.0..20.0:1
+        { 10, 200, 10, 10, k_unit_param_type_strings, 1, 1, 0, {"Mid Ratio"} }, // ID 21
+        { 10, 200, 10, 10, k_unit_param_type_strings, 1, 1, 0, {"Hi Ratio"} },  // ID 22
         // ID 23: mid/high split, 1 kHz at 0 to 16 kHz at 100, log; 33 = 2.5 kHz.
         // The two ranges meet only at 1 kHz, so the splits can never cross.
         { 0, 100, 0, 33, k_unit_param_type_strings, 0, 0, 0, {"Xover Hi"} },    // ID 23

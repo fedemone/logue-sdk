@@ -72,13 +72,13 @@ static Params headerDefaults() {
     p.v[k_treble]              = 50;
     p.v[k_presence]            = 50;
     p.v[k_band_solo_mute]      = 0;      /* Off */
-    p.v[k_band_low_threshold]  = -200;
-    p.v[k_band_mid_threshold]  = -200;
-    p.v[k_band_high_threshold] = -200;
+    p.v[k_band_low_threshold]  = 0;      /* offsets from THRESH */
+    p.v[k_band_mid_threshold]  = 0;
+    p.v[k_band_high_threshold] = 0;
     p.v[k_crossover_low]       = 50;     /* 250 Hz */
-    p.v[k_band_low_ratio]      = 40;     /* 4.0:1 */
-    p.v[k_band_mid_ratio]      = 40;
-    p.v[k_band_high_ratio]     = 40;
+    p.v[k_band_low_ratio]      = 10;     /* 1.0:1 in series with SLOPE */
+    p.v[k_band_mid_ratio]      = 10;
+    p.v[k_band_high_ratio]     = 10;
     p.v[k_crossover_high]      = 33;     /* 2.5 kHz */
     p.mode = 0;
     p.dist = 0;
@@ -375,14 +375,15 @@ static void section_matched() {
     printf("%-12s %-12s %+10.2f %+10.2f %+10.2f\n",
            MODE_NAME[1], "4:1", r.gain_fund_db, r.gain_rms_db, r.rms_dbfs);
 
+    /* Multiband reads THRESH, SLOPE and the limits itself now: the same
+     * knobs, offsets 0 and band ratios 1:1, must land where Standard does. */
     p = headerDefaults();
-    p.mode = 2;
-    setBandThresholds(p, -300);
-    setBandRatios(p, 40);
+    p.v[k_threhold] = -300; p.v[k_attenuation_limit] = -300; p.v[k_gain_limit] = 300;
+    p.mode = 2; p.v[k_slope] = 58;
     apply(p);
     r = measure(0.5, F0, SETTLE, MEAS);
     printf("%-12s %-12s %+10.2f %+10.2f %+10.2f\n",
-           MODE_NAME[2], "4.0:1", r.gain_fund_db, r.gain_rms_db, r.rms_dbfs);
+           MODE_NAME[2], "SLOPE 58", r.gain_fund_db, r.gain_rms_db, r.rms_dbfs);
 }
 
 /* E. Multiband summing loss and its frequency dependence. */
@@ -393,8 +394,8 @@ static void section_mb() {
     for (int mk : {0, 30, 60, 69, 75, 90}) {
         Params p = headerDefaults();
         p.mode = 2;
-        setBandThresholds(p, 0);
-        setBandRatios(p, 10);
+        p.v[k_attenuation_limit] = 0;   /* no gain change in any band */
+        p.v[k_gain_limit]        = 0;
         p.v[k_makeup] = mk;
         apply(p);
         Result r = measure(0.1, F0, SETTLE, MEAS);
@@ -405,8 +406,8 @@ static void section_mb() {
     for (double f : {100.0, 250.0, 600.0, 1000.0, 2500.0, 6000.0}) {
         Params p = headerDefaults();
         p.mode = 2;
-        setBandThresholds(p, 0);
-        setBandRatios(p, 10);
+        p.v[k_attenuation_limit] = 0;
+        p.v[k_gain_limit]        = 0;
         apply(p);
         Result r = measure(0.1, f, SETTLE, MEAS);
         printf("  %-10.0f %+10.2f %+10.1f\n", f, r.gain_fund_db, r.phase_deg);
@@ -548,8 +549,8 @@ static void section_release() {
         { "Distressor 4:1 REL=10",   1, 38,   10, 0 },
         { "Distressor 4:1 REL=2000", 1, 38, 2000, 0 },
         { "Distressor Opto REL=200", 1, 63,  200, 0 },
-        { "Multiband      REL=200",  2, 40,  200, 0 },
-        { "Multiband      REL=2000", 2, 40, 2000, 0 },
+        { "Multiband      REL=200",  2, 58,  200, 0 },
+        { "Multiband      REL=2000", 2, 58, 2000, 0 },
     };
 
     printf("  %-24s %s\n", "config", " 100ms   200    300    400    500    600    700    800");
@@ -561,9 +562,6 @@ static void section_release() {
         p.v[k_detection_mode]    = c.detect;
         p.v[k_attenuation_limit] = -300;
         p.v[k_gain_limit]        = 300;
-        if (c.mode == 2) {
-            setBandThresholds(p, -200);
-        }
         apply(p);
         measure(0.708, F0, 9600, 0);          /* the hit, no analysis */
         printf("  %-24s", c.name);
@@ -583,9 +581,6 @@ static void section_release() {
         p.v[k_slope]             = (mode == 1) ? distressorSlopeRaw(3) : 58;
         p.v[k_attenuation_limit] = -300;
         p.v[k_gain_limit]        = 300;
-        if (mode == 2) {
-            setBandThresholds(p, -200);
-        }
         p.v[k_detection_mode] = 0;
         apply(p);
         double internal = measureKeyed(0.1, 0.708, F0, SETTLE, MEAS);
@@ -648,9 +643,6 @@ static void section_quirks() {
         p.v[k_attenuation_limit] = -300;
         p.v[k_gain_limit]        = 300;
         p.v[k_slope]             = (mode == 1) ? distressorSlopeRaw(3) : 58;
-        if (mode == 2) {
-            setBandThresholds(p, -300);
-        }
         apply(p); double mono = measure(0.5, F0, SETTLE, MEAS, 0).gain_fund_db;
         apply(p); double left = measure(0.5, F0, SETTLE, MEAS, 1).gain_fund_db;
         printf("   %-11s mono(L=R) %+7.2f dB   left-only %+7.2f dB   delta %+5.2f dB\n",
@@ -1002,7 +994,7 @@ static RecoverResult runSpoiled(const Params& p, Spoil spoil, float value) {
                 case SPOIL_ENVELOPE:       g_fx.envelope_.env_state = value; break;
                 case SPOIL_DISTRESSOR_ENV: g_fx.distressor_.distressor_env.env_state = value; break;
                 case SPOIL_TUBE_DC:        g_fx.overlord_.dc_l.y_prev = value; break;
-                case SPOIL_CROSSOVER:      g_fx.multiband_.xover_low_mid.l_lpf_z1 = value; break;
+                case SPOIL_CROSSOVER:      g_fx.multiband_.split_lo.s1.z1[0] = value; break;
                 case SPOIL_SLAM_DC:        g_fx.slam_.dc_l.y_prev = value; break;
                 case SPOIL_DRIVE_DC:       g_fx.distressor_.out_dc_l.y_prev = value; break;
                 case SPOIL_DRIVE_LEVEL:    g_fx.distressor_.level.out = value; break;
@@ -1108,8 +1100,8 @@ static void panelCheck(bool ok, const char* what, const char* detail) {
 static Params multibandFlat() {
     Params p = headerDefaults();
     p.mode = COMP_MODE_MULTIBAND;
-    setBandThresholds(p, 0);       /* no gain reduction anywhere */
-    setBandRatios(p, 10);
+    p.v[k_attenuation_limit] = 0;  /* the curve may not move any band */
+    p.v[k_gain_limit]        = 0;
     return p;
 }
 
@@ -1150,8 +1142,15 @@ static void section_panel() {
     for (int k = 0; k < 3; ++k) {
         double g[3];
         for (int b = 0; b < 3; ++b) {
-            Params p = multibandFlat();
-            p.v[k_band_low_threshold + k] = -400;   /* -40 dB */
+            /* THRESH -10 sits above every -20 dBFS tone, and with no upward
+             * gain allowed the bands at offset 0 stay at unity; the one under
+             * test pivots 30 dB lower at 20:1 on top of SLOPE. */
+            Params p = headerDefaults();
+            p.mode = COMP_MODE_MULTIBAND;
+            p.v[k_threhold] = -100;
+            p.v[k_attenuation_limit] = -300;
+            p.v[k_gain_limit] = 0;
+            p.v[k_band_low_threshold + k] = -300;   /* THRESH - 30 dB */
             p.v[k_band_low_ratio + k]     = 200;    /* 20:1 */
             apply(p);
             g[b] = measure(0.1, tone[b], SETTLE / 2, MEAS / 2).gain_fund_db;
@@ -1235,7 +1234,8 @@ static void section_panel() {
         for (int k = 0; k < 2; ++k) {
             Params p = headerDefaults();
             p.mode = COMP_MODE_MULTIBAND;
-            setBandThresholds(p, -200);
+            setBandRatios(p, 40);                         /* 4:1 on top of SLOPE */
+            p.v[k_gain_limit] = 0;
             p.v[k_release] = rels[k];
             apply(p);
             measure(0.708, F0, 9600, 0);                  /* a 200 ms hit */
@@ -1254,6 +1254,7 @@ static void section_panel() {
     struct DCase { const char* what; int mode; int dist; };
     const DCase dc[] = {
         { "Standard (Overlord tube)",      COMP_MODE_STANDARD,   0 },
+        { "Multiband (a tube per band)",   COMP_MODE_MULTIBAND,  0 },
         { "Distressor Dist2 (bench only)", COMP_MODE_DISTRESSOR, DIST_MODE_DIST2 },
     };
     for (const DCase& c : dc) {
@@ -1282,6 +1283,122 @@ static void section_panel() {
         }
     }
 
+    /* M8. Page 1 means the same in both modes.  Multiband runs Standard's
+     * curve per band: at offsets 0 and band ratios 1:1 a tone in any band
+     * must come out where Standard puts it, THRESH must move every band's
+     * pivot, a band ratio must stack on SLOPE, the bands must sum flat, and a
+     * hit after a quiet passage must not ride in on the RELEASE time. */
+    printf("\n  M8. Multiband follows page 1\n");
+    {
+        /* The band that carries the tone, soloed, with the crossover's own
+         * shape at that frequency taken out.  Compared on the whole output a
+         * pure tone also measures its -32 dB spill into the neighbouring
+         * bands, which the curve lifts toward the threshold like any quiet
+         * band (up to +2.5 dB at Rev 9.8); that is the multiband doing its
+         * job, not the curve differing. */
+        const int slopes[] = { 20, 40, 58, 66, 70 };
+        double worst = 0.0; int worst_slope = 0; double worst_amp = 0.0, worst_f = 0.0;
+        for (int b = 0; b < 3; ++b) {
+            const double f = tone[b];
+            Params flat = multibandFlat();
+            flat.v[k_band_solo_mute] = SOLO_LOW + b;
+            apply(flat);
+            const double shape = measure(0.1, f, SETTLE / 2, MEAS / 2).gain_fund_db;
+            for (int sl : slopes)
+                for (double amp : {0.01, 0.1, 0.5}) {
+                    double g[2];
+                    for (int m = 0; m < 2; ++m) {
+                        Params p = headerDefaults();
+                        p.mode = m ? COMP_MODE_MULTIBAND : COMP_MODE_STANDARD;
+                        if (m) p.v[k_band_solo_mute] = SOLO_LOW + b;
+                        p.v[k_slope] = sl;
+                        apply(p);
+                        g[m] = measure(amp, f, SETTLE / 2, MEAS / 2).gain_fund_db - (m ? shape : 0.0);
+                    }
+                    if (fabs(g[1] - g[0]) > fabs(worst)) {
+                        worst = g[1] - g[0]; worst_slope = sl; worst_amp = amp; worst_f = f;
+                    }
+                }
+        }
+        snprintf(buf, sizeof(buf), "(worst %+.2f dB: SLOPE %d, %.0f Hz, %.0f dBFS)",
+                 worst, worst_slope, worst_f, 20.0 * log10(worst_amp));
+        panelCheck(fabs(worst) < 1.0, "each band follows Standard's curve (soloed)", buf);
+    }
+    {
+        double lo_t[3], hi_t[3];
+        for (int b = 0; b < 3; ++b)
+            for (int k = 0; k < 2; ++k) {
+                Params p = headerDefaults();
+                p.mode = COMP_MODE_MULTIBAND;
+                p.v[k_slope] = 58;
+                p.v[k_attenuation_limit] = -300; p.v[k_gain_limit] = 300;
+                p.v[k_threhold] = k ? -100 : -300;
+                apply(p);
+                (k ? hi_t : lo_t)[b] = measure(0.1, tone[b], SETTLE / 2, MEAS / 2).gain_fund_db;
+            }
+        bool ok = true;
+        for (int b = 0; b < 3; ++b) ok = ok && (hi_t[b] - lo_t[b] > 5.0);
+        snprintf(buf, sizeof(buf), "(THRESH -30 -> -10: Low %+.1f  Mid %+.1f  High %+.1f dB)",
+                 hi_t[0] - lo_t[0], hi_t[1] - lo_t[1], hi_t[2] - lo_t[2]);
+        panelCheck(ok, "THRESH moves every band's pivot", buf);
+    }
+    {
+        /* Effective ratio above threshold from two levels 10 dB apart.  SLOPE
+         * 50 is 2:1; a band ratio of 2:1 in series makes it 4:1. */
+        double eff[2];
+        const int band_ratio[2] = { 10, 20 };
+        for (int k = 0; k < 2; ++k) {
+            double out[2];
+            const double amps[2] = { 0.1, 0.316 };
+            for (int a = 0; a < 2; ++a) {
+                Params p = headerDefaults();
+                p.mode = COMP_MODE_MULTIBAND;
+                p.v[k_slope] = 50;
+                p.v[k_threhold] = -400;
+                p.v[k_attenuation_limit] = -300; p.v[k_gain_limit] = 300;
+                setBandRatios(p, band_ratio[k]);
+                apply(p);
+                out[a] = 20.0 * log10(amps[a]) + measure(amps[a], F0, SETTLE / 2, MEAS / 2).gain_fund_db;
+            }
+            eff[k] = 10.0 / (out[1] - out[0]);
+        }
+        snprintf(buf, sizeof(buf), "(SLOPE 2:1 alone %.2f:1, with Ratio 2:1 %.2f:1)", eff[0], eff[1]);
+        panelCheck(fabs(eff[0] - 2.0) < 0.2 && fabs(eff[1] - 4.0) < 0.4,
+                   "a band Ratio stacks on SLOPE", buf);
+    }
+    {
+        double worst = 0.0, at = 0.0;
+        for (double f : {40.0, 100.0, 250.0, 600.0, 1000.0, 2500.0, 6000.0, 12000.0}) {
+            Params p = multibandFlat();
+            apply(p);
+            const double g = measure(0.1, f, SETTLE / 2, MEAS / 2).gain_fund_db;
+            if (fabs(g) > fabs(worst)) { worst = g; at = f; }
+        }
+        snprintf(buf, sizeof(buf), "(worst %+.3f dB at %.0f Hz)", worst, at);
+        panelCheck(fabs(worst) < 0.1, "the three bands sum flat, 40 Hz - 12 kHz", buf);
+    }
+    {
+        /* Quiet for a second (the curve boosts it to GAIN LMT), then a hit
+         * 3 dB over THRESH at Rev 9.8, whose static gain is -3.3 dB.  20-60 ms
+         * in, ATTACK 3.2 ms has long since got there; RELEASE 224 ms would
+         * still be carrying most of the +6 dB boost. */
+        for (int m = 0; m < 2; ++m) {
+            Params p = headerDefaults();
+            p.mode = m ? COMP_MODE_MULTIBAND : COMP_MODE_STANDARD;
+            p.v[k_slope] = 70; p.v[k_attack] = 32; p.v[k_release] = 224;
+            apply(p);
+            const double settled = measure(0.1413, F0, SETTLE, MEAS).gain_fund_db;
+            apply(p);
+            measure(0.001, F0, 48000, 0);
+            const double early = measure(0.1413, F0, 960, 1920).gain_fund_db;
+            snprintf(buf, sizeof(buf), "(20-60 ms after: %+.1f dB, settled %+.1f dB)", early, settled);
+            char what[80];
+            snprintf(what, sizeof(what), "%s: a hit after silence attacks, not releases",
+                     m ? "Multiband" : "Standard");
+            panelCheck(fabs(early - settled) < 1.5, what, buf);
+        }
+    }
+
     /* M7. What the panel shows. */
     printf("\n  M7. Readouts\n");
     /* One call per printf: the unit hands back a single static buffer, which
@@ -1293,6 +1410,7 @@ static void section_panel() {
         { "Xover Lo",   k_crossover_low,   {0, 50, 100},  3 },
         { "Xover Hi",   k_crossover_high,  {0, 33, 100},  3 },
         { "Mid Ratio",  k_band_mid_ratio,  {10, 40, 200}, 3 },
+        { "Lo Thresh",  k_band_low_threshold, {-300, 0, 60}, 3 },
     };
     for (const Readout& r : ro) {
         printf("     %-10s", r.name);
