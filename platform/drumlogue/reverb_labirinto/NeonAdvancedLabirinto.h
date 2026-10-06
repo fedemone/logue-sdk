@@ -1253,6 +1253,16 @@ public:
 
         // The host normally hands us frames_per_buffer, but the SDK allows
         // smaller counts, so anything from 1 frame up has to work.
+        // Re-arm the glides once per render. Within a render they are skipped
+        // from the first block that moves nothing (a one-pole sitting on its
+        // fixed point stays there until its target changes), which on a
+        // settled patch is 15 blocks in 16 of work that changed no value.
+        // Re-arming here rather than in every setter is what makes that safe:
+        // whatever moves a target -- a knob, a preset, the tempo, PILL's
+        // derived values -- is seen within one render, 1.3 ms at most.
+        gainsMoving_  = true;
+        delaysMoving_ = true;
+
         int samplesProcessed = 0;
         while (samplesProcessed < numSamples) {
             const int remaining = numSamples - samplesProcessed;
@@ -1300,26 +1310,38 @@ private:
                                                                 : modDepth * 4.7f;
         const float shimDepth  = shimmerDepth_ * 45.0f;  // deep, slow microtonal stretch
 
-        float angles[FDN_CHANNELS] __attribute__((aligned(16)));
-        float mods[FDN_CHANNELS]   __attribute__((aligned(16)));
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            // Rates are normalised phase per sample. swirlRate_ is 0.2-0.9 Hz
-            // over the sample rate; the default used to be a literal 0.5 — half
-            // a cycle per sample, an LFO at Nyquist, which is not a swirl but a
-            // +-1 sample alternation on the read pointer.
-            const float rate = microtonal ? microtonalRate_[ch]
-                                          : swirlRate_[ch] * (1.0f + modRate);
-            const float base = channelPhase_[ch];
-            angles[ch] = base * (float)M_TWOPI;
-            float next = base + rate * (float)NEON_LANES;
-            if (next > 1.0f) next -= 1.0f;
-            channelPhase_[ch] = next;
-        }
-        vst1q_f32(&mods[0], sin_ps(vld1q_f32(&angles[0])));
-        vst1q_f32(&mods[4], sin_ps(vld1q_f32(&angles[4])));
-
+        // Rates are normalised phase per sample. swirlRate_ is 0.2-0.9 Hz
+        // over the sample rate; the default used to be a literal 0.5 — half
+        // a cycle per sample, an LFO at Nyquist, which is not a swirl but a
+        // +-1 sample alternation on the read pointer.
+        //
+        // Eight channels are two vectors, so the phase step, the wrap, the
+        // sine and the read position below are all done two channels-of-four
+        // at a time rather than once per channel.
         const float depth = microtonal ? shimDepth : swirlDepth;
-        for (int ch = 0; ch < FDN_CHANNELS; ch++) mods[ch] *= depth;
+        const float rateScale = microtonal ? 1.0f : (1.0f + modRate);
+        const float* rates = microtonal ? microtonalRate_ : swirlRate_;
+        const float32x4_t one = vdupq_n_f32(1.0f);
+        const float32x4_t head = vdupq_n_f32((float)writePos);
+        int32_t idx[FDN_CHANNELS]  __attribute__((aligned(16)));
+        float   fracs[FDN_CHANNELS] __attribute__((aligned(16)));
+        for (int g = 0; g < FDN_CHANNELS; g += NEON_LANES) {
+            const float32x4_t base = vld1q_f32(&channelPhase_[g]);
+            const float32x4_t rate = vmulq_n_f32(vld1q_f32(&rates[g]), rateScale);
+            float32x4_t next = vaddq_f32(base, vmulq_n_f32(rate, (float)NEON_LANES));
+            next = vbslq_f32(vcgtq_f32(next, one), vsubq_f32(next, one), next);
+            vst1q_f32(&channelPhase_[g], next);
+            const float32x4_t mod =
+                vmulq_n_f32(sin_ps(vmulq_n_f32(base, (float)M_TWOPI)), depth);
+
+            // Read position, biased by one buffer length -- see below.
+            const float32x4_t delaySamples = vmulq_n_f32(vld1q_f32(&delayTimes[g]), sampleRate);
+            const float32x4_t safe = vaddq_f32(vsubq_f32(vsubq_f32(head, delaySamples), mod),
+                                               vdupq_n_f32((float)BUFFER_SIZE));
+            const int32x4_t i0 = vcvtq_s32_f32(safe);
+            vst1q_s32(&idx[g], i0);
+            vst1q_f32(&fracs[g], vsubq_f32(safe, vcvtq_f32_s32(i0)));
+        }
 
         // ------------------------------------------------------------------
         // 2. The reads themselves.
@@ -1336,23 +1358,37 @@ private:
         // the fractional part of the read position quantises to 1/128 of a
         // sample at BUFFER_SIZE and to 1/32 at four times it.
         // ------------------------------------------------------------------
+        //
+        // The interpolation runs on NEON: the five taps are loaded straight
+        // into lanes (a frame holds all eight channels, so one channel's taps
+        // are FDN_CHANNELS floats apart), lane s+1's tap is the same vector
+        // shifted by one, and the four lerps are one multiply-accumulate. Done
+        // in scalar it was ~90 instructions per channel per block and the
+        // single most expensive thing in the unit -- 38% of it, on a drumlogue
+        // that a polyphonic synth already loads to the edge. Only a read
+        // that straddles the end of the ring needs the masked indices, and
+        // that is one block in ~6500 per channel.
         for (int ch = 0; ch < FDN_CHANNELS; ch++) {
-            const float delaySamples = delayTimes[ch] * sampleRate;
-            const float safe = (float)writePos - delaySamples - mods[ch]
-                             + (float)BUFFER_SIZE;
-            const int32_t i0   = (int32_t)safe;
-            const float   frac = safe - (float)i0;
-            const uint32_t b   = (uint32_t)i0 & BUFFER_MASK;
+            const float    frac = fracs[ch];
+            const uint32_t b    = (uint32_t)idx[ch] & BUFFER_MASK;
 
-            float tap[NEON_LANES + 1];
-            for (int k = 0; k <= NEON_LANES; k++)
-                tap[k] = delayLine[(b + k) & BUFFER_MASK].samples[ch];
-
-            float lanes[NEON_LANES];
-            for (int s = 0; s < NEON_LANES; s++)
-                lanes[s] = tap[s] + frac * (tap[s + 1] - tap[s]);
-
-            out[ch] = vld1q_f32(lanes);
+            float32x4_t t0, t4;
+            if (b <= (uint32_t)(BUFFER_SIZE - (NEON_LANES + 1))) {
+                const float* p = &delayLine[b].samples[ch];
+                t0 = vld1q_dup_f32(p);
+                t0 = vld1q_lane_f32(p + 1 * FDN_CHANNELS, t0, 1);
+                t0 = vld1q_lane_f32(p + 2 * FDN_CHANNELS, t0, 2);
+                t0 = vld1q_lane_f32(p + 3 * FDN_CHANNELS, t0, 3);
+                t4 = vld1q_dup_f32(p + 4 * FDN_CHANNELS);
+            } else {
+                t0 = vld1q_dup_f32(&delayLine[b].samples[ch]);
+                t0 = vld1q_lane_f32(&delayLine[(b + 1) & BUFFER_MASK].samples[ch], t0, 1);
+                t0 = vld1q_lane_f32(&delayLine[(b + 2) & BUFFER_MASK].samples[ch], t0, 2);
+                t0 = vld1q_lane_f32(&delayLine[(b + 3) & BUFFER_MASK].samples[ch], t0, 3);
+                t4 = vld1q_dup_f32(&delayLine[(b + 4) & BUFFER_MASK].samples[ch]);
+            }
+            const float32x4_t t1 = vextq_f32(t0, t4, 1);   // taps 1..4
+            out[ch] = vmlaq_n_f32(t0, vsubq_f32(t1, t0), frac);
         }
     }
 
@@ -1684,7 +1720,7 @@ private:
      * change would jump the read pointer and click; this bends pitch instead,
      * the same trick the pre-delay uses.
      */
-    inline void slewDelayTimes() {
+    inline bool slewDelayTimes() {
         // The read pointer travels at (1 - dd) samples per output sample, where
         // dd is how fast the delay length itself is moving. dd is therefore a
         // pitch ratio, and the one-pole alone does not bound it: PILL crossing
@@ -1700,12 +1736,17 @@ private:
         // signal, but a kink in its slope, which is still audible. Ease the rate
         // itself over a few milliseconds so the bend starts and lands smoothly.
         const float maxStep = DELAY_MAX_RATE * (float)NEON_LANES / sampleRate;
+        bool moved = false;
         for (int i = 0; i < FDN_CHANNELS; i++) {
             float want = DELAY_SLEW_COEFF * (targetDelayTimes[i] - delayTimes[i]);
             want = fmaxf(-maxStep, fminf(maxStep, want));
-            delayStep[i] += DELAY_RATE_EASE * (want - delayStep[i]);
-            delayTimes[i] += delayStep[i];
+            const float step = delayStep[i] + DELAY_RATE_EASE * (want - delayStep[i]);
+            const float time = delayTimes[i] + step;
+            moved |= (step != delayStep[i]) | (time != delayTimes[i]);
+            delayStep[i]  = step;
+            delayTimes[i] = time;
         }
+        return moved;
     }
 
     /**
@@ -1727,12 +1768,28 @@ private:
      * 10 ms and a move settles in ~50 ms: too fast to feel as lag on a knob,
      * slow enough that nothing steps.
      */
-    inline void slewGains() {
-        inputDrive    += GAIN_SLEW_COEFF * (targetInputDrive   - inputDrive);
-        lowBandGain   += GAIN_SLEW_COEFF * (targetLowBandGain  - lowBandGain);
-        highBandGain  += GAIN_SLEW_COEFF * (targetHighBandGain - highBandGain);
-        width         += GAIN_SLEW_COEFF * (targetWidth        - width);
-        outputMakeup  += GAIN_SLEW_COEFF * (targetOutputMakeup - outputMakeup);
+    /** x one glide step toward t; true if x changed. */
+    static inline bool glideTo(float& x, float t, float c) {
+        const float n = x + c * (t - x);
+        const bool moved = (n != x);
+        x = n;
+        return moved;
+    }
+
+    /**
+     * The panel-driven glides, one step. Returns whether any value changed:
+     * each one-pole stalls on a fixed point within a few ulps of its target,
+     * and from there another step changes nothing -- so once a step has moved
+     * nothing, every further step until a target changes would move nothing
+     * too, and slewGains() can skip it. See glidesMoving_.
+     */
+    inline bool glideGains() {
+        bool moved = false;
+        moved |= glideTo(inputDrive, targetInputDrive  , GAIN_SLEW_COEFF);
+        moved |= glideTo(lowBandGain, targetLowBandGain , GAIN_SLEW_COEFF);
+        moved |= glideTo(highBandGain, targetHighBandGain, GAIN_SLEW_COEFF);
+        moved |= glideTo(width, targetWidth       , GAIN_SLEW_COEFF);
+        moved |= glideTo(outputMakeup, targetOutputMakeup, GAIN_SLEW_COEFF);
 
         // Crossfade weight between the two feedback matrices, so PILL entering
         // or leaving ping-pong bends instead of jumping. Snapped to the rails at
@@ -1741,9 +1798,8 @@ private:
         // ring-modulated feedback path out in one sample, which is why entering
         // tempio from esotico or stellare — the only two PILL=4 presets — was
         // the worst preset transition left once the colour crossfade was in.
-        shimmerDepth_ += GAIN_SLEW_COEFF * (targetShimmerDepth_ - shimmerDepth_);
-        if (fabsf(targetShimmerDepth_ - shimmerDepth_) < 1e-5f)
-            shimmerDepth_ = targetShimmerDepth_;
+        moved |= glideTo(shimmerDepth_, targetShimmerDepth_, GAIN_SLEW_COEFF);
+        if (fabsf(targetShimmerDepth_ - shimmerDepth_) < 1e-5f) { moved |= (shimmerDepth_ != targetShimmerDepth_); shimmerDepth_ = targetShimmerDepth_; }
 
         // Mixdown weights and the PILL=0 mono fold.
         {
@@ -1761,41 +1817,61 @@ private:
             for (int i = 0; i < FDN_CHANNELS; i++) {
                 const float t = (i < 4) ? ((i < halfL) ? 1.0f : 0.0f)
                                         : ((i - 4 < halfR) ? 1.0f : 0.0f);
-                mixWeight[i] += GAIN_SLEW_COEFF * (t - mixWeight[i]);
+                moved |= glideTo(mixWeight[i], t, GAIN_SLEW_COEFF);
                 // Land exactly on the rail: a weight left at 0.999999 would make
                 // the settled mix differ from the same patch loaded cold.
-                if (fabsf(t - mixWeight[i]) < 1e-5f) mixWeight[i] = t;
+                if (fabsf(t - mixWeight[i]) < 1e-5f) { moved |= (mixWeight[i] != t); mixWeight[i] = t; }
             }
             const float fold = (halfR == 0) ? 1.0f : 0.0f;
-            monoFold += GAIN_SLEW_COEFF * (fold - monoFold);
-            if (fabsf(fold - monoFold) < 1e-4f) monoFold = fold;
+            moved |= glideTo(monoFold, fold, GAIN_SLEW_COEFF);
+            if (fabsf(fold - monoFold) < 1e-4f) { moved |= (monoFold != fold); monoFold = fold; }
         }
 
         // Colour filter cutoff, and the depth of the delay modulation. Both are
         // panel-driven and both land straight on live signal — the cutoff via
         // the biquad it designs, the depth as a jump in the read position, which
         // is a click in the most literal sense.
-        baseFc   += GAIN_SLEW_COEFF * (targetBaseFc   - baseFc);
-        modDepth += GAIN_SLEW_COEFF * (targetModDepth - modDepth);
+        moved |= glideTo(baseFc, targetBaseFc  , GAIN_SLEW_COEFF);
+        moved |= glideTo(modDepth, targetModDepth, GAIN_SLEW_COEFF);
 
         // The band-split crossover. Its state is continuous but the coefficient
         // is not: stepping it re-splits the current sample between the two
         // bands, and when LOW and HIGH are far apart — tempio to labirinto moves
         // both, in opposite directions, while DAMP jumps 1500 Hz to 5100 Hz —
         // that re-split is a step in the output.
-        dampingCoeff += GAIN_SLEW_COEFF * (targetDampingCoeff - dampingCoeff);
+        moved |= glideTo(dampingCoeff, targetDampingCoeff, GAIN_SLEW_COEFF);
 
         // Cross-feedback amount (PILL picks the base, BNCE scales it) and the
         // fade between two wirings of it.
-        crossGainLive += GAIN_SLEW_COEFF * (effectiveCrossGain() - crossGainLive);
+        moved |= glideTo(crossGainLive, effectiveCrossGain(), GAIN_SLEW_COEFF);
         if (crossXfade < 1.0f) {
-            crossXfade += GAIN_SLEW_COEFF * (1.0f - crossXfade);
+            moved |= glideTo(crossXfade, 1.0f, GAIN_SLEW_COEFF);
             if (crossXfade > 0.9999f) crossXfade = 1.0f;
         }
 
         const float wTarget = pingPong_ ? 1.0f : 0.0f;
-        pingPongBlend += GAIN_SLEW_COEFF * (wTarget - pingPongBlend);
-        if (fabsf(wTarget - pingPongBlend) < 1e-4f) pingPongBlend = wTarget;
+        moved |= glideTo(pingPongBlend, wTarget, GAIN_SLEW_COEFF);
+        if (fabsf(wTarget - pingPongBlend) < 1e-4f) { moved |= (pingPongBlend != wTarget); pingPongBlend = wTarget; }
+
+        // Same idea for the colour stage across a mode change. Once the fade
+        // completes the outgoing states are dropped, so entering a mode again
+        // starts from a clean filter rather than replaying what was in it.
+        if (colourXfade < 1.0f) {
+            moved = true;
+            colourXfade += GAIN_SLEW_COEFF * (1.0f - colourXfade);
+            if (colourXfade > 0.9999f) {
+                colourXfade = 1.0f;
+                memset(oldFilterState1,   0, sizeof(oldFilterState1));
+                memset(oldFilterState2,   0, sizeof(oldFilterState2));
+                memset(oldMetalState,     0, sizeof(oldMetalState));
+                memset(oldCrystalAPState, 0, sizeof(oldCrystalAPState));
+            }
+        }
+        return moved;
+    }
+
+    inline void slewGains() {
+        if (gainsMoving_) gainsMoving_ = glideGains();
 
         // Which bank the input is fed into, alternating at the bounce rate.
         //
@@ -1864,19 +1940,6 @@ private:
         // the alternation washes out.
         bankSwing_ += BANK_SWING_COEFF * (bankTarget_ - bankSwing_);
 
-        // Same idea for the colour stage across a mode change. Once the fade
-        // completes the outgoing states are dropped, so entering a mode again
-        // starts from a clean filter rather than replaying what was in it.
-        if (colourXfade < 1.0f) {
-            colourXfade += GAIN_SLEW_COEFF * (1.0f - colourXfade);
-            if (colourXfade > 0.9999f) {
-                colourXfade = 1.0f;
-                memset(oldFilterState1,   0, sizeof(oldFilterState1));
-                memset(oldFilterState2,   0, sizeof(oldFilterState2));
-                memset(oldMetalState,     0, sizeof(oldMetalState));
-                memset(oldCrystalAPState, 0, sizeof(oldCrystalAPState));
-            }
-        }
     }
 
     /**
@@ -2124,7 +2187,7 @@ private:
         //    nothing here clobbers a phase this block still needs)
         // =================================================================
         updateRandomLfo();
-        slewDelayTimes();
+        if (delaysMoving_) delaysMoving_ = slewDelayTimes();
         slewGains();
 
         float modAmount = diffusion * modDepth;   // diffusion is DFSN (0..1)
@@ -2466,6 +2529,8 @@ private:
     float delayTimes[FDN_CHANNELS] __attribute__((aligned(16)));        // slewed, live
     float targetDelayTimes[FDN_CHANNELS] __attribute__((aligned(16)));  // requested
     float delayStep[FDN_CHANNELS] __attribute__((aligned(16)));         // eased glide rate
+    bool  gainsMoving_  = true;   // glideGains() still changing something this render
+    bool  delaysMoving_ = true;   // slewDelayTimes() still changing something this render
     // new filter states
     float metalState[FDN_CHANNELS] __attribute__((aligned(16)));
     float crystalAPState[FDN_CHANNELS] __attribute__((aligned(16)));
