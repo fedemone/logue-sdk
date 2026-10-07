@@ -120,18 +120,19 @@ Place `NeonAdvancedLabirinto.h`, `unit.cc`, and `header.c` in your SDK project. 
 
 The drumlogue runs the synth, both send effects, the master effect and its own engine on one audio thread, and a polyphonic user synth can take that thread to the edge: with Rings at polyphony 4 (2 on the *labirinto* preset) beside this reverb and a master compressor, the output crackled and then stopped. Measured on the ARM build under QEMU, in instructions per 64-frame render:
 
-| Preset | before | now |
-|--------|--------|-----|
-| foresta | 29,400 | 16,100 |
-| labirinto | 30,800 | 17,500 |
-| esotico | 30,900 | 17,700 |
-| stellare | 44,800 | 31,600 |
+| Preset | before | code changes, -Os | now (-O3) |
+|--------|--------|-----|-----|
+| foresta | 29,400 | 16,100 | 6,800 |
+| labirinto | 30,800 | 17,500 | 7,400 |
+| esotico | 30,900 | 17,700 | 7,000 |
+| stellare | 44,800 | 31,600 | 8,500 |
 
-Three changes, none of which changes the sound (the output matches the old build to -79 dB or better; the residue is the slow LFO's phase rounding a different way):
+Four changes, none of which changes the sound (each build's output matches the one before it to -79 dB or better; the residue is rounding, mostly the slow LFO's phase):
 
 - the delay-line taps are interpolated on NEON instead of in scalar (above);
 - the panel glides are skipped once they have landed (above);
-- `unit_render` de-interleaves and re-interleaves with `vld2q_f32`/`vst2q_f32`.
+- `unit_render` de-interleaves and re-interleaves with `vld2q_f32`/`vst2q_f32`;
+- the unit is built at `-O3`. `config.mk` always asked for it, through `UDEFS`, but the `UDEFS =` further down reset it, and the SDK Makefile takes the level from `OPTIM` (default `-Os`) anyway — so every build so far shipped size-optimised. `OPTIM = -O3` does it.
 
 ## Tests
 

@@ -449,20 +449,29 @@ on its *labirinto* preset) it crackled and then stopped, so every instruction
 here is someone else's headroom. Measured on the ARM build under QEMU, in
 instructions per 64-frame render (the budget is 1.33 ms):
 
-| Mode | before | now |
-|------|--------|-----|
-| Standard, DRIVE 0 (the factory default) | 4,200 | 4,300 |
-| Standard, DRIVE 23 | 5,700 | 5,800 |
-| Multiband, DRIVE 0 | 17,000 | 7,000 |
-| Multiband, DRIVE 23 | 17,100 | 10,400 |
+| Mode | before | NEON Multiband, -Os | now (-O3) |
+|------|--------|-----|-----|
+| Standard, DRIVE 0 (the factory default) | 4,200 | 4,300 | 2,800 |
+| Standard, DRIVE 23 | 5,700 | 5,800 | 4,800 |
+| Multiband, DRIVE 0 | 17,000 | 7,000 | 2,700 |
+| Multiband, DRIVE 23 | 17,100 | 10,400 | 3,700 |
 
-Multiband used to run its sixteen crossover biquads per sample one at a time in
-scalar code — 43% of the mode. They now run four at a time (L/R × low-pass/
-high-pass in one vector), and the detectors, gain smoothers, DC blockers and
-level matchers run the three bands side by side, which pays for the per-band
-tubes, their level matching and the low band's all-pass with room to spare.
-For scale: Rings at SympStrQ measures about 43,000–48,000 and NeonLabirinto
-16,000–18,000 (it was 29,000–31,000).
+Two changes. Multiband used to run its sixteen crossover biquads per sample one
+at a time in scalar code — 43% of the mode. They now run four at a time (L/R ×
+low-pass/high-pass in one vector), and the detectors, gain smoothers, DC
+blockers and level matchers run the three bands side by side, which pays for
+the per-band tubes, their level matching and the low band's all-pass with room
+to spare.
+
+And the unit is finally built at `-O3`. `config.mk` always asked for it, but in
+`UCFLAGS`, which the SDK Makefile never reads — it reads `OPTIM`, and defaults
+to `-Os` — so every build so far shipped size-optimised. `OPTIM = -O3` takes
+another 35–65% off, and the output matches the `-Os` build to −64 dB or better
+in every mode.
+
+For scale, at the same measure: Rings at SympStrQ is about 48,000 at
+polyphony 4 as it ships (`-Os`) and 21,000 at `-O3`; NeonLabirinto went from
+29,000–31,000 to 6,800–8,500.
 
 ---
 

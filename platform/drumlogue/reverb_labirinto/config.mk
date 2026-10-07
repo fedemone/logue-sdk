@@ -25,12 +25,14 @@ ASMXSRC =
 #
 
 UINCDIR =
-# --- Compiler Flags (Il cuore dell'ottimizzazione NEON) ---
-# -mfpu=neon: Attiva l'unità SIMD NEON
-# -mfloat-abi=hard: Usa i registri hardware per il passaggio dei float (fondamentale per performance)
-# -O3: Massima ottimizzazione del codice
-# -ffast-math: Permette ottimizzazioni matematiche aggressive (sicuro per questo DSP)
-UDEFS = -mfpu=neon -mfloat-abi=hard -O3 -ffast-math
+# --- Optimisation level ---
+# The SDK Makefile reads OPTIM (default -Os).  -O3 used to be asked for here
+# through UDEFS, together with -mfpu/-mfloat-abi/-ffast-math (which the
+# Makefile already sets), but "UDEFS =" under Macros below reset it, so the
+# unit always shipped at -Os.  At -O3 the ARM build runs about half the
+# instructions per render (labirinto 16.4k -> 7.4k) and its output matches -Os
+# to -79 dB or better.
+OPTIM = -O3
 
 ##############################################################################
 # Library Paths
