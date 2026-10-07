@@ -7,6 +7,29 @@
 
 // Struct layout: min, max, center, init, type, frac, frac_mode, reserved, name
 
+/*
+ * Build stamp: which optimisation level and compiler built this unit, so a
+ * shipped .drmlgunit can be checked without its build log:
+ *
+ *     strings omnipress.drmlgunit | grep "build:"
+ *
+ * config.mk sets OPTIM = -O3.  Objects now depend on config.mk (see the
+ * object rules in the Makefile), but a tree built before that relinks its
+ * old size-optimised objects unless it is cleaned once.  GCC defines
+ * __OPTIMIZE_SIZE__ only at -Os, and this file is compiled with the same
+ * flags as the rest of the unit; `used` keeps the string through LTO and
+ * strip.
+ */
+#if defined(__OPTIMIZE_SIZE__)
+#define UNIT_BUILD_OPT "-Os (size: rebuild clean for -O3)"
+#elif defined(__OPTIMIZE__)
+#define UNIT_BUILD_OPT "-O2/-O3 (speed)"
+#else
+#define UNIT_BUILD_OPT "-O0 (debug)"
+#endif
+__attribute__((used)) static const char unit_build_stamp[] =
+    "build: " UNIT_BUILD_OPT ", gcc " __VERSION__;
+
 const __unit_header unit_header_t unit_header = {
     .header_size = sizeof(unit_header_t),
     .target      = UNIT_TARGET_PLATFORM | k_unit_module_masterfx,
