@@ -121,6 +121,17 @@ Recent GCC rejects the SDK Makefile's `--param max-inline-insns-single`
 value as too large; if you hit that, override `USE_COPT` / `USE_CXXOPT` on the
 command line without the `-finline-limit` / `--param` entries.
 
+`config.mk` sets `OPTIM = -O3` (the SDK default is `-Os`): about 7% fewer
+instructions per render on the ARM build (2.05k -> 1.91k per 64 frames), with
+bit-identical output.  Objects depend on `config.mk`, so changing it rebuilds
+them; a tree built before that change needs one clean build.  To check what
+a `.drmlgunit` was built with:
+
+```
+strings portacassette.drmlgunit | grep "build:"
+build: -O2/-O3 (speed), gcc 13.3.0
+```
+
 ## Testing
 
 There is no on-device test harness. The DSP is plain C++ over ARM NEON

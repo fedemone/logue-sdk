@@ -28,6 +28,12 @@ UINCDIR  = .
 # them but was silently ignored; had it applied it would have produced an ABI
 # mismatch at the unit boundary.  Extra defines belong in UDEFS below.
 
+# Optimisation level.  The SDK Makefile reads OPTIM (default -Os).  At -O3
+# the ARM build runs about 7% fewer instructions per render (2.05k -> 1.91k)
+# with bit-identical output; small, but the drumlogue's audio thread is
+# shared with whatever synth and reverb are loaded alongside.
+OPTIM = -O3
+
 ##############################################################################
 # Libraries
 #
