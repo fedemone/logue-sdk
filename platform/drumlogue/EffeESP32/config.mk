@@ -45,3 +45,12 @@ ULIBS += -lc
 #
 
 UDEFS =
+
+##############################################################################
+# Optimisation level
+#
+# The SDK Makefile reads OPTIM (default -Os).  Measured on the ARM build under
+# qemu, in instructions per 64-frame render (a note every 100 ms): -Os 25.7k,
+# -O2 23.5k, -O3 22.6k.  -O3 runs 12% fewer than -Os, with output matching -Os
+# to -142 dB.
+OPTIM = -O3

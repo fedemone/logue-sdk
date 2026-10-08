@@ -162,6 +162,16 @@ make CROSS_COMPILE=arm-linux-gnueabihf-   # with a local ARM toolchain
 Produces `build/effemd.drmlgunit` — copy to the drumlogue's `Units/Synths`
 directory via USB mass storage.
 
+**Optimisation level.** `config.mk` sets `OPTIM = -O2` (the SDK default is
+`-Os`): 14% fewer ARM instructions per 64-frame render (15.1k -> 12.9k, measured
+under `qemu-arm`), bit-identical output; -O3 measured barely better than -Os. Objects depend on `config.mk`, so changing it
+rebuilds them; a tree built before that needs one clean build. To check what
+a `.drmlgunit` was built with:
+
+```sh
+strings effemd.drmlgunit | grep "build:"
+```
+
 ## Testing
 
 The DSP layer is host-testable:

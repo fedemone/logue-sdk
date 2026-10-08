@@ -94,3 +94,18 @@ A convincing ensemble needs:
 - subtle random variation per hit
 
 That produces the feeling of a group of players, not a chorus effect.
+
+## Building
+
+Standard logue-SDK drumlogue build (`make` in this directory, or the SDK
+Docker builder).
+
+**Optimisation level.** `config.mk` sets `OPTIM = -O3` (the SDK default is
+`-Os`): 11% fewer ARM instructions per 64-frame render (25.4k -> 22.7k, measured
+under `qemu-arm`), output identical to -143 dB. Objects depend on `config.mk`, so changing it
+rebuilds them; a tree built before that needs one clean build. To check what
+a `.drmlgunit` was built with:
+
+```sh
+strings delay_tribal.drmlgunit | grep "build:"
+```

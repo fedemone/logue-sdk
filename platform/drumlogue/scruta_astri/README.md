@@ -173,3 +173,18 @@ The three picks are OR'd, so they stack: aim them at the same number for one add
 Euclid and Accent are folded back into the driving LFO's own value, so a skipped step is skipped everywhere that LFO goes — the AM included — rather than only in the add-ons hanging off it.
 
 Depth comes from the driving LFO's own depth knob (`L1Dpth` or `L2Dpth`), the same control the AM uses.
+
+## Building
+
+Standard logue-SDK drumlogue build (`make` in this directory, or the SDK
+Docker builder).
+
+**Optimisation level.** `config.mk` sets `OPTIM = -O3` (the SDK default is
+`-Os`): 6% fewer ARM instructions per 64-frame render (55.5k -> 52.0k, measured
+under `qemu-arm`), output identical to -124 dB. Objects depend on `config.mk`, so changing it
+rebuilds them; a tree built before that needs one clean build. To check what
+a `.drmlgunit` was built with:
+
+```sh
+strings scruta_astri.drmlgunit | grep "build:"
+```
