@@ -23,11 +23,14 @@ ASMXSRC =
 #
 
 UINCDIR =
-# 5. Optimization & SIMD Flags
-# These are added to UDEFS and passed to the main Makefile.
-# The main Makefile already adds -mfpu=neon-vfpv4 and -mfloat-abi=hard,
-# but we add -O3 and -ffast-math for maximum DSP performance.
-UDEFS = -mfpu=neon -mfloat-abi=hard -O3 -ffast-math
+# --- Optimisation level ---
+# The SDK Makefile reads OPTIM (default -Os).  -O3 used to be asked for here
+# through UDEFS, together with -mfpu/-mfloat-abi/-ffast-math (which the
+# Makefile already sets), but "UDEFS =" under Macros below reset it, so the
+# unit always shipped at -Os.  At -O3 the ARM build runs about a quarter fewer
+# instructions per render (11.2k -> 8.2k at the default settings, before the
+# LFO and delay-read changes took it to 6.2k).
+OPTIM = -O3
 
 ##############################################################################
 # Library Paths
