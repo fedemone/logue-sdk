@@ -1363,8 +1363,8 @@ private:
         // into lanes (a frame holds all eight channels, so one channel's taps
         // are FDN_CHANNELS floats apart), lane s+1's tap is the same vector
         // shifted by one, and the four lerps are one multiply-accumulate. Done
-        // in scalar it was ~90 instructions per channel per block and the
-        // single most expensive thing in the unit -- 38% of it, on a drumlogue
+        // in scalar it was ~135 instructions per channel per block and the
+        // single most expensive thing in the unit -- a third of it, on a drumlogue
         // that a polyphonic synth already loads to the edge. Only a read
         // that straddles the end of the ring needs the masked indices, and
         // that is one block in ~6500 per channel.

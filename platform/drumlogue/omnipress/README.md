@@ -451,23 +451,28 @@ instructions per 64-frame render (the budget is 1.33 ms):
 
 | Mode | before | NEON Multiband, -Os | now (-O3) |
 |------|--------|-----|-----|
-| Standard, DRIVE 0 (the factory default) | 4,200 | 4,300 | 2,800 |
-| Standard, DRIVE 23 | 5,700 | 5,800 | 4,800 |
-| Multiband, DRIVE 0 | 17,000 | 7,000 | 2,700 |
-| Multiband, DRIVE 23 | 17,100 | 10,400 | 3,700 |
+| Standard, DRIVE 0 (the factory default) | 7,000 | 7,800 | 7,100 |
+| Standard, DRIVE 23 | 11,200 | 14,700 | 14,200 |
+| Multiband, DRIVE 0 | 33,700 | 19,300 | 17,700 |
+| Multiband, DRIVE 23 | 37,700 | 32,600 | 31,300 |
 
-Two changes. Multiband used to run its sixteen crossover biquads per sample one
-at a time in scalar code — 43% of the mode. They now run four at a time (L/R ×
-low-pass/high-pass in one vector), and the detectors, gain smoothers, DC
-blockers and level matchers run the three bands side by side, which pays for
-the per-band tubes, their level matching and the low band's all-pass with room
-to spare.
+(These replace an earlier table that was up to 8x too low: the script that read
+QEMU's trace counted at most eight instructions per basic block.)
 
-And the unit is finally built at `-O3`. `config.mk` always asked for it, but in
+Multiband used to run its sixteen crossover biquads per sample one at a time in
+scalar code. They now run four at a time (L/R × low-pass/high-pass in one
+vector), and the detectors, gain smoothers, DC blockers and level matchers run
+the three bands side by side. That pays for the per-band tubes, their level
+matching and the low band's all-pass and still halves the mode without DRIVE,
+and takes 14% off it with DRIVE 23. Standard costs more than it did: 11% for
+the input guard and the watchdog, and with DRIVE up, the tube's level matching
+(+31% at DRIVE 23) -- the price of DRIVE not moving the level.
+
+And the unit is now built at `-O3`. `config.mk` always asked for it, but in
 `UCFLAGS`, which the SDK Makefile never reads — it reads `OPTIM`, and defaults
 to `-Os` — so every build so far shipped size-optimised. `OPTIM = -O3` takes
-another 35–65% off, and the output matches the `-Os` build to −64 dB or better
-in every mode.
+another 3–9% off (`-O2` is within a few percent of it), and the output matches
+the `-Os` build to −64 dB or better in every mode.
 
 For scale, at the same measure: Rings at SympStrQ is about 48,000 at
 polyphony 4 as it ships (`-Os`) and 21,000 at `-O3`; NeonLabirinto went from
@@ -533,7 +538,7 @@ polyphony 4 as it ships (`-Os`) and 21,000 at `-O3`; NeonLabirinto went from
 | Multiband barely compressed on the drumlogue | Downward-only bands above absolute −20 dB thresholds: a band carries part of the bus, so at bus level little crossed them — 4:1 vs 20:1 was 0.2 dB on a −26 dBFS drum bus — and THRESH and SLOPE did nothing in this mode | Standard's curve per band: THRESH + offset is each pivot, SLOPE the curve with each band's Ratio in series, the limits shared. A default Multiband lands within 0.3 dB of Standard on a tone; on the drum bus the ratio knobs now span −1.4 to −6.3 dB |
 | Multiband did not sum flat | The low band missed the all-pass the second split puts on the other two, and a 38 Hz DC blocker sat on the output: ±0.35 dB around the splits, −0.6 dB at 100 Hz, at 1:1 | All-pass on the low band at the high split; DC blockers only behind the tubes. Flat to 0.02 dB, 40 Hz – 12 kHz |
 | Multiband's DRIVE was weak and moved the level | One triode stage per band at a third of Standard's drive, with a static makeup: 4–18% THD at −20 dBFS against Standard's 6–44%, +5 dB on quiet material, −5 dB on loud; DRIVE 1 gated off | The Overlord's two-stage law per band, level-matched band by band, faded in over the bottom tenth of the knob like Standard's. Same THD as Standard within a few percent, level within 0.35 dB, live from DRIVE 1 |
-| Multiband cost four times Standard | Sixteen scalar biquads per sample | NEON, four filters per vector and the bands in lanes: 17k → 7k instructions per render (10k with DRIVE) |
+| Multiband cost four times Standard | Sixteen scalar biquads per sample | NEON, four filters per vector and the bands in lanes: 33.7k → 17.7k instructions per render (37.7k → 31.3k with DRIVE 23) |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
 
