@@ -645,6 +645,16 @@ The DSP is header-only, so only `header.c` and `unit.cc` are compiled
 `arm-linux-gnueabihf` cross-compiler and exercised under `qemu-arm` (see
 `PROGRESS.md`).
 
+**Optimisation level.** `config.mk` sets `OPTIM = -O3` (the SDK default is
+`-Os`): 12% fewer ARM instructions per 64-frame render (25.7k -> 22.6k, measured
+under `qemu-arm`), output identical to -142 dB. Objects depend on `config.mk`, so changing it
+rebuilds them; a tree built before that needs one clean build. To check what
+a `.drmlgunit` was built with:
+
+```sh
+strings effeesp32.drmlgunit | grep "build:"
+```
+
 ---
 
 ## Copyright & License
