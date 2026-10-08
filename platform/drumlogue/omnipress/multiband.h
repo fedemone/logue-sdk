@@ -18,7 +18,8 @@
  * Layout.  Everything recursive -- the crossover, the detectors, the gain
  * smoothers, the DC blockers -- runs one sample at a time with the bands (or
  * band x channel) in NEON lanes; the scalar code this replaces ran sixteen
- * biquads per sample one by one and cost 17k instructions per 64-frame render.
+ * biquads per sample one by one and cost 34k instructions per 64-frame render
+ * (this layout: 19k at -Os, 18k at -O3).
  *
  *   crossover        [L R L R]       -> [lowL lowR | restL restR]   (split 1)
  *                    [restL restR x2] -> [midL midR | highL highR]   (split 2)

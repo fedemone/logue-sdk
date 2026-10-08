@@ -122,10 +122,12 @@ The drumlogue runs the synth, both send effects, the master effect and its own e
 
 | Preset | before | code changes, -Os | now (-O3) |
 |--------|--------|-----|-----|
-| foresta | 29,400 | 16,100 | 6,800 |
-| labirinto | 30,800 | 17,500 | 7,400 |
-| esotico | 30,900 | 17,700 | 7,000 |
-| stellare | 44,800 | 31,600 | 8,500 |
+| foresta | 50,500 | 31,300 | 27,100 |
+| labirinto | 51,900 | 32,600 | 27,800 |
+| esotico | 54,200 | 35,100 | 29,500 |
+| stellare | 68,100 | 49,000 | 34,500 |
+
+(These replace an earlier table that was up to 4x too low: the script that read QEMU's trace counted at most eight instructions per basic block. The conclusion stands -- the unit runs in a little over half the instructions it did -- but -O3's share of that is 15-30%, not the half the old table showed.)
 
 Four changes, none of which changes the sound (each build's output matches the one before it to -79 dB or better; the residue is rounding, mostly the slow LFO's phase):
 
