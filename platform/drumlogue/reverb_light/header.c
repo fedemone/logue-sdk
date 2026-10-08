@@ -13,15 +13,15 @@
  *
  *     strings luce_al_neon.drmlgunit | grep "build:"
  *
- * config.mk sets OPTIM = -O3.  Objects now depend on config.mk (see the
- * object rules in the Makefile), but a tree built before that relinks its
- * old size-optimised objects unless it is cleaned once.  GCC defines
+ * config.mk leaves OPTIM at the SDK default, -Os, which measured fastest for
+ * this unit (see config.mk).  Objects depend on config.mk (see the object
+ * rules in the Makefile), so changing it rebuilds them.  GCC defines
  * __OPTIMIZE_SIZE__ only at -Os, and this file is compiled with the same
  * flags as the rest of the unit; `used` keeps the string through LTO and
  * strip.
  */
 #if defined(__OPTIMIZE_SIZE__)
-#define UNIT_BUILD_OPT "-Os (size: rebuild clean for -O3)"
+#define UNIT_BUILD_OPT "-Os (size)"
 #elif defined(__OPTIMIZE__)
 #define UNIT_BUILD_OPT "-O2/-O3 (speed)"
 #else
@@ -73,7 +73,8 @@ const __unit_header unit_header_t unit_header = {
         { 0, 100, 0, 20, k_unit_param_type_percent, 0, 0, 0, {"RATE"} },
 
         // Page 4
-        // ID 12: IRID  iridiscence (saturated optical halo)  0%-100%
+        // ID 12: IRID  iridiscence: 0-50% drone, 50-80% drone -> octave up,
+        //        80-100% octave up (and its level throughout)
         { 0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"IRID"} },
         // ID 13: WDTH  stereo width  0%-100% (0=mono, 50=unity, 100=extra wide)
         { 0, 100, 0, 50, k_unit_param_type_percent, 0, 0, 0, {"WDTH"} },

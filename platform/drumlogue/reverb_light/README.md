@@ -23,8 +23,18 @@ The Color path runs the reverb tail through six parallel, High-Q bandpass Biquad
 ### 5. SPARKLE (Granular Sample & Hold)
 A dedicated 85 ms micro-buffer continuously records the reverb tail. Based on a Xorshift pseudo-random number generator, this block randomly "grabs" 5-15 ms slices of the audio and plays them back faster (pitching them up $+5$, $+7$, $+12$, $+19$ or $+24$ semitones). Each granular "pop" is assigned a randomized stereo pan, creating an effervescent, bubbling effect like neon sparks. A grain starts far enough back in the buffer that, playing faster than the tail is recorded, it never catches up with the write head.
 
-### 6. IRID (Granular Iridescence)
-Two crossfading grain heads (about 47 ms windows) read the tail at roughly a tenth of its speed, with a slight speed wobble from the GLOW LFO. Each head favours one side, so the halo swirls across the stereo image as they fade in and out; an asymmetric soft saturation and a gentle low-pass give it its glow.
+### 6. IRID (Granular Iridescence: drone to octave-up)
+IRID sets both the level and the character of the halo:
+
+| IRID | Character |
+|------|-----------|
+| 0-50% | **Drone**: two crossfading grain heads (about 47 ms windows) read the tail at roughly a tenth of its speed, three octaves and more down |
+| 50-80% | The drone fades out as the octave-up shimmer fades in (an equal-power crossfade, so the loudness holds) |
+| 80-100% | **Octave up**: the same two-head layout reading the tail at twice its speed, a bright shimmer an octave above the reverb |
+
+Both share the swirl: each head favours one side, so the halo moves across the stereo image as the heads fade in and out, with a slight speed wobble from the GLOW LFO. The drone goes through an asymmetric soft saturation and a low-pass at about 1.2 kHz; the shimmer through the same saturation and a much higher low-pass (4.4 kHz left, 5.3 kHz right), and +3.2 dB of make-up, measured, so it sits level with the drone on a broadband tail.
+
+The right channel of the drone used to weight each grain head by the other head's envelope, so it heard both heads at the instant they jumped back a grain: a click train at about 42 per second, and a strong leak of the input's own pitch (-62 dB against -81 dB now, on a 220 Hz tone). Each head now carries its own envelope on both sides.
 
 ---
 
@@ -53,7 +63,7 @@ LuceAlNeon operates using a parallel mixing philosophy. A value of `0%` on any o
 * **RATE (11):** GLOW LFO speed, 0.05 to 3.2 Hz (exponential).
 
 **Page 4: Space**
-* **IRID (12):** Blends in the granular iridescence halo.
+* **IRID (12):** The granular iridescence halo: a deep drone up to 50%, morphing into an octave-up shimmer between 50% and 80%, shimmer alone above that.
 * **WDTH (13):** Stereo width of the wet signal: 0% mono, 50% as is, 100% extra wide.
 
 With high BASS the in-loop HPF lifts the very top of the tail slightly above unity, so DCAY is held where the loop's highest gain reaches that of DCAY 100% at BASS 0%. Below that (every preset, and any DCAY at BASS 0%) DCAY is exactly what it was; above it (DCAY over 92% at BASS 100%, for example) DCAY gives the longest stable tail instead of one that slowly grows without bound.
@@ -71,11 +81,11 @@ With high BASS the in-loop HPF lifts the very top of the tail slightly above uni
 * **CPU Optimization:** NEON intrinsics are used wherever vectorization across channels is mathematically possible. IIR filters (like the Color Biquads and Bright Exciter) are strictly executed in scalar loops to prevent the comb-filtering artifacts inherent in vectorized feedback topologies. The eight delay-line reads run four channels per NEON vector, each interpolation pair coming from one 2-float load.
 * **Dependencies:** Requires the KORG drumlogue SDK and the custom `float_math.h` library containing the `fastersinfullf` phase-normalized fast math functions.
 * **FPU mode:** each render turns on flush-to-zero and default-NaN and puts the caller's mode back afterwards. It used to set bit 22 (round towards plus infinity, not default-NaN) and never restore it, which switched every other unit on the drumlogue's audio thread to rounding up.
-* **Optimisation level:** `config.mk` sets `OPTIM = -O3`. It used to ask for `-O3` through `UDEFS`, which a later `UDEFS =` reset, so the unit shipped at `-Os`. Objects depend on `config.mk`, so changing it rebuilds them; a tree built before that change needs one clean build. To check what a `.drmlgunit` was built with:
+* **Optimisation level:** `-Os`, the SDK default. `config.mk` used to ask for `-O3` through `UDEFS`, which a later `UDEFS =` reset, so the unit always shipped at `-Os` -- and measured, that is the fastest level for it (below). Objects depend on `config.mk`, so setting `OPTIM` there rebuilds them; a tree built before that change needs one clean build. To check what a `.drmlgunit` was built with:
 
   ```
   strings luce_al_neon.drmlgunit | grep "build:"
-  build: -O2/-O3 (speed), gcc 13.3.0
+  build: -Os (size), gcc 13.3.0
   ```
 
 ### CPU
@@ -84,6 +94,11 @@ ARM instructions per 64-frame render (qemu-arm, kick + tone input):
 
 | Build | Default settings | All six paths at 100% |
 |-------|-----------------:|----------------------:|
-| as shipped (-Os) | 11.2k | 11.5k |
-| -O3 | 8.2k | 8.8k |
-| -O3, block LFO and vector delay reads | 6.2k | 6.3k |
+| as shipped (-Os) | 51.8k | 63.3k |
+| shipped code at -O3 | 55.6k | 67.4k |
+| now, -O3 | 44.2k | 54.0k |
+| **now, -Os** | **38.5k** | **49.8k** |
+
+IRID between 50% and 80%, where drone and octave-up both run, adds about 19k to the default figure.
+
+(An earlier version of this table read 11.2k -> 6.2k and recommended `-O3`: the script that read QEMU's trace counted at most eight instructions per basic block, which undercounts long straight-line code most. Recounted, `-O3` makes this unit slower, not faster.)

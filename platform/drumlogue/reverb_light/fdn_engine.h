@@ -42,6 +42,13 @@
 #define GLIDE_MAX_RATE (0.5f)      // samples of delay change per sample
 #define GLIDE_EASE     (0.3f)      // per block
 
+// Level of IRID's octave-up shimmer against its drone, so the crossfade
+// between them holds its loudness.  Measured on the ARM build with white
+// noise into the reverb, the shimmer came out 3.2-3.6 dB below the drone at
+// the same IRID level (and level with it on a pure tone); a drum tail is
+// broadband, so the noise figure is the one matched.
+#define IRID_UP_LEVEL  (1.45f)
+
 static_assert(2.0f * 4513.0f + 2.0f < (float)FDN_BUFFER_SIZE,
               "FDN line too short for the longest prime at SIZE 100%");
 static_assert(PREDELAY_MAX_SAMPLES + 2.0f < (float)PREDELAY_BUFFER_SIZE,
@@ -246,7 +253,7 @@ public:
     // The glow LFO is a sine in cycles (glow_lfo_phase in [0,1)), evaluated
     // once per block and interpolated linearly inside it: at 4 Hz and 64
     // frames the error is 1.4e-4, and it saves three sine approximations per
-    // sample (a fifth of this unit's render).
+    // sample.
     float lfo_sin_ = 0.0f;      // sin(2*pi*phase) at the start of the next block
     float lfo_cos_ = 1.0f;      // cos(2*pi*phase), the right channel's 90 degree offset
     Glide size_glide_;          // sizeScale as the delay lines see it
@@ -258,12 +265,21 @@ public:
     float width_amt = 1.0f;
     bool initialized;
 
-    // Path 6: iridiscence (Granular Octave-Up)
+    // Path 6: iridiscence -- a granular drone that morphs into an octave-up
+    // shimmer as IRID passes 50% (see setIridiscence()).  Both read the same
+    // buffer.
     float iridiscensce_buffer[4096];
     int   iridiscensce_write = 0;
-    float irid_phase = 0.0f;
+    float irid_phase = 0.0f;         // drone: grain delay, grows ~0.9 per sample
     float irid_lpf_l = 0.0f;
     float irid_lpf_r = 0.0f;
+    float irid_up_delay = 0.0f;      // octave-up: grain delay, shrinks 1 per sample
+    float irid_up_lpf_l = 0.0f;
+    float irid_up_lpf_r = 0.0f;
+    float irid_drone_target = 1.0f;  // equal-power crossfade gains, set by IRID
+    float irid_up_target = 0.0f;
+    float irid_drone_gain = 1.0f;    // as ramped per block
+    float irid_up_gain = 0.0f;
 
     // ========================================================================
     // INITIALIZATION & MATH
@@ -400,6 +416,11 @@ public:
         irid_phase = 0.0f;
         irid_lpf_l = 0.0f;
         irid_lpf_r = 0.0f;
+        irid_up_delay = 0.0f;
+        irid_up_lpf_l = 0.0f;
+        irid_up_lpf_r = 0.0f;
+        irid_drone_gain = irid_drone_target;
+        irid_up_gain = irid_up_target;
     }
 
     /*===========================================================================*/
@@ -544,8 +565,22 @@ public:
         glow_rate_hz = 0.05f * fasterpow2f(val * 6.0f);
         glowLfoRate = glow_rate_hz / sampleRate;
     }
+    // IRID is both the path's level and its character:
+    //   0-50%   the granular drone (the tail replayed at about a tenth of its
+    //           speed, three octaves and more down)
+    //   50-80%  the drone fades out as an octave-up shimmer fades in
+    //   80-100% the octave-up shimmer alone
+    // The crossfade is equal-power (cos/sin), since the two are unrelated
+    // signals; the gains are ramped across each block so a knob step is not a
+    // step in level.
     void setIridiscence(float val) {
         irid_amt = val;
+        float m = (val - 0.5f) * (1.0f / 0.3f);
+        m = m < 0.0f ? 0.0f : (m > 1.0f ? 1.0f : m);
+        irid_drone_target = cosf(m * (float)M_PI_2);
+        irid_up_target    = sinf(m * (float)M_PI_2);
+        if (m <= 0.0f) irid_up_target = 0.0f;      // exactly off: skip the path
+        if (m >= 1.0f) irid_drone_target = 0.0f;
     }
     // 0.0..1.0 → 0.0..2.0 (0=mono, 1=unity, 2=extra wide)
     void setWidth(float val) {
@@ -687,6 +722,18 @@ public:
         const float size_step = size_glide_.plan(sizeScale, size_max_step_);
         float pdly = pdly_glide_.cur;
         const float pdly_step = pdly_glide_.plan(predelayScale * PREDELAY_MAX_SAMPLES, GLIDE_MAX_RATE);
+
+        // IRID crossfade gains, ramped from where the last block left them.
+        float irid_dg = irid_drone_gain, irid_ug = irid_up_gain;
+        const float irid_dg_step = (irid_drone_target - irid_dg) * inv_frames;
+        const float irid_ug_step = (irid_up_target - irid_ug) * inv_frames;
+        const bool irid_drone_on = irid_dg > 0.0f || irid_drone_target > 0.0f;
+        const bool irid_up_on    = irid_ug > 0.0f || irid_up_target > 0.0f;
+        irid_drone_gain = irid_drone_target;
+        irid_up_gain    = irid_up_target;
+
+        const float lfo_s0 = lfo_s;           // for irid_pass()
+        const int irid_w0 = iridiscensce_write;
 
         float path_sum = dark_amt + glow_amt + bright_amt + color_amt + spark_amt + irid_amt;
         float path_norm = path_sum > 0.0f ? (1.0f / fmaxf(1.0f, path_sum)) : 0.0f;
@@ -918,25 +965,92 @@ public:
                 }
             }
             // ==========================================
-            // PATH 6: IRIDESCENZA (Formerly iridiscence)
+            // PATH 6: IRIDESCENZA -- input only
             // ==========================================
-            // A swirling, stereo-panning, saturated optical halo.
-            float irid_l = 0.0f;
-            float irid_r = 0.0f;
+            // The path itself runs in its own pass after this loop
+            // (irid_pass()), reading this buffer.  Inline here it cost 2-3%
+            // more per render, IRID on or off: it made this loop body larger
+            // than the compiler could keep in registers.
             if (irid_amt > 0.0f) {
+                iridiscensce_buffer[iridiscensce_write] = (rev_l + rev_r) * 0.5f;
+                iridiscensce_write = (iridiscensce_write + 1) & 4095;
+            }
+            // ==========================================
+            // FINAL PARALLEL MIXDOWN
+            // ==========================================
+            // FDN reverb (rev_l/rev_r) is always the base — SIZE/DECAY/BASS remain
+            // audible even when all path modifiers are at zero.
+            float path_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
+                           (color_l * color_amt) + (spark_l * spark_amt);
+            float path_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
+                           (color_r * color_amt) + (spark_r * spark_amt);
+
+            // The mix before IRID and stereo width, which follow in passes
+            // of their own.
+            out[i]   = rev_l + path_l * path_norm;
+            out[i+1] = rev_r + path_r * path_norm;
+        }
+        size_glide_.cur = size;
+        pdly_glide_.cur = pdly;
+
+        if (irid_amt > 0.0f) {
+            irid_pass(out, frames, irid_w0, lfo_s0, lfo_ds,
+                      irid_dg, irid_dg_step, irid_ug, irid_ug_step,
+                      irid_drone_on, irid_up_on, irid_amt * path_norm);
+        }
+
+        // Mid-side stereo width on the wet signal.
+        const float32x4_t vhalf = vdupq_n_f32(0.5f);
+        const float32x4_t vside = vdupq_n_f32(0.5f * width_amt);
+        int i = 0;
+        for (; i + 8 <= num_samples; i += 8) {
+            float32x4x2_t lr = vld2q_f32(&out[i]);
+            float32x4_t mid  = vmulq_f32(vaddq_f32(lr.val[0], lr.val[1]), vhalf);
+            float32x4_t side = vmulq_f32(vsubq_f32(lr.val[0], lr.val[1]), vside);
+            lr.val[0] = vaddq_f32(mid, side);
+            lr.val[1] = vsubq_f32(mid, side);
+            vst2q_f32(&out[i], lr);
+        }
+        for (; i + 1 < num_samples; i += 2) {
+            float mid  = (out[i] + out[i+1]) * 0.5f;
+            float side = (out[i] - out[i+1]) * 0.5f * width_amt;
+            out[i]   = mid + side;
+            out[i+1] = mid - side;
+        }
+    }
+
+    // ========================================================================
+    // PATH 6: IRIDESCENZA, one block at a time
+    // ========================================================================
+    // A swirling, stereo-panning, saturated optical halo, added into the mix
+    // in out[] at `scale` (IRID's level times the path normalisation).  The
+    // main loop has already written this block's input into the buffer; w0 is
+    // the write position it started from, so sample j sees the buffer as it
+    // stood just after its own sample was written, exactly as when this ran
+    // inside that loop.  (The interpolation's second tap at the very newest
+    // position now reads the next sample instead of a 4096-old one, where
+    // the grain envelope is zero either way.)
+    void irid_pass(float* out, int frames, int w0, float lfo_s, float lfo_ds,
+                   float irid_dg, float irid_dg_step, float irid_ug, float irid_ug_step,
+                   bool irid_drone_on, bool irid_up_on, float scale) {
+        for (int j = 0; j < frames; ++j) {
+            const int write_pos = (w0 + j + 1) & 4095;
+            lfo_s += lfo_ds;
+            irid_dg += irid_dg_step;
+            irid_ug += irid_ug_step;
+            float irid_l, irid_r;
+            if (irid_drone_on) {
                 // 1. Refraction: Speed wobbles microscopically around .9x
                 // Driven by the glow LFO.  Same mean and depth as before the
                 // LFO fix (0.9 + 0.015 * sin(0..0.5 rad) spanned 0.9..0.9072,
                 // mean 0.90367), now as a smooth sine instead of a ramp that
-                // snapped back once per cycle.
+                // snapped back once per cycle.  (The grain delay grows by this
+                // much per sample, so the tail plays back at about 0.1x.)
                 float irid_speed = 0.90367f + lfo_s * 0.0036f;
                 irid_phase += irid_speed;
                 if (irid_phase >= 2048.0f) irid_phase -= 2048.0f;
-                float irid_mono = (rev_l + rev_r) * 0.5f;
 
-                iridiscensce_buffer[iridiscensce_write] = irid_mono;
-                iridiscensce_write = (iridiscensce_write + 1) & 4095;
-                float rs1 = (float)iridiscensce_write - irid_phase;
+                float rs1 = (float)write_pos - irid_phase;
                 if (rs1 < 0.0f) rs1 += 4096.0f;
                 int is1 = (int)rs1;
                 float fs1 = rs1 - is1;
@@ -944,20 +1058,26 @@ public:
 
                 float phase_b = irid_phase + 1024.0f;
                 if (phase_b >= 2048.0f) phase_b -= 2048.0f;
-                float rs2 = (float)iridiscensce_write - phase_b;
+                float rs2 = (float)write_pos - phase_b;
                 if (rs2 < 0.0f) rs2 += 4096.0f;
                 int is2 = (int)rs2;
                 float fs2 = rs2 - is2;
                 float so2 = iridiscensce_buffer[is2 & 4095] + fs2 * (iridiscensce_buffer[(is2+1) & 4095] - iridiscensce_buffer[is2 & 4095]);
 
-                // 2. The "Holo-Fade"
+                // 2. The "Holo-Fade": head 1's envelope; head 2, half a
+                // grain later, has the complement.
                 float fade = 1.0f - fabsf((irid_phase - 1024.0f) / 1024.0f);
 
                 // 3. Chromatic Aberration (Stereo Splitting)
                 // Instead of summing to mono, Head 1 favors Left and Head 2 favors Right!
                 // As they fade in and out, the iridiscence swirls across the stereo image.
+                // Each head carries its own envelope on both sides.  The
+                // right channel used to weight each head by the other's
+                // envelope, so it heard both heads at full or 0.31 level
+                // at the instant they jump back a grain: a click twice per
+                // grain, ~42 a second.
                 float irid_raw_l = (so1 * fade) + (so2 * (1.0f - fade) * 0.29f);
-                float irid_raw_r = (so2 * fade) + (so1 * (1.0f - fade) * 0.31f);
+                float irid_raw_r = (so2 * (1.0f - fade)) + (so1 * fade * 0.31f);
 
                 // 4. Luminescence (Soft Saturation)
                 // Pushing it into a fast_tanh creates high-frequency density ("glow")
@@ -969,31 +1089,52 @@ public:
                 // Asymmetric filtering: Right side is brighter and fizzier
                 irid_lpf_l += 0.1409f * (irid_raw_l - irid_lpf_l);
                 irid_lpf_r += 0.1603f * (irid_raw_r - irid_lpf_r);
-
-                irid_l = irid_lpf_l;
-                irid_r = irid_lpf_r;
             }
-            // ==========================================
-            // FINAL PARALLEL MIXDOWN
-            // ==========================================
-            // FDN reverb (rev_l/rev_r) is always the base — SIZE/DECAY/BASS remain
-            // audible even when all path modifiers are at zero.
-            float path_l = (dark_sig * dark_amt) + (glow_l * glow_amt) + (bright_l * bright_amt) +
-                           (color_l * color_amt) + (spark_l * spark_amt) + (irid_l * irid_amt);
-            float path_r = (dark_sig * dark_amt) + (glow_r * glow_amt) + (bright_r * bright_amt) +
-                           (color_r * color_amt) + (spark_r * spark_amt) + (irid_r * irid_amt);
 
-            float mix_l = rev_l + path_l * path_norm;
-            float mix_r = rev_r + path_r * path_norm;
+            if (irid_up_on) {
+                // Octave up: the grain delay shrinks by one sample per
+                // sample, so each head reads the tail at twice its speed.
+                // Same two-head layout as the drone -- grains of 2048,
+                // heads half a grain apart, triangular envelopes that sum
+                // to one, each head favouring one side -- and the same LFO
+                // wobble, scaled to a few cents of shimmer.  It saturates
+                // like the drone but is filtered far less: an octave up
+                // is the bright end of the halo.  The delay is kept two
+                // samples clear of the write head so the interpolation
+                // never reads ahead of it.
+                irid_up_delay -= 1.0f + lfo_s * 0.004f;
+                if (irid_up_delay < 0.0f) irid_up_delay += 2048.0f;
+                float ub = irid_up_delay + 1024.0f;
+                if (ub >= 2048.0f) ub -= 2048.0f;
 
-            // Mid-side stereo width on wet signal
-            float mid  = (mix_l + mix_r) * 0.5f;
-            float side = (mix_l - mix_r) * 0.5f * width_amt;
+                float ru1 = (float)write_pos - (irid_up_delay + 2.0f);
+                if (ru1 < 0.0f) ru1 += 4096.0f;
+                int iu1 = (int)ru1;
+                float fu1 = ru1 - iu1;
+                float uo1 = iridiscensce_buffer[iu1 & 4095] + fu1 * (iridiscensce_buffer[(iu1+1) & 4095] - iridiscensce_buffer[iu1 & 4095]);
 
-            out[i]   = mid + side;
-            out[i+1] = mid - side;
+                float ru2 = (float)write_pos - (ub + 2.0f);
+                if (ru2 < 0.0f) ru2 += 4096.0f;
+                int iu2 = (int)ru2;
+                float fu2 = ru2 - iu2;
+                float uo2 = iridiscensce_buffer[iu2 & 4095] + fu2 * (iridiscensce_buffer[(iu2+1) & 4095] - iridiscensce_buffer[iu2 & 4095]);
+
+                float ufade = 1.0f - fabsf((irid_up_delay - 1024.0f) / 1024.0f);
+                float up_raw_l = (uo1 * ufade) + (uo2 * (1.0f - ufade) * 0.29f);
+                float up_raw_r = (uo2 * (1.0f - ufade)) + (uo1 * ufade * 0.31f);
+                up_raw_l = fast_tanh(up_raw_l * 1.359f);
+                up_raw_r = fast_tanh(up_raw_r * 1.703f);
+                // ~4.4 kHz left, ~5.3 kHz right: still the drone's
+                // brighter-right asymmetry.
+                irid_up_lpf_l += 0.44f * (up_raw_l - irid_up_lpf_l);
+                irid_up_lpf_r += 0.50f * (up_raw_r - irid_up_lpf_r);
+            }
+
+            irid_l = irid_lpf_l * irid_dg + irid_up_lpf_l * irid_ug * IRID_UP_LEVEL;
+            irid_r = irid_lpf_r * irid_dg + irid_up_lpf_r * irid_ug * IRID_UP_LEVEL;
+            out[2 * j]     += irid_l * scale;
+            out[2 * j + 1] += irid_r * scale;
         }
-        size_glide_.cur = size;
-        pdly_glide_.cur = pdly;
     }
+
 };
