@@ -131,7 +131,20 @@ public:
     PortaCassette() { Configure(48000.0f); }
     ~PortaCassette() {}
 
+    /// The drumlogue hands a master effect four input channels per frame --
+    /// main L, main R, sidechain L, sidechain R (see the SDK's masterfx
+    /// template) -- and this unit used to read its input as plain stereo
+    /// pairs, so on a four-channel bus it took each frame's sidechain pair for
+    /// the next frame and only ever got through the first half of the buffer.
+    /// It now steps through the input at whatever width the runtime declares
+    /// and uses the main pair; a two-channel bus (the SDK notes the sidechain
+    /// might be dropped) still works.
     int8_t Init(const unit_runtime_desc_t* desc) {
+        if (desc->input_channels != 2 && desc->input_channels != 4)
+            return k_unit_err_geometry;
+        if (desc->output_channels != 2)
+            return k_unit_err_geometry;
+        in_stride_ = desc->input_channels;
         Configure((float)desc->samplerate);
         return k_unit_err_none;
     }
@@ -217,7 +230,10 @@ public:
     // =========================================================================
     fast_inline void ProcessBlock(const float* in, float* out, uint32_t frames) {
         if (b_bypass_) {
-            if (in != out) memcpy(out, in, frames * 2u * sizeof(float));
+            for (uint32_t f = 0; f < frames; ++f) {
+                out[f * 2u]      = in[f * in_stride_];
+                out[f * 2u + 1u] = in[f * in_stride_ + 1u];
+            }
             return;
         }
 
@@ -228,7 +244,7 @@ public:
 
         const uint32_t whole = frames & ~3u;
         for (uint32_t f = 0; f < whole; f += 4u)
-            ProcessQuad(in + f * 2u, out + f * 2u);
+            ProcessQuad(in + f * in_stride_, out + f * 2u);
 
         // Buffers shorter than the advertised frames_per_buffer are legal but
         // rare.  Rather than maintain a second, slowly diverging scalar copy of
@@ -238,15 +254,16 @@ public:
         // is that they advance by up to three extra frames in this rare case.
         const uint32_t rem = frames - whole;
         if (rem != 0u) {
-            float scratch[NEON_LANES * 2];
-            const float* tail = in + whole * 2u;
+            float scratch_in[NEON_LANES * 4];
+            float scratch_out[NEON_LANES * 2];
+            const float* tail = in + whole * in_stride_;
             for (uint32_t i = 0; i < NEON_LANES; ++i) {
                 const uint32_t s = (i < rem) ? i : rem - 1u;
-                scratch[i * 2u]      = tail[s * 2u];
-                scratch[i * 2u + 1u] = tail[s * 2u + 1u];
+                for (uint32_t c = 0; c < in_stride_; ++c)
+                    scratch_in[i * in_stride_ + c] = tail[s * in_stride_ + c];
             }
-            ProcessQuad(scratch, scratch);
-            memcpy(out + whole * 2u, scratch, rem * 2u * sizeof(float));
+            ProcessQuad(scratch_in, scratch_out);
+            memcpy(out + whole * 2u, scratch_out, rem * 2u * sizeof(float));
         }
 
         fpu_restore(saved_fpscr);
@@ -519,9 +536,16 @@ private:
         current_sat_drive_  += ks * (target_sat_drive_  - current_sat_drive_);
         current_sat_makeup_ += ks * (target_sat_makeup_ - current_sat_makeup_);
 
-        const float32x4x2_t vi = vld2q_f32(in);
-        const float32x4_t dry_l = vi.val[0];
-        const float32x4_t dry_r = vi.val[1];
+        float32x4_t dry_l, dry_r;
+        if (in_stride_ == 4u) {
+            const float32x4x4_t vi = vld4q_f32(in);   // main L, main R, sidechain L, R
+            dry_l = vi.val[0];
+            dry_r = vi.val[1];
+        } else {
+            const float32x4x2_t vi = vld2q_f32(in);
+            dry_l = vi.val[0];
+            dry_r = vi.val[1];
+        }
 
         float32x4_t sig_l = vmulq_n_f32(dry_l, current_preamp_);
         float32x4_t sig_r = vmulq_n_f32(dry_r, current_preamp_);
@@ -1096,6 +1120,7 @@ private:
     float   samplerate_;
     float   inverse_samplerate_;
     bool    b_bypass_;
+    uint32_t in_stride_ = 2u;   // input floats per frame: 2, or 4 with the sidechain pair
     std::atomic<bool> b_update_filters_;
 
     uint8_t model_;
