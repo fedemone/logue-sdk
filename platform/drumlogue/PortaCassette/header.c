@@ -12,15 +12,15 @@
  *
  *     strings portacassette.drmlgunit | grep "build:"
  *
- * config.mk sets OPTIM = -O3.  Objects now depend on config.mk (see the
- * object rules in the Makefile), but a tree built before that relinks its
- * old size-optimised objects unless it is cleaned once.  GCC defines
+ * config.mk leaves OPTIM at the SDK default, -Os: -O2 and -O3 measured no
+ * faster for this unit (see config.mk).  Objects depend on config.mk (see the
+ * object rules in the Makefile), so changing it rebuilds them.  GCC defines
  * __OPTIMIZE_SIZE__ only at -Os, and this file is compiled with the same
  * flags as the rest of the unit; `used` keeps the string through LTO and
  * strip.
  */
 #if defined(__OPTIMIZE_SIZE__)
-#define UNIT_BUILD_OPT "-Os (size: rebuild clean for -O3)"
+#define UNIT_BUILD_OPT "-Os (size)"
 #elif defined(__OPTIMIZE__)
 #define UNIT_BUILD_OPT "-O2/-O3 (speed)"
 #else
