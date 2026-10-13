@@ -25,29 +25,23 @@ By downloading, building, installing, or using any unit, source code, or tool fr
 
 If you do not agree with these terms, do not download, build, install, or use any of the units or code made available through this repository.
 
-## What's New
+## How to use these custom effects
 
-A new web-based simulator for NTS-1 mkii and NTS-3 in [websim](websim/). 
-Develop, test and debug DSP code inside a web browser to greatly speed up development cycle.
-Take a look at [websim/README.md](websim/README.md) to learn about how to use it.
+* Plug the USB cable to the Drumlogue (switched off) and to the PC
+* Power on the Drumlogue keeping pressed the "record" button until a new window appear on the PC
+* Browse to Unit folder
+* Drop the *.drmlogunit files into the appropriate folder:
+* - reverb: Luce al Neon, Neon Labirinto
+  - delay: Tribale
+  - master FX: Omnipress, Porta Cassette
+  - synth: EffeMD, EffeSP32, Brachetti, Scruta Astri
+* Press "play" button on Drumlogue to start
 
 ## Existing logue SDK Units
 
 To download ready to use oscillators and effects, refer to the [Unit Index](https://korginc.github.io/logue-sdk/unit-index/) and follow instructions on the developer's website.
 
 There is an easier to navigate unit index page called [logue-SDK-filter](https://logue-sdk.vercel.app/).
-
-## Platforms and Compatibility
-
-| Product                        | Latest SDK Version | Minimum Firmware Version | CPU Arch.     | Unit Format                                                 |
-|--------------------------------|--------------------|--------------------------|---------------|-------------------------------------------------------------|
-| prologue                       | v1.1.0             | >= v2.00                 | ARM Cortex-M4 | Custom 32-bit LSB executable, ARM, EABI5 v1 (SYSV), static  |
-| minilogue-xd                   | v1.1.0             | >= v2.00                 | ARM Cortex-M4 | Custom 32-bit LSB executable, ARM, EABI5 v1 (SYSV), static  |
-| Nu:Tekt NTS-1 digital kit      | v1.1.0             | >= v1.02                 | ARM Cortex-M4 | Custom 32-bit LSB executable, ARM, EABI5 v1 (SYSV), static  |
-| drumlogue                      | v2.0.0             | >= v1.0.0                | ARM Cortex-A7 | ELF 32-bit LSB shared object, ARM, EABI5 v1 (SYSV), dynamic |
-| Nu:Tekt NTS-1 digital kit mkII | v2.0.0             | >= v1.0.0                | ARM Cortex-M7 | ELF 32-bit LSB shared object, ARM, EABI5 v1 (SYSV), dynamic |
-| Nu:Tekt NTS-3 kaoss pad kit    | v2.0.0             | >= v1.0.0                | ARM Cortex-M7 | ELF 32-bit LSB shared object, ARM, EABI5 v1 (SYSV), dynamic |
-| microKORG2                     | v2.1.0             | >= v2.0.0                | ARM Cortex-A7 | ELF 32-bit LSB shared object, ARM, EABI5 v1 (SYSV), dynamic |
 
 #### Binary Compatibility
 
@@ -67,14 +61,5 @@ However, developers are encouraged to optimize their units for each target platf
 * [docker/](docker/) : Sources for a docker container that allows building projects for any platform in a more host OS agnostic way.
 * [tools/](tools/) : Installation location and documentation for tools required to build projects and manipulate built products. Can be ignored if using the docker container.
 * [devboards/](devboards/) : Information and files related to limited edition development boards.
-
-## Sharing your Oscillators/Effects with us
-
-To show us your work please reach out to *logue-sdk@korg.co.jp*.
-
-## Support
-
-The SDK is provided as-is, no technical support will be provided by KORG.
-For community support, please visit our discord at https://discord.com/invite/pqW5VpdQkZ
 
 
