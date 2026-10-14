@@ -4,7 +4,7 @@
 
 ## Overview
 
-**OmniPress** is a character master bus compressor for the KORG drumlogue, loosely inspired by the **Eventide Omnipressor**. The panel offers **two compression modes** — Standard, and Multiband, which runs Standard's curve once per band — and takes advantage of the drumlogue's 4-channel master effect input for external sidechain processing.
+**OmniPress** is a character master bus compressor for the KORG drumlogue, loosely inspired by the **Eventide Omnipressor**. The panel offers **two compression modes** — Standard, and Multiband, which runs Standard's curve once per band and gives DRIVE a different shaper in each band — and takes advantage of the drumlogue's 4-channel master effect input for external sidechain processing.
 
 A third engine, modelled on the **Empirical Labs EL8 Distressor**, is still in the source and on the bench but no longer on the panel: see [Shelved: the Distressor engine](#shelved-the-distressor-engine).
 
@@ -14,7 +14,7 @@ A third engine, modelled on the **Empirical Labs EL8 Distressor**, is still in t
 |---------|-------------|
 | **2 Compression Modes** | Standard (Omnipressor transfer curve) and Multiband (the same curve, per band, 3 bands) |
 | **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
-| **Drive** | Overlord tube: broadband in Standard, one per band in Multiband — same drive law, level-matched in both, so DRIVE changes the character and not the level |
+| **Drive** | Standard: the Overlord tube, broadband. Multiband: a shaper per band — a wavefold on the lows, the Overlord tube on the mids, an even-harmonic exciter on the highs. Level-matched everywhere, so DRIVE changes the character and not the level |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
 | **Multiband on the panel** | Page 1 sets every band; one offset and one ratio knob per band move it from there; two independent crossover points, and a Solo/Mute selector |
 | **Exact ballistics** | ATTACK and RELEASE are applied once, by the gain smoother, in both modes and to every band — attack while the level rises, release while it falls |
@@ -47,7 +47,7 @@ modes, so switching COMP MODE keeps the character and moves it into the bands:
 | **SLOPE** | Every band's curve. **Lo/Mid/Hi Ratio** is a second ratio in series on top: at 1.0:1 a band follows SLOPE exactly, at 4.0:1 it compresses four times harder than SLOPE alone (SLOPE 2:1 + Ratio 2:1 measures 3.9:1) |
 | **ATT LMT / GAIN LMT** | Every band's limits. GAIN LMT 0 makes the bands downward-only |
 | **ATTACK / RELEASE** | Every band's gain smoother |
-| **DRIVE** | An Overlord tube per band, with Standard's drive law and each band's voicing (softer lows, brighter highs), level-matched band by band — see [DRIVE](#drive-character-not-level) |
+| **DRIVE** | A different shaper per band — fold on the lows, Standard's tube on the mids, an exciter on the highs — level-matched band by band; see [Multiband DRIVE](#multiband-drive-a-shaper-per-band) |
 | **MAKEUP, MIX, BASS/TREBLE/PRESENCE** | After the bands, as in Standard |
 
 | Band | Default range |
@@ -153,15 +153,118 @@ peak does not move: that is the ceiling's job); from the second beat it has
 settled. Turning the knob moves in steps the average follows, at most ~2 dB
 fuller while it moves.
 
-Multiband's tubes are matched the same way, one band at a time (the three
-matchers run side by side in NEON lanes), so DRIVE never moves the balance
-between the bands either. With the same drive law they now distort like
-Standard's tube: at −20 dBFS, 6/28/42% THD at DRIVE 23/50/100 on a 1 kHz tone
-against Standard's 6/28/42%, and the level stays within 0.35 dB; on the drum
-bus DRIVE 67 moves the level by 0.06 dB.
+Multiband's three shapers are matched the same way, one band at a time (the
+three matchers run side by side in NEON lanes), so DRIVE never moves the
+balance between the bands either — see
+[Multiband DRIVE](#multiband-drive-a-shaper-per-band).
 
-Bench: `./test_levels panel` M6 (pass/fail, both modes: within 1 dB of DRIVE 0
-from −60 to −6 dBFS while THD climbs), G3, G4.
+Bench: `./test_levels panel` M6 (pass/fail, Standard and each Multiband band:
+within 1 dB of DRIVE 0 from −60 to −6 dBFS while THD climbs), G3, G4.
+
+---
+
+## Multiband DRIVE: a shaper per band
+
+Multiband's DRIVE used to run Standard's Overlord tube three times, once per
+band, with only the triode's shape constants changed. Switching COMP MODE moved
+the distortion into the bands but did not change what it sounded like. The
+bands are already split, so DRIVE now gives each one the stage that suits what
+lives in it. Two of the three come from the shelved Distressor:
+
+| Band | Shaper | What it does | Taken from |
+|------|--------|--------------|------------|
+| **Low** | Sine wavefold | Folds kicks and bass into odd harmonics two to four octaves up: growl a small speaker can play. The sub stays | `sine_folder()`, `wavefolder.h` |
+| **Mid** | Overlord tube | Standard's tube and drive law: the same THD within 0.4 points | `operation_overlord.h` |
+| **High** | Even-harmonic exciter | Adds the 2nd harmonic (and a little 4th) of hats and cymbals on top of the untouched band | the even half of Dist2, `distressor_mode.h` |
+
+The low band is also the one place a folder cannot alias: the harmonics it
+makes of anything under the low split are nowhere near Nyquist.
+
+Tones at −20 dBFS, no gain reduction (`./test_levels mbdrive`, N1):
+
+| DRIVE | Low 60 Hz: THD, H3 | Mid 1 kHz: THD | High 5 kHz: THD, H2 | Standard 1 kHz: THD |
+|-------|--------------------|----------------|---------------------|---------------------|
+| 23 | 12.7%, −18.1 dB | 6.2% | 5.1%, −26.0 dB | 5.8% |
+| 50 | 23.0%, −13.0 dB | 27.9% | 11.2%, −19.2 dB | 27.8% |
+| 67 | 32.8%, −9.9 dB | 34.9% | 15.1%, −16.6 dB | 35.3% |
+| 100 | 68.6%, −3.6 dB | 41.6% | 22.9%, −13.0 dB | 41.6% |
+
+The fold makes no even harmonics (H2 under −70 dB). The exciter makes no odd
+ones: H3 is under −46 dB at −20 dBFS, and the −38 dB it reaches at −6 dBFS is
+the mid band's tube working on the tone's spill across the crossover. The tube
+makes both.
+
+**Each shaper is normalised to its band's own envelope.** The fold and the
+exciter run on their band divided by a peak follower of it. The attack is
+instant, so the ratio never exceeds 1; the release is 50 ms on the lows (it has
+to span a few cycles of the lowest note) and 10 ms on the highs. DRIVE alone
+then sets the depth, whatever the level: at DRIVE 100 a 60 Hz tone reads 68.6%
+THD from −24 to −3 dBFS (N2). Below −30 dBFS the follower stops counting and
+the depth falls with the level, so tails and noise come out cleaner (3.3% THD
+at −40 dBFS).
+
+That is what makes a folder usable on a master bus. A folded sine's
+fundamental passes through nulls as the depth grows, so a fold driven by
+absolute level changes depth through every kick's decay and drops the sub
+partway through every tail. The first design, modelled before it was built, put
+the tube's preamp in front of the fold: at −4 dBFS and DRIVE 50 a 100 Hz tone's
+fundamental all but vanished (2,760% THD).
+
+**The fold stops short of folding the sub away.** The fold's input peaks at
+0.8 at DRIVE 0, where nothing folds and it is a sine-shaped saturator, rising
+to 1.75 at DRIVE 100, where the peaks fold back toward zero. At 2 a peak folds
+all the way to zero, and a sine's fundamental reaches its null at 2.44. At 1.75
+the 3rd harmonic is 3.6 dB under the fundamental, and a kick through the bus
+keeps its sub (N4: energy under 100 Hz −0.4 dB at DRIVE 67, −2.0 dB at 100). A
+ceiling of 1.9 cost the sub 4 dB and left the band 1.3 dB under its input level:
+the folded wave's higher peaks hold the level matcher's peak ceiling down.
+
+The fold is symmetric, so it leaves no DC, and the low band has no DC blocker
+any more. The old low tube needed one at 30 Hz, which put 50 Hz 1.0–1.2 dB
+under 200 Hz even where the tube was still linear (now within 0.05 dB), and it
+still left −0.0016 of DC on a −6 dBFS 60 Hz tone at DRIVE 67 (now none).
+
+**The exciter uses only the even half of Dist2.** Whole Dist2, driven hard
+enough to be an exciter, takes a 5 kHz tone's fundamental down 10 dB and makes
+as much 3rd harmonic as 2nd: fizz, on hats. Its even half,
+(dist2(z) + dist2(−z)) / 2 = 0.75 z² / ((1 + |z|/2)(1 + 2|z|)), is everything
+the asymmetry contributes, the 2nd harmonic with the 4th 14 dB under it, and
+none of the compression. DRIVE sets how much of it is added, up to three times
+the curve. The band itself passes through untouched, so the crossover still
+sums flat under it.
+
+**What the exciter adds is high-passed.** An even curve rectifies. On a hat it
+leaves the hat's envelope behind (a thump under every hit) along with the
+difference tones between its partials. So what the exciter adds goes through a
+12 dB/oct high-pass an octave under the high split, following Xover Hi.
+Noise-burst hats, high band soloed (N3), energy under 300 Hz relative to the
+output:
+
+| DRIVE | with the high-pass | without |
+|-------|--------------------|---------|
+| 23 | −65.6 dB | −22.1 dB |
+| 67 | −57.5 dB | −13.2 dB |
+| 100 | −54.8 dB | −10.1 dB |
+
+**Level.** Every band stays level-matched: from −60 to −6 dBFS, the fold within
+0.55 dB of DRIVE 0, the tube within 0.2 dB and the exciter within 0.7 dB (M6,
+now one row per band).
+
+**Cost.** Each band's shaper runs on that band's own [L R] pair in 64-bit NEON
+vectors. Before, the bands ran in two 128-bit vectors, and the high band's
+vector was half empty. Measured on the ARM build under QEMU with the same
+harness before and after (GCC 13, `-O3`): Multiband at DRIVE 23 went from 33.9k
+to 35.7k instructions per 64-frame render (+5%), and DRIVE 0 is unchanged.
+
+`./test_levels panel` M9 is pass/fail. It checks that the fold makes odd
+harmonics at a depth that does not follow the level, never nulls the
+fundamental and leaves a kick its sub; that the mid band is Standard's tube;
+that the exciter adds even harmonics and no thump; that no band leaves DC; and
+that the two-lane curves match the Distressor's own within 1e-5. The panel and
+recover sections also pass on an ARM build of the bench run under `qemu-arm`,
+with the hardware's reciprocal estimates in place of the shim's exact ones. No
+parameter changed, so stored programs load as before and just sound different
+with DRIVE up in Multiband.
 
 ---
 
@@ -173,6 +276,10 @@ in any setting. Its code stays — `distressor_mode.h`, `drive_slam.h`,
 `wavefolder.h` and its branches in `masterfx.h` — fixed, documented and measured
 by the bench, so it can be reused or brought back:
 
+* **Two of its curves work in Multiband now.** `sine_folder()`'s fold drives the
+  low band and the even half of Dist2 the high band (see
+  [Multiband DRIVE](#multiband-drive-a-shaper-per-band)). Their two-lane
+  versions sit next to the originals, and bench M9 checks the two still agree.
 * **Reaching it.** The drumlogue only ever calls `setParameter()`, and no panel
   value selects it (bench section M4 checks that). `MasterFX::setEngineMode(
   COMP_MODE_DISTRESSOR)` and `MasterFX::setDistressorDistortion(0..8)` do, and
@@ -316,7 +423,7 @@ across 6 pages of 4. IDs below match `header.c`.
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
 | 4 | MAKEUP | 0.0 to 24.0 dB | Output makeup gain (x0.1 dB) |
-| 5 | DRIVE | 0 to 100% | Overlord tube, level-matched, so the knob changes the character and not the level — broadband in Standard, one per band in Multiband |
+| 5 | DRIVE | 0 to 100% | Level-matched, so the knob changes the character and not the level. Standard: the Overlord tube, broadband. Multiband: a fold on the lows, the tube on the mids, an exciter on the highs |
 | 6 | MIX | -100 to +100 | Dry/wet balance (-100=dry, 0=balanced, +100=wet) |
 | 7 | SC HPF | 20 to 500 Hz | Sidechain high-pass filter cutoff |
 
@@ -395,8 +502,8 @@ Standard's curve in each band.
 │  │  • gain smoother:        │   │    band, + offset, Ratio │     │
 │  │    ATTACK / RELEASE      │   │  • gain smoother:        │     │
 │  │                          │   │    ATTACK / RELEASE      │     │
-│  │                          │   │  • per-band tube DRIVE,  │     │
-│  │                          │   │    level-matched         │     │
+│  │                          │   │  • DRIVE per band: fold, │     │
+│  │                          │   │    tube, exciter; matched│     │
 │  │                          │   │  • SoloMute              │     │
 │  └────────────┬─────────────┘   └────────────┬─────────────┘     │
 └───────────────┼──────────────────────────────┼───────────────────┘
@@ -458,6 +565,11 @@ instructions per 64-frame render (the budget is 1.33 ms):
 
 (These replace an earlier table that was up to 8x too low: the script that read
 QEMU's trace counted at most eight instructions per basic block.)
+
+The per-band shapers were measured with a different harness (GCC 13, no LTO),
+which reads higher across the board, so as a before/after pair: Multiband at
+DRIVE 23 went from 33.9k to 35.7k (+5%); Multiband at DRIVE 0 and Standard
+moved by under 1.5%.
 
 Multiband used to run its sixteen crossover biquads per sample one at a time in
 scalar code. They now run four at a time (L/R × low-pass/high-pass in one
@@ -539,6 +651,7 @@ polyphony 4 as it ships (`-Os`) and 21,000 at `-O3`; NeonLabirinto went from
 | Multiband did not sum flat | The low band missed the all-pass the second split puts on the other two, and a 38 Hz DC blocker sat on the output: ±0.35 dB around the splits, −0.6 dB at 100 Hz, at 1:1 | All-pass on the low band at the high split; DC blockers only behind the tubes. Flat to 0.02 dB, 40 Hz – 12 kHz |
 | Multiband's DRIVE was weak and moved the level | One triode stage per band at a third of Standard's drive, with a static makeup: 4–18% THD at −20 dBFS against Standard's 6–44%, +5 dB on quiet material, −5 dB on loud; DRIVE 1 gated off | The Overlord's two-stage law per band, level-matched band by band, faded in over the bottom tenth of the knob like Standard's. Same THD as Standard within a few percent, level within 0.35 dB, live from DRIVE 1 |
 | Multiband cost four times Standard | Sixteen scalar biquads per sample | NEON, four filters per vector and the bands in lanes: 33.7k → 17.7k instructions per render (37.7k → 31.3k with DRIVE 23) |
+| Multiband's DRIVE sounded like Standard's | The same Overlord tube ran in every band, with only its shape constants changed, so switching mode moved the distortion into the bands without changing what it sounded like. The low band's tube also sat behind a 30 Hz DC blocker that put 50 Hz 1.0–1.2 dB under 200 Hz even with the tube still linear, and it left DC | A shaper per band: a sine fold on the lows, the even half of Dist2 as an exciter on the highs (both normalised to their band's own envelope), Standard's tube on the mids. No DC blocker on the lows. See [Multiband DRIVE](#multiband-drive-a-shaper-per-band) (bench M9, N) |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
 
@@ -562,15 +675,22 @@ value plays exactly the bands it names, each threshold and ratio knob
 compresses its own band and no other, each crossover moves its own split,
 programs stored under the old COMP MODE numbering load a panel mode, no panel
 value reaches the Distressor, page-1 RELEASE reaches every band, DRIVE holds
-the level in both modes (M6), and Multiband follows page 1 (M8): each band,
-soloed, on Standard's curve at every SLOPE; THRESH moving every pivot; a band
-Ratio stacking on SLOPE; the bands summing flat from 40 Hz to 12 kHz; and a hit
-after silence taking the ATTACK time in both modes.
+the level in Standard and in each Multiband band (M6), and Multiband follows
+page 1 (M8): each band, soloed, on Standard's curve at every SLOPE; THRESH
+moving every pivot; a band Ratio stacking on SLOPE; the bands summing flat from
+40 Hz to 12 kHz; and a hit after silence taking the ATTACK time in both modes.
+Multiband's DRIVE gives each band its own shaper and each does its job (M9):
+see [Multiband DRIVE](#multiband-drive-a-shaper-per-band).
+
+`./test_levels mbdrive` measures Multiband's DRIVE band by band: harmonic
+profiles against Standard's tube (N1), the fold against level (N2), the
+exciter's high-pass on hats (N3) and a kick's sub (N4).
 
 `./test_levels recover` is pass/fail and sets the exit status too: one NaN, ±Inf,
 1e30 or 1e20 sample on the bus in each mode, with the output three seconds
 later required to match an untouched run, and NaN planted directly in the
-detector, tube, slam and crossover state to prove the watchdog clears it. The
+detector, tube, slam, crossover and per-band drive state to prove the watchdog
+clears it. The
 NEON shim propagates NaN through `vmaxq_f32`/`vminq_f32` the way the hardware
 does, tested on the bits, since the DSP is compiled `Ofast` and an `x != x`
 test would be folded away.
@@ -600,7 +720,7 @@ The architecture supports easy addition of:
 | CPU Target | < 2% @ 1GHz |
 | Memory | ~4 KB |
 | Crossover | Linkwitz-Riley 24dB/oct |
-| Drive | Overlord tube: broadband (Standard), per band (Multiband) |
+| Drive | Overlord tube, broadband (Standard); fold / tube / exciter per band (Multiband) |
 
 ---
 
