@@ -57,6 +57,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
             if (value == PortaCassette::k_424)   return "T-424";
             if (value == PortaCassette::k_488)   return "T-488";
             if (value == PortaCassette::k_vinyl) return "Vinyl";
+            if (value == PortaCassette::k_424n)  return "T-424N";  // 424 at NORMAL speed
             break;
 
         // dbx Noise Reduction Modes
@@ -64,6 +65,7 @@ __unit_callback const char * unit_get_param_str_value(uint8_t id, int32_t value)
             if (value == PortaCassette::k_active)       return "Active";
             if (value == PortaCassette::k_encode_only)  return "EncOnly"; // The classic Portastudio abuse trick
             if (value == PortaCassette::k_off)          return "Off";
+            if (value == PortaCassette::k_decode_only)  return "DecOnly"; // the reverse: dark and expanded
             break;
 
         // EQ Frequencies
