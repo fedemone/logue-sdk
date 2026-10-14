@@ -318,6 +318,31 @@ fast_inline float32x4_t generate_harmonics(distressor_t* d,
 }
 
 /**
+ * The even half of generate_harmonics()'s Dist2 curve, on two lanes, for
+ * Multiband's high band (multiband.h).
+ *
+ * Dist2 is z / (1 + z/2) above zero and z / (1 + 2|z|) below.  Its even half,
+ * (dist2(z) + dist2(-z)) / 2, is everything that asymmetry contributes -- the
+ * 2nd harmonic it is named for, and the 4th and 6th falling away behind it --
+ * and none of what its odd half does, which is squeeze the fundamental and
+ * add odd harmonics: driven as hard as the exciter needs, whole Dist2 takes
+ * a 5 kHz tone's fundamental down 10 dB and makes as much 3rd harmonic as 2nd,
+ * which on hats is fizz.  With a = |z| it comes to one reciprocal:
+ *
+ *     ( a/(1 + a/2) - a/(1 + 2a) ) / 2  =  0.75 z^2 / ((1 + a/2)(1 + 2a))
+ *
+ * Bounded by 0.75, and its mean is not zero: whoever adds it to a signal has
+ * to high-pass it.
+ */
+fast_inline float32x2_t dist2_even_d(float32x2_t z) {
+    const float32x2_t a = vabs_f32(z);
+    const float32x2_t den = vmla_f32(vdup_n_f32(1.0f), a, vadd_f32(vdup_n_f32(2.5f), a));
+    float32x2_t r = vrecpe_f32(den);
+    r = vmul_f32(vrecps_f32(den, r), r);
+    return vmul_f32(vmul_n_f32(vmul_f32(z, z), 0.75f), r);
+}
+
+/**
  * What every DstrDist shaper needs behind it: take out the DC an asymmetric
  * or biased shaper leaves, then hand back the level that went in.  `ref_l`
  * and `ref_r` are the signal as it entered the drive stage, before the slam

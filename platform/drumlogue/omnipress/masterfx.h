@@ -413,9 +413,9 @@ private:
         distressor_set_drive(&distressor_, drive_percent, slam);
         overlord_set_drive(&overlord_, drive_percent, slam);
 
-        // Multiband drives a tube per band, with the Overlord's law and each
-        // band's own voicing (softer on the lows, brighter on the highs),
-        // level-matched band by band -- see multiband_drive().
+        // Multiband drives a shaper per band -- a fold on the lows, the
+        // Overlord tube on the mids, an exciter on the highs -- level-matched
+        // band by band; see multiband_drive().
         multiband_set_drive(&multiband_, drive_);
     }
 
@@ -500,9 +500,9 @@ private:
         //                 and DRIVE would otherwise be a dead knob (the factory
         //                 default combination).  Fall through to the tube instead,
         //                 so the mode has a broadband drive at every DstrDist.
-        //   Multiband   - never: each band has its own tube, fed from DRIVE in
-        //                 setParameter, and stacking a broadband stage on top
-        //                 would double-saturate.
+        //   Multiband   - never: each band has its own shaper, fed from DRIVE
+        //                 in setParameter, and stacking a broadband stage on
+        //                 top would double-saturate.
         const bool tube_drive =
             drive_ > 0.0f &&
             (comp_mode_ == COMP_MODE_STANDARD ||

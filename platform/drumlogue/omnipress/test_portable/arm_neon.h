@@ -160,6 +160,44 @@ NSHIM float32x4x2_t vuzpq_f32(float32x4_t a, float32x4_t b){
     float32x4x2_t r; r.val[0] = (float32x4_t){a[0], a[2], b[0], b[2]};
     r.val[1] = (float32x4_t){a[1], a[3], b[1], b[3]}; return r; }
 
+/* ---- 64-bit (2-lane) arithmetic, for Multiband's per-band drive stage ---- */
+NSHIM float32x2_t vmul_n_f32(float32x2_t a, float s){ return a * vdup_n_f32(s); }
+NSHIM float32x2_t vmla_n_f32(float32x2_t a, float32x2_t b, float n){ return a + b * n; }
+NSHIM float32x2_t vmls_n_f32(float32x2_t a, float32x2_t b, float n){ return a - b * n; }
+NSHIM float32x2_t vneg_f32(float32x2_t a){ return -a; }
+NSHIM float32x2_t vmax_f32(float32x2_t a, float32x2_t b){   /* NaN as VMAX, see vmaxq_f32 */
+    float32x2_t r;
+    for (int i=0;i<2;++i) r[i] = (nshim_isnan(a[i]) || nshim_isnan(b[i])) ? NAN : (a[i] > b[i] ? a[i] : b[i]);
+    return r;
+}
+NSHIM float32x2_t vmin_f32(float32x2_t a, float32x2_t b){
+    float32x2_t r;
+    for (int i=0;i<2;++i) r[i] = (nshim_isnan(a[i]) || nshim_isnan(b[i])) ? NAN : (a[i] < b[i] ? a[i] : b[i]);
+    return r;
+}
+NSHIM float32x2_t vrecpe_f32(float32x2_t a){ return (float32x2_t){1.0f / a[0], 1.0f / a[1]}; }
+NSHIM float32x2_t vrecps_f32(float32x2_t a, float32x2_t b){ return vdup_n_f32(2.0f) - a * b; }
+NSHIM float32x2_t vrsqrte_f32(float32x2_t a){ return (float32x2_t){1.0f / sqrtf(a[0]), 1.0f / sqrtf(a[1])}; }
+NSHIM float32x2_t vrsqrts_f32(float32x2_t a, float32x2_t b){
+    return (vdup_n_f32(3.0f) - a * b) * vdup_n_f32(0.5f);
+}
+NSHIM uint32x2_t  vreinterpret_u32_f32(float32x2_t a){ uint32x2_t r; memcpy(&r,&a,8); return r; }
+NSHIM float32x2_t vreinterpret_f32_u32(uint32x2_t a){ float32x2_t r; memcpy(&r,&a,8); return r; }
+NSHIM uint32x2_t  vdup_n_u32(uint32_t v){ return (uint32x2_t){v, v}; }
+NSHIM uint32x2_t  vand_u32(uint32x2_t a, uint32x2_t b){ return a & b; }
+NSHIM uint32x2_t  vceq_u32(uint32x2_t a, uint32x2_t b){
+    return (uint32x2_t){a[0] == b[0] ? 0xFFFFFFFFu : 0u, a[1] == b[1] ? 0xFFFFFFFFu : 0u};
+}
+NSHIM uint32x2_t  vcgt_f32(float32x2_t a, float32x2_t b){
+    return (uint32x2_t){a[0] > b[0] ? 0xFFFFFFFFu : 0u, a[1] > b[1] ? 0xFFFFFFFFu : 0u};
+}
+NSHIM uint32x2_t  vcge_f32(float32x2_t a, float32x2_t b){
+    return (uint32x2_t){a[0] >= b[0] ? 0xFFFFFFFFu : 0u, a[1] >= b[1] ? 0xFFFFFFFFu : 0u};
+}
+NSHIM float32x2_t vbsl_f32(uint32x2_t m, float32x2_t a, float32x2_t b){
+    return vreinterpret_f32_u32((m & vreinterpret_u32_f32(a)) | (~m & vreinterpret_u32_f32(b)));
+}
+
 /* ---- compare (result: all-ones / all-zeros lanes) ---- */
 NSHIM uint32x4_t vcgtq_f32(float32x4_t a, float32x4_t b){
     uint32x4_t r; for (int i=0;i<4;++i) r[i] = a[i] >  b[i] ? 0xFFFFFFFFu : 0u; return r;

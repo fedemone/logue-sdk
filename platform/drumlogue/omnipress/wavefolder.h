@@ -214,6 +214,28 @@ fast_inline float32x4_t sine_folder(float32x4_t x) {
     return vmulq_n_f32(sin_ps(vmulq_n_f32(x, (float)M_PI_2)), 2.0f / (float)M_PI);
 }
 
+/**
+ * sine_folder()'s curve on two lanes, for an input the caller keeps within
+ * +/-3: Multiband's low band (multiband.h), whose input is divided by its
+ * own envelope and so never exceeds MB_FOLD_DEPTH_MAX.
+ *
+ * Inside +/-3 the fold is a single reflection about +/-1, so the triangle
+ * core is max(min(x, 2 - x), -2 - x) -- four instructions where
+ * triangle_folder() needs a floor for any input -- and the sine of the folded
+ * value is an odd 7th-order polynomial fitted with p(1) = 2/pi and p'(1) = 0,
+ * so the fold's corners stay as round as the sine's.  Nine instructions, and
+ * within 1e-6 of sine_folder() over the whole range.
+ */
+fast_inline float32x2_t sine_folder_bounded(float32x2_t x) {
+    const float32x2_t t = vmax_f32(vmin_f32(x, vsub_f32(vdup_n_f32(2.0f), x)),
+                                   vsub_f32(vdup_n_f32(-2.0f), x));
+    const float32x2_t t2 = vmul_f32(t, t);
+    float32x2_t p = vmla_n_f32(vdup_n_f32(0.05050934f), t2, -0.00272271f);
+    p = vmla_f32(vdup_n_f32(-0.41116043f), t2, p);
+    p = vmla_f32(vdup_n_f32(0.99999357f), t2, p);
+    return vmul_f32(t, p);
+}
+
 // Sub-octave generator — sequential scalar processing for correct zero-crossing detection.
 // The old NEON version used float32x4_t last_input/sub_phase where each lane had its
 // own independent history, causing 3 of the 4 lanes to detect wrong zero crossings

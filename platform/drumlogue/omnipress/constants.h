@@ -342,8 +342,8 @@ constexpr float DIST_DC_POLE = DRIVE_SLAM_DC_POLE;
 
 // ----------------------------------------------------------------------------
 // The Overlord tube's drive law, shared by Standard's broadband tube
-// (operation_overlord.h) and Multiband's per-band tubes (multiband.h), so a
-// DRIVE value means the same push in both modes.
+// (operation_overlord.h) and Multiband's mid-band tube (multiband.h), so a
+// DRIVE value means the same push in both.
 // ----------------------------------------------------------------------------
 constexpr float TUBE_STAGE1_GAIN = 35.0f;    // preamp:  1 + 35 d^2
 constexpr float TUBE_STAGE1_BIAS = 0.12f;    // its fixed asymmetry
@@ -352,6 +352,69 @@ constexpr float TUBE_STAGE2_BIAS = -0.18f;   // the triode's operating point
 constexpr float TUBE_BIAS_ALPHA  = 0.0025f;  // grid-current bias tracker, per block
 constexpr float TUBE_GRID_BIAS   = 1.7f;     // ...and how far grid current shifts it
 constexpr float TUBE_DC_POLE     = 0.996f;   // DC blocker behind the tube
+
+// ----------------------------------------------------------------------------
+// Multiband's DRIVE: a different shaper in each band (multiband.h)
+// ----------------------------------------------------------------------------
+// Standard's DRIVE is one broadband tube, and Multiband used to run that same
+// tube three times, once per band.  It has the bands split already, so DRIVE
+// now gives each band the stage that suits what lives in it, all three
+// level-matched band by band (DRIVE_LEVEL_* above):
+//
+//   Low   sine_folder()'s fold, from the Distressor's wavefolder.  Folds a
+//         kick or a bass line into odd harmonics two to four octaves up --
+//         growl that small speakers can play -- and this is the band where a
+//         folder cannot alias: what it makes of 250 Hz is nowhere near
+//         Nyquist.
+//   Mid   the Overlord tube, with Standard's drive law (TUBE_* above).
+//   High  the even half of the Distressor's Dist2 saturator, as an exciter:
+//         second harmonic and a little 4th, an octave of air over hats and
+//         cymbals, with the band itself passed through untouched.
+//
+// The fold and the exciter see their band divided by its own envelope (a
+// peak follower, so the ratio never exceeds 1), which sets their depth from
+// DRIVE alone, whatever the level.  Driven by absolute level instead, a folder
+// on a kick changes depth through every decay and its fundamental passes
+// through a null on the way -- the sub drops out mid-tail -- and an exciter
+// adds more to a loud hat than to a quiet one by the square of the level.  Below
+// MB_SHAPER_FLOOR the envelope stops counting and the depth falls with the
+// level, so tails and noise come out cleaner, as they would from a real stage.
+constexpr float MB_SHAPER_FLOOR     = 0.0316f;  // -30 dBFS
+
+// The fold's depth: the input to sine_folder_bounded() peaks at F.  Below 1
+// nothing folds (a sine-shaped saturator); above it the peaks fold back.
+// F = 2 would fold a peak all the way to zero, and a sine's fundamental
+// reaches its null at 2.44.  At 1.75 a 60 Hz tone comes out 69% THD with its
+// 3rd harmonic 3.6 dB under the fundamental, and a kick's sub 2 dB down
+// after the level matching; at 1.9 the sub lost 4 dB and the band sat 1.3 dB
+// under its input, the folded wave's higher peaks holding the matcher's
+// peak ceiling down.
+constexpr float MB_FOLD_DEPTH_MIN   = 0.8f;     // DRIVE 0
+constexpr float MB_FOLD_DEPTH_MAX   = 1.75f;    // DRIVE 100
+// Release of the low band's envelope.  It has to span a few periods of the
+// lowest note: shorter, and it sags between a 40 Hz cycle's peaks, which
+// reshapes the waveform before it reaches the fold.
+constexpr float MB_FOLD_ENV_MS      = 50.0f;
+
+// The exciter adds the even half of Dist2 (dist2_even_d) at a fixed depth --
+// the band's peaks reach MB_EXCITE_SHAPE on the curve -- and DRIVE sets how
+// much of it: up to MB_EXCITE_AMOUNT_MAX times the curve, scaled back by the
+// band's level.  Even harmonics only and the fundamental untouched; at the
+// top of the knob a tone's 2nd harmonic is 13 dB under it and the 4th 14 dB
+// further down.  Deeper into the curve buys more 4th and 6th, not more 2nd.
+constexpr float MB_EXCITE_SHAPE      = 1.0f;
+constexpr float MB_EXCITE_AMOUNT_MAX = 3.0f;
+constexpr float MB_EXCITE_ENV_MS     = 10.0f;   // the band starts at 1 kHz at the lowest
+// What the exciter adds goes through a 12 dB/oct high-pass an octave under the
+// high split.  An even curve rectifies: on a hat it leaves the hat's envelope
+// behind -- a low thump under every hit, 10 dB under the hat itself at DRIVE
+// 100 -- along with the difference tones between its partials, and none of
+// that belongs in the high band.  The band's own signal does not go through it.
+constexpr float MB_EXCITE_HPF_RATIO  = 0.5f;
+
+// The mid band's triode voicing (stage 2's positive and negative shape).
+constexpr float MB_TUBE_SHAPE_POS   = 5.5f;
+constexpr float MB_TUBE_SHAPE_NEG   = 1.8f;
 
 // ============================================================================
 // NEON Vector Constants

@@ -12,24 +12,30 @@
  * band does exactly what Standard does to the whole signal, so switching
  * COMP MODE keeps the character and moves it into the bands.
  *
- * DRIVE reaches a tube per band, with the Overlord's drive law (operation_
- * overlord.h), level-matched band by band so DRIVE never moves the balance.
+ * DRIVE gives each band its own shaper -- a fold on the lows, Standard's
+ * Overlord tube on the mids, an exciter on the highs (see "Multiband's DRIVE"
+ * in constants.h) -- each level-matched band by band, so DRIVE never moves
+ * the balance.
  *
  * Layout.  Everything recursive -- the crossover, the detectors, the gain
- * smoothers, the DC blockers -- runs one sample at a time with the bands (or
- * band x channel) in NEON lanes; the scalar code this replaces ran sixteen
- * biquads per sample one by one and cost 34k instructions per 64-frame render
- * (this layout: 19k at -Os, 18k at -O3).
+ * smoothers -- runs one sample at a time with the bands (or band x channel)
+ * in NEON lanes; the scalar code this replaces ran sixteen biquads per sample
+ * one by one and cost 34k instructions per 64-frame render (this layout: 19k
+ * at -Os, 18k at -O3).  The drive stage runs each band's shaper on that
+ * band's own [L R] pair, 64-bit vectors, since no two bands share one.
  *
  *   crossover        [L R L R]       -> [lowL lowR | restL restR]   (split 1)
  *                    [restL restR x2] -> [midL midR | highL highR]   (split 2)
  *   band signals     v1 = [lowL lowR midL midR], v2 = [highL highR 0 0]
  *   band dynamics    [low mid high -]
+ *   drive            [lowL lowR] fold, [midL midR] tube, [highL highR] exciter
  */
 
 #include <arm_neon.h>
 #include "constants.h"
 #include "float_math.h"
+#include "wavefolder.h"        // sine_folder_bounded(): the low band's fold
+#include "distressor_mode.h"   // dist2_even_d(): the high band's exciter
 
 #define BAND_LOW 0
 #define BAND_MID 1
@@ -120,14 +126,6 @@ fast_inline void lr4_mono_design(lr4_mono_t* x, float hz, float sample_rate) {
     x->c.a2 = (float32x2_t){lp.a2, hp.a2};
 }
 
-/* ---------------------------------------------------------------------------
- * Per-band tube voicing.  The drive law is the Overlord's (constants.h,
- * TUBE_*); only the triode's transfer shape differs per band: softer on the
- * lows so the kick thickens rather than farts out, brighter on the highs.
- * ------------------------------------------------------------------------- */
-constexpr float BAND_TUBE_SHAPE_POS[NUM_OF_BANDS] = {3.2f, 5.5f, 6.0f};
-constexpr float BAND_TUBE_SHAPE_NEG[NUM_OF_BANDS] = {1.1f, 1.8f, 2.5f};
-
 typedef struct {
     // ---- crossover -------------------------------------------------------
     lr4_stereo_t split_lo;       // low | rest, at xover_low_freq
@@ -147,11 +145,14 @@ typedef struct {
     float32x4_t slope;           // each band's curve: (1 + f) / ratio - 1
     float32x4_t thresh;          // THRESH + offset, dB
 
-    // ---- drive stage, lanes = [lowL lowR midL midR] and [highL highR - -] --
-    float32x4_t dyn_bias[2];     // grid-current bias trackers
-    float32x4_t dc_x[2], dc_y[2];
-    float32x4_t idle[2];         // the tube's output with no signal
-    float32x4_t shape_pos[2], shape_neg[2];
+    // ---- drive stage, each band's shaper on its own [L R] ------------------
+    float32x2_t fold_env;        // low:  peak follower the fold is normalised to
+    float32x2_t tube_bias;       // mid:  grid-current bias tracker
+    float32x2_t dc_x, dc_y;      // mid:  DC blocker behind the tube
+    float32x2_t exc_env;         // high: peak follower the exciter is normalised to
+    bq2_state_t exc_hpf_s;       // high: high-pass on what Dist2 adds
+    bq2_coeffs_t exc_hpf_c;
+    float tube_idle;             // mid:  the tube's output with no signal
     // level matching, lanes = [low mid high -]
     float32x4_t lm_in, lm_out, lm_in_slow, lm_out_slow, lm_gain;
     bool        drive_on;        // the stage ran last block
@@ -169,7 +170,10 @@ typedef struct {
     float env_pre_coeff;         // detector decay
     float lm_attack, lm_release, lm_slow;   // level matching, per block
     float drive;                 // 0..1
-    float drive_g1, drive_g2;    // the two stages' gains
+    float drive_g1, drive_g2;    // mid: the tube's two stages' gains
+    float fold_depth, fold_inv_depth;      // low: F, and 1/F to hand the level back
+    float exc_amount;            // high: how much of the curve, over its depth
+    float fold_env_coeff, exc_env_coeff;   // the two peak followers' decay, per sample
     float blend;                 // parallel fade-in at the bottom of the knob
 
     float xover_low_freq;        // asked for
@@ -224,11 +228,18 @@ fast_inline void multiband_set_ballistics(multiband_t* mb, float attack_ms, floa
     mb->rel_coeff = ballistics_coeff(release_ms, mb->sample_rate);
 }
 
-/** DRIVE, 0..1: the Overlord's law, so a DRIVE value means the same push in both modes. */
+/**
+ * DRIVE, 0..1, into each band's shaper: the Overlord's law for the mid tube,
+ * so a DRIVE value pushes it as hard as Standard's; the fold's depth and the
+ * exciter's from their own laws (MB_FOLD_*, MB_EXCITE_* in constants.h).
+ */
 fast_inline void multiband_set_drive(multiband_t* mb, float drive) {
     mb->drive    = drive;
     mb->drive_g1 = 1.0f + drive * drive * TUBE_STAGE1_GAIN;
     mb->drive_g2 = 1.0f + drive * TUBE_STAGE2_GAIN;
+    mb->fold_depth     = MB_FOLD_DEPTH_MIN + (MB_FOLD_DEPTH_MAX - MB_FOLD_DEPTH_MIN) * drive;
+    mb->fold_inv_depth = 1.0f / mb->fold_depth;
+    mb->exc_amount     = MB_EXCITE_AMOUNT_MAX * drive / MB_EXCITE_SHAPE;
     mb->blend    = (drive < 0.1f) ? drive * 10.0f : 1.0f;
 }
 
@@ -277,6 +288,12 @@ fast_inline void multiband_design(multiband_t* mb) {
     mb->ap_c.b0 = vdup_n_f32(ap.b0); mb->ap_c.b1 = vdup_n_f32(ap.b1);
     mb->ap_c.b2 = vdup_n_f32(ap.b2); mb->ap_c.a1 = vdup_n_f32(ap.a1);
     mb->ap_c.a2 = vdup_n_f32(ap.a2);
+    // The exciter's high-pass follows the high split, so it always sits an
+    // octave under the band whatever Xover Hi says.
+    const biquad_coeffs_t hp = rbj_butterworth(RBJ_HIGHPASS, hi * MB_EXCITE_HPF_RATIO, mb->sample_rate);
+    mb->exc_hpf_c.b0 = vdup_n_f32(hp.b0); mb->exc_hpf_c.b1 = vdup_n_f32(hp.b1);
+    mb->exc_hpf_c.b2 = vdup_n_f32(hp.b2); mb->exc_hpf_c.a1 = vdup_n_f32(hp.a1);
+    mb->exc_hpf_c.a2 = vdup_n_f32(hp.a2);
     mb->designed_low  = lo;
     mb->designed_high = hi;
 }
@@ -284,11 +301,13 @@ fast_inline void multiband_design(multiband_t* mb) {
 /** Put the drive stage where it sits with no signal: no DC step, no level memory. */
 fast_inline void multiband_prime_drive(multiband_t* mb) {
     const float32x4_t zero = vdupq_n_f32(0.0f);
-    for (int k = 0; k < 2; ++k) {
-        mb->dyn_bias[k] = zero;
-        mb->dc_x[k] = mb->idle[k];
-        mb->dc_y[k] = zero;
-    }
+    const float32x2_t zero2 = vdup_n_f32(0.0f);
+    mb->fold_env  = zero2;
+    mb->exc_env   = zero2;
+    mb->tube_bias = zero2;
+    mb->dc_x = vdup_n_f32(mb->tube_idle);
+    mb->dc_y = zero2;
+    mb->exc_hpf_s.z1 = mb->exc_hpf_s.z2 = zero2;
     mb->lm_in = mb->lm_out = mb->lm_in_slow = mb->lm_out_slow = zero;
     mb->lm_gain = vdupq_n_f32(1.0f);
 }
@@ -322,10 +341,12 @@ fast_inline bool multiband_state_is_nonfinite(const multiband_t* mb) {
     m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->lm_in), nonfinite_mask_q(mb->lm_out)));
     m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->lm_in_slow), nonfinite_mask_q(mb->lm_out_slow)));
     m = vorrq_u32(m, nonfinite_mask_q(mb->lm_gain));
-    for (int k = 0; k < 2; ++k) {
-        m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->dyn_bias[k]), nonfinite_mask_q(mb->dc_x[k])));
-        m = vorrq_u32(m, nonfinite_mask_q(mb->dc_y[k]));
-    }
+    // The drive stage's [L R] pairs, two to a vector, asked directly like the
+    // rest rather than left to show up at the output.
+    m = vorrq_u32(m, nonfinite_mask_q(vcombine_f32(mb->fold_env, mb->exc_env)));
+    m = vorrq_u32(m, nonfinite_mask_q(vcombine_f32(mb->tube_bias, mb->dc_x)));
+    m = vorrq_u32(m, nonfinite_mask_q(vcombine_f32(mb->dc_y, mb->exc_hpf_s.z1)));
+    m = vorrq_u32(m, nonfinite_mask_q(vcombine_f32(mb->exc_hpf_s.z2, mb->exc_hpf_s.z2)));
     const uint32x2_t m2 = vorr_u32(vget_low_u32(m), vget_high_u32(m));
     return (vget_lane_u32(m2, 0) | vget_lane_u32(m2, 1)) != 0;
 }
@@ -343,22 +364,14 @@ fast_inline void multiband_init(multiband_t* mb, float sample_rate) {
     mb->lm_attack  = ballistics_coeff(DRIVE_LEVEL_ATTACK_MS,  block_rate);
     mb->lm_release = ballistics_coeff(DRIVE_LEVEL_RELEASE_MS, block_rate);
     mb->lm_slow    = ballistics_coeff(DRIVE_LEVEL_SLOW_MS,    block_rate);
+    mb->fold_env_coeff = ballistics_coeff(MB_FOLD_ENV_MS,   sample_rate);
+    mb->exc_env_coeff  = ballistics_coeff(MB_EXCITE_ENV_MS, sample_rate);
 
-    // Per-lane tube shapes, and the output each band's tube settles on with no
-    // signal: stage 1 is offset to idle at zero, so stage 2 sees only its own
-    // bias, b / sqrt(1 + shape_neg b^2).
-    float pos[NUM_OF_BANDS], neg[NUM_OF_BANDS], idle[NUM_OF_BANDS];
-    for (int b = 0; b < NUM_OF_BANDS; ++b) {
-        pos[b] = BAND_TUBE_SHAPE_POS[b];
-        neg[b] = BAND_TUBE_SHAPE_NEG[b];
-        idle[b] = TUBE_STAGE2_BIAS / sqrtf(1.0f + neg[b] * TUBE_STAGE2_BIAS * TUBE_STAGE2_BIAS);
-    }
-    mb->shape_pos[0] = (float32x4_t){pos[0], pos[0], pos[1], pos[1]};
-    mb->shape_pos[1] = (float32x4_t){pos[2], pos[2], pos[2], pos[2]};
-    mb->shape_neg[0] = (float32x4_t){neg[0], neg[0], neg[1], neg[1]};
-    mb->shape_neg[1] = (float32x4_t){neg[2], neg[2], neg[2], neg[2]};
-    mb->idle[0] = (float32x4_t){idle[0], idle[0], idle[1], idle[1]};
-    mb->idle[1] = (float32x4_t){idle[2], idle[2], 0.0f, 0.0f};
+    // What the mid tube settles on with no signal: stage 1 is offset to idle
+    // at zero, so stage 2 sees only its own bias, b / sqrt(1 + shape_neg b^2).
+    // The fold and the exciter idle at zero.
+    mb->tube_idle = TUBE_STAGE2_BIAS /
+        sqrtf(1.0f + MB_TUBE_SHAPE_NEG * TUBE_STAGE2_BIAS * TUBE_STAGE2_BIAS);
 
     for (int b = 0; b < NUM_OF_BANDS; ++b) {
         mb->band_offset[b] = 0.0f;
@@ -407,71 +420,109 @@ fast_inline float32x4_t sqrt_ratio_q(float32x4_t a, float32x4_t b) {
     return vmulq_f32(q, e);
 }
 
-/**
- * Overlord tube, one vector of band x channel lanes: the rational preamp
- * (stage1_continuous_preamp) into the dynamic-bias triode (stage2_pirkle_
- * triode), phase restored.  `gk_pos` accumulates the triode's grid current for
- * the bias trackers.
- */
-fast_inline float32x4_t band_tube(const multiband_t* mb, int k, float32x4_t x, float32x4_t* gk_pos) {
-    const float32x4_t one = vdupq_n_f32(1.0f);
-    // Stage 1: x g1 + b over 1 + |x g1 + b|, offset so it idles at zero
-    const float32x4_t biased = vmlaq_n_f32(vdupq_n_f32(TUBE_STAGE1_BIAS), x, mb->drive_g1);
-    const float32x4_t den1 = vaddq_f32(one, vabsq_f32(biased));
-    float32x4_t r = vrecpeq_f32(den1);
-    r = vmulq_f32(vrecpsq_f32(den1, r), r);
-    const float32x4_t pre = vsubq_f32(vmulq_f32(biased, r),
-        vdupq_n_f32(TUBE_STAGE1_BIAS / (1.0f + TUBE_STAGE1_BIAS)));
-    // Stage 2: the triode, biased by its static point and its grid-current tracker
-    const float32x4_t gk = vmlaq_n_f32(vaddq_f32(vdupq_n_f32(TUBE_STAGE2_BIAS), mb->dyn_bias[k]),
-                                       pre, mb->drive_g2);
-    *gk_pos = vaddq_f32(*gk_pos, vmaxq_f32(gk, vdupq_n_f32(0.0f)));
-    const float32x4_t shape = vbslq_f32(vcgtq_f32(gk, vdupq_n_f32(0.0f)),
-                                        mb->shape_pos[k], mb->shape_neg[k]);
-    const float32x4_t den2 = vmlaq_f32(one, vmulq_f32(gk, gk), shape);
-    float32x4_t e = vrsqrteq_f32(den2);
-    e = vmulq_f32(vrsqrtsq_f32(vmulq_f32(e, e), den2), e);
-    // The triode inverts and overlord_process inverts it back; both cancel here.
-    return vmulq_f32(gk, e);
+/** 1 / x from the NEON estimate and one Newton step (~16 bits), on two lanes. */
+fast_inline float32x2_t recip_d(float32x2_t x) {
+    const float32x2_t r = vrecpe_f32(x);
+    return vmul_f32(vrecps_f32(x, r), r);
 }
 
 /**
- * The drive stage for one block: tube, DC blocker and level matching per band,
- * then the parallel blend.  v1/v2 are the compressed bands, per sample, and
- * are replaced by the driven ones.
+ * A peak follower on one band's [L R], and the level its shaper is
+ * normalised to.  The attack is instant, so the follower is never below |x|
+ * and x / level stays within +/-1 -- which is what bounds the shaper's input
+ * by its depth.  Below MB_SHAPER_FLOOR the level holds at the floor, so the
+ * depth falls away with the signal.
+ */
+fast_inline float32x2_t band_level(float32x2_t* env, float32x2_t x, float decay) {
+    *env = vmax_f32(vabs_f32(x), vmul_n_f32(*env, decay));
+    return vmax_f32(*env, vdup_n_f32(MB_SHAPER_FLOOR));
+}
+
+/**
+ * Low band: sine_folder()'s fold at depth F on the band divided by its level,
+ * then scaled back by level / F.  Small signals come out unchanged (the fold
+ * has unity slope at zero); the band's peaks reach F, past 1 they fold back.
+ * Symmetric, so it leaves no DC and needs no blocker: the tube's 30 Hz one,
+ * when this band had a tube, put 50 Hz 1.0-1.2 dB under 200 Hz even where
+ * the tube was still linear.
+ */
+fast_inline float32x2_t band_fold(multiband_t* mb, float32x2_t x) {
+    const float32x2_t level = band_level(&mb->fold_env, x, mb->fold_env_coeff);
+    const float32x2_t z = vmul_f32(x, vmul_n_f32(recip_d(level), mb->fold_depth));
+    return vmul_f32(sine_folder_bounded(z), vmul_n_f32(level, mb->fold_inv_depth));
+}
+
+/**
+ * Mid band: the Overlord tube with Standard's drive law -- the rational
+ * preamp (stage1_continuous_preamp) into the dynamic-bias triode (stage2_
+ * pirkle_triode), phase restored.  `gk_pos` accumulates the triode's grid
+ * current for the bias tracker.
+ */
+fast_inline float32x2_t band_tube(const multiband_t* mb, float32x2_t x, float32x2_t* gk_pos) {
+    const float32x2_t one = vdup_n_f32(1.0f);
+    // Stage 1: x g1 + b over 1 + |x g1 + b|, offset so it idles at zero
+    const float32x2_t biased = vmla_n_f32(vdup_n_f32(TUBE_STAGE1_BIAS), x, mb->drive_g1);
+    const float32x2_t pre = vsub_f32(vmul_f32(biased, recip_d(vadd_f32(one, vabs_f32(biased)))),
+                                     vdup_n_f32(TUBE_STAGE1_BIAS / (1.0f + TUBE_STAGE1_BIAS)));
+    // Stage 2: the triode, biased by its static point and its grid-current tracker
+    const float32x2_t gk = vmla_n_f32(vadd_f32(vdup_n_f32(TUBE_STAGE2_BIAS), mb->tube_bias),
+                                      pre, mb->drive_g2);
+    *gk_pos = vadd_f32(*gk_pos, vmax_f32(gk, vdup_n_f32(0.0f)));
+    const float32x2_t shape = vbsl_f32(vcgt_f32(gk, vdup_n_f32(0.0f)),
+                                       vdup_n_f32(MB_TUBE_SHAPE_POS), vdup_n_f32(MB_TUBE_SHAPE_NEG));
+    const float32x2_t den2 = vmla_f32(one, vmul_f32(gk, gk), shape);
+    float32x2_t e = vrsqrte_f32(den2);
+    e = vmul_f32(vrsqrts_f32(vmul_f32(e, e), den2), e);
+    // The triode inverts and overlord_process inverts it back; both cancel here.
+    return vmul_f32(gk, e);
+}
+
+/**
+ * High band: the Distressor's Dist2 as an exciter.  The even half of its
+ * curve, on the band divided by its level, scaled back by that level and by
+ * DRIVE's amount, through the high-pass and onto the band.  The band itself
+ * passes untouched, so the crossover still sums flat under it.
+ */
+fast_inline float32x2_t band_excite(multiband_t* mb, float32x2_t x) {
+    const float32x2_t level = band_level(&mb->exc_env, x, mb->exc_env_coeff);
+    const float32x2_t z = vmul_f32(x, vmul_n_f32(recip_d(level), MB_EXCITE_SHAPE));
+    const float32x2_t added = vmul_f32(dist2_even_d(z), vmul_n_f32(level, mb->exc_amount));
+    return vadd_f32(x, bq2_tick(&mb->exc_hpf_s, &mb->exc_hpf_c, added));
+}
+
+/**
+ * The drive stage for one block: each band's shaper, then level matching per
+ * band and the parallel blend.  v1/v2 are the compressed bands, per sample,
+ * and are replaced by the driven ones.
  */
 fast_inline void multiband_drive(multiband_t* mb, float32x4_t v1[NEON_LANES], float32x4_t v2[NEON_LANES]) {
     if (!mb->drive_on) { multiband_prime_drive(mb); mb->drive_on = true; }
 
     const float32x4_t zero = vdupq_n_f32(0.0f);
+    const float32x2_t zero2 = vdup_n_f32(0.0f);
     float32x4_t w1[NEON_LANES], w2[NEON_LANES];
     float32x4_t pin1 = zero, pin2 = zero, pout1 = zero, pout2 = zero;
-    float32x4_t gk1 = zero, gk2 = zero;
+    float32x2_t gk = zero2;
     for (int t = 0; t < NEON_LANES; ++t) {
-        const float32x4_t a = band_tube(mb, 0, v1[t], &gk1);
-        const float32x4_t b = band_tube(mb, 1, v2[t], &gk2);
-        // DC blocker (the tube's own corner), one lane per band x channel
-        const float32x4_t ya = vmlaq_n_f32(vsubq_f32(a, mb->dc_x[0]), mb->dc_y[0], TUBE_DC_POLE);
-        const float32x4_t yb = vmlaq_n_f32(vsubq_f32(b, mb->dc_x[1]), mb->dc_y[1], TUBE_DC_POLE);
-        mb->dc_x[0] = a; mb->dc_y[0] = ya;
-        mb->dc_x[1] = b; mb->dc_y[1] = yb;
-        w1[t] = ya; w2[t] = yb;
+        const float32x2_t lo = band_fold(mb, vget_low_f32(v1[t]));
+        const float32x2_t mi = band_tube(mb, vget_high_f32(v1[t]), &gk);
+        const float32x2_t hi = band_excite(mb, vget_low_f32(v2[t]));
+        // DC blocker behind the tube (the tube's own corner); the fold is
+        // symmetric, and the exciter's high-pass already keeps DC out.
+        const float32x2_t ym = vmla_n_f32(vsub_f32(mi, mb->dc_x), mb->dc_y, TUBE_DC_POLE);
+        mb->dc_x = mi; mb->dc_y = ym;
+        w1[t] = vcombine_f32(lo, ym);
+        w2[t] = vcombine_f32(hi, zero2);
         pin1  = vmlaq_f32(pin1,  v1[t], v1[t]);
         pin2  = vmlaq_f32(pin2,  v2[t], v2[t]);
-        pout1 = vmlaq_f32(pout1, ya, ya);
-        pout2 = vmlaq_f32(pout2, yb, yb);
+        pout1 = vmlaq_f32(pout1, w1[t], w1[t]);
+        pout2 = vmlaq_f32(pout2, w2[t], w2[t]);
     }
-    // (Lanes 2-3 of the high vector carry no band: the tube idles there, and
-    // lanes_to_bands() and bands_to_lanes_hi() leave them out of everything.)
 
-    // Grid-current bias trackers, once per block, as overlord_process does it
-    const float alpha = TUBE_BIAS_ALPHA;
-    mb->dyn_bias[0] = vmlaq_n_f32(mb->dyn_bias[0],
-        vsubq_f32(vmulq_n_f32(gk1, -TUBE_GRID_BIAS * 0.25f), mb->dyn_bias[0]), alpha);
-    mb->dyn_bias[1] = vmlaq_n_f32(mb->dyn_bias[1],
-        vsubq_f32(vmulq_n_f32(gk2, -TUBE_GRID_BIAS * 0.25f), mb->dyn_bias[1]), alpha);
-    mb->dyn_bias[0] = flush_denormal_q(mb->dyn_bias[0]);
-    mb->dyn_bias[1] = flush_denormal_q(vcombine_f32(vget_low_f32(mb->dyn_bias[1]), vdup_n_f32(0.0f)));
+    // The tube's grid-current bias tracker, once per block, as overlord_process does it
+    mb->tube_bias = vmla_n_f32(mb->tube_bias,
+        vsub_f32(vmul_n_f32(gk, -TUBE_GRID_BIAS * 0.25f), mb->tube_bias), TUBE_BIAS_ALPHA);
+    mb->tube_bias = vget_low_f32(flush_denormal_q(vcombine_f32(mb->tube_bias, zero2)));
 
     // Level matching per band, level_match_process()'s law with the bands in
     // lanes: mean power over the block and both channels, a fast follower used
@@ -601,7 +652,12 @@ fast_inline void multiband_process(multiband_t* mb,
     // keeps them, at ~10x the cost (test_levels G9).
     bq4_state_t* st[4] = { &mb->split_lo.s1, &mb->split_lo.s2, &mb->split_hi.s1, &mb->split_hi.s2 };
     for (bq4_state_t* q : st) { q->z1 = flush_denormal_q(q->z1); q->z2 = flush_denormal_q(q->z2); }
-    for (int k = 0; k < 2; ++k) mb->dc_y[k] = flush_denormal_q(mb->dc_y[k]);
+    // The drive stage's [L R] states, two to a vector
+    float32x4_t f = flush_denormal_q(vcombine_f32(mb->fold_env, mb->exc_env));
+    mb->fold_env = vget_low_f32(f); mb->exc_env = vget_high_f32(f);
+    f = flush_denormal_q(vcombine_f32(mb->exc_hpf_s.z1, mb->exc_hpf_s.z2));
+    mb->exc_hpf_s.z1 = vget_low_f32(f); mb->exc_hpf_s.z2 = vget_high_f32(f);
+    mb->dc_y = vget_low_f32(flush_denormal_q(vcombine_f32(mb->dc_y, mb->dc_y)));
     for (int i = 0; i < 2; ++i) {
         float* z = (i == 0) ? (float*)&mb->ap_s.z1 : (float*)&mb->ap_s.z2;
         z[0] = flush_denormal(z[0]); z[1] = flush_denormal(z[1]);
