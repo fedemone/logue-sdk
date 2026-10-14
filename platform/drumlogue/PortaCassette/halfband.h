@@ -18,8 +18,11 @@
  *     of rejection from 76 kHz -- everything that could fold below 20 kHz.
  *     (What folds into 20-48 kHz, stage A removes on the way down.)
  *
- * 64-70 dB puts what is left of an alias under the tape's own noise floor;
- * six and four coefficients bought 96 and 132 dB for twice the work.
+ * 64-70 dB of rejection puts what the filters let through under the tape's
+ * own noise floor; six and four coefficients bought 96 and 132 dB for twice
+ * the work.  (Harmonics a shaper makes above 96 kHz fold at the 192 kHz rate
+ * itself, before any filter; that only matters when a tone is driven far past
+ * the knee, as Drive 100 % does to loud treble.)
  *
  * 2x is stage A alone; 4x is A then B.  The response is not linear-phase,
  * which is irrelevant inside a tape model whose wow & flutter already moves

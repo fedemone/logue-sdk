@@ -5,10 +5,11 @@
  *
  * Signal chain, evaluated four frames at a time:
  *
- *   Trim -> Console clip (2x) -> PEQ(3-band) -> dbx encode
- *        -> Record EQ -> Drive/Saturation (2x) -> Playback EQ
+ *   Trim -> Console clip (4x) -> 20 kHz -> PEQ(3-band) -> dbx encode
+ *        -> Record EQ -> Drive/Saturation (4x) -> Playback EQ
  *        -> Hiss or Vinyl dust -> Head bump -> Tape LPF -> Wow & Flutter
- *        -> Crosstalk -> dbx decode -> DC block -> Dry/Wet -> Soft ceiling
+ *        -> Crosstalk -> dbx decode -> Playback gain -> DC block -> Dry/Wet
+ *        -> Soft ceiling
  *
  * The noise sources sit *inside* the dbx encode/decode loop on purpose: that is
  * where tape noise enters on a real machine, and it is what lets the decoder
@@ -217,8 +218,9 @@ public:
                 const uint8_t mode = (uint8_t)((value < 0) ? 0 : (value > k_decode_only ? k_decode_only : value));
                 // A half that was out of circuit has a stale detector; re-seed
                 // both so they come back in step (on the audio thread).
-                if (mode != dbx_mode_) b_dbx_resync_.store(true);
+                const bool changed = (mode != dbx_mode_);
                 dbx_mode_ = mode;
+                if (changed) b_dbx_resync_.store(true);
                 break;
             }
             case k_param_age:
@@ -372,8 +374,8 @@ private:
      * back flat and a loud one comes back with its treble squashed.  At 9.5
      * cm/s a 10 kHz tone has the wavelength of 5 kHz at 4.76 cm/s, which
      * roughly halves the gap; rec_emph_hz puts the pre-emphasis zero there
-     * (about +9 dB at 10 kHz at HIGH speed, +15 dB at NORMAL).  Vinyl has no
-     * tape record EQ.
+     * (about +10 dB at 10 kHz at HIGH speed, +16 dB at NORMAL, levelling off
+     * at +16 / +22 dB).  Vinyl has no tape record EQ.
      *
      * Head bump.  The bump is the tape's own response, inside the dbx loop, so
      * with dbx Active the decoder doubles it like any other level error.  The
@@ -607,7 +609,14 @@ private:
         // approximate (the true mean depends on programme level), which is why
         // the DC blocker now runs in vinyl mode too.
         const float b = vinyl_bias_;
-        vinyl_dc_offset_ = b / (1.0f + fabsf(b) + 0.3f * b * b);
+        const float den = 1.0f + fabsf(b) + 0.3f * b * b;
+        vinyl_dc_offset_ = b / den;
+        // Small-signal slope at the bias point, f'(b) = (1 - 0.3b^2) / den^2:
+        // -0.4 dB at Age 10, -3.8 dB at Age 100.  The tape stage divides it out
+        // (the dbx decoder would double any gain error inside the loop) and the
+        // playback gain puts it back once, so the level still falls with Age
+        // as it always did, but by the same amount whichever dbx mode is on.
+        vinyl_slope_ = (1.0f - 0.3f * b * b) / (den * den);
     }
 
     // =========================================================================
@@ -651,10 +660,10 @@ private:
         sig_l = vmulq_n_f32(sig_l, current_fader_);
         sig_r = vmulq_n_f32(sig_r, current_fader_);
         // The mixer's 20 kHz bandwidth (20 Hz - 20 kHz +/-2 dB, line to line).
-        // It also clears the clip's residue between 20 and 24 kHz -- harmonics
-        // in the oversampler's transition band fold there -- before the tape's
-        // record EQ boosts it 12 dB and the saturator mixes it back down into
-        // the audio band.
+        // It also knocks down the clip's residue between 20 and 24 kHz --
+        // harmonics in the oversampler's transition band fold there -- before
+        // the tape's record EQ boosts it ~16 dB and the saturator mixes it back
+        // down into the audio band.
         biquad_process4_stereo(&console_lpf_, &coeff_console_lpf_, &sig_l, &sig_r);
 
         parametric_eq(sig_l, sig_r);
@@ -668,7 +677,8 @@ private:
         // was +3.4 dB at 40 %).  So the saturator runs at unity small-signal
         // gain and the make-up is a playback gain after the decoder.
         const float drive    = current_sat_drive_ * sat_scale_;
-        const float playback = current_sat_makeup_ * sat_makeup_comp_ * drive;
+        const float playback = current_sat_makeup_ * sat_makeup_comp_ * drive
+                             * ((model_ == k_vinyl) ? vinyl_slope_ : 1.0f);
 
         // Record EQ boosts the treble into the tape and the playback EQ takes
         // it out again, so the treble saturates first, as it does on cassette.
@@ -878,7 +888,7 @@ private:
         biquad_process4_stereo(&tape_lpf_, &coeff_tape_lpf_, &sig_l, &sig_r);
     }
 
-    // The memoryless shapers, as functors for the 2x oversampler.
+    // The memoryless shapers, as functors for the 4x oversampler.
     struct ConsoleShaper {
         fast_inline float32x4_t operator()(float32x4_t x) const {
             return knee_clip(x, kConsoleKnee, kConsoleRange);
@@ -909,9 +919,11 @@ private:
     }
 
     /// Drive into the shaper and back out by the same factor, so a quiet signal
-    /// leaves at the level it came in.  Run at 4x: the record EQ pushes the
-    /// treble 9-15 dB harder into the shaper than the midrange, and at 2x a
-    /// 10 kHz tone's 9th harmonic still folded back to 6.2 kHz.
+    /// leaves at the level it came in (vinyl also divides out its shaper's
+    /// slope at the groove-wear bias; see set_vinyl_asymmetry).  Run at 4x:
+    /// the record EQ pushes 10 kHz 10-16 dB harder into the shaper than the
+    /// midrange, and at 2x a 10 kHz tone's 9th harmonic still folded back to
+    /// 6.2 kHz.
     __attribute__((noinline, optimize("Ofast")))
     void drive_into_soft_saturation(float32x4_t &sig_l, float32x4_t &sig_r, float drive) {
         sig_l = vmulq_n_f32(sig_l, drive);
@@ -924,7 +936,7 @@ private:
         } else {
             hb4x_process4_stereo(&tape_os_, &sig_l, &sig_r, TapeShaper());
         }
-        const float back = 1.0f / drive;
+        const float back = 1.0f / (drive * ((model_ == k_vinyl) ? vinyl_slope_ : 1.0f));
         sig_l = vmulq_n_f32(sig_l, back);
         sig_r = vmulq_n_f32(sig_r, back);
     }
@@ -1130,7 +1142,7 @@ private:
     /// Vinyl's memoryless half: the rational clipper f(x) = x / (1 + |x| + 0.3x^2),
     /// a cheap tanh with a warmer knee.  The caller adds the groove-wear bias
     /// first; the bias breaks the symmetry and generates the even harmonics
-    /// that give worn vinyl its warmth.  Run at 2x.
+    /// that give worn vinyl its warmth.  Run at 4x.
     static fast_inline float32x4_t vinyl_clip(float32x4_t xb) {
         const float32x4_t denom =
             vmlaq_n_f32(vaddq_f32(vdupq_n_f32(1.0f), vabsq_f32(xb)),
@@ -1228,15 +1240,24 @@ private:
     }
 
     /// First-order shelf (1 + s/wz) / (1 + s/wp), unity at DC, by the bilinear
-    /// transform with both corners prewarped.  zero < pole is a treble boost,
-    /// zero > pole the matching cut; a zero of 0 Hz means no emphasis at all.
+    /// transform.  zero < pole is a treble boost, zero > pole the matching cut
+    /// (same corners swapped, so the pair is an exact inverse); a zero of 0 Hz
+    /// means no emphasis at all.
+    ///
+    /// Only the lower corner is prewarped; the upper one is placed so the
+    /// shelf tops out at the analog ratio.  Prewarping both, with the pole at
+    /// 20 kHz this close to Nyquist, stretched a 15.9 dB shelf to 24.9 dB and
+    /// pushed the top octave 9-12 dB harder into the saturator than designed.
     void calc_emphasis(biquad_coeffs_t* c, float zero_hz, float pole_hz) {
         if (zero_hz <= 0.0f || pole_hz <= 0.0f) {
             c->b0 = 1.0f;  c->b1 = c->b2 = c->a1 = c->a2 = 0.0f;
             return;
         }
-        const float az = 1.0f / tanf(M_PI * clamp_hz(zero_hz) * inverse_samplerate_);
-        const float ap = 1.0f / tanf(M_PI * clamp_hz(pole_hz) * inverse_samplerate_);
+        const float lo = fminf(zero_hz, pole_hz), hi = fmaxf(zero_hz, pole_hz);
+        const float a_lo = 1.0f / tanf(M_PI * clamp_hz(lo) * inverse_samplerate_);
+        const float a_hi = a_lo * lo / hi;
+        const float az = (zero_hz <= pole_hz) ? a_lo : a_hi;
+        const float ap = (zero_hz <= pole_hz) ? a_hi : a_lo;
         const float inv_a0 = 1.0f / (1.0f + ap);
         c->b0 = (1.0f + az) * inv_a0;
         c->b1 = (1.0f - az) * inv_a0;
@@ -1379,6 +1400,7 @@ private:
     float tape_age_;
     float vinyl_bias_;
     float vinyl_dc_offset_;
+    float vinyl_slope_ = 1.0f;   // vinyl shaper's small-signal slope at the bias
     float xtalk_amount_;
     float hiss_amount_;
 

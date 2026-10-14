@@ -8,7 +8,7 @@ runs it under qemu-arm:
     ./run.sh all              # everything below
     ./run.sh calib            # THD per machine at the reference level
     ./run.sh onset            # where each frequency starts to saturate
-    ./run.sh alias            # inharmonic (aliased) products of a 10 kHz tone
+    ./run.sh alias            # inharmonic (aliased) products of treble tones
     ./run.sh track            # dbx: tape compression vs what reaches the output
     ./run.sh burst            # a hit after silence through the compander
     ./run.sh pump             # how far a quiet treble tone moves with each kick
@@ -17,13 +17,18 @@ runs it under qemu-arm:
     ./run.sh xtalk            # channel separation
     ./run.sh noise            # noise floor
     ./run.sh table            # the README's per-machine table
-    ./run.sh response         # small-signal frequency response, dbx Off / Active
+    ./run.sh response         # frequency response at -15 and -45 dBFS, dbx Off / Active
+    ./run.sh unity            # dbx Active against Off for a quiet tone, every model
 
 Levels are sine PEAK levels in dBFS: -15 dBFS peak is -18 dBFS RMS, the
 compander's reference ("0 VU").  Unless a test says otherwise, tones run with
 wow & flutter off (a fixed delay) so the spectra stay clean, and through the
 "_nc" build, whose output ceiling is out of reach, so the numbers describe the
 tape and not the safety limiter behind it.
+
+A row for a model or dbx mode the measured sources do not have (an older copy
+through SRC=) prints "n/a" instead of quietly measuring whatever the unit
+clamped the value to.
 
 Requires numpy.
 """
@@ -58,14 +63,22 @@ def _bh4(n):
 WIN = _bh4(NFFT)
 
 
+UNSUPPORTED = 3   # probe.cc's exit status when the unit clamped model or dbx
+
+
 def render(nc=True, **kw):
-    """Render with probe.cc; keyword arguments are its key=value pairs."""
+    """Render with probe.cc; keyword arguments are its key=value pairs.
+    Returns None if the sources do not have the requested model or dbx mode."""
     kw.setdefault("nowf", 1)
     fd, path = tempfile.mkstemp(suffix=".raw")
     os.close(fd)
     try:
         args = [QEMU, PROBE_NC if nc else PROBE, path] + [f"{k}={v}" for k, v in kw.items()]
-        subprocess.run(args, check=True)
+        rc = subprocess.run(args).returncode
+        if rc == UNSUPPORTED:
+            return None
+        if rc != 0:
+            raise RuntimeError(f"probe failed ({rc}): {' '.join(args)}")
         return np.fromfile(path, dtype=np.float32).astype(np.float64)
     finally:
         os.unlink(path)
@@ -137,6 +150,16 @@ def sine_fit(y, f, n0, n):
     return np.hypot(c[0], c[1]), 100 * np.sqrt((res ** 2).mean() / max((fit ** 2).mean(), 1e-30))
 
 
+def hann_level(y, f, n0, n):
+    """Amplitude of the component at f in y[n0:n0+n], Hann-windowed single-bin
+    DFT.  A least-squares sine fit over a short window is a rectangular window:
+    a loud low-frequency neighbour leaks into it."""
+    seg = y[n0:n0 + n]
+    w = np.hanning(n)
+    t = np.arange(n0, n0 + n)
+    return 2 * abs((seg * w * np.exp(-2j * np.pi * f * t / FS)).sum()) / w.sum()
+
+
 def dB(a):
     return 20 * np.log10(max(a, 1e-30))
 
@@ -144,15 +167,19 @@ def dB(a):
 # ----------------------------------------------------------------------------
 
 def calib():
-    print("THD at the reference level: 997 Hz, -15 dBFS peak (-18 dBFS RMS),")
-    print("default patch (Trim 20 %, Drive 40 %), shipped build, wow & flutter on")
+    print("THD at the reference level: 997 Hz, -15 dBFS peak (-18 dBFS RMS), Trim 0 %")
+    print("(so that level reaches the tape), Drive 40 %, wow & flutter off")
     spec = {0: "1.5 %", 1: "1.0 % (424 MkII)", 2: "1.3 %", 4: "-"}
-    jobs = [dict(nc=False, nowf=0, secs=4, model=m, dbx=d, f1=997, a1=-15)
-            for d in (0, 2) for m in (0, 1, 2, 4)]
+    jobs = [dict(nc=False, trim=0, model=m, dbx=d, f1=997, a1=-15)
+            for d in (2, 0) for m in (0, 1, 2, 4)]
     out = iter(render_many(jobs))
-    for d in (0, 2):
+    for d in (2, 0):
         for m in (0, 1, 2, 4):
-            r = analyse(next(out), 997)
+            x = next(out)
+            if x is None:
+                print(f"  dbx {DBX[d]:7s} {MODELS[m]:6s}: n/a")
+                continue
+            r = analyse(x, 997)
             print(f"  dbx {DBX[d]:7s} {MODELS[m]:6s}: THD {r['thd']:5.2f} %  "
                   f"(H2 {r['h2']:6.1f}, H3 {r['h3']:6.1f} dBc)   published {spec[m]}")
 
@@ -167,6 +194,9 @@ def onset(models=(0, 4)):
     levels = np.arange(-36, 9.1, 1.5)
     for m in models:
         for d in (2, 0):
+            if render(model=m, dbx=d, f1=997, a1=-40, secs=0.1) is None:
+                print(f"  {MODELS[m]:6s} dbx {DBX[d]:6s}: n/a")
+                continue
             # The small-signal reference sits inside the compander's 2:1 range
             # (above -42 dBFS RMS): below it the gain clamps and the decoder
             # stops doubling the tape's response, which would read as a level
@@ -198,6 +228,19 @@ def alias():
         w = r["worst_alias"]
         print(f"  dbx {DBX[d]:6s} Drive {drive:3d} %: H{w[1]} -> {w[2]:6.0f} Hz at {w[0]:6.1f} dBc "
               f"(all aliases {r['alias']:6.1f} dBc)")
+    print("Top-octave tones at -24 dBFS peak, default patch: everything the unit puts")
+    print("between 100 Hz and 19 kHz other than the tone itself (dBFS, as a sine's peak)")
+    for f in (14983, 16993, 19997, 21503):
+        cells = []
+        for d in (0, 2):
+            x = render(model=0, dbx=d, f1=f, a1=-24)
+            P, _ = spectrum(x)
+            fr = np.arange(len(P)) * FS / NFFT
+            _, lo, hi = band(P, f)
+            sel = (fr >= 100) & (fr <= 19000)
+            sel[lo:hi] = False
+            cells.append(f"dbx {DBX[d]} {dB(amplitude(P[sel].sum())):6.1f}")
+        print(f"  {f:5d} Hz: " + "  ".join(cells))
 
 
 def track():
@@ -214,30 +257,34 @@ def track():
 
 
 def burst():
-    print("997 Hz burst at -6 dBFS peak after 1 s of silence, T-244, default patch.")
-    print("Level and THD+N in 2 ms windows, against the steady state.")
+    print("997 Hz burst at -15 dBFS peak (the reference level) after 1 s of silence,")
+    print("T-244, default patch.  Level and THD+N in 2 ms windows, against the steady state.")
+    lat = 4   # the oversamplers' latency, so the 0 ms window starts on the tone
     for d in (2, 0):
-        y = render(model=0, dbx=d, f1=997, a1=-6, start=1.0, secs=2)
-        ss, ss_t = sine_fit(y, 997, 48000 + 24000, 384)
+        y = render(model=0, dbx=d, f1=997, a1=-15, start=1.0, secs=3)
+        ss, ss_t = sine_fit(y, 997, 48000 + 2 * 48000 - 384, 384)
         rows = []
-        for ms in (0, 2, 4, 8, 16, 32):
-            a, t = sine_fit(y, 997, 48000 + ms * 48, 96)
-            rows.append(f"{ms:2d} ms {dB(a / ss):+6.2f} dB {t:5.1f} %")
-        print(f"  dbx {DBX[d]:6s} (steady THD+N {ss_t:4.1f} %): " + " | ".join(rows))
+        for ms in (0, 2, 4, 8, 16, 32, 64, 128, 256):
+            a, t = sine_fit(y, 997, 48000 + lat + ms * 48, 96)
+            rows.append(f"{ms:3d} ms {dB(a / ss):+6.2f}")
+        print(f"  dbx {DBX[d]:6s} (steady THD+N {ss_t:4.1f} %): " + " |".join(rows))
 
 
 def pump():
-    print("Kicks (55 Hz, -6 dBFS peak, 80 ms decay, every 500 ms) over a steady 8 kHz tone")
-    print("at -36 dBFS, T-244, default patch: how far the 8 kHz tone moves with each kick.")
+    print("Kicks (55 Hz, -6 dBFS peak, 80 ms decay, every 500 ms) under a steady 8 kHz tone")
+    print("at -36 dBFS, T-244, default patch, shipped build.  The tone is isolated as")
+    print("(kicks + tone) - (kicks alone), measured in 5 ms Hann windows, and compared")
+    print("with the tone alone: how far each kick pushes it down (dip) and up (swell).")
+    n = 240
     for d in (2, 0):
-        y = render(model=d and 0, dbx=d, f1=55, a1=-6, hit=0.5, tau=0.08, f2=8000, a2=-36, secs=4)
-        lv = []
-        for n0 in range(2 * FS, 4 * FS - 240, 240):          # 5 ms windows over 2 s
-            lv.append(dB(sine_fit(y, 8000, n0, 240)[0]))
-        lv = np.array(lv)
-        ref = dB(10 ** (-36 / 20))
-        print(f"  dbx {DBX[d]:6s}: 8 kHz level {lv.min() - ref:+6.2f} .. {lv.max() - ref:+6.2f} dB re input "
-              f"(swing {lv.max() - lv.min():5.2f} dB)")
+        kt, k, t = render_many([
+            dict(nc=False, model=0, dbx=d, f1=55, a1=-6, hit=0.5, tau=0.08, f2=8000, a2=-36, secs=4),
+            dict(nc=False, model=0, dbx=d, f1=55, a1=-6, hit=0.5, tau=0.08, secs=4),
+            dict(nc=False, model=0, dbx=d, f1=0, f2=8000, a2=-36, secs=4)])
+        tone = kt - k
+        ref = np.median([dB(hann_level(t, 8000, n0, n)) for n0 in range(2 * FS, 4 * FS - n, n)])
+        lv = np.array([dB(hann_level(tone, 8000, n0, n)) for n0 in range(2 * FS, 4 * FS - n, n)])
+        print(f"  dbx {DBX[d]:6s}: dip {ref - lv.min():5.2f} dB, swell {lv.max() - ref:5.2f} dB")
 
 
 def modes():
@@ -251,7 +298,8 @@ def modes():
     for d in (2, 1, 3):
         for L in levels:
             for f in freqs:
-                amp[d, L, f] = dB(analyse(next(res), f)["amp"])
+                x = next(res)
+                amp[d, L, f] = dB(analyse(x, f)["amp"]) if x is not None else float("nan")
     print("  input  |  EncOnly: 100 Hz  1 kHz  10 kHz |  DecOnly: 100 Hz  1 kHz  10 kHz")
     for L in levels:
         e = [amp[1, L, f] - amp[2, L, f] for f in freqs]
@@ -287,6 +335,9 @@ def xtalk():
         for xt in (1, 5):
             for f in (1000, 10000):
                 d, b = next(res), next(res)
+                if d is None or b is None:
+                    cells.append(f"X-talk {xt} {f // 1000:2d} kHz   n/a")
+                    continue
                 sep = dB(sine_fit(d, f, len(d) - 48000, 48000)[0]) - dB(sine_fit(b, f, len(b) - 48000, 48000)[0])
                 cells.append(f"X-talk {xt} {f // 1000:2d} kHz {sep:5.1f} dB")
         print(f"  {MODELS[m]:6s}: " + " | ".join(cells))
@@ -300,7 +351,11 @@ def noise():
     for m in (0, 1, 2, 4):
         cells = []
         for d in (0, 2):
-            x = next(res)[-NFFT:]
+            x = next(res)
+            if x is None:
+                cells.append(f"dbx {DBX[d]}    n/a")
+                continue
+            x = x[-NFFT:]
             X = np.fft.rfft(x * np.hanning(len(x)))
             fr = np.fft.rfftfreq(len(x), 1 / FS)
             P = np.abs(X) ** 2 / (np.hanning(len(x)) ** 2).sum() * 2 / len(x)
@@ -314,6 +369,9 @@ def table():
     for m in (0, 1, 2, 3, 4):
         lo = render(model=m, dbx=2, drive=0, f1=997, a1=-30)
         hi = render(model=m, dbx=2, drive=0, f1=14000, a1=-30)
+        if lo is None:
+            print(f"  {MODELS[m]:6s}: n/a")
+            continue
         r14 = dB(analyse(hi, 14000)["amp"]) - dB(analyse(lo, 997)["amp"])
         # wow & flutter: instantaneous frequency of a 3150 Hz tone, unweighted
         # -40 dBFS: at higher levels the tone's own distortion products
@@ -332,8 +390,29 @@ def table():
               f"RMS {dev.std():5.0f} ppm (unweighted)")
 
 
+def unity():
+    print("Level with dbx Active against Off, 997 Hz, Drive 0 %, Trim 0 %: the tape runs at")
+    print("unity inside the compander, so a quiet tone should come back where it went in")
+    levels = (-40, -30, -15)
+    for m in (0, 1, 2, 3, 4):
+        for age in (10, 100):
+            res = render_many([dict(model=m, dbx=d, drive=0, trim=0, age=age, f1=997, a1=L)
+                               for L in levels for d in (0, 2)])
+            if res[0] is None:
+                print(f"  {MODELS[m]:6s} Age {age:3d} %: n/a")
+                break
+            it = iter(res)
+            cells = []
+            for L in levels:
+                a, o = next(it), next(it)
+                diff = dB(sine_fit(a, 997, len(a) - 48000, 48000)[0]) - dB(sine_fit(o, 997, len(o) - 48000, 48000)[0])
+                cells.append(f"{L} dBFS {diff:+5.2f} dB")
+            print(f"  {MODELS[m]:6s} Age {age:3d} %: " + " | ".join(cells))
+
+
 def response():
-    print("Small-signal frequency response (dB re 1 kHz), T-244, Drive 40 %, Trim 0 %")
+    print("Frequency response (dB re 1 kHz), T-244, Drive 40 %, Trim 0 %: at -15 dBFS the")
+    print("treble is large-signal; at -45 dBFS the compander sits on its gain limits")
     freqs = (40, 61, 100, 211, 1000, 5000, 10000, 14000, 16000)
     for d in (2, 0):
         for L in (-15, -45):
@@ -345,7 +424,7 @@ def response():
 
 TESTS = dict(calib=calib, onset=onset, alias=alias, track=track, burst=burst, modes=modes,
              console=console, xtalk=xtalk, noise=noise, table=table, pump=pump,
-             response=response)
+             response=response, unity=unity)
 
 
 def main(argv):
