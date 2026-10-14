@@ -87,10 +87,10 @@ noise xtalk`; Hiss 15 % for the noise floor):
 
 | model | 14 kHz re 1 kHz | noise floor | separation @ 1 kHz, X-talk 1 | W&F (RMS, unweighted) |
 | --- | --- | --- | --- | --- |
-| T-244 | −4.3 dB | −55.7 dBFS | 53.6 dB | 2453 ppm |
+| T-244 | −4.2 dB | −55.7 dBFS | 53.6 dB | 2453 ppm |
 | T-424 | −2.1 dB | −58.4 dBFS | 55.0 dB | 2026 ppm |
-| T-488 | −4.3 dB | −52.6 dBFS | 50.0 dB | 1619 ppm |
-| T-424N | −11.4 dB | −57.4 dBFS | 55.0 dB | 2469 ppm |
+| T-488 | −4.2 dB | −52.6 dBFS | 50.0 dB | 1619 ppm |
+| T-424N | −11.3 dB | −57.4 dBFS | 55.0 dB | 2460 ppm |
 | Vinyl | −7.2 dB | — | — | — |
 
 The bandwidth spread is deliberately small, because the real machines' is.
@@ -110,31 +110,36 @@ Cassette saturation has three properties this unit models, measured with
 **It is mostly third harmonic, and it comes on gradually.**  The saturator is
 a rational fit to tanh (within 0.5 % of it): odd harmonics only, the third
 rising 2 dB per dB of level, about 5 dB from 1 % to the 3 % that defines a
-tape's maximum output level.  Calibrated at the compander's reference level
-(997 Hz, −18 dBFS RMS, the default patch):
+tape's maximum output level.  THD of the tape at the reference level (997 Hz,
+−18 dBFS RMS reaching the tape, i.e. Trim 0 %; Drive 40 %, the default):
 
-| | measured THD | published THD |
-| --- | --- | --- |
-| T-244 | 1.41 % | 1.5 % |
-| T-424 | 0.95 % | 1.0 % (424 MkII) |
-| T-488 | 1.20 % | 1.3 % |
+| | tape (dbx Off) | dbx Active | published THD |
+| --- | --- | --- | --- |
+| T-244 | 1.53 % | 1.09 % | 1.5 % |
+| T-424 | 1.00 % | 0.71 % | 1.0 % (424 MkII) |
+| T-488 | 1.25 % | 0.89 % | 1.3 % |
+
+With dbx the third harmonic comes out lower: it is made on tape from a
+pre-emphasised signal and then goes through the de-emphasis.  The default
+Trim (20 %) adds 3 dB on the way in, so a −18 dBFS RMS input reaches the tape
+at −15.
 
 **It runs out of treble first.**  On Type II tape at 4.76 cm/s the 10 kHz
 saturation level sits about 16 dB below the 400 Hz maximum output level.  The
 deck's record EQ boosts the treble into the tape and its playback EQ takes it
 out again; a quiet signal comes back flat, a loud one with its treble
 squashed.  The unit does the same with a first-order pre-emphasis around the
-saturator: about +9 dB at 10 kHz at HIGH speed (a 10 kHz wavelength at 9.5 cm/s
-is a 5 kHz one at 4.76 cm/s, which roughly halves the gap), +15 dB on the
-T-424N.  Input level at which each tone is compressed by 1 dB (T-244, Drive
+saturator: about +10 dB at 10 kHz at HIGH speed (a 10 kHz wavelength at 9.5
+cm/s is a 5 kHz one at 4.76 cm/s, which roughly halves the gap), +16 dB on the
+T-424N, levelling off at +16 / +22 dB.  Input level at which each tone is compressed by 1 dB (T-244, Drive
 40 %, Trim 0 %):
 
 | | 61 Hz | 211 Hz | 997 Hz | 4993 Hz | 9973 Hz |
 | --- | --- | --- | --- | --- | --- |
 | before, dbx Off | −14.6 | −11.8 | −11.7 | −11.7 | −11.7 |
-| now, dbx Off | −11.6 | −11.7 | −12.0 | −17.0 | −22.6 |
-| now, dbx Active | −13.2 | −12.6 | −13.3 | −24.4 | −32.2 |
-| now, T-424N, dbx Off | −9.7 | −9.8 | −11.1 | −20.1 | −26.2 |
+| now, dbx Off | −11.6 | −11.7 | −12.0 | −16.8 | −21.6 |
+| now, dbx Active | −13.2 | −12.6 | −13.3 | −24.0 | −31.5 |
+| now, T-424N, dbx Off | −9.7 | −9.8 | −11.1 | −19.9 | −25.3 |
 
 The old unit saturated every frequency at the same level except the bass,
 which went *first*: the head bump sat in front of the saturator and drove the
@@ -151,13 +156,29 @@ IIR halfband filters (`halfband.h`).  Strongest inharmonic product of a
 
 | | before | now |
 | --- | --- | --- |
-| dbx Active, Drive 40 % | −39.7 dBc | −60.2 dBc |
-| dbx Off, Drive 40 % | −36.6 dBc | −63.4 dBc |
-| dbx Active, Drive 100 % | −14.4 dBc | −16.2 dBc |
+| dbx Active, Drive 40 % | −39.7 dBc | −65.4 dBc |
+| dbx Off, Drive 40 % | −36.6 dBc | −70.2 dBc |
+| dbx Active, Drive 100 % | −14.4 dBc | −18.4 dBc |
 
 Drive 100 % with a loud treble tone is still a fuzz box: the pre-emphasis puts
 that tone 30 dB past the knee, the saturator returns something close to a
 square wave, and its 19th harmonic folds back even at 4x.
+
+Everything the unit adds between 100 Hz and 19 kHz to a top-octave tone at
+−24 dBFS peak, default patch (dBFS):
+
+| | before, dbx Active | now, dbx Active | before, dbx Off | now, dbx Off |
+| --- | --- | --- | --- | --- |
+| 14983 Hz | −49.5 | −77.6 | −61.9 | −94.1 |
+| 16993 Hz | −49.3 | −65.6 | −61.9 | −85.1 |
+| 19997 Hz | −55.1 | −62.7 | −63.7 | −96.6 |
+| 21503 Hz | −62.2 | −46.2 | −70.7 | −86.8 |
+
+The one row that got worse is an isolated tone above 20 kHz with dbx Active.
+The encoder's detector is band-limited to 10 kHz, as Type II's is, so it
+barely hears such a tone and gives it the full +12 dB; the record EQ adds 16,
+and the result is driven hard enough to fold at 192 kHz.  Real programme
+material always has something below 10 kHz to set the gain.
 
 ## Console
 
@@ -180,8 +201,10 @@ mixer's 20 kHz bandwidth, then the EQ.
 | 70 % | +21 dB | 6.0 % | −37 dBc |
 | 100 % | +30 dB | 31 % | −18 dBc |
 
-Below about 65 % what you hear is the tape getting a hotter signal; above it,
-the console.  The clip runs at 4x too.
+Below about 65 % what you hear on this tone is the tape getting a hotter
+signal; above it, the console.  At the default 20 % the console starts to
+round off input peaks above about −3 dBFS.  The clip runs at 4x too, and a
+5 kHz tone at full Trim leaves its worst alias at −61 dBc.
 
 ## Noise
 
@@ -210,15 +233,19 @@ Modelled as a real compander rather than as a compressor bolted on:
   power makes the detector chase the ripple of a bass note and modulate its
   own gain at twice the note frequency.
 * **Gain computer** — `gain = (env / ref)^(-1/2)` of the compressed signal's
-  power, which in steady state is a true 2:1 in dB, referenced to −18 dBFS RMS
-  rather than to full scale. Referencing to 0 dBFS means any realistic
-  master-bus level asks for more than the encode ceiling, which turns the
-  "compressor" into a fixed boost.
+  power, which in steady state is a true 2:1 in dB, referenced to a nominal
+  −18 dBFS RMS rather than to full scale. Referencing to 0 dBFS means any
+  realistic master-bus level asks for more than the encode ceiling, which
+  turns the "compressor" into a fixed boost.  (The detector sums L and R, so
+  for a centred source the unity point sits nearer −19.5 dBFS RMS per channel.)
 * **Ballistics** — Attack/Release smooth the *gain*, serially per sample, in
   both halves alike.
 * **Calibration** — the tape between them runs at unity gain for a quiet
   signal, as a calibrated deck does; Drive's make-up is applied after the
-  decoder.  Otherwise the decoder would double it.
+  decoder.  Otherwise the decoder would double it.  Vinyl's shaper, whose
+  slope at the groove-wear bias is below one, divides that slope out inside
+  the loop and gets it back after the decoder (`test/run.sh unity`: every
+  model within 0.06 dB for a quiet tone, vinyl within 0.2 dB).
 
 ### What the decoder does with the tape
 
@@ -228,17 +255,19 @@ its own (997 Hz, T-244, Drive 40 %):
 
 | THD | compression, dbx Off | compression, dbx Active |
 | --- | --- | --- |
-| 1.5 % | 0.53 dB | 1.17 dB |
-| 2.8 % | 1.00 dB | 2.27 dB |
-| 4.9 % | 1.82 dB | 4.15 dB |
+| 1.5 % | 0.52 dB | 1.16 dB |
+| 2.8 % | 0.99 dB | 2.26 dB |
+| 5 % | 1.82 dB | 4.15 dB |
 
 The same goes for the tape's frequency response: with dbx Active the head
 bump is about +3.6 dB at 61 Hz (+1.6 dB with dbx Off), and the treble a loud
 signal loses on tape it loses twice.  That is why the head bump in the machine
-table is half what it was: with dbx Active the bump is where it used to be.
+table is half what it was: on a tone, with dbx Active, the bump is where it
+used to be.  On programme, bass near the bump also lifts the decoder's gain
+for everything else (+1.7 dB on a 1 kHz tone under a −12 dBFS 61 Hz one, Drive 0 %).
 
-Two consequences are audible, and both are real dbx behaviour rather than
-side effects of the model:
+Two consequences are audible.  The mechanism of both is real dbx mistracking;
+how long the first one lasts here is the unit's Release setting:
 
 * **Transients after silence.**  The encoder's gain rises to its +12 dB limit
   on silence, so the first milliseconds of a hit reach the tape hot and
@@ -247,9 +276,12 @@ side effects of the model:
   2.5 dB and recovers over the Release time (−1.1 dB at 128 ms; the old unit
   recovered in 16 ms).  Lower Drive or a shorter Release shrinks it.
 * **Pumping.**  A kick that saturates the tape moves everything else with it.
-  With 55 Hz kicks at −6 dBFS peak over a −36 dBFS 8 kHz tone, the 8 kHz tone
-  dips up to 5.7 dB with dbx Active, 2.6 dB with dbx Off (the tape's own
-  cross-modulation) and 2.3 dB in the old unit.
+  55 Hz kicks at −6 dBFS peak over a −36 dBFS 8 kHz tone, default patch: the
+  8 kHz tone dips 15.0 dB with dbx Off (the tape's own cross-modulation) and
+  17.3 dB with dbx Active, then swells 2 dB for a few hundred milliseconds as
+  the decoder follows the kick down.  The old unit dipped 22.3 dB (Off) and
+  19.4 dB (Active), mostly because its head bump drove the kick harder into
+  saturation; the new one pumps less either way.
 
 ### Modes
 
@@ -267,8 +299,8 @@ Drive 0 %):
 | input | EncOnly 1 kHz | EncOnly 10 kHz | DecOnly 1 kHz | DecOnly 10 kHz |
 | --- | --- | --- | --- | --- |
 | −45 dBFS | +6.2 dB | +11.7 dB | −6.2 dB | −11.7 dB |
-| −15 dBFS | −0.7 dB | +2.2 dB | +1.3 dB | −7.3 dB |
-| −3 dBFS | −5.1 dB | −0.1 dB | +5.9 dB | −1.2 dB |
+| −15 dBFS | −0.7 dB | +2.3 dB | +1.3 dB | −7.1 dB |
+| −3 dBFS | −5.1 dB | −0.1 dB | +5.9 dB | −0.4 dB |
 
 Heard on their own, both halves are limited to ±6 dB of gain (±12 dB when
 they run as a pair); a real encoder's range is much wider, which is what makes
@@ -300,9 +332,9 @@ trace with the parser reading every instruction of each translated block:
 
 | | before | now |
 | --- | --- | --- |
-| dbx Active (default) | 22.6k | 46.9k |
-| dbx Off | 17.7k | 36.9k |
-| Vinyl, dbx Off | 19.9k | 36.3k |
+| dbx Active (default) | 22.6k | 47.2k |
+| dbx Off | 17.7k | 37.3k |
+| Vinyl, dbx Off | 19.9k | 36.9k |
 
 Of the 24k added in the default patch, the two 4x oversamplers take about 14k,
 the compander's second detector and the control-path filters about 5k, and the
@@ -310,7 +342,7 @@ record/playback EQ, the mixer band-limit and the stage calls the rest.  The
 oversampled stages and the compander are out of line: inlined into
 `ProcessQuad`, the oversamplers' state spilled to the stack around every
 allpass section and cost twice as much.  The deepest call chain uses about
-540 bytes of stack (`ProcessQuad` 240 + the tape stage 296).
+580 bytes of stack (`ProcessQuad` 256 + the tape stage 320).
 
 **Input channels.** A drumlogue master effect receives four input channels
 per frame: main L, main R, sidechain L, sidechain R.  This unit used to read
@@ -337,7 +369,9 @@ gated start, a train of kick-like hits, one channel only for crosstalk);
 `measure.py` analyses them.  Tone tests run with wow & flutter switched off and
 through a build whose output ceiling is out of reach
 (`-DPC_CEILING_KNEE_OVERRIDE`), so they describe the tape rather than the
-limiter behind it.
+limiter behind it.  Measured against an older copy of the sources, rows for a
+model or dbx mode it does not have print `n/a`, and if it predates the
+ceiling hook `run.sh` says so and measures with the ceiling in.
 
 ## Sources
 

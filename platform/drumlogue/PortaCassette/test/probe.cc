@@ -23,7 +23,10 @@
  *   nowf         1 = wow & flutter off, for clean spectra
  *   stride       input channels per frame, 2 or 4 (default 2)
  *
- * Writes the chosen output channel as raw float32.
+ * Writes the chosen output channel as raw float32.  Exits with status 3 if
+ * the unit does not have the requested model or dbx mode (an older copy of
+ * the sources clamps them), so measure.py can say so instead of measuring
+ * the wrong thing.
  */
 #include <atomic>
 #include <cmath>
@@ -39,6 +42,12 @@
 #define private public
 #include "PortaCassette.h"
 #undef private
+
+#ifdef PC_CEILING_KNEE_OVERRIDE
+// run.sh falls back to the shipped build when the sources predate the hook.
+static_assert(PortaCassette::kCeilingKnee == PC_CEILING_KNEE_OVERRIDE,
+              "these sources ignore PC_CEILING_KNEE_OVERRIDE");
+#endif
 
 static PortaCassette s_pc;
 
@@ -92,6 +101,11 @@ int main(int argc, char** argv) {
     d.output_channels = 2;
     if (s_pc.Init(&d) != k_unit_err_none) { fprintf(stderr, "init failed\n"); return 1; }
     for (int i = 0; i < PortaCassette::k_num_params; ++i) s_pc.SetParameter((uint8_t)i, prm[i]);
+    if (s_pc.model_ != prm[PortaCassette::k_param_model] || s_pc.dbx_mode_ != prm[PortaCassette::k_param_dbx]) {
+        fprintf(stderr, "model %d / dbx %d not supported by these sources\n",
+                (int)prm[PortaCassette::k_param_model], (int)prm[PortaCassette::k_param_dbx]);
+        return 3;
+    }
     s_pc.Reset();   // lands the smoothed parameters on their targets
 
     const uint32_t N = 64;

@@ -25,10 +25,17 @@ command -v "$QEMU" >/dev/null || { echo "missing qemu-arm (apt-get install qemu-
 FLAGS="-O2 -march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4 -std=gnu++14
        -fno-math-errno -Wno-psabi -D__ARM_NEON__ -DARM_NEON_OPTIMIZATION -I$SRC -I$COMMON"
 
-BUILD="$HERE/build/$(printf '%s' "$SRC" | cksum | cut -d' ' -f1)"
-mkdir -p "$BUILD"
-"$CXX" $FLAGS -static -o "$BUILD/probe"    "$HERE/probe.cc" -lm
-"$CXX" $FLAGS -static -o "$BUILD/probe_nc" "$HERE/probe.cc" -lm -DPC_CEILING_KNEE_OVERRIDE=1000.0f
+# A private build directory per run, so concurrent runs cannot overwrite each
+# other's probes.
+mkdir -p "$HERE/build"
+BUILD="$(mktemp -d "$HERE/build/run.XXXXXX")"
+trap 'rm -rf "$BUILD"' EXIT
+"$CXX" $FLAGS -static -o "$BUILD/probe" "$HERE/probe.cc" -lm
+if ! "$CXX" $FLAGS -static -o "$BUILD/probe_nc" "$HERE/probe.cc" -lm \
+        -DPC_CEILING_KNEE_OVERRIDE=1000.0f 2>/dev/null; then
+  echo "warning: $SRC predates PC_CEILING_KNEE_OVERRIDE; tone tests include the output ceiling" >&2
+  cp "$BUILD/probe" "$BUILD/probe_nc"
+fi
 
 export QEMU PROBE="$BUILD/probe" PROBE_NC="$BUILD/probe_nc"
-exec python3 "$HERE/measure.py" "$@"
+python3 "$HERE/measure.py" "$@"
