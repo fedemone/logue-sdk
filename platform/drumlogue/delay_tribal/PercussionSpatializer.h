@@ -77,9 +77,13 @@ typedef struct {
     float scatter_samples;  // Per-hit random delay offset
     float pan_gain_l;       // Panning gain (left), HP attenuation baked in
     float pan_gain_r;       // Panning gain (right), HP attenuation baked in
-    float hp_attn;          // HP attenuation factor, kept so Angel mode can
-                            // re-place clones per hit without recomputing the
-                            // filter frequencies
+    float hp_attn;          // HP attenuation factor, kept so Tribal and Angel
+                            // can re-place clones per hit without recomputing
+                            // the filter frequencies
+    float pan_rand;         // Per-hit placement draw in [-1, 1], made only in
+                            // randomize_hit() so a knob move never re-rolls the
+                            // layout.  Tribal: sway along the ring.  Angel: the
+                            // voice's position itself.  Military: unused.
     float base_gain;        // Base gain before accentuation and softening
 
     float wobble_phase;
@@ -170,10 +174,9 @@ public:
     static constexpr uint32_t kSmoothBlocks = 120;
 
     void rebuild_profile();
-    // recompute_trim: recompute the L/R balance factors from the new layout
-    // (parameter rebuilds), or reuse the stored ones (Angel's per-hit
-    // re-placement, where re-trimming every hit would force each hit to centre
-    // and cancel the mode's random spatial movement).
+    // recompute_trim: recompute the L/R balance factors (parameter rebuilds),
+    // or keep them (per-hit re-placement, where re-trimming would drag every
+    // hit back to centre and cancel the movement the placement exists for).
     void place_clones(bool recompute_trim);
     void randomize_hit();
     void update_clone_dynamics();
@@ -217,7 +220,7 @@ private:
     alignas(16) float lp_coefs_[kMaxClones];
 
     float trim_l_ = 1.0f;       // L/R balance factors, recomputed on rebuild
-    float trim_r_ = 1.0f;       // and reused across Angel's per-hit placement
+    float trim_r_ = 1.0f;       // and reused across per-hit placement
     float clone_norm_ = 1.0f;   // 1/sqrt(sum of clone gain^2): keeps the wet
                                 // sum near unity power as clones are added
     uint32_t smoothing_remaining_ = 0;
