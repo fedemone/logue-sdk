@@ -22,10 +22,6 @@ constexpr float kScatterMsFull = 8.3f;
 // keeps its transient; followers roll off toward lp_base * 0.5.
 constexpr float kLeaderLpHz = 15000.0f;
 
-// How fast the L/R balance trim eases toward centre on Angel's per-hit
-// re-placement.  Slow enough that individual hits keep their own offset.
-constexpr float kTrimAdapt = 0.05f;
-
 // Transient detector.  The fast envelope falls quickly enough to sit close to
 // the stroke, the slow one holds the floor across a decaying tail, and the
 // refractory window is a little under the shortest musically useful spacing.
@@ -130,6 +126,7 @@ void PercussionSpatializer::Reset() {
 
     rebuild_profile();
     randomize_hit();
+    update_clone_dynamics();   // net gains pick up the first hit's draws
 }
 
 // ---------------------------------------------------------------------------
@@ -414,8 +411,22 @@ void PercussionSpatializer::rebuild_profile() {
 // ---------------------------------------------------------------------------
 // place_clones — pan placement for every clone, plus an L/R balance trim.
 //
-// Called from rebuild_profile(), and additionally from randomize_hit() in
-// Angel mode, where the placement is meant to be re-scattered on every hit.
+//   Tribal    players evenly spaced around a ring.  Stereo carries only the
+//             lateral component, so seat k sits at sin(theta_k) with the
+//             angles evenly spaced over -90..+90 degrees.  Each hit, Scatter
+//             sways the players along the ring by at most half the angle to
+//             the next seat, so the ring keeps its shape and its order.
+//   Military  a row across the front: evenly spaced positions, no random
+//             offset at all, so the line never breaks rank.
+//   Angel     every voice gets a fresh random position on every hit: a random
+//             seat, then a uniform offset within it.  Each voice is uniform
+//             over the width, and every hit still covers the width rather
+//             than clumping on one side.
+//
+// Called from rebuild_profile(), and from randomize_hit() for Tribal and
+// Angel, whose placement moves per hit.  The random draws themselves are made
+// only in randomize_hit() (clone_t::pan_rand); this function is deterministic,
+// so moving an unrelated knob no longer re-rolls the layout.
 // ---------------------------------------------------------------------------
 
 // Seat assignment: which of the evenly spaced stereo positions the i-th clone
@@ -431,47 +442,64 @@ static fast_inline int centre_out_seat(int i, int n) {
     return (i & 1) ? (half + rank) : (half - 1 - rank);
 }
 
+// Constant-power pan pair for position px in [-1, 1], warped by the mode's
+// exponent.
+static fast_inline void pan_pair(float px, float exponent, float& gl, float& gr) {
+    const float a  = 0.5f * (px + 1.0f);
+    const float pl = fasterpowf(1.0f - a, exponent);
+    const float pr = fasterpowf(a, exponent);
+    // pn normalizes the pair so the sum-of-squares is 1; divide (not multiply).
+    // Multiplying by pn inverts the normalization — 4.7 dB deficit at center.
+    const float pn     = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
+    const float inv_pn = 1.0f / (pn + 1e-20f);
+    gl = pl * inv_pn;
+    gr = pr * inv_pn;
+}
+
 void PercussionSpatializer::place_clones(bool recompute_trim) {
-    const float inv_cnt1 = 1.0f / (float)(clone_count_ > 1 ? clone_count_ - 1 : 1);
+    const int   n        = clone_count_;
+    const float inv_cnt1 = 1.0f / (float)(n > 1 ? n - 1 : 1);
+    // Tribal's sway: each player strays up to Scatter x half the angle to its
+    // neighbour (pi/(n-1) apart), so at Scatter=100 two neighbours can at most
+    // meet halfway and never swap places.  Every player gets the same bound.
+    // The random offsets this replaces were scaled by the seat — its
+    // left-to-right position — so the leftmost player barely moved and the
+    // rightmost moved five times as far, a lopsided image in every mode.
+    // Weighting by arrival order instead was tried and is inaudible: it
+    // freezes the loud central players, and the late ones sit at the ends of
+    // the ring, where sin() is flat (sd 0.01-0.02 at Scatter=45, 10 clones).
+    const float sway = 0.5f * (float)M_PI * inv_cnt1 * scatter_;
 
     float sum_l = 0.0f, sum_r = 0.0f;
 
-    for (int i = 0; i < clone_count_; ++i) {
-        const float seat = (float)centre_out_seat(i, clone_count_) * inv_cnt1;
+    for (int i = 0; i < n; ++i) {
+        // Seats are dealt by arrival order, outward from the centre.
+        const float seat = (float)centre_out_seat(i, n) * inv_cnt1;
 
-        float base_x = 0.0f;
+        float x, x_nominal;   // nominal: the formation without per-hit offsets
         switch (profile_.pan_model) {
             case PAN_MODEL_CIRCLE: {
-                float arc = seat * M_PI - 1.5707963f;
-                base_x = fastersinfullf(arc);
+                const float arc = seat * (float)M_PI - 1.5707963f;
+                x_nominal = fastersinfullf(arc);
+                // Swaying past an end seat folds back inward (sin is symmetric
+                // about +-90 degrees), which is what a ring does, so no clamp.
+                x = fastersinfullf(arc + clones_[i].pan_rand * sway);
                 break;
             }
             case PAN_MODEL_LINE:
-                base_x = seat * 2.0f - 1.0f;
+                x = x_nominal = seat * 2.0f - 1.0f;
                 break;
-            case PAN_MODEL_SCATTER: {
-                float center = seat * 2.0f - 1.0f;
-                float jit    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * profile_.scatter_amount;
-                base_x       = clampf(center + jit, -1.0f, 1.0f);
+            case PAN_MODEL_SCATTER:
+            default:
+                x = x_nominal = clones_[i].pan_rand;
                 break;
-            }
         }
-
-        const float scatter_shape = profile_.scatter_amount * (0.20f + 0.80f * seat);
-        const float random_off    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * scatter_shape;
 
         // Spread collapses the image toward the centre.  It used to scale the
         // pan gains directly, which made Spread=0 mute the wet path entirely
         // instead of collapsing it to mono.
-        const float px = clampf((base_x + random_off) * spread_, -1.0f, 1.0f);
-
-        const float a  = 0.5f * (px + 1.0f);
-        const float pl = fasterpowf(1.0f - a, profile_.pan_exponent);
-        const float pr = fasterpowf(a, profile_.pan_exponent);
-        // pn normalizes the pair so the sum-of-squares is 1; divide (not multiply).
-        // Multiplying by pn inverts the normalization — 4.7 dB deficit at center.
-        const float pn     = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
-        const float inv_pn = 1.0f / (pn + 1e-20f);
+        float gl, gr;
+        pan_pair(clampf(x * spread_, -1.0f, 1.0f), profile_.pan_exponent, gl, gr);
 
         // Filter makeup gain.  For y[n] = y[n-1] + a(x[n]-y[n-1]) and broadband
         // input the power gains are a/(2-a) for the lowpass and 2(1-a)^2/(2-a)
@@ -488,46 +516,59 @@ void PercussionSpatializer::place_clones(bool recompute_trim) {
         const float pw_r  = (mode_ == MODE_ANGEL) ? pw_hp : pw_lp;  // Angel highpasses R
 
         const float mk_l = 1.0f / my_sqrt_f(pw_lp + 1e-9f);
-        const float mk_r = 1.0f / my_sqrt_f(pw_r  + 1e-9f);
+        float       mk_r = 1.0f / my_sqrt_f(pw_r  + 1e-9f);
 
-        clones_[i].pan_gain_l = pl * inv_pn * mk_l * clones_[i].hp_attn;
-        clones_[i].pan_gain_r = pr * inv_pn * mk_r * clones_[i].hp_attn;
+        // The delay tap's linear interpolation is a lowpass of its own, and
+        // the power figures above assume it is not there.  Averaged over the
+        // fractional position, it passes (2 + rho1)/3 of a signal's power,
+        // rho1 being the lag-1 autocorrelation: 1 - a for the one-pole lowpass
+        // and -a/2 for its highpass.  The highpass therefore loses more —
+        // 1.4-1.7 dB more — which is the whole of the left lean Angel used to
+        // measure (+1.4 dB; -0.01 dB with interpolation switched off).  Only
+        // the R/L ratio is corrected, so L and the other modes keep their level.
+        if (mode_ == MODE_ANGEL)
+            mk_r *= my_sqrt_f((1.0f - lpa * (1.0f / 3.0f)) /
+                              ((2.0f / 3.0f) - lpa * (1.0f / 6.0f)));
 
-        // Balance weights use the filter power alone: the makeup gain is
-        // already inside pan_gain, so folding it in again would double-count it.
-        const float gl = clones_[i].base_gain * clones_[i].pan_gain_l;
-        const float gr = clones_[i].base_gain * clones_[i].pan_gain_r;
-        sum_l += gl * gl * pw_lp;
-        sum_r += gr * gr * pw_r;
+        clones_[i].pan_gain_l = gl * mk_l * clones_[i].hp_attn;
+        clones_[i].pan_gain_r = gr * mk_r * clones_[i].hp_attn;
+
+        if (recompute_trim) {
+            // The trim balances the formation, not one hit's sway of it, so it
+            // is taken from the nominal positions.  A channel's output power is
+            // gain^2 x filter power, and the makeup gain cancels the latter,
+            // leaving the clone's level and its pan.
+            if (x != x_nominal)
+                pan_pair(clampf(x_nominal * spread_, -1.0f, 1.0f),
+                         profile_.pan_exponent, gl, gr);
+            const float g = clones_[i].base_gain * clones_[i].hp_attn;
+            sum_l += g * g * gl * gl;
+            sum_r += g * g * gr * gr;
+        }
     }
 
     // Balance trim.  Seating alone cannot fully cancel the bias for every clone
     // count (at 2 clones there is no centre seat), so equalising total L/R
     // power guarantees a centred image for two multiplies per clone.
     //
-    // Recomputed only on rebuild.  Angel re-places its clones every hit, and
-    // re-deriving the trim each time would drag every individual hit back to
-    // centre — which is exactly the random spatial movement the mode exists to
-    // produce.  Reusing the rebuild's factors centres Angel on average while
-    // leaving each hit free to land where it fell.
-    if (sum_l > 1e-12f && sum_r > 1e-12f) {
-        const float mean = 0.5f * (sum_l + sum_r);
-        const float want_l = my_sqrt_f(mean / sum_l);
-        const float want_r = my_sqrt_f(mean / sum_r);
-        if (recompute_trim) {
-            trim_l_ = want_l;
-            trim_r_ = want_r;
-        } else {
-            // Angel's per-hit path: ease toward balance over many hits rather
-            // than snapping to it.  Snapping would cancel the hit-to-hit
-            // movement; a single rebuild-time value would instead lock in
-            // whichever random layout happened to be current, leaving the
-            // long-term image off-centre.
-            trim_l_ += (want_l - trim_l_) * kTrimAdapt;
-            trim_r_ += (want_r - trim_r_) * kTrimAdapt;
+    // Recomputed only on rebuild, and kept across per-hit re-placement:
+    // re-deriving it every hit would drag each hit back to centre, cancelling
+    // the very movement the per-hit placement exists to produce.
+    if (recompute_trim) {
+        if (profile_.pan_model == PAN_MODEL_SCATTER) {
+            // Angel has no formation to balance.  Every voice is equally likely
+            // to land anywhere, so the expected image is centred by symmetry,
+            // and a trim derived from whichever random layout happens to be
+            // current would only lock that one hit's lean in.
+            trim_l_ = 1.0f;
+            trim_r_ = 1.0f;
+        } else if (sum_l > 1e-12f && sum_r > 1e-12f) {
+            const float mean = 0.5f * (sum_l + sum_r);
+            trim_l_ = my_sqrt_f(mean / sum_l);
+            trim_r_ = my_sqrt_f(mean / sum_r);
         }
     }
-    for (int i = 0; i < clone_count_; ++i) {
+    for (int i = 0; i < n; ++i) {
         clones_[i].pan_gain_l *= trim_l_;
         clones_[i].pan_gain_r *= trim_r_;
     }
@@ -562,10 +603,30 @@ void PercussionSpatializer::randomize_hit() {
         clones_[i].precalculated_delay_base = fmaxf(2.0f, clones_[i].delay_samples + clones_[i].scatter_samples);
     }
 
-    // Angel scatters its players on every hit, per the mode's design.  The
-    // placement used to be computed only in rebuild_profile(), so it was
-    // frozen until a parameter changed and Angel sounded as static as Tribal.
-    if (mode_ == MODE_ANGEL) place_clones(false);
+    // Per-hit placement draws, consumed by place_clones().  They are made here
+    // and nowhere else: place_clones() used to draw its own offsets, so every
+    // rebuild — i.e. any knob move, Rate and Wobble included — re-rolled the
+    // whole Tribal and Military layout by up to a third of the stereo width.
+    if (mode_ == MODE_ANGEL) {
+        // A random seat per voice (Fisher-Yates over the n seats), then a
+        // uniform offset inside that seat's cell: each voice is uniform over
+        // [-1, 1), and every hit still covers the whole width.
+        int perm[kMaxClones];
+        for (int k = 0; k < clone_count_; ++k) perm[k] = k;
+        for (int k = clone_count_ - 1; k > 0; --k) {
+            const int j = (int)(xorshift_f32(rng_state_) * (float)(k + 1));
+            std::swap(perm[k], perm[j]);
+        }
+        const float cell = 2.0f / (float)clone_count_;
+        for (int i = 0; i < clone_count_; ++i)
+            clones_[i].pan_rand = -1.0f + ((float)perm[i] + xorshift_f32(rng_state_)) * cell;
+    } else {
+        for (int i = 0; i < clone_count_; ++i)
+            clones_[i].pan_rand = xorshift_f32(rng_state_) * 2.0f - 1.0f;
+    }
+
+    // Tribal sways and Angel re-scatters on every hit; Military holds its row.
+    if (mode_ != MODE_MILITARY) place_clones(false);
 
     // Humanize: Pick 1 or 2 random secondary clones to accent or damp
     if (clone_count_ > 2) {

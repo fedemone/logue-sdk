@@ -59,6 +59,10 @@ Per-hit stereo position over 40 hits:
 Tribal stays at sd 1.09 dB and Military at 0.65 dB, so the modes now differ
 audibly in how much the image moves.
 
+*Superseded* by "Panning against each mode's intent" below. Angel now places
+every voice at random, so there is no formation to trim. Its trim is 1, and it
+is centred by symmetry rather than by easing.
+
 ## Depth and Mix removed
 
 Both are fixed at 100% internally. Depth always uses the widest arrival spread;
@@ -87,13 +91,66 @@ below 0.9 and bends asymptotically to a ceiling of 1.0 (`y = th + h*u/(1+u)`,
 unity value and slope at the threshold). Measured worst-case output at maximum
 drive: 0.9932 — bounded, with nothing hard-clipping.
 
-### Known residual: Angel channel balance
+## Panning against each mode's intent (fixed)
 
-Angel splits the bands across channels — L lowpassed, R highpassed — so its
-balance is program-dependent and no fixed gain trim can centre it for every
-input. It measures +1.4 to +2.0 dB left on impulses. Tribal and Military are
-within ±0.4 dB at every clone count. If this matters, the fix is to make Angel
-dual-band *per clone* rather than per channel, which is a voicing change.
+Checked against what each mode is meant to be: Tribal a ring of players,
+Military a row across the front, Angel a random position per voice. Measured by
+reading every clone's pan gains after each hit, and by windowing each clone's
+own arrival in the output (`test_pan_formations()` locks all of it in).
+
+| Bug | Measured | Root cause | Fix |
+|-----|----------|-----------|-----|
+| **The layout re-rolled whenever a knob moved** | Rate 30 -> 31 moved a clone by up to 0.28 (Tribal), 0.35 (Military), 0.72 (Angel) on a -1..+1 scale | `place_clones()` drew its own random offsets, and it runs on every rebuild: any knob move, plus the end of every smoothing window | The draws moved to `randomize_hit()` (`clone_t::pan_rand`); `place_clones()` is deterministic. 0.0000 now |
+| **Random offsets were lopsided** | Scaled by 0.2 at the leftmost seat and 1.0 at the rightmost, so right players moved up to five times as far: over 400 rebuilds, Military's second seat from the left varied with sd 0.045 against 0.113 for its mirror | The weight was `seat` — the left-to-right position — where the arrival order was meant | Tribal's sway has one bound for every player; Angel's placement is symmetric by construction. Mirrored Tribal seats now sway within 1.27x of each other |
+| **Military broke rank** | Same offsets as Tribal (`0.08 + 0.55 x Scatter`, +-0.33 at the default) against a seat spacing of 0.22 at 10 clones: the row was out of order on 274 of 400 layouts at the default Scatter, 395 of 400 at Scatter=100 | One formula for both modes | No random offset in Military: the row is fixed and symmetric, 0 of 400 out of order |
+| **Tribal's ring was blurred, and never moved per hit** | Static offsets up to +-0.33 over the sin() spacing; zero movement between hits | As above | Exact ring positions, plus a per-hit sway along the ring of at most Scatter x half the angle to the neighbour: 0 neighbour swaps in 300 hits at Scatter=100, centre sway sd 0.11 |
+| **Angel was the row plus jitter** | Each voice stayed near its row seat: the outer voices sat on their own side on 60 of 60 hits, mean ILD up to 15 dB; at Scatter=100, 24% of voices were clamped hard to one side | Row seat + two random terms, each clamped to +-1 | A random seat, then a uniform offset inside it, per hit. Every voice now has mean 0 and sd 0.52-0.60 (0.577 is uniform), is left of centre on 23-36 of 60 hits, and none is clamped |
+| **Angel leaned left** (the old "known residual") | +1.4 to +1.6 dB on impulses, every clone count | The delay tap's linear interpolation is a lowpass the makeup gains ignored. Averaged over the fractional position it passes (2 + rho1)/3 of the power — `1 - a/3` for the lowpass, `2/3 - a/6` for the highpass — so Angel's highpassed R lost 1.4-1.7 dB more than L. With interpolation switched off the lean measured -0.01 dB | R's makeup carries that ratio (Angel only, so L and the other modes keep their level): +0.06 to +0.4 dB now, depending on Gap |
+
+The balance trim is still computed on rebuild from the nominal formation, and
+kept across the per-hit placement so it never drags a hit back to centre.
+Angel has no formation, and its expected image is centred by symmetry, so its
+trim is 1. Per-hit image movement (L/R sd over 300 hits, 4 / 10 clones,
+Scatter 45): Tribal 1.5 / 0.9 dB, Military 1.3 / 0.7 dB, Angel 3.3 / 3.6 dB. In
+the two fixed formations it comes from the per-hit level humanisation, not from
+pan.
+
+## Still open: where Angel's low end goes
+
+Angel lowpasses L and highpasses R, so wherever a voice is placed, its body
+comes out of the left speaker and its top out of the right. Measured by band
+(2 clones, Spread 100, 60 hits):
+
+| 40-200 Hz | 200-800 Hz | 0.8-3 kHz | 3-8 kHz | 8-20 kHz |
+|---|---|---|---|---|
+| +25 dB L | +20 dB L | +10 dB L | +2.4 dB L | -3.3 dB (R) |
+
+Tribal and Military are within +-0.8 dB in every band. So Angel's random
+placement only moves the top end and the level of each voice. The broadband
+balance is centred now, but that is an average over the bands. Fixing it is a
+voicing decision. Two candidates:
+
+- **The whole voice moves**: filter both channels alike and pan the voice as a
+  unit, with Angel's "air" as a per-voice highpass tilt. The voice keeps its
+  position at every frequency; the per-voice L/R spectral split goes away.
+- **The split follows the voice**: per voice and per hit, pick which channel
+  gets the lowpass (the body on the voice's own side, the air opposite). This
+  keeps the split's width, and the low end is spread across both sides.
+
+## Still open: a panned input pulls the formation to its side
+
+Clone gains act as a balance on the stereo input (L in -> L out, R in -> R
+out), not as a pan of the source. With a centred source that is the same
+thing. Moving the same source power hard right drops the outer left clone by
+13 dB (Tribal) to 17 dB (Military) at 4 clones and Spread 80, and the formation
+folds to the right. Feeding the clones from (L+R)/2 would put every clone on
+its seat whatever the source pan, and halve the delay-line reads. It would also stop the echoes of a panned part
+from leaning its way, so it is left as a choice.
+
+Note also that the seats alternate from the centre with each pair's earlier,
+louder clone on the left. The trim balances the power, and as a send effect the
+dry hit decides where the stroke is heard, so this reads as a ping-pong that
+starts on the left. It is not corrected.
 
 ## Test suite
 
@@ -118,6 +175,9 @@ drumlogue hardware.**
       equal-power mix law changed the output level
 - [ ] Decide whether `filters.h` (biquads) should be wired into the engine or
       deleted along with `test_biquad_filters.cpp`
+- [ ] Decide Angel's band split (see "where Angel's low end goes")
+- [ ] Decide mono feed vs. balance for panned inputs
+- [ ] Listen to Tribal's per-hit sway on hardware (Scatter 45 / 100)
 
 ## Fixed
 
