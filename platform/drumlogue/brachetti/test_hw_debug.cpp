@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cassert>
 #include <cstring>
+#include <vector>
 
 // ── Mock Drumlogue OS runtime ────────────────────────────────────────────────
 #include "../common/runtime.h"
@@ -972,7 +973,7 @@ static void test_os_param_init_sequence() {
     // Reflects header.c after the ÷10 step-size change for MlltStif/Dkay/NzFltFrq
     static const int32_t header_defaults[24] = {
         0,      // 0: Program
-        60,     // 1: Note
+        0,      // 1: Pitch (semitones from the preset root; was Note 60)
         0,      // 2: Bank
         1,      // 3: Sample
         500,    // 4: MlltRes
@@ -2430,13 +2431,13 @@ static void test_kernel_note_change_cost() {
     s.LoadPreset(5);                                  // Timpani, 280 modes
     const int full = s.m_drum_kernel.ModeCount();
 
-    s.setParameter(BrachettiSynth::k_paramNote, 52);
+    s.setParameter(BrachettiSynth::k_paramPitch, 0);  // Timpani's root, note 52
     s.GateOn(110); s.GateOff();
     run_blocks(s, 4800, 64);                          // ~100 ms of ring
     const int one_kettle = s.m_drum_kernel.LiveModes();
 
     // The reported action: change the note while the first is still ringing.
-    s.setParameter(BrachettiSynth::k_paramNote, 57);
+    s.setParameter(BrachettiSynth::k_paramPitch, 5);  // note 57
     s.GateOn(110); s.GateOff();
     int peak = 0;
     for (int b = 0; b < 200; ++b) {                   // ~270 ms
@@ -2471,7 +2472,7 @@ static void test_kernel_note_change_cost() {
     BrachettiSynth s2;
     s2.Init(&desc);
     s2.LoadPreset(5);
-    s2.setParameter(BrachettiSynth::k_paramNote, 52);
+    s2.setParameter(BrachettiSynth::k_paramPitch, 0);
     for (int i = 0; i < 4; ++i) {
         s2.GateOn(110); s2.GateOff();
         run_blocks(s2, 2400, 64);
@@ -2484,6 +2485,114 @@ static void test_kernel_note_change_cost() {
            s2.m_drum_kernel.LiveModes() == full,
            "a roll on one drum is being treated as a note change and losing "
            "its wash");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T44 — Pitch is semitones from the preset's ROOT note (pass 48)
+//
+//   Slot 1 used to be an absolute MIDI note that LoadPreset overwrote with the
+//   preset's own.  It is now an offset from that note, so:
+//     a) Pitch 0 must play every preset exactly as before — the sequencer path
+//        at Pitch 0 is bit-identical to striking the preset's root directly;
+//     b) Pitch +n plays the root + n semitones, on every engine path (legacy
+//        voice, kernel, cymbal);
+//     c) a Program change moves the root and LEAVES the offset alone, so the
+//        knob keeps matching the host's parameter store;
+//     d) out-of-range values (a pre-pass-48 pattern stores an absolute note in
+//        this slot) are clamped to the knob's range, never added to the root;
+//     e) external MIDI note-on is not transposed — Pitch moves the gate path
+//        only, the one path the old Note ever moved.
+// ════════════════════════════════════════════════════════════════════════════
+static std::vector<float> t44_render(int preset, int pitch, int midi_note, int frames) {
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.LoadPreset((uint8_t)preset);
+    s.setParameter(BrachettiSynth::k_paramPitch, pitch);
+    if (midi_note < 0) { s.GateOn(110); s.GateOff(); }
+    else { s.NoteOn((uint8_t)midi_note, 110); s.NoteOff((uint8_t)midi_note); }
+    std::vector<float> out((size_t)frames, 0.0f);
+    float buf[128];
+    for (int done = 0; done < frames; done += 64) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 64);
+        for (int i = 0; i < 64 && done + i < frames; ++i) out[(size_t)(done + i)] = buf[i * 2];
+    }
+    return out;
+}
+
+static void test_pitch_relative_to_root() {
+    std::cout << "\n── T44: Pitch = semitones from the preset's root note ──\n";
+    unit_runtime_desc_t desc = make_desc();
+    const int N = 12000;   // 250 ms: past every attack, long enough to diverge
+
+    int a_bad = 0;
+    for (int p = 0; p < BrachettiSynth::k_NumPrograms; ++p) {
+        BrachettiSynth probe;
+        probe.Init(&desc);
+        probe.LoadPreset((uint8_t)p);
+        const int root = probe.PresetRootNote();
+        if (t44_render(p, 0, -1, N) != t44_render(p, 0, root, N)) {
+            std::cout << "  preset " << p << " (" << BrachettiSynth::getPresetName((uint8_t)p)
+                      << "): sequencer at Pitch 0 != NoteOn(root " << root << ")\n";
+            ++a_bad;
+        }
+    }
+    // This checks the gate path against the root the unit REPORTS; whether
+    // that root is the shipped note is T44c's hard-coded 36/72 plus the
+    // pass-48 byte-identity check of every GateOn render against the old build.
+    result("T44a at Pitch 0 the sequencer plays each preset's root (40/40 == NoteOn(root))",
+           a_bad == 0, "the sequencer path at Pitch 0 disagrees with the preset's root");
+
+    // Legacy voice (Marimba), KS (Koto), kernel (Timpani), cymbal (Cymbal).
+    const int paths[] = { 1, 9, 5, 13 };
+    int b_bad = 0;
+    for (int p : paths) {
+        BrachettiSynth probe;
+        probe.Init(&desc);
+        probe.LoadPreset((uint8_t)p);
+        const int root = probe.PresetRootNote();
+        for (int off : { 7, -12 }) {
+            if (t44_render(p, off, -1, N) != t44_render(p, 0, root + off, N)) {
+                std::cout << "  preset " << p << " Pitch " << off
+                          << " != NoteOn(" << (root + off) << ")\n";
+                ++b_bad;
+            }
+        }
+    }
+    result("T44b Pitch +7 / -12 plays root+7 / root-12 on every engine path",
+           b_bad == 0, "the offset is not being applied in semitones from the root");
+
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.LoadPreset(0);                                         // Kick2, root 36
+    s.setParameter(BrachettiSynth::k_paramPitch, 5);
+    const int root0 = s.PresetRootNote();
+    s.setParameter(BrachettiSynth::k_paramProgram, 1);       // Marimba, root 72
+    const int root1 = s.PresetRootNote();
+    std::cout << "  Kick2 root " << root0 << " -> Marimba root " << root1
+              << ", Pitch " << s.getParameterValue(BrachettiSynth::k_paramPitch)
+              << ", plays " << (int)s.PlayedNote() << "\n";
+    result("T44c a Program change moves the root and keeps the offset",
+           root0 == 36 && root1 == 72 &&
+           s.getParameterValue(BrachettiSynth::k_paramPitch) == 5 &&
+           s.PlayedNote() == root1 + 5,
+           "LoadPreset rewrote the Pitch knob, or did not move the root");
+
+    s.setParameter(BrachettiSynth::k_paramPitch, 72);        // a pre-pass-48 absolute note
+    const bool hi = s.getParameterValue(BrachettiSynth::k_paramPitch) ==
+                        BrachettiSynth::kPitchRangeSemis &&
+                    s.PlayedNote() == root1 + BrachettiSynth::kPitchRangeSemis;
+    s.setParameter(BrachettiSynth::k_paramPitch, -100);
+    const bool lo = s.getParameterValue(BrachettiSynth::k_paramPitch) ==
+                        -BrachettiSynth::kPitchRangeSemis &&
+                    s.PlayedNote() == root1 - BrachettiSynth::kPitchRangeSemis;
+    result("T44d out-of-range Pitch values clamp to the knob's range",
+           hi && lo, "an absolute note left in this slot was added to the root");
+
+    result("T44e external MIDI note-on is not transposed by Pitch",
+           t44_render(1, 12, 60, N) == t44_render(1, 0, 60, N),
+           "Pitch leaked into unit_note_on; it should only move the gate path");
 }
 
 int main() {
@@ -2534,6 +2643,7 @@ int main() {
     test_cymbal_density_on_partls();
     test_reset_clears_deferred_drive();
     test_kernel_note_change_cost();
+    test_pitch_relative_to_root();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

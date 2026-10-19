@@ -65,8 +65,11 @@ int main(int argc, char** argv) {
 
     // The edits a player actually makes mid-performance.
     const Edit edits[] = {
-        {  1,  72, "Note=72"   }, {  1,  36, "Note=36"   }, {  1, 126, "Note=126"  },
-        {  1,  24, "Note=24"   }, {  0,   5, "Program=5" }, {  9,   0, "Model=0"   },
+        // Slot 1 is Pitch since pass 48 (semitones from the preset's root),
+        // so these are the knob's two ends and an octave either way — the
+        // played note spans root-24 .. root+24 = 12 .. 112 across the library.
+        {  1,  24, "Pitch=+24" }, {  1, -24, "Pitch=-24" }, {  1,  12, "Pitch=+12" },
+        {  1, -12, "Pitch=-12" }, {  0,   5, "Program=5" }, {  9,   0, "Model=0"   },
         {  8,   7, "Partls=7"  }, { 10, 210, "Dkay=210"  }, { 15, -100, "Inharm=-100" },
         { 13, -98, "HitPos=-98"}, { 14,  20, "Rel=20"    }, {  2,   4, "Poly=4"    },
     };
@@ -83,8 +86,10 @@ int main(int argc, char** argv) {
         for (int e = 0; e < NE; ++e) {
             s.Init(&d);
             s.LoadPreset((uint8_t)p);
-            int note = s.getParameterValue(1);
-            if (note < 24 || note > 126) note = 60;
+            // Pitch survives LoadPreset (and Init) by design, and `s` is reused
+            // across edits, so put the knob back to the preset's own pitch.
+            s.setParameter(BrachettiSynth::k_paramPitch, 0);
+            int note = s.PlayedNote();
 
             int bad = 0;
             s.NoteOn((uint8_t)note, 110);
@@ -92,11 +97,10 @@ int main(int argc, char** argv) {
             s.setParameter(edits[e].idx, edits[e].value);
             float post = render(s, (SR * 4) / 5, &bad);   // 800 ms
             // ...then STRIKE AGAIN.  This is the scenario the HW report
-            // actually describes — the player turns Note while the sequencer
+            // actually describes — the player turns Pitch while the sequencer
             // keeps triggering — and it is the half that a ring-out test
             // cannot see.
-            int note2 = (edits[e].idx == 1) ? edits[e].value : note;
-            if (note2 < 24 || note2 > 126) note2 = note;
+            int note2 = (edits[e].idx == 1) ? (int)s.PlayedNote() : note;
             s.NoteOn((uint8_t)note2, 110);
             float again = render(s, SR / 2, &bad);        // 500 ms
 
@@ -106,6 +110,7 @@ int main(int argc, char** argv) {
             // positives on the first run of this probe.
             BrachettiSynth& c = s;
             c.Init(&d); c.LoadPreset((uint8_t)p);
+            c.setParameter(BrachettiSynth::k_paramPitch, 0);
             int cbad = 0;
             c.NoteOn((uint8_t)note, 110);
             render(c, SR / 5, &cbad);

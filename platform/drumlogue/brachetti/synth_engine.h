@@ -27,7 +27,7 @@ extern float ut_voice_out;
  * The Architectural Wins Here:
  * Pre-Calculated Math: Notice the apply_skew and division happens purely in setParameter. The DSP struct (WaveguideState) now holds a pure float like 0.993f. In Phase 3, the Audio Thread will just do a single multiplication (buffer[i] * feedback_gain).
  * Crash-Proof Samples: The sample loader has the exact pointer checks we discussed, but it pushes the metadata to all 4 voices instantly.
- * Sequencer Routing: GateOn properly routes to m_ui_note, ensuring the internal drum machine plays the pitch defined on the screen.
+ * Sequencer Routing: GateOn routes to m_ui_note = the preset's root note + the Pitch knob (semitones), so the internal drum machine plays the preset at its own pitch, offset by what the screen shows.
  *
 */
 
@@ -131,7 +131,7 @@ public:
     // ==============================================================================
     enum ParamIndex {
         k_paramProgram = 0,
-        k_paramNote,        // 1
+        k_paramPitch,       // 1 — ex-Note: semitones from the preset's root note (pass 48)
         k_paramCymPoly,     // 2 — ex-Bank: global voice cap (1-4), cymbals included
         k_paramVelocity,    // 3 — ex-Rsntrs: velocity bias (-100 ghost .. +100 wham)
         k_paramMlltRes,     // 4
@@ -162,6 +162,11 @@ public:
     // silently shifts every column of all 40 presets, which reads as "the unit
     // loads the wrong sound" rather than as a build error.
     static_assert(k_lastParamIndex == 24, "header.c declares 24 params");
+    // Pitch knob reach, semitones either side of the preset's root note.
+    // Must equal the min/max header.c declares for "Pitch" (C cannot assert
+    // across the two files).  ±24 cannot clip a played note: the roots span
+    // 36..88, so root ± 24 stays inside 12..112, well within MIDI's 0..127.
+    static constexpr int kPitchRangeSemis = 24;
     enum ProgramIndex {
         k_Kick2 = 0,        // 0  — solid kettledrum-kick (the pre-redesign Timpani body, HW-approved as a kick)
         k_Marimba,          // 1  -sample: marimba-hit-c4_C_minor.wav (524Hz +/- 50Hz)
@@ -973,6 +978,14 @@ SynthState state;
         return m_preset_idx;
     }
 
+    // The current preset's root note (its Note column) and the note the
+    // sequencer path actually plays, root + Pitch.  Host tools use these to
+    // turn an absolute note into a Pitch offset; nothing on the device reads
+    // them.  (Not to be confused with ModalDrumKernel::RootNote(), the kernel
+    // recipe's calibration anchor — equal to this on Timpani/Taiko by design.)
+    inline uint8_t PresetRootNote() const { return m_root_note; }
+    inline uint8_t PlayedNote() const     { return m_ui_note; }
+
     // Called by unit_set_param_value(0, value) to load a new patch
     inline void LoadPreset(uint8_t idx) {
         // Reject an out-of-range preset BEFORE anything is written.  This guard
@@ -1008,7 +1021,7 @@ SynthState state;
         m_params[k_paramProgram] = idx;
 
         // Columns Map: NOTE keep the justification so it's easier to read!!
-        // 0:Prgram | 1:Note | 2:Poly | 3:Vel    | 4:MlltRes | 5:MlltStif | 6:VlMllR | 7:VlMllS
+        // 0:Prgram | 1:Root | 2:Poly | 3:Vel    | 4:MlltRes | 5:MlltStif | 6:VlMllR | 7:VlMllS
         // 8:Prtls  | 9:Model| 10:Dkay| 11:Mterl | 12:Tone   | 13:HitPos  | 14:Rel   | 15:Inharm
         // 16:LCut  | 17:TRad| 18:Gain| 19:NzMix | 20:NzRes  | 21:NzFltr  | 22:NzFrq | 23:Resnc
         // Column order matches the ParamIndex enum above.
@@ -1025,7 +1038,13 @@ SynthState state;
         // 3840 B → 1920 B of code-segment budget, and every value round-trips
         // unchanged.  Widen it again if any column ever needs > ±32767.
         static const int16_t presets[k_NumPrograms][k_lastParamIndex] = {
-            //  Prg  Nte  Ply  Vel - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - Cut  TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            //  Prg Root  Ply  Vel - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - Cut  TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
+            //
+            // Col 1 is the preset's ROOT NOTE (MIDI), not a parameter value:
+            // since pass 48 slot 1 is the Pitch knob, an offset in semitones
+            // FROM this note, so the column is captured into m_root_note and
+            // never written to the knob.  Same numbers the old absolute Note
+            // shipped, so Pitch 0 plays every preset at the pitch it always had.
             //
             // Cols 2 (Poly) and 3 (Velocity) are GLOBAL performance controls:
             // LoadPreset skips them, so the stale values still sitting in those
@@ -1099,8 +1118,15 @@ SynthState state;
         // choice persists across preset changes.  (The cymbal resonator density
         // that used to live in slot 3 is NOT global any more: it rides on
         // Partls, which is a normal per-preset column and loads with the row.)
+        // And skip Pitch: column 1 is this preset's ROOT, the knob is an offset
+        // from it, so the root moves and the offset stays — which keeps the
+        // knob equal to what the host's parameter store holds for it (the host
+        // is never told that a Program change rewrote a parameter).
+        m_root_note = (uint8_t)presets[idx][k_paramPitch];
+        update_played_note();
         for (uint8_t param_id = 0; param_id < k_lastParamIndex; ++param_id) {
             if (param_id == k_paramProgram) continue;
+            if (param_id == k_paramPitch) continue;
             if (param_id == k_paramCymPoly) continue;
             if (param_id == k_paramVelocity) continue;
 
@@ -1296,9 +1322,20 @@ SynthState state;
                 LoadPreset((uint8_t)value);
                 break;
 
-            case k_paramNote:
-                m_ui_note = (uint8_t)fmaxf(1.0f, fminf(126.0f, value));
+            case k_paramPitch: {
+                // Semitone offset from the preset's root note (pass 48; was an
+                // absolute MIDI note).  Bounded here as the SDK asks: patterns
+                // saved before pass 48 still hold an ABSOLUTE note (36, 72...)
+                // in this slot, and that has to land as a legal offset, not as
+                // "root + 72".  Stored clamped so the host reads back what plays.
+                const int32_t p = (value < -kPitchRangeSemis) ? -kPitchRangeSemis
+                                : (value >  kPitchRangeSemis) ?  kPitchRangeSemis
+                                : value;
+                m_params[index] = p;
+                m_pitch_semis   = (int8_t)p;
+                update_played_note();
                 break;
+            }
 
             case k_paramCymPoly:
                 // Global voice cap 1-4 (HW: "Poly always showed 2, not the
@@ -4900,7 +4937,9 @@ SynthState state;
         if (velocity == 0) {
             GateOff();
         } else {
-            // Route internal Drumlogue sequencer to the UI Note parameter
+            // Route the internal Drumlogue sequencer to the preset's root note
+            // plus the Pitch knob.  External MIDI (unit_note_on) bypasses this
+            // and plays the note it carries, as it always has.
             NoteOn(m_ui_note, velocity);
         }
     }
@@ -5029,7 +5068,18 @@ private:
     unit_runtime_get_num_samples_for_bank_ptr m_get_num_samples_for_bank_ptr = nullptr;
     unit_runtime_get_sample_ptr m_get_sample = nullptr;
 
-    uint8_t m_ui_note = 60;
+    // The note the sequencer path plays (GateOn / GateOff) = the preset's ROOT
+    // note (its Note column, captured by LoadPreset) + the Pitch knob.  Kept
+    // derived rather than stored on its own so neither input can go stale
+    // against it: LoadPreset moves the root, setParameter moves the offset,
+    // and both re-derive through update_played_note().
+    uint8_t m_root_note   = 36;   // preset 0 (Kick2) until LoadPreset runs
+    int8_t  m_pitch_semis = 0;    // Pitch knob, ±kPitchRangeSemis
+    uint8_t m_ui_note     = 36;
+    inline void update_played_note() {
+        const int n = (int)m_root_note + (int)m_pitch_semis;
+        m_ui_note = (uint8_t)((n < 0) ? 0 : ((n > 127) ? 127 : n));
+    }
     // Idle-CPU guard: blocks of master-chain flush left to run after the last
     // active voice died.  While > 0 the pre-clip + master FX loops keep running
     // on the (all-zero) buffer so the master SVF settles; at 0 processBlock

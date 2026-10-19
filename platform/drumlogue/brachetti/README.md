@@ -692,19 +692,66 @@ and difference-RMS in dB, because a total-RMS metric is fooled by a limiter
 holding the level while the character changes (the blind spot that hid three
 kick knobs in pass 30).
 
+### `Pitch` — semitones from the preset's root note (October 2026, pass 48)
+
+Slot 1 used to be **`Note`**, an absolute MIDI note (24-126) that `LoadPreset`
+overwrote with the preset's own.  It is now **`Pitch`**: `-24 … +24`
+semitones, `k_unit_param_type_semi` (the panel shows `+3` / `-12`), default 0.
+
+```
+played note = preset root + Pitch            (root = the preset's Note column)
+```
+
+| | before (`Note`) | now (`Pitch`) |
+|---|---|---|
+| value means | an absolute MIDI note | an offset from **this preset's** root |
+| 0 / default | — (default 36 was right for Kick2 only) | every preset exactly as voiced |
+| on a Program change | rewritten to the new preset's note **inside the unit only** | **left alone**; the root moves under it |
+| external MIDI note-on | plays the note it carries | unchanged — plays the note it carries |
+
+- **Pitch 0 is byte-identical to the old shipped notes.**  The preset table's
+  column 1 carries the same numbers it always did; it is now read as the root
+  (`m_root_note`) instead of being written to the knob.  Verified: 80/80
+  `note_audit` renders (each preset at its shipped note and at +12, through
+  `GateOn`) and 40/40 `render_presets` renders identical to the pass-47 build.
+- **Why it survives a Program change.**  The drumlogue host owns the
+  parameter store the panel draws and a project saves, and the unit cannot push
+  a value back to it (see `../EffeESP32/README.md`, *Instrument selection and
+  the panel*).  With `.num_presets = 0` the Program parameter is the only way
+  to change preset, so every parameter `LoadPreset` rewrites goes stale on the
+  panel, and the first touch of that knob pushes the host's stale value back
+  in.  An absolute `Note` had exactly that problem.  A relative `Pitch` that
+  `LoadPreset` never writes cannot disagree with the host: the panel shows the
+  offset, and the offset is what plays, on whichever preset is loaded.  Same
+  arrangement as `Poly` and `Velocity`, and as EffeESP32's own `Pitch`.
+- **Reach.**  Roots span 36-88, so ±24 plays notes 12-112; nothing clips.  The
+  old knob could reach 24-126 from any preset; the deepest drops are now two
+  octaves under the root.  `kPitchRangeSemis` (synth_engine.h) and the
+  header.c range are the two numbers to change together for more.
+- **Old patterns.**  A pattern saved before this build stores an absolute
+  note (36, 72 …) in this slot.  It is clamped to ±24 rather than added to the
+  root, so it loads as a large offset — set `Pitch` back to 0 on those
+  patterns.
+- **Host tools** that want an absolute note convert it with
+  `setParameter(k_paramPitch, note - PresetRootNote())`; `PlayedNote()` is
+  what `GateOn` plays.  `k_paramNote` was renamed `k_paramPitch` on purpose,
+  so a tool still passing an absolute note fails to compile instead of
+  silently clamping to +24.  Regression test: **T44** (`test_hw_debug.cpp`).
+
 ### Note assignment per instrument — see `NOTE_AUDIT.md`
 
-`note_audit.cpp` + `note_audit.py` render every preset **at its own shipped
-Note** through `GateOn()` (the sequencer's path, so the note under test is
-always the preset's own) and measure what comes out.  Headlines:
+`note_audit.cpp` + `note_audit.py` render every preset **at its own root
+note** (Pitch 0) through `GateOn()` (the sequencer's path, so the note under
+test is always the preset's own) and measure what comes out.  Headlines:
 
 - All **8 engine anchors match** their preset's Note exactly (six cymbal
   `ref_note`s, both kernel `root_note`s), so no preset plays a transposed
   version of the spectrum it was calibrated on.
 - **Note is inert on 8 presets** — 808Sub and KickDrum (boom oscillator, no
   modal body), the three snares (the wire bands are absolute Hz), and the three
-  NOISE presets.  On the two kicks that means the screen says 65 Hz while you
-  hear 45 / 57 Hz; `TubRad` is their real tune control.
+  NOISE presets.  So `Pitch` does nothing there either; on the two kicks
+  `TubRad` is the real tune control (their root says 65 Hz while you hear 45 /
+  57 Hz — the panel no longer shows that number, it shows the offset).
 - **Five presets are pitched oddly for the instrument** (Bongo at 147 Hz,
   Woodblock at 131 Hz, the snares at 73 Hz = the *General MIDI drum-map number*
   used as a pitch, Triangle at 440 Hz, Claves 4 semitones below the one clave
