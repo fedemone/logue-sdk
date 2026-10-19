@@ -5,13 +5,17 @@
  *
  * Signal chain, evaluated four frames at a time:
  *
- *   PreAmp -> PEQ(3-band) -> dbx encode -> Head bump -> Drive/Saturation
- *          -> Tape LPF -> Hiss or Vinyl dust -> Wow & Flutter -> Crosstalk
- *          -> dbx decode -> DC block -> Dry/Wet -> Soft ceiling
+ *   Trim -> Console clip (4x) -> 20 kHz -> PEQ(3-band) -> dbx encode
+ *        -> Record EQ -> Drive/Saturation (4x) -> Playback EQ
+ *        -> Hiss or Vinyl dust -> Head bump -> Tape LPF -> Wow & Flutter
+ *        -> Crosstalk -> dbx decode -> Playback gain -> DC block -> Dry/Wet
+ *        -> Soft ceiling
  *
  * The noise sources sit *inside* the dbx encode/decode loop on purpose: that is
  * where tape noise enters on a real machine, and it is what lets the decoder
- * actually reduce it.
+ * actually reduce it.  So does everything else the tape does: the decoder has
+ * its own detector, so it hears the tape's saturation and treble loss and
+ * reacts to them, as a real dbx decoder does.
  */
 
 #include <atomic>
@@ -23,9 +27,11 @@
 #include "unit.h"
 #include "float_math.h"
 #include "biquad.h"
+#include "halfband.h"
 
 // Wow & Flutter delay line: 512 frames ~ 10.7 ms at 48 kHz.  Worst-case read
-// offset is 30*1.8 + 2.8 = 56.8 frames at full Age, plus two guard taps.
+// offset is (30*1.8 + 2.8) * 2.0 = 113.6 frames at full Age on the T-424N (the
+// deepest wf_scale), plus two guard taps.
 #define WF_BUFFER_SIZE 512
 #define WF_BUFFER_MASK (WF_BUFFER_SIZE - 1)
 #define NEON_LANES (4)
@@ -73,9 +79,8 @@ static fast_inline float32x4_t recip_fast(float32x4_t x) {
     return vmulq_f32(r, vrecpsq_f32(x, r));
 }
 
-// 1/x, ~1e-7 relative.  Used where the decode gain has to invert the encode
-// gain closely enough that the residual is a fixed offset rather than a
-// signal-dependent modulation.
+// 1/x, ~1e-7 relative: a second step, for the dbx decoder's gain, which has to
+// invert the encoder's closely enough that the pair cancels.
 static fast_inline float32x4_t recip_nr(float32x4_t x) {
     const float32x4_t r = recip_fast(x);
     return vmulq_f32(r, vrecpsq_f32(x, r));
@@ -103,8 +108,10 @@ public:
         k_num_params
     };
 
-    enum DbxMode { k_active = 0, k_encode_only, k_off };
-    enum k7Mode  { k_244    = 0, k_424, k_488, k_vinyl };
+    // New entries are appended, so a value saved by an earlier version still
+    // selects the same mode.
+    enum DbxMode { k_active = 0, k_encode_only, k_off, k_decode_only };
+    enum k7Mode  { k_244    = 0, k_424, k_488, k_vinyl, k_424n };
 
     // Mirrors the .init column of header.c.  Kept here so the DSP is coherent
     // before the host has pushed any parameter, and so unit_reset() can clear
@@ -112,7 +119,7 @@ public:
     static constexpr int32_t kParamInit[k_num_params] = {
         10,   // age        10 %
         100,  // mix       100 %
-        20,   // preamp     20 %
+        20,   // trim       20 % (+6 dB in, -3 dB fader: +3 dB, as before)
         40,   // drive      40 %
         0,    // dbx        Active
         0,    // model      T-244
@@ -122,7 +129,7 @@ public:
         120,  // eq mid gain   0 dB
         100,  // eq high hz  10 kHz
         120,  // eq high gain  0 dB
-        5,    // crosstalk   5 %
+        1,    // crosstalk   1 % (the published separation; 5 % was 17 dB worse)
         15,   // hiss       15 %
         30,   // attack     3.0 ms
         150,  // release    150 ms
@@ -153,21 +160,25 @@ public:
     /// NOT touch the parameters — the host does not re-send them afterwards.
     void Reset() {
         biquad_reset2(&eq_low_);    biquad_reset2(&eq_mid_);   biquad_reset2(&eq_high_);
-        biquad_reset2(&dbx_pre_);   biquad_reset2(&dbx_de_);   biquad_reset2(&dbx_hf_);
+        biquad_reset2(&dbx_pre_);   biquad_reset2(&dbx_de_);
+        biquad_reset2(&rec_pre_);   biquad_reset2(&rec_de_);    biquad_reset2(&console_lpf_);
         biquad_reset2(&tape_head_); biquad_reset2(&tape_lpf_);
         biquad_reset2(&hiss_hpf_);  biquad_reset2(&xtalk_hpf_);
         biquad_reset2(&dc_block_);
+
+        hb4x_reset(&console_os_);
+        hb4x_reset(&tape_os_);
 
         memset(wf_delay_, 0, sizeof(wf_delay_));
         wf_write_pos_     = 0;
         wf_lfo_phase_     = 0.0f;
         wf_flutter_phase_ = 0.0f;
 
-        // Seed the detectors at the compander's unity point so the first block
-        // after a reset does not open up to the encode ceiling.
-        dbx_wb_env_ = kDbxRefPower;
-        dbx_hf_env_ = kDbxRefPower;
-        dbx_gain_   = 1.0f;
+        // Seed both detectors at the compander's unity point so the first
+        // block after a reset does not open up to the encode ceiling, and so
+        // the encoder and decoder start in step.
+        dbx_side_reset(&dbx_enc_);
+        dbx_side_reset(&dbx_dec_);
 
         vinyl_hist_l_ = vinyl_hist_r_ = vdupq_n_f32(0.0f);
         dust_hist_l_  = dust_hist_r_  = vdupq_n_f32(0.0f);
@@ -175,7 +186,8 @@ public:
         pop_env_     = 0.0f;
         big_pop_env_ = 0.0f;
 
-        current_preamp_     = target_preamp_;
+        current_trim_       = target_trim_;
+        current_fader_      = target_fader_;
         current_mix_        = target_mix_;
         current_sat_drive_  = target_sat_drive_;
         current_sat_makeup_ = target_sat_makeup_;
@@ -191,17 +203,26 @@ public:
         raw_params_[id] = value;
         const float norm = value * 0.01f;
         switch (id) {
-            case k_param_model:
-                model_ = (uint8_t)((value < 0) ? 0 : (value > k_vinyl ? k_vinyl : value));
-                wf_phase_inc_ = M_TWOPI * ((model_ == k_vinyl) ? 0.55f : 1.5f) * inverse_samplerate_;
+            case k_param_model: {
+                model_ = (uint8_t)((value < 0) ? 0 : (value > k_424n ? k_424n : value));
+                const MachineSpec& m = spec_for(model_);
+                wf_phase_inc_         = M_TWOPI * m.wow_hz     * inverse_samplerate_;
+                wf_flutter_phase_inc_ = M_TWOPI * m.flutter_hz * inverse_samplerate_;
                 b_update_filters_.store(true);  // tape model affects LPF/head coeffs
                 break;
-            case k_param_preamp: target_preamp_ = 1.0f + norm * 2.0f;  break;
+            }
+            case k_param_preamp: set_trim(norm);                       break;
             case k_param_drive:  set_drive(norm);                      break;
             case k_param_mix:    target_mix_    = norm;                break;
-            case k_param_dbx:
-                dbx_mode_ = (uint8_t)((value < 0) ? 0 : (value > k_off ? k_off : value));
+            case k_param_dbx: {
+                const uint8_t mode = (uint8_t)((value < 0) ? 0 : (value > k_decode_only ? k_decode_only : value));
+                // A half that was out of circuit has a stale detector; re-seed
+                // both so they come back in step (on the audio thread).
+                const bool changed = (mode != dbx_mode_);
+                dbx_mode_ = mode;
+                if (changed) b_dbx_resync_.store(true);
                 break;
+            }
             case k_param_age:
                 tape_age_ = norm;
                 b_update_filters_.store(true);  // age affects the tape LPF cutoff
@@ -241,6 +262,10 @@ public:
 
         if (b_update_filters_.exchange(false))
             UpdateCoefficients();
+        if (b_dbx_resync_.exchange(false)) {
+            dbx_side_reset(&dbx_enc_);
+            dbx_side_reset(&dbx_dec_);
+        }
 
         const uint32_t whole = frames & ~3u;
         for (uint32_t f = 0; f < whole; f += 4u)
@@ -280,20 +305,40 @@ private:
     // meant any realistic master-bus level asked for more than the encode
     // ceiling, so the "compressor" was really just a fixed 3x gain.
     static constexpr float kDbxRefPower = 0.01584893f;   // 10^(-18/10), power
-    static constexpr float kDbxRefScale = 0.35481339f;   // kDbxRefPower^0.25
 
-    // Encode-gain limits.  With decode engaged the pair is exactly inverse, so
-    // the clamp only bounds how hard the tape stage is driven; in encode-only
-    // mode the listener hears the compression directly, so it is tightened.
+    // Encode-gain limits, which the decoder mirrors.  With both halves engaged
+    // the clamp only bounds how hard the tape stage is driven; when only one
+    // half runs (EncOnly, DecOnly) the listener hears the companding directly,
+    // so it is tightened.
     static constexpr float kEncGainMin      = 0.25f;     // -12 dB
     static constexpr float kEncGainMax      = 4.00f;     // +12 dB
-    static constexpr float kEncOnlyGainMin  = 0.50f;     //  -6 dB
-    static constexpr float kEncOnlyGainMax  = 2.00f;     //  +6 dB
+    static constexpr float kHalfGainMin     = 0.50f;     //  -6 dB
+    static constexpr float kHalfGainMax     = 2.00f;     //  +6 dB
 
+    // test/measure.py overrides the knee (far out of reach) to look at the
+    // tape stage without the output ceiling folded into its numbers.
+#ifndef PC_CEILING_KNEE_OVERRIDE
     static constexpr float kCeilingKnee  = 0.70f;        // soft ceiling onset
+#else
+    static constexpr float kCeilingKnee  = PC_CEILING_KNEE_OVERRIDE;
+#endif
     static constexpr float kCeilingRange = 0.30f;        // knee + range = 1.0
 
     static constexpr float kOutputGain   = 1.30f;        // ~ +2.3 dB make-up
+
+    // Console (mixer) op-amp stage.  The 424 MkII accepts +10 dBV at minimum
+    // Trim against a -10 dBV nominal level, i.e. about 20 dB of clean headroom
+    // before the channel op-amps reach their rails; here nominal is the
+    // compander's -18 dBFS RMS, so a sine clips at +2 dBFS RMS = +5 dBFS peak.
+    // The knee is short: rail clipping is hard, but not a brick wall.
+    static constexpr float kConsoleRail  = 1.778f;               // +5 dBFS
+    static constexpr float kConsoleKnee  = 0.80f * kConsoleRail; // linear below
+    static constexpr float kConsoleRange = 0.20f * kConsoleRail; // knee + range = rail
+    static constexpr float kTrimMaxDb    = 30.0f;                // Trim 100 %
+
+    // Record EQ: first-order pre-emphasis zero, pole common to all machines.
+    // The playback EQ is its exact inverse, so a small signal sees neither.
+    static constexpr float kRecEmphPoleHz = 20000.0f;
 
     /**
      * @brief Per-machine character, from the published specifications.
@@ -317,29 +362,57 @@ private:
      *    of signal-to-noise and puts the tracks close enough together that
      *    separation drops to the 50 dB in the manual.  Its transport is the
      *    best of the three.
+     *  - T-424N is the 424 at its NORMAL speed, 4.8 cm/s: 40 Hz - 10 kHz
+     *    +/-3 dB, W&F 0.06% WRMS (against 0.05% at HIGH), S/N 54 dB
+     *    unweighted (against 55 dB).  Half the speed halves every wavelength,
+     *    so the head bump and the capstan's wow and flutter rates halve too.
      *
-     * Noise, crosstalk and wow depth are relative to the 244.
+     * Treble headroom.  Cassette runs out of treble long before it runs out of
+     * midrange: on Type II tape at 4.76 cm/s the 10 kHz saturation level sits
+     * about 16 dB below the 400 Hz MOL.  The record EQ boosts the treble into
+     * the tape and the playback EQ takes it back out, so a quiet signal comes
+     * back flat and a loud one comes back with its treble squashed.  At 9.5
+     * cm/s a 10 kHz tone has the wavelength of 5 kHz at 4.76 cm/s, which
+     * roughly halves the gap; rec_emph_hz puts the pre-emphasis zero there
+     * (about +10 dB at 10 kHz at HIGH speed, +16 dB at NORMAL, levelling off
+     * at +16 / +22 dB).  Vinyl has no tape record EQ.
+     *
+     * Head bump.  The bump is the tape's own response, inside the dbx loop, so
+     * with dbx Active the decoder doubles it like any other level error.  The
+     * values are half of what they were when the bump sat outside the loop:
+     * with dbx Active the bump is what it was, and with dbx Off the tape alone
+     * stays inside the published +/-3 dB.
+     *
+     * Noise, crosstalk and wow depth are relative to the 244.  Crosstalk is
+     * calibrated so X-talk 1 gives the published separation at 1 kHz: 55 dB
+     * for the 424 (MkII manual), 50 dB for the 488.
      */
     struct MachineSpec {
         float lpf_hz;       // record/playback -3 dB point
         float head_hz;      // head bump centre
         float head_db;      // head bump amount
         float hiss_hz;      // noise band lower corner
-        float wf_scale;     // wow & flutter depth
+        float wf_scale;     // wow & flutter depth (delay, in samples)
         float noise_scale;  // noise floor
         float xtalk_scale;  // inter-track bleed
         float sat_scale;    // relative THD
+        float rec_emph_hz;  // record pre-emphasis zero, 0 = none
+        float wow_hz;       // capstan wow rate
+        float flutter_hz;   // flutter rate
     };
 
     static const MachineSpec& spec_for(uint8_t model) {
-        static const MachineSpec kSpecs[4] = {
-            //  lpf     head  dB    hiss   W&F   noise  xtalk  sat
-            { 14000.0f, 60.0f, 4.0f, 3500.0f, 1.00f, 1.00f, 1.00f, 1.00f },  // 244
-            { 16000.0f, 55.0f, 3.0f, 4000.0f, 0.83f, 0.70f, 0.85f, 0.80f },  // 424
-            { 14000.0f, 70.0f, 4.5f, 3000.0f, 0.67f, 1.40f, 2.20f, 0.90f },  // 488
-            { 12000.0f, 150.0f, 4.0f, 400.0f, 1.60f, 1.00f, 1.30f, 1.10f },  // vinyl
+        static const MachineSpec kSpecs[5] = {
+            //  lpf     head    dB    hiss   W&F   noise  xtalk  sat    emph   wow    flutter
+            { 14000.0f, 60.0f,  2.0f,  3500.0f, 1.00f, 1.00f, 0.68f, 1.00f, 3200.0f, 1.50f, 25.0f },  // 244
+            { 16000.0f, 55.0f,  1.5f,  4000.0f, 0.83f, 0.70f, 0.58f, 0.80f, 3200.0f, 1.50f, 25.0f },  // 424
+            { 14000.0f, 70.0f,  2.25f, 3000.0f, 0.67f, 1.40f, 1.03f, 0.90f, 3200.0f, 1.50f, 25.0f },  // 488
+            { 12000.0f, 150.0f, 2.0f,  400.0f,  1.60f, 1.00f, 0.89f, 1.10f,    0.0f, 0.55f, 25.0f },  // vinyl
+            // 424 NORMAL: W&F 1.2x the 424's; depth x2 because the LFOs run at
+            // half the rate and speed deviation is depth x rate.
+            { 10000.0f, 27.5f,  1.5f,  3000.0f, 2.00f, 0.98f, 0.58f, 0.80f, 1600.0f, 0.75f, 12.5f },  // 424N
         };
-        return kSpecs[(model < 4) ? model : 0];
+        return kSpecs[(model < 5) ? model : 0];
     }
 
     // RMS averaging windows.  The wideband path is deliberately slow enough not
@@ -412,14 +485,15 @@ private:
         // against fs/4 (the hard-coded 0.01 it replaces drifted with fs).
         smooth_coeff_ = -expm1f(-4000.0f / (kSmoothMs * samplerate_));
 
-        wb_rms_coeff_ = one_pole_coeff(kWbRmsMs);
-        hf_rms_coeff_ = one_pole_coeff(kHfRmsMs);
-
-        wf_flutter_phase_inc_ = M_TWOPI * 25.0f * inverse_samplerate_;
-        wf_phase_inc_         = M_TWOPI * 1.5f  * inverse_samplerate_;
+        // The detectors' one-pole RMS averages, four steps at a time:
+        // after x0..x3, env = d*env + sum(w_i * x_i), with d = (1-k)^4 and
+        // w = k * {(1-k)^3, (1-k)^2, (1-k), 1} -- exactly the serial result.
+        set_quad_one_pole(one_pole_coeff(kWbRmsMs), &wb_rms_w_, &wb_rms_decay_);
+        set_quad_one_pole(one_pole_coeff(kHfRmsMs), &hf_rms_w_, &hf_rms_decay_);
 
         // Load the header defaults through the normal parameter path so there
-        // is exactly one place where a default is written down.
+        // is exactly one place where a default is written down.  (The model
+        // parameter also sets the wow and flutter rates.)
         for (uint8_t i = 0; i < k_num_params; ++i)
             SetParameter(i, kParamInit[i]);
 
@@ -456,6 +530,28 @@ private:
     void set_drive(float norm) {
         target_sat_drive_  = powf(12.0f, norm);
         target_sat_makeup_ = 0.9f / sqrtf(target_sat_drive_);
+    }
+
+    /**
+     * @brief Map the Trim knob to the console stage's input gain and fader.
+     *
+     * 0 to +30 dB into the channel op-amps, equal dB per step.  On a
+     * Portastudio you crank the Trim to make the channel strip distort and
+     * pull the fader down to keep the level; the "fader" here does that
+     * automatically with the same half-power law as Drive, so the clean level
+     * climbs 15 dB over the whole range instead of 30.  At the default 20 %
+     * that is +6 dB in and -3 dB out, the +3 dB the old PreAmp gave at 20 %.
+     */
+    void set_trim(float norm) {
+        target_trim_  = powf(10.0f, norm * kTrimMaxDb * 0.05f);
+        target_fader_ = 1.0f / sqrtf(target_trim_);
+    }
+
+    static void set_quad_one_pole(float k, float32x4_t* w, float* decay) {
+        const float a = 1.0f - k;
+        const float wv[4] = { k * a * a * a, k * a * a, k * a, k };
+        *w = vld1q_f32(wv);
+        *decay = a * a * a * a;
     }
 
     fast_inline void set_attack_ms(float ms) {
@@ -513,7 +609,14 @@ private:
         // approximate (the true mean depends on programme level), which is why
         // the DC blocker now runs in vinyl mode too.
         const float b = vinyl_bias_;
-        vinyl_dc_offset_ = b / (1.0f + fabsf(b) + 0.3f * b * b);
+        const float den = 1.0f + fabsf(b) + 0.3f * b * b;
+        vinyl_dc_offset_ = b / den;
+        // Small-signal slope at the bias point, f'(b) = (1 - 0.3b^2) / den^2:
+        // -0.4 dB at Age 10, -3.8 dB at Age 100.  The tape stage divides it out
+        // (the dbx decoder would double any gain error inside the loop) and the
+        // playback gain puts it back once, so the level still falls with Age
+        // as it always did, but by the same amount whichever dbx mode is on.
+        vinyl_slope_ = (1.0f - 0.3f * b * b) / (den * den);
     }
 
     // =========================================================================
@@ -521,8 +624,8 @@ private:
     // =========================================================================
 
     /// Deliberately not inlined.  ProcessQuad has two call sites (the main loop
-    /// and the short-buffer tail), and letting the whole chain — both saturator
-    /// variants, both noise generators, eleven biquads — expand twice pushed
+    /// and the short-buffer tail), and letting the whole chain — the shapers,
+    /// both noise generators, a dozen biquads — expand twice pushed
     /// unit_render's stack frame to 2168 bytes of spill.  Every other unit in
     /// this SDK sits under 500.  One call per four frames costs nothing next to
     /// the work inside; keeping a single copy takes the frame to 72 bytes and
@@ -531,7 +634,8 @@ private:
     void ProcessQuad(const float* in, float* out) {
         // Parameter smoothing: one 1-pole step per quad, ~8 ms at any rate.
         const float ks = smooth_coeff_;
-        current_preamp_     += ks * (target_preamp_     - current_preamp_);
+        current_trim_       += ks * (target_trim_       - current_trim_);
+        current_fader_      += ks * (target_fader_      - current_fader_);
         current_mix_        += ks * (target_mix_        - current_mix_);
         current_sat_drive_  += ks * (target_sat_drive_  - current_sat_drive_);
         current_sat_makeup_ += ks * (target_sat_makeup_ - current_sat_makeup_);
@@ -547,31 +651,64 @@ private:
             dry_r = vi.val[1];
         }
 
-        float32x4_t sig_l = vmulq_n_f32(dry_l, current_preamp_);
-        float32x4_t sig_r = vmulq_n_f32(dry_r, current_preamp_);
+        float32x4_t sig_l = vmulq_n_f32(dry_l, current_trim_);
+        float32x4_t sig_r = vmulq_n_f32(dry_r, current_trim_);
+
+        // Channel strip: Trim into the op-amps, which clip at their rails,
+        // then the fader.  The EQ comes after the clip, as on the console.
+        console_clip(sig_l, sig_r);
+        sig_l = vmulq_n_f32(sig_l, current_fader_);
+        sig_r = vmulq_n_f32(sig_r, current_fader_);
+        // The mixer's 20 kHz bandwidth (20 Hz - 20 kHz +/-2 dB, line to line).
+        // It also knocks down the clip's residue between 20 and 24 kHz --
+        // harmonics in the oversampler's transition band fold there -- before
+        // the tape's record EQ boosts it ~16 dB and the saturator mixes it back
+        // down into the audio band.
+        biquad_process4_stereo(&console_lpf_, &coeff_console_lpf_, &sig_l, &sig_r);
 
         parametric_eq(sig_l, sig_r);
 
-        // dbx encode: HF pre-emphasis + 2:1 RMS companding.  Returns the
-        // matching decode gain so encode x decode is exactly unity.
-        const float32x4_t dec_gain = dbx_nr_encode(sig_l, sig_r);
+        // dbx encode: HF pre-emphasis + 2:1 RMS compression (Active, EncOnly).
+        dbx_nr_encode(sig_l, sig_r);
 
-        head_bump(sig_l, sig_r);
-        drive_into_soft_saturation(sig_l, sig_r);
+        // Inside the dbx loop the tape has to give back what it was given, as
+        // a calibrated deck does: the decoder now hears the tape, and a 1:2
+        // expander would double any gain the tape stage added (Drive's make-up
+        // was +3.4 dB at 40 %).  So the saturator runs at unity small-signal
+        // gain and the make-up is a playback gain after the decoder.
+        const float drive    = current_sat_drive_ * sat_scale_;
+        const float playback = current_sat_makeup_ * sat_makeup_comp_ * drive
+                             * ((model_ == k_vinyl) ? vinyl_slope_ : 1.0f);
+
+        // Record EQ boosts the treble into the tape and the playback EQ takes
+        // it out again, so the treble saturates first, as it does on cassette.
+        biquad_process4_stereo(&rec_pre_, &coeff_rec_pre_, &sig_l, &sig_r);
+        drive_into_soft_saturation(sig_l, sig_r, drive);
+        biquad_process4_stereo(&rec_de_,  &coeff_rec_de_,  &sig_l, &sig_r);
 
         // Noise sits after saturation (so Drive does not amplify it), before
         // the playback roll-off (so it is band-limited by the machine, as tape
         // noise is), and before the decoder (so the decoder can suppress it,
         // as dbx does).  It used to come after the roll-off, which left a
         // high-passed noise band running flat to Nyquist — the "whine".
-        if (model_ == k_vinyl) vinyl_dust(sig_l, sig_r);
-        else                   tape_hiss(sig_l, sig_r);
+        // The noise is scaled against the playback gain so the floor at the
+        // output is where it was, and a hotter recording still buys S/N.
+        const float noise_level = 1.0f / playback;
+        if (model_ == k_vinyl) vinyl_dust(sig_l, sig_r, noise_level);
+        else                   tape_hiss(sig_l, sig_r, noise_level);
 
+        // The head bump is the playback head's response, so it comes after
+        // the tape.  Ahead of the saturator (where it used to be) it drove
+        // the kick 3-5 dB harder into saturation than the rest of the mix.
+        head_bump(sig_l, sig_r);
         tape_age(sig_l, sig_r);
 
         wow_and_flutter(sig_l, sig_r);
         crosstalk(sig_l, sig_r);
-        dbx_nr_decode(sig_l, sig_r, dec_gain);
+        dbx_nr_decode(sig_l, sig_r);
+
+        sig_l = vmulq_n_f32(sig_l, playback);
+        sig_r = vmulq_n_f32(sig_r, playback);
 
         // DC block the wet path only, so Mix=0 stays bit-transparent.  Vinyl
         // needs this most: its asymmetric saturator is the main DC source, yet
@@ -599,118 +736,147 @@ private:
         if (eq_high_active_) biquad_process4_stereo(&eq_high_, &coeff_eq_high_, &sig_l, &sig_r);
     }
 
-    /// Serial per-sample 1-pole over the four lanes of a quad.
+    // =========================================================================
+    // dbx compander
+    //
+    // A dbx encoder is the exact inverse of its decoder because both detectors
+    // read the same signal: the encoder's detector listens to its own output
+    // (feedback), the decoder's to its input (feed-forward), and on tape those
+    // are the same thing.  So the two halves cancel without sharing any state,
+    // and whatever the tape does in between -- saturation, treble loss, the
+    // head bump -- reaches the decoder's detector and is expanded along with
+    // the programme.  A 1:2 expander doubles any level error in dB, which is
+    // why a dbx Portastudio squashes harder than its tape alone when pushed,
+    // and why dull or misaligned tape "breathes".
+    //
+    // This unit used to take the decode gain as 1/encode gain, which cancels
+    // exactly but hides the tape from the decoder.  (Independent followers
+    // reading *different* signals -- the encoder's input against the tape
+    // output -- clicked on the first hit after silence; mirrored detectors
+    // reading the same signal start and stay in step.)
+    // =========================================================================
+
+    /// One half of the compander.  The gain is always held as the *encoder's*
+    /// gain, so the decoder's state is a copy of the encoder's whenever the
+    /// tape is transparent; the decoder applies its inverse.
+    struct DbxSide {
+        float env_wb;            // wideband RMS power envelope
+        float env_hf;            // Type II HF spectral envelope
+        float gain;              // smoothed encode gain
+        biquad_state2_t bl;      // control-path band limit, {L,R}
+        biquad_state2_t hf;      // detector HF band filter, {L,R}
+    };
+
+    static void dbx_side_reset(DbxSide* s) {
+        s->env_wb = kDbxRefPower;
+        s->env_hf = kDbxRefPower;
+        s->gain   = 1.0f;
+        biquad_reset2(&s->bl);
+        biquad_reset2(&s->hf);
+    }
+
+    /// 1/sqrt(x), ~1e-6 relative: NEON estimate plus two Newton-Raphson steps.
+    static fast_inline float rsqrt_nr(float x) {
+        const float32x2_t v = vdup_n_f32(x);
+        float32x2_t r = vrsqrte_f32(v);
+        r = vmul_f32(vrsqrts_f32(vmul_f32(v, r), r), r);
+        r = vmul_f32(vrsqrts_f32(vmul_f32(v, r), r), r);
+        return vget_lane_f32(r, 0);
+    }
+
+    /// The gain this half wants for the next quad, from the detector state the
+    /// last one left: (env/ref)^(-1/2) of the *compressed* signal's power,
+    /// which in steady state is (input/ref)^(-1/4) -- a true 2:1 in dB about
+    /// -18 dBFS RMS.  Once per quad: the detectors average over 3-12 ms, so
+    /// four samples of latency in the loop cost nothing.
+    fast_inline float dbx_target(const DbxSide* s, float gmin, float gmax) const {
+        const float env = fmaxf(0.7f * s->env_wb + 0.3f * s->env_hf, 1.0e-9f);
+        return fminf(fmaxf(rsqrt_nr(env * (1.0f / kDbxRefPower)), gmin), gmax);
+    }
+
+    /// Per-sample gain ballistics toward the target: attack while the gain
+    /// falls (the programme got louder), release while it recovers.  Serial,
+    /// because a vector update per quad would run four decimated followers.
+    fast_inline float32x4_t dbx_ballistics(DbxSide* s, float target) const {
+        const float k = (target < s->gain) ? attack_coeff_ : release_coeff_;
+        float g = s->gain;
+        float32x4_t v = vdupq_n_f32(0.0f);
+        g += k * (target - g);  v = vsetq_lane_f32(g, v, 0);
+        g += k * (target - g);  v = vsetq_lane_f32(g, v, 1);
+        g += k * (target - g);  v = vsetq_lane_f32(g, v, 2);
+        g += k * (target - g);  v = vsetq_lane_f32(g, v, 3);
+        s->gain = g;
+        return v;
+    }
+
+    /// Feed a quad of the signal *as it stands on tape* to a detector.  The
+    /// encoder and the decoder run this same code on the same signal.
     ///
-    /// Keeping the state in a float32x4_t and doing one vector update per quad
-    /// — as this used to — gives each lane its own follower running on a
-    /// decimated-by-4 stream: the time constants come out 4x too long and the
-    /// lanes drift apart, stair-stepping the result at fs/4.  omnipress smooths
-    /// its compressor gain serially for the same reason.
-    fast_inline float32x4_t smooth_serial(float& state, float32x4_t x, float k) const {
-        float st = state;
-        float32x4_t y = x;
-#define PC_SMOOTH_STEP(LANE)                                        \
-        {                                                           \
-            st += k * (vgetq_lane_f32(x, LANE) - st);               \
-            y = vsetq_lane_f32(st, y, LANE);                        \
-        }
-        PC_SMOOTH_STEP(0)
-        PC_SMOOTH_STEP(1)
-        PC_SMOOTH_STEP(2)
-        PC_SMOOTH_STEP(3)
-#undef PC_SMOOTH_STEP
-        state = st;
-        return y;
+    /// Fixed-window RMS averaging, not the user's ballistics: a real dbx
+    /// detector averages power over a fixed time, and putting a 3 ms attack
+    /// straight onto the power made the detector chase the 2f ripple of a bass
+    /// note and modulate its own gain at twice the note frequency.  The four
+    /// per-sample one-pole steps are folded into one weighted sum, which is
+    /// exactly the serial result.
+    fast_inline void dbx_listen(DbxSide* s, float32x4_t l, float32x4_t r) const {
+        // Type II rolls its control path off below ~30 Hz and above ~10 kHz so
+        // errors at the band edges -- rumble, the treble a tape loses -- do not
+        // steer the gain.  It does not touch the audio path.
+        biquad_process4_stereo(&s->bl, &coeff_dbx_bl_, &l, &r);
+        // Type II HF spectral path: the band above ~2 kHz is tracked on its own
+        // so bright transients get more reduction than their level implies.
+        float32x4_t hl = l, hr = r;
+        biquad_process4_stereo(&s->hf, &coeff_dbx_hf_, &hl, &hr);
+        const float32x4_t wb = vmlaq_f32(vmulq_f32(l, l), r, r);       // L+R power
+        const float32x4_t hf = vmlaq_f32(vmulq_f32(hl, hl), hr, hr);
+        const float32x4_t ww = vmulq_f32(wb, wb_rms_w_);
+        const float32x4_t hw = vmulq_f32(hf, hf_rms_w_);
+        const float32x2_t sw = vpadd_f32(vadd_f32(vget_low_f32(ww), vget_high_f32(ww)),
+                                         vadd_f32(vget_low_f32(hw), vget_high_f32(hw)));
+        s->env_wb = s->env_wb * wb_rms_decay_ + vget_lane_f32(sw, 0);
+        s->env_hf = s->env_hf * hf_rms_decay_ + vget_lane_f32(sw, 1);
     }
 
-    /// Serial per-sample gain ballistics: attack while the compander is pulling
-    /// gain down (the programme got louder), release while it is letting gain
-    /// back up.
-    fast_inline float32x4_t smooth_gain(float& state, float32x4_t target) const {
-        const float ka = attack_coeff_, kr = release_coeff_;
-        float st = state;
-        float32x4_t y = target;
-#define PC_GAIN_STEP(LANE)                                          \
-        {                                                           \
-            const float g = vgetq_lane_f32(target, LANE);           \
-            st += ((g < st) ? ka : kr) * (g - st);                  \
-            y = vsetq_lane_f32(st, y, LANE);                        \
-        }
-        PC_GAIN_STEP(0)
-        PC_GAIN_STEP(1)
-        PC_GAIN_STEP(2)
-        PC_GAIN_STEP(3)
-#undef PC_GAIN_STEP
-        state = st;
-        return y;
-    }
+    /// Gain limits for the compander: the full range when both halves run, a
+    /// tighter one when the listener hears one half on its own.
+    fast_inline float dbx_gain_min() const { return (dbx_mode_ == k_active) ? kEncGainMin : kHalfGainMin; }
+    fast_inline float dbx_gain_max() const { return (dbx_mode_ == k_active) ? kEncGainMax : kHalfGainMax; }
 
-    fast_inline float32x4_t dbx_nr_encode(float32x4_t &sig_l, float32x4_t &sig_r) {
-        if (dbx_mode_ == k_off)
-            return vdupq_n_f32(1.0f);
+    __attribute__((noinline, optimize("Ofast")))
+    void dbx_nr_encode(float32x4_t &sig_l, float32x4_t &sig_r) {
+        if (dbx_mode_ != k_active && dbx_mode_ != k_encode_only)
+            return;
 
         // HF pre-emphasis (record side).
         biquad_process4_stereo(&dbx_pre_, &coeff_dbx_pre_, &sig_l, &sig_r);
 
-        // Type II HF spectral path: track the band above ~2 kHz separately so
-        // bright transients get more reduction than their level alone implies.
-        float32x4_t hf_l = sig_l, hf_r = sig_r;
-        biquad_process4_stereo(&dbx_hf_, &coeff_dbx_hf_, &hf_l, &hf_r);
-
-        const float32x4_t hf_sq = vmlaq_f32(vmulq_f32(hf_l,  hf_l),  hf_r,  hf_r);
-        const float32x4_t wb_sq = vmlaq_f32(vmulq_f32(sig_l, sig_l), sig_r, sig_r);
-
-        // Fixed-window RMS averaging, not the user's ballistics.  A real dbx
-        // detector averages power over a fixed time; putting a 3 ms attack
-        // straight onto the power made the detector chase the 2f ripple of a
-        // bass note and modulate its own gain at twice the note frequency.
-        // Attack/Release now shape the *gain*, which is what they mean on a
-        // compressor and what omnipress does.
-        const float32x4_t hf_env = smooth_serial(dbx_hf_env_, hf_sq, hf_rms_coeff_);
-        const float32x4_t wb_env = smooth_serial(dbx_wb_env_, wb_sq, wb_rms_coeff_);
-
-        float32x4_t env = vmlaq_n_f32(vmulq_n_f32(wb_env, 0.7f), hf_env, 0.3f);
-        env = vmaxq_f32(env, vdupq_n_f32(1.0e-9f));
-
-        // 2:1 companding referenced to kDbxRefPower:
-        //   gain = (env / ref)^(-1/4)
-        // env is power, so amplitude^(-1/2) — a true 2:1 slope — is env^(-1/4).
-        // Two Newton-refined rsqrt steps beat the generic pow() path by ~40 ops
-        // and track it to better than 2e-5 relative.
-        float32x4_t rsq = vrsqrteq_f32(env);
-        rsq = vmulq_f32(vrsqrtsq_f32(vmulq_f32(env, rsq), rsq), rsq);   // 1/sqrt(env)
-        const float32x4_t sqrt_env = vmulq_f32(env, rsq);               // sqrt(env)
-        float32x4_t enc_gain = vrsqrteq_f32(sqrt_env);
-        enc_gain = vmulq_f32(vrsqrtsq_f32(vmulq_f32(sqrt_env, enc_gain), enc_gain), enc_gain);
-        enc_gain = vmulq_n_f32(enc_gain, kDbxRefScale);
-
-        const bool enc_only = (dbx_mode_ == k_encode_only);
-        enc_gain = vminq_f32(enc_gain, vdupq_n_f32(enc_only ? kEncOnlyGainMax : kEncGainMax));
-        enc_gain = vmaxq_f32(enc_gain, vdupq_n_f32(enc_only ? kEncOnlyGainMin : kEncGainMin));
-        enc_gain = smooth_gain(dbx_gain_, enc_gain);
-
-        sig_l = vmulq_f32(sig_l, enc_gain);
-        sig_r = vmulq_f32(sig_r, enc_gain);
-
-        // Deriving the decode gain from the encode gain (rather than from an
-        // independent post-tape detector) keeps encode x decode == 1 at all
-        // times.  Independent followers used to mismatch on the first hit after
-        // silence and produce a click followed by a hole.
-        return recip_nr(enc_gain);
+        // Compress with the gain the detector chose from what it heard of
+        // the *compressed* signal so far, then let it hear this quad.
+        const float32x4_t g = dbx_ballistics(&dbx_enc_, dbx_target(&dbx_enc_, dbx_gain_min(), dbx_gain_max()));
+        sig_l = vmulq_f32(sig_l, g);
+        sig_r = vmulq_f32(sig_r, g);
+        dbx_listen(&dbx_enc_, sig_l, sig_r);
     }
 
-    fast_inline void dbx_nr_decode(float32x4_t &sig_l, float32x4_t &sig_r,
-                                   float32x4_t dec_gain) {
-        // Encode-only is the classic Portastudio abuse trick: record through
-        // the encoder, play back without the decoder, and keep the compressed,
-        // pre-emphasised signal.  It only means anything if the decoder really
-        // is out of circuit — this branch used to run for encode-only too, so
-        // the mode did nothing but tighten a clamp.
-        if (dbx_mode_ != k_active)
+    __attribute__((noinline, optimize("Ofast")))
+    void dbx_nr_decode(float32x4_t &sig_l, float32x4_t &sig_r) {
+        // EncOnly is the classic Portastudio abuse trick: record through the
+        // encoder, play back without the decoder, and keep the compressed,
+        // pre-emphasised signal -- bright and squashed, "a makeshift aural
+        // exciter".  DecOnly is the reverse: a tape recorded without dbx played
+        // through the expander and its de-emphasis, which comes out dark and
+        // over-dynamic ("lots of bass and no high-end").
+        if (dbx_mode_ != k_active && dbx_mode_ != k_decode_only)
             return;
 
-        sig_l = vmulq_f32(sig_l, dec_gain);
-        sig_r = vmulq_f32(sig_r, dec_gain);
+        // Same detector, same code, on what came back off the tape; expand by
+        // the inverse of the gain it implies.
+        const float32x4_t g = dbx_ballistics(&dbx_dec_, dbx_target(&dbx_dec_, dbx_gain_min(), dbx_gain_max()));
+        dbx_listen(&dbx_dec_, sig_l, sig_r);
+        const float32x4_t inv = recip_nr(g);
+        sig_l = vmulq_f32(sig_l, inv);
+        sig_r = vmulq_f32(sig_r, inv);
+
         biquad_process4_stereo(&dbx_de_, &coeff_dbx_de_, &sig_l, &sig_r);
     }
 
@@ -722,16 +888,57 @@ private:
         biquad_process4_stereo(&tape_lpf_, &coeff_tape_lpf_, &sig_l, &sig_r);
     }
 
-    fast_inline void drive_into_soft_saturation(float32x4_t &sig_l, float32x4_t &sig_r) {
-        const float drive  = current_sat_drive_  * sat_scale_;
-        const float makeup = current_sat_makeup_ * sat_makeup_comp_;
-        if (model_ == k_vinyl) {
-            sig_l = vmulq_n_f32(vinyl_saturate(sig_l, drive, vinyl_hist_l_), makeup);
-            sig_r = vmulq_n_f32(vinyl_saturate(sig_r, drive, vinyl_hist_r_), makeup);
-        } else {
-            sig_l = vmulq_n_f32(tape_saturation(vmulq_n_f32(sig_l, drive)), makeup);
-            sig_r = vmulq_n_f32(tape_saturation(vmulq_n_f32(sig_r, drive)), makeup);
+    // The memoryless shapers, as functors for the 4x oversampler.
+    struct ConsoleShaper {
+        fast_inline float32x4_t operator()(float32x4_t x) const {
+            return knee_clip(x, kConsoleKnee, kConsoleRange);
         }
+    };
+    struct TapeShaper {
+        fast_inline float32x4_t operator()(float32x4_t x) const {
+            return tape_saturation(x);
+        }
+    };
+    struct VinylShaper {
+        float bias;
+        fast_inline float32x4_t operator()(float32x4_t x) const {
+            return vinyl_clip(vaddq_f32(x, vdupq_n_f32(bias)));
+        }
+    };
+
+    /// Console op-amp stage, run at 4x: rail clipping is the most broadband
+    /// thing in the unit.
+    ///
+    /// This and the other oversampled and compander stages are out of line:
+    /// inlined into ProcessQuad, the oversamplers' state spilled to the stack
+    /// around every allpass section.  On its own each keeps its state in
+    /// registers for the whole quad.
+    __attribute__((noinline, optimize("Ofast")))
+    void console_clip(float32x4_t &sig_l, float32x4_t &sig_r) {
+        hb4x_process4_stereo(&console_os_, &sig_l, &sig_r, ConsoleShaper());
+    }
+
+    /// Drive into the shaper and back out by the same factor, so a quiet signal
+    /// leaves at the level it came in (vinyl also divides out its shaper's
+    /// slope at the groove-wear bias; see set_vinyl_asymmetry).  Run at 4x:
+    /// the record EQ pushes 10 kHz 10-16 dB harder into the shaper than the
+    /// midrange, and at 2x a 10 kHz tone's 9th harmonic still folded back to
+    /// 6.2 kHz.
+    __attribute__((noinline, optimize("Ofast")))
+    void drive_into_soft_saturation(float32x4_t &sig_l, float32x4_t &sig_r, float drive) {
+        sig_l = vmulq_n_f32(sig_l, drive);
+        sig_r = vmulq_n_f32(sig_r, drive);
+        if (model_ == k_vinyl) {
+            hb4x_process4_stereo(&tape_os_, &sig_l, &sig_r, VinylShaper{ vinyl_bias_ });
+            const float32x4_t dc = vdupq_n_f32(vinyl_dc_offset_);
+            sig_l = vinyl_trace(vsubq_f32(sig_l, dc), vinyl_hist_l_);
+            sig_r = vinyl_trace(vsubq_f32(sig_r, dc), vinyl_hist_r_);
+        } else {
+            hb4x_process4_stereo(&tape_os_, &sig_l, &sig_r, TapeShaper());
+        }
+        const float back = 1.0f / (drive * ((model_ == k_vinyl) ? vinyl_slope_ : 1.0f));
+        sig_l = vmulq_n_f32(sig_l, back);
+        sig_r = vmulq_n_f32(sig_r, back);
     }
 
     /// 4-point, 3rd-order Hermite over a {L,R} pair.
@@ -823,7 +1030,7 @@ private:
         sig_r = xr;
     }
 
-    fast_inline void tape_hiss(float32x4_t &sig_l, float32x4_t &sig_r) {
+    fast_inline void tape_hiss(float32x4_t &sig_l, float32x4_t &sig_r, float level) {
         if (hiss_amount_ <= 0.0f) return;
         // Two independent bipolar noise streams, coloured by the same HPF.
         // The old code filtered L only and built R as 0.3*L + 0.7*rand, where
@@ -836,12 +1043,12 @@ private:
         // here: the hiss is injected inside the companding loop, so when the
         // decoder is engaged it gets pulled down exactly as it would on tape.
         // (The Hiss knob used to do literally nothing in the default patch.)
-        const float hiss_scaled = hiss_amount_ * (1.0f + tape_age_ * 2.0f) * noise_scale_;
+        const float hiss_scaled = hiss_amount_ * (1.0f + tape_age_ * 2.0f) * noise_scale_ * level;
         sig_l = vmlaq_n_f32(sig_l, nl, hiss_scaled);
         sig_r = vmlaq_n_f32(sig_r, nr, hiss_scaled);
     }
 
-    fast_inline void vinyl_dust(float32x4_t &sig_l, float32x4_t &sig_r) {
+    fast_inline void vinyl_dust(float32x4_t &sig_l, float32x4_t &sig_r, float level) {
         float32x4_t white_l = prng_bipolar();
         float32x4_t white_r = prng_bipolar();
         const float32x4_t trig = prng_unit();
@@ -898,7 +1105,7 @@ private:
         crack_l = vmlaq_f32(crack_l, white_l, v_big);
         crack_r = vmlaq_f32(crack_r, white_r, v_big);
 
-        const float dust_level = (0.06f + tape_age_ * 0.08f) * noise_scale_;
+        const float dust_level = (0.06f + tape_age_ * 0.08f) * noise_scale_ * level;
         sig_l = vmlaq_n_f32(sig_l, crack_l, dust_level);
         sig_r = vmlaq_n_f32(sig_r, crack_r, dust_level);
     }
@@ -907,17 +1114,23 @@ private:
     /// quadratic knee, and exactly 1.0 once the overshoot reaches 2*range.  The
     /// old stage hard-clipped at +/-1, which sprays broadband aliasing across
     /// the master bus precisely when the unit is being pushed.
+    fast_inline float32x4_t soft_ceiling(float32x4_t x) const {
+        return knee_clip(x, kCeilingKnee, kCeilingRange);
+    }
+
+    /// Odd-symmetric clipper: unity up to `knee`, then a quadratic knee that
+    /// lands tangent-flat on knee + range once the overshoot reaches 2*range.
     ///
     /// Written without a division: no reciprocal to refine, and an infinite
-    /// input lands on 1.0 instead of going through a 0*inf NaN.
-    fast_inline float32x4_t soft_ceiling(float32x4_t x) const {
-        const float32x4_t knee = vdupq_n_f32(kCeilingKnee);
+    /// input lands on the ceiling instead of going through a 0*inf NaN.
+    static fast_inline float32x4_t knee_clip(float32x4_t x, float knee_level, float range) {
+        const float32x4_t knee = vdupq_n_f32(knee_level);
         const float32x4_t a    = vabsq_f32(x);
         float32x4_t over = vmaxq_f32(vsubq_f32(a, knee), vdupq_n_f32(0.0f));
-        over = vminq_f32(over, vdupq_n_f32(2.0f * kCeilingRange));
+        over = vminq_f32(over, vdupq_n_f32(2.0f * range));
         // mag = min(a,knee) + over - over^2 / (4*range)
         float32x4_t mag = vaddq_f32(vminq_f32(a, knee), over);
-        mag = vmlsq_n_f32(mag, vmulq_f32(over, over), 0.25f / kCeilingRange);
+        mag = vmlsq_n_f32(mag, vmulq_f32(over, over), 0.25f / range);
         const uint32x4_t sign = vandq_u32(vreinterpretq_u32_f32(x), vdupq_n_u32(0x80000000u));
         return vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(mag), sign));
     }
@@ -926,25 +1139,23 @@ private:
     // Non-linearities
     // =========================================================================
 
-    /// Asymmetric vinyl saturation with mechanical tracing distortion.
-    /// @param hist per-channel one-quad history — L and R used to share a single
-    ///        history vector, which cross-fed the two channels' tracing filters.
-    fast_inline float32x4_t vinyl_saturate(float32x4_t x, float drive,
-                                           float32x4_t &hist) const {
-        // Bias breaks the symmetry and generates the even harmonics that give
-        // worn vinyl its warmth.
-        const float32x4_t xb = vmlaq_n_f32(vdupq_n_f32(vinyl_bias_), x, drive);
-
-        // Rational clipper f(x) = x / (1 + |x| + 0.3x^2): a cheap tanh with a
-        // warmer knee.
+    /// Vinyl's memoryless half: the rational clipper f(x) = x / (1 + |x| + 0.3x^2),
+    /// a cheap tanh with a warmer knee.  The caller adds the groove-wear bias
+    /// first; the bias breaks the symmetry and generates the even harmonics
+    /// that give worn vinyl its warmth.  Run at 4x.
+    static fast_inline float32x4_t vinyl_clip(float32x4_t xb) {
         const float32x4_t denom =
             vmlaq_n_f32(vaddq_f32(vdupq_n_f32(1.0f), vabsq_f32(xb)),
                         vmulq_f32(xb, xb), 0.3f);
-        const float32x4_t sat = vmulq_f32(xb, recip_fast(denom));
-        const float32x4_t y   = vsubq_f32(sat, vdupq_n_f32(vinyl_dc_offset_));
+        return vmulq_f32(xb, recip_fast(denom));
+    }
 
-        // Tracing error: the stylus cannot follow the groove wall exactly, so
-        // add a signed-square of the groove velocity (a 1-sample difference).
+    /// Mechanical tracing distortion: the stylus cannot follow the groove wall
+    /// exactly, so add a signed-square of the groove velocity (a 1-sample
+    /// difference).
+    /// @param hist per-channel one-quad history — L and R used to share a single
+    ///        history vector, which cross-fed the two channels' tracing filters.
+    static fast_inline float32x4_t vinyl_trace(float32x4_t y, float32x4_t &hist) {
         const float32x4_t shifted = vextq_f32(hist, y, 3);
         hist = y;
         const float32x4_t vel = vsubq_f32(y, shifted);
@@ -1000,11 +1211,58 @@ private:
         // Age dulls the high end: full Age drops 14 kHz to 5.6 kHz.
         const float lpf_hz = m.lpf_hz * (1.0f - tape_age_ * 0.6f);
 
+        // Record EQ and its exact inverse, the playback EQ: swapping the zero
+        // and the pole of a first-order shelf inverts it.
+        calc_emphasis(&coeff_rec_pre_, m.rec_emph_hz,  kRecEmphPoleHz);
+        calc_emphasis(&coeff_rec_de_,  kRecEmphPoleHz, m.rec_emph_hz);
+
         calc_peaking(&coeff_tape_head_,  m.head_hz, m.head_db, 1.5f);
         calc_low_pass(&coeff_tape_lpf_,  lpf_hz,  0.707f);
         calc_high_pass(&coeff_hiss_hpf_, m.hiss_hz, 0.707f);
         calc_high_pass(&coeff_dbx_hf_,   2000.0f, 0.707f);  // Type II HF path
+        calc_band_limit(&coeff_dbx_bl_,  30.0f, 10000.0f);  // Type II control path
+        calc_low_pass(&coeff_console_lpf_, 20000.0f, 0.707f);  // mixer bandwidth
         calc_high_pass(&coeff_xtalk_hpf_, 1500.0f, 0.5f);   // treble-biased bleed
+    }
+
+    /// First-order high-pass at lo_hz times first-order low-pass at hi_hz, as
+    /// one biquad (bilinear, prewarped): a gentle band limit for a detector.
+    void calc_band_limit(biquad_coeffs_t* c, float lo_hz, float hi_hz) {
+        const float t1 = tanf(M_PI * clamp_hz(lo_hz) * inverse_samplerate_);
+        const float t2 = tanf(M_PI * clamp_hz(hi_hz) * inverse_samplerate_);
+        // HP: (1 - z^-1) / (1 + t1) / (1 - p1 z^-1);  LP: t2 (1 + z^-1) / (1 + t2) / (1 - p2 z^-1)
+        const float p1 = (1.0f - t1) / (1.0f + t1);
+        const float p2 = (1.0f - t2) / (1.0f + t2);
+        const float g  = t2 / ((1.0f + t1) * (1.0f + t2));
+        c->b0 =  g;  c->b1 = 0.0f;  c->b2 = -g;              // (1 - z^-1)(1 + z^-1) = 1 - z^-2
+        c->a1 = -(p1 + p2);
+        c->a2 =  p1 * p2;
+    }
+
+    /// First-order shelf (1 + s/wz) / (1 + s/wp), unity at DC, by the bilinear
+    /// transform.  zero < pole is a treble boost, zero > pole the matching cut
+    /// (same corners swapped, so the pair is an exact inverse); a zero of 0 Hz
+    /// means no emphasis at all.
+    ///
+    /// Only the lower corner is prewarped; the upper one is placed so the
+    /// shelf tops out at the analog ratio.  Prewarping both, with the pole at
+    /// 20 kHz this close to Nyquist, stretched a 15.9 dB shelf to 24.9 dB and
+    /// pushed the top octave 9-12 dB harder into the saturator than designed.
+    void calc_emphasis(biquad_coeffs_t* c, float zero_hz, float pole_hz) {
+        if (zero_hz <= 0.0f || pole_hz <= 0.0f) {
+            c->b0 = 1.0f;  c->b1 = c->b2 = c->a1 = c->a2 = 0.0f;
+            return;
+        }
+        const float lo = fminf(zero_hz, pole_hz), hi = fmaxf(zero_hz, pole_hz);
+        const float a_lo = 1.0f / tanf(M_PI * clamp_hz(lo) * inverse_samplerate_);
+        const float a_hi = a_lo * lo / hi;
+        const float az = (zero_hz <= pole_hz) ? a_lo : a_hi;
+        const float ap = (zero_hz <= pole_hz) ? a_hi : a_lo;
+        const float inv_a0 = 1.0f / (1.0f + ap);
+        c->b0 = (1.0f + az) * inv_a0;
+        c->b1 = (1.0f - az) * inv_a0;
+        c->a1 = (1.0f - ap) * inv_a0;
+        c->b2 = c->a2 = 0.0f;
     }
 
     /// A band at exactly 0 dB is a unity filter, so mark it inactive and clear
@@ -1017,6 +1275,12 @@ private:
         if (on) calc_peaking(c, hz, db, q);
     }
 
+    /// The coefficient functions below use libm's cosf/sinf, not float_math's
+    /// fast versions: those carry ~1.3e-5 of absolute error, and a biquad's
+    /// centre frequency hangs on cos(w0) ~ 1 - w0^2/2, so at the bottom of the
+    /// range the error moved the 60 Hz head bump to 72 Hz and a 27.5 Hz one to
+    /// 48 Hz.  Parameter-change path only, so libm is affordable.
+    ///
     /// Keep every cutoff inside a range where the cookbook formulas are well
     /// conditioned.  A zeroed parameter array used to ask for 0 Hz, which makes
     /// alpha 0 and produces a degenerate pole-on-the-unit-circle section.
@@ -1028,8 +1292,8 @@ private:
     void calc_peaking(biquad_coeffs_t* c, float hz, float db, float q) {
         const float A      = powf(10.0f, db * 0.025f);   // 10^(db/40)
         const float w0     = M_TWOPI * clamp_hz(hz) * inverse_samplerate_;
-        const float cosw   = fastercosfullf(w0);
-        const float alpha  = fastersinfullf(w0) / (2.0f * q);
+        const float cosw   = cosf(w0);
+        const float alpha  = sinf(w0) / (2.0f * q);
         const float inv_a0 = A / (A + alpha);   // 1 / (1 + alpha/A)
         c->b0 =  (1.0f + alpha * A) * inv_a0;
         c->b1 = (-2.0f * cosw)      * inv_a0;
@@ -1041,7 +1305,7 @@ private:
     void calc_high_shelf(biquad_coeffs_t* c, float hz, float db) {
         const float A    = powf(10.0f, db * 0.025f);
         const float w0   = M_TWOPI * clamp_hz(hz) * inverse_samplerate_;
-        const float cosw = fastercosfullf(w0), sinw = fastersinfullf(w0);
+        const float cosw = cosf(w0), sinw = sinf(w0);
         // alpha for the shelf form, S = 1  =>  sqrt((A + 1/A)(1/S - 1) + 2)
         const float alpha  = (sinw * 0.5f) * fasterSqrt((A + 1.0f / A) * 0.414427157f + 2.0f);
         const float sqA2   = 2.0f * fasterSqrt(A) * alpha;
@@ -1055,7 +1319,7 @@ private:
 
     void calc_low_pass(biquad_coeffs_t* c, float hz, float q) {
         const float w0   = M_TWOPI * clamp_hz(hz) * inverse_samplerate_;
-        const float cosw = fastercosfullf(w0), sinw = fastersinfullf(w0);
+        const float cosw = cosf(w0), sinw = sinf(w0);
         const float alpha  = sinw / (2.0f * q);
         const float inv_a0 = 1.0f / (1.0f + alpha);
         c->b0 = (1.0f - cosw) * 0.5f * inv_a0;
@@ -1067,7 +1331,7 @@ private:
 
     void calc_high_pass(biquad_coeffs_t* c, float hz, float q) {
         const float w0   = M_TWOPI * clamp_hz(hz) * inverse_samplerate_;
-        const float cosw = fastercosfullf(w0), sinw = fastersinfullf(w0);
+        const float cosw = cosf(w0), sinw = sinf(w0);
         const float alpha  = sinw / (2.0f * q);
         const float inv_a0 = 1.0f / (1.0f + alpha);
         c->b0 =  (1.0f + cosw) * 0.5f * inv_a0;
@@ -1122,31 +1386,36 @@ private:
     bool    b_bypass_;
     uint32_t in_stride_ = 2u;   // input floats per frame: 2, or 4 with the sidechain pair
     std::atomic<bool> b_update_filters_;
+    std::atomic<bool> b_dbx_resync_{false};
 
-    uint8_t model_;
-    uint8_t dbx_mode_;
+    uint8_t model_    = 0;
+    uint8_t dbx_mode_ = 0;
 
     float smooth_coeff_;
-    float target_preamp_, current_preamp_;
+    float target_trim_,   current_trim_;     // console input gain
+    float target_fader_,  current_fader_;    // its make-up
     float target_mix_,    current_mix_;
     float target_sat_drive_,  current_sat_drive_;    // saturator input gain
     float target_sat_makeup_, current_sat_makeup_;   // its make-up
     float tape_age_;
     float vinyl_bias_;
     float vinyl_dc_offset_;
+    float vinyl_slope_ = 1.0f;   // vinyl shaper's small-signal slope at the bias
     float xtalk_amount_;
     float hiss_amount_;
 
     // Per-machine scalings, resolved from the spec table on a model change.
     float wf_scale_, noise_scale_, xtalk_scale_, sat_scale_, sat_makeup_comp_;
 
-    // dbx detector
+    // dbx compander: encoder (feedback) and decoder (feed-forward) detectors
     float attack_ms_,  attack_coeff_;
     float release_ms_, release_coeff_;
-    float wb_rms_coeff_, hf_rms_coeff_;
-    float dbx_wb_env_;      // wideband RMS power envelope
-    float dbx_hf_env_;      // Type II HF spectral envelope
-    float dbx_gain_;        // smoothed encode gain
+    float32x4_t wb_rms_w_, hf_rms_w_;    // quad-folded RMS weights
+    float wb_rms_decay_, hf_rms_decay_;
+    DbxSide dbx_enc_, dbx_dec_;
+
+    // 4x oversamplers around the console clip and the tape/vinyl shaper
+    hb4x_state_t console_os_, tape_os_;
 
     // Wow & flutter
     float    wf_phase_inc_, wf_lfo_phase_;
@@ -1166,7 +1435,8 @@ private:
 
     // Stereo biquads (one state pair each, L and R sharing coefficients)
     biquad_state2_t eq_low_, eq_mid_, eq_high_;
-    biquad_state2_t dbx_pre_, dbx_de_, dbx_hf_;
+    biquad_state2_t dbx_pre_, dbx_de_;
+    biquad_state2_t rec_pre_, rec_de_, console_lpf_;
     biquad_state2_t tape_head_, tape_lpf_;
     biquad_state2_t hiss_hpf_, xtalk_hpf_;
     biquad_state2_t dc_block_;
@@ -1174,7 +1444,8 @@ private:
     bool eq_low_active_, eq_mid_active_, eq_high_active_;
 
     biquad_coeffs_t coeff_eq_low_, coeff_eq_mid_, coeff_eq_high_;
-    biquad_coeffs_t coeff_dbx_pre_, coeff_dbx_de_, coeff_dbx_hf_;
+    biquad_coeffs_t coeff_dbx_pre_, coeff_dbx_de_, coeff_dbx_hf_, coeff_dbx_bl_;
+    biquad_coeffs_t coeff_rec_pre_, coeff_rec_de_, coeff_console_lpf_;
     biquad_coeffs_t coeff_tape_head_, coeff_tape_lpf_;
     biquad_coeffs_t coeff_hiss_hpf_, coeff_xtalk_hpf_;
     biquad_coeffs_t coeff_dc_block_;
