@@ -13,7 +13,9 @@
  * in one case did) drift from the Note column the preset actually ships, and
  * the shipped column is what the drumlogue plays.  This tool drives GateOn(),
  * the exact path the internal sequencer uses, so the note under test is always
- * m_ui_note = the preset's own Note parameter.
+ * m_ui_note = the preset's own root note (its Note column) at Pitch 0.  Since
+ * pass 48 the knob in slot 1 is Pitch, a semitone OFFSET from that root, so
+ * the +12 render below is simply Pitch = +12.
  *
  * Printed per preset:
  *   note / nominal Hz   the shipped Note column and its equal-tempered pitch
@@ -105,8 +107,9 @@ int main(int argc, char** argv) {
     printf("idx,name,note,nominal_hz,engine,anchor,anchor_delta_semis,wav,wav_up12\n");
 
     // Render `preset` at `note` through the sequencer path and return the mono
-    // buffer.  transpose != 0 moves the Note parameter, which is how the second
-    // render (+12 semitones) tests whether the preset TRACKS its note at all.
+    // buffer.  transpose != 0 moves the Pitch knob (semitones from the root),
+    // which is how the second render (+12) tests whether the preset TRACKS its
+    // note at all.
     auto render = [&](int preset, int transpose, int n) -> float* {
         BrachettiSynth s;
         unit_runtime_desc_t d = {};
@@ -119,10 +122,7 @@ int main(int argc, char** argv) {
         s.LoadPreset((uint8_t)preset);
         for (int i = 0; i < NUM_VOICES; ++i)
             s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;
-        if (transpose) {
-            const int nn = s.getParameterValue(BrachettiSynth::k_paramNote) + transpose;
-            s.setParameter(BrachettiSynth::k_paramNote, nn);
-        }
+        if (transpose) s.setParameter(BrachettiSynth::k_paramPitch, transpose);
         float* mono = new float[n]();
         float buf[128];
         s.GateOn(110);          // same-tick gate, the drumlogue's own path
@@ -146,9 +146,9 @@ int main(int argc, char** argv) {
         s.Init(&d);
         s.LoadPreset((uint8_t)p);
 
-        // The shipped Note column, read back through the parameter store —
-        // exactly the value the sequencer will play through GateOn().
-        const int note = s.getParameterValue(BrachettiSynth::k_paramNote);
+        // The shipped root note at Pitch 0 — exactly the note the sequencer
+        // will play through GateOn().
+        const int note = s.PlayedNote();
         const float hz = 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
         const BrachettiSynth::EngineType eng = s.kPresetEngine[p];
         const int anchor = engine_anchor(p);

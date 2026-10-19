@@ -43,7 +43,7 @@ const sample_wrapper_t* mock_get_sample(uint8_t, uint8_t) { return nullptr; }
 static const int kSR = 48000;
 static const int kBlock = 128;
 
-struct Event { int type; float t; int arg; };   // type 0 = strike, 1 = set Note
+struct Event { int type; float t; int arg; };   // type 0 = strike, 1 = set note (absolute)
 
 // Render a timeline.  Returns mono samples.
 static std::vector<float> render(int preset, const std::vector<Event>& evs,
@@ -56,6 +56,10 @@ static std::vector<float> render(int preset, const std::vector<Event>& evs,
     d.get_sample = mock_get_sample;
     s.Init(&d);
     s.LoadPreset((uint8_t)preset);
+    // Pitch is a performance control that LoadPreset leaves alone (pass 48),
+    // and `s` is static: without this the CONTROL render would inherit the
+    // last offset the note-change render left on the knob.
+    s.setParameter(BrachettiSynth::k_paramPitch, 0);
 
     const int total = (int)(dur_s * kSR);
     std::vector<float> mono((size_t)total, 0.0f);
@@ -71,7 +75,10 @@ static std::vector<float> render(int preset, const std::vector<Event>& evs,
                 s.GateOff();
                 if (strike_times) strike_times->push_back(t);
             } else {
-                s.setParameter(BrachettiSynth::k_paramNote, evs[ei].arg);
+                // Events carry an ABSOLUTE note; the knob is an offset from
+                // the preset's root since pass 48.
+                s.setParameter(BrachettiSynth::k_paramPitch,
+                               evs[ei].arg - (int)s.PresetRootNote());
             }
             ++ei;
         }

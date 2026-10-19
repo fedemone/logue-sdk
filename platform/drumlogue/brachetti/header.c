@@ -41,10 +41,12 @@ const __unit_header unit_header_t unit_header = {
         // sound-shaping defaults disagreed with Kick2's preset row (Note 60 vs
         // 36 = two octaves up, Dkay 25 vs 200, NzRes 0 vs 420, ...), so the
         // unit booted showing "Kick2" while sounding like something else.
-        // Every default below is now Kick2's shipped value; only Poly and
-        // Velocity keep their own, because LoadPreset deliberately skips them
-        // (they are global performance settings, not per-preset sound design).
-        // If preset 0's row changes, change these with it.
+        // Every default below is now Kick2's shipped value; only Pitch, Poly
+        // and Velocity keep their own, because LoadPreset deliberately skips
+        // them (they are performance settings, not per-preset sound design).
+        // If preset 0's row changes, change these with it.  Pitch's default 0
+        // is right for EVERY preset by construction — it is an offset from
+        // the preset's own root note — which is one of the reasons it is one.
         //
         // ── RANGES MUST COVER WHAT THE PRESETS STORE ───────────────────────
         // Related HW report: "a preset loaded is not showing actual parameter
@@ -63,7 +65,24 @@ const __unit_header unit_header_t unit_header = {
         // agree with .num_presets — that is 0 now, see the note above — but
         // LoadPreset's own range guard is the backstop either way.
         {0, 39, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
-        {24, 126, 1, 36, k_unit_param_type_midi_note, 0, 0, 0, {"Note"}},
+        // Pitch (pass 48, was the absolute "Note" 24..126): SEMITONES FROM
+        // THE PRESET'S ROOT NOTE.  Every preset carries a root — the column
+        // that used to be loaded into Note — and the sequencer plays
+        // root + Pitch, so 0 is the preset exactly as voiced, whichever preset
+        // that is.  Range and type match EffeESP32's "Pitch" (type_semi shows
+        // "+3" / "-12").  Like Poly and Velocity it is a performance control
+        // that LoadPreset does NOT rewrite: the value on screen stays the
+        // value that sounds across a Program change.  An absolute Note could
+        // not do that: LoadPreset rewrote it inside the unit, but the host owns
+        // the parameter store and is never told (no unit -> host push exists;
+        // see EffeESP32/README.md, "Instrument selection and the panel"), so
+        // the panel kept the previous preset's note and the first touch pushed
+        // that stale note back in.
+        // External MIDI note-on is unaffected — it plays the note it carries,
+        // exactly as before; Pitch moves the sequencer (gate) path, which is
+        // the only path Note ever moved.
+        // ±24 is kPitchRangeSemis in synth_engine.h — change both together.
+        {-24, 24, 0, 0, k_unit_param_type_semi, 0, 0, 0, {"Pitch"}},
         // Ex Bank/Sample (PCM layering removed): global performance controls.
         // LoadPreset skips both, so they persist across preset changes.
         // Poly = GLOBAL voice cap 1-4 (was cymbal-only 1-2 and always displayed

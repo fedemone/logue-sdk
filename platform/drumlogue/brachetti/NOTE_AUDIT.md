@@ -1,7 +1,18 @@
 # Note-assignment audit (August 2026)
 
-What the **Note** parameter does on each of the 40 presets, measured rather
-than assumed.  Reproduce with:
+What each preset's **root note** does on each of the 40 presets, measured
+rather than assumed.
+
+> **Pass 48 (October 2026):** slot 1 is no longer an absolute `Note` but
+> `Pitch`, a semitone offset (−24…+24) from the preset's root — the column this
+> audit calls "Note", which the preset table still carries unchanged.  So every
+> finding below still holds: it describes the ROOT, i.e. what `Pitch 0` plays,
+> and the "+12" renders are now `Pitch = +12` (byte-identical to the old
+> absolute transpose — 80/80 renders checked).  Where the text says "turning
+> Note", read "turning Pitch".  See the README, *`Pitch` — semitones from the
+> preset's root note*.
+
+Reproduce with:
 
 ```bash
 g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
@@ -14,7 +25,7 @@ python3 note_audit.py /tmp/na.csv
 hard-coded note per preset, which is not necessarily the Note the preset
 ships — and the shipped column is what the drumlogue plays.  The audit drives
 `GateOn()`, the sequencer's own path, so the note under test is always
-`m_ui_note` = the preset's Note parameter.
+`m_ui_note` = the preset's root note + Pitch (0 here).
 
 ---
 

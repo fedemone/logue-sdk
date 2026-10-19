@@ -7,8 +7,9 @@
 
 ## Dev Branch
 
-`claude/gong-preset-stacking-bqiqyw` on `fedemone/logue-sdk`
-(previous work landed from `claude/brachetti-cymbal-velocity-2y8gsi`,
+`claude/festive-bell-h80c0n` on `fedemone/logue-sdk` (pass 48)
+(previous work landed from `claude/gong-preset-stacking-bqiqyw`,
+`claude/brachetti-cymbal-velocity-2y8gsi`,
 `claude/brachetti-review-rename-rhad77`,
 `claude/snare-drum-realism-optimization-y4hrhf` and
 `claude/eager-galileo-2fho84`).
@@ -16,8 +17,9 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 53,128 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
-`.bss` 108,124.  (Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
+Current shipping tree: `.text` 53,160 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
+`.bss` 108,124.  (Pass 48: `.text` +32 B, nothing else moved — the root note and
+the Pitch offset fit in existing padding.  Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
 40-float `kPresetOutTrim`.  It is a non-static class member like the other
 preset tables, so the ARRAY lives in the object in `.bss` and its initialiser
 list in `.rodata`; that is why both rows move by 40 floats.  Passes 45-46
@@ -31,7 +33,16 @@ so read the row name, not the row order.)
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **108/108**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **113/113**.
+- **Pass 48 — `Note` is now `Pitch`, semitones from the preset's root; not yet
+  on hardware.**  Slot 1 is `-24..+24`, `type_semi`, default 0, and
+  `LoadPreset` no longer writes it: the preset's Note column is captured as
+  the ROOT and the sequencer plays root + Pitch.  Pitch 0 is byte-identical to
+  every shipped note (80/80 GateOn renders, 40/40 render_presets).  Listen
+  for: does the panel read `0` on every preset and keep its offset across a
+  Program change?  Old patterns store an absolute note here and load clamped
+  to +24 — reset their Pitch.  The pass also audits which OTHER parameters
+  could go relative; see the entry below before converting any.
 - **Pass 47 — the master stage is gain-staged; not yet heard on hardware.**
   The bus reached the limiter at up to 116x full scale, so it levelled the
   library instead of limiting it: presets were held AT the ceiling for hundreds
