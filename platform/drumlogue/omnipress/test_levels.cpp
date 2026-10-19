@@ -14,7 +14,7 @@
  *       -o test_levels test_levels.cpp -lm
  * Run:
  *   ./test_levels            # everything
- *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam|recover|panel
+ *   ./test_levels gain       # one section: gain|default|matched|mb|drive|kick|release|quirks|slam|recover|panel|mbdrive
  *
  * Sections R (recover) and M (panel) are pass/fail checks, and the exit status
  * is non-zero if any of their rows fail; every other section is a measurement
@@ -156,6 +156,7 @@ struct Result {
     double thd_pct;       /* harmonics 2..24 relative to fundamental         */
     double nonfund_pct;   /* all non-fundamental energy incl. sub-harmonics  */
     double sub_db;        /* f0/2 component relative to fundamental          */
+    double h2_db, h3_db;  /* 2nd and 3rd harmonic relative to fundamental     */
 };
 
 /* pan: 0 = mono (L=R), 1 = left only. f0 must divide evenly into the window. */
@@ -217,6 +218,8 @@ static Result measure(double amp, double f0, int settle, int meas, int pan = 0) 
     r.thd_pct      = 100.0 * sqrt(harm2) / (A[1] + 1e-30);
     r.nonfund_pct  = 100.0 * sqrt(nonfund) / (A[1] + 1e-30);
     r.sub_db       = 20.0 * log10((Asub + 1e-30) / (A[1] + 1e-30));
+    r.h2_db        = 20.0 * log10((A[2] + 1e-30) / (A[1] + 1e-30));
+    r.h3_db        = 20.0 * log10((A[3] + 1e-30) / (A[1] + 1e-30));
     return r;
 }
 
@@ -970,7 +973,8 @@ static bool nonfinite(float x) {         /* bit test: robust under -ffast-math *
 
 enum Spoil { SPOIL_NONE, SPOIL_INPUT, SPOIL_ENVELOPE, SPOIL_DISTRESSOR_ENV,
              SPOIL_TUBE_DC, SPOIL_CROSSOVER, SPOIL_SLAM_DC, SPOIL_DRIVE_DC,
-             SPOIL_DRIVE_LEVEL, SPOIL_TUBE_LEVEL };
+             SPOIL_DRIVE_LEVEL, SPOIL_TUBE_LEVEL, SPOIL_MB_FOLD_ENV, SPOIL_MB_TUBE_BIAS,
+             SPOIL_MB_EXCITE_HPF };
 
 struct RecoverResult { double rms_db; long bad; uint32_t trips; };
 
@@ -999,6 +1003,9 @@ static RecoverResult runSpoiled(const Params& p, Spoil spoil, float value) {
                 case SPOIL_DRIVE_DC:       g_fx.distressor_.out_dc_l.y_prev = value; break;
                 case SPOIL_DRIVE_LEVEL:    g_fx.distressor_.level.out = value; break;
                 case SPOIL_TUBE_LEVEL:     g_fx.overlord_.level.out = value; break;
+                case SPOIL_MB_FOLD_ENV:    g_fx.multiband_.fold_env[0] = value; break;
+                case SPOIL_MB_TUBE_BIAS:   g_fx.multiband_.tube_bias[0] = value; break;
+                case SPOIL_MB_EXCITE_HPF:  g_fx.multiband_.exc_hpf_s.z1[0] = value; break;
                 default: break;
             }
         }
@@ -1070,6 +1077,9 @@ static void section_recover() {
         { "drive DC",   4, SPOIL_DRIVE_DC },        /* the shapers' */
         { "drive lvl",  4, SPOIL_DRIVE_LEVEL },
         { "crossover",  6, SPOIL_CROSSOVER },
+        { "mb fold",    7, SPOIL_MB_FOLD_ENV },     /* Multiband's per-band drive */
+        { "mb tube",    7, SPOIL_MB_TUBE_BIAS },
+        { "mb excite",  7, SPOIL_MB_EXCITE_HPF },
     };
     printf("   %-10s %9s %9s %8s %6s\n", "state", "ref dB", "out dB", "nonfin", "trips");
     for (const Inside& t : inside) {
@@ -1082,6 +1092,63 @@ static void section_recover() {
     printf("\n  %s\n", g_recover_failures ? "RECOVERY: FAILED" : "RECOVERY: all rows ok");
 }
 
+
+/* Signal helpers for M9 and N. */
+
+/* Feed gen(n) to both channels and the key for `settle` then `meas` frames;
+ * hand each measured output frame (L) to sink. */
+template <class Gen, class Sink>
+static void runSignal(Gen gen, long settle, long meas, Sink sink) {
+    std::vector<float> in(BLOCK * NCH), out(BLOCK * 2);
+    long n = 0;
+    while (n < settle + meas) {
+        const long n0 = n;
+        for (size_t i = 0; i < BLOCK; ++i, ++n) {
+            const float v = gen(n);
+            for (int c = 0; c < NCH; ++c) in[i*NCH + c] = v;
+        }
+        g_fx.Process(in.data(), out.data(), BLOCK);
+        for (size_t i = 0; i < BLOCK; ++i)
+            if (n0 + (long)i >= settle) sink(out[i*2]);
+    }
+}
+
+/* A 4th-order Butterworth low-pass in double, for the energy under a corner. */
+struct LowPass4 {
+    double b[2][3], a[2][2], z[2][2] = {{0, 0}, {0, 0}};
+    explicit LowPass4(double hz) {
+        const biquad_coeffs_t k = rbj_butterworth(RBJ_LOWPASS, (float)hz, (float)SR);
+        for (int s = 0; s < 2; ++s) {
+            b[s][0] = k.b0; b[s][1] = k.b1; b[s][2] = k.b2; a[s][0] = k.a1; a[s][1] = k.a2;
+        }
+    }
+    double tick(double x) {
+        for (int s = 0; s < 2; ++s) {
+            const double y = b[s][0] * x + z[s][0];
+            z[s][0] = b[s][1] * x - a[s][0] * y + z[s][1];
+            z[s][1] = b[s][2] * x - a[s][1] * y;
+            x = y;
+        }
+        return x;
+    }
+};
+
+/* One white-noise hat every 125 ms, 40 ms decay, peak `amp`. */
+static float hatNoise(long n, double amp) {
+    static uint32_t s = 1;
+    if (n == 0) s = 1;
+    s = s * 1664525u + 1013904223u;
+    const double t = (double)(n % (SR / 8)) / SR;
+    return (float)(amp * exp(-t / 0.040) * (((s >> 9) * (1.0 / 4194304.0)) - 1.0));
+}
+
+/* A kick every 500 ms: 55 Hz settling from three times that in 30 ms, 250 ms
+ * decay, peak `amp`. */
+static float kick(long n, double amp) {
+    const double t = (double)(n % (SR / 2)) / SR;
+    const double ph = 2.0 * M_PI * 55.0 * (t + 2.0 * 0.030 * (1.0 - exp(-t / 0.030)));
+    return (float)(amp * exp(-t / 0.250) * sin(ph));
+}
 
 /* M. The Multiband panel: one knob per band, two crossovers, SoloMute.
  *
@@ -1251,11 +1318,13 @@ static void section_panel() {
      * full-scale square.  Quiet (still linear in the shaper), working and hot
      * levels: within 1 dB of DRIVE 0, with THD climbing at the working ones. */
     printf("\n  M6. DRIVE changes character, not level\n");
-    struct DCase { const char* what; int mode; int dist; };
+    struct DCase { const char* what; int mode; int dist; double f; };
     const DCase dc[] = {
-        { "Standard (Overlord tube)",      COMP_MODE_STANDARD,   0 },
-        { "Multiband (a tube per band)",   COMP_MODE_MULTIBAND,  0 },
-        { "Distressor Dist2 (bench only)", COMP_MODE_DISTRESSOR, DIST_MODE_DIST2 },
+        { "Standard (Overlord tube)",      COMP_MODE_STANDARD,   0, F0 },
+        { "Multiband Low (fold) 60 Hz",    COMP_MODE_MULTIBAND,  0, 60.0 },
+        { "Multiband Mid (tube) 1 kHz",    COMP_MODE_MULTIBAND,  0, F0 },
+        { "Multiband High (exciter) 5 kHz", COMP_MODE_MULTIBAND, 0, 5000.0 },
+        { "Distressor Dist2 (bench only)", COMP_MODE_DISTRESSOR, DIST_MODE_DIST2, F0 },
     };
     for (const DCase& c : dc) {
         for (double amp : {0.001, 0.1, 0.5}) {
@@ -1270,7 +1339,7 @@ static void section_panel() {
                 if (c.mode == COMP_MODE_DISTRESSOR) p.v[k_slope] = distressorSlopeRaw(0);
                 p.v[k_drive] = drv;
                 apply(p);
-                const Result r = measure(amp, F0, SETTLE / 2, MEAS / 2);
+                const Result r = measure(amp, c.f, SETTLE / 2, MEAS / 2);
                 if (fabs(r.gain_rms_db) > fabs(worst)) worst = r.gain_rms_db;
                 if (drv == 0)   thd0 = r.thd_pct;
                 if (drv == 100) thd100 = r.thd_pct;
@@ -1399,6 +1468,134 @@ static void section_panel() {
         }
     }
 
+    /* M9. Multiband's DRIVE gives each band its own shaper: a fold on the
+     * lows, Standard's tube on the mids, an exciter on the highs (constants.h,
+     * "Multiband's DRIVE").  Each must do what it is there for and nothing
+     * it is not: the fold makes odd harmonics at a depth that does not follow
+     * the level and leaves the kick its sub; the mid band is Standard's tube;
+     * the exciter adds even harmonics and no thump; nothing leaves DC; and the
+     * curves are the Distressor's they were taken from.  Measured over QMEAS,
+     * which holds whole cycles of all three tones: MEAS / 2 runs to 188
+     * blocks, 15.04 cycles of 60 Hz, and the stray 0.04 reads as DC. */
+    printf("\n  M9. Multiband DRIVE: a shaper per band\n");
+    {
+        Params p = multibandFlat();
+        p.v[k_drive] = 67;
+        apply(p);
+        const Result r = measure(0.1, 60.0, SETTLE / 2, QMEAS);
+        snprintf(buf, sizeof(buf), "(THD %.1f%%, H2 %+.1f dB, H3 %+.1f dB)", r.thd_pct, r.h2_db, r.h3_db);
+        panelCheck(r.thd_pct > 25.0 && r.h3_db > r.h2_db + 20.0,
+                   "Low folds: odd harmonics at DRIVE 67, 60 Hz", buf);
+    }
+    {
+        double thd[2], worst_fund = 0.0;
+        const double dbs[2] = { -24.0, -3.0 };
+        for (int k = 0; k < 2; ++k) {
+            Params p = multibandFlat();
+            p.v[k_drive] = 100;
+            apply(p);
+            thd[k] = measure(pow(10.0, dbs[k] / 20.0), 60.0, SETTLE / 2, QMEAS).thd_pct;
+        }
+        for (double db = -40.0; db <= -3.0; db += 3.0) {
+            Params p = multibandFlat();
+            p.v[k_drive] = 100;
+            apply(p);
+            const double g = measure(pow(10.0, db / 20.0), 60.0, SETTLE / 2, QMEAS).gain_fund_db;
+            if (g < worst_fund) worst_fund = g;
+        }
+        snprintf(buf, sizeof(buf), "(THD %.1f%% at -24, %.1f%% at -3 dBFS)", thd[0], thd[1]);
+        panelCheck(fabs(thd[0] - thd[1]) < 2.0, "Low fold depth does not follow the level", buf);
+        snprintf(buf, sizeof(buf), "(worst %+.2f dB, -40..-3 dBFS, DRIVE 100)", worst_fund);
+        panelCheck(worst_fund > -3.0, "Low fold never nulls the fundamental", buf);
+    }
+    {
+        double sub0 = 0.0, worst = 0.0;
+        for (int drv : {0, 50, 100}) {
+            Params p = multibandFlat();
+            p.v[k_drive] = drv;
+            apply(p);
+            LowPass4 lp(100.0);
+            double sl = 0;
+            runSignal([](long n) { return kick(n, 0.5); }, SR, 2 * SR,
+                      [&](float y) { const double l = lp.tick(y); sl += l * l; });
+            const double sub = 10 * log10(sl + 1e-30);
+            if (drv == 0) sub0 = sub;
+            else if (sub - sub0 < worst) worst = sub - sub0;
+        }
+        snprintf(buf, sizeof(buf), "(energy under 100 Hz: worst %+.2f dB vs DRIVE 0)", worst);
+        panelCheck(worst > -3.0, "Low fold leaves a kick its sub", buf);
+    }
+    {
+        double worst = 0.0;
+        for (int drv : {23, 67, 100}) {
+            double thd[2];
+            for (int m = 0; m < 2; ++m) {
+                Params p = m ? multibandFlat() : headerDefaults();
+                if (!m) { p.v[k_attenuation_limit] = 0; p.v[k_gain_limit] = 0; }
+                p.v[k_drive] = drv;
+                apply(p);
+                thd[m] = measure(0.1, F0, SETTLE / 2, QMEAS).thd_pct;
+            }
+            if (fabs(thd[1] - thd[0]) > fabs(worst)) worst = thd[1] - thd[0];
+        }
+        snprintf(buf, sizeof(buf), "(THD vs Standard: worst %+.1f points, DRIVE 23-100)", worst);
+        panelCheck(fabs(worst) < 2.0, "Mid is Standard's tube", buf);
+    }
+    for (double amp : {0.1, 0.5}) {
+        Params p = multibandFlat();
+        p.v[k_drive] = 100;
+        apply(p);
+        const Result r = measure(amp, 5000.0, SETTLE / 2, QMEAS);
+        snprintf(buf, sizeof(buf), "(H2 %+.1f dB, H3 %+.1f dB)", r.h2_db, r.h3_db);
+        char what[64];
+        snprintf(what, sizeof(what), "High excites: even harmonics, 5 kHz %.0f dBFS", 20.0 * log10(amp));
+        panelCheck(r.h2_db > -16.0 && r.h3_db < r.h2_db - 20.0, what, buf);
+    }
+    {
+        Params p = multibandFlat();
+        p.v[k_band_solo_mute] = SOLO_HIGH;
+        p.v[k_drive] = 100;
+        apply(p);
+        LowPass4 lp(300.0);
+        double se = 0, sl = 0;
+        runSignal([](long n) { return hatNoise(n, 0.5); }, SR / 2, SR,
+                  [&](float y) { const double l = lp.tick(y); se += (double)y * y; sl += l * l; });
+        const double lf = 10 * log10(sl / (se + 1e-30) + 1e-30);
+        snprintf(buf, sizeof(buf), "(energy under 300 Hz %+.1f dB re output, DRIVE 100)", lf);
+        panelCheck(lf < -45.0, "High exciter leaves hats no thump", buf);
+    }
+    {
+        double worst = 0.0;
+        for (double f : {60.0, F0, 5000.0}) {
+            Params p = multibandFlat();
+            p.v[k_drive] = 100;
+            apply(p);
+            double mean, peak;
+            measureDC(0.5, f, SETTLE / 2, QMEAS, &mean, &peak);
+            if (fabs(mean) > fabs(worst)) worst = mean;
+        }
+        snprintf(buf, sizeof(buf), "(worst mean %+.5f, -6 dBFS tones, DRIVE 100)", worst);
+        panelCheck(fabs(worst) < 1e-3, "No band leaves DC", buf);
+    }
+    {
+        /* The two-lane curves against the Distressor's own, sample by sample */
+        double fold_err = 0.0, even_err = 0.0;
+        for (double x = -3.0; x <= 3.0; x += 1.0 / 1024.0) {
+            float a[4], b[2];
+            vst1q_f32(a, sine_folder(vdupq_n_f32((float)x)));
+            const float32x2_t y = sine_folder_bounded(vdup_n_f32((float)x));
+            b[0] = vget_lane_f32(y, 0);
+            fold_err = fmax(fold_err, fabs(a[0] - b[0]));
+            float p[4], m[4];
+            vst1q_f32(p, generate_harmonics(nullptr, vdupq_n_f32((float)x), DIST_MODE_DIST2));
+            vst1q_f32(m, generate_harmonics(nullptr, vdupq_n_f32((float)-x), DIST_MODE_DIST2));
+            const float e = vget_lane_f32(dist2_even_d(vdup_n_f32((float)x)), 0);
+            even_err = fmax(even_err, fabs(0.5 * (p[0] + m[0]) - e));
+        }
+        snprintf(buf, sizeof(buf), "(fold %.1e, Dist2's even half %.1e, over +/-3)", fold_err, even_err);
+        panelCheck(fold_err < 1e-5 && even_err < 1e-5, "The curves are the Distressor's", buf);
+    }
+
     /* M7. What the panel shows. */
     printf("\n  M7. Readouts\n");
     /* One call per printf: the unit hands back a single static buffer, which
@@ -1419,6 +1616,120 @@ static void section_panel() {
         printf("\n");
     }
     printf("\n  %s\n", g_panel_failures ? "PANEL: FAILED" : "PANEL: all checks ok");
+}
+
+/* N. Multiband's DRIVE, band by band.
+ *
+ * Measurements to read, not pass/fail (M9 holds the pass/fail checks).  Every
+ * table runs Multiband with no gain reduction, so what changes is the drive
+ * stage alone. */
+
+static void section_mbdrive() {
+    hdr("N1. MULTIBAND DRIVE, BAND BY BAND (no gain reduction, MIX WET).  Each\n"
+        "    band has its own shaper: a fold on the lows, the Overlord tube on the\n"
+        "    mids, the even half of Dist2 as an exciter on the highs.  Standard's\n"
+        "    broadband tube on the same tone alongside.  'gain' is broadband RMS\n"
+        "    out vs in.");
+    struct B { const char* name; double f; };
+    const B bands[] = { { "Low, 60 Hz (fold)", 60.0 }, { "Mid, 1 kHz (tube)", 1000.0 },
+                        { "High, 5 kHz (exciter)", 5000.0 } };
+    for (const B& b : bands)
+        for (double amp : {0.1, 0.5}) {
+            printf("\n  %s, in %.0f dBFS\n", b.name, 20 * log10(amp));
+            printf("  %6s | %-33s | %-26s\n", "", "Multiband", "Standard");
+            printf("  %6s | %7s %7s %8s %8s | %7s %8s %8s\n",
+                   "DRIVE", "gain dB", "THD%", "H2 dB", "H3 dB", "THD%", "H2 dB", "H3 dB");
+            for (int drv : {0, 10, 23, 50, 67, 100}) {
+                Params p = multibandFlat();
+                p.v[k_drive] = drv;
+                apply(p);
+                const Result m = measure(amp, b.f, SETTLE / 2, QMEAS);
+                Params q = headerDefaults();
+                q.v[k_attenuation_limit] = 0; q.v[k_gain_limit] = 0;
+                q.v[k_drive] = drv;
+                apply(q);
+                const Result s = measure(amp, b.f, SETTLE / 2, QMEAS);
+                printf("  %6d | %+7.2f %7.1f %+8.1f %+8.1f | %7.1f %+8.1f %+8.1f\n", drv,
+                       m.gain_rms_db, m.thd_pct, m.h2_db, m.h3_db, s.thd_pct, s.h2_db, s.h3_db);
+            }
+        }
+
+    hdr("N2. THE FOLD AGAINST LEVEL (Multiband, 60 Hz, DRIVE 67 and 100).  The\n"
+        "    fold runs on the band divided by its own envelope, so above the\n"
+        "    -30 dBFS floor its depth -- and the THD -- stay put however loud the\n"
+        "    bass is, and the fundamental never passes through a null.  Below the\n"
+        "    floor the depth falls with the level.");
+    printf("  %8s | %-22s | %-22s\n", "", "DRIVE 67", "DRIVE 100");
+    printf("  %8s | %10s %11s | %10s %11s\n", "in dBFS", "fund dB", "THD%", "fund dB", "THD%");
+    for (double db : {-50.0, -40.0, -30.0, -24.0, -18.0, -12.0, -6.0, -3.0}) {
+        const double amp = pow(10.0, db / 20.0);
+        Result r[2];
+        for (int k = 0; k < 2; ++k) {
+            Params p = multibandFlat();
+            p.v[k_drive] = k ? 100 : 67;
+            apply(p);
+            r[k] = measure(amp, 60.0, SETTLE / 2, QMEAS);
+        }
+        printf("  %8.0f | %+10.2f %11.1f | %+10.2f %11.1f\n", db,
+               r[0].gain_fund_db, r[0].thd_pct, r[1].gain_fund_db, r[1].thd_pct);
+    }
+
+    hdr("N3. THE EXCITER ON HATS (Multiband, High soloed, noise bursts every\n"
+        "    125 ms).  The exciter's curve is even, so it rectifies: on a hat it\n"
+        "    leaves the hat's envelope behind, a thump under every hit, and the\n"
+        "    high-pass on what it adds is there to take that out.  Energy under\n"
+        "    300 Hz, relative to the whole output, with the high-pass and with it\n"
+        "    bypassed.");
+    printf("  %6s %14s %14s %10s\n", "DRIVE", "with HPF dB", "without dB", "out dBFS");
+    for (int drv : {0, 23, 67, 100}) {
+        double lf[2] = {0, 0}, rms = 0;
+        for (int bypass = 0; bypass < 2; ++bypass) {
+            Params p = multibandFlat();
+            p.v[k_band_solo_mute] = SOLO_HIGH;
+            p.v[k_drive] = drv;
+            apply(p);
+            runSignal([](long n) { return hatNoise(n, 0.5); }, BLOCK, 0, [](float) {});
+            if (bypass) {
+                bq2_coeffs_t& c = g_fx.multiband_.exc_hpf_c;
+                c.b0 = vdup_n_f32(1.0f);
+                c.b1 = c.b2 = c.a1 = c.a2 = vdup_n_f32(0.0f);
+            }
+            LowPass4 lp(300.0);
+            double se = 0, sl = 0;
+            runSignal([](long n) { return hatNoise(n + BLOCK, 0.5); }, SR / 2, SR,
+                      [&](float y) { const double l = lp.tick(y); se += (double)y * y; sl += l * l; });
+            lf[bypass] = 10 * log10(sl / (se + 1e-30) + 1e-30);
+            if (!bypass) rms = 10 * log10(se / SR + 1e-30);
+        }
+        printf("  %6d %+14.1f %+14.1f %+10.1f\n", drv, lf[0], lf[1], rms);
+    }
+
+    hdr("N4. A KICK THROUGH THE BUS (55 Hz from 165 Hz in 30 ms, 250 ms decay,\n"
+        "    peak -6 dBFS, every 500 ms).  Energy under 100 Hz and in all, against\n"
+        "    DRIVE 0 in the same mode: the fold adds growl above the kick and must\n"
+        "    not take its sub away.");
+    printf("  %6s | %-22s | %-22s\n", "", "Multiband", "Standard");
+    printf("  %6s | %10s %11s | %10s %11s\n", "DRIVE", "sub dB", "all dB", "sub dB", "all dB");
+    double ref[2][2] = {{0, 0}, {0, 0}};
+    for (int drv : {0, 23, 50, 67, 100}) {
+        double res[2][2];
+        for (int m = 0; m < 2; ++m) {
+            Params p = m ? headerDefaults() : multibandFlat();
+            if (m) { p.v[k_attenuation_limit] = 0; p.v[k_gain_limit] = 0; }
+            p.v[k_drive] = drv;
+            apply(p);
+            LowPass4 lp(100.0);
+            double se = 0, sl = 0;
+            runSignal([](long n) { return kick(n, 0.5); }, SR, 2 * SR,
+                      [&](float y) { const double l = lp.tick(y); se += (double)y * y; sl += l * l; });
+            res[m][0] = 10 * log10(sl + 1e-30);
+            res[m][1] = 10 * log10(se + 1e-30);
+            if (drv == 0) { ref[m][0] = res[m][0]; ref[m][1] = res[m][1]; }
+        }
+        printf("  %6d | %+10.2f %+11.2f | %+10.2f %+11.2f\n", drv,
+               res[0][0] - ref[0][0], res[0][1] - ref[0][1],
+               res[1][0] - ref[1][0], res[1][1] - ref[1][1]);
+    }
 }
 
 /* ========================================================================= */
@@ -1444,6 +1755,7 @@ int main(int argc, char** argv) {
     if (s == "all" || s == "slam")    section_slam();
     if (s == "all" || s == "recover") section_recover();
     if (s == "all" || s == "panel")   section_panel();
+    if (s == "all" || s == "mbdrive") section_mbdrive();
     printf("\n");
     return (g_recover_failures || g_panel_failures) ? 1 : 0;
 }
