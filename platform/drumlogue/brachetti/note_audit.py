@@ -16,10 +16,10 @@ three measurements taken from the render of THAT note:
   body_hz     strongest peak below 2 kHz (the drum/body pitch, which on a
               bright percussion sound is not the overall peak)
   centroid    spectral centroid, i.e. "brightness"
-  +12         how far the strongest peak ACTUALLY moves when the Note
-              parameter is raised an octave.  ~+12.0 = the preset tracks its
-              note; ~0.0 = the Note knob is inert on this preset and the
-              displayed pitch is decoration.
+  +12         how far the strongest peak ACTUALLY moves at Pitch +12 (an
+              octave above the preset's root).  ~+12.0 = the preset tracks its
+              note; ~0.0 = the note is inert on this preset, so neither the
+              root nor the Pitch knob changes what you hear.
   +12c        the same octave shift measured on the spectral CENTROID.  Read
               this one for the cymbal family: peak-picking a dense inharmonic
               wash latches onto a different anchor after a transpose and
@@ -29,9 +29,10 @@ three measurements taken from the render of THAT note:
 `peak/nominal` in semitones is the number to read: a pitched instrument whose
 note is doing its job lands near 0, ±12 (an octave — the note names the same
 pitch class), or on a documented inharmonic partial.  A large, non-octave
-offset means the Note column does not name the pitch the preset produces, so
-the display lies and transposing from the sequencer starts from the wrong
-place.
+offset means the preset's root (its Note column) does not name the pitch the
+preset produces, so Pitch offsets from the sequencer start from the wrong
+place.  (Before pass 48 the panel also showed that root as an absolute Note;
+it now shows only the Pitch offset, so the root is not on screen.)
 """
 
 import csv
