@@ -50,6 +50,17 @@ inline float knob_exp2(float x) {
     return (x == 0.0f) ? 1.0f : fasterpow2f(x);
 }
 
+// Compile-time check on one column of LoadPreset's preset table: every row's
+// value lies in [lo, hi].  Used to pin the columns LoadPreset does NOT load
+// (pass 48), so a future edit that gives one preset its own Tone or Cutoff —
+// which would be silently ignored — fails the build instead.
+template <int R, int C>
+constexpr bool preset_column_in(const int16_t (&t)[R][C], int col, int lo, int hi) {
+    for (int r = 0; r < R; ++r)
+        if (t[r][col] < lo || t[r][col] > hi) return false;
+    return true;
+}
+
 FastTables g_tables;
 
 // ==============================================================================
@@ -759,7 +770,15 @@ SynthState state;
 
         g_tables.generate(default_sample_rate); // Pre-calculate all tuning math
 
-        // 2. Clear all memory explicitly at boot
+        // 2. Performance knobs to their header.c defaults, BEFORE Reset() —
+        // Reset() re-derives Tone and the master filter from these values.
+        // LoadPreset does not write them (that is what keeps them in step
+        // with the host's parameter store), so without this they would come
+        // up as 0 on a fresh object (Cutoff 0 = a 1 Hz lowpass) and, on an
+        // object Init() is called on again, as whatever the last session left.
+        seed_performance_params();
+
+        // 3. Clear all memory explicitly at boot
         Reset();
 
         // 3. Stash runtime functions to manage samples.
@@ -868,7 +887,12 @@ SynthState state;
         state.master_lim_env = 0.0f;
         m_idle_flush_blocks  = 0;
         state.mix_ab       = 0.5f; // Equal A/B mix
-        state.tone         = 0.0f; // Neutral tilt EQ (LoadPreset restores the preset value)
+        // Tone is the knob's value, not 0.  LoadPreset no longer writes Tone
+        // (pass 48 — it is a performance control the host owns), so a Reset()
+        // that zeroed it would leave the panel showing the user's tilt while
+        // the unit played a flat one until the knob was next touched.  The SDK
+        // says the same: unit_reset() must not reset parameter values.
+        state.tone = fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramTone]));
         m_pitch_bend_mult  = 1.0f; // Clear any held bend so the next note plays in tune.
 
         // Always return to ResA edit context so LoadPreset (called next in Init)
@@ -881,7 +905,13 @@ SynthState state;
         // reversed: raising it silenced the sound.  Players expect a drum-synth
         // master cutoff to OPEN as it rises — so it is now an LP with max = open.
         state.master_filter.mode = 0;
-        state.master_filter.set_coeffs(16000.0f, 0.707f, default_sample_rate);
+        // From the Cutoff/Resnc knobs, for the same reason as Tone above: they
+        // are performance controls LoadPreset does not write.  This used to be
+        // a hard-coded 16 kHz / Q 0.707 — not even the knob's own "open"
+        // (Cutoff 1999 = 19.99 kHz; set_coeffs caps at 0.47·fs, not at 16 kHz),
+        // so every unit_reset() quietly moved the master filter until the next
+        // Program change put the preset's value back.
+        apply_master_filter();
         state.master_filter.lp = 0.0f;
         state.master_filter.bp = 0.0f;
         state.master_filter.hp = 0.0f;
@@ -1037,7 +1067,7 @@ SynthState state;
         // a tenth of what int16_t holds, so halving the element width is free:
         // 3840 B → 1920 B of code-segment budget, and every value round-trips
         // unchanged.  Widen it again if any column ever needs > ±32767.
-        static const int16_t presets[k_NumPrograms][k_lastParamIndex] = {
+        static constexpr int16_t presets[k_NumPrograms][k_lastParamIndex] = {
             //  Prg Root  Ply  Vel - MlRs MlSt VlRs VlSt - Ptls Mdl  Dky  Mtr - Ton  Hit  Rel  InHm - Cut  TbRd Gain NzMx - NzRs NzFl NzFq Rsnc
             //
             // Col 1 is the preset's ROOT NOTE (MIDI), not a parameter value:
@@ -1048,9 +1078,16 @@ SynthState state;
             //
             // Cols 2 (Poly) and 3 (Velocity) are GLOBAL performance controls:
             // LoadPreset skips them, so the stale values still sitting in those
-            // columns are never read.  Col 8 (Partls) doubles as the cymbal
-            // resonator DENSITY on the six ENGINE_CYMBAL rows (13/14/27/32/33/
-            // 37), where the shared modal bank it normally drives is bypassed:
+            // columns are never read.  Since pass 48 so are cols 6 (VlMllRes),
+            // 12 (Tone), 16 (Cutoff) and 23 (Resnc): every row ships the same
+            // value (0 / 0 / 1999 / 71), so the knob already IS the offset from
+            // the preset, and the static_asserts below the table keep it that
+            // way — a row that wants its own value there needs the relative
+            // form CLAUDE.md pass 48 describes, not an edit to this table.
+            // (Col 6 is still read once, as the VlMllRes anchors.)  Col 8
+            // (Partls) doubles as the cymbal resonator DENSITY on the six
+            // ENGINE_CYMBAL rows (13/14/26/31/32/36), where the shared modal
+            // bank it normally drives is bypassed:
             // density = 25 + 5 x Partls %, so their shipped 3 = the 40 % the
             // ex-"Rsntrs" knob defaulted to.
             //
@@ -1088,7 +1125,7 @@ SynthState state;
             {  23,  41,   0,   1, 250,  39,   0,   0,   1,   5, 200,  10,   0,  30,  15,   0,1999,  11,   5,   9, 550,   0, 130,  71},        // 23: Taiko2    — the pre-redesign Taiko (deep membrane), replaces PluckBass per HW request
             {  24,  76,   0,   1, 700,   5,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},        // 24: GlsBwl
             {  25,  72,   0,   1, 100,  37,   0,   0,   2,   5,  12,  10,   0,  50,  18,   0,1999,   3,   3,  90, 900,   2, 800,  71},        // 25: HHat-C    — the pre-redesign Shaker noise voice ('a perfect closed hi-hat' per HW)
-            {  26,  79,   0,   1, 900,  49,   0,   0,   3,   4, 210,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 26: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50)
+            {  26,  79,   0,   1, 900,  49,   0,   0,   3,   4, 200,  18,   0,   0,  18,   1,1999,  12,   0,  90,1000,   2,1300,  71},        // 26: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50).  Dkay 210 -> 200 (pass 48): the range is 0..200 and every consumer already read 210 as 200
             {  27,  62,   0,   1, 600,  43,   0,   0,   1,   5, 158,   3,   0,   0,  10,   1,1999,   9,   0,  15, 520,   0, 450,  71},        // 27: Conga     — open tone extended (modal cfg 90→250ms), slap softened (NzFq 710→450)
             {  28,  62,   0,   1, 700,  30,   0,   0,   0,   4, 190,  22,   0,   0,  20,   0,1999,  18,   0,   5, 300,   0,1000,  71},        // 28: Handpn
             {  29,  84,   0,   1, 900,  42,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},        // 29: BelTre
@@ -1103,6 +1140,17 @@ SynthState state;
             {  38,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71},        // 38: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
             {  39,  53,   0,   1, 420,  36,   0,   0,   2,   5, 190,   0,   0,  52,  12,   0,1999,   6,   5,  48, 300,   0, 700,  71}       // 39: RackTom   — note 53 (F3, 174.6 Hz) = the rack tom an octave-ish over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS on this engine — LoadPreset captures each into m_modal_*_ref from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  (Mterl/TubRad additionally write resA's loss filter absolutely, but that is read only under voice_engine == ENGINE_KS, so it is dead on a membrane.)  Ring length lives in modal_preset_configs, shell in model_param_presets
         };
+
+        static_assert(preset_column_in(presets, k_paramVlMllRes, 0, 0),
+                      "VlMllRes is not loaded per preset: every row must ship 0");
+        static_assert(preset_column_in(presets, k_paramTone, 0, 0),
+                      "Tone is not loaded per preset: every row must ship 0");
+        static_assert(preset_column_in(presets, k_paramLowCut, 1999, 1999),
+                      "Cutoff is not loaded per preset: every row must ship 1999");
+        static_assert(preset_column_in(presets, k_paramResnc, 71, 71),
+                      "Resnc is not loaded per preset: every row must ship 71");
+        static_assert(preset_column_in(presets, k_paramDkay, 0, 200),
+                      "Dkay is 0..200: every consumer saturates at 200");
 
         // Preset loading always targets ResA first, then ResB, regardless of the
         // current editor selection.  Save both flags and restore them afterwards so
@@ -1121,7 +1169,10 @@ SynthState state;
         // And skip Pitch: column 1 is this preset's ROOT, the knob is an offset
         // from it, so the root moves and the offset stays — which keeps the
         // knob equal to what the host's parameter store holds for it (the host
-        // is never told that a Program change rewrote a parameter).
+        // is never told that a Program change rewrote a parameter).  VlMllRes,
+        // Tone, Cutoff and Resnc are skipped for the same reason; their
+        // columns are identical on every row (asserted above), so skipping
+        // them changes no preset.
         m_root_note = (uint8_t)presets[idx][k_paramPitch];
         update_played_note();
         for (uint8_t param_id = 0; param_id < k_lastParamIndex; ++param_id) {
@@ -1129,6 +1180,10 @@ SynthState state;
             if (param_id == k_paramPitch) continue;
             if (param_id == k_paramCymPoly) continue;
             if (param_id == k_paramVelocity) continue;
+            if (param_id == k_paramVlMllRes) continue;
+            if (param_id == k_paramTone) continue;
+            if (param_id == k_paramLowCut) continue;
+            if (param_id == k_paramResnc) continue;
 
             // FIX: Enforce ResA-only routing on every single parameter
             // so k_paramPartls (index 8) cannot hijack the rest of the loop.
@@ -1179,7 +1234,9 @@ SynthState state;
             m_kernel_vlstf_ref = (float)presets[idx][k_paramVlMllStf] * 0.01f;
             m_kernel_vlres_ref = (float)presets[idx][k_paramVlMllRes] * 0.01f;
             m_kernel_nzmix_ref = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramNzMix] * 0.01f));
-            m_kernel_nzfrq_ref = fmaxf(20.0f, (float)presets[idx][k_paramNzFltFrq]);
+            // Stored unit (÷10 Hz), floored at the header minimum 2 — NOT at 20,
+            // which is a Hz figure and does not belong to this unit.
+            m_kernel_nzfrq_ref = fmaxf(2.0f, fminf(2000.0f, (float)presets[idx][k_paramNzFltFrq]));
             float ref_drive = 1.0f + fmaxf(0.0f, (float)presets[idx][k_paramGain] * 0.01f) * 20.0f;
             m_drum_kernel.Configure((idx == k_Timpani) ? &kTimpaniRecipe : &kTaikoRecipe, ref_drive);
             m_kernel_tone_lp = 0.0f;
@@ -1467,21 +1524,36 @@ SynthState state;
                     if (m_is_resonator_b && m_model_b < k_lastModel)
                         state.voices[i].resB.model_ap_base = ap_base_by_model[m_model_b];
                 }
+                // Dkay's KS loop gain has a Drumhead curve of its own, so a
+                // Model change must re-derive it (pass 48).  It did not: Koto
+                // at Dkay 100 switched to Drumhead kept g 0.9245 where 0.7245
+                // is due — invisible at the shipped Dkay 200 only because both
+                // curves meet at 0.999 there.
+                apply_ks_feedback_gain();
                 break;
             }
 
             case k_paramDkay: {
                 // 0.85 = instant dead thud. 0.999 = rings for ~5 seconds.
                 // Stored ÷10 (0-200 represents 0-2000). Divide by 200 (new max).
-                if (value <= 200) {
-                    float norm = fmaxf(0.0f, fminf(1.0f, (float)value * 0.005f));
-                    // Drumhead (model 5): percussion skins need a shorter minimum decay
-                    // than strings/bars. Formula [0.45, 0.999] lets Dkay=55 give
-                    // T60≈175ms@65Hz — natural kick/tom body ring before boom takes over.
-                    // Membrane (3) and all other models keep [0.85, 0.999].
-                    float g = ((m_is_resonator_a && m_model_a == 5) || (m_is_resonator_b && m_model_b == 5))
-                              ? (0.45f + norm * 0.549f)
-                              : (0.85f + norm * 0.149f);
+                // CLAMPED, not skipped (pass 48).  This used to be
+                // `if (value <= 200) { ... }`, so a value above 200 was ignored
+                // outright and the last value <= 200 stuck (Koto at 150, then
+                // 205, kept playing 150), while the header offered 201-210 —
+                // ten positions every consumer saturates at 200 anyway.  The
+                // header range is 0..200 now and HHat-O ships 200 (it shipped
+                // 210, which every consumer already read as 200).
+                {
+                    const int32_t dk = (value < 0) ? 0 : ((value > 200) ? 200 : value);
+                    m_params[index] = dk;
+                    float norm = fmaxf(0.0f, fminf(1.0f, (float)dk * 0.005f));
+                    // The KS loop gain depends on the MODEL as well (Drumhead
+                    // has its own curve), so it lives in apply_ks_feedback_gain(),
+                    // which the Model case calls too.  Each resonator keeps its
+                    // own Dkay, because Partls 6/7 edit them separately.
+                    if (m_is_resonator_a) m_dkay_norm_a = norm;
+                    if (m_is_resonator_b) m_dkay_norm_b = norm;
+                    apply_ks_feedback_gain();
                     // master_env gate: exponential 50ms (Decay=0) → 10s (Decay=200).
                     // Decay is the primary sustain control; Rel only gates the noise
                     // burst.  Without this, the master_env would kill the waveguide
@@ -1489,11 +1561,6 @@ SynthState state;
                     float t_s = fasterpow2f(k_log_2_of_200 * norm); // 50ms..10s - was fasterpowf(200.0f, norm)
                     float master_rate = M_THREELN10 * 20 * inverse_default_sample_rate / t_s;  // was 3.0f * M_LN10
                     for (int i = 0; i < NUM_VOICES; ++i) {
-                        if (m_is_resonator_a)
-                            state.voices[i].resA.feedback_gain = g;
-                        if (m_is_resonator_b)
-                            state.voices[i].resB.feedback_gain = g;
-                        // Always update regardless of which resonator is selected —
                         // master_env is voice-level, not per-resonator.
                         state.voices[i].exciter.master_env.release_rate = master_rate;
                         // Auto-decay rate: 30% of release rate.  Ensures sounds
@@ -1596,12 +1663,9 @@ SynthState state;
             }
             case k_paramLowCut: {
                 // Master LP "Cutoff".  Stored 1-1999; effective 10-19990 Hz
-                // (×10 scaling), internally capped at 16 kHz by set_coeffs.
+                // (×10 scaling); set_coeffs caps it at 0.47·fs (22.56 kHz).
                 // High values = open (full spectrum), low values = dark.
-                m_master_cutoff = (float)value * 10.0f;
-                // Divide by 1000: UI stores 707-4000, filter needs 0.707-4.0
-                float res_val = fmaxf(0.707f, 0.707f + ((float)m_params[k_paramResnc] - 71.0f) * 0.01f);
-                state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
+                apply_master_filter();
                 break;
             }
             case k_paramGain: {
@@ -1638,8 +1702,7 @@ SynthState state;
                 // Stored ÷10 (71-400 = display 710-4000), step 10 on the encoder.
                 // Q = 0.707 + (value-71)*0.01 → the shipped default (71) maps to
                 // EXACTLY the old Q 0.707 (bit-identical), 400 → ~4.0.
-                float res_val = fmaxf(0.707f, 0.707f + ((float)value - 71.0f) * 0.01f);
-                state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
+                apply_master_filter();
                 break;
             }
 
@@ -5050,9 +5113,28 @@ private:
         md.noise_mult = knob_exp2(3.0f * dnz);
         md.noise_add  = 0.30f * fmaxf(0.0f, dnz);
 
-        // NzFltFrq (stored ÷10): wedge start-cutoff scale vs the shipped corner.
-        float fq = fmaxf(20.0f, (float)m_params[k_paramNzFltFrq]);
-        md.noise_bright = fq / m_kernel_nzfrq_ref;
+        // NzFltFrq (stored ÷10, 2..2000): the noise wedge's start cutoff.
+        // Mapped so the knob's two ends land exactly on the coefficient's two
+        // bounds and the shipped value on the recipe's own coefficient —
+        // log-proportional either side of it.  It was `fq / ref` with fq
+        // floored at 20 (the stored unit is ÷10 Hz, so that floor swallowed
+        // stored 2..20) and a product clamped to 0.02..0.90, which together
+        // left 64.7 % of the knob dead on Timpani and 25 % on Taiko (pass 48).
+        // fq == ref gives exactly 1.0, as before, so shipped renders hold.
+        {
+            const float fq  = fmaxf(2.0f, fminf(2000.0f, (float)m_params[k_paramNzFltFrq]));
+            const float ref = m_kernel_nzfrq_ref;
+            const float c0  = m_drum_kernel.NoiseCoefHi();
+            if (fq == ref || c0 <= 0.0f) {
+                md.noise_bright = 1.0f;
+            } else if (fq > ref) {
+                md.noise_bright = powf(ModalDrumKernel::kNoiseCoefMax / c0,
+                                       logf(fq / ref) / logf(2000.0f / ref));
+            } else {
+                md.noise_bright = powf(ModalDrumKernel::kNoiseCoefMin / c0,
+                                       logf(ref / fq) / logf(ref / 2.0f));
+            }
+        }
 
         m_drum_kernel.SetMods(md);
     }
@@ -5085,9 +5167,66 @@ private:
     int8_t  m_pitch_semis = 0;    // Pitch knob, ±kPitchRangeSemis
     uint8_t m_ui_note     = 36;
     uint8_t m_gate_note   = 36;   // the note the last GateOn struck
+    // Each resonator's own Dkay, normalised 0..1 — the KS gain needs it again
+    // whenever Model changes, and m_params holds only the last one written.
+    float   m_dkay_norm_a = 1.0f;
+    float   m_dkay_norm_b = 1.0f;
+    // KS feedback gain for one resonator, from ITS OWN model and Dkay.
+    // Drumhead (model 5): percussion skins need a shorter minimum decay than
+    // strings/bars. Formula [0.45, 0.999] lets Dkay=55 give T60≈175ms@65Hz —
+    // natural kick/tom body ring before boom takes over.  Membrane (3) and all
+    // other models keep [0.85, 0.999].
+    static inline float ks_feedback_gain(uint8_t model, float dkay_norm) {
+        return (model == k_Drumhead) ? (0.45f + dkay_norm * 0.549f)
+                                     : (0.85f + dkay_norm * 0.149f);
+    }
+    // Writes both resonators every time.  The old Dkay case chose ONE curve
+    // for whichever resonators were selected — Drumhead if either was — so
+    // editing ResA+B with only one of them on Drumhead gave the other the
+    // wrong curve.  ENGINE_KS is the only reader of feedback_gain.
+    inline void apply_ks_feedback_gain() {
+        const float ga = ks_feedback_gain(m_model_a, m_dkay_norm_a);
+        const float gb = ks_feedback_gain(m_model_b, m_dkay_norm_b);
+        for (int i = 0; i < NUM_VOICES; ++i) {
+            state.voices[i].resA.feedback_gain = ga;
+            state.voices[i].resB.feedback_gain = gb;
+        }
+    }
+
     inline void update_played_note() {
         const int n = (int)m_root_note + (int)m_pitch_semis;
         m_ui_note = (uint8_t)((n < 0) ? 0 : ((n > 127) ? 127 : n));
+    }
+
+    // Master lowpass from the Cutoff and Resnc knobs.  One place for the three
+    // callers (both setParameter cases and Reset()), so they cannot drift.
+    // Bit-identical to the two case bodies it replaces for every in-range
+    // value; out-of-range values are bounded as the SDK asks.
+    inline void apply_master_filter() {
+        const int32_t lc = (m_params[k_paramLowCut] < 1) ? 1
+                         : (m_params[k_paramLowCut] > 1999) ? 1999
+                         : m_params[k_paramLowCut];
+        m_master_cutoff = (float)lc * 10.0f;
+        const float res_val =
+            fmaxf(0.707f, 0.707f + ((float)m_params[k_paramResnc] - 71.0f) * 0.01f);
+        state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
+    }
+
+    // The knobs LoadPreset does NOT write — performance and master controls
+    // the host owns (pass 48) — back to their header.c defaults.  Called once
+    // from Init().  MUST track header.c's `.init` fields for these slots; C
+    // cannot assert across the two files, so they are listed here explicitly.
+    inline void seed_performance_params() {
+        static const int16_t kDefaults[][2] = {
+            { k_paramPitch,    0    },
+            { k_paramCymPoly,  4    },
+            { k_paramVelocity, 0    },
+            { k_paramVlMllRes, 0    },
+            { k_paramTone,     0    },
+            { k_paramLowCut,   1999 },
+            { k_paramResnc,    71   },
+        };
+        for (const auto& d : kDefaults) setParameter((uint8_t)d[0], d[1]);
     }
     // Idle-CPU guard: blocks of master-chain flush left to run after the last
     // active voice died.  While > 0 the pre-clip + master FX loops keep running

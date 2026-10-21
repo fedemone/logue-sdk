@@ -26,6 +26,7 @@
 #include <cassert>
 #include <cstring>
 #include <vector>
+#include <string>
 
 // ── Mock Drumlogue OS runtime ────────────────────────────────────────────────
 #include "../common/runtime.h"
@@ -2623,6 +2624,173 @@ static void test_pitch_relative_to_root() {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T45 — VlMllRes, Tone, Cutoff, Resnc belong to the host, not to the preset
+//
+//   Every preset ships the same value in these four columns (0/0/1999/71), so
+//   the knob already IS the offset from the preset; the defect was LoadPreset
+//   rewriting them behind the host's back (the panel kept the user's value,
+//   the unit played the preset's).  Pass 48 skips them in LoadPreset, keeps
+//   them through Reset(), and puts them — with Pitch/Poly/Velocity — back to
+//   header defaults in Init().
+// ════════════════════════════════════════════════════════════════════════════
+static bool svf_coeffs_equal(const FastSVF& a, const FastSVF& b) {
+    return a.a1 == b.a1 && a.a2 == b.a2 && a.a3 == b.a3 && a.q == b.q;
+}
+
+static void test_master_knobs_persist() {
+    std::cout << "\n── T45: VlMllRes / Tone / Cutoff / Resnc survive Program changes and Reset ──\n";
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.setParameter(BrachettiSynth::k_paramVlMllRes, 60);
+    s.setParameter(BrachettiSynth::k_paramTone, 12);
+    s.setParameter(BrachettiSynth::k_paramLowCut, 400);
+    s.setParameter(BrachettiSynth::k_paramResnc, 200);
+    const FastSVF want = s.state.master_filter;
+
+    auto kept = [&](BrachettiSynth& x) {
+        return x.getParameterValue(BrachettiSynth::k_paramVlMllRes) == 60 &&
+               x.getParameterValue(BrachettiSynth::k_paramTone)     == 12 &&
+               x.getParameterValue(BrachettiSynth::k_paramLowCut)   == 400 &&
+               x.getParameterValue(BrachettiSynth::k_paramResnc)    == 200 &&
+               x.state.tone == 12.0f && svf_coeffs_equal(x.state.master_filter, want);
+    };
+    bool prog_ok = true;
+    for (int p : { 13, 5, 9, 21, 0 }) {     // cymbal, kernel, KS, noise, back
+        s.setParameter(BrachettiSynth::k_paramProgram, p);
+        if (!kept(s)) { prog_ok = false; std::cout << "  lost after Program " << p << "\n"; }
+    }
+    result("T45a a Program change leaves all four knobs, and what they drive, alone",
+           prog_ok, "LoadPreset rewrote a knob the host owns; the panel now disagrees with the sound");
+
+    s.Suspend(); s.Resume();
+    result("T45b Reset() keeps the Tone tilt and the master filter at the knobs' values",
+           kept(s), "Reset() hard-coded Tone 0 / 16 kHz and the knob no longer restores it");
+
+    s.setParameter(BrachettiSynth::k_paramPitch, 7);
+    s.setParameter(BrachettiSynth::k_paramVelocity, 50);
+    s.setParameter(BrachettiSynth::k_paramCymPoly, 2);
+    s.Init(&desc);
+    const bool fresh =
+        s.getParameterValue(BrachettiSynth::k_paramPitch)    == 0    &&
+        s.getParameterValue(BrachettiSynth::k_paramCymPoly)  == 4    &&
+        s.getParameterValue(BrachettiSynth::k_paramVelocity) == 0    &&
+        s.getParameterValue(BrachettiSynth::k_paramVlMllRes) == 0    &&
+        s.getParameterValue(BrachettiSynth::k_paramTone)     == 0    &&
+        s.getParameterValue(BrachettiSynth::k_paramLowCut)   == 1999 &&
+        s.getParameterValue(BrachettiSynth::k_paramResnc)    == 71   &&
+        s.state.tone == 0.0f;
+    result("T45c Init() returns every knob LoadPreset skips to its header default",
+           fresh, "a reused synth carries the previous session's performance knobs "
+                  "(this is how param_audit leaked Velocity into every row)");
+
+    bool anchors_zero = true;
+    for (int p = 0; p < BrachettiSynth::k_NumPrograms; ++p) {
+        BrachettiSynth q;
+        q.Init(&desc);
+        q.LoadPreset((uint8_t)p);
+        if (q.m_snare_vlres_ref != 0.0f || q.m_kernel_vlres_ref != 0.0f) anchors_zero = false;
+    }
+    result("T45d every preset's VlMllRes anchor is 0, so the knob value IS the offset",
+           anchors_zero, "a preset ships a non-zero VlMllRes; its absolute consumers pivot at 0");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T46 — Dkay above 200 is clamped, not ignored
+//   `if (value <= 200)` used to skip it, so the last value <= 200 stuck.
+// T47 — the KS loop gain follows the resonator's OWN model and Dkay
+//   A Model change never re-derived it, and the Dkay case gave both selected
+//   resonators the Drumhead curve if either was on Drumhead.
+// ════════════════════════════════════════════════════════════════════════════
+static float t47_gain(int model, int dkay) {
+    const float n = (float)dkay * 0.005f;
+    return (model == 5) ? (0.45f + n * 0.549f) : (0.85f + n * 0.149f);
+}
+
+static void test_dkay_and_model_gain() {
+    std::cout << "\n── T46/T47: Dkay clamp and the Model-dependent KS loop gain ──\n";
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.LoadPreset(9);                                          // Koto, ENGINE_KS
+    s.setParameter(BrachettiSynth::k_paramDkay, 150);
+    s.setParameter(BrachettiSynth::k_paramDkay, 205);
+    const float g = s.state.voices[0].resA.feedback_gain;
+    std::cout << "  Dkay 150 then 205: stored " << s.getParameterValue(BrachettiSynth::k_paramDkay)
+              << ", gain " << g << " (200 -> " << t47_gain(0, 200) << ")\n";
+    result("T46 Dkay above 200 plays as 200 instead of keeping the previous value",
+           s.getParameterValue(BrachettiSynth::k_paramDkay) == 200 && g == t47_gain(0, 200),
+           "a value above 200 was ignored and the last value <= 200 stuck");
+
+    s.setParameter(BrachettiSynth::k_paramDkay, 100);        // edit A+B (Init's context)
+    s.setParameter(BrachettiSynth::k_paramModel, 5);         // both to Drumhead
+    const float a1 = s.state.voices[0].resA.feedback_gain;
+    const float b1 = s.state.voices[0].resB.feedback_gain;
+    s.setParameter(BrachettiSynth::k_paramPartls, 7);        // edit ResB only
+    s.setParameter(BrachettiSynth::k_paramModel, 0);         // ResB back to String
+    s.setParameter(BrachettiSynth::k_paramPartls, 5);        // edit A+B again
+    s.setParameter(BrachettiSynth::k_paramDkay, 100);
+    const float a2 = s.state.voices[0].resA.feedback_gain;
+    const float b2 = s.state.voices[0].resB.feedback_gain;
+    std::cout << "  Dkay 100, Model->Drumhead: A " << a1 << " B " << b1
+              << "   then B->String, Dkay 100 on A+B: A " << a2 << " B " << b2 << "\n";
+    result("T47a a Model change re-derives the KS loop gain",
+           a1 == t47_gain(5, 100) && b1 == t47_gain(5, 100),
+           "the gain kept the previous model's curve");
+    result("T47b each resonator's gain follows its own model when both are edited",
+           a2 == t47_gain(5, 100) && b2 == t47_gain(0, 100),
+           "one resonator on Drumhead put the other on the Drumhead curve too");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// T48 — NzFltFrq moves the Timpani/Taiko noise wedge across its whole range
+//   It did nothing on its own (SetMods never applied noise_bright unless some
+//   other mod forced a rebuild), floored the ÷10 value at 20 as if it were Hz,
+//   and clamped most of its travel.  NzMix is raised so the wedge is audible.
+// ════════════════════════════════════════════════════════════════════════════
+static uint64_t t48_hash(int preset, int nzfrq) {
+    unit_runtime_desc_t desc = make_desc();
+    BrachettiSynth s;
+    s.Init(&desc);
+    s.LoadPreset((uint8_t)preset);
+    s.setParameter(BrachettiSynth::k_paramNzMix, 100);
+    s.setParameter(BrachettiSynth::k_paramNzFltFrq, nzfrq);
+    s.GateOn(110); s.GateOff();
+    uint64_t h = 1469598103934665603ULL;
+    float buf[128];
+    for (int done = 0; done < 9600; done += 64) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 64);
+        for (int i = 0; i < 128; i += 2) {
+            uint32_t u; std::memcpy(&u, &buf[i], 4);
+            h ^= u; h *= 1099511628211ULL;
+        }
+    }
+    return h;
+}
+
+static void test_kernel_noise_cutoff() {
+    std::cout << "\n── T48: NzFltFrq is live across its range on the kernel drums ──\n";
+    const int steps[] = { 2, 10, 20, 100, 250, 500, 800, 1100, 1500, 2000 };
+    for (int p : { 5, 7 }) {
+        std::vector<uint64_t> h;
+        for (int v : steps) h.push_back(t48_hash(p, v));
+        int distinct = 0;
+        for (size_t i = 0; i < h.size(); ++i) {
+            bool seen = false;
+            for (size_t j = 0; j < i; ++j) if (h[j] == h[i]) seen = true;
+            if (!seen) ++distinct;
+        }
+        std::cout << "  " << BrachettiSynth::getPresetName((uint8_t)p) << ": " << distinct
+                  << " distinct renders from " << h.size() << " NzFltFrq settings\n";
+        const std::string name = std::string("T48 NzFltFrq changes the ") +
+                                 BrachettiSynth::getPresetName((uint8_t)p) + " noise at every step";
+        result(name.c_str(), distinct == (int)h.size(),
+               "NzFltFrq positions render identically on the kernel");
+    }
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -2672,6 +2840,9 @@ int main() {
     test_reset_clears_deferred_drive();
     test_kernel_note_change_cost();
     test_pitch_relative_to_root();
+    test_master_knobs_persist();
+    test_dkay_and_model_gain();
+    test_kernel_noise_cutoff();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

@@ -122,9 +122,21 @@ public:
                        (m.hf_decay_tilt != m_mods.hf_decay_tilt) ||
                        (m.stretch    != m_mods.stretch)    ||
                        (m.density    != m_mods.density);
+        // noise_bright is not a rebuild trigger, and its coefficient used to be
+        // refreshed only INSIDE a rebuild — so a NzFltFrq turn on its own never
+        // reached the noise wedge (it landed only when some other mod happened
+        // to force a rebuild).  It is one multiply and two clamps: apply it now.
+        const bool bright = (m.noise_bright != m_mods.noise_bright);
         m_mods = m;
         if (rebuild && m_recipe) { m_rebuild_pos = 0; m_sched_ready = false; }
+        if (bright && m_recipe) ApplyNoiseBright();
     }
+
+    // The noise wedge's start-cutoff coefficient is bounded to this range;
+    // RefreshKernelMods maps NzFltFrq onto exactly this span (see there).
+    static constexpr float kNoiseCoefMin = 0.02f;
+    static constexpr float kNoiseCoefMax = 0.90f;
+    float NoiseCoefHi() const { return m_recipe ? m_recipe->noise_coef_hi : 0.5f; }
 
     // Strike.  `note` selects/retunes a kettle; `ratio` is the engine-computed
     // transpose (2^((note-root)/12)); velocity ∈ [0,1].
@@ -666,10 +678,14 @@ private:
             if ((m & 3) == 0 || n_die > m_grp_retire[g]) m_grp_retire[g] = n_die;
         }
         // Noise-wedge cutoffs (cheap; refresh alongside any rebuild).
-        m_noise_coef_hi_eff = r.noise_coef_hi * m_mods.noise_bright;
-        if (m_noise_coef_hi_eff > 0.90f) m_noise_coef_hi_eff = 0.90f;
-        if (m_noise_coef_hi_eff < 0.02f) m_noise_coef_hi_eff = 0.02f;
+        ApplyNoiseBright();
         m_noise_coef_lo_eff = r.noise_coef_lo;
+    }
+
+    void ApplyNoiseBright() {
+        m_noise_coef_hi_eff = m_recipe->noise_coef_hi * m_mods.noise_bright;
+        if (m_noise_coef_hi_eff > kNoiseCoefMax) m_noise_coef_hi_eff = kNoiseCoefMax;
+        if (m_noise_coef_hi_eff < kNoiseCoefMin) m_noise_coef_hi_eff = kNoiseCoefMin;
     }
 
     // Derive one kettle's coefficients from the base tables at its transpose

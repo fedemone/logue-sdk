@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
         // played note spans root-24 .. root+24 = 12 .. 112 across the library.
         {  1,  24, "Pitch=+24" }, {  1, -24, "Pitch=-24" }, {  1,  12, "Pitch=+12" },
         {  1, -12, "Pitch=-12" }, {  0,   5, "Program=5" }, {  9,   0, "Model=0"   },
-        {  8,   7, "Partls=7"  }, { 10, 210, "Dkay=210"  }, { 15, -100, "Inharm=-100" },
+        {  8,   7, "Partls=7"  }, { 10, 200, "Dkay=200"  }, { 15, -100, "Inharm=-100" },
         { 13, -98, "HitPos=-98"}, { 14,  20, "Rel=20"    }, {  2,   4, "Poly=4"    },
     };
     const int NE = (int)(sizeof(edits) / sizeof(edits[0]));
