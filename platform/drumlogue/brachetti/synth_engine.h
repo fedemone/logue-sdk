@@ -774,8 +774,9 @@ SynthState state;
         // Reset() re-derives Tone and the master filter from these values.
         // LoadPreset does not write them (that is what keeps them in step
         // with the host's parameter store), so without this they would come
-        // up as 0 on a fresh object (Cutoff 0 = a 1 Hz lowpass) and, on an
-        // object Init() is called on again, as whatever the last session left.
+        // up as 0 on a fresh object (Cutoff 0, clamped to its 10 Hz minimum)
+        // and, on an object Init() is called on again, as whatever the last
+        // session left.
         seed_performance_params();
 
         // 3. Clear all memory explicitly at boot
