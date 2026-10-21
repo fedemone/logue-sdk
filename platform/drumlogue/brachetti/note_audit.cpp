@@ -1,6 +1,6 @@
 /**
- * note_audit.cpp — render every preset AT ITS OWN SHIPPED NOTE and report what
- * the Note parameter is actually doing on that engine.
+ * note_audit.cpp — render every preset AT ITS OWN ROOT NOTE (Pitch 0) and
+ * report what that note is actually doing on that engine.
  *
  * Build (from the brachetti directory):
  *   g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \

@@ -737,6 +737,17 @@ played note = preset root + Pitch            (root = the preset's Note column)
   what `GateOn` plays.  `k_paramNote` was renamed `k_paramPitch` on purpose,
   so a tool still passing an absolute note fails to compile instead of
   silently clamping to +24.  Regression test: **T44** (`test_hw_debug.cpp`).
+- **Gate-off releases the note the gate struck**, not root + Pitch at release
+  time, so moving Pitch (or Program) under a held gate can no longer leave a
+  voice ringing (a Koto voice used to ring 34 s).  Same-tick gates — the
+  drumlogue's own — are unaffected.  **T44f**.
+- **Could the other knobs work the same way?**  Audited and verified per
+  parameter in `CLAUDE.md`, pass 48.  Short version: VlMllRes, Tone, Cutoff and
+  Resnc already ship one value on every preset and only need `LoadPreset` to
+  stop rewriting them; MlltRes, VlMllStf, Dkay, Inharm, HitPos, Rel, TubRad,
+  Mterl and Gain (in dB) can become plateau-free offsets, each with its own
+  caveat; MlltStif, Partls, Model, NzMix, NzFltr and NzFltFrq should stay
+  absolute.  Nothing beyond Pitch has been converted.
 
 ### Note assignment per instrument — see `NOTE_AUDIT.md`
 
