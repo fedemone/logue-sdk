@@ -202,6 +202,27 @@ render, Angel at 2 / 6 / 10 clones). "The whole voice moves" came in at
   in the placement alone. Listen for whether the ensemble still reads as airy
   and wide at Spread 80-100.
 
+## CPU: delay taps gathered straight into NEON lanes
+
+The 4-wide paths (`tap_batch4()`, shared by every mode) wrote each clone's
+four tap samples and its fraction to five stack arrays, then read them back
+as vectors. That round trip was most of the loop body: about 88 of its 186
+instructions were loads and stores, against some 14 of filter math. The taps
+now load straight into their lanes (`vld1q_lane_f32` / `vsetq_lane_f32`).
+Same arithmetic. The output is bit-identical to before in every mode and clone
+count, across mode switches, and through the stress run.
+
+Instructions per 64-frame render under `qemu-arm`, kick + tone input:
+
+| | Angel 2 | Angel 6 | Angel 10 | Tribal 2 | Tribal 10 | Military 10 |
+|---|---|---|---|---|---|---|
+| before, steady | 15640 | 33956 | 50661 | 16646 | 51643 | 51572 |
+| after, steady | **15488** | **30604** | **44941** | **16319** | **45556** | **45485** |
+| before, knob moving | 17600 | 37724 | 56125 | | 56050 | |
+| after, knob moving | **17448** | **34372** | **50405** | | **49963** | |
+
+At 2 clones there is no 4-wide batch, so little changes there.
+
 ## Still open: a panned input pulls the formation to its side
 
 Clone gains act as a balance on the stereo input (L in -> L out, R in -> R
