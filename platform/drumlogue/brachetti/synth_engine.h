@@ -3844,8 +3844,15 @@ SynthState state;
     }
 
     inline void GateOff() {
-        // The internal Drumlogue sequencer releases the UI note
-        NoteOff(m_ui_note);
+        // Release the note GateOn STRUCK, not whatever root + Pitch is now.
+        // Pitch (or a Program change, which moves the root) can move between
+        // a held gate's on and off — a motion-sequenced Pitch, a long gate
+        // time — and NoteOff(m_ui_note) then matched nothing: the struck voice
+        // was never released (measured: a Koto voice rang 33.9 s instead of
+        // 2.9 s after Pitch +5 under a held gate).  The drumlogue's own
+        // same-tick gate cannot move it, so every same-tick render is
+        // unchanged.  T44f.
+        NoteOff(m_gate_note);
 
         // Voice-allocation policy for REPEATED triggers of the same preset.
         // The Drumlogue fires gate_on+gate_off in the same tick, so whatever
@@ -4940,6 +4947,7 @@ SynthState state;
             // Route the internal Drumlogue sequencer to the preset's root note
             // plus the Pitch knob.  External MIDI (unit_note_on) bypasses this
             // and plays the note it carries, as it always has.
+            m_gate_note = m_ui_note;   // what GateOff must release
             NoteOn(m_ui_note, velocity);
         }
     }
@@ -5076,6 +5084,7 @@ private:
     uint8_t m_root_note   = 36;   // preset 0 (Kick2) until LoadPreset runs
     int8_t  m_pitch_semis = 0;    // Pitch knob, ±kPitchRangeSemis
     uint8_t m_ui_note     = 36;
+    uint8_t m_gate_note   = 36;   // the note the last GateOn struck
     inline void update_played_note() {
         const int n = (int)m_root_note + (int)m_pitch_semis;
         m_ui_note = (uint8_t)((n < 0) ? 0 : ((n > 127) ? 127 : n));
