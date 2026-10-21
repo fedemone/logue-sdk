@@ -767,34 +767,53 @@ void PercussionSpatializer::randomize_hit() {
 // produces the same output whichever batch width covers it.
 // ---------------------------------------------------------------------------
 
+// One clone's fractional tap, loaded straight into lane L of the gather
+// vectors.  The lane is a template parameter because the NEON lane
+// intrinsics need it as a constant.
+template <int L>
+static fast_inline void tap_lane(const clone_t& c,
+                                 const delay_line_t& delay,
+                                 int sample_idx_in_block,
+                                 float32x4_t& s0l, float32x4_t& s1l,
+                                 float32x4_t& s0r, float32x4_t& s1r,
+                                 float32x4_t& v_fr) {
+    // Smooth LFO calculation
+    const float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
+
+    int i0, i1; float fr;
+    delay_tap(delay.write, total_d, i0, i1, fr);
+
+    v_fr = vsetq_lane_f32(fr, v_fr, L);
+    s0l  = vld1q_lane_f32(&delay.l[i0], s0l, L);
+    s1l  = vld1q_lane_f32(&delay.l[i1], s1l, L);
+    s0r  = vld1q_lane_f32(&delay.r[i0], s0r, L);
+    s1r  = vld1q_lane_f32(&delay.r[i1], s1r, L);
+}
+
 // The four clones' fractional delay taps, linearly interpolated.
+//
+// The taps are gathered straight into NEON lanes.  They used to be written
+// to five stack arrays and read back as vectors, and that round trip was most
+// of the 4-wide loop body: about 88 of its 186 instructions were loads and
+// stores, against some 14 of filter math.  Same arithmetic, same output; at
+// 10 clones a render costs about 11% less in every mode (see TODO.md).
 static fast_inline void tap_batch4(clone_t* clones,
                                    int base,
                                    const delay_line_t& delay,
                                    int sample_idx_in_block,
                                    float32x4_t& v_raw_dl,
                                    float32x4_t& v_raw_dr) {
-    alignas(16) float s0l[4], s1l[4], s0r[4], s1r[4], frs[4];
+    // Zeroed first: a lane load reads the rest of its destination register.
+    float32x4_t s0l = vdupq_n_f32(0.0f), s1l = s0l, s0r = s0l, s1r = s0l, v_fr = s0l;
 
-    for (int lane = 0; lane < 4; ++lane) {
-        clone_t& c = clones[base + lane];
-
-        // Smooth LFO calculation
-        float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
-
-        int i0, i1;
-        delay_tap(delay.write, total_d, i0, i1, frs[lane]);
-
-        s0l[lane] = delay.l[i0];
-        s1l[lane] = delay.l[i1];
-        s0r[lane] = delay.r[i0];
-        s1r[lane] = delay.r[i1];
-    }
+    tap_lane<0>(clones[base + 0], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+    tap_lane<1>(clones[base + 1], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+    tap_lane<2>(clones[base + 2], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+    tap_lane<3>(clones[base + 3], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
 
     // Vectorized Linear Interpolation: out = s0 + fr * (s1 - s0)
-    const float32x4_t v_fr = vld1q_f32(frs);
-    v_raw_dl = vmlaq_f32(vld1q_f32(s0l), v_fr, vsubq_f32(vld1q_f32(s1l), vld1q_f32(s0l)));
-    v_raw_dr = vmlaq_f32(vld1q_f32(s0r), v_fr, vsubq_f32(vld1q_f32(s1r), vld1q_f32(s0r)));
+    v_raw_dl = vmlaq_f32(s0l, v_fr, vsubq_f32(s1l, s0l));
+    v_raw_dr = vmlaq_f32(s0r, v_fr, vsubq_f32(s1r, s0r));
 }
 
 static fast_inline void mix_clone_batch4(clone_t* clones,
