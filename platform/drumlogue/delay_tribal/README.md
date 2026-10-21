@@ -85,6 +85,15 @@ Each mode controls three things at once:
    difference: Military 1.12 is the most decisive, Tribal 0.90 softer, Angel
    0.78 the softest, which pulls Angel's random positions toward the centre.
 
+   The pan moves the whole voice in every mode: both channels of a clone
+   carry the same filtered signal. Tribal and Military lowpass each clone,
+   the followers darker. An Angel voice is its lowpass plus a highpass "air"
+   part, mixed alike on both channels, so its body and its air go wherever
+   the voice is placed. (Angel used to lowpass L and highpass R, which left
+   every voice's body in the left speaker; see TODO.md.) Each Angel voice is
+   a gentle shelf: the leader and the early followers, whose cutoffs sit above
+   about 7.6 kHz, tilt bright; the later ones tilt dark.
+
 ### Scatter control
 
 Scatter is the new detachment parameter.

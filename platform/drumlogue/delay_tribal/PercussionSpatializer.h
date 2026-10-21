@@ -94,11 +94,25 @@ typedef struct {
 
     float lp_coef_base;           // Base LPF coefficient, calculated in rebuild_profile
     float lp_cutoff_rand_factor;  // Random factor applied per hit to lp_coef
+    float voice_lp_mix;           // Angel only: the voice's lowpass weight over
+                                  // its raw-tap weight, (alpha - beta)/beta,
+                                  // set by place_clones() (see there)
 
     // dynamic humanization
     float hit_accent;  // Per-hit random accentuation/damping
     float dynamic_gain_factor;  // Per-hit random dynamic gain factor
 } clone_t;
+
+// Angel's per-clone render coefficients: per channel, w = raw + pole*w and
+// out = gain * (raw + mix*w) (see update_clone_dynamics()).  Interleaved so
+// the 4-wide render path fetches a batch's four vectors with one
+// de-interleaving load (vld4q_f32).
+typedef struct {
+    float gain_l;   // net_gains_l_[i]
+    float mix;      // voice_lp_mix * a, the same on both channels
+    float gain_r;   // net_gains_r_[i]
+    float pole;     // 1 - a
+} angel_coefs_t;
 
 enum params {
     k_clones = 0,
@@ -168,7 +182,8 @@ public:
     float* get_lp_coefs();
     float* get_lp_states_l();
     float* get_lp_states_r();
-    
+    angel_coefs_t* get_angel_coefs();
+
 
         private : static constexpr int kMaxClones = 10;
     static constexpr uint32_t kSmoothBlocks = 120;
@@ -184,7 +199,10 @@ public:
 
 
     void prepare_block(const float* in, int frames);
-    void render_frames(const float* in, float* out, int frames);
+    // kAngel: Angel's whole-voice path, else the lowpass modes'; Render()
+    // picks one per call (see there).
+    template <bool kAngel> void render_blocks(const float* in, float* out, size_t frames);
+    template <bool kAngel> void render_frames(const float* in, float* out, int frames);
 
     static fast_inline float clamp01(float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); }
 
@@ -218,6 +236,19 @@ private:
     alignas(16) float lp_states_l_[kMaxClones];
     alignas(16) float lp_states_r_[kMaxClones];
     alignas(16) float lp_coefs_[kMaxClones];
+    // Angel only, refreshed by update_clone_dynamics() before any Angel frame
+    // is rendered; Tribal and Military never read it.
+    alignas(16) angel_coefs_t angel_coefs_[kMaxClones];
+    // What lp_states_l_/r_ hold: the lowpass output divided by this.  1 in
+    // Tribal and Military; lp_coefs_[i] in Angel, whose render path keeps the
+    // unnormalised state lp/a (see update_clone_dynamics()).  Tracked per
+    // clone so a clone that sat out a mode or coefficient change is still
+    // converted correctly when it comes back.
+    float lp_state_scale_[kMaxClones];
+    // Set whenever lp_coefs_ or voice_lp_mix change (rebuild_profile(),
+    // randomize_hit()); update_clone_dynamics() then refreshes Angel's filter
+    // coefficients, and otherwise only its gains.
+    bool angel_filter_dirty_ = true;
 
     float trim_l_ = 1.0f;       // L/R balance factors, recomputed on rebuild
     float trim_r_ = 1.0f;       // and reused across per-hit placement
