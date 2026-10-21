@@ -478,6 +478,17 @@ that preset (`is_modal_engine` is false for `ENGINE_NOISE`; measured identical
 before and after).  The audit now pins the seed per render, and the before/after
 comparison is reproducible.
 
+**And a third (fixed in pass 48): it leaked the Velocity knob between rows.**
+It reuses one synth and relies on `Init()` + `LoadPreset()` for a fresh state,
+but neither touched the knobs `LoadPreset` deliberately skips, so Velocity —
+its first row, swept to +100 — rode into every later knob and every later
+family.  Seven of its 168 verdicts were wrong (Marimba Tone and NzMix, AcSnare
+VlMllRes and Partls read `weak` instead of `ok`; Cymbal Inharm `ok` instead of
+`weak`; Clap VlMllStf and HitPos swapped).  `Init()` now returns every skipped
+knob to its header default, which fixes this for every tool that reuses a
+synth, not just this one.  The README matrix is no longer derived from this
+tool — see `knob_matrix.cpp` above.
+
 On the kick family, prefer a **band** metric over RMS: the master chain is
 loudness-maximised, so a thump reshapes the attack spectrum without raising
 level.  Measuring the 100-400 Hz "thump" band against the sub band over the
@@ -490,80 +501,105 @@ Because each knob is wired into a specific engine mechanism, a knob does
 **nothing** when the current preset's engine has no matching mechanism — this
 is by design, not a bug.  Rather than mark dead knobs with an "X" on the
 hardware (which would need every affected knob converted to a text display),
-here is the intended-wiring matrix.  Legend: **●** live · **◐** subtle /
-context-dependent · **○** inert by design.
+here is the measured matrix.  Legend: **●** live on most of the family ·
+**◐** subtle, or live on only some members · **○** inert on every member.
 
-> **Maintenance rule — do not hand-write this table.**  The first version of
-> this matrix was written from memory and got three cells wrong (it marked
-> `VlMllRes`/`VlMllStf` inert on the Timpani/Taiko kernel and `VlMllRes` inert
-> on cymbals, when `RefreshKernelMods` and the cymbal `stickLevel` block have
-> always read them).  A wrong "inert by design" note is worse than no note: it
-> hides a real regression behind an intended one.  **Always re-derive the
-> table from `param_audit.cpp`** (which sweeps every knob per family exemplar
-> and prints NO EFFECT / weak / ok) and cross-check against the code before
-> editing a cell.  Note the audit's own blind spot: its 2-second RMS metric
-> dilutes short transients ~50×, so a knob that adds a 40 ms attack can audit
-> `weak` while being plainly audible — confirm those with a windowed probe
-> before marking anything inert.
+> **Maintenance rule — do not hand-write this table; regenerate it.**
+> `knob_matrix.cpp` + `knob_matrix.py` produce every cell except Poly (a voice
+> cap, which one strike cannot show):
+>
+> ```
+> g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+>     knob_matrix.cpp -o /tmp/knob_matrix
+> /tmp/knob_matrix > /tmp/km.csv && python3 knob_matrix.py /tmp/km.csv --members
+> ```
+>
+> It renders **all 40 presets** through `GateOn` at their own root, each knob
+> at the shipped value, both ends and halfway to each end, and scores the
+> largest energy change in any unmasked third-octave band (40 Hz-16 kHz) of the
+> attack, body or tail window: live ≥ 3 dB, subtle 0.5-3 dB, inert < 0.5 dB.
+> A family cell is ● when the knob is live on a strict majority of its members.
+> `--members` prints the per-preset numbers behind every cell.
+>
+> **Why not `param_audit.cpp` any more** (pass 48).  This table used to be
+> re-derived from it.  Regenerated with this tool, **51 of its 144 cells
+> changed**: 20 cells marked inert measure audible (8 of them clearly live),
+> 2 cells marked live or subtle measure inert (Dkay on the Noise family, Rel on
+> Koto), and the other 29 move between subtle and live.  The audit scores a 2-second RMS on ONE preset per family
+> at the two ends of each knob, which misses a short transient (a 40 ms thump
+> is diluted ~50×), a shift of pitch or partials at a level the limiter holds,
+> any family member that is not the exemplar, and a knob that peaks mid-travel
+> (Koto's Inharm is strongest at +50) — and until pass 48 it also carried the
+> Velocity knob's +100 from its first row into every later one.  A wrong
+> "inert by design" note is worse than no note: it hides a real regression
+> behind an intended one (the first, hand-written version of this table marked
+> `VlMllRes`/`VlMllStf` inert on the kernel, which `RefreshKernelMods` has
+> always read; the param_audit-derived one marked `MlltRes`/`MlltStif` inert
+> there, which it also reads).
 
 | Knob | Kick | Tom¹ | Kernel² | Snare | Bar³ | Plate⁴ | Cymbal⁵ | Noise⁶ | String⁷ |
 |------|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Poly | ● | ● | ◐ | ● | ● | ● | ◐ | ● | ○ |
 | Velocity | ● | ● | ● | ● | ● | ● | ● | ● | ● |
-| MlltRes | ● | ◐ | ○ | ● | ● | ● | ● | ◐ | ◐ |
-| MlltStif | ● | ◐ | ○ | ● | ● | ◐ | ● | ○ | ◐ |
-| VlMllRes | ● | ● | ● | ● | ○ | ◐ | ● | ◐ | ○ |
-| VlMllStf | ● | ● | ● | ● | ◐ | ◐ | ● | ◐ | ◐ |
-| Partls | ○ | ● | ○ | ○ | ● | ● | ●⁸ | ○ | ● |
-| Model | ○ | ● | ○ | ○ | ● | ● | ○ | ○ | ● |
-| Dkay | ● | ● | ● | ◐ | ● | ● | ● | ◐ | ● |
-| Mterl | ◐ | ● | ● | ○ | ● | ● | ● | ○ | ◐ |
-| Tone | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ |
-| HitPos | ● | ● | ● | ○ | ● | ● | ● | ○ | ◐ |
-| Rel | ● | ● | ● | ● | ● | ● | ● | ● | ● |
-| Inharm | ◐ | ● | ● | ○ | ● | ◐ | ● | ○ | ● |
-| TubRad | ● | ● | ● | ● | ● | ◐ | ● | ○ | ◐ |
-| Resnc | ○ | ○ | ○ | ○ | ○ | ○ | ◐ | ◐ | ○ |
+| MlltRes | ● | ● | ● | ● | ● | ● | ● | ● | ● |
+| MlltStif | ● | ● | ● | ● | ● | ● | ● | ◐ | ● |
+| VlMllRes | ● | ● | ● | ◐ | ◐ | ◐ | ● | ● | ○ |
+| VlMllStf | ● | ● | ● | ● | ● | ● | ● | ◐ | ● |
+| Partls | ◐ | ● | ◐ | ● | ● | ● | ●⁸ | ○ | ◐ |
+| Model | ◐ | ● | ○ | ● | ● | ● | ○ | ● | ● |
+| Dkay | ● | ● | ● | ● | ● | ● | ● | ○ | ● |
+| Mterl | ● | ● | ● | ● | ● | ● | ● | ○ | ● |
+| Tone | ● | ● | ● | ● | ● | ● | ● | ● | ● |
+| HitPos | ● | ● | ● | ● | ● | ● | ● | ◐ | ● |
+| Rel | ● | ● | ● | ● | ● | ● | ● | ● | ○ |
+| Inharm | ● | ● | ● | ● | ● | ● | ● | ○ | ● |
+| TubRad | ● | ● | ● | ● | ● | ● | ● | ○ | ● |
+| Resnc | ◐ | ◐ | ○ | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ |
 
-¹ Tom = membrane toms/congas/bongos/djembe/handpan/Taiko2 · ² Kernel =
-Timpani/Taiko (dense drum-kernel) · ³ Bar = marimba/vibes/kalimba/… (mallet
-bars) · ⁴ Plate = cowbell/triangle/belltree/tick · ⁵ Cymbal = crash/ride/
-hats/gong/splash (dense resonator) · ⁶ Noise = clap/shaker/HHatClosed · ⁷
-String = Koto/GuitarStr (Karplus-Strong) · ⁸ on the cymbal family **Partls is
-the resonator-bank density** (the ex-`Rsntrs` control), not a mode count.  It
-is marked live on the strength of **T40**, which measures the bank directly
-(32 → 60 resonators across the knob); `param_audit.cpp` reads it `weak`,
-because the bank is 1/√N level-normalised so a density change moves texture
-without moving RMS — exactly the blind spot the maintenance rule above warns
-about.  `Velocity` needs no such caveat: it audits `ok` on all eight family
-exemplars.
+¹ Tom = Djambe, Ac Tom, DeepBs (Taiko2), Conga, Handpan, Bongo, RackTom · ²
+Kernel = Timpani, Taiko (dense drum-kernel) · ³ Bar = Marimba, TblrBel, Vibrph,
+Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl · ⁴ Plate = Cowbell,
+Triangle, BelTre, Tick · ⁵ Cymbal = Cymbal, Gong, HHat-O, Ride, RidBel, Splash
+(dense resonator) · ⁶ Noise = Clap, Shaker, HHat-C · ⁷ String = Koto
+(Karplus-Strong) · Kick = Kick2, 808Sub, KickDrum · ⁸ on the cymbal family
+**Partls is the resonator-bank density** (the ex-`Rsntrs` control), not a mode
+count; **T40** measures the bank directly (32 → 60 resonators across the knob).
 
-Notes on the recurring "no effect (expected)" cases:
+Notes on the cells people ask about:
 
-- **Velocity** and **Poly** are the two **global** performance controls (they
-  are skipped by `LoadPreset`, so they survive a preset change).  Velocity is
-  live on every engine because it biases the strike itself — see the section
-  below.  Poly is the voice cap (1-4); the cymbal family honours the full range
-  with its CPU bounded by `kCymCostBudget` instead, while the Timpani/Taiko
-  kernel runs 2 kettles and the string engine is mono, so the display shows the
-  effective value there, e.g. `4(2)` / `4(1)`.
-- **Resnc** is the master low-pass **Q** — see footnote ¹ above; it needs
-  `Cutoff` brought down to be heard.
-- **Model / Partls** reshape the **shared modal bank**.  The kick (boom osc),
-  cymbal (dense resonator) and kernel drums bypass that bank, so `Model` is
-  inert there — the same structural reason the body knobs were dead before the
-  July-2026 per-family wiring.  `Partls` is the exception: on the cymbal family
-  it now carries the resonator density instead (see below).
-- **Tone** is a master tilt-EQ: it works on everything but is gentle, and reads
-  as "little effect" on sounds with little energy in the tilt band.
-- **Mterl / HitPos** are inert on the snare (its voice is the wire buzz, not a
-  struck modal body); **TubRad** on the snare is the *body-depth* control
-  (July 2026, Band-A centre) so it is live there.
-- **`MlltRes` / `MlltStif` on the cymbal family were ◐ and are now ●** — the
-  July-2026 depth pass wired them to ring presence and beater hardness (they
-  had audited `NO EFFECT`), and `MlltStif` on the kick gained a live lower half.
-  Re-derived from `param_audit.cpp` with the PRNG pinned, per the maintenance
-  rule above.
+- **Velocity** and **Poly** are global performance controls (`LoadPreset` skips
+  them, so they survive a preset change).  Velocity is live on every engine
+  because it biases the strike itself — see the section below.  Poly is the
+  voice cap (1-4); the cymbal family honours the full range with its CPU bounded
+  by `kCymCostBudget` instead, while the Timpani/Taiko kernel runs 2 kettles and
+  the string engine is mono, so the display shows the effective value there,
+  e.g. `4(2)` / `4(1)`.  Its row is the one cell set by design, not measured.
+- **Resnc** is the master low-pass **Q**.  With `Cutoff` fully open (every
+  preset's shipped value) its peak sits near 20 kHz, so it is only subtle —
+  0.5-3 dB in the audible top band of bright presets, nothing on the kernel.
+  Bring `Cutoff` down to hear it.  (Measured at an open Cutoff on purpose:
+  that is what the panel starts at.)
+- **Tone** is a master tilt-EQ, and at the ends of its range it moves a band by
+  well over 3 dB on every family, so it measures live everywhere.  It is still
+  the gentlest knob per step.
+- **Model / Partls** reshape the **shared modal bank**, so they do nothing
+  where a preset has none: 808Sub and KickDrum (boom only — Kick2's modal body
+  is why the kick column reads ◐), the cymbals and the kernel drums for
+  `Model`.  On the Noise family `Model` is live for a different reason: it
+  picks the noise band split (0.70 percussion / 0.35 tube / 0.50 other).
+- **The snare's body knobs** (`Partls`, `Model`, `Mterl`, `HitPos`, `Inharm`)
+  were marked inert and are not: they reshape the snare's modal head, as the
+  snare section below says, and measure live on AcSnare, BrshSnr and RimShot
+  (MrchSnr's head is nearly buried under its buzz).  `VlMllRes` is ◐ because
+  BrshSnr has no crack burst for it to drive.
+- **The Noise family** (Clap, Shaker, HHat-C) has no modal body, so the
+  body-shaping knobs (`Dkay`, `Mterl`, `Inharm`, `TubRad`, `Partls`) do
+  nothing there; `Rel`, `Tone`, `Model` and the mallet knobs are its controls.
+- **`Rel` on the string is inert**: on Koto it only drives the noise tail, and
+  Koto ships `NzMix` 0.
+- **`VlMllRes` is ◐ on bars and plates**: it is dead on most of them (Marimba,
+  Vibrph, StelPan, GlsBwl, SltDrm, TblrBel; Triangle, BelTre) and live on
+  Claves, GlsBotl and Tick.
 
 #### Careful: `MlltRes`/`MlltStif` vs `VlMllRes`/`VlMllStf`
 
@@ -741,13 +777,18 @@ played note = preset root + Pitch            (root = the preset's Note column)
   time, so moving Pitch (or Program) under a held gate can no longer leave a
   voice ringing (a Koto voice used to ring 34 s).  Same-tick gates — the
   drumlogue's own — are unaffected.  **T44f**.
-- **Could the other knobs work the same way?**  Audited and verified per
-  parameter in `CLAUDE.md`, pass 48.  Short version: VlMllRes, Tone, Cutoff and
-  Resnc already ship one value on every preset and only need `LoadPreset` to
-  stop rewriting them; MlltRes, VlMllStf, Dkay, Inharm, HitPos, Rel, TubRad,
+- **VlMllRes, Tone, Cutoff and Resnc now work the same way.**  Every preset
+  ships the same value for each, so they already were offsets from the
+  preset; `LoadPreset` simply stops rewriting them, and they keep what you dial
+  across a Program change (and through a `unit_reset` — the old `Reset()`
+  pinned Tone to 0 and the master filter to 16 kHz).  Nothing changes until you
+  turn one.  `Init()` returns all seven skipped knobs to their header defaults.
+  Regression test: **T45**.
+- **Could the rest work the same way?**  Audited and verified per parameter in
+  `CLAUDE.md`, pass 48: MlltRes, VlMllStf, Dkay, Inharm, HitPos, Rel, TubRad,
   Mterl and Gain (in dB) can become plateau-free offsets, each with its own
   caveat; MlltStif, Partls, Model, NzMix, NzFltr and NzFltFrq should stay
-  absolute.  Nothing beyond Pitch has been converted.
+  absolute.  None of those is converted.
 
 ### Note assignment per instrument — see `NOTE_AUDIT.md`
 
