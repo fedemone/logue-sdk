@@ -22,10 +22,6 @@ constexpr float kScatterMsFull = 8.3f;
 // keeps its transient; followers roll off toward lp_base * 0.5.
 constexpr float kLeaderLpHz = 15000.0f;
 
-// How fast the L/R balance trim eases toward centre on Angel's per-hit
-// re-placement.  Slow enough that individual hits keep their own offset.
-constexpr float kTrimAdapt = 0.05f;
-
 // Transient detector.  The fast envelope falls quickly enough to sit close to
 // the stroke, the slow one holds the floor across a decaying tail, and the
 // refractory window is a little under the shortest musically useful spacing.
@@ -94,6 +90,8 @@ PercussionSpatializer::PercussionSpatializer() {
     memset(params_, 0, sizeof(params_));
     clone_set_index_ = CLONE_SET_4;
     clone_count_     = kCloneValues[clone_set_index_];
+    // set_mode() may run before Init(); it must find plain lowpass states.
+    for (int i = 0; i < kMaxClones; ++i) lp_state_scale_[i] = 1.0f;
 }
 
 int8_t PercussionSpatializer::Init(const unit_runtime_desc_t* desc) {
@@ -122,6 +120,13 @@ void PercussionSpatializer::Reset() {
     for (int i = 0; i < kMaxClones; ++i) {
         lp_states_l_[i] = 0.0f;
         lp_states_r_[i] = 0.0f;
+        lp_state_scale_[i] = 1.0f;
+        // A valid coefficient for clones the current count leaves out.
+        // rebuild_profile() sets it before any of them is rendered, but when
+        // the count is raised during a smoothing window, update_clone_dynamics()
+        // sees the new clones first, and Angel divides by this coefficient
+        // (uninitialised or 0 -> a NaN state that never recovers).
+        lp_coefs_[i] = 0.5f;
         clones_[i].wobble_sine_start   = 0.0f;
         clones_[i].wobble_sine_delta   = 0.0f;
         clones_[i].hit_accent          = 1.0f;
@@ -130,6 +135,7 @@ void PercussionSpatializer::Reset() {
 
     rebuild_profile();
     randomize_hit();
+    update_clone_dynamics();   // net gains pick up the first hit's draws
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +151,19 @@ void PercussionSpatializer::set_clone_count_index(int idx) {
 
 void PercussionSpatializer::set_mode(spatial_mode_t mode) {
     if (mode >= MODE_COUNT) mode = MODE_TRIBAL;
+    // Leaving Angel: Tribal and Military read lp_states_ as the plain lowpass
+    // output, and Angel keeps them divided by the coefficient (see
+    // update_clone_dynamics()).  Convert every clone, including any the clone
+    // count has parked, so neither mode ever starts from a scaled state.
+    // Entering Angel needs nothing here: update_clone_dynamics() runs before
+    // the first Angel frame and converts the clones it renders.
+    if (mode_ == MODE_ANGEL && mode != MODE_ANGEL) {
+        for (int i = 0; i < kMaxClones; ++i) {
+            lp_states_l_[i]   *= lp_state_scale_[i];
+            lp_states_r_[i]   *= lp_state_scale_[i];
+            lp_state_scale_[i] = 1.0f;
+        }
+    }
     mode_ = mode;
     pending_profile_rebuild_ = true;
 }
@@ -216,6 +235,9 @@ float* PercussionSpatializer::get_lp_states_l() {
 float* PercussionSpatializer::get_lp_states_r() {
     return lp_states_r_;
 }
+angel_coefs_t* PercussionSpatializer::get_angel_coefs() {
+    return angel_coefs_;
+}
 
 // ---------------------------------------------------------------------------
 // Smoothing — called once per 4-frame block
@@ -255,6 +277,26 @@ void PercussionSpatializer::update_clone_dynamics() {
     const float gap_boost = (1.0f + gap_ * 0.22f + scatter_ * 0.10f) * clone_norm_;
     const float ms_to_smp = (float)sample_rate_ * 0.001f;
 
+    // Angel's per-sample coefficients.  Its render path runs the lowpass on
+    // the unnormalised state w = lp/a, so the filter update is one
+    // multiply-add, w = raw + (1-a)*w, and a channel's output is
+    //     g * (raw + q*w),   q = voice_lp_mix * a,
+    // g being the net gain (see mix_angel_batch4()).  The gains move on every
+    // block of a smoothing window; the filter part (q, the pole, and w
+    // following a coefficient change) only when lp_coefs_ or voice_lp_mix is
+    // written, i.e. after rebuild_profile() and randomize_hit(), which set
+    // angel_filter_dirty_.  Instructions per render for Angel at 10 clones
+    // while a knob moves (56409 before Angel changed): all four refreshed
+    // every block 59096; the filter part behind the flag but still inside the
+    // gain loop 57293; in loops of their own, as here, 56125.
+    //
+    // w follows the per-hit cutoff draw (a moves by up to +-30%): rescaling
+    // it keeps lp = a*w continuous, exactly as the plain lowpass state is in
+    // the other modes.
+    const bool angel  = (mode_ == MODE_ANGEL);
+    const bool filter = angel && angel_filter_dirty_;
+    if (angel) angel_filter_dirty_ = false;
+
     for (int i = 0; i < clone_count_; ++i) {
         const float t        = (float)i * inv_cnt1;
         const float soft_fac = (i == 0) ? 1.0f : (0.82f + 0.18f * (1.0f - soft_atk_));
@@ -264,6 +306,25 @@ void PercussionSpatializer::update_clone_dynamics() {
 
         net_gains_l_[i] = clones_[i].base_gain * clones_[i].pan_gain_l * dyn;
         net_gains_r_[i] = clones_[i].base_gain * clones_[i].pan_gain_r * dyn;
+    }
+    if (angel) {
+        for (int i = 0; i < clone_count_; ++i) {
+            angel_coefs_[i].gain_l = net_gains_l_[i];
+            angel_coefs_[i].gain_r = net_gains_r_[i];
+        }
+        if (filter) {
+            for (int i = 0; i < clone_count_; ++i) {
+                const float a = lp_coefs_[i];
+                if (lp_state_scale_[i] != a) {
+                    const float r = lp_state_scale_[i] / a;
+                    lp_states_l_[i]   *= r;
+                    lp_states_r_[i]   *= r;
+                    lp_state_scale_[i] = a;
+                }
+                angel_coefs_[i].mix  = clones_[i].voice_lp_mix * a;
+                angel_coefs_[i].pole = 1.0f - a;
+            }
+        }
     }
 }
 
@@ -291,6 +352,7 @@ static pan_model_t mode_pan_model(spatial_mode_t mode) {
 // change (once at first block after change, once at end of smoothing).
 // ---------------------------------------------------------------------------
 void PercussionSpatializer::rebuild_profile() {
+    angel_filter_dirty_ = true;   // lp_coefs_ and voice_lp_mix are rewritten below
     // Base delay times (ms) per mode
     // Base delays (ms): span 50-450ms so each clone sits ~40ms apart — the minimum
     // perceptual gap to hear distinct hits rather than a flam/shake. Previous values
@@ -414,8 +476,22 @@ void PercussionSpatializer::rebuild_profile() {
 // ---------------------------------------------------------------------------
 // place_clones — pan placement for every clone, plus an L/R balance trim.
 //
-// Called from rebuild_profile(), and additionally from randomize_hit() in
-// Angel mode, where the placement is meant to be re-scattered on every hit.
+//   Tribal    players evenly spaced around a ring.  Stereo carries only the
+//             lateral component, so seat k sits at sin(theta_k) with the
+//             angles evenly spaced over -90..+90 degrees.  Each hit, Scatter
+//             sways the players along the ring by at most half the angle to
+//             the next seat, so the ring keeps its shape and its order.
+//   Military  a row across the front: evenly spaced positions, no random
+//             offset at all, so the line never breaks rank.
+//   Angel     every voice gets a fresh random position on every hit: a random
+//             seat, then a uniform offset within it.  Each voice is uniform
+//             over the width, and every hit still covers the width rather
+//             than clumping on one side.
+//
+// Called from rebuild_profile(), and from randomize_hit() for Tribal and
+// Angel, whose placement moves per hit.  The random draws themselves are made
+// only in randomize_hit() (clone_t::pan_rand); this function is deterministic,
+// so moving an unrelated knob no longer re-rolls the layout.
 // ---------------------------------------------------------------------------
 
 // Seat assignment: which of the evenly spaced stereo positions the i-th clone
@@ -431,51 +507,68 @@ static fast_inline int centre_out_seat(int i, int n) {
     return (i & 1) ? (half + rank) : (half - 1 - rank);
 }
 
+// Constant-power pan pair for position px in [-1, 1], warped by the mode's
+// exponent.
+static fast_inline void pan_pair(float px, float exponent, float& gl, float& gr) {
+    const float a  = 0.5f * (px + 1.0f);
+    const float pl = fasterpowf(1.0f - a, exponent);
+    const float pr = fasterpowf(a, exponent);
+    // pn normalizes the pair so the sum-of-squares is 1; divide (not multiply).
+    // Multiplying by pn inverts the normalization — 4.7 dB deficit at center.
+    const float pn     = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
+    const float inv_pn = 1.0f / (pn + 1e-20f);
+    gl = pl * inv_pn;
+    gr = pr * inv_pn;
+}
+
 void PercussionSpatializer::place_clones(bool recompute_trim) {
-    const float inv_cnt1 = 1.0f / (float)(clone_count_ > 1 ? clone_count_ - 1 : 1);
+    const int   n        = clone_count_;
+    const float inv_cnt1 = 1.0f / (float)(n > 1 ? n - 1 : 1);
+    // Tribal's sway: each player strays up to Scatter x half the angle to its
+    // neighbour (pi/(n-1) apart), so at Scatter=100 two neighbours can at most
+    // meet halfway and never swap places.  Every player gets the same bound.
+    // The random offsets this replaces were scaled by the seat — its
+    // left-to-right position — so the leftmost player barely moved and the
+    // rightmost moved five times as far, a lopsided image in every mode.
+    // Weighting by arrival order instead was tried and is inaudible: it
+    // freezes the loud central players, and the late ones sit at the ends of
+    // the ring, where sin() is flat (sd 0.01-0.02 at Scatter=45, 10 clones).
+    const float sway = 0.5f * (float)M_PI * inv_cnt1 * scatter_;
 
     float sum_l = 0.0f, sum_r = 0.0f;
 
-    for (int i = 0; i < clone_count_; ++i) {
-        const float seat = (float)centre_out_seat(i, clone_count_) * inv_cnt1;
+    for (int i = 0; i < n; ++i) {
+        // Seats are dealt by arrival order, outward from the centre.
+        const float seat = (float)centre_out_seat(i, n) * inv_cnt1;
 
-        float base_x = 0.0f;
+        float x, x_nominal;   // nominal: the formation without per-hit offsets
         switch (profile_.pan_model) {
             case PAN_MODEL_CIRCLE: {
-                float arc = seat * M_PI - 1.5707963f;
-                base_x = fastersinfullf(arc);
+                const float arc = seat * (float)M_PI - 1.5707963f;
+                x_nominal = fastersinfullf(arc);
+                // Swaying past an end seat folds back inward (sin is symmetric
+                // about +-90 degrees), which is what a ring does, so no clamp.
+                x = fastersinfullf(arc + clones_[i].pan_rand * sway);
                 break;
             }
             case PAN_MODEL_LINE:
-                base_x = seat * 2.0f - 1.0f;
+                x = x_nominal = seat * 2.0f - 1.0f;
                 break;
-            case PAN_MODEL_SCATTER: {
-                float center = seat * 2.0f - 1.0f;
-                float jit    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * profile_.scatter_amount;
-                base_x       = clampf(center + jit, -1.0f, 1.0f);
+            case PAN_MODEL_SCATTER:
+            default:
+                x = x_nominal = clones_[i].pan_rand;
                 break;
-            }
         }
-
-        const float scatter_shape = profile_.scatter_amount * (0.20f + 0.80f * seat);
-        const float random_off    = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * scatter_shape;
 
         // Spread collapses the image toward the centre.  It used to scale the
         // pan gains directly, which made Spread=0 mute the wet path entirely
         // instead of collapsing it to mono.
-        const float px = clampf((base_x + random_off) * spread_, -1.0f, 1.0f);
-
-        const float a  = 0.5f * (px + 1.0f);
-        const float pl = fasterpowf(1.0f - a, profile_.pan_exponent);
-        const float pr = fasterpowf(a, profile_.pan_exponent);
-        // pn normalizes the pair so the sum-of-squares is 1; divide (not multiply).
-        // Multiplying by pn inverts the normalization — 4.7 dB deficit at center.
-        const float pn     = my_sqrt_f(pl * pl + pr * pr + 1e-12f);
-        const float inv_pn = 1.0f / (pn + 1e-20f);
+        float gl, gr;
+        pan_pair(clampf(x * spread_, -1.0f, 1.0f), profile_.pan_exponent, gl, gr);
 
         // Filter makeup gain.  For y[n] = y[n-1] + a(x[n]-y[n-1]) and broadband
         // input the power gains are a/(2-a) for the lowpass and 2(1-a)^2/(2-a)
-        // for Angel's highpass (out_r = raw - lp).
+        // for the highpass raw - lp that Angel mixes in (below).
         //
         // A one-pole lowpass has unity DC gain but its impulse peak is only a,
         // and a is 0.22-0.50 here.  Percussion is all transient, so the filter
@@ -485,49 +578,94 @@ void PercussionSpatializer::place_clones(bool recompute_trim) {
         const float lpa   = clampf(clones_[i].lp_coef_base, 0.01f, 0.99f);
         const float pw_lp = lpa / (2.0f - lpa);
         const float pw_hp = 2.0f * (1.0f - lpa) * (1.0f - lpa) / (2.0f - lpa);
-        const float pw_r  = (mode_ == MODE_ANGEL) ? pw_hp : pw_lp;  // Angel highpasses R
+        const float pw_r  = (mode_ == MODE_ANGEL) ? pw_hp : pw_lp;
 
-        const float mk_l = 1.0f / my_sqrt_f(pw_lp + 1e-9f);
-        const float mk_r = 1.0f / my_sqrt_f(pw_r  + 1e-9f);
+        float mk_l = 1.0f / my_sqrt_f(pw_lp + 1e-9f);   // alpha, the LP makeup
+        float mk_r = 1.0f / my_sqrt_f(pw_r  + 1e-9f);   // beta in Angel
 
-        clones_[i].pan_gain_l = pl * inv_pn * mk_l * clones_[i].hp_attn;
-        clones_[i].pan_gain_r = pr * inv_pn * mk_r * clones_[i].hp_attn;
+        // Angel: the whole voice moves.  Angel used to lowpass L and highpass
+        // R, so wherever a voice was placed its body came out of the left
+        // speaker and its top out of the right: per voice, 20-300 Hz sat
+        // +31 dB left on average and only the top end followed the placement.
+        // Both channels now carry the same voice, the coherent sum of what L
+        // and R used to carry,
+        //     v = alpha*LP + beta*HP = beta*raw + (alpha - beta)*LP,
+        // and the pan places all of it, so the voice holds its position at
+        // every frequency: mean L/R 0.0 dB and correlation with the voice's
+        // position +1.00 in each of 20-300 Hz, 0.3-3 kHz and 3-16 kHz
+        // (80 hits x 10 voices).
+        //
+        // Level: v is divided by sqrt(2), the mid of the old pair.  The old
+        // pan sent, on average over positions, half of each part's power to
+        // its channel, so a voice carried alpha^2/2 below its cutoff (from L)
+        // and beta^2/2 above it (from R).  v/sqrt(2) carries exactly that at
+        // both ends, wherever the voice sits.  Only around the cutoff is it
+        // louder: the parts are not orthogonal (for a white impulse
+        // <lp, hp> = a(1-a)/(2-a) > 0), so there they add in phase.  Against
+        // the old pair's L+R on the same hits and voices: 20-300 Hz -0.05 dB,
+        // 0.3-3 kHz +0.06, 3-8 kHz +0.55, 8-16 kHz +1.10, 16-24 kHz +1.43; a
+        // mono kick-and-tone render below the limiter -0.18 dB (2 clones) and
+        // -0.27 dB (10).  Matching the old pair's power on white noise instead,
+        // the obvious normalisation, moved that power up into the overlap and
+        // left drums 0.9-1.3 dB quieter, Angel's body 1 dB under its old level.
+        //
+        // The voice is a shelf that pivots at a = 0.5 (alpha = beta, about a
+        // 7.6 kHz cutoff), where it is the raw tap unfiltered: voices above it
+        // tilt bright, the leader included, and voices below it dark.
+        //
+        // The interpolation correction is gone.  It scaled R by
+        // sqrt((1 - a/3)/(2/3 - a/6)) because the interpolation darkens the
+        // highpass more than the lowpass, and that was the whole of the old
+        // left lean.  With one filter on both channels there is no balance
+        // left for it to restore, and as a tone control it would put another
+        // 1.4-1.7 dB on the top that the in-phase overlap already raises, so
+        // the tap darkens Angel as it does Tribal and Military, whose makeups
+        // leave it alone too.
+        if (mode_ == MODE_ANGEL) {
+            const float beta = mk_r;
+            clones_[i].voice_lp_mix = (mk_l - beta) / beta;   // v = beta*(raw + mix*lp)
+            mk_l = mk_r = 0.70710678f * beta;
+        }
 
-        // Balance weights use the filter power alone: the makeup gain is
-        // already inside pan_gain, so folding it in again would double-count it.
-        const float gl = clones_[i].base_gain * clones_[i].pan_gain_l;
-        const float gr = clones_[i].base_gain * clones_[i].pan_gain_r;
-        sum_l += gl * gl * pw_lp;
-        sum_r += gr * gr * pw_r;
+        clones_[i].pan_gain_l = gl * mk_l * clones_[i].hp_attn;
+        clones_[i].pan_gain_r = gr * mk_r * clones_[i].hp_attn;
+
+        if (recompute_trim) {
+            // The trim balances the formation, not one hit's sway of it, so it
+            // is taken from the nominal positions.  A channel's output power is
+            // gain^2 x filter power, and the makeup gain cancels the latter,
+            // leaving the clone's level and its pan.
+            if (x != x_nominal)
+                pan_pair(clampf(x_nominal * spread_, -1.0f, 1.0f),
+                         profile_.pan_exponent, gl, gr);
+            const float g = clones_[i].base_gain * clones_[i].hp_attn;
+            sum_l += g * g * gl * gl;
+            sum_r += g * g * gr * gr;
+        }
     }
 
     // Balance trim.  Seating alone cannot fully cancel the bias for every clone
     // count (at 2 clones there is no centre seat), so equalising total L/R
     // power guarantees a centred image for two multiplies per clone.
     //
-    // Recomputed only on rebuild.  Angel re-places its clones every hit, and
-    // re-deriving the trim each time would drag every individual hit back to
-    // centre — which is exactly the random spatial movement the mode exists to
-    // produce.  Reusing the rebuild's factors centres Angel on average while
-    // leaving each hit free to land where it fell.
-    if (sum_l > 1e-12f && sum_r > 1e-12f) {
-        const float mean = 0.5f * (sum_l + sum_r);
-        const float want_l = my_sqrt_f(mean / sum_l);
-        const float want_r = my_sqrt_f(mean / sum_r);
-        if (recompute_trim) {
-            trim_l_ = want_l;
-            trim_r_ = want_r;
-        } else {
-            // Angel's per-hit path: ease toward balance over many hits rather
-            // than snapping to it.  Snapping would cancel the hit-to-hit
-            // movement; a single rebuild-time value would instead lock in
-            // whichever random layout happened to be current, leaving the
-            // long-term image off-centre.
-            trim_l_ += (want_l - trim_l_) * kTrimAdapt;
-            trim_r_ += (want_r - trim_r_) * kTrimAdapt;
+    // Recomputed only on rebuild, and kept across per-hit re-placement:
+    // re-deriving it every hit would drag each hit back to centre, cancelling
+    // the very movement the per-hit placement exists to produce.
+    if (recompute_trim) {
+        if (profile_.pan_model == PAN_MODEL_SCATTER) {
+            // Angel has no formation to balance.  Every voice is equally likely
+            // to land anywhere, so the expected image is centred by symmetry,
+            // and a trim derived from whichever random layout happens to be
+            // current would only lock that one hit's lean in.
+            trim_l_ = 1.0f;
+            trim_r_ = 1.0f;
+        } else if (sum_l > 1e-12f && sum_r > 1e-12f) {
+            const float mean = 0.5f * (sum_l + sum_r);
+            trim_l_ = my_sqrt_f(mean / sum_l);
+            trim_r_ = my_sqrt_f(mean / sum_r);
         }
     }
-    for (int i = 0; i < clone_count_; ++i) {
+    for (int i = 0; i < n; ++i) {
         clones_[i].pan_gain_l *= trim_l_;
         clones_[i].pan_gain_r *= trim_r_;
     }
@@ -538,6 +676,7 @@ void PercussionSpatializer::place_clones(bool recompute_trim) {
 // Pre-computes scatter_samples per clone so the render loop is xorshift-free.
 // ---------------------------------------------------------------------------
 void PercussionSpatializer::randomize_hit() {
+    angel_filter_dirty_ = true;   // new cutoff draws and, in Angel, a new placement
     const float ms_to_smp  = (float)sample_rate_ * 0.001f;
     const float inv_cnt1   = 1.0f / (float)(clone_count_ > 1 ? clone_count_ - 1 : 1);
     const float global_jit = (xorshift_f32(rng_state_) * 2.0f - 1.0f) * profile_.jitter_ms;
@@ -562,10 +701,30 @@ void PercussionSpatializer::randomize_hit() {
         clones_[i].precalculated_delay_base = fmaxf(2.0f, clones_[i].delay_samples + clones_[i].scatter_samples);
     }
 
-    // Angel scatters its players on every hit, per the mode's design.  The
-    // placement used to be computed only in rebuild_profile(), so it was
-    // frozen until a parameter changed and Angel sounded as static as Tribal.
-    if (mode_ == MODE_ANGEL) place_clones(false);
+    // Per-hit placement draws, consumed by place_clones().  They are made here
+    // and nowhere else: place_clones() used to draw its own offsets, so every
+    // rebuild — i.e. any knob move, Rate and Wobble included — re-rolled the
+    // whole Tribal and Military layout by up to a third of the stereo width.
+    if (mode_ == MODE_ANGEL) {
+        // A random seat per voice (Fisher-Yates over the n seats), then a
+        // uniform offset inside that seat's cell: each voice is uniform over
+        // [-1, 1), and every hit still covers the whole width.
+        int perm[kMaxClones];
+        for (int k = 0; k < clone_count_; ++k) perm[k] = k;
+        for (int k = clone_count_ - 1; k > 0; --k) {
+            const int j = (int)(xorshift_f32(rng_state_) * (float)(k + 1));
+            std::swap(perm[k], perm[j]);
+        }
+        const float cell = 2.0f / (float)clone_count_;
+        for (int i = 0; i < clone_count_; ++i)
+            clones_[i].pan_rand = -1.0f + ((float)perm[i] + xorshift_f32(rng_state_)) * cell;
+    } else {
+        for (int i = 0; i < clone_count_; ++i)
+            clones_[i].pan_rand = xorshift_f32(rng_state_) * 2.0f - 1.0f;
+    }
+
+    // Tribal sways and Angel re-scatters on every hit; Military holds its row.
+    if (mode_ != MODE_MILITARY) place_clones(false);
 
     // Humanize: Pick 1 or 2 random secondary clones to accent or damp
     if (clone_count_ > 2) {
@@ -600,11 +759,66 @@ void PercussionSpatializer::randomize_hit() {
 
 // ---------------------------------------------------------------------------
 // render_block4 — 4 frames, NEON interpolation across time
+//
+// Tribal and Military run mix_clone_*: one lowpass per channel.  Angel runs
+// mix_angel_*: the whole voice on both channels (see place_clones()).  The
+// mode is chosen once per Render() call, so neither set of loops carries the
+// other's work.  Both share a clone's filter state, and in each set a clone
+// produces the same output whichever batch width covers it.
 // ---------------------------------------------------------------------------
+
+// One clone's fractional tap, loaded straight into lane L of the gather
+// vectors.  The lane is a template parameter because the NEON lane
+// intrinsics need it as a constant.
+template <int L>
+static fast_inline void tap_lane(const clone_t& c,
+                                 const delay_line_t& delay,
+                                 int sample_idx_in_block,
+                                 float32x4_t& s0l, float32x4_t& s1l,
+                                 float32x4_t& s0r, float32x4_t& s1r,
+                                 float32x4_t& v_fr) {
+    // Smooth LFO calculation
+    const float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
+
+    int i0, i1; float fr;
+    delay_tap(delay.write, total_d, i0, i1, fr);
+
+    v_fr = vsetq_lane_f32(fr, v_fr, L);
+    s0l  = vld1q_lane_f32(&delay.l[i0], s0l, L);
+    s1l  = vld1q_lane_f32(&delay.l[i1], s1l, L);
+    s0r  = vld1q_lane_f32(&delay.r[i0], s0r, L);
+    s1r  = vld1q_lane_f32(&delay.r[i1], s1r, L);
+}
+
+// The four clones' fractional delay taps, linearly interpolated.
+//
+// The taps are gathered straight into NEON lanes.  They used to be written
+// to five stack arrays and read back as vectors, and that round trip was most
+// of the 4-wide loop body: about 88 of its 186 instructions were loads and
+// stores, against some 14 of filter math.  Same arithmetic, same output; at
+// 10 clones a render costs about 11% less in every mode (see TODO.md).
+static fast_inline void tap_batch4(clone_t* clones,
+                                   int base,
+                                   const delay_line_t& delay,
+                                   int sample_idx_in_block,
+                                   float32x4_t& v_raw_dl,
+                                   float32x4_t& v_raw_dr) {
+    // Zeroed first: a lane load reads the rest of its destination register.
+    float32x4_t s0l = vdupq_n_f32(0.0f), s1l = s0l, s0r = s0l, s1r = s0l, v_fr = s0l;
+
+    tap_lane<0>(clones[base + 0], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+    tap_lane<1>(clones[base + 1], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+    tap_lane<2>(clones[base + 2], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+    tap_lane<3>(clones[base + 3], delay, sample_idx_in_block, s0l, s1l, s0r, s1r, v_fr);
+
+    // Vectorized Linear Interpolation: out = s0 + fr * (s1 - s0)
+    v_raw_dl = vmlaq_f32(s0l, v_fr, vsubq_f32(s1l, s0l));
+    v_raw_dr = vmlaq_f32(s0r, v_fr, vsubq_f32(s1r, s0r));
+}
+
 static fast_inline void mix_clone_batch4(clone_t* clones,
                                          int base,
                                          const delay_line_t& delay,
-                                         bool is_angel,
                                          const float* contiguous_gains_l,
                                          const float* contiguous_gains_r,
                                          float* contiguous_lp_l,
@@ -613,47 +827,22 @@ static fast_inline void mix_clone_batch4(clone_t* clones,
                                          float& wet_l,
                                          float& wet_r,
                                          int sample_idx_in_block) {
-    alignas(16) float s0l[4], s1l[4], s0r[4], s1r[4], frs[4];
+    float32x4_t v_raw_dl, v_raw_dr;
+    tap_batch4(clones, base, delay, sample_idx_in_block, v_raw_dl, v_raw_dr);
 
-    for (int lane = 0; lane < 4; ++lane) {
-        clone_t& c = clones[base + lane];
-
-        // Smooth LFO calculation
-        float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
-
-        int i0, i1;
-        delay_tap(delay.write, total_d, i0, i1, frs[lane]);
-
-        s0l[lane] = delay.l[i0];
-        s1l[lane] = delay.l[i1];
-        s0r[lane] = delay.r[i0];
-        s1r[lane] = delay.r[i1];
-    }
-
-    float32x4_t v_fr   = vld1q_f32(frs);
     float32x4_t v_lpc  = vld1q_f32(contiguous_lp_c + base);
     float32x4_t v_lpsl = vld1q_f32(contiguous_lp_l + base);
     float32x4_t v_lpsr = vld1q_f32(contiguous_lp_r + base);
 
-    // 1. Vectorized Linear Interpolation: out = s0 + fr * (s1 - s0)
-    float32x4_t v_raw_dl = vmlaq_f32(vld1q_f32(s0l), v_fr, vsubq_f32(vld1q_f32(s1l), vld1q_f32(s0l)));
-    float32x4_t v_raw_dr = vmlaq_f32(vld1q_f32(s0r), v_fr, vsubq_f32(vld1q_f32(s1r), vld1q_f32(s0r)));
-
-    // 2. Vectorized IIR Filter Update: state = state + coef * (target - state)
+    // Vectorized IIR Filter Update: state = state + coef * (target - state)
     v_lpsl = vmlaq_f32(v_lpsl, v_lpc, vsubq_f32(v_raw_dl, v_lpsl));
     v_lpsr = vmlaq_f32(v_lpsr, v_lpc, vsubq_f32(v_raw_dr, v_lpsr));
 
-    // 3. Convert Right Channel to HPF if Angel Mode is Active ---
-    float32x4_t v_out_r = v_lpsr;
-    if (is_angel) {
-        v_out_r = vsubq_f32(v_raw_dr, v_lpsr); // HPF = Input - LPF
-    }
-
-    // 4. Final mix and horizontal sum (with stereo filtering)
+    // Final mix and horizontal sum
     wet_l += PercussionSpatializer::horizontal_sum4(vmulq_f32(v_lpsl, vld1q_f32(contiguous_gains_l + base)));
-    wet_r += PercussionSpatializer::horizontal_sum4(vmulq_f32(v_out_r, vld1q_f32(contiguous_gains_r + base)));
+    wet_r += PercussionSpatializer::horizontal_sum4(vmulq_f32(v_lpsr, vld1q_f32(contiguous_gains_r + base)));
 
-    // 5. Update clone persistent states
+    // Update clone persistent states
     vst1q_f32(contiguous_lp_l + base, v_lpsl);
     vst1q_f32(contiguous_lp_r + base, v_lpsr);
 }
@@ -661,7 +850,6 @@ static fast_inline void mix_clone_batch4(clone_t* clones,
 static fast_inline void mix_clone_batch2(clone_t* clones,
                                          int base,
                                          const delay_line_t& delay,
-                                         bool is_angel,
                                          const float* gains_l,
                                          const float* gains_r,
                                          float* lp_l,
@@ -688,9 +876,8 @@ static fast_inline void mix_clone_batch2(clone_t* clones,
         // which batch width happens to cover it).
         lp_l[idx] += lp_c[idx] * (raw_dl - lp_l[idx]);
         lp_r[idx] += lp_c[idx] * (raw_dr - lp_r[idx]);
-        // Angel mode turns the right channel into a high-pass (input - LPF)
         dl[lane] = lp_l[idx];
-        dr[lane] = is_angel ? (raw_dr - lp_r[idx]) : lp_r[idx];
+        dr[lane] = lp_r[idx];
     }
 
     float32x2_t vdl = vld1_f32(dl);
@@ -702,7 +889,6 @@ static fast_inline void mix_clone_batch2(clone_t* clones,
 static fast_inline void mix_clone_scalar(const clone_t& c,
                                          int idx,
                                          const delay_line_t& delay,
-                                         bool is_angel,
                                          const float* gains_l,
                                          const float* gains_r,
                                          float* lp_l,
@@ -721,9 +907,115 @@ static fast_inline void mix_clone_scalar(const clone_t& c,
     lp_l[idx] += lp_c[idx] * (raw_dl - lp_l[idx]);
     lp_r[idx] += lp_c[idx] * (raw_dr - lp_r[idx]);
     wet_l += lp_l[idx] * gains_l[idx];
-    wet_r += (is_angel ? (raw_dr - lp_r[idx]) : lp_r[idx]) * gains_r[idx];
+    wet_r += lp_r[idx] * gains_r[idx];
 }
 
+// Angel: the whole voice on both channels.  Per channel
+//     w   = raw + (1-a)*w          (w = lp/a, see update_clone_dynamics())
+//     out = g * (raw + q*w)        (angel_coefs_t)
+// which is v = alpha*LP + beta*HP from place_clones(), panned and scaled.
+//
+// q and the pole are the same on both channels, since both carry the same
+// filter, so a clone's four coefficients fit one de-interleaving load.
+// Folding g into the lowpass weight per channel, out = g*raw + g*q*w, saves
+// the vmov per channel the compiler adds here (VMLA overwrites its
+// accumulator and raw is needed twice) but needs a fifth coefficient and a
+// second load.  It measured 16297 / 34675 / 51475 instructions per render at
+// 2 / 6 / 10 clones against 16040 / 34290 / 51024 for this form, but
+// unrelated edits elsewhere in Render() move these counts by up to ~1000
+// through register allocation, so neither form is clearly the cheaper.
+static fast_inline void mix_angel_batch4(clone_t* clones,
+                                         int base,
+                                         const delay_line_t& delay,
+                                         const angel_coefs_t* coefs,
+                                         float* w_l,
+                                         float* w_r,
+                                         float& wet_l,
+                                         float& wet_r,
+                                         int sample_idx_in_block) {
+    float32x4_t v_raw_dl, v_raw_dr;
+    tap_batch4(clones, base, delay, sample_idx_in_block, v_raw_dl, v_raw_dr);
+
+    // val[0] gain_l, val[1] mix, val[2] gain_r, val[3] pole
+    const float32x4x4_t v_c = vld4q_f32(&coefs[base].gain_l);
+    float32x4_t v_wl = vld1q_f32(w_l + base);
+    float32x4_t v_wr = vld1q_f32(w_r + base);
+
+    v_wl = vmlaq_f32(v_raw_dl, v_c.val[3], v_wl);                  // w = raw + (1-a)*w
+    v_wr = vmlaq_f32(v_raw_dr, v_c.val[3], v_wr);
+    const float32x4_t v_vl = vmlaq_f32(v_raw_dl, v_c.val[1], v_wl);  // v = raw + q*w
+    const float32x4_t v_vr = vmlaq_f32(v_raw_dr, v_c.val[1], v_wr);
+
+    wet_l += PercussionSpatializer::horizontal_sum4(vmulq_f32(v_vl, v_c.val[0]));
+    wet_r += PercussionSpatializer::horizontal_sum4(vmulq_f32(v_vr, v_c.val[2]));
+
+    vst1q_f32(w_l + base, v_wl);
+    vst1q_f32(w_r + base, v_wr);
+}
+
+static fast_inline void mix_angel_batch2(clone_t* clones,
+                                         int base,
+                                         const delay_line_t& delay,
+                                         const angel_coefs_t* coefs,
+                                         float* w_l,
+                                         float* w_r,
+                                         float& wet_l,
+                                         float& wet_r,
+                                         int sample_idx_in_block) {
+    float out_l[2], out_r[2];
+
+    for (int lane = 0; lane < 2; ++lane) {
+        const clone_t& c = clones[base + lane];
+        const int idx = base + lane;
+        float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
+
+        int i0, i1; float fr;
+        delay_tap(delay.write, total_d, i0, i1, fr);
+
+        const float raw_dl = delay.l[i0] + (delay.l[i1] - delay.l[i0]) * fr;
+        const float raw_dr = delay.r[i0] + (delay.r[i1] - delay.r[i0]) * fr;
+        // Copied to locals: the coefficients and the states are all floats,
+        // so without them every store to w_l/w_r forces the compiler to
+        // reload the coefficients (-112 instructions per render at 10 clones).
+        const angel_coefs_t& k = coefs[idx];
+        const float pole = k.pole, mix = k.mix;
+        const float wl = raw_dl + pole * w_l[idx];
+        const float wr = raw_dr + pole * w_r[idx];
+        w_l[idx] = wl;
+        w_r[idx] = wr;
+        out_l[lane] = k.gain_l * (raw_dl + mix * wl);
+        out_r[lane] = k.gain_r * (raw_dr + mix * wr);
+    }
+
+    // Summed in the order horizontal_sum2() uses
+    wet_l += out_l[0] + out_l[1];
+    wet_r += out_r[0] + out_r[1];
+}
+
+static fast_inline void mix_angel_scalar(const clone_t& c,
+                                         int idx,
+                                         const delay_line_t& delay,
+                                         const angel_coefs_t* coefs,
+                                         float* w_l,
+                                         float* w_r,
+                                         float& wet_l, float& wet_r,
+                                         int sample_idx_in_block) {
+    float total_d = c.precalculated_delay_base + (c.wobble_sine_start + c.wobble_sine_delta * sample_idx_in_block) * c.wobble_depth_samples;
+
+    int i0, i1; float fr;
+    delay_tap(delay.write, total_d, i0, i1, fr);
+
+    const float raw_dl = delay.l[i0] + (delay.l[i1] - delay.l[i0]) * fr;
+    const float raw_dr = delay.r[i0] + (delay.r[i1] - delay.r[i0]) * fr;
+    const angel_coefs_t& k = coefs[idx];
+
+    w_l[idx] = raw_dl + k.pole * w_l[idx];
+    w_r[idx] = raw_dr + k.pole * w_r[idx];
+    wet_l += k.gain_l * (raw_dl + k.mix * w_l[idx]);
+    wet_r += k.gain_r * (raw_dr + k.mix * w_r[idx]);
+}
+
+template <bool kAngel>
 static fast_inline void render_one_frame(PercussionSpatializer* self,
                                          int sample_idx_in_block,
                                          float& out_l, float& out_r) {
@@ -732,27 +1024,30 @@ static fast_inline void render_one_frame(PercussionSpatializer* self,
 
     // Hoist everything that is loop-invariant out of the batch loops.
     const int   count    = self->get_clone_count();
-    const bool  is_angel = (self->get_mode() == MODE_ANGEL);
     clone_t* const clones   = self->get_clones();
     const delay_line_t& dly = self->get_delay();
-    const float* const gl   = self->get_net_gains_l();
-    const float* const gr   = self->get_net_gains_r();
     float* const sl         = self->get_lp_states_l();
     float* const sr         = self->get_lp_states_r();
-    const float* const lc   = self->get_lp_coefs();
 
     int i = 0;
-    for (; i + 3 < count; i += 4) {
-        mix_clone_batch4(clones, i, dly, is_angel, gl, gr, sl, sr, lc,
-                         wet_l, wet_r, sample_idx_in_block);
-    }
-    for (; i + 1 < count; i += 2) {
-        mix_clone_batch2(clones, i, dly, is_angel, gl, gr, sl, sr, lc,
-                         wet_l, wet_r, sample_idx_in_block);
-    }
-    for (; i < count; ++i) {
-        mix_clone_scalar(clones[i], i, dly, is_angel, gl, gr, sl, sr, lc,
-                         wet_l, wet_r, sample_idx_in_block);
+    if (kAngel) {
+        const angel_coefs_t* const ac = self->get_angel_coefs();
+        for (; i + 3 < count; i += 4)
+            mix_angel_batch4(clones, i, dly, ac, sl, sr, wet_l, wet_r, sample_idx_in_block);
+        for (; i + 1 < count; i += 2)
+            mix_angel_batch2(clones, i, dly, ac, sl, sr, wet_l, wet_r, sample_idx_in_block);
+        for (; i < count; ++i)
+            mix_angel_scalar(clones[i], i, dly, ac, sl, sr, wet_l, wet_r, sample_idx_in_block);
+    } else {
+        const float* const gl = self->get_net_gains_l();
+        const float* const gr = self->get_net_gains_r();
+        const float* const lc = self->get_lp_coefs();
+        for (; i + 3 < count; i += 4)
+            mix_clone_batch4(clones, i, dly, gl, gr, sl, sr, lc, wet_l, wet_r, sample_idx_in_block);
+        for (; i + 1 < count; i += 2)
+            mix_clone_batch2(clones, i, dly, gl, gr, sl, sr, lc, wet_l, wet_r, sample_idx_in_block);
+        for (; i < count; ++i)
+            mix_clone_scalar(clones[i], i, dly, gl, gr, sl, sr, lc, wet_l, wet_r, sample_idx_in_block);
     }
 
     // gap_boost and the clone power normalisation are already baked into the
@@ -762,12 +1057,19 @@ static fast_inline void render_one_frame(PercussionSpatializer* self,
     out_r = wet_r;
 }
 
+
 // ---------------------------------------------------------------------------
 // prepare_block — per-block housekeeping shared by every render path:
 // transient detection, parameter smoothing, wobble LFO segment, profile
 // rebuild.  `frames` is 1..4 so the scalar tail behaves exactly like a full
 // block rather than freezing the LFO and skipping smoothing.
+//
+// Forced inline: with one render loop per mode family (see Render()) the
+// compiler stopped inlining it into the block loop as it used to and called
+// an out-of-line copy per block instead, +17 instructions per render in every
+// mode.
 // ---------------------------------------------------------------------------
+inline __attribute__((always_inline))
 void PercussionSpatializer::prepare_block(const float* in, int frames) {
     float mag_max = 0.0f;
     if (frames == 4) {
@@ -851,6 +1153,7 @@ void PercussionSpatializer::prepare_block(const float* in, int frames) {
 // ---------------------------------------------------------------------------
 // render_frames — 1..4 frames, one delay-line write per frame
 // ---------------------------------------------------------------------------
+template <bool kAngel>
 void PercussionSpatializer::render_frames(const float* in, float* out, int frames) {
     prepare_block(in, frames);
 
@@ -867,7 +1170,7 @@ void PercussionSpatializer::render_frames(const float* in, float* out, int frame
         delay_.push(in[s * 2], in[s * 2 + 1]);
 
         float ol = 0.0f, orr = 0.0f;
-        render_one_frame(this, s, ol, orr);
+        render_one_frame<kAngel>(this, s, ol, orr);
 
         out[s * 2]     = soft_clip(in[s * 2]     * dry_gain + ol * wet_gain);
         out[s * 2 + 1] = soft_clip(in[s * 2 + 1] * dry_gain + orr * wet_gain);
@@ -877,21 +1180,33 @@ void PercussionSpatializer::render_frames(const float* in, float* out, int frame
 // ---------------------------------------------------------------------------
 // Render — 4-frame blocks plus a short tail block
 // ---------------------------------------------------------------------------
+template <bool kAngel>
+void PercussionSpatializer::render_blocks(const float* in, float* out, size_t frames) {
+    size_t i = 0;
+    for (; i + 3 < frames; i += 4) {
+        render_frames<kAngel>(in + i * 2, out + i * 2, 4);
+    }
+    if (i < frames) {
+        // The tail runs through the same path, so smoothing, transient
+        // detection and the wobble LFO advance here too.
+        render_frames<kAngel>(in + i * 2, out + i * 2, (int)(frames - i));
+    }
+}
+
 void PercussionSpatializer::Render(const float* in, float* out, size_t frames) {
     if (!initialized_) {
         std::memset(out, 0, frames * 2 * sizeof(float));
         return;
     }
 
-    size_t i = 0;
-    for (; i + 3 < frames; i += 4) {
-        render_frames(in + i * 2, out + i * 2, 4);
-    }
-    if (i < frames) {
-        // The tail runs through the same path, so smoothing, transient
-        // detection and the wobble LFO advance here too.
-        render_frames(in + i * 2, out + i * 2, (int)(frames - i));
-    }
+    // Angel's per-clone math differs from the lowpass modes' (see
+    // render_one_frame()), and the mode only changes between calls.  Choosing
+    // here compiles each into its own loop; testing per frame put both in one
+    // function, where the extra live registers spilled: Tribal at 10 clones
+    // measured 52369 instructions per render that way, 52153 before Angel
+    // changed, and 51691 with the choice made here (output bit-identical).
+    if (mode_ == MODE_ANGEL) render_blocks<true>(in, out, frames);
+    else                     render_blocks<false>(in, out, frames);
 }
 
 // ---------------------------------------------------------------------------

@@ -16,9 +16,9 @@
 #include <cstdint>
 
 typedef enum {
-    MODE_TRIBAL   = 0,  // circular / ring-like
-    MODE_MILITARY = 1,  // linear / row-like
-    MODE_ANGEL    = 2,  // scattered / diffuse
+    MODE_TRIBAL   = 0,  // ring: evenly spaced angles, swaying per hit
+    MODE_MILITARY = 1,  // row across the front: evenly spaced, fixed
+    MODE_ANGEL    = 2,  // random position per voice, per hit
     MODE_COUNT    = 3,
 } spatial_mode_t;
 
@@ -45,8 +45,10 @@ enum {
 typedef struct {
     float jitter_ms;
     float pan_exponent;
-    // Unitless 0..1 fraction, used for PAN placement (pan coordinates are in
-    // [-1,1]).  Do not use this as a time — see scatter_ms.
+    // Unitless 0..1 fraction: how far followers detach in level.  It used to
+    // set the random pan offsets too; placement now follows each mode's
+    // geometry (see place_clones()).  Do not use this as a time — see
+    // scatter_ms.
     float scatter_amount;
     // Per-hit timing scatter in MILLISECONDS.  scatter_amount used to do double
     // duty here, which meant the Scatter knob only ever bought ~1.5 ms of

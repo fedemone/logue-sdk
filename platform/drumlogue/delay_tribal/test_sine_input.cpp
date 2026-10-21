@@ -16,6 +16,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <vector>
 
@@ -206,10 +207,12 @@ static void test_stereo_balance() {
                 tl += pl; tr += pr;
             }
             const double db = 10.0 * log10((tl + 1e-30) / (tr + 1e-30));
-            // Angel splits the bands across channels (L lowpassed, R
-            // highpassed), so its balance is program-dependent by design and
-            // no fixed gain trim can centre it for every input; it is held to
-            // a looser bound than the two symmetric modes.
+            // Angel filters both channels alike and pans each voice whole, so
+            // it is centred in every band, not just on this white impulse
+            // (it used to lowpass L and highpass R; see test_pan_formations
+            // (e)).  It re-scatters every voice on every hit, so its 120-hit
+            // average carries ~0.3 dB of sampling noise and it is held to a
+            // looser bound than the two fixed formations.
             // At two clones there is no centre seat and each channel is fed
             // by a single clone, so the per-hit random cutoff leaves a ~0.9 dB
             // residual the rebuild-time trim cannot see.
@@ -371,6 +374,229 @@ static void test_transient_detection() {
 }
 
 // ---------------------------------------------------------------------------
+// Test 9: each mode's pan formation
+//
+//   Tribal    players on a ring; per-hit sway keeps the ring's order, and
+//             mirrored seats sway alike
+//   Military  a fixed, symmetric row
+//   Angel     every voice lands anywhere across the width, per hit, and the
+//             whole voice goes there, at every frequency
+//
+// Regressions: the random pan offsets were scaled by the seat's left-to-right
+// position, so left players barely moved and right ones moved five times as
+// far; they were re-drawn on every rebuild, so touching Rate re-rolled the
+// whole Tribal / Military layout; Military got as much as Tribal, enough to
+// swap neighbours in the row; Angel was the row plus jitter, its outer
+// voices confined to their own side; and Angel's body stayed in the left
+// speaker wherever a voice was placed.
+// ---------------------------------------------------------------------------
+
+// Position on a constant-power scale, -1 = hard left, +1 = hard right.
+static double pos_from_gains(double gl, double gr) {
+    return atan2(fabs(gr), fabs(gl)) / (M_PI / 4.0) - 1.0;
+}
+
+// One impulse; each clone's L/R energy, windowed around its own arrival.
+// Needs Scatter = 0 and Wobble = 0, so the arrivals sit where
+// precalculated_delay_base says, Gap = 100 so they are >= 13 ms apart.
+static void per_clone_ild(Rig& r, std::vector<double>& ild_db) {
+    const int n_blk = (300 * kSR / 1000) / 4;
+    std::vector<float> y(n_blk * 8);
+    std::vector<double> arr;
+    for (int b = 0; b < n_blk; ++b) {
+        float in[8] = {0};
+        // 0.25, not 1: the output limiter starts at 0.9 and would squeeze the
+        // louder channel of a hot clone, moving its ILD from hit to hit.
+        if (b == 0) { in[0] = 0.25f; in[1] = 0.25f; }
+        r.sp.Render(in, &y[b * 8], 4);
+        if (b == 0)   // the hit was detected and randomised in this block
+            for (int i = 0; i < r.sp.get_clone_count(); ++i)
+                arr.push_back(r.sp.get_clones()[i].precalculated_delay_base);
+    }
+    ild_db.clear();
+    for (double a : arr) {
+        double el = 0, er = 0;
+        for (int s = (int)a - 24; s < (int)a + 240; ++s) {
+            el += (double)y[s * 2] * y[s * 2];
+            er += (double)y[s * 2 + 1] * y[s * 2 + 1];
+        }
+        ild_db.push_back(10.0 * log10((el + 1e-30) / (er + 1e-30)));
+    }
+}
+
+static void test_pan_formations() {
+    printf("\n=== Pan formation per mode ===\n");
+
+    // (a) A knob unrelated to placement must not move anyone.
+    for (int mode = 0; mode < 3; ++mode) {
+        Rig r(4, mode, 30, 100, 30, 45, 20, 45);
+        float gl[10], gr[10];
+        for (int i = 0; i < 10; ++i) { gl[i] = r.sp.get_clones()[i].pan_gain_l; gr[i] = r.sp.get_clones()[i].pan_gain_r; }
+        r.sp.setParameter(k_rate, 31);
+        r.sp.setParameter(k_wobble, 31);
+        r.settle();
+        double moved = 0;
+        for (int i = 0; i < 10; ++i)
+            moved = fmax(moved, fabs(pos_from_gains(r.sp.get_clones()[i].pan_gain_l, r.sp.get_clones()[i].pan_gain_r) -
+                                     pos_from_gains(gl[i], gr[i])));
+        printf("  mode=%d : Rate/Wobble moved a clone by %.4f\n", mode, moved);
+        assert(moved < 1e-3 && "an unrelated knob re-rolled the stereo layout");
+    }
+
+    const int H = 60;
+
+    // (b) Military: a row that holds still, symmetric about the centre.
+    // Spread 80 (the default) keeps the end seats off hard left/right, where
+    // the far channel holds nothing but rounding and its ILD means nothing.
+    {
+        Rig r(4, 1, 30, 80, 0, 0, 20, 100);
+        std::vector<double> ild, mean(10, 0.0), lo(10, 1e9), hi(10, -1e9);
+        for (int h = 0; h < H; ++h) {
+            per_clone_ild(r, ild);
+            for (int i = 0; i < 10; ++i) { mean[i] += ild[i] / H; lo[i] = fmin(lo[i], ild[i]); hi[i] = fmax(hi[i], ild[i]); }
+        }
+        double worst = 0;
+        for (int i = 0; i < 10; ++i) worst = fmax(worst, hi[i] - lo[i]);
+        std::vector<double> sorted(mean);
+        std::sort(sorted.begin(), sorted.end());
+        double asym = 0;
+        for (int k = 0; k < 5; ++k) asym = fmax(asym, fabs(sorted[k] + sorted[9 - k]));
+        printf("  Military : per-clone ILD moves %.2f dB across hits; mirrored seats differ by %.2f dB\n",
+               worst, asym);
+        assert(worst < 0.5 && "Military's row moved between hits");
+        assert(asym < 1.5 && "Military's row is not symmetric");
+    }
+
+    // (c) Tribal: per-hit sway that keeps the ring's order, alike on both sides.
+    {
+        Rig r(4, 0, 30, 100, 30, 100, 20, 45);
+        const int HT = 300;
+        std::vector<std::vector<double>> p(10);
+        for (int h = 0; h < HT; ++h) {
+            r.impulse(120);
+            for (int i = 0; i < 10; ++i)
+                p[i].push_back(pos_from_gains(r.sp.get_clones()[i].pan_gain_l, r.sp.get_clones()[i].pan_gain_r));
+        }
+        std::vector<double> mean(10, 0.0), sd(10, 0.0);
+        for (int i = 0; i < 10; ++i) {
+            for (double v : p[i]) mean[i] += v / HT;
+            for (double v : p[i]) sd[i] += (v - mean[i]) * (v - mean[i]) / HT;
+            sd[i] = sqrt(sd[i]);
+        }
+        std::vector<int> rank(10);
+        for (int i = 0; i < 10; ++i) rank[i] = i;
+        std::sort(rank.begin(), rank.end(), [&](int a, int b) { return mean[a] < mean[b]; });
+        int swaps = 0;
+        for (int h = 0; h < HT; ++h)
+            for (int k = 0; k + 1 < 10; ++k)
+                if (p[rank[k]][h] > p[rank[k + 1]][h] + 1e-4) ++swaps;
+        double ratio = 1.0;
+        for (int k = 0; k < 4; ++k) {   // the end pair barely moves (sin is flat there)
+            const double q = sd[rank[k]] / (sd[rank[9 - k]] + 1e-12);
+            ratio = fmax(ratio, fmax(q, 1.0 / q));
+        }
+        printf("  Tribal   : %d neighbour swaps in %d hits; centre sway sd %.3f; "
+               "mirrored seats sway within %.2fx of each other\n",
+               swaps, HT, sd[rank[4]], ratio);
+        assert(swaps == 0 && "Tribal's sway broke the ring's order");
+        assert(sd[rank[4]] > 0.03 && "Tribal's sway is too small to hear");
+        assert(ratio < 1.5 && "Tribal's sway depends on which side the seat is on");
+    }
+
+    // (d) Angel: every voice goes anywhere, none is tied to a side.
+    {
+        Rig r(4, 2, 30, 80, 0, 0, 20, 100);
+        std::vector<double> ild, mean(10, 0.0);
+        std::vector<int> left(10, 0);
+        for (int h = 0; h < H; ++h) {
+            per_clone_ild(r, ild);
+            for (int i = 0; i < 10; ++i) { mean[i] += ild[i] / H; left[i] += ild[i] > 0.0; }
+        }
+        int lo = H, hi = 0;
+        double worst_mean = 0;
+        for (int i = 0; i < 10; ++i) {
+            lo = std::min(lo, left[i]); hi = std::max(hi, left[i]);
+            worst_mean = fmax(worst_mean, fabs(mean[i]));
+        }
+        printf("  Angel    : each voice left of centre on %d..%d of %d hits; worst mean ILD %.1f dB\n",
+               lo, hi, H, worst_mean);
+        assert(lo > H / 4 && hi < 3 * H / 4 && "an Angel voice is confined to one side");
+        assert(worst_mean < 4.0 && "an Angel voice is tied to a seat");
+    }
+
+    // (e) Angel: the whole voice moves.  Angel used to lowpass L and highpass
+    // R, so a voice's body came out of the left speaker wherever it was
+    // placed: per voice, 20-300 Hz sat +31 dB left on average and 0.3-3 kHz
+    // +11 dB, and only the top end and the level followed the placement.
+    // Both channels now carry the same voice, so in every band its L/R must
+    // follow its drawn position and centre on average.
+    {
+        Rig r(4, 2, 30, 80, 0, 0, 20, 100);
+        const int HB = 40, W = 512;
+        // Band edges as in the voice_bands probe; frequencies on its 8192-point
+        // grid, every 2nd / 8th / 32nd bin.
+        const struct { const char* name; int k0, k1, step; } bands[3] = {
+            {"20-300 Hz", 4, 51, 2}, {"0.3-3 kHz", 52, 511, 8}, {"3-16 kHz", 512, 2730, 32}};
+        std::vector<double> pos, ild[3];
+        const int n_blk = (300 * kSR / 1000) / 4;
+        std::vector<float> y(n_blk * 8);
+        for (int h = 0; h < HB; ++h) {
+            std::vector<double> arr, pr;
+            for (int b = 0; b < n_blk; ++b) {
+                float in[8] = {0};
+                if (b == 0) { in[0] = 0.25f; in[1] = 0.25f; }   // below the limiter
+                r.sp.Render(in, &y[b * 8], 4);
+                if (b == 0)
+                    for (int i = 0; i < r.sp.get_clone_count(); ++i) {
+                        arr.push_back(r.sp.get_clones()[i].precalculated_delay_base);
+                        pr.push_back(r.sp.get_clones()[i].pan_rand);   // the drawn position
+                    }
+            }
+            for (size_t v = 0; v < arr.size(); ++v) {
+                const float* x = &y[((int)arr[v] - 24) * 2];
+                pos.push_back(pr[v]);
+                for (int bi = 0; bi < 3; ++bi) {
+                    double el = 0, er = 0;
+                    for (int k = bands[bi].k0; k <= bands[bi].k1; k += bands[bi].step) {
+                        // Goertzel: |DFT|^2 of the window at this frequency, per channel
+                        const double c = 2.0 * cos(2.0 * M_PI * k / 8192.0);
+                        double l1 = 0, l2 = 0, r1 = 0, r2 = 0;
+                        for (int s = 0; s < W; ++s) {
+                            const double l0 = x[s * 2] + c * l1 - l2;     l2 = l1; l1 = l0;
+                            const double r0 = x[s * 2 + 1] + c * r1 - r2; r2 = r1; r1 = r0;
+                        }
+                        el += l1 * l1 + l2 * l2 - c * l1 * l2;
+                        er += r1 * r1 + r2 * r2 - c * r1 * r2;
+                    }
+                    ild[bi].push_back(10.0 * log10((el + 1e-30) / (er + 1e-30)));
+                }
+            }
+        }
+        const size_t n = pos.size();
+        double mp = 0;
+        for (double p : pos) mp += p / n;
+        for (int bi = 0; bi < 3; ++bi) {
+            double mi = 0;
+            for (double v : ild[bi]) mi += v / n;
+            // Position +1 is hard right, i.e. a negative L/R difference.
+            double sxy = 0, sxx = 0, syy = 0;
+            for (size_t k = 0; k < n; ++k) {
+                const double dx = -(pos[k] - mp), dy = ild[bi][k] - mi;
+                sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+            }
+            const double corr = sxy / sqrt(sxx * syy + 1e-30);
+            printf("  Angel    : %-9s mean L/R %+5.1f dB, corr with voice position %+.2f (%zu voices)\n",
+                   bands[bi].name, mi, corr, n);
+            assert(fabs(mi) < 1.5 && "an Angel band leans to one side whatever the placement");
+            // 0.97, not lower: the old split already scored +0.89..+0.91 here,
+            // its level following the placement even though its body did not.
+            assert(corr > 0.97 && "an Angel band does not follow the voice's position");
+        }
+    }
+    printf("  PASS\n");
+}
+
+// ---------------------------------------------------------------------------
 int main() {
     setvbuf(stdout, nullptr, _IONBF, 0);  // keep output if an assert aborts
     printf("===========================================\n");
@@ -386,6 +612,7 @@ int main() {
     test_fully_wet();
     test_output_ceiling();
     test_transient_detection();
+    test_pan_formations();
 
     printf("\n=== ALL delay_tribal BEHAVIOURAL TESTS PASSED ===\n");
     return 0;

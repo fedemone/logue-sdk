@@ -49,28 +49,50 @@ essentially open lowpass while the followers darken behind it.
 
 ### Mode behavior
 
-- **Tribal**: circular placement, warm, ring-like
-- **Military**: linear placement, tighter, more ordered
-- **Angel**: scattered placement, diffuse, airy
+- **Tribal**: a ring of players, warm, swaying gently per hit
+- **Military**: a row across the front, fixed, ordered
+- **Angel**: every voice somewhere new on every hit, diffuse, airy
 
 ### Spatial grammar
 
 Each mode controls three things at once:
 
-1. **Pan law**
-   - Tribal uses a curved arc with a softer power law
-   - Military uses a straighter and tighter law
-   - Angel uses a wider, more diffuse law
+1. **Clone placement**
+   - Tribal seats the players evenly around a ring. Stereo carries only the
+     lateral part of a position, so seat *k* sits at sin(θ*k*) with the angles
+     evenly spaced over -90..+90 degrees: denser toward the sides than
+     Military's row.
+   - Military seats them evenly along a row across the front.
+   - Angel gives every voice a fresh random position on every hit: a random
+     seat, then a uniform offset inside it. Each voice is uniform over the
+     width, and every hit still covers the width rather than clumping.
 
-2. **Clone placement**
-   - Tribal distributes players around a stereo ring
-   - Military arranges them in a row
-   - Angel scatters them per hit
+   In Tribal and Military the seats are dealt in arrival order from the centre
+   outward, alternating left and right, so the louder early clones sit near
+   the middle. Spread scales every formation toward the centre.
 
-3. **Stereo scatter**
-   - Tribal adds gentle motion
-   - Military keeps scatter minimal
-   - Angel injects stronger random spatial variation
+2. **Stereo scatter** (per hit)
+   - Tribal: Scatter sways each player along the ring, at most halfway to its
+     neighbour at Scatter=100, so the ring keeps its shape and its order
+   - Military: none — the row never breaks rank
+   - Angel: the placement is the randomness; Scatter does not change it
+
+   In every mode Scatter also loosens timing and level (below). The layout
+   moves only on a detected hit: turning a knob never re-rolls it.
+
+3. **Pan law**
+   Constant power in every mode. The exponent warps position into level
+   difference: Military 1.12 is the most decisive, Tribal 0.90 softer, Angel
+   0.78 the softest, which pulls Angel's random positions toward the centre.
+
+   The pan moves the whole voice in every mode: both channels of a clone
+   carry the same filtered signal. Tribal and Military lowpass each clone,
+   the followers darker. An Angel voice is its lowpass plus a highpass "air"
+   part, mixed alike on both channels, so its body and its air go wherever
+   the voice is placed. (Angel used to lowpass L and highpass R, which left
+   every voice's body in the left speaker; see TODO.md.) Each Angel voice is
+   a gentle shelf: the leader and the early followers, whose cutoffs sit above
+   about 7.6 kHz, tilt bright; the later ones tilt dark.
 
 ### Scatter control
 
@@ -78,7 +100,7 @@ Scatter is the new detachment parameter.
 
 It increases:
 - time jitter
-- spatial randomness
+- spatial randomness (Tribal's sway along the ring)
 - follower looseness
 - perceived distance between the players
 
