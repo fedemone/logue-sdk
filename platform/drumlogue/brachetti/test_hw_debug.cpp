@@ -2593,6 +2593,34 @@ static void test_pitch_relative_to_root() {
     result("T44e external MIDI note-on is not transposed by Pitch",
            t44_render(1, 12, 60, N) == t44_render(1, 0, 60, N),
            "Pitch leaked into unit_note_on; it should only move the gate path");
+
+    // f) A held gate whose Pitch moves before gate-off must still release the
+    //    voice it struck.  GateOff used to release root + Pitch AT RELEASE
+    //    TIME, which matched nothing, so the voice never released (a Koto
+    //    voice rang 33.9 s instead of 2.9 s).  Koto, because ENGINE_KS is the
+    //    family whose release is what ends the note.
+    {
+        BrachettiSynth k;
+        k.Init(&desc);
+        k.LoadPreset(9);                                     // Koto, root 60
+        k.GateOn(110);
+        run_blocks(k, 3840, 64);                             // 80 ms held
+        const int struck = k.PlayedNote();
+        k.setParameter(BrachettiSynth::k_paramPitch, 5);     // moved under the gate
+        k.GateOff();
+        int held = 0, released = 0;
+        for (int i = 0; i < NUM_VOICES; ++i) {
+            const VoiceState& v = k.state.voices[i];
+            if (!v.is_active || v.current_note != struck) continue;
+            ++held;
+            if (v.is_releasing) ++released;
+        }
+        std::cout << "  Koto: struck note " << struck << ", Pitch moved to +5 before gate-off: "
+                  << released << "/" << held << " struck voices releasing\n";
+        result("T44f gate-off releases the note the gate struck, even if Pitch moved",
+               held == 1 && released == 1,
+               "GateOff released root + Pitch at release time; the struck voice rings on");
+    }
 }
 
 int main() {
