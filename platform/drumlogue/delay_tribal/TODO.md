@@ -105,7 +105,7 @@ own arrival in the output (`test_pan_formations()` locks all of it in).
 | **Military broke rank** | Same offsets as Tribal (`0.08 + 0.55 x Scatter`, +-0.33 at the default) against a seat spacing of 0.22 at 10 clones: the row was out of order on 274 of 400 layouts at the default Scatter, 395 of 400 at Scatter=100 | One formula for both modes | No random offset in Military: the row is fixed and symmetric, 0 of 400 out of order |
 | **Tribal's ring was blurred, and never moved per hit** | Static offsets up to +-0.33 over the sin() spacing; zero movement between hits | As above | Exact ring positions, plus a per-hit sway along the ring of at most Scatter x half the angle to the neighbour: 0 neighbour swaps in 300 hits at Scatter=100, centre sway sd 0.11 |
 | **Angel was the row plus jitter** | Each voice stayed near its row seat: the outer voices sat on their own side on 60 of 60 hits, mean ILD up to 15 dB; at Scatter=100, 24% of voices were clamped hard to one side | Row seat + two random terms, each clamped to +-1 | A random seat, then a uniform offset inside it, per hit. Every voice now has mean 0 and sd 0.52-0.60 (0.577 is uniform), is left of centre on 23-36 of 60 hits, and none is clamped |
-| **Angel leaned left** (the old "known residual") | +1.4 to +1.6 dB on impulses, every clone count | The delay tap's linear interpolation is a lowpass the makeup gains ignored. Averaged over the fractional position it passes (2 + rho1)/3 of the power — `1 - a/3` for the lowpass, `2/3 - a/6` for the highpass — so Angel's highpassed R lost 1.4-1.7 dB more than L. With interpolation switched off the lean measured -0.01 dB | R's makeup carries that ratio (Angel only, so L and the other modes keep their level): +0.06 to +0.4 dB now, depending on Gap |
+| **Angel leaned left** (the old "known residual") | +1.4 to +1.6 dB on impulses, every clone count | The delay tap's linear interpolation is a lowpass the makeup gains ignored. Averaged over the fractional position it passes (2 + rho1)/3 of the power — `1 - a/3` for the lowpass, `2/3 - a/6` for the highpass — so Angel's highpassed R lost 1.4-1.7 dB more than L. With interpolation switched off the lean measured -0.01 dB | R's makeup carries that ratio (Angel only, so L and the other modes keep their level): +0.06 to +0.4 dB now, depending on Gap. *Superseded*: Angel now puts the same filter on both channels, and the correction is gone (see "Angel's low end stayed in the left speaker") |
 
 The balance trim is still computed on rebuild from the nominal formation, and
 kept across the per-hit placement so it never drags a hit back to centre.
@@ -115,27 +115,92 @@ Scatter 45): Tribal 1.5 / 0.9 dB, Military 1.3 / 0.7 dB, Angel 3.3 / 3.6 dB. In
 the two fixed formations it comes from the per-hit level humanisation, not from
 pan.
 
-## Still open: where Angel's low end goes
+## Angel's low end stayed in the left speaker (fixed)
 
-Angel lowpasses L and highpasses R, so wherever a voice is placed, its body
-comes out of the left speaker and its top out of the right. Measured by band
-(2 clones, Spread 100, 60 hits):
+Angel lowpassed L and highpassed R, so wherever a voice was placed, its body
+came out of the left speaker and its top out of the right. Its random
+placement only moved the top end and the level of each voice; the broadband
+balance was centred, but only as an average over the bands. Two fixes were
+prototyped: "the whole voice moves" (filter both channels alike, pan the voice
+as a unit) and "the split follows the voice" (per voice, put the lowpass on its
+own side). The brief was the one that costs less CPU.
 
-| 40-200 Hz | 200-800 Hz | 0.8-3 kHz | 3-8 kHz | 8-20 kHz |
+**The whole voice moves.** Both channels now carry the coherent sum of what L
+and R used to carry, v = alpha·LP + beta·HP, alpha and beta being the two
+makeups, and the pan places all of it. Per voice, by band (10 clones, Spread
+80, Gap 100, 80 hits x 10 voices, each voice windowed out of the output):
+
+| | 20-300 Hz | 0.3-3 kHz | 3-16 kHz | broadband |
 |---|---|---|---|---|
-| +25 dB L | +20 dB L | +10 dB L | +2.4 dB L | -3.3 dB (R) |
+| mean L/R before | +31.0 dB | +11.4 dB | -1.0 dB | +0.8 dB |
+| mean L/R after | **+0.0 dB** | **+0.0 dB** | **+0.0 dB** | +0.0 dB |
+| corr. with the voice's position, before | +0.89 | +0.90 | +0.91 | +0.94 |
+| corr. with the voice's position, after | **+1.00** | **+1.00** | **+1.00** | +1.00 |
 
-Tribal and Military are within +-0.8 dB in every band. So Angel's random
-placement only moves the top end and the level of each voice. The broadband
-balance is centred now, but that is an average over the bands. Fixing it is a
-voicing decision. Two candidates:
+`test_pan_formations()` (e) locks this in. On the old engine it fails at
++31.3 dB in 20-300 Hz. Its correlation bound is 0.97, because the old split
+already scored +0.89 to +0.91: the level followed the placement even though
+the body did not.
 
-- **The whole voice moves**: filter both channels alike and pan the voice as a
-  unit, with Angel's "air" as a per-voice highpass tilt. The voice keeps its
-  position at every frequency; the per-voice L/R spectral split goes away.
-- **The split follows the voice**: per voice and per hit, pick which channel
-  gets the lowpass (the body on the voice's own side, the air opposite). This
-  keeps the split's width, and the low end is spread across both sides.
+**Why this option.** Both were built and counted (instructions per 64-frame
+render, Angel at 2 / 6 / 10 clones). "The whole voice moves" came in at
+16040 / 34290 / 51024. "The split follows the voice" came in at
+16459 / 34378 / 51181: it needs both highpasses and a per-voice select.
+
+- **Level.** v is divided by sqrt(2), the mid of the old pair. On average over
+  positions, the old pan sent half of each part's power to its channel. So a
+  voice carried alpha^2/2 below its cutoff and beta^2/2 above it, and v/sqrt(2)
+  carries exactly that at both ends. Only around the cutoff is it louder: LP
+  and HP are not orthogonal (for a white impulse <lp, hp> = a(1-a)/(2-a) > 0),
+  so there they add in phase. Against the old pair's L+R on the same hits:
+
+  | 20-300 Hz | 0.3-3 kHz | 3-8 kHz | 8-16 kHz | 16-24 kHz |
+  |---|---|---|---|---|
+  | -0.05 dB | +0.06 dB | +0.55 dB | +1.10 dB | +1.43 dB |
+
+  A mono kick-and-tone render below the limiter is -0.18 dB at 2 clones and
+  -0.27 dB at 10. The obvious normalisation, matching the old pair's power on
+  white noise, was tried first. It moved that power up into the overlap and
+  left drums 0.9-1.3 dB quieter, Angel's body about 1 dB under its old level.
+  (Full-scale renders read +0.7-0.9 dB louder than the old engine, which is
+  no change in level: the old Angel ran its left channel into the limiter on
+  a quarter to a third of samples, because all of its body was there.)
+- **Timbre.** Each voice is a shelf that pivots at a = 0.5 (alpha = beta,
+  about a 7.6 kHz cutoff), where it is the raw tap unfiltered. Voices above
+  the pivot tilt bright, the leader included, and voices below it tilt dark.
+  The leader's tilt is about 1.6 dB steeper than its old L+R had.
+- **The interpolation correction is gone.** It lifted R's highpass because the
+  delay tap's interpolation darkens the highpass more than the lowpass. With
+  one filter on both channels there is nothing to balance, and kept as a tone
+  control it would add another 1.4-1.7 dB to the top that the in-phase overlap
+  already raises.
+- **CPU.** Instructions per 64-frame render under `qemu-arm`, kick + tone
+  input. "Knob moving" re-arms the 120-block smoothing window before every
+  render, which is the unit's worst case:
+
+  | | Angel 2 | Angel 6 | Angel 10 | Tribal 2 | Tribal 10 | Military 10 |
+  |---|---|---|---|---|---|---|
+  | before, steady | 17440 | 35438 | 52081 | 17669 | 52153 | 52083 |
+  | after, steady | **15640** | **33956** | **50661** | 16646 | 51643 | 51572 |
+  | before, knob moving | 19096 | 38438 | 56409 | | 56481 | |
+  | after, knob moving | **17600** | **37724** | **56125** | | 56050 | |
+
+  Angel now has its own render loop (`mix_angel_*`), and Render() picks the
+  mode family once per call. Branching per frame instead spilled registers
+  (Tribal 10 at 52369). Angel runs its lowpass on the state w = lp/a, so the
+  update is a single multiply-add. Its four per-clone coefficients (two gains,
+  the shared lowpass weight, the pole) come in with one `vld4q_f32`. During a
+  smoothing window only the two gains change. The filter part waits on a dirty
+  flag that `rebuild_profile()` and `randomize_hit()` set, in a loop of its
+  own. Refreshing everything every block cost Angel 10 59096 while a knob
+  moved.
+- **Tribal and Military** match the old engine to within 2.4e-7 (-132 dBFS)
+  at every clone count, and after an Angel round trip. That difference is
+  rounding: under -ffast-math, bit-identity follows whichever code the
+  compiler happens to emit, not the arithmetic.
+- **Not measured on hardware.** The voice is mono per clone now; the width is
+  in the placement alone. Listen for whether the ensemble still reads as airy
+  and wide at Spread 80-100.
 
 ## Still open: a panned input pulls the formation to its side
 
@@ -175,7 +240,9 @@ drumlogue hardware.**
       equal-power mix law changed the output level
 - [ ] Decide whether `filters.h` (biquads) should be wired into the engine or
       deleted along with `test_biquad_filters.cpp`
-- [ ] Decide Angel's band split (see "where Angel's low end goes")
+- [x] Decide Angel's band split: the whole voice moves (see "Angel's low end
+      stayed in the left speaker")
+- [ ] Listen to Angel's whole-voice placement on hardware (Spread 80 / 100)
 - [ ] Decide mono feed vs. balance for panned inputs
 - [ ] Listen to Tribal's per-hit sway on hardware (Scatter 45 / 100)
 
@@ -205,15 +272,19 @@ Per clone, per sample:
    `wobble_depth_samples`.
 2. **One-pole lowpass**, `y += a * (x - y)`, with `a` derived from the clone's
    cutoff (`omega / (omega + 1)`, `omega = 2*pi*fc/fs`) and re-randomised per
-   hit by a 0.7-1.3 factor. In Angel mode the right channel is turned into a
-   highpass by `x - y`.
+   hit by a 0.7-1.3 factor. In Angel mode each channel instead outputs the
+   whole voice, `x + q*w`: the lowpass plus a highpass "air" part, alike on
+   both channels, run on the state `w = y/a` so the update is
+   `w = x + (1-a)*w`.
 3. **Gain**: `base_gain` (exponential rolloff x scatter detachment) x pan gain
-   (with the highpass tilt baked in) x per-hit accent x per-hit dynamic factor
-   x gap boost x `clone_norm_`.
+   (with the filter makeup and follower tilt baked in) x per-hit accent x
+   per-hit dynamic factor x gap boost x `clone_norm_`.
 
 Clones are processed 4-wide (NEON), then 2-wide, then scalar, all sharing one
-set of SoA state arrays. Highpass shaping is an amplitude tilt baked into the
-pan gains, not a filter — there are no biquads in the render path.
+set of SoA state arrays; Angel has its own set of the three (`mix_angel_*`),
+chosen once per `Render()` call. The follower tilt (`hp_attn`) is an amplitude
+tilt baked into the pan gains, not a filter — there are no biquads in the
+render path.
 
 ## Humanisation
 
