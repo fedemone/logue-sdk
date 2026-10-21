@@ -48,10 +48,14 @@ so read the row name, not the row order.)
   across a Program change (every preset ships the same value there, so nothing
   changes until you turn one), and four older bugs are fixed — Dkay above 200
   was ignored, Model never recomputed Koto's loop gain, NzFltFrq was mostly
-  dead on Timpani/Taiko, param_audit leaked Velocity.  Listen for: after a
-  sequencer stop/start (a `unit_reset`) the top octave is back at the knob's
-  own open Cutoff — the old Reset pinned it at 16 kHz.  The README knob matrix
-  is regenerated (51 of 144 cells changed) by a new tool, `knob_matrix.cpp`.
+  dead on Timpani/Taiko, param_audit leaked Velocity.  After a `unit_reset`
+  the master filter is back at the knob's own open Cutoff (the old Reset pinned
+  it at 16 kHz) — but **do not use a reset as the listening test**: Reset()
+  still clobbers Gain, HitPos, the noise filter and Koto's loop settings (see
+  "Still open" in the pass-48 entry), and the drive alone drops Marimba 12 dB
+  there, before and after this pass.  It is not known when the drumlogue calls
+  `unit_reset`.  The README knob matrix is regenerated (51 of 144 cells
+  changed) by a new tool, `knob_matrix.cpp`.
 - **Pass 47 — the master stage is gain-staged; not yet heard on hardware.**
   The bus reached the limiter at up to 116x full scale, so it levelled the
   library instead of limiting it: presets were held AT the ceiling for hundreds
@@ -354,8 +358,9 @@ relative knobs, have `Init()` zero them instead.  (3) `plateau_probe`,
 `param_audit`, `knobaud`, `kick_probe`, `stability_sweep` and test_hw_debug's T21
 table all hard-code absolute ranges and must move with the header.
 
-**Pre-existing defects the audit found.**  The first four are FIXED in pass 48
-(see the next sub-entry); the rest are recorded, not fixed.
+**Pre-existing defects the audit found.**  Four are FIXED in pass 48 (see the
+next sub-entry): Dkay above 200, the Model/KS gain, NzFltFrq on the kernel, and
+the param_audit Velocity leak.  The rest are recorded, not fixed.
 - **Dkay above 200 is ignored**, not clamped: `setParameter` skips values > 200,
   so the last value <= 200 sticks (Koto at 150, then 205, plays 150), and
   HHat-O's shipped 210 is exactly 200.  The header still offers 201-210.
@@ -409,13 +414,19 @@ with it, both found by the verifiers:
   `unit_reset` would have stuck until the knob was touched; before this pass it
   stuck until the next Program change.  **This is the one sound change in the
   pass, and only after a Reset:** measured over a Suspend/Resume chain, level
-  within +-0.33 dB, nothing under 10 kHz moves more than 0.6 dB, the 16-24 kHz
-  band comes back up 2-6 dB.  Restoring the old 16 kHz line makes that chain
-  match pass 47 exactly, which isolates it.
+  within ~0.6 dB (0.33 dB on 100 ms windows; an independent 1 s RMS at velocity
+  100 found HHat-O +0.55, HHat-C +0.52, Cymbal +0.38), nothing under 10 kHz
+  moves more than 0.6 dB, the 16-24 kHz band comes back up 2-6 dB.  Restoring
+  the old 16 kHz line makes that chain match pass 47 exactly, which isolates
+  it.
 - **`Init()` puts every skipped knob back to its header default**
   (`seed_performance_params`, before `Reset()`).  Without it a fresh object
-  would start at Cutoff 0 = a 1 Hz lowpass, and a reused one inherits the last
-  session's knobs — which is exactly how `param_audit` leaked Velocity.
+  would start at Cutoff 0 (clamped to the 10 Hz minimum), and a reused one
+  inherits the last session's knobs — which is exactly how `param_audit`
+  leaked Velocity.  T45c checks the seeded values against `header.c`'s own
+  `unit_header`, which test_hw_debug now compiles in — and T21 now sends what
+  the OS sends at boot from the same table (it carried a hand-copied list,
+  stale in 17 of 24 rows).
 
 **The four bugs:**
 1. **Dkay is clamped to 0..200**, not skipped above 200; the header range is
@@ -463,19 +474,38 @@ Clap while moving its level 0.33 dB).
 byte-identical to pass 47; a Program-change chain probe (every preset in turn,
 and every preset after a varied predecessor, switched over a ringing voice — 80
 segments) byte-identical; `test_dsp` exit 0; `test_hw_debug` **123/123** at -O2
-and -O0 (T45a-d, T46, T47a-b, T48 new; each of the nine fixes was reverted in a
-scratch copy and its test failed); `stability_sweep` 4096 combos + 480 rolls,
+and -O0 (T45a-d, T46, T47a-b, T48 new; eight fixes were each reverted in a
+scratch copy and failed their test — the ninth, flooring the kernel NzFltFrq
+anchor at 2 instead of 20, affects no shipped preset (anchors 380 / 800) and
+no test can see it; a drift between header.c and the seeded defaults also
+fails T45c);  an independent review A/B'd 1,082 render hashes against pass 47
+(fresh Init, Program-change chains, the OS boot sequence, all Models, the
+Partls selector, Dkay and NzFltFrq sweeps, kernel switches) and found them all
+identical, and built the new constructs on GCC 6.5 `-std=gnu++14`; `stability_sweep` 4096 combos + 480 rolls,
 worst |peak| 0.9900, 0 problems; `plateau_probe` unchanged but for Dkay's range
 label; `live_edit_probe` the same 22 pre-existing entries; `click_probe`
 identical.  ARM `.text` 53,180 -> 53,588, `.rodata` +28 B, no new undefined
 symbol.
 
-**Still open, same class, NOT changed:** `Reset()` also sets `master_drive` to
-1.0 and `mix_ab` to 0.5 without reading Gain or HitPos, so after a `unit_reset`
-those two play their defaults until the next Program change or knob touch.  The
-SDK says `unit_reset` must not reset parameter values.  Not touched because
-both are per-preset (groups B/C), so the right fix depends on whether they go
-relative.
+**Still open, same class, NOT changed — and bigger than it looks.**  `Reset()`
+overwrites more knob-derived state than Tone and the master filter, without
+reading the knobs, and nothing restores it until the next Program change or a
+touch of that knob:
+- `master_drive` -> 1.0 (Gain): Marimba -12 dB, Gong -13 dB after a reset;
+- `mix_ab` -> 0.5 (HitPos);
+- every voice's noise filter -> low-pass at 12 kHz (NzFltr / NzFltFrq);
+- Koto's string-loop loss and phase -> 1.0 (Mterl / TubRad / Model);
+- the ResA/ResB edit selector -> both, while the Partls display can read A or B.
+Measured by the review (strike, Suspend/Resume, strike again, Gain and HitPos
+re-applied): the second strike still differs from the first by more than the
+signal on AcSnare (+6.8 dB), HHat-C (+5.2) and BrshSnr (+3.5); re-applying
+NzFltr/NzFltFrq too makes 39 of 40 bit-identical, and Koto also needs Mterl.
+Pass 47 behaves the same, so it is not a regression.  The SDK says
+`unit_reset` must not reset parameter values; the fix is to re-derive each of
+these from `m_params` in `Reset()`, as `apply_master_filter()` now does.  Not
+done here: it was outside the request, and how often the drumlogue calls
+`unit_reset` is unknown — 47 passes of HW listening never reported a level
+drop, which suggests rarely, or that the OS re-sends the parameters after it.
 
 ### Pass 47 — the master limiter was never limiting; it was levelling
 

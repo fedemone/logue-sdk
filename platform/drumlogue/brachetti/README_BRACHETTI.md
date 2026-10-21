@@ -268,10 +268,11 @@ movement bites):
 | Resnc | master-LP Q¹ | master-LP Q¹ | master-LP Q¹ | master-LP Q¹ |
 
 ¹ `Resnc` is the **master low-pass resonance** (`master_filter` Q).  It only
-becomes audible when you also bring `Cutoff` down so the resonant peak sits in
-the audible band; with `Cutoff` fully open — the shipped default on **every**
-preset — the peak sits up near 16 kHz and `Resnc` does effectively nothing.
-That is why it reads as "no effect" on every preset until you close the filter.
+becomes clearly audible when you also bring `Cutoff` down so the resonant peak
+sits in the audible band; with `Cutoff` fully open — the shipped default on
+**every** preset, 19.99 kHz — the peak sits near 20 kHz and `Resnc` is only
+subtle (◐ on 8 of the 9 families in the matrix below: 0.5-3 dB in the top
+audible band of bright presets, nothing on the kernel drums).
 `Inharm` on the kick drives the 808-style pitch dive, so it is strongest on
 `808Sub` (the sweep kick) and deliberately light on Kick2/KickDrum, whose
 calibrated boom is left untouched.
@@ -487,7 +488,7 @@ VlMllRes and Partls read `weak` instead of `ok`; Cymbal Inharm `ok` instead of
 `weak`; Clap VlMllStf and HitPos swapped).  `Init()` now returns every skipped
 knob to its header default, which fixes this for every tool that reuses a
 synth, not just this one.  The README matrix is no longer derived from this
-tool — see `knob_matrix.cpp` above.
+tool — see `knob_matrix.cpp` in the matrix section below.
 
 On the kick family, prefer a **band** metric over RMS: the master chain is
 loudness-maximised, so a thump reshapes the attack spectrum without raising

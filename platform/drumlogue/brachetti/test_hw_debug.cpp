@@ -42,6 +42,9 @@ float ut_delay_read  = 0.0f;
 float ut_voice_out   = 0.0f;
 
 #include "synth_engine.h"
+// The real header, so tests compare against what the OS reads (its defaults
+// and ranges) instead of a hand-copied table that can drift from it.
+#include "header.c"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -955,11 +958,10 @@ static void test_same_tick_gate() {
 //   OS calls unit_set_param_value(i, header_default[i]) for every parameter
 //   AFTER unit_init() returns.
 //
-//   One header.c default differs from the Init preset:
-//     k_paramModel (index 9): header default = 3 (Membrane), Init preset = 0 (String)
-//   If the OS overrides the preset after init, the model is Membrane when the
-//   first note is played.  This test verifies that the unit still produces sound
-//   even when all 24 header defaults are sent after init (simulating OS init).
+//   The header defaults are preset 0's values (pass 29), so sending them should
+//   change nothing that matters; this test verifies the unit still produces
+//   sound after every header default is sent following Init (simulating OS
+//   init).  The values come from header.c's own unit_header (pass 48).
 // ════════════════════════════════════════════════════════════════════════════
 static void test_os_param_init_sequence() {
     std::cout << "\n── T21: OS parameter-init sequence (header defaults sent after Init) ──\n";
@@ -968,42 +970,16 @@ static void test_os_param_init_sequence() {
     BrachettiSynth s;
     s.Init(&desc);
 
-    // Send all 24 header.c default values exactly as the Drumlogue OS does
-    // Format: setParameter(index, header_default_value)
-    // Source: header.c params array — columns are min,max,center,DEFAULT,type,...
-    // Reflects header.c after the ÷10 step-size change for MlltStif/Dkay/NzFltFrq
-    static const int32_t header_defaults[24] = {
-        0,      // 0: Program
-        0,      // 1: Pitch (semitones from the preset root; was Note 60)
-        0,      // 2: Bank
-        1,      // 3: Sample
-        500,    // 4: MlltRes
-        250,    // 5: MlltStif  (new default 250 = 2500 effective, ÷10 range)
-        0,      // 6: VlMllRes
-        0,      // 7: VlMllStf
-        3,      // 8: Partls
-        3,      // 9: Model  ← DIFFERS: header=3 (Membrane), Init preset=0 (String)
-        25,     // 10: Dkay   (new default 25 = 250 effective, ÷10 range)
-        10,     // 11: Mterl
-        0,      // 12: Tone
-        26,     // 13: HitPos
-        10,     // 14: Rel
-        300,    // 15: Inharm
-        1,      // 16: LowCut
-        5,      // 17: TubRad
-        0,      // 18: Gain
-        0,      // 19: NzMix
-        0,      // 20: NzRes  ← DIFFERS: header=0, Init preset=300
-        0,      // 21: NzFltr
-        2,      // 22: NzFltFrq  (new default 2 = 20 Hz effective, ÷10 range)
-        707,    // 23: Resnc
-    };
-
-    for (int i = 0; i < 24; ++i) {
-        s.setParameter((uint8_t)i, header_defaults[i]);
+    // Send every header.c default exactly as the Drumlogue OS does.  Read
+    // from unit_header itself since pass 48: the hand-copied table this used
+    // to carry had gone stale in 17 of 24 rows (MlltStif 250, Inharm 300 and
+    // Resnc 707 were not even in range), so T21 was not testing the boot it
+    // is named after.
+    for (int i = 0; i < (int)unit_header.num_params; ++i) {
+        s.setParameter((uint8_t)i, unit_header.params[i].init);
     }
 
-    std::cout << "  All 24 header.c defaults sent. Model is now 3 (Membrane).\n";
+    std::cout << "  All " << (int)unit_header.num_params << " header.c defaults sent.\n";
 
     // Same-tick trigger: matches the most demanding hardware scenario
     s.GateOn(127);
@@ -2672,16 +2648,21 @@ static void test_master_knobs_persist() {
     s.setParameter(BrachettiSynth::k_paramVelocity, 50);
     s.setParameter(BrachettiSynth::k_paramCymPoly, 2);
     s.Init(&desc);
-    const bool fresh =
-        s.getParameterValue(BrachettiSynth::k_paramPitch)    == 0    &&
-        s.getParameterValue(BrachettiSynth::k_paramCymPoly)  == 4    &&
-        s.getParameterValue(BrachettiSynth::k_paramVelocity) == 0    &&
-        s.getParameterValue(BrachettiSynth::k_paramVlMllRes) == 0    &&
-        s.getParameterValue(BrachettiSynth::k_paramTone)     == 0    &&
-        s.getParameterValue(BrachettiSynth::k_paramLowCut)   == 1999 &&
-        s.getParameterValue(BrachettiSynth::k_paramResnc)    == 71   &&
-        s.state.tone == 0.0f;
-    result("T45c Init() returns every knob LoadPreset skips to its header default",
+    // Against header.c's own `.init` fields, so a drift between the header and
+    // seed_performance_params() fails here.
+    bool fresh = s.state.tone == 0.0f;
+    for (int k : { BrachettiSynth::k_paramPitch, BrachettiSynth::k_paramCymPoly,
+                   BrachettiSynth::k_paramVelocity, BrachettiSynth::k_paramVlMllRes,
+                   BrachettiSynth::k_paramTone, BrachettiSynth::k_paramLowCut,
+                   BrachettiSynth::k_paramResnc }) {
+        if (s.getParameterValue((uint8_t)k) != unit_header.params[k].init) {
+            std::cout << "  " << unit_header.params[k].name << " = "
+                      << s.getParameterValue((uint8_t)k) << ", header default "
+                      << unit_header.params[k].init << "\n";
+            fresh = false;
+        }
+    }
+    result("T45c Init() returns every knob LoadPreset skips to header.c's default",
            fresh, "a reused synth carries the previous session's performance knobs "
                   "(this is how param_audit leaked Velocity into every row)");
 
@@ -2690,7 +2671,9 @@ static void test_master_knobs_persist() {
         BrachettiSynth q;
         q.Init(&desc);
         q.LoadPreset((uint8_t)p);
-        if (q.m_snare_vlres_ref != 0.0f || q.m_kernel_vlres_ref != 0.0f) anchors_zero = false;
+        if (q.m_snare_vlres_ref != 0.0f) anchors_zero = false;
+        // The kernel anchor is only captured on Timpani/Taiko.
+        if ((p == 5 || p == 7) && q.m_kernel_vlres_ref != 0.0f) anchors_zero = false;
     }
     result("T45d every preset's VlMllRes anchor is 0, so the knob value IS the offset",
            anchors_zero, "a preset ships a non-zero VlMllRes; its absolute consumers pivot at 0");

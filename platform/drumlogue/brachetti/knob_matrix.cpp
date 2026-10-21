@@ -6,8 +6,9 @@
  * family, at the two ends of each knob.  That is blind to what this unit's
  * knobs most often change — a short transient (a 40 ms thump is diluted ~50x
  * in a 2 s RMS), a shift of pitch or partials at a level the master limiter
- * holds, a member of the family the exemplar is not — and pass 48 found 43 of
- * the matrix's cells contradicting a better measurement or the code.
+ * holds, a member of the family the exemplar is not — and pass 48 found 23
+ * cells where the fixed audit and the matrix disagreed, only 7 of them from
+ * the audit's Velocity leak; regenerated with this tool, 51 of 144 changed.
  *
  * This tool renders EVERY preset, through the sequencer's own path (GateOn at
  * the preset's root, same-tick GateOff), with each matrix knob at the shipped
