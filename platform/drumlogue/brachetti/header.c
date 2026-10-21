@@ -41,9 +41,13 @@ const __unit_header unit_header_t unit_header = {
         // sound-shaping defaults disagreed with Kick2's preset row (Note 60 vs
         // 36 = two octaves up, Dkay 25 vs 200, NzRes 0 vs 420, ...), so the
         // unit booted showing "Kick2" while sounding like something else.
-        // Every default below is now Kick2's shipped value; only Pitch, Poly
-        // and Velocity keep their own, because LoadPreset deliberately skips
-        // them (they are performance settings, not per-preset sound design).
+        // Every default below is now Kick2's shipped value; only Pitch, Poly,
+        // Velocity, VlMllRes, Tone, Cutoff and Resnc keep their own, because
+        // LoadPreset deliberately skips them (performance and master controls
+        // the host owns, not per-preset sound design — see pass 48; every
+        // preset ships the same value in the last four, so their defaults are
+        // also every preset's value).  seed_performance_params() in
+        // synth_engine.h holds the same seven defaults and must track these.
         // If preset 0's row changes, change these with it.  Pitch's default 0
         // is right for EVERY preset by construction — it is an offset from
         // the preset's own root note — which is one of the reasons it is one.
@@ -53,10 +57,14 @@ const __unit_header unit_header_t unit_header = {
         // values".  31 stored preset values sat OUTSIDE the range declared
         // here, so the OS parameter store could not represent what LoadPreset
         // had written and the display disagreed with the sound.  HitPos (25
-        // presets store 0, min was 2) and Dkay (HHat-O stores 210, max was
-        // 200) are widened below; the out-of-range TubRad values were clamped
-        // into [0,20] in the preset table instead, which is provably
-        // sound-neutral because every TubRad consumer already clamps there.
+        // presets store 0, min was 2) was widened below; the out-of-range
+        // TubRad values were clamped into [0,20] in the preset table instead,
+        // which is provably sound-neutral because every TubRad consumer
+        // already clamps there.  Dkay went the TubRad way in pass 48: it had
+        // been widened to 210 for HHat-O's stored 210, but every consumer
+        // saturates at 200 and setParameter ignored anything above it, so
+        // 201-210 were ten dead positions; the range is back to 0..200 and
+        // HHat-O ships 200, which is what it always played.
 
         // Page 1: Program and sample selection
         // Max MUST be k_NumPrograms-1.  It is also the only thing stopping the
@@ -126,7 +134,7 @@ const __unit_header unit_header_t unit_header = {
         {0, 8, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
         // Stored ÷10: range 0–200 represents 0–2000. Step of 10 on the encoder.
         // getParameterStrValue shows the real ×10 value (0–2000).
-        {0, 210, 25, 200, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
+        {0, 200, 25, 200, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
         // [−10..30]
         {-10, 30, 0, 10, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
 
@@ -184,7 +192,10 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 5: Resonator III
         // Master LOWPASS cutoff: high = open, low = dark.  Stored ÷10
-        // (effective 10–19990 Hz, capped at 16 kHz internally).  Default = open.
+        // (effective 10–19990 Hz; FastSVF::set_coeffs caps it at 0.47·fs,
+        // not at the 16 kHz older comments claimed).  Default = open.  A
+        // performance control since pass 48: LoadPreset skips it, Init seeds
+        // this default, Reset() re-derives the filter from it.
         // type_strings so getParameterStrValue can display the real Hz/kHz value.
         {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
         {0, 20, 0, 0, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
