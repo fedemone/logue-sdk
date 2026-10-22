@@ -17,8 +17,8 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 53,588 · `.rodata` 34,508 · `.data.rel.ro` 468 ·
-`.bss` 108,124.  (Pass 48: `.text` +460 B, `.rodata` +28 B — the seven-entry
+Current shipping tree: `.text` 53,628 · `.rodata` 34,508 · `.data.rel.ro` 468 ·
+`.bss` 108,124.  (Pass 48: `.text` +500 B, `.rodata` +28 B — the seven-entry
 `seed_performance_params` defaults table; the new state fits in existing
 padding.  The undefined dynamic symbols are the same 23 as pass 47's.  Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
 40-float `kPresetOutTrim`.  It is a non-static class member like the other
@@ -34,7 +34,7 @@ so read the row name, not the row order.)
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **123/123**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **126/126**.
 - **Pass 48 — `Note` is now `Pitch`, semitones from the preset's root; not yet
   on hardware.**  Slot 1 is `-24..+24`, `type_semi`, default 0, and
   `LoadPreset` no longer writes it: the preset's Note column is captured as
@@ -48,14 +48,16 @@ so read the row name, not the row order.)
   across a Program change (every preset ships the same value there, so nothing
   changes until you turn one), and four older bugs are fixed — Dkay above 200
   was ignored, Model never recomputed Koto's loop gain, NzFltFrq was mostly
-  dead on Timpani/Taiko, param_audit leaked Velocity.  After a `unit_reset`
-  the master filter is back at the knob's own open Cutoff (the old Reset pinned
-  it at 16 kHz) — but **do not use a reset as the listening test**: Reset()
-  still clobbers Gain, HitPos, the noise filter and Koto's loop settings (see
-  "Still open" in the pass-48 entry), and the drive alone drops Marimba 12 dB
-  there, before and after this pass.  It is not known when the drumlogue calls
-  `unit_reset`.  The README knob matrix is regenerated (51 of 144 cells
-  changed) by a new tool, `knob_matrix.cpp`.
+  dead on Timpani/Taiko, param_audit leaked Velocity.  **And `unit_reset` no
+  longer changes the sound:** `Reset()` used to put Gain's drive, HitPos, the
+  noise filter, Koto's loop, the ResA/ResB edit selector, Tone and the master
+  filter back to fixed values, so a stock preset came back up to 13 dB quieter
+  (Gong -13.4, Marimba -12.0, Kick -10.0) and three snares/hats with the wrong
+  noise colour; now the strike after a Suspend/Resume is bit-identical to a
+  fresh unit's on all 40 presets (pass 47: 0 of 40).  It is not known when the
+  drumlogue calls `unit_reset`; if a level drop was ever heard after
+  suspending the unit, it should be gone.  The README knob matrix is
+  regenerated (51 of 144 cells changed) by a new tool, `knob_matrix.cpp`.
 - **Pass 47 — the master stage is gain-staged; not yet heard on hardware.**
   The bus reached the limiter at up to 116x full scale, so it levelled the
   library instead of limiting it: presets were held AT the ceiling for hundreds
@@ -487,10 +489,10 @@ label; `live_edit_probe` the same 22 pre-existing entries; `click_probe`
 identical.  ARM `.text` 53,180 -> 53,588, `.rodata` +28 B, no new undefined
 symbol.
 
-**Still open, same class, NOT changed — and bigger than it looks.**  `Reset()`
-overwrites more knob-derived state than Tone and the master filter, without
-reading the knobs, and nothing restores it until the next Program change or a
-touch of that knob:
+**Still open after part 2 — fixed in part 3 below.**  `Reset()` overwrote
+more knob-derived state than Tone and the master filter, without reading the
+knobs, and nothing restored it until the next Program change or a touch of
+that knob:
 - `master_drive` -> 1.0 (Gain): Marimba -12 dB, Gong -13 dB after a reset;
 - `mix_ab` -> 0.5 (HitPos);
 - every voice's noise filter -> low-pass at 12 kHz (NzFltr / NzFltFrq);
@@ -501,11 +503,81 @@ re-applied): the second strike still differs from the first by more than the
 signal on AcSnare (+6.8 dB), HHat-C (+5.2) and BrshSnr (+3.5); re-applying
 NzFltr/NzFltFrq too makes 39 of 40 bit-identical, and Koto also needs Mterl.
 Pass 47 behaves the same, so it is not a regression.  The SDK says
-`unit_reset` must not reset parameter values; the fix is to re-derive each of
-these from `m_params` in `Reset()`, as `apply_master_filter()` now does.  Not
-done here: it was outside the request, and how often the drumlogue calls
+`unit_reset` must not reset parameter values.  How often the drumlogue calls
 `unit_reset` is unknown — 47 passes of HW listening never reported a level
 drop, which suggests rarely, or that the OS re-sends the parameters after it.
+
+#### Pass 48, part 3 — `Reset()` touches runtime state only
+
+User: *"yes, fix reset issue"*.  The fix is the opposite of the one part 2
+proposed: rather than re-derive each setting from `m_params`, **`Reset()` no
+longer writes any of them**.  Every one of them is already the knob's value
+the moment `Reset()` runs (each `setParameter` case writes its own state, and
+no other code writes these), so leaving them alone is exact, and there is
+nothing to keep in step with the knob mappings.  Part 2's Tone and
+`apply_master_filter()` re-derives went too, for the same reason
+(`state.tone` and the master filter's coefficients have no writer but their
+knobs).  `Reset()` now clears envelopes, delay lines, filter memories, the
+limiter follower, the idle counter and a held pitch bend — runtime state, as
+the SDK asks — and nothing a knob sets.
+
+Two pieces needed care:
+- **The deferred drive and trim.**  A Program change over a ringing voice
+  queues the INCOMING preset's drive and output trim behind the fade
+  (pass 30); `Reset()` kills the fade, so it now completes the deferral
+  (`m_pending_*` -> the live values), exactly what `processBlock` does when the
+  last fade retires.  It used to drop the queue and force the drive to 1.0 —
+  the loaded preset's Gain thrown away, and the OUTGOING preset's trim left
+  installed for good.  (Part 2's T41 comment said the queued drive was the
+  outgoing preset's; it is the incoming one's.)
+- **Boot.**  The waveguide coefficients, the noise filter's mode/cutoff and
+  the edit selector that `Reset()` used to write now come from
+  `init_fresh_voice_defaults()`, which only `Init()` calls, in the same place
+  relative to `Reset()` and `LoadPreset(0)`.  For the coefficients it is
+  belt-and-braces (they are member defaults, and `LoadPreset(0)` rewrites
+  them; removing them changes no render and no chain segment).  For the
+  selector it is load-bearing: `LoadPreset` preserves the selector by design,
+  so without it `Init()` on a used object kept a stale "ResB only" (T49b).
+
+An interim `ModalDrumKernel::Flush()` change (also forget each kettle's
+`tuned` note) was tried and reverted: the Timpani/Taiko mismatch it was meant
+to fix was the test striking mid-way through the kernel's amortized table
+rebuild (`kRebuildPerBlock` = 48 modes per block after a mod edit), not
+anything `Flush()` kept.  With the rebuild allowed to finish, the post-reset
+strike is bit-identical without it.  **Strike-after-edit comparisons on the
+kernel drums need a few idle blocks first** (T49 `t49_settle`).
+
+**Measured** (`reset_vs_fresh`, scratchpad — strike, 40 ms ring,
+Suspend/Resume, strike again with the noise seed pinned, vs a fresh unit's
+strike): **40 of 40 presets bit-identical** (pass 47: 0; part 2: 8).  The
+pass-47 level losses after a reset, now gone: Gong -13.4 dB, Marimba -12.0,
+Kick -10.0, 808Sub -9.2, Taiko -6.0, DeepBs/StelPan/Cymbal/Splash ~-5.4,
+Djambe -5.2, Timpani -5.1; on AcSnare, HHat-C, MrchSnr, BrshSnr and Shaker the
+difference energy was at or above the signal itself (mostly the noise
+filter's colour — level moved under 2.2 dB there).
+
+**Tests:** T49 (all 40 presets: dial Gain, HitPos, NzFltr, NzFltFrq, Mterl,
+TubRad, Model, Tone, Cutoff, Resnc, Partls 4 then 6, then an Inharm edit after
+the reset; must be bit-identical to the same strike on a never-reset unit —
+the selector is audible only on Koto, the one dual-waveguide preset, at 16+
+partials), T49b (re-`Init()` restores the selector), T41b rewritten and T41d
+new (the first strike after a mid-fade reset is the loaded preset's, bit for
+bit — the only check on the deferred trim, which has no read-out).
+Mutation-tested, 12 mutants in a scratch copy, each failing at least one of
+T41b/T41d/T45b/T49: every old write put back one at a time (drive 1.0, mix_ab,
+noise filter, KS loss / phase / lowpass separately and together, the selector,
+Tone, the 16 kHz filter) and each half of the deferral completion dropped
+(drive, trim).  Removing `init_fresh_voice_defaults()`, or only its selector
+lines, fails T49b.
+
+**Verified:** 80/80 `note_audit` and 40/40 `render_presets` byte-identical to
+pass 47; Program-change chains A and B (80 segments) byte-identical; chain C
+(Suspend/Resume mid-session) differs in all 14 segments, as intended — it is
+the path this fixes; `test_dsp` exit 0; `test_hw_debug` **126/126** at -O2 and
+-O0; `stability_sweep` 4096 combos + 480 rolls, 0 problems; `plateau_probe`
+unchanged but for Dkay's range label; `live_edit_probe` the same 22 entries;
+`click_probe` identical.  ARM `.text` 53,588 -> 53,628, nothing else moved,
+the same 23 undefined dynamic symbols.
 
 ### Pass 47 — the master limiter was never limiting; it was levelling
 
