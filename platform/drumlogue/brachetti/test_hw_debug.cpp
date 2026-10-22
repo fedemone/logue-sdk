@@ -2315,6 +2315,23 @@ static void test_cymbal_density_on_partls() {
            "Mterl/Inharm will write to one resonator only on the next preset");
 }
 
+// One strike at the preset's root with the noise PRNG and the voice index
+// pinned, 300 ms of the left channel: two units in the same state render it
+// bit-identically.
+static std::vector<float> pinned_strike(BrachettiSynth& s) {
+    for (int i = 0; i < NUM_VOICES; ++i) s.state.voices[i].exciter.noise_gen.seed = 2463534242UL;
+    s.state.next_voice_idx = 0;
+    s.GateOn(110); s.GateOff();
+    std::vector<float> out(14400, 0.0f);   // 300 ms
+    float buf[128];
+    for (size_t done = 0; done < out.size(); done += 64) {
+        std::memset(buf, 0, sizeof(buf));
+        s.processBlock(buf, 64);
+        for (size_t i = 0; i < 64; ++i) out[done + i] = buf[i * 2];
+    }
+    return out;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // T41 — Reset() must not leave master-stage state queued
 //
@@ -2325,10 +2342,12 @@ static void test_cymbal_density_on_partls() {
 //   Gain, and that case clears the queue.
 //
 //   Reset() has neither: it kills every voice outright, so the deferral's fade
-//   never happens and nothing clears it.  Suspend() is AllNoteOff() + Reset(),
-//   so a suspend caught between the preset change and the end of the fade used
-//   to hand the NEXT session a drive belonging to the preset before last — a
-//   whole-unit gain error that persists until the user turns Gain.
+//   never happens.  The queued drive and trim are the INCOMING preset's — the
+//   one actually loaded — so since pass 48 Reset() completes the deferral (as
+//   the fade's end would have) and leaves nothing queued.  Before pass 48 it
+//   dropped the queue AND forced the drive to 1.0, throwing the loaded
+//   preset's Gain away and, mid-fade, leaving the outgoing preset's trim
+//   installed for good.
 // ════════════════════════════════════════════════════════════════════════════
 static void test_reset_clears_deferred_drive() {
     std::cout << "\n── T41: Reset() leaves no queued master state ──\n";
@@ -2361,10 +2380,16 @@ static void test_reset_clears_deferred_drive() {
            drive_held == drive_gtr,
            "the deferral itself has stopped working — a preset change now "
            "slams the new Gain onto the outgoing tail (pass 30 regression)");
-    result("T41b Reset() drops a drive queued behind a fade it just cancelled",
-           drive_settled == drive_after_reset,
-           "the first block after Resume() installed a drive belonging to the "
-           "preset that was fading when the unit was suspended");
+    BrachettiSynth fresh;
+    fresh.Init(&desc);
+    fresh.LoadPreset(14);
+    result("T41b Reset() completes a deferred drive and leaves nothing queued",
+           drive_after_reset == fresh.state.master_drive && drive_settled == drive_after_reset,
+           "after a suspend caught mid-fade the unit does not play the loaded "
+           "preset's drive, or a queued drive lands later on Resume()");
+    // The trim, the other half of the deferral, has no read-out: hear both.
+    // Koto -> Gong moves the trim 0.136 -> 0.369 (+8.6 dB) as well as the drive.
+    const bool strike_is_loaded = pinned_strike(s) == pinned_strike(fresh);
 
     // Same argument for the limiter follower: it is master-stage state, it only
     // decays (20 ms release), and a voiceless Reset leaves it holding gain
@@ -2379,6 +2404,10 @@ static void test_reset_clears_deferred_drive() {
            env_was_up && s.state.master_lim_env == 0.0f,
            "a limiter envelope left high rides the first hit after Resume() "
            "down for ~20 ms");
+    result("T41d the first strike after the mid-fade Reset() is the loaded preset's, bit for bit",
+           strike_is_loaded,
+           "a suspend caught mid-fade leaves the outgoing preset's drive or "
+           "output trim on the loaded one");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2774,6 +2803,104 @@ static void test_kernel_noise_cutoff() {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T49 — unit_reset() keeps every knob (pass 48)
+//
+//   Reset() used to rewrite Gain's drive, the HitPos A/B blend, the noise
+//   filter's mode and cutoff, the KS loop's loss and phase, the ResA/ResB edit
+//   selector, Tone and the master filter to fixed values; nothing restored
+//   them until a Program change or a touch of the knob.  The SDK says
+//   unit_reset() must not reset parameter values.
+//
+//   For every preset: dial non-default values into every knob Reset() used to
+//   overwrite (plus Partls 6 = edit ResA only, then an Inharm edit, which lands
+//   on ResA alone only if the selector survived), strike, Suspend + Resume,
+//   strike again.  That second strike must be bit-identical to the same strike
+//   on a unit that was never reset.  The selector is audible only where ResB
+//   sounds — Koto, the one dual-waveguide preset, at 16+ partials — hence the
+//   Partls 4 first.
+//
+//   Both units idle a few blocks after their last edit: Timpani and Taiko
+//   rebuild their mode tables kRebuildPerBlock modes per block after a knob
+//   edit, and a strike before that ends rings whatever half of the table each
+//   unit had built — a timing difference, not a reset one.
+// ════════════════════════════════════════════════════════════════════════════
+static void t49_dial(BrachettiSynth& s) {
+    s.setParameter(BrachettiSynth::k_paramGain,     30);
+    s.setParameter(BrachettiSynth::k_paramHitPos,   70);
+    s.setParameter(BrachettiSynth::k_paramNzFltr,    1);
+    s.setParameter(BrachettiSynth::k_paramNzFltFrq, 600);
+    s.setParameter(BrachettiSynth::k_paramMterl,    20);
+    s.setParameter(BrachettiSynth::k_paramTubRad,   15);
+    s.setParameter(BrachettiSynth::k_paramModel,     7);   // open tube: KS phase -1
+    s.setParameter(BrachettiSynth::k_paramTone,      5);
+    s.setParameter(BrachettiSynth::k_paramLowCut, 1200);
+    s.setParameter(BrachettiSynth::k_paramResnc,   150);
+    s.setParameter(BrachettiSynth::k_paramPartls,    4);   // 64 partials: ResB sounds (Koto)
+    s.setParameter(BrachettiSynth::k_paramPartls,    6);   // edit ResA only
+}
+
+static void t49_settle(BrachettiSynth& s) {
+    const int blocks = ModalDrumKernel::kMaxModes / ModalDrumKernel::kRebuildPerBlock + 2;
+    float buf[128];
+    for (int k = 0; k < blocks; ++k) { std::memset(buf, 0, sizeof(buf)); s.processBlock(buf, 64); }
+}
+
+static void test_reset_keeps_knobs() {
+    std::cout << "\n── T49: unit_reset() keeps every knob ──\n";
+    unit_runtime_desc_t desc = make_desc();
+    int bad = 0;
+    for (int p = 0; p < BrachettiSynth::k_NumPrograms; ++p) {
+        BrachettiSynth a;
+        a.Init(&desc);
+        a.LoadPreset((uint8_t)p);
+        t49_dial(a);
+        a.setParameter(BrachettiSynth::k_paramInharm, 50);
+        t49_settle(a);
+        const std::vector<float> want = pinned_strike(a);
+
+        BrachettiSynth b;
+        b.Init(&desc);
+        b.LoadPreset((uint8_t)p);
+        t49_dial(b);
+        pinned_strike(b);                  // dirty every runtime state
+        b.Suspend();
+        b.Resume();
+        b.setParameter(BrachettiSynth::k_paramInharm, 50);
+        t49_settle(b);
+        if (pinned_strike(b) != want) {
+            std::cout << "  " << BrachettiSynth::getPresetName((uint8_t)p)
+                      << ": the strike after Suspend/Resume differs\n";
+            ++bad;
+        }
+    }
+    result("T49 a strike after Suspend/Resume is bit-identical on all 40 presets",
+           bad == 0, "Reset() reset a knob-derived setting the knob does not put back");
+
+    // The other half: Init() is still a full start.  It is now the only place
+    // that puts the edit selector back to "both", and LoadPreset preserves the
+    // selector by design, so a re-Init() of a unit left on "ResB only" must
+    // still edit both resonators — as a fresh unit does.
+    BrachettiSynth a;
+    a.Init(&desc);
+    a.LoadPreset(9);                                     // Koto: ResB sounds at 16+ partials
+    a.setParameter(BrachettiSynth::k_paramPartls, 4);
+    a.setParameter(BrachettiSynth::k_paramInharm, 50);
+    t49_settle(a);
+    BrachettiSynth b;
+    b.Init(&desc);
+    b.LoadPreset(9);
+    b.setParameter(BrachettiSynth::k_paramPartls, 7);    // edit ResB only
+    b.Init(&desc);
+    b.LoadPreset(9);
+    b.setParameter(BrachettiSynth::k_paramPartls, 4);
+    b.setParameter(BrachettiSynth::k_paramInharm, 50);
+    t49_settle(b);
+    result("T49b Init() on a used unit edits both resonators again, like a fresh one",
+           pinned_strike(a) == pinned_strike(b),
+           "Init() left the ResA/ResB edit selector where the last session put it");
+}
+
 int main() {
     std::cout << "=== BRACHETTI HW-DEBUG UNIT TESTS ===\n";
     std::cout << "Testing HW-vs-UT discrepancies that could cause hardware silence.\n";
@@ -2826,6 +2953,7 @@ int main() {
     test_master_knobs_persist();
     test_dkay_and_model_gain();
     test_kernel_noise_cutoff();
+    test_reset_keeps_knobs();
 
     std::cout << "\n=== RESULTS: " << g_pass << " passed, " << g_fail << " failed ===\n";
     return g_fail == 0 ? 0 : 1;

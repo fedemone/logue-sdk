@@ -195,7 +195,7 @@ const __unit_header unit_header_t unit_header = {
         // (effective 10–19990 Hz; FastSVF::set_coeffs caps it at 0.47·fs,
         // not at the 16 kHz older comments claimed).  Default = open.  A
         // performance control since pass 48: LoadPreset skips it, Init seeds
-        // this default, Reset() re-derives the filter from it.
+        // this default, Reset() clears only the filter's memory.
         // type_strings so getParameterStrValue can display the real Hz/kHz value.
         {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
         {0, 20, 0, 0, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},

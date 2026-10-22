@@ -770,14 +770,15 @@ SynthState state;
 
         g_tables.generate(default_sample_rate); // Pre-calculate all tuning math
 
-        // 2. Performance knobs to their header.c defaults, BEFORE Reset() —
-        // Reset() re-derives Tone and the master filter from these values.
-        // LoadPreset does not write them (that is what keeps them in step
-        // with the host's parameter store), so without this they would come
-        // up as 0 on a fresh object (Cutoff 0, clamped to its 10 Hz minimum)
-        // and, on an object Init() is called on again, as whatever the last
-        // session left.
+        // 2. Performance knobs to their header.c defaults.  LoadPreset does
+        // not write them (that is what keeps them in step with the host's
+        // parameter store), so without this they would come up as 0 on a
+        // fresh object (Cutoff 0, clamped to its 10 Hz minimum) and, on an
+        // object Init() is called on again, as whatever the last session
+        // left.  Then the fresh-object values Reset() no longer writes,
+        // because they belong to knobs once a preset is loaded.
         seed_performance_params();
+        init_fresh_voice_defaults();
 
         // 3. Clear all memory explicitly at boot
         Reset();
@@ -802,6 +803,17 @@ SynthState state;
 
     // Called when the user changes programs or the engine needs a hard flush.
     // This prevents loud "pops" from old delay line data playing unexpectedly.
+    // RUNTIME state only — never a parameter's value (pass 48).  The SDK:
+    // unit_reset() deactivates notes, resets envelopes, clears delay lines,
+    // "however, parameter values should not be reset".  This used to rewrite
+    // seven knob-derived settings to fixed values — Gain's drive, the HitPos
+    // A/B blend, the noise filter's mode and cutoff, the KS loop's loss and
+    // phase (Mterl / TubRad / Model), the ResA/ResB edit selector, Tone and
+    // the master filter — and nothing put them back until the next Program
+    // change or a touch of that knob: Marimba came back 12 dB quiet, and
+    // AcSnare / HHat-C / BrshSnr with the wrong noise colour.  The fresh-object
+    // defaults those writes provided for the very first boot now live in
+    // init_fresh_voice_defaults(), which only Init() calls.  T49.
     inline void Reset() {
         m_drum_kernel.Flush();   // dense-kernel ring dies with the voices
         m_kernel_tone_lp = 0.0f;
@@ -833,26 +845,12 @@ SynthState state;
             state.voices[i].base_delay_A = 0.0f;
             state.voices[i].base_delay_B = 0.0f;
 
-            // Restore non-zero waveguide defaults that PartialReset() reads before
-            // overwriting them (e.g. transient_lp_base = resA.lowpass_coeff).
-            state.voices[i].resA.lowpass_coeff = 1.0f;
-            state.voices[i].resB.lowpass_coeff = 1.0f;
-            state.voices[i].resA.loss_g_dc     = 1.0f;
-            state.voices[i].resB.loss_g_dc     = 1.0f;
-            state.voices[i].resA.loss_g_hf     = 1.0f;
-            state.voices[i].resB.loss_g_hf     = 1.0f;
-            state.voices[i].resA.phase_mult    = 1.0f;
-            state.voices[i].resB.phase_mult    = 1.0f;
-
             // Reset all runtime modulation state: envelopes, transient shaper,
             // modal bank, pitch env, boom, metal FM, onset, snare wire, etc.
             state.voices[i].PartialReset();
 
-            // Noise filter: LP mode, fully open (12 kHz)
-            state.voices[i].exciter.noise_filter.mode = 0;
-            state.voices[i].exciter.noise_filter.set_coeffs(12000.0f, 0.707f, default_sample_rate);
-            // set_coeffs() only updates f/q — explicitly zero the SVF accumulators
-            // to avoid a click on the next NoteOn after a patch change.
+            // Noise filter: clear its MEMORY only.  Its mode and cutoff are the
+            // NzFltr / NzFltFrq knobs and stay as they are.
             state.voices[i].exciter.noise_filter.lp = 0.0f;
             state.voices[i].exciter.noise_filter.bp = 0.0f;
             state.voices[i].exciter.noise_filter.hp = 0.0f;
@@ -870,49 +868,39 @@ SynthState state;
         // loud hits much harder than quiet ones, so pushing gain further in
         // narrows velocity sensitivity rather than adding audible level.
         state.master_gain  = 2.3f;  // was low overall; +~3.7dB, capped by T39c
-        state.master_drive = 1.0f;
-        // Reset() kills every voice, so a master drive deferred behind a
-        // preset-change fade has nothing left to wait for — and unlike
-        // LoadPreset (whose parameter loop always rewrites Gain, which clears
-        // the queue) nothing here would ever clear it.  Suspend() is
-        // AllNoteOff() + Reset(), so leaving it queued means the first block
-        // after Resume() installs the drive of whatever preset was mid-fade
-        // when the unit was suspended, on top of the one actually loaded.
+        // The drive is the Gain knob's and stays.  What Reset() does own is a
+        // drive and trim DEFERRED behind a preset-change fade: the fade waits
+        // for the outgoing voices, and Reset() has just killed them, so
+        // complete it now — exactly what processBlock would do as the last
+        // fade retired.  The queued values are the INCOMING preset's (the one
+        // actually loaded).  This used to drop the queue and force the drive
+        // to 1.0, which threw the loaded preset's Gain away and, mid-fade,
+        // left the OUTGOING preset's output trim installed for good.
+        if (m_pending_drive >= 0.0f) state.master_drive = m_pending_drive;
+        if (m_pending_trim  >= 0.0f) m_out_trim         = m_pending_trim;
         m_pending_drive    = -1.0f;
-        m_pending_trim     = -1.0f;   // same reason; m_out_trim itself belongs
-                                      // to the loaded preset and survives a Reset
+        m_pending_trim     = -1.0f;
         // Master-stage state dies with the voices too: a limiter envelope left
         // high would ride the first strike after Resume() down for ~20 ms, and
         // a non-zero idle counter would keep the master chain spinning on an
         // empty buffer.
         state.master_lim_env = 0.0f;
         m_idle_flush_blocks  = 0;
-        state.mix_ab       = 0.5f; // Equal A/B mix
-        // Tone is the knob's value, not 0.  LoadPreset no longer writes Tone
-        // (pass 48 — it is a performance control the host owns), so a Reset()
-        // that zeroed it would leave the panel showing the user's tilt while
-        // the unit played a flat one until the knob was next touched.  The SDK
-        // says the same: unit_reset() must not reset parameter values.
-        state.tone = fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramTone]));
+        // HitPos's A/B blend (mix_ab) and Tone (state.tone) are knob values and
+        // are left alone, as is the ResA/ResB edit selector (Partls 5-7): it is
+        // the user's editing context, and resetting it while the panel still
+        // showed "ResA" or "ResB" made the next Model/Dkay/Mterl edit land on
+        // the other resonator too.  Init() sets the selector for a fresh boot.
         m_pitch_bend_mult  = 1.0f; // Clear any held bend so the next note plays in tune.
-
-        // Always return to ResA edit context so LoadPreset (called next in Init)
-        // applies preset data symmetrically to both resonators.
-        m_is_resonator_a = true;
-        m_is_resonator_b = true;
 
         // Master filter is a LOWPASS "Cutoff" (mode 0), default fully open.
         // It was a highpass ("LowCut"), but every HW pass reported the knob as
         // reversed: raising it silenced the sound.  Players expect a drum-synth
         // master cutoff to OPEN as it rises — so it is now an LP with max = open.
+        // The mode is fixed; the coefficients are the Cutoff/Resnc knobs and
+        // stay (this used to hard-code 16 kHz / Q 0.707, below the knob's own
+        // "open" of 19.99 kHz).  Only the filter's memory is cleared.
         state.master_filter.mode = 0;
-        // From the Cutoff/Resnc knobs, for the same reason as Tone above: they
-        // are performance controls LoadPreset does not write.  This used to be
-        // a hard-coded 16 kHz / Q 0.707 — not even the knob's own "open"
-        // (Cutoff 1999 = 19.99 kHz; set_coeffs caps at 0.47·fs, not at 16 kHz),
-        // so every unit_reset() quietly moved the master filter until the next
-        // Program change put the preset's value back.
-        apply_master_filter();
         state.master_filter.lp = 0.0f;
         state.master_filter.bp = 0.0f;
         state.master_filter.hp = 0.0f;
@@ -1276,8 +1264,8 @@ SynthState state;
         // A deferral cannot go stale here: the parameter loop above always
         // writes k_paramGain, whose case clears m_pending_drive before this
         // block can re-arm it, so the queue only ever holds the drive of the
-        // preset now loading.  (Reset() has no such loop — see the explicit
-        // clear there.)
+        // preset now loading.  (Reset() has no such loop — it completes a
+        // pending deferral itself.)
         //
         // The output trim is deferred on exactly the same terms — it is the
         // other half of the master-stage gain, and it moves further than the
@@ -5199,8 +5187,8 @@ private:
         m_ui_note = (uint8_t)((n < 0) ? 0 : ((n > 127) ? 127 : n));
     }
 
-    // Master lowpass from the Cutoff and Resnc knobs.  One place for the three
-    // callers (both setParameter cases and Reset()), so they cannot drift.
+    // Master lowpass from the Cutoff and Resnc knobs.  One place for both
+    // setParameter cases, so they cannot drift.
     // Bit-identical to the two case bodies it replaces for every in-range
     // value; out-of-range values are bounded as the SDK asks.
     inline void apply_master_filter() {
@@ -5211,6 +5199,30 @@ private:
         const float res_val =
             fmaxf(0.707f, 0.707f + ((float)m_params[k_paramResnc] - 71.0f) * 0.01f);
         state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
+    }
+
+    // Fresh-object values for state a knob owns once a preset is loaded — the
+    // KS loop's loss/phase (Mterl / TubRad / Model), the noise filter (NzFltr /
+    // NzFltFrq) — and for the ResA/ResB edit selector.  Reset() used to write
+    // these on EVERY reset, which clobbered the knobs; now only Init() does,
+    // so that Init() on a USED object (every host tool reuses one) starts
+    // where a fresh one does.  The coefficients are the member defaults and
+    // LoadPreset(0) rewrites them anyway; the selector is the one that
+    // matters, because LoadPreset deliberately preserves it — without this a
+    // re-Init() would keep a stale "ResB only".  Same values and order as the
+    // old Reset() writes, so a boot is bit-for-bit what it was.  T49b.
+    inline void init_fresh_voice_defaults() {
+        for (int i = 0; i < NUM_VOICES; ++i) {
+            VoiceState& v = state.voices[i];
+            v.resA.lowpass_coeff = 1.0f;  v.resB.lowpass_coeff = 1.0f;
+            v.resA.loss_g_dc     = 1.0f;  v.resB.loss_g_dc     = 1.0f;
+            v.resA.loss_g_hf     = 1.0f;  v.resB.loss_g_hf     = 1.0f;
+            v.resA.phase_mult    = 1.0f;  v.resB.phase_mult    = 1.0f;
+            v.exciter.noise_filter.mode = 0;   // LP, fully open (12 kHz)
+            v.exciter.noise_filter.set_coeffs(12000.0f, 0.707f, default_sample_rate);
+        }
+        m_is_resonator_a = true;   // a fresh boot edits ResA + ResB together
+        m_is_resonator_b = true;
     }
 
     // The knobs LoadPreset does NOT write — performance and master controls

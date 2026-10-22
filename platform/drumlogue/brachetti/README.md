@@ -785,6 +785,15 @@ played note = preset root + Pitch            (root = the preset's Note column)
   pinned Tone to 0 and the master filter to 16 kHz).  Nothing changes until you
   turn one.  `Init()` returns all seven skipped knobs to their header defaults.
   Regression test: **T45**.
+- **A `unit_reset` no longer changes the sound.**  `Reset()` used to put Gain's
+  drive, HitPos, the noise filter, Koto's string loop, the ResA/ResB edit
+  selector, Tone and the master filter back to fixed values, and nothing put
+  them back until the next Program change — a preset came back up to 13 dB
+  quieter (Gong; Marimba 12 dB) and several snares and hats with the wrong
+  noise colour.  It now clears runtime state only (voices, envelopes, delay
+  lines, filter memories), as the SDK asks: a strike after Suspend/Resume is
+  bit-identical to a fresh unit's on all 40 presets.  Regression tests:
+  **T49**, **T41d**.
 - **Could the rest work the same way?**  Audited and verified per parameter in
   `CLAUDE.md`, pass 48: MlltRes, VlMllStf, Dkay, Inharm, HitPos, Rel, TubRad,
   Mterl and Gain (in dB) can become plateau-free offsets, each with its own
