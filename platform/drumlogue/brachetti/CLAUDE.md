@@ -7,8 +7,9 @@
 
 ## Dev Branch
 
-`claude/gong-preset-stacking-bqiqyw` on `fedemone/logue-sdk`
-(previous work landed from `claude/brachetti-cymbal-velocity-2y8gsi`,
+`claude/festive-bell-h80c0n` on `fedemone/logue-sdk` (pass 48)
+(previous work landed from `claude/gong-preset-stacking-bqiqyw`,
+`claude/brachetti-cymbal-velocity-2y8gsi`,
 `claude/brachetti-review-rename-rhad77`,
 `claude/snare-drum-realism-optimization-y4hrhf` and
 `claude/eager-galileo-2fho84`).
@@ -16,8 +17,10 @@
 Always rebuild and check the ARM section sizes — pass 32 added a cross-build
 that works in-session, so this is a real check now, not a note-to-self (command
 under "Host Build / Test Commands"; discussion under the constraint section).
-Current shipping tree: `.text` 53,128 · `.rodata` 34,480 · `.data.rel.ro` 468 ·
-`.bss` 108,124.  (Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
+Current shipping tree: `.text` 53,628 · `.rodata` 34,508 · `.data.rel.ro` 468 ·
+`.bss` 108,124.  (Pass 48: `.text` +500 B, `.rodata` +28 B — the seven-entry
+`seed_performance_params` defaults table; the new state fits in existing
+padding.  The undefined dynamic symbols are the same 23 as pass 47's.  Pass 47: `.text` +212 B, `.rodata` +160 B, `.bss` +176 B — the
 40-float `kPresetOutTrim`.  It is a non-static class member like the other
 preset tables, so the ARRAY lives in the object in `.bss` and its initialiser
 list in `.rodata`; that is why both rows move by 40 floats.  Passes 45-46
@@ -31,7 +34,30 @@ so read the row name, not the row order.)
 ## Current Working State
 
 - Unit **loads on hardware** (as of 081e82e); all **40** presets render clean (0 NaN/silent).
-- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **108/108**.
+- DSP unit tests: **PASS** (exit 0); `test_hw_debug` **126/126**.
+- **Pass 48 — `Note` is now `Pitch`, semitones from the preset's root; not yet
+  on hardware.**  Slot 1 is `-24..+24`, `type_semi`, default 0, and
+  `LoadPreset` no longer writes it: the preset's Note column is captured as
+  the ROOT and the sequencer plays root + Pitch.  Pitch 0 is byte-identical to
+  every shipped note (80/80 GateOn renders, 40/40 render_presets).  Listen
+  for: does the panel read `0` on every preset and keep its offset across a
+  Program change?  Old patterns store an absolute note here and load clamped
+  to +24 — reset their Pitch.  `GateOff` now releases the note `GateOn`
+  struck (a Pitch move under a held gate used to leave the voice ringing).
+  **Also in pass 48:** VlMllRes, Tone, Cutoff and Resnc now keep their value
+  across a Program change (every preset ships the same value there, so nothing
+  changes until you turn one), and four older bugs are fixed — Dkay above 200
+  was ignored, Model never recomputed Koto's loop gain, NzFltFrq was mostly
+  dead on Timpani/Taiko, param_audit leaked Velocity.  **And `unit_reset` no
+  longer changes the sound:** `Reset()` used to put Gain's drive, HitPos, the
+  noise filter, Koto's loop, the ResA/ResB edit selector, Tone and the master
+  filter back to fixed values, so a stock preset came back up to 13 dB quieter
+  (Gong -13.4, Marimba -12.0, Kick -10.0) and three snares/hats with the wrong
+  noise colour; now the strike after a Suspend/Resume is bit-identical to a
+  fresh unit's on all 40 presets (pass 47: 0 of 40).  It is not known when the
+  drumlogue calls `unit_reset`; if a level drop was ever heard after
+  suspending the unit, it should be gone.  The README knob matrix is
+  regenerated (51 of 144 cells changed) by a new tool, `knob_matrix.cpp`.
 - **Pass 47 — the master stage is gain-staged; not yet heard on hardware.**
   The bus reached the limiter at up to 116x full scale, so it levelled the
   library instead of limiting it: presets were held AT the ceiling for hundreds
@@ -228,6 +254,330 @@ needs its modes calibrated — measure first, guess last.
 ---
 
 ## HW Pass History (most recent first)
+
+### Pass 48 — `Note` becomes `Pitch`, and which other knobs could go relative
+
+User: *"change note parameter with a detune, i.e. instead of an absolute value,
+a increase/decrease of semitones from the root note of the single preset.  Check
+if other parameters can be set as relative from preset instead of absolute
+value."*
+
+**The change (shipped this pass).**  Slot 1 is `Pitch`, `-24..+24` semitones,
+`k_unit_param_type_semi`, default 0.  The preset table's column 1 is unchanged
+and is now read as the ROOT (`m_root_note`); the sequencer plays root + Pitch
+(`update_played_note()`).  `LoadPreset` skips the knob like Poly and Velocity,
+so it persists across a Program change.  External MIDI note-on is untouched.
+`k_paramNote` was renamed `k_paramPitch` so that every tool still passing an
+absolute note became a compile error; four did (`note_audit`, `click_probe`,
+`kernel_cpu_probe`, `test_hw_debug` T42) and one more used the literal index 1
+(`live_edit_probe`).  Range and type copy EffeESP32's `Pitch`.
+
+**`GateOff` releases the note the gate struck (`m_gate_note`).**  It used to
+call `NoteOff(m_ui_note)` — root + Pitch AT RELEASE TIME — so moving Pitch under
+a held gate matched no voice and the struck one was never released: measured
+Koto voice life 2.85 s -> **33.85 s** (Clap 0.27 -> 0.39 s, Shaker 0.20 -> 0.27 s)
+after Pitch +5 under an 80 ms gate.  The pass-47 build had the identical exposure
+through the old Note knob, so this is older than Pitch, but Pitch is a
+performance control made to be moved, and the played note now depends on two
+inputs.  The drumlogue's same-tick gate cannot move it, so every render is
+unchanged.  **T44f**, which fails against the old `GateOff`.
+
+**Why "relative" has to mean "and LoadPreset leaves it alone".**  The host owns
+the parameter store the panel draws and a project saves, and there is no unit ->
+host push (EffeESP32's README, *Instrument selection and the panel*, from its
+own HW work).  With `.num_presets = 0` (pass 47) the Program parameter is the
+only way to change preset, so EVERY parameter `LoadPreset` rewrites goes stale
+on the panel: the display keeps the previous preset's value and the first touch
+of that knob pushes the stale value back in.  An offset from a hidden root that
+`LoadPreset` never writes cannot disagree with the host.  That is the real gain
+of going relative, more than the arithmetic.  The flip side: whatever offset
+is dialled carries into the next preset, visibly, because the panel shows it.
+
+**Verified:** 80/80 `note_audit` renders (shipped note and +12, through `GateOn`)
+and 40/40 `render_presets` renders byte-identical to the pass-47 build;
+`test_dsp` exit 0; `test_hw_debug` **114/114** (T44a-f new, and each of the five
+defects T44 guards against was mutation-tested to fail it); `click_probe` output
+identical; `live_edit_probe` lists the same 22 pre-existing `Program=5` entries;
+`stability_sweep` 4096 combos + 480 rolls, worst |peak| 0.9900, 0 problems.  ARM
+`.text` 53,128 -> 53,180, every other section unchanged.  An independent review
+of the change found no remaining slot-1-as-absolute-note path in the engine or
+in any tool.  Not yet on hardware.
+
+**The audit: can the other 20 sound parameters do the same?**  Four parallel
+audits read every consumer of every parameter (absolute vs reference-anchored),
+and four independent verifiers then tried to refute each verdict by sweeping
+EVERY integer of each knob's range on all 40 presets on scratch builds.  Where a
+design is called measured below, it was built: offset 0 byte-identical on 40/40
+(including Program changes over a ringing voice), and no knob position renders
+identical to its neighbour that does not already today.  **Group A is
+implemented** (user: *"do first row + fix 4 older bugs"*, see the next
+sub-entry); groups B and C are not — each conversion there is a voicing and
+compatibility decision.
+
+Group A — already relative; only `LoadPreset`'s rewrite is wrong.  Zero DSP
+change, byte-identical, no saved-pattern break — **DONE in pass 48**:
+
+| Knob | Why | Extra work the verifiers found |
+|---|---|---|
+| `VlMllRes` | ships 0 on all 40 presets — knob already IS the offset | none; a test that every row stores 0 |
+| `Tone` | ships 0 on all 40 | `Reset()` hard-codes `state.tone = 0`; must re-derive from `m_params` or the knob reads 30 while 0 plays |
+| `Cutoff` + `Resnc` | ship 1999 / 71 on all 40 — one master filter, do both | seed both in `Init`; `Reset()` must re-derive the master SVF instead of hard-coding 16 kHz / Q 0.707 (mandatory) |
+
+Group B — convertible with a headroom-scaled offset (`o >= 0` lerps the root
+toward the top of today's range, `o < 0` toward the bottom), so 0 is the shipped
+sound and +-max are exactly today's two end sounds on every preset:
+
+| Knob | Offset | Status | Caveat |
+|---|---|---|---|
+| `MlltRes` | +-100 | measured clean | old patterns (absolute 0..1000) load clamped to +100 |
+| `VlMllStf` | +-100 | measured clean | identical step-for-step on the 36 presets that ship 0; Kick2/Timpani/BrshSnr/RimShot patterns that stored the shipped value get re-voiced |
+| `Dkay` | +-100 (×0.005) | measured clean | removes today's dead 201-210 band and the 14 presets with no upward travel; Koto's KS decay curve changes off-anchor (listen) |
+| `Inharm` | +-100 | clean | clamp the stored offset — an out-of-range 300 multiplies 808Sub's dive ×32 |
+| `HitPos` | +-98 | clean with a corrected map | negative headroom must scale over `r`, not `98+r`: dead positions 1273 today -> 437 |
+| `Rel` | +-20 | clean | kick `boom_decay` ceiling 0.99995 must rise or KickDrum pins for 12 of 20 new steps; longer tails need a stability run |
+| `TubRad` | +-20 | clean | roots must be captured BEFORE the loop (Mterl's case reads TubRad; after = 74/1600 pairs break); bigger Gong reaches ~70 Hz (listen) |
+| `Mterl` | +-20 | **only with a cymbal fix** | `CymbalConfig::maxHz` is dead (pass 45) and `hfTilt` floors at 0, so the whole lower half is dead on Gong/HHat-O/Splash; a bipolar tilt fixes it byte-identically |
+| `Gain` | +-24 dB (`type_db`) | measured clean | worst compatibility: an old absolute 0..24 loads SILENTLY as +0..+24 dB; check `type_db` negative display on HW |
+
+Group C — leave absolute:
+
+| Knob | Why |
+|---|---|
+| `MlltStif` | physical ceiling: 4 presets ship 50 (LP1 already 1.0), StelPan ships 0 — any offset has a dead half there |
+| `Partls` | positions 5-7 are the ResA/ResB edit SELECTOR, and the count is discrete with roots 0..3 |
+| `Model` | an unordered enum: "+2" means Drumhead on Kick2 and ClosedTube on Marimba |
+| `NzMix` | a bounded 0..1 crossfade; 8 live presets ship 0, so the lower half of any offset is dead |
+| `NzFltr` | a mode; HP/BP are part of the snares' and claps' identity |
+| `NzFltFrq` | the Hz readout is meaningful, nothing is one-sided, and "+1 oct" brightens LP presets but thins HP ones |
+| `NzRes` | feasible (measured) but low value: silent on 16 presets, overridden on 7 more — do it with a voicing batch, not alone |
+
+**Costs common to every conversion.**  (1) Saved patterns store the old
+absolute value in the slot, read back as an offset; ship conversions together
+so users take one break.  (2) `Init()` does not clear `m_params`, so tools that
+reuse one synth object inherit offsets across `Init`+`LoadPreset` — Pitch
+already needed explicit resets in `click_probe` and `live_edit_probe`; with more
+relative knobs, have `Init()` zero them instead.  (3) `plateau_probe`,
+`param_audit`, `knobaud`, `kick_probe`, `stability_sweep` and test_hw_debug's T21
+table all hard-code absolute ranges and must move with the header.
+
+**Pre-existing defects the audit found.**  Four are FIXED in pass 48 (see the
+next sub-entry): Dkay above 200, the Model/KS gain, NzFltFrq on the kernel, and
+the param_audit Velocity leak.  The rest are recorded, not fixed.
+- **Dkay above 200 is ignored**, not clamped: `setParameter` skips values > 200,
+  so the last value <= 200 sticks (Koto at 150, then 205, plays 150), and
+  HHat-O's shipped 210 is exactly 200.  The header still offers 201-210.
+- **Changing Model never recomputes the KS feedback gain**, though Dkay's gain
+  curve depends on Model == Drumhead: Koto at Dkay 100 keeps g 0.9245 where
+  0.7245 is due.  Hidden at the shipped Dkay 200, where both curves give 0.999.
+- **NzFltFrq is partly dead on Timpani/Taiko**: `ModalDrumKernel::SetMods` does
+  not count `noise_bright` as a rebuild trigger, so a NzFltFrq change alone never
+  reaches `m_noise_coef_hi_eff` (it lands only when some other mod forces a
+  rebuild), that coefficient is clamped to 0.02..0.90, and `RefreshKernelMods`
+  floors the ÷10-stored value with `fmaxf(20.0f, …)` as if it were Hz.  Measured
+  64.7 % (Timpani) / 25 % (Taiko) of the knob dead even with the refresh fixed;
+  a refresh plus log map makes 1999/1999 positions live, byte-identical at the
+  shipped value.
+- **Dead travel inventory** (bit-identical sweeps): VlMllRes does nothing on 8
+  presets (Marimba, Vibrph, StelPan, Shaker, GlsBwl, BelTre, SltDrm, BrshSnr);
+  HitPos's whole negative half is dead on 808Sub, KickDrum, Clap and HHat-C;
+  Mterl's lower half is dead on Gong/HHat-O/Splash (`maxHz`, above); Model is
+  dead on the 6 cymbals and both kernel presets, and 0 == 7 on 16 presets.
+- **Tooling:** `plateau_probe` over-counts Koto, because the KS jitter seed reads
+  `next_voice_idx` and `Init()` does not reset it, so Koto renders cycle with
+  period 4 across Inits.  Pin `next_voice_idx` before trusting a Koto row.
+- **`param_audit` leaks Velocity across rows** — the same "survives Init +
+  LoadPreset" class Pitch needed fixing for: it reuses one static synth, Velocity
+  is its first row, and its +100 rides into every later knob and target.
+  Resetting Velocity after each `LoadPreset` flips 7 of 168 verdicts (e.g.
+  Marimba Tone/NzMix weak -> ok, Clap VlMllStf weak -> NO EFFECT), and the
+  README's knob matrix says to re-derive from this tool.  Fix the tool, then
+  re-derive the matrix.
+- **test_hw_debug T21's `header_defaults[]` is stale** in 17 of 24 rows (MlltStif
+  250, Inharm 300, Resnc 707 are not even in range), so T21 does not send what
+  the OS sends at boot; iterate `unit_header.params[i].init` instead.  Pass 48
+  corrected only row 1.
+
+Raw audit data (per-consumer file:line tables for all 20 parameters) was
+produced in the session scratchpad and is summarised, not committed.
+
+#### Pass 48, part 2 — group A implemented, four older bugs fixed
+
+**Group A: VlMllRes, Tone, Cutoff, Resnc belong to the host.**  `LoadPreset`
+skips them like Pitch/Poly/Velocity.  Every preset ships the same value in
+those columns (0 / 0 / 1999 / 71), so this changes no preset; the columns are
+now `static_assert`ed to stay that way (the table became `static constexpr`
+for it — same `.rodata`), so a future edit that gives one preset its own Tone
+fails the build instead of being silently ignored.  Two things had to move
+with it, both found by the verifiers:
+- **`Reset()` re-derives Tone and the master filter from the knobs.**  It
+  hard-coded Tone 0 and the filter at 16 kHz / Q 0.707 — not even the knob's
+  own "open" (Cutoff 1999 = 19.99 kHz; `set_coeffs` caps at 0.47·fs, not at the
+  16 kHz the comments claimed).  With `LoadPreset` no longer writing them, a
+  `unit_reset` would have stuck until the knob was touched; before this pass it
+  stuck until the next Program change.  **This is the one sound change in the
+  pass, and only after a Reset:** measured over a Suspend/Resume chain, level
+  within ~0.6 dB (0.33 dB on 100 ms windows; an independent 1 s RMS at velocity
+  100 found HHat-O +0.55, HHat-C +0.52, Cymbal +0.38), nothing under 10 kHz
+  moves more than 0.6 dB, the 16-24 kHz band comes back up 2-6 dB.  Restoring
+  the old 16 kHz line makes that chain match pass 47 exactly, which isolates
+  it.
+- **`Init()` puts every skipped knob back to its header default**
+  (`seed_performance_params`, before `Reset()`).  Without it a fresh object
+  would start at Cutoff 0 (clamped to the 10 Hz minimum), and a reused one
+  inherits the last session's knobs — which is exactly how `param_audit`
+  leaked Velocity.  T45c checks the seeded values against `header.c`'s own
+  `unit_header`, which test_hw_debug now compiles in — and T21 now sends what
+  the OS sends at boot from the same table (it carried a hand-copied list,
+  stale in 17 of 24 rows).
+
+**The four bugs:**
+1. **Dkay is clamped to 0..200**, not skipped above 200; the header range is
+   0..200 and HHat-O ships 200 (it shipped 210, which every consumer already
+   read as 200 — its renders are byte-identical, including after every other
+   preset in the chain probe).
+2. **The KS loop gain follows each resonator's own model and Dkay**
+   (`apply_ks_feedback_gain`, called from the Dkay AND the Model case).  Two
+   defects: a Model change never re-derived it, and the Dkay case gave both
+   selected resonators the Drumhead curve if either was on Drumhead.  Each
+   resonator's Dkay is now remembered (`m_dkay_norm_a/b`) because `m_params`
+   holds only the last one written.  Koto-only (ENGINE_KS is the only reader),
+   and invisible at the shipped Dkay 200.
+3. **NzFltFrq moves the Timpani/Taiko noise wedge across its whole range.**
+   `SetMods` applies `noise_bright` the moment it changes; `RefreshKernelMods`
+   maps the knob log-proportionally so its ends land exactly on the
+   coefficient's bounds (`kNoiseCoefMin/Max`) and the shipped value on the
+   recipe's own coefficient, read from the recipe rather than hard-coded; and
+   the anchor is floored at the stored minimum 2, not at a Hz figure.  Only
+   audible with NzMix raised — Timpani's recipe noise is 0 at the shipped mix.
+4. **`param_audit` no longer leaks Velocity**, fixed at the mechanism (the
+   `Init()` seeding above) rather than in the tool, so every tool that reuses
+   a synth across `Init`+`LoadPreset` is covered.  Its 168 verdicts change in
+   exactly the 7 places predicted.
+
+**The README matrix is regenerated, and no longer from `param_audit`.**  Fixing
+the audit and re-checking its verdicts against the matrix turned up 23
+disagreements, only 7 of them the leak — the rest were the audit's blind spots
+(transients, pitch, one exemplar per family, ends-only sampling) and cells
+written against the code (the kernel reads MlltRes/MlltStif; the snare's head
+takes the body knobs; Model sets the noise split on Clap).  New
+**`knob_matrix.cpp` + `knob_matrix.py`**: every preset through `GateOn` at its
+root, each knob at the shipped value, both ends and halfway either side, scored
+as the largest change in any unmasked third-octave band (40 Hz-16 kHz) of the
+attack, body or tail window; a family cell is live when a strict majority of
+its members are.  51 of 144 cells changed — 20 "inert" cells measure audible,
+2 measure inert that were not marked so (Dkay on Noise, Rel on Koto).  It runs
+in ~20 s.  Two metric decisions to know about before trusting a cell: bands
+above 16 kHz are excluded (Resnc at an open Cutoff peaks near 20 kHz and would
+otherwise read live everywhere), and difference-RMS is not used to grade (on
+noisy presets it measures phase: the post-Reset filter change reads -11.7 dB on
+Clap while moving its level 0.33 dB).
+
+**Verified:** 80/80 `note_audit` and 40/40 `render_presets` renders
+byte-identical to pass 47; a Program-change chain probe (every preset in turn,
+and every preset after a varied predecessor, switched over a ringing voice — 80
+segments) byte-identical; `test_dsp` exit 0; `test_hw_debug` **123/123** at -O2
+and -O0 (T45a-d, T46, T47a-b, T48 new; eight fixes were each reverted in a
+scratch copy and failed their test — the ninth, flooring the kernel NzFltFrq
+anchor at 2 instead of 20, affects no shipped preset (anchors 380 / 800) and
+no test can see it; a drift between header.c and the seeded defaults also
+fails T45c);  an independent review A/B'd 1,082 render hashes against pass 47
+(fresh Init, Program-change chains, the OS boot sequence, all Models, the
+Partls selector, Dkay and NzFltFrq sweeps, kernel switches) and found them all
+identical, and built the new constructs on GCC 6.5 `-std=gnu++14`; `stability_sweep` 4096 combos + 480 rolls,
+worst |peak| 0.9900, 0 problems; `plateau_probe` unchanged but for Dkay's range
+label; `live_edit_probe` the same 22 pre-existing entries; `click_probe`
+identical.  ARM `.text` 53,180 -> 53,588, `.rodata` +28 B, no new undefined
+symbol.
+
+**Still open after part 2 — fixed in part 3 below.**  `Reset()` overwrote
+more knob-derived state than Tone and the master filter, without reading the
+knobs, and nothing restored it until the next Program change or a touch of
+that knob:
+- `master_drive` -> 1.0 (Gain): Marimba -12 dB, Gong -13 dB after a reset;
+- `mix_ab` -> 0.5 (HitPos);
+- every voice's noise filter -> low-pass at 12 kHz (NzFltr / NzFltFrq);
+- Koto's string-loop loss and phase -> 1.0 (Mterl / TubRad / Model);
+- the ResA/ResB edit selector -> both, while the Partls display can read A or B.
+Measured by the review (strike, Suspend/Resume, strike again, Gain and HitPos
+re-applied): the second strike still differs from the first by more than the
+signal on AcSnare (+6.8 dB), HHat-C (+5.2) and BrshSnr (+3.5); re-applying
+NzFltr/NzFltFrq too makes 39 of 40 bit-identical, and Koto also needs Mterl.
+Pass 47 behaves the same, so it is not a regression.  The SDK says
+`unit_reset` must not reset parameter values.  How often the drumlogue calls
+`unit_reset` is unknown — 47 passes of HW listening never reported a level
+drop, which suggests rarely, or that the OS re-sends the parameters after it.
+
+#### Pass 48, part 3 — `Reset()` touches runtime state only
+
+User: *"yes, fix reset issue"*.  The fix is the opposite of the one part 2
+proposed: rather than re-derive each setting from `m_params`, **`Reset()` no
+longer writes any of them**.  Every one of them is already the knob's value
+the moment `Reset()` runs (each `setParameter` case writes its own state, and
+no other code writes these), so leaving them alone is exact, and there is
+nothing to keep in step with the knob mappings.  Part 2's Tone and
+`apply_master_filter()` re-derives went too, for the same reason
+(`state.tone` and the master filter's coefficients have no writer but their
+knobs).  `Reset()` now clears envelopes, delay lines, filter memories, the
+limiter follower, the idle counter and a held pitch bend — runtime state, as
+the SDK asks — and nothing a knob sets.
+
+Two pieces needed care:
+- **The deferred drive and trim.**  A Program change over a ringing voice
+  queues the INCOMING preset's drive and output trim behind the fade
+  (pass 30); `Reset()` kills the fade, so it now completes the deferral
+  (`m_pending_*` -> the live values), exactly what `processBlock` does when the
+  last fade retires.  It used to drop the queue and force the drive to 1.0 —
+  the loaded preset's Gain thrown away, and the OUTGOING preset's trim left
+  installed for good.  (Part 2's T41 comment said the queued drive was the
+  outgoing preset's; it is the incoming one's.)
+- **Boot.**  The waveguide coefficients, the noise filter's mode/cutoff and
+  the edit selector that `Reset()` used to write now come from
+  `init_fresh_voice_defaults()`, which only `Init()` calls, in the same place
+  relative to `Reset()` and `LoadPreset(0)`.  For the coefficients it is
+  belt-and-braces (they are member defaults, and `LoadPreset(0)` rewrites
+  them; removing them changes no render and no chain segment).  For the
+  selector it is load-bearing: `LoadPreset` preserves the selector by design,
+  so without it `Init()` on a used object kept a stale "ResB only" (T49b).
+
+An interim `ModalDrumKernel::Flush()` change (also forget each kettle's
+`tuned` note) was tried and reverted: the Timpani/Taiko mismatch it was meant
+to fix was the test striking mid-way through the kernel's amortized table
+rebuild (`kRebuildPerBlock` = 48 modes per block after a mod edit), not
+anything `Flush()` kept.  With the rebuild allowed to finish, the post-reset
+strike is bit-identical without it.  **Strike-after-edit comparisons on the
+kernel drums need a few idle blocks first** (T49 `t49_settle`).
+
+**Measured** (`reset_vs_fresh`, scratchpad — strike, 40 ms ring,
+Suspend/Resume, strike again with the noise seed pinned, vs a fresh unit's
+strike): **40 of 40 presets bit-identical** (pass 47: 0; part 2: 8).  The
+pass-47 level losses after a reset, now gone: Gong -13.4 dB, Marimba -12.0,
+Kick -10.0, 808Sub -9.2, Taiko -6.0, DeepBs/StelPan/Cymbal/Splash ~-5.4,
+Djambe -5.2, Timpani -5.1; on AcSnare, HHat-C, MrchSnr, BrshSnr and Shaker the
+difference energy was at or above the signal itself (mostly the noise
+filter's colour — level moved under 2.2 dB there).
+
+**Tests:** T49 (all 40 presets: dial Gain, HitPos, NzFltr, NzFltFrq, Mterl,
+TubRad, Model, Tone, Cutoff, Resnc, Partls 4 then 6, then an Inharm edit after
+the reset; must be bit-identical to the same strike on a never-reset unit —
+the selector is audible only on Koto, the one dual-waveguide preset, at 16+
+partials), T49b (re-`Init()` restores the selector), T41b rewritten and T41d
+new (the first strike after a mid-fade reset is the loaded preset's, bit for
+bit — the only check on the deferred trim, which has no read-out).
+Mutation-tested, 12 mutants in a scratch copy, each failing at least one of
+T41b/T41d/T45b/T49: every old write put back one at a time (drive 1.0, mix_ab,
+noise filter, KS loss / phase / lowpass separately and together, the selector,
+Tone, the 16 kHz filter) and each half of the deferral completion dropped
+(drive, trim).  Removing `init_fresh_voice_defaults()`, or only its selector
+lines, fails T49b.
+
+**Verified:** 80/80 `note_audit` and 40/40 `render_presets` byte-identical to
+pass 47; Program-change chains A and B (80 segments) byte-identical; chain C
+(Suspend/Resume mid-session) differs in all 14 segments, as intended — it is
+the path this fixes; `test_dsp` exit 0; `test_hw_debug` **126/126** at -O2 and
+-O0; `stability_sweep` 4096 combos + 480 rolls, 0 problems; `plateau_probe`
+unchanged but for Dkay's range label; `live_edit_probe` the same 22 entries;
+`click_probe` identical.  ARM `.text` 53,588 -> 53,628, nothing else moved,
+the same 23 undefined dynamic symbols.
 
 ### Pass 47 — the master limiter was never limiting; it was levelling
 
@@ -3180,6 +3530,14 @@ cd ../tools/level_meter
 ./run.sh ../../brachetti 60 127 -1 /tmp/cand 0 40     # gated BS.1770 per preset
 ./harmonics.py /tmp/base /tmp/cand                    # what a change COST
 HARM_F0_BAND=25:300 ./harmonics.py /tmp/base36 /tmp/cand36   # kick band
+
+# Which knobs are live, per family — regenerates the README matrix (pass 48;
+# replaces param_audit as its source).  Every preset via GateOn, each knob at
+# shipped / both ends / halfway, third-octave band change per time window.
+# ~20 s.  --members prints the per-preset numbers behind each cell.
+g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
+    knob_matrix.cpp -o /tmp/knob_matrix
+/tmp/knob_matrix > /tmp/km.csv && python3 knob_matrix.py /tmp/km.csv --members
 
 # Note-assignment audit — renders each preset AT ITS OWN shipped Note through
 # GateOn() (render_presets.cpp uses its own hard-coded notes and cannot see

@@ -1,7 +1,22 @@
 # Note-assignment audit (August 2026)
 
-What the **Note** parameter does on each of the 40 presets, measured rather
-than assumed.  Reproduce with:
+What each preset's **root note** does on each of the 40 presets, measured
+rather than assumed.
+
+> **Pass 48 (October 2026):** slot 1 is no longer an absolute `Note` but
+> `Pitch`, a semitone offset (−24…+24) from the preset's root — the column this
+> audit calls "Note", which the preset table still carries unchanged.  So every
+> finding below still holds: it describes the ROOT, i.e. what `Pitch 0` plays,
+> and the "+12" renders are now `Pitch = +12` (byte-identical to the old
+> absolute transpose — 80/80 renders checked).  Every MEASUREMENT below still
+> holds.  What changed is the panel: it shows the Pitch offset (0 on every
+> preset), not the root, so the "the display names a pitch you cannot hear"
+> point in §2 now applies to the root column only, and §4's "display only"
+> AcSnare suggestion is moot.  Where the text says "turning Note", read
+> "turning Pitch".  See the README, *`Pitch` — semitones from the preset's
+> root note*.
+
+Reproduce with:
 
 ```bash
 g++ -std=c++17 -O2 -I. -I.. -I../../common -I../common -DRUNTIME_COMMON_H_ \
@@ -14,7 +29,7 @@ python3 note_audit.py /tmp/na.csv
 hard-coded note per preset, which is not necessarily the Note the preset
 ships — and the shipped column is what the drumlogue plays.  The audit drives
 `GateOn()`, the sequencer's own path, so the note under test is always
-`m_ui_note` = the preset's Note parameter.
+`m_ui_note` = the preset's root note + Pitch (0 here).
 
 ---
 
@@ -40,7 +55,7 @@ Every one is exact.  `note_audit.cpp` reads the kernel anchors straight out of
 `ref_note`s are still hand-copied from the `NoteOn` config switch and are the
 one pair of values to re-check if that switch is edited.
 
-## 2. Note is INERT on 8 presets — the display names a pitch you cannot hear
+## 2. Note is INERT on 8 presets — the root names a pitch you cannot hear
 
 Measured by raising Note an octave and re-measuring: these eight move by
 **exactly 0.0 semitones**, on both the spectral peak and the centroid.
@@ -68,8 +83,9 @@ ratio 2.0, as its preset comment says).
 
 Consequence for the two kicks: what you hear is **44.7 Hz** on 808Sub and
 **56.7 Hz** on KickDrum, while their Note column says 36 = 65.4 Hz.  Nothing
-is broken — but the number on screen is not the pitch, and turning it does
-nothing.
+is broken — but the root is not the pitch, and turning Pitch does nothing.
+(Before pass 48 that 65.4 Hz root was also the number on screen; the panel now
+shows only the Pitch offset.)
 
 ## 3. Cymbal-family tracking reads as nonsense on a peak metric
 
@@ -89,7 +105,7 @@ each one alters an approved sound, so they are listed for a decision.
 |---|---|---|---|---|
 | **Bongo (33)** | 50 (D3) | 146.7 Hz | bongo open tones sit roughly 250-600 Hz; 147 Hz is conga/tumba register | 57-62 — and see §5 |
 | **Wodblk (11)** | 48 (C3) | 130.7 Hz | a woodblock's dominant partial is ~0.8-2.5 kHz; 131 Hz is a large slit drum (which preset 31 already is) | 79-84 |
-| **AcSnare (3)** | 38 (D2) | 73.4 Hz nominal | a snare head sounds ~180-220 Hz. **38 is the General MIDI drum-map number for Acoustic Snare**, used here as a pitch | 55-57, display only (§2: inert) |
+| **AcSnare (3)** | 38 (D2) | 73.4 Hz nominal | a snare head sounds ~180-220 Hz. **38 is the General MIDI drum-map number for Acoustic Snare**, used here as a pitch | ~~55-57, display only (§2: inert)~~ — moot since pass 48: the root is no longer displayed and the note is inert, so changing it would alter nothing |
 | ~~**BrshSnr (37)**~~ | ~~38~~ → **55 (G3)** | **196.0 Hz** | **DONE in pass 44** — the recommendation above was applied when the preset got an audible head. It was free to apply *because* the note had been inert; now it is the head's pitch and no longer cosmetic. | — |
 | **Trngle (19)** | 69 (A4) | 440.0 Hz | a triangle's lowest strong mode is ~1-2 kHz — this is the "Triangle C# ≈ 4434 Hz, ~40 semitones above render range" floor already in the README | 88-96 |
 | **Claves (17)** | 79 (G5) | 784.0 Hz | the one clave reference in `samples/` peaks at **955-975 Hz** (centroid 1750 Hz) — 4 semitones above the preset | 83, minor |

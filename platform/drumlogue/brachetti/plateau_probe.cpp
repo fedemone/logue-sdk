@@ -52,7 +52,7 @@ static const ParamRange kParams[] = {
     { 4,    0, 1000, "MlltRes"  }, { 5,     0,   50, "MlltStif" },
     { 6, -100,  100, "VlMllRes" }, { 7,  -100,  100, "VlMllStf" },
     { 8,    0,    7, "Partls"   }, { 9,     0,    8, "Model"    },
-    {10,    0,  210, "Dkay"     }, {11,   -10,   30, "Mterl"    },
+    {10,    0,  200, "Dkay"     }, {11,   -10,   30, "Mterl"    },
     {12,  -10,   30, "Tone"     }, {13,   -98,   98, "HitPos"   },
     {14,    0,   20, "Rel"      }, {15,  -100,  100, "Inharm"   },
     {16,    1, 1999, "Cutoff"   }, {17,     0,   20, "TubRad"   },

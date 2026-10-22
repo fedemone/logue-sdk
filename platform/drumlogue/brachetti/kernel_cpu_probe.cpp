@@ -69,7 +69,8 @@ static void run_blocks(int n) {
 }
 
 static void strike(int note, int vel) {
-    g_s.setParameter(BrachettiSynth::k_paramNote, note);
+    // `note` is absolute; the knob is an offset from the preset root (pass 48).
+    g_s.setParameter(BrachettiSynth::k_paramPitch, note - (int)g_s.PresetRootNote());
     g_s.GateOn((uint8_t)vel);
     g_s.GateOff();
 }
