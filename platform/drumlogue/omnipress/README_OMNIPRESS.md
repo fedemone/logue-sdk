@@ -16,7 +16,7 @@ A third engine, modelled on the **Empirical Labs EL8 Distressor**, is still in t
 | **External Sidechain** | 4-channel input for ducking/pumping — add 4 to the DETECT parameter (ID 11) to key from SC L/R instead of the main bus. In Multiband the key is split by its own crossover, so it ducks the bands the key actually occupies |
 | **Drive** | Standard: the Overlord tube, broadband. Multiband: a shaper per band — a wavefold on the lows, the Overlord tube on the mids, an even-harmonic exciter on the highs. Level-matched everywhere, so DRIVE changes the character and not the level |
 | **Overlord EQ** | 3-band semi-parametric EQ (Bass/Treble/Presence) in the dynamics chain |
-| **Multiband on the panel** | Page 1 sets every band; one offset and one ratio knob per band move it from there; two independent crossover points, and a Solo/Mute selector |
+| **Multiband on the panel** | Page 1 sets every band; one offset and one ratio knob per band move it from there, the ratio a Distressor-style downward compressor with a soft knee; two independent crossover points, and a Solo/Mute selector |
 | **Exact ballistics** | ATTACK and RELEASE are applied once, by the gain smoother, in both modes and to every band — attack while the level rises, release while it falls |
 | **Bad-sample guard** | A NaN, infinity or absurd sample on the bus cannot latch the master; a watchdog clears the state if anything goes wrong inside |
 | **NEON Optimization** | Fully vectorized for ARM Cortex-A7 |
@@ -44,7 +44,8 @@ modes, so switching COMP MODE keeps the character and moves it into the bands:
 | Control | In Multiband |
 |---------|--------------|
 | **THRESH** | Every band's pivot. **Lo/Mid/Hi Thresh** are offsets from it, −30…+30 dB; at +0.0 a band pivots where Standard would |
-| **SLOPE** | Every band's curve. **Lo/Mid/Hi Ratio** is a second ratio in series on top: at 1.0:1 a band follows SLOPE exactly, at 4.0:1 it compresses four times harder than SLOPE alone (SLOPE 2:1 + Ratio 2:1 measures 3.9:1) |
+| **SLOPE** | Every band's curve, on both sides of its pivot, as in Standard |
+| **Lo/Mid/Hi Ratio** | A second compressor in series, the Distressor's: downward only, from the band's pivot, through a soft knee. At 1.0:1 a band follows SLOPE exactly; above the pivot r:1 divides SLOPE's slope by r (SLOPE 2:1 + Ratio 2:1 measures 4.0:1); below it the band is left to SLOPE. See [The band Ratio](#the-band-ratio-the-distressors-compressor) |
 | **ATT LMT / GAIN LMT** | Every band's limits. GAIN LMT 0 makes the bands downward-only |
 | **ATTACK / RELEASE** | Every band's gain smoother |
 | **DRIVE** | A different shaper per band — fold on the lows, Standard's tube on the mids, an exciter on the highs — level-matched band by band; see [Multiband DRIVE](#multiband-drive-a-shaper-per-band) |
@@ -73,6 +74,35 @@ threshold just as Standard lifts a quiet passage, so with GAIN LMT open the
 quiet parts of the spectrum come up (the "upward" half of an upward/downward
 multiband), and a pure tone's −32 dB spill into the next band comes up with
 it. GAIN LMT is the knob for how far.
+
+#### The band Ratio: the Distressor's compressor
+
+Each band runs SLOPE's curve and then its own Ratio, both pivoting at THRESH +
+the band's offset. The Ratio is the Distressor's gain computer: 1:1 below the
+pivot and r:1 above it, reading the level SLOPE's curve hands it, through
+`distressor_knee()`'s soft knee. The knee's width follows the Distressor's
+table, wide at the gentle ratios and narrow at the steep ones, as 16 dB / √r:
+11.3 dB at 2:1, 8 at 4:1, 3.6 at 20:1. Its release is the Distressor's
+program-dependent one: recovery slows toward 3× RELEASE as the Ratio's own cut
+deepens toward −20 dB, so a band that is working hard does not pump. SLOPE's
+curve keeps Standard's single release, so at Ratio 1:1 a band is still exactly
+Standard. ATT LMT bounds the two together.
+
+**Why.** The Ratio used to divide SLOPE's slope by r on *both* sides of the
+pivot, and a curve with the same slope everywhere has no threshold in it.
+Moving the pivot moved every level by the same number of dB, so on the
+drumlogue Lo Thresh −20 made the low band quieter and compressed it no harder.
+On the bench, a 60 Hz tone at −10 and −30 dBFS came out 15.98 dB apart at
+Lo Thresh +0 and at −20 alike. At 4:1, lowering the threshold changed the
+spread only where GAIN LMT ran out (6.3 → 4.0 dB). Now the Ratio acts only
+above the pivot, so a lower pivot brings more of the band over it. At 4:1 the
+spread goes from 10.4 dB at +0 to 3.9 dB at −20, and below the pivot 20:1 and
+1:1 measure the same to 0.01 dB (bench M10).
+
+Lo/Mid/Hi Thresh still moves SLOPE's pivot too. At Ratio 1:1 it is a band
+level control, as in Standard, where THRESH under a fixed slope sets level
+rather than how hard the band works. Raise the band's Ratio to make the
+threshold compress.
 
 **Why it changed.** On the drumlogue the previous Multiband seemed not to
 compress and DRIVE seemed to do nothing, and both were true at bus level:
@@ -276,10 +306,15 @@ in any setting. Its code stays — `distressor_mode.h`, `drive_slam.h`,
 `wavefolder.h` and its branches in `masterfx.h` — fixed, documented and measured
 by the bench, so it can be reused or brought back:
 
-* **Two of its curves work in Multiband now.** `sine_folder()`'s fold drives the
+* **Parts of it work in Multiband now.** `sine_folder()`'s fold drives the
   low band and the even half of Dist2 the high band (see
   [Multiband DRIVE](#multiband-drive-a-shaper-per-band)). Their two-lane
   versions sit next to the originals, and bench M9 checks the two still agree.
+  Each band's Ratio is its gain computer, with its ratio-dependent soft knee and
+  program-dependent release (see
+  [The band Ratio](#the-band-ratio-the-distressors-compressor)).
+  `distressor_knee()` and Multiband share `distressor_knee_q()`, and M10 checks
+  it against the formula.
 * **Reaching it.** The drumlogue only ever calls `setParameter()`, and no panel
   value selects it (bench section M4 checks that). `MasterFX::setEngineMode(
   COMP_MODE_DISTRESSOR)` and `MasterFX::setDistressorDistortion(0..8)` do, and
@@ -458,9 +493,9 @@ across 6 pages of 4. IDs below match `header.c`.
 
 | ID | Name | Range | Description |
 |----|------|-------|-------------|
-| 20 | Lo Ratio | 1.0 to 20.0 | Low band ratio, in series with SLOPE (1.0 = SLOPE alone) |
-| 21 | Mid Ratio | 1.0 to 20.0 | Mid band ratio, in series with SLOPE |
-| 22 | Hi Ratio | 1.0 to 20.0 | High band ratio, in series with SLOPE |
+| 20 | Lo Ratio | 1.0 to 20.0 | Low band's downward compressor from its pivot, soft knee, in series with SLOPE (1.0 = SLOPE alone) |
+| 21 | Mid Ratio | 1.0 to 20.0 | Mid band's, likewise |
+| 22 | Hi Ratio | 1.0 to 20.0 | High band's, likewise |
 | 23 | Xover Hi | 0–100 | Mid/high split, 1 kHz – 16 kHz, logarithmic. 33 = 2.5 kHz |
 
 Offsets default to +0.0 dB and ratios to 1.0:1, so a default Multiband is
@@ -499,8 +534,10 @@ Standard's curve in each band.
 │  │    follower              │   │    (+ low-band all-pass) │     │
 │  │  • Omnipressor curve     │   │  • per-band peak follower│     │
 │  │    (THRESH, SLOPE, LMTs) │   │  • the same curve per    │     │
-│  │  • gain smoother:        │   │    band, + offset, Ratio │     │
-│  │    ATTACK / RELEASE      │   │  • gain smoother:        │     │
+│  │  • gain smoother:        │   │    band, + offset        │     │
+│  │    ATTACK / RELEASE      │   │  • Ratio: Distressor's,  │     │
+│  │                          │   │    downward, soft knee   │     │
+│  │                          │   │  • gain smoother:        │     │
 │  │                          │   │    ATTACK / RELEASE      │     │
 │  │                          │   │  • DRIVE per band: fold, │     │
 │  │                          │   │    tube, exciter; matched│     │
@@ -569,7 +606,10 @@ QEMU's trace counted at most eight instructions per basic block.)
 The per-band shapers were measured with a different harness (GCC 13, no LTO),
 which reads higher across the board, so as a before/after pair: Multiband at
 DRIVE 23 went from 33.9k to 35.7k (+5%); Multiband at DRIVE 0 and Standard
-moved by under 1.5%.
+moved by under 1.5%. The band Ratio's own compressor -- a second smoother,
+the knee and the program-dependent release, three bands at once -- costs
+3,000 more on that harness, at any DRIVE: Multiband at DRIVE 0 20.6k → 23.6k
+(+15%), at DRIVE 23 35.7k → 38.8k (+9%). Standard moved under 1%.
 
 Multiband used to run its sixteen crossover biquads per sample one at a time in
 scalar code. They now run four at a time (L/R × low-pass/high-pass in one
@@ -652,6 +692,7 @@ polyphony 4 as it ships (`-Os`) and 21,000 at `-O3`; NeonLabirinto went from
 | Multiband's DRIVE was weak and moved the level | One triode stage per band at a third of Standard's drive, with a static makeup: 4–18% THD at −20 dBFS against Standard's 6–44%, +5 dB on quiet material, −5 dB on loud; DRIVE 1 gated off | The Overlord's two-stage law per band, level-matched band by band, faded in over the bottom tenth of the knob like Standard's. Same THD as Standard within a few percent, level within 0.35 dB, live from DRIVE 1 |
 | Multiband cost four times Standard | Sixteen scalar biquads per sample | NEON, four filters per vector and the bands in lanes: 33.7k → 17.7k instructions per render (37.7k → 31.3k with DRIVE 23) |
 | Multiband's DRIVE sounded like Standard's | The same Overlord tube ran in every band, with only its shape constants changed, so switching mode moved the distortion into the bands without changing what it sounded like. The low band's tube also sat behind a 30 Hz DC blocker that put 50 Hz 1.0–1.2 dB under 200 Hz even with the tube still linear, and it left DC | A shaper per band: a sine fold on the lows, the even half of Dist2 as an exciter on the highs (both normalised to their band's own envelope), Standard's tube on the mids. No DC blocker on the lows. See [Multiband DRIVE](#multiband-drive-a-shaper-per-band) (bench M9, N) |
+| Lowering Lo/Mid/Hi Thresh did not compress the band harder | The band Ratio divided SLOPE's slope on both sides of the pivot, and a curve with one slope everywhere has no threshold in it: moving the pivot only moved the level (a 60 Hz tone at −10/−30 dBFS: 15.98 dB apart at Thresh +0 and −20 alike) | The Ratio is the Distressor's compressor now: downward only from the band's pivot, soft knee, program-dependent release. At 4:1 the spread is 10.4 dB at +0 and 3.9 dB at −20 (bench M10) |
 | Lo/Mid/Hi Thresh showed negative offsets as huge positive numbers | The firmware hands the readout callback the 16-bit value zero-extended, so −30.0 dB arrived as 65236 and read "+6523.6dB". If the settings path gets the same form, every negative offset was clamped to +30 dB | `setParameter` and `getParameterStrValue` sign-extend from 16 bits on entry. Every header range fits in `int16_t`, so a value that already arrives signed is unchanged (bench check M7) |
 
 Verified by `test_levels.cpp`, which drives the real `MasterFX::Process()` loop:
@@ -681,7 +722,10 @@ page 1 (M8): each band, soloed, on Standard's curve at every SLOPE; THRESH
 moving every pivot; a band Ratio stacking on SLOPE; the bands summing flat from
 40 Hz to 12 kHz; and a hit after silence taking the ATTACK time in both modes.
 Multiband's DRIVE gives each band its own shaper and each does its job (M9):
-see [Multiband DRIVE](#multiband-drive-a-shaper-per-band).
+see [Multiband DRIVE](#multiband-drive-a-shaper-per-band). The band Ratio
+compresses from its threshold (M10): a lower Lo Thresh compresses harder, the
+Ratio does nothing below the pivot and stacks on SLOPE above it, its knee is
+the Distressor's, and its release slows as its cut deepens.
 
 `./test_levels mbdrive` measures Multiband's DRIVE band by band: harmonic
 profiles against Standard's tube (N1), the fold against level (N2), the
@@ -690,7 +734,7 @@ exciter's high-pass on hats (N3) and a kick's sub (N4).
 `./test_levels recover` is pass/fail and sets the exit status too: one NaN, ±Inf,
 1e30 or 1e20 sample on the bus in each mode, with the output three seconds
 later required to match an untouched run, and NaN planted directly in the
-detector, tube, slam, crossover and per-band drive state to prove the watchdog
+detector, tube, slam, crossover, band Ratio and per-band drive state to prove the watchdog
 clears it. The
 NEON shim propagates NaN through `vmaxq_f32`/`vminq_f32` the way the hardware
 does, tested on the bits, since the DSP is compiled `Ofast` and an `x != x`

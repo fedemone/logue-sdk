@@ -27,6 +27,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <utility>
 #include <ctime>
 
 // Section R corrupts the DSP state directly to prove the watchdog clears it,
@@ -974,7 +975,7 @@ static bool nonfinite(float x) {         /* bit test: robust under -ffast-math *
 enum Spoil { SPOIL_NONE, SPOIL_INPUT, SPOIL_ENVELOPE, SPOIL_DISTRESSOR_ENV,
              SPOIL_TUBE_DC, SPOIL_CROSSOVER, SPOIL_SLAM_DC, SPOIL_DRIVE_DC,
              SPOIL_DRIVE_LEVEL, SPOIL_TUBE_LEVEL, SPOIL_MB_FOLD_ENV, SPOIL_MB_TUBE_BIAS,
-             SPOIL_MB_EXCITE_HPF };
+             SPOIL_MB_EXCITE_HPF, SPOIL_MB_RATIO };
 
 struct RecoverResult { double rms_db; long bad; uint32_t trips; };
 
@@ -1006,6 +1007,7 @@ static RecoverResult runSpoiled(const Params& p, Spoil spoil, float value) {
                 case SPOIL_MB_FOLD_ENV:    g_fx.multiband_.fold_env[0] = value; break;
                 case SPOIL_MB_TUBE_BIAS:   g_fx.multiband_.tube_bias[0] = value; break;
                 case SPOIL_MB_EXCITE_HPF:  g_fx.multiband_.exc_hpf_s.z1[0] = value; break;
+                case SPOIL_MB_RATIO:       g_fx.multiband_.ratio_db[0] = value; break;
                 default: break;
             }
         }
@@ -1080,6 +1082,7 @@ static void section_recover() {
         { "mb fold",    7, SPOIL_MB_FOLD_ENV },     /* Multiband's per-band drive */
         { "mb tube",    7, SPOIL_MB_TUBE_BIAS },
         { "mb excite",  7, SPOIL_MB_EXCITE_HPF },
+        { "mb ratio",   6, SPOIL_MB_RATIO },        /* the band Ratio's smoother */
     };
     printf("   %-10s %9s %9s %8s %6s\n", "state", "ref dB", "out dB", "nonfin", "trips");
     for (const Inside& t : inside) {
@@ -1413,7 +1416,10 @@ static void section_panel() {
     }
     {
         /* Effective ratio above threshold from two levels 10 dB apart.  SLOPE
-         * 50 is 2:1; a band ratio of 2:1 in series makes it 4:1. */
+         * 50 is 2:1; a band ratio of 2:1 in series makes it 4:1.  The mid
+         * band soloed: the tone's -31 dB spill into the high band sits below
+         * that band's pivot, where the Ratio does not act and SLOPE lifts it,
+         * and summed back in it would pull the reading toward SLOPE's. */
         double eff[2];
         const int band_ratio[2] = { 10, 20 };
         for (int k = 0; k < 2; ++k) {
@@ -1425,6 +1431,7 @@ static void section_panel() {
                 p.v[k_slope] = 50;
                 p.v[k_threhold] = -400;
                 p.v[k_attenuation_limit] = -300; p.v[k_gain_limit] = 300;
+                p.v[k_band_solo_mute] = SOLO_MID;
                 setBandRatios(p, band_ratio[k]);
                 apply(p);
                 out[a] = 20.0 * log10(amps[a]) + measure(amps[a], F0, SETTLE / 2, MEAS / 2).gain_fund_db;
@@ -1594,6 +1601,92 @@ static void section_panel() {
         }
         snprintf(buf, sizeof(buf), "(fold %.1e, Dist2's even half %.1e, over +/-3)", fold_err, even_err);
         panelCheck(fold_err < 1e-5 && even_err < 1e-5, "The curves are the Distressor's", buf);
+    }
+
+    /* M10. The band Ratio is a downward compressor at the band's pivot: the
+     * Distressor's gain computer, knee and program-dependent release.  The
+     * low band soloed, a 60 Hz tone, THRESH -20, the factory SLOPE. */
+    printf("\n  M10. The band Ratio compresses from its threshold\n");
+    {
+        auto lowGain = [&](double amp, int offset, int ratio) {
+            Params p = headerDefaults();
+            p.mode = COMP_MODE_MULTIBAND;
+            p.v[k_threhold] = -200;
+            p.v[k_attenuation_limit] = -300;
+            p.v[k_band_solo_mute] = SOLO_LOW;
+            p.v[k_band_low_threshold] = offset;
+            p.v[k_band_low_ratio] = ratio;
+            apply(p);
+            return measure(amp, 60.0, SETTLE / 2, QMEAS).gain_fund_db;
+        };
+        /* How far apart -10 and -30 dBFS come out: 20 dB in. */
+        auto spread = [&](int offset, int ratio) {
+            return 20.0 + lowGain(0.316, offset, ratio) - lowGain(0.0316, offset, ratio);
+        };
+        const double s0 = spread(0, 40), s20 = spread(-200, 40);
+        snprintf(buf, sizeof(buf), "(4:1, -10/-30 dBFS come out %.1f dB apart at +0, %.1f at -20)", s0, s20);
+        panelCheck(s0 - s20 > 4.0, "A lower Lo Thresh compresses harder", buf);
+
+        /* Below its pivot the Ratio does nothing: -45 dBFS, 25 dB under it */
+        const double d = lowGain(0.0056, 0, 200) - lowGain(0.0056, 0, 10);
+        snprintf(buf, sizeof(buf), "(-45 dBFS, Ratio 20:1 vs 1:1: %+.2f dB)", d);
+        panelCheck(fabs(d) < 0.2, "The Ratio leaves the band alone below its pivot", buf);
+
+        /* Above it and past the knee the slopes multiply: SLOPE's (1 + f)
+         * over r.  -15 and -5 dBFS are 15 and 25 dB over the pivot. */
+        const double f = g_fx.function_slope_;
+        const double out_lo = -15.0 + lowGain(0.178, 0, 40), out_hi = -5.0 + lowGain(0.562, 0, 40);
+        const double want = (1.0 + f) / 4.0 * 10.0;
+        snprintf(buf, sizeof(buf), "(10 dB in -> %.2f dB out, (1 + f)/4 says %.2f)", out_hi - out_lo, want);
+        panelCheck(fabs(out_hi - out_lo - want) < 0.3, "Above its pivot the Ratio stacks on SLOPE", buf);
+    }
+    {
+        /* The curve is distressor_knee()'s, lane by lane */
+        double err = 0.0;
+        for (double w : {3.0, 8.0, 12.0})
+            for (double e = -20.0; e <= 20.0; e += 1.0 / 64.0) {
+                float a[4], b[4];
+                vst1q_f32(a, distressor_knee(vdupq_n_f32((float)e), (float)w));
+                vst1q_f32(b, distressor_knee_q(vdupq_n_f32((float)e), vdupq_n_f32((float)(0.5 * w)),
+                                               vdupq_n_f32((float)(0.5 / w))));
+                const double t = e + 0.5 * w;
+                const double ref = (e <= -0.5 * w) ? 0.0 : (e >= 0.5 * w) ? e : t * t / (2.0 * w);
+                err = fmax(err, fmax(fabs(a[0] - ref), fabs(b[0] - ref)));
+            }
+        snprintf(buf, sizeof(buf), "(worst %.1e dB, widths 3/8/12, +/-20 dB)", err);
+        panelCheck(err < 1e-4, "The knee is the Distressor's", buf);
+    }
+    {
+        /* Program-dependent release: after a burst the Ratio's cut recovers
+         * slower from deep than from shallow.  Time for the band Ratio's own
+         * gain to come back to a third of where the burst left it, low band,
+         * 20:1, RELEASE 200 ms. */
+        auto recovery_ms = [&](double burst_amp) {
+            Params p = headerDefaults();
+            p.mode = COMP_MODE_MULTIBAND;
+            p.v[k_threhold] = -300;
+            p.v[k_attenuation_limit] = -300;
+            p.v[k_band_low_ratio] = 200;
+            apply(p);
+            const double w = 2.0 * M_PI * 60.0 / SR;
+            const long burst = SR / 2;
+            float start = 0.0f;
+            long n_back = -1, n = 0;   /* the sink's own sample count */
+            runSignal([&](long k) { return (float)((k < burst ? burst_amp : 0.001) * sin(w * k)); },
+                      0, 2 * SR, [&](float) {
+                          float r[4];
+                          vst1q_f32(r, g_fx.multiband_.ratio_db);
+                          if (n == burst) start = r[0];
+                          if (n > burst && n_back < 0 && r[0] > start / 3.0f) n_back = n - burst;
+                          ++n;
+                      });
+            return std::make_pair(1000.0 * n_back / SR, (double)start);
+        };
+        const auto shallow = recovery_ms(0.056), deep = recovery_ms(0.5);
+        snprintf(buf, sizeof(buf), "(from %.1f dB: %.0f ms, from %.1f dB: %.0f ms)",
+                 shallow.second, shallow.first, deep.second, deep.first);
+        panelCheck(shallow.first > 0 && deep.first > 1.3 * shallow.first,
+                   "The Ratio's release slows as its cut deepens", buf);
     }
 
     /* M7. What the panel shows. */
