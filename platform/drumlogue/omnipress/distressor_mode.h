@@ -361,22 +361,16 @@ fast_inline void distressor_drive_output(distressor_t* d,
 //   below the knee : 0
 //   inside         : (excess + w/2)^2 / (2w)
 //   above          : excess
-//
-// The same with a width per lane, for Multiband's per-band Ratio: `half_w` is
-// w/2 and `inv_2w` 1/(2w), both precomputed, w > 0.
-fast_inline float32x4_t distressor_knee_q(float32x4_t excess,
-                                          float32x4_t half_w, float32x4_t inv_2w) {
-    const float32x4_t t    = vaddq_f32(excess, half_w);
-    const float32x4_t knee = vmulq_f32(vmulq_f32(t, t), inv_2w);
-
-    // inside the knee when |excess| < w/2
-    const uint32x4_t in_knee = vcltq_f32(vabsq_f32(excess), half_w);
-    return vbslq_f32(in_knee, knee, vmaxq_f32(excess, vdupq_n_f32(0.0f)));
-}
-
 fast_inline float32x4_t distressor_knee(float32x4_t excess, float width) {
     if (width <= 0.01f) return vmaxq_f32(excess, vdupq_n_f32(0.0f));
-    return distressor_knee_q(excess, vdupq_n_f32(width * 0.5f), vdupq_n_f32(0.5f / width));
+
+    const float32x4_t hw = vdupq_n_f32(width * 0.5f);
+    const float32x4_t t  = vaddq_f32(excess, hw);
+    const float32x4_t knee = vmulq_n_f32(vmulq_f32(t, t), 0.5f / width);
+
+    // inside the knee when |excess| < w/2
+    const uint32x4_t in_knee = vcltq_f32(vabsq_f32(excess), hw);
+    return vbslq_f32(in_knee, knee, vmaxq_f32(excess, vdupq_n_f32(0.0f)));
 }
 
 // Knee width per ratio, in dB. The EL8 is gentle at the low ratios and tightens

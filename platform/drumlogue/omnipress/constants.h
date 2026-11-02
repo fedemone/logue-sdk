@@ -87,24 +87,10 @@ constexpr int BAND_OFFSET_MIN = -300;    // -30.0 dB
 constexpr int BAND_OFFSET_MAX = 300;     // +30.0 dB
 constexpr int BAND_OFFSET_DEFAULT = 0;
 
-// Lo/Mid/Hi Ratio are a downward compressor in series with SLOPE's curve,
-// at the band's pivot; 1:1 follows SLOPE exactly.
+// Lo/Mid/Hi Ratio are in series with SLOPE's curve; 1:1 follows SLOPE exactly.
 constexpr int BAND_RATIO_MIN = 10;      // 1.0:1
 constexpr int BAND_RATIO_MAX = 200;     // 20.0:1
 constexpr int BAND_RATIO_DEFAULT = 10;  // 1.0:1
-
-// The band Ratio's compressor, from the Distressor (distressor_mode.h).
-//
-// Its soft knee is distressor_knee()'s, and its width follows the
-// Distressor's table (12 dB at 2:1, 8 at 4:1, 6 at 6:1, 3 at 20:1) as
-// K / sqrt(ratio): 11.3, 8.0, 6.5, 3.6 dB.  Wide at the gentle ratios, which
-// is what keeps 2:1 unobtrusive on a bus; near a corner at 20:1.
-constexpr float MB_KNEE_K = 16.0f;
-// Its release is distressor_smooth()'s program-dependent one: recovery slows
-// toward MB_PDR_SLOW x RELEASE as that compressor's own gain reduction
-// deepens toward MB_PDR_DEPTH_DB, so it does not pump on dense material.
-constexpr float MB_PDR_SLOW     = 3.0f;
-constexpr float MB_PDR_DEPTH_DB = 20.0f;
 
 // Page 4: Distressor Mode
 constexpr int DSTR_MODE_MIN = 0;
