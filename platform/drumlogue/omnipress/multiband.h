@@ -7,10 +7,8 @@
  * The panel's page 1 means the same thing in both modes.  Each band pivots at
  * THRESH plus its own offset (Lo/Mid/Hi Thresh), follows SLOPE's curve --
  * expansion, compression, limiting or reversal, on both sides of the pivot,
- * bounded by ATT LMT and GAIN LMT -- with its own Ratio in series on top: the
- * Distressor's downward compressor, from the same pivot, with its soft knee
- * and program-dependent release (multiband_update_curve()).  Both are
- * smoothed with ATTACK/RELEASE.  At offsets of 0 and ratios of 1:1 every
+ * bounded by ATT LMT and GAIN LMT -- with its own Ratio in series on top, and
+ * is smoothed with ATTACK/RELEASE.  At offsets of 0 and ratios of 1:1 every
  * band does exactly what Standard does to the whole signal, so switching
  * COMP MODE keeps the character and moves it into the bands.
  *
@@ -143,11 +141,9 @@ typedef struct {
 
     // ---- dynamics, lanes = [low mid high -] ---------------------------------
     float32x4_t env;             // peak follower, linear
-    float32x4_t gain_db;         // SLOPE's curve, smoothed
-    float32x4_t ratio_db;        // the band Ratio's compressor, smoothed (<= 0)
-    float32x4_t thresh;          // THRESH + offset, dB: both curves pivot here
-    float32x4_t ratio_gr;        // -(1 - 1/ratio): dB of cut per dB over
-    float32x4_t knee_hw, knee_inv2w;   // the Ratio's knee: w/2 and 1/(2w)
+    float32x4_t gain_db;         // smoothed gain
+    float32x4_t slope;           // each band's curve: (1 + f) / ratio - 1
+    float32x4_t thresh;          // THRESH + offset, dB
 
     // ---- drive stage, each band's shaper on its own [L R] ------------------
     float32x2_t fold_env;        // low:  peak follower the fold is normalised to
@@ -171,7 +167,6 @@ typedef struct {
     float band_offset[NUM_OF_BANDS];
     float band_ratio[NUM_OF_BANDS];
     float att_coeff, rel_coeff;  // ATTACK / RELEASE, per sample
-    float rel_slow_coeff;        // RELEASE x MB_PDR_SLOW, for the Ratio's release
     float env_pre_coeff;         // detector decay
     float lm_attack, lm_release, lm_slow;   // level matching, per block
     float drive;                 // 0..1
@@ -192,38 +187,19 @@ typedef struct {
  * Settings
  * ------------------------------------------------------------------------- */
 
-/**
- * Rebuild the per-band curves from SLOPE, THRESH and the band knobs.
- *
- * Each band runs two curves in series, both pivoting at THRESH + its offset.
- * First SLOPE's, as in Standard, on both sides of the pivot.  Then the band's
- * Ratio: a downward compressor, the Distressor's -- 1:1 below the pivot, r:1
- * above it, through distressor_knee()'s soft knee.
- *
- * Why the Ratio is downward-only.  It used to divide SLOPE's slope by r on
- * both sides of the pivot, and a curve with one slope everywhere has no
- * threshold in it: moving the pivot moves every level by the same number of
- * dB, so Lo Thresh -20 turned the low band down and compressed it no harder
- * (bench M10).  With 1:1 below the pivot, a lower pivot brings more of the
- * band over it, which is what a threshold is for.  Above the pivot and past
- * the knee nothing changed: SLOPE's output slope 1 + f over a second r:1 is
- * (1 + f) / r, as before.
- */
+/** Rebuild the per-band curve from SLOPE, THRESH and the band knobs. */
 fast_inline void multiband_update_curve(multiband_t* mb) {
-    float t[4] = {0.0f, 0.0f, 0.0f, 0.0f}, gr[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    float hw[4] = {1.0f, 1.0f, 1.0f, 1.0f}, i2w[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    float s[4] = {0.0f, 0.0f, 0.0f, 0.0f}, t[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     for (int b = 0; b < NUM_OF_BANDS; ++b) {
-        const float r = mb->band_ratio[b];
-        const float w = MB_KNEE_K / sqrtf(r);
-        t[b]   = mb->master_thresh + mb->band_offset[b];
-        gr[b]  = 1.0f / r - 1.0f;
-        hw[b]  = 0.5f * w;
-        i2w[b] = 0.5f / w;
+        // A ratio in series with SLOPE's curve.  SLOPE's output slope is
+        // 1 + f (f = +3 expands 1:4, 0 is 1:1, -1 limits, -2 reverses), and a
+        // second compressor at r:1 divides it by r -- exact when the two pivot
+        // at the same point, which they do here.
+        s[b] = (1.0f + mb->master_slope) / mb->band_ratio[b] - 1.0f;
+        t[b] = mb->master_thresh + mb->band_offset[b];
     }
-    mb->thresh    = vld1q_f32(t);
-    mb->ratio_gr  = vld1q_f32(gr);
-    mb->knee_hw   = vld1q_f32(hw);
-    mb->knee_inv2w = vld1q_f32(i2w);
+    mb->slope  = vld1q_f32(s);
+    mb->thresh = vld1q_f32(t);
 }
 
 fast_inline void multiband_set_curve(multiband_t* mb, float slope, float thresh_db,
@@ -250,9 +226,6 @@ fast_inline void multiband_set_band_ratio(multiband_t* mb, int band, float ratio
 fast_inline void multiband_set_ballistics(multiband_t* mb, float attack_ms, float release_ms) {
     mb->att_coeff = ballistics_coeff(attack_ms,  mb->sample_rate);
     mb->rel_coeff = ballistics_coeff(release_ms, mb->sample_rate);
-    // c^(1/k) is the same filter k times slower; update_opto_coeff()'s way.
-    // Parameter changes only, so libm is affordable.
-    mb->rel_slow_coeff = expf(logf(mb->rel_coeff) * (1.0f / MB_PDR_SLOW));
 }
 
 /**
@@ -358,7 +331,6 @@ fast_inline void multiband_clear_state(multiband_t* mb) {
     mb->sc_hi.s2.z1 = mb->sc_hi.s2.z2 = zero2;
     mb->env = zero;
     mb->gain_db = zero;
-    mb->ratio_db = zero;
     multiband_prime_drive(mb);
     mb->drive_on = false;
 }
@@ -366,7 +338,6 @@ fast_inline void multiband_clear_state(multiband_t* mb) {
 /** Anything in the state gone non-finite?  See the watchdog in MasterFX::Process(). */
 fast_inline bool multiband_state_is_nonfinite(const multiband_t* mb) {
     uint32x4_t m = vorrq_u32(nonfinite_mask_q(mb->env), nonfinite_mask_q(mb->gain_db));
-    m = vorrq_u32(m, nonfinite_mask_q(mb->ratio_db));
     m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->lm_in), nonfinite_mask_q(mb->lm_out)));
     m = vorrq_u32(m, vorrq_u32(nonfinite_mask_q(mb->lm_in_slow), nonfinite_mask_q(mb->lm_out_slow)));
     m = vorrq_u32(m, nonfinite_mask_q(mb->lm_gain));
@@ -634,54 +605,30 @@ fast_inline void multiband_process(multiband_t* mb,
         }
     }
 
-    // ---- per-band gain, bands in lanes: SLOPE's curve, then the Ratio's ---
+    // ---- per-band gain: Standard's curve and ballistics, bands in lanes -----
     const float32x4_t pre_c  = vdupq_n_f32(mb->env_pre_coeff);
     const float32x4_t att    = vdupq_n_f32(mb->att_coeff);
     const float32x4_t rel    = vdupq_n_f32(mb->rel_coeff);
-    const float32x4_t rel_dk = vdupq_n_f32(mb->rel_slow_coeff - mb->rel_coeff);
     const float32x4_t lo_lim = vdupq_n_f32(mb->atten_db);
     const float32x4_t hi_lim = vdupq_n_f32(mb->boost_db);
-    const float32x4_t slope  = vdupq_n_f32(mb->master_slope);
     const float32x4_t zero   = vdupq_n_f32(0.0f);
-    const float32x4_t one    = vdupq_n_f32(1.0f);
-    float32x4_t env = mb->env, g_db = mb->gain_db, r_db = mb->ratio_db;
+    float32x4_t env = mb->env, g_db = mb->gain_db;
     for (int t = 0; t < NEON_LANES; ++t) {
         env = vmaxq_f32(inst[t], vmulq_f32(env, pre_c));
         const float32x4_t env_db =
             vmulq_n_f32(neon_log2q_f32(vmaxq_f32(env, vdupq_n_f32(1e-5f))), 6.0206f);
-        const float32x4_t over = vsubq_f32(env_db, mb->thresh);
-
-        // SLOPE's curve, exactly as in Standard.  Attack while the level is
-        // rising, whichever way that moves the gain -- see
-        // MasterFX::standard_process(), which shares the rule.
-        float32x4_t target = vmulq_f32(slope, over);
+        float32x4_t target = vmulq_f32(mb->slope, vsubq_f32(env_db, mb->thresh));
         target = vminq_f32(vmaxq_f32(target, lo_lim), hi_lim);
-        const uint32x4_t rising = vcgtq_f32(vmulq_f32(vsubq_f32(target, g_db), slope), zero);
+        // Attack while the level is rising, whichever way that moves the gain
+        // -- see MasterFX::standard_process(), which shares the rule.
+        const uint32x4_t rising = vcgtq_f32(vmulq_f32(vsubq_f32(target, g_db), mb->slope), zero);
         g_db = vmlaq_f32(target, vbslq_f32(rising, att, rel), vsubq_f32(g_db, target));
-
-        // The Ratio's compressor, fed what SLOPE's curve hands it: the level
-        // over the pivot after SLOPE's gain.  distressor_gain_computer()'s
-        // law with this band's ratio and knee, then distressor_smooth()'s
-        // ballistics: attack while the cut deepens, and a release that slows
-        // as the cut gets deeper.
-        const float32x4_t over2 = vaddq_f32(over, target);
-        float32x4_t target2 = vmulq_f32(mb->ratio_gr,
-                                        distressor_knee_q(over2, mb->knee_hw, mb->knee_inv2w));
-        target2 = vmaxq_f32(target2, lo_lim);
-        const float32x4_t depth =
-            vminq_f32(one, vmulq_n_f32(r_db, -1.0f / MB_PDR_DEPTH_DB));   // r_db <= 0
-        const float32x4_t c2 = vbslq_f32(vcltq_f32(target2, r_db), att, vmlaq_f32(rel, rel_dk, depth));
-        r_db = vmlaq_f32(target2, c2, vsubq_f32(r_db, target2));
-
-        // The two in series, bounded by ATT LMT together
-        const float32x4_t total = vmaxq_f32(vaddq_f32(g_db, r_db), lo_lim);
-        const float32x4_t g = neon_expq_f32(vmulq_n_f32(total, INV_DB_COEFF));
+        const float32x4_t g = neon_expq_f32(vmulq_n_f32(g_db, INV_DB_COEFF));
         v1[t] = vmulq_f32(v1[t], bands_to_lanes_lo(g));
         v2[t] = vmulq_f32(v2[t], bands_to_lanes_hi(g));
     }
-    mb->env      = flush_denormal_q(env);
-    mb->gain_db  = flush_denormal_q(g_db);
-    mb->ratio_db = flush_denormal_q(r_db);
+    mb->env     = flush_denormal_q(env);
+    mb->gain_db = flush_denormal_q(g_db);
 
     // ---- drive ----------------------------------------------------------------
     if (mb->drive > 0.0f) multiband_drive(mb, v1, v2);
