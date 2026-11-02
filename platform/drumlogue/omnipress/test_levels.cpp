@@ -1615,6 +1615,22 @@ static void section_panel() {
             printf("  %4d -> %-9s", r.v[k], g_fx.getParameterStrValue(r.id, r.v[k]));
         printf("\n");
     }
+
+    /* The firmware hands values over zero-extended from 16 bits: -30.0 dB
+     * arrives as 65236.  Readout and setting must both read it as -300. */
+    {
+        char got[16];
+        snprintf(got, sizeof(got), "%s", g_fx.getParameterStrValue(k_band_low_threshold, 65236));
+        bool ok = strcmp(got, "-30.0dB") == 0;
+        const int32_t keep = g_fx.getParameterValue(k_band_mid_threshold);
+        g_fx.setParameter(k_band_mid_threshold, 65236);
+        const int32_t stored = g_fx.getParameterValue(k_band_mid_threshold);
+        g_fx.setParameter(k_band_mid_threshold, keep);
+        ok = ok && stored == -300;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "(65236 reads %s, stores %d)", got, (int)stored);
+        panelCheck(ok, "A zero-extended negative reads as negative", buf);
+    }
     printf("\n  %s\n", g_panel_failures ? "PANEL: FAILED" : "PANEL: all checks ok");
 }
 

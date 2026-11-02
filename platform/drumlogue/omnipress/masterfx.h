@@ -374,6 +374,17 @@ private:
         slam_clear_state(&slam_);
     }
 
+    /**
+     * Every header range fits in int16 (runtime.h stores min/max as int16_t),
+     * but the firmware hands at least the readout callback the 16-bit value
+     * zero-extended: -30.0 dB arrives as 65236, and the panel showed it as a
+     * huge positive number.  Sign-extend from 16 bits wherever a value comes
+     * in from the firmware.  A value that already arrives signed is unchanged.
+     */
+    static inline int32_t param_from_fw(int32_t v) {
+        return static_cast<int16_t>(static_cast<uint16_t>(v));
+    }
+
     static inline int32_t clamp_raw(int32_t v, int32_t lo, int32_t hi) {
         return v < lo ? lo : (v > hi ? hi : v);
     }
@@ -699,6 +710,7 @@ public:
 
     inline void setParameter(uint8_t index, int32_t value) {
         if (index >= k_num_params) return;
+        value = param_from_fw(value);
 
         raw_params_[index] = value;
 
@@ -942,6 +954,7 @@ public:
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
         static char str_buf[16];
+        value = param_from_fw(value);
 
         switch (index) {
             case k_compressor_mode: // COMP MODE (panel values)
