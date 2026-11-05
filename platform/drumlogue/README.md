@@ -6,7 +6,7 @@
 
 All source files needed to build custom synths and effects for the [drumlogue](https://www.korg.com/products/drums/drumlogue) exist under this directory.
 
-> **Disclaimer:** Several projects under this directory (`EffeESP32`, `EffeMD`, `PortaCassette`, `brachetti`, `delay_tribal`, `levelref`, `omnipress`, `reverb_labirinto`, `reverb_light`, `scruta_astri`) are unofficial, independently developed synth and effect units, not affiliated with or supported by KORG. They are provided "as is", with no guarantee of correct operation, and neither the developer(s) nor any distributor(s) accept liability for any damage, defect, or problem resulting from their use. See the [top-level Disclaimer](../../README.md#disclaimer) for the full terms.
+> **Disclaimer:** Several projects under this directory (`EffeESP32`, `EffeMD`, `PortaCassette`, `brachetti`, `delay_tribal`, `levelref`, `omnipress`, `pelle_legno`, `reverb_labirinto`, `reverb_light`, `scruta_astri`) are unofficial, independently developed synth and effect units and sample kits, not affiliated with or supported by KORG. They are provided "as is", with no guarantee of correct operation, and neither the developer(s) nor any distributor(s) accept liability for any damage, defect, or problem resulting from their use. See the [top-level Disclaimer](../../README.md#disclaimer) for the full terms.
 
 #### Compatibility Notes
 
@@ -20,6 +20,7 @@ Firmware version >= 1.00 is required to run user units built with SDK version 2.
  * [dummy-masterfx/](dummy-masterfx/) : User master effect project template.
  * [tools/level_meter/](tools/level_meter/) : Host-side level and loudness meter for user synth units, so a unit's level in a mix is a number at build time instead of a surprise on hardware.
  * [levelref/](levelref/) : Calibrated reference signal generator, for measuring on the hardware what the meter cannot see — how loud the drum tracks a synth unit competes with actually are.
+ * [pelle_legno/](pelle_legno/) : *Pelle e Legno*, 61 physically-modelled organic, skin and ethnic percussion samples for the USER sample bank, with the generator that renders them, a checker for the drumlogue's sample-file rules, and kit recipes.
 
 ### Setting up the Development Environment (Docker Only)
 
