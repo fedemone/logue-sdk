@@ -1,0 +1,6 @@
+# Build artifacts (the SDK build writes build/ and the .drmlgunit here)
+build/
+*.o
+*.elf
+*.map
+*.drmlgunit
