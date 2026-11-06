@@ -32,10 +32,10 @@ struct FastEnvelope {
         // the first process() computes value += (0 - value)*release_rate,
         // which is still 0, hits the `value <= 0.001f` cutoff and jumps to
         // ENV_IDLE — the envelope dies before it ever opens.  That silenced
-        // the whole Clap/Shaker/HHat-C (ENGINE_NOISE) voice on hardware while
+        // every noise-only voice on hardware while
         // the host renders, which hold the gate ~50 ms, sounded correct.
         // (master_env dodges this by being force-set to 1.0/ENV_DECAY in
-        // NoteOn — see T20 — and ENGINE_SNARE by skipping the call entirely.)
+        // NoteOn.)
         // Completing the attack first keeps the release itself meaningful, so
         // the Rel knob still shapes the tail, and leaves any envelope that is
         // already open bit-for-bit unchanged.

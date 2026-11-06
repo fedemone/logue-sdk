@@ -2,11 +2,11 @@
 
 > **Disclaimer:** Brachetti Kernel is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
-One of nine drumlogue synth units split out of the 40-preset
-[`brachetti`](../brachetti/) physical-modelling percussion unit, one per sound
-model, so each can be browsed, used and improved on its own.  The original
-unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
-for the whole set and how they were derived.
+One of eight drumlogue synth units split out of the 40-preset
+[`brachetti`](../brachetti/) physical-modelling percussion unit, one per
+instrument family, so each can be browsed, used and improved on its own.  The
+original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
+for the whole set and the tools that check them.
 
 This unit holds Timpani and Taiko on the dense coupled-resonator drum kernel.
 
@@ -21,15 +21,15 @@ This unit holds Timpani and Taiko on the dense coupled-resonator drum kernel.
 
 ## Presets
 
-| # | Name | Root | Notes |
+| # | Name | Root | Sound |
 |---|---|---|---|
-| 0 | Timpni | 52 | dense-kernel voice. |
-| 1 | Taiko | 41 | bright open "TAAAN": data-driven inharmonic modes + bright 1472Hz partial (ratio 16.86, the "AAN" vowel) from Taiko-Hit.wav. … |
+| 0 | Timpni | 52 | timpani: measured kettle modes plus a dense membrane fill, two kettles |
+| 1 | Taiko | 41 | taiko: the same kernel with a noise wedge for the broadband decay |
 
 At the knob values each preset ships with, it renders **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
-notes, stacked strokes, Program changes over ringing voices, Reset / Suspend, pitch bend and every knob at its
-ends and in between (see Verification).
+notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
+pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
@@ -41,7 +41,7 @@ ends and in between (see Verification).
 | 4 | `Rel` · `Inharm` · `Cutoff` · `TubRad` |
 | 5 | `Gain` · `NzMix` · `NzFltFrq` · `Resnc` |
 
-Removed from the original's 24 knobs: `Poly`, `Model`, `NzRes`, `NzFltr`.  The Timpani/Taiko kernel always has its two kettles (Poly), and has no modal-template or legacy noise exciter to give Model, NzRes or NzFltr anything to act on.  Each one was measured inert on every preset of this unit in the original — swept across its whole range in several contexts, every render bit-identical (`tools/brachetti_equiv/dead_params.py`).
+Removed from the original's 24 knobs: `Poly`, `Model`, `NzRes`, `NzFltr`.  The kernel always has its two kettles (Poly), and no modal template or exciter noise path for Model, NzRes or NzFltr to act on.  Each was measured inert on every preset of this unit — swept across its whole range in several contexts, every render bit-identical (`tools/brachetti_equiv/dead_params.py`).
 
 What each knob does in this unit:
 
@@ -64,13 +64,12 @@ What each knob does in this unit:
 | `NzMix` | noise-wedge level (Timpani ships none — opening it adds the taiko-style air) |
 | `NzFltFrq` | noise-wedge start cutoff |
 
-`Tone` (master tilt EQ), `Cutoff` / `Resnc` (master low-pass and its Q) and
-`Gain` (master drive) work as in the original.  `Pitch`, `Poly`, `Velocity`,
-`VlMllRes`, `Tone`, `Cutoff` and `Resnc` are performance knobs the host owns:
-a Program change leaves them where they are.  Every other knob loads with the
-preset, and the knob mappings are REFERENCE-ANCHORED on the shipped values — a
-preset plays its calibrated sound at its own knob positions and only movement
-alters it.
+`Tone` (tilt EQ), `Cutoff` / `Resnc` (low-pass and its Q) and `Gain` (drive)
+are the master stage.  `Pitch`, `Velocity`, `VlMllRes`, `Tone`, `Cutoff` and
+`Resnc` are performance knobs the host owns: a Program change leaves them where
+they are.  Every other knob loads with the preset, and the knob mappings are
+REFERENCE-ANCHORED on the shipped values — a preset plays its calibrated sound
+at its own knob positions and only movement alters it.
 
 ## Build
 
@@ -80,7 +79,7 @@ build drumlogue/brachetti_kernel
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
 The product is `brachetti_kernel.drmlgunit`; copy it to the drumlogue's `Units/Synths`
-folder.
+folder.  Not yet tested on hardware.
 
 ## Verification
 
@@ -99,14 +98,12 @@ cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_kernel --fuzz 20 -
 
 ## Relation to the original
 
-The code is the original's, with everything this family never reaches taken
-out: the other engines, the other families' per-preset branches and voice
-layers, their table columns and their knobs.  Comments, identifiers
-(`m_modal_*_ref`, `k_param*`) and the REFERENCE-ANCHOR design are kept as they
-were, so the original's `README.md` and `CLAUDE.md` still explain this code —
-look there for the history behind any mapping or constant.  `k_paramLowCut` is
-called `k_paramCutoff` here (it is the master low-pass "Cutoff"), and
-`k_paramCymPoly` is `k_paramPoly`.
+The code began as the original's, with everything this family never reaches
+taken out: the other engines, the other families' per-preset branches and
+voice layers, their table columns and their knobs.  Its comments describe this
+unit only; the history of how the sounds were voiced stays with the original
+unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
+names, so a fix can still be ported between the two.
 
 Changes made from here on belong to this unit only.  A fix that also applies
 to the original or to a sibling unit has to be made there too.

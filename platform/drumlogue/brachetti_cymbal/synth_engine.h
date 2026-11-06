@@ -1,21 +1,17 @@
 #pragma once
 // Brachetti Cymbal — synth engine of the brachetti_cymbal unit.
 //
-// One of the per-family units split out of the 40-preset `brachetti` unit
-// (platform/drumlogue/brachetti, which stays as it is).  This unit holds the
-// dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, RidBel and Splash.
-// In the original these six never used the shared voice engine — ENGINE_CYMBAL
-// bypasses the exciter, waveguide, modal bank and noise path for a self-
-// contained Stowell-style resonator cymbal (CymbalVoice, dsp_core.h, ported
-// from cymbal_synthesis/) — so that is all this unit contains: CymbalVoice,
-// the cymbal voice-allocation policy and CPU budget, the knob → cymbal mapping
-// and the master stage.  At the knob values the presets ship with, every
-// preset renders bit-identically to the original; tools/brachetti_equiv
-// proves it.
+// The dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, RidBel
+// and Splash.  A voice is a CymbalVoice (dsp_core.h): a large bank of
+// exponentially detuned two-pole ringers driven by band-split noise and a
+// stick impulse, with strike-gated phase modulation for the shimmer.  This
+// file holds the per-preset configs, the voice policy and CPU budget, the
+// knob mappings and the master stage.
 //
-// Removed knobs, all measured inert on all six presets in the original
-// (tools/brachetti_equiv/dead_params.py): Model, NzMix, NzRes, NzFltr and
-// NzFltFrq — the cymbal has its own noise drivers, configured per preset.
+// Split from the 40-preset brachetti unit (platform/drumlogue/brachetti,
+// which documents its history).  At the knob values the presets ship
+// with, each renders bit-identically to the same preset there;
+// tools/brachetti_equiv checks it.
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -29,22 +25,21 @@
 #include "unit.h"
 #include "dsp_core.h"
 
-// 2^x for the REFERENCE-ANCHORED knob curves (NoteOn / LoadPreset).
-// Their precision is not critical — ±0.3% on a knob's
-// response curve is inaudible — so fasterpow2f is fine, EXCEPT at the anchor:
-// fasterpow2f(0) ≈ 0.9614, NOT 1.0, which would silently break the
-// byte-identical guarantee for every shipped preset (the anchor delta is
-// exactly 0 there and the factor must be exactly 1).  Guard the anchor.
-// NEVER use this for tuning or decay-coefficient math — see the CLAUDE.md
-// fasterexpf / fastercosfullf gotchas (exact expf/cosf/exp2f there).
+// 2^x for the REFERENCE-ANCHORED knob curves.  fasterpow2f is precise
+// enough for a knob's response (±0.3 %), EXCEPT at the anchor:
+// fasterpow2f(0) ≈ 0.9614, not 1.0, and every anchored mapping evaluates at
+// exactly 0 for the shipped preset, where the factor must be exactly 1.
+// So the anchor is guarded.  Never use this for tuning or decay
+// coefficients: those need exact expf / cosf / exp2f (fasterexpf is badly
+// wrong for |x| < 0.001; fastercosfullf shifts low mode frequencies).
 inline float knob_exp2(float x) {
     return (x == 0.0f) ? 1.0f : fasterpow2f(x);
 }
 
 // Compile-time check on one column of LoadPreset's preset table: every row's
-// value lies in [lo, hi].  Used to pin the columns LoadPreset does NOT load
-// (pass 48), so a future edit that gives one preset its own Tone or Cutoff —
-// which would be silently ignored — fails the build instead.
+// value lies in [lo, hi].  Pins the columns LoadPreset does NOT load, so
+// giving one preset its own Tone or Cutoff — which would be silently
+// ignored — fails the build instead.
 template <int R, int C>
 constexpr bool preset_column_in(const int16_t (&t)[R][C], int col, int lo, int hi) {
     for (int r = 0; r < R; ++r)
@@ -60,26 +55,16 @@ static constexpr float    kToneLpMix = 0.3f;
 static constexpr float    kInvToneCutDivisor = 0.1f;         // 1 / 10
 static constexpr float    kInvToneBoostDivisor = 0.13333334f; // 1 / 7.5 (widened ×2: every preset ships Tone=0, so no regression)
 static constexpr float    zeroThreshold = 0.0f;
-// Master peak limiter: unity below the threshold, tanh knee above.  Same curve
-// the Timpani/Taiko kernel master stage uses.  See the Stage-4b comment.
-// Limiter threshold.  Raised 0.55 -> 0.75 once the stage became a gain
-// envelope: a waveshaper had to start early to keep peaks down, but an
-// envelope limiter holds the ceiling by construction at any threshold, so the
-// threshold only trades loudness against how much gain riding happens.  Swept
-// 0.55/0.65/0.75/0.85 over all 40 presets — 0.75 recovers 0.54 dB over 0.55
-// while every kick keeps a crest factor well above the pre-pass-29 build the
-// HW called "perfect" (Kick2 1.43 vs 1.15, KickDrum 1.63 vs 1.34, 808Sub 1.64
-// vs 1.51) and the worst peak stays at 0.9890, under the brickwall.
+// Master peak limiter: unity below the threshold, a soft knee above it that
+// is asymptotic to the ceiling (see Stage 4b in processBlock).  It is a gain
+// envelope, so it holds the ceiling at any threshold; the threshold only
+// trades loudness against how much gain riding happens.
 static constexpr float    kMasterLimThr     = 0.75f;
 static constexpr float    kMasterLimCeil    = 0.99f;        // == the brickwall
 static constexpr float    kMasterLimSpan    = kMasterLimCeil - kMasterLimThr;
-// Master limiter release, ms.  Chosen by measurement over 10/20/30/40/60/90/
-// 180/350 ms — the table is in CLAUDE.md pass 30.  20 ms comes out ahead of
-// BOTH earlier master stages on harmonic content and on crest factor for all
-// three kicks, at 1.16 dB of the 3.02 dB pass 29 added; longer releases keep
-// getting quieter without buying back distortion (808Sub's H3/H4/H5 are all
-// worse at 40 ms than at 20).  Two hits 150 ms apart show no ducking
-// (2nd/1st peak within 0.01 dB) anywhere below 350 ms.
+// Master limiter release, ms.  20 ms keeps the strike's crest with the
+// fewest added harmonics on long low tones; longer releases only get
+// quieter, and two hits 150 ms apart show no ducking.
 static constexpr float    kMasterLimRelMs   = 20.0f;
 // 1-exp(-1/tau) ~= 1/tau for tau this large (960 samples at 20 ms).
 static constexpr float    kMasterLimRelCoef =
@@ -155,55 +140,14 @@ float m_cym_hihat_hz[16] = {
     3271.f, 3907.f, 4523.f, 5219.f, 6007.f, 6907.f, 7949.f, 9133.f,
     10501.f, 12073.f, 13879.f, 15959.f, 17041.f, 18353.f, 19141.f, 19709.f };
 
-// Preset → output trim.  The one number that gain-stages a preset into the
-// master limiter; see "Pass 47" in CLAUDE.md and calib_probe.cpp, which
-// generates this table.
-//
-// WHY IT EXISTS.  Stage 4b is a peak limiter with a 0.99 ceiling, and before
-// this table the voice bus reached it between 0.5x and 116x full scale — a
-// 47 dB spread across the library, with a MEASURED single-preset worst case of
-// 13.4x for the BODY of a note (Cowbell), not for its strike.  Nothing
-// downstream can be transparent across that, and what the limiter actually did
-// with it was not limiting: with 20-40 dB of gain reduction standing on the
-// whole note it held the output AT the ceiling for hundreds of milliseconds,
-// so (measured, 10 ms frames, Marimba at its own note and velocity 127) the
-// output envelope read 0, -8, -6, -4, -2, 0, 0, 0 ... dB — a duck into the
-// strike and then a swell back to the wall that stayed there for half a
-// second, where the voice itself decays -14, -14, -15, -16, -18, -24, -42 dB.
-// The instrument's decay never happened, every new strike ducked whatever was
-// still ringing, and stacked notes (which is where HW heard it) drove the
-// residual that no smooth gain can explain to within 5-19 dB of the signal.
-//
-// HOW IT IS CALIBRATED.  On the note's BODY, not its strike: the peak over
-// [10 ms, 1 s] at velocity 127 on the preset's own Note, put onto the BODY
-// TARGET — near the limiter's kMasterLimThr.  A mallet transient limited by
-// 15 dB for 2 ms is what percussion mastering does and is inaudible; a body
-// held 20 dB down for 500 ms is the defect.  The strike keeps the headroom
-// above the threshold and the limiter goes back to catching peaks.
-//
-// THE BODY TARGET IS THE CLIPPING/LOUDNESS DIAL, and it is the probe's only
-// argument — `/tmp/calib_probe 1.5` regenerates this whole table from it, so
-// re-trading the two is one command and a paste.  Measured over the library:
-//
-//     target      mean LUFS   stacked-note distortion   presets left at 1.0
-//     1.0          -17.7            -22.3 dB                    8
-//     1.5 (ships)  -16.1            -20.6 dB                   12
-//     no trim      -13.3            -13.7 dB                   40
-//
-// This table is at 1.5, set on HW request to give a measured part of the
-// clipping back for level.  Kick and DeepBs are COUPLED to the target — their
-// decays were asked for by ear (1590 / 495 ms) and the limiter's grip on the
-// tail moves the measured value — so changing it means re-converging those two
-// against decay_probe.  See CLAUDE.md pass 47.
-//
-// It is clamped to <= 1 by construction: this only ever gives back drive the
-// master stage could not use, so raising the target never pushes a preset past
-// where it already sat.  At 1.5 twelve presets keep exactly 1.0 (Timpani and
-// Taiko, which run the kernel's own master stage, plus Cymbal, Claves, Clap,
-// HHat-O, Ride, RidBel, Tick, Splash and Wodblk) and render bit-identically.
-//
-// NOTE: must be 'static' only (no const/constexpr) — same .rodata rule as the
-// tables above.
+// Preset → output trim: gain-stages each preset into the master limiter.
+// Calibrated on the note's BODY, not its strike — the peak over [10 ms, 1 s]
+// at velocity 127 on the preset's root, put on a body target (1.5) near the
+// limiter threshold — so the limiter catches transients instead of holding
+// whole notes at the ceiling.  Clamped to <= 1: it only gives back drive the
+// master stage could not use.  Changing a preset's decay or level means
+// recalibrating its trim (brachetti/calib_probe.cpp does it).
+// NOTE: plain member (no static/const/constexpr), like the tables above.
 float kPresetOutTrim[k_NumPrograms] = {
     /* 0  Cymbal  */ 1.00000f,
     /* 1  Gong    */ 0.36908f,
@@ -251,7 +195,7 @@ SynthState state;
     }
 
     // RUNTIME state only — never a parameter's value (the SDK: unit_reset()
-    // must not reset parameter values).  T49 in the original.
+    // must not reset parameter values).
     inline void Reset() {
         for (int i = 0; i < NUM_VOICES; ++i) {
             state.voices[i].is_active = false;
@@ -373,18 +317,18 @@ SynthState state;
         // The Pitch column holds the preset's ROOT NOTE (MIDI), not a knob
         // value: the Pitch knob is an offset in semitones FROM it, so the
         // column is captured into m_root_note and never written to the knob.
-        // Columns LoadPreset does NOT load are knobs the host owns (pass 48):
+        // Columns LoadPreset does NOT load are knobs the host owns:
         // Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc.
         // Their values below are never read (VlMllRes's is, once, as an anchor).
         // int16_t: the stored range is [-10, 1999].
         static constexpr int16_t presets[k_NumPrograms][k_lastParamIndex] = {
             //  Prg Root  Ply  Vel MlRs MlSt VlRs VlSt Ptls  Dky  Mtr  Ton  Hit  Rel InHm  Cut TbRd Gain Rsnc
-            {   0,  65,   0,   1, 800,  45,   0,   0,   3, 200,  28,   0,   0,  18,   1,1999,  15,   5,  71},   // 0: Cymbal    — noise⇄ring cross-modulation (modal_rm_depth 0.70)
-            {   1,  50,   0,   1, 200,   2,   0,   0,   3, 190,   1,   0,   0,  20,   1,1999,  20,  20,  71},   // 1: Gong      — NzMx 19→26 + FM depth 0.18 for more crash onset; rm_depth 0.60
-            {   2,  79,   0,   1, 900,  49,   0,   0,   3, 200,  18,   0,   0,  18,   1,1999,  12,   0,  71},   // 2: HHat-O    — ring and noise now cross-modulated (rm_depth 0.50).  Dkay 210 -> 200 (pass 48): the range is 0..200 and every consumer already read 210 as 200
-            {   3,  69,   0,   1, 900,  50,   0,   0,   3, 190,  28,   0,   0,  18,   1,1999,  17,   0,  71},   // 3: Ride      — thick-plate modal ratios replace near-harmonic set (was 'a string sound')
-            {   4,  60,   0,   1, 900,  49,   0,   0,   3, 200,  16,   0,   0,   8,   1,1999,   1,   0,  71},   // 4: RidBel    — bell-partial ratios 1:2:3.01:4.7
-            {   5,  76,   0,   1, 800,  45,   0,   0,   3, 200,  28,   0,   0,  18,   1,1999,  15,   5,  71}    // 5: Splash    — small pitched splash (ENGINE_CYMBAL)
+            {   0,  65,   0,   1, 800,  45,   0,   0,   3, 200,  28,   0,   0,  18,   1,1999,  15,   5,  71},   // 0: Cymbal
+            {   1,  50,   0,   1, 200,   2,   0,   0,   3, 190,   1,   0,   0,  20,   1,1999,  20,  20,  71},   // 1: Gong
+            {   2,  79,   0,   1, 900,  49,   0,   0,   3, 200,  18,   0,   0,  18,   1,1999,  12,   0,  71},   // 2: HHat-O
+            {   3,  69,   0,   1, 900,  50,   0,   0,   3, 190,  28,   0,   0,  18,   1,1999,  17,   0,  71},   // 3: Ride
+            {   4,  60,   0,   1, 900,  49,   0,   0,   3, 200,  16,   0,   0,   8,   1,1999,   1,   0,  71},   // 4: RidBel
+            {   5,  76,   0,   1, 800,  45,   0,   0,   3, 200,  28,   0,   0,  18,   1,1999,  15,   5,  71}    // 5: Splash
         };
 
         static_assert(preset_column_in(presets, k_paramVlMllRes, 0, 0),
@@ -435,27 +379,15 @@ SynthState state;
         m_modal_rel_ref    = fmaxf(0.0f, fminf(1.0f, (float)presets[idx][k_paramRel] * 0.05f));
         m_snare_vlstf_ref  = (float)presets[idx][k_paramVlMllStf] * 0.01f;
 
-        // Hold the OUTGOING master drive until the fades finish.  Gain is a
-        // master parameter, so the incoming preset's drive would otherwise hit
-        // the outgoing tail: GtrStr (Gain 0, drive 1.0) -> Gong (Gain 20, drive
-        // 5.0) drove a quiet fading string into the soft clip at 0.83, well
-        // above the 0.52 tail it was replacing.  Pre-scaling the voice cannot
-        // fix this — the ±0.99 clamp sits between the voice and the drive, so
-        // attenuating the voice just moves it out from under the clamp.
-        // Deferring the drive keeps the fading voice's chain bit-for-bit what
-        // it was; the new drive lands ~10 ms later, before any new hit can
-        // meaningfully need it.
-        //
-        // A deferral cannot go stale here: the parameter loop above always
-        // writes k_paramGain, whose case clears m_pending_drive before this
-        // block can re-arm it, so the queue only ever holds the drive of the
-        // preset now loading.  (Reset() has no such loop — it completes a
-        // pending deferral itself.)
-        //
-        // The output trim is deferred on exactly the same terms — it is the
-        // other half of the master-stage gain, and it moves further than the
-        // drive does (up to 22 dB between two presets), so a fading tail that
-        // took the incoming trim would step audibly.
+        // Hold the OUTGOING master drive and output trim until the fades finish:
+        // Gain is a master parameter, so the incoming preset's drive would
+        // otherwise hit the outgoing tail.  Pre-scaling the voice cannot fix this —
+        // the ±0.99 clamp sits between the voice and the drive.  The deferral
+        // cannot go stale: the parameter loop above always writes k_paramGain,
+        // whose case clears m_pending_drive, so the queue only holds the drive of
+        // the preset now loading (Reset() completes a pending deferral itself).
+        // The trim moves further than the drive (up to 22 dB between presets), so
+        // it is deferred on the same terms.
         m_out_trim = kPresetOutTrim[idx];
         if (preset_changed &&
             (state.master_drive != prev_drive || m_out_trim != prev_trim)) {
@@ -620,50 +552,26 @@ SynthState state;
     static constexpr float kCymStealProtectSec = 0.60f;
 
     // ── Cymbal CPU budget, in resonator-lane equivalents ───────────────────
-    // HW (pass 29): "cymbal: additional hit leads to silence (audio crash)";
-    // "gong: crackling then silence, possible CPU overload."  Pass 26 raised
-    // the cymbal cap from 2 voices to 4 and replaced the voice-count guard
-    // with a ceiling on the TOTAL resonator count, on the stated theory that
-    // "bounding the aggregate is a STRONGER CPU guarantee than the voice
-    // count".  That theory is wrong, and `cym_cpu_probe.cpp` measures by how
-    // much: the FIXED per-voice cost of cymbal_process — pink noise, the two
-    // driver one-poles, the PM block, the DC blocker, the magnitude envelope —
-    // is worth ~124 resonator lanes on its own, i.e. 79 % of a default 32-lane
-    // gong voice.  A resonator-only budget therefore bounded about a fifth of
-    // the real cost and never once bound at the default Rsntrs (4 gong voices
-    // ask for 128 lanes against a 240 ceiling), so pass 26's raise landed as a
-    // near-doubling of the worst case.  Measured 4 voices = 3.7x one voice.
-    //
-    // The budget is now expressed in the same units as the cost: every active
-    // cymbal voice charges kCymVoiceFixedLanes PLUS its resonators.
+    // A voice costs far more than its resonators: the FIXED per-voice work of
+    // cymbal_process — pink noise, the two driver one-poles, the PM block, the
+    // DC blocker, the magnitude envelope — is worth ~124 resonator lanes on its
+    // own (79 % of a 32-lane voice), so a budget that counted resonators only
+    // would bound a fraction of the real cost.  Every active cymbal voice
+    // therefore charges kCymVoiceFixedLanes PLUS its resonators.
     static constexpr int kCymVoiceFixedLanes = 124;
 
-    // The ceiling was the pre-pass-26 worst case — 2 voices at the largest bank
-    // the Rsntrs knob could ask for (60 lanes) = 368 — because that was the
-    // only cymbal CPU level this unit had field evidence for: it ran for 25
-    // passes without an audio crash, and the first report of one came after
-    // pass 26 doubled it.
-    //
-    // 440 (pass 46), for two reasons that are both about the case the old
-    // number was sized against no longer existing:
-    //   1. Repeated strikes used to cost TWO voices, ping-ponging between
-    //      slots.  Since pass 45 a re-strike on the same note re-excites its
-    //      own voice, so the gesture the budget was really protecting against
-    //      now costs ONE voice — measured 29.0 -> 14.1 µs/block.
-    //   2. The gong's bank went back to the density it was ported from (32 ->
-    //      96 lanes), and at 368 that pushed a second DIFFERENTLY-PITCHED gong
-    //      out of the budget entirely: 220 + 124 + 32 = 376 > 368, so distinct
-    //      notes collapsed onto one voice.  That is the defect this whole
-    //      branch started from, reintroduced through the back door.
-    //
-    // The raise is cheap because the bank is nearly free and the VOICE is what
-    // costs: measured on the real processBlock, taking the gong from 32 to 96
-    // lanes moves one voice 13,990 -> 14,345 ns/block (+2.5 %), and a second
-    // full voice adds ~2,000 ns.  Two 96-lane gong voices measure ~16.4
-    // µs/block against pass 30's 49.7 µs last-known-good level and 95.6 µs
-    // crash level.  The 2-voice ceiling is unchanged for every preset in the
-    // family — a third voice is still denied (gong 440 + 124 + 32 = 596 > 440;
-    // crash at max density 360 + 124 + 32 = 516 > 440).
+    // The ceiling admits two full voices and denies a third (gong
+    // 440 + 124 + 32 = 596 > 440; crash at max density 360 + 124 + 32 =
+    // 516 > 440), so two DIFFERENTLY-pitched gongs at their full 96-lane bank
+    // always get a voice each.  Repeated strikes on one note cost a single
+    // voice (see the voice policy in NoteOn), so the budget only binds on
+    // different notes.
+    // The bank is nearly free and the VOICE is what costs: measured on the
+    // real processBlock, taking the gong from 32 to 96 lanes moves one voice
+    // 13,990 -> 14,345 ns/block (+2.5 %), and a second full voice adds
+    // ~2,000 ns.  Two 96-lane gong voices measure ~16.4 µs/block, against
+    // ~50 µs/block known to run on the drumlogue and ~96 µs known to
+    // overload it.
     static constexpr int kCymCostBudget = 440;
 
     // Smallest bank that still reads as a cymbal rather than a chord.
@@ -691,14 +599,14 @@ SynthState state;
 
     // Velocity knob curve.  knob = 0 returns the incoming velocity EXACTLY
     // (not approximately — knob_exp2(0) is exactly 1.0), so the default knob
-    // keeps all 40 presets and every render byte-identical.
+    // keeps every preset and every render byte-identical.
     //   knob < 0 → ghost notes: down to x0.19 (velocity 127 lands at ~24)
     //   knob > 0 → wham:        up to x5.28, clamped at kVelWhamMax, so any
     //                           stroke above ~velocity 25 saturates to a
     //                           full-force hit no matter what the step stores.
-    // Velocity is the unit's whole dynamics axis — it drives mallet stiffness,
-    // wire mix/decay, boom weight, cymbal drive and the kernel impulse — so
-    // biasing it here, once, gives all of that for free on every engine.
+    // Velocity is the unit's whole dynamics axis — it drives the stick, the
+    // noise drivers and the ring — so biasing it here, once, carries through
+    // all of it.
     inline float vel_bias_apply(float vel_norm) const {
         if (m_vel_bias == 0.0f) return vel_norm;
         const float scaled = vel_norm * knob_exp2(2.4f * m_vel_bias);
@@ -712,43 +620,24 @@ SynthState state;
         // The Velocity knob biases the strike ONCE, here, before either engine
         // path reads it (see vel_bias_apply).
         const float vel_norm = vel_bias_apply((float)velocity * 0.007874015f);
-        // ENGINE_CYMBAL voice policy: the cymbal cap (the Poly knob) bounds the
-        // simultaneous cymbal voices.  Below the cap a silent slot is used; at
-        // the cap a ringing voice must be stolen.
+        // Voice policy: the Poly knob caps the simultaneous cymbal voices.  Below
+        // the cap a silent slot is used; at the cap a ringing voice is stolen.
         //
-        // HW: "multiple gong hits are not stacking correctly."  The old rule —
-        // steal the smallest magEnv — inverted itself on every slow-swelling
-        // cymbal.  magEnv is a ~10 ms one-pole of |out| that starts at 0, and a
-        // gong's driver takes lowAttackSec = 0.25 s to open, so for the first
-        // third of a second the NEWEST hit is by far the quietest voice in the
-        // bank.  A second gong struck while the first was still blooming
-        // therefore killed itself on the third strike, and repeated hits ping-
-        // ponged between two slots instead of accumulating.  Two fixes:
-        //   1. voices younger than kCymStealProtectSec are off-limits (they are
-        //      still swelling, i.e. the loudest thing about to happen);
-        //   2. only genuinely faded tails are candidates; if every voice is
-        //      still young the OLDEST one goes, never the one just struck.
+        // A re-strike ON THE SAME NOTE re-excites its own voice: a gong is ONE
+        // piece of metal, and striking it again puts more energy into the ring
+        // that is already there (cymbal_note_on's retainRing path carries the
+        // ring, the driver envelopes and the noise bed across the strike).  Only a
+        // DIFFERENT note — a different-sized instrument — asks for a slot of its
+        // own, so repeated strikes cost one voice and do not ping-pong between
+        // slots.
         //
-        // HW AGAIN, after both of those: "multiple hits still do not stack
-        // correctly."  They did not, and the ledger says why — 8 gong strikes
-        // 300 ms apart allocate slot 0, slot 1, then 0, 1, 0, 1, 0, 1.  Two
-        // voices at the default density cost 2 x (124 + 32) = 312 of the 368
-        // lane budget, so the third strike can never afford a slot and steals;
-        // with every voice inside the 0.6 s protect window it steals the
-        // OLDEST, which is the one two strikes back.  Every strike from the
-        // third on therefore lands on top of a ring, alternating, for ever.
-        //
-        // The missing rule is the one ENGINE_KS already has for a re-plucked
-        // string, and it is the same physics: a gong is ONE piece of metal.
-        // Striking it again does not produce a second gong, it puts more
-        // energy into the one that is already ringing — which is precisely
-        // what cymbal_note_on's retainRing path now does properly (the ring,
-        // the driver envelopes and the noise bed all carry across the strike).
-        // So a re-strike ON THE SAME NOTE re-excites its own voice, and only a
-        // DIFFERENT note — a different-sized instrument — asks for a slot of
-        // its own.  Repeated strikes then cost ONE voice instead of two, which
-        // is also why the budget stops binding on exactly the gesture that
-        // used to break it.
+        // Stealing never takes the voice just struck.  magEnv is a ~10 ms one-pole
+        // of |out| that starts at 0, and a gong's driver takes lowAttackSec =
+        // 0.25 s to open, so a newly struck slow-swelling cymbal is the QUIETEST
+        // voice in the bank while it is about to be the loudest.  So:
+        //   1. voices younger than kCymStealProtectSec are off-limits;
+        //   2. only genuinely faded tails are candidates; if every voice is still
+        //      young the OLDEST one goes.
         {
             const int cap = (int)m_poly;
             const uint32_t protect =
@@ -763,8 +652,8 @@ SynthState state;
                     ++active;
                     busy_cost += kCymVoiceFixedLanes + (int)cv.cymbal.resCount;
                     // fade_mul < 1 = a voice the PREVIOUS preset left ringing
-                    // and that LoadPreset is fading out (pass 28).  It is not
-                    // this preset's plate, so it must not be re-excited — that
+                    // and that LoadPreset is fading out.  It is not this
+                    // preset's plate, so it must not be re-excited — that
                     // would cancel its fade and build the new preset's bank on
                     // top of the old one's ring.
                     if (same < 0 && cv.current_note == note &&
@@ -846,46 +735,31 @@ SynthState state;
                     ref_note = 60;
                     break;
                 case k_Gong:
-                    // hfTilt stays 0 here, and pass 46 put it back after pass
-                    // 45 set it to 2.4.  Worth the space, because the mistake
-                    // is instructive: pass 45 called a 190 Hz centroid with
-                    // nothing above 3 kHz "objectively wrong" on the strength
-                    // of two written notes in this repo, having no recording to
-                    // check against (samples/ was gitignored — see
-                    // samples/README.md).  The recording says otherwise.
-                    // Chinese-Gong.wav, the reference this preset is named
-                    // after, measures a 196 Hz power centroid with 0.0 % of its
-                    // energy above 3 kHz — i.e. the render pass 45 "fixed" was
-                    // already a close match for it, and the tilt moved the
-                    // preset onto the OTHER gong in samples/ (Gong-long-G#.wav,
-                    // centroid 2473 Hz, a different instrument).  On refcmp's
-                    // metric the sustain was right before and wrong after:
-                    // reference 815 Hz, pre-45 728 Hz, pass-45 3225 Hz.
+                    // hfTilt stays 0 on the gong.  Its reference recording
+                    // (Chinese-Gong.wav) measures a 196 Hz power centroid with
+                    // 0.0 % of its energy above 3 kHz, which the flat bank
+                    // already matches (sustain centroid: reference 815 Hz,
+                    // flat bank 728 Hz, tilt 2.4 → 3225 Hz — a different,
+                    // much brighter gong).
                     //
-                    // What IS off is the attack — reference 1147 Hz early
-                    // against 437 rendered — and hfTilt cannot buy it.  A
-                    // static per-lane gain moves both windows together, and
-                    // nothing in the bank's decay separates them either (see
-                    // the rejected hfDamp note in dsp_core.h).  Attack
-                    // brightness has to come from the STRIKE — stickLevel,
-                    // thwackSec, the shimmer band — not from a bank-wide tilt.
-                    // Mterl still moves the tilt either way from here.
+                    // What a flat bank misses is the attack — reference
+                    // 1147 Hz early against 437 rendered — and hfTilt cannot
+                    // buy it: a static per-lane gain moves both windows
+                    // together, and nothing in the bank's decay separates them
+                    // either (see the rejected hfDamp note in dsp_core.h).
+                    // Attack brightness has to come from the STRIKE —
+                    // stickLevel, thwackSec, the shimmer band.  Mterl still
+                    // moves the tilt either way from here.
                     //
-                    // 240 is NOT a bank size — it is the prototype's bank size
-                    // divided by the shipped density.  `resonators` is the count
-                    // at 100 % `Partls`, and the knob only spans 25-60 %, so the
-                    // 80 this used to hold rendered 80 x 0.40 = 32 lanes against
-                    // `cymbal_synthesis`'s 96.  The port has been running the
-                    // gong at a THIRD of the density it was ported from since
-                    // the port was written; 240 x 0.40 = 96 restores it at the
-                    // shipped knob position.  Measured against the prototype:
-                    // 300 Hz-1 kHz 5.9 % -> 9.6 % (prototype 15.0 %), power
-                    // centroid 203 -> 222 Hz (prototype 216), refcmp `late`
-                    // 423 -> 590 Hz (prototype 699).  Above `Partls` 4 the
-                    // request exceeds kCymbalMaxResonators and flattens at 112 —
-                    // a real plateau on the top three knob positions, accepted
-                    // because raising the cap costs .bss on all four voices for
-                    // a range nothing asks for.
+                    // 240 is NOT a bank size: `resonators` is the count at
+                    // 100 % `Partls`, and the knob only spans 25-60 %, so
+                    // 240 x 0.40 = 96 lanes at the shipped knob position — the
+                    // density of the cymbal_synthesis prototype the voice was
+                    // ported from (fewer lanes thin the 300 Hz-1 kHz body).
+                    // Above `Partls` 4 the request exceeds
+                    // kCymbalMaxResonators and flattens at 112: a plateau on
+                    // the top three knob positions, accepted because raising
+                    // the cap costs memory on every voice.
                     cc = { m_cym_gong_hz, 16, 240, 150.f, 14000.f, 2.4f,
                            0.25f, 1.70f, 0.50f, 1.20f, 0.020f, 0.32f, 0.035f,
                            0.126f, 0.22f, 0.010f, 0.15f };
@@ -915,16 +789,12 @@ SynthState state;
                     break;
                 default: break;
             }
-            // Body-brightness fix (REALISM_REVIEW item 1): Cymbal/Ride/RidBel
-            // measured ~1-1.4 kHz body centroid vs ~6-7 kHz in the reference
-            // samples — the flat-gain bank under the pink (−3 dB/oct) driver
-            // reads dark/tonal.  hfTilt=1 counters the driver tilt exactly.
-            // HHat-O ("do not break"), Gong and Splash keep the legacy flat
-            // bank (hfTilt stays 0).  The gong's place in that list is now
-            // backed by its recording rather than by the phrase "deliberately
-            // tonal": Chinese-Gong.wav measures a 196 Hz power centroid with
-            // 0.0 % above 3 kHz, so a flat bank is what it should have.  Read
-            // the long note on the gong's config above before changing it.
+            // Body brightness: under the pink (−3 dB/oct) driver a flat-gain bank
+            // makes Cymbal / Ride / RidBel read dark and tonal (~1-1.4 kHz body
+            // centroid against ~6-7 kHz in the reference recordings); hfTilt = 1
+            // counters the driver tilt exactly.  HHat-O, Gong and Splash keep the flat
+            // bank (hfTilt 0): HHat-O and Splash are approved on hardware as they are,
+            // and the gong's recording asks for it (see the note on its config above).
             if (m_preset_idx == k_Cymbal || m_preset_idx == k_Ride ||
                 m_preset_idx == k_RideBell) {
                 // Over-whiten past 1.0: the thwack burst and swept one-pole park
@@ -965,8 +835,7 @@ SynthState state;
                 cc.resonators = (uint16_t)rcount;
                 // Note transposes the whole anchor spectrum like a smaller or
                 // larger cymbal (2^(Δsemitones/12), anchored at the shipped
-                // default note so the stock sound is unchanged) — previously
-                // the note only reseeded the jitter, which read as "distortion".
+                // default note so the stock sound is unchanged).
                 float pitch_ratio = exp2f((float)((int)note - ref_note) * (1.0f / 12.0f));
                 // VlMllRes scales the stick hit ("tang"): shipped value is 0 for
                 // all cymbal presets (=> x1.0 — REFERENCE-ANCHORED); positive
@@ -980,7 +849,7 @@ SynthState state;
                     cc.lowAttackSec *= knob_exp2(-1.0f * hit_mod);   // up to 2x snappier
                     cc.thwackSec    *= 1.0f + 0.6f * hit_mod;    // longer ping = "tang"
                 }
-                // VlMllStf → stick STIFFNESS (was inert on cymbals): a harder
+                // VlMllStf → stick STIFFNESS: a harder
                 // tip bites faster, the contact ping gets shorter and the
                 // strike brighter; a soft felt tip rounds all three off.
                 // Anchored at the shipped VlMllStf (0 on every cymbal preset)
@@ -991,16 +860,13 @@ SynthState state;
                     cc.thwackSec    *= fmaxf(0.40f, fminf(2.50f, knob_exp2(-0.8f * stif_d)));
                     cc.hfTilt        = fmaxf(0.0f, fminf(4.0f, cc.hfTilt + 0.8f * stif_d));
                 }
-                // ── Cymbal knob-design (REFERENCE-ANCHORED) ──────────────────
-                // The dense-resonator port bypasses the modal bank, so Dkay,
-                // Mterl, HitPos, Rel, Inharm and TubRad were ALL dead on the
-                // cymbal family.  Map each to a natural property of the metal,
-                // anchored at the shipped knob value so the calibrated cymbals
-                // render bit-identical and only knob movement bites.
-                // Depth pass (July 2026, HW: "parameters are too subtle").  Every
-                // coefficient below was widened and its clamp opened; all remain
-                // anchored at Δ=0, so the 40 shipped presets are untouched and
-                // only the travel either side of the shipped value grew.
+                // ── Cymbal knob design (REFERENCE-ANCHORED) ──────────────────────
+                // The cymbal has no modal bank, so Dkay, Mterl, HitPos, Rel, Inharm and
+                // TubRad each map to a natural property of the metal instead, anchored at
+                // the shipped knob value so the calibrated cymbals render unchanged and
+                // only knob movement bites.  The depths are wide on purpose (a subtle
+                // cymbal knob reads as a dead one); every mapping is still exactly
+                // neutral at Δ = 0.
                 {
                     // Dkay → overall ring decay length (body + sizzle together).
                     float cd_dk = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramDkay] * 0.005f));
@@ -1015,12 +881,10 @@ SynthState state;
                     cc.highDecaySec *= fmaxf(0.15f, fminf(9.0f, dscale * rscale));
                     // Inharm → jitter spread (beating density / shimmer thickness).
                     float cd_ih = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramInharm] * 0.01f));
-                    // Deliberately NOT widened with the rest of this pass.  Jitter
-                    // is the one cymbal knob already past its useful depth: at 2.4
-                    // and 3.0 the detune smears wide enough that the bank's high
-                    // modes pile onto the fLo/Nyquist clamps, and the measured
-                    // HF-band swing across the knob SHRANK (audit: ok -> weak).
-                    // 2.0 is the setting that buys the most audible spread.
+                    // Jitter is NOT as wide as the others: it is already at its useful depth.
+                    // At 2.4 and 3.0 the detune smears the bank's high modes onto the
+                    // fLo/Nyquist clamps and the measured HF-band swing across the knob
+                    // SHRINKS; 2.0 buys the most audible spread.
                     cc.jitterSemis = fmaxf(0.0f, fminf(6.0f,
                                      cc.jitterSemis * knob_exp2(2.0f * (cd_ih - m_modal_inharm_ref))));
                     // Mterl → metal brightness (hard bronze sustains highs; soft
@@ -1034,8 +898,8 @@ SynthState state;
                     // HitPos → strike locus: toward the BELL (high) = more stick
                     // ping and pitched ring, less wash; toward the EDGE (low) =
                     // more broadband wash, softer ping.
-                    // fmaxf(-1.0f, …): anchored consumer, so it must follow the
-                    // knob below centre now that HitPos is bipolar (pass 39).
+                    // fmaxf(-1.0f, …): HitPos is bipolar, so the anchored mapping
+                    // must follow the knob below centre too.
                     float cd_hp = fmaxf(-1.0f, fminf(1.0f, (float)m_params[k_paramHitPos] * 0.01f));
                     float d_chp = cd_hp - m_modal_hitpos_ref;
                     if (d_chp < -0.001f || d_chp > 0.001f) {
@@ -1054,9 +918,8 @@ SynthState state;
                         pitch_ratio *= fmaxf(0.35f, fminf(2.8f, knob_exp2(-1.2f * d_ctr)));
                         cc.shimmerLevel = fmaxf(0.0f, cc.shimmerLevel * knob_exp2(1.3f * d_ctr));
                     }
-                    // MlltRes → RING PRESENCE (metal vs air).  Was completely
-                    // inert on the cymbal family (audit: "NO EFFECT") because
-                    // the dense-resonator port has no mallet exciter at all.
+                    // MlltRes → RING PRESENCE (metal vs air) — the cymbal has
+                    // no mallet exciter for it to set.
                     // Up = the bank speaks over the noise bed (a gong that
                     // *rings*); down = the wash dominates (all air, no metal).
                     float cd_mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
@@ -1085,41 +948,31 @@ SynthState state;
                                pitch_ratio, seed, cym_still_ringing);
 
                 // ── Cymbal family level calibration ────────────────────────
-                // HW (pass 29): "cymbal: sound is very quiet".  Measured over a
-                // common 250 ms window (full-render RMS is not comparable —
-                // render lengths run 1-20 s), the ENGINE_CYMBAL presets sat
-                // 11-18 dB under the mean of every other preset in the unit:
+                // Measured over a common 250 ms window (full-render RMS is not
+                // comparable — render lengths run 1-20 s), the cymbals sit well
+                // under a struck drum at the same velocity:
                 //
                 //   Cymbal -18.3 dB   Ride -17.3 dB   HHat-O -17.9 dB
                 //   RidBel -14.7 dB   Splash -11.3 dB   Gong +3.6 dB
                 //
-                // This is NOT a pass-26/29 regression — the same presets
-                // measured the same before both (Cymbal 0.0080 -> 0.0099 RMS).
-                // It became audible because pass 29's master change lifts
-                // transient-dense presets ~3.7 dB but a decaying wash barely at
-                // all, so everything else moved up around them.  So it is a
-                // straight voicing miscalibration, corrected here.
+                // (against the mean of the original 40-preset brachetti kit), so
+                // each preset gets a straight make-up gain here.
                 //
                 // velocityGain is the ONLY uniform output scaler on this voice:
                 // scaling the config levels instead would not be uniform,
                 // because stickLevel feeds both the resonator drive and the
                 // direct tap and would land on the thwack squared.
                 //
-                // HHat-O is equally quiet by measurement but is flagged
-                // "HW-approved, do not break" in CLAUDE.md, so its level is
-                // deliberately NOT touched here — raise it only on an explicit
-                // listen.
+                // HHat-O is equally quiet by measurement, but its level is
+                // approved on hardware as it is, so it is deliberately NOT
+                // touched here — raise it only on an explicit listen.
                 //
-                // Gong 1.28, and it is entirely make-up gain for two changes
-                // that each removed real level without changing the voicing:
-                // the subsonic guard (energy that was inaudible as pitch but WAS
-                // feeding the master limiter) and the denser bank (1/sqrt(N)
-                // normalisation spreads the same energy over 96 lanes instead
-                // of 32).  Together 1.4 dB.  1.28 lands rms 0.1737 and T60
-                // 4.99 s against the pre-pass-45 build's 0.1820 and 4.98 s —
-                // i.e. the same length, 0.4 dB down.  1.40 matches the level
-                // exactly but stretches T60 to 5.22 s by pushing the limiter
-                // harder, and length is the thing this preset can least afford.
+                // Gong 1.28 is make-up gain for the subsonic drive guard and
+                // the dense bank (1/sqrt(N) normalisation over 96 lanes),
+                // which together take 1.4 dB without changing the voicing.
+                // 1.40 would restore the level exactly, but it pushes the
+                // limiter harder and stretches the T60 from 4.99 s to
+                // 5.22 s, and length is what this preset can least afford.
                 float cym_trim = 1.0f;
                 switch (m_preset_idx) {
                     case k_Cymbal:   cym_trim = 3.2f; break;
@@ -1146,10 +999,9 @@ SynthState state;
         // Pitch (or a Program change, which moves the root) can move between
         // a held gate's on and off — a motion-sequenced Pitch, a long gate
         // time — and NoteOff(m_ui_note) then matched nothing: the struck voice
-        // was never released (measured: a Koto voice rang 33.9 s instead of
-        // 2.9 s after Pitch +5 under a held gate).  The drumlogue's own
+        // was never released and rang out its whole tail.  The drumlogue's own
         // same-tick gate cannot move it, so every same-tick render is
-        // unchanged.  T44f.
+        // unchanged.
         NoteOff(m_gate_note);
 
     }
@@ -1164,30 +1016,13 @@ SynthState state;
     }
 
     inline void PitchBend(uint16_t bend) {
-        // Pitch bend moved only the original's Karplus-Strong delay lines;
-        // a cymbal is transposed by its note (Pitch), not bent.
+        // Pitch bend: nothing reads it — a cymbal is transposed by its note
+        // (Pitch), not bent.
         (void)bend;
     }
 
     // ==============================================================================
-    // 5. The Core Physics (Executed per-voice, per-sample)
-    // ==============================================================================
-
-    // ==============================================================================
-    // 6. The Master Audio Loop (Called by Drumlogue OS)
-    // ==============================================================================
-    //
-    // RENDER_STAGE: Incremental isolation for hardware silence debugging.
-    // Set in config.mk:  UDEFS += -DRENDER_STAGE=1
-    //
-    //   Stage 1 — Raw exciter only (mallet impulse / PCM sample, no waveguide, no env, no FX)
-    //             If silent: gate callbacks or voice activation are broken.
-    //   Stage 2 — + Waveguide resonators
-    //             If silent: delay_length or feedback_gain is 0 on ARM.
-    //   Stage 3 — + master_env fade + squelch (Phase 18 fix)
-    //             If silent: pre-advance fix not working on ARM; revert to exciter-only.
-    //   Stage 4 — + Tone EQ + master filter + overdrive (full render, default)
-    //             If silent: tone or FX path issue.
+    // 5. The Master Audio Loop (Called by Drumlogue OS)
     // ==============================================================================
 
     inline void processBlock(float* __restrict main_out, size_t frames) {
@@ -1278,61 +1113,25 @@ SynthState state;
                 main_out[l] = main_out[l] / (1.0f + 0.35f * fabsf(main_out[l]));
             }
         }
-        // NOTE: there is deliberately NO hard clip of the voice bus here.
-        // A `clamp(main_out, +-0.99)` used to sit at this point, left over from
-        // the debug render stages (where the raw mallet impulse, ~3-4x full
-        // scale, could reach the DAC without a master stage behind it).  In the
-        // shipping path Stage 4b ALWAYS runs and bounds the output to
-        // kMasterLimCeil by construction, so the clamp protected nothing and
-        // cost a great deal:
-        //   - it is a hard clipper, and the kick presets sit on top of it
-        //     permanently (Kick2's bus is pinned at 0.99 for most of the hit),
-        //     which is a much larger distortion source than anything the
-        //     master curve does;
-        //   - because the bus was already pinned, ANY layer added underneath it
-        //     was invisible.  That is why VlMllRes measured 0.99x on Kick2 and
-        //     "thump is not really increased" on hardware: the thump layer was
-        //     being armed correctly (verified: thump_env 1.6 at 115 Hz on all
-        //     three kicks) and then clipped straight back off.
-        // The master limiter below sees the true bus level instead and rides it
-        // down smoothly, so added layers change the sound again.
-        // ── Stage 4b: Master FX (filter + overdrive + peak limiter) ───────
-        // The output stage used to be x / (1 + |x|), which divides EVERY
-        // sample, not just the ones that need limiting: a unity-amplitude bus
-        // left the unit at 0.50 and a 0.3 signal at 0.23.  That is where the
-        // unit's ~6 dB of missing level went — measured across the 40 shipped
-        // presets, peaks sat at 0.50-0.74 and NOTHING reached the 0.99 ceiling.
-        // It also squashed the strike crest.  This is a transparent limiter:
-        // unity below kMasterLimThr, tanh knee above, asymptotic to 1.0.
-        // Both channels carry the same signal (mix_r was already a copy of the
-        // filtered left), so limit once and write it twice.
+        // NOTE: there is deliberately NO hard clip of the voice bus here: Stage 4b
+        // always runs and bounds the output to kMasterLimCeil by construction, and a
+        // clamp in front of it would flatten the loudest presets and hide any layer
+        // added underneath them.
+        // ── Stage 4b: Master FX (filter + drive + peak limiter) ───────────
+        // A transparent limiter: unity below kMasterLimThr, a soft knee above,
+        // asymptotic to the ceiling.  Both channels carry the same signal, so limit
+        // once and write it twice.
         // ── Why a gain ENVELOPE and not a waveshaper ───────────────────────
-        // HW: "boom for kicks was declared perfect, but with long decays it
-        // sounds a bit brittle or distorted."  Pass 29's stage applied the
-        // curve below to every SAMPLE, which is a waveshaper: the gain changes
-        // within a single cycle, and on a ~45-90 Hz kick boom that manufactures
-        // high-order harmonics.  Measured on 808Sub at Dkay+Rel max, the 4th
-        // harmonic sat at -21.5 dB under the pre-29 x/(1+|x|) master and at
-        // -7.4 dB after — a 14 dB rise, worst on long decays because the
-        // sustained part of the boom stays under compression longest.
-        //
-        // The presets deliberately drive this stage hard (808Sub arrives at
-        // ~4.5x full scale), so softening the knee cannot help: the waveform
-        // sits deep in the compressive region, nowhere near the corner.  That
-        // was measured too — sweeping a smoothstep knee of 0 / 0.10 / 0.20 /
-        // 0.30 / 0.44 moved H4 by 0.2 dB.  Do not re-try it.
-        //
-        // Instead the peak is tracked with an instant-attack, slow-release
-        // follower and ONE gain is applied per cycle.  Because master_lim_env
-        // only ever jumps up and decays down, it is >= |x| at every sample, so
-        // out = x * (limit(env)/env) is still bounded by kMasterLimCeil BY
-        // CONSTRUCTION — the brickwall stays pure safety — while the waveform
-        // shape inside a cycle is preserved and the harmonics are not created.
-        // One master-stage gain, hoisted: the Gain knob's drive times the
-        // preset's calibrated output trim.  Neither can change inside a block
-        // (setParameter runs on the UI thread and the deferred drive/trim are
-        // released above), so this is also one multiply per sample instead of
-        // two.
+        // A curve applied to every sample changes the gain within a cycle and
+        // manufactures harmonics on low tones; softening the knee cannot help when
+        // the presets drive the stage hard.  So the peak is tracked by an
+        // instant-attack, slow-release follower and ONE gain is applied per cycle:
+        // master_lim_env only jumps up and decays down, so it is >= |x| at every
+        // sample and out = x · limit(env)/env stays bounded by kMasterLimCeil BY
+        // CONSTRUCTION (the brickwall is pure safety), while the waveform inside a
+        // cycle is preserved.
+        // One master-stage gain, hoisted: the Gain knob's drive times the preset's
+        // output trim (neither changes inside a block).
         const float stage_gain = state.master_drive * m_out_trim;
         for (size_t i = 0; i < frames; ++i) {
             float x = state.master_filter.process(main_out[i * 2]);
@@ -1355,9 +1154,8 @@ SynthState state;
                 // 0.333, -3.5 dB, and the strike crest with it), while
                 // 0.85 + 0.15*fastertanhf(...) needs a clamp — fastertanhf is
                 // a rational approximation asymptotic to ~1.168, not 1.0 — and
-                // clamping it just relocates the brickwall: it pinned 23034
-                // samples dead flat across the 40 presets, including an 11 ms
-                // plateau on the Gong, where the old curve pinned none.
+                // clamping it just relocates the brickwall: it pins thousands of
+                // samples dead flat, where this curve pins none.
                 const float over = a - kMasterLimThr;
                 const float y =
                     kMasterLimThr + kMasterLimSpan * over / (over + kMasterLimSpan);
@@ -1398,7 +1196,7 @@ private:
     // derived rather than stored on its own so neither input can go stale
     // against it: LoadPreset moves the root, setParameter moves the offset,
     // and both re-derive through update_played_note().
-    uint8_t m_root_note   = 36;   // preset 0 (Kick2) until LoadPreset runs
+    uint8_t m_root_note   = 36;   // set by LoadPreset (Init loads preset 0)
     int8_t  m_pitch_semis = 0;    // Pitch knob, ±kPitchRangeSemis
     uint8_t m_ui_note     = 36;
     uint8_t m_gate_note   = 36;   // the note the last GateOn struck
@@ -1422,10 +1220,10 @@ private:
         state.master_filter.set_coeffs(m_master_cutoff, res_val, default_sample_rate);
     }
 
-    // The knobs LoadPreset does NOT write — performance and master controls
-    // the host owns (pass 48) — back to their header.c defaults.  Called once
-    // from Init().  MUST track header.c's `.init` fields for these slots; C
-    // cannot assert across the two files, so they are listed here explicitly.
+    // The knobs LoadPreset does NOT write — performance and master controls the
+    // host owns — back to their header.c defaults.  Called once from Init().
+    // MUST track header.c's `.init` fields for these slots (C cannot assert
+    // across the two files).
     inline void seed_performance_params() {
         static const int16_t kDefaults[][2] = {
             { k_paramPitch,    0    },

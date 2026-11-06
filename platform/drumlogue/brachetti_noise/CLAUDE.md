@@ -1,8 +1,9 @@
 # Brachetti Noise – Session Brief
 
-`brachetti_noise` (`BrcNoise` on the drumlogue) is one of the nine per-model units
-split out of the 40-preset `../brachetti` unit (November 2026).  It holds
-the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-C), and nothing else.
+`brachetti_noise` (`BrcNoise` on the drumlogue) is one of the eight per-family
+units split out of the 40-preset `../brachetti` unit.  It holds the pure-noise
+voices: Clap, Shaker and the closed hi-hat (HHat-C), and nothing else.
+README.md lists the presets and what every knob does.
 
 ## Before changing anything
 
@@ -15,22 +16,27 @@ the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-C), and nothing 
   Once you change the voicing on purpose it will start to differ — that is
   expected, and the listing then names exactly the presets and knobs that
   moved.  Say so in the commit.
-- **History lives in `../brachetti/CLAUDE.md` and `../brachetti/README.md`.**
-  The code is the original's minus what this model never reaches; comments,
-  identifiers (`m_modal_*_ref`, `k_param*`) and the REFERENCE-ANCHOR pattern
-  are unchanged, so every pass entry there still applies to the code here.
-  `k_paramLowCut` is `k_paramCutoff` and `k_paramCymPoly` is `k_paramPoly`.
 - **This unit is independent.**  A fix that also applies to the original or a
   sibling unit must be made there separately.
+- **REFERENCE ANCHORS.**  LoadPreset captures each knob's shipped value into
+  an `m_*_ref`; every knob mapping is a function of the DELTA from it, built so
+  the delta 0 gives exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 —
+  `fasterpow2f(0)` is not).  A new mapping must be anchored the same way, or
+  the presets move.
 - **Knob ↔ header.c:** `ParamIndex` must match `header.c` slot for slot (a
   static_assert checks the count; the order is on you), header defaults must
   equal preset 0's row, and `seed_performance_params()` must match the
-  defaults of the knobs LoadPreset skips — the same rules as the original.
-
-- **Known difference:** re-selecting Shaker while it rings does not bring
-  back the original's modal "tok" (README, "Known difference").
-- Dkay has no knob here; the per-preset `Dky` column only sets the AllNoteOff
-  fade rate (`apply_release_rate`).
+  defaults of the knobs LoadPreset skips (Poly, Velocity, VlMllRes, Tone,
+  Cutoff, Resnc — static_asserts in LoadPreset pin their table columns).
+- **Exact math for coefficients.**  Tuning and decay coefficients use exact
+  `expf` / `cosf` / `exp2f`: the `faster*` approximations in float_math.h are
+  badly wrong for small arguments and shift low mode frequencies.
+- **Memory layout.**  No user-defined constructors: the global synth object
+  must stay constant-initialised (it then loads from the ELF instead of being
+  built at run time).  Check `arm_size.sh` after adding members or tables.
+- **Known difference:** re-selecting Shaker while it rings (README).
+- There is no Dkay knob; the per-preset `Dky` column only sets how fast
+  AllNoteOff fades a voice (`apply_release_rate`).
 
 ## Measure, do not assume
 

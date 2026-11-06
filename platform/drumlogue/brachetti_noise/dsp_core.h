@@ -28,7 +28,7 @@ struct ExciterState {
 
     FastNoise    noise_gen;           // seed=2463534242 (non-zero) → forces .data
     FastEnvelope noise_env;           // attack_rate=0.01f (non-zero)
-    FastEnvelope noise_env_hi;        // short high-band burst for snare/hat click
+    FastEnvelope noise_env_hi;        // short high-band burst (the click)
     FastEnvelope master_env;          // Optional: To choke the whole voice on GateOff
 
     // Noise Burst Data
@@ -69,9 +69,9 @@ struct VoiceState {
 
     // Preset-change fade.  A voice cannot survive a preset change — the new
     // preset overwrites the shared per-voice DSP coefficients — but cutting it
-    // dead clicks, and letting it run re-excited it (a cymbal voice holds an
-    // unstarted exciter, so the legacy path fired a whole unplayed attack).
-    // So it fades out under its OWN engine over ~10 ms and is then reclaimed.
+    // dead clicks, and letting it run plays the old voice through the new
+    // preset's coefficients.  So it fades out over ~10 ms and is then
+    // reclaimed.
     // fade_mul stays exactly 1.0f in normal play and the fade block is skipped
     // entirely, so shipped renders are bit-identical.
     float fade      = 1.0f;   // ← non-zero
@@ -138,5 +138,8 @@ struct SynthState {
 
     FastSVF master_filter;
     // NO user constructor — DMIs only so globals go to .data, not .bss.
-    // See WaveguideState comment above for the full explanation.
+    // A user constructor would make the global synth object dynamically
+    // initialised, and GCC then places it in .bss (zero-filled at load);
+    // with default member initialisers only it is constant-initialised and
+    // loaded straight from the ELF.
 };

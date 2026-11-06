@@ -38,7 +38,6 @@ FAMILIES = {
     "plate":  ["Cowbel", "Trngle", "BelTre", "Tick"],
     "cymbal": ["Cymbal", "Gong", "HHat-O", "Ride", "RidBel", "Splash"],
     "noise":  ["Clap", "Shaker", "HHat-C"],
-    "string": ["Koto"],
 }
 
 CONTEXTS = [
@@ -96,7 +95,7 @@ def main():
         for k in rnd.sample(knobs, 8):
             lo, hi, _ = params[k]
             if k == "Partls":
-                hi = min(hi, 4)      # 5-7 are the ResA/ResB edit selector
+                hi = min(hi, 4)      # in the original 5-7 select a string resonator, not a count
             ctx.append((k, rnd.randint(lo, hi)))
         contexts.append(("rand%d" % i, ctx))
 

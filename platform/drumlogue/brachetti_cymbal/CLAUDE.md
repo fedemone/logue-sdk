@@ -1,8 +1,9 @@
 # Brachetti Cymbal – Session Brief
 
-`brachetti_cymbal` (`BrcCymbal` on the drumlogue) is one of the nine per-model units
-split out of the 40-preset `../brachetti` unit (November 2026).  It holds
-the dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, RidBel and Splash, and nothing else.
+`brachetti_cymbal` (`BrcCymbal` on the drumlogue) is one of the eight per-
+family units split out of the 40-preset `../brachetti` unit.  It holds the
+dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, RidBel and Splash,
+and nothing else.  README.md lists the presets and what every knob does.
 
 ## Before changing anything
 
@@ -15,21 +16,30 @@ the dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, RidBel and Splash
   Once you change the voicing on purpose it will start to differ — that is
   expected, and the listing then names exactly the presets and knobs that
   moved.  Say so in the commit.
-- **History lives in `../brachetti/CLAUDE.md` and `../brachetti/README.md`.**
-  The code is the original's minus what this model never reaches; comments,
-  identifiers (`m_modal_*_ref`, `k_param*`) and the REFERENCE-ANCHOR pattern
-  are unchanged, so every pass entry there still applies to the code here.
-  `k_paramLowCut` is `k_paramCutoff` and `k_paramCymPoly` is `k_paramPoly`.
 - **This unit is independent.**  A fix that also applies to the original or a
   sibling unit must be made there separately.
+- **REFERENCE ANCHORS.**  LoadPreset captures each knob's shipped value into
+  an `m_*_ref`; every knob mapping is a function of the DELTA from it, built so
+  the delta 0 gives exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 —
+  `fasterpow2f(0)` is not).  A new mapping must be anchored the same way, or
+  the presets move.
 - **Knob ↔ header.c:** `ParamIndex` must match `header.c` slot for slot (a
   static_assert checks the count; the order is on you), header defaults must
   equal preset 0's row, and `seed_performance_params()` must match the
-  defaults of the knobs LoadPreset skips — the same rules as the original.
-
-- Partls is the resonator-bank density (0-7).  The CPU budget
-  (`kCymCostBudget`) caps simultaneous cymbal voices at two — read the
-  original CLAUDE.md passes 29-30 and 45-46 before touching it.
+  defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity, VlMllRes,
+  Tone, Cutoff, Resnc — static_asserts in LoadPreset pin their table columns).
+- **Exact math for coefficients.**  Tuning and decay coefficients use exact
+  `expf` / `cosf` / `exp2f`: the `faster*` approximations in float_math.h are
+  badly wrong for small arguments and shift low mode frequencies.
+- **Memory layout.**  No user-defined constructors: the global synth object
+  must stay constant-initialised (it then loads from the ELF instead of being
+  built at run time).  Check `arm_size.sh` after adding members or tables.
+- `Partls` is the resonator-bank density.  The CPU budget
+  (`kCymVoiceFixedLanes`, `kCymCostBudget`) admits two full voices; the
+  measurements behind it are in the comments there — re-measure before raising
+  it.
+- HHat-O and Splash are approved on hardware as voiced (flat bank, HHat-O's
+  level untouched).
 
 ## Measure, do not assume
 

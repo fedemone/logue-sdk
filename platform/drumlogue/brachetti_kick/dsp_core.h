@@ -28,7 +28,7 @@ struct ExciterState {
 
     FastNoise    noise_gen;           // seed=2463534242 (non-zero) → forces .data
     FastEnvelope noise_env;           // attack_rate=0.01f (non-zero)
-    FastEnvelope noise_env_hi;        // short high-band burst for snare/hat click
+    FastEnvelope noise_env_hi;        // short high-band burst (the click)
     FastEnvelope master_env;          // Optional: To choke the whole voice on GateOff
 
     // Noise Burst Data
@@ -69,9 +69,9 @@ struct VoiceState {
 
     // Preset-change fade.  A voice cannot survive a preset change — the new
     // preset overwrites the shared per-voice DSP coefficients — but cutting it
-    // dead clicks, and letting it run re-excited it (a cymbal voice holds an
-    // unstarted exciter, so the legacy path fired a whole unplayed attack).
-    // So it fades out under its OWN engine over ~10 ms and is then reclaimed.
+    // dead clicks, and letting it run plays the old voice through the new
+    // preset's coefficients.  So it fades out over ~10 ms and is then
+    // reclaimed.
     // fade_mul stays exactly 1.0f in normal play and the fade block is skipped
     // entirely, so shipped renders are bit-identical.
     float fade      = 1.0f;   // ← non-zero
@@ -85,7 +85,7 @@ struct VoiceState {
     // Dynamic Energy Squelch (MAV envelope follower, α=0.01, τ≈2ms)
     float mag_env            = 0.0f;
 
-    // Stage-2 pilot modal-bank (up to 6 modes)
+    // Modal bank (up to 6 two-pole modes)
     bool     modal_pilot_enabled = false;
     float    modal_k_1   = 0.0f, modal_k_2 = 0.0f, modal_k_3 = 0.0f;
     float    modal_k_4   = 0.0f, modal_k_5 = 0.0f, modal_k_6 = 0.0f;
@@ -146,12 +146,9 @@ struct VoiceState {
     float onset_env = 1.0f;         // ← non-zero
     float onset_inc = 0.0f;
 
-    // ── Strike transient layer (membrane presets) ────────────────────────────
-    // The modal tail is measurably correct; the remaining perceptual gap is the
-    // broadband ATTACK the modal bank cannot synthesise — the Taiko stick-slap
-    // (ref early centroid ~1.9 kHz) and the Timpani felt-mallet contact.  Layer
-    // a short, velocity-scaled, band-passed noise burst over the modal body.
-    // Difference-of-one-poles bandpass; pure DSP, no samples.
+    // ── Strike transient layer ───────────────────────────────────────────
+    // A short, velocity-scaled, band-passed noise burst (difference-of-one-
+    // poles bandpass): the beater click HitPos raises.
     float trans_env   = 0.0f;   // burst envelope (0 = layer off)
     float trans_decay = 1.0f;   // per-sample decay (T60 ≈ 10-30 ms)
     float trans_gain  = 0.0f;   // output level
@@ -226,7 +223,7 @@ struct VoiceState {
         thump_phase = 0.0f;
         thump_inc = 0.0f;
         thump_decay = 1.0f;
-        // metallic FM modulation (for cymbal and metallic models)
+        // metallic FM modulation
         metal_fm_phase = 0.0f;
         metal_fm_inc = 0.0f;
         metal_fm_env = 0.0f;
@@ -250,23 +247,19 @@ struct VoiceState {
         exciter.noise_hi_lp_state = 0.0f; // updated runtime
     }
 
-    // Stage-2 pilot extensions (CPU-light):
-    // - Modal bank for complex metallic presets (Wodblk/Gong/Cymbal)
-    // - Kick pitch-envelope (delay-length sweep)
-    // - Clarinet reed nonlinearity in exciter path
+    // Modal bank set-up for one strike: up to six two-pole oscillators
+    // (y[n] = k·y[n-1] − y[n-2]) at the given ratios, envelopes scaled by the
+    // velocity, decays from the T60s.
     void init_modal_modes(float ratio2, float ratio3, float ratio4,
                          float t60_1_ms, float t60_2_ms, float t60_3_ms, float t60_4_ms,
                          float mix, float env1, float env2, float env3, float env4,
                          uint8_t mode_count, float ratio5 = 0.0f, float ratio6 = 0.0f,
                          float env5 = 0.0f, float env6 = 0.0f) {
         uint8_t note = current_note;
-        // Exact math here, NOT the faster* approximations.  fastercosfullf has
-        // ~1e-3 absolute error; near w→0 the recovered mode frequency shifts by
-        // δf ≈ δcos/(w·sin w) — at timpani range (80-170 Hz) the intended
-        // 1 : 1.504 : 1.742 : 2.0 spread collapsed to 1 : 1.41 : 1.61 : 1.83
-        // with ~17 Hz mode gaps → slow beating heard on HW as a "rough, not
-        // smooth" low-end reverberation.  Same family of bug as the fasterexpf
-        // T60 failure below; this runs once per NoteOn so accuracy wins.
+        // Exact math here, NOT the faster* approximations: fastercosfullf's ~1e-3
+        // error shifts low mode frequencies (an 80-170 Hz 1 : 1.504 : 1.742 spread
+        // collapses toward 1 : 1.41 : 1.61, and the modes beat).  This runs once per
+        // NoteOn, so accuracy wins.
         float base_f = 440.0f * exp2f(((float)note - 69.0f) * 0.08333333333f); // 1/12
         if (base_f < 20.0f) base_f = 20.0f;
         float f1 = fminf(base_f, 0.45f * k_dsp_sample_rate);
@@ -274,7 +267,7 @@ struct VoiceState {
         float f3 = fminf(base_f * ratio3, 0.45f * k_dsp_sample_rate);
         float f4 = fminf(base_f * ratio4, 0.45f * k_dsp_sample_rate);
         // Modes 5/6: use explicit ratios when provided (physical plate theory),
-        // otherwise fall back to legacy formula (ratio4 × 1.31 / 1.62).
+        // otherwise derive them from mode 4 (ratio4 × 1.31 / 1.62).
         float f5 = fminf(base_f * (ratio5 > 0.0f ? ratio5 : ratio4 * 1.31f), 0.45f * k_dsp_sample_rate);
         float f6 = fminf(base_f * (ratio6 > 0.0f ? ratio6 : ratio4 * 1.62f), 0.45f * k_dsp_sample_rate);
         float w1 = (M_TWOPI * f1) * k_dsp_inv_sample_rate;
@@ -346,5 +339,8 @@ struct SynthState {
 
     FastSVF master_filter;
     // NO user constructor — DMIs only so globals go to .data, not .bss.
-    // See WaveguideState comment above for the full explanation.
+    // A user constructor would make the global synth object dynamically
+    // initialised, and GCC then places it in .bss (zero-filled at load);
+    // with default member initialisers only it is constant-initialised and
+    // loaded straight from the ELF.
 };
