@@ -6,6 +6,13 @@
 > performer Arturo Brachetti (July 2026).  `dev_id`/`unit_id` are unchanged,
 > so the renamed unit replaces an installed RipplerX build in place.
 
+> **Per-model units.**  This unit is also available split into nine smaller
+> units, one per sound model — `brachetti_kick`, `_tom`, `_kernel`, `_snare`,
+> `_bar`, `_plate`, `_cymbal`, `_noise` and `_string` — each holding only its
+> own presets, code and knobs, and each rendering its presets bit-identically
+> to this unit.  See [tools/brachetti_equiv](../tools/brachetti_equiv/README.md).
+> This unit itself is unchanged.
+
 ## Overview
 Polyphonic Physical Modeling synthesizer for the Korg Drumlogue. Strictly **Data-Oriented Design**: fixed memory, branchless math, ARM NEON SIMD, respects the ~20 µs RTOS audio deadline. **40 presets** spanning strings, bars, membranes, metallic plates, cymbals, snares, and idiophones.
 
