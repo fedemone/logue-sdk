@@ -92,7 +92,10 @@ the output is a real one.
 ```
 
 Result for the shipped tree: **IDENTICAL on all nine** — 9,348 scenarios,
-24,654 rendered spans.
+24,654 rendered spans with the default seed, and again with three more seeds
+and 300 random sessions each (`--seed 7 / 2024 / 31337 --fuzz 300
+--knob-points 2`): 27 of 27 runs identical, 30,888 more scenarios and 111,421
+more rendered spans.
 
 | Unit | Scenarios | Renders |
 |---|---|---|
@@ -142,8 +145,12 @@ code, so bit-identity is not expected; float-rounding-level differences are.
 | Unit | max abs diff | diff / signal (overall, worst render) |
 |---|---|---|
 | kick | 4.2e-07 | −156 dB, −130 dB |
+| tom | 4.2e-07 | −149 dB, −113 dB |
 | kernel | 6.0e-07 | −149 dB, −108 dB |
+| snare | 1.1e-06 | −135 dB, −110 dB |
+| bar | 4.2e-07 | −152 dB, −119 dB |
 | plate | 4.2e-07 | −152 dB, −122 dB |
+| cymbal | 3.1e-06 | −130 dB, −108 dB |
 | noise | 6.0e-07 | −139 dB, −109 dB |
 | string | 0.30 | −43 dB, −7 dB (see below) |
 

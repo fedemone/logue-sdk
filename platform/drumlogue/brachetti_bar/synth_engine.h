@@ -474,7 +474,7 @@ SynthState state;
 
         // A voice cannot survive a preset change: the rest of this function
         // rewrites the shared per-voice DSP coefficients underneath it.  Arm a
-        // ~10 ms fade-out so it retires click-free under its OWN latched engine
+        // ~10 ms fade-out so it retires click-free under its OWN settings
         // instead of being cut dead or re-excited by the incoming preset.
         // Only on a REAL change — Init()'s LoadPreset(0) and re-selecting the
         // current preset must stay no-ops so shipped renders are unaffected.
