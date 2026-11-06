@@ -1,19 +1,15 @@
 #pragma once
 // Brachetti Kernel — synth engine of the brachetti_kernel unit.
 //
-// One of the per-family units split out of the 40-preset `brachetti` unit
-// (platform/drumlogue/brachetti, which stays as it is).  This unit holds
-// Timpani and Taiko, which in the original never touched the voice engine:
-// they bypass it entirely and render through the dense coupled-resonator
-// ModalDrumKernel (modal_drum_kernel.h — ~280 modes + a recorded knock + a
-// noise wedge) with its own master stage.  So that is all this unit contains:
-// the kernel, the knob → kernel-modifier mapping and the kernel master stage.
-// At the knob values the presets ship with, both presets render
-// bit-identically to the original; tools/brachetti_equiv proves it.
+// Timpani and Taiko on the dense coupled-resonator ModalDrumKernel
+// (modal_drum_kernel.h: ~280 measured + fill modes, a recorded knock, a
+// noise wedge, two kettles) with its own master stage.  This file maps
+// the knobs onto the kernel and runs that master stage.
 //
-// Removed knobs, all measured inert on both presets in the original
-// (tools/brachetti_equiv/dead_params.py): Poly (the kernel always has its two
-// kettles), Model, NzRes and NzFltr (the kernel has no legacy noise exciter).
+// Split from the 40-preset brachetti unit (platform/drumlogue/brachetti,
+// which documents its history).  At the knob values the presets ship
+// with, each renders bit-identically to the same preset there;
+// tools/brachetti_equiv checks it.
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -24,22 +20,21 @@
 #include "filter.h"
 #include "modal_drum_kernel.h" // dense coupled-resonator kernel (Timpani/Taiko)
 
-// 2^x for the REFERENCE-ANCHORED knob curves (NoteOn / LoadPreset /
-// RefreshKernelMods).  Their precision is not critical — ±0.3% on a knob's
-// response curve is inaudible — so fasterpow2f is fine, EXCEPT at the anchor:
-// fasterpow2f(0) ≈ 0.9614, NOT 1.0, which would silently break the
-// byte-identical guarantee for every shipped preset (the anchor delta is
-// exactly 0 there and the factor must be exactly 1).  Guard the anchor.
-// NEVER use this for tuning or decay-coefficient math — see the CLAUDE.md
-// fasterexpf / fastercosfullf gotchas (exact expf/cosf/exp2f there).
+// 2^x for the REFERENCE-ANCHORED knob curves.  fasterpow2f is precise
+// enough for a knob's response (±0.3 %), EXCEPT at the anchor:
+// fasterpow2f(0) ≈ 0.9614, not 1.0, and every anchored mapping evaluates at
+// exactly 0 for the shipped preset, where the factor must be exactly 1.
+// So the anchor is guarded.  Never use this for tuning or decay
+// coefficients: those need exact expf / cosf / exp2f (fasterexpf is badly
+// wrong for |x| < 0.001; fastercosfullf shifts low mode frequencies).
 inline float knob_exp2(float x) {
     return (x == 0.0f) ? 1.0f : fasterpow2f(x);
 }
 
 // Compile-time check on one column of LoadPreset's preset table: every row's
-// value lies in [lo, hi].  Used to pin the columns LoadPreset does NOT load
-// (pass 48), so a future edit that gives one preset its own Tone or Cutoff —
-// which would be silently ignored — fails the build instead.
+// value lies in [lo, hi].  Pins the columns LoadPreset does NOT load, so
+// giving one preset its own Tone or Cutoff — which would be silently
+// ignored — fails the build instead.
 template <int R, int C>
 constexpr bool preset_column_in(const int16_t (&t)[R][C], int col, int lo, int hi) {
     for (int r = 0; r < R; ++r)
@@ -186,7 +181,7 @@ public:
         // The Pitch column holds the preset's ROOT NOTE (MIDI), not a knob
         // value: the Pitch knob is an offset in semitones FROM it, so the
         // column is captured into m_root_note and never written to the knob.
-        // Columns LoadPreset does NOT load are knobs the host owns (pass 48):
+        // Columns LoadPreset does NOT load are knobs the host owns:
         // Pitch, Velocity, VlMllRes, Tone, Cutoff, Resnc.
         // Their values below are never read (VlMllRes's is, once, as an anchor).
         // int16_t: the stored range is [-10, 1999].
@@ -394,14 +389,13 @@ public:
 
     // Velocity knob curve.  knob = 0 returns the incoming velocity EXACTLY
     // (not approximately — knob_exp2(0) is exactly 1.0), so the default knob
-    // keeps all 40 presets and every render byte-identical.
+    // keeps every preset and every render byte-identical.
     //   knob < 0 → ghost notes: down to x0.19 (velocity 127 lands at ~24)
     //   knob > 0 → wham:        up to x5.28, clamped at kVelWhamMax, so any
     //                           stroke above ~velocity 25 saturates to a
     //                           full-force hit no matter what the step stores.
-    // Velocity is the unit's whole dynamics axis — it drives mallet stiffness,
-    // wire mix/decay, boom weight, cymbal drive and the kernel impulse — so
-    // biasing it here, once, gives all of that for free on every engine.
+    // Velocity is the unit's whole dynamics axis — it drives the strike impulse
+    // and the knock — so biasing it here, once, carries through all of it.
     inline float vel_bias_apply(float vel_norm) const {
         if (m_vel_bias == 0.0f) return vel_norm;
         const float scaled = vel_norm * knob_exp2(2.4f * m_vel_bias);
@@ -421,15 +415,14 @@ public:
         m_drum_kernel.Trigger(note, ratio, vel_norm);
     }
 
-    // The drums ring out under their measured decays: a note-off (or a gate-off)
-    // does nothing, exactly as in the original.
+    // The drums ring out under their measured decays: a note-off or gate-off
+    // does nothing.
     inline void NoteOff(uint8_t note) { (void)note; }
     inline void GateOff() {}
-    // As in the original, AllNoteOff does not cut the kernel's ring either (it
-    // only ever released the legacy voices, which Timpani/Taiko do not use);
-    // Reset() / Suspend() is what silences it.
+    // AllNoteOff does not cut the kernel's ring either; Reset() / Suspend() is
+    // what silences it.
     inline void AllNoteOff() {}
-    // Pitch bend moved only the original's Karplus-Strong delay lines.
+    // Pitch bend: nothing reads it (a new note retunes a kettle instead).
     inline void PitchBend(uint16_t bend) { (void)bend; }
 
     inline void GateOn(uint8_t velocity) {
@@ -444,12 +437,10 @@ public:
     // ==============================================================================
     // 4. The Master Audio Loop
     // ==============================================================================
-    // The kernel renders the coupled resonator bank behind the approved
-    // standalone references and this runs its OWN master stage: Tone tilt →
-    // master filter → Gain (re-anchored so the shipped row is transparent) →
-    // transparent peak limiter.  (The voice engine's soft clip compressed the
-    // strike back into the body — the "rough / synthy hit" the HW comparison
-    // flagged — which is why the kernel never used it.)
+    // The kernel renders the coupled resonator bank and this runs its OWN
+    // master stage: Tone tilt → master filter → Gain (re-anchored so the
+    // shipped row is transparent) → transparent peak limiter.  A soft clip
+    // would compress the strike back into the body, so there is none.
     inline void processBlock(float* __restrict main_out, size_t frames) {
         // Hoist tone read outside the loop.  Every preset ships Tone=0: the
         // tilt EQ is skipped entirely then.
@@ -505,10 +496,9 @@ public:
 // ==============================================================================
 private:
     // Map the Brachetti sound-design params onto the dense-kernel modifiers.
-    // Every mapping is a DELTA from the preset's shipped value (the same
-    // reference-anchor pattern as the legacy modal bank), so the shipped rows
-    // reproduce the approved standalone renders exactly and every knob still
-    // sculpts around that point.  Curves reuse the strengthened Task-5 gains.
+    // Every mapping is a DELTA from the preset's shipped value (the
+    // REFERENCE-ANCHOR pattern), so the shipped rows play exactly as voiced
+    // and every knob sculpts around that point.
     inline void RefreshKernelMods() {
         if (!m_drum_kernel.IsActive()) return;
         ModalDrumKernel::Mods md;
@@ -521,16 +511,14 @@ private:
         float rl = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramRel]  * 0.05f));
         md.decay_mult = knob_exp2(4.5f * (dk - m_modal_dkay_ref) + 3.2f * (rl - m_modal_rel_ref));
 
-        // Mterl (−10..30): brighter material lets HF modes ring longer.  Widened
-        // 1.2→2.0→3.0 (audit/HW: Mterl "weak", then "too subtle" on the kettle)
-        // for a full material sweep; still anchored → bit-identical.
+        // Mterl (−10..30): brighter material lets HF modes ring longer
+        // (coefficient 3.0, a full material sweep); anchored at the shipped value.
         float mt = (fmaxf(-10.0f, fminf(30.0f, (float)m_params[k_paramMterl])) + 10.0f) * 0.025f;
         md.hf_decay_tilt = 3.0f * (mt - m_modal_mterl_ref);
 
         // TubRad (0-20, ×0.05): kettle/shell SIZE.  A bigger body rings a little
-        // longer AND darker (more low-mode weight); this is the "TubRad no effect
-        // on the kernel drums" fix — the legacy modal-bank TubRad path is bypassed
-        // for Timpani/Taiko.  Anchored at the shipped TubRad → bit-identical.
+        // longer AND darker (more low-mode weight).  Anchored at the shipped
+        // TubRad → bit-identical.
         float tr = fmaxf(0.0f, fminf(20.0f, (float)m_params[k_paramTubRad])) * 0.05f;
         float d_tr = tr - m_modal_tubrad_ref;
         md.decay_mult    *= knob_exp2(1.9f * d_tr);   // bigger = longer sustain
@@ -551,10 +539,9 @@ private:
         md.exc_sharp = knob_exp2(3.0f * (st - m_modal_stiff_ref));
 
         // MlltRes (×0.001) + HitPos (×0.01, edge = clickier) + VlMllRes: the
-        // knock ("wham") gain.  VlMllRes is the HIT-PROMINENCE knob (HW: "at
-        // high values the hit should be prominent"): raising it BOOSTS the
-        // knock and FLATTENS its velocity curve (lower exponent), so the hit
-        // stays tall even on soft strikes; lowering it buries the knock and
+        // knock ("wham") gain.  VlMllRes is the HIT-PROMINENCE knob: raising it
+        // BOOSTS the knock and FLATTENS its velocity curve (lower exponent), so the
+        // hit stays tall even on soft strikes; lowering it buries the knock and
         // steepens the accent response.
         float mr = fmaxf(0.0f, fminf(1.0f, (float)m_params[k_paramMlltRes] * 0.001f));
         // fmaxf(-1.0f, …): anchored, follows the bipolar knob below centre.
@@ -566,18 +553,10 @@ private:
                               3.0f * (vr - m_kernel_vlres_ref));
         md.vel_knock_exp = fmaxf(0.4f, fminf(3.0f, 1.5f - 1.0f * (vr - m_kernel_vlres_ref)));
 
-        // VlMllStf (±100 → ±1): velocity→sharpness amount.
-        // Was `clamp(0.6 + 0.8*(vs - ref), 0, 1)` — the ONLY linear-into-a-clamp
-        // mapping in this block, everything around it is knob_exp2, and it
-        // saturated exactly the way the pass-37 modal spread did.  Timpani
-        // ships VlMllStf 40, so 0.6 + 0.8*(vs − 0.4) left the clamp reachable
-        // at vs < −0.35: measured dead spans −100..−40 and 80..100, i.e. ~40 %
-        // of the knob (plateau_probe).  vel_sharp is a normalised 0..1 depth,
-        // so it takes the same headroom scaling as the mallet stiffness above:
-        // pivot at the shipped value, then divide the delta by the travel left
-        // on that side so the knob reaches 0 and 1 exactly at its own ends and
-        // never needs a clamp.  d == 0 at shipped → 0.6 exactly, as before, so
-        // all 41 renders stay byte-identical.
+        // VlMllStf (±100 → ±1): velocity→sharpness depth, a normalised 0..1
+        // amount.  Pivoted at the shipped value, with the delta divided by the knob
+        // travel left on that side, so the knob reaches 0 and 1 exactly at its own
+        // ends and needs no clamp; d == 0 at the shipped value gives 0.6 exactly.
         {
             float d = vs - m_kernel_vlstf_ref;
             md.vel_sharp = (d >= 0.0f)
@@ -593,14 +572,10 @@ private:
         md.noise_mult = knob_exp2(3.0f * dnz);
         md.noise_add  = 0.30f * fmaxf(0.0f, dnz);
 
-        // NzFltFrq (stored ÷10, 2..2000): the noise wedge's start cutoff.
-        // Mapped so the knob's two ends land exactly on the coefficient's two
-        // bounds and the shipped value on the recipe's own coefficient —
-        // log-proportional either side of it.  It was `fq / ref` with fq
-        // floored at 20 (the stored unit is ÷10 Hz, so that floor swallowed
-        // stored 2..20) and a product clamped to 0.02..0.90, which together
-        // left 64.7 % of the knob dead on Timpani and 25 % on Taiko (pass 48).
-        // fq == ref gives exactly 1.0, as before, so shipped renders hold.
+        // NzFltFrq (stored ÷10, 2..2000): the noise wedge's start cutoff,
+        // log-proportional either side of the shipped value and mapped so the
+        // knob's ends land exactly on the coefficient's bounds (kNoiseCoefMin/Max)
+        // and the shipped value on the recipe's own coefficient (factor 1.0).
         {
             const float fq  = fmaxf(2.0f, fminf(2000.0f, (float)m_params[k_paramNzFltFrq]));
             const float ref = m_kernel_nzfrq_ref;

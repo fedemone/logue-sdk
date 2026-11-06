@@ -12,7 +12,7 @@
  * stage is a transparent peak limiter (unity below 0.85) — NOT the master
  * soft-clip — so the strike keeps its crest ("wham").
  *
- * TWO KETTLES (HW feedback round 3): the kernel holds kVoices=2 independent
+ * TWO KETTLES: the kernel holds kVoices=2 independent
  * drums.  A hit on the note a voice is already tuned to retriggers that voice
  * in place — its resonator states are NOT zeroed, so energy accumulates like
  * a real drum roll.  A hit on a DIFFERENT note takes a free/oldest voice and
@@ -122,10 +122,9 @@ public:
                        (m.hf_decay_tilt != m_mods.hf_decay_tilt) ||
                        (m.stretch    != m_mods.stretch)    ||
                        (m.density    != m_mods.density);
-        // noise_bright is not a rebuild trigger, and its coefficient used to be
-        // refreshed only INSIDE a rebuild — so a NzFltFrq turn on its own never
-        // reached the noise wedge (it landed only when some other mod happened
-        // to force a rebuild).  It is one multiply and two clamps: apply it now.
+        // noise_bright is not a rebuild trigger: it is one multiply and two
+        // clamps, applied here so a NzFltFrq turn reaches the noise wedge
+        // without waiting for some other mod to force a rebuild.
         const bool bright = (m.noise_bright != m_mods.noise_bright);
         m_mods = m;
         if (rebuild && m_recipe) { m_rebuild_pos = 0; m_sched_ready = false; }
@@ -488,9 +487,9 @@ private:
     // skeleton has T60 620-1670 ms against the skeleton's ~1.9 s, so by 2 s
     // after a strike only ~70 of 280 modes carry anything at all.  Stepping
     // the other 210 is pure cost — and a note change runs TWO banks at once,
-    // which is what puts this preset over the device's CPU budget (measured in
-    // kernel_cpu_probe.cpp: 2 kettles = 110 µs/block against the 49.5 µs
-    // cymbal ceiling that pass 30 established as the known-safe level).
+    // which is what puts this preset over the device's CPU budget (measured:
+    // 2 kettles = 110 µs/block, against ~50 µs/block known to run on the
+    // drumlogue).
     //
     // kRetireEps is ABSOLUTE, against a kettle peak of ~0.95 pre-out_gain, so
     // -100 dB per mode.  kPeakPerAmp bounds a mode's post-strike envelope from
@@ -508,10 +507,9 @@ private:
     // Natural retirement above handles a tail, but not the PEAK, and the peak
     // is what the hardware reports: a strike resets a kettle's bound to the
     // full bank, so a note change (which is always simultaneous with a strike)
-    // puts two full banks in play at once.  Measured 110 µs/block against the
-    // 49.5 µs cymbal level pass 30 established as safe and the 95.6 µs level
-    // that crashed the audio interface — and it stays there for ~7 s, which is
-    // the reported "sporadic clicks for the next 8-10 seconds".
+    // puts two full banks in play at once: 110 µs/block, against ~50 µs/block
+    // known to run on the drumlogue and ~96 µs known to overload it, for ~7 s
+    // (heard as sporadic clicks for the next 8-10 seconds).
     //
     // So when a new note takes the second kettle, the OLDER kettle keeps its
     // measured skeleton (the low modes that carry the pitch — the same n/5

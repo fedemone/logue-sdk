@@ -1,12 +1,13 @@
-# Brachetti family — one unit per model, and the tools that prove them
+# Brachetti family — one unit per instrument family, and the tools that check them
 
 > **Disclaimer:** the Brachetti units are unofficial, independently developed units, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from their use. See the [repository disclaimer](../../../../README.md#disclaimer) for full terms.
 
 The 40-preset [`brachetti`](../../brachetti/) unit grew one synth engine with
 six sound models, a cymbal port and a separate drum kernel inside it, and every
-knob ended up wired into every model.  It is split here into **nine units, one
-per model**, so each can be browsed, used and improved on its own.  The
-original unit is untouched and still builds and ships as before.
+knob ended up wired into every model.  Its percussion is split here into
+**eight units, one per instrument family**, so each can be browsed, used and
+improved on its own.  The original unit is untouched and still builds and
+ships as before.
 
 | Unit (directory) | On the drumlogue | Presets | Knobs | Engine |
 |---|---|---|---|---|
@@ -18,23 +19,28 @@ original unit is untouched and still builds and ships as before.
 | [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick | 24 | plate modes + ring-coupled noise |
 | [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 19 | dense-resonator cymbal |
 | [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C | 18 | shaped noise + AM gating |
-| [`brachetti_string`](../../brachetti_string/) | `BrcString` | Koto | 23 | dual Karplus-Strong waveguide |
 
-All nine are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
-'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrSt'), so they install next to the
-original and next to each other.  The families are the ones the original's
-README already used for its "which knobs are live" matrix.
+All eight are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
+'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz'), so they install next to the original
+and next to each other.  The families are the ones the original's README
+already used for its "which knobs are live" matrix.
+
+**Not split out: the Koto.**  The original's one string preset (a dual
+Karplus-Strong waveguide) is outside the percussion these units focus on, so
+it has no family unit; it stays playable in the original.  The waveguide
+engine lives on there too, should a struck-string percussion family (a
+hammered dulcimer, a berimbau) ever be worth deriving from it.
 
 ## How the units were derived
 
-Each unit is the original's code with everything its model never reaches
-taken out, and nothing else changed:
+Each unit is the original's code with everything its family never reaches
+taken out, and nothing else changed in what it renders:
 
 - **Other engines.**  Each family runs exactly one engine, so the engine
   routing (`kPresetEngine`, the per-voice engine latch) is gone, and so is
   every other engine's code and per-voice state: the Karplus-Strong waveguide
-  (only Koto used it — the delay lines were 64 KB of RAM), the dense-resonator
-  cymbal, the Timpani/Taiko kernel and its 31 KB of mode tables.
+  (64 KB of delay lines), the dense-resonator cymbal, the Timpani/Taiko kernel
+  and its 31 KB of mode tables.
 - **Other families' branches.**  Every `if (preset == …)` branch for a preset
   the unit does not hold.
 - **Layers no preset of the family can switch on.**  E.g. the boom oscillator
@@ -43,9 +49,13 @@ taken out, and nothing else changed:
   columns that only fed them went with them.
 - **Knobs that do nothing on the family** (below).
 
-Comments, identifiers and the REFERENCE-ANCHOR design are kept, so the
-original's `README.md` and `CLAUDE.md` still document the code.  Each unit's
-own README lists its presets, knob pages and what each knob does there.
+Identifiers (`m_modal_*_ref`, `k_param*`) and the REFERENCE-ANCHOR design are
+kept, so a fix can still be ported between a unit and the original.  The
+comments were then rewritten per unit: each describes its own family only,
+and the history of how the sounds were voiced stays in the original's
+`README.md` and `CLAUDE.md`.  Each unit has its own `README.md` (presets, knob
+pages, what every knob does there) and `CLAUDE.md` (the rules for changing
+it).
 
 ### Knobs removed
 
@@ -58,17 +68,16 @@ is removed when every render was bit-identical.
 
 | Unit | Removed | Why there is nothing for it to do |
 |---|---|---|
-| kernel | Poly, Model, NzRes, NzFltr | the kernel always has two kettles and no modal template or legacy noise exciter |
+| kernel | Poly, Model, NzRes, NzFltr | the kernel always has two kettles and no modal template or exciter noise path |
 | cymbal | Model, NzMix, NzRes, NzFltr, NzFltFrq | the cymbal configures its own noise drivers per preset; no modal template |
 | noise | Pitch, Partls, Dkay, Mterl, Inharm, TubRad | no modal body, nothing depends on the note; Dkay only set how fast AllNoteOff fades a voice, kept exact as a per-preset constant |
-| string | Program | Koto is the only preset |
 | kick, tom, snare, bar, plate | — | every knob is live (the original wired each knob into each family on purpose) |
 
 `dead_params.py` also flags Poly on the cymbals: one strike per session cannot
 show a voice cap.  Poly is live there (it decides when a different note gets
 its own voice) and is kept.  On kick, tom, snare, bar and plate `Partls` keeps
-only positions 0-4: 5-7 were the ResA/ResB edit selector of the Koto string,
-which those units do not have.
+only positions 0-4: in the original, 5-7 select which resonator of the Koto
+string the knobs edit.
 
 ## Verification
 
@@ -88,14 +97,17 @@ Both builds are host builds without `-ffast-math`, so any difference at all in
 the output is a real one.
 
 ```
-./run_equiv.sh ../../brachetti_kick        # or any of the nine
+./run_equiv.sh ../../brachetti_kick        # or any of the eight
 ```
 
-Result for the shipped tree: **IDENTICAL on all nine** — 9,348 scenarios,
-24,654 rendered spans with the default seed, and again with three more seeds
+The work directory (binaries, script, hashes) is removed after an IDENTICAL
+run; `KEEP_WORK=1` keeps it, and a difference always does.
+
+Result for the shipped tree: **IDENTICAL on all eight** — 9,023 scenarios,
+23,248 rendered spans with the default seed, and again with three more seeds
 and 300 random sessions each (`--seed 7 / 2024 / 31337 --fuzz 300
---knob-points 2`): 27 of 27 runs identical, 30,888 more scenarios and 111,421
-more rendered spans.
+--knob-points 2`): 24 of 24 runs identical, 29,421 more scenarios and
+102,827 more rendered spans.
 
 | Unit | Scenarios | Renders |
 |---|---|---|
@@ -107,7 +119,6 @@ more rendered spans.
 | plate | 999 | 2,636 |
 | cymbal | 1,182 | 3,121 |
 | noise | 621 | 1,986 |
-| string | 325 | 1,406 |
 
 ### Known differences
 
@@ -152,17 +163,6 @@ code, so bit-identity is not expected; float-rounding-level differences are.
 | plate | 4.2e-07 | −152 dB, −122 dB |
 | cymbal | 3.1e-06 | −130 dB, −108 dB |
 | noise | 6.0e-07 | −139 dB, −109 dB |
-| string | 0.30 | −43 dB, −7 dB (see below) |
-
-**The string is the exception, and it is the original's design, not the
-split.**  Every strike stirs the voice's noise seed with eight words of the
-waveguide delay line, read as raw float BITS.  Under `-ffast-math` two builds
-round those samples differently, so once the noise exciter is switched on
-(Koto ships `NzMix` 0) the two builds draw different noise and drift apart.
-All of the difference sits in the two random sessions that open `NzMix`; the
-rest is at rounding level.  The original measured against ITSELF built at
-`-O2` instead of `-Os` differs more (−26 dB overall, +4 dB worst render) than
-the string unit differs from the original.
 
 ### Sizes
 
@@ -181,13 +181,12 @@ moves a little between toolchains; data sections are exact):
 | plate | 13,704 | 354 | 2,464 | 64 |
 | cymbal | 11,704 | 368 | 12,272 | 52 |
 | noise | 7,292 | 264 | 1,008 | 48 |
-| string | 13,392 | 368 | 67,760 | 568 |
 
-The synth object sits in `.data` in eight of the nine (every member has a
-constant initialiser) where the original's sits in `.bss` (the kernel's
-uninitialised mode arrays made it dynamically initialised); the original's own
-notes record both placements loading on hardware.  None of the nine has run on
-a drumlogue yet.
+The synth object sits in `.data` in seven of the eight (every member has a
+constant initialiser).  In the original, and in the kernel unit, it sits in
+`.bss`: the kernel's mode arrays have no initialiser.  The original's own
+notes record both placements loading on hardware.  None of the eight has run
+on a drumlogue yet.
 
 ## Maintaining the units
 

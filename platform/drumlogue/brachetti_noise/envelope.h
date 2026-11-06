@@ -35,7 +35,7 @@ struct FastEnvelope {
         // the whole Clap/Shaker/HHat-C (ENGINE_NOISE) voice on hardware while
         // the host renders, which hold the gate ~50 ms, sounded correct.
         // (master_env dodges this by being force-set to 1.0/ENV_DECAY in
-        // NoteOn — see T20 — and ENGINE_SNARE by skipping the call entirely.)
+        // NoteOn.)
         // Completing the attack first keeps the release itself meaningful, so
         // the Rel knob still shapes the tail, and leaves any envelope that is
         // already open bit-for-bit unchanged.

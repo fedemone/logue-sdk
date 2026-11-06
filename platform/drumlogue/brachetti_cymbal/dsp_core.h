@@ -26,7 +26,7 @@ constexpr float k_dsp_log_0001        = -6.907755279f;
 // initialisers) so the containing `s_synth` stays constant-initialised in
 // .data, exactly like the rest of dsp_core.h.  The prototype's 32 KB/voice
 // comb section is DROPPED — the resonator bank + PM already supplies the
-// density the FDN used to add, so the comb is not needed and would blow the
+// density the prototype's FDN adds, so the comb is not needed and would blow the
 // per-voice RAM budget.
 enum { kCymbalMaxResonators = 112 };
 // Corner of the cymbal output rumble filter (two cascaded one-poles).  40 Hz
@@ -36,20 +36,14 @@ enum { kCymbalMaxResonators = 112 };
 static constexpr float kCymRumbleHz   = 40.0f;
 static constexpr float kCymRumbleCoef = 6.28318530717958647692f * kCymRumbleHz *
                                         k_dsp_inv_sample_rate;
-// Corner of the two-pole subsonic guard on the resonator DRIVE — see the long
-// note at its use site in cymbal_process.
-//
-// Pass 45 set this to 150 Hz, "the lowest anchor frequency in the whole
-// family", which sounded principled and was the worst possible choice for the
-// one preset that reaches that low: it put the corner ON the gong's own fLo,
-// so the gong paid 6 dB on its lowest lane while every other preset paid under
-// 1.5 dB.  Pass 46 measured the actual reference recording — Chinese-Gong.wav
-// has 0.0 % of its energy below 60 Hz and 68.8 % in ONE mode at 91.5 Hz — so
-// the thing to remove sits well under 60 Hz and the corner belongs there, not
-// at 150.  At 55 Hz the guard still takes 25 Hz down 15 dB and DC to nothing,
-// while the gong's body comes back: measured power centroid 225 -> 201 Hz
-// against the reference's 198, the 100-300 Hz share 89.2 % -> 93.2 %, and the
-// preset gets 1.7 dB louder instead of thinner.
+// Corner of the two-pole subsonic guard on the resonator DRIVE — see the
+// note at its use site in cymbal_process.  It belongs well under the
+// gong's lowest mode: the gong's reference recording (Chinese-Gong.wav)
+// has 0.0 % of its energy below 60 Hz and 68.8 % in ONE mode at 91.5 Hz.
+// A corner up at the family's lowest anchor (the gong's 150 Hz fLo) costs
+// the gong 6 dB on its lowest lane and thins its body; at 55 Hz the guard
+// still takes 25 Hz down 15 dB and DC to nothing, and the gong's power
+// centroid (201 Hz) sits on the reference's 198.
 static constexpr float kCymDriveHpHz   = 55.0f;
 static constexpr float kCymDriveHpCoef = 6.28318530717958647692f * kCymDriveHpHz *
                                          k_dsp_inv_sample_rate;
@@ -67,29 +61,29 @@ struct CymbalConfig {
     float lowAttackSec, decaySec, highAttackSec, highDecaySec;
     float thwackSec, stickLevel, noiseLevel, resonatorLevel, shimmerLevel;
     float directNoiseLevel, phaseModDepth;
-    // HF gain tilt (0 = legacy flat bank).  At 1.0 each ringer's tap gain is
+    // HF gain tilt (0 = flat bank).  At 1.0 each ringer's tap gain is
     // weighted by sqrt(f / 2 kHz), which exactly counters the pink driver's
     // −3 dB/oct amplitude tilt so the wash reads white-bright like the
     // reference cymbals (~6-7 kHz body centroid) instead of ~1.3 kHz dark.
-    // Left 0 for presets whose balance is HW-approved (HHat-O, Splash);
-    // aggregate initializers with 17 values default this to 0.
+    // Left 0 for presets whose balance is approved on hardware (HHat-O,
+    // Splash); aggregate initializers with 17 values default this to 0.
     float hfTilt;
 };
 
-// TRIED AND REJECTED (pass 46), so it is not re-attempted: a per-lane
-// `hfDamp` giving higher lanes a shorter T60 (lane decay scaled by
-// (1 kHz / f)^hfDamp).  The theory was that the bank's ONE shared `r` is why
-// a static `hfTilt` cannot brighten the strike without also brightening the
-// sustain — real metal damps high modes faster, and every `ModalPresetConfig`
-// in this unit already gives descending per-mode T60s.  Measured, it moves the
-// late centroid the WRONG WAY (3225 -> 3375 -> 3666 Hz as hfDamp goes
-// 0 -> 0.3 -> 1.0) because these resonators are CONTINUOUSLY DRIVEN, not
-// impulse-excited: lowering a lane's `r` widens its bandwidth and raises its
-// `b0`, so the lane passes more of the broadband driver than it loses in peak
-// gain.  At `hfTilt = 0` it darkens the tail by 8 % (728 -> 672 Hz), which
-// does not pay for a `powf`+`expf` per lane per strike.  The sustain's
-// brightness comes from the tilted tap being fed by a full-band driver, so
-// nothing about the BANK's decay can separate attack from sustain.
+// TRIED AND REJECTED, so it is not re-attempted: a per-lane `hfDamp`
+// giving higher lanes a shorter T60 (lane decay scaled by
+// (1 kHz / f)^hfDamp).  The theory was that the bank's ONE shared `r` is
+// why a static `hfTilt` cannot brighten the strike without also
+// brightening the sustain — real metal damps high modes faster.
+// Measured, it moves the late centroid the WRONG WAY (3225 -> 3375 ->
+// 3666 Hz as hfDamp goes 0 -> 0.3 -> 1.0) because these resonators are
+// CONTINUOUSLY DRIVEN, not impulse-excited: lowering a lane's `r` widens
+// its bandwidth and raises its `b0`, so the lane passes more of the
+// broadband driver than it loses in peak gain.  At `hfTilt = 0` it darkens
+// the tail by 8 % (728 -> 672 Hz), which does not pay for a `powf`+`expf`
+// per lane per strike.  The sustain's brightness comes from the tilted tap
+// being fed by a full-band driver, so nothing about the BANK's decay can
+// separate attack from sustain.
 
 struct CymbalVoice {
     bool     active       = false;
@@ -149,14 +143,14 @@ struct CymbalVoice {
 
     // Output magnitude envelope for the CPU squelch: a voice whose tail has
     // dropped below audibility must release its resonator bank instead of
-    // grinding through it until endSample (4 voices x full banks over long
-    // gong-length tails overloaded the target: HW audio crash).
+    // grinding through it until endSample (full banks running through long
+    // gong tails overload the drumlogue).
     float magEnv = 0.0f;
 
     // The seed the ringing bank was built from.  A re-strike (retainRing) must
     // rebuild the SAME frequencies, or every lane it keeps ringing is retuned
     // under its own vibration: NoteOn's seed folds in the MIDI velocity, so two
-    // strikes of different force used to hand the same plate two different
+    // strikes of different force would hand the same plate two different
     // detune sets.  Kept per voice rather than recomputed because only the
     // voice knows which strike built the bank it is still ringing with.
     uint32_t bankSeed = 0u;
@@ -169,8 +163,8 @@ static inline float cym_frand(uint32_t& s) {
 }
 
 // Per-sample geometric-envelope multiplier for time constant tauSec.  Exact
-// expf: the argument is ~-1e-4..-1e-2 where float_math.h's fast* variants are
-// catastrophically wrong for the resulting T60 (see CLAUDE.md gotchas).
+// expf: the argument is ~-1e-4..-1e-2, where float_math.h's fast* variants
+// are badly wrong for the resulting T60.
 static inline float cym_env_mul(float tauSec, float sr) {
     if (tauSec < 0.00002f) return 0.0f;
     return expf(-1.0f / (tauSec * sr));
@@ -215,8 +209,8 @@ static inline void cymbal_note_on(CymbalVoice& c, const CymbalConfig& cfg,
     // Driver filter/noise state survives a re-strike for the same reason the
     // resonators do: these are the wash that is still sounding.  Zeroing them
     // silences the noise bed for a full driver attack (0.25 s on the gong) and
-    // steps the DC blocker, which is most of why a re-struck cymbal used to
-    // read as "the previous hit disappeared".
+    // steps the DC blocker, and a re-struck cymbal then reads as "the
+    // previous hit disappeared".
     if (!retainRing) {
         c.lpState = c.hpLowState = c.dcState = c.dcState2 = 0.0f;
         c.driveHp1 = c.driveHp2 = 0.0f;
@@ -390,8 +384,8 @@ static inline float cymbal_process(CymbalVoice& c) {
     // The driver cutoffs are swept by envelopes whose fastest time constant is
     // 12 ms, and the PM LFOs run at 37/71/113 Hz — none of it needs a fresh
     // fastexpf/fastsinf per sample.  Measured on the host: this removes ~19 of
-    // the ~37 ns/sample/voice of FIXED cost, the part kCymResonatorBudget
-    // cannot see and which pass 26 doubled by allowing 4 voices instead of 2.
+    // the ~37 ns/sample/voice of FIXED cost (the kCymVoiceFixedLanes part of
+    // the CPU budget).
     if (c.ctrlCount == 0u) {
         c.ctrlCount = (uint16_t)kCymCtrlStride;
         c.lpCoeff = cym_pole_coeff(10.0f + c.maxCutoff * lowEnv);
@@ -446,20 +440,17 @@ static inline float cymbal_process(CymbalVoice& c) {
     // is pink noise, which by construction has more energy in 10-25 Hz than in
     // 120-200 Hz.  Each strike therefore parks a lump of sub-mode energy in
     // the lanes with the most gain, and it rings for a second — so it PILES UP
-    // across repeated strikes.  Measured on the shipping build, energy under
-    // 100 Hz for ONE strike against EIGHT 300 ms apart: RidBel 2.7 % -> 25.0 %,
-    // Cymbal 1.7 % -> 13.5 %, Ride 2.5 % -> 9.7 %, Gong 5.6 % -> 9.1 % (the
-    // gong reads lower only because it had so little else).  It is inaudible
-    // as pitch and it eats the master limiter, so everything that IS audible
-    // gets quieter and duller with every hit.  That is the "repeated hits
-    // sound muddy" report, and it is not a mix problem — the mud is being
-    // synthesised.  T43 is the regression test.
+    // across repeated strikes.  Without the guard, energy under 100 Hz for ONE
+    // strike against EIGHT 300 ms apart: RidBel 2.7 % -> 25.0 %, Cymbal
+    // 1.7 % -> 13.5 %, Ride 2.5 % -> 9.7 %, Gong 5.6 % -> 9.1 %.  It is
+    // inaudible as pitch and it eats the master limiter, so everything that
+    // IS audible gets quieter and duller with every hit: repeated hits sound
+    // muddy because the mud is being synthesised.
     //
-    // Two cascaded one-poles at kCymDriveHpHz: DC is removed outright, 25 Hz
-    // is -31 dB and 60 Hz -19 dB, while the lowest anchor any preset in the
-    // family uses (the gong's 150 Hz) pays 6 dB and the next one up (crash,
-    // 343 Hz) pays 1.5 dB.  Nothing in the family HAS a mode below 150 Hz, so
-    // everything this removes is energy the bank was never meant to receive.
+    // Two cascaded one-poles at kCymDriveHpHz (55 Hz): DC is removed outright,
+    // 25 Hz is -15 dB and 60 Hz -5 dB, while the lowest anchor any preset
+    // uses (the gong's 150 Hz) pays about 1 dB and the crash's 343 Hz under
+    // 0.3 dB.
     c.driveHp1 += kCymDriveHpCoef * (drive - c.driveHp1);  drive -= c.driveHp1;
     c.driveHp2 += kCymDriveHpCoef * (drive - c.driveHp2);  drive -= c.driveHp2;
 
@@ -599,5 +590,8 @@ struct SynthState {
 
     FastSVF master_filter;
     // NO user constructor — DMIs only so globals go to .data, not .bss.
-    // See WaveguideState comment above for the full explanation.
+    // A user constructor would make the global synth object dynamically
+    // initialised, and GCC then places it in .bss (zero-filled at load);
+    // with default member initialisers only it is constant-initialised and
+    // loaded straight from the ELF.
 };

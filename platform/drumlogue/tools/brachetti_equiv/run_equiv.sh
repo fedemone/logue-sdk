@@ -10,6 +10,9 @@
 #   ./run_equiv.sh ../../brachetti_kick
 #   ./run_equiv.sh ../../brachetti_kick --fuzz 400 --seed 7
 #
+# The work directory is removed after an IDENTICAL run unless KEEP_WORK=1
+# (or EQUIV_WORK names it).
+#
 # Host build, no -ffast-math, so both sides evaluate the same float expressions
 # in the same order; any difference at all in the output is a real one.
 set -euo pipefail
@@ -46,7 +49,10 @@ renders=$(wc -l < "$work/$name.orig.out")
 scen=$(grep -c '^scenario' "$work/$name.script")
 silent=$(awk '$4+0 == 0' "$work/$name.orig.out" | wc -l)
 if cmp -s "$work/$name.orig.out" "$work/$name.family.out"; then
-    echo "$name: IDENTICAL — $scen scenarios, $renders renders ($silent silent spans), work dir $work"
+    echo "$name: IDENTICAL — $scen scenarios, $renders renders ($silent silent spans)"
+    # Keep the binaries, script and hashes only when asked (or when the caller
+    # chose the directory); a difference always keeps them.
+    if [ -z "${EQUIV_WORK:-}" ] && [ -z "${KEEP_WORK:-}" ]; then rm -rf "$work"; fi
 else
     echo "$name: DIFFERENT — first differing renders:"
     diff "$work/$name.orig.out" "$work/$name.family.out" | head -20

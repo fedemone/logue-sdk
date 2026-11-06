@@ -16,7 +16,7 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x42724379U,                                // 'BrCy' (Brachetti Cymbal)
     .version = 0x00010000U,
     .name = "BrcCymbal",
-    // Zero on purpose, as in the original brachetti: the Program parameter
+    // Zero on purpose: the Program parameter
     // is the preset control (stored with the pattern, automatable), and a
     // non-zero count would draw a second, competing preset UI.
     .num_presets = 0,
@@ -27,10 +27,8 @@ const __unit_header unit_header_t unit_header = {
         // Defaults are preset 0's (Cymbal) shipped values, so the unit boots
         // sounding like the preset it shows.  The knobs the host owns keep
         // their own — Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc —
-        // because LoadPreset never writes them (pass 48);
+        // because LoadPreset never writes them;
         // seed_performance_params() in synth_engine.h holds the same values.
-        // Ranges, steps and display are the original brachetti's; see its
-        // header.c for the history behind each one.
 
         // Page 1
         // Program: the preset (this family's presets only)
@@ -58,10 +56,10 @@ const __unit_header unit_header_t unit_header = {
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
 
         // Page 4
-        // HitPos: bipolar since pass 39
+        // HitPos: bipolar
         {-98, 98, 0, 0, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         {0, 20, 0, 18, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
-        // Inharm: bipolar since pass 36
+        // Inharm: bipolar
         {-100, 100, 0, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
         // Cutoff: master low-pass, stored /10 (10-19990 Hz), 1999 = open
         {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},

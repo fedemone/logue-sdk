@@ -2,11 +2,11 @@
 
 > **Disclaimer:** Brachetti Kick is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
-One of nine drumlogue synth units split out of the 40-preset
-[`brachetti`](../brachetti/) physical-modelling percussion unit, one per sound
-model, so each can be browsed, used and improved on its own.  The original
-unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
-for the whole set and how they were derived.
+One of eight drumlogue synth units split out of the 40-preset
+[`brachetti`](../brachetti/) physical-modelling percussion unit, one per
+instrument family, so each can be browsed, used and improved on its own.  The
+original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
+for the whole set and the tools that check them.
 
 This unit holds the boom-oscillator kick drums: Kick2 (a kettledrum-bodied kick), 808Sub (a TR-808-style pitch-diving sub) and Kick (an acoustic bass drum).
 
@@ -21,16 +21,16 @@ This unit holds the boom-oscillator kick drums: Kick2 (a kettledrum-bodied kick)
 
 ## Presets
 
-| # | Name | Root | Notes |
+| # | Name | Root | Sound |
 |---|---|---|---|
-| 0 | Kick2 | 36 | the pre-redesign Timpani body as a solid kettledrum kick (HW-approved) |
-| 1 | 808Sub | 36 | boom_osc pitch dive 160→45Hz, depth on Inharm (pass 22's mapping, live again since pass 35). |
-| 2 | Kick | 36 | Drum — (HW: ok) |
+| 0 | Kick2 | 36 | kettledrum-bodied kick: a fixed boom under a fundamental-dominant modal body |
+| 1 | 808Sub | 36 | TR-808-style sub: boom pitch dive 160→45 Hz, depth on Inharm |
+| 2 | Kick | 36 | acoustic bass drum: swept boom (~90→55 Hz) plus beater thump and click |
 
 At the knob values each preset ships with, it renders **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
-notes, stacked strokes, Program changes over ringing voices, Reset / Suspend, pitch bend and every knob at its
-ends and in between (see Verification).
+notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
+pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
@@ -43,9 +43,9 @@ ends and in between (see Verification).
 | 5 | `Cutoff` · `TubRad` · `Gain` · `NzMix` |
 | 6 | `NzRes` · `NzFltr` · `NzFltFrq` · `Resnc` |
 
-No knob was removed: every one of the original's 24 knobs is live on this family (`tools/brachetti_equiv/dead_params.py` measured each across its whole range).
+Every one of the original's 24 knobs is live on this family (`tools/brachetti_equiv/dead_params.py` measured each across its whole range), so none was removed.
 
-`Partls` keeps only its mode-count positions 0-4: positions 5-7 were the original's ResA/ResB edit selector for its Karplus-Strong string, which this unit does not have.  It now displays the mode count it gives the current preset (`4 md`).
+`Partls` sets the mode count around the preset's own (positions 0-4) and displays the count it gives the current preset (`4 md`).
 
 What each knob does in this unit:
 
@@ -66,13 +66,12 @@ What each knob does in this unit:
 | `Inharm` | 808 pitch-dive depth (strongest on 808Sub) |
 | `TubRad` | boom base tune (bigger shell = lower) |
 
-`Tone` (master tilt EQ), `Cutoff` / `Resnc` (master low-pass and its Q) and
-`Gain` (master drive) work as in the original.  `Pitch`, `Poly`, `Velocity`,
-`VlMllRes`, `Tone`, `Cutoff` and `Resnc` are performance knobs the host owns:
-a Program change leaves them where they are.  Every other knob loads with the
-preset, and the knob mappings are REFERENCE-ANCHORED on the shipped values — a
-preset plays its calibrated sound at its own knob positions and only movement
-alters it.
+`Tone` (tilt EQ), `Cutoff` / `Resnc` (low-pass and its Q) and `Gain` (drive)
+are the master stage.  `Pitch`, `Poly`, `Velocity`, `VlMllRes`, `Tone`,
+`Cutoff` and `Resnc` are performance knobs the host owns: a Program change
+leaves them where they are.  Every other knob loads with the preset, and the
+knob mappings are REFERENCE-ANCHORED on the shipped values — a preset plays its
+calibrated sound at its own knob positions and only movement alters it.
 
 ## Build
 
@@ -82,7 +81,7 @@ build drumlogue/brachetti_kick
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
 The product is `brachetti_kick.drmlgunit`; copy it to the drumlogue's `Units/Synths`
-folder.
+folder.  Not yet tested on hardware.
 
 ## Verification
 
@@ -101,18 +100,16 @@ cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_kick --fuzz 20 --k
 
 ### Known difference
 
-Re-selecting **Kick** (the Program knob set to the preset that is already selected) while a Kick voice is still ringing.  The original then writes Kick's table value `snare_wire_mix = 0.03` into the ringing voice, which switches on a faint snare-wire layer for the rest of that voice — a snare mechanism on a kick drum.  This unit has no snare-wire code, so the re-select changes nothing.  Every other path is bit-identical (the harness proves the only difference is that one write: see tools/brachetti_equiv/README.md).  The equivalence scripts therefore never re-select that preset while it rings (`--avoid-reselect`).
+Re-selecting **Kick** (the Program knob set to the preset that is already selected) while a Kick voice still rings: the original then writes a stray snare-wire level (0.03) from its preset table into the ringing voice.  This unit has no snare-wire layer, so the re-select changes nothing.  The equivalence scripts therefore never re-select that preset while it rings (`--avoid-reselect`).
 
 ## Relation to the original
 
-The code is the original's, with everything this family never reaches taken
-out: the other engines, the other families' per-preset branches and voice
-layers, their table columns and their knobs.  Comments, identifiers
-(`m_modal_*_ref`, `k_param*`) and the REFERENCE-ANCHOR design are kept as they
-were, so the original's `README.md` and `CLAUDE.md` still explain this code —
-look there for the history behind any mapping or constant.  `k_paramLowCut` is
-called `k_paramCutoff` here (it is the master low-pass "Cutoff"), and
-`k_paramCymPoly` is `k_paramPoly`.
+The code began as the original's, with everything this family never reaches
+taken out: the other engines, the other families' per-preset branches and
+voice layers, their table columns and their knobs.  Its comments describe this
+unit only; the history of how the sounds were voiced stays with the original
+unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
+names, so a fix can still be ported between the two.
 
 Changes made from here on belong to this unit only.  A fix that also applies
 to the original or to a sibling unit has to be made there too.
