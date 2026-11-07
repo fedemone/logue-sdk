@@ -190,14 +190,27 @@ code, so bit-identity is not expected; float-rounding-level differences are.
 
 | Unit | max abs diff | diff / signal (overall, worst render) |
 |---|---|---|
-| kick | 4.2e-07 | −156 dB, −130 dB |
-| tom | 4.2e-07 | −149 dB, −113 dB |
-| kernel | 6.0e-07 | −149 dB, −108 dB |
+| kick | 1.0e-06 | −142 dB, −118 dB |
+| tom | 4.8e-07 | −144 dB, −113 dB |
+| kernel | 6.0e-07 | −149 dB, −111 dB |
 | snare | 1.1e-06 | −135 dB, −110 dB |
-| bar | 4.2e-07 | −152 dB, −119 dB |
-| plate | 4.2e-07 | −152 dB, −122 dB |
-| cymbal | 3.1e-06 | −130 dB, −108 dB |
-| noise | 6.0e-07 | −139 dB, −109 dB |
+| bar | 4.2e-07 | −151 dB, −119 dB |
+| plate | 3.6e-07 | −152 dB, −122 dB |
+| cymbal | 1.8e-03 | −77 dB, −51 dB |
+| noise | 6.0e-07 | −139 dB, −118 dB |
+
+The cymbal is the exception, and it is the compiler's: its source arithmetic
+is unchanged (the host build is bit-identical), but in the original's bank
+build GCC merges `exp2f(detune / 12) · exp2f(octave · 0.17)` into one
+`exp2f(a + b)` under `-ffast-math`, and in the restructured build it does
+not.  The second-octave lanes' frequencies then differ by 1-3 ULP, which over
+a long tail is a slow phase drift — what the −77 dB measures; inaudible.
+Forcing the merged form in the source would break the host bit-identity
+(the original computes the product).  The kernel shows the same mechanism
+can bite: with its sample rate a compile-time constant, GCC turned every
+`x / fs` into `x · (1/fs)` and the kernel measured −82 dB, so it keeps the
+rate in a variable (`m_sr`) and measures −149 dB, as before the
+restructuring.
 
 ### Sizes
 
@@ -213,7 +226,7 @@ moves a little between toolchains; data sections are exact):
 | kernel | 10,716 | 31,248 | 4 | 15,428 | 57,216 → 57,540 |
 | snare | 15,504 | 1,288 | 2,000 | 64 | 19,844 → 18,920 |
 | bar | 12,484 | 1,840 | 1,584 | 64 | 16,918 → 16,060 |
-| plate | 13,056 | 1,080 | 1,808 | 64 | 16,650 → 16,072 |
+| plate | 13,004 | 1,080 | 1,808 | 64 | 16,650 → 16,020 |
 | cymbal | 11,120 | 684 | 11,936 | 52 | 24,420 → 24,296 |
 | noise | 7,520 | 300 | 992 | 48 | 8,672 → 8,920 |
 
@@ -246,11 +259,11 @@ unit with itself, never two units with each other.
 |---|---|---|
 | kick | 752.0 | 747.1 |
 | tom | 903.7 | 892.2 |
-| kernel | 1009.7 | 1005.6 |
+| kernel | 1009.7 | 1006.6 |
 | snare | 893.5 | 887.6 |
 | bar | 698.5 | 693.4 |
 | plate | 926.0 | 926.7 |
-| cymbal | 653.6 | 625.7 |
+| cymbal | 653.6 | 627.5 |
 | noise | 525.5 | 526.4 |
 
 The driver's `render_only` command renders without hashing or dumping, so the

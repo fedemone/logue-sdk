@@ -49,7 +49,7 @@ does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_plate`
-  (shipped: .text 13056 · .rodata 1080 · .data 1808 · .bss 64).
+  (shipped: .text 13004 · .rodata 1080 · .data 1808 · .bss 64).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_plate --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.
