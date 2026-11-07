@@ -23,6 +23,19 @@
 
 #include "../common/runtime.h"
 #include "unit.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, env_mul, kSampleRate, knob_exp2
+//   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
+//                    format_int, format_percent, is_host_knob,
+//                    knob::clamp_int, knob::decay, knob::hit_pos,
+//                    knob::inharm, knob::mallet_res, knob::mallet_stiff,
+//                    knob::material, knob::percent, knob::poly, knob::release,
+//                    knob::tube_radius, midi_velocity, off_anchor,
+//                    seed_host_knobs
+//   master_stage.h   MasterStage, soft_saturate_bus, tone_tilt
+//   voice_base.h     any_fading, fade_out_all, kNumVoices
+#include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/voice_base.h"
@@ -41,7 +54,7 @@ public:
         if (desc->samplerate != (uint32_t)brc::kSampleRate) return k_unit_err_samplerate;
         if (desc->output_channels != 2) return k_unit_err_geometry;
         // The knobs LoadPreset does not write start at their header.c defaults.
-        seed_performance_params();
+        brc::seed_host_knobs(*this, kHostKnobs);
         Reset();
         LoadPreset(0);
         return k_unit_err_none;
@@ -87,7 +100,7 @@ public:
         const int16_t* row = kPresetKnobs[idx];
         m_note.set_root((uint8_t)row[k_paramPitch]);   // the Pitch column is the root
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
-            if (loads_with_preset(p)) setParameter(p, row[p]);
+            if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) setParameter(p, row[p]);
 
         // REFERENCE ANCHORS: the shipped knob values every mapping in
         // shape_strike pivots on.
@@ -147,8 +160,8 @@ public:
         switch (index) {
         case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramPartls:   // the bank density this position gives
-            snprintf(partls_buf, sizeof(partls_buf), "Rs%d%%", (int)(25 + 5 * brc::knob::clamp_int(value, 0, 7)));
-            return partls_buf;
+            return brc::format_percent(partls_buf, sizeof(partls_buf),
+                                       (int)(25 + 5 * brc::knob::clamp_int(value, 0, 7)), "Rs");
         case k_paramMlltStif: return brc::format_int(stiff_buf, sizeof(stiff_buf), (int)(value * 100));
         case k_paramDkay:     return brc::format_int(dkay_buf, sizeof(dkay_buf), (int)(value * 10));
         case k_paramCutoff:   return brc::format_hz(cutoff_buf, sizeof(cutoff_buf), value);
@@ -228,7 +241,7 @@ public:
             render_voice(v, out, frames, tone);
         }
         if (!m_master.should_run(any_voice)) return;
-        if (any_voice) soft_saturate(out, frames);
+        if (any_voice) brc::soft_saturate_bus(out, frames, 0.35f);   // stacked voices: soft headroom first
         m_master.render(out, frames);
     }
 
@@ -355,8 +368,6 @@ private:
         beater_hardness(cc);
     }
 
-    static bool moved(float d) { return d < -0.001f || d > 0.001f; }
-
     // VlMllRes → the stick hit ("tang").  Positive values boost the stick and
     // sharpen the noise-driver attack (punch without running the boosted
     // click into the output clamp); negative values soften toward a felt
@@ -374,7 +385,7 @@ private:
     // gets shorter and the strike brighter; a soft felt tip rounds all three off.
     void stick_stiffness(CymbalConfig& cc) const {
         const float d = brc::knob::percent(m_params[k_paramVlMllStf]) - m_anchor.vel_stiff;
-        if (!moved(d)) return;
+        if (!brc::off_anchor(d)) return;
         cc.lowAttackSec *= brc::knob_exp2(-1.2f * d);
         cc.thwackSec    *= brc::clampf(brc::knob_exp2(-0.8f * d), 0.40f, 2.50f);
         cc.hfTilt        = brc::clampf(cc.hfTilt + 0.8f * d, 0.0f, 4.0f);
@@ -405,7 +416,7 @@ private:
     // reads dull): tilts the bank's HF weight and moves the ceiling.
     void metal_brightness(CymbalConfig& cc) const {
         const float d = brc::knob::material(m_params[k_paramMterl]) - m_anchor.material;
-        if (!moved(d)) return;
+        if (!brc::off_anchor(d)) return;
         cc.hfTilt = brc::clampf(cc.hfTilt + d * 3.6f, 0.0f, 5.0f);
         cc.maxHz  = brc::clampf(cc.maxHz * brc::knob_exp2(1.3f * d), 2500.0f, 20000.0f);
     }
@@ -415,7 +426,7 @@ private:
     // a softer ping.  Bipolar, so the mapping follows the knob below centre.
     void strike_locus(CymbalConfig& cc) const {
         const float d = brc::knob::hit_pos(m_params[k_paramHitPos]) - m_anchor.hit_pos;
-        if (!moved(d)) return;
+        if (!brc::off_anchor(d)) return;
         cc.stickLevel     = fminf(3.0f, cc.stickLevel * brc::knob_exp2(2.4f * d));
         cc.resonatorLevel = fmaxf(0.03f, cc.resonatorLevel * brc::knob_exp2(1.4f * d));
         cc.noiseLevel     = fmaxf(0.0f, cc.noiseLevel * brc::knob_exp2(-1.7f * d));
@@ -425,7 +436,7 @@ private:
     // bigger (lower) or smaller (higher) cymbal, and adds breath under the ring.
     void instrument_size(CymbalConfig& cc, float& pitch_ratio) const {
         const float d = brc::knob::tube_radius(m_params[k_paramTubRad]) - m_anchor.tube_radius;
-        if (!moved(d)) return;
+        if (!brc::off_anchor(d)) return;
         pitch_ratio    *= brc::clampf(brc::knob_exp2(-1.2f * d), 0.35f, 2.8f);
         cc.shimmerLevel = fmaxf(0.0f, cc.shimmerLevel * brc::knob_exp2(1.3f * d));
     }
@@ -434,7 +445,7 @@ private:
     // noise bed (a gong that RINGS); down, the wash dominates.
     void ring_presence(CymbalConfig& cc) const {
         const float d = brc::knob::mallet_res(m_params[k_paramMlltRes]) - m_anchor.mallet_res;
-        if (!moved(d)) return;
+        if (!brc::off_anchor(d)) return;
         cc.resonatorLevel = fmaxf(0.03f, cc.resonatorLevel * brc::knob_exp2(2.4f * d));
         cc.shimmerLevel   = fmaxf(0.0f,  cc.shimmerLevel   * brc::knob_exp2(1.2f * d));
         cc.noiseLevel     = fmaxf(0.0f,  cc.noiseLevel     * brc::knob_exp2(-0.9f * d));
@@ -446,7 +457,7 @@ private:
     // with a felt beater.
     void beater_hardness(CymbalConfig& cc) const {
         const float d = brc::knob::mallet_stiff(m_params[k_paramMlltStif]) - m_anchor.mallet_stiff;
-        if (!moved(d)) return;
+        if (!brc::off_anchor(d)) return;
         cc.stickLevel   = fminf(3.0f, cc.stickLevel * brc::knob_exp2(1.8f * d));
         cc.thwackSec   *= brc::clampf(brc::knob_exp2(-1.1f * d), 0.30f, 3.00f);
         cc.lowAttackSec = fmaxf(0.0005f, cc.lowAttackSec * brc::knob_exp2(-1.6f * d));
@@ -466,43 +477,8 @@ private:
         }
     }
 
-    // Stacked voices (rolls) can sum past the limiter's ceiling, which reads
-    // as harsh noise: a gentle headroom curve first, which a single voice
-    // passes nearly unchanged.
-    static void soft_saturate(float* out, size_t frames) {
-        for (size_t i = 0; i < frames; ++i) {
-            const size_t l = i * 2;
-            out[l] = out[l] / (1.0f + 0.35f * fabsf(out[l]));
-        }
-    }
 
-    // The knobs LoadPreset does not write keep their value across Program
-    // changes: Pitch (its column is the root), Poly, Velocity, VlMllRes, Tone,
-    // Cutoff, Resnc.
-    static bool loads_with_preset(uint8_t p) {
-        switch (p) {
-        case k_paramProgram: case k_paramPitch: case k_paramPoly: case k_paramVelocity:
-        case k_paramVlMllRes: case k_paramTone: case k_paramCutoff: case k_paramResnc:
-            return false;
-        default:
-            return true;
-        }
-    }
 
-    // The knobs LoadPreset does NOT write, to their header.c defaults (Init).
-    // MUST track header.c's `.init` fields for these slots.
-    void seed_performance_params() {
-        static const int16_t kDefaults[][2] = {
-            { k_paramPitch,    0    },
-            { k_paramPoly,     4    },
-            { k_paramVelocity, 0    },
-            { k_paramVlMllRes, 0    },
-            { k_paramTone,     0    },
-            { k_paramCutoff,   1999 },
-            { k_paramResnc,    71   },
-        };
-        for (const auto& d : kDefaults) setParameter((uint8_t)d[0], d[1]);
-    }
 
     VoiceState         m_voices[brc::kNumVoices];
     uint8_t            m_last_voice = 0;   // the slot the last strike took

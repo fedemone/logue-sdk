@@ -7,8 +7,20 @@
 //  * the shimmer, a high-pass of the noise burst mixed after the bank;
 //  * the ring gate, which pulls the noise down with the bank's fundamental
 //    so noise and ring die together instead of sounding side by side.
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       kSampleRate, kSilence
+//   exciter.h        NoiseBurst
+//   filter.h         FastSVF
+//   modal_bank.h     ModalBank
+//   small_filters.h  one_pole_hp
+//   voice_base.h     VoiceBase
+//   voice_layers.h   MetalChirp, Onset
+#include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/exciter.h"
 #include "../brachetti_common/filter.h"
 #include "../brachetti_common/modal_bank.h"
+#include "../brachetti_common/small_filters.h"
 #include "../brachetti_common/voice_base.h"
 #include "../brachetti_common/voice_layers.h"
 
@@ -25,8 +37,7 @@ struct Shimmer {
 
     // noise − LP(noise), enveloped.
     float process(float noise) {
-        lp += 0.12f * (noise - lp);
-        const float hf = noise - lp;
+        const float hf = brc::one_pole_hp(noise, 0.12f, lp);
         const float out = hf * env * mix * 8.0f;
         env *= decay;
         return out;

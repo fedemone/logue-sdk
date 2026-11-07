@@ -1,7 +1,14 @@
 #pragma once
 // Brachetti Bar — the presets: what each one plays and how it is voiced.
 #include <cstdint>
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       preset_column_in
+//   knobs.h          name_at
+//   modal_bank.h     ModalPresetConfig
+//   modal_synth.h    ModalLayout
 #include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 
@@ -27,7 +34,7 @@ inline const char* preset_name(uint8_t idx) {
     static const char* const names[kNumPresets] = {
         "Marmba", "TblrBel", "Vibrph", "Wodblk", "Kalimba", "StelPan", "Claves", "GlsBwl", "SltDrm", "GlsBotl"
     };
-    return (idx < kNumPresets) ? names[idx] : "Unknown";
+    return brc::name_at(names, idx, "Unknown");
 }
 
 // One row per preset, one column per knob in slot order: the knob

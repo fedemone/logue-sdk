@@ -6,7 +6,7 @@
 
 This repository contains all the files and tools needed to build custom oscillators and effects for the [prologue](https://www.korg.com/products/synthesizers/prologue), [minilogue xd](https://www.korg.com/products/synthesizers/minilogue_xd), [Nu:Tekt NTS-1 digital kit](https://www.korg.com/products/dj/nts_1), [Nu:Tekt NTS-1 digital kit mkII](https://www.korg.com/products/synthesizers/nts_1_mk2), [microKORG2](https://www.korg.com/products/synthesizers/microkorg2) synthesizers, the [Nu:Tekt NTS-3 kaoss pad kit](https://www.korg.com/products/dj/nts_3), and [drumlogue](https://www.korg.com/products/drums/drumlogue) drum machine.
 
-This is a personal fork of KORG's official [logue-sdk](https://github.com/korginc/logue-sdk) that additionally hosts a number of custom, independently developed synth and effect units (for example, but not limited to, `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti` (and its eight per-family `Brachetti` units) and `delay_tribal` under [platform/drumlogue/](platform/drumlogue/)). **Please read the [Disclaimer](#disclaimer) below before downloading, building, installing, or using any of them.**
+This is a personal fork of KORG's official [logue-sdk](https://github.com/korginc/logue-sdk) that additionally hosts a number of custom, independently developed synth and effect units (for example, but not limited to, `OmniPress`, `NeonLabirinto`, `LuceAlNeon`, `ScrutaAstri`, `EffeESP32`, `EffeMD`, `PortaCassette`, `Brachetti` (and its eight per-family `Brachetti` units) and `delay_tribal` under [platform/drumlogue/](platform/drumlogue/)). **Please read the [Disclaimer](#disclaimer) below before downloading, building, installing, or using any of them.**  To find the document you need — and only that one — see the [Documentation map](#documentation-map).
 
 ## Disclaimer
 
@@ -38,6 +38,60 @@ If you do not agree with these terms, do not download, build, install, or use an
     BrcKernel, BrcSnare, BrcBar, BrcPlate, BrcCymbal, BrcNoise — one per Brachetti instrument
     family, see [platform/drumlogue/tools/brachetti_equiv](platform/drumlogue/tools/brachetti_equiv/README.md))
 * Press "play" button on Drumlogue to start
+
+## Documentation map
+
+Read it top-down: each entry says what a document holds, so you open one only
+when you need what is in it.  The KORG SDK's own documents (one README per
+platform, `docker/`, `tools/`) are listed under [Repository Structure](#repository-structure).
+
+- **This README** — the fork, the disclaimer, installing units on the drumlogue.
+- [`platform/drumlogue/README.md`](platform/drumlogue/README.md) ([日本語](platform/drumlogue/README_ja.md)) — the drumlogue SDK: the Docker build environment, listing and building units, the project layout.
+  - **Synth units**
+    - **Brachetti** — physical-modelling percussion: the original 40-preset unit and its eight per-family units ([below](#brachetti-documents)).
+    - [EffeESP32](platform/drumlogue/EffeESP32/README.md) — 6-operator FM drum synth: features, architecture, every GUI parameter; 59 presets, one per instrument (see "Instrument selection and the panel").  [`PROGRESS.md`](platform/drumlogue/EffeESP32/PROGRESS.md): the porting log and open TODOs — for whoever works on it next.
+    - [EffeMD](platform/drumlogue/EffeMD/README.md) — Machinedrum-style FM percussion synth: history, architecture, building, tests; 2 presets (the instrument is a parameter).
+    - [ScrutaAstri](platform/drumlogue/scruta_astri/README.md) — drone synth: signal path, LFOs, modulation matrix; 242 programs, laid out in "The Program Layout".
+  - **Effects** (no preset slots)
+    - [OmniPress](platform/drumlogue/omnipress/README.md) — master compressor: the modes, DRIVE, the parameter reference, the signal flow.
+    - [PortaCassette](platform/drumlogue/PortaCassette/README.md) (`PortaK7`) — master effect, Portastudio and vinyl emulation: signal chain, machines, parameters.
+    - [NeonLabirinto](platform/drumlogue/reverb_labirinto/README.md) — reverb; its five factory settings (foresta, tempio, labirinto, esotico, stellare) are chosen with its Preset parameter.
+    - [LuceAlNeon](platform/drumlogue/reverb_light/README.md) — reverb, five parallel paths: design and user guide.
+    - [delay_tribal](platform/drumlogue/delay_tribal/README.md) (Tribale) — delay, a percussion micro-ensemble.  [`TODO.md`](platform/drumlogue/delay_tribal/TODO.md): hardware findings, fixes and open items.
+    - Each synth and effect above also carries a `README_<NAME>.md`: an identical copy of its `README.md`.
+  - **Host tools**
+    - [`tools/level_meter`](platform/drumlogue/tools/level_meter/README.md) — what a synth unit puts on the bus, measured on the host.
+    - [`tools/stack_meter`](platform/drumlogue/tools/stack_meter/README.md) — what a synth unit does with stacked hits.
+    - [`tools/brachetti_equiv`](platform/drumlogue/tools/brachetti_equiv/README.md) — the Brachetti family's checks (below).
+
+### Brachetti documents
+
+The original 40-preset unit split into eight per-family units, which share
+one library.  Go down a level only for what you need:
+
+1. [**The Brachetti family**](platform/drumlogue/tools/brachetti_equiv/README.md) — start here: the eight units, how they were split from the original and restructured, how they are verified bit-identical to it (and the tools that do it), their sizes and CPU, how to maintain them.
+2. **The family units** — each has a `README.md` (presets, knob pages, what every knob does, its files, build, verification) and a `CLAUDE.md` (the rules for changing it).  Presets in the order the unit shows them, and the same presets' slots in the original:
+
+   | Unit · rules | On the drumlogue | Presets | Slots in the original | Engine |
+   |---|---|---|---|---|
+   | [`brachetti_kick`](platform/drumlogue/brachetti_kick/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_kick/CLAUDE.md) | `BrcKick` | Kick2, 808Sub, Kick | 0, 2, 20 | membrane modes + boom + thump |
+   | [`brachetti_tom`](platform/drumlogue/brachetti_tom/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_tom/CLAUDE.md) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom | 6, 12, 23, 27, 28, 33, 39 | membrane modes + boom + strike transient |
+   | [`brachetti_kernel`](platform/drumlogue/brachetti_kernel/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_kernel/CLAUDE.md) | `BrcKernel` | Timpni, Taiko | 5, 7 | dense coupled-resonator drum kernel |
+   | [`brachetti_snare`](platform/drumlogue/brachetti_snare/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_snare/CLAUDE.md) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot | 3, 8, 37, 38 | modal head + snare-wire resonators |
+   | [`brachetti_bar`](platform/drumlogue/brachetti_bar/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_bar/CLAUDE.md) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl | 1, 4, 10, 11, 15, 16, 17, 24, 30, 34 | free-bar modes + mallet |
+   | [`brachetti_plate`](platform/drumlogue/brachetti_plate/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_plate/CLAUDE.md) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick | 18, 19, 29, 35 | plate modes + ring-coupled noise |
+   | [`brachetti_cymbal`](platform/drumlogue/brachetti_cymbal/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_cymbal/CLAUDE.md) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 13, 14, 26, 31, 32, 36 | dense-resonator cymbal |
+   | [`brachetti_noise`](platform/drumlogue/brachetti_noise/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_noise/CLAUDE.md) | `BrcNoise` | Clap, Shaker, HHat-C | 21, 22, 25 | shaped noise + AM gating |
+
+   The original's 40th preset, Koto (slot 9, a Karplus-Strong string), is in no family unit; it stays playable in the original.
+3. [**The common library**](platform/drumlogue/brachetti_common/README.md) — what the family units share: what is where, the **helper index** (open it before writing a helper), the rules for changing shared code, the quirks kept on purpose, what was removed or moved.
+4. **The original** — [`brachetti/README.md`](platform/drumlogue/brachetti/README.md): the 40-preset unit — overview, signal flow, architectural decisions and quirks, the tuning toolchain, the parameter reference (`README_BRACHETTI.md` is a copy).  Its other documents record how the sounds were voiced; open them only for that history:
+   - [`CLAUDE.md`](platform/drumlogue/brachetti/CLAUDE.md) — the session brief: the rules and the record of every change and measurement.
+   - [`PROGRESS.md`](platform/drumlogue/brachetti/PROGRESS.md), [`PROGRESS2.md`](platform/drumlogue/brachetti/PROGRESS2.md) — status trackers and TODO history.
+   - [`NOTE_AUDIT.md`](platform/drumlogue/brachetti/NOTE_AUDIT.md) — what each preset's root note does, measured.
+   - [`REALISM_REVIEW.md`](platform/drumlogue/brachetti/REALISM_REVIEW.md) — the instrument-family realism review and its hardware rounds.
+   - [`cymbal_synthesis/README.md`](platform/drumlogue/brachetti/cymbal_synthesis/README.md), [`MERGE_FEASIBILITY.md`](platform/drumlogue/brachetti/cymbal_synthesis/MERGE_FEASIBILITY.md) — the cymbal prototype and how it was merged into the unit.
+   - [`samples/README.md`](platform/drumlogue/brachetti/samples/README.md) — the reference recordings and how renders are scored against them.
 
 ## Existing logue SDK Units
 

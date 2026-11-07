@@ -11,6 +11,10 @@
 //    (noise_out_sample), so the broadband texture is not pitch-filtered away.
 // NzMix crossfades the two: 0 = mallet only, 100 = noise only.
 //
+// Provides: Exciter (the knob setters, the strike, per-sample mallet and noise
+// burst), NoiseBurst (one sample of the burst, in parts), noise_filter_name,
+// kNoiseSeedStir.
+//
 // master_env holds every voice at 1.0 while it plays (the ring length is the
 // voice's own decay); only AllNoteOff releases it, at the rate set_release_time
 // derives from the Dkay knob.
@@ -22,6 +26,7 @@
 #include "knobs.h"
 #include "models.h"
 #include "noise.h"
+#include "small_filters.h"
 
 namespace brc {
 
@@ -33,7 +38,7 @@ constexpr uint32_t kNoiseSeedStir = 0x26A9DBE5u;
 // What the drumlogue shows for NzFltr.
 inline const char* noise_filter_name(int32_t v) {
     static const char* const names[] = {"LP", "BP", "HP"};
-    return (v >= 0 && v < 3) ? names[v] : nullptr;
+    return name_at(names, v, nullptr);
 }
 
 // One sample of the noise burst, split into its parts so a unit can reshape a
@@ -211,10 +216,8 @@ struct Exciter {
             // Both bands come from the FILTERED noise, so NzFltr / NzFltFrq
             // govern the whole burst; noise_hi_lp_coeff only routes body vs
             // click.
-            noise_lp_state += 0.15f * (b.filtered - noise_lp_state);
-            const float low = noise_lp_state;
-            noise_hi_lp_state += noise_hi_lp_coeff * (b.filtered - noise_hi_lp_state);
-            b.high = b.filtered - noise_hi_lp_state;
+            const float low = one_pole_lp(b.filtered, 0.15f, noise_lp_state);
+            b.high = one_pole_hp(b.filtered, noise_hi_lp_coeff, noise_hi_lp_state);
             // noise_band_mix is clamped where it is written, not per sample.
             const float mix = noise_band_mix;
             b.low_part  = low * (1.0f - mix) * b.env_low;

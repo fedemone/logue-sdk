@@ -21,6 +21,13 @@
 #include <cstdint>
 
 #include "../common/runtime.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   master_stage.h   MasterStage, tone_tilt
+//   modal_bank.h     ModalPresetConfig
+//   modal_synth.h    ModalSynth
+#include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 #include "presets.h"
 #include "voice.h"

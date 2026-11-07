@@ -1,7 +1,12 @@
 #pragma once
 // Brachetti Cymbal — the knob layout, the presets and how each one strikes.
 #include <cstdint>
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       preset_column_in
+//   knobs.h          HostKnob, name_at
 #include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
 #include "voice.h"
 
 // ── The knobs, slot by slot ─────────────────────────────────────────────────
@@ -50,7 +55,7 @@ inline const char* preset_name(uint8_t idx) {
     static const char* const names[kNumPresets] = {
         "Cymbal", "Gong", "HHat-O", "Ride", "RidBel", "Splash"
     };
-    return (idx < kNumPresets) ? names[idx] : "Unknown";
+    return brc::name_at(names, idx, "Unknown");
 }
 
 // One row per preset, one column per knob in slot order: the knob values the
@@ -80,6 +85,19 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramDkay, 0, 200),
               "Dkay is 0..200: every consumer saturates at 200");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramPartls, 0, 7),
               "Partls (the bank density) is 0..7");
+
+// The knobs the host owns, with their header.c defaults: a Program change
+// leaves them where they are and Init() seeds them (brc::HostKnob, knobs.h).
+// MUST track header.c's `.init` fields for these slots.
+static const brc::HostKnob kHostKnobs[] = {
+    { k_paramPitch,    0    },
+    { k_paramPoly,     4    },
+    { k_paramVelocity, 0    },
+    { k_paramVlMllRes, 0    },
+    { k_paramTone,     0    },
+    { k_paramCutoff,   1999 },
+    { k_paramResnc,    71   },
+};
 
 // ── Inharmonic anchor tables (ported from cymbal_synthesis) ─────────────────
 static const float kCrashHz[16] = {

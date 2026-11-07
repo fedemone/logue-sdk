@@ -31,7 +31,15 @@
 #include <cmath>
 #include <cstring>
 
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       kSampleRate
+//   master_stage.h   tanh_knee
+//   noise.h          xorshift32
+//   small_filters.h  one_pole_lp
 #include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/noise.h"
+#include "../brachetti_common/small_filters.h"
 #include "modal_drum_data.h"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -159,19 +167,8 @@ public:
         // The transparent peak limiter on the SUM of the kettles: unity below
         // kLimThr, a tanh knee above — preserves the strike's crest ("wham").
         for (int s = 0; s < frames; ++s)
-            mono[s] = TanhKnee(mono[s], kLimThr, 1.0f - kLimThr, 1.0f / (1.0f - kLimThr)) * r.out_gain;
+            mono[s] = brc::tanh_knee(mono[s], kLimThr, 1.0f - kLimThr, 1.0f / (1.0f - kLimThr)) * r.out_gain;
         return true;
-    }
-
-    // A peak limiter that leaves |x| <= thr alone and bends the excess onto
-    // thr + span · tanh((|x| - thr) · inv_span), keeping the sign.
-    static float TanhKnee(float x, float thr, float span, float inv_span) {
-        float a = fabsf(x);
-        if (a > thr) {
-            a = thr + span * fastertanhf((a - thr) * inv_span);
-            x = (x < 0.0f) ? -a : a;
-        }
-        return x;
     }
 
 private:
@@ -559,13 +556,12 @@ private:
     // The noise wedge: broadband membrane response per kettle, its cutoff
     // sweeping down (4 cascaded one-poles = -24 dB/oct).
     float NoiseWedge(Voice& vc, const BlockRates& k) const {
-        vc.rng ^= vc.rng << 13; vc.rng ^= vc.rng >> 17; vc.rng ^= vc.rng << 5;
-        const float wn = (float)(int32_t)vc.rng * (1.0f / 2147483647.0f);
-        vc.nz_lp1 += vc.noise_coef * (wn        - vc.nz_lp1);
-        vc.nz_lp2 += vc.noise_coef * (vc.nz_lp1 - vc.nz_lp2);
-        vc.nz_lp3 += vc.noise_coef * (vc.nz_lp2 - vc.nz_lp3);
-        vc.nz_lp4 += vc.noise_coef * (vc.nz_lp3 - vc.nz_lp4);
-        const float out = vc.nz_lp4 * vc.noise_env * k.noise_level;
+        const float wn = (float)(int32_t)brc::xorshift32(vc.rng) * (1.0f / 2147483647.0f);
+        float x = brc::one_pole_lp(wn, vc.noise_coef, vc.nz_lp1);
+        x = brc::one_pole_lp(x, vc.noise_coef, vc.nz_lp2);
+        x = brc::one_pole_lp(x, vc.noise_coef, vc.nz_lp3);
+        x = brc::one_pole_lp(x, vc.noise_coef, vc.nz_lp4);
+        const float out = x * vc.noise_env * k.noise_level;
         vc.noise_env *= k.noise_decay;
         vc.noise_coef = m_noise_coef_lo_eff + (vc.noise_coef - m_noise_coef_lo_eff) * k.noise_sweep;
         return out;

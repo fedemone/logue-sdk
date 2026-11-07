@@ -13,6 +13,10 @@
 //   ModalBank::init the strike: tuned to the note, scaled by velocity
 //   strike_modal()  Dkay + Rel → ring length, MlltStif → brightness tilt,
 //                   MlltRes → presence, HitPos → which modes the strike feeds
+//
+// Provides: ModalPresetConfig (a preset's calibrated bank), ModalShape,
+// ModalKnobs, ModalBank (the oscillators, NEON path), shape_modal,
+// strike_modal, format_mode_count (Partls' display), kMaxModes, kModelRatios.
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -88,10 +92,6 @@ struct ModalKnobs {
     int32_t decay, release, mallet_stiff, mallet_res, hit_pos;
 };
 
-// Is an anchored factor far enough from 1 to apply?  (At the anchor it is
-// exactly 1, and the calibrated values must pass through untouched.)
-inline bool moved(float factor) { return factor < 0.999f || factor > 1.001f; }
-
 // ── Before the strike: Model, Partls, Inharm, Mterl, TubRad ─────────────────
 // Returns the TubRad body-size factor it applied (1.0 when it did not), for
 // units whose body also feeds another layer.
@@ -139,7 +139,7 @@ inline float shape_modal(ModalShape& s, const ModalKnobs& k, const Anchors& a, u
     // spread reaches its floor partway down and collapses every partial onto
     // the fundamental.
     float spread = knob_exp2(1.75f * (knob::inharm(k.inharm) - a.inharm));
-    if (moved(spread)) {
+    if (off_unity(spread)) {
         spread = clampf(spread, 0.05f, 5.0f);
         for (int i = 1; i < kMaxModes; ++i)
             if (r[i] > 0.0f) r[i] = 1.0f + (r[i] - 1.0f) * spread;
@@ -149,7 +149,7 @@ inline float shape_modal(ModalShape& s, const ModalKnobs& k, const Anchors& a, u
     // Dkay's job), and the upper modes' initial energy tilts too (gently, √):
     // damping only the tail is inaudible on fundamental-dominated drums.
     float mat = knob_exp2(3.4f * (knob::material(k.material) - a.material));
-    if (moved(mat)) {
+    if (off_unity(mat)) {
         mat = clampf(mat, 0.08f, 9.0f);
         t[1] *= mat;
         t[2] *= mat;
@@ -161,7 +161,7 @@ inline float shape_modal(ModalShape& s, const ModalKnobs& k, const Anchors& a, u
     // TubRad: body size — a wider body rings ALL its modes longer (a mode-1
     // change alone is inaudible on fundamental-dominated instruments).
     float tub = knob_exp2(1.9f * (knob::tube_radius(k.tube_radius) - a.tube_radius));
-    if (moved(tub)) {
+    if (off_unity(tub)) {
         tub = clampf(tub, 0.25f, 3.5f);
         t[0] *= tub; t[1] *= tub; t[2] *= tub; t[3] *= tub;
         return tub;
@@ -219,7 +219,7 @@ struct ModalBank {
         // y1 = 1), so it starts at its peak on frame 0 instead of building up
         // from sin(w) over ~1 ms — the right initial energy for a struck body.
         for (int i = 0; i < kMaxModes; ++i) {
-            const float w = (M_TWOPI * f[i]) * kInvSampleRate;
+            const float w = phase_inc(f[i]);
             y2[i] = mode_on(i) ? cosf(w) : 0.0f;
             y1[i] = mode_on(i) ? 1.0f : 0.0f;
         }
@@ -243,7 +243,7 @@ struct ModalBank {
 
     // Ring length × scale (scale < 1 = shorter), as decay^(1/scale).
     void scale_ring(float scale) {
-        if (!moved(scale)) return;
+        if (!off_unity(scale)) return;
         const float exp_scale = 1.0f / scale;
         for (int i = 0; i < kMaxModes; ++i) decay[i] = powf(decay[i], exp_scale);
     }
@@ -359,7 +359,7 @@ inline void strike_modal(ModalBank& b, const ModalKnobs& k, const Anchors& a,
     const float stiff_knob = knob::mallet_stiff(k.mallet_stiff);
     const float tilt = (mallet_stiffness - stiff_knob) * 1.4f
                      + (stiff_knob - a.mallet_stiff) * 3.4f;
-    if (tilt < -0.001f || tilt > 0.001f) {
+    if (off_anchor(tilt)) {
         for (int i = 1; i < kMaxModes; ++i)
             b.env[i] *= clampf(1.0f + tilt * (float)i, 0.05f, 6.0f);
     }
@@ -373,7 +373,7 @@ inline void strike_modal(ModalBank& b, const ModalKnobs& k, const Anchors& a,
     // a clamp, so the far negative corner saturates on presets that ship
     // HitPos high; reshaping them means re-deriving the coefficients by ear.
     const float hit_off = knob::hit_pos(k.hit_pos) - a.hit_pos;
-    if (hit_off < -0.001f || hit_off > 0.001f) {
+    if (off_anchor(hit_off)) {
         static const float kFeed[kMaxModes] = {1.55f, 1.35f, 2.40f, 3.60f, 4.80f, 6.00f};
         b.env[0] *= clampf(1.0f - hit_off * kFeed[0], 0.08f, 2.4f);
         for (int i = 1; i < kMaxModes; ++i)

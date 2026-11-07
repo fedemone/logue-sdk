@@ -17,7 +17,7 @@ This unit holds the dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, R
 | Engine | dense-resonator cymbal (`CymbalVoice`, `ENGINE_CYMBAL`) |
 | Presets | 6 |
 | Knobs | 19 |
-| ARM size (cross-built, `arm_size.sh`) | .text 11076 · .rodata 680 · .data 11936 · .bss 52 |
+| ARM size (cross-built, `arm_size.sh`) | .text 11120 · .rodata 684 · .data 11936 · .bss 52 |
 
 ## Presets
 

@@ -1,6 +1,16 @@
 #pragma once
 // Brachetti common library — constants and small math helpers every unit uses.
 //
+// Provides:
+//   kSampleRate, kInvSampleRate, kLn0001, kSilence   constants
+//   clampf            clamp to [lo, hi] (fmaxf(lo, fminf(hi, x)))
+//   or_default        a table value, or its fallback when it is left unset
+//   knob_exp2         2^x for anchored knob curves, exactly 1 at 0
+//   env_mul           per-sample multiplier of a geometric envelope (exact expf)
+//   phase_inc         radians per sample of an oscillator at a frequency
+//   wrap_phase        keep a phase inside one turn
+//   preset_column_in  compile-time check on a preset-table column
+//
 // The library is header-only C++14 (the drumlogue SDK builds units with
 // -std=gnu++14): plain structs with default member initialisers, no
 // constructors, no virtual functions, no dynamic memory.  That keeps each
@@ -18,6 +28,12 @@ constexpr float kLn0001        = -6.907755279f;   // ln(0.001): a T60 is a -60 d
 constexpr float kSilence       = 1e-5f;           // below this a layer counts as finished
 
 inline float clampf(float x, float lo, float hi) { return fmaxf(lo, fminf(hi, x)); }
+
+// A table value below `unset` means "not given": use the fallback.  (Voicing
+// tables leave a column 0 where the default applies.)
+inline float or_default(float value, float unset, float fallback) {
+    return (value < unset) ? fallback : value;
+}
 
 // 2^x for the REFERENCE-ANCHORED knob curves.  fasterpow2f is precise enough
 // for a knob's response (±0.3 %), EXCEPT at the anchor: fasterpow2f(0) ≈

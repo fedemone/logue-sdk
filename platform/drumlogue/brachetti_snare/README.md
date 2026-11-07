@@ -17,7 +17,7 @@ This unit holds the snare drums: a modal head plus three-band snare-wire resonat
 | Engine | modal head + three-band snare-wire resonators (`ENGINE_SNARE`) |
 | Presets | 4 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 15628 · .rodata 1288 · .data 2000 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 15504 · .rodata 1288 · .data 2000 · .bss 64 |
 
 ## Presets
 

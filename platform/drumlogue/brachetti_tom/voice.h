@@ -3,6 +3,11 @@
 // VoiceBase), the membrane modal bank it strikes, the boom (Ac Tom, DeepBs,
 // Bongo and RackTom, whose boom glides), the pitch envelope RackTom's glide
 // reads, the stick / hand-slap transient, a metallic chirp and the onset ramp.
+
+// From brachetti_common (its README.md indexes every helper):
+//   modal_bank.h     ModalBank
+//   voice_base.h     VoiceBase
+//   voice_layers.h   Boom, MetalChirp, Onset, PitchEnv, Transient
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/voice_base.h"
 #include "../brachetti_common/voice_layers.h"

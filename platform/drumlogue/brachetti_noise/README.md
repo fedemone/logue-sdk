@@ -17,7 +17,7 @@ This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-
 | Engine | shaped noise exciter + AM gating (`ENGINE_NOISE`) |
 | Presets | 3 |
 | Knobs | 18 |
-| ARM size (cross-built, `arm_size.sh`) | .text 7468 · .rodata 300 · .data 992 · .bss 48 |
+| ARM size (cross-built, `arm_size.sh`) | .text 7520 · .rodata 300 · .data 992 · .bss 48 |
 
 ## Presets
 

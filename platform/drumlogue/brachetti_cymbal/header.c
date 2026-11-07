@@ -28,7 +28,7 @@ const __unit_header unit_header_t unit_header = {
         // sounding like the preset it shows.  The knobs the host owns keep
         // their own — Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc —
         // because LoadPreset never writes them;
-        // seed_performance_params() in synth_engine.h holds the same values.
+        // `kHostKnobs` in presets.h holds the same values.
 
         // Page 1
         // Program: the preset (this family's presets only)

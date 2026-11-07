@@ -19,7 +19,10 @@ else.  README.md lists the presets and what every knob does.
   moved.  Say so in the commit.
 - **Shared code.**  This folder holds the family (`presets.h`, `voice.h`,
   `synth_engine.h`); what the family units share is in `../brachetti_common`,
-  whose README has the rules.  A change there reaches all eight units: run
+  whose README has the rules and an index of every helper: look there before
+  writing one.  Each file's `From brachetti_common` block lists the helpers it
+  uses (`../tools/brachetti_equiv/lib_uses.py --write` keeps it true,
+  `--check` verifies it).  A change in the library reaches all eight units: run
   `run_equiv.sh` on each.  A fix that also applies to the original must be made
   there separately.
 - **REFERENCE ANCHORS.**  LoadPreset captures each knob's shipped value into
@@ -30,7 +33,7 @@ else.  README.md lists the presets and what every knob does.
 - **Knob ↔ header.c:** `brc::ModalLayout`
   (`../brachetti_common/modal_synth.h`) must match `header.c` slot for slot (a
   static_assert checks the count; the order is on you), header defaults must
-  equal preset 0's row, and `seed_performance_params()` (`modal_synth.h`) must
+  equal preset 0's row, and `kModalHostKnobs` (`modal_synth.h`) must
   match the defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity,
   VlMllRes, Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their
   table columns).
@@ -47,7 +50,7 @@ else.  README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_kick`
-  (shipped: .text 15692 · .rodata 912 · .data 1952 · .bss 64).
+  (shipped: .text 15568 · .rodata 912 · .data 1952 · .bss 64).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_kick --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

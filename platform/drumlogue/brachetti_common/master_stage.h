@@ -12,8 +12,19 @@
 // into main_out[i * 2] only (a stereo store would cost a load-add-store per
 // sample per voice in the hottest loop of a unit).
 //
+// Provides:
+//   tone_tilt          the Tone knob's tilt EQ, one sample
+//   brickwall          the final ±0.99 safety clamp (kBrickwall)
+//   tanh_knee          a peak limiter on one sample: unity below a threshold
+//   soft_saturate_bus  x / (1 + k·|x|) over a bus: soft headroom for stacks
+//   write_stereo       a mono sample to both channels
+//   MasterControls     the master knobs alone (Tone, Cutoff / Resnc, Gain)
+//   MasterStage        the controls + bus gain, preset trim, preset-change
+//                      hold, idle guard and the transparent limiter
+//
 // MasterControls is the knob half on its own, for a unit that runs its own
-// stage (brachetti_kernel).
+// stage (brachetti_kernel); the output helpers are free functions so such a
+// stage can use them too.
 #include <cstddef>
 #include <cstdint>
 #include "dsp_math.h"
@@ -38,6 +49,40 @@ inline float tone_tilt(float x, float& lp, float tone) {
     return x + (x - lp) * (tone * kToneBoostDiv);
 }
 
+// ── Output helpers ──────────────────────────────────────────────────────────
+// The last safety clamp before the DAC: ±0.99.
+constexpr float kBrickwall = 0.99f;
+inline float brickwall(float x) { return clampf(x, -kBrickwall, kBrickwall); }
+
+// A peak limiter on one sample: |x| <= thr passes untouched, the excess bends
+// onto thr + span·tanh((|x| − thr)·inv_span), keeping the sign.  span and
+// inv_span are passed separately (not derived) so each caller keeps the exact
+// constants it was voiced with.
+inline float tanh_knee(float x, float thr, float span, float inv_span) {
+    float a = fabsf(x);
+    if (a > thr) {
+        a = thr + span * fastertanhf((a - thr) * inv_span);
+        x = (x < 0.0f) ? -a : a;
+    }
+    return x;
+}
+
+// Gentle headroom for a summed bus: x / (1 + amount·|x|).  A single voice
+// passes nearly unchanged; stacked voices are pulled in softly instead of
+// slamming the limiter (the cymbal's rolls).
+inline void soft_saturate_bus(float* out, size_t frames, float amount) {
+    for (size_t i = 0; i < frames; ++i) {
+        const size_t l = i * 2;
+        out[l] = out[l] / (1.0f + amount * fabsf(out[l]));
+    }
+}
+
+// The mono result to both channels of an interleaved stereo buffer.
+inline void write_stereo(float* out, size_t frame, float x) {
+    out[frame * 2]     = x;
+    out[frame * 2 + 1] = x;
+}
+
 // ── The master knobs: Tone, Cutoff / Resnc, Gain ────────────────────────────
 struct MasterControls {
     FastSVF filter;            // Cutoff / Resnc low-pass
@@ -45,7 +90,7 @@ struct MasterControls {
     float   drive = 1.0f;      // Gain knob
 
     void set_tone(int32_t v) { tone = clampf((float)v, -10.0f, 30.0f); }
-    void set_gain(int32_t v) { drive = 1.0f + (fmaxf(0.0f, (float)v * 0.01f) * 20.0f); }
+    void set_gain(int32_t v) { drive = knob::gain_drive(v); }
 
     // Cutoff is stored ÷10 (1-1999 → 10-19990 Hz; set_coeffs caps it at
     // 0.47·fs).  Resnc is stored ÷10 (71-400 → Q 0.707 .. ~4.0).
@@ -81,13 +126,13 @@ struct MasterStage : MasterControls {
     // waveform inside a cycle is preserved.  The threshold only trades
     // loudness against how much gain riding happens.
     static constexpr float kLimThr  = 0.75f;
-    static constexpr float kLimCeil = 0.99f;
+    static constexpr float kLimCeil = kBrickwall;
     static constexpr float kLimSpan = kLimCeil - kLimThr;
     // Release 20 ms: keeps the strike's crest with the fewest added harmonics
     // on long low tones; longer releases only get quieter, and two hits
     // 150 ms apart show no ducking.  1-exp(-1/tau) ~= 1/tau at 960 samples.
     static constexpr float kLimRelMs   = 20.0f;
-    static constexpr float kLimRelCoef = 1.0f / (kLimRelMs * 0.001f * 48000.0f);
+    static constexpr float kLimRelCoef = 1.0f / (kLimRelMs * 0.001f * kSampleRate);
 
     // Blocks the chain keeps running after the last voice died (~320 ms at 64
     // frames), so the filter tail rings out and there is no step on re-entry.
@@ -169,7 +214,7 @@ struct MasterStage : MasterControls {
             const float y = kLimThr + kLimSpan * over / (over + kLimSpan);
             x *= y / a;   // one gain for the whole cycle
         }
-        return fmaxf(-kLimCeil, fminf(kLimCeil, x));
+        return brickwall(x);
     }
 
     // The mono bus in out[i * 2] → filter → drive × trim → limiter → stereo.
@@ -178,9 +223,7 @@ struct MasterStage : MasterControls {
         for (size_t i = 0; i < frames; ++i) {
             float x = filter.process(out[i * 2]);
             x *= stage_gain;
-            x = limit(x);
-            out[i * 2]     = x;
-            out[i * 2 + 1] = x;
+            write_stereo(out, i, limit(x));
         }
     }
 };

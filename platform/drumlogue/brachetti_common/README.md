@@ -18,20 +18,147 @@ it keeps its own code.
 
 ## What is here
 
-Header-only C++14, everything in namespace `brc`.
+Header-only C++14, everything in namespace `brc` (except the original support
+headers' `FastSVF`, `FastNoise`, `FastEnvelope` and the `float_math.h`
+functions).  Each header opens with a **Provides** list; the index below has
+every helper, what it does and which units use it.
 
-| File | What it holds | Used by |
+| File | What it holds |
+|---|---|
+| `dsp_math.h` | constants and small math: clamps, anchored 2^x, envelope steps, phase increments |
+| `knobs.h` | what a knob means: raw value → DSP value, anchors, the knobs the host owns, Velocity, the played note, display strings |
+| `master_stage.h` | the output side: Tone tilt, limiters, bus helpers, `MasterControls`, `MasterStage` |
+| `small_filters.h` | one-pole low/high-pass steps and coefficient, the two-pole resonator |
+| `noise.h` | random sources: xorshift32, `FastNoise`, an LCG, pink noise |
+| `exciter.h` | `Exciter`: the mallet and the two-band noise burst |
+| `voice_base.h` | `VoiceBase` and the voice-set helpers |
+| `voice_layers.h` | voice layers more than one family uses: chirp, onset, pitch envelope, boom, transient, noise gate |
+| `models.h` | the Model knob |
+| `modal_bank.h` | the six-mode bank and the knobs that shape it |
+| `modal_synth.h` | `ModalSynth`: the engine of the five modal units |
+| `float_math.h`, `filter.h`, `envelope.h` | the original's support headers: fast math approximations, the TPT state-variable filter, the AR/ADSR envelope |
+
+## Helper index
+
+Before writing a helper, look for it here.  "Used by" names the units whose
+own files use it; "library" means it is used inside the library (the five
+modal units reach those through `ModalSynth`).  Every unit file opens with a
+**From brachetti_common** block listing the helpers it uses — see
+[Using and adding helpers](#using-and-adding-helpers).
+
+### `dsp_math.h` — constants and small math
+
+| Helper | What it does | Used by |
 |---|---|---|
-| `dsp_math.h` | the sample rate, `clampf`, `knob_exp2` (2^x, exactly 1 at 0), `env_mul` (geometric-envelope step), `phase_inc`, `wrap_phase`, `preset_column_in` (compile-time check on a preset-table column) | all |
-| `knobs.h` | `knob::` raw value → DSP value for every shared knob; `Anchors` (the REFERENCE ANCHORS); `VelocityBias` (the Velocity knob); `SequencerNote` (root + Pitch → the note the sequencer plays); `format_int` / `format_hz` display strings | all |
-| `master_stage.h` | `tone_tilt` (Tone); `MasterControls` (Tone, Cutoff / Resnc, Gain); `MasterStage` (the controls + bus gain, preset trim, preset-change hold, idle guard, transparent limiter) | all; the kernel uses `MasterControls` and runs its own limiter |
-| `exciter.h` | `Exciter`: the mallet and the two-band noise burst every exciter-driven voice starts from | kick, tom, snare, bar, plate, noise |
-| `voice_base.h` | `VoiceBase`: voice life cycle (squelch, preset-change fade, retirement); `next_voice`, `fuses_with` (roll fusion), `any_fading`, `fade_out_all` | kick, tom, snare, bar, plate, noise; the cymbal uses the last two |
-| `voice_layers.h` | `MetalChirp`, `Onset`, `PitchEnv`, `Boom`, `Transient`, `NoiseGate` — layers more than one family uses | see the table in the file |
-| `models.h` | the Model knob: its names and noise-band defaults | units with a Model knob |
-| `modal_bank.h` | `ModalPresetConfig`, `ModalBank` (up to six modes, NEON path), `shape_modal` / `strike_modal` (the modal knobs) | kick, tom, snare, bar, plate |
-| `modal_synth.h` | `ModalLayout` (the 24-knob layout) and `ModalSynth<Unit, Voice>`: the engine the five modal units share — lifecycle, presets, knobs, note routing, the block loop | kick, tom, snare, bar, plate |
-| `float_math.h`, `filter.h`, `envelope.h`, `noise.h` | the support headers (fast math approximations, the TPT state-variable filter, the AR/ADSR envelope, xorshift noise) each unit used to carry its own copy of — the original's, unchanged | all |
+| `kSampleRate`, `kInvSampleRate` | 48 kHz (the drumlogue's only rate) and its inverse | kernel, snare, plate, cymbal, noise; library |
+| `kLn0001` | ln 0.001: a T60 is a −60 dB decay | cymbal; library |
+| `kSilence` | 1e-5: below this a layer counts as finished | kick, plate; library |
+| `clampf(x, lo, hi)` | clamp, as `fmaxf(lo, fminf(hi, x))` | kick, tom, kernel, snare, cymbal, noise; library |
+| `or_default(value, unset, fallback)` | a voicing-table value, or the fallback when the table leaves it unset (below `unset`) | snare, plate |
+| `knob_exp2(x)` | 2^x for anchored knob curves: `fasterpow2f`, but exactly 1.0 at 0 | kick, tom, kernel, snare, cymbal, noise; library |
+| `env_mul(tau, sr)` | per-sample multiplier of a geometric envelope with time constant tau (exact `expf`) | cymbal; library |
+| `phase_inc(hz)` | radians per sample of an oscillator at hz | kick, tom, snare, cymbal, noise; library |
+| `wrap_phase(phase)` | keep a phase inside one turn | kick; library |
+| `preset_column_in(table, col, lo, hi)` | compile-time check that a preset-table column stays in range (pins the knobs a preset must not ship) | all eight |
+
+### `knobs.h` — what a knob means
+
+| Helper | What it does | Used by |
+|---|---|---|
+| `knob::mallet_res`, `mallet_stiff`, `decay`, `release`, `noise_mix`, `noise_res`, `material`, `inharm`, `hit_pos`, `tube_radius`, `percent`, `poly`, `noise_freq`, `gain_drive`, `clamp_int`, `unit_range` | a knob's raw `header.c` value → the number the DSP uses (ranges in the file) | per knob: kick, tom, kernel, snare, cymbal, noise; library |
+| `Anchors` | the knob values the current preset shipped with (REFERENCE ANCHORS) | kernel, cymbal, noise; library |
+| `off_anchor(delta)` | has a knob moved off its anchor? (\|knob − anchor\| > 0.001) | kick, tom, cymbal; library |
+| `off_unity(factor)` | the same for an anchored factor (exactly 1 at the anchor) | kick; library |
+| `HostKnob`, `is_host_knob`, `seed_host_knobs` | the knobs the host owns (Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc): one table with their defaults drives both "LoadPreset leaves them alone" and "Init seeds them" | kernel, cymbal, noise; library |
+| `midi_velocity(v)` | MIDI velocity 0-127 → 0..1 | kernel, cymbal, noise; library |
+| `VelocityBias` | the Velocity knob: ghost … as played … wham, exact at 0 | kernel, cymbal, noise; library |
+| `SequencerNote` | the note the sequencer plays: preset root + Pitch, and what GateOff must release | kernel, cymbal, noise; library |
+| `name_at(names, idx, fallback)` | a name from a fixed table, or the fallback | all eight; library |
+| `format_int`, `format_percent`, `format_hz` | knob display strings ("40", "Rs40%", "1.2kHz") into the caller's buffer | kernel, cymbal, noise; library |
+
+### `master_stage.h` — the output side
+
+| Helper | What it does | Used by |
+|---|---|---|
+| `tone_tilt(x, lp, tone)` | the Tone knob's tilt EQ on one sample | all eight |
+| `brickwall(x)`, `kBrickwall` | the final ±0.99 safety clamp | kernel; library |
+| `tanh_knee(x, thr, span, inv_span)` | a peak limiter on one sample: unity below thr, a tanh knee above | kernel |
+| `soft_saturate_bus(out, frames, k)` | x / (1 + k·\|x\|) over a bus: soft headroom for stacked voices | cymbal |
+| `write_stereo(out, frame, x)` | a mono sample to both channels | kernel; library |
+| `MasterControls` | the master knobs alone (Tone, Cutoff / Resnc, Gain) for a unit with its own stage | kernel |
+| `MasterStage` | the controls + bus gain, preset trim, preset-change hold, idle guard and the transparent limiter | kick, tom, snare, bar, plate, cymbal, noise |
+
+### `small_filters.h` — one- and two-pole filters
+
+| Helper | What it does | Used by |
+|---|---|---|
+| `one_pole_lp(x, a, state)` | one step of a one-pole low-pass, `state += a·(x − state)` | kernel, cymbal; library |
+| `one_pole_hp(x, a, state)` | x minus its one-pole low-pass (two in cascade: a DC blocker) | plate, cymbal; library |
+| `one_pole_coeff_fast(hz)` | the one-pole coefficient for a cutoff swept at control rate (fast exp) | cymbal |
+| `Resonator2` | a two-pole resonator: `tune(hz, r)`, `ring(x)` | snare |
+
+### `noise.h` — random sources
+
+| Helper | What it does | Used by |
+|---|---|---|
+| `xorshift32(state)` | one step of the xorshift32 generator | kernel; library |
+| `FastNoise` | white noise in [−1, 1) from xorshift32 | library (the exciter, `Transient`) |
+| `lcg_unit(state)` | one step of an LCG, as a float in [0, 1) | cymbal |
+| `PinkFilter` | white → pink noise (Paul Kellet's refined filter) | cymbal |
+
+### The voice
+
+| Helper | Header | What it does | Used by |
+|---|---|---|---|
+| `Exciter` | `exciter.h` | the mallet and the two-band noise burst, with a setter per knob | noise; library |
+| `NoiseBurst` | `exciter.h` | one sample of the noise burst in parts, so a unit can reshape a part | snare, plate |
+| `noise_filter_name` | `exciter.h` | the NzFltr knob's display names | noise; library |
+| `VoiceBase` | `voice_base.h` | what every exciter-driven voice has, and its life cycle | kick, tom, snare, bar, plate, noise |
+| `next_voice`, `fuses_with` | `voice_base.h` | round-robin allocation within Poly; roll fusion | noise; library |
+| `any_fading`, `fade_out_all` | `voice_base.h` | the preset-change fade of the voice set | cymbal, noise; library |
+| `set_all_exciters(voices, setter, value)` | `voice_base.h` | one knob into every voice's exciter | noise; library |
+| `kNumVoices`, `kRollFuseSec`, `kPresetFadeTauSec`, `kSquelch*` | `voice_base.h` | the voice count, roll window, fade and squelch constants | kick, tom, snare, cymbal, noise; library |
+| `MetalChirp`, `Onset`, `PitchEnv`, `Boom`, `Transient`, `NoiseGate` | `voice_layers.h` | shared voice layers (the table in the file says which family uses which) | kick, tom, snare, bar, plate, noise |
+| `model_name`, `model_noise_band_mix`, the Model enum | `models.h` | the Model knob | noise; library |
+| `ModalPresetConfig`, `ModalBank` | `modal_bank.h` | a preset's calibrated bank; the bank itself (NEON path) | kick, tom, snare, bar, plate |
+| `shape_modal`, `strike_modal`, `ModalShape`, `ModalKnobs`, `format_mode_count` | `modal_bank.h` | the knobs on the bank, before and at the strike; Partls' display | library (`ModalSynth`) |
+| `ModalLayout`, `kModalHostKnobs`, `ModalSynth` | `modal_synth.h` | the 24-knob layout and the engine of the five modal units | kick, tom, snare, bar, plate |
+
+`ModalSynth` also hands its units these building blocks for their `NoteOn`:
+`strike_velocity`, `allocate_voice`, `shape_exciter`, `modal_knobs`,
+`strike_modal_bank` and `load_modal_bank`.
+
+### The original's support headers
+
+| Helper | Header | Used by |
+|---|---|---|
+| `FastSVF` (TPT state-variable filter) | `filter.h` | plate (Tick's hat filter); library (noise filter, master Cutoff) |
+| `FastEnvelope`, `ENV_*` | `envelope.h` | library (the exciter's envelopes) |
+| `fastexpf`, `fastsinf`, `fasterpowf`, `fastersinfullf`, `fastertanhf`, `fasterpow2f`, `fastercosfullf`, … | `float_math.h` | cymbal, kick; library.  For a knob's response or an envelope sweep only: tuning and decay coefficients use exact `expf` / `cosf` / `exp2f` |
+
+## Using and adding helpers
+
+- **Look here first.**  If a unit needs a clamp, a one-pole, a resonator, a
+  random source, a display string or a knob conversion, it is probably in
+  the index above.
+- **A unit file lists what it uses.**  Each `presets.h`, `voice.h`,
+  `synth_engine.h` (and the kernel's `modal_drum_kernel.h`) opens with a
+  `From brachetti_common` block naming every library header it includes and
+  the helpers it uses from each.  [`lib_uses.py`](../tools/brachetti_equiv/lib_uses.py)
+  keeps those blocks true:
+
+      cd ../tools/brachetti_equiv
+      python3 lib_uses.py --write     # after using a new helper, or dropping one
+      python3 lib_uses.py --check     # before a commit: exits 1 if a block is stale
+      python3 lib_uses.py --index     # helper → the units that use it
+
+- **A new helper goes here** when it is generic (it carries no family's
+  voicing) and more than one place could use it — even if only one does
+  today.  Add it to its header's **Provides** list and to this index, with
+  the exact arithmetic of the code it replaces, then run `run_equiv.sh` on
+  every unit that uses it.  A family's own layers (the snare wires, the
+  plate's shimmer, the kick's thump, the cymbal and kernel voices) stay in
+  their unit.
 
 ## How a unit is laid out
 
@@ -49,6 +176,12 @@ dispatch, no virtual calls) and supply only their family: the strike recipe
 noise and cymbal units have their own knob layouts and engines built from the
 same pieces.  The kernel keeps its drum in `modal_drum_kernel.h` (tables in
 `modal_drum_data.h`) instead of `voice.h`.
+
+The knobs a host owns (Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc)
+are one table per layout — `kModalHostKnobs` in `modal_synth.h` for the five
+modal units, `kHostKnobs` in `presets.h` for the others — with their
+`header.c` defaults.  Each `.h` file opens with its `From brachetti_common`
+block (see [Using and adding helpers](#using-and-adding-helpers)).
 
 ## Rules
 
@@ -98,6 +231,29 @@ arguably a bug.  Each is noted at its place in the code:
   original does.  The two places where the original then writes state the
   family units no longer have are the documented
   [known differences](../tools/brachetti_equiv/README.md#known-differences).
+
+## Helpers that moved here from the units
+
+Each was a generic piece of a unit's code (or the same step written in
+several places); it now has one definition here, with the same arithmetic,
+and the units call it:
+
+| Helper | Was in |
+|---|---|
+| `one_pole_lp`, `one_pole_hp` | cymbal (drivers, DC blockers, level follower), kernel (noise wedge), plate (shimmer), and inside the library (exciter bands, `Transient`) |
+| `one_pole_coeff_fast` | cymbal (`pole_coeff`) |
+| `Resonator2` | snare (`SnareWires::Band`) |
+| `lcg_unit`, `PinkFilter` | cymbal (`frand`, `pink`) |
+| `xorshift32` | kernel (noise wedge) and `FastNoise` |
+| `tanh_knee`, `brickwall`, `write_stereo` | kernel (`TanhKnee`, `clip`, `write_stereo`) and `MasterStage` |
+| `soft_saturate_bus` | cymbal (`soft_saturate`) |
+| `off_anchor`, `off_unity` | cymbal (`moved`), kick, tom, `modal_bank.h` (`moved`) |
+| `or_default` | snare (`or_default`), plate (Tick's hat Q) |
+| `HostKnob`, `is_host_knob`, `seed_host_knobs` | every unit's `loads_with_preset` and `seed_performance_params` |
+| `set_all_exciters` | noise and `ModalSynth` (`set_exciters`) |
+| `name_at` | every unit's `preset_name`, `model_name`, `noise_filter_name` |
+| `format_percent` | cymbal and kernel (Partls' display) |
+| `knob::noise_freq`, `knob::gain_drive` | kernel (`noise_freq`, its reference drive) and `MasterControls` |
 
 ## What was removed, and where it still lives
 

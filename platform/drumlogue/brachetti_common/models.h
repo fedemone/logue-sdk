@@ -5,7 +5,11 @@
 // swaps the bank's mode ratios for the model's template (modal_bank.h); on
 // every unit with an exciter it also sets the default balance between the
 // noise burst's body and click bands (Exciter::noise_band_mix).
+//
+// Provides: the Model enum (k_String .. k_ClosedTube), model_name,
+// model_noise_band_mix.
 #include <cstdint>
+#include "knobs.h"
 
 namespace brc {
 
@@ -28,7 +32,7 @@ inline const char* model_name(int32_t m) {
         "String", "Beam", "Square", "Membrn", "Plate",
         "Drumhd", "Marimba", "OpnTube", "ClsTube"
     };
-    return (m >= 0 && m < k_NumModels) ? names[m] : nullptr;
+    return name_at(names, m, nullptr);
 }
 
 // Default noise band balance by model (a preset's own value wins when it has

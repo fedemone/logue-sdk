@@ -1,7 +1,12 @@
 #pragma once
 // Brachetti Noise — the knob layout and the presets.
 #include <cstdint>
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       preset_column_in
+//   knobs.h          HostKnob, name_at
 #include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
 
 // ── The knobs, slot by slot ─────────────────────────────────────────────────
 // MUST match header.c slot for slot: the preset table below has one column per
@@ -44,7 +49,7 @@ inline const char* preset_name(uint8_t idx) {
     static const char* const names[kNumPresets] = {
         "Clap", "Shaker", "HHat-C"
     };
-    return (idx < kNumPresets) ? names[idx] : "Unknown";
+    return brc::name_at(names, idx, "Unknown");
 }
 
 // One row per preset: one column per knob in slot order (the knob values the
@@ -72,6 +77,18 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramCutoff, 1999, 1999),
               "Cutoff is not loaded per preset: every row must ship 1999");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramResnc, 71, 71),
               "Resnc is not loaded per preset: every row must ship 71");
+
+// The knobs the host owns, with their header.c defaults: a Program change
+// leaves them where they are and Init() seeds them (brc::HostKnob, knobs.h).
+// MUST track header.c's `.init` fields for these slots.
+static const brc::HostKnob kHostKnobs[] = {
+    { k_paramPoly,     4    },
+    { k_paramVelocity, 0    },
+    { k_paramVlMllRes, 0    },
+    { k_paramTone,     0    },
+    { k_paramCutoff,   1999 },
+    { k_paramResnc,    71   },
+};
 
 // The rest of each preset's voicing.
 struct Voicing {

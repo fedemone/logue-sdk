@@ -2,6 +2,12 @@
 
 > **Disclaimer:** the Brachetti units are unofficial, independently developed units, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from their use. See the [repository disclaimer](../../../../README.md#disclaimer) for full terms.
 
+**Documents, top-down** (the repository README's [documentation map](../../../../README.md#documentation-map) has them all):
+this file → each unit's `README.md` (presets, knobs) and `CLAUDE.md` (rules
+for changing it) → [`brachetti_common/README.md`](../../brachetti_common/README.md)
+(the shared library and its helper index) → the original's documents (the
+voicing history).
+
 The 40-preset [`brachetti`](../../brachetti/) unit grew one synth engine with
 six sound models, a cymbal port and a separate drum kernel inside it, and every
 knob ended up wired into every model.  Its percussion is split here into
@@ -104,8 +110,8 @@ removed (and where it still lives).
 
 Every step was checked with `run_equiv.sh`: the restructured units render
 bit-identically to the original exactly as before (below).  On ARM six of the
-eight are smaller than before and six render with fewer instructions; the
-rest are within 250 bytes and 0.2 %.
+eight are smaller than before (the kernel and noise units grew by about 300
+bytes) and the render costs are within 0.2 % of before or below (Sizes, CPU).
 
 ## Verification
 
@@ -202,14 +208,14 @@ moves a little between toolchains; data sections are exact):
 | Unit | .text | .rodata | .data | .bss | total, before → after the restructuring |
 |---|---|---|---|---|---|
 | brachetti (original) | 53,628 | 34,508 | 4 | 108,124 | |
-| kick | 15,692 | 912 | 1,952 | 64 | 19,266 → 18,680 |
-| tom | 14,280 | 1,644 | 1,872 | 64 | 18,768 → 17,936 |
-| kernel | 10,640 | 31,244 | 4 | 15,428 | 57,216 → 57,460 |
-| snare | 15,628 | 1,288 | 2,000 | 64 | 19,844 → 19,044 |
-| bar | 12,608 | 1,840 | 1,584 | 64 | 16,918 → 16,184 |
-| plate | 13,128 | 1,080 | 1,808 | 64 | 16,650 → 16,144 |
-| cymbal | 11,076 | 680 | 11,936 | 52 | 24,420 → 24,248 |
-| noise | 7,468 | 300 | 992 | 48 | 8,672 → 8,868 |
+| kick | 15,568 | 912 | 1,952 | 64 | 19,266 → 18,556 |
+| tom | 14,156 | 1,644 | 1,872 | 64 | 18,768 → 17,812 |
+| kernel | 10,716 | 31,248 | 4 | 15,428 | 57,216 → 57,540 |
+| snare | 15,504 | 1,288 | 2,000 | 64 | 19,844 → 18,920 |
+| bar | 12,484 | 1,840 | 1,584 | 64 | 16,918 → 16,060 |
+| plate | 13,056 | 1,080 | 1,808 | 64 | 16,650 → 16,072 |
+| cymbal | 11,120 | 684 | 11,936 | 52 | 24,420 → 24,296 |
+| noise | 7,520 | 300 | 992 | 48 | 8,672 → 8,920 |
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
 tables from `.data` to `.rodata` (`static const`): the original's notes
@@ -259,6 +265,13 @@ eight, so check all eight:
 ```
 for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
 ```
+
+Each unit file opens with a `From brachetti_common` block listing the library
+helpers it uses; [`lib_uses.py`](lib_uses.py) keeps those blocks true
+(`--write` after using or dropping a helper, `--check` before a commit,
+`--index` for helper → units).  The library's
+[README](../../brachetti_common/README.md#helper-index) indexes every helper:
+look there before writing one.
 
 Before a refactor, `run_equiv.sh` is the check that it changed nothing; once a
 unit's voicing is changed on purpose it will (rightly) start to differ from

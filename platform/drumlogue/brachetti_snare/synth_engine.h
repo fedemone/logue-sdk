@@ -21,7 +21,22 @@
 #include <cstdint>
 
 #include "../common/runtime.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, kSampleRate, knob_exp2, or_default, phase_inc
+//   knobs.h          knob::decay, knob::mallet_res, knob::mallet_stiff,
+//                    knob::noise_res, knob::percent, knob::release,
+//                    knob::tube_radius
+//   master_stage.h   MasterStage, tone_tilt
+//   modal_bank.h     ModalPresetConfig
+//   modal_synth.h    ModalSynth
+//   voice_base.h     kRollFuseSec
+#include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
+#include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/voice_base.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -234,10 +249,10 @@ private:
         r_a = brc::clampf(r_a + tight, 0.5f, 0.995f);
         w.band[0].tune(fminf(20000.0f, band_a_hz() * bright * body), r_a);
         // Bands B and C: the preset's centre and pole radius.
-        w.band[1].tune(fminf(20000.0f, or_default(voicing().band_b_hz, 100.0f, 4500.0f) * bright),
-                       brc::clampf(or_default(voicing().band_b_r, 0.3f, 0.86f) + (0.05f * vel) + tight, 0.5f, 0.995f));
-        w.band[2].tune(fminf(20000.0f, or_default(voicing().band_c_hz, 100.0f, 7200.0f) * bright),
-                       brc::clampf(or_default(voicing().band_c_r, 0.3f, 0.82f) + (0.03f * vel) + tight, 0.5f, 0.995f));
+        w.band[1].tune(fminf(20000.0f, brc::or_default(voicing().band_b_hz, 100.0f, 4500.0f) * bright),
+                       brc::clampf(brc::or_default(voicing().band_b_r, 0.3f, 0.86f) + (0.05f * vel) + tight, 0.5f, 0.995f));
+        w.band[2].tune(fminf(20000.0f, brc::or_default(voicing().band_c_hz, 100.0f, 7200.0f) * bright),
+                       brc::clampf(brc::or_default(voicing().band_c_r, 0.3f, 0.82f) + (0.03f * vel) + tight, 0.5f, 0.995f));
     }
 
     float band_a_hz() const {
@@ -249,9 +264,6 @@ private:
         }
     }
 
-    static float or_default(float value, float below, float fallback) {
-        return (value < below) ? fallback : value;
-    }
 
     // BrshSnr's texture: a soft breathy "chuff", not a snappy "shack".  A
     // faint ~5 Hz flutter models the straws' contact; the click band decays

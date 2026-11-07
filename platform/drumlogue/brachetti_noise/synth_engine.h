@@ -23,10 +23,26 @@
 
 #include "../common/runtime.h"
 #include "unit.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, kSampleRate, knob_exp2, phase_inc
+//   exciter.h        Exciter, noise_filter_name
+//   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
+//                    format_int, is_host_knob, knob::mallet_res,
+//                    knob::mallet_stiff, knob::percent, knob::poly,
+//                    midi_velocity, seed_host_knobs
+//   master_stage.h   MasterStage, tone_tilt
+//   models.h         k_String, model_name
+//   voice_base.h     any_fading, fade_out_all, fuses_with, kNumVoices,
+//                    kRollFuseSec, next_voice, set_all_exciters
+//   voice_layers.h   NoiseGate
+#include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/exciter.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/models.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -43,7 +59,7 @@ public:
         if (desc->output_channels != 2) return k_unit_err_geometry;
         // The knobs LoadPreset does not write start at their header.c
         // defaults, and so does the state the noise-filter knobs own.
-        seed_performance_params();
+        brc::seed_host_knobs(*this, kHostKnobs);
         for (VoiceState& v : m_voices) v.exciter.init_noise_filter();
         Reset();
         LoadPreset(0);
@@ -92,8 +108,8 @@ public:
         const int16_t* row = kPresetKnobs[idx];
         m_note.set_root((uint8_t)row[kRootColumn]);
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
-            if (loads_with_preset(p)) setParameter(p, row[p]);
-        set_exciters(&brc::Exciter::set_release_time, row[kDecayColumn]);
+            if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) setParameter(p, row[p]);
+        brc::set_all_exciters(m_voices, &brc::Exciter::set_release_time, row[kDecayColumn]);
 
         // REFERENCE ANCHORS for the gate's knob mappings and the strike.
         m_anchor.mallet_stiff = brc::knob::mallet_stiff(row[k_paramMlltStif]);
@@ -128,18 +144,18 @@ public:
         case k_paramProgram:  LoadPreset((uint8_t)value); break;
         case k_paramPoly:     m_poly = brc::knob::poly(value); break;
         case k_paramVelocity: m_velocity.set(value); break;
-        case k_paramMlltRes:  set_exciters(&brc::Exciter::set_mallet_res, value); break;
-        case k_paramMlltStif: set_exciters(&brc::Exciter::set_mallet_stiff, value); break;
+        case k_paramMlltRes:  brc::set_all_exciters(m_voices, &brc::Exciter::set_mallet_res, value); break;
+        case k_paramMlltStif: brc::set_all_exciters(m_voices, &brc::Exciter::set_mallet_stiff, value); break;
         case k_paramModel:    m_model = (uint8_t)value; break;
         case k_paramTone:     m_master.set_tone(value); break;
-        case k_paramRel:      set_exciters(&brc::Exciter::set_release, value); break;
+        case k_paramRel:      brc::set_all_exciters(m_voices, &brc::Exciter::set_release, value); break;
         case k_paramCutoff:
         case k_paramResnc:    m_master.set_filter(m_params[k_paramCutoff], m_params[k_paramResnc]); break;
         case k_paramGain:     m_master.set_gain(value); break;
-        case k_paramNzMix:    set_exciters(&brc::Exciter::set_noise_mix, value); break;
-        case k_paramNzRes:    set_exciters(&brc::Exciter::set_noise_res, value); break;
-        case k_paramNzFltr:   set_exciters(&brc::Exciter::set_noise_filter_mode, value); break;
-        case k_paramNzFltFrq: set_exciters(&brc::Exciter::set_noise_filter_freq, value); break;
+        case k_paramNzMix:    brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_mix, value); break;
+        case k_paramNzRes:    brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_res, value); break;
+        case k_paramNzFltr:   brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_filter_mode, value); break;
+        case k_paramNzFltFrq: brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_filter_freq, value); break;
         default: break;   // VlMllRes, VlMllStf, HitPos: read at the strike
         }
     }
@@ -232,20 +248,7 @@ private:
 
     const Voicing& voicing() const { return kVoicing[m_preset_idx]; }
 
-    // The knobs the host owns keep their value across Program changes.
-    static bool loads_with_preset(uint8_t p) {
-        switch (p) {
-        case k_paramProgram: case k_paramPoly: case k_paramVelocity: case k_paramVlMllRes:
-        case k_paramTone: case k_paramCutoff: case k_paramResnc:
-            return false;
-        default:
-            return true;
-        }
-    }
 
-    void set_exciters(void (brc::Exciter::*set)(int32_t), int32_t value) {
-        for (VoiceState& v : m_voices) (v.exciter.*set)(value);
-    }
 
     // The gate that makes a clap or a shaker out of the noise burst, with the
     // mallet knobs on it (REFERENCE-ANCHORED): MlltStif sets the burst / grain
@@ -298,19 +301,6 @@ private:
         }
     }
 
-    // The knobs LoadPreset does NOT write, to their header.c defaults (Init).
-    // MUST track header.c's `.init` fields for these slots.
-    void seed_performance_params() {
-        static const int16_t kDefaults[][2] = {
-            { k_paramPoly,     4    },
-            { k_paramVelocity, 0    },
-            { k_paramVlMllRes, 0    },
-            { k_paramTone,     0    },
-            { k_paramCutoff,   1999 },
-            { k_paramResnc,    71   },
-        };
-        for (const auto& d : kDefaults) setParameter((uint8_t)d[0], d[1]);
-    }
 
     VoiceState         m_voices[brc::kNumVoices];
     uint8_t            m_last_voice = 0;   // the slot the last strike took

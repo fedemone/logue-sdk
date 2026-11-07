@@ -17,7 +17,7 @@ This unit holds Timpani and Taiko on the dense coupled-resonator drum kernel.
 | Engine | dense coupled-resonator drum kernel (`ModalDrumKernel`, ~280 modes) |
 | Presets | 2 |
 | Knobs | 20 |
-| ARM size (cross-built, `arm_size.sh`) | .text 10640 · .rodata 31244 · .data 4 · .bss 15428 |
+| ARM size (cross-built, `arm_size.sh`) | .text 10716 · .rodata 31248 · .data 4 · .bss 15428 |
 
 ## Presets
 
