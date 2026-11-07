@@ -4,6 +4,8 @@
 // AcSnare's swept body boom and the pitch envelope it reads, BrshSnr's swirl
 // (a gate on the noise) and the onset ramp.
 
+#include "../common/attributes.h"   // force_inline
+
 // From brachetti_common (its README.md indexes every helper):
 //   exciter.h        NoiseBurst
 //   modal_bank.h     ModalBank
@@ -90,7 +92,10 @@ struct VoiceState : brc::VoiceBase {
     }
 
     // The exciter with the wires on its noise burst.
-    float excite() {
+    // Per sample, from the render loop: force_inline (the SDK's attributes.h)
+    // because GCC's size heuristics may otherwise leave it out of line, which
+    // costs a call every sample (arm_cpu.sh shows it).
+    force_inline float excite() {
         brc::NoiseBurst b;
         if (exciter.noise_burst(b)) {
             float noise = exciter.noise_sum(b);

@@ -8,6 +8,8 @@
 //  * the ring gate, which pulls the noise down with the bank's fundamental
 //    so noise and ring die together instead of sounding side by side.
 
+#include "../common/attributes.h"   // force_inline
+
 // From brachetti_common (its README.md indexes every helper):
 //   dsp_math.h       kSampleRate, kSilence
 //   exciter.h        NoiseBurst
@@ -78,7 +80,10 @@ struct VoiceState : brc::VoiceBase {
     // The exciter, with the hat filter on the click band in the hi-hat
     // region.  It filters the noise BEFORE the NzFltr filter, so it is a
     // centroid control of its own.
-    float excite() {
+    // Per sample, from the render loop: force_inline (the SDK's attributes.h)
+    // because GCC's size heuristics may otherwise leave it out of line, which
+    // costs a call every sample (arm_cpu.sh shows it).
+    force_inline float excite() {
         brc::NoiseBurst b;
         if (exciter.noise_burst(b)) {
             const float mix = exciter.noise_band_mix;

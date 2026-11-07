@@ -208,6 +208,12 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
 - **Exact math for coefficients.**  Tuning and decay coefficients use exact
   `expf` / `cosf` / `exp2f`: the `faster*` approximations in `float_math.h`
   are badly wrong for small arguments and shift low mode frequencies.
+- **Per-sample code must stay inline.**  GCC's size heuristics can leave a
+  method the render loop calls every sample out of line, which costs a call
+  per sample and shows up in `arm_cpu.sh` (the plate's `excite()` did, at
+  +1.7 %).  Mark such a method `force_inline` (the SDK's
+  `common/attributes.h`), and compare `arm_cpu.sh` before and after any change
+  to code a render loop runs.
 - **No constructors.**  Plain structs with default member initialisers, no
   virtual functions, no heap: each unit's global synth object stays
   constant-initialised and loads from the ELF instead of being built at run
