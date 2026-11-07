@@ -3,27 +3,26 @@
  * modal_drum_kernel.h — dense coupled-resonator drum kernel (Timpani / Taiko).
  *
  * Port of the standalone ResonatorDrumSynth that produced the approved
- * references 105_timp_wedge.wav / 110_taiko_wedge.wav (PROGRESS2.md):
- * one velocity-scaled half-sine excitation impulse rings a bank of up to 280
- * two-pole resonators (the drum's measured modes + a dense jittered membrane
- * fill), a recorded broadband residual transient supplies the stick "knock",
- * a raised-cosine attack bloom gives the few-ms swell to peak, and a
- * sweeping-cutoff noise wedge fills the taiko's broadband decay.  The output
- * stage is a transparent peak limiter (unity below 0.85) — NOT the master
- * soft-clip — so the strike keeps its crest ("wham").
+ * references 105_timp_wedge.wav / 110_taiko_wedge.wav: one velocity-scaled
+ * half-sine excitation impulse rings a bank of up to 280 two-pole resonators
+ * (the drum's measured modes + a dense jittered membrane fill), a recorded
+ * broadband residual transient supplies the stick "knock", a raised-cosine
+ * attack bloom gives the few-ms swell to peak, and a sweeping-cutoff noise
+ * wedge fills the taiko's broadband decay.  The output stage is a
+ * transparent peak limiter (unity below 0.85) — NOT a soft clip — so the
+ * strike keeps its crest ("wham").
  *
- * TWO KETTLES: the kernel holds kVoices=2 independent
- * drums.  A hit on the note a voice is already tuned to retriggers that voice
- * in place — its resonator states are NOT zeroed, so energy accumulates like
- * a real drum roll.  A hit on a DIFFERENT note takes a free/oldest voice and
- * retunes it synchronously (sin/cos only — the decay poles are pitch-
- * invariant, so no expf in the note path), leaving the other kettle's ring
- * untouched.  This is what makes note changes sound like a second drum
- * instead of bending (distorting) the ringing tail.
+ * TWO KETTLES: a hit on the note a kettle is already tuned to retriggers that
+ * kettle in place — its resonator states are NOT zeroed, so energy
+ * accumulates like a real drum roll.  A hit on a DIFFERENT note takes a
+ * free / oldest kettle and retunes it synchronously (sin/cos only — the decay
+ * poles are pitch-invariant, so no expf in the note path), leaving the other
+ * kettle's ring untouched.  That is what makes a note change sound like a
+ * second drum instead of bending (distorting) the ringing tail.
  *
  * RT-safe: no heap, fixed structure-of-arrays state (16-byte aligned), NEON
  * inner loop with a bit-equivalent scalar fallback.  Coefficient work that
- * moves decay poles (Dkay / Rel / Mterl / Inharm / Partls) is amortized:
+ * moves decay poles (Dkay / Rel / Mterl / Inharm / Partls) is amortised:
  * SetMods() marks the shared base tables dirty and Process() rebuilds a
  * bounded number of modes per block, so knob turns never blow the deadline.
  */
@@ -32,6 +31,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "../brachetti_common/dsp_math.h"
 #include "modal_drum_data.h"
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -41,13 +41,13 @@
 
 class ModalDrumKernel {
 public:
-    static const int kMaxModes     = 280;  // timp_wedge table (multiple of 4)
-    static const int kVoices       = 2;    // two kettles
-    static const int kRebuildPerBlock = 48; // modes re-based per Process() call
+    static const int kMaxModes        = 280;  // timp_wedge table (multiple of 4)
+    static const int kVoices          = 2;    // two kettles
+    static const int kRebuildPerBlock = 48;   // modes re-based per Process() call
 
     // Live sound-design modifiers, all anchored so that zero deltas reproduce
     // the recipe (= the approved render) exactly.  Pitch is NOT a mod: the
-    // note travels with each Trigger() and retunes one voice synchronously.
+    // note travels with each Trigger() and retunes one kettle synchronously.
     struct Mods {
         float decay_mult     = 1.0f; // Dkay/Rel: T60 multiplier (>1 = longer)
         float hf_decay_tilt  = 0.0f; // Mterl: +bright material rings HF longer
@@ -62,15 +62,13 @@ public:
         float noise_bright   = 1.0f; // NzFltFrq: wedge start-cutoff multiplier
     };
 
-    void Init(float sample_rate) {
-        m_sr = (sample_rate > 8000.0f) ? sample_rate : 48000.0f;
-        m_recipe = nullptr;
-        m_active = false;
-        for (int v = 0; v < kVoices; ++v) ClearVoice(m_vc[v]);
-    }
+    // The noise wedge's start-cutoff coefficient is bounded to this range;
+    // the NzFltFrq mapping lands its knob ends exactly on it.
+    static constexpr float kNoiseCoefMin = 0.02f;
+    static constexpr float kNoiseCoefMax = 0.90f;
 
-    // Bind a recipe (preset load).  ref_drive is the master_drive the shipped
-    // preset row produces — the kernel master path divides it back out so the
+    // Bind a recipe (preset load).  ref_drive is the master drive the shipped
+    // preset row produces — the master stage divides it back out so the
     // shipped Gain value plays the approved render transparently.
     void Configure(const ModalDrumRecipe* recipe, float ref_drive) {
         m_recipe = recipe;
@@ -88,40 +86,23 @@ public:
         m_active = true;
     }
 
-    void Deactivate() { m_active = false; }
-    bool IsActive() const { return m_active && m_recipe; }
-    // How many kettles are currently stepping their resonator banks.  Each one
-    // costs m_num_modes_padded biquads per sample — on Timpani that is 280 —
-    // so this is the dominant CPU term of the whole unit and the quantity a
-    // note change doubles.  See kernel_cpu_probe.cpp.
-    int LiveVoices() const {
-        int n = 0;
-        for (int i = 0; i < kVoices; ++i)
-            if (m_vc[i].tuned && !m_vc[i].is_silent) ++n;
-        return n;
-    }
-    int ModeCount() const { return m_num_modes_padded; }
-    // Modes actually stepped this block, summed over live kettles — the exact
-    // quantity the per-sample resonator cost is proportional to.
-    int LiveModes() const {
-        int n = 0;
-        for (int i = 0; i < kVoices; ++i)
-            if (m_vc[i].tuned && !m_vc[i].is_silent) n += m_vc[i].live_hi;
-        return n;
-    }
-    float RefDrive() const { return m_ref_drive; }
-    float RootNote() const { return m_recipe ? m_recipe->root_note : 60.0f; }
-    void Flush() {  // hard stop (engine Reset): kill both kettles' rings
+    bool  IsActive() const    { return m_active && m_recipe; }
+    float RefDrive() const    { return m_ref_drive; }
+    float RootNote() const    { return m_recipe ? m_recipe->root_note : 60.0f; }
+    float NoiseCoefHi() const { return m_recipe ? m_recipe->noise_coef_hi : 0.5f; }
+
+    // Hard stop (the unit's Reset): kill both kettles' rings.
+    void Flush() {
         for (int v = 0; v < kVoices; ++v) ClearVoice(m_vc[v]);
     }
 
     // Mods that move the base tables (decay poles, stretch, density) restart
-    // the amortized rebuild; trigger-time mods take effect on the next hit.
+    // the amortised rebuild; trigger-time mods take effect on the next hit.
     void SetMods(const Mods& m) {
-        bool rebuild = (m.decay_mult != m_mods.decay_mult) ||
-                       (m.hf_decay_tilt != m_mods.hf_decay_tilt) ||
-                       (m.stretch    != m_mods.stretch)    ||
-                       (m.density    != m_mods.density);
+        const bool rebuild = (m.decay_mult    != m_mods.decay_mult)    ||
+                             (m.hf_decay_tilt != m_mods.hf_decay_tilt) ||
+                             (m.stretch       != m_mods.stretch)       ||
+                             (m.density       != m_mods.density);
         // noise_bright is not a rebuild trigger: it is one multiply and two
         // clamps, applied here so a NzFltFrq turn reaches the noise wedge
         // without waiting for some other mod to force a rebuild.
@@ -131,114 +112,20 @@ public:
         if (bright && m_recipe) ApplyNoiseBright();
     }
 
-    // The noise wedge's start-cutoff coefficient is bounded to this range;
-    // RefreshKernelMods maps NzFltFrq onto exactly this span (see there).
-    static constexpr float kNoiseCoefMin = 0.02f;
-    static constexpr float kNoiseCoefMax = 0.90f;
-    float NoiseCoefHi() const { return m_recipe ? m_recipe->noise_coef_hi : 0.5f; }
-
-    // Strike.  `note` selects/retunes a kettle; `ratio` is the engine-computed
-    // transpose (2^((note-root)/12)); velocity ∈ [0,1].
+    // Strike.  `note` selects / retunes a kettle; `ratio` is the transpose
+    // (2^((note - root)/12)); velocity in [0, 1].
     void Trigger(uint8_t note, float ratio, float velocity) {
         if (!IsActive()) return;
-        const ModalDrumRecipe& r = *m_recipe;
-        // Ceiling 2.0, not 1.0: the caller's Velocity knob can ask for a strike
-        // harder than MIDI 127 (bounded to 1.30 there) and clamping it back to
-        // 1.0 would make the "wham" direction dead on Timpani/Taiko.  This is a
-        // sanity bound on garbage input — exc_gain/knock/noise scale linearly
-        // past 1.0 and the pitch glide is still pole-clamped in Process().
-        float v = (velocity < 0.0f) ? 0.0f : (velocity > 2.0f ? 2.0f : velocity);
-
-        // ── kettle selection ────────────────────────────────────────────
-        // Same note → the same physical drum: retrigger in place (roll).
-        // New note → prefer a silent kettle, else steal the least-recently
-        // struck one; retune it synchronously and clear its old ring.
-        Voice* vc = nullptr;
-        for (int i = 0; i < kVoices; ++i)
-            if (m_vc[i].tuned && m_vc[i].note == note) { vc = &m_vc[i]; break; }
-        if (!vc) {
-            for (int i = 0; i < kVoices; ++i)
-                if (!m_vc[i].tuned || m_vc[i].is_silent) { vc = &m_vc[i]; break; }
-            if (!vc) {
-                vc = &m_vc[0];
-                for (int i = 1; i < kVoices; ++i)
-                    if (m_vc[i].serial < vc->serial) vc = &m_vc[i];
-            }
-            ClearVoice(*vc);
-            vc->note = note;
-            vc->ratio = ratio;
-            vc->tuned = true;
-            RetuneVoice(*vc);
-        }
-        vc->serial = ++m_trigger_serial;
-
-        // This kettle owns the full bank from here; any OTHER kettle still
-        // ringing gives its dense fill up so the two banks together cost about
-        // one and a bit, not two.  See kFillDampRate — this is the CPU bound
-        // behind the "note change → clicks / audio interface stops" report.
-        if (vc->fill_damp != 1.0f) {
-            vc->fill_damp = 1.0f;
-            vc->fill_cut_at = 0xFFFFFFFFu;
-            DeriveVoiceRange(*vc, m_skeleton_padded, m_num_modes_padded);
-        }
-        const float fill_damp = expf(-kFillDampRate / m_sr);
-        for (int i = 0; i < kVoices; ++i) {
-            Voice& ov = m_vc[i];
-            if (&ov == vc || !ov.tuned || ov.is_silent) continue;
-            if (ov.fill_damp == 1.0f) {
-                ov.fill_damp = fill_damp;
-                ov.fill_cut_at = ov.age + (uint32_t)(kFillCutSec * m_sr);
-                // Scale the poles in place rather than re-deriving the range.
-                // a1 = 2*r*cos(th) and a2 = r*r, so damping r by d is exactly
-                // a1 *= d, a2 *= d*d — no trig, which matters because this runs
-                // in NoteOn ALONGSIDE the new kettle's full RetuneVoice, and a
-                // second bank of sin/cos here would put a CPU spike at the very
-                // moment this mechanism exists to relieve.  DeriveVoiceRange
-                // and the glide fold the same factor in, so a rebuild landing
-                // mid-fade stays consistent with this.
-                const float d2 = fill_damp * fill_damp;
-                for (int m = m_skeleton_padded; m < m_num_modes_padded; ++m) {
-                    ov.a1[m] *= fill_damp;
-                    ov.a2[m] *= d2;
-                }
-            }
-        }
-
-        // Excitation: energy scales with velocity, and the impulse SHARPENS
-        // with velocity (velocity changes timbre, not just level).
-        vc->exc_gain = v * r.exc_gain;
-        float t = m_mods.vel_sharp * v;
-        float len = kExcLenMax - t * (kExcLenMax - kExcLenMin);
-        len /= (m_mods.exc_sharp > 0.1f) ? m_mods.exc_sharp : 0.1f;
-        vc->exc_len = (int)(len + 0.5f);
-        if (vc->exc_len < 1)  vc->exc_len = 1;
-        if (vc->exc_len > 40) vc->exc_len = 40;
-        vc->exc_pos = 0;
-
-        // Broadband knock: velocity curve shaped by vel_knock_exp (a LOWER
-        // exponent keeps the hit prominent at soft velocities).
-        vc->tr_pos = 0;
-        vc->tr_gain = powf(v, m_mods.vel_knock_exp) * r.knock_gain * m_mods.knock_mult;
-
-        // Noise wedge: reset envelope + cutoff to bright, sweeps down per hit.
-        vc->noise_env  = v;
-        vc->noise_coef = m_noise_coef_hi_eff;
-
-        // Strike pitch glide (head tension): starts sharp, settles.
-        vc->glide_state = v * kGlideAmount;
-        vc->glide_idle = false;
-
-        // Arm the raised-cosine attack bloom (membrane-only swell to peak).
-        vc->atk_len = (int)(r.bloom_ms * 0.001f * m_sr + 0.5f);
-        if (vc->atk_len < 1) vc->atk_len = 1;
-        vc->atk_pos = 0;
-
-        vc->silent_blocks = 0;
-        vc->is_silent = false;
-        // A strike re-excites the whole bank, so every retired group comes back
-        // (their y are zero, cleared on retirement, so they restart cleanly).
-        vc->live_hi = m_num_modes_padded;
-        vc->age = 0;
+        // Ceiling 2.0, not 1.0: the Velocity knob can ask for a strike harder
+        // than MIDI 127 (bounded to 1.30 there), and clamping it back to 1.0
+        // would make its "wham" direction dead.  This only guards against
+        // garbage: exc_gain, knock and noise scale linearly past 1.0 and the
+        // pitch glide is still pole-clamped in Process().
+        const float v = (velocity < 0.0f) ? 0.0f : (velocity > 2.0f ? 2.0f : velocity);
+        Voice& vc = TakeKettle(note, ratio);
+        vc.serial = ++m_trigger_serial;
+        HandOverBank(vc);
+        ArmStrike(vc, *m_recipe, v);
     }
 
     // Render `frames` mono samples (transparent-limited, at the approved
@@ -246,239 +133,55 @@ public:
     bool Process(float* __restrict mono, int frames) {
         if (!IsActive()) return false;
         const ModalDrumRecipe& r = *m_recipe;
-
-        // Amortized base rebuild + per-voice re-derivation, bounded per block.
-        if (m_rebuild_pos < m_num_modes_padded) {
-            int end = m_rebuild_pos + kRebuildPerBlock;
-            if (end > m_num_modes_padded) end = m_num_modes_padded;
-            RebuildBase(m_rebuild_pos, end);
-            for (int v = 0; v < kVoices; ++v)
-                if (m_vc[v].tuned) DeriveVoiceRange(m_vc[v], m_rebuild_pos, end);
-            m_rebuild_pos = end;
-            // The per-group figures RebuildBase just wrote are per-group MAXIMA;
-            // turning them into the suffix maxima the walk needs can only be
-            // done once the whole table is current.  Until then no kettle
-            // retires anything (m_sched_ready), which is the safe direction.
-            if (m_rebuild_pos >= m_num_modes_padded) FinishSchedule();
-        }
+        ContinueRebuild();
 
         bool any_audible = false;
         for (int i = 0; i < frames; ++i) mono[i] = 0.0f;
-
-        float noise_decay_fac = expf(-r.noise_decay / m_sr);
-        float noise_sweep_fac = expf(-r.noise_sweep_hz / m_sr);
-        float noise_level = r.noise_level * m_mods.noise_mult + m_mods.noise_add;
-        float glide_decay = expf(-kGlideDecay / m_sr);
+        const BlockRates k = {
+            expf(-r.noise_decay / m_sr),
+            expf(-r.noise_sweep_hz / m_sr),
+            r.noise_level * m_mods.noise_mult + m_mods.noise_add,
+            expf(-kGlideDecay / m_sr),
+        };
 
         for (int vi = 0; vi < kVoices; ++vi) {
             Voice& vc = m_vc[vi];
             if (!vc.tuned || vc.is_silent) continue;
             any_audible = true;
-
-            // Retire mode groups whose envelopes have decayed past kRetireEps.
-            // The schedule is a suffix maximum, so the bound only ever walks
-            // DOWN and each group is visited once per strike.  Retired lanes
-            // are zeroed rather than frozen: leaving stale state there would
-            // let it re-enter as a ghost on the next strike, the same trap
-            // RebuildBase already guards on a density shrink.
-            if (vc.live_hi > m_num_modes_padded) vc.live_hi = m_num_modes_padded;
-            // A damped fill is walked out IN STEP with its damping rather than
-            // dropped in one go at the end.  Dropping it at the end would leave
-            // both banks at full width for the whole 40 ms window — which is
-            // the very peak this mechanism exists to remove — and the ramp is
-            // free of steps because the groups released first are both the
-            // quietest in the table and the furthest into their fade.
-            if (vc.fill_damp != 1.0f && vc.live_hi > m_skeleton_padded) {
-                const uint32_t span = (uint32_t)(kFillCutSec * m_sr);
-                const uint32_t left = (vc.fill_cut_at > vc.age)
-                                    ? (vc.fill_cut_at - vc.age) : 0u;
-                int target = m_skeleton_padded +
-                             (int)(((int64_t)(m_num_modes_padded - m_skeleton_padded)
-                                    * (int64_t)left) / (int64_t)span);
-                target &= ~3;
-                if (target < m_skeleton_padded) target = m_skeleton_padded;
-                if (vc.live_hi > target) {
-                    memset(&vc.y1[target], 0,
-                           (size_t)(vc.live_hi - target) * sizeof(float));
-                    memset(&vc.y2[target], 0,
-                           (size_t)(vc.live_hi - target) * sizeof(float));
-                    vc.live_hi = target;
-                }
-            }
-            if (m_sched_ready) {
-                while (vc.live_hi > 0 &&
-                       m_grp_retire[(vc.live_hi >> 2) - 1] <= (int)vc.age) {
-                    vc.live_hi -= 4;
-                    memset(&vc.y1[vc.live_hi], 0, 4 * sizeof(float));
-                    memset(&vc.y2[vc.live_hi], 0, 4 * sizeof(float));
-                }
-            }
+            RetireModes(vc);
             vc.age += (uint32_t)frames;
-
-            // Per-block pitch-glide retune of THIS kettle (trig out of the
-            // inner loop).  Once settled, snap to exact tuning and stop.
-            if (!vc.glide_idle) {
-                float gm = vc.ratio * (1.0f + vc.glide_state);
-                const float th_max = 0.45f * 2.0f * kPi;   // keep poles < 0.45·sr
-                for (int m = 0; m < m_num_modes_padded; ++m) {
-                    float th = m_base_theta[m] * gm;
-                    const float rr = (m >= m_skeleton_padded)
-                                   ? (m_base_r[m] * vc.fill_damp) : m_base_r[m];
-                    vc.a1[m] = (th < th_max) ? 2.0f * rr * cosf(th) : 0.0f;
-                }
-                if (vc.glide_state < 1e-5f) vc.glide_idle = true;
-            }
-
-            float block_peak = 0.0f;
-            for (int s = 0; s < frames; ++s) {
-                // --- excitation impulse (short half-sine burst) ---
-                float e = 0.0f;
-                if (vc.exc_pos < vc.exc_len) {
-                    e = sinf(kPi * (float)vc.exc_pos / (float)vc.exc_len) * vc.exc_gain;
-                    vc.exc_pos++;
-                }
-
-                // --- resonator bank: y0 = a1*y1 - a2*y2 + g*e, 4 modes per
-                //     NEON iteration; padding lanes contribute exactly 0.
-                //
-                // Two arms, split on whether the strike burst is still running.
-                // `exc_len` is at most 40 samples, so for >99 % of a ring `e`
-                // is exactly 0.0 and `gain[m] * e` contributes nothing — yet
-                // the driven arm still loads the whole `gain` array (280 floats
-                // on Timpani) and issues a multiply-add per mode, every sample.
-                // Dropping that in the tail is bit-exact (x + g*0 == x) and
-                // removes a fifth of the loop's memory traffic; it matters
-                // because this bank is the unit's dominant per-sample cost and
-                // a note change runs TWO of them (see kernel_cpu_probe.cpp).
-                float body = 0.0f;
-                const int nm = vc.live_hi;
-#if defined(MODAL_DRUM_NEON)
-                {
-                    float32x4_t vbody = vdupq_n_f32(0.0f);
-                    if (e != 0.0f) {
-                        const float32x4_t ve = vdupq_n_f32(e);
-                        for (int m = 0; m < nm; m += 4) {
-                            float32x4_t a1 = vld1q_f32(&vc.a1[m]);
-                            float32x4_t a2 = vld1q_f32(&vc.a2[m]);
-                            float32x4_t y1 = vld1q_f32(&vc.y1[m]);
-                            float32x4_t y2 = vld1q_f32(&vc.y2[m]);
-                            float32x4_t g  = vld1q_f32(&vc.gain[m]);
-                            float32x4_t y0 = vmulq_f32(g, ve);
-                            y0 = vmlaq_f32(y0, a1, y1);
-                            y0 = vmlsq_f32(y0, a2, y2);
-                            vst1q_f32(&vc.y2[m], y1);
-                            vst1q_f32(&vc.y1[m], y0);
-                            vbody = vaddq_f32(vbody, y0);
-                        }
-                    } else {
-                        for (int m = 0; m < nm; m += 4) {
-                            float32x4_t a1 = vld1q_f32(&vc.a1[m]);
-                            float32x4_t a2 = vld1q_f32(&vc.a2[m]);
-                            float32x4_t y1 = vld1q_f32(&vc.y1[m]);
-                            float32x4_t y2 = vld1q_f32(&vc.y2[m]);
-                            float32x4_t y0 = vmulq_f32(a1, y1);
-                            y0 = vmlsq_f32(y0, a2, y2);
-                            vst1q_f32(&vc.y2[m], y1);
-                            vst1q_f32(&vc.y1[m], y0);
-                            vbody = vaddq_f32(vbody, y0);
-                        }
-                    }
-                    float32x2_t s2 = vadd_f32(vget_low_f32(vbody), vget_high_f32(vbody));
-                    s2 = vpadd_f32(s2, s2);
-                    body = vget_lane_f32(s2, 0);
-                }
-#else
-                if (e != 0.0f) {
-                    for (int m = 0; m < nm; ++m) {
-                        float y0 = vc.a1[m] * vc.y1[m] - vc.a2[m] * vc.y2[m] + vc.gain[m] * e;
-                        vc.y2[m] = vc.y1[m];
-                        vc.y1[m] = y0;
-                        body += y0;
-                    }
-                } else {
-                    for (int m = 0; m < nm; ++m) {
-                        float y0 = vc.a1[m] * vc.y1[m] - vc.a2[m] * vc.y2[m];
-                        vc.y2[m] = vc.y1[m];
-                        vc.y1[m] = y0;
-                        body += y0;
-                    }
-                }
-#endif
-                float sample = body;
-
-                // --- noise wedge: broadband membrane response per kettle,
-                //     cutoff sweeps down (4 cascaded 1-poles = -24 dB/oct).
-                if (noise_level > 0.0f && vc.noise_env > 1e-5f) {
-                    vc.rng ^= vc.rng << 13; vc.rng ^= vc.rng >> 17; vc.rng ^= vc.rng << 5;
-                    float wn = (float)(int32_t)vc.rng * (1.0f / 2147483647.0f);
-                    vc.nz_lp1 += vc.noise_coef * (wn       - vc.nz_lp1);
-                    vc.nz_lp2 += vc.noise_coef * (vc.nz_lp1 - vc.nz_lp2);
-                    vc.nz_lp3 += vc.noise_coef * (vc.nz_lp2 - vc.nz_lp3);
-                    vc.nz_lp4 += vc.noise_coef * (vc.nz_lp3 - vc.nz_lp4);
-                    sample += vc.nz_lp4 * vc.noise_env * noise_level;
-                    vc.noise_env *= noise_decay_fac;
-                    vc.noise_coef = m_noise_coef_lo_eff +
-                                    (vc.noise_coef - m_noise_coef_lo_eff) * noise_sweep_fac;
-                }
-
-                // --- attack bloom: the MEMBRANE swells to peak over a few ms;
-                //     the stick click (transient below) stays sharp.
-                if (vc.atk_pos < vc.atk_len) {
-                    float ph = (float)vc.atk_pos / (float)vc.atk_len;
-                    float b = 0.5f - 0.5f * cosf(kPi * ph);
-                    sample *= r.bloom_floor + (1.0f - r.bloom_floor) * b;
-                    vc.atk_pos++;
-                }
-
-                // --- broadband residual "knock" (recorded, exp-tapered) ---
-                if (vc.tr_pos < r.transient_len) {
-                    sample += r.transient[vc.tr_pos] * vc.tr_gain;
-                    vc.tr_pos++;
-                }
-
-                mono[s] += sample;
-                float a = fabsf(sample);
-                if (a > block_peak) block_peak = a;
-
-                vc.glide_state *= glide_decay;
-            }
-
-            // Per-kettle silence gate: strike machinery done + inaudible ring
-            // for a stretch → stop burning this voice's NEON loop.
-            bool machinery_done = (vc.exc_pos >= vc.exc_len) &&
-                                  (vc.tr_pos >= r.transient_len) &&
-                                  (vc.noise_env <= 1e-5f || noise_level <= 0.0f);
-            if (machinery_done && block_peak < 3e-5f) {
-                if (++vc.silent_blocks >= 8) vc.is_silent = true;
-            } else {
-                vc.silent_blocks = 0;
-            }
+            GlideRetune(vc);
+            const float block_peak = RenderKettle(vc, r, k, mono, frames);
+            GateSilence(vc, r, k.noise_level, block_peak);
         }
-
         if (!any_audible) return false;
 
-        // --- transparent peak limiter on the SUM of the kettles: unity below
-        //     0.85, tanh knee above — preserves the strike's crest ("wham").
-        for (int s = 0; s < frames; ++s) {
-            float x = mono[s];
-            float a = fabsf(x);
-            if (a > kLimThr) {
-                float over = (a - kLimThr) * (1.0f / (1.0f - kLimThr));
-                a = kLimThr + (1.0f - kLimThr) * fastertanhf(over);
-                x = (x < 0.0f) ? -a : a;
-            }
-            mono[s] = x * r.out_gain;
-        }
+        // The transparent peak limiter on the SUM of the kettles: unity below
+        // kLimThr, a tanh knee above — preserves the strike's crest ("wham").
+        for (int s = 0; s < frames; ++s)
+            mono[s] = TanhKnee(mono[s], kLimThr, 1.0f - kLimThr, 1.0f / (1.0f - kLimThr)) * r.out_gain;
         return true;
+    }
+
+    // A peak limiter that leaves |x| <= thr alone and bends the excess onto
+    // thr + span · tanh((|x| - thr) · inv_span), keeping the sign.
+    static float TanhKnee(float x, float thr, float span, float inv_span) {
+        float a = fabsf(x);
+        if (a > thr) {
+            a = thr + span * fastertanhf((a - thr) * inv_span);
+            x = (x < 0.0f) ? -a : a;
+        }
+        return x;
     }
 
 private:
     static constexpr float kPi = 3.14159265358979f;
     static constexpr float kLimThr = 0.85f;
-    static constexpr float kExcLenMin = 2.0f;   // samples (velocity-sharpened)
+    static constexpr float kExcLenMin = 2.0f;    // samples (velocity-sharpened)
     static constexpr float kExcLenMax = 10.0f;
     static constexpr float kGlideAmount = 0.10f; // strike pitch-glide depth
     static constexpr float kGlideDecay  = 45.0f; // 1/s
+    static constexpr float kThetaMax = 0.45f * 2.0f * kPi;   // keep poles < 0.45·sr
 
     // ── Mode retirement ────────────────────────────────────────────────────
     // A mode whose envelope has decayed below kRetireEps is still stepped
@@ -553,10 +256,18 @@ private:
         int      live_hi = 0;
         uint32_t age = 0;
         // Fill damping (see kFillDampRate): 1.0 = this kettle owns the full
-        // bank; < 1.0 = an newer kettle took over and this one's upper fill is
+        // bank; < 1.0 = a newer kettle took over and this one's upper fill is
         // being damped out, to be cut loose at `fill_cut_at`.
         float    fill_damp = 1.0f;
         uint32_t fill_cut_at = 0xFFFFFFFFu;
+    };
+
+    // Per-block rates Process() hands to every kettle.
+    struct BlockRates {
+        float noise_decay;   // noise-wedge envelope, per sample
+        float noise_sweep;   // noise-wedge cutoff sweep, per sample
+        float noise_level;   // noise-wedge level after NzMix
+        float glide_decay;   // strike pitch glide, per sample
     };
 
     void ClearVoice(Voice& vc) {
@@ -577,6 +288,303 @@ private:
         vc.fill_cut_at = 0xFFFFFFFFu;
     }
 
+    // ── The strike ──────────────────────────────────────────────────────────
+    // Same note → the same physical drum: retrigger in place (a roll).  New
+    // note → a silent kettle if there is one, else the least recently struck;
+    // it is retuned synchronously and its old ring cleared.
+    Voice& TakeKettle(uint8_t note, float ratio) {
+        for (int i = 0; i < kVoices; ++i)
+            if (m_vc[i].tuned && m_vc[i].note == note) return m_vc[i];
+        Voice* vc = nullptr;
+        for (int i = 0; i < kVoices; ++i)
+            if (!m_vc[i].tuned || m_vc[i].is_silent) { vc = &m_vc[i]; break; }
+        if (!vc) {
+            vc = &m_vc[0];
+            for (int i = 1; i < kVoices; ++i)
+                if (m_vc[i].serial < vc->serial) vc = &m_vc[i];
+        }
+        ClearVoice(*vc);
+        vc->note = note;
+        vc->ratio = ratio;
+        vc->tuned = true;
+        RetuneVoice(*vc);
+        return *vc;
+    }
+
+    // The struck kettle owns the full bank from here; any OTHER kettle still
+    // ringing gives its dense fill up, so the two banks together cost about
+    // one and a bit, not two (see kFillDampRate).
+    void HandOverBank(Voice& vc) {
+        if (vc.fill_damp != 1.0f) {
+            vc.fill_damp = 1.0f;
+            vc.fill_cut_at = 0xFFFFFFFFu;
+            DeriveVoiceRange(vc, m_skeleton_padded, m_num_modes_padded);
+        }
+        const float fill_damp = expf(-kFillDampRate / m_sr);
+        for (int i = 0; i < kVoices; ++i) {
+            Voice& ov = m_vc[i];
+            if (&ov == &vc || !ov.tuned || ov.is_silent) continue;
+            if (ov.fill_damp == 1.0f) {
+                ov.fill_damp = fill_damp;
+                ov.fill_cut_at = ov.age + (uint32_t)(kFillCutSec * m_sr);
+                // Scale the poles in place rather than re-deriving the range:
+                // a1 = 2·r·cos(th) and a2 = r², so damping r by d is exactly
+                // a1 *= d, a2 *= d² — no trig, which matters because this runs
+                // in NoteOn ALONGSIDE the new kettle's full RetuneVoice.
+                // DeriveVoiceRange and the glide fold the same factor in, so a
+                // rebuild landing mid-fade stays consistent with this.
+                const float d2 = fill_damp * fill_damp;
+                for (int m = m_skeleton_padded; m < m_num_modes_padded; ++m) {
+                    ov.a1[m] *= fill_damp;
+                    ov.a2[m] *= d2;
+                }
+            }
+        }
+    }
+
+    void ArmStrike(Voice& vc, const ModalDrumRecipe& r, float v) {
+        // Excitation: energy scales with velocity, and the impulse SHARPENS
+        // with velocity (velocity changes timbre, not just level).
+        vc.exc_gain = v * r.exc_gain;
+        const float t = m_mods.vel_sharp * v;
+        float len = kExcLenMax - t * (kExcLenMax - kExcLenMin);
+        len /= (m_mods.exc_sharp > 0.1f) ? m_mods.exc_sharp : 0.1f;
+        vc.exc_len = (int)(len + 0.5f);
+        if (vc.exc_len < 1)  vc.exc_len = 1;
+        if (vc.exc_len > 40) vc.exc_len = 40;
+        vc.exc_pos = 0;
+
+        // Broadband knock: velocity curve shaped by vel_knock_exp (a LOWER
+        // exponent keeps the hit prominent at soft velocities).
+        vc.tr_pos = 0;
+        vc.tr_gain = powf(v, m_mods.vel_knock_exp) * r.knock_gain * m_mods.knock_mult;
+
+        // Noise wedge: envelope and cutoff back to bright, swept down per hit.
+        vc.noise_env  = v;
+        vc.noise_coef = m_noise_coef_hi_eff;
+
+        // Strike pitch glide (head tension): starts sharp, settles.
+        vc.glide_state = v * kGlideAmount;
+        vc.glide_idle = false;
+
+        // The raised-cosine attack bloom (membrane-only swell to peak).
+        vc.atk_len = (int)(r.bloom_ms * 0.001f * m_sr + 0.5f);
+        if (vc.atk_len < 1) vc.atk_len = 1;
+        vc.atk_pos = 0;
+
+        vc.silent_blocks = 0;
+        vc.is_silent = false;
+        // A strike re-excites the whole bank, so every retired group comes back
+        // (their y are zero, cleared on retirement, so they restart cleanly).
+        vc.live_hi = m_num_modes_padded;
+        vc.age = 0;
+    }
+
+    // ── Per block ───────────────────────────────────────────────────────────
+    // The amortised base rebuild and per-kettle re-derivation, bounded per block.
+    void ContinueRebuild() {
+        if (m_rebuild_pos >= m_num_modes_padded) return;
+        int end = m_rebuild_pos + kRebuildPerBlock;
+        if (end > m_num_modes_padded) end = m_num_modes_padded;
+        RebuildBase(m_rebuild_pos, end);
+        for (int v = 0; v < kVoices; ++v)
+            if (m_vc[v].tuned) DeriveVoiceRange(m_vc[v], m_rebuild_pos, end);
+        m_rebuild_pos = end;
+        // The per-group figures RebuildBase just wrote are per-group MAXIMA;
+        // turning them into the suffix maxima the walk needs can only be done
+        // once the whole table is current.  Until then no kettle retires
+        // anything (m_sched_ready), which is the safe direction.
+        if (m_rebuild_pos >= m_num_modes_padded) FinishSchedule();
+    }
+
+    // Retire mode groups whose envelopes have decayed past kRetireEps.  The
+    // schedule is a suffix maximum, so the bound only ever walks DOWN and each
+    // group is visited once per strike.  Retired lanes are zeroed rather than
+    // frozen: stale state there would re-enter as a ghost on the next strike,
+    // the same trap RebuildBase guards on a density shrink.
+    void RetireModes(Voice& vc) {
+        if (vc.live_hi > m_num_modes_padded) vc.live_hi = m_num_modes_padded;
+        // A damped fill is walked out IN STEP with its damping rather than
+        // dropped in one go at the end: dropping it at the end would leave
+        // both banks at full width for the whole 40 ms window — the very peak
+        // this mechanism exists to remove — and the ramp is free of steps
+        // because the groups released first are both the quietest in the table
+        // and the furthest into their fade.
+        if (vc.fill_damp != 1.0f && vc.live_hi > m_skeleton_padded) {
+            const uint32_t span = (uint32_t)(kFillCutSec * m_sr);
+            const uint32_t left = (vc.fill_cut_at > vc.age) ? (vc.fill_cut_at - vc.age) : 0u;
+            int target = m_skeleton_padded +
+                         (int)(((int64_t)(m_num_modes_padded - m_skeleton_padded)
+                                * (int64_t)left) / (int64_t)span);
+            target &= ~3;
+            if (target < m_skeleton_padded) target = m_skeleton_padded;
+            if (vc.live_hi > target) {
+                memset(&vc.y1[target], 0, (size_t)(vc.live_hi - target) * sizeof(float));
+                memset(&vc.y2[target], 0, (size_t)(vc.live_hi - target) * sizeof(float));
+                vc.live_hi = target;
+            }
+        }
+        if (m_sched_ready) {
+            while (vc.live_hi > 0 && m_grp_retire[(vc.live_hi >> 2) - 1] <= (int)vc.age) {
+                vc.live_hi -= 4;
+                memset(&vc.y1[vc.live_hi], 0, 4 * sizeof(float));
+                memset(&vc.y2[vc.live_hi], 0, 4 * sizeof(float));
+            }
+        }
+    }
+
+    // The strike's pitch glide, retuned once per block (trig out of the inner
+    // loop).  Once settled, snap to exact tuning and stop.
+    void GlideRetune(Voice& vc) {
+        if (vc.glide_idle) return;
+        const float gm = vc.ratio * (1.0f + vc.glide_state);
+        for (int m = 0; m < m_num_modes_padded; ++m) {
+            const float th = m_base_theta[m] * gm;
+            const float rr = (m >= m_skeleton_padded) ? (m_base_r[m] * vc.fill_damp) : m_base_r[m];
+            vc.a1[m] = (th < kThetaMax) ? 2.0f * rr * cosf(th) : 0.0f;
+        }
+        if (vc.glide_state < 1e-5f) vc.glide_idle = true;
+    }
+
+    // One kettle for one block, added into mono[]; returns its peak.
+    float RenderKettle(Voice& vc, const ModalDrumRecipe& r, const BlockRates& k,
+                       float* __restrict mono, int frames) {
+        float block_peak = 0.0f;
+        for (int s = 0; s < frames; ++s) {
+            float sample = RingBank(vc, Excitation(vc));
+            if (k.noise_level > 0.0f && vc.noise_env > 1e-5f) sample += NoiseWedge(vc, k);
+            // The attack bloom: the MEMBRANE swells to peak over a few ms; the
+            // stick click (the knock below) stays sharp.
+            if (vc.atk_pos < vc.atk_len) sample *= Bloom(vc, r);
+            if (vc.tr_pos < r.transient_len) sample += Knock(vc, r);
+            mono[s] += sample;
+            const float a = fabsf(sample);
+            if (a > block_peak) block_peak = a;
+            vc.glide_state *= k.glide_decay;
+        }
+        return block_peak;
+    }
+
+    // Per-kettle silence gate: the strike machinery done and the ring
+    // inaudible for a stretch → stop running this kettle's bank.
+    static void GateSilence(Voice& vc, const ModalDrumRecipe& r, float noise_level, float block_peak) {
+        const bool machinery_done = (vc.exc_pos >= vc.exc_len) &&
+                                    (vc.tr_pos >= r.transient_len) &&
+                                    (vc.noise_env <= 1e-5f || noise_level <= 0.0f);
+        if (machinery_done && block_peak < 3e-5f) {
+            if (++vc.silent_blocks >= 8) vc.is_silent = true;
+        } else {
+            vc.silent_blocks = 0;
+        }
+    }
+
+    // ── Per sample ──────────────────────────────────────────────────────────
+    // The excitation impulse: a short half-sine burst.
+    static float Excitation(Voice& vc) {
+        float e = 0.0f;
+        if (vc.exc_pos < vc.exc_len) {
+            e = sinf(kPi * (float)vc.exc_pos / (float)vc.exc_len) * vc.exc_gain;
+            vc.exc_pos++;
+        }
+        return e;
+    }
+
+    // The resonator bank, y0 = a1·y1 - a2·y2 + g·e, 4 modes per NEON
+    // iteration; padding lanes contribute exactly 0.
+    //
+    // Two arms, split on whether the strike burst is still running.  exc_len
+    // is at most 40 samples, so for >99 % of a ring `e` is exactly 0.0 and
+    // `gain[m] * e` contributes nothing — yet the driven arm still loads the
+    // whole gain array (280 floats on Timpani) and issues a multiply-add per
+    // mode, every sample.  Dropping it in the tail is bit-exact (x + g·0 == x)
+    // and removes a fifth of the loop's memory traffic; it matters because
+    // this bank is the unit's dominant per-sample cost and a note change runs
+    // TWO of them.
+    static float RingBank(Voice& vc, float e) {
+        float body = 0.0f;
+        const int nm = vc.live_hi;
+#if defined(MODAL_DRUM_NEON)
+        float32x4_t vbody = vdupq_n_f32(0.0f);
+        if (e != 0.0f) {
+            const float32x4_t ve = vdupq_n_f32(e);
+            for (int m = 0; m < nm; m += 4) {
+                float32x4_t a1 = vld1q_f32(&vc.a1[m]);
+                float32x4_t a2 = vld1q_f32(&vc.a2[m]);
+                float32x4_t y1 = vld1q_f32(&vc.y1[m]);
+                float32x4_t y2 = vld1q_f32(&vc.y2[m]);
+                float32x4_t g  = vld1q_f32(&vc.gain[m]);
+                float32x4_t y0 = vmulq_f32(g, ve);
+                y0 = vmlaq_f32(y0, a1, y1);
+                y0 = vmlsq_f32(y0, a2, y2);
+                vst1q_f32(&vc.y2[m], y1);
+                vst1q_f32(&vc.y1[m], y0);
+                vbody = vaddq_f32(vbody, y0);
+            }
+        } else {
+            for (int m = 0; m < nm; m += 4) {
+                float32x4_t a1 = vld1q_f32(&vc.a1[m]);
+                float32x4_t a2 = vld1q_f32(&vc.a2[m]);
+                float32x4_t y1 = vld1q_f32(&vc.y1[m]);
+                float32x4_t y2 = vld1q_f32(&vc.y2[m]);
+                float32x4_t y0 = vmulq_f32(a1, y1);
+                y0 = vmlsq_f32(y0, a2, y2);
+                vst1q_f32(&vc.y2[m], y1);
+                vst1q_f32(&vc.y1[m], y0);
+                vbody = vaddq_f32(vbody, y0);
+            }
+        }
+        float32x2_t s2 = vadd_f32(vget_low_f32(vbody), vget_high_f32(vbody));
+        s2 = vpadd_f32(s2, s2);
+        body = vget_lane_f32(s2, 0);
+#else
+        if (e != 0.0f) {
+            for (int m = 0; m < nm; ++m) {
+                float y0 = vc.a1[m] * vc.y1[m] - vc.a2[m] * vc.y2[m] + vc.gain[m] * e;
+                vc.y2[m] = vc.y1[m];
+                vc.y1[m] = y0;
+                body += y0;
+            }
+        } else {
+            for (int m = 0; m < nm; ++m) {
+                float y0 = vc.a1[m] * vc.y1[m] - vc.a2[m] * vc.y2[m];
+                vc.y2[m] = vc.y1[m];
+                vc.y1[m] = y0;
+                body += y0;
+            }
+        }
+#endif
+        return body;
+    }
+
+    // The noise wedge: broadband membrane response per kettle, its cutoff
+    // sweeping down (4 cascaded one-poles = -24 dB/oct).
+    float NoiseWedge(Voice& vc, const BlockRates& k) const {
+        vc.rng ^= vc.rng << 13; vc.rng ^= vc.rng >> 17; vc.rng ^= vc.rng << 5;
+        const float wn = (float)(int32_t)vc.rng * (1.0f / 2147483647.0f);
+        vc.nz_lp1 += vc.noise_coef * (wn        - vc.nz_lp1);
+        vc.nz_lp2 += vc.noise_coef * (vc.nz_lp1 - vc.nz_lp2);
+        vc.nz_lp3 += vc.noise_coef * (vc.nz_lp2 - vc.nz_lp3);
+        vc.nz_lp4 += vc.noise_coef * (vc.nz_lp3 - vc.nz_lp4);
+        const float out = vc.nz_lp4 * vc.noise_env * k.noise_level;
+        vc.noise_env *= k.noise_decay;
+        vc.noise_coef = m_noise_coef_lo_eff + (vc.noise_coef - m_noise_coef_lo_eff) * k.noise_sweep;
+        return out;
+    }
+
+    // The raised-cosine attack bloom's gain for this sample.
+    static float Bloom(Voice& vc, const ModalDrumRecipe& r) {
+        const float ph = (float)vc.atk_pos / (float)vc.atk_len;
+        const float b = 0.5f - 0.5f * cosf(kPi * ph);
+        vc.atk_pos++;
+        return r.bloom_floor + (1.0f - r.bloom_floor) * b;
+    }
+
+    // The broadband residual "knock" (recorded, exp-tapered).
+    static float Knock(Voice& vc, const ModalDrumRecipe& r) {
+        return r.transient[vc.tr_pos++] * vc.tr_gain;
+    }
+
+    // ── The shared base tables ──────────────────────────────────────────────
     // Mode selection under the Partls density mod: the low/measured skeleton
     // (first fifth of the table, min 8) always sounds; the fill/upper modes
     // scale with density — 1.0 = the full approved wedge.
@@ -690,15 +698,14 @@ private:
     // ratio.  sin/cos only (~30 µs for 280 modes on the A7) — cheap enough to
     // run synchronously inside NoteOn, so a new note strikes in tune at once.
     void DeriveVoiceRange(Voice& vc, int begin, int end) {
-        const float th_max = 0.45f * 2.0f * kPi;   // keep poles < 0.45·sr
         for (int m = begin; m < end; ++m) {
             float th = m_base_theta[m] * vc.ratio;
             // Fill damping is folded in HERE, not applied as a one-shot to the
-            // coefficient arrays, so it survives an amortized rebuild landing
+            // coefficient arrays, so it survives an amortised rebuild landing
             // mid-fade (which would otherwise restore the undamped poles).
             float rr = (m >= m_skeleton_padded) ? (m_base_r[m] * vc.fill_damp)
                                                 : m_base_r[m];
-            if (th <= 0.0f || th >= th_max) {   // padding or off the top
+            if (th <= 0.0f || th >= kThetaMax) {   // padding or off the top
                 vc.a1[m] = vc.a2[m] = vc.gain[m] = 0.0f;
                 vc.y1[m] = vc.y2[m] = 0.0f;
                 continue;
@@ -714,7 +721,7 @@ private:
     // Turn RebuildBase's per-group maxima into the suffix maxima the per-block
     // walk needs, and arm it.  Only valid once the whole table is current, so
     // it is called from the two places that complete a rebuild: Configure (all
-    // at once) and Process (the amortized path reaching the end).
+    // at once) and ContinueRebuild (the amortised path reaching the end).
     void FinishSchedule() {
         int run = 0;
         for (int g = (m_num_modes_padded >> 2) - 1; g >= 0; --g) {
@@ -724,7 +731,12 @@ private:
         m_sched_ready = true;
     }
 
-    float m_sr = 48000.0f;
+    // The sample rate, deliberately a variable and not a constant: under the
+    // unit's -ffast-math a division by a CONSTANT becomes a multiplication by
+    // its reciprocal, which moves every mode's pole by a rounding step — and a
+    // rounding step on a 280-mode bank ringing for seconds is a measurable
+    // phase drift (-80 dB against the original on ARM, instead of -150).
+    float m_sr = brc::kSampleRate;
     const ModalDrumRecipe* m_recipe = nullptr;
     bool  m_active = false;
     float m_ref_drive = 1.0f;

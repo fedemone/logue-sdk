@@ -17,7 +17,7 @@ This unit holds the dense-resonator metal: Cymbal (crash), Gong, HHat-O, Ride, R
 | Engine | dense-resonator cymbal (`CymbalVoice`, `ENGINE_CYMBAL`) |
 | Presets | 6 |
 | Knobs | 19 |
-| ARM size (cross-built, `arm_size.sh`) | .text 11704 · .rodata 368 · .data 12272 · .bss 52 |
+| ARM size (cross-built, `arm_size.sh`) | .text 11076 · .rodata 680 · .data 11936 · .bss 52 |
 
 ## Presets
 
@@ -52,7 +52,7 @@ What each knob does in this unit:
 | Knob | In this unit |
 |---|---|
 | `Pitch` | semitones from the root: transposes the whole anchor spectrum (a smaller or larger cymbal); a re-strike on the same note re-excites the ringing voice, a different note takes its own |
-| `Poly` | voice cap 1-4; the CPU budget (kCymCostBudget) affords two cymbal voices |
+| `Poly` | voice cap 1-4; the CPU budget (`kCostBudget`) affords two cymbal voices |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
 | `MlltRes` | ring PRESENCE: metal over air (down = the wash dominates) |
 | `MlltStif` | beater hardness: stick ping and fast bite vs a slow felt-mallet swell |
@@ -98,14 +98,29 @@ and the same comparison cross-built for the Cortex-A7 with NEON and
 cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_cymbal --fuzz 20 --knob-points 1
 ```
 
+## Code
+
+| File | What it holds |
+|---|---|
+| `presets.h` | the 19-knob layout, the presets, the inharmonic anchor tables, each preset's strike (config, root, ring scale, level) and output trim |
+| `voice.h` | one voice: the dense resonator bank, its noise drivers, the stick, the phase modulation, the subsonic guards and the output stage |
+| `synth_engine.h` | the voice policy and CPU budget, the knob → strike mappings, voices → the master stage |
+
+The parts every family unit shares — the knob helpers, the REFERENCE ANCHORS, the Velocity knob, note routing and the master stage — are in [`brachetti_common`](../brachetti_common/), whose README has the rules for changing them.
+
 ## Relation to the original
 
 The code began as the original's, with everything this family never reaches
 taken out: the other engines, the other families' per-preset branches and
 voice layers, their table columns and their knobs.  Its comments describe this
 unit only; the history of how the sounds were voiced stays with the original
-unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
-names, so a fix can still be ported between the two.
+unit's documentation.  It was then restructured onto the common library, with
+the renders checked bit-identical at every step.  The names follow the
+restructured code (`m_anchor.decay` for the original's `m_modal_dkay_ref`, and
+so on), so a fix ports between the two by the mapping it changes rather than
+by search and replace.
 
-Changes made from here on belong to this unit only.  A fix that also applies
-to the original or to a sibling unit has to be made there too.
+A change to this unit's sound belongs to this unit.  A change in
+`brachetti_common` reaches all eight family units, so check all eight; a fix
+that also applies to the original has to be made there too (it keeps its own
+code).

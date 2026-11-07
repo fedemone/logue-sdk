@@ -27,6 +27,7 @@
  *   bend <0..16383>      pitch bend
  *   reset | suspend | resume
  *   render <frames>      render, in 64-frame blocks, and print one hash line
+ *   render_only <frames> render without hashing or output (CPU bench)
  *
  * Output: "<scenario> <render#> <hash> <peak>" per render.  The hash is FNV-1a
  * over both output channels with -0.0f folded onto +0.0f.  Two units are
@@ -182,6 +183,14 @@ int main(int argc, char** argv) {
             s->Suspend();
         } else if (cmd == "resume") {
             s->Resume();
+        } else if (cmd == "render_only") {
+            // Render without hashing or output: the CPU bench (arm_cpu.sh)
+            // counts instructions, and the hash loop would count with them.
+            int frames; ls >> frames;
+            frames = (frames + kBlock - 1) / kBlock * kBlock;
+            if ((size_t)frames * 2 > buf.size()) buf.resize((size_t)frames * 2);
+            for (int f = 0; f < frames; f += kBlock)
+                s->processBlock(&buf[(size_t)f * 2], kBlock);
         } else if (cmd == "render") {
             int frames; ls >> frames;
             frames = (frames + kBlock - 1) / kBlock * kBlock;

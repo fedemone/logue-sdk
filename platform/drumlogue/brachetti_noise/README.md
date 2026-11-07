@@ -17,7 +17,7 @@ This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-
 | Engine | shaped noise exciter + AM gating (`ENGINE_NOISE`) |
 | Presets | 3 |
 | Knobs | 18 |
-| ARM size (cross-built, `arm_size.sh`) | .text 7292 · .rodata 264 · .data 1008 · .bss 48 |
+| ARM size (cross-built, `arm_size.sh`) | .text 7468 · .rodata 300 · .data 992 · .bss 48 |
 
 ## Presets
 
@@ -96,14 +96,29 @@ cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_noise --fuzz 20 --
 
 Re-selecting **Shaker** while a Shaker voice still rings: the original then re-strikes a modal bank in the ringing voice, bringing back a woodblock "tok" the preset does not play.  This unit has no modal bank, so the re-select changes nothing.  The equivalence scripts therefore never re-select that preset while it rings (`--avoid-reselect`).
 
+## Code
+
+| File | What it holds |
+|---|---|
+| `presets.h` | the 18-knob layout, the presets (with their root note and decay columns), their voicing and output trim |
+| `voice.h` | one voice: the exciter and the gate that makes Clap's bursts and Shaker's grains |
+| `synth_engine.h` | the unit's own engine, built from the shared pieces: presets and knobs → voices, the gate, voices → the master stage |
+
+The parts every family unit shares — the knob helpers, the REFERENCE ANCHORS, the Velocity knob, note routing, the exciter and voice life cycle and the master stage — are in [`brachetti_common`](../brachetti_common/), whose README has the rules for changing them.
+
 ## Relation to the original
 
 The code began as the original's, with everything this family never reaches
 taken out: the other engines, the other families' per-preset branches and
 voice layers, their table columns and their knobs.  Its comments describe this
 unit only; the history of how the sounds were voiced stays with the original
-unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
-names, so a fix can still be ported between the two.
+unit's documentation.  It was then restructured onto the common library, with
+the renders checked bit-identical at every step.  The names follow the
+restructured code (`m_anchor.decay` for the original's `m_modal_dkay_ref`, and
+so on), so a fix ports between the two by the mapping it changes rather than
+by search and replace.
 
-Changes made from here on belong to this unit only.  A fix that also applies
-to the original or to a sibling unit has to be made there too.
+A change to this unit's sound belongs to this unit.  A change in
+`brachetti_common` reaches all eight family units, so check all eight; a fix
+that also applies to the original has to be made there too (it keeps its own
+code).

@@ -17,7 +17,7 @@ This unit holds Timpani and Taiko on the dense coupled-resonator drum kernel.
 | Engine | dense coupled-resonator drum kernel (`ModalDrumKernel`, ~280 modes) |
 | Presets | 2 |
 | Knobs | 20 |
-| ARM size (cross-built, `arm_size.sh`) | .text 10412 · .rodata 31244 · .data 4 · .bss 15420 |
+| ARM size (cross-built, `arm_size.sh`) | .text 10640 · .rodata 31244 · .data 4 · .bss 15428 |
 
 ## Presets
 
@@ -96,14 +96,30 @@ and the same comparison cross-built for the Cortex-A7 with NEON and
 cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_kernel --fuzz 20 --knob-points 1
 ```
 
+## Code
+
+| File | What it holds |
+|---|---|
+| `presets.h` | the 20-knob layout, the presets and the kernel recipe behind each |
+| `modal_drum_kernel.h` | the drum: two kettles of up to 280 resonators, the knock, the noise wedge, the bloom, the pitch glide, mode retirement |
+| `modal_drum_data.h` | the measured mode tables and recorded transients (generated) |
+| `synth_engine.h` | the knobs → the kernel's modifiers, and the unit's own master stage |
+
+The parts every family unit shares — the knob helpers, the REFERENCE ANCHORS, the Velocity knob, note routing and the master stage (the kernel uses its knob half and runs its own limiter) — are in [`brachetti_common`](../brachetti_common/), whose README has the rules for changing them.
+
 ## Relation to the original
 
 The code began as the original's, with everything this family never reaches
 taken out: the other engines, the other families' per-preset branches and
 voice layers, their table columns and their knobs.  Its comments describe this
 unit only; the history of how the sounds were voiced stays with the original
-unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
-names, so a fix can still be ported between the two.
+unit's documentation.  It was then restructured onto the common library, with
+the renders checked bit-identical at every step.  The names follow the
+restructured code (`m_anchor.decay` for the original's `m_modal_dkay_ref`, and
+so on), so a fix ports between the two by the mapping it changes rather than
+by search and replace.
 
-Changes made from here on belong to this unit only.  A fix that also applies
-to the original or to a sibling unit has to be made there too.
+A change to this unit's sound belongs to this unit.  A change in
+`brachetti_common` reaches all eight family units, so check all eight; a fix
+that also applies to the original has to be made there too (it keeps its own
+code).

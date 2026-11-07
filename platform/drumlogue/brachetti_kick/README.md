@@ -17,7 +17,7 @@ This unit holds the boom-oscillator kick drums: Kick2 (a kettledrum-bodied kick)
 | Engine | membrane modal bank + boom oscillator + thump layer (`ENGINE_MEMBRANE`, kick block) |
 | Presets | 3 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 16220 · .rodata 298 · .data 2624 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 15692 · .rodata 912 · .data 1952 · .bss 64 |
 
 ## Presets
 
@@ -102,14 +102,29 @@ cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_kick --fuzz 20 --k
 
 Re-selecting **Kick** (the Program knob set to the preset that is already selected) while a Kick voice still rings: the original then writes a stray snare-wire level (0.03) from its preset table into the ringing voice.  This unit has no snare-wire layer, so the re-select changes nothing.  The equivalence scripts therefore never re-select that preset while it rings (`--avoid-reselect`).
 
+## Code
+
+| File | What it holds |
+|---|---|
+| `presets.h` | the presets (one row of knob values each), Kick2's membrane modal config, each preset's voicing (boom, thump, click, chirp, onset) and output trim |
+| `voice.h` | one voice: the exciter, Kick2's modal bank, the boom and its pitch sweep, the beater thump, the beater click, the chirp and the onset ramp |
+| `synth_engine.h` | the kick on the shared modal engine: the strike recipe, the kick's knob mappings and the per-sample voice |
+
+The parts the modal units share — the 24-knob layout, preset loading, the knob mappings, note routing, the exciter, the modal bank, the voice life cycle and the master stage — are in [`brachetti_common`](../brachetti_common/) (`modal_synth.h` is the engine), whose README has the rules for changing them.
+
 ## Relation to the original
 
 The code began as the original's, with everything this family never reaches
 taken out: the other engines, the other families' per-preset branches and
 voice layers, their table columns and their knobs.  Its comments describe this
 unit only; the history of how the sounds were voiced stays with the original
-unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
-names, so a fix can still be ported between the two.
+unit's documentation.  It was then restructured onto the common library, with
+the renders checked bit-identical at every step.  The names follow the
+restructured code (`m_anchor.decay` for the original's `m_modal_dkay_ref`, and
+so on), so a fix ports between the two by the mapping it changes rather than
+by search and replace.
 
-Changes made from here on belong to this unit only.  A fix that also applies
-to the original or to a sibling unit has to be made there too.
+A change to this unit's sound belongs to this unit.  A change in
+`brachetti_common` reaches all eight family units, so check all eight; a fix
+that also applies to the original has to be made there too (it keeps its own
+code).
