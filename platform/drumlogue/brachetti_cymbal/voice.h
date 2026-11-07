@@ -24,7 +24,17 @@
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
 #endif
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, env_mul, kInvSampleRate, kLn0001, kSampleRate,
+//                    phase_inc
+//   float_math.h     fasterpowf, fastexpf, fastsinf
+//   noise.h          PinkFilter, lcg_unit
+//   small_filters.h  one_pole_coeff_fast, one_pole_hp, one_pole_lp
 #include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/float_math.h"
+#include "../brachetti_common/noise.h"
+#include "../brachetti_common/small_filters.h"
 
 enum { kCymbalMaxResonators = 112 };
 static_assert(kCymbalMaxResonators % 4 == 0, "kCymbalMaxResonators must be a multiple of 4 for NEON loop safety");
@@ -122,7 +132,7 @@ struct CymbalVoice {
 
     float lpState = 0.0f, hpLowState = 0.0f, dcState = 0.0f, dcState2 = 0.0f;
     float driveHp1 = 0.0f, driveHp2 = 0.0f;
-    float pinkState[7] = {};
+    brc::PinkFilter pinkNoise;
     float pmPhase[3]   = {};
 
     // Control-rate cache: the two driver one-poles' coefficients (each a
@@ -182,7 +192,7 @@ struct CymbalVoice {
             lpState = hpLowState = dcState = dcState2 = 0.0f;
             driveHp1 = driveHp2 = 0.0f;
             pmVal = pmStep = 0.0f;
-            for (int i = 0; i < 7; ++i) pinkState[i] = 0.0f;
+            pinkNoise.reset();
         }
         // ctrlCount 0: the first process() sample takes the control-rate
         // branch, so the cached coefficients are valid before they are read.
@@ -240,10 +250,9 @@ struct CymbalVoice {
         --ctrlCount;
 
         const float wn = frand() * 2.0f - 1.0f;
-        const float noise = pink(wn) * (1.0f - whiteBlend) + wn * whiteBlend;
-        const float lo_driver = one_pole(noise * noiseGain, lpCoeff, lpState) * e.low;
-        const float lp_hi = one_pole(noise * noiseGain, hpCoeff, hpLowState);
-        const float hi_driver = (noise * noiseGain - lp_hi) * (0.18f * e.shimmer);
+        const float noise = pinkNoise.process(wn) * (1.0f - whiteBlend) + wn * whiteBlend;
+        const float lo_driver = brc::one_pole_lp(noise * noiseGain, lpCoeff, lpState) * e.low;
+        const float hi_driver = brc::one_pole_hp(noise * noiseGain, hpCoeff, hpLowState) * (0.18f * e.shimmer);
         const float thwack = stick();
 
         // Phase modulation, interpolated toward the control-rate target.
@@ -261,38 +270,9 @@ struct CymbalVoice {
 private:
     struct Envelopes { float low, high, shimmer, strike; };
 
-    float frand() {
-        rng = rng * 1664525u + 1013904223u;
-        return ((rng >> 8) * (1.0f / 16777216.0f));
-    }
-
-    static float one_pole(float x, float a, float& s) {
-        s += a * (x - s);
-        return s;
-    }
-
-    // A one-pole low-pass coefficient for cutoff.  fastexpf is fine: its
-    // argument is always negative (where it is accurate), and the coefficient
-    // only nudges an already envelope-swept cutoff.
-    static float pole_coeff(float cutoff) {
-        cutoff = brc::clampf(cutoff, 10.0f, brc::kSampleRate * 0.45f);
-        return 1.0f - fastexpf(-6.28318530717958647692f * cutoff * brc::kInvSampleRate);
-    }
-
-    // Pink noise (Paul Kellet's refined filter).
-    float pink(float w) {
-        pinkState[0] = 0.99886f * pinkState[0] + w * 0.0555179f;
-        pinkState[1] = 0.99332f * pinkState[1] + w * 0.0750759f;
-        pinkState[2] = 0.96900f * pinkState[2] + w * 0.1538520f;
-        pinkState[3] = 0.86650f * pinkState[3] + w * 0.3104856f;
-        pinkState[4] = 0.55000f * pinkState[4] + w * 0.5329522f;
-        pinkState[5] = -0.7616f * pinkState[5] - w * 0.0168980f;
-        const float p = pinkState[0] + pinkState[1] + pinkState[2] +
-                        pinkState[3] + pinkState[4] + pinkState[5] +
-                        pinkState[6] + w * 0.5362f;
-        pinkState[6] = w * 0.115926f;
-        return p * 0.11f;
-    }
+    // The voice's random source (the bank's detune, the noise drivers, the
+    // PM phases): one stream, so a seed replays a strike exactly.
+    float frand() { return brc::lcg_unit(rng); }
 
     // The resonator bank for one strike.  Exact expf / cosf (r ≈ 0.9999).
     // Lanes below `keep` carry their vibration across a re-strike, at 0.75 so
@@ -321,7 +301,7 @@ private:
             const float octave = (float)(i / cfg.freqCount);
             float f = anchor * pr * exp2f(detune * (1.0f / 12.0f)) * exp2f(octave * 0.17f);
             f = brc::clampf(f, f_lo, f_hi);
-            const float w = 6.28318530717958647692f * f * brc::kInvSampleRate;
+            const float w = brc::phase_inc(f);
             resB0[i] = b0;
             resA1[i] = 2.0f * r * cosf(w);
             resA2[i] = r2;
@@ -365,8 +345,8 @@ private:
     // kVoiceFixedLanes part of the CPU budget in synth_engine.h).
     void update_control(const Envelopes& e) {
         ctrlCount = (uint16_t)kCymCtrlStride;
-        lpCoeff = pole_coeff(10.0f + maxCutoff * e.low);
-        hpCoeff = pole_coeff(10001.0f - 10000.0f * e.high);
+        lpCoeff = brc::one_pole_coeff_fast(10.0f + maxCutoff * e.low);
+        hpCoeff = brc::one_pole_coeff_fast(10001.0f - 10000.0f * e.high);
 
         const float strike_e  = velocity * (1.0f - strikeAtk) * strikeDec;
         const float rate_step = pmRateBase * (1.0f + 0.6f * strike_e) *
@@ -410,9 +390,8 @@ private:
     // -15 dB and 60 Hz -5 dB, while the lowest anchor any preset uses (the
     // gong's 150 Hz) pays about 1 dB and the crash's 343 Hz under 0.3 dB.
     float guard_drive(float drive) {
-        driveHp1 += kCymDriveHpCoef * (drive - driveHp1);  drive -= driveHp1;
-        driveHp2 += kCymDriveHpCoef * (drive - driveHp2);  drive -= driveHp2;
-        return drive;
+        drive = brc::one_pole_hp(drive, kCymDriveHpCoef, driveHp1);
+        return brc::one_pole_hp(drive, kCymDriveHpCoef, driveHp2);
     }
 
     // One sample of the bank: Σ gain_i · y_i.
@@ -478,10 +457,8 @@ private:
         // gong struck 8 times 300 ms apart puts 12 % of the passage energy
         // under 25 Hz and 17 % under 100 Hz; with these two 40 Hz poles, 0.4 %
         // and 2.5 %.  -16 dB at 17 Hz against -0.6 dB at the gong's 150 Hz.
-        dcState  += kCymRumbleCoef * (out - dcState);
-        out -= dcState;
-        dcState2 += kCymRumbleCoef * (out - dcState2);
-        out = (out - dcState2) * 0.9f;
+        out = brc::one_pole_hp(out, kCymRumbleCoef, dcState);
+        out = brc::one_pole_hp(out, kCymRumbleCoef, dcState2) * 0.9f;
         out *= velocityGain;
 
         out *= fade;   // panic fade (fadeMul < 1 only after AllNoteOff)
@@ -490,7 +467,7 @@ private:
 
         // Release the voice once the tail is inaudible (-66 dB over ~10 ms).
         // The 0.5 s guard protects slow attacks (the gong's 0.25 s).
-        magEnv += 0.002f * (fabsf(out) - magEnv);
+        brc::one_pole_lp(fabsf(out), 0.002f, magEnv);
         if (sampleIndex > (uint32_t)(0.5f * brc::kSampleRate) && magEnv < 0.0004f) active = false;
 
         if (++sampleIndex > endSample) active = false;

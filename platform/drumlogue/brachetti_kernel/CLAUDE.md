@@ -18,9 +18,12 @@ README.md lists the presets and what every knob does.
   moved.  Say so in the commit.
 - **Shared code.**  This folder holds the family (`presets.h`,
   `modal_drum_kernel.h`, `synth_engine.h`); what the family units share is in
-  `../brachetti_common`, whose README has the rules.  A change there reaches
-  all eight units: run `run_equiv.sh` on each.  A fix that also applies to the
-  original must be made there separately.
+  `../brachetti_common`, whose README has the rules and an index of every
+  helper: look there before writing one.  Each file's `From brachetti_common`
+  block lists the helpers it uses (`../tools/brachetti_equiv/lib_uses.py
+  --write` keeps it true, `--check` verifies it).  A change in the library
+  reaches all eight units: run `run_equiv.sh` on each.  A fix that also applies
+  to the original must be made there separately.
 - **REFERENCE ANCHORS.**  LoadPreset captures each knob's shipped value into
   `m_anchor` through the same `knob::` function the mapping reads; every knob
   mapping is a function of the DELTA from it, built so the delta 0 gives
@@ -28,7 +31,7 @@ README.md lists the presets and what every knob does.
   is not).  A new mapping must be anchored the same way, or the presets move.
 - **Knob ↔ header.c:** `ParamIndex` (`presets.h`) must match `header.c` slot
   for slot (a static_assert checks the count; the order is on you), header
-  defaults must equal preset 0's row, and `seed_performance_params()` must
+  defaults must equal preset 0's row, and `kHostKnobs` (`presets.h`) must
   match the defaults of the knobs LoadPreset skips (Pitch, Velocity, VlMllRes,
   Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their table
   columns).
@@ -49,7 +52,7 @@ README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_kernel`
-  (shipped: .text 10640 · .rodata 31244 · .data 4 · .bss 15428).
+  (shipped: .text 10716 · .rodata 31248 · .data 4 · .bss 15428).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_kernel --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

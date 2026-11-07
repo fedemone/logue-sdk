@@ -17,7 +17,7 @@ This unit holds toms and hand drums on the membrane modal bank: Djambe, Ac Tom, 
 | Engine | membrane modal bank + boom + strike-transient layer (`ENGINE_MEMBRANE`) |
 | Presets | 7 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 14280 · .rodata 1644 · .data 1872 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 14156 · .rodata 1644 · .data 1872 · .bss 64 |
 
 ## Presets
 

@@ -3,7 +3,16 @@
 // VoiceBase) with the snare wires on its noise, a short membrane modal head,
 // AcSnare's swept body boom and the pitch envelope it reads, BrshSnr's swirl
 // (a gate on the noise) and the onset ramp.
+
+// From brachetti_common (its README.md indexes every helper):
+//   exciter.h        NoiseBurst
+//   modal_bank.h     ModalBank
+//   small_filters.h  Resonator2
+//   voice_base.h     VoiceBase
+//   voice_layers.h   Boom, NoiseGate, Onset, PitchEnv
+#include "../brachetti_common/exciter.h"
 #include "../brachetti_common/modal_bank.h"
+#include "../brachetti_common/small_filters.h"
 #include "../brachetti_common/voice_base.h"
 #include "../brachetti_common/voice_layers.h"
 
@@ -15,22 +24,7 @@
 // CRACK burst (VlMllRes scales it) carries the strike; the wires fade in
 // behind it (onset_env).
 struct SnareWires {
-    struct Band {
-        float a1, a2;   // 2·r·cos(w), r²
-        float z1, z2;
-
-        // A resonator at freq_hz with pole radius r.
-        void tune(float freq_hz, float r) {
-            a1 = 2.0f * r * fastercosfullf(brc::phase_inc(freq_hz));
-            a2 = r * r;
-        }
-        float ring(float input) {
-            const float w = input + (a1 * z1) - (a2 * z2);
-            z2 = z1;
-            z1 = w;
-            return w;
-        }
-    };
+    using Band = brc::Resonator2;   // {a1, a2, z1, z2}: small_filters.h
 
     float onset_env    = 1.0f;   // 0 = all crack .. 1 = wires fully in
     float onset_attack = 1.0f;   // its step per sample

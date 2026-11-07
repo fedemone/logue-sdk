@@ -3,6 +3,15 @@
 // VoiceBase), the boom that is a kick's real voice, the pitch envelope its
 // swept booms read, the thump (beater punch), the beater click, Kick2's modal
 // body, a metallic chirp and the onset ramp.
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       kSilence, wrap_phase
+//   float_math.h     fastersinfullf
+//   modal_bank.h     ModalBank
+//   voice_base.h     VoiceBase
+//   voice_layers.h   Boom, MetalChirp, Onset, PitchEnv, Transient
+#include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/float_math.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/voice_base.h"
 #include "../brachetti_common/voice_layers.h"

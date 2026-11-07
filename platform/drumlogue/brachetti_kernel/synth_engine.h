@@ -21,6 +21,19 @@
 
 #include "../common/runtime.h"
 #include "unit.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, kSampleRate, knob_exp2
+//   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
+//                    format_int, format_percent, is_host_knob,
+//                    knob::clamp_int, knob::decay, knob::gain_drive,
+//                    knob::hit_pos, knob::inharm, knob::mallet_res,
+//                    knob::mallet_stiff, knob::material, knob::noise_freq,
+//                    knob::noise_mix, knob::percent, knob::release,
+//                    knob::tube_radius, midi_velocity, seed_host_knobs
+//   master_stage.h   MasterControls, brickwall, tanh_knee, tone_tilt,
+//                    write_stereo
+#include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "modal_drum_kernel.h"
@@ -38,7 +51,7 @@ public:
         if (desc->samplerate != (uint32_t)brc::kSampleRate) return k_unit_err_samplerate;
         if (desc->output_channels != 2) return k_unit_err_geometry;
         // The knobs LoadPreset does not write start at their header.c defaults.
-        seed_performance_params();
+        brc::seed_host_knobs(*this, kHostKnobs);
         Reset();
         LoadPreset(0);
         return k_unit_err_none;
@@ -75,13 +88,13 @@ public:
         const int16_t* row = kPresetKnobs[idx];
         m_note.set_root((uint8_t)row[k_paramPitch]);   // the Pitch column is the root
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
-            if (loads_with_preset(p)) setParameter(p, row[p]);
+            if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) setParameter(p, row[p]);
         capture_anchors(row);
 
         // Bind the recipe behind the approved standalone render.  ref_drive is
         // the master drive the shipped Gain column produces; the master stage
         // divides it back out, so the shipped preset is transparent.
-        const float ref_drive = 1.0f + fmaxf(0.0f, (float)row[k_paramGain] * 0.01f) * 20.0f;
+        const float ref_drive = brc::knob::gain_drive(row[k_paramGain]);
         m_kernel.Configure(kRecipes[idx], ref_drive);
         m_tone_lp = 0.0f;
         refresh_kernel_mods();
@@ -122,8 +135,8 @@ public:
         switch (index) {
         case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramPartls:   // the fraction of the membrane fill this position keeps
-            snprintf(partls_buf, sizeof(partls_buf), "%d%%", (int)(fill_density(brc::knob::clamp_int(value, 0, 4)) * 100.0f + 0.5f));
-            return partls_buf;
+            return brc::format_percent(partls_buf, sizeof(partls_buf),
+                                       (int)(fill_density(brc::knob::clamp_int(value, 0, 4)) * 100.0f + 0.5f));
         case k_paramMlltStif: return brc::format_int(stiff_buf, sizeof(stiff_buf), (int)(value * 100));
         case k_paramDkay:     return brc::format_int(dkay_buf, sizeof(dkay_buf), (int)(value * 10));
         case k_paramNzFltFrq: return brc::format_hz(nzfrq_buf, sizeof(nzfrq_buf), value);
@@ -174,11 +187,11 @@ public:
             float mono[kChunk];
             const size_t todo = (frames - done > kChunk) ? kChunk : (frames - done);
             if (m_kernel.Process(mono, (int)todo)) {
-                for (size_t i = 0; i < todo; ++i) write_stereo(out, done + i, master(mono[i], tone, drive_rel));
+                for (size_t i = 0; i < todo; ++i) brc::write_stereo(out, done + i, master(mono[i], tone, drive_rel));
             } else {
                 // The kernel is silent: keep the master filter flowing so there
                 // is no step when the next hit lands.
-                for (size_t i = 0; i < todo; ++i) write_stereo(out, done + i, clip(m_master.filter.process(0.0f)));
+                for (size_t i = 0; i < todo; ++i) brc::write_stereo(out, done + i, brc::brickwall(m_master.filter.process(0.0f)));
             }
             done += todo;
         }
@@ -193,12 +206,7 @@ private:
         x = m_master.filter.process(x);
         x *= drive_rel;   // Gain around the shipped value
         // Unity below 0.85, a tanh knee above it.
-        return clip(ModalDrumKernel::TanhKnee(x, 0.85f, 0.15f, 6.6666667f));
-    }
-    static float clip(float x) { return brc::clampf(x, -0.99f, 0.99f); }
-    static void write_stereo(float* out, size_t frame, float x) {
-        out[frame * 2]     = x;
-        out[frame * 2 + 1] = x;
+        return brc::brickwall(brc::tanh_knee(x, 0.85f, 0.15f, 6.6666667f));
     }
 
     // ── Knobs → kernel modifiers (REFERENCE-ANCHORED) ───────────────────────
@@ -278,12 +286,8 @@ private:
         const float dnz = brc::knob::noise_mix(m_params[k_paramNzMix]) - m_noise_mix_anchor;
         md.noise_mult = brc::knob_exp2(3.0f * dnz);
         md.noise_add  = 0.30f * fmaxf(0.0f, dnz);
-        md.noise_bright = noise_brightness(noise_freq(m_params[k_paramNzFltFrq]));
+        md.noise_bright = noise_brightness(brc::knob::noise_freq(m_params[k_paramNzFltFrq]));
     }
-
-    // NzFltFrq (stored ÷10, floored at the header minimum 2 — not at 20, which
-    // is a Hz figure).
-    static float noise_freq(int32_t v) { return brc::clampf((float)v, 2.0f, 2000.0f); }
 
     // NzFltFrq → the wedge's start-cutoff multiplier: log-proportional either
     // side of the shipped value, so the knob's ends land exactly on the
@@ -313,34 +317,10 @@ private:
         m_anchor.vel_stiff    = knob::percent(row[k_paramVlMllStf]);
         m_anchor.vel_res      = knob::percent(row[k_paramVlMllRes]);
         m_noise_mix_anchor    = knob::noise_mix(row[k_paramNzMix]);
-        m_noise_freq_anchor   = noise_freq(row[k_paramNzFltFrq]);
+        m_noise_freq_anchor   = knob::noise_freq(row[k_paramNzFltFrq]);
     }
 
-    // The knobs the host owns keep their value across Program changes:
-    // Pitch (its column is the root), Velocity, VlMllRes, Tone, Cutoff, Resnc.
-    static bool loads_with_preset(uint8_t p) {
-        switch (p) {
-        case k_paramProgram: case k_paramPitch: case k_paramVelocity: case k_paramVlMllRes:
-        case k_paramTone: case k_paramCutoff: case k_paramResnc:
-            return false;
-        default:
-            return true;
-        }
-    }
 
-    // The knobs LoadPreset does NOT write, to their header.c defaults (Init).
-    // MUST track header.c's `.init` fields for these slots.
-    void seed_performance_params() {
-        static const int16_t kDefaults[][2] = {
-            { k_paramPitch,    0    },
-            { k_paramVelocity, 0    },
-            { k_paramVlMllRes, 0    },
-            { k_paramTone,     0    },
-            { k_paramCutoff,   1999 },
-            { k_paramResnc,    71   },
-        };
-        for (const auto& d : kDefaults) setParameter((uint8_t)d[0], d[1]);
-    }
 
     // One mono instance: one physical drum (two kettles), shared across hits.
     ModalDrumKernel     m_kernel;

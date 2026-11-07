@@ -1,10 +1,13 @@
 #pragma once
 // Brachetti common library — what a knob's raw value means.
 //
-//  * knob::*      raw header.c value → the number the DSP uses
-//  * VelocityBias the Velocity knob (ghost … as played … wham)
-//  * SequencerNote the note the sequencer plays: preset root + Pitch knob
-//  * format_*     the strings the drumlogue shows for a knob
+//  * knob::*        raw header.c value → the number the DSP uses
+//  * Anchors        the shipped knob values (REFERENCE ANCHORS), and
+//    off_anchor / off_unity, whether a knob has moved off them
+//  * HostKnob       the knobs the host owns: is_host_knob, seed_host_knobs
+//  * VelocityBias   the Velocity knob (ghost … as played … wham)
+//  * SequencerNote  the note the sequencer plays: preset root + Pitch knob
+//  * name_at, format_*  the strings the drumlogue shows for a knob
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +32,8 @@ inline float inharm(int32_t v)       { return clampf((float)v * 0.01f, -1.0f, 1.
 inline float hit_pos(int32_t v)      { return clampf((float)v * 0.01f, -1.0f, 1.0f); }   // HitPos  -98..98
 inline float tube_radius(int32_t v)  { return clampf((float)v, 0.0f, 20.0f) * 0.05f; }  // TubRad 0-20 → 0..1
 inline float percent(int32_t v)      { return (float)v * 0.01f; }               // VlMllRes / VlMllStf, ±1
+inline float noise_freq(int32_t v)   { return clampf((float)v, 2.0f, 2000.0f); } // NzFltFrq 2-2000, in stored units (÷10 Hz)
+inline float gain_drive(int32_t v)   { return 1.0f + (fmaxf(0.0f, (float)v * 0.01f) * 20.0f); }  // Gain 0-100 → drive ×1..×21
 inline int32_t clamp_int(int32_t v, int32_t lo, int32_t hi) { return (v < lo) ? lo : ((v > hi) ? hi : v); }
 inline uint8_t poly(int32_t v)       { return (uint8_t)clamp_int(v, 1, 4); }    // Poly 1-4
 }  // namespace knob
@@ -55,6 +60,45 @@ struct Anchors {
     float   vel_stiff    = 0.0f;     // VlMllStf
     float   vel_res      = 0.0f;     // VlMllRes
 };
+
+// Has a knob moved off its anchor?  `delta` is knob − anchor: exactly 0 at
+// the shipped value, where a mapping must leave the calibrated sound alone.
+inline bool off_anchor(float delta) { return delta < -0.001f || delta > 0.001f; }
+
+// The same test for an anchored FACTOR, which is exactly 1 at the anchor.
+inline bool off_unity(float factor) { return factor < 0.999f || factor > 1.001f; }
+
+// ── The knobs the host owns ─────────────────────────────────────────────────
+// Performance and master controls (Pitch, Poly, Velocity, VlMllRes, Tone,
+// Cutoff, Resnc — whichever the unit has) are not part of a preset: a Program
+// change leaves them where they are, and Init() puts them at their header.c
+// defaults.  A unit lists them once, with those defaults, and both rules read
+// the same table:
+//
+//   static const brc::HostKnob kHostKnobs[] = {{k_paramPoly, 4}, ...};
+//   LoadPreset:  if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) load p
+//   Init:        brc::seed_host_knobs(*this, kHostKnobs);
+//
+// The defaults MUST track header.c's `.init` fields (C cannot assert across
+// the two files); the preset table's static_asserts pin those columns.
+struct HostKnob {
+    uint8_t param;   // the knob's slot
+    int16_t init;    // its header.c default
+};
+
+template <size_t N>
+inline bool is_host_knob(const HostKnob (&knobs)[N], uint8_t param) {
+    for (size_t i = 0; i < N; ++i)
+        if (knobs[i].param == param) return true;
+    return false;
+}
+
+// Every host-owned knob to its default, in table order, through the unit's
+// own setParameter (so whatever a knob drives is set up too).
+template <class Synth, size_t N>
+inline void seed_host_knobs(Synth& synth, const HostKnob (&knobs)[N]) {
+    for (size_t i = 0; i < N; ++i) synth.setParameter(knobs[i].param, knobs[i].init);
+}
 
 // MIDI velocity 0-127 → 0..1.
 inline float midi_velocity(uint8_t v) { return (float)v * 0.007874015f; }
@@ -85,7 +129,7 @@ struct VelocityBias {
         if (bias == 0.0f) return vel_norm;
         const float scaled = vel_norm * knob_exp2(2.4f * bias);
         const float ceil_v = (bias > 0.0f) ? (1.0f + (kWhamMax - 1.0f) * bias) : 1.0f;
-        return fmaxf(kGhostMin, fminf(ceil_v, scaled));
+        return clampf(scaled, kGhostMin, ceil_v);
     }
 };
 
@@ -125,10 +169,23 @@ struct SequencerNote {
 };
 
 // ── Knob display strings ────────────────────────────────────────────────────
+// A name from a fixed table, or `fallback` when idx is outside it (preset
+// names, Model names, filter types).
+template <size_t N>
+inline const char* name_at(const char* const (&names)[N], int32_t idx, const char* fallback) {
+    return (idx >= 0 && idx < (int32_t)N) ? names[idx] : fallback;
+}
+
 // Each caller passes its own static buffer: the OS may keep the string of one
 // knob on screen while it asks for another.
 inline const char* format_int(char* buf, size_t size, int value) {
     snprintf(buf, size, "%d", value);
+    return buf;
+}
+
+// "40%", "Rs40%": a percentage with an optional prefix.
+inline const char* format_percent(char* buf, size_t size, int value, const char* prefix = "") {
+    snprintf(buf, size, "%s%d%%", prefix, value);
     return buf;
 }
 

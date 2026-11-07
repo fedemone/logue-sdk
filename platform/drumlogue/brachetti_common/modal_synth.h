@@ -19,6 +19,9 @@
 //       void load_voicing_into(VoiceState& v);                // LoadPreset, per voice
 //   };
 //
+// Provides: ModalLayout (the 24-knob layout), kModalHostKnobs (the knobs the
+// host owns, with their defaults), ModalSynth.
+//
 // A unit may also define NoteOff (GateOff routes through it).  Its voice type
 // derives from VoiceBase and defines reset_for_strike(); it may define
 // on_unit_reset() for state only Reset() clears.
@@ -69,6 +72,18 @@ struct ModalLayout {
 };
 static_assert(ModalLayout::k_lastParamIndex == 24, "the modal units' header.c declares 24 params");
 
+// The knobs the host owns on the modal units, with their header.c defaults
+// (see HostKnob in knobs.h).  Pitch's preset column is the preset's root.
+static const HostKnob kModalHostKnobs[] = {
+    { ModalLayout::k_paramPitch,    0    },
+    { ModalLayout::k_paramPoly,     4    },
+    { ModalLayout::k_paramVelocity, 0    },
+    { ModalLayout::k_paramVlMllRes, 0    },
+    { ModalLayout::k_paramTone,     0    },
+    { ModalLayout::k_paramCutoff,   1999 },
+    { ModalLayout::k_paramResnc,    71   },
+};
+
 template <class Unit, class Voice>
 class ModalSynth : public ModalLayout {
 public:
@@ -84,7 +99,7 @@ public:
         // (on a fresh object they would read 0; on an object Init() runs on
         // again, whatever the last session left), and so does the state the
         // noise-filter knobs own once a preset is loaded.
-        seed_performance_params();
+        seed_host_knobs(*this, kModalHostKnobs);
         for (Voice& v : m_voices) v.exciter.init_noise_filter();
         Reset();
         LoadPreset(0);
@@ -326,16 +341,9 @@ protected:
 private:
     Unit& unit() { return static_cast<Unit&>(*this); }
 
-    // The knobs the host owns (performance and master controls) keep their
-    // value across Program changes; Pitch's column is the preset's root.
+    // Every knob but Program and the host-owned ones loads with a preset.
     static bool loads_with_preset(uint8_t p) {
-        switch (p) {
-        case k_paramProgram: case k_paramPitch: case k_paramPoly: case k_paramVelocity:
-        case k_paramVlMllRes: case k_paramTone: case k_paramCutoff: case k_paramResnc:
-            return false;
-        default:
-            return true;
-        }
+        return p != k_paramProgram && !is_host_knob(kModalHostKnobs, p);
     }
 
     // The shipped knob values every mapping pivots on (REFERENCE ANCHORS).
@@ -355,22 +363,7 @@ private:
     }
 
     void set_exciters(void (Exciter::*set)(int32_t), int32_t value) {
-        for (Voice& v : m_voices) (v.exciter.*set)(value);
-    }
-
-    // The knobs LoadPreset does NOT write, to their header.c defaults (Init).
-    // MUST track header.c's `.init` fields for these slots.
-    void seed_performance_params() {
-        static const int16_t kDefaults[][2] = {
-            { k_paramPitch,    0    },
-            { k_paramPoly,     4    },
-            { k_paramVelocity, 0    },
-            { k_paramVlMllRes, 0    },
-            { k_paramTone,     0    },
-            { k_paramCutoff,   1999 },
-            { k_paramResnc,    71   },
-        };
-        for (const auto& d : kDefaults) setParameter((uint8_t)d[0], d[1]);
+        set_all_exciters(m_voices, set, value);
     }
 };
 

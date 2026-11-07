@@ -12,6 +12,7 @@
 #include <cstdint>
 #include "dsp_math.h"
 #include "noise.h"
+#include "small_filters.h"
 
 namespace brc {
 
@@ -160,9 +161,8 @@ struct Transient {
 
     float process(FastNoise& noise) {
         const float wn = noise.process();
-        lp_lo += a_lo * (wn - lp_lo);
-        lp_hi += a_hi * (wn - lp_hi);
-        const float band = lp_hi - lp_lo;
+        const float lo = one_pole_lp(wn, a_lo, lp_lo);
+        const float band = one_pole_lp(wn, a_hi, lp_hi) - lo;
         const float out = band * env * gain;
         env *= decay;
         return out;

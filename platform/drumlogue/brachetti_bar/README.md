@@ -17,7 +17,7 @@ This unit holds mallet and struck-bar instruments on the free-bar modal bank: Ma
 | Engine | free-bar modal bank + mallet exciter (`ENGINE_BAR`) |
 | Presets | 10 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 12608 · .rodata 1840 · .data 1584 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 12484 · .rodata 1840 · .data 1584 · .bss 64 |
 
 ## Presets
 

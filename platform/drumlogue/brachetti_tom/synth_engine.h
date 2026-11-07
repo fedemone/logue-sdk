@@ -21,7 +21,20 @@
 #include <cstdint>
 
 #include "../common/runtime.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, knob_exp2
+//   knobs.h          knob::percent, off_anchor
+//   master_stage.h   MasterStage, tone_tilt
+//   modal_bank.h     ModalPresetConfig
+//   modal_synth.h    ModalSynth
+//   voice_base.h     kRollFuseSec
+#include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
+#include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/voice_base.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -149,14 +162,14 @@ private:
         const float vel   = brc::clampf(v.current_velocity, 0.0f, 1.0f);
         const float d_vr  = brc::knob::percent(m_params[k_paramVlMllRes]) - m_anchor.vel_res;
         const float d_vs  = brc::knob::percent(m_params[k_paramVlMllStf]) - m_anchor.vel_stiff;
-        if (d_vr > 0.001f || d_vr < -0.001f) {
+        if (brc::off_anchor(d_vr)) {
             if (v.slap.env > 0.0005f) {
                 v.slap.gain = fminf(8.0f, v.slap.gain * brc::knob_exp2(3.0f * d_vr * (0.4f + 0.6f * vel)));
             } else if (d_vr > 0.0f) {
                 v.slap.trigger(fminf(2.0f, d_vr * (0.8f + 1.9f * vel)), 0.99340f, 3.20f, 0.120f, 0.450f);
             }
         }
-        if ((d_vs > 0.001f || d_vs < -0.001f) && v.slap.env > 0.0005f) {
+        if (brc::off_anchor(d_vs) && v.slap.env > 0.0005f) {
             const float snap = d_vs * (0.5f + 0.5f * vel);
             v.slap.a_lo = brc::clampf(v.slap.a_lo * brc::knob_exp2(1.2f * snap), 0.05f, 0.45f);
             v.slap.a_hi = brc::clampf(v.slap.a_hi * brc::knob_exp2(0.8f * snap), 0.15f, 0.80f);

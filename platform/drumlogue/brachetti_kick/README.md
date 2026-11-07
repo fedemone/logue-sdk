@@ -17,7 +17,7 @@ This unit holds the boom-oscillator kick drums: Kick2 (a kettledrum-bodied kick)
 | Engine | membrane modal bank + boom oscillator + thump layer (`ENGINE_MEMBRANE`, kick block) |
 | Presets | 3 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 15692 · .rodata 912 · .data 1952 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 15568 · .rodata 912 · .data 1952 · .bss 64 |
 
 ## Presets
 

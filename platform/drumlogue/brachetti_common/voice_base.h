@@ -3,6 +3,11 @@
 // life cycle: allocation, the per-sample gate and squelch, the preset-change
 // fade and retirement.
 //
+// Provides: VoiceBase; next_voice (round robin), fuses_with (roll fusion),
+// any_fading, fade_out_all, set_all_exciters (one knob into every exciter);
+// kNumVoices, kRollFuseSec, kPresetFadeTauSec, kSquelchGuardSamples,
+// kSquelchThreshold.
+//
 // A unit's voice is a VoiceBase plus the layers the unit uses (a modal bank,
 // a boom, ...).  Per sample, a unit's voice renders in this order:
 //
@@ -133,6 +138,13 @@ inline bool any_fading(const Voice (&voices)[N]) {
     for (int i = 0; i < N; ++i)
         if (voices[i].is_active && voices[i].fade_mul < 1.0f) fading = true;
     return fading;
+}
+
+// One knob into every voice's exciter: set_all_exciters(m_voices,
+// &Exciter::set_mallet_res, value).
+template <class Voice, int N>
+inline void set_all_exciters(Voice (&voices)[N], void (Exciter::*set)(int32_t), int32_t value) {
+    for (Voice& v : voices) (v.exciter.*set)(value);
 }
 
 // Arm the preset-change fade on every ringing voice (an existing fade is not

@@ -22,7 +22,23 @@
 #include <cstdint>
 
 #include "../common/runtime.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, knob_exp2, phase_inc
+//   knobs.h          knob::decay, knob::hit_pos, knob::inharm,
+//                    knob::mallet_res, knob::mallet_stiff, knob::material,
+//                    knob::percent, knob::release, knob::tube_radius,
+//                    off_anchor, off_unity
+//   master_stage.h   MasterStage, tone_tilt
+//   modal_bank.h     ModalPresetConfig
+//   modal_synth.h    ModalSynth
+//   voice_base.h     kRollFuseSec
+#include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
+#include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/voice_base.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -188,7 +204,7 @@ private:
         const float len = brc::knob_exp2(
             3.0f * (brc::knob::decay(m_params[k_paramDkay]) - m_anchor.decay)
             + 2.2f * (brc::knob::release(m_params[k_paramRel]) - m_anchor.release));
-        if (brc::moved(len)) {
+        if (brc::off_unity(len)) {
             const float one_minus = (1.0f - v.boom.decay) / brc::clampf(len, 0.15f, 6.0f);
             v.boom.decay = brc::clampf(1.0f - one_minus, 0.99000f, 0.99995f);
         }
@@ -199,7 +215,7 @@ private:
         // upward a gentle 2^(1.9·Δ) lift.
         const float mat = brc::knob::material(m_params[k_paramMterl]);
         const float d_mat = mat - m_anchor.material;
-        if (d_mat < -0.001f || d_mat > 0.001f) {
+        if (brc::off_anchor(d_mat)) {
             float weight;
             if (d_mat < 0.0f && m_anchor.material > 0.001f) {
                 const float t = fmaxf(0.0f, mat / m_anchor.material);   // 1 at the anchor → 0 at the floor
@@ -213,7 +229,7 @@ private:
         // Tune (bigger shell = lower).  The swept booms read boom.tune every
         // sample; Kick2's fixed boom has it baked into its increment.
         const float d_tube = brc::knob::tube_radius(m_params[k_paramTubRad]) - m_anchor.tube_radius;
-        if (d_tube < -0.001f || d_tube > 0.001f) {
+        if (brc::off_anchor(d_tube)) {
             v.boom.tune = brc::clampf(brc::knob_exp2(-1.0f * d_tube), 0.40f, 2.00f);
             if (m_preset_idx == k_Kick2) v.boom.inc *= v.boom.tune;
         }
@@ -223,7 +239,7 @@ private:
         // linear factor would bottom out early and leave most of its downward
         // travel dead.
         const float d_inh = brc::knob::inharm(m_params[k_paramInharm]) - m_anchor.inharm;
-        if (d_inh < -0.001f || d_inh > 0.001f)
+        if (brc::off_anchor(d_inh))
             v.pitch.amount = fmaxf(0.0f, v.pitch.amount * brc::knob_exp2(2.5f * d_inh));
     }
 

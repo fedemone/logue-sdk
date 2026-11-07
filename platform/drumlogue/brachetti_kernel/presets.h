@@ -1,7 +1,12 @@
 #pragma once
 // Brachetti Kernel — the knob layout and the presets.
 #include <cstdint>
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       preset_column_in
+//   knobs.h          HostKnob, name_at
 #include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/knobs.h"
 #include "modal_drum_data.h"
 
 // ── The knobs, slot by slot ─────────────────────────────────────────────────
@@ -44,7 +49,7 @@ enum Preset : uint8_t {
 
 inline const char* preset_name(uint8_t idx) {
     static const char* const names[kNumPresets] = { "Timpni", "Taiko" };
-    return (idx < kNumPresets) ? names[idx] : "Unknown";
+    return brc::name_at(names, idx, "Unknown");
 }
 
 // One row per preset, one column per knob in slot order: the knob values the
@@ -79,6 +84,18 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramDkay, 0, 200),
               "Dkay is 0..200: every consumer saturates at 200");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramPartls, 0, 4),
               "Partls is 0..4 in this unit");
+
+// The knobs the host owns, with their header.c defaults: a Program change
+// leaves them where they are and Init() seeds them (brc::HostKnob, knobs.h).
+// MUST track header.c's `.init` fields for these slots.
+static const brc::HostKnob kHostKnobs[] = {
+    { k_paramPitch,    0    },
+    { k_paramVelocity, 0    },
+    { k_paramVlMllRes, 0    },
+    { k_paramTone,     0    },
+    { k_paramCutoff,   1999 },
+    { k_paramResnc,    71   },
+};
 
 // The kernel recipe behind each preset: the approved standalone renders
 // (105_timp_wedge / 110_taiko_wedge; see modal_drum_data.h).

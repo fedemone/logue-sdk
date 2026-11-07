@@ -17,7 +17,7 @@ This unit holds small metal percussion on the inharmonic plate modal bank: Cowbe
 | Engine | inharmonic plate modal bank + ring-coupled noise (`ENGINE_PLATE`) |
 | Presets | 4 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 13128 · .rodata 1080 · .data 1808 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 13056 · .rodata 1080 · .data 1808 · .bss 64 |
 
 ## Presets
 

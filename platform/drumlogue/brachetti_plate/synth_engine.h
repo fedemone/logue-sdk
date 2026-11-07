@@ -21,6 +21,15 @@
 #include <cstdint>
 
 #include "../common/runtime.h"
+
+// From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       kSampleRate, or_default
+//   master_stage.h   MasterStage, tone_tilt
+//   modal_bank.h     ModalPresetConfig
+//   modal_synth.h    ModalSynth
+#include "../brachetti_common/dsp_math.h"
+#include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 #include "presets.h"
 #include "voice.h"
@@ -98,8 +107,7 @@ private:
     // The preset's hat-filter tuning, on a voice that uses the filter.
     void tune_hat(VoiceState& v) const {
         if (!v.use_hat || !(voicing().hat_hz > 0.0f)) return;
-        float q = voicing().hat_q;
-        if (q < 0.1f) q = 1.1f;
+        const float q = brc::or_default(voicing().hat_q, 0.1f, 1.1f);
         v.hat.mode = (int)roundf(voicing().hat_mode);
         v.hat.set_coeffs(voicing().hat_hz, q, brc::kSampleRate);
     }
