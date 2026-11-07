@@ -49,13 +49,12 @@ taken out, and nothing else changed in what it renders:
   columns that only fed them went with them.
 - **Knobs that do nothing on the family** (below).
 
-Identifiers (`m_modal_*_ref`, `k_param*`) and the REFERENCE-ANCHOR design are
-kept, so a fix can still be ported between a unit and the original.  The
+The knob names (`k_param*`) and the REFERENCE-ANCHOR design are kept.  The
 comments were then rewritten per unit: each describes its own family only,
 and the history of how the sounds were voiced stays in the original's
 `README.md` and `CLAUDE.md`.  Each unit has its own `README.md` (presets, knob
-pages, what every knob does there) and `CLAUDE.md` (the rules for changing
-it).
+pages, what every knob does there, its files) and `CLAUDE.md` (the rules for
+changing it).
 
 ### Knobs removed
 
@@ -78,6 +77,35 @@ show a voice cap.  Poly is live there (it decides when a different note gets
 its own voice) and is kept.  On kick, tom, snare, bar and plate `Partls` keeps
 only positions 0-4: in the original, 5-7 select which resonator of the Koto
 string the knobs edit.
+
+### Then restructured onto a common library
+
+With each unit holding only its family, what the eight still had in common —
+the same knob mappings, exciter, voice life cycle and master stage, and for
+the five modal units the same engine — was written out eight times.  It now
+lives once, in [`brachetti_common`](../../brachetti_common/), and each unit
+keeps only its family:
+
+- `presets.h` — the knob layout, the presets and their voicing tables;
+- `voice.h` — one voice and the layers the family uses;
+- `synth_engine.h` — the family's strike recipe, knob mappings and render
+  (the five modal units derive it from the shared engine, `modal_synth.h`).
+
+The kernel keeps its drum in `modal_drum_kernel.h` in place of `voice.h`.
+
+Long functions were split into named steps in their original order — every
+unit's `NoteOn` into voice choice, shaping and the strike; the cymbal voice's
+per-sample function into envelopes, control rate, drivers, subsonic guard,
+bank and output stage; the kernel's block render into rebuild, retirement,
+glide, one kettle and the silence gate — and code nothing reached was
+removed.  The library's [README](../../brachetti_common/README.md) lists what
+is where, the rules for changing it, the quirks kept on purpose and what was
+removed (and where it still lives).
+
+Every step was checked with `run_equiv.sh`: the restructured units render
+bit-identically to the original exactly as before (below).  On ARM six of the
+eight are smaller than before and six render with fewer instructions; the
+rest are within 250 bytes and 0.2 %.
 
 ## Verification
 
@@ -143,8 +171,9 @@ units are bit-identical to it on every render with re-selects included.
 
 The host build never compiles the `__ARM_NEON` code (the modal bank, the
 cymbal bank, the kernel).  [`arm_equiv.sh`](arm_equiv.sh) cross-builds both
-units for the Cortex-A7 with the units' own flags (`-Os -ffast-math`,
-NEON-VFPv4), runs the same kind of script under `qemu-arm` and compares the
+units for the Cortex-A7 with the SDK Makefile's flags (`-Os -ffast-math`,
+NEON-VFPv4, its inlining limits), runs the same kind of script under
+`qemu-arm` and compares the
 samples ([`compare_dumps.py`](compare_dumps.py)).  Under `-ffast-math` the
 compiler may fuse and reorder float operations differently around different
 code, so bit-identity is not expected; float-rounding-level differences are.
@@ -170,17 +199,22 @@ code, so bit-identity is not expected; float-rounding-level differences are.
 does and prints its sections (gcc 13 here, not the vendor gcc 6.5, so `.text`
 moves a little between toolchains; data sections are exact):
 
-| Unit | .text | .rodata | .data | .bss |
-|---|---|---|---|---|
-| brachetti (original) | 53,628 | 34,508 | 4 | 108,124 |
-| kick | 16,220 | 298 | 2,624 | 64 |
-| tom | 15,100 | 520 | 3,008 | 64 |
-| kernel | 10,412 | 31,244 | 4 | 15,420 |
-| snare | 16,464 | 372 | 2,880 | 64 |
-| bar | 13,324 | 690 | 2,752 | 64 |
-| plate | 13,704 | 354 | 2,464 | 64 |
-| cymbal | 11,704 | 368 | 12,272 | 52 |
-| noise | 7,292 | 264 | 1,008 | 48 |
+| Unit | .text | .rodata | .data | .bss | total, before → after the restructuring |
+|---|---|---|---|---|---|
+| brachetti (original) | 53,628 | 34,508 | 4 | 108,124 | |
+| kick | 15,692 | 912 | 1,952 | 64 | 19,266 → 18,680 |
+| tom | 14,280 | 1,644 | 1,872 | 64 | 18,768 → 17,936 |
+| kernel | 10,640 | 31,244 | 4 | 15,428 | 57,216 → 57,460 |
+| snare | 15,628 | 1,288 | 2,000 | 64 | 19,844 → 19,044 |
+| bar | 12,608 | 1,840 | 1,584 | 64 | 16,918 → 16,184 |
+| plate | 13,128 | 1,080 | 1,808 | 64 | 16,650 → 16,144 |
+| cymbal | 11,076 | 680 | 11,936 | 52 | 24,420 → 24,248 |
+| noise | 7,468 | 300 | 992 | 48 | 8,672 → 8,868 |
+
+(The totals include `.data.rel.ro`.)  The restructuring moved the preset
+tables from `.data` to `.rodata` (`static const`): the original's notes
+record 34.5 KB of `.rodata` loading on hardware, so the old rule of keeping
+tables out of `.rodata` is not needed.
 
 The synth object sits in `.data` in seven of the eight (every member has a
 constant initialiser).  In the original, and in the kernel unit, it sits in
@@ -188,15 +222,49 @@ constant initialiser).  In the original, and in the kernel unit, it sits in
 notes record both placements loading on hardware.  None of the eight has run
 on a drumlogue yet.
 
+### CPU
+
+[`arm_cpu.sh`](arm_cpu.sh) counts the ARM instructions a unit executes per
+rendered frame: it builds the driver with the SDK flags, strikes every preset
+as a four-note stack and renders 25 ms of it and of the idle path after it,
+under `qemu-arm` with an instruction trace, and subtracts a run of the same
+script without the renders (start-up and preset loading cancel out).  It
+counts instructions, not cycles, so it is a regression check — compare a
+unit with itself, never two units with each other.
+
+```
+./arm_cpu.sh ../../brachetti_kick
+```
+
+| Unit | before the restructuring | after |
+|---|---|---|
+| kick | 752.0 | 747.1 |
+| tom | 903.7 | 892.2 |
+| kernel | 1009.7 | 1005.6 |
+| snare | 893.5 | 887.6 |
+| bar | 698.5 | 693.4 |
+| plate | 926.0 | 926.7 |
+| cymbal | 653.6 | 625.7 |
+| noise | 525.5 | 526.4 |
+
+The driver's `render_only` command renders without hashing or dumping, so the
+count is the unit's own work.
+
 ## Maintaining the units
 
-Each unit is now independent: a change to one cannot reach another.  The
-price is that a fix which applies to several has to be made in each — the code
-is still recognisably the original's, so a fix usually ports by search and
-replace.  Before a refactor of a unit, `run_equiv.sh` is the check that it
-changed nothing; once a unit's voicing is changed on purpose it will (rightly)
-start to differ from the original, and the script then shows exactly which
-presets and knobs moved.
+A unit's family code is its own: a change in its folder cannot reach another
+unit.  A change in [`brachetti_common`](../../brachetti_common/) reaches all
+eight, so check all eight:
+
+```
+for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
+```
+
+Before a refactor, `run_equiv.sh` is the check that it changed nothing; once a
+unit's voicing is changed on purpose it will (rightly) start to differ from
+the original, and the script then shows exactly which presets and knobs
+moved.  The original keeps its own code, so a fix that also applies to it has
+to be made there by hand.
 
 [`dead_params.py`](dead_params.py) works on any unit's driver, so it can show
 whether a knob has become dead after a change.  Python 3 with numpy is needed

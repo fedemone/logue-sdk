@@ -17,7 +17,7 @@ This unit holds small metal percussion on the inharmonic plate modal bank: Cowbe
 | Engine | inharmonic plate modal bank + ring-coupled noise (`ENGINE_PLATE`) |
 | Presets | 4 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 13704 · .rodata 354 · .data 2464 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 13128 · .rodata 1080 · .data 1808 · .bss 64 |
 
 ## Presets
 
@@ -99,14 +99,29 @@ and the same comparison cross-built for the Cortex-A7 with NEON and
 cd ../tools/brachetti_equiv && ./arm_equiv.sh ../../brachetti_plate --fuzz 20 --knob-points 1
 ```
 
+## Code
+
+| File | What it holds |
+|---|---|
+| `presets.h` | the presets, their plate modal configs, each preset's voicing (chirp, shimmer, Tick's hat filter) and output trim |
+| `voice.h` | one voice: the exciter with its noise following the ring down, the modal bank, the chirp, the shimmer and Tick's hat filter |
+| `synth_engine.h` | the plate on the shared modal engine: the strike recipe and the per-sample voice |
+
+The parts the modal units share — the 24-knob layout, preset loading, the knob mappings, note routing, the exciter, the modal bank, the voice life cycle and the master stage — are in [`brachetti_common`](../brachetti_common/) (`modal_synth.h` is the engine), whose README has the rules for changing them.
+
 ## Relation to the original
 
 The code began as the original's, with everything this family never reaches
 taken out: the other engines, the other families' per-preset branches and
 voice layers, their table columns and their knobs.  Its comments describe this
 unit only; the history of how the sounds were voiced stays with the original
-unit's documentation.  Identifiers such as `m_modal_*_ref` keep the original's
-names, so a fix can still be ported between the two.
+unit's documentation.  It was then restructured onto the common library, with
+the renders checked bit-identical at every step.  The names follow the
+restructured code (`m_anchor.decay` for the original's `m_modal_dkay_ref`, and
+so on), so a fix ports between the two by the mapping it changes rather than
+by search and replace.
 
-Changes made from here on belong to this unit only.  A fix that also applies
-to the original or to a sibling unit has to be made there too.
+A change to this unit's sound belongs to this unit.  A change in
+`brachetti_common` reaches all eight family units, so check all eight; a fix
+that also applies to the original has to be made there too (it keeps its own
+code).

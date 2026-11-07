@@ -17,33 +17,38 @@ every knob does.
   Once you change the voicing on purpose it will start to differ — that is
   expected, and the listing then names exactly the presets and knobs that
   moved.  Say so in the commit.
-- **This unit is independent.**  A fix that also applies to the original or a
-  sibling unit must be made there separately.
+- **Shared code.**  This folder holds the family (`presets.h`, `voice.h`,
+  `synth_engine.h`); what the family units share is in `../brachetti_common`,
+  whose README has the rules.  A change there reaches all eight units: run
+  `run_equiv.sh` on each.  A fix that also applies to the original must be made
+  there separately.
 - **REFERENCE ANCHORS.**  LoadPreset captures each knob's shipped value into
-  an `m_*_ref`; every knob mapping is a function of the DELTA from it, built so
-  the delta 0 gives exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 —
-  `fasterpow2f(0)` is not).  A new mapping must be anchored the same way, or
-  the presets move.
-- **Knob ↔ header.c:** `ParamIndex` must match `header.c` slot for slot (a
+  `m_anchor` through the same `knob::` function the mapping reads; every knob
+  mapping is a function of the DELTA from it, built so the delta 0 gives
+  exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 — `fasterpow2f(0)`
+  is not).  A new mapping must be anchored the same way, or the presets move.
+- **Knob ↔ header.c:** `brc::ModalLayout`
+  (`../brachetti_common/modal_synth.h`) must match `header.c` slot for slot (a
   static_assert checks the count; the order is on you), header defaults must
-  equal preset 0's row, and `seed_performance_params()` must match the
-  defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity, VlMllRes,
-  Tone, Cutoff, Resnc — static_asserts in LoadPreset pin their table columns).
+  equal preset 0's row, and `seed_performance_params()` (`modal_synth.h`) must
+  match the defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity,
+  VlMllRes, Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their
+  table columns).
 - **Exact math for coefficients.**  Tuning and decay coefficients use exact
-  `expf` / `cosf` / `exp2f`: the `faster*` approximations in float_math.h are
-  badly wrong for small arguments and shift low mode frequencies.
+  `expf` / `cosf` / `exp2f`: the `faster*` approximations in `float_math.h`
+  are badly wrong for small arguments and shift low mode frequencies.
 - **Memory layout.**  No user-defined constructors: the global synth object
   must stay constant-initialised (it then loads from the ELF instead of being
   built at run time).  Check `arm_size.sh` after adding members or tables.
-- `PartialReset()` clears the snare-wire state on every hit, so NoteOn
-  rebuilds it after the reset — keep that order.
+- `reset_for_strike()` clears the snare-wire state on every hit, so NoteOn
+  rebuilds it after the reset (`strike_wires`) — keep that order.
 - BrshSnr has its own quadratic velocity curve; the character mappings
   normalise it back to 0..1.
 
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_snare`
-  (shipped: .text 16464 · .rodata 372 · .data 2880 · .bss 64).
+  (shipped: .text 15628 · .rodata 1288 · .data 2000 · .bss 64).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_snare --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.
