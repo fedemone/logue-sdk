@@ -74,6 +74,25 @@ static int preset_index(const char* name) {
     return -1;
 }
 
+// header.c against the unit's preset table: a unit that exposes presets to the
+// drumlogue's preset menu must expose exactly its presets, and the Program
+// parameter must reach exactly the same ones (the original exposes none).
+static void check_header() {
+    const int n = (int)BrachettiSynth::k_NumPrograms;
+    if (unit_header.num_presets != 0 && (int)unit_header.num_presets != n) {
+        fprintf(stderr, "header.c: num_presets %u, but the unit has %d presets\n",
+                (unsigned)unit_header.num_presets, n);
+        exit(2);
+    }
+    for (uint32_t i = 0; i < unit_header.num_params; ++i)
+        if (strcmp(unit_header.params[i].name, "Program") == 0 &&
+            (unit_header.params[i].min != 0 || unit_header.params[i].max != n - 1)) {
+            fprintf(stderr, "header.c: Program spans %d..%d, but the unit has %d presets\n",
+                    (int)unit_header.params[i].min, (int)unit_header.params[i].max, n);
+            exit(2);
+        }
+}
+
 static BrachettiSynth* fresh_synth() {
     BrachettiSynth* s = new BrachettiSynth();
     unit_runtime_desc_t desc = {};
@@ -101,6 +120,7 @@ static void die(int line, const std::string& msg) {
 }
 
 int main(int argc, char** argv) {
+    check_header();
     if (argc >= 2 && strcmp(argv[1], "--list") == 0) {
         printf("unit %s presets %d params %u\n", unit_header.name,
                (int)BrachettiSynth::k_NumPrograms, unit_header.num_params);

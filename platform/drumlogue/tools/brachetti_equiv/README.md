@@ -84,6 +84,23 @@ its own voice) and is kept.  On kick, tom, snare, bar and plate `Partls` keeps
 only positions 0-4: in the original, 5-7 select which resonator of the Koto
 string the knobs edit.
 
+### Presets on the drumlogue
+
+The family units expose their presets to the drumlogue's preset menu
+(`.num_presets` is the unit's preset count) as well as through the `Program`
+parameter.  They first inherited the original's arrangement — `.num_presets`
+0 (its pass 47), Program the only preset control — and on hardware the panel
+then kept showing the previous preset's knob values (at boot, preset 0's)
+whatever Program selected: the drumlogue owns
+the values its panel draws, re-reads them after `unit_load_preset()`, and has
+no way for a unit to report that another parameter moved them (EffeESP32
+found the same: [Instrument selection and the panel](../../EffeESP32/README.md#instrument-selection-and-the-panel)).
+Program is kept for what only a parameter has: it is stored with the pattern
+and can be sequenced and motion-recorded.  Both call the same `LoadPreset()`,
+and `unit_get_preset_index()` reports the preset loaded either way.  The
+equivalence driver refuses to run a unit whose `.num_presets` or Program
+range disagrees with its preset table.
+
 ### Then restructured onto a common library
 
 With each unit holding only its family, what the eight still had in common —

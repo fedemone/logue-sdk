@@ -37,6 +37,12 @@ else.  README.md lists the presets and what every knob does.
   match the defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity,
   VlMllRes, Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their
   table columns).
+- **Presets on the drumlogue.**  `header.c` exposes the presets
+  (`.num_presets` = the preset count) next to the Program parameter, because
+  only `unit_load_preset()` makes the panel re-read the knobs; Program alone
+  leaves them showing the previous preset's values.  Keep `.num_presets` and
+  Program's max equal to the preset table (`equiv_driver` refuses to run
+  otherwise).
 - **Exact math for coefficients.**  Tuning and decay coefficients use exact
   `expf` / `cosf` / `exp2f`: the `faster*` approximations in `float_math.h`
   are badly wrong for small arguments and shift low mode frequencies.
