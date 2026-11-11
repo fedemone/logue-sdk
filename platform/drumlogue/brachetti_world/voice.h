@@ -31,12 +31,6 @@
 #include <cmath>
 #include <cstdint>
 #include "../common/attributes.h"
-#include "../brachetti_common/dsp_math.h"
-#include "../brachetti_common/modal_bank.h"
-#include "../brachetti_common/noise.h"
-#include "../brachetti_common/small_filters.h"
-#include "../brachetti_common/voice_base.h"
-#include "../brachetti_common/voice_layers.h"
 
 namespace world {
 
@@ -124,7 +118,7 @@ struct Wire {
         buf[w] = lp * loop_gain;
         if (++w == kWireLen) w = 0;
         if ((n & 31u) == 0u) {                 // the gourd moves at control rate
-            const float fc = gourd_hz + gourd_up * (1.0f - up.env) - gourd_down * (1.0f - down.env);
+            const float fc = fmaxf(40.0f, gourd_hz + gourd_up * (1.0f - up.env) - gourd_down * (1.0f - down.env));
             gourd.tune(fc, gourd_r);
         }
         up.process();

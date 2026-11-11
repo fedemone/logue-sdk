@@ -29,13 +29,19 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
   `multi_load.sh` check it.
 - **Memory.**  The wires' delay lines (16 KB) live in `.bss`
   (`s_wire_lines`), not in the synth object.  No user-defined constructors.
+- **The layers' knobs are anchored too.**  `layer_knobs()` turns six knobs
+  into factors once per strike (length, bend, body, material, density,
+  presence), each `knob_exp2(slope × (knob − anchor))`, so exactly 1 at the
+  shipped value: the strike functions multiply by them and a preset renders
+  byte-identically until a knob moves.  A new layer setting that a knob should
+  reach goes through one of these factors.  README.md "Knobs" tabulates them.
 - **Per-sample code stays inline** (`force_inline` on the layers'
   `process()`).
 
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_world`
-  (shipped: .text 17836 · .rodata 3504 · .data 4 · .bss 21200).
+  (shipped: .text 18920 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21200).
 - CPU: `../tools/brachetti_equiv/arm_cpu.sh ../../brachetti_world` (needs
   qemu-user; not yet measured).
 

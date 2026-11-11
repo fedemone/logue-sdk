@@ -17,7 +17,7 @@ were voiced after the [Pelle e Legno](../pelle_legno/) samples.
 | Engine | modal bank + friction voice, wire, buzz, jingles, particles |
 | Presets | 9 |
 | Knobs | 24 (the modal units' layout) |
-| ARM size (cross-built, `arm_size.sh`) | .text 17836 · .rodata 3504 · .data 4 · .bss 21200 |
+| ARM size (cross-built, `arm_size.sh`) | .text 18920 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21200 |
 
 ## Presets
 
@@ -66,8 +66,19 @@ The 24-knob layout of the modal units, with the same mappings
 REFERENCE-ANCHORED on the preset's shipped values.  On this unit:
 
 - `Pitch`, `Velocity`, `Tone`, `Cutoff` / `Resnc` and `Gain` act on every preset (`Pitch` moves the layers' pitch too).
-- The bank and exciter knobs (`MlltRes`, `MlltStif`, `Partls`, `Model`, `Dkay`, `Mterl`, `HitPos`, `Rel`, `Inharm`, `TubRad`, the `Nz*` knobs) act where a preset has a modal bank or an exciter: the balafons, riq, pandeiro and shekere.  On Cuica, Rainstk and the berimbaus (no bank, and the exciter turned down to nothing or almost: the wire's own strike is the stick) they do nothing audible.
-- The layers' own settings have no knob: they are the preset.
+- The bank and exciter knobs (`MlltRes`, `MlltStif`, `Partls`, `Model`, `Dkay`, `Mterl`, `HitPos`, `Rel`, `Inharm`, `TubRad`, the `Nz*` knobs) act on the bank and the exciter as on the other modal units: on the balafons, riq, pandeiro and shekere.
+- Six of them also move **the layers**, each with the meaning it already has on the bank.  This is what makes them useful on Cuica, Rainstk and the berimbaus, which have no bank and almost no exciter.  At the preset's shipped value each one is a factor of exactly 1, so a preset sounds as voiced until a knob moves:
+
+| Knob | On the layers | Up turns it |
+|---|---|---|
+| `Dkay` + `Rel` | **length**: the cuica's stroke (hold, decay, the thumb's timing); the wire's ring and the gourd's swing; the jingles' ring and the spread of their bounces; the beads' cascade (the rainstick's fall) | longer |
+| `Inharm` | **bend**: the cuica's rise and fall, the depth of the berimbau gourd's wah | deeper |
+| `TubRad` | **body**: the cuica's formants, the gourd, the shells, the mirliton, the jingles' band | lower: a bigger body |
+| `Mterl` | **material**: the wire's brightness, the beads' click length, the cuica stick's rub noise | brighter, drier |
+| `MlltStif` | **density**: the beads' collision rate, the jingles' bounce speed; the attack of the cuica's stroke and of the berimbau's stick | denser, harder |
+| `MlltRes` | **presence**: the layers' level, as it is the bank's | louder |
+
+`Inharm` has nothing to bend on the riq, the pandeiro, the shekere and the rainstick (jingles and beads have no glide), and `Mterl` and `MlltStif` have no layer on the balafons beyond their bank and exciter.
 
 ## How the presets were voiced
 
