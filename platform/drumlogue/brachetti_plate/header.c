@@ -16,10 +16,16 @@ const __unit_header unit_header_t unit_header = {
     .unit_id = 0x4272506CU,                                // 'BrPl' (Brachetti Plate)
     .version = 0x00010000U,
     .name = "BrcPlate",
-    // Zero on purpose: the Program parameter
-    // is the preset control (stored with the pattern, automatable), and a
-    // non-zero count would draw a second, competing preset UI.
-    .num_presets = 0,
+    // The presets, exposed to the drumlogue's preset menu as well as through
+    // the Program parameter.  Only the preset path puts a preset's knob values
+    // on the panel: the host owns the values the panel draws and re-reads
+    // them after unit_load_preset(), never because another parameter (such
+    // as Program) moved them.  Program stays for what only a parameter has:
+    // it is stored with the pattern and can be sequenced and motion-recorded.
+    // Both call the same LoadPreset(), and unit_get_preset_index() reports
+    // the preset loaded either way.  MUST equal the preset count (presets.h),
+    // and Program's max below must be one less; equiv_driver checks both.
+    .num_presets = 4,
     .num_params = 24,
     .params = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
