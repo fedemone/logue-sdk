@@ -11,10 +11,22 @@
 # around different code, so the two builds are not expected to be
 # bit-identical; what is checked is that they differ only at float-rounding
 # level.  Needs: apt-get install g++-arm-linux-gnueabihf qemu-user
+# The original is found as in run_equiv.sh (BRACHETTI_ORIG), and presets added
+# after the split are left out of the comparison the same way.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 family="$(cd "$1" && pwd)"; shift
+orig="${BRACHETTI_ORIG:-$drum/brachetti}"
+if [ ! -f "$orig/synth_engine.h" ]; then
+    cat >&2 <<EOF
+The original brachetti unit is not at $orig.
+It is no longer on main; it lives on the original_brachetti branch:
+  git worktree add /tmp/brachetti_orig origin/original_brachetti
+  BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti $0 $family
+EOF
+    exit 2
+fi
 name="$(basename "$family")"
 work="${EQUIV_WORK:-$(mktemp -d)}"
 mkdir -p "$work"
@@ -26,15 +38,17 @@ build() {
     arm-linux-gnueabihf-g++ -static -std=gnu++17 $ARCH $OPT -w -I"$1" -I"$1/.." \
         -I"$drum/common" -DRUNTIME_COMMON_H_ "$here/equiv_driver.cpp" -o "$2"
 }
-build "$drum/brachetti" "$work/arm_orig"
+build "$orig" "$work/arm_orig"
 build "$family" "$work/arm_$name"
 qemu-arm "$work/arm_$name" --list > "$work/$name.arm.list"
+qemu-arm "$work/arm_orig" --list > "$work/orig.arm.list"
 extra=()
 case "$name" in
     brachetti_kick)  extra=(--avoid-reselect Kick) ;;
     brachetti_noise) extra=(--avoid-reselect Shaker) ;;
 esac
-python3 "$here/gen_scenarios.py" "$work/$name.arm.list" "${extra[@]}" "$@" > "$work/$name.arm.script"
+python3 "$here/gen_scenarios.py" "$work/$name.arm.list" --compare-with "$work/orig.arm.list" \
+    "${extra[@]}" "$@" > "$work/$name.arm.script"
 qemu-arm "$work/arm_orig"  "$work/$name.arm.script" "$work/orig.f32"   > "$work/orig.arm.out"
 qemu-arm "$work/arm_$name" "$work/$name.arm.script" "$work/family.f32" > "$work/family.arm.out"
 printf '%s (ARM, -ffast-math): ' "$name"

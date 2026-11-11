@@ -2,9 +2,10 @@
 
 `brachetti_tom` (`BrcTom` on the drumlogue) is one of the eight per-family
 units split out of the 40-preset `../brachetti` unit.  It holds toms and hand
-drums on the membrane modal bank: Djambe, Ac Tom, DeepBs, Conga, Handpan,
-Bongo and RackTom, and nothing else.  README.md lists the presets and what
-every knob does.
+drums on the membrane modal bank: the original's Djambe, Ac Tom, DeepBs,
+Conga, Handpan, Bongo and RackTom (presets 0-6), and 25 hand-drum strokes
+added after the split (7-31), voiced after the Pelle e Legno samples.
+README.md lists the presets and what every knob does.
 
 ## Before changing anything
 
@@ -51,13 +52,22 @@ every knob does.
 - **Memory layout.**  No user-defined constructors: the global synth object
   must stay constant-initialised (it then loads from the ELF instead of being
   built at run time).  Check `arm_size.sh` after adding members or tables.
+- **The added presets (7-31)** have no counterpart in the original:
+  `run_equiv.sh` names them and compares the other seven.  They were voiced by
+  `../tools/brachetti_equiv/match_samples.py match_specs.py tom` against
+  `../pelle_legno/Samples`; to revoice one, change its spec, re-run the search
+  with `--state` and paste the rows (or start from `--write` on a copy).
+  Their table-driven layers (`slap_*`, `boom_hz` / `glide` in `kVoicing`) stay
+  0 on presets 0-6, which keep their own branches (RackTom's glide, Ac Tom's
+  and RackTom's slaps): keep it that way, or those presets move.
+  After any voicing change, re-run `preset_probe calib` and update `kOutTrim`.
 - RackTom's fundamental is the gliding boom, not a mode — its modal config
   note explains why static modes there beat ("sdeng").
 
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_tom`
-  (shipped: .text 14152 · .rodata 1644 · .data 1872 · .bss 292).
+  (shipped: .text 14420 · .rodata 7004 · .data 1872 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_tom --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

@@ -54,12 +54,23 @@ def main():
     ap.add_argument("--fuzz", type=int, default=120)
     ap.add_argument("--knob-points", type=int, default=3,
                     help="random points per knob, on top of the fixed ones")
+    ap.add_argument("--compare-with", metavar="LISTING",
+                    help="the other unit's --list: presets it does not have (added "
+                         "to the family unit after the split) are left out and named "
+                         "on stderr")
     ap.add_argument("--avoid-reselect", action="append", default=[],
                     help="never select this preset while it is already selected "
                          "(a documented deviation, see run_equiv.sh)")
     a = ap.parse_args()
     rnd = random.Random(a.seed)
     presets, params = parse_list(a.listing)
+    if a.compare_with:
+        theirs = set(parse_list(a.compare_with)[0])
+        new = [p for p in presets if p not in theirs]
+        presets = [p for p in presets if p in theirs]
+        if new:
+            sys.stderr.write("not in the original, left out of the comparison: %s\n"
+                             % ", ".join(new))
     knobs = [p for p in params if p[0] != "Program"]
     out = []
     cur = [None]

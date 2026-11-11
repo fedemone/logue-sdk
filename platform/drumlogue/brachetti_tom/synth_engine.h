@@ -58,9 +58,10 @@ public:
         v.exciter.set_band_mix(m_model, voicing().noise_band_mix);
         v.boom.load(voicing().boom_inc, voicing().boom_env, voicing().boom_decay,
                     voicing().boom_mix, voicing().boom_attack_env, voicing().boom_attack_inc);
-        // Only RackTom's boom glides with the pitch envelope; a strike resets
-        // it, so it is restored here (adding a preset here changes its sound).
-        if (m_preset_idx == k_RackTom)
+        // RackTom's boom and the tracked booms glide with the pitch envelope;
+        // a strike resets it, so it is restored here (adding a preset here
+        // changes its sound).
+        if (m_preset_idx == k_RackTom || voicing().boom_hz > 0.0f)
             v.pitch.set(voicing().pitch_env, voicing().pitch_decay, voicing().pitch_amount);
         v.onset.trigger(voicing().onset_ms);
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
@@ -73,6 +74,8 @@ public:
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
     void render_voice(VoiceState& v, float* __restrict out, size_t frames, float tone) {
         const bool tone_active = (tone != 0.0f);
+        const float boom_hz = voicing().boom_hz;   // > 0: a tracked (gliding) boom
+        const float glide   = voicing().glide;
         for (size_t i = 0; i < frames; ++i) {
             float exciter_sig = v.exciter.process();
             if (v.chirp.active()) exciter_sig += v.chirp.process();
@@ -87,6 +90,8 @@ public:
                 // note ratio, so the whole drum still transposes.
                 if (m_preset_idx == k_RackTom)
                     v.boom.set_freq((174.61f + v.pitch.amount * v.pitch.env) * v.boom.tune);
+                else if (boom_hz > 0.0f)
+                    v.boom.set_freq((boom_hz + glide * v.pitch.amount * v.pitch.env) * v.boom.tune);
                 x += v.boom.process() * v.current_velocity;
             }
             if (v.modal.active) {
@@ -150,7 +155,14 @@ private:
             // RackTom tracks its note.  (After the strike's reset, which sets
             // tune back to 1.0.)
             v.boom.tune = exp2f(((float)note - 53.0f) * (1.0f / 12.0f));
+        } else if (voicing().slap_gain > 0.0f) {
+            v.slap.trigger(1.0f, voicing().slap_decay, voicing().slap_gain,
+                           voicing().slap_a_lo, voicing().slap_a_hi);
         }
+        // A tracked boom follows the played note from the preset's root.
+        if (voicing().boom_hz > 0.0f)
+            v.boom.tune = exp2f(((float)note - (float)kPresetKnobs[m_preset_idx][k_paramPitch])
+                                * (1.0f / 12.0f));
     }
 
     // VlMllRes and VlMllStf on the SLAP (REFERENCE-ANCHORED; every tom ships

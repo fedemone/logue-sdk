@@ -13,13 +13,27 @@
 # The work directory is removed after an IDENTICAL run unless KEEP_WORK=1
 # (or EQUIV_WORK names it).
 #
+# The original is read from ../../brachetti, or from BRACHETTI_ORIG when it is
+# elsewhere (it is no longer on main: see the message below).  Presets a family
+# unit added after the split have no counterpart there; they are left out of
+# the script and named on stderr, and every other preset is still compared.
+#
 # Host build, no -ffast-math, so both sides evaluate the same float expressions
 # in the same order; any difference at all in the output is a real one.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 family="$(cd "$1" && pwd)"; shift
-orig="$drum/brachetti"
+orig="${BRACHETTI_ORIG:-$drum/brachetti}"
+if [ ! -f "$orig/synth_engine.h" ]; then
+    cat >&2 <<EOF
+The original brachetti unit is not at $orig.
+It is no longer on main; it lives on the original_brachetti branch:
+  git worktree add /tmp/brachetti_orig origin/original_brachetti
+  BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti $0 $family
+EOF
+    exit 2
+fi
 work="${EQUIV_WORK:-$(mktemp -d)}"
 mkdir -p "$work"
 name="$(basename "$family")"
@@ -32,6 +46,7 @@ build "$orig" "$work/drv_orig"
 build "$family" "$work/drv_$name"
 
 "$work/drv_$name" --list > "$work/$name.list"
+"$work/drv_orig" --list > "$work/orig.list"
 # Known, deliberate deviations (README.md here, "Known differences"): each is
 # reachable only by re-selecting the preset that is already selected while one
 # of its voices still rings, so the script simply never does that for them.
@@ -40,7 +55,8 @@ case "$name" in
     brachetti_kick)  extra=(--avoid-reselect Kick) ;;
     brachetti_noise) extra=(--avoid-reselect Shaker) ;;
 esac
-python3 "$here/gen_scenarios.py" "$work/$name.list" "${extra[@]}" "$@" > "$work/$name.script"
+python3 "$here/gen_scenarios.py" "$work/$name.list" --compare-with "$work/orig.list" \
+    "${extra[@]}" "$@" > "$work/$name.script"
 
 "$work/drv_orig"  "$work/$name.script" > "$work/$name.orig.out"
 "$work/drv_$name" "$work/$name.script" > "$work/$name.family.out"
