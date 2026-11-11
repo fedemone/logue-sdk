@@ -21,6 +21,9 @@ enum Preset : uint8_t {
     k_Triangle,         // 1  -sample: Triangle-Bell_C#.wav (3753Hz +/- 100Hz), Triangle-Bell_F5.wav (795Hz +/- 100Hz)
     k_BellTree,         // 2  -sample:
     k_Tick,             // 3  — a metallic closed-hat chick + a low "clack" mode
+    k_AgogoHi,          // 4  agogo, the high cone bell, A#5 (voiced after 053_AgogoHi.wav)
+    k_AgogoLo,          // 5  agogo, the low cone bell, F5 (voiced after 054_AgogoLo.wav)
+    k_Zills,            // 6  finger cymbals clashed: slowly beating partials from 2.5 kHz (voiced after 059_Zills.wav)
     kNumPresets         // 4 — count
 };
 
@@ -36,6 +39,9 @@ static const char* const kPresetNames[] = {
     "Trngle",   // slot 19 of the original's 40
     "BelTre",   // slot 29 of the original's 40
     "Tick",     // slot 35 of the original's 40
+    "AgogoHi", // added: voiced after the Pelle e Legno sample
+    "AgogoLo", // added: voiced after the Pelle e Legno sample
+    "Zills",   // added: voiced after the Pelle e Legno sample
 };
 static_assert(sizeof(kPresetNames) / sizeof(kPresetNames[0]) == kNumPresets, "one name per preset");
 
@@ -55,7 +61,10 @@ static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
     {   0,  67,   0,   1, 800,  42,   0,   0,   0,   4, 175,  20,   0,   0,   4,   3,1999,   3,  30,  40, 300,   0,1000,  71},   // 0: Cowbell   — short clank (modal cfg 180 ms) + strike noise (NzMx 40) toward the bright reference clank
     {   1,  69,   0,   1, 900,  47,   0,   0,   0,   1,  60,  20,   0,   0,  15,   2,1999,  20,   0,  10, 300,   0,1500,  71},   // 1: Triangle  — NzMx 10 feeds the raised shimmer (NoteOn) for the >8 kHz metal sheen.  Dkay 60 is the ANCHOR of the short T60s in kModalConfigs — change the two together or the knob just re-lengthens the ring.
     {   2,  84,   0,   1, 900,  42,   0,   0,   0,   1, 200,  20,   0,   0,   8,   1,1999,   3,   0,   0, 300,   0,1200,  71},   // 2: BelTre
-    {   3,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71}    // 3: Tick      — a metallic closed-hat chick + clack mode (modal cfg)
+    {   3,  79,   0,   1, 900,  50,   0,   0,   0,   4, 160,  14,   0,   0,   2,   2,1999,   3,   0,  58, 960,   2, 900,  71},    // 3: Tick      — a metallic closed-hat chick + clack mode (modal cfg)
+    {   4,  82,   0,   1, 900,  45,   0,   0,   2,   4, 175,  20,   0,   0,  10,   0,1999,  10,   0, 100, 300,   0, 849,  71},   // 4: AgogoHi
+    {   5,  77,   0,   1, 900,  45,   0,   0,   2,   4, 175,  20,   0,   0,  10,   0,1999,  10,   0,  58, 300,   0,1200,  71},   // 5: AgogoLo
+    {   6,  99,   0,   1, 900,  41,   0,   0,   2,   4, 175,  20,   0,   0,  10,   0,1999,  10,   0,  15,  62,   0,1800,  71},   // 6: Zills
 };
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
@@ -88,7 +97,13 @@ static const brc::ModalPresetConfig kModalConfigs[kNumPresets] = {
     /* k_BellTree */ {2.01f, 2.76f, 0.0f, 900.0f, 700.0f, 0.0f, 0.0f, 0.17f, 0.80f, 0.60f, 0.0f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Tick: a metallic closed-hat chick + a low "clack" under it (mode 4
        at ratio 1.40, 50ms, strong) */
-    {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f, 0.0f, 0.0f}
+    {2.92f, 6.37f, 1.40f, 45.0f, 28.0f, 316.0f, 70.0f, 0.30f, 0.85f, 0.70f, 0.50f, 1.25f, 4, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_AgogoHi: agogo, the high cone bell, A#5 */
+    {1.0059703f, 2.46992708f, 3.91988428f, 1100.0f, 707.106781f, 550.0f, 350.0f, 0.2f, 1.0f, 0.366666667f, 0.888888889f, 0.892857143f, 6, 5.4298397f, 7.0997904f, 0.666666667f, 0.5f},
+    /* k_AgogoLo: agogo, the low cone bell, F5 */
+    {1.00606271f, 2.47015396f, 3.92024435f, 1100.0f, 125.0f, 550.0f, 350.0f, 0.2f, 1.0f, 0.366666667f, 0.888888889f, 0.892857143f, 6, 5.43033847f, 7.10044257f, 0.666666667f, 0.5f},
+    /* k_Zills: finger cymbals clashed: slowly beating partials from 2.5 kHz */
+    {0.992400261f, 1.45041261f, 1.46234504f, 2508.16779f, 2500.0f, 2300.0f, 2500.0f, 0.2f, 0.39f, 1.0f, 0.546666667f, 0.3f, 6, 2.12529782f, 2.57933269f, 0.6f, 0.5f},
 };
 
 // The rest of each preset's voicing.
@@ -118,7 +133,10 @@ static const Voicing kVoicing[kNumPresets] = {
     /* k_Cowbell   */ {0.22000f, 0.00000f, 900.00000f, 0.45000f, 0.75000f, 5.0f, 0.22f, 1.0f, 0.0f, false, 0.00000f, 0.00000f, 0.00000f},
     /* k_Triangle  */ {0.40000f, 0.00000f, 1800.00000f, 0.15000f, 0.96000f, 7.0f, 0.35f, 0.9996f, 0.000080f, false, 0.00000f, 0.00000f, 0.00000f},
     /* k_BellTree  */ {0.17000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 5.0f, 0.22f, 1.0f, 0.0f, false, 0.00000f, 0.00000f, 0.00000f},
-    /* k_Tick      */ {0.24000f, 0.50000f, 3400.00000f, 0.86000f, 0.39000f, 5.0f, 0.0f, 1.0f, 0.0f, true, 2.00000f, 6000.00000f, 0.80000f}
+    /* k_Tick      */ {0.24000f, 0.50000f, 3400.00000f, 0.86000f, 0.39000f, 5.0f, 0.0f, 1.0f, 0.0f, true, 2.00000f, 6000.00000f, 0.80000f},
+    /* k_AgogoHi      */{1.5f, 0.0f, 900.0f, 0.0f, 0.0f, 5.0f, 0.0f, 1.0f, 0.0f, false, 0.0f, 0.0f, 0.0f},
+    /* k_AgogoLo      */{1.5f, 0.0f, 700.0f, 0.0f, 0.0f, 5.0f, 0.0f, 1.0f, 0.0f, false, 0.0f, 0.0f, 0.0f},
+    /* k_Zills        */{1.03747164f, 0.0f, 2102.24104f, 0.0f, 0.0f, 5.0f, 0.1f, 0.9998f, 0.0f, false, 0.0f, 0.0f, 0.0f},
 };
 
 // Output trim: gain-stages each preset into the master limiter.  Calibrated
@@ -132,5 +150,8 @@ static const float kOutTrim[kNumPresets] = {
     /* 0  Cowbel  */ 0.11212f,
     /* 1  Trngle  */ 0.25227f,
     /* 2  BelTre  */ 0.60091f,
-    /* 3  Tick    */ 1.00000f
+    /* 3  Tick    */ 1.00000f,
+    /* 4  AgogoHi */ 0.04782f,
+    /* 5  AgogoLo */ 0.04987f,
+    /* 6  Zills   */ 0.10432f,
 };

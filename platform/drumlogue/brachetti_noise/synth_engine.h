@@ -275,6 +275,16 @@ private:
             v.exciter.noise_env.attack_rate    = 0.004f;
             v.exciter.noise_env_hi.attack_rate = 0.004f;
         }
+        if (voicing().gate_hz > 0.0f) {
+            g.depth = voicing().gate_depth;
+            g.inc   = brc::phase_inc(voicing().gate_hz);
+            g.decay = voicing().gate_decay;
+            g.phase = M_3_PI_2;   // full level on frame 0
+        }
+        if (voicing().attack_rate > 0.0f) {
+            v.exciter.noise_env.attack_rate    = voicing().attack_rate;
+            v.exciter.noise_env_hi.attack_rate = voicing().attack_rate;
+        }
         if (g.inc > 0.0f) {
             g.inc *= brc::knob_exp2(2.0f * (brc::knob::mallet_stiff(m_params[k_paramMlltStif]) - m_anchor.mallet_stiff));
             g.depth = brc::clampf(

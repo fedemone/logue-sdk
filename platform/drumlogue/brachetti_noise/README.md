@@ -8,16 +8,16 @@ instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
 
-This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-C).
+This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-C), and 5 shakers and rattles voiced after the [Pelle e Legno](../pelle_legno/) samples (ShkFwd, ShkBack, Maracas, Caxixi, Cabasa).
 
 | | |
 |---|---|
 | Unit name on the drumlogue | `BrcNoise` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724E7A` ('BrNz') |
 | Engine | shaped noise exciter + AM gating (`ENGINE_NOISE`) |
-| Presets | 3 |
+| Presets | 8 (3 from the original, 5 added) |
 | Knobs | 18 |
-| ARM size (cross-built, `arm_size.sh`) | .text 7500 · .rodata 300 · .data 992 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 7636 · .rodata 728 · .data 992 · .bss 292 |
 
 ## Presets
 
@@ -27,7 +27,19 @@ This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-
 | 1 | Shaker | 84 | shaker: grain-pulse rattle for the whole tail |
 | 2 | HHat-C | 72 | closed hi-hat: a short, bright noise chick |
 
-At the knob values each preset ships with, it renders **bit-identically** to
+### Added: voiced after the Pelle e Legno samples
+
+Voiced by measurement against each sample with `tools/brachetti_equiv/match_samples.py` (specs in `match_specs.py`); the method is described in [BrcTom's README](../brachetti_tom/README.md#how-the-added-presets-were-voiced). No code changed for them beyond a table-driven gate (`gate_hz` / `gate_depth` / `gate_decay` / `attack_rate` in `kVoicing`, 0 on Clap, Shaker and HHat-C, which keep their own code).
+
+| # | Name | Root | Sound | Voiced after |
+|---|---|---|---|---|
+| 3 | ShkFwd | 84 | shaker, strong stroke: the seeds hit the end wall on the beat | `033_ShakerFwd.wav` |
+| 4 | ShkBack | 84 | shaker, weak stroke: a softer hit, more slide | `034_ShakerBack.wav` |
+| 5 | Maracas | 84 | a pair of maracas: a bright seed cloud | `035_Maracas.wav` |
+| 6 | Caxixi | 84 | caxixi: seeds on the basket's hard gourd base, a sharp chk | `036_Caxixi.wav` |
+| 7 | Cabasa | 84 | cabasa: a steel bead chain twisted on a ridged cylinder | `037_Cabasa.wav` |
+
+The original presets (0-2) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).

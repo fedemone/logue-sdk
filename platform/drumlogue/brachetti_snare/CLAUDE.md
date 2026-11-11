@@ -3,7 +3,7 @@
 `brachetti_snare` (`BrcSnare` on the drumlogue) is one of the eight per-family
 units split out of the 40-preset `../brachetti` unit.  It holds the snare
 drums: a modal head plus three-band snare-wire resonators — AcSnre, MrchSnr,
-BrshSnr and RimShot, and nothing else.  README.md lists the presets and what
+BrshSnr and RimShot (presets 0-3), and 4 presets added after the split (4-7: BndDoum, BndTek, CajBass, CajSlap), voiced after the Pelle e Legno samples by `../tools/brachetti_equiv/match_samples.py match_specs.py snare`; `run_equiv.sh` names them and compares the rest.  After any voicing change re-run `preset_probe calib` and update `kOutTrim`.  README.md lists the presets and what
 every knob does.
 
 ## Before changing anything
@@ -59,7 +59,7 @@ every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_snare`
-  (shipped: .text 15492 · .rodata 1288 · .data 2000 · .bss 292).
+  (shipped: .text 15492 · .rodata 2152 · .data 2000 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_snare --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

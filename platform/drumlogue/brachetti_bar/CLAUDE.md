@@ -4,7 +4,7 @@
 units split out of the 40-preset `../brachetti` unit.  It holds mallet and
 struck-bar instruments on the free-bar modal bank: Marimba, Tubular Bell,
 Vibraphone, Woodblock, Kalimba, Steel Pan, Claves, Glass Bowl, Slit Drum and
-Glass Bottle, and nothing else.  README.md lists the presets and what every
+Glass Bottle (presets 0-9), and 9 presets added after the split (10-18: WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4), voiced after the Pelle e Legno samples by `../tools/brachetti_equiv/match_samples.py match_specs.py bar`; `run_equiv.sh` names them and compares the rest.  After any voicing change re-run `preset_probe calib` and update `kOutTrim`.  README.md lists the presets and what every
 knob does.
 
 ## Before changing anything
@@ -56,7 +56,7 @@ knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_bar`
-  (shipped: .text 12476 · .rodata 1840 · .data 1584 · .bss 292).
+  (shipped: .text 12476 · .rodata 3168 · .data 1584 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_bar --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

@@ -3,7 +3,7 @@
 `brachetti_plate` (`BrcPlate` on the drumlogue) is one of the eight per-family
 units split out of the 40-preset `../brachetti` unit.  It holds small metal
 percussion on the inharmonic plate modal bank: Cowbell, Triangle, Bell Tree
-and Tick, and nothing else.  README.md lists the presets and what every knob
+and Tick (presets 0-3), and 3 presets added after the split (4-6: AgogoHi, AgogoLo, Zills), voiced after the Pelle e Legno samples by `../tools/brachetti_equiv/match_samples.py match_specs.py plate`; `run_equiv.sh` names them and compares the rest.  After any voicing change re-run `preset_probe calib` and update `kOutTrim`.  README.md lists the presets and what every knob
 does.
 
 ## Before changing anything
@@ -57,7 +57,7 @@ does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_plate`
-  (shipped: .text 12996 · .rodata 1080 · .data 1808 · .bss 292).
+  (shipped: .text 12996 · .rodata 1616 · .data 1808 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_plate --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

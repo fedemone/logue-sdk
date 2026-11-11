@@ -8,16 +8,16 @@ instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
 
-This unit holds mallet and struck-bar instruments on the free-bar modal bank: Marimba, Tubular Bell, Vibraphone, Woodblock, Kalimba, Steel Pan, Claves, Glass Bowl, Slit Drum and Glass Bottle.
+This unit holds mallet and struck-bar instruments on the free-bar modal bank: Marimba, Tubular Bell, Vibraphone, Woodblock, Kalimba, Steel Pan, Claves, Glass Bowl, Slit Drum and Glass Bottle, and 9 wood, bamboo, clay and kalimba tines voiced after the [Pelle e Legno](../pelle_legno/) samples (WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4).
 
 | | |
 |---|---|
 | Unit name on the drumlogue | `BrcBar` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724272` ('BrBr') |
 | Engine | free-bar modal bank + mallet exciter (`ENGINE_BAR`) |
-| Presets | 10 |
+| Presets | 19 (10 from the original, 9 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 12476 · .rodata 1840 · .data 1584 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 12476 · .rodata 3168 · .data 1584 · .bss 292 |
 
 ## Presets
 
@@ -34,7 +34,23 @@ This unit holds mallet and struck-bar instruments on the free-bar modal bank: Ma
 | 8 | SltDrm | 60 | slit drum |
 | 9 | GlsBotl | 88 | glass bottle |
 
-At the knob values each preset ships with, it renders **bit-identically** to
+### Added: voiced after the Pelle e Legno samples
+
+Voiced by measurement against each sample with `tools/brachetti_equiv/match_samples.py` (specs in `match_specs.py`); the method is described in [BrcTom's README](../brachetti_tom/README.md#how-the-added-presets-were-voiced). No code changed for them.
+
+| # | Name | Root | Sound | Voiced after |
+|---|---|---|---|---|
+| 10 | WdBlkHi | 85 | high wood block: 1.15 kHz over a 1.11 kHz partner | `044_WoodBlockHi.wav` |
+| 11 | TmplBlk | 72 | temple block (mokugyo): a hollow carved wood bell around C5 | `046_TempleBlock.wav` |
+| 12 | SltDrHi | 64 | log-drum tongue, E4, rubber mallet, over the trunk's cavity | `047_SlitDrumHi.wav` |
+| 13 | SltDrLo | 57 | log-drum tongue, A3 | `048_SlitDrumLo.wav` |
+| 14 | Bamboo | 64 | bamboo tube knocked with a stick: odd air-column harmonics over the wall | `049_BambooKnock.wav` |
+| 15 | Coconut | 74 | two coconut half-shells clapped: a hollow clop | `050_Coconut.wav` |
+| 16 | UduTone | 45 | udu: a fingertip on the clay belly over the pot's 112 Hz air | `052_UduTone.wav` |
+| 17 | KlmbE4 | 64 | kalimba tine, E4: a clamped-free bar, its 'ping' 6.37x up | `055_KalimbaE4.wav` |
+| 18 | KlmbA4 | 69 | kalimba tine, A4 | `056_KalimbaA4.wav` |
+
+The original presets (0-9) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).

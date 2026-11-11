@@ -42,6 +42,11 @@ enum Preset : uint8_t {
     k_Clap = 0,         // 0  -sample: 07_Clap_05_SP.wav (1532 +/- 100Hz)
     k_Shaker,           // 1  — grain-pulse noise (enveloped-LFO AM)
     k_HiHatClosed,      // 2  — a short, bright noise chick
+    k_ShakerFwd,        // 3  shaker, strong stroke: the seeds hit the end wall on the beat (voiced after 033_ShakerFwd.wav)
+    k_ShakerBack,       // 4  shaker, weak stroke: a softer hit, more slide (voiced after 034_ShakerBack.wav)
+    k_Maracas,          // 5  a pair of maracas: a bright seed cloud (voiced after 035_Maracas.wav)
+    k_Caxixi,           // 6  caxixi: seeds on the basket's hard gourd base, a sharp chk (voiced after 036_Caxixi.wav)
+    k_Cabasa,           // 7  cabasa: a steel bead chain twisted on a ridged cylinder (voiced after 037_Cabasa.wav)
     kNumPresets         // 3 — count
 };
 
@@ -56,6 +61,11 @@ static const char* const kPresetNames[] = {
     "Clap",     // slot 21 of the original's 40
     "Shaker",   // slot 22 of the original's 40
     "HHat-C",   // slot 25 of the original's 40
+    "ShkFwd",  // added: voiced after the Pelle e Legno sample
+    "ShkBack", // added: voiced after the Pelle e Legno sample
+    "Maracas", // added: voiced after the Pelle e Legno sample
+    "Caxixi",  // added: voiced after the Pelle e Legno sample
+    "Cabasa",  // added: voiced after the Pelle e Legno sample
 };
 static_assert(sizeof(kPresetNames) / sizeof(kPresetNames[0]) == kNumPresets, "one name per preset");
 
@@ -78,7 +88,12 @@ static constexpr int16_t kPresetKnobs[kNumPresets][k_lastParamIndex + 2] = {
     //  Prg  Ply  Vel MlRs MlSt VlRs VlSt  Mdl  Ton  Hit  Rel  Cut Gain NzMx NzRs NzFl NzFq Rsnc  |Root  Dky
     {   0,   0,   1, 500,  27,   0,   0,   5,   0,  50,  19,1999,   5,  95, 950,   1, 200,  71,  60,  15},   // 0: Clap      — multi-burst AM (~55 Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 200 (BP 2 kHz) toward the reference centroid (~3 kHz)
     {   1,   0,   1, 500,  45,   0,   0,   6,   0,  50,  19,1999,   5,  95, 940,   1, 550,  71,  84,  30},   // 1: Shaker    — Rel 19 so the sustained rattle (noise_am_decay = 1.0) is audible by default; raise Rel for a longer rattle
-    {   2,   0,   1, 100,  37,   0,   0,   5,   0,  50,  18,1999,   3,  90, 900,   2, 800,  71,  72,  12}    // 2: HHat-C    — a short, bright noise chick: a closed hi-hat
+    {   2,   0,   1, 100,  37,   0,   0,   5,   0,  50,  18,1999,   3,  90, 900,   2, 800,  71,  72,  12},    // 2: HHat-C    — a short, bright noise chick: a closed hi-hat
+    {   3,   0,   1, 500,  40,   0,   0,   6,   0,  50,  18,1999,   5,  95, 900,   2, 650,  71,  84,  20},   // 3: ShkFwd
+    {   4,   0,   1, 500,  40,   0,   0,   6,   0,  50,  19,1999,   5,  95, 900,   2, 505,  71,  84,  20},   // 4: ShkBack
+    {   5,   0,   1, 500,  40,   0,   0,   6,   0,  50,  19,1999,   5,  95, 900,   2, 400,  71,  84,  20},   // 5: Maracas
+    {   6,   0,   1, 500,  40,   0,   0,   6,   0,  50,  17,1999,   5,  95, 600,   1, 911,  71,  84,  20},   // 6: Caxixi
+    {   7,   0,   1, 500,  40,   0,   0,   6,   0,  50,  19,1999,   5,  95, 900,   2, 636,  71,  84,  20},   // 7: Cabasa
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
@@ -105,12 +120,25 @@ static const brc::HostKnob kHostKnobs[] = {
 struct Voicing {
     float noise_band_mix;  // noise burst body/click balance, 0 = the Model knob's default
     float noise_split;     // body/click split corner (one-pole coefficient)
+    // ── Presets added after the split (Clap and Shaker keep their own code
+    // in gate_noise, and leave these 0) ──────────────────────────────────────
+    // The noise gate from the table: an enveloped LFO on the noise level
+    // (brc::NoiseGate).  gate_hz 0 = no gate.
+    float gate_hz;         // grain / ridge rate
+    float gate_depth;      // 0..0.99
+    float gate_decay;      // per sample; 1.0 = it never fades
+    float attack_rate;     // both noise envelopes' attack, 0 = NzRes's
 };
 static const Voicing kVoicing[kNumPresets] = {
     //                    band_mix  split
     /* k_Clap         */ {0.00000f, 0.00000f},
     /* k_Shaker       */ {0.00000f, 0.00000f},
-    /* k_HiHatClosed  */ {0.00000f, 0.00000f}
+    /* k_HiHatClosed  */ {0.00000f, 0.00000f},
+    /* k_ShakerFwd    */{0.05f, 0.95f, 30.0f, 0.01f, 0.9995f, 0.106066017f},
+    /* k_ShakerBack   */{0.05f, 0.95f, 35.4511971f, 0.5009375f, 0.9998f, 0.00532723691f},
+    /* k_Maracas      */{0.34375f, 0.5f, 47.5682846f, 0.79f, 0.9995f, 0.00297301779f},
+    /* k_Caxixi       */{0.05f, 0.95f, 0.0f, 0.0f, 1.0f, 0.9f},
+    /* k_Cabasa       */{0.16875f, 0.44375f, 120.0f, 0.4f, 0.9995f, 0.0176776695f},
 };
 
 // Output trim: gain-stages each preset into the master limiter.  Calibrated
@@ -123,5 +151,10 @@ static const Voicing kVoicing[kNumPresets] = {
 static const float kOutTrim[kNumPresets] = {
     /* 0  Clap    */ 1.00000f,
     /* 1  Shaker  */ 0.30340f,
-    /* 2  HHat-C  */ 0.86956f
+    /* 2  HHat-C  */ 0.86956f,
+    /* 3  ShkFwd  */ 0.67162f,
+    /* 4  ShkBack */ 0.49569f,
+    /* 5  Maracas */ 0.18896f,
+    /* 6  Caxixi  */ 1.00000f,
+    /* 7  Cabasa  */ 0.69850f,
 };

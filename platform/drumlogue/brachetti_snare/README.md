@@ -8,16 +8,16 @@ instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
 
-This unit holds the snare drums: a modal head plus three-band snare-wire resonators — AcSnre, MrchSnr, BrshSnr and RimShot.
+This unit holds the snare drums: a modal head plus three-band snare-wire resonators — AcSnre, MrchSnr, BrshSnr and RimShot, and 4 a frame drum and a cajón, whose snares are their identity voiced after the [Pelle e Legno](../pelle_legno/) samples (BndDoum, BndTek, CajBass, CajSlap).
 
 | | |
 |---|---|
 | Unit name on the drumlogue | `BrcSnare` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x4272536E` ('BrSn') |
 | Engine | modal head + three-band snare-wire resonators (`ENGINE_SNARE`) |
-| Presets | 4 |
+| Presets | 8 (4 from the original, 4 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 15492 · .rodata 1288 · .data 2000 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 15492 · .rodata 2152 · .data 2000 · .bss 292 |
 
 ## Presets
 
@@ -28,7 +28,18 @@ This unit holds the snare drums: a modal head plus three-band snare-wire resonat
 | 2 | BrshSnr | 55 | brush snare: a swish, not a crack — velocity shapes the stroke |
 | 3 | RimShot | 69 | rimshot: an 877 Hz honk and a tight buzz |
 
-At the knob values each preset ships with, it renders **bit-identically** to
+### Added: voiced after the Pelle e Legno samples
+
+Voiced by measurement against each sample with `tools/brachetti_equiv/match_samples.py` (specs in `match_specs.py`); the method is described in [BrcTom's README](../brachetti_tom/README.md#how-the-added-presets-were-voiced). No code changed for them.
+
+| # | Name | Root | Sound | Voiced after |
+|---|---|---|---|---|
+| 4 | BndDoum | 41 | bendir, centre: a large thin head on 88 Hz over its gut snares | `020_BendirDoum.wav` |
+| 5 | BndTek | 66 | bendir, edge: the head's upper modes, the snares lighter | `021_BendirTek.wav` |
+| 6 | CajBass | 40 | cajon bass: the box's port air and the tapa's low modes | `023_CajonBass.wav` |
+| 7 | CajSlap | 65 | cajon slap: the tapa's edge with the snare wires | `024_CajonSlap.wav` |
+
+The original presets (0-3) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).

@@ -18,13 +18,13 @@ ships as before.
 | Unit (directory) | On the drumlogue | Presets | Knobs | Engine |
 |---|---|---|---|---|
 | [`brachetti_kick`](../../brachetti_kick/) | `BrcKick` | Kick2, 808Sub, Kick | 24 | membrane modes + boom + thump |
-| [`brachetti_tom`](../../brachetti_tom/) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom | 24 | membrane modes + boom + strike transient |
+| [`brachetti_tom`](../../brachetti_tom/) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom; added: DjmTone, DjmSlap, DjmBass, CngOpen, CngMute, CngSlap, CngHeel, Tumba, BngMach, BngHmbr, TblaNa, TblaTin, TblaTun, TblaGe, TblGeBd, TblaKe, DrbDoum, DrbTek, DrbKa, TalkUp, TalkDn, SurdOpn, SurdMut, Tambrim, UduBass | 24 | membrane modes + boom + strike transient |
 | [`brachetti_kernel`](../../brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 20 | dense coupled-resonator drum kernel |
-| [`brachetti_snare`](../../brachetti_snare/) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot | 24 | modal head + snare-wire resonators |
-| [`brachetti_bar`](../../brachetti_bar/) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl | 24 | free-bar modes + mallet |
-| [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick | 24 | plate modes + ring-coupled noise |
+| [`brachetti_snare`](../../brachetti_snare/) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot; added: BndDoum, BndTek, CajBass, CajSlap | 24 | modal head + snare-wire resonators |
+| [`brachetti_bar`](../../brachetti_bar/) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl; added: WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4 | 24 | free-bar modes + mallet |
+| [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick; added: AgogoHi, AgogoLo, Zills | 24 | plate modes + ring-coupled noise |
 | [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 19 | dense-resonator cymbal |
-| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C | 18 | shaped noise + AM gating |
+| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 18 | shaped noise + AM gating |
 
 All eight are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
 'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz'), so they install next to the original
@@ -36,6 +36,29 @@ Karplus-Strong waveguide) is outside the percussion these units focus on, so
 it has no family unit; it stays playable in the original.  The waveguide
 engine lives on there too, should a struck-string percussion family (a
 hammered dulcimer, a berimbau) ever be worth deriving from it.
+
+## Presets added after the split
+
+46 presets have been added to five of the units, voiced after the
+[Pelle e Legno](../../pelle_legno/) samples (organic, skin and ethnic
+percussion): 25 hand-drum strokes in BrcTom, 9 in BrcBar, 3 in BrcPlate, 5 in
+BrcNoise and 4 in BrcSnare.  They have no counterpart in the original, so
+`run_equiv.sh` and `arm_equiv.sh` name them and compare every other preset,
+which still renders bit-identically.  How they were voiced (measured modal
+banks, the attack searched against each sample, trims by the original's
+method) is in [BrcTom's README](../../brachetti_tom/README.md#how-the-added-presets-were-voiced);
+the tools are [`match_samples.py`](match_samples.py), its specs
+[`match_specs.py`](match_specs.py) and [`preset_probe.cpp`](preset_probe.cpp)
+(render / match / calib for any family unit — the family's replacement for
+the original's `calib_probe.cpp`).
+
+The original is no longer on main: it lives on the `original_brachetti`
+branch.  The scripts find it through `BRACHETTI_ORIG`:
+
+```
+git worktree add /tmp/brachetti_orig origin/original_brachetti
+BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti ./run_equiv.sh ../../brachetti_tom
+```
 
 ## How the units were derived
 

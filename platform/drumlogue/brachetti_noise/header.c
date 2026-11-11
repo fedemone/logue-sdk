@@ -32,7 +32,7 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 1
         // Program: the preset (this family's presets only)
-        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         // Poly: global voice cap 1-4
         {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
         // Velocity: velocity bias: -100 ghost .. 0 as played .. +100 wham

@@ -2,7 +2,7 @@
 
 `brachetti_noise` (`BrcNoise` on the drumlogue) is one of the eight per-family
 units split out of the 40-preset `../brachetti` unit.  It holds the pure-noise
-voices: Clap, Shaker and the closed hi-hat (HHat-C), and nothing else.
+voices: Clap, Shaker and the closed hi-hat (HHat-C) (presets 0-2), and 5 presets added after the split (3-7: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa), voiced after the Pelle e Legno samples by `../tools/brachetti_equiv/match_samples.py match_specs.py noise`; `run_equiv.sh` names them and compares the rest.  After any voicing change re-run `preset_probe calib` and update `kOutTrim`.
 README.md lists the presets and what every knob does.
 
 ## Before changing anything
@@ -56,7 +56,7 @@ README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_noise`
-  (shipped: .text 7500 · .rodata 300 · .data 992 · .bss 292).
+  (shipped: .text 7636 · .rodata 728 · .data 992 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_noise --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

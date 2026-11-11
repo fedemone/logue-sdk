@@ -27,6 +27,15 @@ enum Preset : uint8_t {
     k_GlassBowl,        // 7  -sample: glass-bowl-e-flat-tibetan-singing-bowl-struck-38746.wav
     k_SlitDrum,         // 8  -sample:
     k_GlassBottle,      // 9  -sample: GlassBottle.wav (2636Hz +/- 200Hz)
+    k_WoodBlockHi,      // 10 high wood block: 1.15 kHz over a 1.11 kHz partner (voiced after 044_WoodBlockHi.wav)
+    k_TempleBlock,      // 11 temple block (mokugyo): a hollow carved wood bell around C5 (voiced after 046_TempleBlock.wav)
+    k_SlitDrumHi,       // 12 log-drum tongue, E4, rubber mallet, over the trunk's cavity (voiced after 047_SlitDrumHi.wav)
+    k_SlitDrumLo,       // 13 log-drum tongue, A3 (voiced after 048_SlitDrumLo.wav)
+    k_Bamboo,           // 14 bamboo tube knocked with a stick: odd air-column harmonics over the wall (voiced after 049_BambooKnock.wav)
+    k_Coconut,          // 15 two coconut half-shells clapped: a hollow clop (voiced after 050_Coconut.wav)
+    k_UduTone,          // 16 udu: a fingertip on the clay belly over the pot's 112 Hz air (voiced after 052_UduTone.wav)
+    k_KalimbaE4,        // 17 kalimba tine, E4: a clamped-free bar, its 'ping' 6.37x up (voiced after 055_KalimbaE4.wav)
+    k_KalimbaA4,        // 18 kalimba tine, A4 (voiced after 056_KalimbaA4.wav)
     kNumPresets         // 10 — count
 };
 
@@ -48,6 +57,15 @@ static const char* const kPresetNames[] = {
     "GlsBwl",   // slot 24 of the original's 40
     "SltDrm",   // slot 30 of the original's 40
     "GlsBotl",  // slot 34 of the original's 40
+    "WdBlkHi", // added: voiced after the Pelle e Legno sample
+    "TmplBlk", // added: voiced after the Pelle e Legno sample
+    "SltDrHi", // added: voiced after the Pelle e Legno sample
+    "SltDrLo", // added: voiced after the Pelle e Legno sample
+    "Bamboo",  // added: voiced after the Pelle e Legno sample
+    "Coconut", // added: voiced after the Pelle e Legno sample
+    "UduTone", // added: voiced after the Pelle e Legno sample
+    "KlmbE4",  // added: voiced after the Pelle e Legno sample
+    "KlmbA4",  // added: voiced after the Pelle e Legno sample
 };
 static_assert(sizeof(kPresetNames) / sizeof(kPresetNames[0]) == kNumPresets, "one name per preset");
 
@@ -73,7 +91,16 @@ static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
     {   6,  79,   0,   1, 900,  48,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800,  71},   // 6: Claves
     {   7,  76,   0,   1, 700,   5,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},   // 7: GlsBwl
     {   8,  60,   0,   1, 700,  27,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},   // 8: SltDrm
-    {   9,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71}    // 9: GlsBotl
+    {   9,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},    // 9: GlsBotl
+    {  10,  85,   0,   1, 800,  45,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,  17, 420,   0, 637,  71},   // 10: WdBlkHi
+    {  11,  72,   0,   1, 800,   2,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 420,   0, 566,  71},   // 11: TmplBlk
+    {  12,  64,   0,   1,1000,   5,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 300,   0, 300,  71},   // 12: SltDrHi
+    {  13,  57,   0,   1, 800,  20,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 300,   0, 300,  71},   // 13: SltDrLo
+    {  14,  64,   0,   1, 576,  45,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   8, 420,   0, 900,  71},   // 14: Bamboo
+    {  15,  74,   0,   1, 688,  28,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 420,   0, 700,  71},   // 15: Coconut
+    {  16,  45,   0,   1, 800,  30,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   5, 300,   0, 400,  71},   // 16: UduTone
+    {  17,  64,   0,   1, 800,  39,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,  12, 260,   0, 605,  71},   // 17: KlmbE4
+    {  18,  69,   0,   1, 632,  33,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 260,   0, 720,  71},   // 18: KlmbA4
 };
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
@@ -103,7 +130,25 @@ static const brc::ModalPresetConfig kModalConfigs[kNumPresets] = {
     /* k_Claves */ {2.756f, 5.404f, 0.0f, 60.0f, 25.0f, 0.0f, 0.0f, 0.16f, 0.70f, 0.45f, 0.0f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_GlassBowl: modes 5/6 at 6.37/8.10 for overtone content */ {2.09f, 3.35f, 4.77f, 2000.0f, 1600.0f, 1200.0f, 800.0f, 0.20f, 0.85f, 0.70f, 0.50f, 0.35f, 6, 6.37f, 8.10f, 0.22f, 0.15f},
     /* k_SlitDrum: tongue-drum bar modes 1:1.52:2.08 */ {1.52f, 2.08f, 0.0f, 1000.0f, 700.0f, 450.0f, 0.0f, 0.18f, 0.80f, 0.60f, 0.35f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_GlassBottle: Helmholtz cavity + neck modes 1:1.47:2.42 */ {1.47f, 2.42f, 0.0f, 500.0f, 320.0f, 190.0f, 0.0f, 0.20f, 0.85f, 0.60f, 0.30f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f}
+    /* k_GlassBottle: Helmholtz cavity + neck modes 1:1.47:2.42 */ {1.47f, 2.42f, 0.0f, 500.0f, 320.0f, 190.0f, 0.0f, 0.20f, 0.85f, 0.60f, 0.30f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_WoodBlockHi: high wood block: 1.15 kHz over a 1.11 kHz partner */
+    {1.03947711f, 1.10982784f, 2.66521029f, 118.920712f, 190.0f, 90.0f, 50.0f, 0.2f, 0.228f, 1.0f, 0.266666667f, 0.15f, 5, 4.60526692f, 0.0f, 0.233333333f, 0.0f},
+    /* k_TempleBlock: temple block (mokugyo): a hollow carved wood bell around C5 */
+    {0.79789603f, 0.931483893f, 1.50979129f, 227.042032f, 137.948025f, 257.0f, 120.0f, 0.2f, 0.8f, 0.413333333f, 0.231111111f, 1.0f, 6, 2.31055401f, 3.59865443f, 0.8f, 0.4f},
+    /* k_SlitDrumHi: log-drum tongue, E4, rubber mallet, over the trunk's cavity */
+    {0.4999582f, 2.91996218f, 3.84979949f, 602.92273f, 424.264069f, 220.0f, 120.0f, 0.2f, 1.0f, 0.416666667f, 0.888888889f, 0.785714286f, 6, 6.10082488f, 8.70072887f, 0.555555556f, 0.416666667f},
+    /* k_SlitDrumLo: log-drum tongue, A3 */
+    {0.5f, 2.92f, 3.85f, 723.681731f, 713.524269f, 220.0f, 120.0f, 0.2f, 1.0f, 0.416666667f, 0.888888889f, 0.785714286f, 6, 6.1f, 8.7f, 0.555555556f, 0.416666667f},
+    /* k_Bamboo: bamboo tube knocked with a stick: odd air-column harmonics over the wall */
+    {1.03419751f, 3.10259254f, 4.39890406f, 218.814109f, 184.0f, 100.0f, 60.0f, 0.2f, 0.0458181818f, 0.848484848f, 0.395959596f, 1.0f, 6, 5.17098757f, 10.5573698f, 0.424242424f, 0.848484848f},
+    /* k_Coconut: two coconut half-shells clapped: a hollow clop */
+    {0.926566717f, 0.958405743f, 1.04370709f, 31.25f, 169.281943f, 280.0f, 300.0f, 0.2f, 0.0918f, 0.18f, 0.236f, 0.154285714f, 6, 2.01147725f, 2.05199965f, 1.0f, 0.39f},
+    /* k_UduTone: udu: a fingertip on the clay belly over the pot's 112 Hz air */
+    {3.73545455f, 7.24545455f, 10.6272727f, 303.56024f, 238.618478f, 90.0f, 60.0f, 0.2f, 0.909090909f, 1.0f, 0.707070707f, 0.649350649f, 5, 15.2818182f, 0.0f, 0.505050505f, 0.0f},
+    /* k_KalimbaE4: kalimba tine, E4: a clamped-free bar, its 'ping' 6.37x up */
+    {6.36991646f, 17.798876f, 0.0f, 2934.41294f, 356.762135f, 80.0f, 0.0f, 0.15f, 0.666666667f, 1.0f, 0.118518519f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_KalimbaA4: kalimba tine, A4 */
+    {6.37f, 17.8f, 0.0f, 2934.41294f, 327.15232f, 80.0f, 0.0f, 0.15f, 0.666666667f, 1.0f, 0.118518519f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
 };
 
 // The rest of each preset's voicing.
@@ -125,7 +170,16 @@ static const Voicing kVoicing[kNumPresets] = {
     /* k_Claves       */ {0.18000f, 0.50000f, 0.00000f, 0.00000f, 0.00000f},
     /* k_GlassBowl    */ {0.20000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f},
     /* k_SlitDrum     */ {0.18000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f},
-    /* k_GlassBottle  */ {0.20000f, 0.50000f, 0.00000f, 0.00000f, 0.00000f}
+    /* k_GlassBottle  */ {0.20000f, 0.50000f, 0.00000f, 0.00000f, 0.00000f},
+    /* k_WoodBlockHi  */{1.5f, 0.5625f, 0.0f, 0.0f, 0.0f},
+    /* k_TempleBlock  */{0.4f, 0.375f, 0.0f, 0.0f, 0.0f},
+    /* k_SlitDrumHi   */{0.282842712f, 0.5625f, 0.0f, 0.0f, 0.0f},
+    /* k_SlitDrumLo   */{0.282842712f, 2.25f, 0.0f, 0.0f, 0.0f},
+    /* k_Bamboo       */{1.5f, 0.1875f, 0.0f, 0.0f, 0.0f},
+    /* k_Coconut      */{0.282842712f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_UduTone      */{0.8f, 0.5625f, 0.0f, 0.0f, 0.0f},
+    /* k_KalimbaE4    */{0.6f, 0.84375f, 0.0f, 0.0f, 0.0f},
+    /* k_KalimbaA4    */{0.6f, 0.375f, 0.0f, 0.0f, 0.0f},
 };
 
 // Output trim: gain-stages each preset into the master limiter.  Calibrated
@@ -145,5 +199,14 @@ static const float kOutTrim[kNumPresets] = {
     /* 6  Claves  */ 1.00000f,
     /* 7  GlsBwl  */ 0.44971f,
     /* 8  SltDrm  */ 0.68733f,
-    /* 9  GlsBotl */ 0.60871f
+    /* 9  GlsBotl */ 0.60871f,
+    /* 10 WdBlkHi */ 0.25923f,
+    /* 11 TmplBlk */ 0.45358f,
+    /* 12 SltDrHi */ 0.37759f,
+    /* 13 SltDrLo */ 0.40214f,
+    /* 14 Bamboo  */ 0.16548f,
+    /* 15 Coconut */ 1.00000f,
+    /* 16 UduTone */ 0.13682f,
+    /* 17 KlmbE4  */ 0.19476f,
+    /* 18 KlmbA4  */ 0.19050f,
 };

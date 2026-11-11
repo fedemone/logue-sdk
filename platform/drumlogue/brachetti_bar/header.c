@@ -32,7 +32,7 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 1
         // Program: the preset (this family's presets only)
-        {0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 18, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         // Pitch: semitones from the preset's root note (sequencer path)
         {-24, 24, 0, 0, k_unit_param_type_semi, 0, 0, 0, {"Pitch"}},
         // Poly: global voice cap 1-4

@@ -41,7 +41,27 @@ Which parts can play these samples (owner's manual, *Sound source configuration*
 |---|---|---|
 | CH, OH, RS, CP, SP1, SP2 (digital) | **yes**, from BANK `USER` | the six voices of every recipe |
 | BD, SD, LT, HT (analog) | no (only factory transient/layer PCM) | tuned low and short, they work as dundun, surdo or a second bass drum |
-| MULTI (VPM / NOISE / USER) | no; it hosts one user **synth** | [Brachetti](../brachetti/) in this repo is a physical-modelling synth with `Djambe`, `Conga`, `Bongo`, `Taiko`, `Handpn`, `Kalimba`, `Marmba`, `SltDrm` and `Wodblk` presets, which makes it a seventh voice from the same families |
+| MULTI (VPM / NOISE / USER) | no; it hosts one user **synth** | the Brachetti family units in this repo carry **46 presets voiced after these samples** (below), so the MULTI part plays the same instruments as a synth |
+
+### The same instruments as Brachetti presets
+
+46 of these sounds are also presets of the [Brachetti family](../tools/brachetti_equiv/README.md)
+synth units, voiced after these very samples by measurement.  On the MULTI
+part they follow Pitch and velocity, and motion-sequencing the Program knob
+per step plays a whole djembe, conga or tabla part on one track:
+
+| Unit | Presets |
+|---|---|
+| `BrcTom` | DjmTone, DjmSlap, DjmBass, CngOpen, CngMute, CngSlap, CngHeel, Tumba, BngMach, BngHmbr, TblaNa, TblaTin, TblaTun, TblaGe, TblGeBd, TblaKe, DrbDoum, DrbTek, DrbKa, TalkUp, TalkDn, SurdOpn, SurdMut, Tambrim, UduBass |
+| `BrcBar` | WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4 |
+| `BrcPlate` | AgogoHi, AgogoLo, Zills |
+| `BrcNoise` | ShkFwd, ShkBack, Maracas, Caxixi, Cabasa |
+| `BrcSnare` | BndDoum, BndTek, CajBass, CajSlap |
+
+Not there, because no family engine can make them: the cuíca, berimbau,
+balafon (its buzzing gourd), rainstick, riq and pandeiro (bouncing jingles),
+shekere, seed pods and guiro.  Claves, low wood block and taiko already exist
+as `Claves`, `Wodblk` (BrcBar) and `Taiko` (BrcKernel).
 
 ---
 
@@ -172,7 +192,7 @@ of one shaker makes the shaker alternate naturally.
 | 033 ShakerFwd | 034 ShakerBack | 003 DjembeSlap | 002 DjembeTone | 001 DjembeBass | 053 AgogoHi |
 
 Choke RS + CP + SP1 together (one djembe). Analog **BD/LT/HT** tuned low with
-short decay play dundun / sangban / kenkeni. **MULTI**: Brachetti `Djambe`.
+short decay play dundun / sangban / kenkeni. **MULTI**: BrcTom `DjmTone`.
 
 ### B. Rumba (Afro-Cuban)
 
@@ -181,7 +201,7 @@ short decay play dundun / sangban / kenkeni. **MULTI**: Brachetti `Djambe`.
 | 035 Maracas | 042 GuiroLong | 043 Claves | 006 CongaSlap | 004 CongaOpen | 008 TumbaOpen |
 
 Choke CP + SP1 (one conga). Swap SP2 for 005 CongaMute for a single-drum
-tumbao. **MULTI**: Brachetti `Bongo` or `Conga`.
+tumbao. **MULTI**: BrcTom `BngMach` or `CngOpen`.
 
 ### C. Tabla & darbuka (North India, Middle East)
 
@@ -191,7 +211,7 @@ tumbao. **MULTI**: Brachetti `Bongo` or `Conga`.
 
 Tune CP (Na, C#4) to the key of the song. Na, Tin and Tun are true pitched
 harmonic series. Replace SP1 with 014 TablaGe for an unbent bass. Zills ring
-2.1 s, so raise OH's DECAY. **MULTI**: Brachetti `Handpn`.
+2.1 s, so raise OH's DECAY. **MULTI**: BrcTom `TblaNa`.
 
 ### D. Batucada (Brazil)
 
@@ -210,7 +230,7 @@ want the pair to answer each other.
 | 039 SeedPods | 040 Rainstick | 044 WoodBlockHi | 046 TempleBlock | 047 SlitDrumHi | 051 UduBass |
 
 The rainstick is 2.6 s long: OH's DECAY must be near maximum, and START trims
-its slow swell if you want it on the beat. **MULTI**: Brachetti `Marmba`, `Kalimba` or `SltDrm`.
+its slow swell if you want it on the beat. **MULTI**: BrcBar `KlmbE4` or `SltDrHi`.
 
 ### Playing notes
 
@@ -271,7 +291,7 @@ ceiling −1 dBFS, BS.1770 loudness ceiling −15 LUFS momentary).
 ### Calibration
 
 Thirteen of the instruments have a counterpart among the reference recordings
-in [`../brachetti/samples/`](../brachetti/samples/). Those recordings were only
+in the original Brachetti's `samples/` folder (on the `original_brachetti` branch, `platform/drumlogue/brachetti/samples/`). Those recordings were only
 **measured**. Nothing from them is in these samples. Rendered vs reference:
 
 | Sample | Reference | strongest partial, Hz | energy in first 30 ms, % | t40, ms | energy in 1–3 kHz, % |

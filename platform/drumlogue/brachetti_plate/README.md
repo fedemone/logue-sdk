@@ -8,16 +8,16 @@ instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
 
-This unit holds small metal percussion on the inharmonic plate modal bank: Cowbell, Triangle, Bell Tree and Tick.
+This unit holds small metal percussion on the inharmonic plate modal bank: Cowbell, Triangle, Bell Tree and Tick, and 3 cone bells and finger cymbals voiced after the [Pelle e Legno](../pelle_legno/) samples (AgogoHi, AgogoLo, Zills).
 
 | | |
 |---|---|
 | Unit name on the drumlogue | `BrcPlate` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x4272506C` ('BrPl') |
 | Engine | inharmonic plate modal bank + ring-coupled noise (`ENGINE_PLATE`) |
-| Presets | 4 |
+| Presets | 7 (4 from the original, 3 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 12996 · .rodata 1080 · .data 1808 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 12996 · .rodata 1616 · .data 1808 · .bss 292 |
 
 ## Presets
 
@@ -28,7 +28,17 @@ This unit holds small metal percussion on the inharmonic plate modal bank: Cowbe
 | 2 | BelTre | 84 | bell tree |
 | 3 | Tick | 79 | a metallic closed-hat chick with a low clack under it |
 
-At the knob values each preset ships with, it renders **bit-identically** to
+### Added: voiced after the Pelle e Legno samples
+
+Voiced by measurement against each sample with `tools/brachetti_equiv/match_samples.py` (specs in `match_specs.py`); the method is described in [BrcTom's README](../brachetti_tom/README.md#how-the-added-presets-were-voiced). No code changed for them.
+
+| # | Name | Root | Sound | Voiced after |
+|---|---|---|---|---|
+| 4 | AgogoHi | 82 | agogo, the high cone bell, A#5 | `053_AgogoHi.wav` |
+| 5 | AgogoLo | 77 | agogo, the low cone bell, F5 | `054_AgogoLo.wav` |
+| 6 | Zills | 99 | finger cymbals clashed: slowly beating partials from 2.5 kHz | `059_Zills.wav` |
+
+The original presets (0-3) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).
