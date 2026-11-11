@@ -17,7 +17,7 @@ This unit holds small metal percussion on the inharmonic plate modal bank: Cowbe
 | Engine | inharmonic plate modal bank + ring-coupled noise (`ENGINE_PLATE`) |
 | Presets | 4 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 13004 · .rodata 1080 · .data 1808 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 12996 · .rodata 1080 · .data 1808 · .bss 292 |
 
 ## Presets
 
@@ -32,15 +32,6 @@ At the knob values each preset ships with, it renders **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).
-
-**Choosing a preset.**  Pick it from the drumlogue's preset menu: the unit
-loads it and the panel shows the preset's own knob values.  The `Program`
-knob selects the same presets, and it is the one stored with a pattern,
-sequenced and motion-recorded — but the drumlogue never redraws the other
-knobs when a parameter changes them (a unit cannot update the panel), so
-after a Program change they keep showing the previous preset's values, and
-turning one sends that stale value plus your turn.  Use the preset menu to
-choose a sound, Program to automate one.
 
 ## Knobs
 

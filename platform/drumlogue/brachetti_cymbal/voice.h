@@ -62,6 +62,11 @@ static constexpr float kCymDriveHpCoef = brc::phase_inc(55.0f);
 // multiplier and so is linearly interpolated back to sample rate.
 enum { kCymCtrlStride = 8 };
 
+// The three phase-modulation LFO rates (Hz before the strike's rate scaling).
+// Namespace-scope `static`: a static local of a member function would be
+// STB_GNU_UNIQUE (see brachetti_common/knobs.h, name_at).
+static const float kPmRates[3] = { 37.0f, 71.0f, 113.0f };
+
 // One preset's strike, as NoteOn hands it to CymbalVoice::strike (by value;
 // freqHz points at a preset's anchor table).
 struct CymbalConfig {
@@ -351,10 +356,9 @@ private:
         const float strike_e  = velocity * (1.0f - strikeAtk) * strikeDec;
         const float rate_step = pmRateBase * (1.0f + 0.6f * strike_e) *
                                 brc::kInvSampleRate * (float)kCymCtrlStride;
-        static const float rates[3] = { 37.0f, 71.0f, 113.0f };
         float pm_next = 0.0f;
         for (int i = 0; i < 3; ++i) {
-            pmPhase[i] += rates[i] * rate_step;
+            pmPhase[i] += kPmRates[i] * rate_step;
             if (pmPhase[i] >= 1.0f) pmPhase[i] -= (float)(int)pmPhase[i];
             const float ph = (pmPhase[i] > 0.5f) ? (pmPhase[i] - 1.0f) : pmPhase[i];
             pm_next += fastsinf(6.28318530717958647692f * ph);

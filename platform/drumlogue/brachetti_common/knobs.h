@@ -7,7 +7,7 @@
 //  * HostKnob       the knobs the host owns: is_host_knob, seed_host_knobs
 //  * VelocityBias   the Velocity knob (ghost … as played … wham)
 //  * SequencerNote  the note the sequencer plays: preset root + Pitch knob
-//  * name_at, format_*  the strings the drumlogue shows for a knob
+//  * name_at, knob_text, format_*  the strings the drumlogue shows for a knob
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -171,13 +171,32 @@ struct SequencerNote {
 // ── Knob display strings ────────────────────────────────────────────────────
 // A name from a fixed table, or `fallback` when idx is outside it (preset
 // names, Model names, filter types).
+//
+// THE TABLE MUST BE A NAMESPACE-SCOPE `static` ARRAY, never a static local of
+// an inline function or a template.  GCC gives such locals the STB_GNU_UNIQUE
+// binding, and the dynamic loader keeps ONE copy of a unique symbol for every
+// library that defines it — across separately loaded drumlogue units too.
+// Each family unit's preset-name table was once `preset_name()::names`, so
+// every unit showed the names of whichever unit loaded first (BrcKernel's
+// Program read "Marmba", "TblrBel").  The same applies to any mutable buffer
+// (knob_text below).  arm_size.sh fails a unit that has a unique symbol.
 template <size_t N>
 inline const char* name_at(const char* const (&names)[N], int32_t idx, const char* fallback) {
     return (idx >= 0 && idx < (int32_t)N) ? names[idx] : fallback;
 }
 
-// Each caller passes its own static buffer: the OS may keep the string of one
-// knob on screen while it asks for another.
+// The buffer a knob's display string is built in: one per knob slot, because
+// the OS may keep one knob's string on screen while it asks for another.  The
+// storage is a static local of a `static` (internal-linkage) function, so
+// each unit has its own (see name_at for why that matters).
+constexpr size_t  kKnobTextSize = 12;
+constexpr uint8_t kMaxKnobs     = 24;   // the drumlogue's parameter slots
+static inline char* knob_text(uint8_t slot) {
+    static char text[kMaxKnobs][kKnobTextSize];
+    return text[(slot < kMaxKnobs) ? slot : 0];
+}
+
+// The format_* helpers write into the caller's buffer (knob_text).
 inline const char* format_int(char* buf, size_t size, int value) {
     snprintf(buf, size, "%d", value);
     return buf;

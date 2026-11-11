@@ -27,11 +27,11 @@
 // From brachetti_common (its README.md indexes every helper):
 //   dsp_math.h       clampf, env_mul, kSampleRate, knob_exp2
 //   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
-//                    format_int, format_percent, is_host_knob,
+//                    format_int, format_percent, is_host_knob, kKnobTextSize,
 //                    knob::clamp_int, knob::decay, knob::hit_pos,
 //                    knob::inharm, knob::mallet_res, knob::mallet_stiff,
 //                    knob::material, knob::percent, knob::poly, knob::release,
-//                    knob::tube_radius, midi_velocity, off_anchor,
+//                    knob::tube_radius, knob_text, midi_velocity, off_anchor,
 //                    seed_host_knobs
 //   master_stage.h   MasterStage, soft_saturate_bus, tone_tilt
 //   voice_base.h     any_fading, fade_out_all, kNumVoices
@@ -156,17 +156,16 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
-        static char partls_buf[8], stiff_buf[8], dkay_buf[8], cutoff_buf[10], resnc_buf[8], poly_buf[8];
         switch (index) {
         case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramPartls:   // the bank density this position gives
-            return brc::format_percent(partls_buf, sizeof(partls_buf),
+            return brc::format_percent(brc::knob_text(index), brc::kKnobTextSize,
                                        (int)(25 + 5 * brc::knob::clamp_int(value, 0, 7)), "Rs");
-        case k_paramMlltStif: return brc::format_int(stiff_buf, sizeof(stiff_buf), (int)(value * 100));
-        case k_paramDkay:     return brc::format_int(dkay_buf, sizeof(dkay_buf), (int)(value * 10));
-        case k_paramCutoff:   return brc::format_hz(cutoff_buf, sizeof(cutoff_buf), value);
-        case k_paramResnc:    return brc::format_int(resnc_buf, sizeof(resnc_buf), (int)(value * 10));
-        case k_paramPoly:     return brc::format_int(poly_buf, sizeof(poly_buf), brc::knob::poly(value));
+        case k_paramMlltStif: return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
+        case k_paramDkay:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
+        case k_paramCutoff:   return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
+        case k_paramResnc:    return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
+        case k_paramPoly:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, brc::knob::poly(value));
         default:              return "---";
         }
     }

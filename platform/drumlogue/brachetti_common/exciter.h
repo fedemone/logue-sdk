@@ -36,10 +36,8 @@ namespace brc {
 constexpr uint32_t kNoiseSeedStir = 0x26A9DBE5u;
 
 // What the drumlogue shows for NzFltr.
-inline const char* noise_filter_name(int32_t v) {
-    static const char* const names[] = {"LP", "BP", "HP"};
-    return name_at(names, v, nullptr);
-}
+static const char* const kNoiseFilterNames[] = {"LP", "BP", "HP"};   // namespace scope: see name_at
+inline const char* noise_filter_name(int32_t v) { return name_at(kNoiseFilterNames, v, nullptr); }
 
 // One sample of the noise burst, split into its parts so a unit can reshape a
 // part before the bands are summed (the plate's hi-hat filter, the snare's

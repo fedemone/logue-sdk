@@ -203,22 +203,20 @@ public:
     }
 
     const char* getParameterStrValue(uint8_t index, int32_t value) const {
-        static char partls_buf[8], stiff_buf[8], dkay_buf[8], nzfrq_buf[10],
-                    cutoff_buf[10], resnc_buf[8], poly_buf[8];
         const char* s = nullptr;
         switch (index) {
         case k_paramProgram:  return Unit::preset_name((uint8_t)value);   // the preset being browsed
         case k_paramModel:    s = model_name(value); break;
         case k_paramPartls:
-            return format_mode_count(partls_buf, sizeof(partls_buf),
+            return format_mode_count(knob_text(index), kKnobTextSize,
                                      Unit::modal_config(m_preset_idx).mode_count, value, m_anchor.partls);
         case k_paramNzFltr:   s = noise_filter_name(value); break;
-        case k_paramMlltStif: return format_int(stiff_buf, sizeof(stiff_buf), (int)(value * 100));
-        case k_paramDkay:     return format_int(dkay_buf, sizeof(dkay_buf), (int)(value * 10));
-        case k_paramNzFltFrq: return format_hz(nzfrq_buf, sizeof(nzfrq_buf), value);
-        case k_paramCutoff:   return format_hz(cutoff_buf, sizeof(cutoff_buf), value);
-        case k_paramResnc:    return format_int(resnc_buf, sizeof(resnc_buf), (int)(value * 10));
-        case k_paramPoly:     return format_int(poly_buf, sizeof(poly_buf), knob::poly(value));
+        case k_paramMlltStif: return format_int(knob_text(index), kKnobTextSize, (int)(value * 100));
+        case k_paramDkay:     return format_int(knob_text(index), kKnobTextSize, (int)(value * 10));
+        case k_paramNzFltFrq: return format_hz(knob_text(index), kKnobTextSize, value);
+        case k_paramCutoff:   return format_hz(knob_text(index), kKnobTextSize, value);
+        case k_paramResnc:    return format_int(knob_text(index), kKnobTextSize, (int)(value * 10));
+        case k_paramPoly:     return format_int(knob_text(index), kKnobTextSize, knob::poly(value));
         default: break;
         }
         return s ? s : "---";

@@ -27,13 +27,12 @@ enum Model : uint8_t {
 };
 
 // What the drumlogue shows for each Model knob position.
-inline const char* model_name(int32_t m) {
-    static const char* const names[k_NumModels] = {
-        "String", "Beam", "Square", "Membrn", "Plate",
-        "Drumhd", "Marimba", "OpnTube", "ClsTube"
-    };
-    return name_at(names, m, nullptr);
-}
+// Namespace-scope `static`, not a static local: see name_at in knobs.h.
+static const char* const kModelNames[k_NumModels] = {
+    "String", "Beam", "Square", "Membrn", "Plate",
+    "Drumhd", "Marimba", "OpnTube", "ClsTube"
+};
+inline const char* model_name(int32_t m) { return name_at(kModelNames, m, nullptr); }
 
 // Default noise band balance by model (a preset's own value wins when it has
 // one): percussion models lean on the bright click band, tubes on the body

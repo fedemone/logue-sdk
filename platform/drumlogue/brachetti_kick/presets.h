@@ -23,11 +23,22 @@ enum Preset : uint8_t {
     kNumPresets         // 3 — count
 };
 
-inline const char* preset_name(uint8_t idx) {
-    static const char* const names[kNumPresets] = {
-        "Kick2", "808Sub", "Kick"
-    };
-    return brc::name_at(names, idx, "Unknown");
+// What the Program knob shows: this family's own preset names, in this unit's
+// order.  A table of its own (taken from the original brachetti's 40-name
+// table, slots noted), and `static`: internal linkage, so it is private to
+// this unit.  It must not be a static local of an inline function — GCC makes
+// those STB_GNU_UNIQUE, and the drumlogue's loader then shares one copy among
+// every unit that defines the same symbol (every family unit once showed the
+// first-loaded unit's names).
+static const char* const kPresetNames[] = {
+    "Kick2",    // slot 0 of the original's 40
+    "808Sub",   // slot 2 of the original's 40
+    "Kick",     // slot 20 of the original's 40
+};
+static_assert(sizeof(kPresetNames) / sizeof(kPresetNames[0]) == kNumPresets, "one name per preset");
+
+static inline const char* preset_name(uint8_t idx) {
+    return brc::name_at(kPresetNames, idx, "Unknown");
 }
 
 // One row per preset, one column per knob in slot order: the knob

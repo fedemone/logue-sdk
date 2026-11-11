@@ -31,6 +31,14 @@ namespace brc {
 
 constexpr int kMaxModes = 6;
 
+// Library constant tables are namespace-scope `static` (internal linkage):
+// as static locals of inline functions GCC would make them STB_GNU_UNIQUE,
+// and the drumlogue's loader shares those among every loaded unit.
+// A mode's per-sample decay while the bank is idle (reset).
+static const float kModeIdleDecay[kMaxModes] = {0.9990f, 0.9985f, 0.9980f, 0.9975f, 0.9970f, 0.9965f};
+// HitPos: how strongly a strike off the anchor position feeds each mode.
+static const float kHitPosFeed[kMaxModes] = {1.55f, 1.35f, 2.40f, 3.60f, 4.80f, 6.00f};
+
 // One preset's calibrated bank.  Modes 5 and 6 are optional (mode_count 5-6);
 // a ratio of 0 for them means "derive from mode 4".
 struct ModalPresetConfig {
@@ -185,10 +193,9 @@ struct ModalBank {
         count = 0;
         mix = 0.0f;
         norm_count = 0;
-        static const float kIdleDecay[kMaxModes] = {0.9990f, 0.9985f, 0.9980f, 0.9975f, 0.9970f, 0.9965f};
         for (int i = 0; i < kMaxModes; ++i) {
             k[i] = 0.0f; y1[i] = 0.0f; y2[i] = 0.0f; env[i] = 0.0f;
-            decay[i] = kIdleDecay[i];
+            decay[i] = kModeIdleDecay[i];
         }
     }
 
@@ -374,10 +381,9 @@ inline void strike_modal(ModalBank& b, const ModalKnobs& k, const Anchors& a,
     // HitPos high; reshaping them means re-deriving the coefficients by ear.
     const float hit_off = knob::hit_pos(k.hit_pos) - a.hit_pos;
     if (off_anchor(hit_off)) {
-        static const float kFeed[kMaxModes] = {1.55f, 1.35f, 2.40f, 3.60f, 4.80f, 6.00f};
-        b.env[0] *= clampf(1.0f - hit_off * kFeed[0], 0.08f, 2.4f);
+        b.env[0] *= clampf(1.0f - hit_off * kHitPosFeed[0], 0.08f, 2.4f);
         for (int i = 1; i < kMaxModes; ++i)
-            b.env[i] *= clampf(1.0f + hit_off * kFeed[i], 0.05f, 9.0f);
+            b.env[i] *= clampf(1.0f + hit_off * kHitPosFeed[i], 0.05f, 9.0f);
     }
 }
 
