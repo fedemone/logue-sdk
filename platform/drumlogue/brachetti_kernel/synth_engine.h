@@ -25,12 +25,13 @@
 // From brachetti_common (its README.md indexes every helper):
 //   dsp_math.h       clampf, kSampleRate, knob_exp2
 //   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
-//                    format_int, format_percent, is_host_knob,
+//                    format_int, format_percent, is_host_knob, kKnobTextSize,
 //                    knob::clamp_int, knob::decay, knob::gain_drive,
 //                    knob::hit_pos, knob::inharm, knob::mallet_res,
 //                    knob::mallet_stiff, knob::material, knob::noise_freq,
 //                    knob::noise_mix, knob::percent, knob::release,
-//                    knob::tube_radius, midi_velocity, seed_host_knobs
+//                    knob::tube_radius, knob_text, midi_velocity,
+//                    seed_host_knobs
 //   master_stage.h   MasterControls, brickwall, tanh_knee, tone_tilt,
 //                    write_stereo
 #include "../brachetti_common/dsp_math.h"
@@ -131,17 +132,16 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
-        static char partls_buf[8], stiff_buf[8], dkay_buf[8], nzfrq_buf[10], cutoff_buf[10], resnc_buf[8];
         switch (index) {
         case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramPartls:   // the fraction of the membrane fill this position keeps
-            return brc::format_percent(partls_buf, sizeof(partls_buf),
+            return brc::format_percent(brc::knob_text(index), brc::kKnobTextSize,
                                        (int)(fill_density(brc::knob::clamp_int(value, 0, 4)) * 100.0f + 0.5f));
-        case k_paramMlltStif: return brc::format_int(stiff_buf, sizeof(stiff_buf), (int)(value * 100));
-        case k_paramDkay:     return brc::format_int(dkay_buf, sizeof(dkay_buf), (int)(value * 10));
-        case k_paramNzFltFrq: return brc::format_hz(nzfrq_buf, sizeof(nzfrq_buf), value);
-        case k_paramCutoff:   return brc::format_hz(cutoff_buf, sizeof(cutoff_buf), value);
-        case k_paramResnc:    return brc::format_int(resnc_buf, sizeof(resnc_buf), (int)(value * 10));
+        case k_paramMlltStif: return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
+        case k_paramDkay:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
+        case k_paramNzFltFrq: return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
+        case k_paramCutoff:   return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
+        case k_paramResnc:    return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
         default:              return "---";
         }
     }

@@ -73,7 +73,8 @@ modal units reach those through `ModalSynth`).  Every unit file opens with a
 | `midi_velocity(v)` | MIDI velocity 0-127 → 0..1 | kernel, cymbal, noise; library |
 | `VelocityBias` | the Velocity knob: ghost … as played … wham, exact at 0 | kernel, cymbal, noise; library |
 | `SequencerNote` | the note the sequencer plays: preset root + Pitch, and what GateOff must release | kernel, cymbal, noise; library |
-| `name_at(names, idx, fallback)` | a name from a fixed table, or the fallback | all eight; library |
+| `name_at(names, idx, fallback)` | a name from a fixed table, or the fallback; the table must be a namespace-scope `static` array (see the rules) | all eight; library |
+| `knob_text(slot)`, `kKnobTextSize` | the buffer a knob's display string is built in, one per knob slot, private to the unit | kernel, cymbal, noise; library |
 | `format_int`, `format_percent`, `format_hz` | knob display strings ("40", "Rs40%", "1.2kHz") into the caller's buffer | kernel, cymbal, noise; library |
 
 ### `master_stage.h` — the output side
@@ -214,6 +215,18 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
   +1.7 %).  Mark such a method `force_inline` (the SDK's
   `common/attributes.h`), and compare `arm_cpu.sh` before and after any change
   to code a render loop runs.
+- **Nothing shared between units.**  A static local of an inline function or
+  a template — a table, a buffer — gets GCC's `STB_GNU_UNIQUE` binding, and
+  the dynamic loader keeps ONE copy of a unique symbol for every library that
+  defines it, drumlogue units included.  Every family unit's preset-name table
+  was once `preset_name()::names`, so all of them showed the first-loaded
+  unit's Program names (BrcKernel read "Marmba", "TblrBel").  Tables and
+  buffers live at namespace scope with `static` (each unit's `kPresetNames`,
+  `kModelNames`, ...) or in a `static` function (`knob_text`).
+  `arm_size.sh` fails a unit that has a unique symbol, and
+  [`multi_load.sh`](../tools/brachetti_equiv/multi_load.sh) loads all eight
+  units into one process and checks every display string against the unit
+  loaded alone.
 - **No constructors.**  Plain structs with default member initialisers, no
   virtual functions, no heap: each unit's global synth object stays
   constant-initialised and loads from the ELF instead of being built at run
@@ -259,6 +272,7 @@ and the units call it:
 | `set_all_exciters` | noise and `ModalSynth` (`set_exciters`) |
 | `name_at` | every unit's `preset_name`, `model_name`, `noise_filter_name` |
 | `format_percent` | cymbal and kernel (Partls' display) |
+| `knob_text` | the display buffers every `getParameterStrValue` kept as static locals (shared between units — see the rules) |
 | `knob::noise_freq`, `knob::gain_drive` | kernel (`noise_freq`, its reference drive) and `MasterControls` |
 
 ## What was removed, and where it still lives

@@ -84,23 +84,6 @@ its own voice) and is kept.  On kick, tom, snare, bar and plate `Partls` keeps
 only positions 0-4: in the original, 5-7 select which resonator of the Koto
 string the knobs edit.
 
-### Presets on the drumlogue
-
-The family units expose their presets to the drumlogue's preset menu
-(`.num_presets` is the unit's preset count) as well as through the `Program`
-parameter.  They first inherited the original's arrangement — `.num_presets`
-0 (its pass 47), Program the only preset control — and on hardware the panel
-then kept showing the previous preset's knob values (at boot, preset 0's)
-whatever Program selected: the drumlogue owns
-the values its panel draws, re-reads them after `unit_load_preset()`, and has
-no way for a unit to report that another parameter moved them (EffeESP32
-found the same: [Instrument selection and the panel](../../EffeESP32/README.md#instrument-selection-and-the-panel)).
-Program is kept for what only a parameter has: it is stored with the pattern
-and can be sequenced and motion-recorded.  Both call the same `LoadPreset()`,
-and `unit_get_preset_index()` reports the preset loaded either way.  The
-equivalence driver refuses to run a unit whose `.num_presets` or Program
-range disagrees with its preset table.
-
 ### Then restructured onto a common library
 
 With each unit holding only its family, what the eight still had in common —
@@ -126,9 +109,10 @@ is where, the rules for changing it, the quirks kept on purpose and what was
 removed (and where it still lives).
 
 Every step was checked with `run_equiv.sh`: the restructured units render
-bit-identically to the original exactly as before (below).  On ARM six of the
-eight are smaller than before (the kernel and noise units grew by about 300
-bytes) and the render costs are within 0.2 % of before or below (Sizes, CPU).
+bit-identically to the original exactly as before (below).  On ARM the render
+costs are within 0.2 % of before or below (CPU), and the code is smaller in
+six of the eight; every unit now also carries 288 bytes of display buffers of
+its own (Units loaded together).
 
 ## Verification
 
@@ -229,6 +213,27 @@ can bite: with its sample rate a compile-time constant, GCC turned every
 rate in a variable (`m_sr`) and measures −149 dB, as before the
 restructuring.
 
+### Units loaded together
+
+The drumlogue runs several units in one process.  [`multi_load.sh`](multi_load.sh)
+builds the units as host shared libraries and prints every display string —
+every "strings" parameter at every value, for every preset — once with each
+unit loaded alone and once with all eight loaded together, each with
+`RTLD_LOCAL` as a plugin host loads them; the two must be identical.  It
+found the family units' first hardware bug: each unit's preset-name table was
+a static local of an inline function, which GCC makes `STB_GNU_UNIQUE`, and
+the loader keeps one copy of such a symbol across libraries — so every unit
+showed the first-loaded unit's Program names (BrcKernel read "Marmba",
+"TblrBel" for Timpni and Taiko), and the display buffers were shared too.
+Each table is now private to its unit, and `arm_size.sh` fails any unit with a
+unique symbol.
+
+```
+./multi_load.sh          # all eight; exit 1 and the differing strings if any
+```
+
+Result: 166,980 display strings identical alone and together.
+
 ### Sizes
 
 [`arm_size.sh`](arm_size.sh) cross-compiles a unit the way the SDK Makefile
@@ -238,14 +243,14 @@ moves a little between toolchains; data sections are exact):
 | Unit | .text | .rodata | .data | .bss | total, before → after the restructuring |
 |---|---|---|---|---|---|
 | brachetti (original) | 53,628 | 34,508 | 4 | 108,124 | |
-| kick | 15,568 | 912 | 1,952 | 64 | 19,266 → 18,556 |
-| tom | 14,156 | 1,644 | 1,872 | 64 | 18,768 → 17,812 |
-| kernel | 10,716 | 31,248 | 4 | 15,428 | 57,216 → 57,540 |
-| snare | 15,504 | 1,288 | 2,000 | 64 | 19,844 → 18,920 |
-| bar | 12,484 | 1,840 | 1,584 | 64 | 16,918 → 16,060 |
-| plate | 13,004 | 1,080 | 1,808 | 64 | 16,650 → 16,020 |
-| cymbal | 11,120 | 684 | 11,936 | 52 | 24,420 → 24,296 |
-| noise | 7,520 | 300 | 992 | 48 | 8,672 → 8,920 |
+| kick | 15,560 | 912 | 1,952 | 292 | 19,266 → 18,776 |
+| tom | 14,152 | 1,644 | 1,872 | 292 | 18,768 → 18,036 |
+| kernel | 10,724 | 31,248 | 4 | 15,664 | 57,216 → 57,784 |
+| snare | 15,492 | 1,288 | 2,000 | 292 | 19,844 → 19,136 |
+| bar | 12,476 | 1,840 | 1,584 | 292 | 16,918 → 16,280 |
+| plate | 12,996 | 1,080 | 1,808 | 292 | 16,650 → 16,240 |
+| cymbal | 11,136 | 684 | 11,936 | 292 | 24,420 → 24,552 |
+| noise | 7,500 | 300 | 992 | 292 | 8,672 → 9,144 |
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
 tables from `.data` to `.rodata` (`static const`): the original's notes

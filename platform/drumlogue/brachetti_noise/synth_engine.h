@@ -28,9 +28,9 @@
 //   dsp_math.h       clampf, kSampleRate, knob_exp2, phase_inc
 //   exciter.h        Exciter, noise_filter_name
 //   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
-//                    format_int, is_host_knob, knob::mallet_res,
-//                    knob::mallet_stiff, knob::percent, knob::poly,
-//                    midi_velocity, seed_host_knobs
+//                    format_int, is_host_knob, kKnobTextSize,
+//                    knob::mallet_res, knob::mallet_stiff, knob::percent,
+//                    knob::poly, knob_text, midi_velocity, seed_host_knobs
 //   master_stage.h   MasterStage, tone_tilt
 //   models.h         k_String, model_name
 //   voice_base.h     any_fading, fade_out_all, fuses_with, kNumVoices,
@@ -161,17 +161,16 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
-        static char stiff_buf[8], nzfrq_buf[10], cutoff_buf[10], resnc_buf[8], poly_buf[8];
         const char* s = nullptr;
         switch (index) {
         case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramModel:    s = brc::model_name(value); break;
         case k_paramNzFltr:   s = brc::noise_filter_name(value); break;
-        case k_paramMlltStif: return brc::format_int(stiff_buf, sizeof(stiff_buf), (int)(value * 100));
-        case k_paramNzFltFrq: return brc::format_hz(nzfrq_buf, sizeof(nzfrq_buf), value);
-        case k_paramCutoff:   return brc::format_hz(cutoff_buf, sizeof(cutoff_buf), value);
-        case k_paramResnc:    return brc::format_int(resnc_buf, sizeof(resnc_buf), (int)(value * 10));
-        case k_paramPoly:     return brc::format_int(poly_buf, sizeof(poly_buf), brc::knob::poly(value));
+        case k_paramMlltStif: return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
+        case k_paramNzFltFrq: return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
+        case k_paramCutoff:   return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
+        case k_paramResnc:    return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
+        case k_paramPoly:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, brc::knob::poly(value));
         default: break;
         }
         return s ? s : "---";

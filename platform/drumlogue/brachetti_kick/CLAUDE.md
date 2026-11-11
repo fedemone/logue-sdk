@@ -37,12 +37,14 @@ else.  README.md lists the presets and what every knob does.
   match the defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity,
   VlMllRes, Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their
   table columns).
-- **Presets on the drumlogue.**  `header.c` exposes the presets
-  (`.num_presets` = the preset count) next to the Program parameter, because
-  only `unit_load_preset()` makes the panel re-read the knobs; Program alone
-  leaves them showing the previous preset's values.  Keep `.num_presets` and
-  Program's max equal to the preset table (`equiv_driver` refuses to run
-  otherwise).
+- **Nothing shared between units.**  The drumlogue loads several units into one
+  process, and a static local of an inline function or template (a table, a
+  buffer) becomes an STB_GNU_UNIQUE symbol the loader shares among all of
+  them: the family units once all showed the first-loaded unit's Program
+  names.  Keep tables at namespace scope with `static` (as `kPresetNames` in
+  `presets.h`) and build display strings in `brc::knob_text`.  `arm_size.sh`
+  fails a unit with a unique symbol; `multi_load.sh` checks the units loaded
+  together.
 - **Exact math for coefficients.**  Tuning and decay coefficients use exact
   `expf` / `cosf` / `exp2f`: the `faster*` approximations in `float_math.h`
   are badly wrong for small arguments and shift low mode frequencies.
@@ -56,7 +58,7 @@ else.  README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_kick`
-  (shipped: .text 15568 · .rodata 912 · .data 1952 · .bss 64).
+  (shipped: .text 15560 · .rodata 912 · .data 1952 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_kick --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

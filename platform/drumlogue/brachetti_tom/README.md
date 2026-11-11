@@ -17,7 +17,7 @@ This unit holds toms and hand drums on the membrane modal bank: Djambe, Ac Tom, 
 | Engine | membrane modal bank + boom + strike-transient layer (`ENGINE_MEMBRANE`) |
 | Presets | 7 |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 14156 · .rodata 1644 · .data 1872 · .bss 64 |
+| ARM size (cross-built, `arm_size.sh`) | .text 14152 · .rodata 1644 · .data 1872 · .bss 292 |
 
 ## Presets
 
@@ -35,15 +35,6 @@ At the knob values each preset ships with, it renders **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).
-
-**Choosing a preset.**  Pick it from the drumlogue's preset menu: the unit
-loads it and the panel shows the preset's own knob values.  The `Program`
-knob selects the same presets, and it is the one stored with a pattern,
-sequenced and motion-recorded — but the drumlogue never redraws the other
-knobs when a parameter changes them (a unit cannot update the panel), so
-after a Program change they keep showing the previous preset's values, and
-turning one sends that stale value plus your turn.  Use the preset menu to
-choose a sound, Program to automate one.
 
 ## Knobs
 
