@@ -41,11 +41,11 @@ Which parts can play these samples (owner's manual, *Sound source configuration*
 |---|---|---|
 | CH, OH, RS, CP, SP1, SP2 (digital) | **yes**, from BANK `USER` | the six voices of every recipe |
 | BD, SD, LT, HT (analog) | no (only factory transient/layer PCM) | tuned low and short, they work as dundun, surdo or a second bass drum |
-| MULTI (VPM / NOISE / USER) | no; it hosts one user **synth** | the Brachetti family units in this repo carry **46 presets voiced after these samples** (below), so the MULTI part plays the same instruments as a synth |
+| MULTI (VPM / NOISE / USER) | no; it hosts one user **synth** | the Brachetti family units in this repo carry **55 presets voiced after these samples** (below), so the MULTI part plays the same instruments as a synth |
 
 ### The same instruments as Brachetti presets
 
-46 of these sounds are also presets of the [Brachetti family](../tools/brachetti_equiv/README.md)
+55 of these sounds are also presets of the [Brachetti family](../tools/brachetti_equiv/README.md)
 synth units, voiced after these very samples by measurement.  On the MULTI
 part they follow Pitch and velocity, and motion-sequencing the Program knob
 per step plays a whole djembe, conga or tabla part on one track:
@@ -57,11 +57,15 @@ per step plays a whole djembe, conga or tabla part on one track:
 | `BrcPlate` | AgogoHi, AgogoLo, Zills |
 | `BrcNoise` | ShkFwd, ShkBack, Maracas, Caxixi, Cabasa |
 | `BrcSnare` | BndDoum, BndTek, CajBass, CajSlap |
+| `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk |
 
 The seed pods and the guiro stay samples (039 `SeedPods`, 041 `GuiroShort`,
 042 `GuiroLong` in the USER bank): their few large random clicks and the
-gourd ringing under the ridges are what a sample part does best.  Claves, low wood block and taiko already exist
-as `Claves`, `Wodblk` (BrcBar) and `Taiko` (BrcKernel).
+gourd ringing under the ridges are what a sample part does best.  Claves, low
+wood block and taiko already exist as `Claves`, `Wodblk` (BrcBar) and `Taiko`
+(BrcKernel).  BrcWorld is the family unit built for the instruments the
+others could not make: its friction voice, wire, buzz, jingles and particle
+layers are described in [its README](../brachetti_world/README.md).
 
 ---
 
@@ -221,7 +225,7 @@ harmonic series. Replace SP1 with 014 TablaGe for an unbent bass. Zills ring
 
 A second agogo (054 AgogoLo) or 031 Cuica can replace SP1. The analog **BD**,
 tuned low with a long decay, is the second surdo. Choke SP2 with BD if you
-want the pair to answer each other.
+want the pair to answer each other.  **MULTI**: BrcWorld `Cuica`.
 
 ### E. Wood & seeds (organic)
 

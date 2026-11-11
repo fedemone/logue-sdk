@@ -1,7 +1,7 @@
 #pragma once
-// Brachetti common library — the engine the five modal units share.
+// Brachetti common library — the engine the six modal units share.
 //
-// Kick, Tom, Snare, Bar and Plate are one engine with different family
+// Kick, Tom, Snare, Bar, Plate and World are one engine with different family
 // layers: the same 24 knobs, the same preset loading, the same note routing
 // and block loop.  That engine lives here; a unit derives from it (CRTP:
 // static dispatch, no virtual calls) and supplies only its family:

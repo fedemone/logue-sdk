@@ -80,6 +80,17 @@ VOICING_FIELDS = {
               "wire_onset_attack", "wire_a1", "wire_a2", "band_b_hz", "band_b_r",
               "band_c_hz", "band_c_r"],
     "noise": ["band_mix", "split", "gate_hz", "gate_depth", "gate_decay", "attack_rate"],
+    "world": ["modal_mix", "onset_ms", "band_mix", "split", "exc_gain",
+              "fr_level", "fr_hz", "fr_rise", "fr_rise_ms", "fr_fall", "fr_fall_hold_ms",
+              "fr_fall_ms", "fr_hold_ms", "fr_t60_ms", "fr_formant1_hz", "fr_formant2_hz", "fr_noise",
+              "wire_level", "wire_hz", "wire_t60_ms", "wire_damp", "wire_burst_ms", "wire_direct",
+              "gourd_hz", "gourd_up_hz", "gourd_up_ms", "gourd_down_hz", "gourd_down_hold_ms",
+              "gourd_down_ms", "gourd_q",
+              "buzz_level", "buzz_thresh", "buzz_hz", "buzz_q",
+              "jg_level", "jg_lo_hz", "jg_hi_hz", "jg_t60_ms", "jg_bounce_lo_ms", "jg_bounce_hi_ms",
+              "jg_spread_ms", "jg_clash_ms",
+              "pt_level", "pt_rate", "pt_attack_ms", "pt_hold_ms", "pt_t60_ms", "pt_click_ms",
+              "pt_f1_hz", "pt_q1", "pt_f2_hz", "pt_q2", "pt_mix2", "pt_direct"],
 }
 VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0, split=0.0,
                         pitch_env=0.0, pitch_decay=0.0, pitch_amount=0.0, boom_inc=0.0,
@@ -90,7 +101,7 @@ VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0,
                         hat_mode=0.0, hat_hz=0.0, hat_q=0.0, wire_mix=0.0, wire_onset_env=1.0,
                         wire_onset_attack=0.001, wire_a1=1.76, wire_a2=0.918, band_b_hz=0.0,
                         band_b_r=0.0, band_c_hz=0.0, band_c_r=0.0, gate_hz=0.0,
-                        gate_depth=0.0, gate_decay=1.0, attack_rate=0.0)
+                        gate_depth=0.0, gate_decay=1.0, attack_rate=0.0, exc_gain=1.0)
 
 
 def full(spec):
@@ -137,7 +148,8 @@ def modal_row(v):
 
 
 def voicing_row(v, unit):
-    return "    {" + ", ".join(cfloat(v[f]) for f in VOICING_FIELDS[unit]) + "},"
+    # A voicing field no spec sets is 0 (the layer it belongs to is off).
+    return "    {" + ", ".join(cfloat(v.get(f, 0.0)) for f in VOICING_FIELDS[unit]) + "},"
 
 
 def insert_table(text, marker, rows):
@@ -247,7 +259,8 @@ def patch_presets(text, unit, cands, first_idx):
 # Build, render
 # ---------------------------------------------------------------------------
 UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
-                 snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick")
+                 snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick",
+                 world="brachetti_world")
 
 
 def build(unit_dir, out):

@@ -8,7 +8,7 @@ for changing it) → [`brachetti_common/README.md`](../../brachetti_common/READM
 (the shared library and its helper index) → the original's documents (the
 voicing history).
 
-The 40-preset [`brachetti`](../../brachetti/) unit grew one synth engine with
+The 40-preset [`brachetti`](https://github.com/fedemone/logue-sdk/blob/original_brachetti/platform/drumlogue/brachetti/) unit grew one synth engine with
 six sound models, a cymbal port and a separate drum kernel inside it, and every
 knob ended up wired into every model.  Its percussion is split here into
 **eight units, one per instrument family**, so each can be browsed, used and
@@ -25,21 +25,26 @@ ships as before.
 | [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick; added: AgogoHi, AgogoLo, Zills | 24 | plate modes + ring-coupled noise |
 | [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 19 | dense-resonator cymbal |
 | [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 18 | shaped noise + AM gating |
+| [`brachetti_world`](../../brachetti_world/) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | 24 | modal bank + friction voice, wire, buzz, jingles, particles |
 
-All eight are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
-'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz'), so they install next to the original
-and next to each other.  The families are the ones the original's README
+All nine are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
+'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrWd'), so they install next to the
+original and next to each other.  The first eight were split from the
+original; the ninth, **BrcWorld**, was built after the split for the
+instruments no family engine can make (the cuica's friction voice, the
+berimbau's wire, the balafon's buzz, bouncing jingles, bead and pebble
+cascades), on the same modal engine and library.  The families are the ones the original's README
 already used for its "which knobs are live" matrix.
 
 **Not split out: the Koto.**  The original's one string preset (a dual
 Karplus-Strong waveguide) is outside the percussion these units focus on, so
 it has no family unit; it stays playable in the original.  The waveguide
-engine lives on there too, should a struck-string percussion family (a
-hammered dulcimer, a berimbau) ever be worth deriving from it.
+engine lives on there too.  (The berimbau did get a struck wire: BrcWorld's
+`Wire` layer, a single Karplus-Strong loop written for it.)
 
 ## Presets added after the split
 
-46 presets have been added to five of the units, voiced after the
+46 presets have been added to five of the units, and BrcWorld's 9 built with it, all voiced after the
 [Pelle e Legno](../../pelle_legno/) samples (organic, skin and ethnic
 percussion): 25 hand-drum strokes in BrcTom, 9 in BrcBar, 3 in BrcPlate, 5 in
 BrcNoise and 4 in BrcSnare.  They have no counterpart in the original, so
@@ -241,7 +246,7 @@ restructuring.
 The drumlogue runs several units in one process.  [`multi_load.sh`](multi_load.sh)
 builds the units as host shared libraries and prints every display string —
 every "strings" parameter at every value, for every preset — once with each
-unit loaded alone and once with all eight loaded together, each with
+unit loaded alone and once with all of them loaded together, each with
 `RTLD_LOCAL` as a plugin host loads them; the two must be identical.  It
 found the family units' first hardware bug: each unit's preset-name table was
 a static local of an inline function, which GCC makes `STB_GNU_UNIQUE`, and
@@ -252,10 +257,11 @@ Each table is now private to its unit, and `arm_size.sh` fails any unit with a
 unique symbol.
 
 ```
-./multi_load.sh          # all eight; exit 1 and the differing strings if any
+./multi_load.sh          # all nine; exit 1 and the differing strings if any
 ```
 
-Result: 166,980 display strings identical alone and together.
+Result: 420,458 display strings identical alone and together (nine units,
+with the presets added after the split).
 
 ### Sizes
 
@@ -274,6 +280,11 @@ moves a little between toolchains; data sections are exact):
 | plate | 12,996 | 1,080 | 1,808 | 292 | 16,650 → 16,240 |
 | cymbal | 11,136 | 684 | 11,936 | 292 | 24,420 → 24,552 |
 | noise | 7,500 | 300 | 992 | 292 | 8,672 → 9,144 |
+
+(These are the restructuring's figures.  With the presets added after the
+split, each unit's README carries its current sizes; BrcWorld measures
+.text 17,836 · .rodata 3,504 · .data 4 · .bss 21,200, the 16 KB of wire
+delay lines in `.bss`.)
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
 tables from `.data` to `.rodata` (`static const`): the original's notes
@@ -318,7 +329,9 @@ count is the unit's own work.
 
 A unit's family code is its own: a change in its folder cannot reach another
 unit.  A change in [`brachetti_common`](../../brachetti_common/) reaches all
-eight, so check all eight:
+nine, so check them all.  BrcWorld has no original to compare with: check it
+against itself (render its presets with `preset_probe render` before and
+after, and compare), and the other eight with:
 
 ```
 for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done

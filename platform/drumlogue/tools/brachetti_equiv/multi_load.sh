@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# multi_load.sh [<unit-dir> ...]   (default: the eight family units)
+# multi_load.sh [<unit-dir> ...]   (default: the nine family units)
 #
 # Do the units stay independent when the drumlogue loads several at once?
 # Builds each unit as a host shared library, then prints every display string
@@ -15,7 +15,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 if [ $# -eq 0 ]; then
-    set -- $(for u in kick tom kernel snare bar plate cymbal noise; do echo "$drum/brachetti_$u"; done)
+    set -- $(for u in kick tom kernel snare bar plate cymbal noise world; do echo "$drum/brachetti_$u"; done)
 fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

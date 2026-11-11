@@ -31,7 +31,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DRUM = os.path.normpath(os.path.join(HERE, '..', '..'))
 LIB = os.path.join(DRUM, 'brachetti_common')
-UNITS = ['kick', 'tom', 'kernel', 'snare', 'bar', 'plate', 'cymbal', 'noise']
+UNITS = ['kick', 'tom', 'kernel', 'snare', 'bar', 'plate', 'cymbal', 'noise', 'world']
 FILES = ['presets.h', 'voice.h', 'synth_engine.h', 'modal_drum_kernel.h']
 BLOCK_HEAD = '// From brachetti_common (its README.md indexes every helper):'
 UNQUALIFIED = {'FastSVF', 'FastNoise', 'FastEnvelope'}

@@ -3,7 +3,7 @@
 > **Disclaimer:** Brachetti Kick is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
 One of eight drumlogue synth units split out of the 40-preset
-[`brachetti`](../brachetti/) physical-modelling percussion unit, one per
+[`brachetti`](https://github.com/fedemone/logue-sdk/blob/original_brachetti/platform/drumlogue/brachetti/) physical-modelling percussion unit, one per
 instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
