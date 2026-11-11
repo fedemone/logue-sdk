@@ -30,6 +30,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -68,7 +69,7 @@ VOICING_FIELDS = {
     "tom": ["modal_mix", "onset_ms", "chirp_hz", "band_mix", "split", "pitch_env",
             "pitch_decay", "pitch_amount", "boom_inc", "boom_env", "boom_decay", "boom_mix",
             "boom_attack_env", "boom_attack_inc", "slap_gain", "slap_decay", "slap_a_lo",
-            "slap_a_hi", "boom_hz", "glide"],
+            "slap_a_hi", "boom_hz", "glide", "glide_hold_ms", "glide_ms"],
     "bar": ["modal_mix", "onset_ms", "chirp_hz", "band_mix", "split"],
     "plate": ["modal_mix", "onset_ms", "chirp_hz", "band_mix", "split", "noise_gain",
               "shimmer_mix", "shimmer_decay", "click_decay", "hat", "hat_mode", "hat_hz",
@@ -84,7 +85,7 @@ VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0,
                         pitch_env=0.0, pitch_decay=0.0, pitch_amount=0.0, boom_inc=0.0,
                         boom_env=0.0, boom_decay=0.0, boom_mix=0.0, boom_attack_env=0.0,
                         boom_attack_inc=0.0, slap_gain=0.0, slap_decay=0.0, slap_a_lo=0.0,
-                        slap_a_hi=0.0, boom_hz=0.0, glide=0.0, noise_gain=5.0,
+                        slap_a_hi=0.0, boom_hz=0.0, glide=0.0, glide_hold_ms=0.0, glide_ms=0.0, noise_gain=5.0,
                         shimmer_mix=0.0, shimmer_decay=1.0, click_decay=0.0, hat=False,
                         hat_mode=0.0, hat_hz=0.0, hat_q=0.0, wire_mix=0.0, wire_onset_env=1.0,
                         wire_onset_attack=0.001, wire_a1=1.76, wire_a2=0.918, band_b_hz=0.0,
@@ -187,11 +188,43 @@ def write_presets(unit, specs, vals, trims, source):
     open(p, "w").write(text)
     h = os.path.join(d, "header.c")
     ht = open(h).read()
-    import re
     m = re.search(r'\{0, (\d+), 0, 0, k_unit_param_type_strings, 0, 0, 0, \{"Program"\}\}', ht)
     ht = ht[:m.start(1)] + str(n0 + len(specs) - 1) + ht[m.end(1):]
     open(h, "w").write(ht)
     print("wrote %d presets (%d..%d) into %s" % (len(specs), n0, n0 + len(specs) - 1, d), file=sys.stderr)
+
+
+def rewrite_presets(unit, specs, vals, trims):
+    """Replace the rows of presets already in the REAL unit (found by the
+    enum, name and index comments write_presets leaves), so a preset can be
+    revoiced in place."""
+    d = os.path.join(DRUM, UNIT_DIRS[unit])
+    p = os.path.join(d, "presets.h")
+    text = open(p).read()
+    enum_block = text[text.index("enum Preset"):text.index("    kNumPresets")]
+    enums = [l.strip().split()[0].rstrip(",").split("=")[0].strip()
+             for l in enum_block.splitlines() if l.strip().startswith("k_")]
+
+    def sub1(pattern, repl):
+        nonlocal text
+        new, n = re.subn(pattern, lambda m: repl(m), text, count=1, flags=re.M)
+        if n != 1:
+            raise SystemExit("rewrite: no row matches %r" % pattern)
+        text = new
+
+    for s, v, t in zip(specs, vals, trims):
+        i = enums.index(s["enum"])
+        sub1(r"^    \{.*\},(   // %d: %s)$" % (i, re.escape(s["name"])),
+             lambda m: knob_row(v, i, unit) + m.group(1))
+        if unit != "noise":
+            sub1(r"^(    /\* %s: .*\*/\n)    \{.*\},?$" % re.escape(s["enum"]),
+                 lambda m: m.group(1) + modal_row(v))
+        sub1(r"^(    /\* %s\s*\*/)\{.*\},?$" % re.escape(s["enum"]),
+             lambda m: m.group(1) + voicing_row(v, unit)[4:])
+        sub1(r"^(    /\* %-2d %-7s \*/ )[0-9.]+f,?$" % (i, re.escape(s["name"])),
+             lambda m: m.group(1) + "%.5ff," % t)
+    open(p, "w").write(text)
+    print("rewrote %d presets in %s" % (len(specs), d), file=sys.stderr)
 
 
 def patch_presets(text, unit, cands, first_idx):
@@ -215,11 +248,6 @@ def patch_presets(text, unit, cands, first_idx):
 # ---------------------------------------------------------------------------
 UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
                  snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick")
-
-
-def count_presets(unit_dir):
-    probe = build(unit_dir, os.path.join(tempfile.mkdtemp(), "p"))
-    return len(subprocess.run([probe, "list"], capture_output=True, text=True).stdout.splitlines())
 
 
 def build(unit_dir, out):
@@ -247,8 +275,7 @@ def render_candidates(unit, cands, vel, secs):
             shutil.copytree(src, unit_dir)
             p = os.path.join(unit_dir, "presets.h")
             text = open(p).read()
-            n0 = sum(1 for line in text[text.index("enum Preset"):text.index("    kNumPresets")].splitlines()
-                     if line.strip().startswith("k_"))
+            n0 = preset_count(text)
             open(p, "w").write(patch_presets(text, unit, batch, n0))
             probe = build(unit_dir, os.path.join(tmp, "probe"))
             outd = os.path.join(tmp, "out")
@@ -440,6 +467,8 @@ def main():
     ap.add_argument("--report", action="store_true", help="score the specs as written, no search")
     ap.add_argument("--write", action="store_true",
                     help="append the presets, at their --state values, to the real unit")
+    ap.add_argument("--rewrite", action="store_true",
+                    help="replace, at their --state values, presets already in the real unit")
     ap.add_argument("--state", help="JSON of each preset's values: a search starts from it "
                                     "(over the spec) and saves its result to it")
     a = ap.parse_args()
@@ -452,10 +481,16 @@ def main():
     saved = {}
     if a.state and os.path.exists(a.state):
         saved = json.load(open(a.state))
-    if a.write:
+    if a.write or a.rewrite:
         vals = [start_values(s, saved) for s in specs]
-        res = render_candidates(a.unit, vals, a.vel, a.secs)
-        write_presets(a.unit, specs, vals, [t for _, t in res], a.specs)
+        res = render_candidates(a.unit, vals, a.vel, a.secs) if a.write else None
+        if a.write:
+            write_presets(a.unit, specs, vals, [t for _, t in res], a.specs)
+        else:
+            # Candidates are appended after the unit's presets, so the trims
+            # are measured on copies of the new values, not on the old rows.
+            res = render_candidates(a.unit, vals, a.vel, a.secs)
+            rewrite_presets(a.unit, specs, vals, [t for _, t in res])
         return
     if a.report:
         res = render_candidates(a.unit, [start_values(s, saved) for s in specs], a.vel, a.secs)

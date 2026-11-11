@@ -86,8 +86,16 @@ SLAP_FREE = dict(slap_gain=(0.1, 8.0, "log"), slap_a_lo=(0.02, 0.6, "log"), slap
 # body / click balance.
 BRIGHT_FREE = dict(NzFl=(0, 2, "int"), band_mix=(0.05, 1.0, "lin"))
 BOOM_FREE = dict(boom_mix=(0.02, 2.0, "log"))
-# A gliding boom also moves the glide's time constant (ms) and depth (Hz).
-GLIDE_FREE = dict(pitch_decay=(15, 400, "tau"), pitch_amount=(1, 120, "log"))
+# A bending boom also moves the S-curve's hold and length (ms) and its depth (Hz).
+GLIDE_FREE = dict(glide_hold_ms=(0, 80, "lin"), glide_ms=(30, 600, "log"), pitch_amount=(1, 120, "log"))
+
+
+def bend(hz_from, hz_to, hold_ms, len_ms):
+    """A held, then S-shaped bend from hz_from to hz_to (brc::GlideCurve):
+    the tracked boom rests on hz_to, so glide is +1 for a fall, -1 for a rise."""
+    return dict(boom_hz=hz_to, glide=1.0 if hz_from > hz_to else -1.0, pitch_env=1.0,
+                pitch_decay=1.0, pitch_amount=abs(hz_from - hz_to),
+                glide_hold_ms=hold_ms, glide_ms=len_ms)
 
 
 def free(*ds):
@@ -191,7 +199,7 @@ SPECS = {"tom": [
          note="Ge with the heel sliding toward the syahi: the bass bends up ~5 semitones",
          values=merge(SKIN, dict(Mdl=0), bank(43, [(98.0, .10), (198.1, .30), (295.9, .10)],
                                               [150, 150, 120], 0.15),
-                      boom(133.3, 750, 0.8, attack_ms=3, glide=-1, glide_hz=35.3, glide_ms=90),
+                      boom(129.4, 750, 0.8, attack_ms=3), bend(98.0, 129.4, 40, 260),
                       dict(MlSt=15, MlRs=400, Hit=20, NzMx=8, NzRs=300, NzFq=150)),
          free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(80, 150)),
     dict(name="TblaKe", enum="k_TablaKe", ref=os.path.join(P, "016_TablaKe.wav"),
@@ -224,13 +232,13 @@ SPECS = {"tom": [
     dict(name="TalkUp", enum="k_TalkUp", ref=os.path.join(P, "025_TalkDrumUp.wav"),
          note="talking drum squeezed as it rings: D3 up about a fifth",
          values=merge(SKIN, bank(50, [(146.8, .2), (212.4, .4), (275.8, .3)], [80, 80, 70], 0.15),
-                      boom(225.0, 970, 0.8, attack_ms=2, glide=-1, glide_hz=75.0, glide_ms=60),
+                      boom(217.5, 970, 0.8, attack_ms=2), bend(150.0, 217.5, 20, 180),
                       dict(MlSt=35, Hit=30, NzMx=12, NzRs=400, NzFq=350)),
          free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(120, 260)),
     dict(name="TalkDn", enum="k_TalkDown", ref=os.path.join(P, "026_TalkDrumDn.wav"),
          note="talking drum released as it rings: down about a fifth to D3",
          values=merge(SKIN, bank(50, [(146.8, .2), (212.4, .4), (275.8, .3)], [80, 80, 70], 0.15),
-                      boom(146.0, 970, 0.8, attack_ms=2, glide=1, glide_hz=71.5, glide_ms=110),
+                      boom(150.0, 970, 0.8, attack_ms=2), bend(217.5, 150.0, 20, 200),
                       dict(MlSt=35, Hit=30, NzMx=12, NzRs=400, NzFq=350)),
          free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(120, 260)),
     dict(name="SurdOpn", enum="k_SurdoOpen", ref=os.path.join(P, "027_SurdoOpen.wav"),
@@ -256,7 +264,7 @@ SPECS = {"tom": [
     dict(name="UduBass", enum="k_UduBass", ref=os.path.join(P, "051_UduBass.wav"),
          note="udu: the palm over the side hole, the pot's air rising 85 -> 112 Hz",
          values=merge(SKIN, bank(45, [(110.0, .05), (201.0, .03)], [300, 200], 0.05),
-                      boom(114.2, 610, 0.9, attack_ms=5, glide=-1, glide_hz=26.0, glide_ms=50),
+                      boom(112.0, 610, 0.9, attack_ms=5), bend(89.6, 112.0, 20, 120),
                       dict(MlSt=8, MlRs=300, Hit=0, NzMx=15, NzRs=300, NzFq=90)),
          free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(70, 130)),
 ]}

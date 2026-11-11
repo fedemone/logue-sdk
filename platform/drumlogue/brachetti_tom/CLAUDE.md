@@ -56,8 +56,10 @@ README.md lists the presets and what every knob does.
   `run_equiv.sh` names them and compares the other seven.  They were voiced by
   `../tools/brachetti_equiv/match_samples.py match_specs.py tom` against
   `../pelle_legno/Samples`; to revoice one, change its spec, re-run the search
-  with `--state` and paste the rows (or start from `--write` on a copy).
-  Their table-driven layers (`slap_*`, `boom_hz` / `glide` in `kVoicing`) stay
+  with `--state`, then `--rewrite` replaces its rows in place (`--write`
+  appends new presets).
+  Their table-driven layers (`slap_*`, `boom_hz` / `glide`, `glide_hold_ms` /
+  `glide_ms` in `kVoicing`) stay
   0 on presets 0-6, which keep their own branches (RackTom's glide, Ac Tom's
   and RackTom's slaps): keep it that way, or those presets move.
   After any voicing change, re-run `preset_probe calib` and update `kOutTrim`.
@@ -67,7 +69,7 @@ README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_tom`
-  (shipped: .text 14420 · .rodata 7004 · .data 1872 · .bss 292).
+  (shipped: .text 14692 · .rodata 7260 · .data 1952 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_tom --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

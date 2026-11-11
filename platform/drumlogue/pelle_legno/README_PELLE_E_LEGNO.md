@@ -58,9 +58,9 @@ per step plays a whole djembe, conga or tabla part on one track:
 | `BrcNoise` | ShkFwd, ShkBack, Maracas, Caxixi, Cabasa |
 | `BrcSnare` | BndDoum, BndTek, CajBass, CajSlap |
 
-Not there, because no family engine can make them: the cuíca, berimbau,
-balafon (its buzzing gourd), rainstick, riq and pandeiro (bouncing jingles),
-shekere, seed pods and guiro.  Claves, low wood block and taiko already exist
+The seed pods and the guiro stay samples (039 `SeedPods`, 041 `GuiroShort`,
+042 `GuiroLong` in the USER bank): their few large random clicks and the
+gourd ringing under the ridges are what a sample part does best.  Claves, low wood block and taiko already exist
 as `Claves`, `Wodblk` (BrcBar) and `Taiko` (BrcKernel).
 
 ---

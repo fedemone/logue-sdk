@@ -17,7 +17,7 @@ This unit holds toms and hand drums on the membrane modal bank: the original's D
 | Engine | membrane modal bank + boom + strike-transient layer (`ENGINE_MEMBRANE`) |
 | Presets | 32 (7 from the original, 25 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 14420 · .rodata 7004 · .data 1872 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 14692 · .rodata 7260 · .data 1952 · .bss 292 |
 
 ## Presets
 
@@ -142,9 +142,10 @@ every added preset matches its sample's pitch (strongest partial within 2 %,
 except where the sample's strongest partial is the start of a glide), and 23 of
 the 25 match its 40 dB decay within 15 %.  What six modes cannot hold is the
 dense upper mode field of a membrane slap: CngMute, CngSlap, BngMach, Tambrim
-and DrbTek put 30-60 % less of their attack in 1-3 kHz than their samples.  The
-talking-drum glides are exponential where the drummer's are S-shaped, so they
-start moving sooner.
+and DrbTek put 30-60 % less of their attack in 1-3 kHz than their samples.
+The four bends (TalkUp, TalkDn, TblGeBd, UduBass) follow their samples' pitch
+tracks within a few Hz — measured over 10-60 / 60-120 / 120-200 / 200-350 ms,
+TalkUp is 162/179/209/218 Hz against 152/173/213/218.
 
 Two table-driven layers were added for them, both 0 on the original seven
 (which keep their own code paths and render as before):
@@ -153,7 +154,13 @@ Two table-driven layers were added for them, both 0 on the original seven
 - `boom_hz` / `glide`: a **tracked** boom that follows the played note from the
   preset's root and, with a pitch envelope, glides down onto its frequency
   (`glide` +1: a hard hit settling) or up to it (−1: the talking drum, the
-  udu, the tabla bayan under the heel).
+  udu, the tabla bayan under the heel);
+- `glide_hold_ms` / `glide_ms`: the bend's SHAPE.  At 0 the tracked boom
+  bends along the exponential pitch envelope (the settle of a hard hit);
+  above 0 along an S-curve (`brc::GlideCurve`, shared in
+  `brachetti_common/voice_layers.h`), held and then eased in and out, the
+  way a hand squeezes a talking drum or presses a bayan.  The four bends
+  use it.
 
 ## Build
 

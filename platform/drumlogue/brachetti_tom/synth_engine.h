@@ -63,6 +63,7 @@ public:
         // changes its sound).
         if (m_preset_idx == k_RackTom || voicing().boom_hz > 0.0f)
             v.pitch.set(voicing().pitch_env, voicing().pitch_decay, voicing().pitch_amount);
+        if (voicing().glide_ms > 0.0f) v.curve.trigger(voicing().glide_hold_ms, voicing().glide_ms);
         v.onset.trigger(voicing().onset_ms);
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
         // A wider shell (TubRad) also feeds more energy into the boom.
@@ -90,8 +91,10 @@ public:
                 // note ratio, so the whole drum still transposes.
                 if (m_preset_idx == k_RackTom)
                     v.boom.set_freq((174.61f + v.pitch.amount * v.pitch.env) * v.boom.tune);
-                else if (boom_hz > 0.0f)
-                    v.boom.set_freq((boom_hz + glide * v.pitch.amount * v.pitch.env) * v.boom.tune);
+                else if (boom_hz > 0.0f) {
+                    const float bend = v.curve.active() ? v.curve.process() : v.pitch.env;
+                    v.boom.set_freq((boom_hz + glide * v.pitch.amount * bend) * v.boom.tune);
+                }
                 x += v.boom.process() * v.current_velocity;
             }
             if (v.modal.active) {

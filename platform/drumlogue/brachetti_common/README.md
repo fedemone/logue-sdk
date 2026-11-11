@@ -119,7 +119,7 @@ modal units reach those through `ModalSynth`).  Every unit file opens with a
 | `any_fading`, `fade_out_all` | `voice_base.h` | the preset-change fade of the voice set | cymbal, noise; library |
 | `set_all_exciters(voices, setter, value)` | `voice_base.h` | one knob into every voice's exciter | noise; library |
 | `kNumVoices`, `kRollFuseSec`, `kPresetFadeTauSec`, `kSquelch*` | `voice_base.h` | the voice count, roll window, fade and squelch constants | kick, tom, snare, cymbal, noise; library |
-| `MetalChirp`, `Onset`, `PitchEnv`, `Boom`, `Transient`, `NoiseGate` | `voice_layers.h` | shared voice layers (the table in the file says which family uses which) | kick, tom, snare, bar, plate, noise |
+| `MetalChirp`, `Onset`, `PitchEnv`, `Boom`, `Transient`, `NoiseGate`, `GlideCurve` | `voice_layers.h` | shared voice layers (the table in the file says which family uses which); `GlideCurve` is a held, then S-shaped bend | kick, tom, snare, bar, plate, noise |
 | `model_name`, `model_noise_band_mix`, the Model enum | `models.h` | the Model knob | noise; library |
 | `ModalPresetConfig`, `ModalBank` | `modal_bank.h` | a preset's calibrated bank; the bank itself (NEON path) | kick, tom, snare, bar, plate |
 | `shape_modal`, `strike_modal`, `ModalShape`, `ModalKnobs`, `format_mode_count` | `modal_bank.h` | the knobs on the bank, before and at the strike; Partls' display | library (`ModalSynth`) |

@@ -9,6 +9,7 @@
 //   Boom        low sine body ("boom") with its own env  kick tom snare
 //   Transient   band-passed noise burst: click / slap    kick tom
 //   NoiseGate   enveloped-LFO gate on the noise          snare noise
+//   GlideCurve  held, then S-shaped 1 → 0 bend envelope   tom world
 #include <cstdint>
 #include "dsp_math.h"
 #include "noise.h"
@@ -190,6 +191,47 @@ struct NoiseGate {
         wrap_phase(phase);
         depth *= decay;
         return fmaxf(0.0f, am);
+    }
+};
+
+// ── S-curve glide ───────────────────────────────────────────────────────────
+// A bend a hand or an arm makes: held at 1 for hold samples, then an S-shaped
+// (smoothstep) fall to 0 over len samples.  An exponential envelope starts
+// moving at once and moves fastest at the start; a squeezed talking drum or a
+// pressed bayan holds, then eases in and out.  A unit reads env as its bend
+// amount (freq = base ± depth · env).
+struct GlideCurve {
+    uint32_t n       = 0;
+    uint32_t hold    = 0;
+    uint32_t len     = 0;      // 0 = off
+    float    inv_len = 0.0f;
+    float    env     = 0.0f;
+
+    void reset() { n = 0; hold = 0; len = 0; inv_len = 0.0f; env = 0.0f; }
+
+    void trigger(float hold_ms, float len_ms) {
+        n       = 0;
+        hold    = (uint32_t)(hold_ms * 0.001f * kSampleRate);
+        len     = (uint32_t)(len_ms * 0.001f * kSampleRate);
+        if (len < 1) len = 1;
+        inv_len = 1.0f / (float)len;
+        env     = 1.0f;
+    }
+
+    bool active() const { return len > 0; }
+
+    float process() {
+        if (n > hold) {
+            const uint32_t k = n - hold;
+            if (k >= len) {
+                env = 0.0f;
+            } else {
+                const float u = (float)k * inv_len;
+                env = 1.0f - u * u * (3.0f - 2.0f * u);
+            }
+        }
+        if (n <= hold + len) ++n;
+        return env;
     }
 };
 
