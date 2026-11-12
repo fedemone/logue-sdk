@@ -3,7 +3,7 @@
 > **Disclaimer:** Brachetti Kick is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
 One of eight drumlogue synth units split out of the 40-preset
-[`brachetti`](../brachetti/) physical-modelling percussion unit, one per
+[`brachetti`](https://github.com/fedemone/logue-sdk/blob/original_brachetti/platform/drumlogue/brachetti/) physical-modelling percussion unit, one per
 instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
@@ -24,7 +24,7 @@ This unit holds the boom-oscillator kick drums: Kick2 (a kettledrum-bodied kick)
 | # | Name | Root | Sound |
 |---|---|---|---|
 | 0 | Kick2 | 36 | kettledrum-bodied kick: a fixed boom under a fundamental-dominant modal body |
-| 1 | 808Sub | 36 | TR-808-style sub: boom pitch dive 160→45 Hz, depth on Inharm |
+| 1 | 808Sub | 36 | TR-808-style sub: boom pitch dive 160→45 Hz (`Dive`, `DiveTm`) |
 | 2 | Kick | 36 | acoustic bass drum: swept boom (~90→55 Hz) plus beater thump and click |
 
 At the knob values each preset ships with, it renders **bit-identically** to
@@ -34,44 +34,62 @@ pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
-| Page | Knobs |
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+
+| Page | | Knobs |
+|---|---|---|
+| 1 | common | `Program` · `Pitch` · `Poly` · `Velocity` |
+| 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
+| 3 | dedicated | `Thump` · `Snap` · `VelThmp` · `VelSnap` |
+| 4 | dedicated | `DiveTm` · `Punch` · `Dkay` · `Rel` |
+| 5 | dedicated | `Weight` · `Click` · `Dive` · `Tune` |
+| 6 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
+
+### Common knobs
+
+| Knob | |
 |---|---|
-| 1 | `Program` · `Pitch` · `Poly` · `Velocity` |
-| 2 | `MlltRes` · `MlltStif` · `VlMllRes` · `VlMllStf` |
-| 3 | `Partls` · `Model` · `Dkay` · `Mterl` |
-| 4 | `Tone` · `HitPos` · `Rel` · `Inharm` |
-| 5 | `Cutoff` · `TubRad` · `Gain` · `NzMix` |
-| 6 | `NzRes` · `NzFltr` · `NzFltFrq` · `Resnc` |
-
-Every one of the original's 24 knobs is live on this family (`tools/brachetti_equiv/dead_params.py` measured each across its whole range), so none was removed.
-
-`Partls` sets the mode count around the preset's own (positions 0-4) and displays the count it gives the current preset (`4 md`).
-
-What each knob does in this unit:
-
-| Knob | In this unit |
-|---|---|
-| `Pitch` | semitones from the preset's root (the booms are absolute Hz; Pitch moves Kick2's modal body and the roll-fusion note) |
+| `Program` | the preset |
+| `Pitch` | semitones from the preset's root (the booms are absolute Hz: Pitch moves Kick2's modal body and the roll-fusion note) |
 | `Poly` | voice cap 1-4; same-note strokes inside 80 ms fuse into one voice |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
-| `MlltRes` | thump AMOUNT — a fast pitch-dropping mid punch over the boom (0 at the shipped value) |
-| `MlltStif` | thump SNAP / pitch; below the shipped value it stretches the boom onset (a felt-mallet "whoomp") |
-| `VlMllRes` | velocity-weighted thump prominence — trades boom for punch |
-| `VlMllStf` | velocity-weighted beater snap (adds its own knock; down = rounder, weightier) |
-| `Partls / Model / Inharm(modal)` | reshape Kick2's modal body (808Sub and Kick have none) |
-| `Dkay` | boom decay length (coarse) |
-| `Mterl` | boom body WEIGHT — down to silence at the floor (thump-only kick with MlltRes up) |
-| `HitPos` | beater click (a bright tick above the shipped value) |
-| `Rel` | boom decay length (fine) |
-| `Inharm` | 808 pitch-dive depth (strongest on 808Sub) |
-| `TubRad` | boom base tune (bigger shell = lower) |
+| `Tone` | tilt EQ |
+| `Cutoff` / `Resnc` | master low-pass and its Q |
+| `Gain` | drive |
 
-`Tone` (tilt EQ), `Cutoff` / `Resnc` (low-pass and its Q) and `Gain` (drive)
-are the master stage.  `Pitch`, `Poly`, `Velocity`, `VlMllRes`, `Tone`,
-`Cutoff` and `Resnc` are performance knobs the host owns: a Program change
-leaves them where they are.  Every other knob loads with the preset, and the
-knob mappings are REFERENCE-ANCHORED on the shipped values — a preset plays its
-calibrated sound at its own knob positions and only movement alters it.
+`Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff`, `Resnc` and `VelThmp` are performance knobs the host owns: a Program change leaves them where they are.  `Gain` loads with the preset (it is part of its gain staging).  The common knobs are [`brachetti_common/common_knobs.h`](../brachetti_common/common_knobs.h).
+
+### Dedicated knobs
+
+| Knob | Is | In this unit |
+|---|---|---|
+| `Thump` | `MlltRes` | the thump AMOUNT: a fast pitch-dropping mid punch over the boom (0 at the shipped value) |
+| `Snap` | `MlltStif` | the thump's snap and pitch; below the shipped value it stretches the boom's onset (a felt-mallet "whoomp") |
+| `VelThmp` | `VlMllRes` | velocity-weighted thump prominence: trades boom for punch (host-owned) |
+| `VelSnap` | `VlMllStf` | velocity-weighted beater knock; down = rounder, weightier |
+| `DiveTm` | **own** | how fast the pitch dive falls, ×¼ .. ×4: 808Sub's dive, Kick's 90 → 55 Hz sweep, Kick2's dive once `Dive` is up |
+| `Punch` | **own** | the transient (see below): + a shorter onset ramp, a faster boom rise and the boom dropped after a 10 ms hit; − softer and slower (808Sub, which ships no onset, gets up to 30 ms) |
+| `Dkay` | `Dkay` | boom decay length (coarse); also how fast AllNoteOff fades a voice |
+| `Rel` | `Rel` | boom decay length (fine) |
+| `Weight` | `Mterl` | boom body WEIGHT, down to silence at the floor (a thump-only kick with `Thump` up) |
+| `Click` | `HitPos` | a beater click above the shipped value (the lower half is inert by design) |
+| `Dive` | `Inharm` | pitch-dive depth: 808Sub's dive, Kick's sweep depth; up gives Kick2 a dive (up to +87 Hz) on top of spreading its body's overtones |
+| `Tune` | `TubRad` | boom base tune (bigger shell = lower) |
+| `NzMix / NzRes / NzFltr / NzFltFrq` | the noise knobs | the strike noise: level, envelope, filter mode and cutoff |
+
+**Is** names the standard modal-engine knob a dedicated knob is (renamed where it does something specific here), or **own** for a knob of this family in that slot.  Every dedicated knob (but a host-owned one, which keeps its place across a Program change) loads with the preset, and is REFERENCE-ANCHORED on the value it shipped with: a preset plays its calibrated sound at its own knob positions, and only movement alters it.  The knobs this unit's own knobs replaced keep playing at each preset's shipped value, so every preset sounds exactly as it did.
+
+### Punch: the transient shaper
+
+`Punch` is a gain curve over each voice, started by its strike (a drum synth knows the sample its transient starts on, so nothing has to be detected).  **Up**, the first 10 ms pass untouched and then the boom drops (τ 25 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.
+
+It never boosts the attack.  The unit ends in a peak limiter that already takes 5-25 dB off its hard strikes and would take a boost straight back off; lowering what follows the strike is the contrast it cannot undo.  So more `Punch` is also a quieter part: raise the drumlogue's part level to compensate.  Measured at velocity 110, `Punch` +100 lowers the body by 11-15 dB with the strike's peak unchanged.  It is `brc::Punch`, shared by all nine units.
+
+### Knob review
+
+The modal knobs had little to act on: `Partls` and `Model` only reached Kick2's small modal body and the noise band balance (under 1 dB on Kick2, nothing on 808Sub and Kick), and `Inharm` did nothing on Kick.  Their slots now hold `DiveTm` and `Punch`, and `Inharm` became `Dive`, a pitch dive on all three kicks.  The other knobs keep their roles under names that say what they do on a kick.  (`Pitch` still does not move 808Sub's or Kick's boom, whose pitch is absolute; `Tune` is their tuning.)
+
+Measured with [`knob_liveness.py`](../tools/brachetti_equiv/knob_liveness.py), which moves each knob to both ends on every preset and scores how much the sound changes.
 
 ## Build
 

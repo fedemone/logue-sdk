@@ -27,14 +27,16 @@
 //   knobs.h          knob::percent, off_anchor
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kRollFuseSec
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -48,6 +50,13 @@ public:
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
 
+    // Punch sits in Rel's slot (presets.h); Rel plays at each preset's
+    // shipped value.
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramPunch) ? brc::kFamilyKnob : slot;
+    }
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) { (void)role; return kShippedRel[idx]; }
+
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
         VoiceState& v = allocate_voice(note, roll_window());
@@ -58,21 +67,26 @@ public:
         v.exciter.set_band_mix(m_model, voicing().noise_band_mix);
         v.boom.load(voicing().boom_inc, voicing().boom_env, voicing().boom_decay,
                     voicing().boom_mix, voicing().boom_attack_env, voicing().boom_attack_inc);
-        // Only RackTom's boom glides with the pitch envelope; a strike resets
-        // it, so it is restored here (adding a preset here changes its sound).
-        if (m_preset_idx == k_RackTom)
+        // RackTom's boom and the tracked booms glide with the pitch envelope;
+        // a strike resets it, so it is restored here (adding a preset here
+        // changes its sound).
+        if (m_preset_idx == k_RackTom || voicing().boom_hz > 0.0f)
             v.pitch.set(voicing().pitch_env, voicing().pitch_decay, voicing().pitch_amount);
+        if (voicing().glide_ms > 0.0f) v.curve.trigger(voicing().glide_hold_ms, voicing().glide_ms);
         v.onset.trigger(voicing().onset_ms);
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
         // A wider shell (TubRad) also feeds more energy into the boom.
         v.boom.mix *= strike_modal_bank(v, voicing().modal_mix);
         trigger_slap(v, note);
         dial_slap(v);
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
     void render_voice(VoiceState& v, float* __restrict out, size_t frames, float tone) {
         const bool tone_active = (tone != 0.0f);
+        const float boom_hz = voicing().boom_hz;   // > 0: a tracked (gliding) boom
+        const float glide   = voicing().glide;
         for (size_t i = 0; i < frames; ++i) {
             float exciter_sig = v.exciter.process();
             if (v.chirp.active()) exciter_sig += v.chirp.process();
@@ -87,6 +101,10 @@ public:
                 // note ratio, so the whole drum still transposes.
                 if (m_preset_idx == k_RackTom)
                     v.boom.set_freq((174.61f + v.pitch.amount * v.pitch.env) * v.boom.tune);
+                else if (boom_hz > 0.0f) {
+                    const float bend = v.curve.active() ? v.curve.process() : v.pitch.env;
+                    v.boom.set_freq((boom_hz + glide * v.pitch.amount * bend) * v.boom.tune);
+                }
                 x += v.boom.process() * v.current_velocity;
             }
             if (v.modal.active) {
@@ -94,6 +112,7 @@ public:
                 x += modes * v.chirp.open_modal(v.modal.mix) * kModalGain;
             }
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);
@@ -150,7 +169,14 @@ private:
             // RackTom tracks its note.  (After the strike's reset, which sets
             // tune back to 1.0.)
             v.boom.tune = exp2f(((float)note - 53.0f) * (1.0f / 12.0f));
+        } else if (voicing().slap_gain > 0.0f) {
+            v.slap.trigger(1.0f, voicing().slap_decay, voicing().slap_gain,
+                           voicing().slap_a_lo, voicing().slap_a_hi);
         }
+        // A tracked boom follows the played note from the preset's root.
+        if (voicing().boom_hz > 0.0f)
+            v.boom.tune = exp2f(((float)note - (float)kPresetKnobs[m_preset_idx][k_paramPitch])
+                                * (1.0f / 12.0f));
     }
 
     // VlMllRes and VlMllStf on the SLAP (REFERENCE-ANCHORED; every tom ships

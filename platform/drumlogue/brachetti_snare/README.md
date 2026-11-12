@@ -3,21 +3,21 @@
 > **Disclaimer:** Brachetti Snare is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
 One of eight drumlogue synth units split out of the 40-preset
-[`brachetti`](../brachetti/) physical-modelling percussion unit, one per
+[`brachetti`](https://github.com/fedemone/logue-sdk/blob/original_brachetti/platform/drumlogue/brachetti/) physical-modelling percussion unit, one per
 instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
 
-This unit holds the snare drums: a modal head plus three-band snare-wire resonators — AcSnre, MrchSnr, BrshSnr and RimShot.
+This unit holds the snare drums: a modal head plus three-band snare-wire resonators — AcSnre, MrchSnr, BrshSnr and RimShot, and 4 a frame drum and a cajón, whose snares are their identity voiced after the [Pelle e Legno](../pelle_legno/) samples (BndDoum, BndTek, CajBass, CajSlap).
 
 | | |
 |---|---|
 | Unit name on the drumlogue | `BrcSnare` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x4272536E` ('BrSn') |
 | Engine | modal head + three-band snare-wire resonators (`ENGINE_SNARE`) |
-| Presets | 4 |
+| Presets | 8 (4 from the original, 4 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 15492 · .rodata 1288 · .data 2000 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 15492 · .rodata 2152 · .data 2000 · .bss 292 |
 
 ## Presets
 
@@ -28,49 +28,78 @@ This unit holds the snare drums: a modal head plus three-band snare-wire resonat
 | 2 | BrshSnr | 55 | brush snare: a swish, not a crack — velocity shapes the stroke |
 | 3 | RimShot | 69 | rimshot: an 877 Hz honk and a tight buzz |
 
-At the knob values each preset ships with, it renders **bit-identically** to
+### Added: voiced after the Pelle e Legno samples
+
+Voiced by measurement against each sample with `tools/brachetti_equiv/match_samples.py` (specs in `match_specs.py`); the method is described in [BrcTom's README](../brachetti_tom/README.md#how-the-added-presets-were-voiced). No code changed for them.
+
+| # | Name | Root | Sound | Voiced after |
+|---|---|---|---|---|
+| 4 | BndDoum | 41 | bendir, centre: a large thin head on 88 Hz over its gut snares | `020_BendirDoum.wav` |
+| 5 | BndTek | 66 | bendir, edge: the head's upper modes, the snares lighter | `021_BendirTek.wav` |
+| 6 | CajBass | 40 | cajon bass: the box's port air and the tapa's low modes | `023_CajonBass.wav` |
+| 7 | CajSlap | 65 | cajon slap: the tapa's edge with the snare wires | `024_CajonSlap.wav` |
+
+The original presets (0-3) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
-| Page | Knobs |
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+
+| Page | | Knobs |
+|---|---|---|
+| 1 | common | `Program` · `Pitch` · `Poly` · `Velocity` |
+| 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
+| 3 | dedicated | `Buzz` · `BuzzTon` · `Crack` · `Tight` |
+| 4 | dedicated | `Punch` · `Model` · `Dkay` · `BuzzLen` |
+| 5 | dedicated | `Mterl` · `HitPos` · `Inharm` · `TubRad` |
+| 6 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
+
+### Common knobs
+
+| Knob | |
 |---|---|
-| 1 | `Program` · `Pitch` · `Poly` · `Velocity` |
-| 2 | `MlltRes` · `MlltStif` · `VlMllRes` · `VlMllStf` |
-| 3 | `Partls` · `Model` · `Dkay` · `Mterl` |
-| 4 | `Tone` · `HitPos` · `Rel` · `Inharm` |
-| 5 | `Cutoff` · `TubRad` · `Gain` · `NzMix` |
-| 6 | `NzRes` · `NzFltr` · `NzFltFrq` · `Resnc` |
-
-Every one of the original's 24 knobs is live on this family (`tools/brachetti_equiv/dead_params.py` measured each across its whole range), so none was removed.
-
-`Partls` sets the mode count around the preset's own (positions 0-4) and displays the count it gives the current preset (`4 md`).
-
-What each knob does in this unit:
-
-| Knob | In this unit |
-|---|---|
-| `Pitch` | semitones from the preset's root — moves the modal head |
+| `Program` | the preset |
+| `Pitch` | semitones from the preset's root: moves the modal head |
 | `Poly` | voice cap 1-4; fast same-note strokes fuse and keep the wires rattling (buzz roll) |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
-| `MlltRes` | buzz AMOUNT (wire rattle vs plain filtered noise) |
-| `MlltStif` | buzz BRIGHTNESS (all three wire bands) |
-| `VlMllRes` | crack / SNAP (the broadband onset burst) |
-| `VlMllStf` | buzz TIGHTNESS (wire Q: loose ↔ zingy) |
-| `Partls / Model / Mterl / HitPos / Inharm` | reshape the modal head, as on the toms |
-| `Dkay` | modal head ring; on BrshSnr also the swish tail (coarse) |
-| `Rel` | buzz TAIL length |
-| `TubRad` | body depth: drops the low wire band for a deeper shell (up is capped — it reads toy-ish) |
-| `NzRes` | buzz decay |
+| `Tone` | tilt EQ |
+| `Cutoff` / `Resnc` | master low-pass and its Q |
+| `Gain` | drive |
 
-`Tone` (tilt EQ), `Cutoff` / `Resnc` (low-pass and its Q) and `Gain` (drive)
-are the master stage.  `Pitch`, `Poly`, `Velocity`, `VlMllRes`, `Tone`,
-`Cutoff` and `Resnc` are performance knobs the host owns: a Program change
-leaves them where they are.  Every other knob loads with the preset, and the
-knob mappings are REFERENCE-ANCHORED on the shipped values — a preset plays its
-calibrated sound at its own knob positions and only movement alters it.
+`Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff`, `Resnc` and `Crack` are performance knobs the host owns: a Program change leaves them where they are.  `Gain` loads with the preset (it is part of its gain staging).  The common knobs are [`brachetti_common/common_knobs.h`](../brachetti_common/common_knobs.h).
+
+### Dedicated knobs
+
+| Knob | Is | In this unit |
+|---|---|---|
+| `Buzz` | `MlltRes` | buzz AMOUNT (wire rattle vs plain filtered noise) |
+| `BuzzTon` | `MlltStif` | buzz BRIGHTNESS (all three wire bands, ±1.6 octaves) |
+| `Crack` | `VlMllRes` | the CRACK: the broadband burst before the wires engage; up also lengthens it (up to 4×) and gives one to the snares that ship none (host-owned) |
+| `Tight` | `VlMllStf` | buzz TIGHTNESS (the wires' Q: loose ↔ zingy) |
+| `Punch` | **own** (in `Partls`' slot) | the transient shaper (see below) |
+| `Model / Mterl / HitPos / Inharm` | the modal knobs | reshape the modal head, as on the toms (the frame drums and cajóns have a real head; on AcSnre, MrchSnr and BrshSnr it is a faint ~10 % layer) |
+| `Dkay` | `Dkay` | modal head ring; on BrshSnr also the swish tail (coarse) |
+| `BuzzLen` | `Rel` | buzz TAIL length |
+| `TubRad` | `TubRad` | body depth: drops the low wire band for a deeper shell (up is capped: it reads toy-ish) |
+| `NzMix / NzFltr / NzFltFrq` | the noise knobs | the noise that drives the wires: level, filter mode and cutoff |
+| `NzRes` | `NzRes` | buzz decay |
+
+**Is** names the standard modal-engine knob a dedicated knob is (renamed where it does something specific here), or **own** for a knob of this family in that slot.  Every dedicated knob (but a host-owned one, which keeps its place across a Program change) loads with the preset, and is REFERENCE-ANCHORED on the value it shipped with: a preset plays its calibrated sound at its own knob positions, and only movement alters it.  The knobs this unit's own knobs replaced keep playing at each preset's shipped value, so every preset sounds exactly as it did.
+
+### Punch: the transient shaper
+
+`Punch` is a gain curve over each voice, started by its strike (a drum synth knows the sample its transient starts on, so nothing has to be detected).  **Up**, the first 5 ms pass untouched and then the body drops (τ 15 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.
+
+It never boosts the attack.  The unit ends in a peak limiter that already takes 5-25 dB off its hard strikes and would take a boost straight back off; lowering what follows the strike is the contrast it cannot undo.  So more `Punch` is also a quieter part: raise the drumlogue's part level to compensate.  Measured at velocity 110, `Punch` +100 lowers the body by 11-15 dB with the strike's peak unchanged.  It is `brc::Punch`, shared by all nine units.
+
+### Knob review
+
+`VlMllRes`, the crack, only changed the first few milliseconds of the three snares that ship a crack phase, and nothing on the others.  It is now `Crack` and also lengthens the crack and adds one where a preset has none.  The wire knobs are named for the wires.  `Model` and `Inharm` read as dead on AcSnre, MrchSnr and BrshSnr, whose head is a faint layer, but they are live on RimShot and the four frame-drum and cajón presets, so they keep their job.  `Partls`, the head's mode count, was the weakest of them (under 0.5 dB on the classic snares) and gave its slot to `Punch` (it plays at each preset's shipped value).
+
+Measured with [`knob_liveness.py`](../tools/brachetti_equiv/knob_liveness.py), which moves each knob to both ends on every preset and scores how much the sound changes.
 
 ## Build
 

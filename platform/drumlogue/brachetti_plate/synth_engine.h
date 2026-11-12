@@ -23,14 +23,16 @@
 #include "../common/runtime.h"
 
 // From brachetti_common (its README.md indexes every helper):
-//   dsp_math.h       kSampleRate, or_default
+//   dsp_math.h       clampf, kSampleRate, knob_exp2, or_default
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -43,6 +45,16 @@ public:
     static const int16_t* preset_knobs(uint8_t idx) { return kPresetKnobs[idx]; }
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
+
+    // Chirp sits in VlMllRes' slot (presets.h); VlMllRes then plays at 0,
+    // the value every plate shipped (the default fixed_knob).
+    // Punch sits in Rel's slot; Rel plays at each preset's shipped value.
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramChirp || slot == k_paramPunch) ? brc::kFamilyKnob : slot;
+    }
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) {
+        return (role == k_paramRel) ? kShippedRel[idx] : 0;   // VlMllRes: 0, as every plate shipped
+    }
 
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
@@ -60,8 +72,11 @@ public:
         if (voicing().click_decay > 0.0f) v.exciter.noise_env_hi.decay_rate = voicing().click_decay;
         tune_hat(v);
         v.onset.trigger(voicing().onset_ms);
-        v.chirp.trigger(voicing().chirp_hz);   // every plate preset chirps
+        v.chirp.trigger(voicing().chirp_hz);   // every plate preset but BelTre chirps
+        dial_chirp(v);
         strike_modal_bank(v, voicing().modal_mix);
+        // A struck plate rings long: the body drops more slowly after the hit.
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 5.0f, 30.0f);
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -80,6 +95,7 @@ public:
                 x += modes * v.chirp.open_modal(v.modal.mix) * kModalGain;
             }
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);
@@ -103,6 +119,22 @@ private:
     static constexpr float kModalGain = 5.0f;   // the bank's voicing level
 
     const Voicing& voicing() const { return kVoicing[m_preset_idx]; }
+
+    // Chirp: the metallic FM chirp on the strike (bipolar around 0, every
+    // preset's value, the identity there).  Its FM depth scales ×1/8 .. ×8
+    // and, above 0, its sweep lasts up to 4× longer; BelTre, which ships
+    // none, gets one at 1.5 kHz.  The chirp also lifts the bank while it
+    // sounds (MetalChirp::open_modal).
+    void dial_chirp(VoiceState& v) const {
+        const float k = brc::clampf((float)m_params[k_paramChirp] * 0.01f, -1.0f, 1.0f);
+        if (k == 0.0f) return;
+        if (!(voicing().chirp_hz > 0.0f)) {
+            if (k <= 0.0f) return;
+            v.chirp.trigger(1500.0f);
+        }
+        v.chirp.depth *= brc::knob_exp2(3.0f * k);
+        if (k > 0.0f) v.chirp.decay = 1.0f - (1.0f - v.chirp.decay) / (1.0f + 3.0f * k);
+    }
 
     // The preset's hat-filter tuning, on a voice that uses the filter.
     void tune_hat(VoiceState& v) const {

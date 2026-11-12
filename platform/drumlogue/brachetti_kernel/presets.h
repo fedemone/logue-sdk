@@ -3,8 +3,10 @@
 #include <cstdint>
 
 // From brachetti_common (its README.md indexes every helper):
+//   common_knobs.h   CommonLayout
 //   dsp_math.h       preset_column_in
 //   knobs.h          HostKnob, name_at
+#include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "modal_drum_data.h"
@@ -12,33 +14,36 @@
 // ── The knobs, slot by slot ─────────────────────────────────────────────────
 // MUST match header.c slot for slot: the preset table below has one column per
 // slot, and a parameter added here without its row in header.c (or vice
-// versa) silently shifts every column of every preset.  (No Poly: the kernel
-// has its own two kettles.  No Model, NzRes or NzFltr: the kernel's noise is
-// its own wedge.)
+// versa) silently shifts every column of every preset.  Pages 1-2 are the
+// common knobs (../brachetti_common/common_knobs.h); Poly's slot is blank: the
+// kernel always has its two kettles.  Pages 3-6 are this family's (no Model,
+// NzRes or NzFltr: the kernel's noise is its own wedge).
 enum ParamIndex : uint8_t {
-    k_paramProgram = 0,  // 0
-    k_paramPitch,        // 1
-    k_paramVelocity,     // 2
-    k_paramMlltRes,      // 3
-    k_paramMlltStif,     // 4
-    k_paramVlMllRes,     // 5
-    k_paramVlMllStf,     // 6
-    k_paramPartls,       // 7
-    k_paramDkay,         // 8
-    k_paramMterl,        // 9
-    k_paramTone,         // 10
-    k_paramHitPos,       // 11
-    k_paramRel,          // 12
-    k_paramInharm,       // 13
-    k_paramCutoff,       // 14
-    k_paramTubRad,       // 15
-    k_paramGain,         // 16
-    k_paramNzMix,        // 17
-    k_paramNzFltFrq,     // 18
-    k_paramResnc,        // 19
+    k_paramProgram   = brc::CommonLayout::k_paramProgram,  // 0  page 1: common (brc::CommonLayout)
+    k_paramPitch     = brc::CommonLayout::k_paramPitch,  // 1
+    k_paramNoPoly    = brc::CommonLayout::k_paramPoly,  // 2  blank: no Poly
+    k_paramVelocity  = brc::CommonLayout::k_paramVelocity,  // 3
+    k_paramTone      = brc::CommonLayout::k_paramTone,  // 4  page 2: common (brc::CommonLayout)
+    k_paramCutoff    = brc::CommonLayout::k_paramCutoff,  // 5
+    k_paramResnc     = brc::CommonLayout::k_paramResnc,  // 6
+    k_paramGain      = brc::CommonLayout::k_paramGain,  // 7
+    k_paramMlltRes   = brc::CommonLayout::k_firstDedicated,  // 8  page 3: dedicated
+    k_paramMlltStif,   // 9
+    k_paramVlMllRes,   // 10
+    k_paramVlMllStf,   // 11
+    k_paramPartls,     // 12  page 4: dedicated
+    k_paramDkay,       // 13
+    k_paramRel,        // 14
+    k_paramMterl,      // 15
+    k_paramHitPos,     // 16  page 5: dedicated
+    k_paramInharm,     // 17
+    k_paramTubRad,     // 18
+    k_paramPunch,      // 19  the transient shaper (brc::Punch)
+    k_paramNzMix,      // 20  page 6: dedicated
+    k_paramNzFltFrq,   // 21
     k_lastParamIndex     // marker
 };
-static_assert(k_lastParamIndex == 20, "header.c declares 20 params");
+static_assert(k_lastParamIndex == 22, "header.c declares 22 params");
 
 // ── The presets ─────────────────────────────────────────────────────────────
 enum Preset : uint8_t {
@@ -80,12 +85,14 @@ static inline const char* preset_name(uint8_t idx) {
 //    brighter crack (NzMix 52, NzFltFrq 800 ≈ 8 kHz) and a leaner boom for a
 //    brighter, longer ring.
 static constexpr int16_t kPresetKnobs[kNumPresets][k_lastParamIndex] = {
-    //  Prg Root  Vel MlRs MlSt VlRs VlSt Ptls  Dky  Mtr  Ton  Hit  Rel InHm  Cut TbRd Gain NzMx NzFq Rsnc
-    {   0,  52,   1, 360,  30,   0,  40,   2, 150,  10,   0,  36,  18,   1,1999,   0,   4,   1, 380,  71},   // 0: Timpani
-    {   1,  41,   1, 250,  45,   0,   0,   1, 120,  10,   0,  30,  15,   0,1999,  16,   5,  52, 800,  71}    // 1: Taiko
+    //  Prg Root    -  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Dky  Rel  Mtr  Hit InHm TbRd Pnch NzMx NzFq
+    {   0,  52,   0,   1,   0,1999,  71,   4, 360,  30,   0,  40,   2, 150,  18,  10,  36,   1,   0,   0,   1, 380},   // 0: Timpani
+    {   1,  41,   0,   1,   0,1999,  71,   5, 250,  45,   0,   0,   1, 120,  15,  10,  30,   0,  16,   0,  52, 800}    // 1: Taiko
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramCutoff, 1999, 1999),
@@ -103,10 +110,10 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramPartls, 0, 4),
 static const brc::HostKnob kHostKnobs[] = {
     { k_paramPitch,    0    },
     { k_paramVelocity, 0    },
-    { k_paramVlMllRes, 0    },
     { k_paramTone,     0    },
     { k_paramCutoff,   1999 },
     { k_paramResnc,    71   },
+    { k_paramVlMllRes, 0    },
 };
 
 // The kernel recipe behind each preset: the approved standalone renders

@@ -7,7 +7,7 @@
 // From brachetti_common (its README.md indexes every helper):
 //   modal_bank.h     ModalBank
 //   voice_base.h     VoiceBase
-//   voice_layers.h   Boom, MetalChirp, Onset, PitchEnv, Transient
+//   voice_layers.h   Boom, GlideCurve, MetalChirp, Onset, PitchEnv, Transient
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/voice_base.h"
 #include "../brachetti_common/voice_layers.h"
@@ -19,6 +19,7 @@ struct VoiceState : brc::VoiceBase {
     brc::PitchEnv   pitch;
     brc::Boom       boom;
     brc::Transient  slap;   // the stick or hand slap
+    brc::GlideCurve curve;  // an S-shaped bend for the tracked boom (glide_ms > 0)
 
     void reset_for_strike() {
         reset_base();
@@ -28,5 +29,6 @@ struct VoiceState : brc::VoiceBase {
         pitch.reset();
         boom.reset();
         slap.reset();
+        curve.reset();
     }
 };

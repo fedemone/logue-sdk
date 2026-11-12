@@ -15,12 +15,23 @@
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
 // match it slot for slot.
 using Param = brc::ModalLayout;
+// One standard slot carries a snare knob of its own: Partls' (the head's mode
+// count, next to nothing on the classic snares, whose head is a faint layer)
+// is Punch, the transient shaper (brc::Punch).  It loads with the preset (0
+// on every row: off).
+enum SnareParam : uint8_t {
+    k_paramPunch = Param::k_paramPartls,   // 12
+};
 
 enum Preset : uint8_t {
     k_AcSnare = 0,      // 0  -sample: acoustic-snare.wav (1436Hz +/- 20Hz), snare heavy.wav (1287Hz +/- 80Hz)
     k_MarchSnare,       // 1  -sample: Marching-Snare-Drum-A#-minor (1750Hz +/- 100Hz)
     k_BrushSnare,       // 2  — sample: snare_brush_hard.wav, snare_brush_medium.wav, snare_brush_soft.wav. brush-swept snare: slow swish onset + ~4 Hz swirl AM + diffuse wire hiss
     k_RimShot,          // 3  — sample: rimshot-snare.wav rimshot: hard stick crack + bright rim-ring mode cluster + tight short buzz
+    k_BendirDoum,       // 4  bendir, centre: a large thin head on 88 Hz over its gut snares (voiced after 020_BendirDoum.wav)
+    k_BendirTek,        // 5  bendir, edge: the head's upper modes, the snares lighter (voiced after 021_BendirTek.wav)
+    k_CajonBass,        // 6  cajon bass: the box's port air and the tapa's low modes (voiced after 023_CajonBass.wav)
+    k_CajonSlap,        // 7  cajon slap: the tapa's edge with the snare wires (voiced after 024_CajonSlap.wav)
     kNumPresets         // 4 — count
 };
 
@@ -36,6 +47,10 @@ static const char* const kPresetNames[] = {
     "MrchSnr",  // slot 8 of the original's 40
     "BrshSnr",  // slot 37 of the original's 40
     "RimShot",  // slot 38 of the original's 40
+    "BndDoum", // added: voiced after the Pelle e Legno sample
+    "BndTek",  // added: voiced after the Pelle e Legno sample
+    "CajBass", // added: voiced after the Pelle e Legno sample
+    "CajSlap", // added: voiced after the Pelle e Legno sample
 };
 static_assert(sizeof(kPresetNames) / sizeof(kPresetNames[0]) == kNumPresets, "one name per preset");
 
@@ -51,14 +66,22 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel MlRs MlSt VlRs VlSt Ptls  Mdl  Dky  Mtr  Ton  Hit  Rel InHm  Cut TbRd Gain NzMx NzRs NzFl NzFq Rsnc
-    {   0,  38,   0,   1, 120,  28,   0,   0,   2,   5, 168,  -7,   0,  46,   9,   0,1999,   8,   7,  52, 950,   2, 300,  71},   // 0: AcSnare   — wire path live; NzRs 950: buzz T60 ≈ 0.4 s matches acoustic-snare.wav t40 ≈ 280 ms; NzFq 300 (HP 3 kHz) pulls the centroid toward the darker reference
-    {   1,  65,   0,   1, 720,  50,   0,   0,   1,   5, 190,  20,   0,  50,   8,   2,1999,  19,   5,  55, 940,   2, 105,  71},   // 1: MrchSnr   — click+buzz land together; NzRs 940: buzz T60 ≈ 0.36 s matches the Marching-Snare reference t40 ≈ 220 ms
-    {   2,  55,   0,   1, 120,   8,   0,  60,   2,   5, 160,  -7,   0,  46,  17,   0,1999,   8,   5,  95, 975,   1, 320,  71},   // 2: BrshSnr   — DATA-DRIVEN (brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
-    {   3,  69,   0,   1, 500,  48,   0,  20,   2,   5, 168,   5,   0,  80,   6,   0,1999,   8,   7,  55, 540,   1, 300,  71}    // 3: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Pnch  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    {   0,  38,   0,   1,   0,1999,  71,   7, 120,  28,   0,   0,   0,   5, 168,   9,  -7,  46,   0,   8,  52, 950,   2, 300},   // 0: AcSnare   — wire path live; NzRs 950: buzz T60 ≈ 0.4 s matches acoustic-snare.wav t40 ≈ 280 ms; NzFq 300 (HP 3 kHz) pulls the centroid toward the darker reference
+    {   1,  65,   0,   1,   0,1999,  71,   5, 720,  50,   0,   0,   0,   5, 190,   8,  20,  50,   2,  19,  55, 940,   2, 105},   // 1: MrchSnr   — click+buzz land together; NzRs 940: buzz T60 ≈ 0.36 s matches the Marching-Snare reference t40 ≈ 220 ms
+    {   2,  55,   0,   1,   0,1999,  71,   5, 120,   8,   0,  60,   0,   5, 160,  17,  -7,  46,   0,   8,  95, 975,   1, 320},   // 2: BrshSnr   — DATA-DRIVEN (brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+    {   3,  69,   0,   1,   0,1999,  71,   7, 500,  48,   0,  20,   0,   5, 168,   6,   5,  80,   0,   8,  55, 540,   1, 300},    // 3: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+    {   4,  41,   0,   1,   0,1999,  71,   5, 300,   2,   0,   0,   0,   5, 168,   9,   0,  20,   0,   8,  78, 928,   2, 424},   // 4: BndDoum
+    {   5,  66,   0,   1,   0,1999,  71,   5, 300,  38,   0,   0,   0,   5, 168,   9,   0,  70,   0,   8,  38, 900,   2,  75},   // 5: BndTek
+    {   6,  40,   0,   1,   0,1999,  71,   5, 200,   2,   0,   0,   0,   5, 168,   9,   0,   0,   0,   8,  20, 956,   2, 106},   // 6: CajBass
+    {   7,  65,   0,   1,   0,1999,  71,   5, 300,  42,   0,   0,   0,   5, 168,   9,   0,  70,   0,   8,  92, 928,   2, 600},   // 7: CajSlap
 };
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
+// What Partls, whose slot Punch took, shipped with: the head's mode count.
+static const int8_t kShippedPartls[kNumPresets] = {2, 1, 2, 2, 2, 2, 2, 2};
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),
@@ -67,8 +90,6 @@ static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramResnc, 71, 71),
               "Resnc is not loaded per preset: every row must ship 71");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramDkay, 0, 200),
               "Dkay is 0..200: every consumer saturates at 200");
-static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramPartls, 0, 4),
-              "Partls is 0..4 in this unit");
 
 // Each preset's calibrated modal bank: ratios of modes 2-4, T60s of modes 1-4
 // (ms), LoadPreset's mix, mode amplitudes 1-4, mode count, then the optional
@@ -87,7 +108,15 @@ static const brc::ModalPresetConfig kModalConfigs[kNumPresets] = {
     /* env weights counter the fixed modal_sum taper (0.6/0.45/0.28/0.18 for
        modes 2-5) so the 877-1107 cluster carries the energy as measured
        (ref: 56% in 1-3k, fundamental barely present). */
-    {2.00f, 2.29f, 3.99f, 40.0f, 70.0f, 60.0f, 50.0f, 0.30f, 0.10f, 0.55f, 1.10f, 1.30f, 5, 6.33f, 0.0f, 1.60f, 0.0f}
+    {2.00f, 2.29f, 3.99f, 40.0f, 70.0f, 60.0f, 50.0f, 0.30f, 0.10f, 0.55f, 1.10f, 1.30f, 5, 6.33f, 0.0f, 1.60f, 0.0f},
+    /* k_BendirDoum: bendir, centre: a large thin head on 88 Hz over its gut snares */
+    {1.61040818f, 2.31481858f, 2.96081447f, 505.995588f, 544.656859f, 431.0f, 390.0f, 0.3f, 0.4005f, 0.435f, 1.0f, 0.466071429f, 6, 3.6365903f, 4.26998698f, 0.25f, 0.15f},
+    /* k_BendirTek: bendir, edge: the head's upper modes, the snares lighter */
+    {1.09866521f, 1.16704462f, 1.31650633f, 330.0f, 360.0f, 347.0f, 347.0f, 0.3f, 0.1f, 0.277777778f, 0.185185185f, 0.422619048f, 6, 1.41731866f, 1.47867094f, 0.546296296f, 1.0f},
+    /* k_CajonBass: cajon bass: the box's port air and the tapa's low modes */
+    {1.15524322f, 1.41371675f, 1.69281963f, 292.0f, 421.435642f, 231.0f, 224.0f, 0.35f, 1.0f, 0.516666667f, 0.755555556f, 0.821428571f, 5, 0.711105595f, 0.0f, 0.833333333f, 0.0f},
+    /* k_CajonSlap: cajon slap: the tapa's edge with the snare wires */
+    {1.08324576f, 1.63073872f, 1.69029863f, 229.251011f, 249.4251f, 182.0f, 166.0f, 0.3f, 0.15971831f, 0.122535211f, 0.152112676f, 0.905432596f, 6, 2.26699885f, 2.37208772f, 1.0f, 0.464788732f},
 };
 
 // The rest of each preset's voicing.
@@ -121,7 +150,11 @@ static const Voicing kVoicing[kNumPresets] = {
     /* k_AcSnare      */ {0.10000f, 0.00000f, 0.42000f, 0.86000f, 1.00000f, 0.99850f, 18.00000f, brc::phase_inc(175.0f), 1.00000f, 0.99920f, 0.12000f, 0.00000f, 0.00180f, 0.85000f, 0.00000f, 0.00260f, 1.76000f, 0.91800f, 4500.00000f, 0.86000f, 7200.00000f, 0.82000f},
     /* k_MarchSnare   */ {0.06000f, 0.00000f, 0.50000f, 0.89000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.72000f, 0.00000f, 0.00280f, 1.74500f, 0.91200f, 5200.00000f, 0.88000f, 8500.00000f, 0.84000f},
     /* k_BrushSnare   */ {0.20000f, 2.00000f, 0.70000f, 0.35000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.10000f, 1.00000f, 0.00080f, 1.76000f, 0.91800f, 3600.00000f, 0.78000f, 6300.00000f, 0.72000f},
-    /* k_RimShot      */ {0.26000f, 0.00000f, 0.55000f, 0.80000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.45000f, 0.00000f, 0.01000f, 1.76000f, 0.91800f, 5000.00000f, 0.84000f, 8200.00000f, 0.78000f}
+    /* k_RimShot      */ {0.26000f, 0.00000f, 0.55000f, 0.80000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.00000f, 0.45000f, 0.00000f, 0.01000f, 1.76000f, 0.91800f, 5000.00000f, 0.84000f, 8200.00000f, 0.78000f},
+    /* k_BendirDoum   */{0.389051866f, 0.0f, 0.45f, 0.85f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.490625f, 1.0f, 0.0026f, 1.76f, 0.918f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_BendirTek    */{1.5f, 0.0f, 0.45f, 0.85f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.475f, 1.0f, 0.0026f, 1.76f, 0.918f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_CajonBass    */{1.5f, 0.0f, 0.45f, 0.85f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.1f, 1.0f, 0.0026f, 1.76f, 0.918f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_CajonSlap    */{0.32715232f, 0.0f, 0.45f, 0.85f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f, 1.0f, 0.0026f, 1.76f, 0.918f, 0.0f, 0.0f, 0.0f, 0.0f},
 };
 
 // Output trim: gain-stages each preset into the master limiter.  Calibrated
@@ -135,5 +168,9 @@ static const float kOutTrim[kNumPresets] = {
     /* 0  AcSnre  */ 0.23584f,
     /* 1  MrchSnr */ 0.32283f,
     /* 2  BrshSnr */ 0.30136f,
-    /* 3  RimShot */ 0.56418f
+    /* 3  RimShot */ 0.56418f,
+    /* 4  BndDoum */ 0.12634f,
+    /* 5  BndTek  */ 0.09902f,
+    /* 6  CajBass */ 0.06677f,
+    /* 7  CajSlap */ 0.36629f,
 };

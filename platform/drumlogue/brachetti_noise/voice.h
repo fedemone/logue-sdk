@@ -11,6 +11,9 @@
 
 struct VoiceState : brc::VoiceBase {
     brc::NoiseGate gate;
+    // VelTone retuned this voice's noise filter at its last strike (kept
+    // across strikes, so turning VelTone back to 0 restores the knob's tuning).
+    bool tone_moved = false;
 
     void reset_for_strike() {
         reset_base();

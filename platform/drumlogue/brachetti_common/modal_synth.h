@@ -1,7 +1,7 @@
 #pragma once
-// Brachetti common library — the engine the five modal units share.
+// Brachetti common library — the engine the six modal units share.
 //
-// Kick, Tom, Snare, Bar and Plate are one engine with different family
+// Kick, Tom, Snare, Bar, Plate and World are one engine with different family
 // layers: the same 24 knobs, the same preset loading, the same note routing
 // and block loop.  That engine lives here; a unit derives from it (CRTP:
 // static dispatch, no virtual calls) and supplies only its family:
@@ -19,8 +19,17 @@
 //       void load_voicing_into(VoiceState& v);                // LoadPreset, per voice
 //   };
 //
-// Provides: ModalLayout (the 24-knob layout), kModalHostKnobs (the knobs the
-// host owns, with their defaults), ModalSynth.
+// Provides: ModalLayout (the 24-knob layout: the common pages, then the
+// standard dedicated set), kFamilyKnob, kModalHostKnobs (the knobs the host
+// owns, with their defaults), ModalSynth.
+//
+// The knobs are handled in three tiers: the COMMON knobs (pages 1-2,
+// common_knobs.h) the same on every unit; the standard DEDICATED knobs
+// (pages 3-6), each a ROLE the shared modal engine has a setter or a strike
+// mapping for; and the FAMILY knobs a unit puts in a standard slot instead
+// (role_at returns kFamilyKnob there), which only the unit reads.  A unit that
+// gives a standard role's slot away supplies that knob's per-preset value
+// (fixed_knob), so its presets play exactly as before.
 //
 // A unit may also define NoteOff (GateOff routes through it).  Its voice type
 // derives from VoiceBase and defines reset_for_strike(); it may define
@@ -28,6 +37,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "unit.h"
+#include "common_knobs.h"
 #include "dsp_math.h"
 #include "exciter.h"
 #include "knobs.h"
@@ -41,47 +51,48 @@ namespace brc {
 // tables have one column per slot, and a parameter added here without its
 // row in header.c (or vice versa) silently shifts every column of every
 // preset.
-struct ModalLayout {
+//
+// Pages 1-2 are the COMMON knobs (common_knobs.h: the same on all nine
+// units).  Pages 3-6 are the family's DEDICATED knobs; the standard set below
+// is what the shared modal engine drives, and the enumerator of each is also
+// its ROLE.  A unit may give a standard slot to a knob of its own (a ROLE
+// change, see role_at in ModalSynth) and may relabel any dedicated knob in
+// its header.c to say what it does in that family.
+struct ModalLayout : CommonLayout {
     enum Param : uint8_t {
-        k_paramProgram = 0,  // 0
-        k_paramPitch,        // 1
-        k_paramPoly,         // 2
-        k_paramVelocity,     // 3
-        k_paramMlltRes,      // 4
-        k_paramMlltStif,     // 5
-        k_paramVlMllRes,     // 6
-        k_paramVlMllStf,     // 7
-        k_paramPartls,       // 8
-        k_paramModel,        // 9
-        k_paramDkay,         // 10
-        k_paramMterl,        // 11
-        k_paramTone,         // 12
-        k_paramHitPos,       // 13
-        k_paramRel,          // 14
-        k_paramInharm,       // 15
-        k_paramCutoff,       // 16
-        k_paramTubRad,       // 17
-        k_paramGain,         // 18
-        k_paramNzMix,        // 19
-        k_paramNzRes,        // 20
-        k_paramNzFltr,       // 21
-        k_paramNzFltFrq,     // 22
-        k_paramResnc,        // 23
+        // page 3: the strike
+        k_paramMlltRes = k_firstDedicated,  // 8
+        k_paramMlltStif,     // 9
+        k_paramVlMllRes,     // 10
+        k_paramVlMllStf,     // 11
+        // page 4: the bank and its length
+        k_paramPartls,       // 12
+        k_paramModel,        // 13
+        k_paramDkay,         // 14
+        k_paramRel,          // 15
+        // page 5: the body
+        k_paramMterl,        // 16
+        k_paramHitPos,       // 17
+        k_paramInharm,       // 18
+        k_paramTubRad,       // 19
+        // page 6: the noise burst
+        k_paramNzMix,        // 20
+        k_paramNzRes,        // 21
+        k_paramNzFltr,       // 22
+        k_paramNzFltFrq,     // 23
         k_lastParamIndex     // marker
     };
 };
 static_assert(ModalLayout::k_lastParamIndex == 24, "the modal units' header.c declares 24 params");
 
-// The knobs the host owns on the modal units, with their header.c defaults
-// (see HostKnob in knobs.h).  Pitch's preset column is the preset's root.
+// A dedicated slot whose knob is the family's own (no standard role).
+constexpr uint8_t kFamilyKnob = 0xFF;
+
+// The knobs the host owns on the modal units: the common ones, plus VlMllRes
+// where a unit keeps it (see ModalSynth::is_host_owned).
 static const HostKnob kModalHostKnobs[] = {
-    { ModalLayout::k_paramPitch,    0    },
-    { ModalLayout::k_paramPoly,     4    },
-    { ModalLayout::k_paramVelocity, 0    },
-    { ModalLayout::k_paramVlMllRes, 0    },
-    { ModalLayout::k_paramTone,     0    },
-    { ModalLayout::k_paramCutoff,   1999 },
-    { ModalLayout::k_paramResnc,    71   },
+    BRC_COMMON_HOST_KNOBS,
+    { ModalLayout::k_paramVlMllRes, 0 },
 };
 
 template <class Unit, class Voice>
@@ -132,8 +143,8 @@ public:
 
     // The current preset's root note and the note the sequencer plays (root +
     // Pitch).  Host tools use these; nothing on the device reads them.
-    uint8_t PresetRootNote() const { return m_note.root; }
-    uint8_t PlayedNote() const     { return m_note.note; }
+    uint8_t PresetRootNote() const { return m_common.note.root; }
+    uint8_t PlayedNote() const     { return m_common.note.note; }
 
     void LoadPreset(uint8_t idx) {
         if (idx >= Unit::k_NumPrograms) return;   // before anything is written
@@ -149,9 +160,13 @@ public:
         m_preset_idx = idx;
         m_params[k_paramProgram] = idx;   // whether set by the knob or by unit_load_preset
         const int16_t* row = Unit::preset_knobs(idx);
-        m_note.set_root((uint8_t)row[k_paramPitch]);
+        m_common.note.set_root((uint8_t)row[k_paramPitch]);
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
             if (loads_with_preset(p)) setParameter(p, row[p]);
+        // A standard knob the unit gave its slot away from still has a value:
+        // the preset's own, which the unit supplies (fixed_knob).
+        for (uint8_t r = k_firstDedicated; r < k_lastParamIndex; ++r)
+            if (slot_of(r) == kNoSlot) apply_role(r, Unit::fixed_knob(idx, r));
         capture_anchors(row);
 
         m_master.out_trim = Unit::out_trim(idx);
@@ -174,38 +189,25 @@ public:
     void setParameter(uint8_t index, int32_t value) {
         if (index >= k_lastParamIndex) return;
         m_params[index] = value;
-        switch (index) {
-        case k_paramProgram:  LoadPreset((uint8_t)value); break;
-        case k_paramPitch:    m_params[index] = m_note.set_pitch(value); break;
-        case k_paramPoly:     m_poly = knob::poly(value); break;
-        case k_paramVelocity: m_velocity.set(value); break;
-        case k_paramMlltRes:  set_exciters(&Exciter::set_mallet_res, value); break;
-        case k_paramMlltStif: set_exciters(&Exciter::set_mallet_stiff, value); break;
-        case k_paramPartls:   m_params[index] = knob::clamp_int(value, 0, 4); break;
-        case k_paramModel:    m_model = (uint8_t)value; break;
-        case k_paramDkay:
-            // Its ring-length mappings are read at the strike; what is set
-            // here is how fast AllNoteOff fades a voice.
-            m_params[index] = knob::clamp_int(value, 0, 200);
-            set_exciters(&Exciter::set_release_time, m_params[index]);
-            break;
-        case k_paramTone:     m_master.set_tone(value); break;
-        case k_paramRel:      set_exciters(&Exciter::set_release, value); break;
-        case k_paramCutoff:
-        case k_paramResnc:    m_master.set_filter(m_params[k_paramCutoff], m_params[k_paramResnc]); break;
-        case k_paramGain:     m_master.set_gain(value); break;
-        case k_paramNzMix:    set_exciters(&Exciter::set_noise_mix, value); break;
-        case k_paramNzRes:    set_exciters(&Exciter::set_noise_res, value); break;
-        case k_paramNzFltr:   set_exciters(&Exciter::set_noise_filter_mode, value); break;
-        case k_paramNzFltFrq: set_exciters(&Exciter::set_noise_filter_freq, value); break;
-        default: break;   // VlMllRes, VlMllStf, Mterl, HitPos, Inharm, TubRad: read at the strike
+        if (index == k_paramProgram) { LoadPreset((uint8_t)value); return; }
+        if (is_common_knob(index)) {
+            m_params[index] = m_common.set(index, value, m_params, m_master);
+            return;
         }
+        // A dedicated knob: the shared engine's setter for its role; a
+        // family knob (kFamilyKnob) is read by the unit at the strike.
+        const uint8_t role = Unit::role_at(index);
+        if (role != kFamilyKnob) m_params[index] = apply_role(role, value);
     }
 
     const char* getParameterStrValue(uint8_t index, int32_t value) const {
+        if (index == k_paramProgram) return Unit::preset_name((uint8_t)value);   // the preset being browsed
+        if (is_common_knob(index)) {
+            const char* c = common_knob_text(index, value);
+            return c ? c : "---";
+        }
         const char* s = nullptr;
-        switch (index) {
-        case k_paramProgram:  return Unit::preset_name((uint8_t)value);   // the preset being browsed
+        switch (Unit::role_at(index)) {
         case k_paramModel:    s = model_name(value); break;
         case k_paramPartls:
             return format_mode_count(knob_text(index), kKnobTextSize,
@@ -214,13 +216,22 @@ public:
         case k_paramMlltStif: return format_int(knob_text(index), kKnobTextSize, (int)(value * 100));
         case k_paramDkay:     return format_int(knob_text(index), kKnobTextSize, (int)(value * 10));
         case k_paramNzFltFrq: return format_hz(knob_text(index), kKnobTextSize, value);
-        case k_paramCutoff:   return format_hz(knob_text(index), kKnobTextSize, value);
-        case k_paramResnc:    return format_int(knob_text(index), kKnobTextSize, (int)(value * 10));
-        case k_paramPoly:     return format_int(knob_text(index), kKnobTextSize, knob::poly(value));
+        case kFamilyKnob:     s = Unit::family_knob_text(index, value); break;
         default: break;
         }
         return s ? s : "---";
     }
+
+    // ── What a unit may redefine (CRTP: its own static of the same name hides
+    // these defaults) ──────────────────────────────────────────────────────
+    // The standard role of a dedicated slot, or kFamilyKnob for a knob of the
+    // unit's own.  The default is the standard layout: each slot its own role.
+    static constexpr uint8_t role_at(uint8_t slot) { return slot; }
+    // The value of a standard knob whose slot the unit gave away, for preset
+    // idx (it then plays as the preset always did).
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) { (void)idx; (void)role; return 0; }
+    // A family knob's display string (strings-type knobs only).
+    static const char* family_knob_text(uint8_t slot, int32_t value) { (void)slot; (void)value; return nullptr; }
 
     // ==========================================================================
     // Notes (the unit supplies NoteOn: its family's strike)
@@ -239,9 +250,9 @@ public:
     // plays the note it carries.
     void GateOn(uint8_t velocity) {
         if (velocity == 0) { GateOff(); return; }
-        unit().NoteOn(m_note.strike(), velocity);
+        unit().NoteOn(m_common.note.strike(), velocity);
     }
-    void GateOff() { unit().NoteOff(m_note.gate_note); }
+    void GateOff() { unit().NoteOff(m_common.note.gate_note); }
 
     // Panic: everything fades out under the Dkay-set release.
     void AllNoteOff() {
@@ -276,30 +287,37 @@ public:
 protected:
     // ── Building blocks for a unit's NoteOn ─────────────────────────────────
     // MIDI velocity × the Velocity knob.
-    float strike_velocity(uint8_t midi) const { return m_velocity.apply(midi_velocity(midi)); }
+    float strike_velocity(uint8_t midi) const { return m_common.velocity.apply(midi_velocity(midi)); }
 
     // Round-robin within Poly.  With fuse_sec > 0, a stroke on the same note
     // within fuse_sec of the last one re-strikes that voice instead (roll
     // fusion: one continuous pressed roll, not a pile of whole bodies).
     Voice& allocate_voice(uint8_t note, float fuse_sec) {
         if (!(fuse_sec > 0.0f) || !fuses_with(m_voices[m_last_voice], note, fuse_sec))
-            m_last_voice = next_voice(m_last_voice, m_poly);
+            m_last_voice = next_voice(m_last_voice, m_common.poly);
         return m_voices[m_last_voice];
     }
 
     // Velocity and strike position (HitPos) shape the exciter before it fires.
     void shape_exciter(Voice& v) const {
-        v.exciter.shape_strike(v.current_velocity, m_params[k_paramHitPos],
-                               m_params[k_paramMlltStif], m_params[k_paramVlMllStf],
-                               m_anchor.vel_stiff, m_params[k_paramNzRes],
-                               m_params[k_paramVlMllRes]);
+        v.exciter.shape_strike(v.current_velocity, knob(k_paramHitPos),
+                               knob(k_paramMlltStif), knob(k_paramVlMllStf),
+                               m_anchor.vel_stiff, knob(k_paramNzRes),
+                               knob(k_paramVlMllRes));
     }
 
     ModalKnobs modal_knobs() const {
-        return {m_params[k_paramModel], m_params[k_paramPartls], m_params[k_paramInharm],
-                m_params[k_paramMterl], m_params[k_paramTubRad], m_params[k_paramDkay],
-                m_params[k_paramRel], m_params[k_paramMlltStif], m_params[k_paramMlltRes],
-                m_params[k_paramHitPos]};
+        return {knob(k_paramModel), knob(k_paramPartls), knob(k_paramInharm),
+                knob(k_paramMterl), knob(k_paramTubRad), knob(k_paramDkay),
+                knob(k_paramRel), knob(k_paramMlltStif), knob(k_paramMlltRes),
+                knob(k_paramHitPos)};
+    }
+
+    // A standard knob's raw value: its slot's, or the preset's own where the
+    // unit gave the slot to a family knob.
+    int32_t knob(uint8_t role) const {
+        const uint8_t s = slot_of(role);
+        return (s != kNoSlot) ? m_params[s] : Unit::fixed_knob(m_preset_idx, role);
     }
 
     // Strike the preset's modal bank, reshaped by the knobs.  The bank is
@@ -331,33 +349,77 @@ protected:
     int32_t           m_params[k_lastParamIndex] = {0};   // raw knob values, as the host set them
     uint8_t           m_preset_idx = 0;
     Anchors           m_anchor;
-    VelocityBias      m_velocity;
-    SequencerNote     m_note;
-    uint8_t           m_poly  = 4;          // Poly knob: voice cap 1-4
+    CommonKnobs       m_common;             // Pitch, Poly, Velocity
     uint8_t           m_model = k_String;   // Model knob
 
 private:
     Unit& unit() { return static_cast<Unit&>(*this); }
 
+    static constexpr uint8_t kNoSlot = 0xFF;
+
+    // The slot a standard role sits in, or kNoSlot.
+    static constexpr uint8_t slot_of(uint8_t role) {
+        for (uint8_t s = k_firstDedicated; s < k_lastParamIndex; ++s)
+            if (Unit::role_at(s) == role) return s;
+        return kNoSlot;
+    }
+
+    // The host owns the common knobs it owns on every unit, and VlMllRes
+    // where the unit keeps it (a family knob in its slot loads with the
+    // preset, like any sound-design knob).
+    static bool is_host_owned(uint8_t p) {
+        return is_host_knob(kCommonHostKnobs, p) || (p == slot_of(k_paramVlMllRes));
+    }
+
     // Every knob but Program and the host-owned ones loads with a preset.
-    static bool loads_with_preset(uint8_t p) {
-        return p != k_paramProgram && !is_host_knob(kModalHostKnobs, p);
+    static bool loads_with_preset(uint8_t p) { return p != k_paramProgram && !is_host_owned(p); }
+
+    // A standard knob's setter.  Returns the value to store.
+    int32_t apply_role(uint8_t role, int32_t value) {
+        switch (role) {
+        case k_paramMlltRes:  set_exciters(&Exciter::set_mallet_res, value); break;
+        case k_paramMlltStif: set_exciters(&Exciter::set_mallet_stiff, value); break;
+        case k_paramPartls:   return knob::clamp_int(value, 0, 4);
+        case k_paramModel:    m_model = (uint8_t)value; break;
+        case k_paramDkay:
+            // Its ring-length mappings are read at the strike; what is set
+            // here is how fast AllNoteOff fades a voice.
+            value = knob::clamp_int(value, 0, 200);
+            set_exciters(&Exciter::set_release_time, value);
+            break;
+        case k_paramRel:      set_exciters(&Exciter::set_release, value); break;
+        case k_paramNzMix:    set_exciters(&Exciter::set_noise_mix, value); break;
+        case k_paramNzRes:    set_exciters(&Exciter::set_noise_res, value); break;
+        case k_paramNzFltr:   set_exciters(&Exciter::set_noise_filter_mode, value); break;
+        case k_paramNzFltFrq: set_exciters(&Exciter::set_noise_filter_freq, value); break;
+        default: break;   // VlMllRes, VlMllStf, Mterl, HitPos, Inharm, TubRad: read at the strike
+        }
+        return value;
+    }
+
+    // A standard knob's shipped value: the preset row's, or the unit's fixed
+    // value where the slot is a family knob's.
+    static int32_t shipped(const int16_t* row, uint8_t idx, uint8_t role) {
+        const uint8_t s = slot_of(role);
+        return (s != kNoSlot) ? row[s] : Unit::fixed_knob(idx, role);
     }
 
     // The shipped knob values every mapping pivots on (REFERENCE ANCHORS).
     void capture_anchors(const int16_t* row) {
-        m_anchor.decay        = knob::decay(row[k_paramDkay]);
-        m_anchor.mallet_stiff = knob::mallet_stiff(row[k_paramMlltStif]);
-        m_anchor.model        = (uint8_t)row[k_paramModel];
-        m_anchor.partls       = (row[k_paramPartls] <= 4) ? row[k_paramPartls] : 0;
-        m_anchor.inharm       = knob::inharm(row[k_paramInharm]);
-        m_anchor.material     = knob::material(row[k_paramMterl]);
-        m_anchor.hit_pos      = knob::hit_pos(row[k_paramHitPos]);
-        m_anchor.tube_radius  = knob::tube_radius(row[k_paramTubRad]);
-        m_anchor.mallet_res   = knob::mallet_res(row[k_paramMlltRes]);
-        m_anchor.release      = knob::release(row[k_paramRel]);
-        m_anchor.vel_stiff    = knob::percent(row[k_paramVlMllStf]);
-        m_anchor.vel_res      = knob::percent(row[k_paramVlMllRes]);
+        const uint8_t i = m_preset_idx;
+        m_anchor.decay        = knob::decay(shipped(row, i, k_paramDkay));
+        m_anchor.mallet_stiff = knob::mallet_stiff(shipped(row, i, k_paramMlltStif));
+        m_anchor.model        = (uint8_t)shipped(row, i, k_paramModel);
+        const int32_t partls  = shipped(row, i, k_paramPartls);
+        m_anchor.partls       = (partls <= 4) ? partls : 0;
+        m_anchor.inharm       = knob::inharm(shipped(row, i, k_paramInharm));
+        m_anchor.material     = knob::material(shipped(row, i, k_paramMterl));
+        m_anchor.hit_pos      = knob::hit_pos(shipped(row, i, k_paramHitPos));
+        m_anchor.tube_radius  = knob::tube_radius(shipped(row, i, k_paramTubRad));
+        m_anchor.mallet_res   = knob::mallet_res(shipped(row, i, k_paramMlltRes));
+        m_anchor.release      = knob::release(shipped(row, i, k_paramRel));
+        m_anchor.vel_stiff    = knob::percent(shipped(row, i, k_paramVlMllStf));
+        m_anchor.vel_res      = knob::percent(shipped(row, i, k_paramVlMllRes));
     }
 
     void set_exciters(void (Exciter::*set)(int32_t), int32_t value) {

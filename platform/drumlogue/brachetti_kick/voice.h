@@ -57,6 +57,7 @@ struct VoiceState : brc::VoiceBase {
     brc::Boom       boom;
     Thump           thump;
     brc::Transient  click;   // the beater click HitPos raises
+    bool            own_dive = false;   // Kick / Kick2: the boom follows the pitch envelope (shape_dive)
 
     void reset_for_strike() {
         reset_base();
@@ -67,5 +68,6 @@ struct VoiceState : brc::VoiceBase {
         boom.reset();
         thump.reset();
         click.reset();
+        own_dive = false;
     }
 };

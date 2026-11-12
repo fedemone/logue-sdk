@@ -31,10 +31,12 @@
 //   float_math.h     fasterpowf, fastexpf, fastsinf
 //   noise.h          PinkFilter, lcg_unit
 //   small_filters.h  one_pole_coeff_fast, one_pole_hp, one_pole_lp
+//   voice_layers.h   Punch
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/float_math.h"
 #include "../brachetti_common/noise.h"
 #include "../brachetti_common/small_filters.h"
+#include "../brachetti_common/voice_layers.h"
 
 enum { kCymbalMaxResonators = 112 };
 static_assert(kCymbalMaxResonators % 4 == 0, "kCymbalMaxResonators must be a multiple of 4 for NEON loop safety");
@@ -494,11 +496,13 @@ struct VoiceState {
     CymbalVoice cymbal;
 
     float tone_lp = 0.0f;    // Tone tilt EQ memory
+    brc::Punch punch;        // the transient shaper (the Punch knob)
 
     void reset_for_strike() {
         fade     = 1.0f;     // a re-struck slot is no longer fading
         fade_mul = 1.0f;
         tone_lp  = 0.0f;
+        punch.reset();
         cymbal.active = false;
     }
 

@@ -3,21 +3,21 @@
 > **Disclaimer:** Brachetti Noise is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
 One of eight drumlogue synth units split out of the 40-preset
-[`brachetti`](../brachetti/) physical-modelling percussion unit, one per
+[`brachetti`](https://github.com/fedemone/logue-sdk/blob/original_brachetti/platform/drumlogue/brachetti/) physical-modelling percussion unit, one per
 instrument family, so each can be browsed, used and improved on its own.  The
 original unit stays as it is; see [Brachetti family](../tools/brachetti_equiv/README.md)
 for the whole set and the tools that check them.
 
-This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-C).
+This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-C), and 5 shakers and rattles voiced after the [Pelle e Legno](../pelle_legno/) samples (ShkFwd, ShkBack, Maracas, Caxixi, Cabasa).
 
 | | |
 |---|---|
 | Unit name on the drumlogue | `BrcNoise` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724E7A` ('BrNz') |
 | Engine | shaped noise exciter + AM gating (`ENGINE_NOISE`) |
-| Presets | 3 |
+| Presets | 8 (3 from the original, 5 added) |
 | Knobs | 18 |
-| ARM size (cross-built, `arm_size.sh`) | .text 7500 · .rodata 300 · .data 992 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 7636 · .rodata 728 · .data 992 · .bss 292 |
 
 ## Presets
 
@@ -27,45 +27,76 @@ This unit holds the pure-noise voices: Clap, Shaker and the closed hi-hat (HHat-
 | 1 | Shaker | 84 | shaker: grain-pulse rattle for the whole tail |
 | 2 | HHat-C | 72 | closed hi-hat: a short, bright noise chick |
 
-At the knob values each preset ships with, it renders **bit-identically** to
+### Added: voiced after the Pelle e Legno samples
+
+Voiced by measurement against each sample with `tools/brachetti_equiv/match_samples.py` (specs in `match_specs.py`); the method is described in [BrcTom's README](../brachetti_tom/README.md#how-the-added-presets-were-voiced). No code changed for them beyond a table-driven gate (`gate_hz` / `gate_depth` / `gate_decay` / `attack_rate` in `kVoicing`, 0 on Clap, Shaker and HHat-C, which keep their own code).
+
+| # | Name | Root | Sound | Voiced after |
+|---|---|---|---|---|
+| 3 | ShkFwd | 84 | shaker, strong stroke: the seeds hit the end wall on the beat | `033_ShakerFwd.wav` |
+| 4 | ShkBack | 84 | shaker, weak stroke: a softer hit, more slide | `034_ShakerBack.wav` |
+| 5 | Maracas | 84 | a pair of maracas: a bright seed cloud | `035_Maracas.wav` |
+| 6 | Caxixi | 84 | caxixi: seeds on the basket's hard gourd base, a sharp chk | `036_Caxixi.wav` |
+| 7 | Cabasa | 84 | cabasa: a steel bead chain twisted on a ridged cylinder | `037_Cabasa.wav` |
+
+The original presets (0-2) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI
 notes, stacked strokes, Program changes over ringing voices, Reset / Suspend,
 pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
-| Page | Knobs |
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+
+| Page | | Knobs |
+|---|---|---|
+| 1 | common | `Program` · — · `Poly` · `Velocity` |
+| 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
+| 3 | dedicated | `GrnRate` · `GrnDpth` · `GrnFade` · `Swell` |
+| 4 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
+| 5 | dedicated | `Band` · `Rel` · `VelTone` · `Punch` |
+
+### Common knobs
+
+| Knob | |
 |---|---|
-| 1 | `Program` · `Poly` · `Velocity` · `MlltRes` |
-| 2 | `MlltStif` · `VlMllRes` · `VlMllStf` · `Model` |
-| 3 | `Tone` · `HitPos` · `Rel` · `Cutoff` |
-| 4 | `Gain` · `NzMix` · `NzRes` · `NzFltr` |
-| 5 | `NzFltFrq` · `Resnc` |
-
-Removed from the original's 24 knobs: `Pitch`, `Partls`, `Dkay`, `Mterl`, `Inharm`, `TubRad`.  A noise voice has no modal body (Partls, Mterl, Inharm, TubRad) and nothing in its sound depends on the note (Pitch only ever decided which strokes count as the same note for roll fusion; the sequencer now always plays the preset's root).  Dkay's only remaining effect was how fast AllNoteOff fades a voice; that is kept exact as a per-preset constant in the preset table.  Each was measured inert on every preset of this unit — swept across its whole range in several contexts, every render bit-identical (`tools/brachetti_equiv/dead_params.py`).
-
-What each knob does in this unit:
-
-| Knob | In this unit |
-|---|---|
+| `Program` | the preset |
 | `Poly` | voice cap 1-4; fast strokes on the same note fuse |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
-| `MlltRes` | burst / grain contrast (AM depth on Clap and Shaker), and the mallet body |
-| `MlltStif` | burst / grain RATE (AM speed, ±2 octaves on Clap and Shaker) |
-| `VlMllRes` | velocity → noise-attack speed |
-| `VlMllStf` | velocity → mallet stiffness |
-| `Model` | noise band balance: percussion models 0.70, tubes 0.35, others 0.50 |
-| `HitPos` | rim strike: brighter mallet and a faster noise attack |
-| `Rel` | noise tail ('tcha' on Clap, rattle length on Shaker) |
-| `NzMix / NzRes` | noise level / noise envelope |
-| `NzFltr / NzFltFrq` | noise filter mode / cutoff |
+| `Tone` | tilt EQ |
+| `Cutoff` / `Resnc` | master low-pass and its Q |
+| `Gain` | drive |
 
-`Tone` (tilt EQ), `Cutoff` / `Resnc` (low-pass and its Q) and `Gain` (drive)
-are the master stage.  `Poly`, `Velocity`, `VlMllRes`, `Tone`, `Cutoff` and
-`Resnc` are performance knobs the host owns: a Program change leaves them where
-they are.  Every other knob loads with the preset, and the knob mappings are
-REFERENCE-ANCHORED on the shipped values — a preset plays its calibrated sound
-at its own knob positions and only movement alters it.
+`Poly`, `Velocity`, `Tone`, `Cutoff` and `Resnc` are performance knobs the host owns: a Program change leaves them where they are.  `Gain` loads with the preset (it is part of its gain staging).  The common knobs are [`brachetti_common/common_knobs.h`](../brachetti_common/common_knobs.h).  `Pitch`'s slot is blank: nothing in a noise voice follows the note (the sequencer plays the preset's root).
+
+### Dedicated knobs
+
+| Knob | Is | In this unit |
+|---|---|---|
+| `GrnRate` | `MlltStif` | the grain / burst RATE (the gate on the noise), ±2 octaves; also the faint mallet's stiffness |
+| `GrnDpth` | **own** (was `MlltRes`) | the grains' CONTRAST; above the shipped value it also adds contrast, and gives a 30 Hz grain to the presets that ship none (HHat-C, Caxixi) |
+| `GrnFade` | **own** | how fast the grains melt into a plain hiss: − slower (×⅛), + faster, and it makes the shakers' never-fading grains fade too |
+| `Swell` | **own** | the noise's rise: − snappier, + slower (×1/32 .. ×32, up to ~70 ms) |
+| `NzMix / NzRes` | the noise knobs | noise level / noise envelope |
+| `NzFltr / NzFltFrq` | the noise knobs | noise filter mode / cutoff |
+| `Band` | **own** | the noise's balance: − all the soft body band, + all the bright click band |
+| `Rel` | `Rel` | the noise tail ("tcha" on Clap, the rattle's length on the shakers) |
+| `VelTone` | **own** | velocity → brightness: + a harder stroke opens the noise filter and a soft one closes it (±2 octaves), − the reverse |
+| `Punch` | **own** | the transient shaper (see below) |
+
+**Is** names the original knob a dedicated knob is, or **own** for a knob of this family.  Every dedicated knob (but a host-owned one, which keeps its place across a Program change) loads with the preset, and is REFERENCE-ANCHORED on the value it shipped with: a preset plays its calibrated sound at its own knob positions, and only movement alters it.  The knobs this unit's own knobs replaced keep playing at each preset's shipped value, so every preset sounds exactly as it did.
+
+### Punch: the transient shaper
+
+`Punch` is a gain curve over each voice, started by its strike (a drum synth knows the sample its transient starts on, so nothing has to be detected).  **Up**, the first 5 ms pass untouched and then the body drops (τ 15 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.
+
+It never boosts the attack.  The unit ends in a peak limiter that already takes 5-25 dB off its hard strikes and would take a boost straight back off; lowering what follows the strike is the contrast it cannot undo.  So more `Punch` is also a quieter part: raise the drumlogue's part level to compensate.  Measured at velocity 110, `Punch` +100 lowers the body by 11-15 dB with the strike's peak unchanged.  It is `brc::Punch`, shared by all nine units.
+
+### Knob review
+
+`HitPos` (the strike position) and `VlMllStf` (velocity → stiffness) moved only the mallet, which `NzMix` crossfades almost silent, so they did nothing on any preset; `VlMllRes` (velocity → noise attack) was overridden by the attack of six of the eight presets; and `Model` only picked one of three band balances, on the three presets without their own.  Those slots are now `GrnFade`, `Swell`, `VelTone` and a continuous `Band`.  The mallet knobs, which here set the grains, are named for them.  (Removed in the split, and still absent: `Pitch`, `Partls`, `Dkay`, `Mterl`, `Inharm` and `TubRad`; a noise voice has no modal body and nothing in it follows the note.  Dkay's one remaining job, how fast AllNoteOff fades a voice, is a per-preset constant.)  The liveness tool under-reads the grain knobs: it averages over 43 ms, longer than a grain.
+
+Measured with [`knob_liveness.py`](../tools/brachetti_equiv/knob_liveness.py), which moves each knob to both ends on every preset and scores how much the sound changes.
 
 ## Build
 

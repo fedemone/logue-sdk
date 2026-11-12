@@ -20,52 +20,59 @@ const __unit_header unit_header_t unit_header = {
     // is the preset control (stored with the pattern, automatable), and a
     // non-zero count would draw a second, competing preset UI.
     .num_presets = 0,
-    .num_params = 18,
+    .num_params = 20,
     .params = {
-        // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
-        //
-        // Defaults are preset 0's (Clap) shipped values, so the unit boots
-        // sounding like the preset it shows.  The knobs the host owns keep
-        // their own — Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc —
-        // because LoadPreset never writes them;
-        // `kHostKnobs` in presets.h holds the same values.
 
-        // Page 1
+        // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
+
+        // Page 1 — common: performance
         // Program: the preset (this family's presets only)
-        {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},   // blank: this unit has no Pitch (nothing in a noise voice follows the note)
         // Poly: global voice cap 1-4
         {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
         // Velocity: velocity bias: -100 ghost .. 0 as played .. +100 wham
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Velocity"}},
-        {0, 1000, 500, 500, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
 
-        // Page 2
-        // MlltStif: stored /100, displayed x100 (0-5000)
-        {0, 50, 0, 27, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
-        // Model: physical-model template
-        {0, 8, 0, 5, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
-
-        // Page 3
+        // Page 2 — common: master
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
-        // HitPos: bipolar
-        {-98, 98, 0, 50, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
-        {0, 20, 0, 19, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // Cutoff: master low-pass, stored /10 (10-19990 Hz), 1999 = open
         {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
-
-        // Page 4
+        // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
+        {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}},
         // Gain: master drive
         {0, 100, 0, 5, k_unit_param_type_none, 0, 0, 0, {"Gain"}},
+
+        // Page 3 — dedicated
+        // GrnRate (was MlltStif): the grain / burst rate, ±2 octaves.
+        // Stored /100, displayed x100 (0-5000)
+        {0, 50, 0, 27, k_unit_param_type_strings, 0, 0, 0, {"GrnRate"}},
+        // GrnDpth (was MlltRes): the grains' contrast; above the shipped value it adds
+        // grains to the presets that ship none
+        {0, 1000, 500, 500, k_unit_param_type_none, 1, 1, 0, {"GrnDpth"}},
+        // GrnFade (new, in HitPos' slot): how fast the grains melt into a
+        // plain hiss: − slower (×1/8), + faster (it makes the shakers fade too)
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"GrnFade"}},
+        // Swell (new, in VlMllStf's slot): the noise's rise, − snappier, + slower (×1/32 .. ×32)
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Swell"}},
+
+        // Page 4 — dedicated
         {0, 100, 50, 95, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},
         {0, 1000, 300, 950, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         {0, 2, 0, 1, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
-
-        // Page 5
         // NzFltFrq: stored /10 (20-20000 Hz)
         {2, 2000, 1200, 200, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
-        // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
-        {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}}
+
+        // Page 5 — dedicated
+        // Band (new, in Model's slot): the noise's balance, − the soft body
+        // band, + the bright click band
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Band"}},
+        {0, 20, 0, 19, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
+        // VelTone (new, in VlMllRes' slot): velocity → brightness: + a harder
+        // stroke opens the noise filter (a soft one closes it), − the reverse
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VelTone"}},
+        // Punch: the transient shaper.  + the attack passes and the body drops
+        // after it (up to −15 dB), − a softer, rounder attack.  0 = off
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}}
     }
 };

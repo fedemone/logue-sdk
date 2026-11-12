@@ -13,6 +13,7 @@
 //
 //   x  = exciter + noise burst + the unit's layers
 //   x  = follow_and_gate(x)       level follower, master envelope, squelch
+//   x  = punch.apply(x)           the Punch knob's transient shaper (idle at 0)
 //   x  = tone_tilt(x)             if the Tone knob is off 0 (master_stage.h)
 //   x  = (the unit's onset ramp, if it has one)
 //   x  = fade_out(x)              only while a preset change fades it
@@ -22,6 +23,7 @@
 #include <cstdint>
 #include "dsp_math.h"
 #include "exciter.h"
+#include "voice_layers.h"
 
 namespace brc {
 
@@ -57,6 +59,7 @@ struct VoiceBase {
 
     float tone_lp = 0.0f;    // Tone tilt EQ memory
     float mag_env = 0.0f;    // level follower for the squelch (α = 0.01, τ ≈ 2 ms)
+    Punch punch;             // the transient shaper: the unit triggers it at the strike
 
     void start(uint8_t note, float velocity) {
         is_active        = true;
@@ -72,6 +75,7 @@ struct VoiceBase {
         fade_mul = 1.0f;
         exciter.restart();
         tone_lp  = 0.0f;
+        punch.reset();
     }
 
     bool fading() const { return is_active && fade_mul < 1.0f; }

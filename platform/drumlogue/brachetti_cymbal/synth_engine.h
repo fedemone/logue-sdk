@@ -25,20 +25,23 @@
 #include "unit.h"
 
 // From brachetti_common (its README.md indexes every helper):
+//   common_knobs.h   CommonKnobs, common_knob_text, is_common_knob
 //   dsp_math.h       clampf, env_mul, kSampleRate, knob_exp2
-//   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
-//                    format_int, format_percent, is_host_knob, kKnobTextSize,
-//                    knob::clamp_int, knob::decay, knob::hit_pos,
-//                    knob::inharm, knob::mallet_res, knob::mallet_stiff,
-//                    knob::material, knob::percent, knob::poly, knob::release,
-//                    knob::tube_radius, knob_text, midi_velocity, off_anchor,
-//                    seed_host_knobs
+//   knobs.h          Anchors, format_int, format_percent, is_host_knob,
+//                    kKnobTextSize, knob::clamp_int, knob::decay,
+//                    knob::hit_pos, knob::inharm, knob::mallet_res,
+//                    knob::mallet_stiff, knob::material, knob::percent,
+//                    knob::release, knob::tube_radius, knob_text,
+//                    midi_velocity, off_anchor, seed_host_knobs
 //   master_stage.h   MasterStage, soft_saturate_bus, tone_tilt
 //   voice_base.h     any_fading, fade_out_all, kNumVoices
+//   voice_layers.h   punch_amount
+#include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -82,8 +85,8 @@ public:
 
     // The current preset's root note and the note the sequencer plays (root +
     // Pitch).  Host tools use these; nothing on the device reads them.
-    inline uint8_t PresetRootNote() const { return m_note.root; }
-    inline uint8_t PlayedNote() const     { return m_note.note; }
+    inline uint8_t PresetRootNote() const { return m_common.note.root; }
+    inline uint8_t PlayedNote() const     { return m_common.note.note; }
 
     inline void LoadPreset(uint8_t idx) {
         if (idx >= kNumPresets) return;   // before anything is written
@@ -98,7 +101,7 @@ public:
         m_preset_idx = idx;
         m_params[k_paramProgram] = idx;
         const int16_t* row = kPresetKnobs[idx];
-        m_note.set_root((uint8_t)row[k_paramPitch]);   // the Pitch column is the root
+        m_common.note.set_root((uint8_t)row[k_paramPitch]);   // the Pitch column is the root
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
             if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) setParameter(p, row[p]);
 
@@ -129,15 +132,16 @@ public:
     inline void setParameter(uint8_t index, int32_t value) {
         if (index >= k_lastParamIndex) return;
         m_params[index] = value;
+        if (index == k_paramProgram) { LoadPreset((uint8_t)value); return; }
+        // The common knobs (Pitch transposes the whole anchor spectrum, a
+        // smaller or larger cymbal; Poly is the voice cap, and kCostBudget
+        // bounds the CPU on top of it, which in practice affords two cymbal
+        // voices).
+        if (brc::is_common_knob(index)) {
+            m_params[index] = m_common.set(index, value, m_params, m_master);
+            return;
+        }
         switch (index) {
-        case k_paramProgram:  LoadPreset((uint8_t)value); break;
-        // Semitones from the preset's root: transposes the whole anchor
-        // spectrum (a smaller or larger cymbal).  Stored clamped.
-        case k_paramPitch:    m_params[index] = m_note.set_pitch(value); break;
-        // The voice cap.  kCostBudget bounds the CPU on top of it, which in
-        // practice affords two simultaneous cymbal voices.
-        case k_paramPoly:     m_poly = brc::knob::poly(value); break;
-        case k_paramVelocity: m_velocity.set(value); break;
         // Resonator-bank DENSITY: 25 + 5 × Partls % of the preset's bank.
         // Shipped rows store 3 = 40 %.
         case k_paramPartls:
@@ -145,10 +149,6 @@ public:
             break;
         // Stored ÷10 (0-200 = 0-2000), stored clamped.
         case k_paramDkay:     m_params[index] = brc::knob::clamp_int(value, 0, 200); break;
-        case k_paramTone:     m_master.set_tone(value); break;
-        case k_paramCutoff:
-        case k_paramResnc:    m_master.set_filter(m_params[k_paramCutoff], m_params[k_paramResnc]); break;
-        case k_paramGain:     m_master.set_gain(value); break;
         // MlltRes, MlltStif, VlMllRes, VlMllStf, Mterl, HitPos, Rel, Inharm,
         // TubRad: read at the next strike.
         default: break;
@@ -156,16 +156,17 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
+        if (index == k_paramProgram) return preset_name((uint8_t)value);   // the preset being browsed
+        if (brc::is_common_knob(index)) {
+            const char* c = brc::common_knob_text(index, value);
+            return c ? c : "---";
+        }
         switch (index) {
-        case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramPartls:   // the bank density this position gives
             return brc::format_percent(brc::knob_text(index), brc::kKnobTextSize,
                                        (int)(25 + 5 * brc::knob::clamp_int(value, 0, 7)), "Rs");
         case k_paramMlltStif: return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
         case k_paramDkay:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
-        case k_paramCutoff:   return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
-        case k_paramResnc:    return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
-        case k_paramPoly:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, brc::knob::poly(value));
         default:              return "---";
         }
     }
@@ -176,7 +177,7 @@ public:
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // The Velocity knob biases the strike once, here: it drives the
         // stick, the noise drivers and the ring.
-        const float vel = m_velocity.apply(brc::midi_velocity(velocity));
+        const float vel = m_common.velocity.apply(brc::midi_velocity(velocity));
         m_last_voice = pick_voice(note);
         VoiceState& v = m_voices[m_last_voice];
 
@@ -204,6 +205,9 @@ public:
         shape_strike(cc, pitch_ratio);
         v.cymbal.strike(cc, v.current_velocity, s.ring_scale, pitch_ratio, seed, still_ringing);
         v.cymbal.velocityGain *= s.level;
+        // A cymbal's body is its wash: up, the stick and bite pass and the
+        // wash drops after them (τ 40 ms).
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 5.0f, 40.0f);
     }
 
     // A cymbal has no release by design: the drumlogue fires gate on and off
@@ -213,9 +217,9 @@ public:
 
     inline void GateOn(uint8_t velocity) {
         if (velocity == 0) { GateOff(); return; }
-        NoteOn(m_note.strike(), velocity);
+        NoteOn(m_common.note.strike(), velocity);
     }
-    inline void GateOff() { NoteOff(m_note.gate_note); }
+    inline void GateOff() { NoteOff(m_common.note.gate_note); }
 
     // Panic: a click-free output fade (τ 8 ms: the voice is off ~55 ms later).
     inline void AllNoteOff() {
@@ -317,7 +321,7 @@ private:
         }
         const bool affordable = (busy_cost + kVoiceFixedLanes + kMinResonators) <= kCostBudget;
         if (same >= 0) return (uint8_t)same;
-        if (active < (int)m_poly && affordable && free_slot >= 0) return (uint8_t)free_slot;
+        if (active < (int)m_common.poly && affordable && free_slot >= 0) return (uint8_t)free_slot;
         if (faded >= 0)     return (uint8_t)faded;
         if (oldest >= 0)    return (uint8_t)oldest;
         if (free_slot >= 0) return (uint8_t)free_slot;
@@ -469,6 +473,7 @@ private:
         const bool tone_active = (tone != 0.0f);
         for (size_t i = 0; i < frames; ++i) {
             float x = v.cymbal.process();
+            x = v.punch.apply(x);
             x = v.fade_out(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             out[i * 2] += x * brc::MasterStage::kBusGain;
@@ -485,8 +490,6 @@ private:
     int32_t            m_params[k_lastParamIndex] = {0};   // raw knob values, as the host set them
     uint8_t            m_preset_idx = 0;
     brc::Anchors       m_anchor;
-    brc::VelocityBias  m_velocity;
-    brc::SequencerNote m_note;
-    uint8_t            m_poly         = 4;    // Poly knob: voice cap 1-4
+    brc::CommonKnobs   m_common;              // Pitch, Poly, Velocity
     uint8_t            m_bank_percent = 40;   // Partls: bank density, 25-60 %
 };

@@ -64,7 +64,20 @@ static const int kBlock = 64;
 
 static int param_slot(const char* name) {
     for (uint32_t i = 0; i < unit_header.num_params; ++i)
-        if (strcmp(unit_header.params[i].name, name) == 0) return (int)i;
+        if (name[0] && strcmp(unit_header.params[i].name, name) == 0) return (int)i;
+    // EQUIV_ALIASES="Thump=MlltRes,Snap=MlltStif": a knob a family unit
+    // relabelled, found here under the name this unit gives it.
+    if (const char* al = getenv("EQUIV_ALIASES")) {
+        const std::string want = std::string(name) + "=";
+        std::string list = std::string(",") + al + ",";
+        const size_t at = list.find("," + want);
+        if (at != std::string::npos) {
+            const size_t b = at + 1 + want.size();
+            const std::string other = list.substr(b, list.find(',', b) - b);
+            for (uint32_t i = 0; i < unit_header.num_params; ++i)
+                if (strcmp(unit_header.params[i].name, other.c_str()) == 0) return (int)i;
+        }
+    }
     return -1;
 }
 

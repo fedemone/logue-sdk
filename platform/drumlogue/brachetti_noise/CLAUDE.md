@@ -2,7 +2,7 @@
 
 `brachetti_noise` (`BrcNoise` on the drumlogue) is one of the eight per-family
 units split out of the 40-preset `../brachetti` unit.  It holds the pure-noise
-voices: Clap, Shaker and the closed hi-hat (HHat-C), and nothing else.
+voices: Clap, Shaker and the closed hi-hat (HHat-C) (presets 0-2), and 5 presets added after the split (3-7: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa), voiced after the Pelle e Legno samples by `../tools/brachetti_equiv/match_samples.py match_specs.py noise`; `run_equiv.sh` names them and compares the rest.  After any voicing change re-run `preset_probe calib` and update `kOutTrim`.
 README.md lists the presets and what every knob does.
 
 ## Before changing anything
@@ -29,12 +29,22 @@ README.md lists the presets and what every knob does.
   mapping is a function of the DELTA from it, built so the delta 0 gives
   exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 — `fasterpow2f(0)`
   is not).  A new mapping must be anchored the same way, or the presets move.
-- **Knob ↔ header.c:** `ParamIndex` (`presets.h`) must match `header.c` slot
-  for slot (a static_assert checks the count; the order is on you), header
-  defaults must equal preset 0's row, and `kHostKnobs` (`presets.h`) must
-  match the defaults of the knobs LoadPreset skips (Poly, Velocity, VlMllRes,
-  Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their table
-  columns).
+- **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
+  knobs (`../brachetti_common/common_knobs.h`: `brc::CommonKnobs` handles
+  them), the same on all nine units; the pages after them are this family's.
+  `ParamIndex` (`presets.h`) must match `header.c` slot for slot (a
+  static_assert checks the count; the order is on you), header defaults must
+  equal preset 0's row, and `kHostKnobs` (`presets.h`) must match the defaults
+  of the knobs LoadPreset skips (Poly, Velocity, Tone, Cutoff, Resnc —
+  static_asserts pin their table columns).  Pitch's slot is blank
+  (`k_paramNoPitch`).  Slot 19 is `Punch`.  A knob relabelled in `header.c` is
+  listed in `../tools/brachetti_equiv/aliases.txt`, so `run_equiv.sh` still
+  compares it with the original; a knob with a new job is left out of the
+  comparison and named.
+- **Punch** is the shared transient shaper (`brc::Punch`, `voice_layers.h`):
+  triggered at the end of NoteOn, applied right after `follow_and_gate`.  At 0
+  it is skipped entirely, so every preset renders byte-identically; keep it
+  that way.
 - **Nothing shared between units.**  The drumlogue loads several units into one
   process, and a static local of an inline function or template (a table, a
   buffer) becomes an STB_GNU_UNIQUE symbol the loader shares among all of
@@ -50,13 +60,18 @@ README.md lists the presets and what every knob does.
   must stay constant-initialised (it then loads from the ELF instead of being
   built at run time).  Check `arm_size.sh` after adding members or tables.
 - **Known difference:** re-selecting Shaker while it rings (README).
+- **Knobs of the family's own** (`GrnFade`, `Swell`, `Band`, `VelTone`, and
+  `GrnDpth`'s added contrast) took the slots of knobs that did nothing here
+  (HitPos, VlMllStf, Model, VlMllRes).  The exciter still reads those at each
+  preset's shipped value (`kShippedHitPos`, `kShippedVelKnob`,
+  `kShippedModel` in `presets.h`): a new preset needs its Model there.
 - There is no Dkay knob; the per-preset `Dky` column only sets how fast
   AllNoteOff fades a voice (`Exciter::set_release_time`).
 
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_noise`
-  (shipped: .text 7500 · .rodata 300 · .data 992 · .bss 292).
+  (shipped: .text 8732 · .rodata 700 · .data.rel.ro 44 · .data 1104 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_noise --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

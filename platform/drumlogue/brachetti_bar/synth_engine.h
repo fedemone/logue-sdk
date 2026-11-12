@@ -23,12 +23,16 @@
 #include "../common/runtime.h"
 
 // From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       knob_exp2
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
+//   voice_layers.h   punch_amount
+#include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -42,6 +46,12 @@ public:
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
 
+    // Punch sits in VlMllRes' slot (presets.h); VlMllRes then plays at 0,
+    // the value every bar shipped (the default fixed_knob).
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramPunch) ? brc::kFamilyKnob : slot;
+    }
+
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
         // Every strike stacks: for a sustained bar the overlap IS the sound
@@ -52,9 +62,11 @@ public:
         v.reset_for_strike();
         v.exciter.fire();
         v.exciter.set_band_mix(m_model, voicing().noise_band_mix);
-        v.onset.trigger(voicing().onset_ms);
+        v.onset.trigger(attack_ms());
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
         strike_modal_bank(v, voicing().modal_mix);
+        // A bar rings: the body drops more slowly after the hit.
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 5.0f, 30.0f);
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -70,6 +82,7 @@ public:
                 x += modes * v.chirp.open_modal(v.modal.mix) * kModalGain;
             }
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);
@@ -96,4 +109,14 @@ private:
     static constexpr float kModalGain = 5.0f;
 
     const Voicing& voicing() const { return kVoicing[m_preset_idx]; }
+
+    // Punch: bipolar around 0 (every preset), the identity there.  Besides
+    // the shared shaper (brc::Punch, triggered in NoteOn) it moves the
+    // preset's onset ramp: up shortens it (×1/5.7); down lengthens it (×5.7)
+    // and adds a swell, up to 60 ms (a bowed vibraphone or glass bowl).
+    float attack_ms() const {
+        const float a = -brc::punch_amount(m_params[k_paramPunch]);
+        if (a == 0.0f) return voicing().onset_ms;
+        return voicing().onset_ms * brc::knob_exp2(2.5f * a) + fmaxf(0.0f, a) * 60.0f;
+    }
 };
