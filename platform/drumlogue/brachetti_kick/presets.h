@@ -15,12 +15,12 @@
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
 // match it slot for slot.  Two of its standard slots carry kick knobs of
 // their own (a modal role has little to do on a boom kick): Partls' slot is
-// DiveTm, Model's is Attack.  The other dedicated knobs keep their roles under
+// DiveTm, Model's is Punch.  The other dedicated knobs keep their roles under
 // names that say what they do on a kick (header.c).
 using Param = brc::ModalLayout;
 enum KickParam : uint8_t {
     k_paramDiveTm = Param::k_paramPartls,   // 12: how fast the pitch dive falls
-    k_paramAttack = Param::k_paramModel,    // 13: onset and boom rise
+    k_paramPunch  = Param::k_paramModel,    // 13: the transient: onset, boom rise, body after the hit
 };
 
 enum Preset : uint8_t {
@@ -56,7 +56,7 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain Thmp Snap VThm VSnp DvTm Attk  Dky  Rel Wght Clck Dive Tune NzMx NzRs NzFl NzFq
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain Thmp Snap VThm VSnp DvTm Pnch  Dky  Rel Wght Clck Dive Tune NzMx NzRs NzFl NzFq
     {   0,  36,   0,   1,   0,1999,  71,   4, 360,  30,   0,  40,   0,   0, 200,  18,  10,  36,   1,   0,   1, 420,   0, 380},   // 0: Kick2     — a solid kettledrum-bodied kick
     {   1,  36,   0,   1,   0,1999,  71,  14, 350,  35,   0,   0,   0,   0, 195,   6,  -5,  38,   0,   3,   5, 220,   0, 220},   // 1: 808Sub    — boom_osc pitch dive 160→45 Hz, depth on Dive (the Inharm role)
     {   2,  36,   0,   1,   0,1999,  71,  12, 380,  35,   0,   0,   0,   0, 195,   6,  -5,  38,   0,   3,  15, 220,   0, 220}    // 2: Kick Drum
@@ -72,8 +72,8 @@ static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramResnc, 71, 71),
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramDkay, 0, 200),
               "Dkay is 0..200: every consumer saturates at 200");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramDiveTm, 0, 0) &&
-              brc::preset_column_in(kPresetKnobs, k_paramAttack, 0, 0),
-              "DiveTm and Attack are 0 on every preset: their mappings are the identity there");
+              brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "DiveTm and Punch are 0 on every preset: their mappings are the identity there");
 
 // The two standard knobs whose slots the kick gave away still have a value
 // per preset: the one each shipped with, so the modal body (Kick2) and the

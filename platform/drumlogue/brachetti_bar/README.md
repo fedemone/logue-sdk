@@ -63,7 +63,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ni
 |---|---|---|
 | 1 | common | `Program` · `Pitch` · `Poly` · `Velocity` |
 | 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
-| 3 | dedicated | `MlltRes` · `MlltStif` · `Attack` · `VlMllStf` |
+| 3 | dedicated | `MlltRes` · `MlltStif` · `Punch` · `VlMllStf` |
 | 4 | dedicated | `Partls` · `Model` · `Dkay` · `Rel` |
 | 5 | dedicated | `Mterl` · `HitPos` · `Inharm` · `TubRad` |
 | 6 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
@@ -88,7 +88,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ni
 |---|---|---|
 | `MlltRes` | `MlltRes` | modal presence |
 | `MlltStif` | `MlltStif` | mallet hardness: upper-mode brightness |
-| `Attack` | **own** | the voice's onset: − sharper (where a preset has an onset ramp), + slower, up to a 60 ms swell (a bowed vibraphone, a rubbed glass bowl) |
+| `Punch` | **own** | the transient (see below): + the hit kept and the ring dropped after it, a sharper onset ramp; − a slower onset, up to a 60 ms swell (a bowed vibraphone, a rubbed glass bowl) |
 | `VlMllStf` | `VlMllStf` | velocity → mallet stiffness |
 | `Partls` | `Partls` | mode count around the preset's own (the display shows the count) |
 | `Model` | `Model` | modal ratio template (free bar, marimba bar, tube, plate, …) |
@@ -101,9 +101,15 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ni
 
 **Is** names the standard modal-engine knob a dedicated knob is (renamed where it does something specific here), or **own** for a knob of this family in that slot.  Every dedicated knob (but a host-owned one, which keeps its place across a Program change) loads with the preset, and is REFERENCE-ANCHORED on the value it shipped with: a preset plays its calibrated sound at its own knob positions, and only movement alters it.  The knobs this unit's own knobs replaced keep playing at each preset's shipped value, so every preset sounds exactly as it did.
 
+### Punch: the transient shaper
+
+`Punch` is a gain curve over each voice, started by its strike (a drum synth knows the sample its transient starts on, so nothing has to be detected).  **Up**, the first 5 ms pass untouched and then the ring drops (τ 30 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.
+
+It never boosts the attack.  The unit ends in a peak limiter that already takes 5-25 dB off its hard strikes and would take a boost straight back off; lowering what follows the strike is the contrast it cannot undo.  So more `Punch` is also a quieter part: raise the drumlogue's part level to compensate.  Measured at velocity 110, `Punch` +100 lowers the body by 11-15 dB with the strike's peak unchanged.  It is `brc::Punch`, shared by all nine units.
+
 ### Knob review
 
-`VlMllRes` (velocity → noise-attack speed) did nothing on the 14 bars that ship no noise.  Its slot is now `Attack`, which reaches every preset.  Every other knob is live, and keeps its standard name.
+`VlMllRes` (velocity → noise-attack speed) did nothing on the 14 bars that ship no noise.  Its slot is now `Punch`, which reaches every preset.  Every other knob is live, and keeps its standard name.
 
 Measured with [`knob_liveness.py`](../tools/brachetti_equiv/knob_liveness.py), which moves each knob to both ends on every preset and scores how much the sound changes.
 

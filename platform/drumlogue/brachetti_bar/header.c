@@ -48,9 +48,10 @@ const __unit_header unit_header_t unit_header = {
         {0, 1000, 500, 800, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // MlltStif: stored /100, displayed x100 (0-5000)
         {0, 50, 0, 13, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
-        // Attack (a bar knob, in VlMllRes' slot): the voice's onset, − sharper
-        // (where a preset has one), + a slower swell (up to ~60 ms more: bowed)
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Attack"}},
+        // Punch (a bar knob, in VlMllRes' slot): the transient.  + the hit kept
+        // and the ring dropped after it, a sharper onset; − a slower swell (up
+        // to ~60 ms more: bowed)
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
 
         // Page 4 — dedicated

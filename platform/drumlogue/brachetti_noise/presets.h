@@ -37,9 +37,10 @@ enum ParamIndex : uint8_t {
     k_paramBand,       // 16  page 5: dedicated
     k_paramRel,        // 17
     k_paramVelTone,    // 18
+    k_paramPunch,      // 19  the transient shaper (brc::Punch)
     k_lastParamIndex     // marker
 };
-static_assert(k_lastParamIndex == 19, "header.c declares 19 params");
+static_assert(k_lastParamIndex == 20, "header.c declares 20 params");
 
 // ── The presets ─────────────────────────────────────────────────────────────
 enum Preset : uint8_t {
@@ -89,21 +90,22 @@ static inline const char* preset_name(uint8_t idx) {
 constexpr int kRootColumn  = k_lastParamIndex;
 constexpr int kDecayColumn = k_lastParamIndex + 1;
 static constexpr int16_t kPresetKnobs[kNumPresets][k_lastParamIndex + 2] = {
-    //  Prg    -  Ply  Vel  Ton  Cut Rsnc Gain GRat GDep GFad Swel NzMx NzRs NzFl NzFq Band  Rel VTon |Root  Dky
-    {   0,   0,   0,   1,   0,1999,  71,   5,  27, 500,   0,   0,  95, 950,   1, 200,   0,  19,   0,  60,  15},   // 0: Clap      — multi-burst AM (~55 Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 200 (BP 2 kHz) toward the reference centroid (~3 kHz)
-    {   1,   0,   0,   1,   0,1999,  71,   5,  45, 500,   0,   0,  95, 940,   1, 550,   0,  19,   0,  84,  30},   // 1: Shaker    — Rel 19 so the sustained rattle (noise_am_decay = 1.0) is audible by default; raise Rel for a longer rattle
-    {   2,   0,   0,   1,   0,1999,  71,   3,  37, 100,   0,   0,  90, 900,   2, 800,   0,  18,   0,  72,  12},    // 2: HHat-C    — a short, bright noise chick: a closed hi-hat
-    {   3,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 650,   0,  18,   0,  84,  20},   // 3: ShkFwd
-    {   4,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 505,   0,  19,   0,  84,  20},   // 4: ShkBack
-    {   5,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 400,   0,  19,   0,  84,  20},   // 5: Maracas
-    {   6,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 600,   1, 911,   0,  17,   0,  84,  20},   // 6: Caxixi
-    {   7,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 636,   0,  19,   0,  84,  20},   // 7: Cabasa
+    //  Prg    -  Ply  Vel  Ton  Cut Rsnc Gain GRat GDep GFad Swel NzMx NzRs NzFl NzFq Band  Rel VTon Pnch |Root  Dky
+    {   0,   0,   0,   1,   0,1999,  71,   5,  27, 500,   0,   0,  95, 950,   1, 200,   0,  19,   0,   0,  60,  15},   // 0: Clap      — multi-burst AM (~55 Hz, NoteOn) + Rel 19 for the 'tcha' tail; NzFq 200 (BP 2 kHz) toward the reference centroid (~3 kHz)
+    {   1,   0,   0,   1,   0,1999,  71,   5,  45, 500,   0,   0,  95, 940,   1, 550,   0,  19,   0,   0,  84,  30},   // 1: Shaker    — Rel 19 so the sustained rattle (noise_am_decay = 1.0) is audible by default; raise Rel for a longer rattle
+    {   2,   0,   0,   1,   0,1999,  71,   3,  37, 100,   0,   0,  90, 900,   2, 800,   0,  18,   0,   0,  72,  12},    // 2: HHat-C    — a short, bright noise chick: a closed hi-hat
+    {   3,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 650,   0,  18,   0,   0,  84,  20},   // 3: ShkFwd
+    {   4,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 505,   0,  19,   0,   0,  84,  20},   // 4: ShkBack
+    {   5,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 400,   0,  19,   0,   0,  84,  20},   // 5: Maracas
+    {   6,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 600,   1, 911,   0,  17,   0,   0,  84,  20},   // 6: Caxixi
+    {   7,   0,   0,   1,   0,1999,  71,   5,  40, 500,   0,   0,  95, 900,   2, 636,   0,  19,   0,   0,  84,  20},   // 7: Cabasa
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramGrnFade, 0, 0) &&
               brc::preset_column_in(kPresetKnobs, k_paramSwell, 0, 0) &&
               brc::preset_column_in(kPresetKnobs, k_paramBand, 0, 0) &&
-              brc::preset_column_in(kPresetKnobs, k_paramVelTone, 0, 0),
-              "GrnFade, Swell, Band and VelTone are 0 on every preset: their mappings are the identity there");
+              brc::preset_column_in(kPresetKnobs, k_paramVelTone, 0, 0) &&
+              brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "GrnFade, Swell, Band, VelTone and Punch are 0 on every preset: their mappings are the identity there");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramCutoff, 1999, 1999),

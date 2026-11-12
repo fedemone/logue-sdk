@@ -15,6 +15,12 @@
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
 // match it slot for slot.
 using Param = brc::ModalLayout;
+// One standard slot carries a tom knob of its own: Rel's (a second, finer
+// ring length beside Dkay) is Punch, the transient shaper
+// (brc::Punch).  It loads with the preset (0 on every row: off).
+enum TomParam : uint8_t {
+    k_paramPunch = Param::k_paramRel,   // 15
+};
 
 enum Preset : uint8_t {
     k_Djambe = 0,       // 0  -samples: Djambe-B3.wav (starts over 600Hz and settles to 215Hz), Djambe-A3.wav (starts over 1100Hz and settles to 747Hz +/- 10Hz)
@@ -107,42 +113,47 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
-    {   0,  48,   0,   1,   0,1999,  71,   5, 600,  35,   0,   0,   1,   5, 152,  12,   0,  35,   1,  15,   7, 450,   0, 500},   // 0: Djambe
-    {   1,  45,   0,   1,   0,1999,  71,   5, 450,  30,   0,   0,   2,   5, 200,  11,   0,  44,   0,   9,  30, 360,   0, 520},   // 1: Ac Tom    — stick transient layer + NzMx 30 for the close-mic attack brightness
-    {   2,  41,   0,   1,   0,1999,  71,   5, 250,  39,   0,   0,   1,   5, 200,  15,  10,  30,   0,  11,   9, 550,   0, 130},   // 2: Taiko2    — a deep Taiko-style membrane as a bass voice
-    {   3,  62,   0,   1,   0,1999,  71,   0, 600,  43,   0,   0,   1,   5, 158,  10,   3,   0,   1,   9,  15, 520,   0, 450},   // 3: Conga     — 250 ms open tone; slap softened by NzFq 450
-    {   4,  62,   0,   1,   0,1999,  71,   0, 700,  30,   0,   0,   0,   4, 190,  20,  22,   0,   0,  18,   5, 300,   0,1000},   // 4: Handpn
-    {   5,  50,   0,   1,   0,1999,  71,   0, 650,  41,   0,   0,   0,   5, 162,   8, -10,   0,   0,   0,   0, 520,   0, 450},   // 5: Bongo     — + wood 'tock' mode 5 in modal config
-    {   6,  53,   0,   1,   0,1999,  71,   5, 420,  36,   0,   0,   2,   5, 190,  12,   0,  52,   0,   6,  48, 300,   0, 700},    // 6: RackTom   — note 53 (F3, 174.6 Hz), the rack tom over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS — LoadPreset captures each into m_anchor from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  Ring length lives in kModalConfigs, shell in kVoicing
-    {   7,  60,   0,   1,   0,1999,  71,   0, 600,  50,   0,   0,   2,   5, 160,  10,   0,  20,   0,  10,  30, 441,   1, 400},   // 7: DjmTone
-    {   8,  84,   0,   1,   0,1999,  71,   0, 600,  18,   0,   0,   2,   5, 160,  10,   0,  60,   0,  10,  46, 381,   2, 501},   // 8: DjmSlap
-    {   9,  38,   0,   1,   0,1999,  71,   0, 300,  10,   0,   0,   2,   5, 160,  10,   0,  20,   0,  10,   0, 300,   0, 180},   // 9: DjmBass
-    {  10,  60,   0,   1,   0,1999,  71,   0, 600,  41,   0,   0,   2,   5, 160,  10,   0,  20,   0,  10,  40, 500,   0, 450},   // 10: CngOpen
-    {  11,  76,   0,   1,   0,1999,  71,   0, 600,   4,   0,   0,   2,   5, 160,  12,   0,  20,   0,  10,  40, 857,   0, 600},   // 11: CngMute
-    {  12,  72,   0,   1,   0,1999,  71,   0, 600,  36,   0,   0,   2,   5, 160,  10,   0,  60,   0,  10,   0, 500,   2, 150},   // 12: CngSlap
-    {  13,  51,   0,   1,   0,1999,  71,   0, 300,   8,   0,   0,   2,   5, 160,  12,   0,   0,   0,  10,  70, 300,   0,  30},   // 13: CngHeel
-    {  14,  55,   0,   1,   0,1999,  71,   0, 600,  41,   0,   0,   2,   5, 160,  15,   0,  20,   0,  10,  52, 500,   0, 208},   // 14: Tumba
-    {  15,  70,   0,   1,   0,1999,  71,   0, 600,  32,   0,   0,   2,   5, 160,  10,   0,  20,   0,  10,  20, 500,   0, 560},   // 15: BngMach
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Mdl  Dky Pnch  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    {   0,  48,   0,   1,   0,1999,  71,   5, 600,  35,   0,   0,   1,   5, 152,   0,   0,  35,   1,  15,   7, 450,   0, 500},   // 0: Djambe
+    {   1,  45,   0,   1,   0,1999,  71,   5, 450,  30,   0,   0,   2,   5, 200,   0,   0,  44,   0,   9,  30, 360,   0, 520},   // 1: Ac Tom    — stick transient layer + NzMx 30 for the close-mic attack brightness
+    {   2,  41,   0,   1,   0,1999,  71,   5, 250,  39,   0,   0,   1,   5, 200,   0,  10,  30,   0,  11,   9, 550,   0, 130},   // 2: Taiko2    — a deep Taiko-style membrane as a bass voice
+    {   3,  62,   0,   1,   0,1999,  71,   0, 600,  43,   0,   0,   1,   5, 158,   0,   3,   0,   1,   9,  15, 520,   0, 450},   // 3: Conga     — 250 ms open tone; slap softened by NzFq 450
+    {   4,  62,   0,   1,   0,1999,  71,   0, 700,  30,   0,   0,   0,   4, 190,   0,  22,   0,   0,  18,   5, 300,   0,1000},   // 4: Handpn
+    {   5,  50,   0,   1,   0,1999,  71,   0, 650,  41,   0,   0,   0,   5, 162,   0, -10,   0,   0,   0,   0, 520,   0, 450},   // 5: Bongo     — + wood 'tock' mode 5 in modal config
+    {   6,  53,   0,   1,   0,1999,  71,   5, 420,  36,   0,   0,   2,   5, 190,   0,   0,  52,   0,   6,  48, 300,   0, 700},    // 6: RackTom   — note 53 (F3, 174.6 Hz), the rack tom over Ac Tom's 45/110 Hz.  What voices it are the ABSOLUTE columns: NzMx 38 and NzFq 700 (7 kHz vs Ac Tom's 5.2) put more bright stick in the mix, NzRs 300 keeps it short.  Dky/Rel/Hit/Mtr/TbRd are REFERENCE ANCHORS — LoadPreset captures each into m_anchor from this very row, so every consumer's 2^(k·Δ) is exactly 1 here and they set where the knobs SIT, not the voicing.  Ring length lives in kModalConfigs, shell in kVoicing
+    {   7,  60,   0,   1,   0,1999,  71,   0, 600,  50,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  30, 441,   1, 400},   // 7: DjmTone
+    {   8,  84,   0,   1,   0,1999,  71,   0, 600,  18,   0,   0,   2,   5, 160,   0,   0,  60,   0,  10,  46, 381,   2, 501},   // 8: DjmSlap
+    {   9,  38,   0,   1,   0,1999,  71,   0, 300,  10,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,   0, 300,   0, 180},   // 9: DjmBass
+    {  10,  60,   0,   1,   0,1999,  71,   0, 600,  41,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  40, 500,   0, 450},   // 10: CngOpen
+    {  11,  76,   0,   1,   0,1999,  71,   0, 600,   4,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  40, 857,   0, 600},   // 11: CngMute
+    {  12,  72,   0,   1,   0,1999,  71,   0, 600,  36,   0,   0,   2,   5, 160,   0,   0,  60,   0,  10,   0, 500,   2, 150},   // 12: CngSlap
+    {  13,  51,   0,   1,   0,1999,  71,   0, 300,   8,   0,   0,   2,   5, 160,   0,   0,   0,   0,  10,  70, 300,   0,  30},   // 13: CngHeel
+    {  14,  55,   0,   1,   0,1999,  71,   0, 600,  41,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  52, 500,   0, 208},   // 14: Tumba
+    {  15,  70,   0,   1,   0,1999,  71,   0, 600,  32,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  20, 500,   0, 560},   // 15: BngMach
     {  16,  69,   0,   1,   0,1999,  71,   0, 600,  50,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  20, 797,   0, 734},   // 16: BngHmbr
-    {  17,  61,   0,   1,   0,1999,  71,   0, 600,  45,   0,   0,   2,   0, 160,  10,   0,  60,   0,  10,  20, 857,   1, 501},   // 17: TblaNa
-    {  18,  58,   0,   1,   0,1999,  71,   0, 600,  48,   0,   0,   2,   0, 160,   8,   0,  50,   0,  10,  15, 500,   2, 141},   // 18: TblaTin
-    {  19,  60,   0,   1,   0,1999,  71,   0, 600,  42,   0,   0,   2,   0, 160,  10,   0,  10,   0,  10,  81, 400,   0, 177},   // 19: TblaTun
-    {  20,  43,   0,   1,   0,1999,  71,   0, 400,  15,   0,   0,   2,   0, 160,  10,   0,  20,   0,  10,  50, 657,   0, 389},   // 20: TblaGe
-    {  21,  43,   0,   1,   0,1999,  71,   0, 400,  45,   0,   0,   2,   0, 160,   8,   0,  20,   0,  10,  68, 300,   0,  59},   // 21: TblGeBd
-    {  22,  43,   0,   1,   0,1999,  71,   0, 300,   2,   0,   0,   2,   5, 160,  10,   0,   0,   0,  10,   0, 300,   0, 200},   // 22: TblaKe
-    {  23,  43,   0,   1,   0,1999,  71,   0, 400,  32,   0,   0,   2,   5, 160,  12,   0,  10,   0,  10,  22, 300,   0, 249},   // 23: DrbDoum
-    {  24,  84,   0,   1,   0,1999,  71,   0, 600,  39,   0,   0,   2,   5, 160,  17,   0,  70,   0,  10,  72, 500,   2,1003},   // 24: DrbTek
-    {  25,  84,   0,   1,   0,1999,  71,   0, 600,  50,   0,   0,   2,   5, 160,  10,   0,  60,   0,  10,   3, 500,   2, 501},   // 25: DrbKa
-    {  26,  50,   0,   1,   0,1999,  71,   0, 600,  35,   0,   0,   2,   5, 160,  10,   0,  30,   0,  10,  12, 941,   0, 270},   // 26: TalkUp
-    {  27,  50,   0,   1,   0,1999,  71,   0, 600,  20,   0,   0,   2,   5, 160,  14,   0,  30,   0,  10,  12, 162,   0, 832},   // 27: TalkDn
-    {  28,  34,   0,   1,   0,1999,  71,   0, 350,   2,   0,   0,   2,   5, 160,  10,   0,  20,   0,  10,   2, 300,   0, 106},   // 28: SurdOpn
-    {  29,  34,   0,   1,   0,1999,  71,   0, 350,  36,   0,   0,   2,   5, 160,  10,   0,  20,   0,  10,  68, 300,   0,  30},   // 29: SurdMut
-    {  30,  73,   0,   1,   0,1999,  71,   0, 600,  38,   0,   0,   2,   5, 160,  10,   0,  50,   0,  10,   0, 500,   2, 300},   // 30: Tambrim
-    {  31,  45,   0,   1,   0,1999,  71,   0, 300,   2,   0,   0,   2,   5, 160,  10,   0,   0,   0,  10,  27, 300,   0, 138},   // 31: UduBass
+    {  17,  61,   0,   1,   0,1999,  71,   0, 600,  45,   0,   0,   2,   0, 160,   0,   0,  60,   0,  10,  20, 857,   1, 501},   // 17: TblaNa
+    {  18,  58,   0,   1,   0,1999,  71,   0, 600,  48,   0,   0,   2,   0, 160,   0,   0,  50,   0,  10,  15, 500,   2, 141},   // 18: TblaTin
+    {  19,  60,   0,   1,   0,1999,  71,   0, 600,  42,   0,   0,   2,   0, 160,   0,   0,  10,   0,  10,  81, 400,   0, 177},   // 19: TblaTun
+    {  20,  43,   0,   1,   0,1999,  71,   0, 400,  15,   0,   0,   2,   0, 160,   0,   0,  20,   0,  10,  50, 657,   0, 389},   // 20: TblaGe
+    {  21,  43,   0,   1,   0,1999,  71,   0, 400,  45,   0,   0,   2,   0, 160,   0,   0,  20,   0,  10,  68, 300,   0,  59},   // 21: TblGeBd
+    {  22,  43,   0,   1,   0,1999,  71,   0, 300,   2,   0,   0,   2,   5, 160,   0,   0,   0,   0,  10,   0, 300,   0, 200},   // 22: TblaKe
+    {  23,  43,   0,   1,   0,1999,  71,   0, 400,  32,   0,   0,   2,   5, 160,   0,   0,  10,   0,  10,  22, 300,   0, 249},   // 23: DrbDoum
+    {  24,  84,   0,   1,   0,1999,  71,   0, 600,  39,   0,   0,   2,   5, 160,   0,   0,  70,   0,  10,  72, 500,   2,1003},   // 24: DrbTek
+    {  25,  84,   0,   1,   0,1999,  71,   0, 600,  50,   0,   0,   2,   5, 160,   0,   0,  60,   0,  10,   3, 500,   2, 501},   // 25: DrbKa
+    {  26,  50,   0,   1,   0,1999,  71,   0, 600,  35,   0,   0,   2,   5, 160,   0,   0,  30,   0,  10,  12, 941,   0, 270},   // 26: TalkUp
+    {  27,  50,   0,   1,   0,1999,  71,   0, 600,  20,   0,   0,   2,   5, 160,   0,   0,  30,   0,  10,  12, 162,   0, 832},   // 27: TalkDn
+    {  28,  34,   0,   1,   0,1999,  71,   0, 350,   2,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,   2, 300,   0, 106},   // 28: SurdOpn
+    {  29,  34,   0,   1,   0,1999,  71,   0, 350,  36,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  68, 300,   0,  30},   // 29: SurdMut
+    {  30,  73,   0,   1,   0,1999,  71,   0, 600,  38,   0,   0,   2,   5, 160,   0,   0,  50,   0,  10,   0, 500,   2, 300},   // 30: Tambrim
+    {  31,  45,   0,   1,   0,1999,  71,   0, 300,   2,   0,   0,   2,   5, 160,   0,   0,   0,   0,  10,  27, 300,   0, 138},   // 31: UduBass
 };
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
+// What Rel, whose slot Punch took, shipped with: the exciter's noise release
+// and the ring's fine length still read it, so every preset plays as voiced.
+static const int8_t kShippedRel[kNumPresets] = {12, 11, 15, 10, 20, 8, 12, 10, 10, 10, 10, 12, 10, 12, 15, 10, 0, 10, 8, 10, 10, 8, 10, 12, 17, 10, 10, 14, 10, 10, 10, 10};
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),

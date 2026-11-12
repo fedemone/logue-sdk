@@ -16,10 +16,10 @@
 // match it slot for slot.
 using Param = brc::ModalLayout;
 // One standard slot carries a bar knob of its own: VlMllRes' (velocity →
-// noise-attack speed did nothing on the bars that have no noise) is Attack,
-// the voice's onset swell.  It loads with the preset (0 on every row).
+// noise-attack speed did nothing on the bars that have no noise) is Punch,
+// the voice's transient: a punchier hit, or a slower swell.  It loads with the preset (0 on every row).
 enum BarParam : uint8_t {
-    k_paramAttack = Param::k_paramVlMllRes,   // 10
+    k_paramPunch = Param::k_paramVlMllRes,   // 10
 };
 
 enum Preset : uint8_t {
@@ -87,7 +87,7 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Attk VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Pnch VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
     {   0,  72,   0,   1,   0,1999,  71,  20, 800,  13,   0,   0,   0,   6, 194,   5,  -7,   0,   2,   7,   0, 300,   0,1200},   // 0: Marimba   — exemplar BAR voice
     {   1,  72,   0,   1,   0,1999,  71,   0, 900,  34,   0,   0,   0,   1, 200,  20,  30,   0,   1,  18,   5, 300,   0,1500},   // 1: TblrBel
     {   2,  72,   0,   1,   0,1999,  71,   0, 500,  30,   0,   0,   0,   1, 200,  18,  28,   0,   0,  13,   0, 300,   0,1000},   // 2: Vibrph
@@ -108,8 +108,8 @@ static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
     {  17,  64,   0,   1,   0,1999,  71,   0, 800,  39,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  12, 260,   0, 605},   // 17: KlmbE4
     {  18,  69,   0,   1,   0,1999,  71,   0, 632,  33,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   0, 260,   0, 720},   // 18: KlmbA4
 };
-static_assert(brc::preset_column_in(kPresetKnobs, k_paramAttack, 0, 0),
-              "Attack is 0 on every preset: its mapping is the identity there");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 on every preset: its mapping is the identity there");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),

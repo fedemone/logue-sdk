@@ -26,11 +26,13 @@
 //   modal_bank.h     ModalPresetConfig, kMaxModes
 //   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kNumVoices
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -55,8 +57,12 @@ public:
 
     // Rattle sits in VlMllRes' slot (presets.h); VlMllRes then plays at 0,
     // the value every preset shipped (the default fixed_knob).
+    // Punch sits in Rel's slot; Rel plays at each preset's shipped value.
     static constexpr uint8_t role_at(uint8_t slot) {
-        return (slot == k_paramRattle) ? brc::kFamilyKnob : slot;
+        return (slot == k_paramRattle || slot == k_paramPunch) ? brc::kFamilyKnob : slot;
+    }
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) {
+        return (role == k_paramRel) ? kShippedRel[idx] : 0;   // VlMllRes: 0, as every preset shipped
     }
 
     // ── The strike ──────────────────────────────────────────────────────────
@@ -81,6 +87,7 @@ public:
         if (voicing().buzz_level > 0.0f) strike_buzz(v, tune, k);
         if (voicing().jg_level > 0.0f) strike_jingles(v.jingles, seed, tune, k);
         if (voicing().pt_level > 0.0f) strike_particles(v.particles, seed, tune, k);
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -104,6 +111,7 @@ public:
             x += layers * vel;
             const bool sounding = v.layers_active();
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);
@@ -168,7 +176,7 @@ private:
         namespace kn = brc::knob;
         LayerKnobs k;
         k.length   = brc::clampf(brc::knob_exp2(4.5f * (kn::decay(m_params[k_paramDkay]) - m_anchor.decay)
-                                                + 3.2f * (kn::release(m_params[k_paramRel]) - m_anchor.release)),
+                                                + 3.2f * (kn::release(knob(k_paramRel)) - m_anchor.release)),
                                  0.05f, 12.0f);
         k.bend     = brc::clampf(brc::knob_exp2(2.0f * (kn::inharm(m_params[k_paramInharm]) - m_anchor.inharm)),
                                  0.05f, 4.0f);

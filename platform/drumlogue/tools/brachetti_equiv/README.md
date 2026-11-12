@@ -19,12 +19,12 @@ ships as before.
 |---|---|---|---|---|
 | [`brachetti_kick`](../../brachetti_kick/) | `BrcKick` | Kick2, 808Sub, Kick | 24 | membrane modes + boom + thump |
 | [`brachetti_tom`](../../brachetti_tom/) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom; added: DjmTone, DjmSlap, DjmBass, CngOpen, CngMute, CngSlap, CngHeel, Tumba, BngMach, BngHmbr, TblaNa, TblaTin, TblaTun, TblaGe, TblGeBd, TblaKe, DrbDoum, DrbTek, DrbKa, TalkUp, TalkDn, SurdOpn, SurdMut, Tambrim, UduBass | 24 | membrane modes + boom + strike transient |
-| [`brachetti_kernel`](../../brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 20 (+2 blank) | dense coupled-resonator drum kernel |
+| [`brachetti_kernel`](../../brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 21 (+1 blank) | dense coupled-resonator drum kernel |
 | [`brachetti_snare`](../../brachetti_snare/) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot; added: BndDoum, BndTek, CajBass, CajSlap | 24 | modal head + snare-wire resonators |
 | [`brachetti_bar`](../../brachetti_bar/) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl; added: WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4 | 24 | free-bar modes + mallet |
 | [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick; added: AgogoHi, AgogoLo, Zills | 24 | plate modes + ring-coupled noise |
-| [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 19 | dense-resonator cymbal |
-| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 18 (+1 blank) | shaped noise + AM gating |
+| [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 20 | dense-resonator cymbal |
+| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 19 (+1 blank) | shaped noise + AM gating |
 | [`brachetti_world`](../../brachetti_world/) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | 24 | modal bank + friction voice, wire, buzz, jingles, particles |
 
 All nine are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
@@ -125,17 +125,28 @@ every preset and scores how much the sound changes.  Where a knob did nothing
 (or next to nothing) on most of a family, its slot got a job of that family's;
 where a standard name hid what a knob does in a family, it was relabelled:
 
-| Unit | New knobs (in the slot of) | Relabelled |
-|---|---|---|
-| kick | `DiveTm` (Partls), `Attack` (Model); `Dive` (Inharm) now dives all three kicks | `Thump` `Snap` `VelThmp` `VelSnap` `Weight` `Click` `Tune` |
-| tom | — (every knob live) | `Slap` `SlapSnp` |
-| snare | `Crack` (VlMllRes) now lengthens the crack and adds one where a preset has none | `Buzz` `BuzzTon` `Tight` `BuzzLen` |
-| bar | `Attack` (VlMllRes) | — |
-| plate | `Chirp` (VlMllRes) | — |
-| noise | `GrnFade` (HitPos), `Swell` (VlMllStf), `Band` (Model), `VelTone` (VlMllRes); `GrnDpth` adds grains | `GrnRate` |
-| world | `Rattle` (VlMllRes); `Pitch` now moves the jingles, beads and mirliton too | — |
-| cymbal | — (every knob live) | `Tang` `Density` |
-| kernel | — (every knob live) | `Knock` `Fill` |
+| Unit | New knobs (in the slot of) | Punch (in the slot of) | Relabelled |
+|---|---|---|---|
+| kick | `DiveTm` (Partls); `Dive` (Inharm) now dives all three kicks | Model (with the kick's onset and boom rise) | `Thump` `Snap` `VelThmp` `VelSnap` `Weight` `Click` `Tune` |
+| tom | — | Rel | `Slap` `SlapSnp` |
+| snare | `Crack` (VlMllRes) now lengthens the crack and adds one where a preset has none | Partls | `Buzz` `BuzzTon` `Tight` `BuzzLen` |
+| bar | — | VlMllRes (with the bar's onset swell) | — |
+| plate | `Chirp` (VlMllRes) | Rel | — |
+| noise | `GrnFade` (HitPos), `Swell` (VlMllStf), `Band` (Model), `VelTone` (VlMllRes); `GrnDpth` adds grains | a slot of its own | `GrnRate` |
+| world | `Rattle` (VlMllRes); `Pitch` now moves the jingles, beads and mirliton too | Rel | — |
+| cymbal | — | a slot of its own | `Tang` `Density` |
+| kernel | — | a slot of its own | `Knock` `Fill` |
+
+**Punch** is the transient shaper all nine share (`brc::Punch`): a gain curve
+from each strike that lets the attack through and lowers the body after it
+(up), or softens the attack (down), off at 0.  It never boosts the attack:
+each unit ends in a peak limiter that takes 5-25 dB off its hard strikes
+(measured, velocity 127: 808Sub −23 dB, Marmba −18 dB, TblaNa −21 dB; the
+body untouched), so the contrast has to come from what follows the strike.
+Where a 24-knob unit had no free slot, Punch took the weakest knob: Rel, a
+second, finer ring length beside Dkay (tom, plate, world), Partls on the snare
+(the head's mode count, under 0.5 dB on the classic snares), and the kick's
+and bar's Attack knobs grew into it.
 
 Every new knob is REFERENCE-ANCHORED and ships at the identity, and the
 standard knob it displaced keeps playing at each preset's shipped value, so
@@ -211,14 +222,14 @@ With the common / dedicated layout, the knobs of the families' own left out
 
 | Unit | Scenarios | Renders | Left out (the family's own) |
 |---|---|---|---|
-| kick | 695 | 2,174 | DiveTm, Attack, Dive |
-| tom | 1,670 | 3,863 | — |
-| kernel | 483 | 1,627 | — |
-| snare | 968 | 2,634 | Crack |
-| bar | 2,196 | 4,963 | Attack |
-| plate | 965 | 2,631 | Chirp |
-| cymbal | 1,185 | 3,165 | — |
-| noise | 488 | 1,828 | GrnDpth, GrnFade, Swell, Band, VelTone |
+| kick | 695 | 2,174 | DiveTm, Punch, Dive |
+| tom | 1,600 | 3,887 | Punch |
+| kernel | 483 | 1,627 | Punch |
+| snare | 940 | 2,578 | Crack, Punch |
+| bar | 2,196 | 4,963 | Punch |
+| plate | 922 | 2,586 | Chirp, Punch |
+| cymbal | 1,185 | 3,165 | Punch |
+| noise | 488 | 1,828 | GrnDpth, GrnFade, Swell, Band, VelTone, Punch |
 
 all IDENTICAL.
 
@@ -322,7 +333,7 @@ moves a little between toolchains; data sections are exact):
 
 (These are the restructuring's figures.  With the presets added after the
 split, each unit's README carries its current sizes; BrcWorld measures
-.text 19,680 · .rodata 3,504 · .data 4 · .bss 21,216, the 16 KB of wire
+.text 20,496 · .rodata 3,516 · .data 4 · .bss 21,296, the 16 KB of wire
 delay lines in `.bss`.)
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset

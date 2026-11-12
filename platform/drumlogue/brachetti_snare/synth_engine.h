@@ -29,14 +29,16 @@
 //                    knob::tube_radius
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kRollFuseSec
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -49,6 +51,13 @@ public:
     static const int16_t* preset_knobs(uint8_t idx) { return kPresetKnobs[idx]; }
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
+
+    // Punch sits in Partls' slot (presets.h); Partls plays at each preset's
+    // shipped value.
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramPunch) ? brc::kFamilyKnob : slot;
+    }
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) { (void)role; return kShippedPartls[idx]; }
 
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
@@ -81,6 +90,7 @@ public:
         v.onset.trigger(voicing().onset_ms * onset_scale);
         // A wider shell (TubRad) also feeds more energy into the boom.
         v.boom.mix *= strike_modal_bank(v, voicing().modal_mix);
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
     }
 
     // SNARE: NoteOff does not release the noise.  Real snare wires ring
@@ -115,6 +125,7 @@ public:
                 x += modes * v.modal.mix * kModalGain;
             }
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);

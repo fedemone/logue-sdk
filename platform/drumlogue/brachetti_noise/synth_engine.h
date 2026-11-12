@@ -35,7 +35,7 @@
 //   models.h         k_String
 //   voice_base.h     any_fading, fade_out_all, fuses_with, kNumVoices,
 //                    kRollFuseSec, next_voice, set_all_exciters
-//   voice_layers.h   NoiseGate
+//   voice_layers.h   NoiseGate, punch_amount
 #include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/exciter.h"
@@ -196,6 +196,7 @@ public:
         v.exciter.set_band_mix(m_model, voicing().noise_band_mix);
         gate_noise(v);
         shape_noise(v);
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
     }
 
     // Releases the noise into its Rel tail.
@@ -364,6 +365,7 @@ private:
             if (v.gate.active()) noise_gain *= v.gate.gain();
             x += v.exciter.noise_out_sample * noise_gain * v.current_velocity;
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.fade_out(x);
             out[i * 2] += x * brc::MasterStage::kBusGain;

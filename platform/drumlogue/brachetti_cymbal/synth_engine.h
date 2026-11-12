@@ -35,11 +35,13 @@
 //                    midi_velocity, off_anchor, seed_host_knobs
 //   master_stage.h   MasterStage, soft_saturate_bus, tone_tilt
 //   voice_base.h     any_fading, fade_out_all, kNumVoices
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -203,6 +205,9 @@ public:
         shape_strike(cc, pitch_ratio);
         v.cymbal.strike(cc, v.current_velocity, s.ring_scale, pitch_ratio, seed, still_ringing);
         v.cymbal.velocityGain *= s.level;
+        // A cymbal's body is its wash: up, the stick and bite pass and the
+        // wash drops after them (τ 40 ms).
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 5.0f, 40.0f);
     }
 
     // A cymbal has no release by design: the drumlogue fires gate on and off
@@ -468,6 +473,7 @@ private:
         const bool tone_active = (tone != 0.0f);
         for (size_t i = 0; i < frames; ++i) {
             float x = v.cymbal.process();
+            x = v.punch.apply(x);
             x = v.fade_out(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             out[i * 2] += x * brc::MasterStage::kBusGain;

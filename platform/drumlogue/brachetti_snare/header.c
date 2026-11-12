@@ -57,8 +57,10 @@ const __unit_header unit_header_t unit_header = {
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Tight"}},
 
         // Page 4 — dedicated
-        // Partls: mode-count offset around the preset's own count; shows the count
-        {0, 4, 0, 2, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
+        // Punch (the family's own, in Partls' slot): the transient shaper.  + the
+        // attack passes and the body drops after it (up to −15 dB), − a softer,
+        // rounder attack.  0 = off
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}},
         // Model: physical-model template
         {0, 8, 0, 5, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
         // Dkay: stored /10, displayed x10 (0-2000)

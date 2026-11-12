@@ -65,7 +65,9 @@ const __unit_header unit_header_t unit_header = {
         // Inharm: bipolar
         {-100, 100, 0, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
         {0, 20, 0, 0, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},   // blank: this unit has no knob here (it keeps the noise wedge's two knobs on one page)
+        // Punch: the transient shaper.  + the attack passes and the body drops
+        // after it (up to −15 dB), − a softer, rounder attack.  0 = off
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}},
 
         // Page 6 — dedicated
         {0, 100, 50, 1, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},

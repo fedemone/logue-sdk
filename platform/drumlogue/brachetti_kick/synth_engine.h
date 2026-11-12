@@ -33,12 +33,14 @@
 //   modal_bank.h     ModalPresetConfig
 //   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kRollFuseSec
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
 #include "../brachetti_common/voice_base.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -54,7 +56,7 @@ public:
 
     // ── The kick's own knobs in two standard slots (presets.h) ──────────────
     static constexpr uint8_t role_at(uint8_t slot) {
-        return (slot == k_paramDiveTm || slot == k_paramAttack) ? brc::kFamilyKnob : slot;
+        return (slot == k_paramDiveTm || slot == k_paramPunch) ? brc::kFamilyKnob : slot;
     }
     static int32_t fixed_knob(uint8_t idx, uint8_t role) {
         return (role == k_paramPartls) ? kShippedPartls[idx] : kShippedModel[idx];
@@ -89,6 +91,8 @@ public:
         beater_click(v);
         shape_attack(v);
         shape_dive(v);
+        // The boom is the body: it keeps a 10 ms hit, then drops (τ 25 ms).
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 10.0f, 25.0f);
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -111,6 +115,7 @@ public:
                 x += modes * v.chirp.open_modal(v.modal.mix) * kModalGain;
             }
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);
@@ -280,10 +285,13 @@ private:
     // Each is bipolar around 0, the value every preset ships: 0 is the
     // identity, so the presets play as voiced.
 
-    // Attack: below 0 punchier (a shorter onset ramp, a faster boom rise),
-    // above 0 softer — the onset stretches up to ×5.7 and, where a preset has
-    // none (808Sub), up to 30 ms; the boom rises up to ×5.7 slower.
-    float attack_knob() const { return brc::clampf((float)m_params[k_paramAttack] * 0.01f, -1.0f, 1.0f); }
+    // Punch: the kick's transient.  It drives the shared shaper (brc::Punch:
+    // up, the body drops after a 10 ms hit; down, a softened attack) and the
+    // kick's own attack: up punchier (a shorter onset ramp, a faster boom
+    // rise), down softer — the onset stretches up to ×5.7 and, where a preset
+    // has none (808Sub), up to 30 ms; the boom rises up to ×5.7 slower.
+    // attack_knob() is that second half's direction: −Punch.
+    float attack_knob() const { return -brc::punch_amount(m_params[k_paramPunch]); }
     float attack_ms() const {
         const float a = attack_knob();
         if (a == 0.0f) return voicing().onset_ms;

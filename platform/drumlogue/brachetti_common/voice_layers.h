@@ -10,6 +10,8 @@
 //   Transient   band-passed noise burst: click / slap    kick tom
 //   NoiseGate   enveloped-LFO gate on the noise          snare noise
 //   GlideCurve  held, then S-shaped 1 → 0 bend envelope   tom world
+//   Punch       the transient shaper (the Punch knob)    all nine
+#include <cmath>
 #include <cstdint>
 #include "dsp_math.h"
 #include "noise.h"
@@ -234,5 +236,64 @@ struct GlideCurve {
         return env;
     }
 };
+
+// ── Punch: the transient shaper ─────────────────────────────────────────────
+// A gain curve over the voice, started by the strike — a drum synth knows the
+// exact sample its transient starts on, so there is nothing to detect.  One
+// bipolar knob (−1 .. +1, 0 = off):
+//   + PUNCH: the attack passes untouched for hold_ms, then the body is pulled
+//     down (τ = body_ms) to knob_exp2(−2.5·amount): −15 dB at the top.  The
+//     attack is not boosted: every unit ends in a peak limiter that already
+//     takes 5-25 dB off its hard strikes, and would take a boost straight back
+//     off.  Lowering the body is the contrast the limiter cannot undo; the
+//     part gets quieter (the drumlogue's part level gives it back).
+//   − SOFTER: the voice fades in from 1 − 0.95·|amount| over τ = 2-20 ms, a
+//     rounder strike under a full body.
+// At 0 trigger() leaves it inactive and apply() returns x untouched, so a
+// preset renders byte-identically.  One multiply per sample while active.
+struct Punch {
+    float    gain   = 1.0f;
+    float    target = 1.0f;
+    float    coef   = 0.0f;   // one-pole step toward target
+    uint32_t hold   = 0;      // samples left before the gain starts to move
+    bool     active = false;
+
+    void reset() { gain = 1.0f; target = 1.0f; coef = 0.0f; hold = 0; active = false; }
+
+    // amount: the knob, −1 .. +1.  hold_ms / body_ms: how long the attack
+    // stays untouched and how fast the body then drops (a unit picks them for
+    // its family; the defaults suit a stick or hand strike).
+    void trigger(float amount, float hold_ms = 5.0f, float body_ms = 15.0f) {
+        amount = clampf(amount, -1.0f, 1.0f);
+        if (amount == 0.0f) { reset(); return; }
+        active = true;
+        if (amount > 0.0f) {
+            gain   = 1.0f;
+            target = knob_exp2(-2.5f * amount);
+            hold   = (uint32_t)(hold_ms * 0.001f * kSampleRate);
+            coef   = 1.0f - expf(-1.0f / (body_ms * 0.001f * kSampleRate));
+        } else {
+            gain   = 1.0f + 0.95f * amount;
+            target = 1.0f;
+            hold   = 0;
+            coef   = 1.0f - expf(-1.0f / ((2.0f - 18.0f * amount) * 0.001f * kSampleRate));
+        }
+    }
+
+    float apply(float x) {
+        if (!active) return x;
+        if (hold > 0) {
+            --hold;
+        } else {
+            gain += (target - gain) * coef;
+            // A softened attack is done once it is back at full level.
+            if (target == 1.0f && gain > 0.9999f) { active = false; gain = 1.0f; return x; }
+        }
+        return x * gain;
+    }
+};
+
+// The Punch knob's raw value (−100 .. 100) → the shaper's amount.
+inline float punch_amount(int32_t knob) { return clampf((float)knob * 0.01f, -1.0f, 1.0f); }
 
 }  // namespace brc

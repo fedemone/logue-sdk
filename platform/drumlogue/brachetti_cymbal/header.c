@@ -20,7 +20,7 @@ const __unit_header unit_header_t unit_header = {
     // is the preset control (stored with the pattern, automatable), and a
     // non-zero count would draw a second, competing preset UI.
     .num_presets = 0,
-    .num_params = 19,
+    .num_params = 20,
     .params = {
 
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
@@ -65,6 +65,9 @@ const __unit_header unit_header_t unit_header = {
         {-98, 98, 0, 0, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         // Inharm: bipolar
         {-100, 100, 0, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
-        {0, 20, 0, 15, k_unit_param_type_none, 1, 0, 0, {"TubRad"}}
+        {0, 20, 0, 15, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
+        // Punch: the transient shaper.  + the attack passes and the body drops
+        // after it (up to −15 dB), − a softer, rounder attack.  0 = off
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}}
     }
 };

@@ -34,10 +34,12 @@
 //                    knob_text, midi_velocity, seed_host_knobs
 //   master_stage.h   MasterControls, brickwall, tanh_knee, tone_tilt,
 //                    write_stereo
+//   voice_layers.h   Punch, punch_amount
 #include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
+#include "../brachetti_common/voice_layers.h"
 #include "modal_drum_kernel.h"
 #include "presets.h"
 
@@ -67,6 +69,7 @@ public:
         m_kernel.Flush();
         m_tone_lp = 0.0f;
         m_master.clear_filter();
+        m_punch.reset();
     }
 
     inline void Resume() {}
@@ -162,6 +165,9 @@ public:
         const float vel = m_common.velocity.apply(brc::midi_velocity(velocity));
         const float ratio = exp2f(((float)note - m_kernel.RootNote()) * 0.0833333333f);
         m_kernel.Trigger(note, ratio, vel);
+        // The kernel's two kettles share one output, so Punch shapes the unit
+        // from each strike (a strike on the other kettle restarts it).
+        m_punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 8.0f, 30.0f);
     }
 
     // The drums ring out under their measured decays: note-offs, gate-offs and
@@ -206,6 +212,7 @@ private:
 
     // ── Master stage ────────────────────────────────────────────────────────
     float master(float x, float tone, float drive_rel) {
+        x = m_punch.apply(x);   // the transient shaper (idle at Punch 0)
         if (tone != 0.0f) x = brc::tone_tilt(x, m_tone_lp, tone);   // every preset ships Tone 0
         x = m_master.filter.process(x);
         x *= drive_rel;   // Gain around the shipped value
@@ -335,5 +342,6 @@ private:
     brc::Anchors        m_anchor;
     float               m_noise_mix_anchor  = 0.0f;     // NzMix
     float               m_noise_freq_anchor = 380.0f;   // NzFltFrq, stored units
+    brc::Punch          m_punch;    // the Punch knob's transient shaper
     brc::CommonKnobs    m_common;   // Pitch, Velocity (the kernel has no Poly)
 };

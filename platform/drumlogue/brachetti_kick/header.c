@@ -59,9 +59,10 @@ const __unit_header unit_header_t unit_header = {
         // DiveTm (a kick knob, in Partls' slot): how fast the pitch dive falls,
         // ×1/4 .. ×4 around the shipped time
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"DiveTm"}},
-        // Attack (a kick knob, in Model's slot): − punchier (shorter onset,
-        // faster boom rise), + softer and slower
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Attack"}},
+        // Punch (a kick knob, in Model's slot): the transient.  + a shorter
+        // onset, a faster boom rise and the body dropped after a 10 ms hit;
+        // − softer and slower
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}},
         // Dkay: stored /10, displayed x10 (0-2000)
         {0, 200, 25, 200, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
         {0, 20, 0, 18, k_unit_param_type_none, 1, 0, 0, {"Rel"}},

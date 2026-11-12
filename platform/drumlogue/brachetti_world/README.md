@@ -59,7 +59,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ni
 | 1 | common | `Program` · `Pitch` · `Poly` · `Velocity` |
 | 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
 | 3 | dedicated | `MlltRes` · `MlltStif` · `Rattle` · `VlMllStf` |
-| 4 | dedicated | `Partls` · `Model` · `Dkay` · `Rel` |
+| 4 | dedicated | `Partls` · `Model` · `Dkay` · `Punch` |
 | 5 | dedicated | `Mterl` · `HitPos` · `Inharm` · `TubRad` |
 | 6 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
 
@@ -83,7 +83,7 @@ The modal engine's knobs act on the bank and the exciter as on the other modal u
 
 | Knob | On the layers | Up turns it |
 |---|---|---|
-| `Dkay` + `Rel` | **length**: the cuica's stroke (hold, decay, the thumb's timing); the wire's ring and the gourd's swing; the jingles' ring and the spread of their bounces; the beads' cascade (the rainstick's fall) | longer |
+| `Dkay` | **length**: the cuica's stroke (hold, decay, the thumb's timing); the wire's ring and the gourd's swing; the jingles' ring and the spread of their bounces; the beads' cascade (the rainstick's fall) | longer |
 | `Inharm` | **bend**: the cuica's rise and fall, the depth of the berimbau gourd's wah | deeper |
 | `TubRad` | **body**: the cuica's formants, the gourd, the shells, the mirliton, the jingles' band | lower: a bigger body |
 | `Mterl` | **material**: the wire's brightness, the beads' click length, the cuica stick's rub noise | brighter, drier |
@@ -91,7 +91,15 @@ The modal engine's knobs act on the bank and the exciter as on the other modal u
 | `MlltRes` | **presence**: the layers' level, as it is the bank's | louder |
 | `Rattle` | **contact noise**: the balafons' mirliton buzz (it buzzes from a lower level), the jingles' clash (louder, longer), the beads' and the wire's dry contact (added where a preset ships none), the cuica stick's rub | rattlier; down cleaner (×¼ .. ×4) |
 
+(`Rel`, a second and finer ring length beside `Dkay`, gave its slot to `Punch`; it plays at each preset's shipped value.)
+
 `Inharm` has nothing to bend on the riq, the pandeiro, the shekere and the rainstick (jingles and beads have no glide).  `Partls`, `Model`, `VlMllStf` and `HitPos` act on the bank and the exciter only, so they do nothing on Cuica, the berimbaus and Rainstk.
+
+### Punch: the transient shaper
+
+`Punch` is a gain curve over each voice, started by its strike (a drum synth knows the sample its transient starts on, so nothing has to be detected).  **Up**, the first 5 ms pass untouched and then the body drops (τ 15 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.
+
+It never boosts the attack.  The unit ends in a peak limiter that already takes 5-25 dB off its hard strikes and would take a boost straight back off; lowering what follows the strike is the contrast it cannot undo.  So more `Punch` is also a quieter part: raise the drumlogue's part level to compensate.  Measured at velocity 110, `Punch` +100 lowers the body by 11-15 dB with the strike's peak unchanged.  It is `brc::Punch`, shared by all nine units.
 
 ### Knob review
 

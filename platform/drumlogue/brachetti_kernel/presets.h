@@ -38,7 +38,7 @@ enum ParamIndex : uint8_t {
     k_paramHitPos,     // 16  page 5: dedicated
     k_paramInharm,     // 17
     k_paramTubRad,     // 18
-    k_paramNoKnob19,   // 19  blank: keeps the noise wedge on one page
+    k_paramPunch,      // 19  the transient shaper (brc::Punch)
     k_paramNzMix,      // 20  page 6: dedicated
     k_paramNzFltFrq,   // 21
     k_lastParamIndex     // marker
@@ -85,12 +85,14 @@ static inline const char* preset_name(uint8_t idx) {
 //    brighter crack (NzMix 52, NzFltFrq 800 ≈ 8 kHz) and a leaner boom for a
 //    brighter, longer ring.
 static constexpr int16_t kPresetKnobs[kNumPresets][k_lastParamIndex] = {
-    //  Prg Root    -  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Dky  Rel  Mtr  Hit InHm TbRd    - NzMx NzFq
+    //  Prg Root    -  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Dky  Rel  Mtr  Hit InHm TbRd Pnch NzMx NzFq
     {   0,  52,   0,   1,   0,1999,  71,   4, 360,  30,   0,  40,   2, 150,  18,  10,  36,   1,   0,   0,   1, 380},   // 0: Timpani
     {   1,  41,   0,   1,   0,1999,  71,   5, 250,  45,   0,   0,   1, 120,  15,  10,  30,   0,  16,   0,  52, 800}    // 1: Taiko
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramCutoff, 1999, 1999),

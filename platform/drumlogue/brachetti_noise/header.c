@@ -20,7 +20,7 @@ const __unit_header unit_header_t unit_header = {
     // is the preset control (stored with the pattern, automatable), and a
     // non-zero count would draw a second, competing preset UI.
     .num_presets = 0,
-    .num_params = 19,
+    .num_params = 20,
     .params = {
 
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
@@ -70,6 +70,9 @@ const __unit_header unit_header_t unit_header = {
         {0, 20, 0, 19, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // VelTone (new, in VlMllRes' slot): velocity → brightness: + a harder
         // stroke opens the noise filter (a soft one closes it), − the reverse
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VelTone"}}
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VelTone"}},
+        // Punch: the transient shaper.  + the attack passes and the body drops
+        // after it (up to −15 dB), − a softer, rounder attack.  0 = off
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}}
     }
 };

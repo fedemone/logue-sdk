@@ -41,7 +41,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ni
 | 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
 | 3 | dedicated | `Knock` · `MlltStif` · `VlMllRes` · `VlMllStf` |
 | 4 | dedicated | `Fill` · `Dkay` · `Rel` · `Mterl` |
-| 5 | dedicated | `HitPos` · `Inharm` · `TubRad` · — |
+| 5 | dedicated | `HitPos` · `Inharm` · `TubRad` · `Punch` |
 | 6 | dedicated | `NzMix` · `NzFltFrq` |
 
 ### Common knobs
@@ -71,10 +71,17 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ni
 | `HitPos` | `HitPos` | knock click |
 | `Inharm` | `Inharm` | upper-mode stretch |
 | `TubRad` | `TubRad` | body size (longer and darker) |
+| `Punch` | **own** | the transient shaper (see below); the two kettles share one output, so a strike on either restarts it |
 | `NzMix` | `NzMix` | noise-wedge level (Timpani ships none: opening it adds the taiko-style air) |
 | `NzFltFrq` | `NzFltFrq` | noise-wedge start cutoff |
 
 **Is** names the original knob a dedicated knob is, or **own** for a knob of this family.  Every dedicated knob (but a host-owned one, which keeps its place across a Program change) loads with the preset, and is REFERENCE-ANCHORED on the value it shipped with: a preset plays its calibrated sound at its own knob positions, and only movement alters it.  The knobs this unit's own knobs replaced keep playing at each preset's shipped value, so every preset sounds exactly as it did.
+
+### Punch: the transient shaper
+
+`Punch` is a gain curve over each voice, started by its strike (a drum synth knows the sample its transient starts on, so nothing has to be detected).  **Up**, the first 8 ms pass untouched and then the kettles' ring drops (τ 30 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.
+
+It never boosts the attack.  The unit ends in a peak limiter that already takes 5-25 dB off its hard strikes and would take a boost straight back off; lowering what follows the strike is the contrast it cannot undo.  So more `Punch` is also a quieter part: raise the drumlogue's part level to compensate.  Measured at velocity 110, `Punch` +100 lowers the body by 11-15 dB with the strike's peak unchanged.  It is `brc::Punch`, shared by all nine units.
 
 ### Knob review
 

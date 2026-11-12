@@ -61,7 +61,10 @@ const __unit_header unit_header_t unit_header = {
         {0, 8, 0, 1, k_unit_param_type_strings, 0, 0, 0, {"Model"}},
         // Dkay: stored /10, displayed x10 (0-2000)
         {0, 200, 25, 160, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
-        {0, 20, 0, 10, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
+        // Punch (the family's own, in Rel's slot): the transient shaper.  + the
+        // attack passes and the body drops after it (up to −15 dB), − a softer,
+        // rounder attack.  0 = off
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Punch"}},
 
         // Page 5 — dedicated
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},

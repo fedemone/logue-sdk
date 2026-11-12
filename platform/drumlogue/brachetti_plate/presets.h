@@ -20,6 +20,7 @@ using Param = brc::ModalLayout;
 // the strike.  It loads with the preset (0 on every row).
 enum PlateParam : uint8_t {
     k_paramChirp = Param::k_paramVlMllRes,   // 10
+    k_paramPunch = Param::k_paramRel,   // 15: the transient shaper (brc::Punch)
 };
 
 enum Preset : uint8_t {
@@ -63,17 +64,22 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Chrp VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
-    {   0,  67,   0,   1,   0,1999,  71,  30, 800,  42,   0,   0,   0,   4, 175,   4,  20,   0,   3,   3,  40, 300,   0,1000},   // 0: Cowbell   — short clank (modal cfg 180 ms) + strike noise (NzMx 40) toward the bright reference clank
-    {   1,  69,   0,   1,   0,1999,  71,   0, 900,  47,   0,   0,   0,   1,  60,  15,  20,   0,   2,  20,  10, 300,   0,1500},   // 1: Triangle  — NzMx 10 feeds the raised shimmer (NoteOn) for the >8 kHz metal sheen.  Dkay 60 is the ANCHOR of the short T60s in kModalConfigs — change the two together or the knob just re-lengthens the ring.
-    {   2,  84,   0,   1,   0,1999,  71,   0, 900,  42,   0,   0,   0,   1, 200,   8,  20,   0,   1,   3,   0, 300,   0,1200},   // 2: BelTre
-    {   3,  79,   0,   1,   0,1999,  71,   0, 900,  50,   0,   0,   0,   4, 160,   2,  14,   0,   2,   3,  58, 960,   2, 900},    // 3: Tick      — a metallic closed-hat chick + clack mode (modal cfg)
-    {   4,  82,   0,   1,   0,1999,  71,   0, 900,  45,   0,   0,   2,   4, 175,  10,  20,   0,   0,  10, 100, 300,   0, 849},   // 4: AgogoHi
-    {   5,  77,   0,   1,   0,1999,  71,   0, 900,  45,   0,   0,   2,   4, 175,  10,  20,   0,   0,  10,  58, 300,   0,1200},   // 5: AgogoLo
-    {   6,  99,   0,   1,   0,1999,  71,   0, 900,  41,   0,   0,   2,   4, 175,  10,  20,   0,   0,  10,  15,  62,   0,1800},   // 6: Zills
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Chrp VlSt Ptls  Mdl  Dky Pnch  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    {   0,  67,   0,   1,   0,1999,  71,  30, 800,  42,   0,   0,   0,   4, 175,   0,  20,   0,   3,   3,  40, 300,   0,1000},   // 0: Cowbell   — short clank (modal cfg 180 ms) + strike noise (NzMx 40) toward the bright reference clank
+    {   1,  69,   0,   1,   0,1999,  71,   0, 900,  47,   0,   0,   0,   1,  60,   0,  20,   0,   2,  20,  10, 300,   0,1500},   // 1: Triangle  — NzMx 10 feeds the raised shimmer (NoteOn) for the >8 kHz metal sheen.  Dkay 60 is the ANCHOR of the short T60s in kModalConfigs — change the two together or the knob just re-lengthens the ring.
+    {   2,  84,   0,   1,   0,1999,  71,   0, 900,  42,   0,   0,   0,   1, 200,   0,  20,   0,   1,   3,   0, 300,   0,1200},   // 2: BelTre
+    {   3,  79,   0,   1,   0,1999,  71,   0, 900,  50,   0,   0,   0,   4, 160,   0,  14,   0,   2,   3,  58, 960,   2, 900},    // 3: Tick      — a metallic closed-hat chick + clack mode (modal cfg)
+    {   4,  82,   0,   1,   0,1999,  71,   0, 900,  45,   0,   0,   2,   4, 175,   0,  20,   0,   0,  10, 100, 300,   0, 849},   // 4: AgogoHi
+    {   5,  77,   0,   1,   0,1999,  71,   0, 900,  45,   0,   0,   2,   4, 175,   0,  20,   0,   0,  10,  58, 300,   0,1200},   // 5: AgogoLo
+    {   6,  99,   0,   1,   0,1999,  71,   0, 900,  41,   0,   0,   2,   4, 175,   0,  20,   0,   0,  10,  15,  62,   0,1800},   // 6: Zills
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramChirp, 0, 0),
               "Chirp is 0 on every preset: its mapping is the identity there");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
+// What Rel, whose slot Punch took, shipped with: the exciter's noise release
+// and the ring's fine length still read it, so every preset plays as voiced.
+static const int8_t kShippedRel[kNumPresets] = {4, 15, 8, 2, 10, 10, 10};
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),

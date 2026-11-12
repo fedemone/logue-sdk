@@ -63,7 +63,28 @@ MODAL_KNOB_DEFAULTS = dict(Ply=0, Vel=1, VlRs=0, VlSt=0, Ptls=2, Mdl=3, Dky=150,
 # not a column: add a new preset's to kShippedModel in presets.h by hand.
 NOISE_KNOBS = ["Prg", "-", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
                "MlSt", "MlRs", "GFad", "Swel", "NzMx", "NzRs", "NzFl", "NzFq",
-               "Band", "Rel", "VTon", "Root", "Dky"]
+               "Band", "Rel", "VTon", "Pnch", "Root", "Dky"]
+# Standard knobs whose slot a unit gave to its Punch knob: the column ships
+# Punch's 0 (off), and the spec's value goes to the unit's per-preset table
+# of what the displaced knob shipped with (the unit reads it from there).
+DISPLACED = {"tom": ("Rel", "kShippedRel"), "plate": ("Rel", "kShippedRel"),
+             "world": ("Rel", "kShippedRel"), "snare": ("Ptls", "kShippedPartls")}
+
+
+def shipped_table(text, unit, values, at=None):
+    """Append values to (or, with at, overwrite entry at of) the unit's table of
+    a displaced knob's shipped values (DISPLACED)."""
+    if unit not in DISPLACED:
+        return text
+    col, table = DISPLACED[unit]
+    m = re.search(r"(static const int8_t %s\[kNumPresets\] = \{)([^}]*)(\};)" % table, text)
+    vals = [x.strip() for x in m.group(2).split(",") if x.strip()]
+    new = ["%d" % int(round(v[col])) for v in values]
+    if at is None:
+        vals += new
+    else:
+        vals[at] = new[0]
+    return text[:m.start(2)] + ", ".join(vals) + text[m.end(2):]
 NOISE_KNOB_DEFAULTS = dict(Ply=0, Vel=1, MlRs=500, MlSt=40, VlRs=0, VlSt=0, Mdl=5, Ton=0,
                            Hit=50, Rel=18, Cut=1999, Gain=3, NzMx=95, NzRs=900, NzFl=1,
                            NzFq=500, Rsnc=71, Root=84, Dky=20)
@@ -142,6 +163,8 @@ def knob_row(v, idx, unit):
     vals = []
     for c in cols:
         x = idx if c == "Prg" else int(round(v.get(c, 0)))
+        if unit in DISPLACED and c == DISPLACED[unit][0]:
+            x = 0   # the slot is Punch's (off); the value goes to shipped_table
         if c in KNOB_RANGES:
             lo, hi = KNOB_RANGES[c]
             x = max(lo, min(hi, x))
@@ -206,6 +229,7 @@ def write_presets(unit, specs, vals, trims, source):
                         ["    /* %-14s */" % s["enum"] + voicing_row(v, unit)[4:] for s, v in zip(specs, vals)])
     text = insert_table(text, "kOutTrim[kNumPresets]",
                         ["    /* %-2d %-7s */ %.5ff," % (n0 + i, s["name"], t) for i, (s, t) in enumerate(zip(specs, trims))])
+    text = shipped_table(text, unit, vals)
     open(p, "w").write(text)
     h = os.path.join(d, "header.c")
     ht = open(h).read()
@@ -244,6 +268,7 @@ def rewrite_presets(unit, specs, vals, trims):
              lambda m: m.group(1) + voicing_row(v, unit)[4:])
         sub1(r"^(    /\* %-2d %-7s \*/ )[0-9.]+f,?$" % (i, re.escape(s["name"])),
              lambda m: m.group(1) + "%.5ff," % t)
+        text = shipped_table(text, unit, [v], at=i)
     open(p, "w").write(text)
     print("rewrote %d presets in %s" % (len(specs), d), file=sys.stderr)
 
@@ -260,6 +285,7 @@ def patch_presets(text, unit, cands, first_idx):
     if unit != "noise":
         text = insert_table(text, "kModalConfigs[kNumPresets]", [modal_row(c) for c in cands])
     text = insert_table(text, "kVoicing[kNumPresets]", [voicing_row(c, unit) for c in cands])
+    text = shipped_table(text, unit, cands)
     text = insert_table(text, "kOutTrim[kNumPresets]", ["    1.0f," for _ in cands])
     return text
 

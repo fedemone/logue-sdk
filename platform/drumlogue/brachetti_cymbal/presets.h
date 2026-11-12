@@ -38,9 +38,10 @@ enum ParamIndex : uint8_t {
     k_paramHitPos,     // 16  page 5: dedicated
     k_paramInharm,     // 17
     k_paramTubRad,     // 18
+    k_paramPunch,      // 19  the transient shaper (brc::Punch)
     k_lastParamIndex     // marker
 };
-static_assert(k_lastParamIndex == 19, "header.c declares 19 params");
+static_assert(k_lastParamIndex == 20, "header.c declares 20 params");
 
 // ── The presets ─────────────────────────────────────────────────────────────
 // (The comments name each preset's reference recording.)
@@ -82,16 +83,18 @@ static inline const char* preset_name(uint8_t idx) {
 // Resnc) are never loaded; the static_asserts below pin them so a preset
 // cannot quietly ship its own.  int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Dky  Rel  Mtr  Hit InHm TbRd
-    {   0,  65,   0,   1,   0,1999,  71,   5, 800,  45,   0,   0,   3, 200,  18,  28,   0,   1,  15},   // 0: Cymbal
-    {   1,  50,   0,   1,   0,1999,  71,  20, 200,   2,   0,   0,   3, 190,  20,   1,   0,   1,  20},   // 1: Gong
-    {   2,  79,   0,   1,   0,1999,  71,   0, 900,  49,   0,   0,   3, 200,  18,  18,   0,   1,  12},   // 2: HHat-O
-    {   3,  69,   0,   1,   0,1999,  71,   0, 900,  50,   0,   0,   3, 190,  18,  28,   0,   1,  17},   // 3: Ride
-    {   4,  60,   0,   1,   0,1999,  71,   0, 900,  49,   0,   0,   3, 200,   8,  16,   0,   1,   1},   // 4: RidBel
-    {   5,  76,   0,   1,   0,1999,  71,   5, 800,  45,   0,   0,   3, 200,  18,  28,   0,   1,  15}    // 5: Splash
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Dky  Rel  Mtr  Hit InHm TbRd Pnch
+    {   0,  65,   0,   1,   0,1999,  71,   5, 800,  45,   0,   0,   3, 200,  18,  28,   0,   1,  15,   0},   // 0: Cymbal
+    {   1,  50,   0,   1,   0,1999,  71,  20, 200,   2,   0,   0,   3, 190,  20,   1,   0,   1,  20,   0},   // 1: Gong
+    {   2,  79,   0,   1,   0,1999,  71,   0, 900,  49,   0,   0,   3, 200,  18,  18,   0,   1,  12,   0},   // 2: HHat-O
+    {   3,  69,   0,   1,   0,1999,  71,   0, 900,  50,   0,   0,   3, 190,  18,  28,   0,   1,  17,   0},   // 3: Ride
+    {   4,  60,   0,   1,   0,1999,  71,   0, 900,  49,   0,   0,   3, 200,   8,  16,   0,   1,   1,   0},   // 4: RidBel
+    {   5,  76,   0,   1,   0,1999,  71,   5, 800,  45,   0,   0,   3, 200,  18,  28,   0,   1,  15,   0}    // 5: Splash
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramCutoff, 1999, 1999),

@@ -38,11 +38,17 @@ README.md lists the presets and what every knob does.
   static_assert checks the count; the order is on you), header defaults must
   equal preset 0's row, and the knobs the host owns (the common Pitch, Poly,
   Velocity, Tone, Cutoff, Resnc, and Slap (the VlMllRes role)) are never
-  loaded: static_asserts in `presets.h` pin their table columns.  A knob
-  relabelled in `header.c` keeps its role and is listed in
+  loaded: static_asserts in `presets.h` pin their table columns.  Rel's slot
+  is `Punch` (`role_at` returns `brc::kFamilyKnob` there; `fixed_knob` gives
+  Rel each preset's shipped value, `kShippedRel`).  A knob relabelled in
+  `header.c` keeps its role and is listed in
   `../tools/brachetti_equiv/aliases.txt`, so `run_equiv.sh` still compares it
   with the original; a knob with a new job is left out of the comparison and
   named.
+- **Punch** is the shared transient shaper (`brc::Punch`, `voice_layers.h`):
+  triggered at the end of NoteOn, applied right after `follow_and_gate`.  At 0
+  it is skipped entirely, so every preset renders byte-identically; keep it
+  that way.
 - **Nothing shared between units.**  The drumlogue loads several units into one
   process, and a static local of an inline function or template (a table, a
   buffer) becomes an STB_GNU_UNIQUE symbol the loader shares among all of
@@ -74,7 +80,7 @@ README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_tom`
-  (shipped: .text 15220 · .rodata 7260 · .data.rel.ro 176 · .data 1968 · .bss 292).
+  (shipped: .text 15820 · .rodata 7292 · .data.rel.ro 176 · .data 2048 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_tom --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

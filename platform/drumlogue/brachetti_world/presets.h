@@ -20,6 +20,7 @@ using Param = brc::ModalLayout;
 // It loads with the preset (0 on every row).
 enum WorldParam : uint8_t {
     k_paramRattle = Param::k_paramVlMllRes,   // 10
+    k_paramPunch = Param::k_paramRel,   // 15: the transient shaper (brc::Punch)
 };
 
 // Every preset is voiced after a sample of the Pelle e Legno kit
@@ -64,19 +65,24 @@ static inline const char* preset_name(uint8_t idx) {
 // the host owns (Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc) are
 // never loaded; the static_asserts below pin them.
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Rttl VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
-    {   0,  69,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  10, 300,   0, 800},   // 0: Cuica
-    {   1,  46,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  24, 200,   2, 200},   // 1: Berimbu
-    {   2,  48,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  40, 200,   2, 200},   // 2: BerimHi
-    {   3,  60,   0,   1,   0,1999,  71,   0, 800,  25,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  10, 300,   0, 800},   // 3: BalafnC
-    {   4,  67,   0,   1,   0,1999,  71,   0, 800,  13,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  10, 300,   0, 800},   // 4: BalafnG
-    {   5,  63,   0,   1,   0,1999,  71,   0, 800,  29,   0,   0,   2,   3, 160,  10,   0,  60,   0,  10,   0, 281,   2, 500},   // 5: Riq
-    {   6,  53,   0,   1,   0,1999,  71,   0, 800,  23,   0,   0,   2,   3, 160,  10,   0,  50,   0,  10,  54, 519,   0, 356},   // 6: Pandeir
-    {   7,  54,   0,   1,   0,1999,  71,   0, 400,   2,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  10, 419,   0, 300},   // 7: Shekere
-    {   8,  72,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  10, 300,   0, 800},   // 8: Rainstk
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Rttl VlSt Ptls  Mdl  Dky Pnch  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    {   0,  69,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  10, 300,   0, 800},   // 0: Cuica
+    {   1,  46,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  24, 200,   2, 200},   // 1: Berimbu
+    {   2,  48,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  40, 200,   2, 200},   // 2: BerimHi
+    {   3,  60,   0,   1,   0,1999,  71,   0, 800,  25,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  10, 300,   0, 800},   // 3: BalafnC
+    {   4,  67,   0,   1,   0,1999,  71,   0, 800,  13,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  10, 300,   0, 800},   // 4: BalafnG
+    {   5,  63,   0,   1,   0,1999,  71,   0, 800,  29,   0,   0,   2,   3, 160,   0,   0,  60,   0,  10,   0, 281,   2, 500},   // 5: Riq
+    {   6,  53,   0,   1,   0,1999,  71,   0, 800,  23,   0,   0,   2,   3, 160,   0,   0,  50,   0,  10,  54, 519,   0, 356},   // 6: Pandeir
+    {   7,  54,   0,   1,   0,1999,  71,   0, 400,   2,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  10, 419,   0, 300},   // 7: Shekere
+    {   8,  72,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,   0,   0,   0,   0,  10,  10, 300,   0, 800},   // 8: Rainstk
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramRattle, 0, 0),
               "Rattle is 0 on every preset: its mapping is the identity there");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
+// What Rel, whose slot Punch took, shipped with: the exciter's noise release
+// and the ring's fine length still read it, so every preset plays as voiced.
+static const int8_t kShippedRel[kNumPresets] = {10, 10, 10, 10, 10, 10, 10, 10, 10};
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),

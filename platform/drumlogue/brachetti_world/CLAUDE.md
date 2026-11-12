@@ -23,6 +23,10 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
   other eight, and the render comparison above here).  Each file's
   `From brachetti_common` block lists the helpers it uses
   (`../tools/brachetti_equiv/lib_uses.py --write` / `--check`).
+- **Punch** is the shared transient shaper (`brc::Punch`, `voice_layers.h`):
+  triggered at the end of NoteOn, applied right after `follow_and_gate`.  At 0
+  it is skipped entirely, so every preset renders byte-identically; keep it
+  that way.
 - **Nothing shared between units.**  Tables and buffers at namespace scope
   with `static` (`kPresetNames`, `kModeWeight`, `s_wire_lines`), never static
   locals of inline functions (STB_GNU_UNIQUE).  `arm_size.sh` and
@@ -33,8 +37,10 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
   knobs (`../brachetti_common/common_knobs.h`), the same on all nine units;
   pages 3-6 are the modal engine's standard set (`brc::ModalLayout`, which
   `header.c` must match slot for slot), except VlMllRes' slot, which is
-  `Rattle`: `role_at` returns `brc::kFamilyKnob` there, VlMllRes plays at 0
-  (the default `fixed_knob`) and the slot loads with the preset.
+  `Rattle`, and Rel's, which is `Punch` (`fixed_knob` gives Rel each preset's
+  shipped value, `kShippedRel`): `role_at` returns `brc::kFamilyKnob` there,
+  VlMllRes plays at 0 (the default `fixed_knob`) and the slot loads with the
+  preset.
 - **The layers' knobs are anchored too.**  `layer_knobs()` turns seven knobs
   into factors once per strike (length, bend, body, material, density,
   presence, rattle), each `knob_exp2(slope × (knob − anchor))`, so exactly 1
@@ -53,7 +59,7 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_world`
-  (shipped: .text 19680 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21216).
+  (shipped: .text 20496 · .rodata 3516 · .data.rel.ro 84 · .data 4 · .bss 21296).
 - CPU: `../tools/brachetti_equiv/arm_cpu.sh ../../brachetti_world` (needs
   qemu-user; not yet measured).
 

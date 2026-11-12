@@ -27,10 +27,12 @@
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
 //   modal_synth.h    ModalSynth, kFamilyKnob
+//   voice_layers.h   punch_amount
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/voice_layers.h"
 #include "presets.h"
 #include "voice.h"
 
@@ -46,8 +48,12 @@ public:
 
     // Chirp sits in VlMllRes' slot (presets.h); VlMllRes then plays at 0,
     // the value every plate shipped (the default fixed_knob).
+    // Punch sits in Rel's slot; Rel plays at each preset's shipped value.
     static constexpr uint8_t role_at(uint8_t slot) {
-        return (slot == k_paramChirp) ? brc::kFamilyKnob : slot;
+        return (slot == k_paramChirp || slot == k_paramPunch) ? brc::kFamilyKnob : slot;
+    }
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) {
+        return (role == k_paramRel) ? kShippedRel[idx] : 0;   // VlMllRes: 0, as every plate shipped
     }
 
     // ── The strike ──────────────────────────────────────────────────────────
@@ -69,6 +75,8 @@ public:
         v.chirp.trigger(voicing().chirp_hz);   // every plate preset but BelTre chirps
         dial_chirp(v);
         strike_modal_bank(v, voicing().modal_mix);
+        // A struck plate rings long: the body drops more slowly after the hit.
+        v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]), 5.0f, 30.0f);
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -87,6 +95,7 @@ public:
                 x += modes * v.chirp.open_modal(v.modal.mix) * kModalGain;
             }
             x = v.follow_and_gate(x);
+            x = v.punch.apply(x);
             if (tone_active) x = brc::tone_tilt(x, v.tone_lp, tone);
             x = v.onset.apply(x);
             x = v.fade_out(x);

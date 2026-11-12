@@ -15,6 +15,13 @@
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
 // match it slot for slot.
 using Param = brc::ModalLayout;
+// One standard slot carries a snare knob of its own: Partls' (the head's mode
+// count, next to nothing on the classic snares, whose head is a faint layer)
+// is Punch, the transient shaper (brc::Punch).  It loads with the preset (0
+// on every row: off).
+enum SnareParam : uint8_t {
+    k_paramPunch = Param::k_paramPartls,   // 12
+};
 
 enum Preset : uint8_t {
     k_AcSnare = 0,      // 0  -sample: acoustic-snare.wav (1436Hz +/- 20Hz), snare heavy.wav (1287Hz +/- 80Hz)
@@ -59,18 +66,22 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
-    {   0,  38,   0,   1,   0,1999,  71,   7, 120,  28,   0,   0,   2,   5, 168,   9,  -7,  46,   0,   8,  52, 950,   2, 300},   // 0: AcSnare   — wire path live; NzRs 950: buzz T60 ≈ 0.4 s matches acoustic-snare.wav t40 ≈ 280 ms; NzFq 300 (HP 3 kHz) pulls the centroid toward the darker reference
-    {   1,  65,   0,   1,   0,1999,  71,   5, 720,  50,   0,   0,   1,   5, 190,   8,  20,  50,   2,  19,  55, 940,   2, 105},   // 1: MrchSnr   — click+buzz land together; NzRs 940: buzz T60 ≈ 0.36 s matches the Marching-Snare reference t40 ≈ 220 ms
-    {   2,  55,   0,   1,   0,1999,  71,   5, 120,   8,   0,  60,   2,   5, 160,  17,  -7,  46,   0,   8,  95, 975,   1, 320},   // 2: BrshSnr   — DATA-DRIVEN (brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
-    {   3,  69,   0,   1,   0,1999,  71,   7, 500,  48,   0,  20,   2,   5, 168,   6,   5,  80,   0,   8,  55, 540,   1, 300},    // 3: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
-    {   4,  41,   0,   1,   0,1999,  71,   5, 300,   2,   0,   0,   2,   5, 168,   9,   0,  20,   0,   8,  78, 928,   2, 424},   // 4: BndDoum
-    {   5,  66,   0,   1,   0,1999,  71,   5, 300,  38,   0,   0,   2,   5, 168,   9,   0,  70,   0,   8,  38, 900,   2,  75},   // 5: BndTek
-    {   6,  40,   0,   1,   0,1999,  71,   5, 200,   2,   0,   0,   2,   5, 168,   9,   0,   0,   0,   8,  20, 956,   2, 106},   // 6: CajBass
-    {   7,  65,   0,   1,   0,1999,  71,   5, 300,  42,   0,   0,   2,   5, 168,   9,   0,  70,   0,   8,  92, 928,   2, 600},   // 7: CajSlap
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Pnch  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    {   0,  38,   0,   1,   0,1999,  71,   7, 120,  28,   0,   0,   0,   5, 168,   9,  -7,  46,   0,   8,  52, 950,   2, 300},   // 0: AcSnare   — wire path live; NzRs 950: buzz T60 ≈ 0.4 s matches acoustic-snare.wav t40 ≈ 280 ms; NzFq 300 (HP 3 kHz) pulls the centroid toward the darker reference
+    {   1,  65,   0,   1,   0,1999,  71,   5, 720,  50,   0,   0,   0,   5, 190,   8,  20,  50,   2,  19,  55, 940,   2, 105},   // 1: MrchSnr   — click+buzz land together; NzRs 940: buzz T60 ≈ 0.36 s matches the Marching-Snare reference t40 ≈ 220 ms
+    {   2,  55,   0,   1,   0,1999,  71,   5, 120,   8,   0,  60,   0,   5, 160,  17,  -7,  46,   0,   8,  95, 975,   1, 320},   // 2: BrshSnr   — DATA-DRIVEN (brush refs: snare_brush_hard/medium/soft.wav): BP noise 3.6kHz (ref centroid ~4.2kHz, 2-6kHz≈57%, flatness≈0.31 = colored not white), NzMx 95 (mallet ~silent), VlMllStf 60 = velocity→decay length (soft 185ms→hard 315ms), ~22ms swish onset
+    {   3,  69,   0,   1,   0,1999,  71,   7, 500,  48,   0,  20,   0,   5, 168,   6,   5,  80,   0,   8,  55, 540,   1, 300},    // 3: RimShot   — DATA-DRIVEN (rimshot-snare.wav): note 69 anchors the 877Hz honk at ratio 2.0; BP noise 3kHz (ref centroid 3.1k, 56% in 1-3k, 10% in 3-6k); NzRs 540 → tight buzz (ref t40 45ms)
+    {   4,  41,   0,   1,   0,1999,  71,   5, 300,   2,   0,   0,   0,   5, 168,   9,   0,  20,   0,   8,  78, 928,   2, 424},   // 4: BndDoum
+    {   5,  66,   0,   1,   0,1999,  71,   5, 300,  38,   0,   0,   0,   5, 168,   9,   0,  70,   0,   8,  38, 900,   2,  75},   // 5: BndTek
+    {   6,  40,   0,   1,   0,1999,  71,   5, 200,   2,   0,   0,   0,   5, 168,   9,   0,   0,   0,   8,  20, 956,   2, 106},   // 6: CajBass
+    {   7,  65,   0,   1,   0,1999,  71,   5, 300,  42,   0,   0,   0,   5, 168,   9,   0,  70,   0,   8,  92, 928,   2, 600},   // 7: CajSlap
 };
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
+              "Punch is 0 (off) on every preset");
+// What Partls, whose slot Punch took, shipped with: the head's mode count.
+static const int8_t kShippedPartls[kNumPresets] = {2, 1, 2, 2, 2, 2, 2, 2};
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),
@@ -79,8 +90,6 @@ static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramResnc, 71, 71),
               "Resnc is not loaded per preset: every row must ship 71");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramDkay, 0, 200),
               "Dkay is 0..200: every consumer saturates at 200");
-static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramPartls, 0, 4),
-              "Partls is 0..4 in this unit");
 
 // Each preset's calibrated modal bank: ratios of modes 2-4, T60s of modes 1-4
 // (ms), LoadPreset's mix, mode amplitudes 1-4, mode count, then the optional
