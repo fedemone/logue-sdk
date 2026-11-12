@@ -47,14 +47,23 @@ MAX_BATCH = 200          # Preset is a uint8_t enum: keep every build under 256
 # ---------------------------------------------------------------------------
 # Rows: how a spec becomes C initialisers, per unit layout
 # ---------------------------------------------------------------------------
-MODAL_KNOBS = ["Prg", "Root", "Ply", "Vel", "MlRs", "MlSt", "VlRs", "VlSt", "Ptls", "Mdl",
-               "Dky", "Mtr", "Ton", "Hit", "Rel", "InHm", "Cut", "TbRd", "Gain", "NzMx",
-               "NzRs", "NzFl", "NzFq", "Rsnc"]
+# The columns in slot order: the common pages (Program, Pitch = the root,
+# Poly, Velocity, Tone, Cutoff, Resnc, Gain), then the family's.  A column
+# no spec sets is 0 — the value of every family knob in a standard slot
+# (bar Attack, plate Chirp, world Rattle in VlRs'; noise GFad / Swel / Band /
+# VTon), where its mapping is the identity.
+MODAL_KNOBS = ["Prg", "Root", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
+               "MlRs", "MlSt", "VlRs", "VlSt", "Ptls", "Mdl", "Dky", "Rel",
+               "Mtr", "Hit", "InHm", "TbRd", "NzMx", "NzRs", "NzFl", "NzFq"]
 MODAL_KNOB_DEFAULTS = dict(Ply=0, Vel=1, VlRs=0, VlSt=0, Ptls=2, Mdl=3, Dky=150, Mtr=0,
                            Ton=0, Hit=0, Rel=10, InHm=0, Cut=1999, TbRd=10, Gain=0,
                            NzMx=10, NzRs=400, NzFl=0, NzFq=500, Rsnc=71, MlRs=600, MlSt=35)
-NOISE_KNOBS = ["Prg", "Ply", "Vel", "MlRs", "MlSt", "VlRs", "VlSt", "Mdl", "Ton", "Hit",
-               "Rel", "Cut", "Gain", "NzMx", "NzRs", "NzFl", "NzFq", "Rsnc", "Root", "Dky"]
+# BrcNoise: slot 1 is blank (no Pitch), GrnRate / GrnDpth are the mallet
+# knobs' slots (MlSt, MlRs).  Its Model value (the noise band default) is
+# not a column: add a new preset's to kShippedModel in presets.h by hand.
+NOISE_KNOBS = ["Prg", "-", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
+               "MlSt", "MlRs", "GFad", "Swel", "NzMx", "NzRs", "NzFl", "NzFq",
+               "Band", "Rel", "VTon", "Root", "Dky"]
 NOISE_KNOB_DEFAULTS = dict(Ply=0, Vel=1, MlRs=500, MlSt=40, VlRs=0, VlSt=0, Mdl=5, Ton=0,
                            Hit=50, Rel=18, Cut=1999, Gain=3, NzMx=95, NzRs=900, NzFl=1,
                            NzFq=500, Rsnc=71, Root=84, Dky=20)
@@ -132,7 +141,7 @@ def knob_row(v, idx, unit):
     cols = NOISE_KNOBS if unit == "noise" else MODAL_KNOBS
     vals = []
     for c in cols:
-        x = idx if c == "Prg" else int(round(v[c]))
+        x = idx if c == "Prg" else int(round(v.get(c, 0)))
         if c in KNOB_RANGES:
             lo, hi = KNOB_RANGES[c]
             x = max(lo, min(hi, x))

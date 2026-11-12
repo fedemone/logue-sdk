@@ -52,22 +52,34 @@ slowly) is not retired by the family's level squelch while the layer plays.
 
 ## Knobs
 
-| Page | Knobs |
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+
+| Page | | Knobs |
+|---|---|---|
+| 1 | common | `Program` · `Pitch` · `Poly` · `Velocity` |
+| 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
+| 3 | dedicated | `MlltRes` · `MlltStif` · `Rattle` · `VlMllStf` |
+| 4 | dedicated | `Partls` · `Model` · `Dkay` · `Rel` |
+| 5 | dedicated | `Mterl` · `HitPos` · `Inharm` · `TubRad` |
+| 6 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
+
+### Common knobs
+
+| Knob | |
 |---|---|
-| 1 | `Program` · `Pitch` · `Poly` · `Velocity` |
-| 2 | `MlltRes` · `MlltStif` · `VlMllRes` · `VlMllStf` |
-| 3 | `Partls` · `Model` · `Dkay` · `Mterl` |
-| 4 | `Tone` · `HitPos` · `Rel` · `Inharm` |
-| 5 | `Cutoff` · `TubRad` · `Gain` · `NzMix` |
-| 6 | `NzRes` · `NzFltr` · `NzFltFrq` · `Resnc` |
+| `Program` | the preset |
+| `Pitch` | semitones from the preset's root: the bank and every pitched layer (the cuica, the wire, the mirliton, the jingles' band, the beads' resonances) follow the played note |
+| `Poly` | voice cap 1-4; every strike stacks |
+| `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
+| `Tone` | tilt EQ |
+| `Cutoff` / `Resnc` | master low-pass and its Q |
+| `Gain` | drive |
 
-The 24-knob layout of the modal units, with the same mappings
-([BrcTom's README](../brachetti_tom/README.md#knobs) describes each), all
-REFERENCE-ANCHORED on the preset's shipped values.  On this unit:
+`Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff` and `Resnc` are performance knobs the host owns: a Program change leaves them where they are.  `Gain` loads with the preset.  The common knobs are [`brachetti_common/common_knobs.h`](../brachetti_common/common_knobs.h).
 
-- `Pitch`, `Velocity`, `Tone`, `Cutoff` / `Resnc` and `Gain` act on every preset (`Pitch` moves the layers' pitch too).
-- The bank and exciter knobs (`MlltRes`, `MlltStif`, `Partls`, `Model`, `Dkay`, `Mterl`, `HitPos`, `Rel`, `Inharm`, `TubRad`, the `Nz*` knobs) act on the bank and the exciter as on the other modal units: on the balafons, riq, pandeiro and shekere.
-- Six of them also move **the layers**, each with the meaning it already has on the bank.  This is what makes them useful on Cuica, Rainstk and the berimbaus, which have no bank and almost no exciter.  At the preset's shipped value each one is a factor of exactly 1, so a preset sounds as voiced until a knob moves:
+### Dedicated knobs
+
+The modal engine's knobs act on the bank and the exciter as on the other modal units (see [BrcTom's README](../brachetti_tom/README.md#knobs)): on the balafons, riq, pandeiro and shekere.  Six of them also move **the layers**, each with the meaning it already has on the bank, and `Rattle`, a knob of BrcWorld's own in `VlMllRes`' slot, moves only the layers.  That is what makes them useful on Cuica, Rainstk and the berimbaus, which have no bank and almost no exciter.  At the preset's shipped value each mapping is a factor of exactly 1 (`Rattle` ships 0), so a preset sounds as voiced until a knob moves:
 
 | Knob | On the layers | Up turns it |
 |---|---|---|
@@ -77,8 +89,13 @@ REFERENCE-ANCHORED on the preset's shipped values.  On this unit:
 | `Mterl` | **material**: the wire's brightness, the beads' click length, the cuica stick's rub noise | brighter, drier |
 | `MlltStif` | **density**: the beads' collision rate, the jingles' bounce speed; the attack of the cuica's stroke and of the berimbau's stick | denser, harder |
 | `MlltRes` | **presence**: the layers' level, as it is the bank's | louder |
+| `Rattle` | **contact noise**: the balafons' mirliton buzz (it buzzes from a lower level), the jingles' clash (louder, longer), the beads' and the wire's dry contact (added where a preset ships none), the cuica stick's rub | rattlier; down cleaner (×¼ .. ×4) |
 
-`Inharm` has nothing to bend on the riq, the pandeiro, the shekere and the rainstick (jingles and beads have no glide), and `Mterl` and `MlltStif` have no layer on the balafons beyond their bank and exciter.
+`Inharm` has nothing to bend on the riq, the pandeiro, the shekere and the rainstick (jingles and beads have no glide).  `Partls`, `Model`, `VlMllStf` and `HitPos` act on the bank and the exciter only, so they do nothing on Cuica, the berimbaus and Rainstk.
+
+### Knob review
+
+`VlMllRes` (velocity → noise-attack speed) did nothing on any preset: the layers have no noise attack for it to speed up, and the bank presets ship little noise.  Its slot is now `Rattle`.  `Pitch` did not reach the rainstick at all, and moved only the bank of the riq, pandeiro and shekere: the jingles, beads and mirliton now follow the played note too (at the root, nothing changes).  Measured with [`knob_liveness.py`](../tools/brachetti_equiv/knob_liveness.py), which moves each knob to both ends on every preset and scores how much the sound changes.
 
 ## How the presets were voiced
 

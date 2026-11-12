@@ -45,44 +45,55 @@ pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
-| Page | Knobs |
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+
+| Page | | Knobs |
+|---|---|---|
+| 1 | common | `Program` · `Pitch` · `Poly` · `Velocity` |
+| 2 | common | `Tone` · `Cutoff` · `Resnc` · `Gain` |
+| 3 | dedicated | `MlltRes` · `MlltStif` · `Chirp` · `VlMllStf` |
+| 4 | dedicated | `Partls` · `Model` · `Dkay` · `Rel` |
+| 5 | dedicated | `Mterl` · `HitPos` · `Inharm` · `TubRad` |
+| 6 | dedicated | `NzMix` · `NzRes` · `NzFltr` · `NzFltFrq` |
+
+### Common knobs
+
+| Knob | |
 |---|---|
-| 1 | `Program` · `Pitch` · `Poly` · `Velocity` |
-| 2 | `MlltRes` · `MlltStif` · `VlMllRes` · `VlMllStf` |
-| 3 | `Partls` · `Model` · `Dkay` · `Mterl` |
-| 4 | `Tone` · `HitPos` · `Rel` · `Inharm` |
-| 5 | `Cutoff` · `TubRad` · `Gain` · `NzMix` |
-| 6 | `NzRes` · `NzFltr` · `NzFltFrq` · `Resnc` |
-
-Every one of the original's 24 knobs is live on this family (`tools/brachetti_equiv/dead_params.py` measured each across its whole range), so none was removed.
-
-`Partls` sets the mode count around the preset's own (positions 0-4) and displays the count it gives the current preset (`4 md`).
-
-What each knob does in this unit:
-
-| Knob | In this unit |
-|---|---|
+| `Program` | the preset |
 | `Pitch` | semitones from the preset's root |
 | `Poly` | voice cap 1-4; every strike stacks |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
-| `MlltRes` | modal presence |
-| `MlltStif` | beater hardness: upper-mode brightness |
-| `VlMllRes` | velocity → noise-attack speed (live on Tick) |
-| `VlMllStf` | velocity → beater stiffness |
-| `Partls` | mode count around the preset's own (the display shows the count) |
-| `Model` | modal ratio template |
-| `Dkay / Rel` | ring length (coarse / fine); the noise follows the ring down |
-| `Mterl` | upper-mode material damping |
-| `HitPos` | strike position tilt |
-| `Inharm` | overtone spread |
-| `TubRad` | whole-body ring length |
+| `Tone` | tilt EQ |
+| `Cutoff` / `Resnc` | master low-pass and its Q |
+| `Gain` | drive |
 
-`Tone` (tilt EQ), `Cutoff` / `Resnc` (low-pass and its Q) and `Gain` (drive)
-are the master stage.  `Pitch`, `Poly`, `Velocity`, `VlMllRes`, `Tone`,
-`Cutoff` and `Resnc` are performance knobs the host owns: a Program change
-leaves them where they are.  Every other knob loads with the preset, and the
-knob mappings are REFERENCE-ANCHORED on the shipped values — a preset plays its
-calibrated sound at its own knob positions and only movement alters it.
+`Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff` and `Resnc` are performance knobs the host owns: a Program change leaves them where they are.  `Gain` loads with the preset (it is part of its gain staging).  The common knobs are [`brachetti_common/common_knobs.h`](../brachetti_common/common_knobs.h).
+
+### Dedicated knobs
+
+| Knob | Is | In this unit |
+|---|---|---|
+| `MlltRes` | `MlltRes` | modal presence |
+| `MlltStif` | `MlltStif` | beater hardness: upper-mode brightness |
+| `Chirp` | **own** | the metallic FM chirp on the strike: − subtler, + deeper (×8) and up to 4× longer; BelTre, which ships none, gets one at 1.5 kHz |
+| `VlMllStf` | `VlMllStf` | velocity → beater stiffness |
+| `Partls` | `Partls` | mode count around the preset's own (the display shows the count) |
+| `Model` | `Model` | modal ratio template |
+| `Dkay / Rel` | `Dkay` / `Rel` | ring length (coarse / fine); the noise follows the ring down |
+| `Mterl` | `Mterl` | upper-mode material damping |
+| `HitPos` | `HitPos` | strike position tilt |
+| `Inharm` | `Inharm` | overtone spread |
+| `TubRad` | `TubRad` | whole-body ring length |
+| `NzMix / NzRes / NzFltr / NzFltFrq` | the noise knobs | the strike noise |
+
+**Is** names the standard modal-engine knob a dedicated knob is (renamed where it does something specific here), or **own** for a knob of this family in that slot.  Every dedicated knob (but a host-owned one, which keeps its place across a Program change) loads with the preset, and is REFERENCE-ANCHORED on the value it shipped with: a preset plays its calibrated sound at its own knob positions, and only movement alters it.  The knobs this unit's own knobs replaced keep playing at each preset's shipped value, so every preset sounds exactly as it did.
+
+### Knob review
+
+`VlMllRes` (velocity → noise-attack speed) reached only Tick.  Its slot is now `Chirp`, the strike's metallic FM chirp, strongest on Cowbel and Tick (on the agogôs and zills the bank, voiced loud, covers most of it).  Every other knob is live.
+
+Measured with [`knob_liveness.py`](../tools/brachetti_equiv/knob_liveness.py), which moves each knob to both ends on every preset and scores how much the sound changes.
 
 ## Build
 

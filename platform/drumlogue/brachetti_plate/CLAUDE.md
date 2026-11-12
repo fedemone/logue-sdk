@@ -30,13 +30,20 @@ does.
   mapping is a function of the DELTA from it, built so the delta 0 gives
   exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 — `fasterpow2f(0)`
   is not).  A new mapping must be anchored the same way, or the presets move.
-- **Knob ↔ header.c:** `brc::ModalLayout`
+- **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
+  knobs (`../brachetti_common/common_knobs.h`), the same on all nine units;
+  pages 3-6 are this family's.  `brc::ModalLayout`
   (`../brachetti_common/modal_synth.h`) must match `header.c` slot for slot (a
   static_assert checks the count; the order is on you), header defaults must
-  equal preset 0's row, and `kModalHostKnobs` (`modal_synth.h`) must
-  match the defaults of the knobs LoadPreset skips (Pitch, Poly, Velocity,
-  VlMllRes, Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their
-  table columns).
+  equal preset 0's row, and the knobs the host owns (the common Pitch, Poly,
+  Velocity, Tone, Cutoff, Resnc) are never loaded: static_asserts in
+  `presets.h` pin their table columns.  VlMllRes' slot is `Chirp` (`role_at`
+  returns `brc::kFamilyKnob` there; VlMllRes plays at 0, the default
+  `fixed_knob`, and the slot loads with the preset).  A knob relabelled in
+  `header.c` keeps its role and is listed in
+  `../tools/brachetti_equiv/aliases.txt`, so `run_equiv.sh` still compares it
+  with the original; a knob with a new job is left out of the comparison and
+  named.
 - **Nothing shared between units.**  The drumlogue loads several units into one
   process, and a static local of an inline function or template (a table, a
   buffer) becomes an STB_GNU_UNIQUE symbol the loader shares among all of
@@ -57,7 +64,7 @@ does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_plate`
-  (shipped: .text 12996 · .rodata 1616 · .data 1808 · .bss 292).
+  (shipped: .text 13804 · .rodata 1616 · .data.rel.ro 76 · .data 1824 · .bss 292).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_plate --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

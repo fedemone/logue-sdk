@@ -13,8 +13,15 @@
 #include "../brachetti_common/modal_synth.h"
 
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
-// match it slot for slot.
+// match it slot for slot.  Two of its standard slots carry kick knobs of
+// their own (a modal role has little to do on a boom kick): Partls' slot is
+// DiveTm, Model's is Attack.  The other dedicated knobs keep their roles under
+// names that say what they do on a kick (header.c).
 using Param = brc::ModalLayout;
+enum KickParam : uint8_t {
+    k_paramDiveTm = Param::k_paramPartls,   // 12: how fast the pitch dive falls
+    k_paramAttack = Param::k_paramModel,    // 13: onset and boom rise
+};
 
 enum Preset : uint8_t {
     k_Kick2 = 0,        // 0  — a solid kettledrum-bodied kick
@@ -49,10 +56,10 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel MlRs MlSt VlRs VlSt Ptls  Mdl  Dky  Mtr  Ton  Hit  Rel InHm  Cut TbRd Gain NzMx NzRs NzFl NzFq Rsnc
-    {   0,  36,   0,   1, 360,  30,   0,  40,   2,   3, 200,  10,   0,  36,  18,   1,1999,   0,   4,   1, 420,   0, 380,  71},   // 0: Kick2     — a solid kettledrum-bodied kick
-    {   1,  36,   0,   1, 350,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  14,   5, 220,   0, 220,  71},   // 1: 808Sub    — boom_osc pitch dive 160→45 Hz, depth on Inharm
-    {   2,  36,   0,   1, 380,  35,   0,   0,   2,   5, 195,  -5,   0,  38,   6,   0,1999,   3,  12,  15, 220,   0, 220,  71}    // 2: Kick Drum
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain Thmp Snap VThm VSnp DvTm Attk  Dky  Rel Wght Clck Dive Tune NzMx NzRs NzFl NzFq
+    {   0,  36,   0,   1,   0,1999,  71,   4, 360,  30,   0,  40,   0,   0, 200,  18,  10,  36,   1,   0,   1, 420,   0, 380},   // 0: Kick2     — a solid kettledrum-bodied kick
+    {   1,  36,   0,   1,   0,1999,  71,  14, 350,  35,   0,   0,   0,   0, 195,   6,  -5,  38,   0,   3,   5, 220,   0, 220},   // 1: 808Sub    — boom_osc pitch dive 160→45 Hz, depth on Dive (the Inharm role)
+    {   2,  36,   0,   1,   0,1999,  71,  12, 380,  35,   0,   0,   0,   0, 195,   6,  -5,  38,   0,   3,  15, 220,   0, 220}    // 2: Kick Drum
 };
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
@@ -64,8 +71,15 @@ static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramResnc, 71, 71),
               "Resnc is not loaded per preset: every row must ship 71");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramDkay, 0, 200),
               "Dkay is 0..200: every consumer saturates at 200");
-static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramPartls, 0, 4),
-              "Partls is 0..4 in this unit");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramDiveTm, 0, 0) &&
+              brc::preset_column_in(kPresetKnobs, k_paramAttack, 0, 0),
+              "DiveTm and Attack are 0 on every preset: their mappings are the identity there");
+
+// The two standard knobs whose slots the kick gave away still have a value
+// per preset: the one each shipped with, so the modal body (Kick2) and the
+// noise burst's band balance (the Model knob's default) play as voiced.
+static const int8_t kShippedPartls[kNumPresets] = {2, 2, 2};
+static const int8_t kShippedModel[kNumPresets]  = {3, 5, 5};
 
 // Each preset's calibrated modal bank: ratios of modes 2-4, T60s of modes 1-4
 // (ms), LoadPreset's mix, mode amplitudes 1-4, mode count, then the optional

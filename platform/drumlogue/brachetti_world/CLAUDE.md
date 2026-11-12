@@ -29,19 +29,31 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
   `multi_load.sh` check it.
 - **Memory.**  The wires' delay lines (16 KB) live in `.bss`
   (`s_wire_lines`), not in the synth object.  No user-defined constructors.
-- **The layers' knobs are anchored too.**  `layer_knobs()` turns six knobs
+- **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
+  knobs (`../brachetti_common/common_knobs.h`), the same on all nine units;
+  pages 3-6 are the modal engine's standard set (`brc::ModalLayout`, which
+  `header.c` must match slot for slot), except VlMllRes' slot, which is
+  `Rattle`: `role_at` returns `brc::kFamilyKnob` there, VlMllRes plays at 0
+  (the default `fixed_knob`) and the slot loads with the preset.
+- **The layers' knobs are anchored too.**  `layer_knobs()` turns seven knobs
   into factors once per strike (length, bend, body, material, density,
-  presence), each `knob_exp2(slope × (knob − anchor))`, so exactly 1 at the
-  shipped value: the strike functions multiply by them and a preset renders
-  byte-identically until a knob moves.  A new layer setting that a knob should
-  reach goes through one of these factors.  README.md "Knobs" tabulates them.
+  presence, rattle), each `knob_exp2(slope × (knob − anchor))`, so exactly 1
+  at the shipped value (Rattle's additive part, `rattle_add`, is 0 there):
+  the strike functions multiply by them and a preset renders byte-identically
+  until a knob moves.  A new layer setting that a knob should reach goes
+  through one of these factors.  README.md "Knobs" tabulates them.
+- **The pitched layers follow the played note** (`tune`, exactly 1 at the
+  root): the cuica, the wire, the mirliton, the jingles' band and the beads'
+  resonances.  A refactor check must therefore strike the root (as
+  `preset_probe render` does) or compare off-root notes against the same
+  code.
 - **Per-sample code stays inline** (`force_inline` on the layers'
   `process()`).
 
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_world`
-  (shipped: .text 18920 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21200).
+  (shipped: .text 19680 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21216).
 - CPU: `../tools/brachetti_equiv/arm_cpu.sh ../../brachetti_world` (needs
   qemu-user; not yet measured).
 

@@ -3,8 +3,10 @@
 #include <cstdint>
 
 // From brachetti_common (its README.md indexes every helper):
+//   common_knobs.h   CommonLayout
 //   dsp_math.h       preset_column_in
 //   knobs.h          HostKnob, name_at
+#include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "voice.h"
@@ -12,29 +14,30 @@
 // ── The knobs, slot by slot ─────────────────────────────────────────────────
 // MUST match header.c slot for slot: the preset table below has one column per
 // slot, and a parameter added here without its row in header.c (or vice
-// versa) silently shifts every column of every preset.  (No Model or Nz*
-// knobs: a cymbal has its own noise drivers and no modal body.  Partls is the
-// resonator-bank density.)
+// versa) silently shifts every column of every preset.  Pages 1-2 are the
+// common knobs (../brachetti_common/common_knobs.h), pages 3-5 this family's.
+// (No Model or Nz* knobs: a cymbal has its own noise drivers and no modal
+// body.  Partls is the resonator-bank density.)
 enum ParamIndex : uint8_t {
-    k_paramProgram = 0,  // 0
-    k_paramPitch,        // 1
-    k_paramPoly,         // 2
-    k_paramVelocity,     // 3
-    k_paramMlltRes,      // 4
-    k_paramMlltStif,     // 5
-    k_paramVlMllRes,     // 6
-    k_paramVlMllStf,     // 7
-    k_paramPartls,       // 8
-    k_paramDkay,         // 9
-    k_paramMterl,        // 10
-    k_paramTone,         // 11
-    k_paramHitPos,       // 12
-    k_paramRel,          // 13
-    k_paramInharm,       // 14
-    k_paramCutoff,       // 15
-    k_paramTubRad,       // 16
-    k_paramGain,         // 17
-    k_paramResnc,        // 18
+    k_paramProgram   = brc::CommonLayout::k_paramProgram,  // 0  page 1: common (brc::CommonLayout)
+    k_paramPitch     = brc::CommonLayout::k_paramPitch,  // 1
+    k_paramPoly      = brc::CommonLayout::k_paramPoly,  // 2
+    k_paramVelocity  = brc::CommonLayout::k_paramVelocity,  // 3
+    k_paramTone      = brc::CommonLayout::k_paramTone,  // 4  page 2: common (brc::CommonLayout)
+    k_paramCutoff    = brc::CommonLayout::k_paramCutoff,  // 5
+    k_paramResnc     = brc::CommonLayout::k_paramResnc,  // 6
+    k_paramGain      = brc::CommonLayout::k_paramGain,  // 7
+    k_paramMlltRes   = brc::CommonLayout::k_firstDedicated,  // 8  page 3: dedicated
+    k_paramMlltStif,   // 9
+    k_paramVlMllRes,   // 10
+    k_paramVlMllStf,   // 11
+    k_paramPartls,     // 12  page 4: dedicated
+    k_paramDkay,       // 13
+    k_paramRel,        // 14
+    k_paramMterl,      // 15
+    k_paramHitPos,     // 16  page 5: dedicated
+    k_paramInharm,     // 17
+    k_paramTubRad,     // 18
     k_lastParamIndex     // marker
 };
 static_assert(k_lastParamIndex == 19, "header.c declares 19 params");
@@ -79,13 +82,13 @@ static inline const char* preset_name(uint8_t idx) {
 // Resnc) are never loaded; the static_asserts below pin them so a preset
 // cannot quietly ship its own.  int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel MlRs MlSt VlRs VlSt Ptls  Dky  Mtr  Ton  Hit  Rel InHm  Cut TbRd Gain Rsnc
-    {   0,  65,   0,   1, 800,  45,   0,   0,   3, 200,  28,   0,   0,  18,   1,1999,  15,   5,  71},   // 0: Cymbal
-    {   1,  50,   0,   1, 200,   2,   0,   0,   3, 190,   1,   0,   0,  20,   1,1999,  20,  20,  71},   // 1: Gong
-    {   2,  79,   0,   1, 900,  49,   0,   0,   3, 200,  18,   0,   0,  18,   1,1999,  12,   0,  71},   // 2: HHat-O
-    {   3,  69,   0,   1, 900,  50,   0,   0,   3, 190,  28,   0,   0,  18,   1,1999,  17,   0,  71},   // 3: Ride
-    {   4,  60,   0,   1, 900,  49,   0,   0,   3, 200,  16,   0,   0,   8,   1,1999,   1,   0,  71},   // 4: RidBel
-    {   5,  76,   0,   1, 800,  45,   0,   0,   3, 200,  28,   0,   0,  18,   1,1999,  15,   5,  71}    // 5: Splash
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt VlRs VlSt Ptls  Dky  Rel  Mtr  Hit InHm TbRd
+    {   0,  65,   0,   1,   0,1999,  71,   5, 800,  45,   0,   0,   3, 200,  18,  28,   0,   1,  15},   // 0: Cymbal
+    {   1,  50,   0,   1,   0,1999,  71,  20, 200,   2,   0,   0,   3, 190,  20,   1,   0,   1,  20},   // 1: Gong
+    {   2,  79,   0,   1,   0,1999,  71,   0, 900,  49,   0,   0,   3, 200,  18,  18,   0,   1,  12},   // 2: HHat-O
+    {   3,  69,   0,   1,   0,1999,  71,   0, 900,  50,   0,   0,   3, 190,  18,  28,   0,   1,  17},   // 3: Ride
+    {   4,  60,   0,   1,   0,1999,  71,   0, 900,  49,   0,   0,   3, 200,   8,  16,   0,   1,   1},   // 4: RidBel
+    {   5,  76,   0,   1,   0,1999,  71,   5, 800,  45,   0,   0,   3, 200,  18,  28,   0,   1,  15}    // 5: Splash
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramVlMllRes, 0, 0),
               "VlMllRes is not loaded per preset: every row must ship 0");
@@ -104,13 +107,8 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramPartls, 0, 7),
 // leaves them where they are and Init() seeds them (brc::HostKnob, knobs.h).
 // MUST track header.c's `.init` fields for these slots.
 static const brc::HostKnob kHostKnobs[] = {
-    { k_paramPitch,    0    },
-    { k_paramPoly,     4    },
-    { k_paramVelocity, 0    },
+    BRC_COMMON_HOST_KNOBS,
     { k_paramVlMllRes, 0    },
-    { k_paramTone,     0    },
-    { k_paramCutoff,   1999 },
-    { k_paramResnc,    71   },
 };
 
 // ── Inharmonic anchor tables (ported from cymbal_synthesis) ─────────────────

@@ -24,7 +24,7 @@
 //   dsp_math.h       clampf, kLn0001, kSampleRate, knob_exp2, phase_inc
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig, kMaxModes
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kNumVoices
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/master_stage.h"
@@ -53,6 +53,12 @@ public:
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
 
+    // Rattle sits in VlMllRes' slot (presets.h); VlMllRes then plays at 0,
+    // the value every preset shipped (the default fixed_knob).
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramRattle) ? brc::kFamilyKnob : slot;
+    }
+
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
         // Every strike stacks (a ringing balafon bar, a rainstick turned over
@@ -72,9 +78,9 @@ public:
         const LayerKnobs k = layer_knobs();
         if (voicing().fr_level > 0.0f) strike_friction(v.friction, tune, k);
         if (voicing().wire_level > 0.0f) strike_wire(v, tune, k);
-        if (voicing().buzz_level > 0.0f) strike_buzz(v, k);
-        if (voicing().jg_level > 0.0f) strike_jingles(v.jingles, seed, k);
-        if (voicing().pt_level > 0.0f) strike_particles(v.particles, seed, k);
+        if (voicing().buzz_level > 0.0f) strike_buzz(v, tune, k);
+        if (voicing().jg_level > 0.0f) strike_jingles(v.jingles, seed, tune, k);
+        if (voicing().pt_level > 0.0f) strike_particles(v.particles, seed, tune, k);
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -148,8 +154,14 @@ private:
     //   MlltStif    density   particle rate, jingle bounce speed; the attack
     //                         of the cuica's stroke and the berimbau's stick
     //   MlltRes     presence  the layers' level (as it is the bank's)
+    // and one knob of BrcWorld's own, in VlMllRes' slot (bipolar, 0 shipped):
+    //   Rattle      rattle    the contact noise: the mirliton's buzz (a lower
+    //                         threshold), the jingles' clash, the beads' and
+    //                         the wire's dry contact, the cuica's rub noise
     struct LayerKnobs {
         float length, bend, body, bright, density, presence;
+        float rattle;       // the factor (×1/4 .. ×4)
+        float rattle_add;   // Rattle's upper half, 0..1: what it ADDS where a preset ships none
     };
 
     LayerKnobs layer_knobs() const {
@@ -168,6 +180,9 @@ private:
                                  0.1f, 8.0f);
         k.presence = brc::clampf(brc::knob_exp2(3.4f * (kn::mallet_res(m_params[k_paramMlltRes]) - m_anchor.mallet_res)),
                                  0.05f, 9.0f);
+        const float rattle = brc::clampf((float)m_params[k_paramRattle] * 0.01f, -1.0f, 1.0f);
+        k.rattle     = brc::knob_exp2(2.0f * rattle);
+        k.rattle_add = fmaxf(0.0f, rattle);
         return k;
     }
 
@@ -192,7 +207,7 @@ private:
         f.att_inc = 1.0f / ms_to_samples(20.0f / k.density);   // the stick's grip: how fast the stroke speaks
         f.hold    = (uint32_t)ms_to_samples(c.fr_hold_ms * k.length);
         f.decay   = world::t60_mul(c.fr_t60_ms * k.length);
-        f.noise   = c.fr_noise * k.bright;                    // a drier stick rubs louder
+        f.noise   = c.fr_noise * k.bright * k.rattle;         // a drier stick rubs louder
         const float hz1 = body_hz(c.fr_formant1_hz, k), hz2 = body_hz(c.fr_formant2_hz, k);
         const float r1 = pole_for_q(hz1, kFormant1Q);
         const float r2 = pole_for_q(hz2, kFormant2Q);
@@ -211,7 +226,7 @@ private:
         w.delay = brc::clampf(brc::kSampleRate / (c.wire_hz * tune), 2.0f, (float)(world::kWireLen - 2));
         w.loop_gain = expf(brc::kLn0001 * w.delay / (c.wire_t60_ms * k.length * 0.001f * brc::kSampleRate));
         w.damp = brc::clampf(c.wire_damp * k.bright, 0.02f, 1.0f);
-        w.direct = c.wire_direct;
+        w.direct = c.wire_direct * k.rattle + 0.6f * k.rattle_add;   // the wire's own dry sound beside the gourd
         // The stick: a short Hann-windowed noise burst one period long at most.
         const int len = (int)w.delay;
         int burst = (int)ms_to_samples(c.wire_burst_ms / k.density);   // a harder stick, a shorter burst
@@ -232,7 +247,7 @@ private:
         w.gourd.tune(w.gourd_hz, w.gourd_r);
     }
 
-    void strike_buzz(VoiceState& v, const LayerKnobs& k) const {
+    void strike_buzz(VoiceState& v, float tune, const LayerKnobs& k) const {
         const Voicing& c = voicing();
         world::Buzz& b = v.buzz;
         // The bank's level at the strike.
@@ -240,19 +255,19 @@ private:
         for (int i = 0; i < brc::kMaxModes; ++i) ref += v.modal.env[i] * kModeWeight[i];
         b.ref    = fmaxf(ref, 1e-4f);
         b.level  = c.buzz_level * k.presence;
-        b.thresh = c.buzz_thresh;
-        const float hz = body_hz(c.buzz_hz, k);
+        b.thresh = c.buzz_thresh / k.rattle;   // the mirliton buzzes from a lower level
+        const float hz = body_hz(c.buzz_hz * tune, k);
         const float r = pole_for_q(hz, c.buzz_q);
         b.res.tune(hz, r);
         b.g = 1.0f - r;
     }
 
-    void strike_jingles(world::Jingles& j, uint32_t seed, const LayerKnobs& k) const {
+    void strike_jingles(world::Jingles& j, uint32_t seed, float tune, const LayerKnobs& k) const {
         const Voicing& c = voicing();
         j.level = c.jg_level * k.presence;
         j.lcg = seed | 1u;
-        const float lo = logf(body_hz(c.jg_lo_hz, k)), span = logf(body_hz(c.jg_hi_hz, k)) - lo;
-        j.g = 0.15f;
+        const float lo = logf(body_hz(c.jg_lo_hz * tune, k)), span = logf(body_hz(c.jg_hi_hz * tune, k)) - lo;
+        j.g = fminf(1.0f, 0.15f * k.rattle);   // Rattle: the clash's noise beside the modes
         for (int p = 0; p < world::kJinglePairs; ++p) {
             for (int m = 0; m < world::kJingleModes; ++m) {
                 const float hz = expf(lo + span * j.draw());
@@ -263,13 +278,13 @@ private:
             j.amp[p]  = 1.0f;
             j.next[p] = (uint32_t)(j.draw() * ms_to_samples(3.0f));
         }
-        j.clash_mul   = expf(-1.0f / ms_to_samples(c.jg_clash_ms));
+        j.clash_mul   = expf(-1.0f / ms_to_samples(c.jg_clash_ms * k.rattle));   // Rattle: a longer clash
         j.bounce_lo   = (uint32_t)ms_to_samples(c.jg_bounce_lo_ms / k.density);
         j.bounce_span = (uint32_t)ms_to_samples((c.jg_bounce_hi_ms - c.jg_bounce_lo_ms) / k.density) + 1u;
         j.spread      = (uint32_t)ms_to_samples(c.jg_spread_ms * k.length);
     }
 
-    void strike_particles(world::Particles& p, uint32_t seed, const LayerKnobs& k) const {
+    void strike_particles(world::Particles& p, uint32_t seed, float tune, const LayerKnobs& k) const {
         const Voicing& c = voicing();
         p.level     = c.pt_level * k.presence;
         p.lcg       = seed | 1u;
@@ -278,7 +293,7 @@ private:
         p.hold      = (uint32_t)ms_to_samples((c.pt_attack_ms + c.pt_hold_ms) * k.length);
         p.decay     = world::t60_mul(c.pt_t60_ms * k.length);
         p.click_mul = expf(-1.0f / ms_to_samples(c.pt_click_ms / k.bright));
-        const float hz1 = body_hz(c.pt_f1_hz, k), hz2 = body_hz(c.pt_f2_hz, k);
+        const float hz1 = body_hz(c.pt_f1_hz * tune, k), hz2 = body_hz(c.pt_f2_hz * tune, k);
         const float r1 = pole_for_q(hz1, c.pt_q1);
         const float r2 = pole_for_q(hz2, c.pt_q2);
         p.r1.tune(hz1, r1);
@@ -286,6 +301,6 @@ private:
         p.g1 = 1.0f - r1;
         p.g2 = 1.0f - r2;
         p.mix2 = c.pt_mix2;
-        p.direct = c.pt_direct;
+        p.direct = c.pt_direct * k.rattle + 0.6f * k.rattle_add;   // the beads' dry clicks
     }
 };

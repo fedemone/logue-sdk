@@ -1,0 +1,22 @@
+# Knobs a Brachetti family unit relabelled: <unit> <new name>=<the original's name>.
+# The knob is the same (same role, same mapping), so run_equiv.sh compares it
+# with the original's.  A knob given a NEW job is not listed here: it has no
+# counterpart, and run_equiv.sh leaves it out and names it.
+brachetti_kick Thump=MlltRes
+brachetti_kick Snap=MlltStif
+brachetti_kick VelThmp=VlMllRes
+brachetti_kick VelSnap=VlMllStf
+brachetti_kick Weight=Mterl
+brachetti_kick Click=HitPos
+brachetti_kick Tune=TubRad
+brachetti_noise GrnRate=MlltStif
+brachetti_snare Buzz=MlltRes
+brachetti_snare BuzzTon=MlltStif
+brachetti_snare Tight=VlMllStf
+brachetti_snare BuzzLen=Rel
+brachetti_tom Slap=VlMllRes
+brachetti_tom SlapSnp=VlMllStf
+brachetti_cymbal Tang=VlMllRes
+brachetti_cymbal Density=Partls
+brachetti_kernel Knock=MlltRes
+brachetti_kernel Fill=Partls

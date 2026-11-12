@@ -23,9 +23,11 @@
 #include "../common/runtime.h"
 
 // From brachetti_common (its README.md indexes every helper):
+//   dsp_math.h       clampf, knob_exp2
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
+#include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/master_stage.h"
 #include "../brachetti_common/modal_bank.h"
 #include "../brachetti_common/modal_synth.h"
@@ -42,6 +44,12 @@ public:
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
 
+    // Attack sits in VlMllRes' slot (presets.h); VlMllRes then plays at 0,
+    // the value every bar shipped (the default fixed_knob).
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramAttack) ? brc::kFamilyKnob : slot;
+    }
+
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
         // Every strike stacks: for a sustained bar the overlap IS the sound
@@ -52,7 +60,7 @@ public:
         v.reset_for_strike();
         v.exciter.fire();
         v.exciter.set_band_mix(m_model, voicing().noise_band_mix);
-        v.onset.trigger(voicing().onset_ms);
+        v.onset.trigger(attack_ms());
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
         strike_modal_bank(v, voicing().modal_mix);
     }
@@ -96,4 +104,13 @@ private:
     static constexpr float kModalGain = 5.0f;
 
     const Voicing& voicing() const { return kVoicing[m_preset_idx]; }
+
+    // Attack: bipolar around 0 (every preset), the identity there.  Below 0
+    // the preset's onset ramp shortens (×1/5.7); above 0 it lengthens (×5.7)
+    // and a swell is added, up to 60 ms (a bowed vibraphone or glass bowl).
+    float attack_ms() const {
+        const float a = brc::clampf((float)m_params[k_paramAttack] * 0.01f, -1.0f, 1.0f);
+        if (a == 0.0f) return voicing().onset_ms;
+        return voicing().onset_ms * brc::knob_exp2(2.5f * a) + fmaxf(0.0f, a) * 60.0f;
+    }
 };

@@ -26,6 +26,7 @@ every helper, what it does and which units use it.
 | File | What it holds |
 |---|---|
 | `dsp_math.h` | constants and small math: clamps, anchored 2^x, envelope steps, phase increments |
+| `common_knobs.h` | the COMMON knobs: pages 1-2, the same slots, names and meaning on all nine units |
 | `knobs.h` | what a knob means: raw value → DSP value, anchors, the knobs the host owns, Velocity, the played note, display strings |
 | `master_stage.h` | the output side: Tone tilt, limiters, bus helpers, `MasterControls`, `MasterStage` |
 | `small_filters.h` | one-pole low/high-pass steps and coefficient, the two-pole resonator |
@@ -77,6 +78,22 @@ modal units reach those through `ModalSynth`).  Every unit file opens with a
 | `knob_text(slot)`, `kKnobTextSize` | the buffer a knob's display string is built in, one per knob slot, private to the unit | kernel, cymbal, noise; library |
 | `format_int`, `format_percent`, `format_hz` | knob display strings ("40", "Rs40%", "1.2kHz") into the caller's buffer | kernel, cymbal, noise; library |
 
+### `common_knobs.h` — the common knobs
+
+Every Brachetti unit puts the same eight knobs on its first two pages —
+`Program` · `Pitch` · `Poly` · `Velocity`, then `Tone` · `Cutoff` · `Resnc` ·
+`Gain` — and its family's own (DEDICATED) knobs from page 3 on.  A unit
+without one of them leaves its slot blank in `header.c` (BrcNoise has no
+Pitch, BrcKernel no Poly), so a common knob is in the same place on every
+unit.
+
+| Helper | What it does | Used by |
+|---|---|---|
+| `CommonLayout` | the eight slots (`k_paramProgram` … `k_paramGain`) and `k_firstDedicated` | kernel, cymbal, noise; library |
+| `CommonKnobs` | their state (the played note, Velocity, Poly) and `set()`, which also drives the unit's master stage | kernel, cymbal, noise; library |
+| `kCommonHostKnobs`, `BRC_COMMON_HOST_KNOBS` | the common knobs the host owns, with their `header.c` defaults (a unit's host-knob table starts with them; the macro is the table's rows) | cymbal (the macro); library |
+| `is_common_knob`, `common_knob_text` | is a slot a common knob; its display string | kernel, cymbal, noise; library |
+
 ### `master_stage.h` — the output side
 
 | Helper | What it does | Used by |
@@ -123,7 +140,7 @@ modal units reach those through `ModalSynth`).  Every unit file opens with a
 | `model_name`, `model_noise_band_mix`, the Model enum | `models.h` | the Model knob | noise; library |
 | `ModalPresetConfig`, `ModalBank` | `modal_bank.h` | a preset's calibrated bank; the bank itself (NEON path) | kick, tom, snare, bar, plate, world |
 | `shape_modal`, `strike_modal`, `ModalShape`, `ModalKnobs`, `format_mode_count` | `modal_bank.h` | the knobs on the bank, before and at the strike; Partls' display | library (`ModalSynth`) |
-| `ModalLayout`, `kModalHostKnobs`, `ModalSynth` | `modal_synth.h` | the 24-knob layout and the engine of the six modal units | kick, tom, snare, bar, plate, world |
+| `ModalLayout`, `kModalHostKnobs`, `kFamilyKnob`, `ModalSynth` | `modal_synth.h` | the 24-knob layout (the common pages, then the standard dedicated set) and the engine of the six modal units | kick, tom, snare, bar, plate, world |
 
 `ModalSynth` also hands its units these building blocks for their `NoteOn`:
 `strike_velocity`, `allocate_voice`, `shape_exciter`, `modal_knobs`,
@@ -178,10 +195,35 @@ noise and cymbal units have their own knob layouts and engines built from the
 same pieces.  The kernel keeps its drum in `modal_drum_kernel.h` (tables in
 `modal_drum_data.h`) instead of `voice.h`.
 
-The knobs a host owns (Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc)
-are one table per layout — `kModalHostKnobs` in `modal_synth.h` for the six
-modal units, `kHostKnobs` in `presets.h` for the others — with their
-`header.c` defaults.  Each `.h` file opens with its `From brachetti_common`
+**The knobs.**  Pages 1-2 are the common knobs (`common_knobs.h`).  On the
+six modal units pages 3-6 are the modal engine's standard DEDICATED set —
+page 3 the strike (`MlltRes` `MlltStif` `VlMllRes` `VlMllStf`), page 4 the
+bank and its length (`Partls` `Model` `Dkay` `Rel`), page 5 the body
+(`Mterl` `HitPos` `Inharm` `TubRad`), page 6 the noise burst (`NzMix`
+`NzRes` `NzFltr` `NzFltFrq`) — and each of those enumerators is also a ROLE:
+what `ModalSynth` sets or maps for it.  A unit handles the knobs in three
+tiers:
+
+- the common knobs, which `ModalSynth` (or the unit's own engine) hands to
+  `CommonKnobs`;
+- the standard dedicated knobs: each role's setter and strike mapping are in
+  the library.  A unit may RELABEL one in `header.c` to say what it does in
+  that family (BrcKick's `MlltRes` is `Thump`); the role, the code name and
+  the mapping stay;
+- FAMILY knobs: a unit may give a standard slot to a knob of its own.  Its
+  `role_at(slot)` returns `kFamilyKnob` there (CRTP: it hides
+  `ModalSynth::role_at`), the unit reads the knob at the strike, and its
+  `family_knob_text` gives a display string if it needs one.  The standard
+  knob it displaced still has a value: the preset's own, from the unit's
+  `fixed_knob(preset, role)` (default 0), so every preset plays exactly as it
+  did.
+
+The knobs a host owns (the common Pitch, Poly, Velocity, Tone, Cutoff,
+Resnc, plus VlMllRes where a unit keeps it) keep their place across a
+Program change; their `header.c` defaults are one table per layout —
+`kModalHostKnobs` in `modal_synth.h` for the six modal units, `kHostKnobs` in
+`presets.h` for the others.  A family knob in VlMllRes' slot loads with the
+preset, like any sound-design knob.  Each `.h` file opens with its `From brachetti_common`
 block (see [Using and adding helpers](#using-and-adding-helpers)).
 
 ## Rules
@@ -193,6 +235,10 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
 
       cd ../tools/brachetti_equiv
       for u in kick tom kernel snare bar plate cymbal noise world; do ./run_equiv.sh ../../brachetti_$u; done
+
+  A knob a unit relabelled is compared under its original name
+  (`../tools/brachetti_equiv/aliases.txt`); a family knob, which has no
+  counterpart there, is left out and named.
 
 - **Keep the float operations in their order.**  The host check is built
   without `-ffast-math`, so `(a * b) * c` and `a * (b * c)` are different

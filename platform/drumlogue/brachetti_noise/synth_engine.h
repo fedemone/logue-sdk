@@ -25,17 +25,18 @@
 #include "unit.h"
 
 // From brachetti_common (its README.md indexes every helper):
+//   common_knobs.h   CommonKnobs, common_knob_text, is_common_knob
 //   dsp_math.h       clampf, kSampleRate, knob_exp2, phase_inc
 //   exciter.h        Exciter, noise_filter_name
-//   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
-//                    format_int, is_host_knob, kKnobTextSize,
-//                    knob::mallet_res, knob::mallet_stiff, knob::percent,
-//                    knob::poly, knob_text, midi_velocity, seed_host_knobs
+//   knobs.h          Anchors, format_hz, format_int, is_host_knob,
+//                    kKnobTextSize, knob::mallet_res, knob::mallet_stiff,
+//                    knob::percent, knob_text, midi_velocity, seed_host_knobs
 //   master_stage.h   MasterStage, tone_tilt
-//   models.h         k_String, model_name
+//   models.h         k_String
 //   voice_base.h     any_fading, fade_out_all, fuses_with, kNumVoices,
 //                    kRollFuseSec, next_voice, set_all_exciters
 //   voice_layers.h   NoiseGate
+#include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/exciter.h"
 #include "../brachetti_common/knobs.h"
@@ -90,8 +91,8 @@ public:
 
     // The note the sequencer plays (the preset's root; there is no Pitch
     // knob).  Host tools use these; nothing on the device reads them.
-    inline uint8_t PresetRootNote() const { return m_note.root; }
-    inline uint8_t PlayedNote() const     { return m_note.note; }
+    inline uint8_t PresetRootNote() const { return m_common.note.root; }
+    inline uint8_t PlayedNote() const     { return m_common.note.note; }
 
     inline void LoadPreset(uint8_t idx) {
         if (idx >= kNumPresets) return;   // before anything is written
@@ -106,15 +107,16 @@ public:
         m_preset_idx = idx;
         m_params[k_paramProgram] = idx;
         const int16_t* row = kPresetKnobs[idx];
-        m_note.set_root((uint8_t)row[kRootColumn]);
+        m_common.note.set_root((uint8_t)row[kRootColumn]);
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
             if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) setParameter(p, row[p]);
         brc::set_all_exciters(m_voices, &brc::Exciter::set_release_time, row[kDecayColumn]);
 
         // REFERENCE ANCHORS for the gate's knob mappings and the strike.
-        m_anchor.mallet_stiff = brc::knob::mallet_stiff(row[k_paramMlltStif]);
-        m_anchor.mallet_res   = brc::knob::mallet_res(row[k_paramMlltRes]);
-        m_anchor.vel_stiff    = brc::knob::percent(row[k_paramVlMllStf]);
+        m_anchor.mallet_stiff = brc::knob::mallet_stiff(row[k_paramGrnRate]);
+        m_anchor.mallet_res   = brc::knob::mallet_res(row[k_paramGrnDepth]);
+        m_anchor.vel_stiff    = brc::knob::percent(kShippedVelKnob);
+        m_model               = kShippedModel[idx];   // the noise band balance's default
 
         m_master.out_trim = kOutTrim[idx];
         if (changed) m_master.hold_while_fading(prev_drive, prev_trim, brc::any_fading(m_voices));
@@ -140,18 +142,18 @@ public:
     inline void setParameter(uint8_t index, int32_t value) {
         if (index >= k_lastParamIndex) return;
         m_params[index] = value;
+        if (index == k_paramProgram) { LoadPreset((uint8_t)value); return; }
+        if (index == k_paramNoPitch) return;   // a blank slot
+        if (brc::is_common_knob(index)) {
+            m_params[index] = m_common.set(index, value, m_params, m_master);
+            return;
+        }
         switch (index) {
-        case k_paramProgram:  LoadPreset((uint8_t)value); break;
-        case k_paramPoly:     m_poly = brc::knob::poly(value); break;
-        case k_paramVelocity: m_velocity.set(value); break;
-        case k_paramMlltRes:  brc::set_all_exciters(m_voices, &brc::Exciter::set_mallet_res, value); break;
-        case k_paramMlltStif: brc::set_all_exciters(m_voices, &brc::Exciter::set_mallet_stiff, value); break;
-        case k_paramModel:    m_model = (uint8_t)value; break;
-        case k_paramTone:     m_master.set_tone(value); break;
+        // The grain knobs are the exciter's mallet knobs too (the mallet is
+        // mostly crossfaded out under NzMix).
+        case k_paramGrnDepth: brc::set_all_exciters(m_voices, &brc::Exciter::set_mallet_res, value); break;
+        case k_paramGrnRate:  brc::set_all_exciters(m_voices, &brc::Exciter::set_mallet_stiff, value); break;
         case k_paramRel:      brc::set_all_exciters(m_voices, &brc::Exciter::set_release, value); break;
-        case k_paramCutoff:
-        case k_paramResnc:    m_master.set_filter(m_params[k_paramCutoff], m_params[k_paramResnc]); break;
-        case k_paramGain:     m_master.set_gain(value); break;
         case k_paramNzMix:    brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_mix, value); break;
         case k_paramNzRes:    brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_res, value); break;
         case k_paramNzFltr:   brc::set_all_exciters(m_voices, &brc::Exciter::set_noise_filter_mode, value); break;
@@ -161,16 +163,16 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
+        if (index == k_paramProgram) return preset_name((uint8_t)value);   // the preset being browsed
+        if (brc::is_common_knob(index)) {
+            const char* c = brc::common_knob_text(index, value);
+            return c ? c : "---";
+        }
         const char* s = nullptr;
         switch (index) {
-        case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
-        case k_paramModel:    s = brc::model_name(value); break;
         case k_paramNzFltr:   s = brc::noise_filter_name(value); break;
-        case k_paramMlltStif: return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
+        case k_paramGrnRate:  return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
         case k_paramNzFltFrq: return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
-        case k_paramCutoff:   return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
-        case k_paramResnc:    return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
-        case k_paramPoly:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, brc::knob::poly(value));
         default: break;
         }
         return s ? s : "---";
@@ -182,17 +184,18 @@ public:
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // Strokes on the same note inside kRollFuseSec are one roll.
         if (!brc::fuses_with(m_voices[m_last_voice], note, brc::kRollFuseSec))
-            m_last_voice = brc::next_voice(m_last_voice, m_poly);
+            m_last_voice = brc::next_voice(m_last_voice, m_common.poly);
         VoiceState& v = m_voices[m_last_voice];
-        v.start(note, m_velocity.apply(brc::midi_velocity(velocity)));
-        v.exciter.shape_strike(v.current_velocity, m_params[k_paramHitPos],
-                               m_params[k_paramMlltStif], m_params[k_paramVlMllStf],
+        v.start(note, m_common.velocity.apply(brc::midi_velocity(velocity)));
+        v.exciter.shape_strike(v.current_velocity, kShippedHitPos,
+                               m_params[k_paramGrnRate], kShippedVelKnob,
                                m_anchor.vel_stiff, m_params[k_paramNzRes],
-                               m_params[k_paramVlMllRes]);
+                               kShippedVelKnob);
         v.reset_for_strike();
         v.exciter.fire();
         v.exciter.set_band_mix(m_model, voicing().noise_band_mix);
         gate_noise(v);
+        shape_noise(v);
     }
 
     // Releases the noise into its Rel tail.
@@ -207,9 +210,9 @@ public:
 
     inline void GateOn(uint8_t velocity) {
         if (velocity == 0) { GateOff(); return; }
-        NoteOn(m_note.strike(), velocity);
+        NoteOn(m_common.note.strike(), velocity);
     }
-    inline void GateOff() { NoteOff(m_note.gate_note); }
+    inline void GateOff() { NoteOff(m_common.note.gate_note); }
 
     // Panic: everything fades out at the preset's decay setting.
     inline void AllNoteOff() {
@@ -285,11 +288,69 @@ private:
             v.exciter.noise_env.attack_rate    = voicing().attack_rate;
             v.exciter.noise_env_hi.attack_rate = voicing().attack_rate;
         }
+        // GrnDpth above its shipped value also ADDS contrast (up to +0.9), so
+        // it reaches the presets that ship a shallow gate or none: a preset
+        // without one gets a 30 Hz grain that never fades (GrnRate sets its
+        // rate, GrnFade lets it fade).
+        const float d_depth = brc::knob::mallet_res(m_params[k_paramGrnDepth]) - m_anchor.mallet_res;
+        if (!(g.inc > 0.0f) && d_depth > 0.001f) {
+            g.depth = 0.0f;
+            g.inc   = brc::phase_inc(30.0f);
+            g.decay = 1.0f;
+            g.phase = M_3_PI_2;
+        }
         if (g.inc > 0.0f) {
-            g.inc *= brc::knob_exp2(2.0f * (brc::knob::mallet_stiff(m_params[k_paramMlltStif]) - m_anchor.mallet_stiff));
-            g.depth = brc::clampf(
-                g.depth * brc::knob_exp2(1.5f * (brc::knob::mallet_res(m_params[k_paramMlltRes]) - m_anchor.mallet_res)),
-                0.0f, 0.99f);
+            g.inc *= brc::knob_exp2(2.0f * (brc::knob::mallet_stiff(m_params[k_paramGrnRate]) - m_anchor.mallet_stiff));
+            g.depth = brc::clampf(g.depth * brc::knob_exp2(1.5f * d_depth) + fmaxf(0.0f, d_depth) * 1.8f,
+                                  0.0f, 0.99f);
+        }
+    }
+
+    // ── This family's own knobs: GrnFade, Swell, Band, VelTone ──────────────
+    // Each is bipolar around 0, the value every preset ships, where it is the
+    // identity: the presets play as voiced.
+    static float bipolar(int32_t v) { return brc::clampf((float)v * 0.01f, -1.0f, 1.0f); }
+
+    void shape_noise(VoiceState& v) const {
+        // GrnFade: how fast the grain contrast fades into the plain hiss.
+        // (1 − decay) scales ×1/8 .. ×8, and above 0 a fade is ADDED (τ down
+        // to ~40 ms), so the shakers whose grains never fade can fade too.
+        const float fade = bipolar(m_params[k_paramGrnFade]);
+        if (fade != 0.0f && v.gate.inc > 0.0f) {
+            const float one_minus = (1.0f - v.gate.decay) * brc::knob_exp2(3.0f * fade)
+                                  + fmaxf(0.0f, fade) * 0.0005f;
+            v.gate.decay = brc::clampf(1.0f - one_minus, 0.99f, 1.0f);
+        }
+        // Swell: the noise's rise time ×1/32 .. ×32, up to ~70 ms (both
+        // bands: the attack rate is a one-pole coefficient, time ∝ 1 / rate).
+        const float swell = bipolar(m_params[k_paramSwell]);
+        if (swell != 0.0f) {
+            const float k = brc::knob_exp2(-5.0f * swell);
+            v.exciter.noise_env.attack_rate    = brc::clampf(v.exciter.noise_env.attack_rate * k, 0.0003f, 0.99f);
+            v.exciter.noise_env_hi.attack_rate = brc::clampf(v.exciter.noise_env_hi.attack_rate * k, 0.0003f, 0.99f);
+        }
+        // Band: the body / click balance, scaled into the headroom on its
+        // side (−1 all body, +1 all click).
+        const float band = bipolar(m_params[k_paramBand]);
+        if (band != 0.0f) {
+            const float m = v.exciter.noise_band_mix;
+            v.exciter.noise_band_mix = brc::clampf(m + band * ((band > 0.0f) ? (1.0f - m) : m), 0.0f, 1.0f);
+        }
+        // VelTone: velocity → the noise filter's cutoff, up to ±2 octaves
+        // between a full stroke and a ghost, pivoting on velocity 0.75.  The
+        // voice's filter is retuned only while it is in use (and once more
+        // when it stops, back to the knob's value).
+        const float vt = bipolar(m_params[k_paramVelTone]);
+        if (vt != 0.0f || v.tone_moved) {
+            if (vt == 0.0f) {
+                v.exciter.set_noise_filter_freq(m_params[k_paramNzFltFrq]);
+            } else {
+                const float vel = brc::clampf(v.current_velocity, 0.0f, 1.0f);
+                const float hz = brc::clampf((float)m_params[k_paramNzFltFrq] * 10.0f
+                                             * brc::knob_exp2(4.0f * vt * (vel - 0.75f)), 20.0f, 20000.0f);
+                v.exciter.noise_filter.set_coeffs(hz, 0.707f, brc::kSampleRate);
+            }
+            v.tone_moved = (vt != 0.0f);
         }
     }
 
@@ -317,8 +378,6 @@ private:
     int32_t            m_params[k_lastParamIndex] = {0};   // raw knob values, as the host set them
     uint8_t            m_preset_idx = 0;
     brc::Anchors       m_anchor;
-    brc::VelocityBias  m_velocity;
-    brc::SequencerNote m_note;
-    uint8_t            m_poly  = 4;              // Poly knob: voice cap 1-4
-    uint8_t            m_model = brc::k_String;  // Model knob
+    brc::CommonKnobs   m_common;                 // Poly, Velocity (no Pitch)
+    uint8_t            m_model = brc::k_String;  // the preset's noise band default (kShippedModel)
 };

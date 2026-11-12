@@ -29,12 +29,19 @@ README.md lists the presets and what every knob does.
   mapping is a function of the DELTA from it, built so the delta 0 gives
   exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 — `fasterpow2f(0)`
   is not).  A new mapping must be anchored the same way, or the presets move.
-- **Knob ↔ header.c:** `ParamIndex` (`presets.h`) must match `header.c` slot
-  for slot (a static_assert checks the count; the order is on you), header
-  defaults must equal preset 0's row, and `kHostKnobs` (`presets.h`) must
-  match the defaults of the knobs LoadPreset skips (Pitch, Velocity, VlMllRes,
-  Tone, Cutoff, Resnc — static_asserts in `presets.h` pin their table
-  columns).
+- **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
+  knobs (`../brachetti_common/common_knobs.h`: `brc::CommonKnobs` handles
+  them), the same on all nine units; the pages after them are this family's.
+  `ParamIndex` (`presets.h`) must match `header.c` slot for slot (a
+  static_assert checks the count; the order is on you), header defaults must
+  equal preset 0's row, and `kHostKnobs` (`presets.h`) must match the defaults
+  of the knobs LoadPreset skips (Pitch, Velocity, Tone, Cutoff, Resnc and
+  VlMllRes — static_asserts pin their table columns).  Poly's slot is blank
+  (`k_paramNoPoly`), and slot 19 keeps the noise wedge's two knobs on one
+  page.  A knob relabelled in `header.c` is listed in
+  `../tools/brachetti_equiv/aliases.txt`, so `run_equiv.sh` still compares it
+  with the original; a knob with a new job is left out of the comparison and
+  named.
 - **Nothing shared between units.**  The drumlogue loads several units into one
   process, and a static local of an inline function or template (a table, a
   buffer) becomes an STB_GNU_UNIQUE symbol the loader shares among all of
@@ -60,7 +67,7 @@ README.md lists the presets and what every knob does.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_kernel`
-  (shipped: .text 10724 · .rodata 31248 · .data 4 · .bss 15664).
+  (shipped: .text 10768 · .rodata 31256 · .data.rel.ro 144 · .data 4 · .bss 15680).
 - NEON paths on ARM (qemu): `../tools/brachetti_equiv/arm_equiv.sh ../../brachetti_kernel --fuzz 20 --knob-points 1`
 - Dead knobs: build `../tools/brachetti_equiv/equiv_driver.cpp` against this
   unit and run `dead_params.py` on it.

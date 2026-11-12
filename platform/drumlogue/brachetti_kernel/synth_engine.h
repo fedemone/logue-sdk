@@ -23,17 +23,18 @@
 #include "unit.h"
 
 // From brachetti_common (its README.md indexes every helper):
+//   common_knobs.h   CommonKnobs, common_knob_text, is_common_knob
 //   dsp_math.h       clampf, kSampleRate, knob_exp2
-//   knobs.h          Anchors, SequencerNote, VelocityBias, format_hz,
-//                    format_int, format_percent, is_host_knob, kKnobTextSize,
-//                    knob::clamp_int, knob::decay, knob::gain_drive,
-//                    knob::hit_pos, knob::inharm, knob::mallet_res,
-//                    knob::mallet_stiff, knob::material, knob::noise_freq,
-//                    knob::noise_mix, knob::percent, knob::release,
-//                    knob::tube_radius, knob_text, midi_velocity,
-//                    seed_host_knobs
+//   knobs.h          Anchors, format_hz, format_int, format_percent,
+//                    is_host_knob, kKnobTextSize, knob::clamp_int,
+//                    knob::decay, knob::gain_drive, knob::hit_pos,
+//                    knob::inharm, knob::mallet_res, knob::mallet_stiff,
+//                    knob::material, knob::noise_freq, knob::noise_mix,
+//                    knob::percent, knob::release, knob::tube_radius,
+//                    knob_text, midi_velocity, seed_host_knobs
 //   master_stage.h   MasterControls, brickwall, tanh_knee, tone_tilt,
 //                    write_stereo
+#include "../brachetti_common/common_knobs.h"
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
 #include "../brachetti_common/master_stage.h"
@@ -79,15 +80,15 @@ public:
 
     // The current preset's root note and the note the sequencer plays (root +
     // Pitch).  Host tools use these; nothing on the device reads them.
-    inline uint8_t PresetRootNote() const { return m_note.root; }
-    inline uint8_t PlayedNote() const     { return m_note.note; }
+    inline uint8_t PresetRootNote() const { return m_common.note.root; }
+    inline uint8_t PlayedNote() const     { return m_common.note.note; }
 
     inline void LoadPreset(uint8_t idx) {
         if (idx >= kNumPresets) return;   // before anything is written
         m_preset_idx = idx;
         m_params[k_paramProgram] = idx;
         const int16_t* row = kPresetKnobs[idx];
-        m_note.set_root((uint8_t)row[k_paramPitch]);   // the Pitch column is the root
+        m_common.note.set_root((uint8_t)row[k_paramPitch]);   // the Pitch column is the root
         for (uint8_t p = 0; p < k_lastParamIndex; ++p)
             if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) setParameter(p, row[p]);
         capture_anchors(row);
@@ -113,16 +114,17 @@ public:
         m_params[index] = value;
         switch (index) {
         case k_paramProgram:  LoadPreset((uint8_t)value); return;   // configures the kernel itself
-        // Semitones from the preset's root; rides each NoteOn, which retunes a
-        // kettle there.  Stored clamped.
-        case k_paramPitch:    m_params[index] = m_note.set_pitch(value); break;
-        case k_paramVelocity: m_velocity.set(value); break;
+        // The common knobs.  Pitch: semitones from the preset's root; it
+        // rides each NoteOn, which retunes a kettle there.  (Poly's slot is
+        // blank: the kernel always has its two kettles.)
+        case k_paramPitch:
+        case k_paramVelocity:
+        case k_paramTone:
+        case k_paramCutoff:
+        case k_paramResnc:
+        case k_paramGain:     m_params[index] = m_common.set(index, value, m_params, m_master); break;
         // Stored ÷10 (0-200 = 0-2000), stored clamped.
         case k_paramDkay:     m_params[index] = brc::knob::clamp_int(value, 0, 200); break;
-        case k_paramTone:     m_master.set_tone(value); break;
-        case k_paramCutoff:
-        case k_paramResnc:    m_master.set_filter(m_params[k_paramCutoff], m_params[k_paramResnc]); break;
-        case k_paramGain:     m_master.set_gain(value); break;
         default: break;
         }
         // Every other knob is a kernel modifier: re-derive them all (cheap
@@ -132,16 +134,18 @@ public:
     }
 
     inline const char* getParameterStrValue(uint8_t index, int32_t value) const {
+        if (index == k_paramProgram) return preset_name((uint8_t)value);   // the preset being browsed
+        if (brc::is_common_knob(index)) {
+            const char* c = (index == k_paramNoPoly) ? nullptr : brc::common_knob_text(index, value);
+            return c ? c : "---";
+        }
         switch (index) {
-        case k_paramProgram:  return preset_name((uint8_t)value);   // the preset being browsed
         case k_paramPartls:   // the fraction of the membrane fill this position keeps
             return brc::format_percent(brc::knob_text(index), brc::kKnobTextSize,
                                        (int)(fill_density(brc::knob::clamp_int(value, 0, 4)) * 100.0f + 0.5f));
         case k_paramMlltStif: return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 100));
         case k_paramDkay:     return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
         case k_paramNzFltFrq: return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
-        case k_paramCutoff:   return brc::format_hz(brc::knob_text(index), brc::kKnobTextSize, value);
-        case k_paramResnc:    return brc::format_int(brc::knob_text(index), brc::kKnobTextSize, (int)(value * 10));
         default:              return "---";
         }
     }
@@ -155,7 +159,7 @@ public:
     inline void NoteOn(uint8_t note, uint8_t velocity) {
         // The Velocity knob biases the strike once, here: it drives the
         // strike impulse and the knock.
-        const float vel = m_velocity.apply(brc::midi_velocity(velocity));
+        const float vel = m_common.velocity.apply(brc::midi_velocity(velocity));
         const float ratio = exp2f(((float)note - m_kernel.RootNote()) * 0.0833333333f);
         m_kernel.Trigger(note, ratio, vel);
     }
@@ -170,7 +174,7 @@ public:
 
     inline void GateOn(uint8_t velocity) {
         if (velocity == 0) { GateOff(); return; }
-        NoteOn(m_note.strike(), velocity);
+        NoteOn(m_common.note.strike(), velocity);
     }
 
     // ==========================================================================
@@ -331,6 +335,5 @@ private:
     brc::Anchors        m_anchor;
     float               m_noise_mix_anchor  = 0.0f;     // NzMix
     float               m_noise_freq_anchor = 380.0f;   // NzFltFrq, stored units
-    brc::VelocityBias   m_velocity;
-    brc::SequencerNote  m_note;
+    brc::CommonKnobs    m_common;   // Pitch, Velocity (the kernel has no Poly)
 };

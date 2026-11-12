@@ -22,15 +22,10 @@ const __unit_header unit_header_t unit_header = {
     .num_presets = 0,
     .num_params = 19,
     .params = {
-        // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
-        //
-        // Defaults are preset 0's (Cymbal) shipped values, so the unit boots
-        // sounding like the preset it shows.  The knobs the host owns keep
-        // their own — Pitch, Poly, Velocity, VlMllRes, Tone, Cutoff, Resnc —
-        // because LoadPreset never writes them;
-        // `kHostKnobs` in presets.h holds the same values.
 
-        // Page 1
+        // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
+
+        // Page 1 — common: performance
         // Program: the preset (this family's presets only)
         {0, 5, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         // Pitch: semitones from the preset's root note (sequencer path)
@@ -40,35 +35,36 @@ const __unit_header unit_header_t unit_header = {
         // Velocity: velocity bias: -100 ghost .. 0 as played .. +100 wham
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Velocity"}},
 
-        // Page 2
+        // Page 2 — common: master
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
+        // Cutoff: master low-pass, stored /10 (10-19990 Hz), 1999 = open
+        {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
+        // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
+        {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}},
+        // Gain: master drive
+        {0, 100, 0, 5, k_unit_param_type_none, 0, 0, 0, {"Gain"}},
+
+        // Page 3 — dedicated
         {0, 1000, 500, 800, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // MlltStif: stored /100, displayed x100 (0-5000)
         {0, 50, 0, 45, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
-        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllRes"}},
+        // Tang (was VlMllRes, host-owned): the stick hit's "tang", level and attack
+        {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Tang"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
 
-        // Page 3
-        // Partls: resonator-bank density 25-60 % (25 + 5 x Partls)
-        {0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Partls"}},
+        // Page 4 — dedicated
+        // Density (was Partls): resonator-bank density 25-60 % (25 + 5 x the knob)
+        {0, 7, 0, 3, k_unit_param_type_strings, 0, 0, 0, {"Density"}},
         // Dkay: stored /10, displayed x10 (0-2000)
         {0, 200, 25, 200, k_unit_param_type_strings, 0, 0, 0, {"Dkay"}},
+        {0, 20, 0, 18, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         {-10, 30, 0, 28, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
-        {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
 
-        // Page 4
+        // Page 5 — dedicated
         // HitPos: bipolar
         {-98, 98, 0, 0, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
-        {0, 20, 0, 18, k_unit_param_type_none, 1, 0, 0, {"Rel"}},
         // Inharm: bipolar
         {-100, 100, 0, 1, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
-        // Cutoff: master low-pass, stored /10 (10-19990 Hz), 1999 = open
-        {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
-
-        // Page 5
-        {0, 20, 0, 15, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
-        // Gain: master drive
-        {0, 100, 0, 5, k_unit_param_type_none, 0, 0, 0, {"Gain"}},
-        // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
-        {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}}
+        {0, 20, 0, 15, k_unit_param_type_none, 1, 0, 0, {"TubRad"}}
     }
 };

@@ -19,12 +19,12 @@ ships as before.
 |---|---|---|---|---|
 | [`brachetti_kick`](../../brachetti_kick/) | `BrcKick` | Kick2, 808Sub, Kick | 24 | membrane modes + boom + thump |
 | [`brachetti_tom`](../../brachetti_tom/) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom; added: DjmTone, DjmSlap, DjmBass, CngOpen, CngMute, CngSlap, CngHeel, Tumba, BngMach, BngHmbr, TblaNa, TblaTin, TblaTun, TblaGe, TblGeBd, TblaKe, DrbDoum, DrbTek, DrbKa, TalkUp, TalkDn, SurdOpn, SurdMut, Tambrim, UduBass | 24 | membrane modes + boom + strike transient |
-| [`brachetti_kernel`](../../brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 20 | dense coupled-resonator drum kernel |
+| [`brachetti_kernel`](../../brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 20 (+2 blank) | dense coupled-resonator drum kernel |
 | [`brachetti_snare`](../../brachetti_snare/) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot; added: BndDoum, BndTek, CajBass, CajSlap | 24 | modal head + snare-wire resonators |
 | [`brachetti_bar`](../../brachetti_bar/) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl; added: WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4 | 24 | free-bar modes + mallet |
 | [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick; added: AgogoHi, AgogoLo, Zills | 24 | plate modes + ring-coupled noise |
 | [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 19 | dense-resonator cymbal |
-| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 18 | shaped noise + AM gating |
+| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 18 (+1 blank) | shaped noise + AM gating |
 | [`brachetti_world`](../../brachetti_world/) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | 24 | modal bank + friction voice, wire, buzz, jingles, particles |
 
 All nine are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
@@ -112,6 +112,40 @@ its own voice) and is kept.  On kick, tom, snare, bar and plate `Partls` keeps
 only positions 0-4: in the original, 5-7 select which resonator of the Koto
 string the knobs edit.
 
+### Knobs: common, then dedicated
+
+Each unit puts the same eight **common knobs** on its first two pages —
+`Program` · `Pitch` · `Poly` · `Velocity`, then `Tone` · `Cutoff` · `Resnc` ·
+`Gain` — and its family's **dedicated knobs** from page 3 on
+([`common_knobs.h`](../../brachetti_common/common_knobs.h); a unit without
+one of the common knobs leaves its slot blank, so they are in the same place
+on all nine).  The dedicated knobs were then reviewed family by family with
+[`knob_liveness.py`](knob_liveness.py), which moves every knob to both ends on
+every preset and scores how much the sound changes.  Where a knob did nothing
+(or next to nothing) on most of a family, its slot got a job of that family's;
+where a standard name hid what a knob does in a family, it was relabelled:
+
+| Unit | New knobs (in the slot of) | Relabelled |
+|---|---|---|
+| kick | `DiveTm` (Partls), `Attack` (Model); `Dive` (Inharm) now dives all three kicks | `Thump` `Snap` `VelThmp` `VelSnap` `Weight` `Click` `Tune` |
+| tom | — (every knob live) | `Slap` `SlapSnp` |
+| snare | `Crack` (VlMllRes) now lengthens the crack and adds one where a preset has none | `Buzz` `BuzzTon` `Tight` `BuzzLen` |
+| bar | `Attack` (VlMllRes) | — |
+| plate | `Chirp` (VlMllRes) | — |
+| noise | `GrnFade` (HitPos), `Swell` (VlMllStf), `Band` (Model), `VelTone` (VlMllRes); `GrnDpth` adds grains | `GrnRate` |
+| world | `Rattle` (VlMllRes); `Pitch` now moves the jingles, beads and mirliton too | — |
+| cymbal | — (every knob live) | `Tang` `Density` |
+| kernel | — (every knob live) | `Knock` `Fill` |
+
+Every new knob is REFERENCE-ANCHORED and ships at the identity, and the
+standard knob it displaced keeps playing at each preset's shipped value, so
+every preset renders exactly as before; each unit's README has its knob
+table and review.  For `run_equiv.sh` a relabelled knob is the same knob:
+[`aliases.txt`](aliases.txt) names it, and the original's driver finds it
+under its old name (`EQUIV_ALIASES`).  A knob with a new job has no
+counterpart in the original: the script leaves it out and names it, as it
+does the added presets.
+
 ### Then restructured onto a common library
 
 With each unit holding only its family, what the eight still had in common —
@@ -166,22 +200,27 @@ the output is a real one.
 The work directory (binaries, script, hashes) is removed after an IDENTICAL
 run; `KEEP_WORK=1` keeps it, and a difference always does.
 
-Result for the shipped tree: **IDENTICAL on all eight** — 9,023 scenarios,
-23,248 rendered spans with the default seed, and again with three more seeds
-and 300 random sessions each (`--seed 7 / 2024 / 31337 --fuzz 300
+Result for the restructured tree: **IDENTICAL on all eight** — 9,023
+scenarios, 23,248 rendered spans with the default seed, and again with three
+more seeds and 300 random sessions each (`--seed 7 / 2024 / 31337 --fuzz 300
 --knob-points 2`): 24 of 24 runs identical, 29,421 more scenarios and
 102,827 more rendered spans.
 
-| Unit | Scenarios | Renders |
-|---|---|---|
-| kick | 767 | 2,209 |
-| tom | 1,670 | 3,878 |
-| kernel | 486 | 1,613 |
-| snare | 1,010 | 2,647 |
-| bar | 2,288 | 5,158 |
-| plate | 999 | 2,636 |
-| cymbal | 1,182 | 3,121 |
-| noise | 621 | 1,986 |
+With the common / dedicated layout, the knobs of the families' own left out
+(see above) and the added presets named, the default seed gives:
+
+| Unit | Scenarios | Renders | Left out (the family's own) |
+|---|---|---|---|
+| kick | 695 | 2,174 | DiveTm, Attack, Dive |
+| tom | 1,670 | 3,863 | — |
+| kernel | 483 | 1,627 | — |
+| snare | 968 | 2,634 | Crack |
+| bar | 2,196 | 4,963 | Attack |
+| plate | 965 | 2,631 | Chirp |
+| cymbal | 1,185 | 3,165 | — |
+| noise | 488 | 1,828 | GrnDpth, GrnFade, Swell, Band, VelTone |
+
+all IDENTICAL.
 
 ### Known differences
 
@@ -283,7 +322,7 @@ moves a little between toolchains; data sections are exact):
 
 (These are the restructuring's figures.  With the presets added after the
 split, each unit's README carries its current sizes; BrcWorld measures
-.text 17,836 · .rodata 3,504 · .data 4 · .bss 21,200, the 16 KB of wire
+.text 19,680 · .rodata 3,504 · .data 4 · .bss 21,216, the 16 KB of wire
 delay lines in `.bss`.)
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
@@ -351,6 +390,9 @@ moved.  The original keeps its own code, so a fix that also applies to it has
 to be made there by hand.
 
 [`dead_params.py`](dead_params.py) works on any unit's driver, so it can show
-whether a knob has become dead after a change.  Python 3 with numpy is needed
+whether a knob has become dead after a change; [`knob_liveness.py`](knob_liveness.py)
+shows how much each knob moves each preset (`./knob_liveness.py tom noise`).
+A knob a unit relabels goes in [`aliases.txt`](aliases.txt), so `run_equiv.sh`
+keeps comparing it.  Python 3 with numpy is needed
 for `compare_dumps.py`; the ARM scripts need
 `apt-get install g++-arm-linux-gnueabihf qemu-user`.

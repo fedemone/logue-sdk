@@ -15,6 +15,12 @@
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
 // match it slot for slot.
 using Param = brc::ModalLayout;
+// One standard slot carries a bar knob of its own: VlMllRes' (velocity →
+// noise-attack speed did nothing on the bars that have no noise) is Attack,
+// the voice's onset swell.  It loads with the preset (0 on every row).
+enum BarParam : uint8_t {
+    k_paramAttack = Param::k_paramVlMllRes,   // 10
+};
 
 enum Preset : uint8_t {
     k_Marimba = 0,      // 0  -sample: marimba-hit-c4_C_minor.wav (524Hz +/- 50Hz)
@@ -81,29 +87,29 @@ static inline const char* preset_name(uint8_t idx) {
 // pin them so a preset cannot quietly ship its own.
 // int16_t: the stored range is [-10, 1999].
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
-    //  Prg Root  Ply  Vel MlRs MlSt VlRs VlSt Ptls  Mdl  Dky  Mtr  Ton  Hit  Rel InHm  Cut TbRd Gain NzMx NzRs NzFl NzFq Rsnc
-    {   0,  72,   0,   1, 800,  13,   0,   0,   0,   6, 194,  -7,   0,   0,   5,   2,1999,   7,  20,   0, 300,   0,1200,  71},   // 0: Marimba   — exemplar BAR voice
-    {   1,  72,   0,   1, 900,  34,   0,   0,   0,   1, 200,  30,   0,   0,  20,   1,1999,  18,   0,   5, 300,   0,1500,  71},   // 1: TblrBel
-    {   2,  72,   0,   1, 500,  30,   0,   0,   0,   1, 200,  28,   0,   0,  18,   0,1999,  13,   0,   0, 300,   0,1000,  71},   // 2: Vibrph
-    {   3,  48,   0,   1, 900,  50,   0,   0,   0,   2, 156,  24,   0,   0,   2,   1,1999,   3,   0,   5, 420,   0, 900,  71},   // 3: Wodblk
-    {   4,  65,   0,   1, 700,  39,   0,   0,   0,   1, 192,   6,   0,   0,   5,   0,1999,   7,   3,  10, 260,   0, 720,  71},   // 4: Kalimba
-    {   5,  60,   0,   1, 600,   0,   0,   0,   0,   4, 200,  18,   0,   0,  12,   0,1999,   9,   5,   0, 300,   0,1000,  71},   // 5: StelPan
-    {   6,  79,   0,   1, 900,  48,   0,   0,   0,   2,  13,  -3,   0,   0,   1,   0,1999,   1,   0,  20, 260,   0, 800,  71},   // 6: Claves
-    {   7,  76,   0,   1, 700,   5,   0,   0,   0,   4, 200,  30,   0,   0,  18,   1,1999,  18,   0,   0, 300,   0,1200,  71},   // 7: GlsBwl
-    {   8,  60,   0,   1, 700,  27,   0,   0,   0,   6, 177,   8,   0,   0,  10,   1,1999,   3,   0,   0, 300,   0, 800,  71},   // 8: SltDrm
-    {   9,  88,   0,   1, 100,  45,   0,   0,   0,   7, 200,   5,   0,   0,   5,   0,1999,  19,   0,  50, 110,   0, 390,  71},    // 9: GlsBotl
-    {  10,  85,   0,   1, 800,  45,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,  17, 420,   0, 637,  71},   // 10: WdBlkHi
-    {  11,  72,   0,   1, 800,   2,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 420,   0, 566,  71},   // 11: TmplBlk
-    {  12,  64,   0,   1,1000,   5,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 300,   0, 300,  71},   // 12: SltDrHi
-    {  13,  57,   0,   1, 800,  20,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 300,   0, 300,  71},   // 13: SltDrLo
-    {  14,  64,   0,   1, 576,  45,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   8, 420,   0, 900,  71},   // 14: Bamboo
-    {  15,  74,   0,   1, 688,  28,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 420,   0, 700,  71},   // 15: Coconut
-    {  16,  45,   0,   1, 800,  30,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   5, 300,   0, 400,  71},   // 16: UduTone
-    {  17,  64,   0,   1, 800,  39,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,  12, 260,   0, 605,  71},   // 17: KlmbE4
-    {  18,  69,   0,   1, 632,  33,   0,   0,   2,   1, 160,   0,   0,   0,  10,   0,1999,  10,   0,   0, 260,   0, 720,  71},   // 18: KlmbA4
+    //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Attk VlSt Ptls  Mdl  Dky  Rel  Mtr  Hit InHm TbRd NzMx NzRs NzFl NzFq
+    {   0,  72,   0,   1,   0,1999,  71,  20, 800,  13,   0,   0,   0,   6, 194,   5,  -7,   0,   2,   7,   0, 300,   0,1200},   // 0: Marimba   — exemplar BAR voice
+    {   1,  72,   0,   1,   0,1999,  71,   0, 900,  34,   0,   0,   0,   1, 200,  20,  30,   0,   1,  18,   5, 300,   0,1500},   // 1: TblrBel
+    {   2,  72,   0,   1,   0,1999,  71,   0, 500,  30,   0,   0,   0,   1, 200,  18,  28,   0,   0,  13,   0, 300,   0,1000},   // 2: Vibrph
+    {   3,  48,   0,   1,   0,1999,  71,   0, 900,  50,   0,   0,   0,   2, 156,   2,  24,   0,   1,   3,   5, 420,   0, 900},   // 3: Wodblk
+    {   4,  65,   0,   1,   0,1999,  71,   3, 700,  39,   0,   0,   0,   1, 192,   5,   6,   0,   0,   7,  10, 260,   0, 720},   // 4: Kalimba
+    {   5,  60,   0,   1,   0,1999,  71,   5, 600,   0,   0,   0,   0,   4, 200,  12,  18,   0,   0,   9,   0, 300,   0,1000},   // 5: StelPan
+    {   6,  79,   0,   1,   0,1999,  71,   0, 900,  48,   0,   0,   0,   2,  13,   1,  -3,   0,   0,   1,  20, 260,   0, 800},   // 6: Claves
+    {   7,  76,   0,   1,   0,1999,  71,   0, 700,   5,   0,   0,   0,   4, 200,  18,  30,   0,   1,  18,   0, 300,   0,1200},   // 7: GlsBwl
+    {   8,  60,   0,   1,   0,1999,  71,   0, 700,  27,   0,   0,   0,   6, 177,  10,   8,   0,   1,   3,   0, 300,   0, 800},   // 8: SltDrm
+    {   9,  88,   0,   1,   0,1999,  71,   0, 100,  45,   0,   0,   0,   7, 200,   5,   5,   0,   0,  19,  50, 110,   0, 390},    // 9: GlsBotl
+    {  10,  85,   0,   1,   0,1999,  71,   0, 800,  45,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  17, 420,   0, 637},   // 10: WdBlkHi
+    {  11,  72,   0,   1,   0,1999,  71,   0, 800,   2,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   0, 420,   0, 566},   // 11: TmplBlk
+    {  12,  64,   0,   1,   0,1999,  71,   0,1000,   5,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   0, 300,   0, 300},   // 12: SltDrHi
+    {  13,  57,   0,   1,   0,1999,  71,   0, 800,  20,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   0, 300,   0, 300},   // 13: SltDrLo
+    {  14,  64,   0,   1,   0,1999,  71,   0, 576,  45,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   8, 420,   0, 900},   // 14: Bamboo
+    {  15,  74,   0,   1,   0,1999,  71,   0, 688,  28,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   0, 420,   0, 700},   // 15: Coconut
+    {  16,  45,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   5, 300,   0, 400},   // 16: UduTone
+    {  17,  64,   0,   1,   0,1999,  71,   0, 800,  39,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,  12, 260,   0, 605},   // 17: KlmbE4
+    {  18,  69,   0,   1,   0,1999,  71,   0, 632,  33,   0,   0,   2,   1, 160,  10,   0,   0,   0,  10,   0, 260,   0, 720},   // 18: KlmbA4
 };
-static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramVlMllRes, 0, 0),
-              "VlMllRes is not loaded per preset: every row must ship 0");
+static_assert(brc::preset_column_in(kPresetKnobs, k_paramAttack, 0, 0),
+              "Attack is 0 on every preset: its mapping is the identity there");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),

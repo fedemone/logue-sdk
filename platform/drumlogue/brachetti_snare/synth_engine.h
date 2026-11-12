@@ -183,6 +183,9 @@ private:
     }
 
     // The wires, rebuilt on every strike (the strike's reset cleared them),
+    // (the code names the knobs by their modal-engine ROLE; the drumlogue
+    // shows MlltRes = Buzz, MlltStif = BuzzTon, VlMllRes = Crack,
+    // VlMllStf = Tight, Rel = BuzzLen — header.c)
     // and the knobs that shape them.  The BUZZ, not the ~10 % modal head, is a
     // snare's defining voice, so the exciter knobs drive the wires, each as a
     // delta from its shipped value (REFERENCE-ANCHORED):
@@ -192,7 +195,8 @@ private:
     //   MlltRes  → buzz AMOUNT (wire vs plain filtered noise)
     //   MlltStif → buzz BRIGHTNESS (all three bands)
     //   VlMllStf → buzz TIGHTNESS (pole radius: loose ↔ zingy)
-    //   VlMllRes → the CRACK (the broadband burst before the wires)
+    //   VlMllRes → the CRACK (the broadband burst before the wires; up also
+    //              lengthens it, and adds one where a preset has none)
     //   TubRad   → body depth: band A only (the drum's body tone)
     void strike_wires(VoiceState& v, bool in_motion, const SnareWires::Motion& motion) const {
         SnareWires& w = v.wires;
@@ -216,8 +220,17 @@ private:
             0.33f, 3.0f);   // ±1.6 octaves
         const float tight = brc::clampf((brc::knob::percent(m_params[k_paramVlMllStf]) - m_anchor.vel_stiff) * 0.12f,
                                         -0.12f, 0.12f);
-        w.crack_gain = brc::clampf(
-            brc::knob_exp2(4.0f * (brc::knob::percent(m_params[k_paramVlMllRes]) - m_anchor.vel_res)), 0.0f, 9.0f);
+        const float d_crack = brc::knob::percent(m_params[k_paramVlMllRes]) - m_anchor.vel_res;
+        w.crack_gain = brc::clampf(brc::knob_exp2(4.0f * d_crack), 0.0f, 9.0f);
+        // Above its shipped value Crack also LENGTHENS the crack phase (the
+        // wires fade in up to 4× slower) and gives one to the presets that
+        // ship none (wires in from frame 0): a crack you can hear on every
+        // snare, not only a louder first few ms.  Not while the wires are
+        // already rattling (a buzz roll has no crack).
+        if (d_crack > 0.001f && !in_motion) {
+            w.onset_env    = fminf(w.onset_env, 1.0f - fminf(1.0f, d_crack));
+            w.onset_attack = (w.onset_attack > 0.0f ? w.onset_attack : 0.0026f) / (1.0f + 3.0f * d_crack);
+        }
         // TubRad: a bigger shell drops band A for a deeper "thunk", a smaller
         // one lifts it.  ASYMMETRIC on purpose: deepening reads right however
         // far it goes, while far above the shipped pitch the band sounds

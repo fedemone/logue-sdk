@@ -55,6 +55,12 @@ case "$name" in
     brachetti_kick)  extra=(--avoid-reselect Kick) ;;
     brachetti_noise) extra=(--avoid-reselect Shaker) ;;
 esac
+# Knobs a family unit RELABELLED (same knob, a name that says what it does
+# there): the script uses the family's name, and the original's driver finds
+# it under its own through EQUIV_ALIASES.  The list is kept in aliases.txt.
+aliases="$(awk -v u="$name" '$1 == u { print $2 }' "$here/aliases.txt" | paste -sd, -)"
+export EQUIV_ALIASES="$aliases"
+for al in ${aliases//,/ }; do extra+=(--alias "$al"); done
 python3 "$here/gen_scenarios.py" "$work/$name.list" --compare-with "$work/orig.list" \
     "${extra[@]}" "$@" > "$work/$name.script"
 

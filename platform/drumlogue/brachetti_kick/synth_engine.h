@@ -31,7 +31,7 @@
 //                    off_anchor, off_unity
 //   master_stage.h   MasterStage, tone_tilt
 //   modal_bank.h     ModalPresetConfig
-//   modal_synth.h    ModalSynth
+//   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kRollFuseSec
 #include "../brachetti_common/dsp_math.h"
 #include "../brachetti_common/knobs.h"
@@ -52,6 +52,14 @@ public:
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
 
+    // ── The kick's own knobs in two standard slots (presets.h) ──────────────
+    static constexpr uint8_t role_at(uint8_t slot) {
+        return (slot == k_paramDiveTm || slot == k_paramAttack) ? brc::kFamilyKnob : slot;
+    }
+    static int32_t fixed_knob(uint8_t idx, uint8_t role) {
+        return (role == k_paramPartls) ? kShippedPartls[idx] : kShippedModel[idx];
+    }
+
     // ── The strike ──────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
         // Strokes on the same note inside kRollFuseSec are one pressed roll.
@@ -67,7 +75,7 @@ public:
         // it, so it is restored here (adding a preset here changes its sound).
         if (m_preset_idx == k_808Sub)
             v.pitch.set(voicing().pitch_env, voicing().pitch_decay, voicing().pitch_amount);
-        v.onset.trigger(voicing().onset_ms);
+        v.onset.trigger(attack_ms());
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
         // The modal body is Kick2's (TubRad stretches it, and retunes the boom
         // in shape_boom).
@@ -79,6 +87,8 @@ public:
         shape_boom(v);
         balance_kick2(v);
         beater_click(v);
+        shape_attack(v);
+        shape_dive(v);
     }
 
     // ── One voice, one block, into the mono bus (out[i * 2]) ────────────────
@@ -135,8 +145,13 @@ private:
     // retunes the whole kick, 1.0 as shipped).  Kick2's boom is fixed.
     void sweep_boom(VoiceState& v) const {
         if (m_preset_idx == k_KickDrum) {
-            // Kick: 90 → 55 Hz down the boom's own envelope.
-            v.boom.set_freq((55.0f + (35.0f * v.boom.env)) * v.boom.tune);
+            // Kick: 90 → 55 Hz down the boom's own envelope, or down the pitch
+            // envelope once Dive / DiveTm have moved (shape_dive).
+            if (v.own_dive) v.boom.set_freq((55.0f + v.pitch.amount * v.pitch.env) * v.boom.tune);
+            else            v.boom.set_freq((55.0f + (35.0f * v.boom.env)) * v.boom.tune);
+        } else if (m_preset_idx == k_Kick2) {
+            // Kick2's boom is fixed; it dives only when Dive is turned up.
+            if (v.own_dive) v.boom.set_freq((58.0f + v.pitch.amount * v.pitch.env) * v.boom.tune);
         } else if (m_preset_idx == k_808Sub) {
             // 808Sub: the pitch envelope (τ ≈ 21 ms) dives 160 → 45 Hz in
             // ~100 ms, independently of the boom's level.
@@ -145,6 +160,10 @@ private:
     }
 
     // ── The kick's knob mappings (REFERENCE-ANCHORED) ───────────────────────
+    // The code names the knobs by their modal-engine ROLE (k_paramMlltRes …);
+    // the drumlogue shows the kick's names for them: MlltRes = Thump,
+    // MlltStif = Snap, VlMllRes = VelThmp, VlMllStf = VelSnap, Mterl = Weight,
+    // HitPos = Click, Inharm = Dive, TubRad = Tune (header.c).
     // Each is a function of the knob's delta from the value the preset
     // shipped with: 0 at the shipped value, where the kick plays as voiced.
 
@@ -255,6 +274,49 @@ private:
         const float vd = brc::clampf(1.0f - v.current_velocity, 0.0f, 1.0f);
         v.boom.mix        = fminf(1.50f, v.boom.mix * (1.0f + 0.35f * vd));
         v.boom.attack_inc = fmaxf(0.00008f, v.boom.attack_inc * (1.0f - 0.50f * vd));
+    }
+
+    // ── The kick's own knobs (in the Partls and Model slots) ─────────────────
+    // Each is bipolar around 0, the value every preset ships: 0 is the
+    // identity, so the presets play as voiced.
+
+    // Attack: below 0 punchier (a shorter onset ramp, a faster boom rise),
+    // above 0 softer — the onset stretches up to ×5.7 and, where a preset has
+    // none (808Sub), up to 30 ms; the boom rises up to ×5.7 slower.
+    float attack_knob() const { return brc::clampf((float)m_params[k_paramAttack] * 0.01f, -1.0f, 1.0f); }
+    float attack_ms() const {
+        const float a = attack_knob();
+        if (a == 0.0f) return voicing().onset_ms;
+        return voicing().onset_ms * brc::knob_exp2(2.5f * a) + fmaxf(0.0f, a) * 30.0f;
+    }
+    void shape_attack(VoiceState& v) const {
+        const float a = attack_knob();
+        if (a != 0.0f)
+            v.boom.attack_inc = brc::clampf(v.boom.attack_inc * brc::knob_exp2(-2.5f * a), 0.00008f, 1.0f);
+    }
+
+    // The pitch dive: Dive (the Inharm role, its depth) and DiveTm (its
+    // time, ×1/4 .. ×4).  808Sub dives on its pitch envelope already (Dive's
+    // depth is applied in shape_boom); here DiveTm stretches it.  Kick sweeps
+    // 90 → 55 Hz down its boom's envelope: once either knob moves it gets an
+    // envelope of its own with that time and a depth of 35 Hz × Dive's
+    // factor.  Kick2's boom is a fixed 58 Hz: turning Dive UP gives it a dive
+    // (up to +87 Hz at the top of the knob), DiveTm its time.
+    void shape_dive(VoiceState& v) const {
+        const float t = brc::knob_exp2(2.0f * brc::clampf((float)m_params[k_paramDiveTm] * 0.01f, -1.0f, 1.0f));
+        const float d_inh = brc::knob::inharm(m_params[k_paramInharm]) - m_anchor.inharm;
+        if (m_preset_idx == k_808Sub) {
+            if (brc::off_unity(t)) v.pitch.decay = 1.0f - (1.0f - v.pitch.decay) / t;
+        } else if (m_preset_idx == k_KickDrum) {
+            if (!brc::off_unity(t) && !brc::off_anchor(d_inh)) return;
+            v.own_dive = true;
+            v.pitch.set(1.0f, 1.0f - (1.0f - v.boom.decay) / t,
+                        35.0f * brc::knob_exp2(2.5f * d_inh));
+        } else if (m_preset_idx == k_Kick2) {
+            if (d_inh <= 0.001f) return;
+            v.own_dive = true;
+            v.pitch.set(1.0f, 1.0f - 0.0006f / t, 87.0f * fminf(1.0f, d_inh));
+        }
     }
 
     // HitPos above the shipped value adds a beater CLICK (a harder beater =
