@@ -35,8 +35,8 @@ ULIBDIR =
 ##############################################################################
 # Libraries
 #
-# No -lpthread on purpose: pthread_create / pthread_join / clock_gettime are
-# weak references (unit.cc), so the unit loads even where they are missing.
+# No -lrt: clock_gettime is a weak reference (unit.cc), so the unit loads even
+# on a C library that keeps it elsewhere.
 
 ULIBS  = -lm
 ULIBS += -lc

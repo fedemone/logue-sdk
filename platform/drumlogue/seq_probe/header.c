@@ -36,11 +36,12 @@ const __unit_header unit_header_t unit_header = {
         {0, 10, 0, 7, k_unit_param_type_none, 0, 0, 0, {"Shadow"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Burst"}},
 
-        // Page 3 — what the sequencer sends, and the files
+        // Page 3 — what the sequencer sends, and the boot-time file test
         {0, 15, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"Grid"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Gate"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Event"}},
-        {0, 1, 0, 1, k_unit_param_type_strings, 0, 0, 0, {"Files"}},
+        // Files: the boot-time file test in a word (the knob does nothing)
+        {0, 1, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Files"}},
 
         // Page 4 — prototype: steps 1-4 of the lane chosen on page 5.  Read
         // as relative turns, so the stored number does not matter.
@@ -55,8 +56,9 @@ const __unit_header unit_header_t unit_header = {
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
 
-        // Page 6 — unused
-        {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+        // Page 6 — every measurement, one per knob position (README.md,
+        // "The Result list"); kNumResults in unit.cc
+        {0, 11, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Result"}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}

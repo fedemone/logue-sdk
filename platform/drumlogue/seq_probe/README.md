@@ -9,31 +9,32 @@ parallel sequencer depends on:
 | Question | Why the sequencer needs it |
 |---|---|
 | Does the panel redraw a bitmap or string by itself, or only when its knob turns, or when a page is entered? | Whether a step's real content, a blinking cursor and a playhead can be shown |
-| Does the panel take the number `unit_get_param_value()` returns? | How a knob turn must be read to edit a step from what it holds |
+| Does the panel take the number `unit_get_param_value()` returns? | How a knob turn must be read; whether a pattern can live in the knob numbers a program saves |
 | What does loading a program send? | The guard that keeps a program load from writing into steps |
 | What does the sequencer send: gates, per-step velocity, stop? | The clock |
-| Which callback runs on which thread? | Where pattern edits, playback and file I/O may run |
-| May a unit start a thread and write files? | Song and sound files |
+| Which callbacks run on the audio thread? | Where pattern edits and playback may run |
+| When does `unit_init` run, and can files be read and written then? | Whether songs and sounds can be loaded at boot |
 | Do the step keys reach the unit as notes? | Whether real buttons are possible |
 
-Every answer goes into a log file; pages 1–3 show the same answers on the
-panel in case the file cannot be written.  Pages 4–5 are a working prototype
-of the proposed sequencer layout: 3 lanes, and each knob shows one step's real
-content.
+Every answer is on the panel: pages 1–3 live, and page 6 holds the full list
+(**Result**).  Pages 4–5 are a working prototype of the proposed sequencer
+layout: 3 lanes, and each knob shows one step's real content.
 
-## What it writes to your drumlogue
+## Files: at boot only
 
-Only into the `Programs` folder you see over USB (on the device:
-`/var/lib/drumlogued/userfs/Programs`, the folder
-[rgrvmusic/borg](https://github.com/rgrvmusic/borg) writes its logs to):
+The drumlogue allows file handling only before the sequencer and the synths
+start.  SeqProbe touches files in one place, called from `unit_init` only, and
+only when that runs at boot: the first `unit_init` since power-on, within 60 s
+of the system starting.  A later one (the unit selected while the drumlogue
+runs) touches nothing, and **Files** shows `late`.
 
-- `seqprobe.log`: appended to each session, and never grown past 2 MB.
-- `seqprobe-save.txt`: the save test (written as `seqprobe-save.tmp`, then renamed).
-
-It also reads the folder's file list into the log.  It touches nothing else.
-Writing files is outside the SDK: if the drumlogue refuses, the unit runs
-on and **Files** shows the error.  To stop writing, turn **Files** (page 3, knob 4)
-to off.  After the test, delete the unit and the two files.
+At boot it lists the `Programs` folder you see over USB (on the device:
+`/var/lib/drumlogued/userfs/Programs`, as
+[rgrvmusic/borg](https://github.com/rgrvmusic/borg) names it) and reads back the
+file the previous boot wrote.  Then it writes `seqprobe-save.txt` the way a
+song save would: written as `seqprobe-save.tmp`, flushed to storage, renamed,
+read back.  It touches nothing else.  After the test, delete the unit and that
+file.
 
 ## Build and install
 
@@ -44,12 +45,11 @@ matches the drumlogue's C library.
 build drumlogue/seq_probe
 ```
 
-Copy `seq_probe.drmlgunit` to `Units/Synths/`, restart, and select **SeqProbe**
-on the Multi-engine part.
+Copy `seq_probe.drmlgunit` to `Units/Synths/`.  Select **SeqProbe** on the
+Multi-engine part and save the program, so it is the one loaded at power-on.
+Then restart: the boot-time file test needs SeqProbe to be loaded at boot.
 
 ## The test, step by step
-
-The log answers every point exactly; what you see on the panel is the backup.
 
 **1. Page 1, hands off, about 10 seconds.**
 
@@ -76,11 +76,10 @@ should show 20 or 90 if the panel re-reads values after a preset.
 - Put a trig on all 16 steps of the Multi part.  Give step 1 a different velocity from the others, then press Play.  **Gate** shows the step and the velocity that arrived (`01 v127`, `02 v100`…).  **Grid** shows a playhead on its bottom rows.  You hear a tick on every gate, plus a three-lane demo pattern: a low thump, a noise hit, a tone.
 - Press Stop.  **Event** shows the last two things stop sent (`Aoff>Rset`: all-notes-off, then reset).
 - Play the Multi part from the step keys (a keyboard or chromatic mode, if the drumlogue has one), or from MIDI.  **Event** shows `N60` and similar if the notes reach the unit.
-- **Files**:
-  - `ok T`: files work, with the unit's own thread.
-  - `ok -`: files work, without a thread.
-  - `e13`: no permission. `e30`: read-only. Other numbers are system error codes.
-  - `full`: the log reached 2 MB.
+- **Files** sums up the boot-time file test:
+  - `rw ok`: read and written at boot.
+  - `rd e13`, `wr e30`…: what failed (13 = no permission, 30 = read-only; other numbers are system error codes).
+  - `late`: this `unit_init` was not at boot, so nothing was touched.
 
 **6. Pages 4–5: the lane-view prototype.**  Three lanes of 16 steps.  Page 4
 shows steps 1–4 of the lane chosen on page 5.  Each knob shows its step's
@@ -90,55 +89,53 @@ content and edits it.
 - Turn a step one click.  It should move one program on from what it shows, whatever the knob did before.
 - Page 3's Grid shows the lanes and your edits (one row of 2 pixels per lane).
 
-**7. Before power-off**, turn Files off and wait a second: the last lines are
-written.  Then copy `Programs/seqprobe.log` over USB.
+**7. Page 6: the Result list.**  Turn **Result** through its 12 positions
+and note what each shows (table below).  The polling rates (8–10) and the
+adoption count (11) only fill in after steps 1–6.  Then power-cycle once and
+read position 4 again: `prev ok` means a file written at boot survived.
 
-## Reading the log
+## The Result list
 
-```
-     2.163 f=96000     tid=1246  poll P02 per second: str=42 bmp=0 get=0
-```
-
-The columns are:
-1. seconds since `unit_init`
-2. audio frames rendered so far
-3. the thread that made the call
-4. what happened
-
-The lines that answer the questions:
-
-| Line | Tells |
-|---|---|
-| `THREAD render runs here: policy=FIFO priority=…` | One line per callback the first time it runs.  Compare `tid=`: which callbacks share the audio thread |
-| `str P02 v=0 (+33 ms since its last call)`, `poll P02 per second: str=30 …` | Whether and how often the panel asks.  The P numbers it asks for show the page on screen |
-| `set P05 = 50 (restore)`, `RESTORE detected at set …` | What a program load sends, in what order, how fast |
-| `edit P12 … counted from the unit's get answer` | The panel took the unit's number when it drew the page |
-| `edit P12 … counted from the host's last set` | It kept its own number |
-| `gate_on vel=127 -> step 1`, `all_note_off`, `reset`, `tempo 120.000 bpm` | The clock and what stop sends |
-| `FILE save: …`, `FILE dir: …`, `FILE fs: … read-only no` | Whether a song save can work, what `Programs` holds, the free space |
-| `worker thread started` or `worker: …` | Whether the unit may run its own thread |
+| # | Shows | Means |
+|---|---|---|
+| 1 | `b+14s #1` | `unit_init` ran 14 s after the system started, and it is the first init since power-on.  A large number or `#2` means init comes when the unit is selected, not at boot |
+| 2 | `rd ok 23` | At boot the `Programs` folder could be listed (23 entries).  `rd e13`: it could not, with that error.  `late` / `noclk`: the file test did not run (not at boot / no clock to tell) |
+| 3 | `wr ok` | At boot a file could be written, flushed, renamed and read back.  `wr e30`: the error.  `wr diff`: it read back different |
+| 4 | `prev ok` | The file the previous boot wrote reads back (`prev none` on the first boot) |
+| 5 | `io 3.2ms` | How long the boot-time file work took |
+| 6 | `aud GA` | Callbacks that ran on the audio thread: **G** gate on, **g** gate off, **N** note on, **S** knob set, **V** knob value asked, **T** text asked, **B** bitmap asked, **P** preset load, **A** all-notes-off, **R** reset, **M** tempo.  `aud none`: none of them.  `aud ?`: no audio yet |
+| 7 | `FIFO 80` | The audio thread's scheduling class and priority |
+| 8 | `str 30/s` | The most times the panel asked for one knob's text in one second while no knob turned.  0–2: only when a page is entered; 10 or more: it polls |
+| 9 | `bmp 30/s` | The same for bitmaps |
+| 10 | `knobs 4` | The most knobs polled (asked 3+ times) in one second.  4 or fewer: only the page on screen; more: other pages too |
+| 11 | `unit2 own0` | Step turns made after the panel had asked for the value.  **unit**: counted from the unit's number (the panel takes it); **own**: from its own |
+| 12 | `bpm 120.0` | The last tempo received |
 
 ## Files
 
 | File | What it holds |
 |---|---|
-| `unit.cc` | The callbacks, the measurements, the lane prototype, the log writer and its thread |
-| `header.c` | The 17 knobs (pages 1–5) and the two presets |
-| `probe_log.h` | The lock-free event ring the callbacks write into |
+| `unit.cc` | The callbacks, the measurements, the boot-time file test, the lane prototype |
+| `header.c` | The knobs (pages 1–6) and the two presets |
 | `probe_draw.h` | 16×16 bitmaps in the drumlogue format, and a 3×5 digit font |
 | `test/host_test.cc`, `test/run_host_test.sh` | The host test |
 
 ## Host test
 
 ```
-test/run_host_test.sh               # host, address and undefined-behaviour sanitizers
-NO_THREAD=1 test/run_host_test.sh   # as if the drumlogue refused a thread
-ARM=1 test/run_host_test.sh         # ARM build (the SDK's -march/-mfpu), under qemu-arm
+test/run_host_test.sh          # host, address and undefined-behaviour sanitizers
+ARM=1 test/run_host_test.sh    # ARM build (the SDK's -march/-mfpu), under qemu-arm
 ```
 
-It drives the callbacks the way the drumlogue would: a real-time render thread
-and panel calls from another, a program load, knob turns from a panel that
-keeps its own number and from one that takes the unit's, a burst that starts
-with a turn, gates, stop, a MIDI note and a polling panel.  Then it checks
-every display and the log.  It runs in a few seconds.  `ARM=1` needs
-`g++-arm-linux-gnueabihf` and `qemu-user`.
+It drives the callbacks the way the drumlogue would:
+- a real-time render thread, with panel calls from another;
+- a program load;
+- knob turns from a panel that keeps its own number and from one that takes the unit's;
+- a burst that starts with a turn;
+- gates, including one from the audio thread;
+- stop, a MIDI note, tempo, a polling panel.
+
+It then checks every display and every Result.  It also enforces the file
+rule: the folder must be unchanged from the moment `unit_init` returns, and a
+second, late `unit_init` must touch nothing.  It runs in a few seconds.
+`ARM=1` needs `g++-arm-linux-gnueabihf` and `qemu-user`.

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Builds the probe with the host test and runs it.
 #
-#   ./run_host_test.sh               host g++, address + undefined sanitizers
-#   NO_THREAD=1 ./run_host_test.sh   as if the firmware refused a thread
-#   ARM=1 ./run_host_test.sh         arm-linux-gnueabihf-g++ with the SDK's
-#                                    -march/-mfpu flags, run under qemu-arm
+#   ./run_host_test.sh          host g++, address + undefined sanitizers
+#   ARM=1 ./run_host_test.sh    arm-linux-gnueabihf-g++ with the SDK's
+#                               -march/-mfpu flags, run under qemu-arm
 #
 # Not a device build: the .drmlgunit comes from the SDK Docker image
 # (`build drumlogue/seq_probe`), whose toolchain matches the drumlogue's C
@@ -16,8 +15,9 @@ common="$unit/../common"
 out="${OUT:-$(mktemp -d)}"
 mkdir -p "$out/userfs"
 
-defs=(-DPROBE_DIR="\"$out/userfs\"" -DPROBE_STATS_SECONDS=1)
-[ -n "${NO_THREAD:-}" ] && defs+=(-DPROBE_FORCE_NO_THREAD)
+# The host has been up longer than the drumlogue's boot window: widen it, so
+# the first unit_init counts as boot.
+defs=(-DPROBE_DIR="\"$out/userfs\"" -DPROBE_BOOT_WINDOW_S=2000000000)
 
 if [ -n "${ARM:-}" ]; then
     cxx=arm-linux-gnueabihf-g++; cc=arm-linux-gnueabihf-gcc
@@ -42,4 +42,3 @@ warn=(-W -Wall -Wextra -Wno-ignored-qualifiers -Werror)
     "$here/host_test.cc" "$out/unit.o" "$out/header.o" "$out/base.o" -lm -lpthread -o "$out/host_test"
 
 "${run[@]}" "$out/host_test"
-echo "log: $out/userfs/seqprobe.log"

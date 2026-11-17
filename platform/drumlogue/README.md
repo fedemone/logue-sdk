@@ -21,7 +21,7 @@ Firmware version >= 1.00 is required to run user units built with SDK version 2.
  * [dummy-delfx/](dummy-delfx/) : User delay effect project template.
  * [dummy-revfx/](dummy-revfx/) : User reverb effect project template.
  * [dummy-masterfx/](dummy-masterfx/) : User master effect project template.
- * [seq_probe/](seq_probe/) : Test unit (it makes no music) that measures, on the device, how the panel redraws, what a program load and the sequencer send, threads and file writes — for the planned parallel sequencer.
+ * [seq_probe/](seq_probe/) : Test unit (it makes no music) that measures, on the device, how the panel redraws, what a program load and the sequencer send, the audio thread, and file access at boot — for the planned parallel sequencer.
  * [tools/brachetti_equiv/](tools/brachetti_equiv/) : The Brachetti family — the 40-preset `brachetti` unit split into eight per-family units (`brachetti_kick` … `brachetti_noise`, sharing the code in [`brachetti_common`](brachetti_common/)) — and the tools that prove each one renders bit-identically to the original.
  * [tools/level_meter/](tools/level_meter/) : Host-side level and loudness meter for user synth units, so a unit's level in a mix is a number at build time instead of a surprise on hardware.
  * [tools/stack_meter/](tools/stack_meter/) : Host-side polyphony meter: what a user synth unit does when it is given more than one hit at a time.

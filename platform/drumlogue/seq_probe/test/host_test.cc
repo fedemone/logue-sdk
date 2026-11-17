@@ -1,17 +1,25 @@
 // seq_probe host test: drives the unit's callbacks the way the drumlogue
 // would — a real-time render thread, panel calls from another, a program
 // load, knob turns from a host that keeps its own number and from one that
-// takes the unit's answer, gates, stop — and checks the displays and the log.
+// takes the unit's answer, gates (also from the audio thread), stop, a
+// polling panel — and checks every display and every Result.
 //
-//   ./run_host_test.sh            host build, worker thread
-//   NO_THREAD=1 ./run_host_test.sh   the path where no thread can be created
-//   ARM=1 ./run_host_test.sh      ARM build under qemu-arm
+// And the file rule: files are touched only inside the first unit_init.
+// The folder is snapshotted when unit_init returns and must be unchanged at
+// the end; a second unit_init (a "late" one) must touch nothing.
+//
+//   ./run_host_test.sh          host build, address + undefined sanitizers
+//   ARM=1 ./run_host_test.sh    ARM build under qemu-arm
+#include <sys/stat.h>
+#include <dirent.h>
+
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <thread>
 
@@ -25,20 +33,44 @@ static int s_fail = 0;
 #define CHECK(cond, ...) do { if (!(cond)) { ++s_fail; std::printf("FAIL %s:%d  ", __FILE__, __LINE__); \
     std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
 
+enum { P_CLOCK = 2, P_FOLLOW_S = 3, P_OWNED = 4, P_OWNED_S = 5, P_BURST = 7, P_GATE = 9,
+       P_EVENT = 10, P_FILES = 11, P_STEP1 = 12, P_STEP2 = 13, P_STEP4 = 15, P_LANE = 16,
+       P_RESULT = 20 };
+
 static std::string str(uint8_t id, int32_t v = 0) {
     const char* s = unit_get_param_str_value(id, v);
     return s ? s : "(null)";
 }
+static std::string result(int i) { return str(P_RESULT, i); }
+static bool starts(const std::string& s, const char* p) { return s.rfind(p, 0) == 0; }
 
 static void sleep_ms(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
 
+// The folder as name -> size:mtime, to prove nothing changed in it.
+static std::map<std::string, std::string> snapshot(const std::string& dir) {
+    std::map<std::string, std::string> m;
+    if (DIR* d = opendir(dir.c_str())) {
+        while (const dirent* e = readdir(d)) {
+            struct stat st;
+            const std::string p = dir + "/" + e->d_name;
+            if (e->d_name[0] == '.' || stat(p.c_str(), &st) != 0) continue;
+            m[e->d_name] = std::to_string(st.st_size) + ":" + std::to_string(st.st_mtim.tv_sec) + "." +
+                           std::to_string(st.st_mtim.tv_nsec);
+        }
+        closedir(d);
+    }
+    return m;
+}
+
 static std::atomic<bool> s_run{true};
+static std::atomic<bool> s_gate_from_audio{false};
 static std::atomic<bool> s_bad_sample{false};
 static std::atomic<float> s_peak{0.0f};
 
 static void render_thread() {
     float out[64 * 2];
     while (s_run.load()) {
+        if (s_gate_from_audio.exchange(false)) unit_gate_on(64);   // the sequencer on the audio thread
         unit_render(nullptr, out, 64);
         for (float x : out) {
             if (!std::isfinite(x) || std::fabs(x) > 1.0f) s_bad_sample = true;
@@ -48,23 +80,14 @@ static void render_thread() {
     }
 }
 
-static std::string read_file(const char* path) {
-    std::string s;
-    if (FILE* f = std::fopen(path, "rb")) {
-        char buf[4096];
-        size_t n;
-        while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) s.append(buf, n);
-        std::fclose(f);
-    }
-    return s;
-}
-
-static bool has(const std::string& log, const char* what) { return log.find(what) != std::string::npos; }
-
 int main() {
     const std::string dir = PROBE_DIR;
-    std::remove((dir + "/seqprobe.log").c_str());
-    std::remove((dir + "/seqprobe-save.txt").c_str());
+    // A file from "the previous boot".
+    std::remove((dir + "/seqprobe-save.tmp").c_str());
+    if (FILE* f = std::fopen((dir + "/seqprobe-save.txt").c_str(), "wb")) {
+        std::fputs("seq_probe save test, uptime 9 s\n", f);
+        std::fclose(f);
+    }
 
     unit_runtime_desc_t desc;
     std::memset(&desc, 0, sizeof(desc));
@@ -75,22 +98,31 @@ int main() {
     desc.input_channels = 2;
     desc.output_channels = 2;
     CHECK(unit_init(&desc) == k_unit_err_none, "unit_init");
+    const auto after_init = snapshot(dir);
+
+    // ── The boot-time file test, before anything runs ───────────────────────
+    CHECK(str(P_FILES) == "rw ok", "Files: %s", str(P_FILES).c_str());
+    CHECK(starts(result(0), "b+") && result(0).find(" #1") != std::string::npos, "init: %s", result(0).c_str());
+    CHECK(result(1) == "rd ok 1", "read at boot: %s", result(1).c_str());
+    CHECK(result(2) == "wr ok", "write at boot: %s", result(2).c_str());
+    CHECK(result(3) == "prev ok", "the previous boot's file: %s", result(3).c_str());
+    CHECK(starts(result(4), "io "), "file time: %s", result(4).c_str());
+    CHECK(result(5) == "aud ?", "no audio thread yet: %s", result(5).c_str());
+    CHECK(unit_header.params[P_RESULT].max == 11 && result(12) == "-", "Result has 12 positions");
 
     std::thread audio(render_thread);
 
     // ── Page 1: the panel draws it, a knob turns ────────────────────────────
-    CHECK(str(3) == "k1=00", "FollowS before a turn: %s", str(3).c_str());
+    CHECK(str(P_FOLLOW_S) == "k1=00", "FollowS before a turn: %s", str(P_FOLLOW_S).c_str());
     unit_set_param_value(0, 5);
-    CHECK(str(3) == "k1=05", "FollowS follows knob 1: %s", str(3).c_str());
+    CHECK(str(P_FOLLOW_S) == "k1=05", "FollowS follows knob 1: %s", str(P_FOLLOW_S).c_str());
     {
-        const uint8_t* a = unit_get_param_bmp_value(0, 5);
         uint8_t blink[32], follow[32];
-        std::memcpy(blink, a, 32);
+        std::memcpy(blink, unit_get_param_bmp_value(0, 5), 32);
         std::memcpy(follow, unit_get_param_bmp_value(1, 0), 32);
         CHECK(std::memcmp(blink + 24, follow + 24, 8) == 0, "Follow's bar (rows 12-15) is Blink's");
         CHECK(blink[24] == 0x3F && blink[25] == 0x00, "bar of value 5 lights pixels 0-5: %02x %02x",
               blink[24], blink[25]);
-        // The blinking square (rows 0-4, x 0-4) flips within a second.
         const bool lit0 = blink[0] & 1;
         bool flipped = false;
         for (int i = 0; i < 12 && !flipped; ++i) {
@@ -104,129 +136,105 @@ int main() {
     sleep_ms(20);
     unit_load_preset(1);
     for (uint8_t i = 0; i < 24; ++i) unit_set_param_value(i, unit_header.params[i].init);
-    CHECK(str(7).rfind("24/", 0) == 0, "Burst shows the restore: %s", str(7).c_str());
-    CHECK(unit_get_param_value(4) == 90, "preset B's shadow survives the restore: %d",
-          (int)unit_get_param_value(4));
-    CHECK(str(12) == "Kick2", "the restore did not edit step 1: %s", str(12).c_str());
-    CHECK(str(5, 50) == "h50 u90", "OwnedS shows host and unit values: %s", str(5, 50).c_str());
+    CHECK(starts(str(P_BURST), "24/"), "Burst shows the restore: %s", str(P_BURST).c_str());
+    CHECK(unit_get_param_value(P_OWNED) == 90, "preset B's answer survives the restore: %d",
+          (int)unit_get_param_value(P_OWNED));
+    CHECK(str(P_STEP1) == "Kick2", "the restore did not edit step 1: %s", str(P_STEP1).c_str());
+    CHECK(str(P_OWNED_S, 50) == "h50 u90", "OwnedS: %s", str(P_OWNED_S, 50).c_str());
 
     // ── Step knobs: a host that keeps its own number ────────────────────────
     sleep_ms(80);   // past the 50 ms after a preset load that counts as restore
-    unit_set_param_value(12, 501);
-    CHECK(str(12) == "808Sub", "one turn right from Kick2: %s", str(12).c_str());
+    unit_set_param_value(P_STEP1, 501);
+    CHECK(str(P_STEP1) == "808Sub", "one turn right from Kick2: %s", str(P_STEP1).c_str());
 
-    // …and one that takes the unit's answer (asked on a page draw).
+    // …one that takes the unit's answer (asked on a page draw)…
     sleep_ms(20);
-    const int32_t answer = unit_get_param_value(12);
+    const int32_t answer = unit_get_param_value(P_STEP1);
     CHECK(answer == 301, "step knob answers 200 away from the host's number: %d", (int)answer);
-    unit_set_param_value(12, answer + 1);
-    CHECK(str(12) == "Kick", "counted from the unit's answer: %s", str(12).c_str());
+    unit_set_param_value(P_STEP1, answer + 1);
+    CHECK(str(P_STEP1) == "Kick", "counted from the unit's answer: %s", str(P_STEP1).c_str());
     sleep_ms(10);
-    unit_set_param_value(12, answer + 2);
-    CHECK(str(12) == "Kick", "clamped at the last program: %s", str(12).c_str());
+    unit_set_param_value(P_STEP1, answer + 2);
+    CHECK(str(P_STEP1) == "Kick", "clamped at the last program: %s", str(P_STEP1).c_str());
+    // …and one that was asked but kept its own number.
     sleep_ms(10);
-    unit_set_param_value(12, answer + 1);
-    CHECK(str(12) == "808Sub", "and back down: %s", str(12).c_str());
+    unit_get_param_value(P_STEP1);
+    unit_set_param_value(P_STEP1, answer + 1);
+    CHECK(str(P_STEP1) == "808Sub", "counted from its own number: %s", str(P_STEP1).c_str());
+    CHECK(result(10) == "unit1 own1", "adoption: %s", result(10).c_str());
     sleep_ms(10);
-    unit_set_param_value(12, 900);
-    CHECK(str(12) == "808Sub", "a big jump is a resync, not an edit: %s", str(12).c_str());
+    unit_set_param_value(P_STEP1, 900);
+    CHECK(str(P_STEP1) == "808Sub", "a big jump is a resync, not an edit: %s", str(P_STEP1).c_str());
 
     // ── The lane view: page 5 picks the lane page 4 shows ───────────────────
     sleep_ms(10);
-    unit_set_param_value(16, 1);
-    CHECK(str(16, 1) == "B Snare", "Lane: %s", str(16, 1).c_str());
-    CHECK(str(12) == "---", "page 4 now shows lane B's step 1: %s", str(12).c_str());
-    CHECK(str(15) == "---", "lane B step 4: %s", str(15).c_str());
+    unit_set_param_value(P_LANE, 1);
+    CHECK(str(P_LANE, 1) == "B Snare", "Lane: %s", str(P_LANE, 1).c_str());
+    CHECK(str(P_STEP1) == "---", "page 4 now shows lane B's step 1: %s", str(P_STEP1).c_str());
+    CHECK(str(P_STEP4) == "---", "lane B step 4: %s", str(P_STEP4).c_str());
 
     // An edit that turns out to be the first set of a restore is undone.
     sleep_ms(20);
-    unit_set_param_value(13, 501);
-    CHECK(str(13) == "AcSnre", "edit lane B step 2: %s", str(13).c_str());
+    unit_set_param_value(P_STEP2, 501);
+    CHECK(str(P_STEP2) == "AcSnre", "edit lane B step 2: %s", str(P_STEP2).c_str());
     unit_set_param_value(0, 0);
     unit_set_param_value(1, 0);
-    CHECK(str(13) == "---", "reverted once the burst shows: %s", str(13).c_str());
+    CHECK(str(P_STEP2) == "---", "undone once the burst shows: %s", str(P_STEP2).c_str());
 
-    // ── The sequencer: gates, stop, a MIDI note ─────────────────────────────
-    CHECK(str(9) == "wait", "Gate before any gate: %s", str(9).c_str());
+    // ── The sequencer: gates, stop, a MIDI note, tempo ──────────────────────
+    CHECK(str(P_GATE) == "wait", "Gate before any gate: %s", str(P_GATE).c_str());
     unit_gate_on(127);
-    CHECK(str(9) == "01 v127", "first gate: %s", str(9).c_str());
+    CHECK(str(P_GATE) == "01 v127", "first gate: %s", str(P_GATE).c_str());
     sleep_ms(30);
     unit_gate_off();
     unit_gate_on(100);
-    CHECK(str(9) == "02 v100", "second gate: %s", str(9).c_str());
+    CHECK(str(P_GATE) == "02 v100", "second gate: %s", str(P_GATE).c_str());
     sleep_ms(100);
     unit_all_note_off();
     unit_reset();
-    CHECK(str(10) == "Aoff>Rset", "what stop sent: %s", str(10).c_str());
+    CHECK(str(P_EVENT) == "Aoff>Rset", "what stop sent: %s", str(P_EVENT).c_str());
     unit_gate_on(90);
-    CHECK(str(9) == "01 v90", "the first gate after a stop is step 1: %s", str(9).c_str());
+    CHECK(str(P_GATE) == "01 v90", "the first gate after a stop is step 1: %s", str(P_GATE).c_str());
     unit_note_on(60, 100);
-    CHECK(str(10) == "Rset>N60", "a MIDI note: %s", str(10).c_str());
+    CHECK(str(P_EVENT) == "Rset>N60", "a MIDI note: %s", str(P_EVENT).c_str());
     unit_set_tempo(120u << 16);
-    sleep_ms(200);
+    CHECK(result(11) == "bpm 120.0", "tempo: %s", result(11).c_str());
+    s_gate_from_audio = true;
+    sleep_ms(100);
+    CHECK(result(5) == "aud G", "gate_on seen on the audio thread: %s", result(5).c_str());
+    CHECK(result(6) == "OTHER 0", "the audio thread's scheduling: %s", result(6).c_str());
     CHECK(s_peak.load() > 0.05f, "the gates made sound (peak %.3f)", s_peak.load());
 
-    // ── A panel that polls: Clock asked 40 times a second for 2 s ───────────
-    for (int i = 0; i < 80; ++i) { str(2); sleep_ms(25); }
-
-    // ── Files ───────────────────────────────────────────────────────────────
-    sleep_ms(300);
-#ifdef PROBE_FORCE_NO_THREAD
-    CHECK(str(11, 1) == "ok -", "Files without a thread: %s", str(11, 1).c_str());
-#else
-    CHECK(str(11, 1) == "ok T", "Files with the worker: %s", str(11, 1).c_str());
-#endif
-    CHECK(std::atof(str(2).c_str() + 1) >= 1.0, "Clock counts seconds: %s", str(2).c_str());
+    // ── A panel that polls: Clock asked 40 times a second for 2.5 s ─────────
+    for (int i = 0; i < 100; ++i) { str(P_CLOCK); sleep_ms(25); }
+    // An audio second is a little longer than a real one here (sleep
+    // overhead, sanitizers, qemu), so the rate runs a little high.
+    const int str_hz = std::atoi(result(7).c_str() + 4);
+    CHECK(str_hz >= 25 && str_hz <= 80, "str rate: %s", result(7).c_str());
+    // Only the Blink loop above asked for bitmaps: at most ~10 a second.
+    const int bmp_hz = std::atoi(result(8).c_str() + 4);
+    CHECK(bmp_hz <= 15, "bmp rate: %s", result(8).c_str());
+    CHECK(result(9) == "knobs 1", "one knob polled at a time: %s", result(9).c_str());
+    CHECK(std::atof(str(P_CLOCK).c_str() + 1) >= 2.0, "Clock counts seconds: %s", str(P_CLOCK).c_str());
 
     s_run = false;
     audio.join();
     CHECK(!s_bad_sample.load(), "every sample finite and within ±1");
     unit_teardown();
+    CHECK(snapshot(dir) == after_init, "no file changed after unit_init");
 
-    const std::string log = read_file((dir + "/seqprobe.log").c_str());
-    CHECK(!log.empty(), "the log was written");
-    const char* expected[] = {
-        "=== seq_probe 1.0 session",
-        "init samplerate=48000 frames_per_buffer=64 in=2 out=2",
-        "THREAD set runs here",
-        "THREAD render runs here",
-        "FILE save: write + fsync + rename + read back: OK",
-        "FILE dir: f seqprobe.log",
-        "FILE fs:",
-        "load_preset 1",
-        "RESTORE detected at set 3 of a group (3 knobs",
-        ", right after load_preset",
-        "set P23 = 0  (restore)",
-        "edit P12 lane A step 1: 1 -> 2 (turn +1, counted from the host's last set)",
-        "edit P12 lane A step 1: 2 -> 3 (turn +1, counted from the unit's get answer)",
-        "resync P12: set 900",
-        "edit P13 lane B step 2: 1 -> 0 UNDONE (that turn was the start of a restore)",
-        "gate_on vel=127 -> step 1",
-        "gate_on vel=100 -> step 2",
-        "all_note_off",
-        "restart: next gate is step 1 (stop event)",
-        "note_on note=60 vel=100",
-        "tempo 120.000 bpm",
-        "bmp P00 v=5  (first call)",
-        "str P03 v=0  (first call)",
-        "poll P02 per second: str=",
-        " blocks in 1 s, 64 frames each, longest gap between blocks ",
-        "=== teardown ===",
-#ifdef PROBE_FORCE_NO_THREAD
-        "worker: no pthread_create in this C library; flushing from callbacks",
-#else
-        "worker thread started",
-#endif
-    };
-    for (const char* e : expected) CHECK(has(log, e), "log has \"%s\"", e);
-    CHECK(read_file((dir + "/seqprobe-save.txt").c_str()).rfind("seq_probe save test", 0) == 0,
-          "the saved file reads back");
+    // ── A second, late unit_init touches no file ────────────────────────────
+    CHECK(unit_init(&desc) == k_unit_err_none, "second unit_init");
+    CHECK(str(P_FILES) == "late", "Files on a late init: %s", str(P_FILES).c_str());
+    CHECK(result(1) == "late" && result(2) == "late", "nothing read or written late");
+    CHECK(result(0).find(" #2") != std::string::npos, "init count: %s", result(0).c_str());
+    unit_teardown();
+    CHECK(snapshot(dir) == after_init, "a late init touched no file");
 
     if (s_fail) {
-        std::printf("\n--- log ---\n%s\n", log.c_str());
         std::printf("%d check(s) FAILED\n", s_fail);
         return 1;
     }
-    std::printf("all checks passed (%zu bytes of log)\n", log.size());
+    std::printf("all checks passed\n");
     return 0;
 }

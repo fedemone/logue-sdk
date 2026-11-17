@@ -5,27 +5,29 @@
  * A test unit for the planned parallel sequencer.  It answers, on the
  * device, what the SDK documentation does not say:
  *
- *   - when the panel asks for a bitmap or string (on a timer? only for the
+ *   - when the panel asks for a bitmap or a string (on a timer? only for the
  *     knob being turned? when a page is entered?);
- *   - whether the panel adopts the number get_param_value() returns;
+ *   - whether the panel takes the number unit_get_param_value() returns;
  *   - what a program load sends (the "restore burst");
- *   - what the sequencer sends: gates, per-step velocity, stop;
- *   - which callback runs on which thread;
- *   - whether a unit may start a thread and write files in userfs.
+ *   - what the sequencer sends: gates, per-step velocity, stop, tempo;
+ *   - which callbacks run on the audio thread;
+ *   - when unit_init runs, and whether files can be read and written then.
  *
- * Everything is logged to userfs/Programs/seqprobe.log (README.md says how
- * to read it); pages 1-3 show the same answers on the panel.  Pages 4-5 are
- * a prototype of the sequencer's lane view: each knob shows one step of the
- * lane chosen on page 5, and a turn edits that step from what it holds.
+ * The answers are on the panel: pages 1-3 live, page 6 a list (Result).
  *
- * Files and threads are not part of the SDK.  The unit only uses them where
- * the C library offers them (weak symbols) and keeps working without.
+ * Files: the drumlogue allows file handling only before the sequencer and
+ * the synths start.  So files are touched in one place, run_at_boot(),
+ * called from unit_init() only — and it does nothing unless unit_init runs
+ * at boot (the first init, soon after the system started).
+ *
+ * Pages 4-5 are a prototype of the sequencer's lane view: each knob shows
+ * one step of the lane chosen on page 5, and a turn edits that step from
+ * what it holds.
  */
 
 #include <atomic>
 #include <cerrno>
 #include <cmath>
-#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -33,33 +35,27 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <sched.h>
-#include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "unit.h"
 #include "probe_draw.h"
-#include "probe_log.h"
 
-// Optional symbols: a weak undefined symbol resolves to null instead of
-// failing the load, so the unit loads on a C library without them.  Every
-// use checks for null first.
-#pragma weak pthread_create
-#pragma weak pthread_join
+// Optional: a weak undefined symbol resolves to null instead of failing the
+// load, so the unit loads on a C library without it.
 #pragma weak clock_gettime
 
 #ifndef PROBE_DIR
 // The drumlogue's user filesystem (the drive the PC sees in USB mode), as
-// rgrvmusic/borg writes it; borg keeps its own logs in Programs/.
+// rgrvmusic/borg names it; borg keeps its own logs in Programs/.
 #define PROBE_DIR "/var/lib/drumlogued/userfs/Programs"
 #endif
-
-using probe::Ev;
-using probe::Rec;
+#ifndef PROBE_BOOT_WINDOW_S
+// unit_init this soon after the system started counts as boot time.
+#define PROBE_BOOT_WINDOW_S 60
+#endif
 
 namespace {
 
@@ -72,81 +68,152 @@ enum : uint8_t {
     P_GRID, P_GATE, P_EVENT, P_FILES,           // page 3
     P_STEP1, P_STEP2, P_STEP3, P_STEP4,         // page 4
     P_LANE,                                     // page 5
+    P_RESULT = 20,                              // page 6
     kNumParams = 24,
 };
 
-constexpr uint64_t kBurstGapUs     = 5000;      // sets closer than this are one group
-constexpr int      kBurstIds       = 3;         // a group touching 3+ knobs is a restore
+constexpr uint64_t kBurstGapUs      = 5000;     // sets closer than this are one group
+constexpr int      kBurstIds        = 3;        // a group touching 3+ knobs is a restore
 constexpr uint64_t kPresetRestoreUs = 50000;    // sets this soon after a preset load, too
-constexpr int32_t  kStepCenter     = 500;
-constexpr int32_t  kStepSwing      = 200;       // how far get_param_value moves a step knob
-constexpr int32_t  kMaxStepDelta   = 16;        // a bigger jump is a resync, not a turn
-constexpr uint64_t kRestartGapUs   = 1500000;   // no gate for this long: next gate is step 1
-constexpr uint64_t kPollQuietUs    = 500000;    // log a polled call after this much silence
-constexpr long     kLogCap         = 2L * 1024 * 1024;
-#ifndef PROBE_STATS_SECONDS
-#define PROBE_STATS_SECONDS 10                  // render cadence and call rates, this often
-#endif
-constexpr uint32_t kStatsSeconds   = PROBE_STATS_SECONDS;
+constexpr int32_t  kStepCenter      = 500;
+constexpr int32_t  kStepSwing       = 200;      // how far get_param_value moves a step knob
+constexpr int32_t  kMaxStepDelta    = 16;       // a bigger jump is a resync, not a turn
+constexpr uint64_t kRestartGapUs    = 1500000;  // no gate for this long: next gate is step 1
+constexpr uint64_t kBootWindowUs    = uint64_t(PROBE_BOOT_WINDOW_S) * 1000000u;
+constexpr uint32_t kPollMinCalls    = 3;        // calls to one knob in a second = polling
+constexpr size_t   kStrLen          = 24;
 
 // ============================================================================
-// Clock, thread id, log
+// Clock and threads
 // ============================================================================
-probe::Ring s_ring;
-std::atomic<uint32_t> s_frames{0};   // audio frames rendered since unit_init
 uint32_t s_sr = 48000;
-uint64_t s_t0_us = 0;
+std::atomic<uint32_t> s_frames{0};   // audio frames rendered since unit_init
+
+// Time since the system started (CLOCK_MONOTONIC); 0 when unavailable.
+uint64_t uptime_us() {
+    if (&clock_gettime == nullptr) return 0;
+    timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return uint64_t(ts.tv_sec) * 1000000u + uint64_t(ts.tv_nsec) / 1000u;
+}
 
 uint64_t now_us() {
-    if (&clock_gettime != nullptr) {
-        timespec ts;
-        if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
-            return uint64_t(ts.tv_sec) * 1000000u + uint64_t(ts.tv_nsec) / 1000u;
-    }
-    return uint64_t(s_frames.load(std::memory_order_relaxed)) * 1000000u / s_sr;
+    const uint64_t t = uptime_us();
+    return t ? t : uint64_t(s_frames.load(std::memory_order_relaxed)) * 1000000u / s_sr;
 }
 
 uint32_t thread_id() { return static_cast<uint32_t>(syscall(SYS_gettid)); }
 
-void log_ev(Ev ev, uint8_t a = 0, int32_t b = 0, int32_t c = 0, uint16_t d = 0) {
-    s_ring.push(ev, a, b, c, d, now_us(), s_frames.load(std::memory_order_relaxed), thread_id());
+// Which callbacks ran on the audio thread (the one unit_render runs on).
+enum Cb { kCbGateOn, kCbGateOff, kCbNoteOn, kCbSet, kCbGet, kCbStr, kCbBmp,
+          kCbPreset, kCbAllOff, kCbReset, kCbTempo, kNumCb };
+const char kCbLetter[kNumCb + 1] = "GgNSVTBPARM";   // README.md, "The Result list"
+std::atomic<uint32_t> s_render_tid{0};
+std::atomic<uint32_t> s_on_audio{0};                // bit per Cb
+int s_render_policy = -1;
+int s_render_prio = 0;
+
+void mark(Cb cb) {
+    const uint32_t rt = s_render_tid.load(std::memory_order_relaxed);
+    if (rt && thread_id() == rt) s_on_audio.fetch_or(1u << cb, std::memory_order_relaxed);
 }
 
-// The first call of each callback records its thread and scheduling class.
-std::atomic<bool> s_seen[probe::kEvCount];
+// How often the panel asks for each knob's text and picture.  Counted per
+// second of audio; the session's highest rates are kept, from seconds in
+// which no knob turned (a turning knob is asked on every click).
+std::atomic<uint32_t> s_calls_str[kNumParams];
+std::atomic<uint32_t> s_calls_bmp[kNumParams];
+std::atomic<bool>     s_set_this_second{false};
+uint32_t s_max_str_hz = 0, s_max_bmp_hz = 0, s_max_polled = 0;
+uint32_t s_second_frames = 0;
 
-void thread_info_once(Ev ev) {
-    if (s_seen[ev].exchange(true, std::memory_order_relaxed)) return;
-    sched_param sp;
-    std::memset(&sp, 0, sizeof(sp));
-    const int policy = sched_getscheduler(0);
-    sched_getparam(0, &sp);
-    log_ev(probe::kEvThreadInfo, ev, policy, sp.sched_priority);
-}
-
-// Calls the panel may make many times a second.  Each is counted (a "poll"
-// line reports the rate when it changes) and logged on its own when its
-// value changes or after a quiet spell — which is how a page being entered
-// shows up.
-enum PollKind { kPollStr, kPollBmp, kPollGet, kPollPresetName, kPollPresetIndex, kNumPollKinds };
-uint64_t s_poll_last_us[kNumPollKinds][kNumParams];
-int32_t  s_poll_last_v[kNumPollKinds][kNumParams];
-std::atomic<uint32_t> s_poll_count[3][kNumParams];   // str, bmp, get
-uint32_t s_poll_logged[3][kNumParams];               // the rates last reported
-
-void log_polled(PollKind kind, Ev ev, uint8_t id, int32_t v) {
-    if (id >= kNumParams) return;
-    if (kind < 3) s_poll_count[kind][id].fetch_add(1, std::memory_order_relaxed);
-    const uint64_t t = now_us();
-    const bool first = s_poll_last_us[kind][id] == 0;
-    const uint64_t gap = t - s_poll_last_us[kind][id];
-    if (first || gap >= kPollQuietUs || v != s_poll_last_v[kind][id]) {
-        const uint64_t gap_ms = gap / 1000u;
-        log_ev(ev, id, v, first ? -1 : gap_ms > 0x7FFFFFFF ? 0x7FFFFFFF : int32_t(gap_ms));
+void poll_second() {
+    uint32_t str_hz = 0, bmp_hz = 0, polled = 0;
+    for (int id = 0; id < kNumParams; ++id) {
+        const uint32_t s = s_calls_str[id].exchange(0, std::memory_order_relaxed);
+        const uint32_t b = s_calls_bmp[id].exchange(0, std::memory_order_relaxed);
+        if (s > str_hz) str_hz = s;
+        if (b > bmp_hz) bmp_hz = b;
+        if (s + b >= kPollMinCalls) ++polled;
     }
-    s_poll_last_us[kind][id] = t;
-    s_poll_last_v[kind][id] = v;
+    if (s_set_this_second.exchange(false, std::memory_order_relaxed)) return;
+    if (str_hz > s_max_str_hz) s_max_str_hz = str_hz;
+    if (bmp_hz > s_max_bmp_hz) s_max_bmp_hz = bmp_hz;
+    if (polled > s_max_polled) s_max_polled = polled;
 }
+
+// ============================================================================
+// unit_init, and the only file access
+// ============================================================================
+uint32_t s_init_count = 0;        // survives a re-init while the unit stays loaded
+uint64_t s_init_uptime_us = 0;
+
+namespace files {
+
+const char kDir[]      = PROBE_DIR;
+const char kSaveTmp[]  = PROBE_DIR "/seqprobe-save.tmp";
+const char kSavePath[] = PROBE_DIR "/seqprobe-save.txt";
+const char kStamp[]    = "seq_probe save test";
+
+enum Run { kNotRun, kLate, kNoClock, kDone };
+Run      s_run = kNotRun;
+int      s_read_err = 0;   // errno of opendir, 0 = read
+int      s_entries = 0;    // entries in the folder
+int      s_prev = 0;       // 0 = no file from an earlier boot, 1 = it reads back, 2 = it does not
+int      s_write = 0;      // 0 = written and read back, errno, or -1 = reads back different
+uint32_t s_us = 0;         // how long it all took
+
+bool reads_stamp(const char* path) {
+    const int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    char b[32];
+    const ssize_t n = read(fd, b, sizeof(b));
+    close(fd);
+    return n >= ssize_t(sizeof(kStamp) - 1) && std::memcmp(b, kStamp, sizeof(kStamp) - 1) == 0;
+}
+
+// Read the folder and the file an earlier boot wrote, then write a new one
+// the way a song save would: a temporary file, flushed to storage, renamed
+// over the real one (a power cut keeps the old file), read back.
+//
+// Only at boot: the first unit_init, soon after the system started.  Any
+// later init (the unit selected while the drumlogue runs) touches nothing.
+void run_at_boot(uint64_t uptime) {
+    s_read_err = s_entries = s_prev = s_write = 0;
+    s_us = 0;
+    if (!uptime) { s_run = kNoClock; return; }
+    if (s_init_count > 1 || uptime > kBootWindowUs) { s_run = kLate; return; }
+
+    if (DIR* d = opendir(kDir)) {
+        while (const dirent* e = readdir(d))
+            if (std::strcmp(e->d_name, ".") && std::strcmp(e->d_name, "..")) ++s_entries;
+        closedir(d);
+    } else {
+        s_read_err = errno;
+    }
+    if (access(kSavePath, F_OK) == 0) s_prev = reads_stamp(kSavePath) ? 1 : 2;
+
+    char text[64];
+    const int n = snprintf(text, sizeof(text), "%s, uptime %u s\n", kStamp, unsigned(uptime / 1000000u));
+    const int fd = open(kSaveTmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        s_write = errno;
+    } else {
+        int err = 0;
+        if (write(fd, text, size_t(n)) != n) err = errno ? errno : EIO;
+        else if (fsync(fd) != 0) err = errno ? errno : EIO;
+        close(fd);
+        if (err) s_write = err;
+        else if (rename(kSaveTmp, kSavePath) != 0) s_write = errno;
+        else s_write = reads_stamp(kSavePath) ? 0 : -1;
+    }
+
+    const uint64_t end = uptime_us();
+    s_us = uint32_t(end > uptime ? end - uptime : 0);
+    s_run = kDone;
+}
+
+}  // namespace files
 
 // ============================================================================
 // State
@@ -157,6 +224,11 @@ bool    s_get_since_set[kNumParams];
 int32_t s_shadow = 70;            // what Owned / OwnedS answer when asked
 uint8_t s_preset = 0;
 uint8_t s_lane = 0;
+uint32_t s_tempo = 0;
+
+// Step turns made after the panel asked for the value: whether it counted
+// from the unit's answer or from its own number.
+uint32_t s_adopt_unit = 0, s_adopt_own = 0;
 
 // The sequencer side
 uint64_t s_last_gate_us = 0;
@@ -164,7 +236,6 @@ bool     s_restart = true;
 uint8_t  s_step = 0;
 uint8_t  s_last_vel = 0;
 uint32_t s_gates = 0;
-uint32_t s_tempo_last = 0;
 
 // The Event display: the last two non-knob, non-gate events
 char s_note_name[8] = "";
@@ -180,7 +251,6 @@ void note_event(const char* name) {
 uint64_t s_set_last_us = 0, s_group_start_us = 0, s_preset_us = 0;
 uint32_t s_group_ids = 0;     // bit per knob touched in the current group
 uint16_t s_group_n = 0;
-uint8_t  s_group_first = 0;
 bool     s_group_restore = false;
 uint16_t s_last_burst_n = 0;
 uint32_t s_last_burst_span_us = 0;
@@ -204,303 +274,6 @@ uint8_t s_steps[3][16] = {
     {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
     {0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0},
 };
-
-// ============================================================================
-// Files: the log, a save test, a directory listing — one writer at a time
-// ============================================================================
-namespace files {
-
-const char kDir[]      = PROBE_DIR;
-const char kLogPath[]  = PROBE_DIR "/seqprobe.log";
-const char kSaveTmp[]  = PROBE_DIR "/seqprobe-save.tmp";
-const char kSavePath[] = PROBE_DIR "/seqprobe-save.txt";
-
-enum State { kWaiting = 0, kOk = 1, kFull = 2, kOff = 3 };   // < 0: -errno
-std::atomic<int>  s_state{kWaiting};
-std::atomic<bool> s_on{true};
-std::atomic<bool> s_busy{false};
-std::atomic<bool> s_thread_ok{false};
-
-int      s_fd = -1;
-long     s_size = 0;
-bool     s_tests_done = false;
-uint64_t s_last_sync_us = 0;
-char     s_buf[8192];
-size_t   s_n = 0;
-
-void close_fd() {
-    if (s_fd >= 0) { fsync(s_fd); close(s_fd); }
-    s_fd = -1;
-}
-
-void flush_buf() {
-    const char* p = s_buf;
-    size_t n = s_n;
-    s_n = 0;
-    while (s_fd >= 0 && n > 0) {
-        const ssize_t w = write(s_fd, p, n);
-        if (w < 0) {
-            if (errno == EINTR) continue;
-            s_state = -errno;
-            close_fd();
-            return;
-        }
-        p += w; n -= size_t(w); s_size += long(w);
-    }
-}
-
-void line(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
-void line(const char* fmt, ...) {
-    if (s_fd < 0) return;
-    if (s_size + long(s_n) > kLogCap) {
-        flush_buf();
-        s_state = kFull;
-        close_fd();
-        return;
-    }
-    if (sizeof(s_buf) - s_n < 512) flush_buf();   // lines are far shorter
-    va_list ap;
-    va_start(ap, fmt);
-    const int k = vsnprintf(s_buf + s_n, sizeof(s_buf) - s_n, fmt, ap);
-    va_end(ap);
-    if (k > 0) s_n += (size_t(k) < sizeof(s_buf) - s_n) ? size_t(k) : sizeof(s_buf) - s_n - 1;
-}
-
-const char* policy_name(int p) {
-    switch (p) {
-    case SCHED_OTHER: return "OTHER";
-    case SCHED_FIFO:  return "FIFO";
-    case SCHED_RR:    return "RR";
-    default:          return "?";
-    }
-}
-
-void format(const Rec& r) {
-    const double t = double(int64_t(r.t_us - s_t0_us)) / 1e6;
-    char head[64];
-    snprintf(head, sizeof(head), "%10.3f f=%-9u tid=%-5u ", t, r.frame, r.tid);
-    const char* name = r.ev < probe::kEvCount ? probe::kEvName[r.ev] : "?";
-    switch (r.ev) {
-    case probe::kEvInit:
-        line("%sinit samplerate=%d frames_per_buffer=%u in=%u out=%u api=0x%08x\n", head, r.b,
-             unsigned(r.d), unsigned(r.a >> 4), unsigned(r.a & 15), unsigned(r.c));
-        break;
-    case probe::kEvRenderStats:
-        line("%srender %d blocks in %u s, %u frames each, longest gap between blocks %d us\n", head,
-             r.b, unsigned(kStatsSeconds), unsigned(r.d), r.c);
-        break;
-    case probe::kEvPollStats:
-        line("%spoll P%02u per second: str=%d bmp=%d get=%u\n", head, r.a, r.b, r.c, unsigned(r.d));
-        break;
-    case probe::kEvSetParam:
-        line("%sset P%02u = %d%s\n", head, r.a, r.b, r.c ? "  (restore)" : "");
-        break;
-    case probe::kEvGetParam:
-    case probe::kEvStr:
-    case probe::kEvBmp:
-        if (r.c < 0) line("%s%s P%02u v=%d  (first call)\n", head, name, r.a, r.b);
-        else line("%s%s P%02u v=%d  (+%d ms since its last call)\n", head, name, r.a, r.b, r.c);
-        break;
-    case probe::kEvGetPresetName:
-    case probe::kEvGetPresetIndex:
-        if (r.c < 0) line("%s%s %d  (first call)\n", head, name, r.b);
-        else line("%s%s %d  (+%d ms)\n", head, name, r.b, r.c);
-        break;
-    case probe::kEvTempo:
-        line("%stempo %u.%03u bpm (raw 0x%08x)\n", head, unsigned(uint32_t(r.b) >> 16),
-             unsigned((uint32_t(r.b) & 0xFFFFu) * 1000u / 65536u), unsigned(r.b));
-        break;
-    case probe::kEvNoteOn:     line("%snote_on note=%u vel=%d\n", head, r.a, r.b); break;
-    case probe::kEvNoteOff:    line("%snote_off note=%u\n", head, r.a); break;
-    case probe::kEvGateOn:     line("%sgate_on vel=%d -> step %d\n", head, r.b, r.c); break;
-    case probe::kEvPitchBend:  line("%spitch_bend %d\n", head, r.b); break;
-    case probe::kEvPressure:   line("%spressure %d\n", head, r.b); break;
-    case probe::kEvAftertouch: line("%saftertouch note=%u %d\n", head, r.a, r.b); break;
-    case probe::kEvLoadPreset: line("%sload_preset %u\n", head, r.a); break;
-    case probe::kEvThreadInfo:
-        line("%sTHREAD %s runs here: policy=%s priority=%d\n", head,
-             r.a < probe::kEvCount ? probe::kEvName[r.a] : "?", policy_name(r.b), r.c);
-        break;
-    case probe::kEvWorker:
-        if (r.a) line("%sworker thread started\n", head);
-        else if (r.b < 0) line("%sworker: no pthread_create in this C library; flushing from callbacks\n", head);
-        else line("%sworker: pthread_create failed (%d); flushing from callbacks\n", head, r.b);
-        break;
-    case probe::kEvEdit: {
-        const uint32_t p = uint32_t(r.b);
-        const char lane = char('A' + (p >> 24));
-        const unsigned step = ((p >> 16) & 0xFF) + 1, from = (p >> 8) & 0xFF, to = p & 0xFF;
-        if (r.d == 2)
-            line("%sedit P%02u lane %c step %u: %u -> %u UNDONE (that turn was the start of a restore)\n",
-                 head, r.a, lane, step, from, to);
-        else
-            line("%sedit P%02u lane %c step %u: %u -> %u (turn %+d, counted from the %s)\n", head, r.a,
-                 lane, step, from, to, r.c, r.d ? "unit's get answer" : "host's last set");
-        break;
-    }
-    case probe::kEvResync:
-        line("%sresync P%02u: set %d, last set %d, last answer %u (jump too big for a turn)\n",
-             head, r.a, r.b, r.c, unsigned(r.d));
-        break;
-    case probe::kEvBurst:
-        line("%sRESTORE detected at set %d of a group (%u knob%s in %d us, first P%02u)%s\n", head,
-             r.b, unsigned(r.d & 0xFF), (r.d & 0xFF) == 1 ? "" : "s", r.c, r.a,
-             (r.d >> 8) ? ", right after load_preset" : "");
-        break;
-    case probe::kEvRestart:
-        line("%srestart: next gate is step 1 (%s)\n", head, r.a ? "gap" : "stop event");
-        break;
-    default:
-        line("%s%s\n", head, name);
-        break;
-    }
-}
-
-// What a song save will need: write a temporary file, flush it to storage,
-// rename it over the real one (so a power cut keeps the old file), read it
-// back.  Then what the folder holds, and how much room is left.
-void file_tests() {
-    char text[128];
-    const int n = snprintf(text, sizeof(text), "seq_probe save test, pid %d\n", int(getpid()));
-    int fd = open(kSaveTmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-    if (fd < 0) {
-        line("FILE save: open %s failed: errno %d (%s)\n", kSaveTmp, errno, strerror(errno));
-    } else {
-        const bool wrote = write(fd, text, size_t(n)) == n;
-        const bool synced = fsync(fd) == 0;
-        close(fd);
-        if (!wrote || !synced) {
-            line("FILE save: write %s, fsync %s\n", wrote ? "ok" : "FAILED", synced ? "ok" : "FAILED");
-        } else if (rename(kSaveTmp, kSavePath) != 0) {
-            line("FILE save: rename failed: errno %d (%s)\n", errno, strerror(errno));
-        } else {
-            char back[128];
-            ssize_t got = -1;
-            fd = open(kSavePath, O_RDONLY | O_CLOEXEC);
-            if (fd >= 0) { got = read(fd, back, sizeof(back)); close(fd); }
-            const bool same = got == n && std::memcmp(back, text, size_t(n)) == 0;
-            line("FILE save: write + fsync + rename + read back: %s\n", same ? "OK" : "MISMATCH");
-        }
-    }
-
-    DIR* d = opendir(kDir);
-    if (!d) {
-        line("FILE dir: opendir %s failed: errno %d (%s)\n", kDir, errno, strerror(errno));
-    } else {
-        int count = 0;
-        while (const dirent* e = readdir(d)) {
-            if (!std::strcmp(e->d_name, ".") || !std::strcmp(e->d_name, "..")) continue;
-            if (count < 40) line("FILE dir: %c %s\n", e->d_type == DT_DIR ? 'd' : 'f', e->d_name);
-            ++count;
-        }
-        closedir(d);
-        line("FILE dir: %d entries in %s\n", count, kDir);
-    }
-
-    struct statvfs fs;
-    if (statvfs(kDir, &fs) == 0) {
-        const unsigned long long kb = 1024ull;
-        line("FILE fs: %llu KB free of %llu KB, read-only %s\n",
-             (unsigned long long)fs.f_bavail * fs.f_frsize / kb,
-             (unsigned long long)fs.f_blocks * fs.f_frsize / kb,
-             (fs.f_flag & ST_RDONLY) ? "yes" : "no");
-    }
-}
-
-void open_log() {
-    s_fd = open(kLogPath, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
-    if (s_fd < 0) { s_state = -errno; return; }
-    struct stat st;
-    s_size = (fstat(s_fd, &st) == 0) ? long(st.st_size) : 0;
-    if (s_size >= kLogCap) { s_state = kFull; close_fd(); return; }
-    s_state = kOk;
-    line("\n=== seq_probe %u.%u session: pid %d, files written by the %s ===\n",
-         unsigned(unit_header.version >> 16), unsigned((unit_header.version >> 8) & 0xFF),
-         int(getpid()), s_thread_ok ? "worker thread" : "callbacks (no thread)");
-    line("    seconds since unit_init | f= audio frames rendered | tid= thread | what happened\n");
-}
-
-// Drain the ring to the log.  Whoever gets s_busy does it; others skip.
-void flush_once() {
-    if (s_busy.exchange(true, std::memory_order_acquire)) return;
-    if (!s_on.load(std::memory_order_relaxed)) {
-        if (s_fd >= 0) { line("logging switched off (Files)\n"); flush_buf(); close_fd(); }
-        s_ring.drain([](const Rec&) {});
-        s_ring.take_dropped();
-        s_state = kOff;
-    } else {
-        if (s_fd < 0 && s_state.load() == kWaiting) open_log();
-        if (s_fd >= 0) {
-            if (!s_tests_done) { file_tests(); s_tests_done = true; }
-            s_ring.drain(format);
-            if (const uint32_t dropped = s_ring.take_dropped())
-                line("dropped %u records: the ring was full\n", dropped);
-            flush_buf();
-            const uint64_t t = now_us();
-            if (s_fd >= 0 && t - s_last_sync_us > 2000000u) { fsync(s_fd); s_last_sync_us = t; }
-        } else {
-            s_ring.drain([](const Rec&) {});   // nowhere to write: keep the ring free
-        }
-    }
-    s_busy.store(false, std::memory_order_release);
-}
-
-void close_log() {
-    while (s_busy.exchange(true, std::memory_order_acquire)) {}
-    if (s_fd >= 0) { line("=== teardown ===\n"); flush_buf(); close_fd(); }
-    s_busy.store(false, std::memory_order_release);
-}
-
-// The worker: drains the ring every 100 ms, never on the audio thread.
-pthread_t s_thread;
-std::atomic<bool> s_thread_run{false};
-
-void* worker_main(void*) {
-    while (s_thread_run.load(std::memory_order_acquire)) {
-        flush_once();
-        timespec ts = {0, 100 * 1000 * 1000};
-        nanosleep(&ts, nullptr);
-    }
-    flush_once();
-    return nullptr;
-}
-
-void worker_start() {
-    if (s_thread_ok.load()) return;
-#ifdef PROBE_FORCE_NO_THREAD   // host test of the no-thread path
-    const bool have_threads = false;
-#else
-    const bool have_threads = &pthread_create != nullptr;
-#endif
-    if (!have_threads) { log_ev(probe::kEvWorker, 0, -1); return; }
-    s_thread_run.store(true);
-    const int err = pthread_create(&s_thread, nullptr, worker_main, nullptr);
-    if (err == 0) s_thread_ok.store(true);
-    else s_thread_run.store(false);
-    log_ev(probe::kEvWorker, err == 0 ? 1 : 0, err);
-}
-
-void worker_stop() {
-    if (!s_thread_ok.load()) { flush_once(); return; }
-    s_thread_run.store(false, std::memory_order_release);
-    if (&pthread_join != nullptr) pthread_join(s_thread, nullptr);
-    s_thread_ok.store(false);
-}
-
-// Without a worker, the callbacks that are not the audio thread flush.
-uint32_t s_render_tid = 0;
-uint64_t s_last_inline_us = 0;
-
-void maybe_flush_inline() {
-    if (s_thread_ok.load(std::memory_order_relaxed)) return;
-    const uint64_t t = now_us();
-    if (t - s_last_inline_us < 250000u) return;
-    if (thread_id() == s_render_tid) return;
-    s_last_inline_us = t;
-    flush_once();
-}
-
-}  // namespace files
 
 // ============================================================================
 // Sound: a tick on every gate, a blip per lane step, a tone per MIDI note
@@ -560,8 +333,7 @@ void play_step(uint8_t vel) {
 // ============================================================================
 // Displays
 // ============================================================================
-constexpr size_t kStrLen = 24;
-char      s_str[kNumParams][kStrLen];
+char       s_str[kNumParams][kStrLen];
 probe::Bmp s_bmp[kNumParams];
 
 bool blink_phase() { return (s_frames.load(std::memory_order_relaxed) / (s_sr / 2)) & 1u; }
@@ -597,15 +369,78 @@ const char* step_name(uint8_t lane, uint8_t step) {
     return p == 0 ? "---" : kLanes[lane].progs[p - 1];
 }
 
+// Files (page 3): the boot-time file test in a word.
 const char* files_text(char* s) {
-    if (!files::s_on.load()) return "off";
-    const int st = files::s_state.load();
-    switch (st) {
-    case files::kWaiting: return "wait";
-    case files::kOk:      return files::s_thread_ok.load() ? "ok T" : "ok -";
-    case files::kFull:    return "full";
-    case files::kOff:     return "off";
-    default:              snprintf(s, kStrLen, "e%d", -st); return s;
+    switch (files::s_run) {
+    case files::kNotRun:  return "-";
+    case files::kLate:    return "late";
+    case files::kNoClock: return "noclk";
+    default: break;
+    }
+    if (files::s_read_err) snprintf(s, kStrLen, "rd e%d", files::s_read_err);
+    else if (files::s_write > 0) snprintf(s, kStrLen, "wr e%d", files::s_write);
+    else if (files::s_write < 0) return "wr diff";
+    else return "rw ok";
+    return s;
+}
+
+// Result (page 6): one measurement per position of the knob.  README.md,
+// "The Result list", says what each means.
+constexpr int kNumResults = 12;
+
+const char* result_text(int32_t i, char* s) {
+    if (i < 0 || i >= kNumResults) return "-";
+    switch (i) {
+    case 0:   // when unit_init ran (seconds after the system started), how many times
+        if (s_init_uptime_us)
+            snprintf(s, kStrLen, "b+%us #%u", unsigned(s_init_uptime_us / 1000000u), unsigned(s_init_count));
+        else
+            snprintf(s, kStrLen, "b+? #%u", unsigned(s_init_count));
+        return s;
+    case 1:   // reading at boot
+        if (files::s_run != files::kDone) return files_text(s);
+        if (files::s_read_err) snprintf(s, kStrLen, "rd e%d", files::s_read_err);
+        else snprintf(s, kStrLen, "rd ok %d", files::s_entries);
+        return s;
+    case 2:   // writing at boot
+        if (files::s_run != files::kDone) return files_text(s);
+        if (files::s_write > 0) snprintf(s, kStrLen, "wr e%d", files::s_write);
+        else return files::s_write < 0 ? "wr diff" : "wr ok";
+        return s;
+    case 3:   // the file the previous boot wrote
+        if (files::s_run != files::kDone) return files_text(s);
+        return files::s_prev == 1 ? "prev ok" : files::s_prev == 2 ? "prev bad" : "prev none";
+    case 4:   // how long the boot-time file work took
+        snprintf(s, kStrLen, "io %u.%ums", unsigned(files::s_us / 1000u), unsigned(files::s_us / 100u % 10u));
+        return s;
+    case 5: { // callbacks seen on the audio thread
+        if (!s_render_tid.load()) return "aud ?";
+        const uint32_t bits = s_on_audio.load();
+        if (!bits) return "aud none";
+        int n = snprintf(s, kStrLen, "aud ");
+        for (int k = 0; k < kNumCb && n < int(kStrLen) - 1; ++k)
+            if (bits & (1u << k)) s[n++] = kCbLetter[k];
+        s[n] = '\0';
+        return s;
+    }
+    case 6:   // the audio thread's scheduling
+        if (s_render_policy < 0) return "rt ?";
+        snprintf(s, kStrLen, "%s %d",
+                 s_render_policy == SCHED_FIFO ? "FIFO" : s_render_policy == SCHED_RR ? "RR"
+                 : s_render_policy == SCHED_OTHER ? "OTHER" : "?", s_render_prio);
+        return s;
+    case 7: snprintf(s, kStrLen, "str %u/s", unsigned(s_max_str_hz)); return s;
+    case 8: snprintf(s, kStrLen, "bmp %u/s", unsigned(s_max_bmp_hz)); return s;
+    case 9: snprintf(s, kStrLen, "knobs %u", unsigned(s_max_polled)); return s;
+    case 10:
+        snprintf(s, kStrLen, "unit%u own%u", unsigned(s_adopt_unit), unsigned(s_adopt_own));
+        return s;
+    case 11:
+        if (!s_tempo) return "bpm -";
+        snprintf(s, kStrLen, "bpm %u.%u", unsigned(s_tempo >> 16), unsigned((s_tempo & 0xFFFFu) * 10u / 65536u));
+        return s;
+    default:
+        return "-";
     }
 }
 
@@ -619,27 +454,19 @@ const char* files_text(char* s) {
 bool in_restore(uint8_t id, uint64_t t) {
     if (t - s_set_last_us > kBurstGapUs) {
         s_group_start_us = t; s_group_n = 0; s_group_ids = 0;
-        s_group_restore = false; s_npending = 0; s_group_first = id;
+        s_group_restore = false; s_npending = 0;
     }
     s_set_last_us = t;
     ++s_group_n;
     s_group_ids |= 1u << id;
-    const bool after_preset = (t - s_preset_us) < kPresetRestoreUs;
     int ids = 0;
     for (uint32_t m = s_group_ids; m; m &= m - 1) ++ids;
+    const bool after_preset = (t - s_preset_us) < kPresetRestoreUs;
     if (!s_group_restore && (ids >= kBurstIds || after_preset)) {
         s_group_restore = true;
-        for (uint8_t i = 0; i < s_npending; ++i) {
-            const PendingEdit& e = s_pending[i];
-            const uint8_t now = s_steps[e.lane][e.step];
-            s_steps[e.lane][e.step] = e.prev;
-            log_ev(probe::kEvEdit, uint8_t(P_STEP1 + e.step),
-                   int32_t((uint32_t(e.lane) << 24) | (uint32_t(e.step) << 16) | (uint32_t(now) << 8) | e.prev),
-                   0, 2);
-        }
+        for (uint8_t i = 0; i < s_npending; ++i)
+            s_steps[s_pending[i].lane][s_pending[i].step] = s_pending[i].prev;
         s_npending = 0;
-        log_ev(probe::kEvBurst, s_group_first, s_group_n, int32_t(t - s_group_start_us),
-               uint16_t(ids | (after_preset ? 0x100 : 0)));
     }
     if (s_group_restore) {
         s_last_burst_n = s_group_n;
@@ -657,17 +484,16 @@ void step_turn(uint8_t id, int32_t v, int32_t last_set, bool restore) {
     s_get_since_set[id] = false;
     if (restore) return;
     int32_t ref = last_set;
-    uint16_t refkind = 0;
-    if (asked && std::abs(v - s_last_get[id]) < std::abs(v - last_set)) {
-        ref = s_last_get[id];
-        refkind = 1;
+    if (asked) {
+        if (std::abs(v - s_last_get[id]) < std::abs(v - last_set)) {
+            ref = s_last_get[id];
+            ++s_adopt_unit;
+        } else {
+            ++s_adopt_own;
+        }
     }
     const int32_t d = v - ref;
-    if (d == 0) return;
-    if (d > kMaxStepDelta || d < -kMaxStepDelta) {
-        log_ev(probe::kEvResync, id, v, last_set, uint16_t(s_last_get[id]));
-        return;
-    }
+    if (d == 0 || d > kMaxStepDelta || d < -kMaxStepDelta) return;   // a big jump is a resync
     const uint8_t lane = s_lane, step = uint8_t(id - P_STEP1);
     const int old = s_steps[lane][step];
     int nv = old + d;
@@ -675,9 +501,6 @@ void step_turn(uint8_t id, int32_t v, int32_t last_set, bool restore) {
     if (nv > kLanes[lane].count) nv = kLanes[lane].count;
     s_steps[lane][step] = uint8_t(nv);
     if (s_npending < 4) s_pending[s_npending++] = {lane, step, uint8_t(old)};
-    log_ev(probe::kEvEdit, id,
-           int32_t((uint32_t(lane) << 24) | (uint32_t(step) << 16) | (uint32_t(old) << 8) | uint32_t(nv)),
-           d, refkind);
 }
 
 void reset_state() {
@@ -685,52 +508,24 @@ void reset_state() {
         s_val[i] = unit_header.params[i].init;
         s_last_get[i] = 0;
         s_get_since_set[i] = false;
+        s_calls_str[i].store(0);
+        s_calls_bmp[i].store(0);
     }
-    for (int k = 0; k < kNumPollKinds; ++k)
-        for (int i = 0; i < kNumParams; ++i) { s_poll_last_us[k][i] = 0; s_poll_last_v[k][i] = 0; }
-    for (int k = 0; k < 3; ++k)
-        for (int i = 0; i < kNumParams; ++i) { s_poll_count[k][i].store(0); s_poll_logged[k][i] = 0; }
-    for (int e = 0; e < probe::kEvCount; ++e) s_seen[e].store(false);
+    s_max_str_hz = s_max_bmp_hz = s_max_polled = 0;
+    s_second_frames = 0;
+    s_render_tid.store(0);
+    s_on_audio.store(0);
+    s_render_policy = -1;
     s_shadow = s_val[P_SHADOW] * 10;
     s_lane = 0;
     s_preset = 0;
+    s_tempo = 0;
+    s_adopt_unit = s_adopt_own = 0;
     s_restart = true;
     s_gates = 0;
     s_set_last_us = s_preset_us = 0;
     s_last_burst_n = 0;
     s_event_prev = s_event_last = "-";
-}
-
-// Render-side bookkeeping, every kStatsSeconds of audio: render cadence, and
-// the panel's call rates (per second) for each knob whose rate changed.
-uint32_t s_blocks = 0, s_stats_frames = 0, s_max_gap_us = 0;
-uint64_t s_last_render_us = 0;
-
-void render_stats(uint32_t frames) {
-    const uint64_t t = now_us();
-    if (s_last_render_us) {
-        const uint64_t gap = t - s_last_render_us;
-        if (gap > s_max_gap_us) s_max_gap_us = uint32_t(gap);
-    }
-    s_last_render_us = t;
-    ++s_blocks;
-    s_stats_frames += frames;
-    if (s_stats_frames < kStatsSeconds * s_sr) return;
-    log_ev(probe::kEvRenderStats, 0, int32_t(s_blocks), int32_t(s_max_gap_us), uint16_t(frames));
-    for (uint8_t id = 0; id < kNumParams; ++id) {
-        uint32_t rate[3];
-        bool changed = false;
-        for (int k = 0; k < 3; ++k) {
-            const uint32_t n = s_poll_count[k][id].exchange(0, std::memory_order_relaxed);
-            rate[k] = (n + kStatsSeconds / 2) / kStatsSeconds;
-            const uint32_t was = s_poll_logged[k][id];
-            if ((rate[k] == 0) != (was == 0) || rate[k] > was + 2 || rate[k] + 2 < was) changed = true;
-        }
-        if (!changed) continue;
-        for (int k = 0; k < 3; ++k) s_poll_logged[k][id] = rate[k];
-        log_ev(probe::kEvPollStats, id, int32_t(rate[0]), int32_t(rate[1]), uint16_t(rate[2]));
-    }
-    s_blocks = 0; s_stats_frames = 0; s_max_gap_us = 0;
 }
 
 }  // namespace
@@ -744,53 +539,41 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     if (!UNIT_API_IS_COMPAT(desc->api)) return k_unit_err_api_version;
     if (desc->output_channels != 2) return k_unit_err_geometry;
 
+    ++s_init_count;
+    s_init_uptime_us = uptime_us();
     s_sr = desc->samplerate ? desc->samplerate : 48000;
     s_frames.store(0);
-    s_t0_us = now_us();
     reset_state();
     silence();
-    thread_info_once(probe::kEvInit);
-    log_ev(probe::kEvInit, uint8_t((desc->input_channels << 4) | (desc->output_channels & 15)),
-           int32_t(desc->samplerate), int32_t(desc->api), desc->frames_per_buffer);
-    files::s_state.store(files::kWaiting);
-    files::s_tests_done = false;
-    files::worker_start();
+    files::run_at_boot(s_init_uptime_us);   // the only file access, and only at boot
     return k_unit_err_none;
 }
 
-__unit_callback void unit_teardown() {
-    thread_info_once(probe::kEvTeardown);
-    log_ev(probe::kEvTeardown);
-    files::worker_stop();   // the worker flushes once more on its way out
-    files::close_log();
-}
+__unit_callback void unit_teardown() { silence(); }
 
 __unit_callback void unit_reset() {
-    thread_info_once(probe::kEvReset);
-    log_ev(probe::kEvReset);
+    mark(kCbReset);
     note_event("Rset");
     s_restart = true;
     silence();
 }
 
-__unit_callback void unit_resume() {
-    thread_info_once(probe::kEvResume);
-    log_ev(probe::kEvResume);
-    note_event("Resm");
-}
+__unit_callback void unit_resume() { note_event("Resm"); }
 
 __unit_callback void unit_suspend() {
-    thread_info_once(probe::kEvSuspend);
-    log_ev(probe::kEvSuspend);
     note_event("Susp");
     silence();
 }
 
 __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
     (void)in;
-    if (files::s_render_tid == 0) {
-        files::s_render_tid = thread_id();
-        thread_info_once(probe::kEvRenderStats);
+    if (!s_render_tid.load(std::memory_order_relaxed)) {
+        sched_param sp;
+        std::memset(&sp, 0, sizeof(sp));
+        s_render_policy = sched_getscheduler(0);
+        sched_getparam(0, &sp);
+        s_render_prio = sp.sched_priority;
+        s_render_tid.store(thread_id(), std::memory_order_relaxed);
     }
     start_requested();
     for (uint32_t i = 0; i < frames; ++i) {
@@ -818,24 +601,23 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
         out[i * 2 + 1] = s;
     }
     s_frames.fetch_add(frames, std::memory_order_relaxed);
-    render_stats(frames);
+    s_second_frames += frames;
+    if (s_second_frames >= s_sr) {
+        s_second_frames -= s_sr;
+        poll_second();
+    }
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
-    thread_info_once(probe::kEvSetParam);
+    mark(kCbSet);
     if (id >= kNumParams) return;
-    const uint64_t t = now_us();
-    const bool restore = in_restore(id, t);
-    log_ev(probe::kEvSetParam, id, value, restore ? 1 : 0);
+    s_set_this_second.store(true, std::memory_order_relaxed);
+    const bool restore = in_restore(id, now_us());
     const int32_t last_set = s_val[id];
     s_val[id] = value;
     switch (id) {
     case P_SHADOW:
         if (!restore) s_shadow = value * 10;   // a restore must not overwrite the preset test
-        break;
-    case P_FILES:
-        files::s_on.store(value != 0);
-        if (value && files::s_state.load() != files::kOk) files::s_state.store(files::kWaiting);
         break;
     case P_LANE:
         s_lane = uint8_t(value < 0 ? 0 : value > 2 ? 2 : value);
@@ -847,11 +629,10 @@ __unit_callback void unit_set_param_value(uint8_t id, int32_t value) {
         break;
     }
     if (id < P_STEP1 || id > P_STEP4) s_get_since_set[id] = false;
-    files::maybe_flush_inline();
 }
 
 __unit_callback int32_t unit_get_param_value(uint8_t id) {
-    thread_info_once(probe::kEvGetParam);
+    mark(kCbGet);
     if (id >= kNumParams) return 0;
     int32_t v;
     switch (id) {
@@ -869,16 +650,13 @@ __unit_callback int32_t unit_get_param_value(uint8_t id) {
     }
     s_last_get[id] = v;
     s_get_since_set[id] = true;
-    log_polled(kPollGet, probe::kEvGetParam, id, v);
-    files::maybe_flush_inline();
     return v;
 }
 
 __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) {
-    thread_info_once(probe::kEvStr);
+    mark(kCbStr);
     if (id >= kNumParams) return "";
-    log_polled(kPollStr, probe::kEvStr, id, value);
-    files::maybe_flush_inline();
+    s_calls_str[id].fetch_add(1, std::memory_order_relaxed);
     char* s = s_str[id];
     switch (id) {
     case P_CLOCK:
@@ -907,16 +685,18 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
         return step_name(s_lane, uint8_t(id - P_STEP1));   // the step, not the knob's number
     case P_LANE:
         return kLanes[value < 0 ? 0 : value > 2 ? 2 : value].name;
+    case P_RESULT:
+        return result_text(value, s);
     default:
         return "-";
     }
 }
 
 __unit_callback const uint8_t* unit_get_param_bmp_value(uint8_t id, int32_t value) {
-    thread_info_once(probe::kEvBmp);
+    mark(kCbBmp);
     if (id >= kNumParams) return nullptr;
-    log_polled(kPollBmp, probe::kEvBmp, id, value);
-    files::maybe_flush_inline();
+    s_calls_bmp[id].fetch_add(1, std::memory_order_relaxed);
+    (void)value;
     probe::Bmp& b = s_bmp[id];
     b.clear();
     const bool lit = blink_phase();
@@ -930,78 +710,48 @@ __unit_callback const uint8_t* unit_get_param_bmp_value(uint8_t id, int32_t valu
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
-    thread_info_once(probe::kEvTempo);
-    // Externally synced, this can come often: only changes are logged.
-    if (tempo != s_tempo_last) {
-        s_tempo_last = tempo;
-        log_ev(probe::kEvTempo, 0, int32_t(tempo));
-    }
+    mark(kCbTempo);
+    s_tempo = tempo;
 }
 
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {
-    thread_info_once(probe::kEvNoteOn);
-    log_ev(probe::kEvNoteOn, note, velocity);
+    mark(kCbNoteOn);
     snprintf(s_note_name, sizeof(s_note_name), "N%u", unsigned(note));
     note_event(s_note_name);
     request(kVoiceNote, 440.0f * powf(2.0f, (float(note) - 69.0f) / 12.0f),
             0.3f * float(velocity) / 127.0f, 0.3f);
 }
 
-__unit_callback void unit_note_off(uint8_t note) {
-    thread_info_once(probe::kEvNoteOff);
-    log_ev(probe::kEvNoteOff, note);
-}
+__unit_callback void unit_note_off(uint8_t note) { (void)note; }
 
 __unit_callback void unit_gate_on(uint8_t velocity) {
-    thread_info_once(probe::kEvGateOn);
+    mark(kCbGateOn);
     const uint64_t t = now_us();
-    if (s_restart || t - s_last_gate_us > kRestartGapUs) {
-        if (!s_restart) log_ev(probe::kEvRestart, 1);
-        s_step = 0;
-    } else {
-        s_step = uint8_t((s_step + 1) & 15);
-    }
+    if (s_restart || t - s_last_gate_us > kRestartGapUs) s_step = 0;
+    else s_step = uint8_t((s_step + 1) & 15);
     s_restart = false;
     s_last_gate_us = t;
     s_last_vel = velocity;
     ++s_gates;
-    log_ev(probe::kEvGateOn, 0, velocity, s_step + 1);
     play_step(velocity);
 }
 
-__unit_callback void unit_gate_off() {
-    thread_info_once(probe::kEvGateOff);
-    log_ev(probe::kEvGateOff);
-}
+__unit_callback void unit_gate_off() { mark(kCbGateOff); }
 
 __unit_callback void unit_all_note_off() {
-    thread_info_once(probe::kEvAllNoteOff);
-    log_ev(probe::kEvAllNoteOff);
+    mark(kCbAllOff);
     note_event("Aoff");
-    if (!s_restart) log_ev(probe::kEvRestart, 0);
     s_restart = true;
     silence();
 }
 
-__unit_callback void unit_pitch_bend(uint16_t bend) {
-    thread_info_once(probe::kEvPitchBend);
-    log_ev(probe::kEvPitchBend, 0, bend);
-}
-
-__unit_callback void unit_channel_pressure(uint8_t pressure) {
-    thread_info_once(probe::kEvPressure);
-    log_ev(probe::kEvPressure, 0, pressure);
-}
-
-__unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) {
-    thread_info_once(probe::kEvAftertouch);
-    log_ev(probe::kEvAftertouch, note, aftertouch);
-}
+__unit_callback void unit_pitch_bend(uint16_t bend) { (void)bend; }
+__unit_callback void unit_channel_pressure(uint8_t pressure) { (void)pressure; }
+__unit_callback void unit_aftertouch(uint8_t note, uint8_t aftertouch) { (void)note; (void)aftertouch; }
 
 __unit_callback void unit_load_preset(uint8_t idx) {
-    thread_info_once(probe::kEvLoadPreset);
+    mark(kCbPreset);
     s_preset_us = now_us();
-    log_ev(probe::kEvLoadPreset, idx);
     if (idx < 2) {
         s_preset = idx;
         s_shadow = idx == 0 ? 20 : 90;   // Owned should show this if the panel re-reads
@@ -1009,14 +759,8 @@ __unit_callback void unit_load_preset(uint8_t idx) {
     }
 }
 
-__unit_callback uint8_t unit_get_preset_index() {
-    thread_info_once(probe::kEvGetPresetIndex);
-    log_polled(kPollPresetIndex, probe::kEvGetPresetIndex, 0, s_preset);
-    return s_preset;
-}
+__unit_callback uint8_t unit_get_preset_index() { return s_preset; }
 
 __unit_callback const char* unit_get_preset_name(uint8_t idx) {
-    thread_info_once(probe::kEvGetPresetName);
-    log_polled(kPollPresetName, probe::kEvGetPresetName, idx < kNumParams ? idx : 0, idx);
     return idx == 0 ? "ProbeA" : idx == 1 ? "ProbeB" : nullptr;
 }
