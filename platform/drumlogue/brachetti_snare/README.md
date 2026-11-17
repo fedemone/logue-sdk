@@ -46,7 +46,7 @@ pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ten Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
 
 | Page | | Knobs |
 |---|---|---|

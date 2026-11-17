@@ -26,21 +26,29 @@ ships as before.
 | [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 20 | dense-resonator cymbal |
 | [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 19 (+1 blank) | shaped noise + AM gating |
 | [`brachetti_world`](../../brachetti_world/) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | 24 | modal bank + friction voice, wire, buzz, jingles, particles |
+| [`brachetti_loop`](../../brachetti_loop/) | `BrcLoop` | RackTom, FlrTom, Snare, SnrHvy, Kick, Taiko, Bendir, Surdo (all added) | 24 | Karplus-Strong loop + all-pass (after Miguel Moreno), tension glide, snares |
 
-All nine are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
-'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrWd'), so they install next to the
-original and next to each other.  The first eight were split from the
+All ten are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
+'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrWd', 'BrLp'), so they install next
+to the original and next to each other.  The first eight were split from the
 original; the ninth, **BrcWorld**, was built after the split for the
 instruments no family engine can make (the cuica's friction voice, the
 berimbau's wire, the balafon's buzz, bouncing jingles, bead and pebble
-cascades), on the same modal engine and library.  The families are the ones the original's README
+cascades), on the same modal engine and library.  The tenth, **BrcLoop**, is
+a synthesis family the others do not have: drums from a delay loop, a
+Karplus-Strong loop with a Schroeder all-pass inside it, after Miguel
+Moreno's [*Realistic drums with karplus-strong synthesis*](https://mikemorenodsp.github.io/posts/Realistic-drums-with-karplus-strong-synthesis/)
+(2022; its [README](../../brachetti_loop/README.md#credits-and-sources) has
+the design and every source), voiced after the original's reference
+recordings of a real kit.  The families are the ones the original's README
 already used for its "which knobs are live" matrix.
 
 **Not split out: the Koto.**  The original's one string preset (a dual
 Karplus-Strong waveguide) is outside the percussion these units focus on, so
 it has no family unit; it stays playable in the original.  The waveguide
 engine lives on there too.  (The berimbau did get a struck wire: BrcWorld's
-`Wire` layer, a single Karplus-Strong loop written for it.)
+`Wire` layer, a single Karplus-Strong loop written for it; and BrcLoop makes
+drums from the same kind of loop.)
 
 ## Presets added after the split
 
@@ -55,7 +63,11 @@ method) is in [BrcTom's README](../../brachetti_tom/README.md#how-the-added-pres
 the tools are [`match_samples.py`](match_samples.py), its specs
 [`match_specs.py`](match_specs.py) and [`preset_probe.cpp`](preset_probe.cpp)
 (render / match / calib for any family unit — the family's replacement for
-the original's `calib_probe.cpp`).
+the original's `calib_probe.cpp`).  BrcLoop's presets were voiced the same way, after the
+original's reference recordings (`BRACHETTI_ORIG`, below); for them
+`match_samples.py` learned to resample 44.1 kHz references and to compare
+each band's decay after 300 ms where a spec asks (`late`) — both inert for
+the specs that do not.
 
 The original is no longer on main: it lives on the `original_brachetti`
 branch.  The scripts find it through `BRACHETTI_ORIG`:
@@ -119,7 +131,7 @@ Each unit puts the same eight **common knobs** on its first two pages —
 `Gain` — and its family's **dedicated knobs** from page 3 on
 ([`common_knobs.h`](../../brachetti_common/common_knobs.h); a unit without
 one of the common knobs leaves its slot blank, so they are in the same place
-on all nine).  The dedicated knobs were then reviewed family by family with
+on all ten).  The dedicated knobs were then reviewed family by family with
 [`knob_liveness.py`](knob_liveness.py), which moves every knob to both ends on
 every preset and scores how much the sound changes.  Where a knob did nothing
 (or next to nothing) on most of a family, its slot got a job of that family's;
@@ -134,10 +146,11 @@ where a standard name hid what a knob does in a family, it was relabelled:
 | plate | `Chirp` (VlMllRes) | Rel | — |
 | noise | `GrnFade` (HitPos), `Swell` (VlMllStf), `Band` (Model), `VelTone` (VlMllRes); `GrnDpth` adds grains | a slot of its own | `GrnRate` |
 | world | `Rattle` (VlMllRes); `Pitch` now moves the jingles, beads and mirliton too | Rel | — |
+| loop | `Bend` (VlMllRes), `BendTm` (Partls), `Snares` (Model), `Blend` (NzRes), `SnrTone` (NzFltr) | Rel | `ApDelay` |
 | cymbal | — | a slot of its own | `Tang` `Density` |
 | kernel | — | a slot of its own | `Knock` `Fill` |
 
-**Punch** is the transient shaper all nine share (`brc::Punch`): a gain curve
+**Punch** is the transient shaper all ten share (`brc::Punch`): a gain curve
 from each strike that lets the attack through and lowers the body after it
 (up), or softens the attack (down), off at 0.  It never boosts the attack:
 each unit ends in a peak limiter that takes 5-25 dB off its hard strikes
@@ -307,11 +320,11 @@ Each table is now private to its unit, and `arm_size.sh` fails any unit with a
 unique symbol.
 
 ```
-./multi_load.sh          # all nine; exit 1 and the differing strings if any
+./multi_load.sh          # all ten; exit 1 and the differing strings if any
 ```
 
 Result: 420,458 display strings identical alone and together (nine units,
-with the presets added after the split).
+with the presets added after the split); with BrcLoop, 457,040 (ten units).
 
 ### Sizes
 
@@ -334,7 +347,8 @@ moves a little between toolchains; data sections are exact):
 (These are the restructuring's figures.  With the presets added after the
 split, each unit's README carries its current sizes; BrcWorld measures
 .text 20,496 · .rodata 3,516 · .data 4 · .bss 21,296, the 16 KB of wire
-delay lines in `.bss`.)
+delay lines in `.bss`; BrcLoop .text 19,060 · .rodata 2,144 · .data 4 ·
+.bss 51,776, its 48 KB of loop and all-pass delay lines in `.bss`.)
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
 tables from `.data` to `.rodata` (`static const`): the original's notes
@@ -379,9 +393,9 @@ count is the unit's own work.
 
 A unit's family code is its own: a change in its folder cannot reach another
 unit.  A change in [`brachetti_common`](../../brachetti_common/) reaches all
-nine, so check them all.  BrcWorld has no original to compare with: check it
-against itself (render its presets with `preset_probe render` before and
-after, and compare), and the other eight with:
+ten, so check them all.  BrcWorld and BrcLoop have no original to compare
+with: check each against itself (render its presets with `preset_probe
+render` before and after, and compare), and the other eight with:
 
 ```
 for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done

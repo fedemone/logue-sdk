@@ -1,6 +1,6 @@
 #pragma once
 // Brachetti common library — the COMMON knobs: the first two pages, the same
-// slots, names and meaning on all nine Brachetti units.
+// slots, names and meaning on all ten Brachetti units.
 //
 //   page 1  Program · Pitch · Poly · Velocity     performance
 //   page 2  Tone · Cutoff · Resnc · Gain          master stage

@@ -505,3 +505,75 @@ SPECS["world"] = [
                    pt_hold_ms=(100, 1200, "log"), pt_t60_ms=(300, 4000, "log"), pt_click_ms=(0.05, 2.0, "log"),
                    pt_direct=(0.0, 1.0, "lin"), pt_f1_hz=(1500, 9000, "log"))),
 ]
+
+
+# ── BrcLoop: drums from a delay loop ─────────────────────────────────────────
+# The loop drum of ../../brachetti_loop/voice.h: a Karplus-Strong loop with a
+# Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums with
+# karplus-strong synthesis" (2022).  The kit pieces are voiced after the
+# original brachetti's reference recordings, on the original_brachetti
+# branch; point BRACHETTI_ORIG at that unit as for run_equiv.sh:
+#   git worktree add /tmp/brachetti_orig origin/original_brachetti
+#   BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti python3 match_samples.py match_specs.py loop
+# The frame drum and the surdo are voiced after Pelle e Legno samples.  Some of
+# the recordings are 44.1 kHz: match_samples.py resamples a reference to 48 kHz.
+ORIG = os.path.join(os.environ.get("BRACHETTI_ORIG", "/tmp/brachetti_orig/platform/drumlogue/brachetti"),
+                    "samples")
+# Bend, BendTm, Snares, Blend and SnrTone (VlRs', Ptls', Mdl's, NzRs' and
+# NzFl's slots) ship 0: match_samples.py writes 0 in those columns whatever
+# is here (FAMILY_ZERO).
+LOOP = dict(Dky=160, TbRd=10, Gain=0, MlRs=800, MlSt=30, Hit=0, Mtr=0, InHm=0, Rel=10,
+            NzMx=10, NzRs=300, NzFl=0, NzFq=800, count=0, modal_mix=0.0, mix=0.0, exc_gain=0.3,
+            lp_level=1.0, lp_hf=0.15, ap_ratio=0.3, ap_gain=0.3, blend=0.0,
+            exc_ratio=1.0, exc_noise=0.5, exc_noise_hz=3000.0, exc_pos=0.0, bend=0.05, bend_ms=40.0,
+            sn_level=0.0, sn_hz=3000.0, sn_q=2.0, sn_att_ms=1.0, sn_rel_ms=30.0)
+
+
+def loop_free(hz, t60):
+    """The loop's free values: its first resonance within a semitone or so of
+    the measured one, and the rest of its shape."""
+    return dict(lp_hz=(hz * 0.94, hz * 1.06, "log"), lp_t60_ms=(t60 / 4, t60 * 4, "log"),
+                lp_hf=(0.01, 1.0, "log"), ap_ratio=(0.02, 0.9, "lin"), ap_gain=(-0.9, 0.9, "lin"),
+                exc_ratio=(0.1, 2.0, "log"), exc_noise=(0.0, 3.0, "lin"),
+                exc_noise_hz=(300, 16000, "log"), exc_pos=(0.0, 0.5, "lin"), bend=(0.0, 0.6, "lin"),
+                bend_ms=(5, 300, "log"), exc_gain=(0.0, 2.0, "lin"))
+
+
+SNARES_FREE = dict(sn_level=(0.05, 8.0, "log"), sn_hz=(1500, 9000, "log"), sn_q=(0.7, 6.0, "log"),
+                   sn_rel_ms=(5, 200, "log"), blend=(0.0, 0.5, "lin"))
+
+
+def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=((0.3, 1.0),)):
+    # late: each band's decay is also compared, from the first 100 ms to
+    # 300 ms - 1 s (match_samples band_decay): a loop with too little loss
+    # rings its highs on long after a real head's have died.  Cut short where
+    # a recording is.
+    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late or []),
+                values=merge(LOOP, dict(Root=root, lp_hz=hz, lp_t60_ms=t60), extra or {}),
+                free=merge(loop_free(hz, t60), free or {}))
+
+
+SPECS["loop"] = [
+    loop_spec("RackTom", "k_RackTom", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
+              "rack tom: a 12-inch tom, close-miked", 58, 240.0, 600.0),
+    loop_spec("FlrTom", "k_FloorTom", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
+              "floor tom: a 16-inch tom, its pitch sagging as it rings", 52, 167.0, 1200.0,
+              dict(bend=0.1)),
+    loop_spec("Snare", "k_Snare", os.path.join(ORIG, "acoustic-snare.wav"),
+              "acoustic snare: the head through an all-pass, the wires on its motion", 60, 264.0, 300.0,
+              dict(sn_level=1.0), SNARES_FREE),
+    loop_spec("SnrHvy", "k_SnareHeavy", os.path.join(ORIG, "snare heavy.wav"),
+              "heavy snare: a deep, slack snare struck hard", 47, 127.0, 260.0,
+              dict(sn_level=1.0, bend=0.08), SNARES_FREE, late=None),   # the recording is 0.25 s
+    loop_spec("Kick", "k_Kick", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
+              "kick: a hard beater on a damped bass drum", 40, 79.0, 450.0,
+              dict(bend=0.5, MlSt=45)),
+    loop_spec("Taiko", "k_Taiko", os.path.join(ORIG, "Taiko-Hit.wav"),
+              "taiko: a big cowhide head, a heavy bachi", 42, 92.0, 1500.0, dict(bend=0.08)),
+    loop_spec("Bendir", "k_Bendir", os.path.join(P, "020_BendirDoum.wav"),
+              "bendir: a frame drum with a snare string across the head", 41, 87.0, 350.0,
+              dict(sn_level=0.3), merge(SNARES_FREE, dict(lp_hz=(78.0, 215.0, "log"))),
+              late=((0.2, 0.42),)),   # the recording is 0.43 s
+    loop_spec("Surdo", "k_Surdo", os.path.join(P, "027_SurdoOpen.wav"),
+              "surdo: the samba bass drum, open", 34, 58.0, 900.0),
+]
