@@ -35,7 +35,7 @@ If you do not agree with these terms, do not download, build, install, or use an
   - delay: Tribale
   - master FX: Omnipress, Porta Cassette
   - synth: EffeMD, EffeSP32, Brachetti, Scruta Astri, and the Brachetti family units (BrcKick, BrcTom,
-    BrcKernel, BrcSnare, BrcBar, BrcPlate, BrcCymbal, BrcNoise, BrcWorld, BrcLippa, BrcFilo — one per Brachetti instrument
+    BrcKernel, BrcSnare, BrcBar, BrcPlate, BrcCymbal, BrcNoise, BrcWorld, BrcLippa, BrcCordiera — one per Brachetti instrument
     family, see [platform/drumlogue/tools/brachetti_equiv](platform/drumlogue/tools/brachetti_equiv/README.md))
 * Press "play" button on Drumlogue to start
 
@@ -52,7 +52,7 @@ platform, `docker/`, `tools/`) are listed under [Repository Structure](#reposito
 - **This README** — the fork, the disclaimer, installing units on the drumlogue.
 - [`platform/drumlogue/README.md`](platform/drumlogue/README.md) ([日本語](platform/drumlogue/README_ja.md)) — the drumlogue SDK: the Docker build environment, listing and building units, the project layout.
   - **Synth units**
-    - **Brachetti** — physical-modelling percussion: the original 40-preset unit, its eight per-family units, BrcWorld, BrcLippa and BrcFilo ([below](#brachetti-documents)).
+    - **Brachetti** — physical-modelling percussion: the original 40-preset unit, its eight per-family units, BrcWorld, BrcLippa and BrcCordiera ([below](#brachetti-documents)).
     - [EffeESP32](platform/drumlogue/EffeESP32/README.md) — 6-operator FM drum synth: features, architecture, every GUI parameter; 59 presets, one per instrument (see "Instrument selection and the panel").  [`PROGRESS.md`](platform/drumlogue/EffeESP32/PROGRESS.md): the porting log and open TODOs — for whoever works on it next.
     - [EffeMD](platform/drumlogue/EffeMD/README.md) — Machinedrum-style FM percussion synth: history, architecture, building, tests; 2 presets (the instrument is a parameter).
     - [ScrutaAstri](platform/drumlogue/scruta_astri/README.md) — drone synth: signal path, LFOs, modulation matrix; 242 programs, laid out in "The Program Layout".
@@ -73,9 +73,9 @@ platform, `docker/`, `tools/`) are listed under [Repository Structure](#reposito
 The original 40-preset unit split into eight per-family units, joined later
 by a ninth, BrcWorld, a tenth, BrcLippa (drums from a Karplus-Strong loop,
 after Miguel Moreno's [*Realistic drums with karplus-strong synthesis*](https://mikemorenodsp.github.io/posts/Realistic-drums-with-karplus-strong-synthesis/)
-and his Pd instrument mymembrane~), and an eleventh, BrcFilo (BrcSnare's snares
-with their wires on the head, BrcWorld's berimbaus with a stiff wire, so those
-two units stay bit-exact); all eleven share one library.  Go down a level only for what you need:
+and his Pd instrument mymembrane~), and an eleventh, BrcCordiera (wire instruments
+— a tabor, a daf, an mbira with buzzers, a spring drum, a gopichand — on BrcSnare's
+and BrcWorld's engines, the wires driven by the head and stiff); all eleven share one library.  Go down a level only for what you need:
 
 1. [**The Brachetti family**](platform/drumlogue/tools/brachetti_equiv/README.md) — start here: the eight units, how they were split from the original and restructured, how they are verified bit-identical to it (and the tools that do it), their sizes and CPU, how to maintain them.
 2. **The family units** — each has a `README.md` (presets, knob pages, what every knob does, its files, build, verification) and a `CLAUDE.md` (the rules for changing it).  Presets in the order the unit shows them, and the same presets' slots in the original:
@@ -91,8 +91,8 @@ two units stay bit-exact); all eleven share one library.  Go down a level only f
    | [`brachetti_cymbal`](platform/drumlogue/brachetti_cymbal/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_cymbal/CLAUDE.md) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 13, 14, 26, 31, 32, 36 | dense-resonator cymbal |
    | [`brachetti_noise`](platform/drumlogue/brachetti_noise/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_noise/CLAUDE.md) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 21, 22, 25 | shaped noise + AM gating |
    | [`brachetti_world`](platform/drumlogue/brachetti_world/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_world/CLAUDE.md) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | — | modal bank + friction voice, wire, buzz, jingles, particles |
-   | [`brachetti_lippa`](platform/drumlogue/brachetti_lippa/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_lippa/CLAUDE.md) | `BrcLippa` | RackTom, FlrTom, Snare, SnrHvy, Kick, Taiko, Bendir, Surdo (all added) | — | Karplus-Strong loop + all-pass, tension glide, snares on the head's motion |
-   | [`brachetti_filo`](platform/drumlogue/brachetti_filo/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_filo/CLAUDE.md) | `BrcFilo` | AcSnre, MrchSnr, BrshSnr, RimShot, BndDoum, BndTek, CajBass, CajSlap, Berimbu, BerimHi (BrcSnare's and BrcWorld's) | — | BrcSnare's engine, the wires on the head; BrcWorld's wire, made stiff |
+   | [`brachetti_lippa`](platform/drumlogue/brachetti_lippa/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_lippa/CLAUDE.md) | `BrcLippa` | RackTom, FlrTom, Snare, SnrHvy, Kick, Taiko, Bendir, Surdo, MmSnare, MmKick, MmSnr2, MmTom, MmFloor (all added) | — | Karplus-Strong loop + all-pass, tension glide, snares on the head's motion |
+   | [`brachetti_cordiera`](platform/drumlogue/brachetti_cordiera/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_cordiera/CLAUDE.md) | `BrcCordiera` | Tabor, Daf, MbiraBz, TomBuzz, Marranz, Spring, Gopichd (all new) | — | BrcSnare's engine, the wires driven by the head; BrcWorld's wire, stiff and bending |
 
    The original's 40th preset, Koto (slot 9, a Karplus-Strong string), is in no family unit; it stays playable in the original.
 3. [**The common library**](platform/drumlogue/brachetti_common/README.md) — what the family units share: what is where, the **helper index** (open it before writing a helper), the rules for changing shared code, the quirks kept on purpose, what was removed or moved.

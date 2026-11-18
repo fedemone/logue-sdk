@@ -38,8 +38,8 @@ work="${EQUIV_WORK:-$(mktemp -d)}"
 mkdir -p "$work"
 name="$(basename "$family")"
 
-# EQUIV_CXXFLAGS: extra flags for the family unit's build only (BrcFilo's
-# -DBRC_FILO_AS_COPIED, which turns its new layers off for the copy check).
+# EQUIV_CXXFLAGS: extra flags for the family unit's build only (a unit's switch
+# that turns its own additions off, to compare it with the unit it copied).
 build() {  # <unit-dir> <out> [extra flags]
     g++ -std=c++17 -O2 -I"$1" -I"$1/.." -I"$drum/common" -DRUNTIME_COMMON_H_ \
         -w ${3:-} "$here/equiv_driver.cpp" -o "$2"
@@ -61,7 +61,7 @@ esac
 # there): the script uses the family's name, and the original's driver finds
 # it under its own through EQUIV_ALIASES.  The list is kept in aliases.txt.
 # EQUIV_ALIASES_FILE names another list, for a comparison with a unit other
-# than the original (BrcFilo against BrcSnare or BrcWorld: README.md here).
+# than the original (a unit against the family unit it copied: README.md here).
 aliases="$(awk -v u="$name" '$1 == u { print $2 }' "${EQUIV_ALIASES_FILE:-$here/aliases.txt}" | paste -sd, -)"
 export EQUIV_ALIASES="$aliases"
 for al in ${aliases//,/ }; do extra+=(--alias "$al"); done

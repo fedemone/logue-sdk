@@ -1,5 +1,5 @@
 #pragma once
-// Brachetti Filo — synth engine of the brachetti_filo unit.
+// Brachetti Cordiera — synth engine of the brachetti_cordiera unit.
 //
 // The wires: BrcSnare's eight snares (AcSnre .. CajSlap) with their wires
 // driven by the head as well as by the noise burst, and BrcWorld's two
@@ -50,7 +50,7 @@
 
 // The berimbau wires' delay lines, one per voice slot (16 KB, as BrcWorld's):
 // namespace-scope `static`, private to this unit and in .bss.
-static float s_wire_lines[brc::kNumVoices][filo::kWireLen];
+static float s_wire_lines[brc::kNumVoices][cordiera::kWireLen];
 
 class alignas(16) BrachettiSynth : public brc::ModalSynth<BrachettiSynth, VoiceState> {
 public:
@@ -60,11 +60,7 @@ public:
     static const char* preset_name(uint8_t idx) { return ::preset_name(idx); }
     static const int16_t* preset_knobs(uint8_t idx) { return kPresetKnobs[idx]; }
     static const brc::ModalPresetConfig& modal_config(uint8_t idx) { return kModalConfigs[idx]; }
-#ifdef BRC_FILO_AS_COPIED
-    static float out_trim(uint8_t idx) { return kCopiedTrim[idx]; }
-#else
     static float out_trim(uint8_t idx) { return kOutTrim[idx]; }
-#endif
 
     // Punch sits in Partls' slot (presets.h); Partls plays at each preset's
     // shipped value.
@@ -324,11 +320,12 @@ private:
     }
 
     float band_a_hz() const {
+        if (voicing().band_a_hz > 100.0f) return voicing().band_a_hz;   // the table's, where it sets one
         switch (kind()) {
         case kKindMarch: return 3500.0f;
         case kKindBrush: return 2200.0f;   // brushes read lower and softer
         case kKindRim:   return 3200.0f;
-        default:           return 2800.0f;
+        default:         return 2800.0f;
         }
     }
 
@@ -361,9 +358,6 @@ private:
         HeadDrive& h = v.head;
         const Voicing& c = voicing();
         h.follow = 0.0f;
-#ifdef BRC_FILO_AS_COPIED   // the copy check (README.md, "Verification")
-        return;
-#endif
         if (!(c.head_follow > 0.0f)) return;
         const float amount = brc::knob_exp2(3.0f * (brc::knob::mallet_res(m_params[k_paramMlltRes]) - m_anchor.mallet_res));
         const float length = brc::knob_exp2(4.0f * (brc::knob::release(m_params[k_paramRel]) - m_anchor.release));
@@ -489,21 +483,18 @@ private:
 
     void strike_wire(VoiceState& v, float tune, const WireKnobs& k) {
         const Voicing& c = voicing();
-        filo::Wire& w = v.wire;
+        cordiera::Wire& w = v.wire;
         w.buf = s_wire_lines[&v - m_voices];
-        memset(w.buf, 0, sizeof(float) * filo::kWireLen);
+        memset(w.buf, 0, sizeof(float) * cordiera::kWireLen);
         w.level = c.bw_level * k.presence;
-        w.delay = brc::clampf(brc::kSampleRate / (c.bw_hz * tune), 2.0f, (float)(filo::kWireLen - 2));
+        w.delay = brc::clampf(brc::kSampleRate / (c.bw_hz * tune), 2.0f, (float)(cordiera::kWireLen - 2));
         w.loop_gain = expf(brc::kLn0001 * w.delay / (c.bw_t60_ms * k.length * 0.001f * brc::kSampleRate));
         w.damp = brc::clampf(c.bw_damp * k.bright, 0.02f, 1.0f);
         w.direct = c.bw_direct * k.rattle + 0.6f * k.rattle_add;   // the wire's own dry sound beside the gourd
         // The stiffness: the all-passes' delay at the fundamental comes off
         // the line, so the fundamental stays where it was and the partials
         // above it go sharp.
-        w.stages = (int)brc::clampf(c.bw_stages + 0.5f, 0.0f, (float)filo::kMaxStiffStages);
-#ifdef BRC_FILO_AS_COPIED   // the copy check (README.md, "Verification")
-        w.stages = 0;
-#endif
+        w.stages = (int)brc::clampf(c.bw_stages + 0.5f, 0.0f, (float)cordiera::kMaxStiffStages);
         if (w.stages > 0) {
             // Tight: a first-order all-pass's low-frequency delay, and with it
             // the stretch, grows as 1 / (1 − a), so the knob scales 1 − a
@@ -523,7 +514,7 @@ private:
             // 8 cents flat at the root, a third of a tone three octaves up).
             w.delay = brc::clampf(w.delay - (float)w.stages * ap1_delay(w0, w.stiff)
                                           - lp_delay(w0, w.damp),
-                                  2.0f, (float)(filo::kWireLen - 2));
+                                  2.0f, (float)(cordiera::kWireLen - 2));
         }
         // The stick: a short Hann-windowed noise burst one period long at most.
         const int len = (int)w.delay;
@@ -543,5 +534,9 @@ private:
         w.up.trigger(0.0f, c.gourd_up_ms * k.length);
         w.down.trigger(c.gourd_down_hold_ms * k.length, c.gourd_down_ms * k.length);
         w.gourd.tune(w.gourd_hz, w.gourd_r);
+        // the pitch bend, on the same curves as the gourd; Inharm deepens it
+        // as it deepens the gourd's sweep (k.bend, exactly 1 as shipped)
+        w.bend_up   = c.bw_bend_up * k.bend;
+        w.bend_down = c.bw_bend_down * k.bend;
     }
 };

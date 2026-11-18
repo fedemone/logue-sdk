@@ -82,6 +82,8 @@ public:
         // motion (loop::Drum::Motion): no click where the old ring would be cut.
         const bool ringing = v.is_active && v.drum.active() && v.fade_mul >= 1.0f;
         const loop::Drum::Motion motion = v.drum.motion();
+        const bool ringing_mm = v.is_active && v.mm.active() && v.fade_mul >= 1.0f;
+        const mm::Membrane::Motion mm_motion = v.mm.motion();
         v.start(note, strike_velocity(velocity));
         shape_exciter(v);
         v.reset_for_strike();
@@ -95,6 +97,9 @@ public:
         if (voicing().lp_level > 0.0f) {
             strike_loop(v, tune, layer_knobs(), ringing);
             if (ringing) v.drum.resume(motion, kRestrikeSlew);
+        } else if (voicing().mm_level > 0.0f) {
+            strike_membrane(v, tune, layer_knobs(), ringing_mm);
+            if (ringing_mm) v.mm.resume(mm_motion, kRestrikeSlew);
         }
         v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
     }
@@ -109,6 +114,7 @@ public:
             float x = (exciter_sig + v.exciter.noise_out_sample * kNoiseGain) * exc * vel;
             if (v.modal.active) x += v.modal.process() * v.modal.mix * kModalGain;
             if (v.drum.active()) x += v.drum.process(v.exciter.noise_gen);   // velocity is in its excitation
+            if (v.mm.active()) x += v.mm.process();                          // and in mymembrane~'s
             const bool sounding = v.layers_active();
             x = v.follow_and_gate(x);
             x = v.punch.apply(x);
@@ -346,4 +352,63 @@ private:
             d.sn_rel = 1.0f - expf(-1.0f / fmaxf(1.0f, ms_to_samples(brc::or_default(c.sn_rel_ms, 0.001f, 30.0f))));
         }
     }
+
+    // ── mymembrane~ (voice.h mm::Membrane) ──────────────────────────────────
+    // The patch's own controls and velocity curves, as Pd computes them; the
+    // knobs act on them as on the loop drum, each anchored (a factor of
+    // exactly 1, an offset of exactly 0, at the shipped value):
+    //   Dkay      the feedback, as a T60: fb^(1 / length)
+    //   Mterl     the damping's corner        ApDelay  the all-pass's delay
+    //   Inharm    the all-pass's gain          MlltRes  the level
+    //   MlltStif / VlMllStf  the sine cycle and the noise window (a stiffer stick, shorter)
+    //   NzMix / NzFltFrq     the excitation's noise and its corner
+    //   Bend / BendTm        the chirp's depth and length
+    //   Snares / SnrTone     the snares' level and band;  Blend the K-S sign flip
+    void strike_membrane(VoiceState& v, float tune, const LayerKnobs& k, bool ringing) {
+        const Voicing& c = voicing();
+        mm::Membrane& m = v.mm;
+        const int slot = (int)(&v - m_voices);
+        m.buf = s_loop_lines[slot];
+        m.ap  = s_ap_lines[slot];
+        if (!ringing) {
+            memset(m.buf, 0, sizeof(float) * loop::kLoopLen);
+            memset(m.ap, 0, sizeof(float) * loop::kApLen);
+        }
+        m.level = c.mm_level * k.presence;
+        // mymembrane~'s velocity: (MIDI − 1) / 126
+        m.v = brc::clampf((v.current_velocity * 127.0f - 1.0f) * (1.0f / 126.0f), 0.0f, 1.0f);
+        m.velgain = expf((2.302585f * 0.05f) * (-24.0f * (1.0f - m.v)));   // dbtorms(100 − 24·(1 − v))
+        m.f   = brc::clampf(c.mm_hz * tune, 20.0f, 20000.0f);
+        m.apf = brc::clampf(c.mm_apf_hz * tune / k.apdelay, 47.5f, 20000.0f);
+        m.fbk = c.mm_feedback;
+        if (k.length != 1.0f && m.fbk > 0.0f) {
+            m.fbk = fminf(1.0f, powf(m.fbk, 1.0f / k.length));
+            // a feedback of 1 (MmKick's) has no power to shorten: take it below 1
+            if (k.length < 1.0f && m.fbk > 0.995f) m.fbk = 1.0f - 0.02f * (1.0f / k.length - 1.0f);
+        }
+        m.apg  = brc::clampf(c.mm_apgain + k.inharm, -1.0f, 1.0f);
+        m.flip = brc::clampf(k.blend_add, 0.0f, 0.5f);
+        m.lcg  = v.exciter.noise_gen.seed | 1u;
+        const float stick = k.stick * brc::knob_exp2(k.vel_stick * v.current_velocity);
+        m.exc_len   = (mm::kSR / m.f) / stick;
+        m.chirp_len = 0.08f * mm::kSR * k.bend_time;
+        m.depth_l   = (2.0f + m.v) * k.bend;
+        m.depth_a   = (1.0f + m.v) * k.bend;
+        m.boost     = 0.7f * sqrtf(m.v);
+        m.noise     = k.noise;
+        m.nlp.lowpass(m.f * powf(2.0f, 3.0f * m.v) / 3.0f * k.noise_hz, 0.4f);
+        m.nz.val = 16u;                                   // "seed 16" at every strike
+        m.sn.val = v.exciter.noise_gen.seed * 1319u;
+        m.hip20.set(20.0f);
+        m.hip_sn.set(100.0f);
+        m.hip_env.set(100.0f);
+        m.lp.set(m.f * (powf(2.0f, 6.0f * c.mm_damping) / 2.0f) * k.bright);
+        m.bp.set(3000.0f * k.snare_tone, 1.0f);
+        m.snares = c.mm_snares * k.snares + kMmSnaresAdd * k.snares_add;
+        m.rot_c = cosf(mm::kTwoPi / 1024.0f);
+        m.rot_s = sinf(mm::kTwoPi / 1024.0f);
+    }
+    // What Snares adds, at its top, to a mymembrane~ preset that ships none
+    // (the patch's noise level runs 0.001-1; the help patch ships 0.1).
+    static constexpr float kMmSnaresAdd = 0.4f;
 };

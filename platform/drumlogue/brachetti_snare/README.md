@@ -19,7 +19,7 @@ This unit holds the snare drums: a modal head plus three-band snare-wire resonat
 | Knobs | 24 |
 | ARM size (cross-built, `arm_size.sh`) | .text 15492 · .rodata 2152 · .data 2000 · .bss 292 |
 
-**See also [BrcFilo](../brachetti_filo/README.md)**: these eight presets with the wires also driven by the head (and the crackle of Miguel Moreno's mymembrane~), in a unit of their own so this one stays bit-identical to the original.
+**See also [BrcCordiera](../brachetti_cordiera/README.md)**: this unit's engine with the wires also driven by the head (and the crackle of Miguel Moreno's mymembrane~), for instruments of its own — a tabor, a daf, an mbira with buzzers, a tom with the snares on.
 
 ## Presets
 

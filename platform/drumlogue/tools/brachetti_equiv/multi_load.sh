@@ -15,7 +15,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 if [ $# -eq 0 ]; then
-    set -- $(for u in kick tom kernel snare bar plate cymbal noise world lippa filo; do echo "$drum/brachetti_$u"; done)
+    set -- $(for u in kick tom kernel snare bar plate cymbal noise world lippa cordiera; do echo "$drum/brachetti_$u"; done)
 fi
 # The drumlogue tells units apart by dev_id + unit_id: two units sharing one
 # would collide on the device, whatever their names.  (BrcLippa once shipped

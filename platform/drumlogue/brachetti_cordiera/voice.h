@@ -1,5 +1,5 @@
 #pragma once
-// Brachetti Filo — one voice: the exciter (mallet + noise burst, from
+// Brachetti Cordiera — one voice: the exciter (mallet + noise burst, from
 // VoiceBase) with the snare wires on its noise, a short membrane modal head,
 // AcSnare's swept body boom and the pitch envelope it reads, BrshSnr's swirl
 // (a gate on the noise) and the onset ramp — BrcSnare's voice, as it is —
@@ -20,7 +20,7 @@
 #include "../common/attributes.h"   // force_inline
 
 // From brachetti_common (its README.md indexes every helper):
-//   dsp_math.h       kSilence
+//   dsp_math.h       clampf, kSilence
 //   exciter.h        NoiseBurst
 //   modal_bank.h     ModalBank
 //   noise.h          FastNoise, crackle
@@ -91,7 +91,7 @@ struct SnareWires {
         return (noise * (1.0f - mix)) + (rattle * mix * 0.40f);
     }
 
-    // The same, with the head's drive added to the bands' input (BrcFilo's
+    // The same, with the head's drive added to the bands' input (BrcCordiera's
     // wires on the head; process() is kept separate so a preset without the
     // drive runs BrcSnare's arithmetic exactly).
     force_inline float process_driven(float noise, float high, float env_high, float drive) {
@@ -136,7 +136,7 @@ struct HeadDrive {
     }
 };
 
-namespace filo {
+namespace cordiera {
 
 // ── The berimbau's wire ─────────────────────────────────────────────────────
 // BrcWorld's Wire (../brachetti_world/voice.h), as it is, plus a cascade of
@@ -145,8 +145,8 @@ namespace filo {
 // steel wire's do (Van Duyne & Smith, "A Simplified Approach to Modeling
 // Dispersion Caused by Stiffness in Strings and Plates", ICMC 1994).  At
 // stages 0 the loop is BrcWorld's exactly.
-constexpr int kWireLen = 1024;   // ≥ one period down to ~47 Hz
-constexpr int kMaxStiffStages = 4;
+constexpr int kWireLen = 2048;   // ≥ one period down to ~23.4 Hz (the spring drum's loop)
+constexpr int kMaxStiffStages = 16;   // the spring's dispersion needs many
 
 struct Wire {
     float level = 0.0f;           // 0 = off
@@ -163,6 +163,10 @@ struct Wire {
     int   stages = 0;             // the stiffness all-passes, 0 = none
     float stiff = 0.0f;           // their coefficient
     float ap_z[kMaxStiffStages] = {};
+    // The pitch bend (a gopichand's neck squeezed and let go): the delay ×
+    // 1 / (1 + bend_up·(1 − up.env) − bend_down·(1 − down.env)), on the
+    // gourd's two curves.  0 and 0 = none.
+    float bend_up = 0.0f, bend_down = 0.0f;
 
     void reset() { float* b = buf; *this = Wire(); buf = b; }
 
@@ -170,7 +174,11 @@ struct Wire {
 
     force_inline float process() {
         // read with linear interpolation one period back
-        float rp = (float)w - delay;
+        float d = delay;
+        if (bend_up != 0.0f || bend_down != 0.0f)
+            d = brc::clampf(delay / (1.0f + bend_up * (1.0f - up.env) - bend_down * (1.0f - down.env)),
+                            2.0f, (float)(kWireLen - 2));
+        float rp = (float)w - d;
         if (rp < 0.0f) rp += (float)kWireLen;
         const int i0 = (int)rp;
         const int i1 = (i0 + 1 == kWireLen) ? 0 : i0 + 1;
@@ -203,7 +211,7 @@ struct Wire {
     }
 };
 
-}  // namespace filo
+}  // namespace cordiera
 
 struct VoiceState : brc::VoiceBase {
     brc::ModalBank  modal;   // the head
@@ -213,7 +221,7 @@ struct VoiceState : brc::VoiceBase {
     brc::NoiseGate  swirl;   // BrshSnr's brush flutter
     SnareWires      wires;
     HeadDrive       head;    // the wires on the head (off on BrcSnare's presets)
-    filo::Wire      wire;    // the berimbau
+    cordiera::Wire      wire;    // the berimbau
     bool            berimbau = false;   // struck as a berimbau: its render path
 
     void reset_for_strike() {

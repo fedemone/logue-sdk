@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := brachetti_filo
+PROJECT := brachetti_cordiera
 PROJECT_TYPE := synth
 
 ##############################################################################

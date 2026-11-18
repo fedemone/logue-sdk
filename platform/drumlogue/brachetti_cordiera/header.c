@@ -1,6 +1,6 @@
 /**
  * @file header.c
- * @brief drumlogue SDK unit header — Brachetti Filo
+ * @brief drumlogue SDK unit header — Brachetti Cordiera
  *
  * Copyright (c) 2020-2022 KORG Inc. All rights reserved.
  *
@@ -13,9 +13,9 @@ const __unit_header unit_header_t unit_header = {
     .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,
     .api = UNIT_API_VERSION,
     .dev_id = 0x46654465U,                                 // 'FeDe'
-    .unit_id = 0x4272466CU,                                // 'BrFl' (Brachetti Filo)
+    .unit_id = 0x42724364U,                                // 'BrCd' (Brachetti Cordiera)
     .version = 0x00010000U,
-    .name = "BrcFilo",
+    .name = "BrcCordiera",
     // Zero on purpose: the Program parameter
     // is the preset control (stored with the pattern, automatable), and a
     // non-zero count would draw a second, competing preset UI.
@@ -27,7 +27,7 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 1 — common: performance
         // Program: the preset (this family's presets only)
-        {0, 9, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
+        {0, 6, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         // Pitch: semitones from the preset's root note (sequencer path)
         {-24, 24, 0, 0, k_unit_param_type_semi, 0, 0, 0, {"Pitch"}},
         // Poly: global voice cap 1-4
@@ -42,14 +42,14 @@ const __unit_header unit_header_t unit_header = {
         // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
         {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}},
         // Gain: master drive
-        {0, 100, 0, 7, k_unit_param_type_none, 0, 0, 0, {"Gain"}},
+        {0, 100, 0, 5, k_unit_param_type_none, 0, 0, 0, {"Gain"}},
 
         // Page 3 — dedicated
         // Buzz (the MlltRes role): the wire rattle vs plain filtered noise
-        {0, 1000, 500, 120, k_unit_param_type_none, 1, 1, 0, {"Buzz"}},
+        {0, 1000, 500, 400, k_unit_param_type_none, 1, 1, 0, {"Buzz"}},
         // BuzzTon (the MlltStif role): the brightness of all three wire bands.
         // Stored /100, displayed x100 (0-5000)
-        {0, 50, 0, 28, k_unit_param_type_strings, 0, 0, 0, {"BuzzTon"}},
+        {0, 50, 0, 20, k_unit_param_type_strings, 0, 0, 0, {"BuzzTon"}},
         // Crack (the VlMllRes role, host-owned): the broadband crack before the
         // wires engage; up also lengthens it, and adds one where a preset has none
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Crack"}},
@@ -69,16 +69,16 @@ const __unit_header unit_header_t unit_header = {
         {0, 20, 0, 9, k_unit_param_type_none, 1, 0, 0, {"BuzzLen"}},
 
         // Page 5 — dedicated
-        {-10, 30, 0, -7, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
+        {-10, 30, 0, 0, k_unit_param_type_none, 1, 1, 0, {"Mterl"}},
         // HitPos: bipolar
-        {-98, 98, 0, 46, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
+        {-98, 98, 0, 30, k_unit_param_type_none, 2, 0, 0, {"HitPos"}},
         // Inharm: bipolar
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Inharm"}},
         {0, 20, 0, 8, k_unit_param_type_none, 1, 0, 0, {"TubRad"}},
 
         // Page 6 — dedicated
-        {0, 100, 50, 52, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},
-        {0, 1000, 300, 950, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
+        {0, 100, 50, 50, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},
+        {0, 1000, 300, 920, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         {0, 2, 0, 2, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
         // NzFltFrq: stored /10 (20-20000 Hz)
         {2, 2000, 1200, 300, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}}

@@ -45,6 +45,12 @@ enum Preset : uint8_t {
     k_Taiko,            // 5  taiko: a big cowhide head, a heavy bachi (voiced after Taiko-Hit.wav)
     k_Bendir,           // 6  bendir: a frame drum with a snare string across the head (voiced after 020_BendirDoum.wav)
     k_Surdo,            // 7  surdo: the samba bass drum, open (voiced after 027_SurdoOpen.wav)
+    // Miguel Moreno's own drums: mymembrane~'s help and demo settings, through its port (voice.h mm::Membrane)
+    k_MmSnare,          // 8  mymembrane~'s help patch: a snare-like drum, its snares on (Miguel Moreno's settings)
+    k_MmKick,           // 9  mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain (Miguel Moreno's settings)
+    k_MmSnare2,         // 10 mymembrane~ demo 2: a lower snare-like drum (Miguel Moreno's settings)
+    k_MmTom,            // 11 mymembrane~ demo 3: a tom, the all-pass's gain negative (Miguel Moreno's settings)
+    k_MmFloor,          // 12 mymembrane~ demo 4: a long, bright floor drum (Miguel Moreno's settings)
     kNumPresets         // count
 };
 
@@ -60,6 +66,11 @@ static const char* const kPresetNames[] = {
     "Taiko",  
     "Bendir", 
     "Surdo",  
+    "MmSnare", // Miguel Moreno's settings
+    "MmKick",  // Miguel Moreno's settings
+    "MmSnr2",  // Miguel Moreno's settings
+    "MmTom",   // Miguel Moreno's settings
+    "MmFloor", // Miguel Moreno's settings
 };
 static_assert(sizeof(kPresetNames) / sizeof(kPresetNames[0]) == kNumPresets, "one name per preset");
 
@@ -82,6 +93,11 @@ static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
     {   5,  42,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 5: Taiko
     {   6,  41,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 6: Bendir
     {   7,  34,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 7: Surdo
+    {   8,  54,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 8: MmSnare
+    {   9,  32,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 9: MmKick
+    {  10,  45,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 10: MmSnr2
+    {  11,  48,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 11: MmTom
+    {  12,  41,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 12: MmFloor
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramBend, 0, 0),
               "Bend is 0 on every preset: its mapping is the identity there");
@@ -100,7 +116,7 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramSnrTone, 0, 0),
 // own; Partls the bank's own mode count (2 = no offset); Model the drum head
 // (the bank's template and the noise burst's band balance); NzRes and NzFltr
 // the noise burst's filter at its header.c defaults (30 %, low-pass).
-static const int8_t kShippedRel[kNumPresets] = {10, 10, 10, 10, 10, 10, 10, 10};
+static const int8_t kShippedRel[kNumPresets] = {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10};
 constexpr int32_t kFixedPartls = 2;
 constexpr int32_t kFixedModel  = brc::k_Drumhead;
 constexpr int32_t kFixedNzRes  = 300;
@@ -134,6 +150,16 @@ static const brc::ModalPresetConfig kModalConfigs[kNumPresets] = {
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Surdo: surdo: the samba bass drum, open */
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_MmSnare: mymembrane~'s help patch: a snare-like drum, its snares on (Miguel Moreno's settings) */
+    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_MmKick: mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain (Miguel Moreno's settings) */
+    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_MmSnare2: mymembrane~ demo 2: a lower snare-like drum (Miguel Moreno's settings) */
+    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_MmTom: mymembrane~ demo 3: a tom, the all-pass's gain negative (Miguel Moreno's settings) */
+    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_MmFloor: mymembrane~ demo 4: a long, bright floor drum (Miguel Moreno's settings) */
+    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
 };
 
 // The rest of each preset's voicing: the exciter beside the loop, and the
@@ -164,16 +190,27 @@ struct Voicing {
     // and release, and how far their noise is the sparse crackle of
     // mymembrane~ (0 = white noise, 1 = all crackle).
     float sn_level, sn_hz, sn_q, sn_att_ms, sn_rel_ms, sn_crackle;
+    // mymembrane~ (voice.h mm::Membrane) in place of the loop drum, when
+    // mm_level > 0 (lp_level then 0): its level, and the patch's own controls —
+    // the delay's frequency (Hz at the root: not the pitch, which the
+    // all-pass and the filters pull down), feedback, damping (0-1), the
+    // all-pass's gain and frequency (Hz at the root), the snares' noise level.
+    float mm_level, mm_hz, mm_feedback, mm_damping, mm_apgain, mm_apf_hz, mm_snares;
 };
 static const Voicing kVoicing[kNumPresets] = {
-    /* k_RackTom      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 240.0f, 821.401454f, 0.393288363f, 0.1625f, 0.185742187f, 0.0f, 1.04427378f, 0.828125f, 2020.41268f, 0.109375f, 0.088671875f, 42.685616f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
-    /* k_FloorTom     */{0.0f, 0.0f, 0.0f, 0.0f, 0.0625f, 1.0f, 166.098104f, 1706.27112f, 0.11660917f, 0.4375f, 0.553125f, 0.0f, 0.978572062f, 0.5f, 4430.47844f, 0.0458984375f, 0.1984375f, 39.1428825f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
-    /* k_Snare        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 264.0f, 352.919097f, 0.182287104f, 0.238125f, -0.0375f, 0.0f, 0.707106781f, 0.0f, 1600.7106f, 0.0f, 0.0f, 40.0f, 0.978572062f, 2075.86482f, 0.7f, 1.0f, 5.0f, 0.2921875f},
-    /* k_SnareHeavy   */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 127.0f, 367.695526f, 0.115665812f, 0.334160156f, 0.29296875f, 0.0f, 1.09050773f, 2.24609375f, 931.393359f, 0.0f, 0.04015625f, 48.6098944f, 0.917004043f, 4019.00257f, 1.61923514f, 1.0f, 29.3571619f, 0.3f},
-    /* k_Kick         */{0.0f, 0.0f, 0.0f, 0.0f, 0.068359375f, 1.0f, 79.0f, 713.766576f, 0.380715287f, 0.3f, 0.0754394531f, 0.0f, 0.978572062f, 0.5f, 1268.1936f, 0.09765625f, 0.348828125f, 40.0f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
-    /* k_Taiko        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 90.0286297f, 1783.81067f, 0.626564269f, 0.3f, -0.0515625f, 0.0f, 0.68080451f, 1.625f, 2536.3872f, 0.0625f, 0.19953125f, 15.5058488f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
-    /* k_Bendir       */{0.0f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 100.870445f, 494.974747f, 0.115665812f, 0.2725f, 0.525f, 0.0f, 0.840896415f, 1.7421875f, 809.070598f, 0.0f, 0.03984375f, 20.8854756f, 0.126134462f, 4831.471f, 0.989949494f, 1.0f, 21.4442001f, 0.846875f},
-    /* k_Surdo        */{0.0f, 0.0f, 0.0f, 0.0f, 0.01171875f, 1.0f, 58.0f, 1280.13653f, 0.226374664f, 0.41859375f, 0.3f, 0.0f, 0.703287997f, 0.171875f, 3491.17458f, 0.0f, 0.051171875f, 71.0150597f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
+    /* k_RackTom      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 240.0f, 821.401454f, 0.393288363f, 0.1625f, 0.185742187f, 0.0f, 1.04427378f, 0.828125f, 2020.41268f, 0.109375f, 0.088671875f, 42.685616f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_FloorTom     */{0.0f, 0.0f, 0.0f, 0.0f, 0.0625f, 1.0f, 166.098104f, 1706.27112f, 0.11660917f, 0.4375f, 0.553125f, 0.0f, 0.978572062f, 0.5f, 4430.47844f, 0.0458984375f, 0.1984375f, 39.1428825f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_Snare        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 264.0f, 352.919097f, 0.182287104f, 0.238125f, -0.0375f, 0.0f, 0.707106781f, 0.0f, 1600.7106f, 0.0f, 0.0f, 40.0f, 0.978572062f, 2075.86482f, 0.7f, 1.0f, 5.0f, 0.2921875f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_SnareHeavy   */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 127.0f, 367.695526f, 0.115665812f, 0.334160156f, 0.29296875f, 0.0f, 1.09050773f, 2.24609375f, 931.393359f, 0.0f, 0.04015625f, 48.6098944f, 0.917004043f, 4019.00257f, 1.61923514f, 1.0f, 29.3571619f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_Kick         */{0.0f, 0.0f, 0.0f, 0.0f, 0.068359375f, 1.0f, 79.0f, 713.766576f, 0.380715287f, 0.3f, 0.0754394531f, 0.0f, 0.978572062f, 0.5f, 1268.1936f, 0.09765625f, 0.348828125f, 40.0f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_Taiko        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 90.0286297f, 1783.81067f, 0.626564269f, 0.3f, -0.0515625f, 0.0f, 0.68080451f, 1.625f, 2536.3872f, 0.0625f, 0.19953125f, 15.5058488f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_Bendir       */{0.0f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 100.870445f, 494.974747f, 0.115665812f, 0.2725f, 0.525f, 0.0f, 0.840896415f, 1.7421875f, 809.070598f, 0.0f, 0.03984375f, 20.8854756f, 0.126134462f, 4831.471f, 0.989949494f, 1.0f, 21.4442001f, 0.846875f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_Surdo        */{0.0f, 0.0f, 0.0f, 0.0f, 0.01171875f, 1.0f, 58.0f, 1280.13653f, 0.226374664f, 0.41859375f, 0.3f, 0.0f, 0.703287997f, 0.171875f, 3491.17458f, 0.0f, 0.051171875f, 71.0150597f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
+    /* k_MmSnare      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 277.6f, 0.7908f, 0.4409f, 0.6378f, 169.2f, 0.1018f},
+    /* k_MmKick       */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 109.7f, 1.0f, 0.07874f, 1.0f, 500.0f, 0.01786f},
+    /* k_MmSnare2     */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 245.3f, 0.8677f, 0.4016f, 0.3071f, 174.5f, 0.1266f},
+    /* k_MmTom        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 314.2f, 0.9214f, 0.2362f, -0.5591f, 257.0f, 0.01156f},
+    /* k_MmFloor      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 134.1f, 0.9838f, 0.748f, 0.3701f, 309.4f, 0.001f},
 };
 
 // Output trim: gain-stages each preset into the master limiter, calibrated as
@@ -189,4 +226,9 @@ static const float kOutTrim[kNumPresets] = {
     /* 5  Taiko   */ 0.60808f,
     /* 6  Bendir  */ 0.54714f,
     /* 7  Surdo   */ 0.62087f,
+    /* 8  MmSnare */ 1.00000f,
+    /* 9  MmKick  */ 1.00000f,
+    /* 10 MmSnr2  */ 1.00000f,
+    /* 11 MmTom   */ 1.00000f,
+    /* 12 MmFloor */ 1.00000f,
 };

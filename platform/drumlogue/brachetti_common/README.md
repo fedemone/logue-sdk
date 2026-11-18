@@ -7,7 +7,7 @@ The code the eleven Brachetti family units share: [`brachetti_kick`](../brachett
 [`brachetti_snare`](../brachetti_snare/), [`brachetti_bar`](../brachetti_bar/),
 [`brachetti_plate`](../brachetti_plate/), [`brachetti_cymbal`](../brachetti_cymbal/),
 [`brachetti_noise`](../brachetti_noise/), [`brachetti_world`](../brachetti_world/),
-[`brachetti_lippa`](../brachetti_lippa/) and [`brachetti_filo`](../brachetti_filo/) (see
+[`brachetti_lippa`](../brachetti_lippa/) and [`brachetti_cordiera`](../brachetti_cordiera/) (see
 [the Brachetti family](../tools/brachetti_equiv/README.md)).  It is not a unit:
 there is no Makefile here, so `build -l` does not list it.  Units include its
 headers by relative path (`#include "../brachetti_common/knobs.h"`), which
@@ -52,14 +52,14 @@ modal units reach those through `ModalSynth`).  Every unit file opens with a
 
 | Helper | What it does | Used by |
 |---|---|---|
-| `kSampleRate`, `kInvSampleRate` | 48 kHz (the drumlogue's only rate) and its inverse | kernel, snare, plate, cymbal, noise, world, lippa, filo; library |
-| `kLn0001` | ln 0.001: a T60 is a −60 dB decay | cymbal, world, lippa, filo; library |
-| `kSilence` | 1e-5: below this a layer counts as finished | kick, plate, world, lippa, filo; library |
-| `clampf(x, lo, hi)` | clamp, as `fmaxf(lo, fminf(hi, x))` | kick, tom, kernel, snare, cymbal, noise, world, lippa, filo; library |
-| `or_default(value, unset, fallback)` | a voicing-table value, or the fallback when the table leaves it unset (below `unset`) | snare, plate, lippa, filo |
+| `kSampleRate`, `kInvSampleRate` | 48 kHz (the drumlogue's only rate) and its inverse | kernel, snare, plate, cymbal, noise, world, lippa, cordiera; library |
+| `kLn0001` | ln 0.001: a T60 is a −60 dB decay | cymbal, world, lippa, cordiera; library |
+| `kSilence` | 1e-5: below this a layer counts as finished | kick, plate, world, lippa, cordiera; library |
+| `clampf(x, lo, hi)` | clamp, as `fmaxf(lo, fminf(hi, x))` | kick, tom, kernel, snare, cymbal, noise, world, lippa, cordiera; library |
+| `or_default(value, unset, fallback)` | a voicing-table value, or the fallback when the table leaves it unset (below `unset`) | snare, plate, lippa, cordiera |
 | `knob_exp2(x)` | 2^x for anchored knob curves: `fasterpow2f`, but exactly 1.0 at 0 | all eleven; library |
 | `env_mul(tau, sr)` | per-sample multiplier of a geometric envelope with time constant tau (exact `expf`) | cymbal; library |
-| `phase_inc(hz)` | radians per sample of an oscillator at hz | kick, tom, snare, cymbal, noise, world, lippa, filo; library |
+| `phase_inc(hz)` | radians per sample of an oscillator at hz | kick, tom, snare, cymbal, noise, world, lippa, cordiera; library |
 | `wrap_phase(phase)` | keep a phase inside one turn | kick; library |
 | `preset_column_in(table, col, lo, hi)` | compile-time check that a preset-table column stays in range (pins the knobs a preset must not ship) | all eleven |
 
@@ -67,7 +67,7 @@ modal units reach those through `ModalSynth`).  Every unit file opens with a
 
 | Helper | What it does | Used by |
 |---|---|---|
-| `knob::mallet_res`, `mallet_stiff`, `decay`, `release`, `noise_mix`, `noise_res`, `material`, `inharm`, `hit_pos`, `tube_radius`, `percent`, `poly`, `noise_freq`, `gain_drive`, `clamp_int`, `unit_range` | a knob's raw `header.c` value → the number the DSP uses (ranges in the file) | per knob: kick, tom, kernel, snare, cymbal, noise, filo; library |
+| `knob::mallet_res`, `mallet_stiff`, `decay`, `release`, `noise_mix`, `noise_res`, `material`, `inharm`, `hit_pos`, `tube_radius`, `percent`, `poly`, `noise_freq`, `gain_drive`, `clamp_int`, `unit_range` | a knob's raw `header.c` value → the number the DSP uses (ranges in the file) | per knob: kick, tom, kernel, snare, cymbal, noise, cordiera; library |
 | `Anchors` | the knob values the current preset shipped with (REFERENCE ANCHORS) | kernel, cymbal, noise; library |
 | `off_anchor(delta)` | has a knob moved off its anchor? (\|knob − anchor\| > 0.001) | kick, tom, cymbal; library |
 | `off_unity(factor)` | the same for an anchored factor (exactly 1 at the anchor) | kick; library |
@@ -105,45 +105,45 @@ unit.
 | `soft_saturate_bus(out, frames, k)` | x / (1 + k·\|x\|) over a bus: soft headroom for stacked voices | cymbal |
 | `write_stereo(out, frame, x)` | a mono sample to both channels | kernel; library |
 | `MasterControls` | the master knobs alone (Tone, Cutoff / Resnc, Gain) for a unit with its own stage | kernel |
-| `MasterStage` | the controls + bus gain, preset trim, preset-change hold, idle guard and the transparent limiter | kick, tom, snare, bar, plate, cymbal, noise, world, lippa, filo |
+| `MasterStage` | the controls + bus gain, preset trim, preset-change hold, idle guard and the transparent limiter | kick, tom, snare, bar, plate, cymbal, noise, world, lippa, cordiera |
 
 ### `small_filters.h` — one- and two-pole filters
 
 | Helper | What it does | Used by |
 |---|---|---|
-| `one_pole_lp(x, a, state)` | one step of a one-pole low-pass, `state += a·(x − state)` | kernel, cymbal, world, lippa, filo; library |
+| `one_pole_lp(x, a, state)` | one step of a one-pole low-pass, `state += a·(x − state)` | kernel, cymbal, world, lippa, cordiera; library |
 | `one_pole_hp(x, a, state)` | x minus its one-pole low-pass (two in cascade: a DC blocker) | plate, cymbal, lippa; library |
 | `one_pole_coeff_fast(hz)` | the one-pole coefficient for a cutoff swept at control rate (fast exp) | cymbal |
-| `Resonator2` | a two-pole resonator: `tune(hz, r)`, `ring(x)` | snare, world, lippa, filo |
+| `Resonator2` | a two-pole resonator: `tune(hz, r)`, `ring(x)` | snare, world, lippa, cordiera |
 
 ### `noise.h` — random sources
 
 | Helper | What it does | Used by |
 |---|---|---|
 | `xorshift32(state)` | one step of the xorshift32 generator | kernel; library |
-| `FastNoise` | white noise in [−1, 1) from xorshift32 | world, lippa, filo; library (the exciter, `Transient`) |
+| `FastNoise` | white noise in [−1, 1) from xorshift32 | world, lippa, cordiera; library (the exciter, `Transient`) |
 | `lcg_unit(state)` | one step of an LCG, as a float in [0, 1) | cymbal |
 | `PinkFilter` | white → pink noise (Paul Kellet's refined filter) | cymbal |
-| `crackle(x)`, `kCrackleMean`, `kCrackleGain` | sparse crackle from uniform noise: x⁵⁰, its mean off and its RMS on white noise's (mymembrane~'s snares, Miguel Moreno, pd-mkmr, BSD-3-Clause) | lippa, filo |
+| `crackle(x)`, `kCrackleMean`, `kCrackleGain` | sparse crackle from uniform noise: x⁵⁰, its mean off and its RMS on white noise's (mymembrane~'s snares, Miguel Moreno, pd-mkmr, BSD-3-Clause) | lippa, cordiera |
 
 ### The voice
 
 | Helper | Header | What it does | Used by |
 |---|---|---|---|
 | `Exciter` | `exciter.h` | the mallet and the two-band noise burst, with a setter per knob | noise; library |
-| `NoiseBurst` | `exciter.h` | one sample of the noise burst in parts, so a unit can reshape a part | snare, plate, filo |
+| `NoiseBurst` | `exciter.h` | one sample of the noise burst in parts, so a unit can reshape a part | snare, plate, cordiera |
 | `noise_filter_name` | `exciter.h` | the NzFltr knob's display names | noise; library |
-| `VoiceBase` | `voice_base.h` | what every exciter-driven voice has (the Punch shaper included), and its life cycle | kick, tom, snare, bar, plate, noise, world, lippa, filo |
+| `VoiceBase` | `voice_base.h` | what every exciter-driven voice has (the Punch shaper included), and its life cycle | kick, tom, snare, bar, plate, noise, world, lippa, cordiera |
 | `next_voice`, `fuses_with` | `voice_base.h` | round-robin allocation within Poly; roll fusion | noise; library |
 | `any_fading`, `fade_out_all` | `voice_base.h` | the preset-change fade of the voice set | cymbal, noise; library |
 | `set_all_exciters(voices, setter, value)` | `voice_base.h` | one knob into every voice's exciter | noise; library |
-| `kNumVoices`, `kRollFuseSec`, `kPresetFadeTauSec`, `kSquelch*` | `voice_base.h` | the voice count, roll window, fade and squelch constants | kick, tom, snare, cymbal, noise, world, lippa, filo; library |
-| `MetalChirp`, `Onset`, `PitchEnv`, `Boom`, `Transient`, `NoiseGate`, `GlideCurve` | `voice_layers.h` | shared voice layers (the table in the file says which family uses which); `GlideCurve` is a held, then S-shaped bend | kick, tom, snare, bar, plate, noise, world, lippa, filo |
+| `kNumVoices`, `kRollFuseSec`, `kPresetFadeTauSec`, `kSquelch*` | `voice_base.h` | the voice count, roll window, fade and squelch constants | kick, tom, snare, cymbal, noise, world, lippa, cordiera; library |
+| `MetalChirp`, `Onset`, `PitchEnv`, `Boom`, `Transient`, `NoiseGate`, `GlideCurve` | `voice_layers.h` | shared voice layers (the table in the file says which family uses which); `GlideCurve` is a held, then S-shaped bend | kick, tom, snare, bar, plate, noise, world, lippa, cordiera |
 | `Punch`, `punch_amount` | `voice_layers.h` | the Punch knob's transient shaper: a gain curve from the strike — up, the attack passes and the body drops after it (never a boost: the master limiter would take it back); down, a softened attack; off at 0 (every voice has one in `VoiceBase`) | all eleven |
 | `model_name`, `model_noise_band_mix`, the Model enum | `models.h` | the Model knob | noise, lippa; library |
-| `ModalPresetConfig`, `ModalBank` | `modal_bank.h` | a preset's calibrated bank; the bank itself (NEON path) | kick, tom, snare, bar, plate, world, lippa, filo |
+| `ModalPresetConfig`, `ModalBank` | `modal_bank.h` | a preset's calibrated bank; the bank itself (NEON path) | kick, tom, snare, bar, plate, world, lippa, cordiera |
 | `shape_modal`, `strike_modal`, `ModalShape`, `ModalKnobs`, `format_mode_count` | `modal_bank.h` | the knobs on the bank, before and at the strike; Partls' display | library (`ModalSynth`) |
-| `ModalLayout`, `kModalHostKnobs`, `kFamilyKnob`, `ModalSynth` | `modal_synth.h` | the 24-knob layout (the common pages, then the standard dedicated set) and the engine of the eight modal units | kick, tom, snare, bar, plate, world, lippa, filo |
+| `ModalLayout`, `kModalHostKnobs`, `kFamilyKnob`, `ModalSynth` | `modal_synth.h` | the 24-knob layout (the common pages, then the standard dedicated set) and the engine of the eight modal units | kick, tom, snare, bar, plate, world, lippa, cordiera |
 
 `ModalSynth` also hands its units these building blocks for their `NoteOn`:
 `strike_velocity`, `allocate_voice`, `shape_exciter`, `modal_knobs`,
@@ -240,8 +240,9 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
       for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
 
   and BrcWorld and BrcLippa, which have no original, against renders of
-  themselves made before the change (`preset_probe render`), and BrcFilo with
-  its copy check (`../brachetti_filo/README.md`, "Verification").
+  themselves made before the change (`preset_probe render`); BrcCordiera
+  likewise; BrcLippa's mymembrane~ presets also against Pd
+  (`../tools/brachetti_equiv/mymembrane_check.py`).
 
   A knob a unit relabelled is compared under its original name
   (`../tools/brachetti_equiv/aliases.txt`); a family knob, which has no

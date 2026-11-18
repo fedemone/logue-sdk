@@ -19,7 +19,7 @@ were voiced after the [Pelle e Legno](../pelle_legno/) samples.
 | Knobs | 24 (the modal units' layout) |
 | ARM size (cross-built, `arm_size.sh`) | .text 18920 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21200 |
 
-**See also [BrcFilo](../brachetti_filo/README.md)**: Berimbu and BerimHi with a stiff wire (the samples' upper partials run sharp; this unit's wire is harmonic) and tuned through its loss filter (here it plays 8 cents flat at the root, flatter higher up), in a unit of their own so these presets stay as they are.
+**See also [BrcCordiera](../brachetti_cordiera/README.md)**: this unit's berimbau wire made stiff (the berimbau samples' upper partials run sharp; this unit's wire is harmonic), tuned through its loss filter (here it plays 8 cents flat at the root, flatter higher up) and able to bend, for instruments of its own — a marranzano, a spring drum, a gopichand.
 
 ## Presets
 

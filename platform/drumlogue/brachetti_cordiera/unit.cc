@@ -1,6 +1,6 @@
 /**
  * @file unit.cc
- * @brief drumlogue SDK unit interface — Brachetti Filo
+ * @brief drumlogue SDK unit interface — Brachetti Cordiera
  */
 
 #include "unit.h"

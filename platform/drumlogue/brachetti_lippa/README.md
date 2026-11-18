@@ -24,10 +24,10 @@ recordings.
 | Unit name on the drumlogue | `BrcLippa` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724C70` ('BrLp') |
 | Engine | Karplus-Strong loop + Schroeder all-pass, tension glide, snares on the head's motion |
-| Presets | 8 |
+| Presets | 13 (8 voiced after recordings, 5 of Miguel Moreno's own) |
 | Knobs | 24 (the modal units' layout, six slots the family's own) |
-| ARM size (cross-built, `arm_size.sh`) | .text 19492 · .rodata 2176 · .data.rel.ro 80 · .data 4 · .bss 51824 |
-| CPU (`arm_cpu.sh`) | 857.4 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself) |
+| ARM size (cross-built, `arm_size.sh`) | .text 23180 · .rodata 3652 · .data.rel.ro 100 · .data 4 · .bss 52752 |
+| CPU (`arm_cpu.sh`) | 998.1 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself) |
 
 ## Presets
 
@@ -41,11 +41,20 @@ recordings.
 | 5 | Taiko | 42 | taiko: a big cowhide head, a heavy bachi; a long ring | `Taiko-Hit.wav` |
 | 6 | Bendir | 41 | bendir: a frame drum with a snare string across the head | `020_BendirDoum.wav` (Pelle e Legno) |
 | 7 | Surdo | 34 | surdo: the samba bass drum, open | `027_SurdoOpen.wav` (Pelle e Legno) |
+| 8 | MmSnare | 54 | mymembrane~'s help patch: a snare-like drum, its snares on | Miguel Moreno's settings |
+| 9 | MmKick | 32 | mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain | Miguel Moreno's settings |
+| 10 | MmSnr2 | 45 | mymembrane~ demo 2: a lower snare-like drum | Miguel Moreno's settings |
+| 11 | MmTom | 48 | mymembrane~ demo 3: a tom, the all-pass's gain negative | Miguel Moreno's settings |
+| 12 | MmFloor | 41 | mymembrane~ demo 4: a long, bright floor drum | Miguel Moreno's settings |
 
 The kit pieces (0-5) are voiced after the original brachetti's reference
 recordings — its `samples/` folder, on the `original_brachetti` branch (the
 same files its AcTom, AcSnre, Kick and Taiko were tuned to) — and the frame
 drum and the surdo after the [Pelle e Legno](../pelle_legno/) samples.
+Presets 8-12 are Miguel Moreno's own drums: the settings of mymembrane~'s help
+patch and its demo's four instruments, played by a port of his patch
+("mymembrane~ in BrcLippa", below); each root is the note nearest its strongest
+partial.
 
 ## The loop drum
 
@@ -114,7 +123,7 @@ loop drum (`loop::Drum` in `voice.h`):
   white blended towards `brc::crackle` (`sn_crackle`): mymembrane~'s, see
   below.  (BrcSnare's wires ring on the exciter's noise burst instead;
   BrcWorld's balafon `Buzz` is the same idea as this, gated per sample by
-  the bank's motion; BrcFilo puts BrcSnare's wires on the head.)
+  the bank's motion; BrcCordiera puts BrcSnare's wires on the head.)
 - **The Karplus-Strong drum blend** (Karplus & Strong 1983, not in the
   article).  With probability `b` a trip round the loop flips sign: at
   `b = 0.5` the loop's tone turns into a pitched noise burst, Karplus and
@@ -138,7 +147,8 @@ object:
 | snares | `noise~` → `pow~ 50` → `hip~ 100` → `bp~ 3000 1`, × the RMS envelope (`env~`) of the drum | the band-pass on white noise blended with the same crackle (`sn_crackle`), × a peak follower |
 | retrigger | the output ramps to 0 in 1 ms, the delays are cleared, the strike follows 2 ms later | a ringing loop keeps its lines (below) |
 
-Two of these came into BrcLippa:
+Three things came into BrcLippa from it: the whole patch, ported (the next
+section), and two pieces for the loop drum:
 
 - **The crackle.**  `pow~ 50` of uniform noise is near 0 but for rare spikes
   where |x| is near 1: a sparse rattle, where white noise is a hiss.  It is
@@ -171,6 +181,60 @@ rather than a 3-4× chirp (BrcLippa's presets are voiced after real drums).
 `Bend` at its top starts a full-velocity strike 1.65× (RackTom) to 2.7×
 (Kick) the note, and `BendTm` at its bottom makes the fall 4× faster: near
 mymembrane~'s chirp.
+
+### mymembrane~ in BrcLippa
+
+`mm::Membrane` (`voice.h`) is the patch, object by object, with Pd's own
+formulas for the objects it uses: `noise~`'s generator (re-seeded with 16 at
+every strike, as the patch does), `hip~`, `lop~`, `bp~` (with its own cosine
+approximation), `biquad~` with the coefficients of the patch's `lowpass~`,
+`vd~`'s 4-point interpolation and its minimum of one block in a feedback loop,
+`env~`'s Hann-windowed RMS over 1024 samples every 512 (computed without a
+buffer: each sample adds to the two half-windows it belongs to), the `line~`
+after it, and the patch's rational `hv.tanh`.  A preset plays it in place of
+the loop drum (`mm_level` > 0) and reads the patch's own controls
+(`mm_hz`, `mm_feedback`, `mm_damping`, `mm_apgain`, `mm_apf_hz`, `mm_snares`),
+with the patch's velocity curves.  It shares the loop drum's delay lines.
+
+Checked against Pd itself
+([`mymembrane_check.py`](../tools/brachetti_equiv/mymembrane_check.py)): Pd 0.54
+rendered the patch headless (`pd -nogui`, 48 kHz) with its help and demo
+settings at velocities 127 and 90, and the five presets, struck through the
+unit's own path, compare as:
+
+| Preset (setting) | waveform correlation, first 200 ms (v127 / v90) | t40, ms (unit / Pd) | periodicity (unit / Pd) |
+|---|---:|---:|---:|
+| MmSnare (help) | 0.937 / 0.960 | 180 / 180 | 0.56 / 0.55 |
+| MmKick (demo 1) | 0.999 / 0.999 | 190 / 190 | 0.65 / 0.65 |
+| MmSnr2 (demo 2) | 0.981 / 0.982 | 230 / 210 | 0.72 / 0.72 |
+| MmTom (demo 3) | 0.966 / 0.969 | 470 / 475 | 0.94 / 0.94 |
+| MmFloor (demo 4) | 0.971 / 0.975 | 1020 / 1000 | 0.88 / 0.88 |
+
+The residue is the snares' noise (a different `noise~` instance, unseeded in
+the patch) and float rounding through the tanh.  Two things differ on
+purpose: a strike into a ringing voice keeps the ring and slews the delays
+over 1 ms (mymembrane~ ramps its output to 0 over 1 ms, clears its lines and
+strikes 2 ms later), and the knobs reach it, each anchored: `Dkay` the
+feedback (as a T60), `Mterl` the damping's corner, `Inharm` and `ApDelay`
+the all-pass, `MlltRes` the level, `MlltStif`/`VlMllStf` the excitation's
+length, `NzMix`/`NzFltFrq` its noise, `Bend`/`BendTm` the chirp's depth and
+length, `Snares`/`SnrTone` the snares, `Blend` the Karplus-Strong sign flip.
+`HitPos` has nothing to move (the patch has no strike position).
+
+**The other presets on it — a trial, not shipped.**  The loop drum's toms,
+kick, taiko and surdo ring like strings (below, "How the presets were
+voiced": periodicity 0.87-0.94 against their recordings' 0.20-0.82).  They
+were voiced again on mymembrane~ against the same recordings, starting from
+the nearest of Moreno's settings, with the periodicity in the score
+(`match_specs.py`'s `lippa_mm` specs).  Periodicity came down where it
+matters most — RackTom 0.94 → 0.71 (the recording's 0.71), Taiko 0.94 → 0.66
+(0.20) — but not on the kick (0.87 → 0.84, against 0.23) or the floor tom
+(0.94 → 0.86, against 0.61), and every one matched its recording worse on
+the rest (energy over time above all: RackTom 83 % in its first 30 ms
+against the recording's 46 %; scores 1.47 → 1.54, 1.50 → 1.71, 2.12 → 2.57,
+2.37 → 2.66, 0.45 → 0.46).  So those presets stay on the loop drum, and this
+is left for later: Moreno's sound is here as his own five presets, his loop
+and the trial's specs are ready to go further.
 
 ### Tuning
 
@@ -281,13 +345,19 @@ Kick        11.1    :0.3    10.3    10.2     6.8     3.4     6.0    :1.3     7.9
 Taiko       16.5    :0.6    12.5    14.4     5.0     3.2     6.4    :0.9     5.8    28.4    10.7     3.1     3.8     4.5    :1.5     8.4    27.8       .    12.6
 Bendir       6.3    :0.6     9.0    10.1     3.6    :0.7     5.1       .     6.5    10.3     6.5     2.4     2.5     4.5     4.7     5.2    10.9     1.8     2.3
 Surdo       11.9    :0.4     9.8    10.9     3.9     2.2     6.1       .    13.0    15.0     7.2     4.2     1.9     2.6     1.8     6.0    17.6       .     4.1
+MmSnare     11.0       .     9.0     8.5     1.9     2.2     2.7     3.2     4.2     7.4     4.7     2.9       .     6.7    12.2     4.7     7.8    :1.4     1.9
+MmKick       6.6       .     5.2     4.6     1.8    :1.3     2.7    :1.3     4.1     1.7     2.0     6.4       .    :1.2       .     3.2     4.3    :0.5     2.4
+MmSnr2      10.8       .     8.6     8.5     2.3     2.1     3.5     2.7     5.3     9.1     5.0     3.4       .     5.1     7.8     4.3    10.5     1.6     1.6
+MmTom       14.0       .     8.2     7.6     2.4     2.7     3.8     3.8     7.2     7.8     3.9     7.4       .     8.6     6.7     4.2    11.9    :0.6     3.1
+MmFloor     19.5    :0.3     7.8     8.6     3.7     2.8     4.6     2.8     7.5     9.1     5.7     6.1       .     4.0     2.9     6.6    19.7       .     4.5
 ```
 
 `BendTm` is small where a preset's glide is (it times a glide that is barely
 there: raise `Bend` first), and `SnrTone` is silent on the presets without
 snares (raise `Snares` first).  On Snare, `NzMix` and `NzFltFrq` scale an
 excitation noise the preset barely uses, and `ApDelay` an all-pass whose
-gain it ships near 0 (raise `Inharm` first).
+gain it ships near 0 (raise `Inharm` first).  On Moreno's five, `HitPos` does
+nothing (mymembrane~ has no strike position).
 
 ## How the presets were voiced
 
@@ -371,6 +441,8 @@ There is no original to compare with.  What was checked on the host:
 
 - **Tuning**: the first resonance against the note, `Inharm` and `ApDelay`
   at both ends, three octaves (see Tuning).
+- **mymembrane~**: the port against Pd's own renders of the patch (above,
+  "mymembrane~ in BrcLippa").
 - **Stability**: 3000 random sessions — every preset, every knob anywhere in
   its range, random notes and velocities, up to four stacked strikes,
   AllNoteOff — with every output sample finite and within the limiter's
@@ -380,7 +452,7 @@ There is no original to compare with.  What was checked on the host:
   crackle and the restrike left every preset's single-strike render
   byte-identical until the snares were revoiced.
 - **Restrikes**: see "What the Pd code adds".
-- **Units loaded together**: `multi_load.sh` (all eleven units, 503,100
+- **Units loaded together**: `multi_load.sh` (all eleven units, 512,286
   display strings, identical alone and together); `arm_size.sh` finds no
   unique symbol.
 - **Its unit id.**  The first commit of this unit (as BrcLoop) carried
@@ -414,10 +486,13 @@ Shared with the other units: [`brachetti_common`](../brachetti_common/)
   source of a drum's inharmonicity, the pitch envelope on both delays, the
   sine cycle plus windowed noise as the excitation, and the snares as noise
   following the head's envelope.  The article publishes no code or
-  coefficients, and none were taken from the Pd patch: the C++ here, its
-  tuning formula and the voicing are this repository's.  The article carries
-  no licence beyond its copyright notice; what is used is its description of
-  a technique, credited here.
+  coefficients; the loop drum's C++, its tuning and its voicing are this
+  repository's.  `mm::Membrane` is a port of the patch itself
+  (`instruments/mymembrane~.pd`), and presets 8-12 are its help and demo
+  settings; pd-mkmr's 3-Clause BSD License covers that part (below), and
+  `brc::crackle` comes from the same patch.  The article carries no licence
+  beyond its copyright notice; what is used from it is its description of a
+  technique, credited here.
 - **Kevin Karplus and Alex Strong**, "Digital Synthesis of Plucked-String and
   Drum Timbres", *Computer Music Journal* 7(2), 1983 — the loop, and the drum
   blend (`Blend`).
@@ -438,9 +513,10 @@ Shared with the other units: [`brachetti_common`](../brachetti_common/)
 - Universal Audio, "Allpass Filters" (blog), cited by the article for the
   all-pass.
 
-pd-mkmr is distributed under the 3-Clause BSD License; the crackle
-(`brc::crackle`) is taken from `mymembrane~`'s snare layer, and its
-conditions apply to that part:
+pd-mkmr is distributed under the 3-Clause BSD License; `mm::Membrane` is a
+port of `mymembrane~`, presets 8-12 are its settings, and the crackle
+(`brc::crackle`) is taken from its snare layer, so its conditions apply to
+those parts:
 
 > Redistribution and use in source and binary forms, with or without
 > modification, are permitted provided that the following conditions are met:
@@ -472,13 +548,15 @@ reads "mymembrane~ v1, Miguel Moreno 2019".)
 
 Two of the ideas above would improve units that are bit-identical to the
 original (BrcSnare) or checked against their own renders (BrcWorld), so they
-went into a family of their own, [BrcFilo](../brachetti_filo/README.md),
-which copies those presets and leaves both units as they are:
+went into a family of their own, [BrcCordiera](../brachetti_cordiera/README.md),
+on those units' engines, with instruments of its own (a tabor, a daf, an mbira
+with buzzers, a tom with the snares on, a marranzano, a spring drum, a
+gopichand), and left both units as they are:
 
 - **BrcSnare's wires on the head**, with the crackle.
 - **BrcWorld's berimbau wire made stiff** (all-passes in its loop, as the
-  Pelle e Legno berimbau samples' sharp upper partials ask), and tuned through
-  its loss filter.
+  Pelle e Legno berimbau samples' sharp upper partials ask), tuned through
+  its loss filter, and able to bend.
 
 Not done: **BrcTom / BrcKick glides** bend a modal bank; the loop's glide
 bends every partial at once for the price of one, but the kick's `Dive`

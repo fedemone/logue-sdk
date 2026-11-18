@@ -4,14 +4,16 @@
 unit, built after the split: drums from a delay loop — a Karplus-Strong loop
 with a Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums
 with karplus-strong synthesis" (2022) and his Pd instrument mymembrane~
-(pd-mkmr, BSD-3-Clause: README.md keeps its notice).  Presets: RackTom, FlrTom, Snare,
-SnrHvy, Kick, Taiko, Bendir, Surdo.  README.md has the design, its sources
+(pd-mkmr, BSD-3-Clause: README.md keeps its notice).  Presets 0-7 (RackTom,
+FlrTom, Snare, SnrHvy, Kick, Taiko, Bendir, Surdo) play the loop drum, voiced
+after recordings; 8-12 (MmSnare, MmKick, MmSnr2, MmTom, MmFloor) play a port of
+mymembrane~ itself with Moreno's own settings.  README.md has the design, its sources
 and credits, the presets and what the knobs do.
 
 ## Before changing anything
 
 - **There is no original to compare with.**  `run_equiv.sh` does not apply.
-  Before a refactor, render every preset (`preset_probe render 0 7 110 3 dir`,
+  Before a refactor, render every preset (`preset_probe render 0 12 110 3 dir`,
   built against this directory) and compare after: a refactor must leave the
   files byte-identical.
 - **The presets are voiced after recordings** by
@@ -25,7 +27,15 @@ and credits, the presets and what the knobs do.
   loss filter and the highs ring on like a string's; and on the presets with
   snares their kurtosis (`sparsity`), without which `sn_crackle` is invisible.
 - **The field order of `Voicing`** must match `VOICING_FIELDS["lippa"]` in
-  `match_samples.py`.  The loop is on when `lp_level` is above 0.
+  `match_samples.py`.  The loop drum is on when `lp_level` is above 0,
+  mymembrane~ when `mm_level` is (one or the other).
+- **mymembrane~ is a port, checked against Pd** (`mm::Membrane`, README.md
+  "mymembrane~ in BrcLippa").  Its arithmetic follows Pd's objects; after a
+  change run `../tools/brachetti_equiv/mymembrane_check.py <pd-mkmr>/instruments`
+  (Pd renders the patch with its help and demo settings; the five Mm presets
+  must correlate ≥ 0.93 over the first 200 ms, with the same t40 and
+  periodicity).  The trial of the
+  loop presets on it is `match_specs.py`'s `lippa_mm`.
 - **The tuning is exact by construction.**  `strike_loop` sets the delay so
   the loop's phase at the note is one period: the delay line plus the phase
   delays of the all-pass, the loss filter and the DC blocker (README.md,
@@ -76,10 +86,10 @@ and credits, the presets and what the knobs do.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_lippa`
-  (shipped: .text 19492 · .rodata 2176 · .data.rel.ro 80 · .data 4 · .bss 51824).
+  (shipped: .text 23180 · .rodata 3652 · .data.rel.ro 100 · .data 4 · .bss 52752).
 - CPU: `../tools/brachetti_equiv/arm_cpu.sh ../../brachetti_lippa`
-  (shipped: 857.4 ARM instructions per rendered frame; 818.8 before the
-  crackle and the restrike slew).
+  (shipped: 998.1 ARM instructions per rendered frame, with the five
+  mymembrane~ presets in the bench; 857.4 for the eight loop presets).
 - Knobs: `../tools/brachetti_equiv/knob_liveness.py lippa`.
 
 Not yet run on hardware.

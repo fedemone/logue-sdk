@@ -35,7 +35,7 @@
 // README.md, "The loop drum", has all of it.
 
 // From brachetti_common (its README.md indexes every helper):
-//   dsp_math.h       kSilence
+//   dsp_math.h       clampf, kSilence
 //   modal_bank.h     ModalBank
 //   noise.h          FastNoise, crackle
 //   small_filters.h  Resonator2, one_pole_hp, one_pole_lp
@@ -209,12 +209,250 @@ struct Drum {
 
 }  // namespace loop
 
+// ── mymembrane~: Miguel Moreno's drum, ported ───────────────────────────────
+// instruments/mymembrane~.pd in pd-mkmr (Miguel Moreno, BSD-3-Clause; the
+// notice is in README.md), object by object, with Pd's own formulas for the
+// objects it uses (noise~, hip~, lop~, bp~, biquad~ with its lowpass~
+// coefficients, vd~'s 4-point interpolation and its one-block minimum delay in
+// a feedback loop, env~, the hv.tanh rational tanh).  Checked against Pd 0.54's
+// renders of the patch with its help and demo settings: waveform correlation
+// 0.94-1.00 over the first 200 ms, the same strongest partial, decay and
+// periodicity (README.md, "mymembrane~ in BrcLippa").
+//
+//   loop:  delay(f, chirp) → hip~ 20 → × feedback → tanh → + excitation
+//          → all-pass(apf, chirp; gain) → lop~ f·2^(6·damping)/2 → × boost → delay
+//   out:   tanh(loop + the excitation's noise) + snares
+//   excitation: a sine cycle one period long, + noise~ (seed 16 at every strike)
+//          through a low-pass at f·2^(3v)/3 (Q 0.4) under a one-period window
+//   chirp: the delay's frequency × (1 + (2+v)·e¹⁰), the all-pass's × (1 + (1+v)·e²⁰),
+//          e a ramp 1 → 0 over 80 ms; the loop × (1 + 0.7·√v·e²⁰)
+//   snares: noise^50 → hip~ 100 → bp~ 3000 Q 1, × the RMS (env~ 1024/512, line~ 1 ms)
+//          of hip~ 100 of the drum, × the noise level
+namespace mm {
+
+constexpr float kSR = 48000.0f;
+constexpr float kTwoPi = 6.2831853f;
+constexpr float kMinDelay = 65.0f;   // vd~ in a feedback loop: at least one block
+
+struct PdNoise {   // noise~
+    uint32_t val = 16u;
+    force_inline float next() {
+        const float o = (float)((int32_t)(val & 0x7fffffffu) - 0x40000000) * (1.0f / 1073741824.0f);
+        val = val * 435898247u + 382842987u;
+        return o;
+    }
+};
+struct Hip {   // hip~
+    float coef = 0.0f, last = 0.0f;
+    void set(float hz) { coef = brc::clampf(1.0f - hz * kTwoPi / kSR, 0.0f, 1.0f); }
+    force_inline float run(float x) {
+        const float nw = x + coef * last;
+        const float y = 0.5f * (1.0f + coef) * (nw - last);
+        last = nw;
+        return y;
+    }
+};
+struct Lop {   // lop~
+    float coef = 1.0f, last = 0.0f;
+    void set(float hz) { coef = brc::clampf(hz * kTwoPi / kSR, 0.0f, 1.0f); }
+    force_inline float run(float x) { last = coef * x + (1.0f - coef) * last; return last; }
+};
+struct Bp {   // bp~
+    float c1 = 0.0f, c2 = 0.0f, g = 0.0f, y1 = 0.0f, y2 = 0.0f;
+    static float qcos(float f) {
+        if (f >= -(0.5f * 3.14159f) && f <= 0.5f * 3.14159f) {
+            const float h = f * f;
+            return ((h * h * h * (-1.0f / 720.0f) + h * h * (1.0f / 24.0f)) - h * 0.5f) + 1.0f;
+        }
+        return 0.0f;
+    }
+    void set(float hz, float q) {
+        const float om = hz * (2.0f * 3.14159f) / kSR;
+        float omr = (q < 0.001f) ? 1.0f : om / q;
+        if (omr > 1.0f) omr = 1.0f;
+        const float r = 1.0f - omr;
+        c1 = 2.0f * qcos(om) * r;
+        c2 = -r * r;
+        g = 2.0f * omr * (omr + r * om);
+    }
+    force_inline float run(float x) {
+        const float y = g * x + c1 * y1 + c2 * y2;
+        y2 = y1;
+        y1 = y;
+        return y;
+    }
+};
+struct Biquad {   // biquad~, as the patch's lowpass~ sets it
+    float fb1 = 0.0f, fb2 = 0.0f, ff1 = 0.0f, ff2 = 0.0f, ff3 = 0.0f, w1 = 0.0f, w2 = 0.0f;
+    void lowpass(float hz, float q) {
+        hz = brc::clampf(hz, 20.0f, 22050.0f);
+        const float om = hz * 6.28319f / kSR, s = sinf(om), c = cosf(om);
+        const float alpha = s / (2.0f * fmaxf(q, 5.96046e-08f));
+        const float a0 = 1.0f + alpha, a1 = -2.0f * c, a2 = 1.0f - alpha, b1 = 1.0f - c, b0 = b1 * 0.5f;
+        fb1 = -a1 / a0; fb2 = -a2 / a0; ff1 = b0 / a0; ff2 = b1 / a0; ff3 = b0 / a0;
+        w1 = w2 = 0.0f;
+    }
+    force_inline float run(float x) {
+        const float w = x + fb1 * w1 + fb2 * w2;
+        const float y = ff1 * w + ff2 * w1 + ff3 * w2;
+        w2 = w1;
+        w1 = w;
+        return y;
+    }
+};
+force_inline float hv_tanh(float x) {   // the patch's hv.tanh
+    x = brc::clampf(x, -3.0f, 3.0f);
+    return x * (27.0f + x * x) / (27.0f + 9.0f * x * x);
+}
+// vd~'s 4-point interpolation, d samples back from the write index w
+force_inline float read4(const float* v, int mask, int w, float d) {
+    const int id = (int)d;
+    const float fr = d - (float)id;
+    const float a = v[(w - id) & mask], b = v[(w - id - 1) & mask];
+    const float c = v[(w - id - 2) & mask], dd = v[(w - id - 3) & mask];
+    const float cmb = c - b;
+    return b + fr * (cmb - 0.1666667f * (1.0f - fr) * ((dd - a - 3.0f * cmb) * fr + (dd + 2.0f * a - 3.0f * b)));
+}
+
+struct Membrane {
+    float level = 0.0f;             // 0 = off
+    float* buf = nullptr;           // the loop's delay line (2048, BrcLippa's)
+    float* ap  = nullptr;           // the all-pass's (1024)
+    int   w = 0, aw = 0;
+    float f = 100.0f, apf = 100.0f; // the delay's and the all-pass's frequencies, Hz
+    float fbk = 0.9f, apg = 0.0f, flip = 0.0f;
+    uint32_t lcg = 1u;
+    float v = 1.0f, velgain = 1.0f;
+    float exc_len = 1.0f;           // the sine cycle and the noise window, samples
+    float chirp_len = 3840.0f;      // the chirp's ramp, samples (80 ms)
+    float depth_l = 3.0f, depth_a = 2.0f, boost = 0.7f;
+    float noise = 1.0f, snares = 0.0f;
+    Biquad nlp;
+    Hip hip20, hip_sn, hip_env;
+    Lop lp;
+    Bp bp;
+    PdNoise nz, sn;
+    // env~ 1024/512: the Hann-weighted mean square in two half-window sums
+    float env_lo = 0.0f, env_hi = 0.0f, env_prev = 0.0f, env_c = 1.0f, env_s = 0.0f;
+    float env = 0.0f, env_step = 0.0f;
+    int   env_p = 0, env_ramp = 0;
+    float rot_c = 1.0f, rot_s = 0.0f;   // cos, sin of 2π / 1024
+    // a strike into a ringing loop slews the delays from where the ring had them
+    float dl_now = 0.0f, da_now = 0.0f, slew = 0.0f;
+    uint32_t n = 0;
+    float out_env = 1.0f;
+
+    void reset() {
+        float* b = buf;
+        float* a = ap;
+        *this = Membrane();
+        buf = b;
+        ap = a;
+    }
+
+    bool active() const { return level > 0.0f && buf != nullptr; }
+
+    struct Motion {
+        int w, aw; float hip20, lp, dl, da, out_env, env, bp1, bp2, hsn, henv;
+    };
+    Motion motion() const {
+        return {w, aw, hip20.last, lp.last, dl_now, da_now, out_env, env, bp.y1, bp.y2, hip_sn.last, hip_env.last};
+    }
+    void resume(const Motion& m, float s) {
+        w = m.w; aw = m.aw; hip20.last = m.hip20; lp.last = m.lp; dl_now = m.dl; da_now = m.da;
+        out_env = m.out_env; env = m.env; bp.y1 = m.bp1; bp.y2 = m.bp2; hip_sn.last = m.hsn; hip_env.last = m.henv;
+        slew = s;
+    }
+
+    force_inline float process() {
+        const float nf = (float)n;
+        // the excitation: a sine cycle (cos~ of the ramp − 0.25) and the noise
+        // under its window (in 0.25 ms, out over 0.25 ms after the period)
+        float exc = 0.0f, direct = 0.0f;
+        if (nf < exc_len + 12.0f) {
+            float win = fminf(1.0f, nf * (1.0f / 12.0f));
+            if (nf > exc_len) win = fmaxf(0.0f, 1.0f - (nf - exc_len) * (1.0f / 12.0f));
+            const float n2 = nlp.run(nz.next()) * win * 2.0f * noise;
+            const float sine = (nf < exc_len) ? sinf(kTwoPi * nf / exc_len) * 0.5f : 0.0f;
+            exc = (sine + n2) * velgain;
+            direct = n2 * 2.0f * velgain;
+        }
+        // the chirp
+        float dl = kSR / f, da = kSR / apf, bst = 1.0f;
+        if (nf < chirp_len) {
+            const float r = 1.0f - nf / chirp_len;
+            const float r2 = r * r, r4 = r2 * r2, r8 = r4 * r4;
+            const float e10 = r8 * r2, e20 = e10 * e10;
+            dl = kSR / (f * (1.0f + depth_l * e10));
+            da = kSR / (apf * (1.0f + depth_a * e20));
+            bst = 1.0f + e20 * boost;
+        }
+        dl = brc::clampf(dl, kMinDelay, 2040.0f);
+        da = brc::clampf(da, kMinDelay, 1016.0f);
+        if (slew > 0.0f) {   // only after a strike into a ringing loop
+            dl_now += slew * (dl - dl_now);
+            da_now += slew * (da - da_now);
+            dl = dl_now;
+            da = da_now;
+            if (n > 2400u) slew = 0.0f;
+        } else {
+            dl_now = dl;
+            da_now = da;
+        }
+        ++n;
+        // the loop
+        float back = hv_tanh(hip20.run(read4(buf, 2047, w, dl)) * fbk);
+        if (flip > 0.0f) {   // Karplus & Strong's drum blend (BrcLippa's Blend knob)
+            lcg = lcg * 1664525u + 1013904223u;
+            if ((float)(lcg >> 8) * (1.0f / 16777216.0f) < flip) back = -back;
+        }
+        const float u = exc + back;
+        const float wd = read4(ap, 1023, aw, da);
+        const float wv = u + apg * wd;
+        ap[aw] = wv;
+        aw = (aw + 1) & 1023;
+        const float y = lp.run(wd - apg * wv) * bst;
+        buf[w] = y;
+        w = (w + 1) & 2047;
+        const float drum = hv_tanh(y + direct);
+        float out = drum;
+        if (snares > 0.0f) {
+            const float s = sn.next();
+            const float s2 = s * s, s4 = s2 * s2, s8 = s4 * s4, s16 = s8 * s8, s32 = s16 * s16;
+            const float snr = bp.run(hip_sn.run(s32 * s16 * s2));
+            const float h = hip_env.run(drum);
+            const float hh = h * h;
+            env_lo += (1.0f - env_c) * hh;   // this sample in the next window's older half
+            env_hi += (1.0f + env_c) * hh;   // and in this window's newer half
+            const float c = env_c * rot_c - env_s * rot_s;
+            env_s = env_s * rot_c + env_c * rot_s;
+            env_c = c;
+            if (++env_p == 512) {
+                const float ms = (env_prev + env_hi) * (1.0f / 1024.0f);
+                env_prev = env_lo;
+                env_lo = env_hi = 0.0f;
+                env_c = 1.0f; env_s = 0.0f; env_p = 0;
+                env_step = (sqrtf(fmaxf(ms, 0.0f)) - env) * (1.0f / 48.0f);   // line~ over 1 ms
+                env_ramp = 48;
+            }
+            if (env_ramp > 0) { env += env_step; --env_ramp; }
+            out += snr * env * snares;
+        }
+        out_env = brc::one_pole_lp(fabsf(drum), 0.001f, out_env);
+        if (n > 4800u && out_env < brc::kSilence) level = 0.0f;
+        return out * level;
+    }
+};
+
+}  // namespace mm
+
 struct VoiceState : brc::VoiceBase {
     brc::ModalBank modal;
     brc::Onset     onset;
     loop::Drum     drum;
+    mm::Membrane   mm;      // mymembrane~ (a preset uses one or the other)
 
-    bool layers_active() const { return drum.active(); }
+    bool layers_active() const { return drum.active() || mm.active(); }
 
     // Every layer back to silence for a new strike.  The settings the knobs
     // own (mallet, noise envelopes, noise filter) stay.
@@ -223,5 +461,6 @@ struct VoiceState : brc::VoiceBase {
         modal.reset();
         onset.reset();
         drum.reset();
+        mm.reset();
     }
 };
