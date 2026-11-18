@@ -4,6 +4,7 @@
 #   ./run_host_test.sh          host g++, address + undefined sanitizers
 #   ARM=1 ./run_host_test.sh    arm-linux-gnueabihf-g++ with the SDK's
 #                               -march/-mfpu flags, run under qemu-arm
+#   LITE=1 ./run_host_test.sh   SeqProbeLite (no bitmaps, no files); with ARM=1 too
 #
 # Not a device build: the .drmlgunit comes from the SDK Docker image
 # (`build drumlogue/seq_probe`), whose toolchain matches the drumlogue's C
@@ -18,6 +19,7 @@ mkdir -p "$out/userfs"
 # The host has been up longer than the drumlogue's boot window: widen it, so
 # the first unit_init counts as boot.
 defs=(-DPROBE_DIR="\"$out/userfs\"" -DPROBE_BOOT_WINDOW_S=2000000000)
+[ -n "${LITE:-}" ] && defs+=(-DPROBE_LITE)
 
 if [ -n "${ARM:-}" ]; then
     cxx=arm-linux-gnueabihf-g++; cc=arm-linux-gnueabihf-gcc
@@ -34,7 +36,7 @@ else
 fi
 
 warn=(-W -Wall -Wextra -Wno-ignored-qualifiers -Werror)
-"$cc"  "${arch[@]}" "${opt[@]}" -std=c11 -fPIC -I"$common" -c "$unit/header.c" -o "$out/header.o"
+"$cc"  "${arch[@]}" "${opt[@]}" -std=c11 -fPIC -I"$common" "${defs[@]}" -c "$unit/header.c" -o "$out/header.o"
 "$cc"  "${arch[@]}" "${opt[@]}" -std=c11 -fPIC -I"$common" -c "$common/_unit_base.c" -o "$out/base.o"
 "$cxx" "${arch[@]}" "${opt[@]}" "${cxxopt[@]}" -std=gnu++14 "${warn[@]}" -fPIC -I"$common" "${defs[@]}" \
     -c "$unit/unit.cc" -o "$out/unit.o"

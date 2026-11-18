@@ -38,16 +38,50 @@ file.
 
 ## Build and install
 
-Build with the SDK's Docker image, not a desktop cross-compiler: its toolchain
-matches the drumlogue's C library.
+There are two units.  **SeqProbe** is the full probe.
+[**SeqProbeLite**](../seq_probe_lite/) is the same probe without the two
+things no other unit in this repository uses: bitmap knobs (its Blink,
+Follow and Grid show text) and file access.  Install both: if SeqProbe does
+not appear on the drumlogue, one boot tells whether one of those is why.
 
-```
-build drumlogue/seq_probe
-```
+1. Build both with the SDK's Docker image, not a desktop cross-compiler: its
+   toolchain matches the drumlogue's C library.
 
-Copy `seq_probe.drmlgunit` to `Units/Synths/`.  Select **SeqProbe** on the
-Multi-engine part and save the program, so it is the one loaded at power-on.
-Then restart: the boot-time file test needs SeqProbe to be loaded at boot.
+   ```
+   build drumlogue/seq_probe
+   build drumlogue/seq_probe_lite
+   ```
+
+   Each build ends with a size line and `Deploying to …/seq_probe.drmlgunit`
+   (or `…/seq_probe_lite.drmlgunit`), a file of 13–20 KB in the project folder.
+   If a build printed an error, the file there is an older one or missing.
+2. Switch the drumlogue off.  Hold **REC** and switch it on: it shows up on the
+   computer as a USB drive.
+3. Copy both files into `Units/Synths/` on that drive, the folder that holds
+   your other synth units.  Name them `00_seq_probe.drmlgunit` and
+   `00_seq_probe_lite.drmlgunit`.  The drumlogue loads units in alphabetical
+   order, and the prefix puts these first, ahead of any limit on how many
+   synth units it loads.  The name must end in `.drmlgunit`.
+4. Eject the drive on the computer and wait until it says the drive is safe
+   to remove.  Only then switch the drumlogue off: a copy still in the
+   computer's cache can be lost.
+5. Switch the drumlogue on normally.  On the Multi-engine part, look for
+   **SeqProbe** and **SeqProbeLite** where your other user synths appear.
+6. Select SeqProbe (or SeqProbeLite, below) and save the program, so it is the
+   one loaded at power-on.  Then restart: the boot-time file test needs
+   SeqProbe to be loaded at boot.
+
+### If SeqProbe does not appear
+
+| What you see | What it means | What to do |
+|---|---|---|
+| Neither unit, nor any of your other user synths | The drumlogue did not read the folder | Check the copy went to `Units/Synths/`, then eject before switching off |
+| Neither unit, but your other synths are there | The copy did not land, or the drumlogue refuses both | Repeat steps 2–5.  Then check the firmware version in the drumlogue's system menu, and tell me the version and how many `.drmlgunit` files `Units/Synths/` holds |
+| Only SeqProbeLite | Bitmap knobs or file access at boot keep SeqProbe off | Tell me the firmware version: bitmap knobs need 1.1.0 or later.  Run the test with SeqProbeLite: it shows the same answers, as text |
+| Both | The earlier copy did not land | Run the test with SeqProbe |
+
+SeqProbeLite answers every question except the boot-time file test: its
+**Files** and Result positions 2–4 show `lite`.
 
 ## The test, step by step
 
@@ -69,7 +103,7 @@ Do they follow at once, a moment later, only after you change page, or never?
 
 **4. Load a program** (this one again, or any other that uses SeqProbe), then
 look at page 2: **Burst** shows how many knobs the load set and how fast
-(`24/3ms`).  Then pick preset ProbeA or ProbeB from the preset menu: Owned
+(`24 in 3ms`).  Then pick preset ProbeA or ProbeB from the preset menu: Owned
 should show 20 or 90 if the panel re-reads values after a preset.
 
 **5. Page 3: the sequencer.**
@@ -105,8 +139,8 @@ read position 4 again: `prev ok` means a file written at boot survived.
 | 5 | `io 3.2ms` | How long the boot-time file work took |
 | 6 | `aud GA` | Callbacks that ran on the audio thread: **G** gate on, **g** gate off, **N** note on, **S** knob set, **V** knob value asked, **T** text asked, **B** bitmap asked, **P** preset load, **A** all-notes-off, **R** reset, **M** tempo.  `aud none`: none of them.  `aud ?`: no audio yet |
 | 7 | `FIFO 80` | The audio thread's scheduling class and priority |
-| 8 | `str 30/s` | The most times the panel asked for one knob's text in one second while no knob turned.  0–2: only when a page is entered; 10 or more: it polls |
-| 9 | `bmp 30/s` | The same for bitmaps |
+| 8 | `str 30Hz` | The most times the panel asked for one knob's text in one second while no knob turned.  0–2: only when a page is entered; 10 or more: it polls |
+| 9 | `bmp 30Hz` | The same for bitmaps (always 0 on SeqProbeLite, which has none) |
 | 10 | `knobs 4` | The most knobs polled (asked 3+ times) in one second.  4 or fewer: only the page on screen; more: other pages too |
 | 11 | `unit2 own0` | Step turns made after the panel had asked for the value.  **unit**: counted from the unit's number (the panel takes it); **own**: from its own |
 | 12 | `bpm 120.0` | The last tempo received |
@@ -119,12 +153,14 @@ read position 4 again: `prev ok` means a file written at boot survived.
 | `header.c` | The knobs (pages 1–6) and the two presets |
 | `probe_draw.h` | 16×16 bitmaps in the drumlogue format, and a 3×5 digit font |
 | `test/host_test.cc`, `test/run_host_test.sh` | The host test |
+| [`../seq_probe_lite/`](../seq_probe_lite/) | SeqProbeLite: a `header.c` and `unit.cc` that set `PROBE_LITE` and include these.  They are separate files, not paths to this folder in its `config.mk`: the SDK Makefile adds each source's folder to make's `VPATH`, and make would then find this project's `build/` and objects and never build its own |
 
 ## Host test
 
 ```
 test/run_host_test.sh          # host, address and undefined-behaviour sanitizers
 ARM=1 test/run_host_test.sh    # ARM build (the SDK's -march/-mfpu), under qemu-arm
+LITE=1 test/run_host_test.sh   # SeqProbeLite (with ARM=1 too)
 ```
 
 It drives the callbacks the way the drumlogue would:

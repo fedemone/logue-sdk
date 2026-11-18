@@ -8,15 +8,27 @@
 
 #include "unit.h"
 
+#ifdef PROBE_LITE
+// SeqProbeLite (../seq_probe_lite): no bitmap knobs, no file access.  Its
+// own id, so it installs next to SeqProbe.
+#define PROBE_UNIT_ID   0x5371506CU                    // 'SqPl'
+#define PROBE_NAME      "SeqProbeLite"
+#define PROBE_BITMAPS   k_unit_param_type_strings
+#else
+#define PROBE_UNIT_ID   0x53715062U                    // 'SqPb'
+#define PROBE_NAME      "SeqProbe"
+#define PROBE_BITMAPS   k_unit_param_type_bitmaps
+#endif
+
 // The parameter order must match the P_* indices in unit.cc.
 const __unit_header unit_header_t unit_header = {
     .header_size = sizeof(unit_header_t),
     .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,
     .api = UNIT_API_VERSION,
     .dev_id = 0x46654465U,                                 // 'FeDe'
-    .unit_id = 0x53715062U,                                // 'SqPb' (SeqProbe)
+    .unit_id = PROBE_UNIT_ID,
     .version = 0x00010000U,
-    .name = "SeqProbe",
+    .name = PROBE_NAME,
     // Two presets, to see what the drumlogue re-reads after one is loaded.
     .num_presets = 2,
     .num_params = 24,
@@ -24,8 +36,8 @@ const __unit_header unit_header_t unit_header = {
         // Format: min, max, center, default, type, frac_digits, frac_type, <reserved>, name
 
         // Page 1 — does the panel redraw on its own?
-        {0, 15, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"Blink"}},
-        {0, 15, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"Follow"}},
+        {0, 15, 0, 0, PROBE_BITMAPS, 0, 0, 0, {"Blink"}},
+        {0, 15, 0, 0, PROBE_BITMAPS, 0, 0, 0, {"Follow"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Clock"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"FollowS"}},
 
@@ -37,7 +49,7 @@ const __unit_header unit_header_t unit_header = {
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Burst"}},
 
         // Page 3 — what the sequencer sends, and the boot-time file test
-        {0, 15, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"Grid"}},
+        {0, 15, 0, 0, PROBE_BITMAPS, 0, 0, 0, {"Grid"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Gate"}},
         {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Event"}},
         // Files: the boot-time file test in a word (the knob does nothing)

@@ -23,6 +23,12 @@
  * Pages 4-5 are a prototype of the sequencer's lane view: each knob shows
  * one step of the lane chosen on page 5, and a turn edits that step from
  * what it holds.
+ *
+ * Built with -DPROBE_LITE (../seq_probe_lite) it is SeqProbeLite: the same
+ * probe without what no other unit here uses — no bitmap knobs (Blink,
+ * Follow and Grid show text) and no file access at all.  Installed next to
+ * SeqProbe, one boot tells whether either of those keeps a unit off the
+ * drumlogue's list.
  */
 
 #include <atomic>
@@ -58,6 +64,12 @@
 #endif
 
 namespace {
+
+#ifdef PROBE_LITE
+constexpr bool kLite = true;
+#else
+constexpr bool kLite = false;
+#endif
 
 // ============================================================================
 // Parameters (header.c holds the same order)
@@ -278,10 +290,12 @@ uint8_t s_steps[3][16] = {
 // ============================================================================
 // Sound: a tick on every gate, a blip per lane step, a tone per MIDI note
 // ============================================================================
+// Every member initialised, so the array is constant-initialised: nothing
+// runs when the drumlogue loads the unit.
 struct VoiceReq {
     std::atomic<bool> fire{false};
-    float freq, amp, decay_s;
-    bool noise;
+    float freq = 0.0f, amp = 0.0f, decay_s = 0.0f;
+    bool noise = false;
 };
 
 struct Voice {
@@ -372,7 +386,7 @@ const char* step_name(uint8_t lane, uint8_t step) {
 // Files (page 3): the boot-time file test in a word.
 const char* files_text(char* s) {
     switch (files::s_run) {
-    case files::kNotRun:  return "-";
+    case files::kNotRun:  return kLite ? "lite" : "-";
     case files::kLate:    return "late";
     case files::kNoClock: return "noclk";
     default: break;
@@ -429,8 +443,9 @@ const char* result_text(int32_t i, char* s) {
                  s_render_policy == SCHED_FIFO ? "FIFO" : s_render_policy == SCHED_RR ? "RR"
                  : s_render_policy == SCHED_OTHER ? "OTHER" : "?", s_render_prio);
         return s;
-    case 7: snprintf(s, kStrLen, "str %u/s", unsigned(s_max_str_hz)); return s;
-    case 8: snprintf(s, kStrLen, "bmp %u/s", unsigned(s_max_bmp_hz)); return s;
+    // (No '/': the panel shows only the characters the SDK README lists.)
+    case 7: snprintf(s, kStrLen, "str %uHz", unsigned(s_max_str_hz)); return s;
+    case 8: snprintf(s, kStrLen, "bmp %uHz", unsigned(s_max_bmp_hz)); return s;
     case 9: snprintf(s, kStrLen, "knobs %u", unsigned(s_max_polled)); return s;
     case 10:
         snprintf(s, kStrLen, "unit%u own%u", unsigned(s_adopt_unit), unsigned(s_adopt_own));
@@ -545,7 +560,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
     s_frames.store(0);
     reset_state();
     silence();
-    files::run_at_boot(s_init_uptime_us);   // the only file access, and only at boot
+    if (!kLite) files::run_at_boot(s_init_uptime_us);   // the only file access, and only at boot
     return k_unit_err_none;
 }
 
@@ -659,6 +674,20 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
     s_calls_str[id].fetch_add(1, std::memory_order_relaxed);
     char* s = s_str[id];
     switch (id) {
+    // SeqProbeLite shows the bitmap knobs as text: the value, and a mark
+    // that blinks with the unit's clock (Follow in the other phase); Grid
+    // shows the cursor step and the playhead step.
+    case P_BLINK: case P_FOLLOW:
+        if (!kLite) return "-";
+        snprintf(s, kStrLen, "%02d %s", int(s_val[P_BLINK]), blink_phase() == (id == P_BLINK) ? "*" : "-");
+        return s;
+    case P_GRID:
+        if (!kLite) return "-";
+        if (s_gates && !s_restart)
+            snprintf(s, kStrLen, "c%02d p%02d", int(s_val[P_GRID]) + 1, int(s_step) + 1);
+        else
+            snprintf(s, kStrLen, "c%02d", int(s_val[P_GRID]) + 1);
+        return s;
     case P_CLOCK:
         snprintf(s, kStrLen, "t%u", unsigned(s_frames.load() / s_sr));
         return s;
@@ -670,7 +699,7 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
         return s;
     case P_BURST:
         if (!s_last_burst_n) return "none";
-        snprintf(s, kStrLen, "%u/%ums", unsigned(s_last_burst_n), unsigned(s_last_burst_span_us / 1000u));
+        snprintf(s, kStrLen, "%u in %ums", unsigned(s_last_burst_n), unsigned(s_last_burst_span_us / 1000u));
         return s;
     case P_GATE:
         if (!s_gates) return "wait";

@@ -97,18 +97,31 @@ int main() {
     desc.frames_per_buffer = 64;
     desc.input_channels = 2;
     desc.output_channels = 2;
+    const auto before_init = snapshot(dir);
     CHECK(unit_init(&desc) == k_unit_err_none, "unit_init");
     const auto after_init = snapshot(dir);
+    CHECK(unit_header.params[P_RESULT].max == 11 && result(12) == "-", "Result has 12 positions");
 
+#ifdef PROBE_LITE
+    // ── SeqProbeLite: no file access, no bitmap knob ────────────────────────
+    CHECK(after_init == before_init, "unit_init touched no file");
+    CHECK(str(P_FILES) == "lite", "Files: %s", str(P_FILES).c_str());
+    CHECK(result(1) == "lite" && result(2) == "lite" && result(3) == "lite", "no file results");
+    CHECK(std::strcmp(unit_header.name, "SeqProbeLite") == 0 && unit_header.unit_id == 0x5371506CU,
+          "its own name and id");
+    for (int i = 0; i < 24; ++i)
+        CHECK(unit_header.params[i].type != k_unit_param_type_bitmaps, "P%02d is not a bitmap", i);
+#else
     // ── The boot-time file test, before anything runs ───────────────────────
+    (void)before_init;
     CHECK(str(P_FILES) == "rw ok", "Files: %s", str(P_FILES).c_str());
     CHECK(starts(result(0), "b+") && result(0).find(" #1") != std::string::npos, "init: %s", result(0).c_str());
     CHECK(result(1) == "rd ok 1", "read at boot: %s", result(1).c_str());
     CHECK(result(2) == "wr ok", "write at boot: %s", result(2).c_str());
     CHECK(result(3) == "prev ok", "the previous boot's file: %s", result(3).c_str());
     CHECK(starts(result(4), "io "), "file time: %s", result(4).c_str());
+#endif
     CHECK(result(5) == "aud ?", "no audio thread yet: %s", result(5).c_str());
-    CHECK(unit_header.params[P_RESULT].max == 11 && result(12) == "-", "Result has 12 positions");
 
     std::thread audio(render_thread);
 
@@ -116,6 +129,21 @@ int main() {
     CHECK(str(P_FOLLOW_S) == "k1=00", "FollowS before a turn: %s", str(P_FOLLOW_S).c_str());
     unit_set_param_value(0, 5);
     CHECK(str(P_FOLLOW_S) == "k1=05", "FollowS follows knob 1: %s", str(P_FOLLOW_S).c_str());
+#ifdef PROBE_LITE
+    {
+        // Blink and Follow as text: the value and a mark, in opposite phases.
+        const std::string a = str(0, 5), b = str(1, 0);
+        CHECK((a == "05 *" && b == "05 -") || (a == "05 -" && b == "05 *"), "Blink %s, Follow %s",
+              a.c_str(), b.c_str());
+        bool flipped = false;
+        for (int i = 0; i < 12 && !flipped; ++i) {
+            sleep_ms(100);
+            flipped = str(0, 5) != a;
+        }
+        CHECK(flipped, "Blink's mark flips with the unit's clock");
+        CHECK(str(8, 0) == "c01", "Grid as text: %s", str(8, 0).c_str());
+    }
+#else
     {
         uint8_t blink[32], follow[32];
         std::memcpy(blink, unit_get_param_bmp_value(0, 5), 32);
@@ -131,12 +159,13 @@ int main() {
         }
         CHECK(flipped, "Blink's square flips with the unit's clock");
     }
+#endif
 
     // ── A program load: preset, then every knob ─────────────────────────────
     sleep_ms(20);
     unit_load_preset(1);
     for (uint8_t i = 0; i < 24; ++i) unit_set_param_value(i, unit_header.params[i].init);
-    CHECK(starts(str(P_BURST), "24/"), "Burst shows the restore: %s", str(P_BURST).c_str());
+    CHECK(starts(str(P_BURST), "24 in "), "Burst shows the restore: %s", str(P_BURST).c_str());
     CHECK(unit_get_param_value(P_OWNED) == 90, "preset B's answer survives the restore: %d",
           (int)unit_get_param_value(P_OWNED));
     CHECK(str(P_STEP1) == "Kick2", "the restore did not edit step 1: %s", str(P_STEP1).c_str());
@@ -225,8 +254,13 @@ int main() {
 
     // ── A second, late unit_init touches no file ────────────────────────────
     CHECK(unit_init(&desc) == k_unit_err_none, "second unit_init");
-    CHECK(str(P_FILES) == "late", "Files on a late init: %s", str(P_FILES).c_str());
-    CHECK(result(1) == "late" && result(2) == "late", "nothing read or written late");
+#ifdef PROBE_LITE
+    const char* late = "lite";
+#else
+    const char* late = "late";
+#endif
+    CHECK(str(P_FILES) == late, "Files on a late init: %s", str(P_FILES).c_str());
+    CHECK(result(1) == late && result(2) == late, "nothing read or written late");
     CHECK(result(0).find(" #2") != std::string::npos, "init count: %s", result(0).c_str());
     unit_teardown();
     CHECK(snapshot(dir) == after_init, "a late init touched no file");
