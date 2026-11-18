@@ -69,11 +69,11 @@ NOISE_KNOBS = ["Prg", "-", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
 # of what the displaced knob shipped with (the unit reads it from there).
 DISPLACED = {"tom": ("Rel", "kShippedRel"), "plate": ("Rel", "kShippedRel"),
              "world": ("Rel", "kShippedRel"), "snare": ("Ptls", "kShippedPartls"),
-             "loop": ("Rel", "kShippedRel")}
+             "lippa": ("Rel", "kShippedRel"), "filo": ("Ptls", "kShippedPartls")}
 # Standard slots a unit gave to knobs of its own that ship 0 (the identity),
 # whose standard knob plays at a fixed value the unit holds: the column is 0
-# whatever the spec says.  BrcLoop: Bend, BendTm, Snares, Blend, SnrTone.
-FAMILY_ZERO = {"loop": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
+# whatever the spec says.  BrcLippa: Bend, BendTm, Snares, Blend, SnrTone.
+FAMILY_ZERO = {"lippa": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
 
 
 def shipped_table(text, unit, values, at=None):
@@ -126,10 +126,18 @@ VOICING_FIELDS = {
               "jg_spread_ms", "jg_clash_ms",
               "pt_level", "pt_rate", "pt_attack_ms", "pt_hold_ms", "pt_t60_ms", "pt_click_ms",
               "pt_f1_hz", "pt_q1", "pt_f2_hz", "pt_q2", "pt_mix2", "pt_direct"],
-    "loop": ["modal_mix", "onset_ms", "band_mix", "split", "exc_gain",
+    "filo": ["modal_mix", "onset_ms", "band_mix", "split", "pitch_env", "pitch_decay",
+             "pitch_amount", "boom_inc", "boom_env", "boom_decay", "boom_mix",
+             "boom_attack_env", "boom_attack_inc", "wire_mix", "wire_onset_env",
+             "wire_onset_attack", "wire_a1", "wire_a2", "band_b_hz", "band_b_r",
+             "band_c_hz", "band_c_r", "exc_gain", "head_follow", "head_rel_ms", "head_crackle",
+             "bw_level", "bw_hz", "bw_t60_ms", "bw_damp", "bw_burst_ms", "bw_direct",
+             "gourd_hz", "gourd_up_hz", "gourd_up_ms", "gourd_down_hz", "gourd_down_hold_ms",
+             "gourd_down_ms", "gourd_q", "bw_stiff", "bw_stages", "snare_kind"],
+    "lippa": ["modal_mix", "onset_ms", "band_mix", "split", "exc_gain",
              "lp_level", "lp_hz", "lp_t60_ms", "lp_hf", "ap_ratio", "ap_gain", "blend",
              "exc_ratio", "exc_noise", "exc_noise_hz", "exc_pos", "bend", "bend_ms",
-             "sn_level", "sn_hz", "sn_q", "sn_att_ms", "sn_rel_ms"],
+             "sn_level", "sn_hz", "sn_q", "sn_att_ms", "sn_rel_ms", "sn_crackle"],
 }
 VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0, split=0.0,
                         pitch_env=0.0, pitch_decay=0.0, pitch_amount=0.0, boom_inc=0.0,
@@ -306,7 +314,7 @@ def patch_presets(text, unit, cands, first_idx):
 # ---------------------------------------------------------------------------
 UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
                  snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick",
-                 world="brachetti_world", loop="brachetti_loop")
+                 world="brachetti_world", lippa="brachetti_lippa", filo="brachetti_filo")
 
 
 def build(unit_dir, out):
@@ -422,9 +430,47 @@ def band_decay(x, late, tot):
     return np.array(out)
 
 
-def features(x, track=None, late=None):
+def band_kurtosis(x):
+    """How impulsive the 2-8 kHz band is (a spec's "sparsity"): its kurtosis in
+    20 ms frames over 20-200 ms, each frame normalised so the decay envelope
+    does not count.  Gaussian noise reads 3; snare wires rattling against a
+    head read higher (a gut-snared bendir ~10), which band energies cannot see:
+    a crackle and a hiss through the same band-pass have the same spectrum."""
+    from scipy.signal import butter, sosfiltfilt
+    sos = butter(4, [2000, 8000], btype="band", fs=SR, output="sos")
+    y = sosfiltfilt(sos, x)
+    h = int(0.02 * SR)
+    ks = []
+    for a in range(int(0.02 * SR), int(0.2 * SR) - h, h):
+        f = y[a:a + h] - np.mean(y[a:a + h])
+        v = np.mean(f ** 2)
+        if v > 0:
+            ks.append(np.mean(f ** 4) / v ** 2)
+    return float(np.mean(ks)) if ks else 3.0
+
+
+def partial_stretch(x, f0_lo, f0_hi, kmax):
+    """How far partials 2..kmax sit from k times the fundamental, in cents (a
+    spec's "stretch"): a stiff wire's upper partials run sharp, a flexible
+    one's sit on the harmonic series.  The fundamental is the strongest peak
+    in [f0_lo, f0_hi] over 20-500 ms; each partial the strongest peak within
+    5 % of k times it."""
+    s = x[int(0.02 * SR):int(0.5 * SR)]
+    S = np.abs(np.fft.rfft(s * np.hanning(len(s)), 1 << 18))
+    f = np.fft.rfftfreq(1 << 18, 1 / SR)
+    m = (f >= f0_lo) & (f <= f0_hi)
+    f0 = f[m][np.argmax(S[m])]
+    out = []
+    for k in range(2, kmax + 1):
+        mm = (f > 0.95 * k * f0) & (f < 1.05 * k * f0)
+        out.append(1200.0 * np.log2(f[mm][np.argmax(S[mm])] / (k * f0)))
+    return np.array(out)
+
+
+def features(x, track=None, late=None, sparsity=False, stretch=None):
     """late: (start, end) windows, in seconds, for band_decay (a spec's
-    "late"); None leaves it out."""
+    "late"); None leaves it out.  sparsity: band_kurtosis (a spec's
+    "sparsity")."""
     x = x - np.mean(x)
     tot = np.sum(x ** 2) + 1e-20
     ew = np.array([np.sum(x[int(a * SR):int(b * SR)] ** 2) / tot for a, b in WINDOWS])
@@ -444,11 +490,14 @@ def features(x, track=None, late=None):
     pk = f[m][np.argmax(S[m])]
     return dict(ew=ew, bw=np.array(bw), t40=t40(x), pk=pk,
                 track=pitch_track(x, *track) if track else None,
-                bd=band_decay(x, late, tot) if late else None)
+                bd=band_decay(x, late, tot) if late else None,
+                ku=band_kurtosis(x) if sparsity else None,
+                st=partial_stretch(x, *stretch) if stretch else None)
 
 
 def spec_features(x, spec):
-    return features(x, spec.get("track"), spec.get("late"))
+    return features(x, spec.get("track"), spec.get("late"), spec.get("sparsity", False),
+                    spec.get("stretch"))
 
 
 def score(fa, fb, w):
@@ -463,8 +512,15 @@ def score(fa, fb, w):
     d_d = 0.0
     if fa.get("bd") is not None and fb.get("bd") is not None:
         d_d = np.mean(np.abs(fa["bd"] - fb["bd"]))   # decades
+    d_k = 0.0
+    if fa.get("ku") is not None and fb.get("ku") is not None:
+        d_k = abs(np.log(fa["ku"] / fb["ku"]))
+    d_s = 0.0
+    if fa.get("st") is not None and fb.get("st") is not None:
+        d_s = np.mean(np.abs(fa["st"] - fb["st"])) / 100.0   # in semitones
     return (w.get("e", 1.0) * d_e + w.get("b", 1.0) * d_b + w.get("t", 0.6) * d_t
-            + w.get("p", 1.0) * d_p + w.get("g", 0.15) * d_g + w.get("d", 0.5) * d_d)
+            + w.get("p", 1.0) * d_p + w.get("g", 0.15) * d_g + w.get("d", 0.5) * d_d
+            + w.get("k", 1.0) * d_k + w.get("s", 2.0) * d_s)
 
 
 def describe(fa, fb):

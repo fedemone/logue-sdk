@@ -1,6 +1,6 @@
-# Brachetti Loop (`BrcLoop`)
+# Brachetti Lippa (`BrcLippa`)
 
-> **Disclaimer:** Brachetti Loop is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
+> **Disclaimer:** Brachetti Lippa is an unofficial, independently developed unit, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from its use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
 The tenth unit of the [Brachetti family](../tools/brachetti_equiv/README.md),
 and its first drum made from a **delay loop** rather than from modes: a
@@ -21,13 +21,13 @@ recordings.
 
 | | |
 |---|---|
-| Unit name on the drumlogue | `BrcLoop` |
+| Unit name on the drumlogue | `BrcLippa` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724C70` ('BrLp') |
 | Engine | Karplus-Strong loop + Schroeder all-pass, tension glide, snares on the head's motion |
 | Presets | 8 |
 | Knobs | 24 (the modal units' layout, six slots the family's own) |
-| ARM size (cross-built, `arm_size.sh`) | .text 19060 · .rodata 2144 · .data.rel.ro 80 · .data 4 · .bss 51776 |
-| CPU (`arm_cpu.sh`) | 818.8 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself) |
+| ARM size (cross-built, `arm_size.sh`) | .text 19492 · .rodata 2176 · .data.rel.ro 80 · .data 4 · .bss 51824 |
+| CPU (`arm_cpu.sh`) | 857.4 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself) |
 
 ## Presets
 
@@ -108,15 +108,69 @@ loop drum (`loop::Drum` in `voice.h`):
   scales with velocity.  A fast, deep glide is also a chirp that sharpens the
   attack, which the article points out.
 - **The snares** (the article's).  An envelope follower (attack `sn_att_ms`,
-  release `sn_rel_ms`) on the loop's output sets the level of white noise
+  release `sn_rel_ms`) on the loop's output sets the level of a noise
   through a two-pole band-pass (`sn_hz`, `sn_q`; 3 kHz in the article): the
-  wires rattle as long as, and as hard as, the head moves.  (BrcSnare's wires
-  ring on the exciter's noise burst instead; BrcWorld's balafon `Buzz` is
-  the same idea as this, gated per sample by the bank's motion.)
+  wires rattle as long as, and as hard as, the head moves.  The noise is
+  white blended towards `brc::crackle` (`sn_crackle`): mymembrane~'s, see
+  below.  (BrcSnare's wires ring on the exciter's noise burst instead;
+  BrcWorld's balafon `Buzz` is the same idea as this, gated per sample by
+  the bank's motion; BrcFilo puts BrcSnare's wires on the head.)
 - **The Karplus-Strong drum blend** (Karplus & Strong 1983, not in the
   article).  With probability `b` a trip round the loop flips sign: at
   `b = 0.5` the loop's tone turns into a pitched noise burst, Karplus and
   Strong's own drum.  `blend` in the table, and the `Blend` knob adds to it.
+
+### What the Pd code adds: mymembrane~
+
+The article describes `[mymembrane~]`; its patch, in
+[pd-mkmr](https://github.com/MikeMorenoDSP/pd-mkmr) (`instruments/mymembrane~.pd`,
+BSD-3-Clause), has the details the article leaves out.  Read object by
+object:
+
+| | mymembrane~ | BrcLippa |
+|---|---|---|
+| loop | `vd~` → `hip~ 20` → × feedback → `tanh` → + excitation → all-pass → `lop~`; the delay set from the frequency alone, so the all-pass and filters pull the pitch | delay → loss filter → DC blocker → gain → all-pass; the delay solved so the note is exact (Tuning) |
+| loss | `lop~` at f · 2^(6·damping) / 2, a fixed coefficient per pitch | the one-pole designed from two T60s (above) |
+| all-pass | delay 1 / apf (the demo's four instruments: 0.6-1.6 periods), gain −1 .. 1 | `ap_ratio` (presets 0.16-0.44), gain ±0.95 |
+| excitation | one sine cycle (`vline~` → `cos~` of the ramp − 0.25), plus `noise~` (re-seeded identically at every strike) through a low-pass at f · 2^(3·velocity) / 3, under a rectangular window one period long | one sine cycle and Hann-windowed noise, the noise's corner a preset value |
+| pitch envelope | the delay's frequency × (1 + (2 + velocity) · env¹⁰), the all-pass's × (1 + (1 + velocity) · env²⁰), env a ramp 1 → 0 over 80 ms: the strike starts 3-4× the note and falls in ~10 ms — an attack chirp | `bend` (≤ 35 % on the presets) falling with `bend_ms` |
+| loop boost | × (1 + 0.7·√velocity · env²⁰) during the chirp | — |
+| snares | `noise~` → `pow~ 50` → `hip~ 100` → `bp~ 3000 1`, × the RMS envelope (`env~`) of the drum | the band-pass on white noise blended with the same crackle (`sn_crackle`), × a peak follower |
+| retrigger | the output ramps to 0 in 1 ms, the delays are cleared, the strike follows 2 ms later | a ringing loop keeps its lines (below) |
+
+Two of these came into BrcLippa:
+
+- **The crackle.**  `pow~ 50` of uniform noise is near 0 but for rare spikes
+  where |x| is near 1: a sparse rattle, where white noise is a hiss.  It is
+  `brc::crackle` in `brachetti_common/noise.h` (its mean taken off and its
+  RMS put on white noise's, so a blend keeps the level), and `sn_crackle`
+  blends it in.  The band energies the voicing compares cannot tell crackle
+  from hiss — the same band-pass, the same spectrum — so the voicing gained a
+  measure of it, the kurtosis of the 2-8 kHz band (How the presets were
+  voiced): the recordings' snares read 3.45 (Snare), 3.46 (SnrHvy) and 9.71
+  (Bendir's gut snares) against white noise's 3; with `sn_crackle` 0.29, 0.30
+  and 0.85 the presets read 3.45, 3.47 and 9.71.
+- **Restrikes without a click.**  A voice slot struck again while its loop
+  rings (Poly reached, or a long ring) used to clear the delay lines: the old
+  ring stopped dead.  mymembrane~ fades it out over 1 ms first.  BrcLippa
+  keeps it instead (`loop::Drum::Motion`): the lines, their positions and the
+  filters' states stay, and the new strike adds to the head's motion, as a
+  second stroke on a real drum does.  The glide would jump both delays at the
+  new strike — a jump in the read position inside a ringing waveform — so on
+  a restrike its factor slews over ~1 ms from where the old ring had it.
+  Measured (Poly 1, a strike at velocity 127, a second at 20 after 300 ms; the
+  largest sample step in the first three samples of the second strike, against
+  the same strike on a silent voice): the step is now the strike's own attack
+  (FlrTom 0.097 against 0.094, Kick 0.123 against 0.122, Bendir 0.251 against
+  0.251); before, a cut ring added to it (Surdo 0.140 → 0.014, RackTom 0.033 →
+  0.012, Taiko 0.020 → 0.013).  A fresh strike is unchanged.
+
+The rest stays as it was, on purpose: the exact tuning (mymembrane~'s pitch
+moves with every filter setting), the two-T60 loss, and a glide of tension
+rather than a 3-4× chirp (BrcLippa's presets are voiced after real drums).
+`Bend` at its top starts a full-velocity strike 1.65× (RackTom) to 2.7×
+(Kick) the note, and `BendTm` at its bottom makes the fall 4× faster: near
+mymembrane~'s chirp.
 
 ### Tuning
 
@@ -145,7 +199,7 @@ one near the note read up to 40 cents off on low notes.
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all ten Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all eleven Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
 
 | Page | | Knobs |
 |---|---|---|
@@ -176,7 +230,7 @@ Every mapping is REFERENCE-ANCHORED, as on every Brachetti unit: a factor of
 exactly 1 (or an offset of exactly 0) at the preset's shipped value, so a
 preset plays as voiced until a knob moves.  The standard knobs keep the
 meaning they have on the other modal units and act on the loop with it; six
-slots are BrcLoop's own (they ship 0):
+slots are BrcLippa's own (they ship 0):
 
 | Knob | On the loop | Up turns it | Range |
 |---|---|---|---|
@@ -217,15 +271,15 @@ excitation too.  `Mterl` and `ApDelay` got steeper curves (they moved
 under 1.5 dB on half the presets).  As shipped:
 
 ```
-=== brachetti_loop   (mean |dB| change at the knob's ends; '.' < 0.3, ':' < 1.5)
+=== brachetti_lippa   (mean |dB| change at the knob's ends; '.' < 0.3, ':' < 1.5)
            Pitch    Poly Velocit MlltRes MlltSti    Bend VlMllSt  BendTm  Snares    Dkay   Punch   Mterl  HitPos  Inharm ApDelay   NzMix   Blend SnrTone NzFltFr
 RackTom     15.9    :0.4     9.3    10.4     5.5     2.4     6.0    :0.4     7.3    16.8     6.7     2.4     3.9     6.4    :1.3     6.5    18.0       .     4.9
 FlrTom      18.5    :0.5    10.5    11.5     5.9     2.9     7.7    :1.5    10.7    20.1     7.7     4.5     6.5     3.5     3.7     5.3    22.2       .     3.2
-Snare        8.5       .    10.0    11.4     3.6    :0.7     7.2       .     6.6    16.3     7.5    :0.9     3.1     6.5       .       .    17.4     2.8       .
-SnrHvy       5.2       .     9.9    11.3     2.2     2.0     4.3       .     6.0    10.2     7.4    :1.2     3.0     3.2     4.3     3.6     9.8     3.1    :0.7
+Snare        6.7       .    10.0    11.4     3.2    :0.7     6.3       .     6.1    17.2     7.5    :0.5     3.1     6.8       .       .    18.1     2.8       .
+SnrHvy       4.9       .     9.9    11.3     2.1     2.0     4.3       .     5.7    10.2     7.5    :1.2     2.8     3.0     4.3     3.4     9.9     3.2    :0.6
 Kick        11.1    :0.3    10.3    10.2     6.8     3.4     6.0    :1.3     7.9    14.8     6.5     3.4     2.2     5.8    :0.9     6.2    15.3       .     4.6
 Taiko       16.5    :0.6    12.5    14.4     5.0     3.2     6.4    :0.9     5.8    28.4    10.7     3.1     3.8     4.5    :1.5     8.4    27.8       .    12.6
-Bendir       6.0    :0.5     9.4    10.5     3.6    :0.6     5.1       .     7.2    11.6     6.8     1.9     2.6     4.5     4.6     5.0    11.9     2.0     2.0
+Bendir       6.3    :0.6     9.0    10.1     3.6    :0.7     5.1       .     6.5    10.3     6.5     2.4     2.5     4.5     4.7     5.2    10.9     1.8     2.3
 Surdo       11.9    :0.4     9.8    10.9     3.9     2.2     6.1       .    13.0    15.0     7.2     4.2     1.9     2.6     1.8     6.0    17.6       .     4.1
 ```
 
@@ -239,13 +293,13 @@ gain it ships near 0 (raise `Inharm` first).
 
 As BrcWorld's and BrcTom's added presets:
 [`match_samples.py`](../tools/brachetti_equiv/match_samples.py) with the
-`loop` specs of [`match_specs.py`](../tools/brachetti_equiv/match_specs.py)
+`lippa` specs of [`match_specs.py`](../tools/brachetti_equiv/match_specs.py)
 walks each preset's free values downhill against its recording (energy over
 time, band balance over time, 40 dB decay, strongest partial), comparing the
 voice before the master limiter; trims by the family's body-target method
 (`preset_probe calib` reprints them).  Each preset starts with its loop at
 the recording's strongest partial (its root the nearest note below) and its
-T60 from the recording's decay.  Two changes to the tool came with it, both
+T60 from the recording's decay.  Three changes to the tool came with it, all
 inert for the other units:
 
 - **References at 44.1 kHz** are resampled to 48 kHz (several of the
@@ -260,10 +314,15 @@ inert for the other units:
   first search used that to open the loss filter: the highs rang on for a
   second like a steel string's, which the recordings' do not.  (The second
   half of the fix was the loss filter itself: see "The loop drum".)
+- **A spec may ask for the snares' kurtosis** (`sparsity`, `band_kurtosis`):
+  the 2-8 kHz band in 20 ms frames over 20-200 ms, each frame normalised, its
+  kurtosis compared as a log ratio (weight 1).  Without it the search cannot
+  set `sn_crackle` (see "What the Pd code adds"); the lippa specs turn it on
+  where a preset has snares.
 
 ```
 BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti \
-    python3 match_samples.py match_specs.py loop --state loop.json
+    python3 match_samples.py match_specs.py lippa --state loop.json
 ```
 
 Measured, preset vs recording (velocity 110, sequencer gate):
@@ -272,16 +331,16 @@ Measured, preset vs recording (velocity 110, sequencer gate):
 |---|---:|---:|---:|
 | RackTom | 1.011 | 515 / 420 | 241 / 239 |
 | FlrTom | 0.849 | 905 / 900 | 167 / 167 |
-| Snare | 0.986 | 225 / 225 | 264 / 264 |
-| SnrHvy | 0.730 | 190 / 190 | 127 / 127 |
+| Snare | 0.993 | 225 / 225 | 264 / 264 |
+| SnrHvy | 0.737 | 190 / 190 | 127 / 127 |
 | Kick | 0.832 | 400 / 360 | 80 / 79 |
 | Taiko | 0.890 | 1080 / 1080 | 90 / 89 |
-| Bendir | 0.698 | 240 / 240 | 101 / 202 |
+| Bendir | 0.703 | 240 / 240 | 101 / 202 |
 | Surdo | 0.342 | 625 / 625 | 58 / 58 |
 
-The score includes the band-decay term (above); without it the same
-presets score 0.22-0.86, where BrcWorld's measure 0.41-2.50 against their
-samples.  Bendir's loop sits at 101 Hz, between the recording's doum
+The score includes the band-decay term (above), and on the three presets
+with snares the snares' kurtosis (`sparsity`); without them the same presets
+score 0.22-0.86, where BrcWorld's measure 0.41-2.50 against their samples.  Bendir's loop sits at 101 Hz, between the recording's doum
 (87 Hz) and half its strongest partial (202 Hz); the score counts an octave
 as a near-miss.  Snare and SnrHvy match their decay and pitch but not their
 energy over time (e30: 71 % in the first 30 ms against the recording's
@@ -292,18 +351,18 @@ dense, noise-like cloud; the loop's are discrete partials — one all-pass
 spreads them, but a membrane's mode density grows with frequency and a
 loop's does not.  The search uses the excitation's noise, the snares and the
 two-T60 loss filter to make up for it in the first 100 ms; after that a
-BrcLoop drum is a cleaner, more tonal drum than the recording.  That is the
+BrcLippa drum is a cleaner, more tonal drum than the recording.  That is the
 character of the technique, and where it is useful beside the modal units:
 tuned toms and kicks that glide, ring clean and cost little.
 
 ## Build
 
 ```
-build drumlogue/brachetti_loop
+build drumlogue/brachetti_lippa
 ```
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
-The product is `brachetti_loop.drmlgunit`; copy it to the drumlogue's
+The product is `brachetti_lippa.drmlgunit`; copy it to the drumlogue's
 `Units/Synths` folder.  Not yet tested on hardware.
 
 ## Verification
@@ -317,10 +376,17 @@ There is no original to compare with.  What was checked on the host:
   AllNoteOff — with every output sample finite and within the limiter's
   ±0.99, and every loop's state bounded.
 - **Identity at the anchors**: re-voicing the knob slots (the knob review)
-  left every preset's score and trim unchanged to the last digit.
-- **Units loaded together**: `multi_load.sh` (all ten units, 457,040 display
-  strings, identical alone and together); `arm_size.sh` finds no unique
-  symbol.
+  left every preset's score and trim unchanged to the last digit; adding the
+  crackle and the restrike left every preset's single-strike render
+  byte-identical until the snares were revoiced.
+- **Restrikes**: see "What the Pd code adds".
+- **Units loaded together**: `multi_load.sh` (all eleven units, 503,100
+  display strings, identical alone and together); `arm_size.sh` finds no
+  unique symbol.
+- **Its unit id.**  The first commit of this unit (as BrcLoop) carried
+  BrcWorld's `unit_id` ('BrWd'), left over from the header it started from:
+  on a drumlogue the two would have collided.  It is 'BrLp' now, and
+  `multi_load.sh` fails any set of units with a duplicated id.
 - `lib_uses.py --check`.
 - **The other units**: the library changes that came with this unit are
   comments; `run_equiv.sh` finds the eight split units IDENTICAL to the
@@ -372,17 +438,48 @@ Shared with the other units: [`brachetti_common`](../brachetti_common/)
 - Universal Audio, "Allpass Filters" (blog), cited by the article for the
   all-pass.
 
-## What the article could give the other units
+pd-mkmr is distributed under the 3-Clause BSD License; the crackle
+(`brc::crackle`) is taken from `mymembrane~`'s snare layer, and its
+conditions apply to that part:
 
-Considered, not done (each would change a unit that is voiced and verified):
+> Redistribution and use in source and binary forms, with or without
+> modification, are permitted provided that the following conditions are met:
+> 1. Redistributions of source code must retain the above copyright notice,
+> this list of conditions and the following disclaimer.  2. Redistributions in
+> binary form must reproduce the above copyright notice, this list of
+> conditions and the following disclaimer in the documentation and/or other
+> materials provided with the distribution.  3. Neither the name of the
+> copyright holder nor the names of its contributors may be used to endorse or
+> promote products derived from this software without specific prior written
+> permission.
+>
+> THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+> AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+> IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+> ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+> LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+> CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+> SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+> INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+> CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+> ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+> POSSIBILITY OF SUCH DAMAGE.
 
-- **BrcSnare**: its wires ring on the exciter's noise burst, so they stop
-  when the burst does; the article's (and BrcLoop's) wires follow the head.
-  A head-following drive would have to be off by default to keep its
-  presets bit-identical to the original.
-- **BrcWorld's `Wire`** (the berimbau) is a Karplus-Strong loop: the same
-  all-pass would give the steel wire its stiffness (a slightly sharp
-  upper series) at the cost of one more delay line per voice.
-- **BrcTom / BrcKick glides**: they bend a modal bank; the loop's glide bends
-  every partial at once for the price of one.  The kick's `Dive` already
-  does what a deep loop glide would.
+(The license file in pd-mkmr names no copyright holder; the patch's help file
+reads "mymembrane~ v1, Miguel Moreno 2019".)
+
+## What the article gave the other units
+
+Two of the ideas above would improve units that are bit-identical to the
+original (BrcSnare) or checked against their own renders (BrcWorld), so they
+went into a family of their own, [BrcFilo](../brachetti_filo/README.md),
+which copies those presets and leaves both units as they are:
+
+- **BrcSnare's wires on the head**, with the crackle.
+- **BrcWorld's berimbau wire made stiff** (all-passes in its loop, as the
+  Pelle e Legno berimbau samples' sharp upper partials ask), and tuned through
+  its loss filter.
+
+Not done: **BrcTom / BrcKick glides** bend a modal bank; the loop's glide
+bends every partial at once for the price of one, but the kick's `Dive`
+already does what a deep loop glide would.

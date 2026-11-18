@@ -507,14 +507,14 @@ SPECS["world"] = [
 ]
 
 
-# ── BrcLoop: drums from a delay loop ─────────────────────────────────────────
-# The loop drum of ../../brachetti_loop/voice.h: a Karplus-Strong loop with a
+# ── BrcLippa: drums from a delay loop ─────────────────────────────────────────
+# The loop drum of ../../brachetti_lippa/voice.h: a Karplus-Strong loop with a
 # Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums with
 # karplus-strong synthesis" (2022).  The kit pieces are voiced after the
 # original brachetti's reference recordings, on the original_brachetti
 # branch; point BRACHETTI_ORIG at that unit as for run_equiv.sh:
 #   git worktree add /tmp/brachetti_orig origin/original_brachetti
-#   BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti python3 match_samples.py match_specs.py loop
+#   BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti python3 match_samples.py match_specs.py lippa
 # The frame drum and the surdo are voiced after Pelle e Legno samples.  Some of
 # the recordings are 44.1 kHz: match_samples.py resamples a reference to 48 kHz.
 ORIG = os.path.join(os.environ.get("BRACHETTI_ORIG", "/tmp/brachetti_orig/platform/drumlogue/brachetti"),
@@ -540,20 +540,25 @@ def loop_free(hz, t60):
 
 
 SNARES_FREE = dict(sn_level=(0.05, 8.0, "log"), sn_hz=(1500, 9000, "log"), sn_q=(0.7, 6.0, "log"),
-                   sn_rel_ms=(5, 200, "log"), blend=(0.0, 0.5, "lin"))
+                   sn_rel_ms=(5, 200, "log"), blend=(0.0, 0.5, "lin"), sn_crackle=(0.0, 1.0, "lin"))
 
 
-def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=((0.3, 1.0),)):
+def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=((0.3, 1.0),),
+              sparsity=None):
     # late: each band's decay is also compared, from the first 100 ms to
     # 300 ms - 1 s (match_samples band_decay): a loop with too little loss
     # rings its highs on long after a real head's have died.  Cut short where
     # a recording is.
-    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late or []),
+    # sparsity: the snares' rattle is compared too (match_samples
+    # band_kurtosis): on by default where the preset has snares.
+    if sparsity is None:
+        sparsity = (extra or {}).get("sn_level", 0.0) > 0.0
+    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late or []), sparsity=sparsity,
                 values=merge(LOOP, dict(Root=root, lp_hz=hz, lp_t60_ms=t60), extra or {}),
                 free=merge(loop_free(hz, t60), free or {}))
 
 
-SPECS["loop"] = [
+SPECS["lippa"] = [
     loop_spec("RackTom", "k_RackTom", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
               "rack tom: a 12-inch tom, close-miked", 58, 240.0, 600.0),
     loop_spec("FlrTom", "k_FloorTom", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
@@ -576,4 +581,107 @@ SPECS["loop"] = [
               late=((0.2, 0.42),)),   # the recording is 0.43 s
     loop_spec("Surdo", "k_Surdo", os.path.join(P, "027_SurdoOpen.wav"),
               "surdo: the samba bass drum, open", 34, 58.0, 900.0),
+]
+
+
+# ── BrcFilo: the wires ───────────────────────────────────────────────────────
+# BrcSnare's eight snares and BrcWorld's two berimbaus, copied as they are
+# (../../brachetti_filo/README.md: bit-identical with the new layers off), so
+# a spec starts from the preset's own rows, read from presets.h, and frees only
+# what BrcFilo adds: the wires on the head (head_follow, head_rel_ms,
+# head_crackle) on the snares, the wire's stiffness (bw_stiff, bw_stages) on
+# the berimbaus.  Every other value stays as voiced.
+import re as _re
+
+_KNOB_COLS = ["Prg", "Root", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
+              "MlRs", "MlSt", "VlRs", "VlSt", "Ptls", "Mdl", "Dky", "Rel",
+              "Mtr", "Hit", "InHm", "TbRd", "NzMx", "NzRs", "NzFl", "NzFq"]
+_MODAL_COLS = ["r2", "r3", "r4", "t1", "t2", "t3", "t4", "mix", "e1", "e2", "e3", "e4",
+               "count", "r5", "r6", "e5", "e6"]
+
+
+def _cvalue(tok):
+    """A C initialiser to a number: 1.5f, 3, brc::phase_inc(175.0f)."""
+    tok = tok.strip()
+    m = _re.match(r"brc::phase_inc\((.*)\)$", tok)
+    if m:
+        return 2.0 * math.pi * _cvalue(m.group(1)) / SR
+    return float(tok.rstrip("fF"))
+
+
+def _rows(block):
+    block = _re.sub(r"/\*.*?\*/", "", block, flags=_re.S)
+    block = _re.sub(r"//[^\n]*", "", block)
+    return [[_cvalue(x) for x in r.split(",") if x.strip()] for r in _re.findall(r"\{([^{}]*)\}", block)]
+
+
+def unit_rows(unit_dir, enum):
+    """A preset's values as its unit ships them: the knob row, the modal bank,
+    the voicing (in VOICING_FIELDS order), the displaced Partls."""
+    text = open(os.path.join(unit_dir, "presets.h")).read()
+    enums = [l.strip().split(",")[0].split("=")[0].strip()
+             for l in text[text.index("enum Preset"):text.index("    kNumPresets")].splitlines()
+             if l.strip().startswith("k_")]
+    i = enums.index(enum)
+
+    def table(marker):
+        a = text.index(marker)
+        a = text.index("{", text.index("=", a))
+        return _rows(text[a + 1:text.index("\n};", a)])
+
+    import importlib.util as _iu
+    _sp = _iu.spec_from_file_location("_ms", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                          "match_samples.py"))
+    _ms = _iu.module_from_spec(_sp)
+    _sp.loader.exec_module(_ms)
+    v = dict(zip(_KNOB_COLS, table("kPresetKnobs[kNumPresets]")[i]))
+    v.update(zip(_MODAL_COLS, table("kModalConfigs[kNumPresets]")[i]))
+    v.update(zip(_ms.VOICING_FIELDS["filo"], table("kVoicing[kNumPresets]")[i]))
+    m = _re.search(r"kShippedPartls\[kNumPresets\] = \{([^}]*)\}", text)
+    v["Ptls"] = float(m.group(1).split(",")[i])
+    return v
+
+
+FILO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "brachetti_filo")
+HEAD_FREE = dict(head_follow=(0.01, 100.0, "log"), head_rel_ms=(2.0, 300.0, "log"),
+                 head_crackle=(0.0, 1.0, "lin"))
+
+
+def filo_snare(name, enum, ref, note, late):
+    return dict(name=name, enum=enum, ref=ref, note=note, sparsity=True, late=[late],
+                values=merge(unit_rows(FILO_DIR, enum), dict(head_follow=1.0, head_rel_ms=20.0)),
+                free=HEAD_FREE)
+
+
+def filo_berimbau(name, enum, ref, note, f0):
+    # The stiffness's score landscape is narrow (two stages at 0.80 and at
+    # 0.90 both miss the stretch that 0.87 matches; the search's first steps
+    # jump over it), so it starts from the best of a grid of stages 2-4 x
+    # coefficient 0.5-0.9: two stages at 0.87 on both berimbaus.
+    return dict(name=name, enum=enum, ref=ref, note=note, stretch=(f0 * 0.9, f0 * 1.1, 12),
+                values=merge(unit_rows(FILO_DIR, enum), dict(bw_stiff=0.87, bw_stages=2)),
+                free=dict(bw_stiff=(0.75, 0.9, "lin"), bw_stages=(1, 4, "int")))
+
+
+SPECS["filo"] = [
+    filo_snare("AcSnre", "k_AcSnare", os.path.join(ORIG, "acoustic-snare.wav"),
+               "acoustic snare, the wires on the head", (0.1, 0.4)),
+    filo_snare("MrchSnr", "k_MarchSnare", os.path.join(ORIG, "Marching-Snare-Drum-A#-minor.wav"),
+               "marching snare, the wires on the head", (0.1, 0.4)),
+    filo_snare("BrshSnr", "k_BrushSnare", os.path.join(ORIG, "snare_brush_medium.wav"),
+               "brushed snare, the wires on the head", (0.1, 0.3)),
+    filo_snare("RimShot", "k_RimShot", os.path.join(ORIG, "rimshot-snare.wav"),
+               "rimshot, the wires on the head", (0.06, 0.2)),
+    filo_snare("BndDoum", "k_BendirDoum", os.path.join(P, "020_BendirDoum.wav"),
+               "bendir centre, its gut snares on the head", (0.1, 0.4)),
+    filo_snare("BndTek", "k_BendirTek", os.path.join(P, "021_BendirTek.wav"),
+               "bendir edge, its gut snares on the head", (0.06, 0.24)),
+    filo_snare("CajBass", "k_CajonBass", os.path.join(P, "023_CajonBass.wav"),
+               "cajon bass, its wires on the tapa", (0.06, 0.22)),
+    filo_snare("CajSlap", "k_CajonSlap", os.path.join(P, "024_CajonSlap.wav"),
+               "cajon slap, its wires on the tapa", (0.06, 0.19)),
+    filo_berimbau("Berimbu", "k_Berimbau", os.path.join(P, "060_Berimbau.wav"),
+                  "berimbau, the steel wire stiff", 117.0),
+    filo_berimbau("BerimHi", "k_BerimbauHi", os.path.join(P, "061_BerimbauHi.wav"),
+                  "berimbau with the coin, the wire stiff", 131.3),
 ]

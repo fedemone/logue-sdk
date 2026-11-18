@@ -1,5 +1,5 @@
 #pragma once
-// Brachetti Loop — the presets: what each one plays and how it is voiced.
+// Brachetti Lippa — the presets: what each one plays and how it is voiced.
 #include <cstdint>
 
 // From brachetti_common (its README.md indexes every helper):
@@ -17,7 +17,7 @@
 // The knob layout is the modal engine's (brc::ModalLayout); header.c MUST
 // match it slot for slot.
 using Param = brc::ModalLayout;
-// Six standard slots carry knobs of BrcLoop's own: the knobs they displaced
+// Six standard slots carry knobs of BrcLippa's own: the knobs they displaced
 // acted on parts of the voice these presets do not use (the bank's mode count
 // and template, the noise burst's filter) or were a second ring length.  Each
 // loads with the preset and ships 0, where its mapping is the identity.  Punch
@@ -160,18 +160,20 @@ struct Voicing {
     // (0.1 = 10 %), and its time constant.
     float bend, bend_ms;
     // The snares: their level, the band-pass the noise rings through (3 kHz,
-    // Q 2 in the article), the follower's attack and release.
-    float sn_level, sn_hz, sn_q, sn_att_ms, sn_rel_ms;
+    // Q 2 in the article; 3 kHz, Q 1 in mymembrane~), the follower's attack
+    // and release, and how far their noise is the sparse crackle of
+    // mymembrane~ (0 = white noise, 1 = all crackle).
+    float sn_level, sn_hz, sn_q, sn_att_ms, sn_rel_ms, sn_crackle;
 };
 static const Voicing kVoicing[kNumPresets] = {
-    /* k_RackTom      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 240.0f, 821.401454f, 0.393288363f, 0.1625f, 0.185742187f, 0.0f, 1.04427378f, 0.828125f, 2020.41268f, 0.109375f, 0.088671875f, 42.685616f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f},
-    /* k_FloorTom     */{0.0f, 0.0f, 0.0f, 0.0f, 0.0625f, 1.0f, 166.098104f, 1706.27112f, 0.11660917f, 0.4375f, 0.553125f, 0.0f, 0.978572062f, 0.5f, 4430.47844f, 0.0458984375f, 0.1984375f, 39.1428825f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f},
-    /* k_Snare        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 264.0f, 360.647019f, 0.115665812f, 0.238125f, -0.0375f, 0.0f, 0.707106781f, 0.03125f, 1600.7106f, 0.0f, 0.0f, 40.0f, 0.60762368f, 2263.74664f, 0.7f, 1.0f, 6.87753032f},
-    /* k_SnareHeavy   */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 127.0f, 367.695526f, 0.126134462f, 0.334160156f, 0.29296875f, 0.0f, 1.09050773f, 1.96484375f, 1317.18912f, 0.0f, 0.04015625f, 48.6098944f, 0.707106781f, 4196.93902f, 1.76578844f, 1.0f, 29.3571619f},
-    /* k_Kick         */{0.0f, 0.0f, 0.0f, 0.0f, 0.068359375f, 1.0f, 79.0f, 713.766576f, 0.380715287f, 0.3f, 0.0754394531f, 0.0f, 0.978572062f, 0.5f, 1268.1936f, 0.09765625f, 0.348828125f, 40.0f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f},
-    /* k_Taiko        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 90.0286297f, 1783.81067f, 0.626564269f, 0.3f, -0.0515625f, 0.0f, 0.68080451f, 1.625f, 2536.3872f, 0.0625f, 0.19953125f, 15.5058488f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f},
-    /* k_Bendir       */{0.0f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 100.870445f, 494.974747f, 0.115665812f, 0.2725f, 0.525f, 0.0f, 0.840896415f, 1.7421875f, 809.070598f, 0.0f, 0.03984375f, 20.0f, 0.15f, 3567.62135f, 0.868666918f, 1.0f, 15.1633393f},
-    /* k_Surdo        */{0.0f, 0.0f, 0.0f, 0.0f, 0.01171875f, 1.0f, 58.0f, 1280.13653f, 0.226374664f, 0.41859375f, 0.3f, 0.0f, 0.703287997f, 0.171875f, 3491.17458f, 0.0f, 0.051171875f, 71.0150597f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f},
+    /* k_RackTom      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 240.0f, 821.401454f, 0.393288363f, 0.1625f, 0.185742187f, 0.0f, 1.04427378f, 0.828125f, 2020.41268f, 0.109375f, 0.088671875f, 42.685616f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
+    /* k_FloorTom     */{0.0f, 0.0f, 0.0f, 0.0f, 0.0625f, 1.0f, 166.098104f, 1706.27112f, 0.11660917f, 0.4375f, 0.553125f, 0.0f, 0.978572062f, 0.5f, 4430.47844f, 0.0458984375f, 0.1984375f, 39.1428825f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
+    /* k_Snare        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 264.0f, 352.919097f, 0.182287104f, 0.238125f, -0.0375f, 0.0f, 0.707106781f, 0.0f, 1600.7106f, 0.0f, 0.0f, 40.0f, 0.978572062f, 2075.86482f, 0.7f, 1.0f, 5.0f, 0.2921875f},
+    /* k_SnareHeavy   */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 127.0f, 367.695526f, 0.115665812f, 0.334160156f, 0.29296875f, 0.0f, 1.09050773f, 2.24609375f, 931.393359f, 0.0f, 0.04015625f, 48.6098944f, 0.917004043f, 4019.00257f, 1.61923514f, 1.0f, 29.3571619f, 0.3f},
+    /* k_Kick         */{0.0f, 0.0f, 0.0f, 0.0f, 0.068359375f, 1.0f, 79.0f, 713.766576f, 0.380715287f, 0.3f, 0.0754394531f, 0.0f, 0.978572062f, 0.5f, 1268.1936f, 0.09765625f, 0.348828125f, 40.0f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
+    /* k_Taiko        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 90.0286297f, 1783.81067f, 0.626564269f, 0.3f, -0.0515625f, 0.0f, 0.68080451f, 1.625f, 2536.3872f, 0.0625f, 0.19953125f, 15.5058488f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
+    /* k_Bendir       */{0.0f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 100.870445f, 494.974747f, 0.115665812f, 0.2725f, 0.525f, 0.0f, 0.840896415f, 1.7421875f, 809.070598f, 0.0f, 0.03984375f, 20.8854756f, 0.126134462f, 4831.471f, 0.989949494f, 1.0f, 21.4442001f, 0.846875f},
+    /* k_Surdo        */{0.0f, 0.0f, 0.0f, 0.0f, 0.01171875f, 1.0f, 58.0f, 1280.13653f, 0.226374664f, 0.41859375f, 0.3f, 0.0f, 0.703287997f, 0.171875f, 3491.17458f, 0.0f, 0.051171875f, 71.0150597f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f},
 };
 
 // Output trim: gain-stages each preset into the master limiter, calibrated as
@@ -181,10 +183,10 @@ static const Voicing kVoicing[kNumPresets] = {
 static const float kOutTrim[kNumPresets] = {
     /* 0  RackTom */ 0.68381f,
     /* 1  FlrTom  */ 0.94044f,
-    /* 2  Snare   */ 0.51714f,
-    /* 3  SnrHvy  */ 0.38502f,
+    /* 2  Snare   */ 0.48404f,
+    /* 3  SnrHvy  */ 0.44734f,
     /* 4  Kick    */ 0.69208f,
     /* 5  Taiko   */ 0.60808f,
-    /* 6  Bendir  */ 0.52027f,
+    /* 6  Bendir  */ 0.54714f,
     /* 7  Surdo   */ 0.62087f,
 };

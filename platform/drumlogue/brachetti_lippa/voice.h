@@ -1,5 +1,5 @@
 #pragma once
-// Brachetti Loop — one voice: the exciter (mallet + noise burst, from
+// Brachetti Lippa — one voice: the exciter (mallet + noise burst, from
 // VoiceBase), the modal bank it can strike, and the family's own layer, the
 // LOOP DRUM: a Karplus-Strong delay loop made into a drum head by an all-pass
 // filter inside it.
@@ -37,7 +37,7 @@
 // From brachetti_common (its README.md indexes every helper):
 //   dsp_math.h       kSilence
 //   modal_bank.h     ModalBank
-//   noise.h          FastNoise
+//   noise.h          FastNoise, crackle
 //   small_filters.h  Resonator2, one_pole_hp, one_pole_lp
 //   voice_base.h     VoiceBase
 //   voice_layers.h   Onset
@@ -85,6 +85,10 @@ struct Drum {
 
     // The glide: both delays × 1 / (1 + bend · env), env falling from 1.
     float bend = 0.0f, bend_env = 0.0f, bend_mul = 0.0f;
+    // On a strike into a ringing loop the glide's factor slews (k_slew > 0)
+    // from where the old ring had it: a jump in the delays would jump the
+    // read position inside the ringing waveform.  0 on a fresh strike.
+    float k_now = 1.0f, k_slew = 0.0f;
 
     // The excitation: a sine cycle (sin_s, sin_c rotate it) over exc_len
     // samples, minus hit× itself exc_d samples later (the strike position's
@@ -98,8 +102,10 @@ struct Drum {
     float win_c = 1.0f, win_s = 0.0f;        // the window, as sin² of the half rate
     float tone = 0.0f, hit = 0.0f, noise = 0.0f, noise_a = 1.0f, noise_lp = 0.0f;
 
-    // The snares: a follower on the head's output → the level of band-passed noise.
+    // The snares: a follower on the head's output → the level of band-passed
+    // noise; sn_crackle blends the white noise towards a sparse crackle.
     float sn_level = 0.0f, sn_env = 0.0f, sn_att = 0.0f, sn_rel = 0.0f, sn_g = 0.0f;
+    float sn_crackle = 0.0f;
     brc::Resonator2 sn_bp;
 
     float env = 1.0f;             // falls below silence → the layer stops
@@ -110,6 +116,20 @@ struct Drum {
         *this = Drum();
         buf = b;
         ap = a;
+    }
+
+    // What a ringing loop keeps when it is struck again: its delay lines (left
+    // as they are), their write positions and its filters' states.  The new
+    // strike then adds to the head's motion instead of cutting it off, which
+    // would click (mymembrane~ ramps its output to 0 over 1 ms and clears its
+    // delays instead).
+    struct Motion { int w, aw; float lp, dc, env, sn_env, sn_z1, sn_z2, k; };
+    Motion motion() const { return {w, aw, lp, dc, env, sn_env, sn_bp.z1, sn_bp.z2, k_now}; }
+    void resume(const Motion& m, float slew) {
+        w = m.w; aw = m.aw; lp = m.lp; dc = m.dc; env = m.env;
+        sn_env = m.sn_env; sn_bp.z1 = m.sn_z1; sn_bp.z2 = m.sn_z2;
+        k_now = m.k;
+        k_slew = slew;
     }
 
     bool active() const { return level > 0.0f && buf != nullptr; }
@@ -148,6 +168,13 @@ struct Drum {
             k = 1.0f / (1.0f + bend * bend_env);
             bend_env *= bend_mul;
         }
+        if (k_slew > 0.0f) {   // only after a strike into a ringing loop
+            k_now += k_slew * (k - k_now);
+            k = k_now;
+            if (n > 2400u) k_slew = 0.0f;   // 50 ms: settled to e^−50
+        } else {
+            k_now = k;
+        }
         // Once round the loop: the delay, the loss filter, the DC blocker,
         // the gain (sign-flipped at random: the K-S drum blend) ...
         const float x = read_delay(buf, kLoopLen, w, n0 * k);
@@ -170,7 +197,9 @@ struct Drum {
         if (sn_level > 0.0f) {
             const float a = fabsf(y);
             sn_env += ((a > sn_env) ? sn_att : sn_rel) * (a - sn_env);
-            out += sn_level * sn_bp.ring(rnd.process() * sn_env * sn_g);
+            float wn = rnd.process();
+            if (sn_crackle > 0.0f) wn += sn_crackle * (brc::crackle(wn) - wn);
+            out += sn_level * sn_bp.ring(wn * sn_env * sn_g);
         }
         env = brc::one_pole_lp(fabsf(y), 0.001f, env);
         if (n > 4800u && env < brc::kSilence) level = 0.0f;

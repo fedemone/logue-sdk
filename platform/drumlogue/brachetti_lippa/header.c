@@ -1,6 +1,6 @@
 /**
  * @file header.c
- * @brief drumlogue SDK unit header — Brachetti Loop
+ * @brief drumlogue SDK unit header — Brachetti Lippa
  *
  * Copyright (c) 2020-2022 KORG Inc. All rights reserved.
  *
@@ -13,9 +13,9 @@ const __unit_header unit_header_t unit_header = {
     .target = UNIT_TARGET_PLATFORM | k_unit_module_synth,
     .api = UNIT_API_VERSION,
     .dev_id = 0x46654465U,                                 // 'FeDe'
-    .unit_id = 0x42725764U,                                // 'BrWd' (Brachetti Loop)
+    .unit_id = 0x42724C70U,                                // 'BrLp' (Brachetti Lippa)
     .version = 0x00010000U,
-    .name = "BrcLoop",
+    .name = "BrcLippa",
     // Zero on purpose: the Program parameter
     // is the preset control (stored with the pattern, automatable), and a
     // non-zero count would draw a second, competing preset UI.
@@ -48,16 +48,16 @@ const __unit_header unit_header_t unit_header = {
         {0, 1000, 500, 800, k_unit_param_type_none, 1, 1, 0, {"MlltRes"}},
         // MlltStif: stored /100, displayed x100 (0-5000)
         {0, 50, 0, 30, k_unit_param_type_strings, 0, 0, 0, {"MlltStif"}},
-        // Bend (BrcLoop's own, in VlMllRes' slot): the glide's depth — how far
+        // Bend (BrcLippa's own, in VlMllRes' slot): the glide's depth — how far
         // above the note a hard strike starts.  − less (× ¼), + more (× 4, and
         // a glide added where a preset has none)
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Bend"}},
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"VlMllStf"}},
 
         // Page 4 — dedicated
-        // BendTm (BrcLoop's own, in Partls' slot): the glide's time, × ¼ .. × 4
+        // BendTm (BrcLippa's own, in Partls' slot): the glide's time, × ¼ .. × 4
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"BendTm"}},
-        // Snares (BrcLoop's own, in Model's slot): the snares on the head's
+        // Snares (BrcLippa's own, in Model's slot): the snares on the head's
         // motion.  − quieter (× ¼), + louder (× 4, and added where a preset
         // has none)
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Snares"}},
@@ -80,10 +80,10 @@ const __unit_header unit_header_t unit_header = {
         // Page 6 — dedicated
         // NzMix: the noise burst's, and the noise in the loop's excitation
         {0, 100, 50, 10, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},
-        // Blend (BrcLoop's own, in NzRes' slot): Karplus & Strong's drum —
+        // Blend (BrcLippa's own, in NzRes' slot): Karplus & Strong's drum —
         // each trip round the loop flips sign at random, up to half the time
         {0, 100, 0, 0, k_unit_param_type_percent, 0, 0, 0, {"Blend"}},
-        // SnrTone (BrcLoop's own, in NzFltr's slot): the snares' band, ± 1 octave
+        // SnrTone (BrcLippa's own, in NzFltr's slot): the snares' band, ± 1 octave
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"SnrTone"}},
         // NzFltFrq: stored /10 (20-20000 Hz); the noise burst's filter, and
         // the corner of the loop excitation's noise

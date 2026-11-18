@@ -2,7 +2,7 @@
 # Project Configuration
 #
 
-PROJECT := brachetti_loop
+PROJECT := brachetti_filo
 PROJECT_TYPE := synth
 
 ##############################################################################
@@ -54,5 +54,6 @@ USE_LINK_GC := yes
 USE_LTO := no
 
 # Size: measure, do not assume (tools/brachetti_equiv/arm_size.sh).  The
-# loop and all-pass delay lines live in .bss (synth_engine.h).
+# preset tables follow the original brachetti's .data pattern — see its
+# CLAUDE.md, ".rodata / .data Constraint".
 

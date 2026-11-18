@@ -20,3 +20,7 @@ brachetti_cymbal Tang=VlMllRes
 brachetti_cymbal Density=Partls
 brachetti_kernel Knock=MlltRes
 brachetti_kernel Fill=Partls
+brachetti_filo Buzz=MlltRes
+brachetti_filo BuzzTon=MlltStif
+brachetti_filo Tight=VlMllStf
+brachetti_filo BuzzLen=Rel

@@ -1,5 +1,5 @@
 #pragma once
-// Brachetti Loop — synth engine of the brachetti_loop unit.
+// Brachetti Lippa — synth engine of the brachetti_lippa unit.
 //
 // Drums from a delay loop: the Karplus-Strong loop with a Schroeder all-pass
 // inside it, after Miguel Moreno's "Realistic drums with karplus-strong
@@ -78,6 +78,10 @@ public:
         // Every strike stacks: a fast double stroke rings two heads' worth,
         // as a real drum's second stroke does not stop the first.
         VoiceState& v = allocate_voice(note, 0.0f);
+        // A slot struck again while its loop still rings keeps the loop's
+        // motion (loop::Drum::Motion): no click where the old ring would be cut.
+        const bool ringing = v.is_active && v.drum.active() && v.fade_mul >= 1.0f;
+        const loop::Drum::Motion motion = v.drum.motion();
         v.start(note, strike_velocity(velocity));
         shape_exciter(v);
         v.reset_for_strike();
@@ -88,7 +92,10 @@ public:
         // The loop follows the played note from the preset's root.
         const float tune = exp2f(((float)note - (float)kPresetKnobs[m_preset_idx][k_paramPitch])
                                  * (1.0f / 12.0f));
-        if (voicing().lp_level > 0.0f) strike_loop(v, tune, layer_knobs());
+        if (voicing().lp_level > 0.0f) {
+            strike_loop(v, tune, layer_knobs(), ringing);
+            if (ringing) v.drum.resume(motion, kRestrikeSlew);
+        }
         v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
     }
 
@@ -139,6 +146,8 @@ private:
     // A trip round the loop never gains more than this: stable whatever the
     // knobs do (the loss and DC filters never exceed unity).
     static constexpr float kMaxLoopGain = 0.9995f;
+    // A strike into a ringing loop slews the glide over ~1 ms (one-pole).
+    static constexpr float kRestrikeSlew = 0.0206f;   // 1 − e^(−1 / 48)
     // The loss filter is designed from the T60 here (Hz) and at the note.
     static constexpr float kHfHz = 3000.0f;
     // ... and its pole kept off 1 (where the filter would pass nothing).
@@ -259,15 +268,17 @@ private:
         return b * sqrtf((2.0f - 2.0f * cosf(w)) / (1.0f - 2.0f * b * cosf(w) + b * b));
     }
 
-    void strike_loop(VoiceState& v, float tune, const LayerKnobs& k) {
+    void strike_loop(VoiceState& v, float tune, const LayerKnobs& k, bool ringing) {
         const Voicing& c = voicing();
         const float vel = v.current_velocity;
         loop::Drum& d = v.drum;
         const int slot = (int)(&v - m_voices);
         d.buf = s_loop_lines[slot];
         d.ap  = s_ap_lines[slot];
-        memset(d.buf, 0, sizeof(float) * loop::kLoopLen);
-        memset(d.ap, 0, sizeof(float) * loop::kApLen);
+        if (!ringing) {   // a ringing loop keeps its lines: the strike adds to them
+            memset(d.buf, 0, sizeof(float) * loop::kLoopLen);
+            memset(d.ap, 0, sizeof(float) * loop::kApLen);
+        }
         d.level = c.lp_level * k.presence;
         d.lcg   = v.exciter.noise_gen.seed | 1u;
 
@@ -324,7 +335,8 @@ private:
 
         // The snares, on the head's motion (a preset without them gets the
         // article's: 3 kHz, Q 2, when the Snares knob adds them).
-        d.sn_level = c.sn_level * k.snares + k.snares_add;
+        d.sn_level   = c.sn_level * k.snares + k.snares_add;
+        d.sn_crackle = brc::clampf(c.sn_crackle, 0.0f, 1.0f);
         if (d.sn_level > 0.0f) {
             const float shz = fminf(brc::or_default(c.sn_hz, 1.0f, 3000.0f) * k.snare_tone, 20000.0f);
             const float r = pole_for_q(shz, brc::or_default(c.sn_q, 0.01f, 2.0f));

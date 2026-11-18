@@ -10,7 +10,7 @@
 //   Transient   band-passed noise burst: click / slap    kick tom
 //   NoiseGate   enveloped-LFO gate on the noise          snare noise
 //   GlideCurve  held, then S-shaped 1 → 0 bend envelope   tom world
-//   Punch       the transient shaper (the Punch knob)    all ten
+//   Punch       the transient shaper (the Punch knob)    all eleven
 #include <cmath>
 #include <cstdint>
 #include "dsp_math.h"
