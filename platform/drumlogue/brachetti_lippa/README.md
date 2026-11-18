@@ -11,7 +11,9 @@ most six modes per voice, the kernel and the cymbal from dense resonator
 banks, BrcNoise from shaped noise; a loop has a resonance at every trip round
 it, up to the top of the spectrum, for the cost of two delay-line reads, so
 it rings with many partials at little CPU.  The all-pass moves those partials off the harmonic
-series, which is what turns a plucked string into a struck head.
+series, which is what turns a plucked string into a struck head — or, where
+it moves them only a little, leaves a string: five of the presets came out
+that way and are kept as strings (Presets).
 
 It runs on the family's shared modal engine (`brachetti_common/modal_synth.h`)
 like BrcWorld: the same 24-knob layout, preset loading, voice life cycle,
@@ -24,37 +26,50 @@ recordings.
 | Unit name on the drumlogue | `BrcLippa` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724C70` ('BrLp') |
 | Engine | Karplus-Strong loop + Schroeder all-pass, tension glide, snares on the head's motion |
-| Presets | 13 (8 voiced after recordings, 5 of Miguel Moreno's own) |
+| Presets | 13: 3 drums voiced after recordings, 5 strings (voiced as drums, kept for how they ring), Miguel Moreno's 5 drums |
 | Knobs | 24 (the modal units' layout, six slots the family's own) |
-| ARM size (cross-built, `arm_size.sh`) | .text 23180 · .rodata 3652 · .data.rel.ro 100 · .data 4 · .bss 52752 |
+| ARM size (cross-built, `arm_size.sh`) | .text 23252 · .rodata 3656 · .data.rel.ro 100 · .data 4 · .bss 52752 |
 | CPU (`arm_cpu.sh`) | 998.1 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself) |
 
 ## Presets
 
 | # | Name | Root | Sound | Voiced after |
 |---|---|---|---|---|
-| 0 | RackTom | 58 | rack tom: a 12-inch tom, close-miked; a slight sag at the strike | `Tom1-001-CloseRoom.wav` |
-| 1 | FlrTom | 52 | floor tom: a 16-inch tom, starting 20 % sharp on a hard hit and settling | `Tom2-004-CloseRoom.wav` |
+| 0 | Harp | 59 (B3) | *string* — harp: a gut string plucked; warm, half a second, a slight sag at the pluck | `Tom1-001-CloseRoom.wav` (a rack tom) |
+| 1 | Oud | 52 (E3) | *string* — oud: a fretless lute's string; warm, a second, 20 % sharp on a hard pluck and settling | `Tom2-004-CloseRoom.wav` (a floor tom) |
 | 2 | Snare | 60 | acoustic snare: a short head, the wires on its motion | `acoustic-snare.wav` |
 | 3 | SnrHvy | 47 | heavy snare: a deep, slack snare struck hard | `snare heavy.wav` |
-| 4 | Kick | 40 | kick: a hard beater on a damped bass drum, a 35 % dive at the strike | `KickA-Hard-012-CloseRoom.wav` |
-| 5 | Taiko | 42 | taiko: a big cowhide head, a heavy bachi; a long ring | `Taiko-Hit.wav` |
+| 4 | Fretls | 39 (D#2) | *string* — fretless bass: a low string thumbed hard, its pitch dropping from 35 % sharp into the note | `KickA-Hard-012-CloseRoom.wav` (a kick) |
+| 5 | Guitar | 42 (F#2) | *string* — guitar: a low string; the brightest and the longest of the five | `Taiko-Hit.wav` (a taiko) |
 | 6 | Bendir | 41 | bendir: a frame drum with a snare string across the head | `020_BendirDoum.wav` (Pelle e Legno) |
-| 7 | Surdo | 34 | surdo: the samba bass drum, open | `027_SurdoOpen.wav` (Pelle e Legno) |
+| 7 | BassPiz | 34 (A#1) | *string* — double bass pizzicato: very dark, about 0.6 s | `027_SurdoOpen.wav` (a surdo; Pelle e Legno) |
 | 8 | MmSnare | 54 | mymembrane~'s help patch: a snare-like drum, its snares on | Miguel Moreno's settings |
 | 9 | MmKick | 32 | mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain | Miguel Moreno's settings |
 | 10 | MmSnr2 | 45 | mymembrane~ demo 2: a lower snare-like drum | Miguel Moreno's settings |
 | 11 | MmTom | 48 | mymembrane~ demo 3: a tom, the all-pass's gain negative | Miguel Moreno's settings |
 | 12 | MmFloor | 41 | mymembrane~ demo 4: a long, bright floor drum | Miguel Moreno's settings |
 
-The kit pieces (0-5) are voiced after the original brachetti's reference
-recordings — its `samples/` folder, on the `original_brachetti` branch (the
-same files its AcTom, AcSnre, Kick and Taiko were tuned to) — and the frame
-drum and the surdo after the [Pelle e Legno](../pelle_legno/) samples.
-Presets 8-12 are Miguel Moreno's own drums: the settings of mymembrane~'s help
-patch and its demo's four instruments, played by a port of his patch
-("mymembrane~ in BrcLippa", below); each root is the note nearest its strongest
-partial.
+Presets 0-7 were voiced as drums: 0-5 after the original brachetti's
+reference recordings — its `samples/` folder, on the `original_brachetti`
+branch (the same files its AcTom, AcSnre, Kick and Taiko were tuned to) — and
+6 and 7 after the [Pelle e Legno](../pelle_legno/) samples.  Three of them
+are drums: Snare, SnrHvy and Bendir.  The other five — voiced after a rack
+tom, a floor tom, a kick, a taiko and a surdo — ring like plucked strings
+instead, which is what a Karplus-Strong loop is at heart.  The measure is the
+periodicity of the ring (the largest normalised autocorrelation of 50-350 ms
+of it at a lag of 1-25 ms; the original's koto sample reads 0.85): 0.87-0.94
+on those five against their recordings' 0.20-0.82.  Moreno's own loop did not
+make drums of them either (below, "From drums to strings"), and they sound
+good as what they are, so they stay, as strings: each is named for the
+instrument it comes closest to, and its loop is moved to the exact pitch of
+its root (Harp +49 cents, from 240 Hz; Oud −13; Fretls −27; Guitar +47;
+BassPiz +8), so that every note plays in equal temperament (measured, the
+root and the octave above: within 1.3 cents).  Nothing else changed.
+
+Presets 8-12 are Miguel Moreno's own drums: the settings of mymembrane~'s
+help patch and its demo's four instruments, played by a port of his patch
+("mymembrane~ in BrcLippa", below); each root is the note nearest its
+strongest partial.
 
 ## The loop drum
 
@@ -171,15 +186,16 @@ section), and two pieces for the loop drum:
   Measured (Poly 1, a strike at velocity 127, a second at 20 after 300 ms; the
   largest sample step in the first three samples of the second strike, against
   the same strike on a silent voice): the step is now the strike's own attack
-  (FlrTom 0.097 against 0.094, Kick 0.123 against 0.122, Bendir 0.251 against
-  0.251); before, a cut ring added to it (Surdo 0.140 → 0.014, RackTom 0.033 →
-  0.012, Taiko 0.020 → 0.013).  A fresh strike is unchanged.
+  (Oud 0.092 against 0.095, Fretls 0.116 against 0.120, Bendir 0.264 against
+  0.264); before, a cut ring added to it (BassPiz 0.140, Harp 0.033, Guitar
+  0.020, measured on the old code at the presets' drum tuning; now 0.011,
+  0.006, 0.010).  A fresh strike is unchanged.
 
 The rest stays as it was, on purpose: the exact tuning (mymembrane~'s pitch
 moves with every filter setting), the two-T60 loss, and a glide of tension
 rather than a 3-4× chirp (BrcLippa's presets are voiced after real drums).
-`Bend` at its top starts a full-velocity strike 1.65× (RackTom) to 2.7×
-(Kick) the note, and `BendTm` at its bottom makes the fall 4× faster: near
+`Bend` at its top starts a full-velocity strike 1.65× (Harp) to 2.7×
+(Fretls) the note, and `BendTm` at its bottom makes the fall 4× faster: near
 mymembrane~'s chirp.
 
 ### mymembrane~ in BrcLippa
@@ -221,20 +237,21 @@ length, `NzMix`/`NzFltFrq` its noise, `Bend`/`BendTm` the chirp's depth and
 length, `Snares`/`SnrTone` the snares, `Blend` the Karplus-Strong sign flip.
 `HitPos` has nothing to move (the patch has no strike position).
 
-**The other presets on it — a trial, not shipped.**  The loop drum's toms,
-kick, taiko and surdo ring like strings (below, "How the presets were
-voiced": periodicity 0.87-0.94 against their recordings' 0.20-0.82).  They
-were voiced again on mymembrane~ against the same recordings, starting from
-the nearest of Moreno's settings, with the periodicity in the score
-(`match_specs.py`'s `lippa_mm` specs).  Periodicity came down where it
-matters most — RackTom 0.94 → 0.71 (the recording's 0.71), Taiko 0.94 → 0.66
-(0.20) — but not on the kick (0.87 → 0.84, against 0.23) or the floor tom
-(0.94 → 0.86, against 0.61), and every one matched its recording worse on
-the rest (energy over time above all: RackTom 83 % in its first 30 ms
-against the recording's 46 %; scores 1.47 → 1.54, 1.50 → 1.71, 2.12 → 2.57,
-2.37 → 2.66, 0.45 → 0.46).  So those presets stay on the loop drum, and this
-is left for later: Moreno's sound is here as his own five presets, his loop
-and the trial's specs are ready to go further.
+**From drums to strings.**  The loop drum's rack tom, floor tom, kick, taiko
+and surdo rang like strings (periodicity 0.87-0.94 against their recordings'
+0.20-0.82).  They were voiced again on mymembrane~ against the same
+recordings, starting from the nearest of Moreno's settings, with the
+periodicity in the score (the `lippa_mm` specs, in `match_specs.py` at commit
+8faf63a).  Periodicity came down where it mattered most — the rack tom 0.94 →
+0.71 (the recording's 0.71), the taiko 0.94 → 0.66 (0.20) — but not on the
+kick (0.87 → 0.84, against 0.23) or the floor tom (0.94 → 0.86, against
+0.61), and every one matched its recording worse on the rest (energy over
+time above all: the rack tom 83 % in its first 30 ms against the recording's
+46 %; scores 1.47 → 1.54, 1.50 → 1.71, 2.12 → 2.57, 2.37 → 2.66, 0.45 →
+0.46).  So they stayed on the loop and became the unit's five strings
+(Presets).  Making drums of them is left for later: Moreno's sound is here as
+his own five presets, and `match_specs.py` keeps `mm_spec`, the start of a
+voicing on his loop.
 
 ### Tuning
 
@@ -337,14 +354,14 @@ under 1.5 dB on half the presets).  As shipped:
 ```
 === brachetti_lippa   (mean |dB| change at the knob's ends; '.' < 0.3, ':' < 1.5)
            Pitch    Poly Velocit MlltRes MlltSti    Bend VlMllSt  BendTm  Snares    Dkay   Punch   Mterl  HitPos  Inharm ApDelay   NzMix   Blend SnrTone NzFltFr
-RackTom     15.9    :0.4     9.3    10.4     5.5     2.4     6.0    :0.4     7.3    16.8     6.7     2.4     3.9     6.4    :1.3     6.5    18.0       .     4.9
-FlrTom      18.5    :0.5    10.5    11.5     5.9     2.9     7.7    :1.5    10.7    20.1     7.7     4.5     6.5     3.5     3.7     5.3    22.2       .     3.2
+Harp        15.7       .     9.3    10.2     6.0     2.4     6.0       .     7.4    16.6     6.6     2.7     3.6     5.9    :1.5     6.2    17.8       .     4.8
+Oud         18.7    :0.6    10.5    11.5     6.1     2.8     7.8    :1.4    10.8    20.2     7.7     4.6     6.5     3.5     3.8     5.4    22.2       .     3.1
 Snare        6.7       .    10.0    11.4     3.2    :0.7     6.3       .     6.1    17.2     7.5    :0.5     3.1     6.8       .       .    18.1     2.8       .
 SnrHvy       4.9       .     9.9    11.3     2.1     2.0     4.3       .     5.7    10.2     7.5    :1.2     2.8     3.0     4.3     3.4     9.9     3.2    :0.6
-Kick        11.1    :0.3    10.3    10.2     6.8     3.4     6.0    :1.3     7.9    14.8     6.5     3.4     2.2     5.8    :0.9     6.2    15.3       .     4.6
-Taiko       16.5    :0.6    12.5    14.4     5.0     3.2     6.4    :0.9     5.8    28.4    10.7     3.1     3.8     4.5    :1.5     8.4    27.8       .    12.6
+Fretls      10.6       .    10.4    10.3     6.5     3.4     5.9    :1.4     7.8    14.8     6.5     3.3     2.3     5.9    :0.9     6.1    15.2       .     4.6
+Guitar      17.0    :0.5    12.7    14.2     5.0     3.2     6.5    :0.8     6.5    27.5    10.6     2.1     3.8     4.9    :0.5     8.4    27.4       .    12.2
 Bendir       6.3    :0.6     9.0    10.1     3.6    :0.7     5.1       .     6.5    10.3     6.5     2.4     2.5     4.5     4.7     5.2    10.9     1.8     2.3
-Surdo       11.9    :0.4     9.8    10.9     3.9     2.2     6.1       .    13.0    15.0     7.2     4.2     1.9     2.6     1.8     6.0    17.6       .     4.1
+BassPiz     11.8       .     9.8    10.9     4.1     2.2     6.1       .    13.0    15.1     7.2     4.2     1.9     2.4     1.8     6.0    17.7       .     4.0
 MmSnare     11.0       .     9.0     8.5     1.9     2.2     2.7     3.2     4.2     7.4     4.7     2.9       .     6.7    12.2     4.7     7.8    :1.4     1.9
 MmKick       6.6       .     5.2     4.6     1.8    :1.3     2.7    :1.3     4.1     1.7     2.0     6.4       .    :1.2       .     3.2     4.3    :0.5     2.4
 MmSnr2      10.8       .     8.6     8.5     2.3     2.1     3.5     2.7     5.3     9.1     5.0     3.4       .     5.1     7.8     4.3    10.5     1.6     1.6
@@ -368,9 +385,11 @@ walks each preset's free values downhill against its recording (energy over
 time, band balance over time, 40 dB decay, strongest partial), comparing the
 voice before the master limiter; trims by the family's body-target method
 (`preset_probe calib` reprints them).  Each preset starts with its loop at
-the recording's strongest partial (its root the nearest note below) and its
-T60 from the recording's decay.  Three changes to the tool came with it, all
-inert for the other units:
+the recording's strongest partial (its root a note near it) and its T60
+from the recording's decay.  The five strings were then moved to the pitch of
+their root (Presets); their specs (`string_spec`) pin it there, so a new
+search cannot detune them.  Three changes to the tool came with it, all inert
+for the other units:
 
 - **References at 44.1 kHz** are resampled to 48 kHz (several of the
   original's recordings are 44.1 kHz).  `load` also scaled integer WAVs by
@@ -395,22 +414,24 @@ BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti \
     python3 match_samples.py match_specs.py lippa --state loop.json
 ```
 
-Measured, preset vs recording (velocity 110, sequencer gate):
+Measured, preset vs recording (velocity 110, sequencer gate; the strings
+against the drum each was voiced after, their score as voiced → at their
+note):
 
-| Preset | score | t40, ms | strongest partial, Hz |
-|---|---:|---:|---:|
-| RackTom | 1.011 | 515 / 420 | 241 / 239 |
-| FlrTom | 0.849 | 905 / 900 | 167 / 167 |
-| Snare | 0.993 | 225 / 225 | 264 / 264 |
-| SnrHvy | 0.737 | 190 / 190 | 127 / 127 |
-| Kick | 0.832 | 400 / 360 | 80 / 79 |
-| Taiko | 0.890 | 1080 / 1080 | 90 / 89 |
-| Bendir | 0.703 | 240 / 240 | 101 / 202 |
-| Surdo | 0.342 | 625 / 625 | 58 / 58 |
+| Preset | score | t40, ms | strongest partial, Hz | periodicity |
+|---|---:|---:|---:|---:|
+| Snare | 0.993 | 225 / 225 | 264 / 264 | 0.81 / 0.50 |
+| SnrHvy | 0.737 | 190 / 190 | 127 / 127 | 0.72 / 0.70 |
+| Bendir | 0.703 | 240 / 240 | 101 / 202 | 0.81 / 0.49 |
+| Harp (rack tom) | 1.011 → 1.552 | 530 / 420 | 248 / 239 | 0.94 / 0.71 |
+| Oud (floor tom) | 0.849 → 0.955 | 905 / 900 | 166 / 167 | 0.94 / 0.61 |
+| Fretls (kick) | 0.832 → 0.941 | 420 / 360 | 79 / 79 | 0.87 / 0.23 |
+| Guitar (taiko) | 0.890 → 0.995 | 1040 / 1080 | 93 / 89 | 0.94 / 0.20 |
+| BassPiz (surdo) | 0.342 → 0.586 | 575 / 625 | 59 / 58 | 0.87 / 0.82 |
 
 The score includes the band-decay term (above), and on the three presets
-with snares the snares' kurtosis (`sparsity`); without them the same presets
-score 0.22-0.86, where BrcWorld's measure 0.41-2.50 against their samples.  Bendir's loop sits at 101 Hz, between the recording's doum
+with snares the snares' kurtosis (`sparsity`); without them the drums score
+0.52-0.74, where BrcWorld's measure 0.41-2.50 against their samples.  Bendir's loop sits at 101 Hz, between the recording's doum
 (87 Hz) and half its strongest partial (202 Hz); the score counts an octave
 as a near-miss.  Snare and SnrHvy match their decay and pitch but not their
 energy over time (e30: 71 % in the first 30 ms against the recording's
@@ -421,9 +442,10 @@ dense, noise-like cloud; the loop's are discrete partials — one all-pass
 spreads them, but a membrane's mode density grows with frequency and a
 loop's does not.  The search uses the excitation's noise, the snares and the
 two-T60 loss filter to make up for it in the first 100 ms; after that a
-BrcLippa drum is a cleaner, more tonal drum than the recording.  That is the
+BrcLippa drum is a cleaner, more tonal drum than the recording — and where
+the all-pass spreads the partials least, a string (Presets).  That is the
 character of the technique, and where it is useful beside the modal units:
-tuned toms and kicks that glide, ring clean and cost little.
+tuned drums and strings that glide, ring clean and cost little.
 
 ## Build
 
@@ -443,6 +465,12 @@ There is no original to compare with.  What was checked on the host:
   at both ends, three octaves (see Tuning).
 - **mymembrane~**: the port against Pd's own renders of the patch (above,
   "mymembrane~ in BrcLippa").
+- **The strings' retune**: only the five strings' renders changed; the three
+  drums and Moreno's five are byte-identical to before.  Each string's first
+  resonance, at its root and an octave up, is within 1.3 cents of the note
+  (Harp +0.5 / −0.2, Oud −0.2 / −0.2, Fretls +0.8 / +0.8, Guitar −0.6 / −0.6,
+  BassPiz −1.3 / −1.3), and `match_samples.py --rewrite` rebuilds the table
+  from the specs byte for byte.
 - **Stability**: 3000 random sessions — every preset, every knob anywhere in
   its range, random notes and velocities, up to four stacked strikes,
   AllNoteOff — with every output sample finite and within the limiter's

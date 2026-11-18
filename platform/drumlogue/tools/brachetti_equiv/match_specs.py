@@ -558,14 +558,14 @@ def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=
                 free=merge(loop_free(hz, t60), free or {}))
 
 
-# The toms, the kick, the taiko and the surdo on mymembrane~ (voice.h
-# mm::Membrane, Miguel Moreno's loop), a trial: on the loop drum they ring like
-# strings (periodicity 0.87-0.94 against the recordings' 0.20-0.82).  Each
-# starts from the mymembrane~ setting nearest its drum (the help patch or a
-# demo instrument), its frequencies scaled so its strongest partial sits near
-# the recording's (mymembrane~ sounds at 0.42-0.67 of its delay frequency:
-# the all-pass and the filters pull it down), and the specs compare the
-# periodicity too (match_samples "periodic").
+# A drum on mymembrane~ (voice.h mm::Membrane, Miguel Moreno's loop), voiced
+# against a recording: it starts from the mymembrane~ setting nearest it (the
+# help patch or a demo instrument), its frequencies scaled so its strongest
+# partial sits near the recording's (mymembrane~ sounds at 0.42-0.67 of its
+# delay frequency: the all-pass and the filters pull it down), and the spec
+# compares the periodicity too (match_samples "periodic").  Tried on the loop
+# presets that ring like strings (../../brachetti_lippa/README.md); they became
+# the unit's strings instead, and this is kept for drums to come.
 MM_SETTINGS = {  # mymembrane~'s: frequency, feedback, damping, apgain, apfreq, noise; its strongest partial
     "help": (277.6, 0.7908, 0.4409, 0.6378, 169.2, 0.1018, 186.0),
     "demo1": (109.7, 1.0, 0.07874, 1.0, 500.0, 0.01786, 51.0),
@@ -587,46 +587,41 @@ def mm_spec(name, enum, ref, note, root, pk, start, late=((0.3, 1.0),)):
                           mm_apf_hz=(apf * k * 0.33, min(apf * k * 3.0, 20000.0), "log")))
 
 
+def string_spec(name, enum, ref, note, root, t60, extra=None):
+    """One of the loop presets that ring like strings: voiced as drums after
+    `ref`, kept as string instruments, tuned to the root note (440 Hz at 69)
+    and with the pitch pinned there, so a search cannot detune them.  The
+    score is still against the drum: a search would pull a string back
+    towards it, so a better string needs a new spec (a string's recording)."""
+    s = loop_spec(name, enum, ref, note, root, 440.0 * 2.0 ** ((root - 69) / 12.0), t60, extra)
+    del s["free"]["lp_hz"]
+    return s
+
+
 SPECS["lippa"] = [
-    loop_spec("RackTom", "k_RackTom", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
-              "rack tom: a 12-inch tom, close-miked", 58, 240.0, 600.0),
-    loop_spec("FlrTom", "k_FloorTom", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
-              "floor tom: a 16-inch tom, its pitch sagging as it rings", 52, 167.0, 1200.0,
-              dict(bend=0.1)),
+    string_spec("Harp", "k_Harp", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
+                "harp: a gut string plucked, warm, half a second (voiced as a drum)", 59, 600.0),
+    string_spec("Oud", "k_Oud", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
+                "oud: a fretless lute's string, warm, a second, the pitch settling after the pluck (voiced as a drum)",
+                52, 1200.0, dict(bend=0.1)),
     loop_spec("Snare", "k_Snare", os.path.join(ORIG, "acoustic-snare.wav"),
               "acoustic snare: the head through an all-pass, the wires on its motion", 60, 264.0, 300.0,
               dict(sn_level=1.0), SNARES_FREE),
     loop_spec("SnrHvy", "k_SnareHeavy", os.path.join(ORIG, "snare heavy.wav"),
               "heavy snare: a deep, slack snare struck hard", 47, 127.0, 260.0,
               dict(sn_level=1.0, bend=0.08), SNARES_FREE, late=None),   # the recording is 0.25 s
-    loop_spec("Kick", "k_Kick", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
-              "kick: a hard beater on a damped bass drum", 40, 79.0, 450.0,
-              dict(bend=0.5, MlSt=45)),
-    loop_spec("Taiko", "k_Taiko", os.path.join(ORIG, "Taiko-Hit.wav"),
-              "taiko: a big cowhide head, a heavy bachi", 42, 92.0, 1500.0, dict(bend=0.08)),
+    string_spec("Fretls", "k_Fretless", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
+                "fretless bass: a low string thumbed hard, its pitch dropping into the note (voiced as a drum)",
+                39, 450.0, dict(bend=0.5, MlSt=45)),
+    string_spec("Guitar", "k_Guitar", os.path.join(ORIG, "Taiko-Hit.wav"),
+                "guitar: a low string, the brightest and longest of these (voiced as a drum)", 42, 1500.0,
+                dict(bend=0.08)),
     loop_spec("Bendir", "k_Bendir", os.path.join(P, "020_BendirDoum.wav"),
               "bendir: a frame drum with a snare string across the head", 41, 87.0, 350.0,
               dict(sn_level=0.3), merge(SNARES_FREE, dict(lp_hz=(78.0, 215.0, "log"))),
               late=((0.2, 0.42),)),   # the recording is 0.43 s
-    loop_spec("Surdo", "k_Surdo", os.path.join(P, "027_SurdoOpen.wav"),
-              "surdo: the samba bass drum, open", 34, 58.0, 900.0),
-]
-
-# The trial of the five string-like presets on mymembrane~ (not shipped:
-# ../../brachetti_lippa/README.md, "mymembrane~ in BrcLippa").  Run it with
-#   python3 match_samples.py match_specs.py lippa_mm --state trial.json
-# (lippa_mm is BrcLippa under another name in match_samples.py).
-SPECS["lippa_mm"] = [
-    mm_spec("RackTom", "k_RackTom", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
-            "rack tom: a 12-inch tom, close-miked", 58, 239.0, "help"),
-    mm_spec("FlrTom", "k_FloorTom", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
-            "floor tom: a 16-inch tom, its pitch sagging as it rings", 52, 167.0, "demo3"),
-    mm_spec("Kick", "k_Kick", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
-            "kick: a hard beater on a damped bass drum", 40, 79.0, "demo1"),
-    mm_spec("Taiko", "k_Taiko", os.path.join(ORIG, "Taiko-Hit.wav"),
-            "taiko: a big cowhide head, a heavy bachi", 42, 89.0, "demo2"),
-    mm_spec("Surdo", "k_Surdo", os.path.join(P, "027_SurdoOpen.wav"),
-            "surdo: the samba bass drum, open", 34, 58.0, "demo4"),
+    string_spec("BassPiz", "k_BassPizz", os.path.join(P, "027_SurdoOpen.wav"),
+                "double bass pizzicato: very dark, about 0.6 s (voiced as a drum)", 34, 900.0),
 ]
 
 

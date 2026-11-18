@@ -4,11 +4,13 @@
 unit, built after the split: drums from a delay loop — a Karplus-Strong loop
 with a Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums
 with karplus-strong synthesis" (2022) and his Pd instrument mymembrane~
-(pd-mkmr, BSD-3-Clause: README.md keeps its notice).  Presets 0-7 (RackTom,
-FlrTom, Snare, SnrHvy, Kick, Taiko, Bendir, Surdo) play the loop drum, voiced
-after recordings; 8-12 (MmSnare, MmKick, MmSnr2, MmTom, MmFloor) play a port of
-mymembrane~ itself with Moreno's own settings.  README.md has the design, its sources
-and credits, the presets and what the knobs do.
+(pd-mkmr, BSD-3-Clause: README.md keeps its notice).  Presets 0-7 play the
+loop drum, all voiced after recordings of drums: Snare, SnrHvy and Bendir are
+drums; Harp, Oud, Fretls, Guitar and BassPiz (0, 1, 4, 5, 7) rang like plucked
+strings and are kept as strings, each tuned to the exact pitch of its root.
+8-12 (MmSnare, MmKick, MmSnr2, MmTom, MmFloor) play a port of mymembrane~
+itself with Moreno's own settings.  README.md has the design, its sources and
+credits, the presets and what the knobs do.
 
 ## Before changing anything
 
@@ -17,15 +19,21 @@ and credits, the presets and what the knobs do.
   built against this directory) and compare after: a refactor must leave the
   files byte-identical.
 - **The presets are voiced after recordings** by
-  `../tools/brachetti_equiv/match_samples.py match_specs.py lippa`: the kit
-  pieces after the original brachetti's reference recordings (its `samples/`,
-  on the `original_brachetti` branch: set `BRACHETTI_ORIG` as for
-  `run_equiv.sh`), Bendir and Surdo after Pelle e Legno samples.  To revoice
-  one: change its spec, search with `--state`, then `--rewrite` replaces its
-  rows.  Then `preset_probe calib` and update `kOutTrim`.  The specs compare
-  each band's decay after 300 ms (`late`): without it the search opens the
-  loss filter and the highs ring on like a string's; and on the presets with
-  snares their kurtosis (`sparsity`), without which `sn_crackle` is invisible.
+  `../tools/brachetti_equiv/match_samples.py match_specs.py lippa`: 0-5
+  after the original brachetti's reference recordings (its `samples/`, on the
+  `original_brachetti` branch: set `BRACHETTI_ORIG` as for `run_equiv.sh`),
+  Bendir and BassPiz after Pelle e Legno samples (BassPiz after the surdo).
+  To revoice one: change its spec, search with `--state`, then `--rewrite`
+  replaces its rows.  Then `preset_probe calib` and update `kOutTrim`.  The
+  specs compare each band's decay after 300 ms (`late`): without it the search
+  opens the loss filter and the highs ring on like a string's; and on the
+  presets with snares their kurtosis (`sparsity`), without which `sn_crackle`
+  is invisible.
+- **The strings stay in tune.**  Their specs are `string_spec`: `lp_hz` is the
+  root's equal-tempered frequency and is not free, so a search cannot detune
+  them.  The specs still score them against the drums they were voiced after,
+  so a search would pull them back towards those drums: to improve a string,
+  voice it by ear or against a recording of a string, with a new spec.
 - **The field order of `Voicing`** must match `VOICING_FIELDS["lippa"]` in
   `match_samples.py`.  The loop drum is on when `lp_level` is above 0,
   mymembrane~ when `mm_level` is (one or the other).
@@ -34,8 +42,9 @@ and credits, the presets and what the knobs do.
   change run `../tools/brachetti_equiv/mymembrane_check.py <pd-mkmr>/instruments`
   (Pd renders the patch with its help and demo settings; the five Mm presets
   must correlate ≥ 0.93 over the first 200 ms, with the same t40 and
-  periodicity).  The trial of the
-  loop presets on it is `match_specs.py`'s `lippa_mm`.
+  periodicity).  The trial of the string presets on it (they did not
+  become drums) is `match_specs.py`'s `lippa_mm` at commit 8faf63a;
+  `mm_spec` is kept for a drum voiced on it, which goes in `SPECS["lippa"]`.
 - **The tuning is exact by construction.**  `strike_loop` sets the delay so
   the loop's phase at the note is one period: the delay line plus the phase
   delays of the all-pass, the loss filter and the DC blocker (README.md,
@@ -86,7 +95,7 @@ and credits, the presets and what the knobs do.
 ## Measure, do not assume
 
 - ARM sizes: `../tools/brachetti_equiv/arm_size.sh ../../brachetti_lippa`
-  (shipped: .text 23180 · .rodata 3652 · .data.rel.ro 100 · .data 4 · .bss 52752).
+  (shipped: .text 23252 · .rodata 3656 · .data.rel.ro 100 · .data 4 · .bss 52752).
 - CPU: `../tools/brachetti_equiv/arm_cpu.sh ../../brachetti_lippa`
   (shipped: 998.1 ARM instructions per rendered frame, with the five
   mymembrane~ presets in the bench; 857.4 for the eight loop presets).

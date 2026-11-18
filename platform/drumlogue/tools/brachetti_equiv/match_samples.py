@@ -69,13 +69,12 @@ NOISE_KNOBS = ["Prg", "-", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
 # of what the displaced knob shipped with (the unit reads it from there).
 DISPLACED = {"tom": ("Rel", "kShippedRel"), "plate": ("Rel", "kShippedRel"),
              "world": ("Rel", "kShippedRel"), "snare": ("Ptls", "kShippedPartls"),
-             "lippa": ("Rel", "kShippedRel"), "lippa_mm": ("Rel", "kShippedRel"),
+             "lippa": ("Rel", "kShippedRel"),
              "cordiera": ("Ptls", "kShippedPartls")}
 # Standard slots a unit gave to knobs of its own that ship 0 (the identity),
 # whose standard knob plays at a fixed value the unit holds: the column is 0
 # whatever the spec says.  BrcLippa: Bend, BendTm, Snares, Blend, SnrTone.
-FAMILY_ZERO = {"lippa": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl"),
-               "lippa_mm": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
+FAMILY_ZERO = {"lippa": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
 
 
 def shipped_table(text, unit, values, at=None):
@@ -137,7 +136,6 @@ VOICING_FIELDS = {
              "gourd_hz", "gourd_up_hz", "gourd_up_ms", "gourd_down_hz", "gourd_down_hold_ms",
              "gourd_down_ms", "gourd_q", "bw_stiff", "bw_stages", "snare_kind", "band_a_hz",
              "bw_bend_up", "bw_bend_down"],
-    "lippa_mm": None,   # BrcLippa's, below
     "lippa": ["modal_mix", "onset_ms", "band_mix", "split", "exc_gain",
              "lp_level", "lp_hz", "lp_t60_ms", "lp_hf", "ap_ratio", "ap_gain", "blend",
              "exc_ratio", "exc_noise", "exc_noise_hz", "exc_pos", "bend", "bend_ms",
@@ -154,9 +152,6 @@ VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0,
                         wire_onset_attack=0.001, wire_a1=1.76, wire_a2=0.918, band_b_hz=0.0,
                         band_b_r=0.0, band_c_hz=0.0, band_c_r=0.0, gate_hz=0.0,
                         gate_depth=0.0, gate_decay=1.0, attack_rate=0.0, exc_gain=1.0)
-
-
-VOICING_FIELDS["lippa_mm"] = VOICING_FIELDS["lippa"]
 
 
 def full(spec):
@@ -322,7 +317,7 @@ def patch_presets(text, unit, cands, first_idx):
 # ---------------------------------------------------------------------------
 UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
                  snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick",
-                 world="brachetti_world", lippa="brachetti_lippa", lippa_mm="brachetti_lippa", cordiera="brachetti_cordiera")
+                 world="brachetti_world", lippa="brachetti_lippa", cordiera="brachetti_cordiera")
 
 
 def build(unit_dir, out):

@@ -71,7 +71,7 @@ platform, `docker/`, `tools/`) are listed under [Repository Structure](#reposito
 ### Brachetti documents
 
 The original 40-preset unit split into eight per-family units, joined later
-by a ninth, BrcWorld, a tenth, BrcLippa (drums from a Karplus-Strong loop,
+by a ninth, BrcWorld, a tenth, BrcLippa (drums, and five strings, from a Karplus-Strong loop,
 after Miguel Moreno's [*Realistic drums with karplus-strong synthesis*](https://mikemorenodsp.github.io/posts/Realistic-drums-with-karplus-strong-synthesis/)
 and his Pd instrument mymembrane~), and an eleventh, BrcCordiera (wire instruments
 — a tabor, a daf, an mbira with buzzers, a spring drum, a gopichand — on BrcSnare's
@@ -91,7 +91,7 @@ and BrcWorld's engines, the wires driven by the head and stiff); all eleven shar
    | [`brachetti_cymbal`](platform/drumlogue/brachetti_cymbal/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_cymbal/CLAUDE.md) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 13, 14, 26, 31, 32, 36 | dense-resonator cymbal |
    | [`brachetti_noise`](platform/drumlogue/brachetti_noise/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_noise/CLAUDE.md) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 21, 22, 25 | shaped noise + AM gating |
    | [`brachetti_world`](platform/drumlogue/brachetti_world/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_world/CLAUDE.md) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | — | modal bank + friction voice, wire, buzz, jingles, particles |
-   | [`brachetti_lippa`](platform/drumlogue/brachetti_lippa/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_lippa/CLAUDE.md) | `BrcLippa` | RackTom, FlrTom, Snare, SnrHvy, Kick, Taiko, Bendir, Surdo, MmSnare, MmKick, MmSnr2, MmTom, MmFloor (all added) | — | Karplus-Strong loop + all-pass, tension glide, snares on the head's motion |
+   | [`brachetti_lippa`](platform/drumlogue/brachetti_lippa/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_lippa/CLAUDE.md) | `BrcLippa` | Snare, SnrHvy, Bendir; strings Harp, Oud, Fretls, Guitar, BassPiz; MmSnare, MmKick, MmSnr2, MmTom, MmFloor (all added) | — | Karplus-Strong loop + all-pass, tension glide, snares on the head's motion |
    | [`brachetti_cordiera`](platform/drumlogue/brachetti_cordiera/README.md) · [CLAUDE.md](platform/drumlogue/brachetti_cordiera/CLAUDE.md) | `BrcCordiera` | Tabor, Daf, MbiraBz, TomBuzz, Marranz, Spring, Gopichd (all new) | — | BrcSnare's engine, the wires driven by the head; BrcWorld's wire, stiff and bending |
 
    The original's 40th preset, Koto (slot 9, a Karplus-Strong string), is in no family unit; it stays playable in the original.
