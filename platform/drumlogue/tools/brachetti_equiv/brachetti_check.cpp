@@ -123,33 +123,30 @@ static void fail(const std::string& what) {
     ++g_fail;
 }
 
-// Bit for bit; or, with BRACHETTI_TOL set (the ARM build, -ffast-math: the
-// compiler may fuse float operations differently in a different translation
-// unit), within that absolute tolerance.  The largest difference is reported.
-static double g_tol = -1.0, g_maxdiff = 0.0;
+// Bit for bit; or, with BRACHETTI_TOL set (the ARM build: under -ffast-math
+// the compiler may reorder float operations differently in a different
+// translation unit), each render's difference energy must be at least
+// BRACHETTI_TOL dB below its signal (e.g. -90).  The worst render is reported.
+static double g_tol = 1.0, g_worst_db = -400.0, g_maxdiff = 0.0;   // g_tol > 0: bit-exact
 static bool differ(const std::vector<float>& a, const std::vector<float>& b) {
-    if (g_tol < 0.0) return memcmp(a.data(), b.data(), a.size() * sizeof(float)) != 0;
-    double m = 0.0;
+    if (g_tol > 0.0) return memcmp(a.data(), b.data(), a.size() * sizeof(float)) != 0;
+    double e = 0.0, s = 0.0, m = 0.0;
+    size_t first = a.size();
     for (size_t i = 0; i < a.size(); ++i) {
-        const double d = std::fabs((double)a[i] - (double)b[i]);
-        if (!(d <= m)) m = d;   // NaN counts as a difference
+        const double d = (double)a[i] - (double)b[i];
+        e += d * d; s += (double)b[i] * b[i];
+        if (!(std::fabs(d) <= m)) m = std::fabs(d);   // NaN counts as a difference
+        if (d != 0.0 && first == a.size()) first = i;
     }
-    if (!(m <= g_maxdiff)) g_maxdiff = m;
-    if (!(m <= g_tol) && getenv("BRACHETTI_VERBOSE")) {
-        double e = 0.0, s = 0.0, pk = 0.0;
-        for (size_t i = 0; i < a.size(); ++i) {
-            const double d = (double)a[i] - (double)b[i];
-            e += d * d; s += (double)b[i] * b[i];
-            if (std::fabs(b[i]) > pk) pk = std::fabs(b[i]);
-        }
-        size_t first = 0;
-        while (first < a.size() && std::fabs((double)a[first] - (double)b[first]) <= g_tol) ++first;
-        fprintf(stderr, "  first beyond tolerance at frame %zu (%.6g vs %.6g)\n", first / 2,
-                first < a.size() ? a[first] : 0.0f, first < a.size() ? b[first] : 0.0f);
-        fprintf(stderr, "  max diff %.3g, peak %.3g, diff/signal %.1f dB\n", m, pk,
-                10.0 * std::log10((e + 1e-30) / (s + 1e-30)));
-    }
-    return !(m <= g_tol);
+    if (!(m == m)) return true;
+    const double db = (e == 0.0) ? -400.0 : 10.0 * std::log10(e / (s + 1e-30));
+    if (db > g_worst_db) g_worst_db = db;
+    if (m > g_maxdiff) g_maxdiff = m;
+    const bool bad = db > g_tol;
+    if (bad && getenv("BRACHETTI_VERBOSE"))
+        fprintf(stderr, "  diff/signal %.1f dB, max diff %.3g, first difference at frame %zu\n",
+                db, m, first / 2);
+    return bad;
 }
 
 // Strike both and compare the output.
@@ -210,7 +207,7 @@ static void knobs_compare(Unit& b, Unit& f, const uint8_t* map, const std::strin
 
 int main(int argc, char** argv) {
     if (argc != 14) { fprintf(stderr, "usage: brachetti_check <brachetti.so> <12 family .so in preset order>\n"); return 2; }
-    if (const char* t = getenv("BRACHETTI_TOL")) g_tol = atof(t);
+    if (const char* t = getenv("BRACHETTI_TOL")) g_tol = atof(t);   // dB, negative
     if (const char* t = getenv("BRACHETTI_KNOB_POINTS")) g_points = clampi(atoi(t), 0, 5);
     Unit b;
     if (!b.open(argv[1])) return 2;
@@ -293,7 +290,8 @@ int main(int argc, char** argv) {
         if (b.get((uint8_t)s) != want[s]) fail(std::string("common knob ") + b.hdr->params[s].name + " not carried across a family switch");
 
     printf("brachetti: %s — 12 families, %ld renders, %ld knob read-backs compared with the family units\n",
-           g_fail ? "DIFFERENT" : (g_tol < 0.0 ? "IDENTICAL" : "WITHIN TOLERANCE"), g_renders, g_knobs);
-    if (g_tol >= 0.0) printf("largest sample difference: %.3g (tolerance %.3g)\n", g_maxdiff, g_tol);
+           g_fail ? "DIFFERENT" : (g_tol > 0.0 ? "IDENTICAL" : "WITHIN TOLERANCE"), g_renders, g_knobs);
+    if (g_tol <= 0.0) printf("worst render: diff/signal %.1f dB (limit %.1f dB); largest sample difference %.3g\n",
+                             g_worst_db, g_tol, g_maxdiff);
     return g_fail ? 1 : 0;
 }

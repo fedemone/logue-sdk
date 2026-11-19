@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# arm_brachetti_check.sh [tolerance]  — brachetti_check on the Cortex-A7.
+# arm_brachetti_check.sh [limit-dB]  — brachetti_check on the Cortex-A7.
 #
 # The host check (brachetti_check.sh) never compiles the NEON paths.  This
 # cross-builds Brachetti and the twelve family units with the SDK Makefile's
 # flags (-Os -ffast-math, NEON-VFPv4) and runs the same check under qemu-arm.
 # Under -ffast-math the compiler may still reorder float operations
 # differently in a different translation unit, so the samples are compared
-# within a tolerance (default 1e-5) and the largest difference is printed;
+# render by render: the difference must be BRACHETTI_TOL dB below the signal
+# (default -90) and the worst render is printed;
 # the knob read-backs and display strings must still match exactly.
 # -ffp-contract=off is part of the units' flags (their config.mk): with GCC's
 # default contraction the families' a*b+c fuse differently inside Brachetti
@@ -17,7 +18,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
-tol="${1:-1e-5}"
+tol="${1:--90}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
