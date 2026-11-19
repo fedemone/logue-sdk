@@ -248,6 +248,11 @@ bool     s_restart = true;
 uint8_t  s_step = 0;
 uint8_t  s_last_vel = 0;
 uint32_t s_gates = 0;
+// The clock question: how many gates arrive between two resets, the
+// velocity range, how many resets and all-notes-offs.
+uint32_t s_resets = 0, s_alloffs = 0;
+uint32_t s_gates_at_reset = 0, s_gates_between_resets = 0;
+uint8_t  s_vel_min = 255, s_vel_max = 0;
 
 // The Event display: the last two non-knob, non-gate events
 char s_note_name[8] = "";
@@ -400,7 +405,7 @@ const char* files_text(char* s) {
 
 // Result (page 6): one measurement per position of the knob.  README.md,
 // "The Result list", says what each means.
-constexpr int kNumResults = 12;
+constexpr int kNumResults = 16;
 
 const char* result_text(int32_t i, char* s) {
     if (i < 0 || i >= kNumResults) return "-";
@@ -414,7 +419,7 @@ const char* result_text(int32_t i, char* s) {
     case 1:   // reading at boot
         if (files::s_run != files::kDone) return files_text(s);
         if (files::s_read_err) snprintf(s, kStrLen, "rd e%d", files::s_read_err);
-        else snprintf(s, kStrLen, "rd ok %d", files::s_entries);
+        else snprintf(s, kStrLen, "rd %d", files::s_entries);
         return s;
     case 2:   // writing at boot
         if (files::s_run != files::kDone) return files_text(s);
@@ -439,9 +444,10 @@ const char* result_text(int32_t i, char* s) {
     }
     case 6:   // the audio thread's scheduling
         if (s_render_policy < 0) return "rt ?";
-        snprintf(s, kStrLen, "%s %d",
-                 s_render_policy == SCHED_FIFO ? "FIFO" : s_render_policy == SCHED_RR ? "RR"
-                 : s_render_policy == SCHED_OTHER ? "OTHER" : "?", s_render_prio);
+        if (s_render_policy == SCHED_FIFO) snprintf(s, kStrLen, "FIFO %d", s_render_prio);
+        else if (s_render_policy == SCHED_RR) snprintf(s, kStrLen, "RR %d", s_render_prio);
+        else if (s_render_policy == SCHED_OTHER) snprintf(s, kStrLen, "OTHER %d", s_render_prio);
+        else snprintf(s, kStrLen, "pol%d %d", s_render_policy, s_render_prio);   // e.g. 3 = BATCH, 5 = IDLE
         return s;
     // (No '/': the panel shows only the characters the SDK README lists.)
     case 7: snprintf(s, kStrLen, "str %uHz", unsigned(s_max_str_hz)); return s;
@@ -452,7 +458,20 @@ const char* result_text(int32_t i, char* s) {
         return s;
     case 11:
         if (!s_tempo) return "bpm -";
-        snprintf(s, kStrLen, "bpm %u.%u", unsigned(s_tempo >> 16), unsigned((s_tempo & 0xFFFFu) * 10u / 65536u));
+        snprintf(s, kStrLen, "%u.%ubpm", unsigned(s_tempo >> 16), unsigned((s_tempo & 0xFFFFu) * 10u / 65536u));
+        return s;
+    case 12:  // gates since unit_init
+        snprintf(s, kStrLen, "g%u", unsigned(s_gates));
+        return s;
+    case 13:  // gates between the last two resets
+        snprintf(s, kStrLen, "gpr %u", unsigned(s_gates_between_resets));
+        return s;
+    case 14:  // resets and all-notes-offs since unit_init
+        snprintf(s, kStrLen, "r%u a%u", unsigned(s_resets), unsigned(s_alloffs));
+        return s;
+    case 15:  // the velocity range of the gates
+        if (!s_gates) return "v -";
+        snprintf(s, kStrLen, "v%u-%u", unsigned(s_vel_min), unsigned(s_vel_max));
         return s;
     default:
         return "-";
@@ -538,6 +557,9 @@ void reset_state() {
     s_adopt_unit = s_adopt_own = 0;
     s_restart = true;
     s_gates = 0;
+    s_resets = s_alloffs = s_gates_at_reset = s_gates_between_resets = 0;
+    s_vel_min = 255;
+    s_vel_max = 0;
     s_set_last_us = s_preset_us = 0;
     s_last_burst_n = 0;
     s_event_prev = s_event_last = "-";
@@ -568,15 +590,18 @@ __unit_callback void unit_teardown() { silence(); }
 
 __unit_callback void unit_reset() {
     mark(kCbReset);
-    note_event("Rset");
+    note_event("Rst");
+    ++s_resets;
+    s_gates_between_resets = s_gates - s_gates_at_reset;
+    s_gates_at_reset = s_gates;
     s_restart = true;
     silence();
 }
 
-__unit_callback void unit_resume() { note_event("Resm"); }
+__unit_callback void unit_resume() { note_event("Res"); }
 
 __unit_callback void unit_suspend() {
-    note_event("Susp");
+    note_event("Sus");
     silence();
 }
 
@@ -761,6 +786,8 @@ __unit_callback void unit_gate_on(uint8_t velocity) {
     s_restart = false;
     s_last_gate_us = t;
     s_last_vel = velocity;
+    if (velocity < s_vel_min) s_vel_min = velocity;
+    if (velocity > s_vel_max) s_vel_max = velocity;
     ++s_gates;
     play_step(velocity);
 }
@@ -769,7 +796,8 @@ __unit_callback void unit_gate_off() { mark(kCbGateOff); }
 
 __unit_callback void unit_all_note_off() {
     mark(kCbAllOff);
-    note_event("Aoff");
+    note_event("Aof");
+    ++s_alloffs;
     s_restart = true;
     silence();
 }
@@ -784,7 +812,7 @@ __unit_callback void unit_load_preset(uint8_t idx) {
     if (idx < 2) {
         s_preset = idx;
         s_shadow = idx == 0 ? 20 : 90;   // Owned should show this if the panel re-reads
-        note_event(idx == 0 ? "PreA" : "PreB");
+        note_event(idx == 0 ? "PrA" : "PrB");
     }
 }
 

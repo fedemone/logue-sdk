@@ -100,7 +100,7 @@ int main() {
     const auto before_init = snapshot(dir);
     CHECK(unit_init(&desc) == k_unit_err_none, "unit_init");
     const auto after_init = snapshot(dir);
-    CHECK(unit_header.params[P_RESULT].max == 11 && result(12) == "-", "Result has 12 positions");
+    CHECK(unit_header.params[P_RESULT].max == 15 && result(16) == "-", "Result has 16 positions");
 
 #ifdef PROBE_LITE
     // ── SeqProbeLite: no file access, no bitmap knob ────────────────────────
@@ -116,7 +116,7 @@ int main() {
     (void)before_init;
     CHECK(str(P_FILES) == "rw ok", "Files: %s", str(P_FILES).c_str());
     CHECK(result(0).find(" #1") != std::string::npos, "init: %s", result(0).c_str());
-    CHECK(result(1) == "rd ok 1", "read at boot: %s", result(1).c_str());
+    CHECK(result(1) == "rd 1", "read at boot: %s", result(1).c_str());
     CHECK(result(2) == "wr ok", "write at boot: %s", result(2).c_str());
     CHECK(result(3) == "prev ok", "the previous boot's file: %s", result(3).c_str());
     CHECK(starts(result(4), "io "), "file time: %s", result(4).c_str());
@@ -221,17 +221,24 @@ int main() {
     sleep_ms(100);
     unit_all_note_off();
     unit_reset();
-    CHECK(str(P_EVENT) == "Aoff>Rset", "what stop sent: %s", str(P_EVENT).c_str());
+    CHECK(str(P_EVENT) == "Aof>Rst", "what stop sent: %s", str(P_EVENT).c_str());
     unit_gate_on(90);
     CHECK(str(P_GATE) == "01 v90", "the first gate after a stop is step 1: %s", str(P_GATE).c_str());
     unit_note_on(60, 100);
-    CHECK(str(P_EVENT) == "Rset>N60", "a MIDI note: %s", str(P_EVENT).c_str());
+    CHECK(str(P_EVENT) == "Rst>N60", "a MIDI note: %s", str(P_EVENT).c_str());
     unit_set_tempo(120u << 16);
-    CHECK(result(11) == "bpm 120.0", "tempo: %s", result(11).c_str());
+    CHECK(result(11) == "120.0bpm", "tempo: %s", result(11).c_str());
     s_gate_from_audio = true;
     sleep_ms(100);
     CHECK(result(5) == "aud G", "gate_on seen on the audio thread: %s", result(5).c_str());
     CHECK(result(6) == "OTHER 0", "the audio thread's scheduling: %s", result(6).c_str());
+    // Gates 127, 100, then a reset, then 90 and the one from the audio thread.
+    CHECK(result(12) == "g4", "gates: %s", result(12).c_str());
+    CHECK(result(13) == "gpr 2", "gates between resets: %s", result(13).c_str());
+    CHECK(result(14) == "r1 a1", "resets, all-notes-offs: %s", result(14).c_str());
+    CHECK(result(15) == "v64-127", "velocity range: %s", result(15).c_str());
+    for (int i = 0; i < 16; ++i)
+        CHECK(result(i).size() <= 8, "Result %d fits the panel (8 characters): %s", i + 1, result(i).c_str());
     CHECK(s_peak.load() > 0.05f, "the gates made sound (peak %.3f)", s_peak.load());
 
     // ── A panel that polls: Clock asked 40 times a second for 2.5 s ─────────

@@ -59,6 +59,8 @@ platform, `docker/`, `tools/`) are listed under [Repository Structure](#reposito
     - [LuceAlNeon](platform/drumlogue/reverb_light/README.md) — reverb, five parallel paths: design and user guide.
     - [delay_tribal](platform/drumlogue/delay_tribal/README.md) (Tribale) — delay, a percussion micro-ensemble.  [`TODO.md`](platform/drumlogue/delay_tribal/TODO.md): hardware findings, fixes and open items.
     - Each synth and effect above also carries a `README_<NAME>.md`: an identical copy of its `README.md`.
+  - **Planned**
+    - [Braquetti](platform/drumlogue/braquetti/PLAN.md) — Brachetti with a three-lane sequencer: what SeqProbe measured on the drumlogue, the design that follows, the open items.
   - **Test units** (installed on the drumlogue, make no music)
     - [SeqProbe](platform/drumlogue/seq_probe/README.md) (`seq_probe`) — for the planned parallel sequencer: measures on the device how the panel redraws, what a program load and the sequencer send, the audio thread, and file access at boot (the only time the drumlogue allows it); how to install it, what to do if it does not appear (with [SeqProbeLite](platform/drumlogue/seq_probe_lite/), the same probe without bitmap knobs or files), the step-by-step test and its Result list.
   - **Host tools**

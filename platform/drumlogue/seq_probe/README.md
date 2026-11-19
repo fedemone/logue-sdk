@@ -96,7 +96,7 @@ something.
 | 3 | Grid — **turn** (cursor step) | Gate — step and velocity | Event — last two events | Files — boot file test |
 | 4 | Step 1 — **turn** | Step 2 — **turn** | Step 3 — **turn** | Step 4 — **turn** |
 | 5 | Lane — **turn** (A, B, C) | | | |
-| 6 | Result — **turn** (12 positions) | | | |
+| 6 | Result — **turn** (16 positions) | | | |
 
 **Clock only ever counts up**: it is the seconds since the unit started,
 not a knob value.  The knob itself does nothing.  What matters is *when* the
@@ -135,7 +135,7 @@ small demo pattern.
 - J: what does **Gate** show while playing?  Does the velocity (`v…`) differ on step 1?
 - K: does **Grid** show a moving dot near the bottom (the playhead)?  (SeqProbeLite: does `p..` count?)
 - Press Stop.
-- L: what does **Event** show?  (`Aoff>Rset` = all-notes-off, then reset.)
+- L: what does **Event** show?  (`Aof>Rst` = all-notes-off, then reset; `Rst>Rst` = two resets.)
 - If you can play the Multi part from the step keys, or from MIDI, play a few notes.
 - M: does **Event** show `N60` or similar?
 - N: what does **Files** show?  (`rw ok`, `late`, `lite`, or an error such as `wr e30`.)
@@ -150,7 +150,7 @@ small demo pattern.
 - Q: does it start from what it showed (`---` → `AcSnre`), or jump?
 
 **Step 7 — the Result list.**  Go to page 6 and turn **Result** through its
-12 positions.  Write down what each shows (the table below says what each
+16 positions.  Write down what each shows (the table below says what each
 means).  Then switch the drumlogue off and on once, and read position 4 again.
 
 ## The Result list
@@ -158,17 +158,24 @@ means).  Then switch the drumlogue off and on once, and read position 4 again.
 | # | Shows | Means |
 |---|---|---|
 | 1 | `14s #1` | `unit_init` ran 14 s after the system started, and it is the first init since power-on.  A large number or `#2` means init comes when the unit is selected, not at boot |
-| 2 | `rd ok 23` | At boot the `Programs` folder could be listed (23 entries).  `rd e13`: it could not, with that error.  `late` / `noclk`: the file test did not run (not at boot / no clock to tell) |
+| 2 | `rd 23` | At boot the `Programs` folder could be listed (23 entries).  `rd e13`: it could not, with that error.  `late` / `noclk`: the file test did not run (not at boot / no clock to tell) |
 | 3 | `wr ok` | At boot a file could be written, flushed, renamed and read back.  `wr e30`: the error.  `wr diff`: it read back different |
 | 4 | `prev ok` | The file the previous boot wrote reads back (`prev none` on the first boot) |
 | 5 | `io 3.2ms` | How long the boot-time file work took |
 | 6 | `aud GA` | Callbacks that ran on the audio thread: **G** gate on, **g** gate off, **N** note on, **S** knob set, **V** knob value asked, **T** text asked, **B** bitmap asked, **P** preset load, **A** all-notes-off, **R** reset, **M** tempo.  `aud none`: none of them.  `aud ?`: no audio yet |
-| 7 | `FIFO 80` | The audio thread's scheduling class and priority |
+| 7 | `FIFO 80` | The audio thread's scheduling class and priority (`pol3 0`: a class with no name here, 3 = BATCH, 5 = IDLE) |
 | 8 | `str 30Hz` | The most times the panel asked for one knob's text in one second while no knob turned.  0–2: only when a page is entered; 10 or more: it polls |
 | 9 | `bmp 30Hz` | The same for bitmaps (always 0 on SeqProbeLite, which has none) |
 | 10 | `knobs 4` | The most knobs polled (asked 3+ times) in one second.  4 or fewer: only the page on screen; more: other pages too |
 | 11 | `u2 o0` | Step turns made after the panel had asked for the value.  **u**: counted from the unit's number (the panel takes it); **o**: from its own |
-| 12 | `bpm 120.0` | The last tempo received |
+| 12 | `120.0bpm` | The last tempo received |
+| 13 | `g1234` | Gates received since the unit started |
+| 14 | `gpr 16` | Gates between the last two resets.  If the drumlogue resets the unit once per bar, this is the gates per bar |
+| 15 | `r12 a3` | Resets and all-notes-offs received since the unit started |
+| 16 | `v64-127` | The lowest and highest gate velocity seen (an accent should raise the highest) |
+
+Every value fits in 8 characters, about what the panel shows before it cuts
+the text off.
 
 ## Files
 

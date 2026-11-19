@@ -70,7 +70,7 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 6 — every measurement, one per knob position (README.md,
         // "The Result list"); kNumResults in unit.cc
-        {0, 11, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Result"}},
+        {0, 15, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Result"}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}
