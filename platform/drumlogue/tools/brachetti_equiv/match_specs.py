@@ -415,7 +415,7 @@ SPECS["snare"] = [
 
 # ── BrcWorld: the instruments no other family engine can make ───────────────
 # A modal bank as every modal unit has, plus the layers of
-# ../../brachetti_world/voice.h (friction voice, wire, buzz, jingles,
+# ../../brachetti_split/brachetti_world/voice.h (friction voice, wire, buzz, jingles,
 # particles), each switched on by its level in the preset's voicing row.
 WORLD = dict(Mdl=1, Ptls=2, Dky=160, TbRd=10, Gain=0, MlRs=800, MlSt=30, Hit=0, Mtr=0,
              NzMx=10, NzRs=300, NzFl=0, NzFq=800, Rel=10, exc_gain=1.0)
@@ -508,7 +508,7 @@ SPECS["world"] = [
 
 
 # ── BrcLippa: drums from a delay loop ─────────────────────────────────────────
-# The loop drum of ../../brachetti_lippa/voice.h: a Karplus-Strong loop with a
+# The loop drum of ../../brachetti_split/brachetti_lippa/voice.h: a Karplus-Strong loop with a
 # Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums with
 # karplus-strong synthesis" (2022).  The kit pieces are voiced after the
 # original brachetti's reference recordings, on the original_brachetti
@@ -564,7 +564,7 @@ def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=
 # partial sits near the recording's (mymembrane~ sounds at 0.42-0.67 of its
 # delay frequency: the all-pass and the filters pull it down), and the spec
 # compares the periodicity too (match_samples "periodic").  Tried on the loop
-# presets that ring like strings (../../brachetti_lippa/README.md); they became
+# presets that ring like strings (../../brachetti_split/brachetti_lippa/README.md); they became
 # the unit's strings instead, and this is kept for drums to come.
 MM_SETTINGS = {  # mymembrane~'s: frequency, feedback, damping, apgain, apfreq, noise; its strongest partial
     "help": (277.6, 0.7908, 0.4409, 0.6378, 169.2, 0.1018, 186.0),
@@ -634,7 +634,7 @@ SPECS["pizzico"] = [
 
 # ── BrcCordiera: the wires ───────────────────────────────────────────────────────
 # BrcSnare's eight snares and BrcWorld's two berimbaus, copied as they are
-# (../../brachetti_cordiera/README.md: bit-identical with the new layers off), so
+# (../../brachetti_split/brachetti_cordiera/README.md: bit-identical with the new layers off), so
 # a spec starts from the preset's own rows, read from presets.h, and frees only
 # what BrcCordiera adds: the wires on the head (head_follow, head_rel_ms,
 # head_crackle) on the snares, the wire's stiffness (bw_stiff, bw_stages) on
@@ -690,9 +690,9 @@ def unit_rows(unit_dir, enum):
     return v
 
 
-CORDIERA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "brachetti_cordiera")
+CORDIERA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "brachetti_split", "brachetti_cordiera")
 # The Pelle e Legno kit and the original's recordings have none of BrcCordiera's
 # instruments, so they were voiced to measured targets instead
-# (../../brachetti_cordiera/README.md, "How the instruments were voiced");
+# (../../brachetti_split/brachetti_cordiera/README.md, "How the instruments were voiced");
 # unit_rows() above reads their rows for a spec once a reference exists.
 SPECS["cordiera"] = []

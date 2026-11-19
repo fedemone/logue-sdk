@@ -2,15 +2,19 @@
 
 > **Disclaimer:** the Brachetti units are unofficial, independently developed units, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from their use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
-The code the twelve Brachetti family units share: [`brachetti_kick`](../brachetti_kick/),
-[`brachetti_tom`](../brachetti_tom/), [`brachetti_kernel`](../brachetti_kernel/),
-[`brachetti_snare`](../brachetti_snare/), [`brachetti_bar`](../brachetti_bar/),
-[`brachetti_plate`](../brachetti_plate/), [`brachetti_cymbal`](../brachetti_cymbal/),
-[`brachetti_noise`](../brachetti_noise/), [`brachetti_world`](../brachetti_world/),
-[`brachetti_lippa`](../brachetti_lippa/), [`brachetti_pizzico`](../brachetti_pizzico/) and [`brachetti_cordiera`](../brachetti_cordiera/) (see
-[the Brachetti family](../tools/brachetti_equiv/README.md)).  It is not a unit:
-there is no Makefile here, so `build -l` does not list it.  Units include its
-headers by relative path (`#include "../brachetti_common/knobs.h"`), which
+The code the twelve Brachetti family units share: [`brachetti_kick`](../brachetti_split/brachetti_kick/),
+[`brachetti_tom`](../brachetti_split/brachetti_tom/), [`brachetti_kernel`](../brachetti_split/brachetti_kernel/),
+[`brachetti_snare`](../brachetti_split/brachetti_snare/), [`brachetti_bar`](../brachetti_split/brachetti_bar/),
+[`brachetti_plate`](../brachetti_split/brachetti_plate/), [`brachetti_cymbal`](../brachetti_split/brachetti_cymbal/),
+[`brachetti_noise`](../brachetti_split/brachetti_noise/), [`brachetti_world`](../brachetti_split/brachetti_world/),
+[`brachetti_lippa`](../brachetti_split/brachetti_lippa/), [`brachetti_pizzico`](../brachetti_split/brachetti_pizzico/) and [`brachetti_cordiera`](../brachetti_split/brachetti_cordiera/) (see
+[the Brachetti family](../tools/brachetti_equiv/README.md)), all in
+[`brachetti_split`](../brachetti_split/), and the [`brachetti`](../brachetti/README.md)
+unit that plays all twelve families as its presets (it compiles every
+family's code in one translation unit, each inside a namespace of its own).
+It is not a unit: there is no Makefile here, so `build -l` does not list it.
+Units include its headers by relative path (`#include "../../brachetti_common/knobs.h"`
+from a family unit, `"../brachetti_common/knobs.h"` from `brachetti`), which
 works the same in the SDK's Docker build, in `arm_size.sh` and in the
 equivalence driver.
 
@@ -237,12 +241,15 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
   A change in this folder reaches every unit, so check all twelve:
 
       cd ../tools/brachetti_equiv
-      for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
+      for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_split/brachetti_$u; done
 
   and BrcWorld and BrcLippa, which have no original, against renders of
   themselves made before the change (`preset_probe render`); BrcPizzico and
   BrcCordiera likewise; BrcLippa's mymembrane~ presets also against Pd
   (`../tools/brachetti_equiv/mymembrane_check.py`).
+
+  Then `./brachetti_check.sh`: Brachetti must still play all twelve
+  families bit for bit as the family units.
 
   A knob a unit relabelled is compared under its original name
   (`../tools/brachetti_equiv/aliases.txt`); a family knob, which has no
@@ -279,9 +286,15 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
   buffers live at namespace scope with `static` (each unit's `kPresetNames`,
   `kModelNames`, ...) or in a `static` function (`knob_text`).
   `arm_size.sh` fails a unit that has a unique symbol, and
-  [`multi_load.sh`](../tools/brachetti_equiv/multi_load.sh) loads all twelve
-  units into one process and checks every display string against the unit
+  [`multi_load.sh`](../tools/brachetti_equiv/multi_load.sh) loads Brachetti
+  and all twelve family units into one process and checks every display string against the unit
   loaded alone.
+- **Include guards, not namespaces, keep the library single.**  Brachetti
+  includes every header here at global scope and then each family's
+  `synth_engine.h` inside `namespace fam_<family>`; the `#pragma once` of a
+  library header is what stops a family's own `#include` of it from
+  declaring it again inside that namespace.  Keep `#pragma once` on every
+  header, and add a new header to Brachetti's `families.h` list.
 - **No constructors.**  Plain structs with default member initialisers, no
   virtual functions, no heap: each unit's global synth object stays
   constant-initialised and loads from the ELF instead of being built at run

@@ -36,7 +36,7 @@ EDGES = [0, 150, 300, 600, 1200, 2400, 4800, 9600, 24000]
 
 def knobs(unit):
     """(slot, min, max, name) of every named knob in header.c."""
-    txt = open(os.path.join(DRUM, "brachetti_" + unit, "header.c")).read()
+    txt = open(os.path.join(DRUM, "brachetti_split", "brachetti_" + unit, "header.c")).read()
     out = []
     rx = r'\{(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*k_unit_param_type_\w+,[^{]*\{"(\w*)"\}\}'
     for slot, m in enumerate(re.finditer(rx, txt)):
@@ -67,7 +67,7 @@ def cell(x):
 
 def main():
     for unit in sys.argv[1:] or ["tom"]:
-        udir = os.path.join(DRUM, "brachetti_" + unit)
+        udir = os.path.join(DRUM, "brachetti_split", "brachetti_" + unit)
         ks = knobs(unit)
         with tempfile.TemporaryDirectory() as work:
             exe = os.path.join(work, "live")

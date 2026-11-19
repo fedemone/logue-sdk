@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# multi_load.sh [<unit-dir> ...]   (default: the twelve family units)
+# multi_load.sh [<unit-dir> ...]   (default: Brachetti and the twelve family units)
 #
 # Do the units stay independent when the drumlogue loads several at once?
 # Builds each unit as a host shared library, then prints every display string
@@ -15,7 +15,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 if [ $# -eq 0 ]; then
-    set -- $(for u in kick tom kernel snare bar plate cymbal noise world lippa pizzico cordiera; do echo "$drum/brachetti_$u"; done)
+    set -- "$drum/brachetti" $(for u in kick tom kernel snare bar plate cymbal noise world lippa pizzico cordiera; do echo "$drum/brachetti_split/brachetti_$u"; done)
 fi
 # The drumlogue tells units apart by dev_id + unit_id: two units sharing one
 # would collide on the device, whatever their names.  (BrcLippa once shipped
@@ -35,9 +35,13 @@ libs=()
 for unit in "$@"; do
     dir="$(cd "$unit" && pwd)"
     name="$(basename "$dir")"
-    gcc -c -fPIC -O1 -w -I"$dir" -I"$drum/common" "$dir/header.c" -o "$work/$name.h.o"
+    cobjs=()
+    for c in "$dir"/*.c; do   # header.c, and Brachetti's family_headers.c
+        gcc -c -fPIC -O1 -w -I"$dir" -I"$drum/common" "$c" -o "$work/$name.$(basename "$c" .c).o"
+        cobjs+=("$work/$name.$(basename "$c" .c).o")
+    done
     g++ -c -fPIC -O1 -std=gnu++14 -w -I"$dir" -I"$drum/common" "$dir/unit.cc" -o "$work/$name.u.o"
-    g++ -shared "$work/$name.u.o" "$work/$name.h.o" -o "$work/$name.so"
+    g++ -shared "$work/$name.u.o" "${cobjs[@]}" -o "$work/$name.so"
     libs+=("$work/$name.so")
 done
 g++ -O1 -std=gnu++14 -w -I"$drum/common" "$here/multi_load.cpp" -o "$work/multi_load" -ldl

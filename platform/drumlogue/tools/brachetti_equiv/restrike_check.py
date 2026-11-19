@@ -38,7 +38,7 @@ B, A = sg.butter(4, 6000 / (SR / 2), "high")
 
 
 def build(unit, work):
-    udir = os.path.join(DRUM, "brachetti_" + unit)
+    udir = os.path.join(DRUM, "brachetti_split", "brachetti_" + unit)
     exe = os.path.join(work, "roll_" + unit)
     subprocess.run(["g++", "-std=c++17", "-O2", "-w", "-I" + udir, "-I" + DRUM, "-I" + os.path.join(DRUM, "common"),
                     "-DRUNTIME_COMMON_H_", os.path.join(HERE, "strike_roll.cpp"), "-o", exe], check=True)
