@@ -26,7 +26,7 @@ single-family units it is built from stay available in
 | Presets | 12, one per family |
 | Instruments | 114, on `Program` |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 106,324 · .rodata 61,976 · .data.rel.ro 2,320 · .data 22,832 · .bss 176,848 |
+| ARM size (cross-built, `arm_size.sh`) | .text 106,320 · .rodata 61,976 · .data.rel.ro 2,320 · .data 22,832 · .bss 176,848 |
 
 ## The presets: one per family
 
@@ -227,8 +227,26 @@ brachetti: IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs comp
 `arm_brachetti_check.sh` runs the same check on the ARM build (`-Os
 -ffast-math`, NEON) under qemu: there the compiler may fuse float operations
 differently in a different translation unit, so samples are compared within
-a tolerance and the largest difference is printed; knob read-backs and
-display strings must still match exactly.  (ARM result: see the next commit.)
+dB limit per render and the worst render is printed; knob read-backs and
+display strings must still match exactly.  Result (each dedicated knob at its two ends; `-90 dB` limit per render):
+14,564 of 14,568 renders agree within −94 dB of their signal (float
+reordering); the 4 that do not are the Gong with `Tang` (the cymbal's
+`VlMllRes` slot) at +100, at −38 dB from the first sample.  That is the
+cymbal engine's own `-ffast-math` sensitivity (BrcCymbal against the
+original measures −51 dB in its worst render, [arm_equiv](../tools/brachetti_equiv/README.md#the-neon-paths-on-arm)):
+built for ARM without `-ffast-math`, Brachetti is **bit-identical** to the
+family units on all 14,568 renders, the Gong included.
+
+**`-ffp-contract=off`.**  This check first found every modal family
+differing on ARM by −30…−50 dB from the first sample: with GCC's default
+contraction, `a*b+c` is fused into one VFMA wherever inlining puts the two
+together, and Brachetti's single translation unit inlines differently from a
+family unit's.  Some coefficients are sensitive to that rounding.  All
+thirteen units (Brachetti and the twelve family units, `config.mk`) are now
+built with `-ffp-contract=off`, which brought them back to agreement and
+keeps the ARM builds close to the host renders the presets were voiced
+against; it costs +0.1–0.3 % instructions (`arm_cpu.sh`: BrcBar 712.0 →
+714.4, BrcTom 858.7 → 861.2, BrcLippa 945.2 → 946.2).
 
 `multi_load.sh` (Brachetti with the twelve family units, each family preset
 walked): `independent: 13 units loaded together show the same 3732058 display

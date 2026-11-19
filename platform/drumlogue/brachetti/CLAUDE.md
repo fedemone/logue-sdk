@@ -20,8 +20,8 @@ README.md has the presets, the knob tables and the verification.
   It must stay IDENTICAL: every family, every instrument, every knob
   position it tries renders bit for bit as on the family unit, and every
   knob reads back as the family's own value with its display text.
-  `arm_brachetti_check.sh` runs it on the ARM build (NEON paths, within a
-  tolerance); `multi_load.sh` checks it loaded next to the family units;
+  `arm_brachetti_check.sh` runs it on the ARM build (NEON paths, -90 dB per
+  render; the Gong at Tang +100 is the known exception, see README.md); `multi_load.sh` checks it loaded next to the family units;
   `arm_size.sh ../../brachetti` measures it and fails on a GNU-unique symbol.
 - **Family code must compile inside a namespace.**  So in a family unit:
   never qualify a family name with a bare `::` (the class's
@@ -46,6 +46,10 @@ README.md has the presets, the knob tables and the verification.
   Never reorder `kFamilies`: a project stores the preset index.
 - **A new instrument in a family** needs nothing here unless it takes the
   family past 32 instruments (Program's range in `header.c`).
+- **`-ffp-contract=off`** is in every Brachetti unit's `config.mk`: without
+  it the family code fuses multiply-adds differently in this unit and the ARM
+  renders differ from the family units at -30..-50 dB.  Keep it in all
+  thirteen.
 - **Threads.**  `LoadPreset` sets the new engine up completely before the
   one atomic store that publishes it; the audio thread keeps its own copy of
   the family it renders and fades the previous one out.  Keep any new

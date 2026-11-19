@@ -379,11 +379,29 @@ clamping and that the common knobs survive a family switch.
 
 ```
 ./brachetti_check.sh         # host, bit-exact
-./arm_brachetti_check.sh     # ARM build under qemu-arm (NEON), within a tolerance
+./arm_brachetti_check.sh     # ARM build under qemu-arm (NEON), -90 dB per render
 ```
 
 Result: `IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs`.
-(ARM result: see the next commit.)
+Result (each dedicated knob at its two ends; `-90 dB` limit per render):
+14,564 of 14,568 renders agree within −94 dB of their signal (float
+reordering); the 4 that do not are the Gong with `Tang` (the cymbal's
+`VlMllRes` slot) at +100, at −38 dB from the first sample.  That is the
+cymbal engine's own `-ffast-math` sensitivity (BrcCymbal against the
+original measures −51 dB in its worst render, [arm_equiv](#the-neon-paths-on-arm)):
+built for ARM without `-ffast-math`, Brachetti is **bit-identical** to the
+family units on all 14,568 renders, the Gong included.
+
+**`-ffp-contract=off`.**  This check first found every modal family
+differing on ARM by −30…−50 dB from the first sample: with GCC's default
+contraction, `a*b+c` is fused into one VFMA wherever inlining puts the two
+together, and Brachetti's single translation unit inlines differently from a
+family unit's.  Some coefficients are sensitive to that rounding.  All
+thirteen units (Brachetti and the twelve family units, `config.mk`) are now
+built with `-ffp-contract=off`, which brought them back to agreement and
+keeps the ARM builds close to the host renders the presets were voiced
+against; it costs +0.1–0.3 % instructions (`arm_cpu.sh`: BrcBar 712.0 →
+714.4, BrcTom 858.7 → 861.2, BrcLippa 945.2 → 946.2).
 
 ### Sizes
 
