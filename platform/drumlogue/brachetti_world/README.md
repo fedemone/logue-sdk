@@ -19,6 +19,8 @@ were voiced after the [Pelle e Legno](../pelle_legno/) samples.
 | Knobs | 24 (the modal units' layout) |
 | ARM size (cross-built, `arm_size.sh`) | .text 18920 · .rodata 3504 · .data.rel.ro 84 · .data 4 · .bss 21200 |
 
+**See also [BrcCordiera](../brachetti_cordiera/README.md)**: this unit's berimbau wire made stiff (the berimbau samples' upper partials run sharp; this unit's wire is harmonic), tuned through its loss filter (here it plays 8 cents flat at the root, flatter higher up) and able to bend, for instruments of its own — a marranzano, a spring drum, a gopichand.
+
 ## Presets
 
 | # | Name | Root | Layers | Sound | Voiced after |
@@ -52,7 +54,7 @@ slowly) is not retired by the family's level squelch while the layer plays.
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all twelve Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
 
 | Page | | Knobs |
 |---|---|---|

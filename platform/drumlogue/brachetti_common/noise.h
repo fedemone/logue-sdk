@@ -5,6 +5,7 @@
 //   FastNoise         white noise in [-1, 1) from xorshift32 (the exciters)
 //   brc::lcg_unit     one step of a linear congruential generator, in [0, 1)
 //   brc::PinkFilter   white → pink noise (Paul Kellet's refined filter)
+//   brc::crackle      sparse crackle from white noise (mymembrane~'s snares)
 #include <cstdint>
 
 namespace brc {
@@ -20,6 +21,19 @@ inline uint32_t xorshift32(uint32_t& state) {
 
 // One step of the Numerical Recipes LCG, as a float in [0, 1) from the top 24
 // bits (the low bits of an LCG are poorly random).
+// Sparse crackle from uniform noise x in [-1, 1), after mymembrane~ (Miguel
+// Moreno, pd-mkmr, BSD-3-Clause), whose snares are noise~ raised to the 50th
+// power: near 0 but for rare spikes where |x| is near 1 -- a rattle of wires
+// against a head, where white noise is a hiss.  Its mean (1/51) is taken off
+// and its RMS put on the white noise's (sqrt(1/3) against
+// sqrt(1/101 - 1/51^2)), so blending the two keeps the level.
+constexpr float kCrackleMean = 1.0f / 51.0f;
+constexpr float kCrackleGain = 5.9183f;
+inline float crackle(float x) {
+    const float x2 = x * x, x4 = x2 * x2, x8 = x4 * x4, x16 = x8 * x8, x32 = x16 * x16;
+    return (x32 * x16 * x2 - kCrackleMean) * kCrackleGain;
+}
+
 inline float lcg_unit(uint32_t& state) {
     state = state * 1664525u + 1013904223u;
     return ((state >> 8) * (1.0f / 16777216.0f));

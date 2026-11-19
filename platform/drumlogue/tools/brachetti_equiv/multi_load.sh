@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# multi_load.sh [<unit-dir> ...]   (default: the nine family units)
+# multi_load.sh [<unit-dir> ...]   (default: the twelve family units)
 #
 # Do the units stay independent when the drumlogue loads several at once?
 # Builds each unit as a host shared library, then prints every display string
@@ -15,7 +15,19 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 if [ $# -eq 0 ]; then
-    set -- $(for u in kick tom kernel snare bar plate cymbal noise world; do echo "$drum/brachetti_$u"; done)
+    set -- $(for u in kick tom kernel snare bar plate cymbal noise world lippa pizzico cordiera; do echo "$drum/brachetti_$u"; done)
+fi
+# The drumlogue tells units apart by dev_id + unit_id: two units sharing one
+# would collide on the device, whatever their names.  (BrcLippa once shipped
+# with BrcWorld's unit_id, copied from the header it started from.)
+ids=$(for unit in "$@"; do
+    sed -n 's/^ *\.unit_id *= *\(0x[0-9A-Fa-f]*\)U*,.*/\1/p' "$unit/header.c" | tr 'a-f' 'A-F' | sed "s|\$| $(basename "$unit")|"
+done)
+dups=$(echo "$ids" | awk '{print $1}' | sort | uniq -d)
+if [ -n "$dups" ]; then
+    echo "DUPLICATE unit_id: $dups"
+    echo "$ids" | grep -F "$dups"
+    exit 1
 fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

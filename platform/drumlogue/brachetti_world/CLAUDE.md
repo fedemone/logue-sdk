@@ -19,8 +19,8 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
   is above 0; the field order of `Voicing` must match `VOICING_FIELDS["world"]`
   in `match_samples.py`.
 - **Shared code.**  The engine is `../brachetti_common/modal_synth.h`; a
-  change in the library reaches all nine units (run `run_equiv.sh` on the
-  other eight, and the render comparison above here).  Each file's
+  change in the library reaches all twelve units (run `run_equiv.sh` on the
+  eight split units, and the render comparison above here and on BrcLippa).  Each file's
   `From brachetti_common` block lists the helpers it uses
   (`../tools/brachetti_equiv/lib_uses.py --write` / `--check`).
 - **Punch** is the shared transient shaper (`brc::Punch`, `voice_layers.h`):
@@ -34,7 +34,7 @@ Rainstk.  README.md lists the presets, the layers and what the knobs do.
 - **Memory.**  The wires' delay lines (16 KB) live in `.bss`
   (`s_wire_lines`), not in the synth object.  No user-defined constructors.
 - **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
-  knobs (`../brachetti_common/common_knobs.h`), the same on all nine units;
+  knobs (`../brachetti_common/common_knobs.h`), the same on all twelve units;
   pages 3-6 are the modal engine's standard set (`brc::ModalLayout`, which
   `header.c` must match slot for slot), except VlMllRes' slot, which is
   `Rattle`, and Rel's, which is `Punch` (`fixed_knob` gives Rel each preset's

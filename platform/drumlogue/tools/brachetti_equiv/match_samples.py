@@ -68,7 +68,14 @@ NOISE_KNOBS = ["Prg", "-", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
 # Punch's 0 (off), and the spec's value goes to the unit's per-preset table
 # of what the displaced knob shipped with (the unit reads it from there).
 DISPLACED = {"tom": ("Rel", "kShippedRel"), "plate": ("Rel", "kShippedRel"),
-             "world": ("Rel", "kShippedRel"), "snare": ("Ptls", "kShippedPartls")}
+             "world": ("Rel", "kShippedRel"), "snare": ("Ptls", "kShippedPartls"),
+             "lippa": ("Rel", "kShippedRel"), "pizzico": ("Rel", "kShippedRel"),
+             "cordiera": ("Ptls", "kShippedPartls")}
+# Standard slots a unit gave to knobs of its own that ship 0 (the identity),
+# whose standard knob plays at a fixed value the unit holds: the column is 0
+# whatever the spec says.  BrcLippa: Bend, BendTm, Snares, Blend, SnrTone.
+FAMILY_ZERO = {"lippa": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl"),
+               "pizzico": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
 
 
 def shipped_table(text, unit, values, at=None):
@@ -121,7 +128,23 @@ VOICING_FIELDS = {
               "jg_spread_ms", "jg_clash_ms",
               "pt_level", "pt_rate", "pt_attack_ms", "pt_hold_ms", "pt_t60_ms", "pt_click_ms",
               "pt_f1_hz", "pt_q1", "pt_f2_hz", "pt_q2", "pt_mix2", "pt_direct"],
+    "cordiera": ["modal_mix", "onset_ms", "band_mix", "split", "pitch_env", "pitch_decay",
+             "pitch_amount", "boom_inc", "boom_env", "boom_decay", "boom_mix",
+             "boom_attack_env", "boom_attack_inc", "wire_mix", "wire_onset_env",
+             "wire_onset_attack", "wire_a1", "wire_a2", "band_b_hz", "band_b_r",
+             "band_c_hz", "band_c_r", "exc_gain", "head_follow", "head_rel_ms", "head_crackle",
+             "bw_level", "bw_hz", "bw_t60_ms", "bw_damp", "bw_burst_ms", "bw_direct",
+             "gourd_hz", "gourd_up_hz", "gourd_up_ms", "gourd_down_hz", "gourd_down_hold_ms",
+             "gourd_down_ms", "gourd_q", "bw_stiff", "bw_stages", "snare_kind", "band_a_hz",
+             "bw_bend_up", "bw_bend_down"],
+    "lippa": ["modal_mix", "onset_ms", "band_mix", "split", "exc_gain",
+             "lp_level", "lp_hz", "lp_t60_ms", "lp_hf", "ap_ratio", "ap_gain", "blend",
+             "exc_ratio", "exc_noise", "exc_noise_hz", "exc_pos", "bend", "bend_ms",
+             "sn_level", "sn_hz", "sn_q", "sn_att_ms", "sn_rel_ms", "sn_crackle",
+             "mm_level", "mm_hz", "mm_feedback", "mm_damping", "mm_apgain", "mm_apf_hz", "mm_snares"],
 }
+# BrcPizzico's: BrcLippa's loop without mymembrane~.
+VOICING_FIELDS["pizzico"] = [f for f in VOICING_FIELDS["lippa"] if not f.startswith("mm_")]
 VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0, split=0.0,
                         pitch_env=0.0, pitch_decay=0.0, pitch_amount=0.0, boom_inc=0.0,
                         boom_env=0.0, boom_decay=0.0, boom_mix=0.0, boom_attack_env=0.0,
@@ -165,6 +188,8 @@ def knob_row(v, idx, unit):
         x = idx if c == "Prg" else int(round(v.get(c, 0)))
         if unit in DISPLACED and c == DISPLACED[unit][0]:
             x = 0   # the slot is Punch's (off); the value goes to shipped_table
+        if c in FAMILY_ZERO.get(unit, ()):
+            x = 0
         if c in KNOB_RANGES:
             lo, hi = KNOB_RANGES[c]
             x = max(lo, min(hi, x))
@@ -295,7 +320,8 @@ def patch_presets(text, unit, cands, first_idx):
 # ---------------------------------------------------------------------------
 UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
                  snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick",
-                 world="brachetti_world")
+                 world="brachetti_world", lippa="brachetti_lippa", pizzico="brachetti_pizzico",
+                 cordiera="brachetti_cordiera")
 
 
 def build(unit_dir, out):
@@ -349,11 +375,16 @@ BANDS = [(0, 100), (100, 300), (300, 1000), (1000, 3000), (3000, 8000), (8000, 2
 
 def load(path):
     sr, x = wavfile.read(path)
+    kind = x.dtype.kind
     x = x.astype(np.float64)
     if x.ndim > 1:
         x = x.mean(axis=1)
-    if x.dtype.kind == "i":
+    if kind == "i":
         x /= 32768.0
+    if sr != SR:   # the original's reference recordings include 44.1 kHz ones
+        from scipy.signal import resample_poly
+        g = np.gcd(SR, sr)
+        x = resample_poly(x, SR // g, sr // g)
     return x
 
 
@@ -385,7 +416,87 @@ def pitch_track(x, lo, hi):
     return np.array(out)
 
 
-def features(x, track=None):
+def band_energy(s):
+    S = np.abs(np.fft.rfft(s, 1 << 15)) ** 2
+    f = np.fft.rfftfreq(1 << 15, 1 / SR)
+    return np.array([S[(f >= lo) & (f < hi)].sum() for lo, hi in BANDS])
+
+
+def band_decay(x, late, tot):
+    """Each band's energy in the late windows against its own in the first
+    100 ms, in decades (a spec's "late"): how much faster the highs die than
+    the lows.  The default features cannot see it -- their spectral windows
+    end at 300 ms, and a late window's band SHARES are the fundamental's in
+    any drum -- so a loop whose highs ring on like a string's scores as well
+    as one whose highs die as a head's do."""
+    early = band_energy(x[:int(0.1 * SR)]) / tot
+    out = []
+    for a, b in late:
+        lt = band_energy(x[int(a * SR):int(b * SR)]) / tot
+        out.append(np.log10(lt + 1e-9) - np.log10(early + 1e-9))
+    return np.array(out)
+
+
+def band_kurtosis(x):
+    """How impulsive the 2-8 kHz band is (a spec's "sparsity"): its kurtosis in
+    20 ms frames over 20-200 ms, each frame normalised so the decay envelope
+    does not count.  Gaussian noise reads 3; snare wires rattling against a
+    head read higher (a gut-snared bendir ~10), which band energies cannot see:
+    a crackle and a hiss through the same band-pass have the same spectrum."""
+    from scipy.signal import butter, sosfiltfilt
+    sos = butter(4, [2000, 8000], btype="band", fs=SR, output="sos")
+    y = sosfiltfilt(sos, x)
+    h = int(0.02 * SR)
+    ks = []
+    for a in range(int(0.02 * SR), int(0.2 * SR) - h, h):
+        f = y[a:a + h] - np.mean(y[a:a + h])
+        v = np.mean(f ** 2)
+        if v > 0:
+            ks.append(np.mean(f ** 4) / v ** 2)
+    return float(np.mean(ks)) if ks else 3.0
+
+
+def partial_stretch(x, f0_lo, f0_hi, kmax):
+    """How far partials 2..kmax sit from k times the fundamental, in cents (a
+    spec's "stretch"): a stiff wire's upper partials run sharp, a flexible
+    one's sit on the harmonic series.  The fundamental is the strongest peak
+    in [f0_lo, f0_hi] over 20-500 ms; each partial the strongest peak within
+    5 % of k times it."""
+    s = x[int(0.02 * SR):int(0.5 * SR)]
+    S = np.abs(np.fft.rfft(s * np.hanning(len(s)), 1 << 18))
+    f = np.fft.rfftfreq(1 << 18, 1 / SR)
+    m = (f >= f0_lo) & (f <= f0_hi)
+    f0 = f[m][np.argmax(S[m])]
+    out = []
+    for k in range(2, kmax + 1):
+        mm = (f > 0.95 * k * f0) & (f < 1.05 * k * f0)
+        out.append(1200.0 * np.log2(f[mm][np.argmax(S[mm])] / (k * f0)))
+    return np.array(out)
+
+
+def periodicity(x, a=0.05, b=0.35, lo=0.001, hi=0.025):
+    """How string-like a sound is (a spec's "periodic"): the largest normalised
+    autocorrelation over 50-350 ms at a lag of 1-25 ms, past the first zero
+    crossing (a dark sound's slow fall is not a period).  A plucked string
+    repeats itself every period (the original's Koto sample: 0.85); a struck
+    head does not (the rack tom recording 0.71, the taiko 0.20).  Band
+    energies cannot see it."""
+    s = x[int(a * SR):int(b * SR)]
+    s = s - np.mean(s)
+    n = len(s)
+    F = np.fft.rfft(s, 2 * n)
+    ac = np.fft.irfft(F * np.conj(F))[:n]
+    ac = ac / (ac[0] + 1e-20)
+    l0, l1 = int(lo * SR), int(hi * SR)
+    z = np.nonzero(ac[1:l1] < 0)[0]
+    l0 = max(l0, int(z[0]) + 1) if len(z) else l1 - 1
+    return float(np.max(ac[l0:l1]))
+
+
+def features(x, track=None, late=None, sparsity=False, stretch=None, periodic=False):
+    """late: (start, end) windows, in seconds, for band_decay (a spec's
+    "late"); None leaves it out.  sparsity: band_kurtosis (a spec's
+    "sparsity")."""
     x = x - np.mean(x)
     tot = np.sum(x ** 2) + 1e-20
     ew = np.array([np.sum(x[int(a * SR):int(b * SR)] ** 2) / tot for a, b in WINDOWS])
@@ -404,7 +515,16 @@ def features(x, track=None):
     m = (f > 40) & (f < 6000)
     pk = f[m][np.argmax(S[m])]
     return dict(ew=ew, bw=np.array(bw), t40=t40(x), pk=pk,
-                track=pitch_track(x, *track) if track else None)
+                track=pitch_track(x, *track) if track else None,
+                bd=band_decay(x, late, tot) if late else None,
+                ku=band_kurtosis(x) if sparsity else None,
+                st=partial_stretch(x, *stretch) if stretch else None,
+                pe=periodicity(x) if periodic else None)
+
+
+def spec_features(x, spec):
+    return features(x, spec.get("track"), spec.get("late"), spec.get("sparsity", False),
+                    spec.get("stretch"), spec.get("periodic", False))
 
 
 def score(fa, fb, w):
@@ -416,8 +536,21 @@ def score(fa, fb, w):
     d_g = 0.0
     if fa.get("track") is not None and fb.get("track") is not None:
         d_g = np.mean(np.abs(np.log2(fa["track"] / fb["track"]))) * 12.0   # semitones
+    d_d = 0.0
+    if fa.get("bd") is not None and fb.get("bd") is not None:
+        d_d = np.mean(np.abs(fa["bd"] - fb["bd"]))   # decades
+    d_k = 0.0
+    if fa.get("ku") is not None and fb.get("ku") is not None:
+        d_k = abs(np.log(fa["ku"] / fb["ku"]))
+    d_s = 0.0
+    if fa.get("st") is not None and fb.get("st") is not None:
+        d_s = np.mean(np.abs(fa["st"] - fb["st"])) / 100.0   # in semitones
+    d_q = 0.0
+    if fa.get("pe") is not None and fb.get("pe") is not None:
+        d_q = abs(fa["pe"] - fb["pe"])
     return (w.get("e", 1.0) * d_e + w.get("b", 1.0) * d_b + w.get("t", 0.6) * d_t
-            + w.get("p", 1.0) * d_p + w.get("g", 0.15) * d_g)
+            + w.get("p", 1.0) * d_p + w.get("g", 0.15) * d_g + w.get("d", 0.5) * d_d
+            + w.get("k", 1.0) * d_k + w.get("s", 2.0) * d_s + w.get("q", 2.0) * d_q)
 
 
 def describe(fa, fb):
@@ -469,11 +602,11 @@ def start_values(spec, saved):
 
 
 def search(unit, specs, gens, vel, secs, saved):
-    targets = [features(load(s["ref"]), s.get("track")) for s in specs]
+    targets = [spec_features(load(s["ref"]), s) for s in specs]
     state = [dict(vals=start_values(s, saved), steps=initial_steps(s), best=None) for s in specs]
     first = render_candidates(unit, [st["vals"] for st in state], vel, secs)
     for st, (x, trim), ft, s in zip(state, first, targets, specs):
-        st["best"] = score(features(x, s.get("track")), ft, s.get("weights", {}))
+        st["best"] = score(spec_features(x, s), ft, s.get("weights", {}))
         st["trim"] = trim
     for g in range(gens):
         cands, owner = [], []
@@ -486,7 +619,7 @@ def search(unit, specs, gens, vel, secs, saved):
         res = render_candidates(unit, cands, vel, secs)
         improved = [[] for _ in specs]
         for (k, name, sgn), nv, (x, trim) in zip(owner, cands, res):
-            sc = score(features(x, specs[k].get("track")), targets[k], specs[k].get("weights", {}))
+            sc = score(spec_features(x, specs[k]), targets[k], specs[k].get("weights", {}))
             if sc < state[k]["best"] - 1e-4:
                 improved[k].append((sc, name, nv, trim))
         changed = 0
@@ -543,7 +676,7 @@ def main():
     if a.report:
         res = render_candidates(a.unit, [start_values(s, saved) for s in specs], a.vel, a.secs)
         for s, (x, trim) in zip(specs, res):
-            fa, fb = features(x, s.get("track")), features(load(s["ref"]), s.get("track"))
+            fa, fb = spec_features(x, s), spec_features(load(s["ref"]), s)
             print("%-8s score %.3f trim %.4f  %s" % (s["name"], score(fa, fb, s.get("weights", {})),
                                                      trim, describe(fa, fb)))
         return
@@ -554,7 +687,7 @@ def main():
         json.dump(saved, open(a.state, "w"), indent=1, sort_keys=True)
     res = render_candidates(a.unit, [st["vals"] for st in state], a.vel, a.secs)
     for s, st, ft, (x, trim) in zip(specs, state, targets, res):
-        fa = features(x, s.get("track"))
+        fa = spec_features(x, s)
         print("// %-8s score %.3f  %s" % (s["name"], st["best"], describe(fa, ft)))
         print("//   free: " + ", ".join("%s=%.6g" % (k, st["vals"][k]) for k in s.get("free", {})))
         print(knob_row(st["vals"], 0, a.unit))

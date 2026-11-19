@@ -505,3 +505,194 @@ SPECS["world"] = [
                    pt_hold_ms=(100, 1200, "log"), pt_t60_ms=(300, 4000, "log"), pt_click_ms=(0.05, 2.0, "log"),
                    pt_direct=(0.0, 1.0, "lin"), pt_f1_hz=(1500, 9000, "log"))),
 ]
+
+
+# ── BrcLippa: drums from a delay loop ─────────────────────────────────────────
+# The loop drum of ../../brachetti_lippa/voice.h: a Karplus-Strong loop with a
+# Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums with
+# karplus-strong synthesis" (2022).  The kit pieces are voiced after the
+# original brachetti's reference recordings, on the original_brachetti
+# branch; point BRACHETTI_ORIG at that unit as for run_equiv.sh:
+#   git worktree add /tmp/brachetti_orig origin/original_brachetti
+#   BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti python3 match_samples.py match_specs.py lippa
+# The frame drum and the surdo are voiced after Pelle e Legno samples.  Some of
+# the recordings are 44.1 kHz: match_samples.py resamples a reference to 48 kHz.
+ORIG = os.path.join(os.environ.get("BRACHETTI_ORIG", "/tmp/brachetti_orig/platform/drumlogue/brachetti"),
+                    "samples")
+# Bend, BendTm, Snares, Blend and SnrTone (VlRs', Ptls', Mdl's, NzRs' and
+# NzFl's slots) ship 0: match_samples.py writes 0 in those columns whatever
+# is here (FAMILY_ZERO).
+LOOP = dict(Dky=160, TbRd=10, Gain=0, MlRs=800, MlSt=30, Hit=0, Mtr=0, InHm=0, Rel=10,
+            NzMx=10, NzRs=300, NzFl=0, NzFq=800, count=0, modal_mix=0.0, mix=0.0, exc_gain=0.3,
+            lp_level=1.0, lp_hf=0.15, ap_ratio=0.3, ap_gain=0.3, blend=0.0,
+            exc_ratio=1.0, exc_noise=0.5, exc_noise_hz=3000.0, exc_pos=0.0, bend=0.05, bend_ms=40.0,
+            sn_level=0.0, sn_hz=3000.0, sn_q=2.0, sn_att_ms=1.0, sn_rel_ms=30.0)
+
+
+def loop_free(hz, t60):
+    """The loop's free values: its first resonance within a semitone or so of
+    the measured one, and the rest of its shape."""
+    return dict(lp_hz=(hz * 0.94, hz * 1.06, "log"), lp_t60_ms=(t60 / 4, t60 * 4, "log"),
+                lp_hf=(0.01, 1.0, "log"), ap_ratio=(0.02, 0.9, "lin"), ap_gain=(-0.9, 0.9, "lin"),
+                exc_ratio=(0.1, 2.0, "log"), exc_noise=(0.0, 3.0, "lin"),
+                exc_noise_hz=(300, 16000, "log"), exc_pos=(0.0, 0.5, "lin"), bend=(0.0, 0.6, "lin"),
+                bend_ms=(5, 300, "log"), exc_gain=(0.0, 2.0, "lin"))
+
+
+SNARES_FREE = dict(sn_level=(0.05, 8.0, "log"), sn_hz=(1500, 9000, "log"), sn_q=(0.7, 6.0, "log"),
+                   sn_rel_ms=(5, 200, "log"), blend=(0.0, 0.5, "lin"), sn_crackle=(0.0, 1.0, "lin"))
+
+
+def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=((0.3, 1.0),),
+              sparsity=None):
+    # late: each band's decay is also compared, from the first 100 ms to
+    # 300 ms - 1 s (match_samples band_decay): a loop with too little loss
+    # rings its highs on long after a real head's have died.  Cut short where
+    # a recording is.
+    # sparsity: the snares' rattle is compared too (match_samples
+    # band_kurtosis): on by default where the preset has snares.
+    if sparsity is None:
+        sparsity = (extra or {}).get("sn_level", 0.0) > 0.0
+    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late or []), sparsity=sparsity,
+                values=merge(LOOP, dict(Root=root, lp_hz=hz, lp_t60_ms=t60), extra or {}),
+                free=merge(loop_free(hz, t60), free or {}))
+
+
+# A drum on mymembrane~ (voice.h mm::Membrane, Miguel Moreno's loop), voiced
+# against a recording: it starts from the mymembrane~ setting nearest it (the
+# help patch or a demo instrument), its frequencies scaled so its strongest
+# partial sits near the recording's (mymembrane~ sounds at 0.42-0.67 of its
+# delay frequency: the all-pass and the filters pull it down), and the spec
+# compares the periodicity too (match_samples "periodic").  Tried on the loop
+# presets that ring like strings (../../brachetti_lippa/README.md); they became
+# the unit's strings instead, and this is kept for drums to come.
+MM_SETTINGS = {  # mymembrane~'s: frequency, feedback, damping, apgain, apfreq, noise; its strongest partial
+    "help": (277.6, 0.7908, 0.4409, 0.6378, 169.2, 0.1018, 186.0),
+    "demo1": (109.7, 1.0, 0.07874, 1.0, 500.0, 0.01786, 51.0),
+    "demo2": (245.3, 0.8677, 0.4016, 0.3071, 174.5, 0.1266, 108.0),
+    "demo3": (314.2, 0.9214, 0.2362, -0.5591, 257.0, 0.01156, 132.0),
+    "demo4": (134.1, 0.9838, 0.748, 0.3701, 309.4, 0.001, 86.0),
+}
+
+
+def mm_spec(name, enum, ref, note, root, pk, start, late=((0.3, 1.0),)):
+    f, fb, dmp, apg, apf, nse, mpk = MM_SETTINGS[start]
+    k = pk / mpk
+    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late), periodic=True,
+                values=merge(LOOP, dict(Root=root, lp_level=0.0, mm_level=1.0, mm_hz=f * k,
+                                        mm_feedback=fb, mm_damping=dmp, mm_apgain=apg,
+                                        mm_apf_hz=apf * k, mm_snares=0.0, exc_gain=0.0)),
+                free=dict(mm_hz=(f * k * 0.7, f * k * 1.4, "log"), mm_feedback=(0.5, 1.0, "lin"),
+                          mm_damping=(0.0, 1.0, "lin"), mm_apgain=(-1.0, 1.0, "lin"),
+                          mm_apf_hz=(apf * k * 0.33, min(apf * k * 3.0, 20000.0), "log")))
+
+
+def string_spec(name, enum, ref, note, root, t60, extra=None):
+    """One of the loop presets that ring like strings: voiced as drums after
+    `ref`, kept as string instruments, tuned to the root note (440 Hz at 69)
+    and with the pitch pinned there, so a search cannot detune them.  The
+    score is still against the drum: a search would pull a string back
+    towards it, so a better string needs a new spec (a string's recording)."""
+    s = loop_spec(name, enum, ref, note, root, 440.0 * 2.0 ** ((root - 69) / 12.0), t60, extra)
+    del s["free"]["lp_hz"]
+    return s
+
+
+SPECS["lippa"] = [
+    loop_spec("Snare", "k_Snare", os.path.join(ORIG, "acoustic-snare.wav"),
+              "acoustic snare: the head through an all-pass, the wires on its motion", 60, 264.0, 300.0,
+              dict(sn_level=1.0), SNARES_FREE),
+    loop_spec("SnrHvy", "k_SnareHeavy", os.path.join(ORIG, "snare heavy.wav"),
+              "heavy snare: a deep, slack snare struck hard", 47, 127.0, 260.0,
+              dict(sn_level=1.0, bend=0.08), SNARES_FREE, late=None),   # the recording is 0.25 s
+    loop_spec("Bendir", "k_Bendir", os.path.join(P, "020_BendirDoum.wav"),
+              "bendir: a frame drum with a snare string across the head", 41, 87.0, 350.0,
+              dict(sn_level=0.3), merge(SNARES_FREE, dict(lp_hz=(78.0, 215.0, "log"))),
+              late=((0.2, 0.42),)),   # the recording is 0.43 s
+]
+
+# BrcPizzico's strings: voiced in BrcLippa as drums after these recordings,
+# then moved (string_spec pins each at its root's pitch).
+SPECS["pizzico"] = [
+    string_spec("Harp", "k_Harp", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
+                "harp: a gut string plucked, warm, half a second (voiced as a drum)", 59, 600.0),
+    string_spec("Oud", "k_Oud", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
+                "oud: a fretless lute's string, warm, a second, the pitch settling after the pluck (voiced as a drum)",
+                52, 1200.0, dict(bend=0.1)),
+    string_spec("Fretls", "k_Fretless", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
+                "fretless bass: a low string thumbed hard, its pitch dropping into the note (voiced as a drum)",
+                39, 450.0, dict(bend=0.5, MlSt=45)),
+    string_spec("Guitar", "k_Guitar", os.path.join(ORIG, "Taiko-Hit.wav"),
+                "guitar: a low string, the brightest and longest of these (voiced as a drum)", 42, 1500.0,
+                dict(bend=0.08)),
+    string_spec("BassPiz", "k_BassPizz", os.path.join(P, "027_SurdoOpen.wav"),
+                "double bass pizzicato: very dark, about 0.6 s (voiced as a drum)", 34, 900.0),
+]
+
+
+
+
+# ── BrcCordiera: the wires ───────────────────────────────────────────────────────
+# BrcSnare's eight snares and BrcWorld's two berimbaus, copied as they are
+# (../../brachetti_cordiera/README.md: bit-identical with the new layers off), so
+# a spec starts from the preset's own rows, read from presets.h, and frees only
+# what BrcCordiera adds: the wires on the head (head_follow, head_rel_ms,
+# head_crackle) on the snares, the wire's stiffness (bw_stiff, bw_stages) on
+# the berimbaus.  Every other value stays as voiced.
+import re as _re
+
+_KNOB_COLS = ["Prg", "Root", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
+              "MlRs", "MlSt", "VlRs", "VlSt", "Ptls", "Mdl", "Dky", "Rel",
+              "Mtr", "Hit", "InHm", "TbRd", "NzMx", "NzRs", "NzFl", "NzFq"]
+_MODAL_COLS = ["r2", "r3", "r4", "t1", "t2", "t3", "t4", "mix", "e1", "e2", "e3", "e4",
+               "count", "r5", "r6", "e5", "e6"]
+
+
+def _cvalue(tok):
+    """A C initialiser to a number: 1.5f, 3, brc::phase_inc(175.0f)."""
+    tok = tok.strip()
+    m = _re.match(r"brc::phase_inc\((.*)\)$", tok)
+    if m:
+        return 2.0 * math.pi * _cvalue(m.group(1)) / SR
+    return float(tok.rstrip("fF"))
+
+
+def _rows(block):
+    block = _re.sub(r"/\*.*?\*/", "", block, flags=_re.S)
+    block = _re.sub(r"//[^\n]*", "", block)
+    return [[_cvalue(x) for x in r.split(",") if x.strip()] for r in _re.findall(r"\{([^{}]*)\}", block)]
+
+
+def unit_rows(unit_dir, enum):
+    """A preset's values as its unit ships them: the knob row, the modal bank,
+    the voicing (in VOICING_FIELDS order), the displaced Partls."""
+    text = open(os.path.join(unit_dir, "presets.h")).read()
+    enums = [l.strip().split(",")[0].split("=")[0].strip()
+             for l in text[text.index("enum Preset"):text.index("    kNumPresets")].splitlines()
+             if l.strip().startswith("k_")]
+    i = enums.index(enum)
+
+    def table(marker):
+        a = text.index(marker)
+        a = text.index("{", text.index("=", a))
+        return _rows(text[a + 1:text.index("\n};", a)])
+
+    import importlib.util as _iu
+    _sp = _iu.spec_from_file_location("_ms", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                          "match_samples.py"))
+    _ms = _iu.module_from_spec(_sp)
+    _sp.loader.exec_module(_ms)
+    v = dict(zip(_KNOB_COLS, table("kPresetKnobs[kNumPresets]")[i]))
+    v.update(zip(_MODAL_COLS, table("kModalConfigs[kNumPresets]")[i]))
+    v.update(zip(_ms.VOICING_FIELDS["cordiera"], table("kVoicing[kNumPresets]")[i]))
+    m = _re.search(r"kShippedPartls\[kNumPresets\] = \{([^}]*)\}", text)
+    v["Ptls"] = float(m.group(1).split(",")[i])
+    return v
+
+
+CORDIERA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "brachetti_cordiera")
+# The Pelle e Legno kit and the original's recordings have none of BrcCordiera's
+# instruments, so they were voiced to measured targets instead
+# (../../brachetti_cordiera/README.md, "How the instruments were voiced");
+# unit_rows() above reads their rows for a spec once a reference exists.
+SPECS["cordiera"] = []

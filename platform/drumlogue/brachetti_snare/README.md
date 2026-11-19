@@ -19,6 +19,8 @@ This unit holds the snare drums: a modal head plus three-band snare-wire resonat
 | Knobs | 24 |
 | ARM size (cross-built, `arm_size.sh`) | .text 15492 · .rodata 2152 · .data 2000 · .bss 292 |
 
+**See also [BrcCordiera](../brachetti_cordiera/README.md)**: this unit's engine with the wires also driven by the head (and the crackle of Miguel Moreno's mymembrane~), for instruments of its own — a tabor, a daf, an mbira with buzzers, a tom with the snares on.
+
 ## Presets
 
 | # | Name | Root | Sound |
@@ -46,7 +48,7 @@ pitch bend and every knob at its ends and in between (see Verification).
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all nine Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all twelve Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
 
 | Page | | Knobs |
 |---|---|---|

@@ -38,12 +38,14 @@ work="${EQUIV_WORK:-$(mktemp -d)}"
 mkdir -p "$work"
 name="$(basename "$family")"
 
-build() {  # <unit-dir> <out>
+# EQUIV_CXXFLAGS: extra flags for the family unit's build only (a unit's switch
+# that turns its own additions off, to compare it with the unit it copied).
+build() {  # <unit-dir> <out> [extra flags]
     g++ -std=c++17 -O2 -I"$1" -I"$1/.." -I"$drum/common" -DRUNTIME_COMMON_H_ \
-        -w "$here/equiv_driver.cpp" -o "$2"
+        -w ${3:-} "$here/equiv_driver.cpp" -o "$2"
 }
 build "$orig" "$work/drv_orig"
-build "$family" "$work/drv_$name"
+build "$family" "$work/drv_$name" "${EQUIV_CXXFLAGS:-}"
 
 "$work/drv_$name" --list > "$work/$name.list"
 "$work/drv_orig" --list > "$work/orig.list"
@@ -58,7 +60,9 @@ esac
 # Knobs a family unit RELABELLED (same knob, a name that says what it does
 # there): the script uses the family's name, and the original's driver finds
 # it under its own through EQUIV_ALIASES.  The list is kept in aliases.txt.
-aliases="$(awk -v u="$name" '$1 == u { print $2 }' "$here/aliases.txt" | paste -sd, -)"
+# EQUIV_ALIASES_FILE names another list, for a comparison with a unit other
+# than the original (a unit against the family unit it copied: README.md here).
+aliases="$(awk -v u="$name" '$1 == u { print $2 }' "${EQUIV_ALIASES_FILE:-$here/aliases.txt}" | paste -sd, -)"
 export EQUIV_ALIASES="$aliases"
 for al in ${aliases//,/ }; do extra+=(--alias "$al"); done
 python3 "$here/gen_scenarios.py" "$work/$name.list" --compare-with "$work/orig.list" \
