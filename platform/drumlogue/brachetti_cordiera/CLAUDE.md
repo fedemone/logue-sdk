@@ -4,8 +4,7 @@
 family unit: instruments whose voice is a wire (*cordiera*: a drum's snare
 wire).  Tabor, Daf, MbiraBz, TomBuzz on BrcSnare's engine with the wires driven
 by the head; Marranz, Spring, Gopichd on BrcWorld's berimbau wire, made stiff,
-tuned through its filters and able to bend.  It began as BrcFilo (BrcSnare's
-and BrcWorld's presets with those additions); its instruments are new.
+tuned through its filters and able to bend.  Its instruments are its own.
 README.md has the engines, the knobs, the voicing and the credits.
 
 ## Before changing anything
@@ -24,7 +23,7 @@ README.md has the engines, the knobs, the voicing and the credits.
 - **The field order of `Voicing`** must match `VOICING_FIELDS["cordiera"]` in
   `match_samples.py`.  A preset is a wire instrument when `bw_level` > 0.
 - **The two engines are BrcSnare's and BrcWorld's**, checked bit-identical to
-  them with the additions off (as BrcFilo, commit e7eeca5).  Keep their paths
+  them with the additions off, on their presets (commit e7eeca5).  Keep their paths
   separate from the additions: a snare with `head_follow` 0 runs
   `SnareWires::process()`, a wire with `bw_stages` 0 and no bend runs
   BrcWorld's loop.  The wire strike re-applies the NzRes setter and shapes the
@@ -35,7 +34,7 @@ README.md has the engines, the knobs, the voicing and the credits.
   under `kMaxStiff`, 0.97); the half-period guard in `strike_wire` keeps the
   pitch.
 - **Shared code.**  The engine is `../brachetti_common/modal_synth.h`; a
-  change in the library reaches all eleven units.  Each file's `From
+  change in the library reaches all twelve units.  Each file's `From
   brachetti_common` block lists the helpers it uses
   (`../tools/brachetti_equiv/lib_uses.py --write` / `--check`).
 - **Knobs: common, then dedicated.**  BrcSnare's layout and names (`Buzz`,

@@ -69,12 +69,13 @@ NOISE_KNOBS = ["Prg", "-", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
 # of what the displaced knob shipped with (the unit reads it from there).
 DISPLACED = {"tom": ("Rel", "kShippedRel"), "plate": ("Rel", "kShippedRel"),
              "world": ("Rel", "kShippedRel"), "snare": ("Ptls", "kShippedPartls"),
-             "lippa": ("Rel", "kShippedRel"),
+             "lippa": ("Rel", "kShippedRel"), "pizzico": ("Rel", "kShippedRel"),
              "cordiera": ("Ptls", "kShippedPartls")}
 # Standard slots a unit gave to knobs of its own that ship 0 (the identity),
 # whose standard knob plays at a fixed value the unit holds: the column is 0
 # whatever the spec says.  BrcLippa: Bend, BendTm, Snares, Blend, SnrTone.
-FAMILY_ZERO = {"lippa": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
+FAMILY_ZERO = {"lippa": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl"),
+               "pizzico": ("VlRs", "Ptls", "Mdl", "NzRs", "NzFl")}
 
 
 def shipped_table(text, unit, values, at=None):
@@ -142,6 +143,8 @@ VOICING_FIELDS = {
              "sn_level", "sn_hz", "sn_q", "sn_att_ms", "sn_rel_ms", "sn_crackle",
              "mm_level", "mm_hz", "mm_feedback", "mm_damping", "mm_apgain", "mm_apf_hz", "mm_snares"],
 }
+# BrcPizzico's: BrcLippa's loop without mymembrane~.
+VOICING_FIELDS["pizzico"] = [f for f in VOICING_FIELDS["lippa"] if not f.startswith("mm_")]
 VOICING_DEFAULTS = dict(modal_mix=0.2, onset_ms=0.0, chirp_hz=0.0, band_mix=0.0, split=0.0,
                         pitch_env=0.0, pitch_decay=0.0, pitch_amount=0.0, boom_inc=0.0,
                         boom_env=0.0, boom_decay=0.0, boom_mix=0.0, boom_attack_env=0.0,
@@ -317,7 +320,8 @@ def patch_presets(text, unit, cands, first_idx):
 # ---------------------------------------------------------------------------
 UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
                  snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick",
-                 world="brachetti_world", lippa="brachetti_lippa", cordiera="brachetti_cordiera")
+                 world="brachetti_world", lippa="brachetti_lippa", pizzico="brachetti_pizzico",
+                 cordiera="brachetti_cordiera")
 
 
 def build(unit_dir, out):

@@ -18,9 +18,9 @@ Moreno's *Realistic drums with karplus-strong synthesis* taught this family
   in its loop (Van Duyne & Smith 1994), tuned through its filters, and able
   to bend its pitch.
 
-The unit began as BrcFilo, which carried BrcSnare's and BrcWorld's own presets
-with those two additions (bit-identical to them with the additions off).  Its
-instruments are new now: none of them is in another Brachetti unit.
+Its instruments are its own: none of them is in another Brachetti unit.  Its
+engines were first checked bit-identical to BrcSnare's and BrcWorld's, on
+those units' own presets, with the two additions off.
 
 | | |
 |---|---|
@@ -91,7 +91,7 @@ MrchSnr's and RimShot's band A, BrshSnr's brush) behind a table value,
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all eleven Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**: BrcSnare's layout and names.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all twelve Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**: BrcSnare's layout and names.
 
 | Page | | Knobs |
 |---|---|---|
@@ -112,7 +112,7 @@ host-owned: a Program change leaves them where they are.
 | `BuzzTon` (MlltStif) | the wire bands' brightness | density: the stick's hardness (a shorter burst) |
 | `Crack` (VlMllRes) | the crack before the wires engage | the wire's dry contact sound beside the gourd |
 | `Tight` (VlMllStf) | the wires' Q, loose ↔ zingy | **the stiffness** (on 1 − the all-passes' coefficient, ×¼ .. ×4) |
-| `Punch` | the transient shaper (`brc::Punch`, shared by all eleven units) | the same |
+| `Punch` | the transient shaper (`brc::Punch`, shared by all twelve units) | the same |
 | `Model`, `Mterl`, `HitPos`, `Inharm` | the modal head, as on BrcSnare | `Mterl` brightness, `Inharm` the bend (the gourd's sweep and the pitch bend) |
 | `Dkay` | the head's ring | the wire's ring and the gourd's timing |
 | `BuzzLen` (Rel) | the buzz tail, and the head drive's release | the wire's fine ring length |
@@ -189,22 +189,23 @@ build drumlogue/brachetti_cordiera
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
 The product is `brachetti_cordiera.drmlgunit`; copy it to the drumlogue's
-`Units/Synths` folder.  Not yet tested on hardware.  It replaces BrcFilo
-(`brachetti_filo.drmlgunit`, 'BrFl'): delete that one from the drumlogue.
+`Units/Synths` folder.  Not yet tested on hardware.  An earlier development
+build, `brachetti_filo.drmlgunit` (BrcFilo), is not part of the family: if it
+is on the drumlogue, delete it from `Units/Synths`.
 
 ## Verification
 
 - **The engines** were checked bit-identical to BrcSnare's and BrcWorld's,
-  with the additions off, when the unit was BrcFilo (commit `e7eeca5`); the
-  changes since add table values that the copied presets did not use (the
-  wires' low band, the pitch bend, more stages, a longer line).
+  with the additions off, on those units' presets (commit `e7eeca5`); the
+  changes since add table values those presets did not use (the wires' low
+  band, the pitch bend, more stages, a longer line).
 - **Stability**: a fuzz of 3000 random sessions (every preset, every knob
   anywhere in its range, random notes, velocities and stacked strikes):
   every output sample finite and within ±0.99.
 - **Tuning** of the stiff wire: within 0.2 cents of the note from the root to
   two octaves up.
-- `multi_load.sh` (eleven units, 512,286 display strings identical alone and
-  together, unit ids distinct), `lib_uses.py --check`.
+- `multi_load.sh` (all twelve units, 512,206 display strings identical alone
+  and together, unit ids distinct), `lib_uses.py --check`.
 
 ## Code
 

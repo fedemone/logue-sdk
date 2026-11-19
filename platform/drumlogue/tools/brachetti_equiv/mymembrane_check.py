@@ -3,7 +3,7 @@
 
 Renders Miguel Moreno's mymembrane~ (pd-mkmr, BSD-3-Clause) with Pure Data,
 headless, at the settings of its help patch and its demo's four instruments
-(velocities 127 and 90), renders BrcLippa's presets 8-12 (MmSnare, MmKick,
+(velocities 127 and 90), renders BrcLippa's presets 3-7 (MmSnare, MmKick,
 MmSnr2, MmTom, MmFloor: the same settings) through the unit's own strike path
 (preset_probe match: the sequencer gate at the root, before the limiter), and
 compares them: waveform correlation over the first 200 ms, the 40 dB decay,
@@ -34,11 +34,11 @@ import match_samples as M  # noqa: E402
 # name: (freq, feedback, damping, apgain, apfreq, noise), from mymembrane~-help.pd
 # and mymembrane~-demo.pd; the BrcLippa preset index that plays it.
 SETTINGS = [
-    ("help", (277.6, 0.7908, 0.4409, 0.6378, 169.2, 0.1018), 8, "MmSnare"),
-    ("demo1", (109.7, 1.0, 0.07874, 1.0, 500.0, 0.01786), 9, "MmKick"),
-    ("demo2", (245.3, 0.8677, 0.4016, 0.3071, 174.5, 0.1266), 10, "MmSnr2"),
-    ("demo3", (314.2, 0.9214, 0.2362, -0.5591, 257.0, 0.01156), 11, "MmTom"),
-    ("demo4", (134.1, 0.9838, 0.748, 0.3701, 309.4, 0.001), 12, "MmFloor"),
+    ("help", (277.6, 0.7908, 0.4409, 0.6378, 169.2, 0.1018), 3, "MmSnare"),
+    ("demo1", (109.7, 1.0, 0.07874, 1.0, 500.0, 0.01786), 4, "MmKick"),
+    ("demo2", (245.3, 0.8677, 0.4016, 0.3071, 174.5, 0.1266), 5, "MmSnr2"),
+    ("demo3", (314.2, 0.9214, 0.2362, -0.5591, 257.0, 0.01156), 6, "MmTom"),
+    ("demo4", (134.1, 0.9838, 0.748, 0.3701, 309.4, 0.001), 7, "MmFloor"),
 ]
 STRIKE_DELAY = 0.012   # the patch below triggers at 10 ms; mymembrane~ strikes 2 ms later
 
@@ -92,7 +92,7 @@ def main():
         for vel in (127, 90):
             out = os.path.join(work, "unit%d" % vel)
             os.makedirs(out)
-            subprocess.run([probe, "match", "8", "12", str(vel), "2.9", out], check=True, capture_output=True)
+            subprocess.run([probe, "match", "3", "7", str(vel), "2.9", out], check=True, capture_output=True)
             for name, (f, fb, dmp, apg, apf, nse), idx, preset in SETTINGS:
                 wav = os.path.join(work, "%s_%d.wav" % (name, vel))
                 pf = os.path.join(work, "render.pd")

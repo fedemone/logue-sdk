@@ -31,29 +31,22 @@ enum LoopParam : uint8_t {
     k_paramSnrTone = Param::k_paramNzFltr,    // 22: the snares' band, ± 1 octave
 };
 
-// Presets 0-7 were voiced after recordings of drums, by measurement (the
+// Presets 0-2 are voiced after recordings of drums, by measurement (the
 // README, "How the presets were voiced", and
 // ../tools/brachetti_equiv/match_specs.py): the original brachetti's reference
-// recordings (its samples/ folder, on the original_brachetti branch) and two
-// Pelle e Legno samples.  Three of them are drums (Snare, SnrHvy, Bendir); the
-// other five ring like plucked strings (the loop is the Karplus-Strong string
-// algorithm), and are kept as string instruments, each named for the one it
-// comes closest to and tuned to its root note.  8-12 are Miguel Moreno's drums.
+// recordings (its samples/ folder, on the original_brachetti branch) and a
+// Pelle e Legno sample.  3-7 are Miguel Moreno's drums.  (Five more presets,
+// voiced as drums the same way, rang as strings: they are BrcPizzico's.)
 enum Preset : uint8_t {
-    k_Harp,             // 0  harp: a gut string plucked, warm, half a second (voiced as a drum after Tom1-001-CloseRoom.wav; it rings as a string)
-    k_Oud,              // 1  oud: a fretless lute's string, warm, a second, the pitch settling after the pluck (voiced as a drum after Tom2-004-CloseRoom.wav; it rings as a string)
-    k_Snare,            // 2  acoustic snare: the head through an all-pass, the wires on its motion (voiced after acoustic-snare.wav)
-    k_SnareHeavy,       // 3  heavy snare: a deep, slack snare struck hard (voiced after snare heavy.wav)
-    k_Fretless,         // 4  fretless bass: a low string thumbed hard, its pitch dropping into the note (voiced as a drum after KickA-Hard-012-CloseRoom.wav; it rings as a string)
-    k_Guitar,           // 5  guitar: a low string, the brightest and longest of these (voiced as a drum after Taiko-Hit.wav; it rings as a string)
-    k_Bendir,           // 6  bendir: a frame drum with a snare string across the head (voiced after 020_BendirDoum.wav)
-    k_BassPizz,         // 7  double bass pizzicato: very dark, about 0.6 s (voiced as a drum after 027_SurdoOpen.wav; it rings as a string)
+    k_Snare,            // 0  acoustic snare: the head through an all-pass, the wires on its motion (voiced after acoustic-snare.wav)
+    k_SnareHeavy,       // 1  heavy snare: a deep, slack snare struck hard (voiced after snare heavy.wav)
+    k_Bendir,           // 2  bendir: a frame drum with a snare string across the head (voiced after 020_BendirDoum.wav)
     // Miguel Moreno's own drums: mymembrane~'s help and demo settings, through its port (voice.h mm::Membrane)
-    k_MmSnare,          // 8  mymembrane~'s help patch: a snare-like drum, its snares on (Miguel Moreno's settings)
-    k_MmKick,           // 9  mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain (Miguel Moreno's settings)
-    k_MmSnare2,         // 10 mymembrane~ demo 2: a lower snare-like drum (Miguel Moreno's settings)
-    k_MmTom,            // 11 mymembrane~ demo 3: a tom, the all-pass's gain negative (Miguel Moreno's settings)
-    k_MmFloor,          // 12 mymembrane~ demo 4: a long, bright floor drum (Miguel Moreno's settings)
+    k_MmSnare,          // 3  mymembrane~'s help patch: a snare-like drum, its snares on (Miguel Moreno's settings)
+    k_MmKick,           // 4  mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain (Miguel Moreno's settings)
+    k_MmSnare2,         // 5  mymembrane~ demo 2: a lower snare-like drum (Miguel Moreno's settings)
+    k_MmTom,            // 6  mymembrane~ demo 3: a tom, the all-pass's gain negative (Miguel Moreno's settings)
+    k_MmFloor,          // 7  mymembrane~ demo 4: a long, bright floor drum (Miguel Moreno's settings)
     kNumPresets         // count
 };
 
@@ -61,14 +54,9 @@ enum Preset : uint8_t {
 // unit (a static local of an inline function would be STB_GNU_UNIQUE, and the
 // drumlogue's loader shares one copy of those among every loaded unit).
 static const char* const kPresetNames[] = {
-    "Harp",   
-    "Oud",    
     "Snare",  
     "SnrHvy", 
-    "Fretls", 
-    "Guitar", 
     "Bendir", 
-    "BassPiz",
     "MmSnare", // Miguel Moreno's settings
     "MmKick",  // Miguel Moreno's settings
     "MmSnr2",  // Miguel Moreno's settings
@@ -88,19 +76,14 @@ static inline const char* preset_name(uint8_t idx) {
 // loaded; the static_asserts below pin them.
 static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
     //  Prg Root  Ply  Vel  Ton  Cut Rsnc Gain MlRs MlSt Bend VlSt BnTm Snrs  Dky Pnch  Mtr  Hit InHm ApDl NzMx Blnd SnTn NzFq
-    {   0,  59,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 0: Harp
-    {   1,  52,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 1: Oud
-    {   2,  60,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 2: Snare
-    {   3,  47,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 3: SnrHvy
-    {   4,  39,   0,   1,   0,1999,  71,   0, 800,  45,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 4: Fretls
-    {   5,  42,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 5: Guitar
-    {   6,  41,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 6: Bendir
-    {   7,  34,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 7: BassPiz
-    {   8,  54,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 8: MmSnare
-    {   9,  32,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 9: MmKick
-    {  10,  45,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 10: MmSnr2
-    {  11,  48,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 11: MmTom
-    {  12,  41,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 12: MmFloor
+    {   0,  60,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 0: Snare
+    {   1,  47,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 1: SnrHvy
+    {   2,  41,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 2: Bendir
+    {   3,  54,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 3: MmSnare
+    {   4,  32,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 4: MmKick
+    {   5,  45,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 5: MmSnr2
+    {   6,  48,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 6: MmTom
+    {   7,  41,   0,   1,   0,1999,  71,   0, 800,  30,   0,   0,   0,   0, 160,   0,   0,   0,   0,  10,  10,   0,   0, 800},   // 7: MmFloor
 };
 static_assert(brc::preset_column_in(kPresetKnobs, k_paramBend, 0, 0),
               "Bend is 0 on every preset: its mapping is the identity there");
@@ -119,7 +102,7 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramSnrTone, 0, 0),
 // own; Partls the bank's own mode count (2 = no offset); Model the drum head
 // (the bank's template and the noise burst's band balance); NzRes and NzFltr
 // the noise burst's filter at its header.c defaults (30 %, low-pass).
-static const int8_t kShippedRel[kNumPresets] = {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10};
+static const int8_t kShippedRel[kNumPresets] = {10, 10, 10, 10, 10, 10, 10, 10};
 constexpr int32_t kFixedPartls = 2;
 constexpr int32_t kFixedModel  = brc::k_Drumhead;
 constexpr int32_t kFixedNzRes  = 300;
@@ -137,21 +120,11 @@ static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramDkay, 0, 200),
 // modes 2-4, T60s of modes 1-4 (ms), LoadPreset's mix, mode amplitudes 1-4,
 // mode count, then the optional ratios and amplitudes of modes 5 and 6.
 static const brc::ModalPresetConfig kModalConfigs[kNumPresets] = {
-    /* k_Harp: harp: a gut string plucked, warm, half a second */
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Oud: oud: a fretless lute's string, warm, a second, the pitch settling after the pluck */
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Snare: acoustic snare: the head through an all-pass, the wires on its motion */
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_SnareHeavy: heavy snare: a deep, slack snare struck hard */
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Fretless: fretless bass: a low string thumbed hard, its pitch dropping into the note */
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Guitar: guitar: a low string, the brightest and longest of these */
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Bendir: bendir: a frame drum with a snare string across the head */
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_BassPizz: double bass pizzicato: very dark, about 0.6 s */
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_MmSnare: mymembrane~'s help patch: a snare-like drum, its snares on (Miguel Moreno's settings) */
     {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0.0f, 0.0f},
@@ -201,14 +174,9 @@ struct Voicing {
     float mm_level, mm_hz, mm_feedback, mm_damping, mm_apgain, mm_apf_hz, mm_snares;
 };
 static const Voicing kVoicing[kNumPresets] = {
-    /* k_Harp         */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 246.941651f, 821.401454f, 0.393288363f, 0.1625f, 0.185742187f, 0.0f, 1.04427378f, 0.828125f, 2020.41268f, 0.109375f, 0.088671875f, 42.685616f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Oud          */{0.0f, 0.0f, 0.0f, 0.0f, 0.0625f, 1.0f, 164.813778f, 1706.27112f, 0.11660917f, 0.4375f, 0.553125f, 0.0f, 0.978572062f, 0.5f, 4430.47844f, 0.0458984375f, 0.1984375f, 39.1428825f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Snare        */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 264.0f, 352.919097f, 0.182287104f, 0.238125f, -0.0375f, 0.0f, 0.707106781f, 0.0f, 1600.7106f, 0.0f, 0.0f, 40.0f, 0.978572062f, 2075.86482f, 0.7f, 1.0f, 5.0f, 0.2921875f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_SnareHeavy   */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 127.0f, 367.695526f, 0.115665812f, 0.334160156f, 0.29296875f, 0.0f, 1.09050773f, 2.24609375f, 931.393359f, 0.0f, 0.04015625f, 48.6098944f, 0.917004043f, 4019.00257f, 1.61923514f, 1.0f, 29.3571619f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Fretless     */{0.0f, 0.0f, 0.0f, 0.0f, 0.068359375f, 1.0f, 77.7817459f, 713.766576f, 0.380715287f, 0.3f, 0.0754394531f, 0.0f, 0.978572062f, 0.5f, 1268.1936f, 0.09765625f, 0.348828125f, 40.0f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_Guitar       */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 92.4986057f, 1783.81067f, 0.626564269f, 0.3f, -0.0515625f, 0.0f, 0.68080451f, 1.625f, 2536.3872f, 0.0625f, 0.19953125f, 15.5058488f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_Bendir       */{0.0f, 0.0f, 0.0f, 0.0f, 0.3f, 1.0f, 100.870445f, 494.974747f, 0.115665812f, 0.2725f, 0.525f, 0.0f, 0.840896415f, 1.7421875f, 809.070598f, 0.0f, 0.03984375f, 20.8854756f, 0.126134462f, 4831.471f, 0.989949494f, 1.0f, 21.4442001f, 0.846875f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_BassPizz     */{0.0f, 0.0f, 0.0f, 0.0f, 0.01171875f, 1.0f, 58.2704702f, 1280.13653f, 0.226374664f, 0.41859375f, 0.3f, 0.0f, 0.703287997f, 0.171875f, 3491.17458f, 0.0f, 0.051171875f, 71.0150597f, 0.0f, 3000.0f, 2.0f, 1.0f, 30.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_MmSnare      */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 277.6f, 0.7908f, 0.4409f, 0.6378f, 169.2f, 0.1018f},
     /* k_MmKick       */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 109.7f, 1.0f, 0.07874f, 1.0f, 500.0f, 0.01786f},
     /* k_MmSnare2     */{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 245.3f, 0.8677f, 0.4016f, 0.3071f, 174.5f, 0.1266f},
@@ -221,17 +189,12 @@ static const Voicing kVoicing[kNumPresets] = {
 // the root, on a body target of 1.5, clamped to <= 1):
 // ../tools/brachetti_equiv/preset_probe calib reprints this table.
 static const float kOutTrim[kNumPresets] = {
-    /* 0  Harp    */ 0.67314f,
-    /* 1  Oud     */ 0.94968f,
-    /* 2  Snare   */ 0.48404f,
-    /* 3  SnrHvy  */ 0.44734f,
-    /* 4  Fretls  */ 0.68473f,
-    /* 5  Guitar  */ 0.61405f,
-    /* 6  Bendir  */ 0.54714f,
-    /* 7  BassPiz */ 0.62008f,
-    /* 8  MmSnare */ 1.00000f,
-    /* 9  MmKick  */ 1.00000f,
-    /* 10 MmSnr2  */ 1.00000f,
-    /* 11 MmTom   */ 1.00000f,
-    /* 12 MmFloor */ 1.00000f,
+    /* 0  Snare   */ 0.48404f,
+    /* 1  SnrHvy  */ 0.44734f,
+    /* 2  Bendir  */ 0.54714f,
+    /* 3  MmSnare */ 1.00000f,
+    /* 4  MmKick  */ 1.00000f,
+    /* 5  MmSnr2  */ 1.00000f,
+    /* 6  MmTom   */ 1.00000f,
+    /* 7  MmFloor */ 1.00000f,
 };

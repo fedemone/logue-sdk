@@ -31,7 +31,7 @@ and nothing else.  README.md lists the presets and what every knob does.
   is not).  A new mapping must be anchored the same way, or the presets move.
 - **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
   knobs (`../brachetti_common/common_knobs.h`: `brc::CommonKnobs` handles
-  them), the same on all eleven units; the pages after them are this family's.
+  them), the same on all twelve units; the pages after them are this family's.
   `ParamIndex` (`presets.h`) must match `header.c` slot for slot (a
   static_assert checks the count; the order is on you), header defaults must
   equal preset 0's row, and `kHostKnobs` (`presets.h`) must match the defaults

@@ -53,7 +53,7 @@ namespace brc {
 // row in header.c (or vice versa) silently shifts every column of every
 // preset.
 //
-// Pages 1-2 are the COMMON knobs (common_knobs.h: the same on all eleven
+// Pages 1-2 are the COMMON knobs (common_knobs.h: the same on all twelve
 // units).  Pages 3-6 are the family's DEDICATED knobs; the standard set below
 // is what the shared modal engine drives, and the enumerator of each is also
 // its ROLE.  A unit may give a standard slot to a knob of its own (a ROLE

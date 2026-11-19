@@ -108,10 +108,19 @@ public:
     void render_voice(VoiceState& v, float* __restrict out, size_t frames, float tone) {
         const bool tone_active = (tone != 0.0f);
         const float exc = voicing().exciter_gain;
+        // A mymembrane~ voice with the burst at 0 never hears the exciter and
+        // shares no noise with it (the loop drum does): only its clock runs,
+        // for the squelch.  ~60 of the voice's ~480 instructions a sample.
+        const bool exciter_on = !(exc == 0.0f && v.mm.active());
         for (size_t i = 0; i < frames; ++i) {
             const float vel = v.current_velocity;
-            const float exciter_sig = v.exciter.process();
-            float x = (exciter_sig + v.exciter.noise_out_sample * kNoiseGain) * exc * vel;
+            float x = 0.0f;
+            if (exciter_on) {
+                const float exciter_sig = v.exciter.process();
+                x = (exciter_sig + v.exciter.noise_out_sample * kNoiseGain) * exc * vel;
+            } else {
+                ++v.exciter.current_frame;
+            }
             if (v.modal.active) x += v.modal.process() * v.modal.mix * kModalGain;
             if (v.drum.active()) x += v.drum.process(v.exciter.noise_gen);   // velocity is in its excitation
             if (v.mm.active()) x += v.mm.process();                          // and in mymembrane~'s
@@ -380,6 +389,9 @@ private:
         m.velgain = expf((2.302585f * 0.05f) * (-24.0f * (1.0f - m.v)));   // dbtorms(100 − 24·(1 − v))
         m.f   = brc::clampf(c.mm_hz * tune, 20.0f, 20000.0f);
         m.apf = brc::clampf(c.mm_apf_hz * tune / k.apdelay, 47.5f, 20000.0f);
+        // the delays after the chirp: once here, not twice a sample
+        m.dl_rest = brc::clampf(mm::kSR / m.f, mm::kMinDelay, 2040.0f);
+        m.da_rest = brc::clampf(mm::kSR / m.apf, mm::kMinDelay, 1016.0f);
         m.fbk = c.mm_feedback;
         if (k.length != 1.0f && m.fbk > 0.0f) {
             m.fbk = fminf(1.0f, powf(m.fbk, 1.0f / k.length));
@@ -405,10 +417,15 @@ private:
         m.lp.set(m.f * (powf(2.0f, 6.0f * c.mm_damping) / 2.0f) * k.bright);
         m.bp.set(3000.0f * k.snare_tone, 1.0f);
         m.snares = c.mm_snares * k.snares + kMmSnaresAdd * k.snares_add;
+        // Too faint to hear, not worth a third of the voice's CPU: MmFloor's
+        // 0.001 (Moreno's demo 4) puts its snares 69 dB under the drum.
+        if (m.snares < kMmSnaresMin) m.snares = 0.0f;
         m.rot_c = cosf(mm::kTwoPi / 1024.0f);
         m.rot_s = sinf(mm::kTwoPi / 1024.0f);
     }
     // What Snares adds, at its top, to a mymembrane~ preset that ships none
     // (the patch's noise level runs 0.001-1; the help patch ships 0.1).
     static constexpr float kMmSnaresAdd = 0.4f;
+    // A mymembrane~ snare level below this is not run (strike_membrane).
+    static constexpr float kMmSnaresMin = 0.005f;
 };

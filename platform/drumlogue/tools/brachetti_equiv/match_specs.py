@@ -599,27 +599,32 @@ def string_spec(name, enum, ref, note, root, t60, extra=None):
 
 
 SPECS["lippa"] = [
-    string_spec("Harp", "k_Harp", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
-                "harp: a gut string plucked, warm, half a second (voiced as a drum)", 59, 600.0),
-    string_spec("Oud", "k_Oud", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
-                "oud: a fretless lute's string, warm, a second, the pitch settling after the pluck (voiced as a drum)",
-                52, 1200.0, dict(bend=0.1)),
     loop_spec("Snare", "k_Snare", os.path.join(ORIG, "acoustic-snare.wav"),
               "acoustic snare: the head through an all-pass, the wires on its motion", 60, 264.0, 300.0,
               dict(sn_level=1.0), SNARES_FREE),
     loop_spec("SnrHvy", "k_SnareHeavy", os.path.join(ORIG, "snare heavy.wav"),
               "heavy snare: a deep, slack snare struck hard", 47, 127.0, 260.0,
               dict(sn_level=1.0, bend=0.08), SNARES_FREE, late=None),   # the recording is 0.25 s
+    loop_spec("Bendir", "k_Bendir", os.path.join(P, "020_BendirDoum.wav"),
+              "bendir: a frame drum with a snare string across the head", 41, 87.0, 350.0,
+              dict(sn_level=0.3), merge(SNARES_FREE, dict(lp_hz=(78.0, 215.0, "log"))),
+              late=((0.2, 0.42),)),   # the recording is 0.43 s
+]
+
+# BrcPizzico's strings: voiced in BrcLippa as drums after these recordings,
+# then moved (string_spec pins each at its root's pitch).
+SPECS["pizzico"] = [
+    string_spec("Harp", "k_Harp", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
+                "harp: a gut string plucked, warm, half a second (voiced as a drum)", 59, 600.0),
+    string_spec("Oud", "k_Oud", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
+                "oud: a fretless lute's string, warm, a second, the pitch settling after the pluck (voiced as a drum)",
+                52, 1200.0, dict(bend=0.1)),
     string_spec("Fretls", "k_Fretless", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
                 "fretless bass: a low string thumbed hard, its pitch dropping into the note (voiced as a drum)",
                 39, 450.0, dict(bend=0.5, MlSt=45)),
     string_spec("Guitar", "k_Guitar", os.path.join(ORIG, "Taiko-Hit.wav"),
                 "guitar: a low string, the brightest and longest of these (voiced as a drum)", 42, 1500.0,
                 dict(bend=0.08)),
-    loop_spec("Bendir", "k_Bendir", os.path.join(P, "020_BendirDoum.wav"),
-              "bendir: a frame drum with a snare string across the head", 41, 87.0, 350.0,
-              dict(sn_level=0.3), merge(SNARES_FREE, dict(lp_hz=(78.0, 215.0, "log"))),
-              late=((0.2, 0.42),)),   # the recording is 0.43 s
     string_spec("BassPiz", "k_BassPizz", os.path.join(P, "027_SurdoOpen.wav"),
                 "double bass pizzicato: very dark, about 0.6 s (voiced as a drum)", 34, 900.0),
 ]

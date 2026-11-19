@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# multi_load.sh [<unit-dir> ...]   (default: the eleven family units)
+# multi_load.sh [<unit-dir> ...]   (default: the twelve family units)
 #
 # Do the units stay independent when the drumlogue loads several at once?
 # Builds each unit as a host shared library, then prints every display string
@@ -15,7 +15,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 drum="$(cd "$here/../.." && pwd)"
 if [ $# -eq 0 ]; then
-    set -- $(for u in kick tom kernel snare bar plate cymbal noise world lippa cordiera; do echo "$drum/brachetti_$u"; done)
+    set -- $(for u in kick tom kernel snare bar plate cymbal noise world lippa pizzico cordiera; do echo "$drum/brachetti_$u"; done)
 fi
 # The drumlogue tells units apart by dev_id + unit_id: two units sharing one
 # would collide on the device, whatever their names.  (BrcLippa once shipped

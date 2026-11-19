@@ -11,9 +11,10 @@ most six modes per voice, the kernel and the cymbal from dense resonator
 banks, BrcNoise from shaped noise; a loop has a resonance at every trip round
 it, up to the top of the spectrum, for the cost of two delay-line reads, so
 it rings with many partials at little CPU.  The all-pass moves those partials off the harmonic
-series, which is what turns a plucked string into a struck head — or, where
-it moves them only a little, leaves a string: five of the presets came out
-that way and are kept as strings (Presets).
+series, which is what turns a plucked string into a struck head.  (Where it
+moves them only a little the loop stays a string: five presets voiced here
+came out that way, and are [BrcPizzico](../brachetti_pizzico/README.md)'s
+strings now.)
 
 It runs on the family's shared modal engine (`brachetti_common/modal_synth.h`)
 like BrcWorld: the same 24-knob layout, preset loading, voice life cycle,
@@ -26,47 +27,37 @@ recordings.
 | Unit name on the drumlogue | `BrcLippa` |
 | dev_id / unit_id | `0x46654465` ('FeDe') / `0x42724C70` ('BrLp') |
 | Engine | Karplus-Strong loop + Schroeder all-pass, tension glide, snares on the head's motion |
-| Presets | 13: 3 drums voiced after recordings, 5 strings (voiced as drums, kept for how they ring), Miguel Moreno's 5 drums |
+| Presets | 8: 3 drums voiced after recordings, Miguel Moreno's 5 |
 | Knobs | 24 (the modal units' layout, six slots the family's own) |
-| ARM size (cross-built, `arm_size.sh`) | .text 23252 · .rodata 3656 · .data.rel.ro 100 · .data 4 · .bss 52752 |
-| CPU (`arm_cpu.sh`) | 998.1 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself) |
+| ARM size (cross-built, `arm_size.sh`) | .text 23492 · .rodata 2400 · .data.rel.ro 80 · .data 4 · .bss 52784 |
+| CPU (`arm_cpu.sh`) | 945.2 ARM instructions per rendered frame (an instruction count, for comparing this unit with itself); see "Restrikes and CPU on mymembrane~" |
 
 ## Presets
 
 | # | Name | Root | Sound | Voiced after |
 |---|---|---|---|---|
-| 0 | Harp | 59 (B3) | *string* — harp: a gut string plucked; warm, half a second, a slight sag at the pluck | `Tom1-001-CloseRoom.wav` (a rack tom) |
-| 1 | Oud | 52 (E3) | *string* — oud: a fretless lute's string; warm, a second, 20 % sharp on a hard pluck and settling | `Tom2-004-CloseRoom.wav` (a floor tom) |
-| 2 | Snare | 60 | acoustic snare: a short head, the wires on its motion | `acoustic-snare.wav` |
-| 3 | SnrHvy | 47 | heavy snare: a deep, slack snare struck hard | `snare heavy.wav` |
-| 4 | Fretls | 39 (D#2) | *string* — fretless bass: a low string thumbed hard, its pitch dropping from 35 % sharp into the note | `KickA-Hard-012-CloseRoom.wav` (a kick) |
-| 5 | Guitar | 42 (F#2) | *string* — guitar: a low string; the brightest and the longest of the five | `Taiko-Hit.wav` (a taiko) |
-| 6 | Bendir | 41 | bendir: a frame drum with a snare string across the head | `020_BendirDoum.wav` (Pelle e Legno) |
-| 7 | BassPiz | 34 (A#1) | *string* — double bass pizzicato: very dark, about 0.6 s | `027_SurdoOpen.wav` (a surdo; Pelle e Legno) |
-| 8 | MmSnare | 54 | mymembrane~'s help patch: a snare-like drum, its snares on | Miguel Moreno's settings |
-| 9 | MmKick | 32 | mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain | Miguel Moreno's settings |
-| 10 | MmSnr2 | 45 | mymembrane~ demo 2: a lower snare-like drum | Miguel Moreno's settings |
-| 11 | MmTom | 48 | mymembrane~ demo 3: a tom, the all-pass's gain negative | Miguel Moreno's settings |
-| 12 | MmFloor | 41 | mymembrane~ demo 4: a long, bright floor drum | Miguel Moreno's settings |
+| 0 | Snare | 60 | acoustic snare: a short head, the wires on its motion | `acoustic-snare.wav` |
+| 1 | SnrHvy | 47 | heavy snare: a deep, slack snare struck hard | `snare heavy.wav` |
+| 2 | Bendir | 41 | bendir: a frame drum with a snare string across the head | `020_BendirDoum.wav` (Pelle e Legno) |
+| 3 | MmSnare | 54 | mymembrane~'s help patch: a snare-like drum, its snares on | Miguel Moreno's settings |
+| 4 | MmKick | 32 | mymembrane~ demo 1: a dark, deep drum, the all-pass at full gain | Miguel Moreno's settings |
+| 5 | MmSnr2 | 45 | mymembrane~ demo 2: a lower snare-like drum | Miguel Moreno's settings |
+| 6 | MmTom | 48 | mymembrane~ demo 3: a tom, the all-pass's gain negative | Miguel Moreno's settings |
+| 7 | MmFloor | 41 | mymembrane~ demo 4: a long, bright floor drum | Miguel Moreno's settings |
 
-Presets 0-7 were voiced as drums: 0-5 after the original brachetti's
-reference recordings — its `samples/` folder, on the `original_brachetti`
-branch (the same files its AcTom, AcSnre, Kick and Taiko were tuned to) — and
-6 and 7 after the [Pelle e Legno](../pelle_legno/) samples.  Three of them
-are drums: Snare, SnrHvy and Bendir.  The other five — voiced after a rack
-tom, a floor tom, a kick, a taiko and a surdo — ring like plucked strings
-instead, which is what a Karplus-Strong loop is at heart.  The measure is the
-periodicity of the ring (the largest normalised autocorrelation of 50-350 ms
-of it at a lag of 1-25 ms; the original's koto sample reads 0.85): 0.87-0.94
-on those five against their recordings' 0.20-0.82.  Moreno's own loop did not
-make drums of them either (below, "From drums to strings"), and they sound
-good as what they are, so they stay, as strings: each is named for the
-instrument it comes closest to, and its loop is moved to the exact pitch of
-its root (Harp +49 cents, from 240 Hz; Oud −13; Fretls −27; Guitar +47;
-BassPiz +8), so that every note plays in equal temperament (measured, the
-root and the octave above: within 1.3 cents).  Nothing else changed.
+Presets 0-2 are voiced after recordings: Snare and SnrHvy after the original
+brachetti's reference recordings — its `samples/` folder, on the
+`original_brachetti` branch (the same files its AcSnre was tuned to) — and
+Bendir after a [Pelle e Legno](../pelle_legno/) sample.  Five more presets
+were voiced the same way, after a rack tom, a floor tom, a kick, a taiko and
+a surdo, and rang like plucked strings instead, which is what a
+Karplus-Strong loop is at heart (periodicity 0.87-0.94 against their
+recordings' 0.20-0.82, below, "From drums to strings").  They sounded good
+as strings, so they became strings, at the exact pitch of their roots, and
+moved to a unit of their own, [BrcPizzico](../brachetti_pizzico/README.md),
+byte for byte.
 
-Presets 8-12 are Miguel Moreno's own drums: the settings of mymembrane~'s
+Presets 3-7 are Miguel Moreno's own drums: the settings of mymembrane~'s
 help patch and its demo's four instruments, played by a port of his patch
 ("mymembrane~ in BrcLippa", below); each root is the note nearest its
 strongest partial.
@@ -186,17 +177,19 @@ section), and two pieces for the loop drum:
   Measured (Poly 1, a strike at velocity 127, a second at 20 after 300 ms; the
   largest sample step in the first three samples of the second strike, against
   the same strike on a silent voice): the step is now the strike's own attack
-  (Oud 0.092 against 0.095, Fretls 0.116 against 0.120, Bendir 0.264 against
-  0.264); before, a cut ring added to it (BassPiz 0.140, Harp 0.033, Guitar
-  0.020, measured on the old code at the presets' drum tuning; now 0.011,
-  0.006, 0.010).  A fresh strike is unchanged.
+  (Bendir 0.264 against 0.264; the floor tom and the kick, now BrcPizzico's
+  Oud and Fretls, 0.092 against 0.095 and 0.116 against 0.120); before, a cut
+  ring added to it (the surdo, the rack tom and the taiko, now BassPiz, Harp
+  and Guitar, 0.140, 0.033 and 0.020 on the old code; now 0.011, 0.006,
+  0.010).  A fresh strike is unchanged.  (mymembrane~'s restrikes needed one
+  more fix: "Restrikes and CPU on mymembrane~", below.)
 
 The rest stays as it was, on purpose: the exact tuning (mymembrane~'s pitch
 moves with every filter setting), the two-T60 loss, and a glide of tension
 rather than a 3-4× chirp (BrcLippa's presets are voiced after real drums).
-`Bend` at its top starts a full-velocity strike 1.65× (Harp) to 2.7×
-(Fretls) the note, and `BendTm` at its bottom makes the fall 4× faster: near
-mymembrane~'s chirp.
+`Bend` at its top starts a full-velocity strike 1.3× (Snare) to 1.46×
+(SnrHvy, Bendir) the note, and `BendTm` at its bottom makes the fall 4×
+faster: towards mymembrane~'s chirp.
 
 ### mymembrane~ in BrcLippa
 
@@ -227,10 +220,12 @@ unit's own path, compare as:
 | MmFloor (demo 4) | 0.971 / 0.975 | 1020 / 1000 | 0.88 / 0.88 |
 
 The residue is the snares' noise (a different `noise~` instance, unseeded in
-the patch) and float rounding through the tanh.  Two things differ on
+the patch) and float rounding through the tanh.  Three things differ on
 purpose: a strike into a ringing voice keeps the ring and slews the delays
 over 1 ms (mymembrane~ ramps its output to 0 over 1 ms, clears its lines and
-strikes 2 ms later), and the knobs reach it, each anchored: `Dkay` the
+strikes 2 ms later), its attack boost then shrinks with the ring's level,
+and a snare level under 0.005 is not run (both below, "Restrikes and CPU on
+mymembrane~"); and the knobs reach it, each anchored: `Dkay` the
 feedback (as a T60), `Mterl` the damping's corner, `Inharm` and `ApDelay`
 the all-pass, `MlltRes` the level, `MlltStif`/`VlMllStf` the excitation's
 length, `NzMix`/`NzFltFrq` its noise, `Bend`/`BendTm` the chirp's depth and
@@ -248,10 +243,74 @@ kick (0.87 → 0.84, against 0.23) or the floor tom (0.94 → 0.86, against
 0.61), and every one matched its recording worse on the rest (energy over
 time above all: the rack tom 83 % in its first 30 ms against the recording's
 46 %; scores 1.47 → 1.54, 1.50 → 1.71, 2.12 → 2.57, 2.37 → 2.66, 0.45 →
-0.46).  So they stayed on the loop and became the unit's five strings
-(Presets).  Making drums of them is left for later: Moreno's sound is here as
-his own five presets, and `match_specs.py` keeps `mm_spec`, the start of a
-voicing on his loop.
+0.46).  So they stayed on the loop and became strings: BrcPizzico's five
+([its README](../brachetti_pizzico/README.md), "Where the strings come
+from").  Making drums of those recordings is left for later: Moreno's sound
+is here as his own five presets, and `match_specs.py` keeps `mm_spec`, the
+start of a voicing on his loop.
+
+### Restrikes and CPU on mymembrane~
+
+**The click.**  MmFloor clicked when it was struck again quickly: a sharp
+broadband tick on top of each new strike.  It was the restrike, a strike on
+a voice slot whose drum still rings (with Poly 4, any pattern faster than
+four strikes per ring reuses one, and MmFloor rings for a second).  The
+voice keeps its ring (above), and mymembrane~'s attack multiplies its loop
+by up to 1 + 0.7·√v (×1.7 at full velocity) for its first ~10 ms — meant
+for the new excitation, in a loop the patch has just cleared.  Here the loop
+also holds the old ring, and boosting a loud ring drives it into the patch's
+tanh: the tick.  Found with
+[`restrike_check.py`](../tools/brachetti_equiv/restrike_check.py) (a second
+strike on the voice still ringing, against the same strike on a silent voice
+plus the old ring alone; the peak above 6 kHz in the strike's first 10 ms,
+through the master stage), and taken apart: without the boost the restrike
+was clean, without the chirp it was not.  Now the boost shrinks with the old
+ring's level (`Membrane::resume`): whole on a silent or quiet voice, gone
+from a ring at −20 dB (`kRingNoBoost`, 0.1, on the drum's follower) up.  A
+fresh strike is unchanged, so the Pd comparison above is too.
+
+| MmFloor restruck after | 30 ms | 60 ms | 150 ms | 300 ms | 600 ms |
+|---|---:|---:|---:|---:|---:|
+| before | 2.94 | 2.91 | 2.08 | 0.93 | 0.97 |
+| now | 0.96 | 0.98 | 1.07 | 1.03 | 0.97 |
+
+(restrike / (strike + ring); a clean restrike is at or below 1.)  Every
+other preset of this unit and of BrcPizzico reads at most 1.21 (SnrHvy's
+wires) at every gap, as before.
+
+**The CPU.**  Clicks can also be the drumlogue running out of time, and
+mymembrane~ was the heaviest voice in the family's loop units: about 480
+instructions per voice per sample, four of them divisions.  On the A7 a
+division costs about fourteen cycles, which `arm_cpu.sh`'s instruction count
+does not show; [`arm_cycles.sh`](../tools/brachetti_equiv/arm_cycles.sh)
+weights them.  Three cuts, the first two bit-exact:
+
+- the delays' `kSR / f` and `kSR / apf` and their clamps, computed every
+  sample, are computed once at the strike (`dl_rest`, `da_rest`; the chirp
+  still computes its own);
+- the family's mallet and noise burst ran on every mymembrane~ voice, at a
+  gain of 0, sharing nothing with it (the loop drum takes its excitation
+  noise from the burst's generator; mymembrane~ has its own): it is skipped
+  there, its clock kept for the squelch;
+- a snare level under 0.005 (`kMmSnaresMin`) is not run: MmFloor's 0.001,
+  Moreno's demo 4 setting, put its snares 69 dB under the drum (peak; 84 dB
+  RMS) for a third of the voice's cost.  MmFloor is the one preset whose
+  render changed, by exactly its snares; the other four keep theirs (26-53
+  dB under their drums).
+
+| Estimated A7 cycles per frame (`arm_cycles.sh`, 400 ms) | before | now |
+|---|---:|---:|
+| MmFloor, four voices | ~2240 | ~1510 |
+| MmFloor, one voice | | ~430 |
+| MmTom, four voices (snares on) | | ~1890 |
+| BrcCymbal's Gong, two voices, for scale | | ~1810 |
+| BrcKernel's Timpni, two kettles, for scale | | ~1900 |
+
+Four MmFloor voices now cost less than two of the cymbal's gongs or the
+kernel's kettles; before, they cost a fifth more.  (BrcKernel's two full
+kettles, before its cost bound, were measured at about twice what is known to
+run on the drumlogue, and were heard as clicks: the kernel's
+`modal_drum_kernel.h` has the story.)  Not yet measured on hardware.
 
 ### Tuning
 
@@ -280,7 +339,7 @@ one near the note read up to 40 cents off on low notes.
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all eleven Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all twelve Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
 
 | Page | | Knobs |
 |---|---|---|
@@ -338,7 +397,7 @@ NzRes 30 %, NzFltr low-pass.
 
 ### Punch: the transient shaper
 
-`Punch` is a gain curve over each voice, started by its strike.  **Up**, the first 5 ms pass untouched and then the body drops (τ 15 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.  It never boosts the attack (the unit's peak limiter would take a boost straight back off).  It is `brc::Punch`, shared by all ten units.
+`Punch` is a gain curve over each voice, started by its strike.  **Up**, the first 5 ms pass untouched and then the body drops (τ 15 ms), down to −15 dB at the top of the knob.  **Down**, the voice fades in from almost nothing over 2-20 ms: a rounder, softer strike.  At **0**, where every preset ships, it is off and the preset plays exactly as voiced.  It never boosts the attack (the unit's peak limiter would take a boost straight back off).  It is `brc::Punch`, shared by all twelve units.
 
 ### Knob review
 
@@ -354,14 +413,9 @@ under 1.5 dB on half the presets).  As shipped:
 ```
 === brachetti_lippa   (mean |dB| change at the knob's ends; '.' < 0.3, ':' < 1.5)
            Pitch    Poly Velocit MlltRes MlltSti    Bend VlMllSt  BendTm  Snares    Dkay   Punch   Mterl  HitPos  Inharm ApDelay   NzMix   Blend SnrTone NzFltFr
-Harp        15.7       .     9.3    10.2     6.0     2.4     6.0       .     7.4    16.6     6.6     2.7     3.6     5.9    :1.5     6.2    17.8       .     4.8
-Oud         18.7    :0.6    10.5    11.5     6.1     2.8     7.8    :1.4    10.8    20.2     7.7     4.6     6.5     3.5     3.8     5.4    22.2       .     3.1
 Snare        6.7       .    10.0    11.4     3.2    :0.7     6.3       .     6.1    17.2     7.5    :0.5     3.1     6.8       .       .    18.1     2.8       .
 SnrHvy       4.9       .     9.9    11.3     2.1     2.0     4.3       .     5.7    10.2     7.5    :1.2     2.8     3.0     4.3     3.4     9.9     3.2    :0.6
-Fretls      10.6       .    10.4    10.3     6.5     3.4     5.9    :1.4     7.8    14.8     6.5     3.3     2.3     5.9    :0.9     6.1    15.2       .     4.6
-Guitar      17.0    :0.5    12.7    14.2     5.0     3.2     6.5    :0.8     6.5    27.5    10.6     2.1     3.8     4.9    :0.5     8.4    27.4       .    12.2
 Bendir       6.3    :0.6     9.0    10.1     3.6    :0.7     5.1       .     6.5    10.3     6.5     2.4     2.5     4.5     4.7     5.2    10.9     1.8     2.3
-BassPiz     11.8       .     9.8    10.9     4.1     2.2     6.1       .    13.0    15.1     7.2     4.2     1.9     2.4     1.8     6.0    17.7       .     4.0
 MmSnare     11.0       .     9.0     8.5     1.9     2.2     2.7     3.2     4.2     7.4     4.7     2.9       .     6.7    12.2     4.7     7.8    :1.4     1.9
 MmKick       6.6       .     5.2     4.6     1.8    :1.3     2.7    :1.3     4.1     1.7     2.0     6.4       .    :1.2       .     3.2     4.3    :0.5     2.4
 MmSnr2      10.8       .     8.6     8.5     2.3     2.1     3.5     2.7     5.3     9.1     5.0     3.4       .     5.1     7.8     4.3    10.5     1.6     1.6
@@ -386,9 +440,8 @@ time, band balance over time, 40 dB decay, strongest partial), comparing the
 voice before the master limiter; trims by the family's body-target method
 (`preset_probe calib` reprints them).  Each preset starts with its loop at
 the recording's strongest partial (its root a note near it) and its T60
-from the recording's decay.  The five strings were then moved to the pitch of
-their root (Presets); their specs (`string_spec`) pin it there, so a new
-search cannot detune them.  Three changes to the tool came with it, all inert
+from the recording's decay.  (The five that rang as strings are BrcPizzico's
+now, with their specs.)  Three changes to the tool came with it, all inert
 for the other units:
 
 - **References at 44.1 kHz** are resampled to 48 kHz (several of the
@@ -414,20 +467,13 @@ BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti \
     python3 match_samples.py match_specs.py lippa --state loop.json
 ```
 
-Measured, preset vs recording (velocity 110, sequencer gate; the strings
-against the drum each was voiced after, their score as voiced → at their
-note):
+Measured, preset vs recording (velocity 110, sequencer gate):
 
 | Preset | score | t40, ms | strongest partial, Hz | periodicity |
 |---|---:|---:|---:|---:|
 | Snare | 0.993 | 225 / 225 | 264 / 264 | 0.81 / 0.50 |
 | SnrHvy | 0.737 | 190 / 190 | 127 / 127 | 0.72 / 0.70 |
 | Bendir | 0.703 | 240 / 240 | 101 / 202 | 0.81 / 0.49 |
-| Harp (rack tom) | 1.011 → 1.552 | 530 / 420 | 248 / 239 | 0.94 / 0.71 |
-| Oud (floor tom) | 0.849 → 0.955 | 905 / 900 | 166 / 167 | 0.94 / 0.61 |
-| Fretls (kick) | 0.832 → 0.941 | 420 / 360 | 79 / 79 | 0.87 / 0.23 |
-| Guitar (taiko) | 0.890 → 0.995 | 1040 / 1080 | 93 / 89 | 0.94 / 0.20 |
-| BassPiz (surdo) | 0.342 → 0.586 | 575 / 625 | 59 / 58 | 0.87 / 0.82 |
 
 The score includes the band-decay term (above), and on the three presets
 with snares the snares' kurtosis (`sparsity`); without them the drums score
@@ -443,9 +489,9 @@ spreads them, but a membrane's mode density grows with frequency and a
 loop's does not.  The search uses the excitation's noise, the snares and the
 two-T60 loss filter to make up for it in the first 100 ms; after that a
 BrcLippa drum is a cleaner, more tonal drum than the recording — and where
-the all-pass spreads the partials least, a string (Presets).  That is the
+the all-pass spreads the partials least, a string (BrcPizzico).  That is the
 character of the technique, and where it is useful beside the modal units:
-tuned drums and strings that glide, ring clean and cost little.
+tuned drums that glide, ring clean and cost little.
 
 ## Build
 
@@ -455,7 +501,10 @@ build drumlogue/brachetti_lippa
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
 The product is `brachetti_lippa.drmlgunit`; copy it to the drumlogue's
-`Units/Synths` folder.  Not yet tested on hardware.
+`Units/Synths` folder.  On hardware so far: MmFloor clicked when struck again
+quickly, fixed since ("Restrikes and CPU on mymembrane~"); the fix is not yet
+heard on the drumlogue.  The five strings it once held are in
+`brachetti_pizzico.drmlgunit` now: install both.
 
 ## Verification
 
@@ -465,12 +514,15 @@ There is no original to compare with.  What was checked on the host:
   at both ends, three octaves (see Tuning).
 - **mymembrane~**: the port against Pd's own renders of the patch (above,
   "mymembrane~ in BrcLippa").
-- **The strings' retune**: only the five strings' renders changed; the three
-  drums and Moreno's five are byte-identical to before.  Each string's first
-  resonance, at its root and an octave up, is within 1.3 cents of the note
-  (Harp +0.5 / −0.2, Oud −0.2 / −0.2, Fretls +0.8 / +0.8, Guitar −0.6 / −0.6,
-  BassPiz −1.3 / −1.3), and `match_samples.py --rewrite` rebuilds the table
-  from the specs byte for byte.
+- **The strings' move to BrcPizzico**: every preset that stayed renders
+  byte-identically to before in its new place (velocities 110 and 60; MmFloor
+  against the render with its snares off, below), every string in BrcPizzico
+  likewise, and `match_samples.py --rewrite` rebuilds both tables from the
+  specs byte for byte.
+- **The restrike fix and the CPU cuts** ("Restrikes and CPU on mymembrane~"):
+  fresh strikes byte-identical on every preset but MmFloor, which is byte for
+  byte the old code with its snares off; `mymembrane_check.py` still matches
+  Pd; `restrike_check.py` passes every preset.
 - **Stability**: 3000 random sessions — every preset, every knob anywhere in
   its range, random notes and velocities, up to four stacked strikes,
   AllNoteOff — with every output sample finite and within the limiter's
@@ -479,8 +531,9 @@ There is no original to compare with.  What was checked on the host:
   left every preset's score and trim unchanged to the last digit; adding the
   crackle and the restrike left every preset's single-strike render
   byte-identical until the snares were revoiced.
-- **Restrikes**: see "What the Pd code adds".
-- **Units loaded together**: `multi_load.sh` (all eleven units, 512,286
+- **Restrikes**: see "What the Pd code adds" and "Restrikes and CPU on
+  mymembrane~".
+- **Units loaded together**: `multi_load.sh` (all twelve units, 512,206
   display strings, identical alone and together); `arm_size.sh` finds no
   unique symbol.
 - **Its unit id.**  The first commit of this unit (as BrcLoop) carried
@@ -516,7 +569,7 @@ Shared with the other units: [`brachetti_common`](../brachetti_common/)
   following the head's envelope.  The article publishes no code or
   coefficients; the loop drum's C++, its tuning and its voicing are this
   repository's.  `mm::Membrane` is a port of the patch itself
-  (`instruments/mymembrane~.pd`), and presets 8-12 are its help and demo
+  (`instruments/mymembrane~.pd`), and presets 3-7 are its help and demo
   settings; pd-mkmr's 3-Clause BSD License covers that part (below), and
   `brc::crackle` comes from the same patch.  The article carries no licence
   beyond its copyright notice; what is used from it is its description of a
@@ -542,7 +595,7 @@ Shared with the other units: [`brachetti_common`](../brachetti_common/)
   all-pass.
 
 pd-mkmr is distributed under the 3-Clause BSD License; `mm::Membrane` is a
-port of `mymembrane~`, presets 8-12 are its settings, and the crackle
+port of `mymembrane~`, presets 3-7 are its settings, and the crackle
 (`brc::crackle`) is taken from its snare layer, so its conditions apply to
 those parts:
 

@@ -27,10 +27,11 @@ ships as before.
 | [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 19 (+1 blank) | shaped noise + AM gating |
 | [`brachetti_world`](../../brachetti_world/) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | 24 | modal bank + friction voice, wire, buzz, jingles, particles |
 | [`brachetti_cordiera`](../../brachetti_cordiera/) | `BrcCordiera` | Tabor, Daf, MbiraBz, TomBuzz, Marranz, Spring, Gopichd (all new) | 24 | BrcSnare's engine with the wires on the head; BrcWorld's wire, stiff and bending |
-| [`brachetti_lippa`](../../brachetti_lippa/) | `BrcLippa` | Snare, SnrHvy, Bendir; strings Harp, Oud, Fretls, Guitar, BassPiz; MmSnare, MmKick, MmSnr2, MmTom, MmFloor (all added) | 24 | Karplus-Strong loop + all-pass (after Miguel Moreno), tension glide, snares |
+| [`brachetti_lippa`](../../brachetti_lippa/) | `BrcLippa` | Snare, SnrHvy, Bendir, MmSnare, MmKick, MmSnr2, MmTom, MmFloor (all added) | 24 | Karplus-Strong loop + all-pass (after Miguel Moreno), tension glide, snares; Moreno's mymembrane~ |
+| [`brachetti_pizzico`](../../brachetti_pizzico/) | `BrcPizzico` | Harp, Oud, Fretls, Guitar, BassPiz (all added) | 24 | BrcLippa's Karplus-Strong loop, as plucked strings |
 
-All eleven are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm',
-'BrKn', 'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrWd', 'BrLp', 'BrFl'), so they
+All twelve are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm',
+'BrKn', 'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrWd', 'BrLp', 'BrCd', 'BrPz'), so they
 install next to the original and next to each other (`multi_load.sh` fails a
 set with a duplicated id).  The first eight were split from the
 original; the ninth, **BrcWorld**, was built after the split for the
@@ -42,26 +43,30 @@ Karplus-Strong loop with a Schroeder all-pass inside it, after Miguel
 Moreno's [*Realistic drums with karplus-strong synthesis*](https://mikemorenodsp.github.io/posts/Realistic-drums-with-karplus-strong-synthesis/)
 (2022; its [README](../../brachetti_lippa/README.md#credits-and-sources) has
 the design and every source), voiced after the original's reference
-recordings of a real kit (it began as BrcLoop) — five of those rang like
-plucked strings and are kept as strings, tuned to their notes; five more
-presets play a port of Moreno's own Pd instrument, mymembrane~, with his
-settings, checked against Pd.  The eleventh, **BrcCordiera**
+recordings of a real kit (it began as BrcLoop); five more presets play a
+port of Moreno's own Pd instrument, mymembrane~, with his settings, checked
+against Pd.  The eleventh, **BrcCordiera**
 (*cordiera*: a drum's snare wire), holds what that work offered two other units
 without changing them, on their engines and with instruments of its own: BrcSnare's
 wires driven by the head (the article's snares, the crackle of its Pd patch) for
 a tabor, a daf, an mbira with buzzers and a tom with the snares on; BrcWorld's
 wire made stiff and able to bend for a marranzano, a spring drum and a
-gopichand.  It began as BrcFilo, BrcSnare's and BrcWorld's own presets with those
-additions (checked bit-identical to them with the additions off).  The
-families are the ones the original's README already used for its "which
+gopichand; its engines were first checked bit-identical to BrcSnare's and
+BrcWorld's with the additions off.  The twelfth, **BrcPizzico** (*pizzico*:
+a pluck), holds five of BrcLippa's first presets: voiced there as drums after
+a rack tom, a floor tom, a kick, a taiko and a surdo, they rang like plucked
+strings, so they became strings — named for the string each comes closest
+to, at the exact pitch of its root — on a verbatim copy of BrcLippa's loop.
+The families are the ones the original's README already used for its "which
 knobs are live" matrix.
 
 **Not split out: the Koto.**  The original's one string preset (a dual
 Karplus-Strong waveguide) is outside the percussion these units focus on, so
 it has no family unit; it stays playable in the original.  The waveguide
 engine lives on there too.  (The berimbau did get a struck wire: BrcWorld's
-`Wire` layer, a single Karplus-Strong loop written for it; and BrcLippa makes
-drums from the same kind of loop.)
+`Wire` layer, a single Karplus-Strong loop written for it; BrcLippa makes
+drums from the same kind of loop, and BrcPizzico plucked strings: a harp, an
+oud, a fretless bass, a guitar and a double bass, not the koto.)
 
 ## Presets added after the split
 
@@ -144,7 +149,7 @@ Each unit puts the same eight **common knobs** on its first two pages —
 `Gain` — and its family's **dedicated knobs** from page 3 on
 ([`common_knobs.h`](../../brachetti_common/common_knobs.h); a unit without
 one of the common knobs leaves its slot blank, so they are in the same place
-on all eleven).  The dedicated knobs were then reviewed family by family with
+on all twelve).  The dedicated knobs were then reviewed family by family with
 [`knob_liveness.py`](knob_liveness.py), which moves every knob to both ends on
 every preset and scores how much the sound changes.  Where a knob did nothing
 (or next to nothing) on most of a family, its slot got a job of that family's;
@@ -161,10 +166,11 @@ where a standard name hid what a knob does in a family, it was relabelled:
 | world | `Rattle` (VlMllRes); `Pitch` now moves the jingles, beads and mirliton too | Rel | — |
 | cordiera | — (BrcSnare's knobs; on the wire instruments they keep BrcWorld's meanings, `Tight` the stiffness) | Partls | `Buzz` `BuzzTon` `Crack` `Tight` `BuzzLen` |
 | lippa | `Bend` (VlMllRes), `BendTm` (Partls), `Snares` (Model), `Blend` (NzRes), `SnrTone` (NzFltr) | Rel | `ApDelay` |
+| pizzico | BrcLippa's, the snares named `Buzz` (Model) and `BuzzTon` (NzFltr) | Rel | `ApDelay` |
 | cymbal | — | a slot of its own | `Tang` `Density` |
 | kernel | — | a slot of its own | `Knock` `Fill` |
 
-**Punch** is the transient shaper all eleven share (`brc::Punch`): a gain curve
+**Punch** is the transient shaper all twelve share (`brc::Punch`): a gain curve
 from each strike that lets the attack through and lowers the body after it
 (up), or softens the attack (down), off at 0.  It never boosts the attack:
 each unit ends in a peak limiter that takes 5-25 dB off its hard strikes
@@ -334,13 +340,15 @@ Each table is now private to its unit, and `arm_size.sh` fails any unit with a
 unique symbol.
 
 ```
-./multi_load.sh          # all eleven; exit 1 and the differing strings, or a duplicated unit_id
+./multi_load.sh          # all twelve; exit 1 and the differing strings, or a duplicated unit_id
 ```
 
 Result: 420,458 display strings identical alone and together (nine units,
 with the presets added after the split); with BrcLippa, 457,040 (ten
-units); with BrcCordiera (then BrcFilo), 503,100 (eleven); with BrcCordiera's
-instruments and BrcLippa's mymembrane~ presets, 512,286.
+units); with BrcCordiera, 503,100 (eleven); with BrcCordiera's instruments
+and BrcLippa's mymembrane~ presets, 512,286; with BrcPizzico, 512,206
+(twelve: the same thirteen loop presets in two units, eighty fewer Program
+names).
 
 ### Sizes
 
@@ -363,8 +371,9 @@ moves a little between toolchains; data sections are exact):
 (These are the restructuring's figures.  With the presets added after the
 split, each unit's README carries its current sizes; BrcWorld measures
 .text 20,496 · .rodata 3,516 · .data 4 · .bss 21,296, the 16 KB of wire
-delay lines in `.bss`; BrcLippa .text 23,252 · .rodata 3,656 · .data 4 ·
-.bss 52,752, its 48 KB of loop and all-pass delay lines in `.bss`; BrcCordiera
+delay lines in `.bss`; BrcLippa .text 23,492 · .rodata 2,400 · .data 4 ·
+.bss 52,784, its 48 KB of loop and all-pass delay lines in `.bss`; BrcPizzico
+.text 19,492 · .rodata 1,508 · .data 4 · .bss 51,824, the same lines; BrcCordiera
 .text 23,172 · .rodata 2,652 · .data 4 · .bss 36,048.)
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
@@ -406,15 +415,26 @@ unit with itself, never two units with each other.
 The driver's `render_only` command renders without hashing or dumping, so the
 count is the unit's own work.
 
+[`arm_cycles.sh`](arm_cycles.sh) estimates cycles for one preset struck as N
+stacked notes: the same trace, each instruction weighted by its kind on the
+Cortex-A7 (a VDIV or VSQRT 14 cycles, the rest 1).  An instruction count
+hides a division's cost, and a voice with divisions in its per-sample path
+(BrcLippa's mymembrane~) is heavier than it reads.  Still a model, for
+comparing presets and units with each other:
+
+```
+./arm_cycles.sh ../../brachetti_lippa MmFloor 4      # ~1510; Gong x2 ~1810, Timpni x2 ~1900
+```
+
 ## Maintaining the units
 
 A unit's family code is its own: a change in its folder cannot reach another
 unit.  A change in [`brachetti_common`](../../brachetti_common/) reaches all
-eleven, so check them all.  BrcWorld and BrcLippa have no original to compare
-with: check each against itself (render its presets with `preset_probe
-render` before and after, and compare), and BrcLippa's mymembrane~ presets
-against Pd too ([`mymembrane_check.py`](mymembrane_check.py)); and the other
-eight with:
+twelve, so check them all.  BrcWorld, BrcLippa, BrcPizzico and BrcCordiera
+have no original to compare with: check each against itself (render its
+presets with `preset_probe render` before and after, and compare), and
+BrcLippa's mymembrane~ presets against Pd too
+([`mymembrane_check.py`](mymembrane_check.py)); and the other eight with:
 
 ```
 for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
@@ -434,11 +454,11 @@ moved.  The original keeps its own code, so a fix that also applies to it has
 to be made there by hand.
 
 `run_equiv.sh` can also compare a unit with another family unit instead of
-the original (`BRACHETTI_ORIG` names any unit directory): BrcFilo, BrcCordiera's
-first form, was checked against BrcSnare and BrcWorld that way.  `EQUIV_ALIASES_FILE` gives it a knob
-alias list other than `aliases.txt` (the knobs' names in the unit compared
-with), and `EQUIV_CXXFLAGS` extra flags for the family unit's build only
-(BrcFilo's copy-check flag).
+the original (`BRACHETTI_ORIG` names any unit directory): BrcCordiera's
+engines were first checked against BrcSnare and BrcWorld that way.
+`EQUIV_ALIASES_FILE` gives it a knob alias list other than `aliases.txt` (the
+knobs' names in the unit compared with), and `EQUIV_CXXFLAGS` extra flags for
+the family unit's build only (a copy-check flag, for one).
 
 `match_samples.py`'s score has, besides its default features, four a spec
 can ask for: `late` (each band's decay after the first 100 ms), `sparsity`
@@ -450,6 +470,12 @@ say why each was needed.
 [`dead_params.py`](dead_params.py) works on any unit's driver, so it can show
 whether a knob has become dead after a change; [`knob_liveness.py`](knob_liveness.py)
 shows how much each knob moves each preset (`./knob_liveness.py tom noise`).
+[`restrike_check.py`](restrike_check.py) strikes each preset twice on one
+voice, 30-600 ms apart, and compares the second strike's high frequencies
+with the same strike on a silent voice plus the ring: a restrike that clicks
+stands out (BrcLippa's MmFloor did, 2.9x; `./restrike_check.py lippa
+pizzico`).  It builds [`strike_roll.cpp`](strike_roll.cpp), which renders any
+unit's output for a series of strikes.
 A knob a unit relabels goes in [`aliases.txt`](aliases.txt), so `run_equiv.sh`
 keeps comparing it.  Python 3 with numpy is needed
 for `compare_dumps.py`; the ARM scripts need

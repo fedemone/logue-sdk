@@ -233,6 +233,9 @@ namespace mm {
 constexpr float kSR = 48000.0f;
 constexpr float kTwoPi = 6.2831853f;
 constexpr float kMinDelay = 65.0f;   // vd~ in a feedback loop: at least one block
+// A restrike's old ring at or above this level (out_env, the drum's follower)
+// gets no attack boost: Membrane::resume.
+constexpr float kRingNoBoost = 0.1f;
 
 struct PdNoise {   // noise~
     uint32_t val = 16u;
@@ -337,6 +340,9 @@ struct Membrane {
     float env = 0.0f, env_step = 0.0f;
     int   env_p = 0, env_ramp = 0;
     float rot_c = 1.0f, rot_s = 0.0f;   // cos, sin of 2π / 1024
+    // the delays after the chirp, samples: kSR / f and kSR / apf within vd~'s
+    // limits, computed once at the strike
+    float dl_rest = 480.0f, da_rest = 480.0f;
     // a strike into a ringing loop slews the delays from where the ring had them
     float dl_now = 0.0f, da_now = 0.0f, slew = 0.0f;
     uint32_t n = 0;
@@ -362,6 +368,14 @@ struct Membrane {
         w = m.w; aw = m.aw; hip20.last = m.hip20; lp.last = m.lp; dl_now = m.dl; da_now = m.da;
         out_env = m.out_env; env = m.env; bp.y1 = m.bp1; bp.y2 = m.bp2; hip_sn.last = m.hsn; hip_env.last = m.henv;
         slew = s;
+        // The attack's loop boost (up to × 1.7 for ~10 ms) is meant for the new
+        // excitation; here the loop also holds the old ring, and boosting a loud
+        // ring drives it into the tanh: a click (MmFloor restruck 30-150 ms after
+        // a strike: 2-3× the high frequencies of a clean restrike,
+        // restrike_check.py).  So the boost shrinks with the ring's level, gone
+        // at kRingNoBoost (−20 dB): a quiet tail still gets the attack a fresh
+        // strike gets.
+        boost *= brc::clampf(1.0f - m.out_env * (1.0f / kRingNoBoost), 0.0f, 1.0f);
     }
 
     force_inline float process() {
@@ -378,7 +392,7 @@ struct Membrane {
             direct = n2 * 2.0f * velgain;
         }
         // the chirp
-        float dl = kSR / f, da = kSR / apf, bst = 1.0f;
+        float dl = dl_rest, da = da_rest, bst = 1.0f;
         if (nf < chirp_len) {
             const float r = 1.0f - nf / chirp_len;
             const float r2 = r * r, r4 = r2 * r2, r8 = r4 * r4;
@@ -386,9 +400,9 @@ struct Membrane {
             dl = kSR / (f * (1.0f + depth_l * e10));
             da = kSR / (apf * (1.0f + depth_a * e20));
             bst = 1.0f + e20 * boost;
+            dl = brc::clampf(dl, kMinDelay, 2040.0f);
+            da = brc::clampf(da, kMinDelay, 1016.0f);
         }
-        dl = brc::clampf(dl, kMinDelay, 2040.0f);
-        da = brc::clampf(da, kMinDelay, 1016.0f);
         if (slew > 0.0f) {   // only after a strike into a ringing loop
             dl_now += slew * (dl - dl_now);
             da_now += slew * (da - da_now);

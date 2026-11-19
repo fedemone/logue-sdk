@@ -54,7 +54,7 @@ slowly) is not retired by the family's level squelch while the layer plays.
 
 ## Knobs
 
-Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all eleven Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
+Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all twelve Brachetti units.  Pages 3 onward hold this family's **dedicated knobs**.
 
 | Page | | Knobs |
 |---|---|---|
