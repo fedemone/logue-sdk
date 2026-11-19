@@ -83,56 +83,81 @@ not appear on the drumlogue, one boot tells whether one of those is why.
 SeqProbeLite answers every question except the boot-time file test: its
 **Files** and Result positions 2–4 show `lite`.
 
-## The test, step by step
+## How to use it
 
-**1. Page 1, hands off, about 10 seconds.**
+Most knobs here are displays, not controls: turning them changes nothing,
+and what they show changes by itself.  Only the knobs marked **turn** do
+something.
 
-| Knob | If it changes by itself | If it does not |
-|---|---|---|
-| Blink: square, top left | bitmaps redraw on their own (blink, playhead possible) | bitmaps redraw only on a turn or a page change |
-| Follow: its square, in the other phase | also the bitmaps of knobs you are not touching | only some are redrawn |
-| Clock: `t12`, `t13`… | strings redraw on their own | strings only on a turn or a page change |
+| Page | Knob 1 | Knob 2 | Knob 3 | Knob 4 |
+|---|---|---|---|---|
+| 1 | Blink — **turn** (0–15) | Follow — shows knob 1 | Clock — seconds since start | FollowS — shows knob 1 |
+| 2 | Owned — **turn** | OwnedS — shows numbers | Shadow — **turn** (0–10) | Burst — last program load |
+| 3 | Grid — **turn** (cursor step) | Gate — step and velocity | Event — last two events | Files — boot file test |
+| 4 | Step 1 — **turn** | Step 2 — **turn** | Step 3 — **turn** | Step 4 — **turn** |
+| 5 | Lane — **turn** (A, B, C) | | | |
+| 6 | Result — **turn** (12 positions) | | | |
 
-**2. Turn knob 1 (Blink) slowly.**  Follow and FollowS show knob 1's value.
-Do they follow at once, a moment later, only after you change page, or never?
+**Clock only ever counts up**: it is the seconds since the unit started,
+not a knob value.  The knob itself does nothing.  What matters is *when* the
+number changes (step 1).
 
-**3. Page 2: whose number?**
-- Owned starts at 50 in the header; the unit answers 70 when asked (20 or 90 once preset ProbeA or ProbeB has loaded).  **Shows 70, 20 or 90**: the panel reads values back from the unit, and 20 or 90 also means the program load loaded a preset.  **Shows 50**: it keeps its own.
-- Turn Shadow to 3 (the unit's answer becomes 30), go to page 1 and back.  Does Owned show 30 now?  OwnedS shows `h<the number the panel passes> u<the unit's value>`.
-- Turn Owned one click right.  **31**: the panel counts from the unit's number.  **51** (or 71): from its own.
+Work through the steps in order and write down each answer; at the end,
+send the answers and the 12 Result values.
 
-**4. Load a program** (this one again, or any other that uses SeqProbe), then
-look at page 2: **Burst** shows how many knobs the load set and how fast
-(`24 in 3ms`).  Then pick preset ProbeA or ProbeB from the preset menu: Owned
-should show 20 or 90 if the panel re-reads values after a preset.
+**Step 1 — does the screen redraw by itself?**  Go to page 1 and do not touch
+anything for 10 seconds.
+- A: does the small square in **Blink** blink?  (SeqProbeLite: does the `*` / `-` change?)
+- B: does the square in **Follow** blink too?
+- C: does **Clock** count up (`t12`, `t13`…) without you touching anything?
 
-**5. Page 3: the sequencer.**
-- Put a trig on all 16 steps of the Multi part.  Give step 1 a different velocity from the others, then press Play.  **Gate** shows the step and the velocity that arrived (`01 v127`, `02 v100`…).  **Grid** shows a playhead on its bottom rows.  You hear a tick on every gate, plus a three-lane demo pattern: a low thump, a noise hit, a tone.
-- Press Stop.  **Event** shows the last two things stop sent (`Aoff>Rset`: all-notes-off, then reset).
-- Play the Multi part from the step keys (a keyboard or chromatic mode, if the drumlogue has one), or from MIDI.  **Event** shows `N60` and similar if the notes reach the unit.
-- **Files** sums up the boot-time file test:
-  - `rw ok`: read and written at boot.
-  - `rd e13`, `wr e30`…: what failed (13 = no permission, 30 = read-only; other numbers are system error codes).
-  - `late`: this `unit_init` was not at boot, so nothing was touched.
+**Step 2 — does turning one knob redraw the others?**  Turn knob 1 (Blink)
+a few clicks.
+- D: do **Follow** and **FollowS** show the new number at once, a moment later, only after you leave the page and come back, or never?
 
-**6. Pages 4–5: the lane-view prototype.**  Three lanes of 16 steps.  Page 4
-shows steps 1–4 of the lane chosen on page 5.  Each knob shows its step's
-content and edits it.
-- Page 4 starts on lane A: `Kick2 --- --- ---`.  Turn Step 2 right: `Kick2`, `808Sub`, `Kick`; turn it left back to `---`.
-- Page 5: set Lane to `B Snare`, then go back to page 4.  Does it show lane B (`--- --- --- ---`)?  If yes, entering a page refreshes it.
-- Turn a step one click.  It should move one program on from what it shows, whatever the knob did before.
-- Page 3's Grid shows the lanes and your edits (one row of 2 pixels per lane).
+**Step 3 — whose number?**  Go to page 2.
+- E: what number does **Owned** show (50, 70, 20 or 90)?
+- Turn **Shadow** to 3.  Go to page 1, then back to page 2.
+- F: what does **Owned** show now?  And **OwnedS** (`h.. u..`)?
+- Turn **Owned** one click right.
+- G: what number does it show now?
 
-**7. Page 6: the Result list.**  Turn **Result** through its 12 positions
-and note what each shows (table below).  The polling rates (8–10) and the
-adoption count (11) only fill in after steps 1–6.  Then power-cycle once and
-read position 4 again: `prev ok` means a file written at boot survived.
+**Step 4 — what does loading a program send?**  Load a program that uses
+SeqProbe (this one again is fine).  Go to page 2.
+- H: what does **Burst** show?  (`24:3ms` = 24 knobs set within 3 ms.)
+- Open the preset menu and pick **ProbeB**.  Go to page 2.
+- I: what does **Owned** show (90 = the screen re-reads after a preset)?
+
+**Step 5 — what does the sequencer send?**  Put a trig on all 16 steps of
+the Multi part.  Give step 1 a different velocity from the others.  Press
+Play and go to page 3.  You should hear a tick on every step, plus a
+small demo pattern.
+- J: what does **Gate** show while playing?  Does the velocity (`v…`) differ on step 1?
+- K: does **Grid** show a moving dot near the bottom (the playhead)?  (SeqProbeLite: does `p..` count?)
+- Press Stop.
+- L: what does **Event** show?  (`Aoff>Rset` = all-notes-off, then reset.)
+- If you can play the Multi part from the step keys, or from MIDI, play a few notes.
+- M: does **Event** show `N60` or similar?
+- N: what does **Files** show?  (`rw ok`, `late`, `lite`, or an error such as `wr e30`.)
+
+**Step 6 — the lane view.**  Go to page 4: it shows steps 1–4 of lane A
+(`Kick2 --- --- ---`).
+- Turn **Step 2** right a few clicks, then left back to `---`.
+- O: does each click move one name (`---`, `Kick2`, `808Sub`, `Kick`)?
+- Go to page 5, set **Lane** to `B Snare`, go back to page 4.
+- P: does page 4 now show lane B (`--- --- --- ---`)?
+- Turn **Step 1** one click.
+- Q: does it start from what it showed (`---` → `AcSnre`), or jump?
+
+**Step 7 — the Result list.**  Go to page 6 and turn **Result** through its
+12 positions.  Write down what each shows (the table below says what each
+means).  Then switch the drumlogue off and on once, and read position 4 again.
 
 ## The Result list
 
 | # | Shows | Means |
 |---|---|---|
-| 1 | `b+14s #1` | `unit_init` ran 14 s after the system started, and it is the first init since power-on.  A large number or `#2` means init comes when the unit is selected, not at boot |
+| 1 | `14s #1` | `unit_init` ran 14 s after the system started, and it is the first init since power-on.  A large number or `#2` means init comes when the unit is selected, not at boot |
 | 2 | `rd ok 23` | At boot the `Programs` folder could be listed (23 entries).  `rd e13`: it could not, with that error.  `late` / `noclk`: the file test did not run (not at boot / no clock to tell) |
 | 3 | `wr ok` | At boot a file could be written, flushed, renamed and read back.  `wr e30`: the error.  `wr diff`: it read back different |
 | 4 | `prev ok` | The file the previous boot wrote reads back (`prev none` on the first boot) |
@@ -142,7 +167,7 @@ read position 4 again: `prev ok` means a file written at boot survived.
 | 8 | `str 30Hz` | The most times the panel asked for one knob's text in one second while no knob turned.  0–2: only when a page is entered; 10 or more: it polls |
 | 9 | `bmp 30Hz` | The same for bitmaps (always 0 on SeqProbeLite, which has none) |
 | 10 | `knobs 4` | The most knobs polled (asked 3+ times) in one second.  4 or fewer: only the page on screen; more: other pages too |
-| 11 | `unit2 own0` | Step turns made after the panel had asked for the value.  **unit**: counted from the unit's number (the panel takes it); **own**: from its own |
+| 11 | `u2 o0` | Step turns made after the panel had asked for the value.  **u**: counted from the unit's number (the panel takes it); **o**: from its own |
 | 12 | `bpm 120.0` | The last tempo received |
 
 ## Files

@@ -115,7 +115,7 @@ int main() {
     // ── The boot-time file test, before anything runs ───────────────────────
     (void)before_init;
     CHECK(str(P_FILES) == "rw ok", "Files: %s", str(P_FILES).c_str());
-    CHECK(starts(result(0), "b+") && result(0).find(" #1") != std::string::npos, "init: %s", result(0).c_str());
+    CHECK(result(0).find(" #1") != std::string::npos, "init: %s", result(0).c_str());
     CHECK(result(1) == "rd ok 1", "read at boot: %s", result(1).c_str());
     CHECK(result(2) == "wr ok", "write at boot: %s", result(2).c_str());
     CHECK(result(3) == "prev ok", "the previous boot's file: %s", result(3).c_str());
@@ -165,7 +165,7 @@ int main() {
     sleep_ms(20);
     unit_load_preset(1);
     for (uint8_t i = 0; i < 24; ++i) unit_set_param_value(i, unit_header.params[i].init);
-    CHECK(starts(str(P_BURST), "24 in "), "Burst shows the restore: %s", str(P_BURST).c_str());
+    CHECK(starts(str(P_BURST), "24:"), "Burst shows the restore: %s", str(P_BURST).c_str());
     CHECK(unit_get_param_value(P_OWNED) == 90, "preset B's answer survives the restore: %d",
           (int)unit_get_param_value(P_OWNED));
     CHECK(str(P_STEP1) == "Kick2", "the restore did not edit step 1: %s", str(P_STEP1).c_str());
@@ -190,7 +190,7 @@ int main() {
     unit_get_param_value(P_STEP1);
     unit_set_param_value(P_STEP1, answer + 1);
     CHECK(str(P_STEP1) == "808Sub", "counted from its own number: %s", str(P_STEP1).c_str());
-    CHECK(result(10) == "unit1 own1", "adoption: %s", result(10).c_str());
+    CHECK(result(10) == "u1 o1", "adoption: %s", result(10).c_str());
     sleep_ms(10);
     unit_set_param_value(P_STEP1, 900);
     CHECK(str(P_STEP1) == "808Sub", "a big jump is a resync, not an edit: %s", str(P_STEP1).c_str());

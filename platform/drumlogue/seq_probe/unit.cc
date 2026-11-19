@@ -407,9 +407,9 @@ const char* result_text(int32_t i, char* s) {
     switch (i) {
     case 0:   // when unit_init ran (seconds after the system started), how many times
         if (s_init_uptime_us)
-            snprintf(s, kStrLen, "b+%us #%u", unsigned(s_init_uptime_us / 1000000u), unsigned(s_init_count));
+            snprintf(s, kStrLen, "%us #%u", unsigned(s_init_uptime_us / 1000000u), unsigned(s_init_count));
         else
-            snprintf(s, kStrLen, "b+? #%u", unsigned(s_init_count));
+            snprintf(s, kStrLen, "? #%u", unsigned(s_init_count));
         return s;
     case 1:   // reading at boot
         if (files::s_run != files::kDone) return files_text(s);
@@ -448,7 +448,7 @@ const char* result_text(int32_t i, char* s) {
     case 8: snprintf(s, kStrLen, "bmp %uHz", unsigned(s_max_bmp_hz)); return s;
     case 9: snprintf(s, kStrLen, "knobs %u", unsigned(s_max_polled)); return s;
     case 10:
-        snprintf(s, kStrLen, "unit%u own%u", unsigned(s_adopt_unit), unsigned(s_adopt_own));
+        snprintf(s, kStrLen, "u%u o%u", unsigned(s_adopt_unit), unsigned(s_adopt_own));
         return s;
     case 11:
         if (!s_tempo) return "bpm -";
@@ -699,7 +699,7 @@ __unit_callback const char* unit_get_param_str_value(uint8_t id, int32_t value) 
         return s;
     case P_BURST:
         if (!s_last_burst_n) return "none";
-        snprintf(s, kStrLen, "%u in %ums", unsigned(s_last_burst_n), unsigned(s_last_burst_span_us / 1000u));
+        snprintf(s, kStrLen, "%u:%ums", unsigned(s_last_burst_n), unsigned(s_last_burst_span_us / 1000u));
         return s;
     case P_GATE:
         if (!s_gates) return "wait";
