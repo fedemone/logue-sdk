@@ -119,7 +119,7 @@ static int g_points = 5;
 static int g_fail = 0;
 static long g_renders = 0, g_knobs = 0;
 static void fail(const std::string& what) {
-    if (g_fail < 40) fprintf(stderr, "FAIL: %s\n", what.c_str());
+    if (g_fail < 400) fprintf(stderr, "FAIL: %s\n", what.c_str());
     ++g_fail;
 }
 
@@ -135,6 +135,20 @@ static bool differ(const std::vector<float>& a, const std::vector<float>& b) {
         if (!(d <= m)) m = d;   // NaN counts as a difference
     }
     if (!(m <= g_maxdiff)) g_maxdiff = m;
+    if (!(m <= g_tol) && getenv("BRACHETTI_VERBOSE")) {
+        double e = 0.0, s = 0.0, pk = 0.0;
+        for (size_t i = 0; i < a.size(); ++i) {
+            const double d = (double)a[i] - (double)b[i];
+            e += d * d; s += (double)b[i] * b[i];
+            if (std::fabs(b[i]) > pk) pk = std::fabs(b[i]);
+        }
+        size_t first = 0;
+        while (first < a.size() && std::fabs((double)a[first] - (double)b[first]) <= g_tol) ++first;
+        fprintf(stderr, "  first beyond tolerance at frame %zu (%.6g vs %.6g)\n", first / 2,
+                first < a.size() ? a[first] : 0.0f, first < a.size() ? b[first] : 0.0f);
+        fprintf(stderr, "  max diff %.3g, peak %.3g, diff/signal %.1f dB\n", m, pk,
+                10.0 * std::log10((e + 1e-30) / (s + 1e-30)));
+    }
     return !(m <= g_tol);
 }
 

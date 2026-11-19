@@ -20,7 +20,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 common="$(cd "$here/../../common" && pwd)"
 ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
-OPT="-Os -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing \
+OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector -fstrict-aliasing \
      -falign-functions=16 -fno-math-errno -fomit-frame-pointer"
 CXXO="-std=gnu++14 -fno-threadsafe-statics -fno-exceptions -fno-rtti \
       -finline-limit=2000000000 --param max-inline-insns-single=2000000000"

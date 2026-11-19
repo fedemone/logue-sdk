@@ -43,7 +43,15 @@ ULIBS += -lc
 # Macros
 #
 
-#UDEFS =
+# No fused multiply-add contraction (-ffp-contract=off; GCC's default is to
+# fuse a*b+c into one VFMA wherever its inlining happens to put them
+# together).  Some Brachetti coefficients are sensitive to that rounding, so
+# with contraction the same family code sounds measurably different in this
+# unit and in Brachetti, which compiles all twelve families in one unit; off,
+# they agree to 1e-6 and stay close to the host renders the presets were
+# voiced against.  Cost: +0.1-0.3 % instructions (arm_cpu.sh).  Passed here
+# because UDEFS reaches both the C and the C++ command lines.
+UDEFS = -ffp-contract=off
 
 # Linker GC: strips unreachable code/data.  Keep enabled for code-budget reasons.
 USE_LINK_GC := yes
