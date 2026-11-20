@@ -5,10 +5,10 @@ steps, each lane playing one Brachetti instrument family, each step one
 instrument (Program) of that family.  The sequencer follows the drumlogue's
 own sequencer through the Multi-engine part's gates.
 
-This file holds what the hardware showed (SeqProbe, first run), the design
+This file holds what the hardware showed (SeqProbe, two runs), the design
 that follows from it, and the open items.  Nothing is built yet.
 
-## What the drumlogue does (SeqProbe, first run)
+## What the drumlogue does (SeqProbe)
 
 | # | Measured | Consequence |
 |---|---|---|
@@ -16,11 +16,11 @@ that follows from it, and the open items.  Nothing is built yet.
 | 2 | The panel shows about 8 characters per value | Every display text fits in 8 characters |
 | 3 | The panel reads the unit's values (`unit_get_param_value`) when a program loads and after a preset loads (Owned 70 at start, 90 after preset ProbeB), not when a page is entered (Owned stayed 70 while the unit held 30).  It counts a turn from its own number (71) | A knob's stored number is not the step's content.  Step knobs are read as turns (+1 / -1) applied to what the step holds: confirmed by the lane prototype (one name per click; `---` → `AcSnre` after a lane change) |
 | 4 | A program load sets all 24 knobs at once | The restore guard (a burst of sets is not an edit) is needed |
-| 5 | Gates come with velocity 64.  The drumlogue's sequencer has accents, not per-step velocity | Step 1 cannot be marked by velocity unless an accent raises it (open) |
-| 6 | Counting gates mod 16 drifted: Gate showed step 15 on the first bar, one less each bar | Open: SeqProbe's Results 13–16 now count gates between resets, resets, all-notes-offs and the velocity range |
-| 7 | Stop sends `unit_reset` (twice, apparently), on the audio thread; gates, knobs and texts arrive on other threads | Edits and gates reach the audio thread through lock-free hand-offs |
-| 8 | Notes played live did not show in Event | Probably no step keys as buttons (the display was cut off: to confirm) |
-| 9 | `unit_init` runs at boot (18 s after power-on, first init).  At boot a file in `Programs/` can be read and written, and it survives a power cycle (4 ms) | Pattern or sound libraries can be read at boot.  Nothing can be saved while the drumlogue runs |
+| 5 | Gates come with velocity 64; an accented trig comes with 127 (run 2: `v64-127`).  The drumlogue's sequencer has accents, not per-step velocity | An accent on step 1 marks the bar: the clock re-aligns there |
+| 6 | Counting gates mod 16 drifted: Gate showed step 15 on the first bar, one less each bar.  It is not resets: run 2 had 154 gates, 5 resets, 0 gates between the last two (resets come in pairs, on stop) | Cause unknown; the accent re-alignment (5) makes the count right at every bar anyway |
+| 7 | Stop sends `unit_reset` (in pairs), Play `unit_resume` (Event `Rst>Res`); reset runs on the audio thread, gates, knobs and texts on other threads.  The audio thread runs under scheduling class 6, SCHED_DEADLINE (`pol6 0`) | Edits and gates reach the audio thread through lock-free hand-offs |
+| 8 | Notes played live did not reach the unit (Event showed only `Rst>Res`) | No step keys as buttons: knobs are the only input |
+| 9 | `unit_init` runs when the unit is first used: 18 s after power-on in run 1 (it was in the power-on program), 74 s in run 2 (selected later; file test skipped as `late`).  At boot a file in `Programs/` can be read and written, and it survives a power cycle (4 ms) | Files can be read only when Braquetti is in the program loaded at power-on.  Nothing can be saved while the drumlogue runs |
 | 10 | The lane view works: page 4 shows four steps of the lane chosen on page 5, each knob shows and edits its own step | The step pages below |
 
 ## Design
@@ -30,16 +30,21 @@ that follows from it, and the open items.  Nothing is built yet.
 | Page | Knob 1 | Knob 2 | Knob 3 | Knob 4 |
 |---|---|---|---|---|
 | 1–4 | Step 1, 5, 9, 13 | Step 2, 6, 10, 14 | Step 3, 7, 11, 15 | Step 4, 8, 12, 16 |
-| 5 | Lane A family | Lane B family | Lane C family | Edit lane (A / B / C) |
-| 6 | open (level, length, pattern…) | | | |
+| 5 | Lane (A / B / C) | Family of that lane | Level of that lane | open (pitch, decay… of that lane) |
+| 6 | Overview: a bitmap of all 3 lanes × 16 steps | open (length, pattern…) | | |
 
 - Pages 1–4 show the 16 steps of the edit lane, one beat per page.  A step
   shows its instrument's name or `---`; a turn moves it one instrument on
   from what it holds.  The family is the lane's, so a step's list is that
   family's Programs.
-- Page 5 chooses each lane's family (Brachetti's presets once main has them)
-  and which lane pages 1–4 edit.  Changing page refreshes the step pages, so
-  nothing on screen is stale after a lane change (finding 1).
+- Page 5 is "the selected lane": Lane picks it, and every other knob there
+  is that lane's (its family — Brachetti's presets once main has them —, its
+  level…).  Turning a knob redraws the whole page (finding 1: Clock and Grid
+  followed any turn), so the family shown is the new lane's at once; the
+  step pages show it when entered.  One family per lane is chosen; the steps
+  pick the instrument.
+- Page 6's overview is a static bitmap (finding 1): it shows the pattern as
+  it was when the page was entered.
 - A family change on a lane must say what happens to its steps (cleared, or
   kept by position): to decide.
 
@@ -57,10 +62,9 @@ that follows from it, and the open items.  Nothing is built yet.
 
 ### Clock
 
-- The Multi part carries a trig on every step; each gate is one step.
+- The Multi part carries a trig on every step, step 1 accented; each gate is
+  one step, an accented gate (velocity above 64) is step 1.
   `unit_reset` (sent on stop) restarts at step 1.
-- Pending finding 6: if a gate goes missing or the drumlogue resets per bar,
-  the count must re-align on whatever marks the bar.
 
 ### Keeping a pattern
 
@@ -81,7 +85,7 @@ the pattern store and the song mode.
 
 ## TODO
 
-- [ ] SeqProbe, second run: Results 13–16 with an accent on step 1 (finding 6), Event with live notes (finding 8).
+- [x] SeqProbe, second run: accent = velocity 127; no notes from the step keys; resets only on stop.
 - [ ] Test the store gesture (Keeping a pattern, 1).
 - [ ] Align with Brachetti on main once its families are presets and its instruments the Program values.
 - [ ] Sequencer core, host-tested: the pattern, step turns, the restore guard, the clock.

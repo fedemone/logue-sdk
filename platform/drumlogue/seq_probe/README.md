@@ -163,7 +163,7 @@ means).  Then switch the drumlogue off and on once, and read position 4 again.
 | 4 | `prev ok` | The file the previous boot wrote reads back (`prev none` on the first boot) |
 | 5 | `io 3.2ms` | How long the boot-time file work took |
 | 6 | `aud GA` | Callbacks that ran on the audio thread: **G** gate on, **g** gate off, **N** note on, **S** knob set, **V** knob value asked, **T** text asked, **B** bitmap asked, **P** preset load, **A** all-notes-off, **R** reset, **M** tempo.  `aud none`: none of them.  `aud ?`: no audio yet |
-| 7 | `FIFO 80` | The audio thread's scheduling class and priority (`pol3 0`: a class with no name here, 3 = BATCH, 5 = IDLE) |
+| 7 | `FIFO 80` | The audio thread's scheduling class and priority (`pol6 0`: a class with no name here, 3 = BATCH, 5 = IDLE, 6 = DEADLINE) |
 | 8 | `str 30Hz` | The most times the panel asked for one knob's text in one second while no knob turned.  0–2: only when a page is entered; 10 or more: it polls |
 | 9 | `bmp 30Hz` | The same for bitmaps (always 0 on SeqProbeLite, which has none) |
 | 10 | `knobs 4` | The most knobs polled (asked 3+ times) in one second.  4 or fewer: only the page on screen; more: other pages too |
