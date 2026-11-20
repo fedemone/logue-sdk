@@ -65,7 +65,7 @@ gourd ringing under the ridges are what a sample part does best.  Claves, low
 wood block and taiko already exist as `Claves`, `Wodblk` (BrcBar) and `Taiko`
 (BrcKernel).  BrcWorld is the family unit built for the instruments the
 others could not make: its friction voice, wire, buzz, jingles and particle
-layers are described in [its README](../brachetti_world/README.md).
+layers are described in [its README](../brachetti_split/brachetti_world/README.md).
 
 ---
 

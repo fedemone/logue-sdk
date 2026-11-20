@@ -318,10 +318,10 @@ def patch_presets(text, unit, cands, first_idx):
 # ---------------------------------------------------------------------------
 # Build, render
 # ---------------------------------------------------------------------------
-UNIT_DIRS = dict(tom="brachetti_tom", bar="brachetti_bar", plate="brachetti_plate",
-                 snare="brachetti_snare", noise="brachetti_noise", kick="brachetti_kick",
-                 world="brachetti_world", lippa="brachetti_lippa", pizzico="brachetti_pizzico",
-                 cordiera="brachetti_cordiera")
+UNIT_DIRS = dict(tom="brachetti_split/brachetti_tom", bar="brachetti_split/brachetti_bar", plate="brachetti_split/brachetti_plate",
+                 snare="brachetti_split/brachetti_snare", noise="brachetti_split/brachetti_noise", kick="brachetti_split/brachetti_kick",
+                 world="brachetti_split/brachetti_world", lippa="brachetti_split/brachetti_lippa", pizzico="brachetti_split/brachetti_pizzico",
+                 cordiera="brachetti_split/brachetti_cordiera")
 
 
 def build(unit_dir, out):

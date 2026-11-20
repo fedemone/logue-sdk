@@ -20,7 +20,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 common="$(cd "$here/../../common" && pwd)"
 ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
-OPT="-Os -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing \
+OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector -fstrict-aliasing \
      -falign-functions=16 -fno-math-errno -fomit-frame-pointer"
 CXXO="-std=gnu++14 -fno-threadsafe-statics -fno-exceptions -fno-rtti \
       -finline-limit=2000000000 --param max-inline-insns-single=2000000000"
@@ -33,11 +33,17 @@ for unit in "$@"; do
     arm-linux-gnueabihf-g++ -c $ARCH $OPT $CXXO -DRENDER_STAGE=4 -fPIC \
         -ffunction-sections -fdata-sections -w -I"$dir" -I"$common" \
         "$dir/unit.cc" -o "$tmp/unit.o"
-    arm-linux-gnueabihf-gcc -c $ARCH $OPT -std=c11 -DRENDER_STAGE=4 -fPIC \
-        -ffunction-sections -fdata-sections -w -I"$dir" -I"$common" \
-        "$dir/header.c" -o "$tmp/header.o"
+    # Every C file of the unit: header.c, and Brachetti's family_headers.c.
+    cobjs=()
+    for c in "$dir"/*.c; do
+        o="$tmp/$(basename "$c" .c).o"
+        arm-linux-gnueabihf-gcc -c $ARCH $OPT -std=c11 -DRENDER_STAGE=4 -fPIC \
+            -ffunction-sections -fdata-sections -w -I"$dir" -I"$common" "$c" -o "$o"
+        cobjs+=("$o")
+    done
     arm-linux-gnueabihf-g++ $ARCH $OPT -shared -Wl,--gc-sections \
-        "$tmp/unit.o" "$tmp/header.o" -lm -o "$tmp/$name.elf"
+        "$tmp/unit.o" "${cobjs[@]}" -lm -o "$tmp/$name.elf"
+    rm -f "${cobjs[@]}"
     printf '%-20s' "$name"
     arm-linux-gnueabihf-size -A "$tmp/$name.elf" |
         awk '$1==".text"||$1==".rodata"||$1==".data"||$1==".data.rel.ro"||$1==".bss"{printf " %s=%s", $1, $2} END{print ""}'

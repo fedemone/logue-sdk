@@ -24,7 +24,7 @@ drum="$(cd "$here/../.." && pwd)"
 unit="$(cd "$1" && pwd)"; preset="$2"; notes="$3"; frames="${4:-19200}"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
-OPT="-Os -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 \
+OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 \
      -fno-math-errno -fomit-frame-pointer -finline-limit=2000000000 \
      --param max-inline-insns-single=2000000000"
 arm-linux-gnueabihf-g++ -static -std=gnu++17 $ARCH $OPT -w -I"$unit" -I"$unit/.." \
