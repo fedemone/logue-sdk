@@ -6,7 +6,8 @@ instrument (Program) of that family.  The sequencer follows the drumlogue's
 own sequencer through the Multi-engine part's gates.
 
 This file holds what the hardware showed (SeqProbe, two runs), the design
-that follows from it, and the open items.  Nothing is built yet.
+that follows from it, and the open items.  The sequencer core is built and
+host-tested; the unit around it is not.
 
 ## What the drumlogue does (SeqProbe)
 
@@ -45,8 +46,8 @@ that follows from it, and the open items.  Nothing is built yet.
   pick the instrument.
 - Page 6's overview is a static bitmap (finding 1): it shows the pattern as
   it was when the page was entered.
-- A family change on a lane must say what happens to its steps (cleared, or
-  kept by position): to decide.
+- A family change keeps the steps' positions: a step that is on stays on,
+  on the same program number if the new family has it, else on its last.
 
 ### Sound
 
@@ -88,6 +89,19 @@ the pattern store and the song mode.
 - [x] SeqProbe, second run: accent = velocity 127; no notes from the step keys; resets only on stop.
 - [ ] Test the store gesture (Keeping a pattern, 1).
 - [ ] Align with Brachetti on main once its families are presets and its instruments the Program values.
-- [ ] Sequencer core, host-tested: the pattern, step turns, the restore guard, the clock.
+- [x] Sequencer core, host-tested: the pattern, step turns, the restore guard, the clock (below).
 - [ ] One engine per lane, the mix, the CPU budget, measured on hardware.
 - [ ] Song mode through the drumlogue's chain, if the store gesture works.
+
+## Code so far
+
+| File | What it holds |
+|---|---|
+| `seq_core.h` | `brq::Sequencer<Catalog>`: three lanes × 16 steps; the knobs (steps, Lane, Family, Level read as turns, the overview bitmap, 8-character texts); the restore guard (a burst of sets, or sets right after a preset load, edits nothing and undoes the turn it started with); the clock (one gate per step, an accent or the first gate after a reset is step 1); `pack_column` / `pack_families` for the store gesture; `HitQueue`, the lock-free hand-off from gates to the audio thread.  No constructor, no heap, no clock of its own |
+| `catalog.h` | The eight Brachetti families and their programs as the family units name them today; the core reads only `kFamilies`, `family_name`, `programs`, `program_name`, `default_family`.  Follows Brachetti on main when its families become presets |
+| `test/core_test.cc`, `test/run_core_test.sh` | Host test: defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, packing, the queue, every name within 8 characters, and gates on one thread while knobs edit on another.  `./run_core_test.sh` (ASan/UBSan) and `ARM=1 ./run_core_test.sh` (qemu-arm) |
+
+Next: the unit around it — header.c with the knob layout above, the SDK
+callbacks, one Brachetti engine per lane playing the hits — once Brachetti
+on main has its families as presets (or on today's family units, to start
+measuring CPU).
