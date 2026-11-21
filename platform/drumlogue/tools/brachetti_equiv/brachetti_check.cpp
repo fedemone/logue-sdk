@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <fstream>
 #include <vector>
 #include "unit.h"
 
@@ -205,6 +206,41 @@ static void knobs_compare(Unit& b, Unit& f, const uint8_t* map, const std::strin
     }
 }
 
+// A second, independent instance of a unit: the same library under another
+// file name (dlopen returns the loaded one for the same path).
+static bool open_copy(Unit& u, const char* path, const char* tag) {
+    const std::string copy = std::string(path) + tag;
+    { std::ifstream in(path, std::ios::binary); std::ofstream out(copy, std::ios::binary); out << in.rdbuf(); }
+    return u.open(copy.c_str());
+}
+
+// Ring-over: two instances with the same history; on one, a change (a
+// Program change, or Brachetti's family switch) while a held gate rings.  The
+// new instrument is silent until struck, so the outputs must stay identical:
+// the ringing sound goes on under its own settings, and the gate's release
+// still reaches it.  Then both strike again (the changed one with its new
+// instrument): the outputs must now differ — the new instrument plays.
+static long g_ringover = 0;
+static void ringover_compare(Unit& u1, Unit& u2, const std::string& ctx, void (*change)(Unit&)) {
+    std::vector<float> a, b, x, y;
+    u1.gate_on(127); u2.gate_on(127);
+    a = u1.run(2400); b = u2.run(2400);
+    change(u1);
+    x = u1.run(1200); y = u2.run(1200); a.insert(a.end(), x.begin(), x.end()); b.insert(b.end(), y.begin(), y.end());
+    u1.gate_off(); u2.gate_off();
+    x = u1.run(8400); y = u2.run(8400); a.insert(a.end(), x.begin(), x.end()); b.insert(b.end(), y.begin(), y.end());
+    ++g_ringover;
+    if (memcmp(a.data(), b.data(), a.size() * sizeof(float)) != 0) fail(ctx + ": the ringing sound changed or was cut");
+    u1.gate_on(127); u2.gate_on(127);
+    x = u1.run(2400); y = u2.run(2400);
+    u1.gate_off(); u2.gate_off();
+    if (memcmp(x.data(), y.data(), x.size() * sizeof(float)) == 0) fail(ctx + ": the new instrument does not play");
+    u1.reset(); u2.reset();
+}
+static int g_change_to = 0;
+static void change_program(Unit& u) { u.set(0, g_change_to); }
+static void change_family(Unit& u) { u.load_preset((uint8_t)g_change_to); }
+
 int main(int argc, char** argv) {
     if (argc != 14) { fprintf(stderr, "usage: brachetti_check <brachetti.so> <12 family .so in preset order>\n"); return 2; }
     if (const char* t = getenv("BRACHETTI_TOL")) g_tol = atof(t);   // dB, negative
@@ -289,8 +325,33 @@ int main(int argc, char** argv) {
     for (int s = 1; s <= 6; ++s)
         if (b.get((uint8_t)s) != want[s]) fail(std::string("common knob ") + b.hdr->params[s].name + " not carried across a family switch");
 
-    printf("brachetti: %s — 12 families, %ld renders, %ld knob read-backs compared with the family units\n",
-           g_fail ? "DIFFERENT" : (g_tol > 0.0 ? "IDENTICAL" : "WITHIN TOLERANCE"), g_renders, g_knobs);
+    // Ring-over, on every family unit and on Brachetti (each family, and a
+    // family switch).  Program 0 rings; the change goes to the last instrument.
+    {
+        // Fresh instances, so both of a pair have the same history.
+        Unit b, b2;
+        if (!open_copy(b, argv[1], ".ring1.so") || !open_copy(b2, argv[1], ".ring2.so")) return 2;
+        for (int i = 0; i < 12; ++i) {
+            Unit f, f2;
+            if (!open_copy(f, argv[2 + i], ".ring1.so") || !open_copy(f2, argv[2 + i], ".ring2.so")) return 2;
+            const int last = f.hdr->params[0].max;
+            if (last == 0) continue;
+            f.reset(); f2.reset(); f.set(0, 0); f2.set(0, 0); f.reset(); f2.reset();
+            g_change_to = last;
+            ringover_compare(f, f2, std::string(f.hdr->name) + " Program change while ringing", change_program);
+            f.set(0, 0); f2.set(0, 0);
+            b.load_preset((uint8_t)i); b2.load_preset((uint8_t)i);
+            b.reset(); b2.reset(); b.set(0, 0); b2.set(0, 0); b.reset(); b2.reset();
+            ringover_compare(b, b2, std::string("Brachetti/") + b.preset_name((uint8_t)i) + " Program change while ringing", change_program);
+            b.set(0, 0); b2.set(0, 0);
+            g_change_to = (i + 1) % 12;
+            ringover_compare(b, b2, std::string("Brachetti ") + b.preset_name((uint8_t)i) + " -> " + b.preset_name((uint8_t)g_change_to) + " while ringing", change_family);
+            b2.load_preset((uint8_t)g_change_to);   // b2 follows, so both stay in step
+        }
+    }
+
+    printf("brachetti: %s — 12 families, %ld renders, %ld knob read-backs compared with the family units, %ld ring-over cases\n",
+           g_fail ? "DIFFERENT" : (g_tol > 0.0 ? "IDENTICAL" : "WITHIN TOLERANCE"), g_renders, g_knobs, g_ringover);
     if (g_tol <= 0.0) printf("worst render: diff/signal %.1f dB (limit %.1f dB); largest sample difference %.3g\n",
                              g_worst_db, g_tol, g_maxdiff);
     return g_fail ? 1 : 0;

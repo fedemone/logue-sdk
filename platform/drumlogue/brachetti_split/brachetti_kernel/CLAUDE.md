@@ -45,6 +45,12 @@ README.md lists the presets and what every knob does.
   triggered at the end of NoteOn, applied right after `follow_and_gate` (the
   kernel: on the unit's output, in `master()`).  At 0 it is skipped entirely,
   so every preset renders byte-identically; keep it that way.
+- **Ringing on.**  `unit.cc` runs the engine as `brc::RingOver` (two copies,
+  `../../brachetti_common/ring_over.h`): a Program change while a sound rings
+  lets it ring out.  The engine itself is unchanged, so `run_equiv.sh` (which
+  drives it directly) still compares it with the original; the ring-over is
+  checked by `brachetti_check.sh`.  A buffer outside the class (a delay line)
+  needs one bank per copy (`SetBank`, as in BrcLippa).
 - **Also played by [`brachetti`](../../brachetti/README.md)**, which compiles this
   family's `synth_engine.h` inside a namespace (`fam_<family>`) as one of its
   twelve presets.  So: no bare `::` before a family name, and a new

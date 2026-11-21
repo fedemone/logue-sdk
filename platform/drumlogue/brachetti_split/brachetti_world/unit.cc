@@ -5,13 +5,16 @@
 
 #include "unit.h"
 #include "synth_engine.h"
+#include "../../brachetti_common/ring_over.h"
 
 // ==============================================================================
 // 1. Global Synth Instance
 // ==============================================================================
 // By declaring this static, it is allocated safely in the Drumlogue's BSS memory
 // segment at boot, avoiding any real-time allocation (malloc/new) hazards.
-static BrachettiSynth s_synth;
+// Two copies of the engine: a Program change lets the ringing sound ring
+// out under its own instrument (brachetti_common/ring_over.h).
+static brc::RingOver<BrachettiSynth> s_synth;
 static unit_runtime_desc_t s_runtime_desc;
 
 // ==============================================================================

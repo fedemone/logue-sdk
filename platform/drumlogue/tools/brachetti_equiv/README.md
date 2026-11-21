@@ -382,7 +382,18 @@ clamping and that the common knobs survive a family switch.
 ./arm_brachetti_check.sh     # ARM build under qemu-arm (NEON), -90 dB per render
 ```
 
-Result: `IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs`.
+It also checks ringing on ([`ring_over.h`](../../brachetti_common/ring_over.h):
+a Program change, or Brachetti's family switch, lets the ringing sound ring
+out): two fresh instances of each unit, the same history, one changed while
+a held gate rings — the outputs must stay identical, and the next strike
+must play the new instrument.
+
+Result: `IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs, 36 ring-over cases`.
+
+`run_equiv.sh` drives the engines directly, not through `RingOver`, so its
+Program changes over ringing voices still compare the engine's own fade with
+the original's (IDENTICAL); what the units do on the device there is the
+ring-over, checked by `brachetti_check.sh`.
 Result (each dedicated knob at its two ends; `-90 dB` limit per render):
 14,564 of 14,568 renders agree within −94 dB of their signal (float
 reordering); the 4 that do not are the Gong with `Tang` (the cymbal's

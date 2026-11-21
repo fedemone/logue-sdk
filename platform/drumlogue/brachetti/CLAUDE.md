@@ -50,10 +50,18 @@ README.md has the presets, the knob tables and the verification.
   it the family code fuses multiply-adds differently in this unit and the ARM
   renders differ from the family units at -30..-50 dB.  Keep it in all
   thirteen.
-- **Threads.**  `LoadPreset` sets the new engine up completely before the
-  one atomic store that publishes it; the audio thread keeps its own copy of
-  the family it renders and fades the previous one out.  Keep any new
-  cross-thread state behind that store.
+- **Ringing on.**  Every engine is a `brc::RingOver` pair
+  (`../brachetti_common/ring_over.h`): a Program change while it rings hands
+  the new instrument to the other copy.  A family switch lets the family left
+  behind render until it is silent (`Render` plays every family that still
+  sounds); a target family still ringing gets a ring-over Program change, not
+  `Init`.  Note-offs, all-notes-off and pitch bend go to every family, a
+  gate's release to the family that took the gate.  `brachetti_check.sh`
+  checks it (the ring-over cases).
+- **Threads.**  `LoadPreset` sets the new family up completely before the
+  one atomic store that publishes it.  `Init` runs only on a family that is
+  neither selected nor sounding, which the audio thread never renders.  Keep
+  any new cross-thread state behind that store.
 - **Nothing shared between units.**  As in the family units: no static local
   of an inline function or template (it becomes STB_GNU_UNIQUE and the loader
   shares it among every loaded unit); keep tables and buffers at namespace

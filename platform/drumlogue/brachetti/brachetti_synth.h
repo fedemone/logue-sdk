@@ -23,11 +23,18 @@
 // family knob's own value (as the family unit would show it), or "---" in a
 // slot the family does not use.  README.md has the per-family knob table.
 //
-// Thread safety.  A preset load prepares the new engine completely (Init,
-// the panel's common knobs) before it publishes the new family with one
-// atomic store; the audio thread picks the store up at its next block and
-// fades the previous engine out over ~10 ms, so neither engine is ever half
-// set up while it renders.
+// Ringing on.  Each family engine is a brc::RingOver pair (ring_over.h): a
+// Program change while an instrument rings lets it ring out under its own
+// settings while the new one plays.  A family switch does the same at the
+// family level: the family left behind keeps rendering until it falls
+// silent, so its last strokes ring on under the new family.
+//
+// Thread safety.  A preset load prepares the new family completely (Init, or
+// a ring-over Program change if it is still ringing; the panel's common
+// knobs) before it publishes it with one atomic store; the audio thread picks
+// the store up at its next block.  A family that is neither selected nor
+// ringing is never rendered, so Init never runs on an engine the audio thread
+// is using.
 #include <atomic>
 #include "families.h"
 
@@ -36,8 +43,7 @@ namespace brachetti {
 constexpr uint8_t kNumSlots    = 24;
 constexpr uint8_t kNone        = 0xFF;   // a Brachetti slot the family does not use
 constexpr uint8_t kNumFamilies = 12;
-constexpr size_t  kFadeFrames  = 480;    // 10 ms at 48 kHz: the old family's fade-out
-constexpr size_t  kFadeChunk   = 64;     // frames per fade-out render (stack buffer)
+constexpr size_t  kChunk       = 64;     // frames per render of a family ringing out (stack buffer)
 
 // One family: its engine, its header.c, where its knobs sit, and the calls.
 struct Family {
@@ -61,6 +67,7 @@ struct Family {
     void        (*gate_off)(void*);
     void        (*all_note_off)(void*);
     void        (*pitch_bend)(void*, uint16_t);
+    bool        (*sounding)(const void*);
 };
 
 // The calls, for any family class (internal linkage: no symbol of these is
@@ -80,27 +87,29 @@ template <class S> static void        f_gate_on(void* e, uint8_t v)        { sta
 template <class S> static void        f_gate_off(void* e)                  { static_cast<S*>(e)->GateOff(); }
 template <class S> static void        f_all_note_off(void* e)              { static_cast<S*>(e)->AllNoteOff(); }
 template <class S> static void        f_pitch_bend(void* e, uint16_t b)    { static_cast<S*>(e)->PitchBend(b); }
+template <class S> static bool        f_sounding(const void* e)            { return static_cast<const S*>(e)->Sounding(); }
 
 #define BRACHETTI_CALLS(S)                                                     \
     S::k_NumPrograms, &f_init<S>, &f_teardown<S>, &f_reset<S>, &f_resume<S>,   \
     &f_suspend<S>, &f_render<S>, &f_set<S>, &f_get<S>, &f_text<S>,             \
     &f_note_on<S>, &f_note_off<S>, &f_gate_on<S>, &f_gate_off<S>,              \
-    &f_all_note_off<S>, &f_pitch_bend<S>
+    &f_all_note_off<S>, &f_pitch_bend<S>, &f_sounding<S>
 
-// The engines: every family is resident (their delay lines are file-scope
-// statics of the family code anyway), so a switch never constructs anything.
-static fam_kick::BrachettiSynth     s_kick;
-static fam_tom::BrachettiSynth      s_tom;
-static fam_kernel::BrachettiSynth   s_kernel;
-static fam_snare::BrachettiSynth    s_snare;
-static fam_bar::BrachettiSynth      s_bar;
-static fam_plate::BrachettiSynth    s_plate;
-static fam_cymbal::BrachettiSynth   s_cymbal;
-static fam_noise::BrachettiSynth    s_noise;
-static fam_world::BrachettiSynth    s_world;
-static fam_lippa::BrachettiSynth    s_lippa;
-static fam_pizzico::BrachettiSynth  s_pizzico;
-static fam_cordiera::BrachettiSynth s_cordiera;
+// The engines: every family is resident, each as a ring-over pair (two copies:
+// a Program change lets the ringing one ring out), so a switch never
+// constructs anything.
+static brc::RingOver<fam_kick::BrachettiSynth>     s_kick;
+static brc::RingOver<fam_tom::BrachettiSynth>      s_tom;
+static brc::RingOver<fam_kernel::BrachettiSynth>   s_kernel;
+static brc::RingOver<fam_snare::BrachettiSynth>    s_snare;
+static brc::RingOver<fam_bar::BrachettiSynth>      s_bar;
+static brc::RingOver<fam_plate::BrachettiSynth>    s_plate;
+static brc::RingOver<fam_cymbal::BrachettiSynth>   s_cymbal;
+static brc::RingOver<fam_noise::BrachettiSynth>    s_noise;
+static brc::RingOver<fam_world::BrachettiSynth>    s_world;
+static brc::RingOver<fam_lippa::BrachettiSynth>    s_lippa;
+static brc::RingOver<fam_pizzico::BrachettiSynth>  s_pizzico;
+static brc::RingOver<fam_cordiera::BrachettiSynth> s_cordiera;
 
 // Where each family's knobs sit in Brachetti's 24 slots.  Pages 1-2 are the
 // common knobs, the same slot on every family.  Pages 3-6 are Brachetti's
@@ -115,29 +124,29 @@ static fam_cordiera::BrachettiSynth s_cordiera;
 static const Family kFamilies[kNumFamilies] = {
     {"Kick",     &s_kick,     &brc_hdr_kick,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_kick::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_kick::BrachettiSynth>)},
     {"Tom",      &s_tom,      &brc_hdr_tom,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_tom::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_tom::BrachettiSynth>)},
     // Kernel: Fill (its 12) in Partls; Punch (19) in Model's slot; Dkay Rel
     // Mterl HitPos Inharm TubRad (13-18) one slot on, where they belong;
     // NzMix (20) and NzFltFrq (21) in their own slots.
     {"Kernel",   &s_kernel,   &brc_hdr_kernel,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 19, 13, 14, 15, 16, 17, 18, 20, N, N, 21},
-     BRACHETTI_CALLS(fam_kernel::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_kernel::BrachettiSynth>)},
     {"Snare",    &s_snare,    &brc_hdr_snare,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_snare::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_snare::BrachettiSynth>)},
     {"Bar",      &s_bar,      &brc_hdr_bar,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_bar::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_bar::BrachettiSynth>)},
     {"Plate",    &s_plate,    &brc_hdr_plate,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_plate::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_plate::BrachettiSynth>)},
     // Cymbal: as the kernel, without the noise page.
     {"Cymbal",   &s_cymbal,   &brc_hdr_cymbal,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 19, 13, 14, 15, 16, 17, 18, N, N, N, N},
-     BRACHETTI_CALLS(fam_cymbal::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_cymbal::BrachettiSynth>)},
     // Noise: GrnDpth (9) and GrnRate (8) swap into the MlltRes / MlltStif
     // kinds; GrnFade Swell (10, 11) stay; Band (16) and VelTone (18) in
     // Partls' and Model's slots; Punch (19) in Rel's, where five other
@@ -145,19 +154,19 @@ static const Family kFamilies[kNumFamilies] = {
     // page (12-15) on the noise page.
     {"Noise",    &s_noise,    &brc_hdr_noise,
      {BRC_COMMON_SLOTS, 9, 8, 10, 11, 16, 18, N, 19, N, N, N, 17, 12, 13, 14, 15},
-     BRACHETTI_CALLS(fam_noise::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_noise::BrachettiSynth>)},
     {"World",    &s_world,    &brc_hdr_world,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_world::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_world::BrachettiSynth>)},
     {"Lippa",    &s_lippa,    &brc_hdr_lippa,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_lippa::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_lippa::BrachettiSynth>)},
     {"Pizzico",  &s_pizzico,  &brc_hdr_pizzico,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_pizzico::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_pizzico::BrachettiSynth>)},
     {"Cordiera", &s_cordiera, &brc_hdr_cordiera,
      {BRC_COMMON_SLOTS, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23},
-     BRACHETTI_CALLS(fam_cordiera::BrachettiSynth)},
+     BRACHETTI_CALLS(brc::RingOver<fam_cordiera::BrachettiSynth>)},
 };
 #undef N
 #undef BRC_COMMON_SLOTS
@@ -222,15 +231,14 @@ public:
         }
         for (uint8_t i = 0; i < kNumSlots; ++i) m_echo[i] = unit_header.params[i].init;
         m_family.store(0);
-        m_render_family = 0;
-        m_fade_left = 0;
+        m_gate_family = 0;
         return k_unit_err_none;
     }
 
     void Teardown() { for (const Family& f : kFamilies) f.teardown(f.engine); }
-    void Reset()    { m_fade_left = 0; active().reset(active().engine); }
-    void Resume()   { active().resume(active().engine); }
-    void Suspend()  { m_fade_left = 0; active().suspend(active().engine); }
+    void Reset()    { for (const Family& f : kFamilies) f.reset(f.engine); }
+    void Resume()   { for (const Family& f : kFamilies) f.resume(f.engine); }
+    void Suspend()  { for (const Family& f : kFamilies) f.suspend(f.engine); }
 
     // ── Presets: the families ───────────────────────────────────────────────
     static const char* PresetName(uint8_t idx) {
@@ -239,13 +247,17 @@ public:
     uint8_t PresetIndex() const { return m_family.load(); }
 
     // Switch to family `idx` on its first instrument, the panel's
-    // performance and master knobs carried over.  Re-selecting the family
-    // already playing goes back to its first instrument.
+    // performance and master knobs carried over; the family left behind rings
+    // out.  Re-selecting the family already playing goes back to its first
+    // instrument (a Program change: what rings, rings on).
     void LoadPreset(uint8_t idx) {
         if (idx >= kNumFamilies) return;
         if (idx == m_family.load()) { active().set(active().engine, 0, 0); return; }
         const Family& f = kFamilies[idx];
-        f.init(f.engine, &m_desc);   // fresh: knobs at defaults, voices silent, instrument 0
+        if (f.sounding(f.engine))
+            f.set(f.engine, 0, 0);       // still ringing from before: ring over onto instrument 0
+        else
+            f.init(f.engine, &m_desc);   // fresh: knobs at defaults, voices silent, instrument 0
         for (uint8_t p = brc::CommonLayout::k_paramPitch; p <= brc::CommonLayout::k_paramResnc; ++p)
             if (!blank(f, p)) f.set(f.engine, p, m_echo[p]);
         for (uint8_t i = brc::CommonLayout::k_firstDedicated; i < kNumSlots; ++i)
@@ -290,24 +302,36 @@ public:
     }
 
     // ── Notes ───────────────────────────────────────────────────────────────
+    // A strike goes to the selected family; a note-off, all-notes-off and pitch
+    // bend to every family (one may still ring from before a switch); a gate's
+    // release to the family the gate struck.
     void NoteOn(uint8_t note, uint8_t vel) { active().note_on(active().engine, note, vel); }
-    void NoteOff(uint8_t note)             { active().note_off(active().engine, note); }
-    void GateOn(uint8_t vel)               { active().gate_on(active().engine, vel); }
-    void GateOff()                         { active().gate_off(active().engine); }
-    void AllNoteOff()                      { active().all_note_off(active().engine); }
-    void PitchBend(uint16_t bend)          { active().pitch_bend(active().engine, bend); }
+    void NoteOff(uint8_t note)    { for (const Family& f : kFamilies) f.note_off(f.engine, note); }
+    void GateOn(uint8_t vel) {
+        if (vel == 0) { GateOff(); return; }
+        m_gate_family = m_family.load();
+        active().gate_on(active().engine, vel);
+    }
+    void GateOff()                { kFamilies[m_gate_family].gate_off(kFamilies[m_gate_family].engine); }
+    void AllNoteOff()             { for (const Family& f : kFamilies) f.all_note_off(f.engine); }
+    void PitchBend(uint16_t bend) { for (const Family& f : kFamilies) f.pitch_bend(f.engine, bend); }
 
     // ── Audio ───────────────────────────────────────────────────────────────
+    // The selected family, plus every other family still ringing.
     void Render(float* out, size_t frames) {
         const uint8_t cur = m_family.load(std::memory_order_acquire);
-        if (cur != m_render_family) {      // a new family: fade the old one out
-            m_fade_family = m_render_family;
-            m_fade_left = kFadeFrames;
-            m_render_family = cur;
-        }
         const Family& f = kFamilies[cur];
         f.render(f.engine, out, frames);
-        if (m_fade_left > 0) fade_out_old(out, frames);
+        for (uint8_t i = 0; i < kNumFamilies; ++i) {
+            const Family& r = kFamilies[i];
+            if (i == cur || !r.sounding(r.engine)) continue;
+            float tmp[kChunk * 2];
+            for (size_t done = 0; done < frames; done += kChunk) {
+                const size_t n = (frames - done < kChunk) ? frames - done : kChunk;
+                r.render(r.engine, tmp, n);
+                for (size_t k = 0; k < 2 * n; ++k) out[2 * done + k] += tmp[k];
+            }
+        }
     }
 
 private:
@@ -317,33 +341,10 @@ private:
     // no Pitch on the noise family).
     static bool blank(const Family& f, uint8_t fs) { return f.hdr->params[fs].name[0] == '\0'; }
 
-    // The family playing before the switch, mixed in under a falling gain.
-    void fade_out_old(float* out, size_t frames) {
-        const Family& old = kFamilies[m_fade_family];
-        float tmp[kFadeChunk * 2];
-        size_t done = 0;
-        while (done < frames && m_fade_left > 0) {
-            size_t n = frames - done;
-            if (n > kFadeChunk) n = kFadeChunk;
-            old.render(old.engine, tmp, n);
-            for (size_t i = 0; i < n; ++i) {
-                const float g = (m_fade_left > 0) ? (float)m_fade_left * (1.0f / (float)kFadeFrames) : 0.0f;
-                if (m_fade_left > 0) --m_fade_left;
-                out[2 * (done + i)]     += g * tmp[2 * i];
-                out[2 * (done + i) + 1] += g * tmp[2 * i + 1];
-            }
-            done += n;
-        }
-        if (m_fade_left == 0) old.reset(old.engine);   // silent until it is chosen again
-    }
-
     unit_runtime_desc_t  m_desc{};
     std::atomic<uint8_t> m_family{0};      // the selected family (the preset)
     int32_t              m_echo[kNumSlots] = {0};   // what the host last set, per slot
-    // Audio thread only.
-    uint8_t              m_render_family = 0;
-    uint8_t              m_fade_family   = 0;
-    size_t               m_fade_left     = 0;
+    uint8_t              m_gate_family = 0;   // the family the last gate struck
 };
 
 }  // namespace brachetti

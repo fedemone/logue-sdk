@@ -50,10 +50,15 @@
 
 // The berimbau wires' delay lines, one per voice slot (16 KB, as BrcWorld's):
 // namespace-scope `static`, private to this unit and in .bss.
-static float s_wire_lines[brc::kNumVoices][cordiera::kWireLen];
+// Two banks: brc::RingOver runs two copies of this engine (a Program change
+// lets the ringing copy ring out), and SetBank gives each copy its own.
+static float s_wire_lines[2][brc::kNumVoices][cordiera::kWireLen];
 
 class alignas(16) BrachettiSynth : public brc::ModalSynth<BrachettiSynth, VoiceState> {
 public:
+    // Which bank of the file-scope delay lines this copy uses (RingOver).
+    void SetBank(uint8_t bank) { m_bank = (uint8_t)(bank & 1); }
+
     // ── The presets (presets.h), as the modal engine reads them ─────────────
     static constexpr int k_NumPrograms = kNumPresets;
     static const char* getPresetName(uint8_t idx) { return preset_name(idx); }
@@ -484,7 +489,7 @@ private:
     void strike_wire(VoiceState& v, float tune, const WireKnobs& k) {
         const Voicing& c = voicing();
         cordiera::Wire& w = v.wire;
-        w.buf = s_wire_lines[&v - m_voices];
+        w.buf = s_wire_lines[m_bank][&v - m_voices];
         memset(w.buf, 0, sizeof(float) * cordiera::kWireLen);
         w.level = c.bw_level * k.presence;
         w.delay = brc::clampf(brc::kSampleRate / (c.bw_hz * tune), 2.0f, (float)(cordiera::kWireLen - 2));
@@ -539,4 +544,5 @@ private:
         w.bend_up   = c.bw_bend_up * k.bend;
         w.bend_down = c.bw_bend_down * k.bend;
     }
+    uint8_t m_bank = 0;   // SetBank: this copy's delay lines
 };

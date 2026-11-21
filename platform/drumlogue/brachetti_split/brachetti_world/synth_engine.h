@@ -41,7 +41,9 @@
 // The wires' delay lines, one per voice slot: 16 KB that would otherwise sit in
 // the synth object's .data as zeros.  Namespace-scope `static`: private to
 // this unit, and in .bss.
-static float s_wire_lines[brc::kNumVoices][world::kWireLen];
+// Two banks: brc::RingOver runs two copies of this engine (a Program change
+// lets the ringing copy ring out), and SetBank gives each copy its own.
+static float s_wire_lines[2][brc::kNumVoices][world::kWireLen];
 
 // The modal bank's output weight per mode (as ModalBank::process sums them):
 // the buzz reads the bank's level at the strike through it.
@@ -49,6 +51,9 @@ static const float kModeWeight[brc::kMaxModes] = {1.0f, 0.6f, 0.45f, 0.28f, 0.18
 
 class alignas(16) BrachettiSynth : public brc::ModalSynth<BrachettiSynth, VoiceState> {
 public:
+    // Which bank of the file-scope delay lines this copy uses (RingOver).
+    void SetBank(uint8_t bank) { m_bank = (uint8_t)(bank & 1); }
+
     // ── The presets (presets.h), as the modal engine reads them ─────────────
     static constexpr int k_NumPrograms = kNumPresets;
     static const char* getPresetName(uint8_t idx) { return preset_name(idx); }
@@ -230,7 +235,7 @@ private:
     void strike_wire(VoiceState& v, float tune, const LayerKnobs& k) {
         const Voicing& c = voicing();
         world::Wire& w = v.wire;
-        w.buf = s_wire_lines[&v - m_voices];
+        w.buf = s_wire_lines[m_bank][&v - m_voices];
         memset(w.buf, 0, sizeof(float) * world::kWireLen);
         w.level = c.wire_level * k.presence;
         w.delay = brc::clampf(brc::kSampleRate / (c.wire_hz * tune), 2.0f, (float)(world::kWireLen - 2));
@@ -313,4 +318,5 @@ private:
         p.mix2 = c.pt_mix2;
         p.direct = c.pt_direct * k.rattle + 0.6f * k.rattle_add;   // the beads' dry clicks
     }
+    uint8_t m_bank = 0;   // SetBank: this copy's delay lines
 };

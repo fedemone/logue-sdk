@@ -40,11 +40,16 @@
 // The loops' delay lines, one pair per voice slot: 48 KB that would otherwise
 // sit in the synth object's .data as zeros.  Namespace-scope `static`: private
 // to this unit, and in .bss.
-static float s_loop_lines[brc::kNumVoices][loop::kLoopLen];
-static float s_ap_lines[brc::kNumVoices][loop::kApLen];
+// Two banks: brc::RingOver runs two copies of this engine (a Program change
+// lets the ringing copy ring out), and SetBank gives each copy its own.
+static float s_loop_lines[2][brc::kNumVoices][loop::kLoopLen];
+static float s_ap_lines[2][brc::kNumVoices][loop::kApLen];
 
 class alignas(16) BrachettiSynth : public brc::ModalSynth<BrachettiSynth, VoiceState> {
 public:
+    // Which bank of the file-scope delay lines this copy uses (RingOver).
+    void SetBank(uint8_t bank) { m_bank = (uint8_t)(bank & 1); }
+
     // ── The presets (presets.h), as the modal engine reads them ─────────────
     static constexpr int k_NumPrograms = kNumPresets;
     static const char* getPresetName(uint8_t idx) { return preset_name(idx); }
@@ -275,8 +280,8 @@ private:
         const float vel = v.current_velocity;
         loop::Drum& d = v.drum;
         const int slot = (int)(&v - m_voices);
-        d.buf = s_loop_lines[slot];
-        d.ap  = s_ap_lines[slot];
+        d.buf = s_loop_lines[m_bank][slot];
+        d.ap  = s_ap_lines[m_bank][slot];
         if (!ringing) {   // a ringing loop keeps its lines: the strike adds to them
             memset(d.buf, 0, sizeof(float) * loop::kLoopLen);
             memset(d.ap, 0, sizeof(float) * loop::kApLen);
@@ -348,4 +353,5 @@ private:
             d.sn_rel = 1.0f - expf(-1.0f / fmaxf(1.0f, ms_to_samples(brc::or_default(c.sn_rel_ms, 0.001f, 30.0f))));
         }
     }
+    uint8_t m_bank = 0;   // SetBank: this copy's delay lines
 };

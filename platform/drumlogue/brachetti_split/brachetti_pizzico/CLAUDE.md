@@ -50,6 +50,12 @@ README.md has where they come from, the knobs and the credits;
 - **Nothing shared between units** (`kPresetNames`, `s_loop_lines`,
   `s_ap_lines` at namespace scope, `static`), **no user-defined
   constructors**, **per-sample code `force_inline`**.
+- **Ringing on.**  `unit.cc` runs the engine as `brc::RingOver` (two copies,
+  `../../brachetti_common/ring_over.h`): a Program change while a sound rings
+  lets it ring out.  The engine itself is unchanged, so `run_equiv.sh` (which
+  drives it directly) still compares it with the original; the ring-over is
+  checked by `brachetti_check.sh`.  A buffer outside the class (a delay line)
+  needs one bank per copy (`SetBank`, as in BrcLippa).
 - **Also played by [`brachetti`](../../brachetti/README.md)**, which compiles this
   family's `synth_engine.h` inside a namespace (`fam_<family>`) as one of its
   twelve presets.  So: no bare `::` before a family name, and a new

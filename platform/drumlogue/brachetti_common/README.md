@@ -42,6 +42,7 @@ every helper, what it does and which units use it.
 | `models.h` | the Model knob |
 | `modal_bank.h` | the six-mode bank and the knobs that shape it |
 | `modal_synth.h` | `ModalSynth`: the engine of the eight modal units |
+| `ring_over.h` | `RingOver`: two copies of a unit's engine, so a Program change lets the ringing sound ring out |
 | `float_math.h`, `filter.h`, `envelope.h` | the original's support headers: fast math approximations, the TPT state-variable filter, the AR/ADSR envelope |
 
 ## Helper index
@@ -148,6 +149,8 @@ unit.
 | `ModalPresetConfig`, `ModalBank` | `modal_bank.h` | a preset's calibrated bank; the bank itself (NEON path) | kick, tom, snare, bar, plate, world, lippa, pizzico, cordiera |
 | `shape_modal`, `strike_modal`, `ModalShape`, `ModalKnobs`, `format_mode_count` | `modal_bank.h` | the knobs on the bank, before and at the strike; Partls' display | library (`ModalSynth`) |
 | `ModalLayout`, `kModalHostKnobs`, `kFamilyKnob`, `ModalSynth` | `modal_synth.h` | the 24-knob layout (the common pages, then the standard dedicated set) and the engine of the eight modal units | kick, tom, snare, bar, plate, world, lippa, pizzico, cordiera |
+
+| `RingOver<Synth>` | `ring_over.h` | two copies of the engine: on a Program change while one sounds, the other takes the new instrument and the first rings out under its own settings; an engine with file-scope buffers gives each copy its own (`SetBank`) | every unit's `unit.cc` and Brachetti (lippa, pizzico, cordiera and world have `SetBank`) |
 
 `ModalSynth` also hands its units these building blocks for their `NoteOn`:
 `strike_velocity`, `allocate_voice`, `shape_exciter`, `modal_knobs`,

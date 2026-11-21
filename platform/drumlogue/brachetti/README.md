@@ -26,7 +26,7 @@ single-family units it is built from stay available in
 | Presets | 12, one per family |
 | Instruments | 114, on `Program` |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 106,320 · .rodata 61,976 · .data.rel.ro 2,320 · .data 22,832 · .bss 176,848 |
+| ARM size (cross-built, `arm_size.sh`) | .text 116,072 · .rodata 61,976 · .data.rel.ro 2,368 · .data 45,760 · .bss 353,056 (every engine twice: *Ringing on*) |
 
 ## The presets: one per family
 
@@ -56,11 +56,14 @@ the [repository README](../../../README.md#brachetti-documents).
   every knob after a preset load).  The performance and master knobs —
   `Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff`, `Resnc` — keep where you
   left them; `Gain` and the dedicated knobs (pages 3-6) load with the
-  instrument.  The family that was playing fades out over 10 ms.
+  instrument.  What the family left behind was playing **rings on** until it
+  dies away, under its own settings, while the new family plays.
 - **Re-loading the preset already selected** goes back to the family's first
   instrument.
 - **`Program`** picks the instrument inside the selected family, exactly as
-  on the family unit.  Its range is 0-31 (Tom has 32 instruments, the most);
+  on the family unit.  **A sound still ringing rings on:** the next strike
+  plays the new instrument and the ringing one dies away under its own
+  instrument and knobs (see *Ringing on*, below).  Its range is 0-31 (Tom has 32 instruments, the most);
   in a smaller family the positions past its last instrument play, and show,
   the last one.
 - **Saved with a project:** the drumlogue stores the preset (the family) and
@@ -176,10 +179,27 @@ plays it exactly as the family unit.
 
 All twelve engines are resident and initialised at start-up: a family
 switch constructs nothing and allocates nothing.  Only the selected family
-renders (and, for 10 ms after a switch, the one before it), so the CPU cost
-of an instrument is the same as on its family unit.  The memory is the
-twelve units' together (most of `.bss` is BrcLippa's and BrcPizzico's loop
-delay lines, BrcCordiera's and BrcWorld's wires, the kernel's modes).
+renders, plus whatever is still ringing from before a change, so the CPU
+cost of an instrument is the same as on its family unit, and twice that
+only while two instruments overlap.  The memory is the twelve units'
+together (most of `.bss` is BrcLippa's and BrcPizzico's loop delay lines,
+BrcCordiera's and BrcWorld's wires, the kernel's modes).
+
+### Ringing on
+
+A family engine cannot keep a voice through a Program change: its voices
+read the current instrument's tables while they ring.  So every family (in
+Brachetti and in each single-family unit alike) runs as **two copies** of
+its engine, [`brc::RingOver`](../brachetti_common/ring_over.h).  New strikes
+and the knobs go to the current copy.  A Program change while the current
+copy still sounds hands the new instrument, with the panel's knobs, to the
+other copy; the first rings out untouched — its instrument, knobs and master
+stage — until it is silent.  A held gate is released on the copy it struck.
+A change while nothing rings is exactly the old Program change.  At most two
+instruments of a family sound at once: a third change while both still ring
+fades the older one in ~10 ms, as before.  A family switch works the same
+way one level up: the family left behind keeps rendering until it is silent.
+The price is memory: the engines and their delay lines are there twice.
 
 The drumlogue may call the knob and preset callbacks from another thread
 than the audio: a preset load sets the new engine up completely and then
@@ -194,10 +214,9 @@ build drumlogue/brachetti
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
 The product is `brachetti.drmlgunit`; copy it to the drumlogue's
-`Units/Synths` folder.  Not yet tested on hardware.  At 106 KB of code it is
-about twice the original 40-preset unit's (53.6 KB, which loads and runs on
-the drumlogue); the firmware's code-size limit is not documented, so this is
-the first thing to check on the device.
+`Units/Synths` folder.  **Tested on hardware** (the version before ringing
+on, 106 KB of code: it loads and plays every family).  With every engine
+twice it is 116 KB of code and about 400 KB of memory (`.data` + `.bss`).
 
 ## Verification
 
@@ -217,11 +236,15 @@ bit for bit as on the family unit — at the shipped settings and with every
 dedicated knob at its ends, centre and two random points.  It also checks the
 header defaults (what the first preset loads), that every slot is wide enough
 for its knobs and loses none of their values, that every family knob is
-placed exactly once, that `Program` stops at a family's last instrument and
+placed exactly once, that `Program` stops at a family's last instrument,
+that a sound still ringing rings on through a Program change and a family
+switch (two instances of each unit with the same history, one of them
+changed while a held gate rings: the outputs must stay identical, and the
+next strike must play the new instrument) and
 that the common knobs survive a family switch.  Result:
 
 ```
-brachetti: IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs compared with the family units
+brachetti: IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs compared with the family units, 36 ring-over cases
 ```
 
 `arm_brachetti_check.sh` runs the same check on the ARM build (`-Os
