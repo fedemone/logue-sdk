@@ -26,7 +26,7 @@
 //   dsp_math.h       clampf, knob_exp2
 //   knobs.h          knob::percent, name_at, off_anchor
 //   master_stage.h   MasterStage, tone_tilt
-//   modal_bank.h     ModalPresetConfig
+//   modal_bank.h     ModalBank, ModalPresetConfig, kMaxModes
 //   modal_synth.h    ModalSynth, kFamilyKnob
 //   voice_base.h     kRollFuseSec
 //   voice_layers.h   punch_amount
@@ -77,6 +77,7 @@ public:
         if (voicing().chirp_hz > 0.0f) v.chirp.trigger(voicing().chirp_hz);
         // A wider shell (TubRad) also feeds more energy into the boom.
         v.boom.mix *= strike_modal_bank(v, voicing().modal_mix);
+        if (voicing().bank_glide > 0.0f) capture_bank(v);
         trigger_slap(v, note);
         dial_slap(v);
         v.punch.trigger(brc::punch_amount(m_params[k_paramPunch]));
@@ -87,6 +88,7 @@ public:
         const bool tone_active = (tone != 0.0f);
         const float boom_hz = voicing().boom_hz;   // > 0: a tracked (gliding) boom
         const float glide   = voicing().glide;
+        const bool  bank_glide = (voicing().bank_glide > 0.0f) && (boom_hz > 0.0f);
         for (size_t i = 0; i < frames; ++i) {
             float exciter_sig = v.exciter.process();
             if (v.chirp.active()) exciter_sig += v.chirp.process();
@@ -103,10 +105,17 @@ public:
                     v.boom.set_freq((174.61f + v.pitch.amount * v.pitch.env) * v.boom.tune);
                 else if (boom_hz > 0.0f) {
                     const float bend = v.curve.active() ? v.curve.process() : v.pitch.env;
-                    v.boom.set_freq((boom_hz + glide * v.pitch.amount * bend) * v.boom.tune);
+                    const float hz = boom_hz + glide * v.pitch.amount * bend;
+                    v.glide_hz = hz;
+                    v.boom.set_freq(hz * v.boom.tune);
                 }
                 x += v.boom.process() * v.current_velocity;
+            } else if (bank_glide) {
+                // A silent boom still carries the bend the bank follows.
+                const float bend = v.curve.active() ? v.curve.process() : v.pitch.env;
+                v.glide_hz = boom_hz + glide * v.pitch.amount * bend;
             }
+            if (bank_glide && (i & 15u) == 0u && v.modal.active) glide_bank(v);
             if (v.modal.active) {
                 const float modes = v.modal.process();
                 x += modes * v.chirp.open_modal(v.modal.mix) * kModalGain;
@@ -149,6 +158,41 @@ private:
     // bass drum cannot do that, the beater damps the head it just struck.
     float roll_window() const {
         return (m_preset_idx == k_Taiko2) ? 0.300f : brc::kRollFuseSec;
+    }
+
+    // Bank glide: the modes' frequencies at the strike, read back from the
+    // struck bank (k = 2 cos w), so every knob that shaped them is in.
+    static void capture_bank(VoiceState& v) {
+        for (int i = 0; i < brc::kMaxModes; ++i)
+            v.bank_w[i] = acosf(brc::clampf(0.5f * v.modal.k[i], -1.0f, 1.0f));
+        v.glide_hz0 = 0.0f;   // taken from the first rendered sample
+    }
+
+    // Every 16 samples: each mode retuned to its strike frequency × the boom's
+    // glide ratio.  Changing k alone would scale a mode's amplitude by
+    // sin(w_old) / sin(w_new); the oscillator is rescaled to keep it.
+    static void glide_bank(VoiceState& v) {
+        if (v.glide_hz0 <= 0.0f) v.glide_hz0 = v.glide_hz;
+        if (v.glide_hz0 <= 0.0f) return;
+        const float ratio = v.glide_hz / v.glide_hz0;
+        brc::ModalBank& b = v.modal;
+        for (int i = 0; i < brc::kMaxModes; ++i) {
+            if (!b.mode_on(i) || v.bank_w[i] <= 0.0f) continue;
+            const float k_old = b.k[i];
+            const float s_old = 1.0f - 0.25f * k_old * k_old;          // sin² w_old
+            const float w_new = fminf(v.bank_w[i] * ratio, 0.45f * 6.2831853f);
+            const float k_new = 2.0f * cosf(w_new);
+            const float y1 = b.y1[i], y2 = b.y2[i];
+            const float i_old = y1 * y1 + y2 * y2 - k_old * y1 * y2;   // A² sin² w_old
+            const float i_new = y1 * y1 + y2 * y2 - k_new * y1 * y2;
+            b.k[i] = k_new;
+            if (s_old > 1e-9f && i_new > 1e-12f) {
+                const float s_new = 1.0f - 0.25f * k_new * k_new;
+                const float g = sqrtf((i_old / s_old) * s_new / i_new);
+                b.y1[i] = y1 * g;
+                b.y2[i] = y2 * g;
+            }
+        }
     }
 
     // The broadband attack the modal bank cannot make.

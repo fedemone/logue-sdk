@@ -88,6 +88,10 @@ BRIGHT_FREE = dict(NzFl=(0, 2, "int"), band_mix=(0.05, 1.0, "lin"))
 BOOM_FREE = dict(boom_mix=(0.02, 2.0, "log"))
 # A bending boom also moves the S-curve's hold and length (ms) and its depth (Hz).
 GLIDE_FREE = dict(glide_hold_ms=(0, 80, "lin"), glide_ms=(30, 600, "log"), pitch_amount=(1, 120, "log"))
+# The talking drums' upper modes' rings too.
+# (kept below the fundamental's: a head's upper modes die first, and mode 4
+# also sets modes 5 and 6).
+TALK_FREE = dict(t2=(250, 1200, "log"), t3=(150, 900, "log"), t4=(100, 600, "log"))
 
 
 def bend(hz_from, hz_to, hold_ms, len_ms):
@@ -229,18 +233,27 @@ SPECS = {"tom": [
                       slap(1.5, 15, 2500, 11000), dict(MlSt=45, Hit=60, NzMx=20, NzRs=500, NzFl=2, NzFq=250)),
          free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
     # ── West Africa: talking drum; Brazil: surdo, tamborim; Nigeria: udu ───
+    # The whole head glides (bank_glide): every mode bends with the squeeze,
+    # as the laced heads tighten together; the boom is off.  Partials and
+    # decays measured on the samples (at 30 ms; T60 of the ring ~0.9 s); the
+    # stick's crack is the slap.  (First voiced as a lone gliding boom over
+    # an 80 ms bank: on the drumlogue it sounded like a synth sweep.)
     dict(name="TalkUp", enum="k_TalkUp", ref=os.path.join(P, "025_TalkDrumUp.wav"),
          note="talking drum squeezed as it rings: D3 up about a fifth",
-         values=merge(SKIN, bank(50, [(146.8, .2), (212.4, .4), (275.8, .3)], [80, 80, 70], 0.15),
-                      boom(217.5, 970, 0.8, attack_ms=2), bend(150.0, 217.5, 20, 180),
+         values=merge(SKIN, bank(50, [(146.8, 1.0), (203.0, .2), (258.4, .4), (378.8, .063),
+                                      (433.1, .05)], [900, 650, 550, 450], 0.35),
+                      boom(217.5, 970, 0.0, attack_ms=2), bend(150.0, 217.5, 20, 180),
+                      slap(1.0, 14, 600, 5000), dict(bank_glide=1.0),
                       dict(MlSt=35, Hit=30, NzMx=12, NzRs=400, NzFq=350)),
-         free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(120, 260)),
+         free=free(MEMBRANE_FREE, GLIDE_FREE, SLAP_FREE, TALK_FREE), track=(120, 260)),
     dict(name="TalkDn", enum="k_TalkDown", ref=os.path.join(P, "026_TalkDrumDn.wav"),
          note="talking drum released as it rings: down about a fifth to D3",
-         values=merge(SKIN, bank(50, [(146.8, .2), (212.4, .4), (275.8, .3)], [80, 80, 70], 0.15),
-                      boom(150.0, 970, 0.8, attack_ms=2), bend(217.5, 150.0, 20, 200),
+         values=merge(SKIN, bank(57, [(220.0, 1.0), (291.7, .3), (363.2, .22), (421.5, .07),
+                                      (479.6, .055), (532.0, .056)], [900, 650, 550, 450], 0.35),
+                      boom(150.0, 970, 0.0, attack_ms=2), bend(217.5, 150.0, 25, 238),
+                      slap(1.0, 14, 600, 5000), dict(bank_glide=1.0),
                       dict(MlSt=35, Hit=30, NzMx=12, NzRs=400, NzFq=350)),
-         free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(120, 260)),
+         free=free(MEMBRANE_FREE, GLIDE_FREE, SLAP_FREE, TALK_FREE), track=(120, 260)),
     dict(name="SurdOpn", enum="k_SurdoOpen", ref=os.path.join(P, "027_SurdoOpen.wav"),
          note="surdo, felt mallet, A#1: a long 58 Hz boom settling from 6 % sharp",
          values=merge(SKIN, bank(34, [(58.3, .10), (90.5, .12), (128.2, .23), (160.8, .16),
@@ -276,6 +289,8 @@ BAR_FREE = dict(modal_mix=(0.02, 1.5, "log"), NzMx=(0, 100, "lin"), NzRs=(50, 10
                 NzFq=(30, 1800, "log"), Rel=(0, 20, "lin"), MlSt=(2, 50, "lin"),
                 MlRs=(100, 1000, "lin"), t1=(20, 5000, "log"), t2=(15, 3000, "log"),
                 onset_ms=(0, 3, "lin"))
+# The coconut's rings stay short: a clap, not a bar.
+CLOP_FREE = dict(t1=(30, 250, "log"), t2=(30, 300, "log"), t3=(20, 200, "log"), t4=(15, 150, "log"))
 SPECS["bar"] = [
     dict(name="WdBlkHi", enum="k_WoodBlockHi", ref=os.path.join(P, "044_WoodBlockHi.wav"),
          note="high wood block: 1.15 kHz over a 1.11 kHz partner",
@@ -302,11 +317,16 @@ SPECS["bar"] = [
          values=merge(BAR, bank(64, [(329.6, .09), (340.9, 1.0), (1022.7, .35), (1450.0, .55),
                                      (1704.5, .15), (3480.0, .2)], [184, 184, 100, 60], 0.2),
                       dict(MlSt=45, NzMx=8, NzRs=420, NzFq=900)), free=BAR_FREE),
+    # The cavity's air (~560 Hz, mode 1) and the shell wall (1.18 kHz and its
+    # 1.43 / 2.2 / 3.1 overtones), all short, under a hard shell-on-shell
+    # click.  (First voiced with four modes 544-613 Hz: they beat, so the
+    # clop swelled for 50 ms and rang 250 ms — a tuned block, not a clap.)
     dict(name="Coconut", enum="k_Coconut", ref=os.path.join(P, "050_Coconut.wav"),
          note="two coconut half-shells clapped: a hollow clop",
-         values=merge(BAR, bank(74, [(587.3, .51), (544.2, .60), (562.9, .59), (613.0, .24),
-                                     (1181.4, 1.0), (1205.2, .26)], [250, 250, 280, 300], 0.2),
-                      dict(MlSt=40, NzMx=8, NzRs=420, NzFq=700)), free=BAR_FREE),
+         values=merge(BAR, bank(73, [(554.4, .8), (1181.0, 1.0), (1690.0, .35), (2600.0, .2),
+                                     (3660.0, .1)], [90, 150, 80, 50], 0.2),
+                      dict(MlSt=50, NzMx=30, NzRs=300, NzFq=250)),
+         free=free(BAR_FREE, CLOP_FREE)),
     dict(name="UduTone", enum="k_UduTone", ref=os.path.join(P, "052_UduTone.wav"),
          note="udu: a fingertip on the clay belly over the pot's 112 Hz air",
          values=merge(BAR, bank(45, [(110.0, 1.0), (410.9, .66), (797.0, .35), (1169.0, .2),

@@ -17,7 +17,7 @@ This unit holds toms and hand drums on the membrane modal bank: the original's D
 | Engine | membrane modal bank + boom + strike-transient layer (`ENGINE_MEMBRANE`) |
 | Presets | 32 (7 from the original, 25 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 14692 · .rodata 7260 · .data 1952 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 17272 · .rodata 7420 · .data 4352 · .bss 292 (the engine twice: ring-over) |
 
 ## Presets
 
@@ -61,7 +61,7 @@ measurement (see *How the added presets were voiced* below).
 | 24 | DrbTek | 84 | tek: the ring finger on the rim, the bright edge modes ring | `018_DarbukaTek.wav` |
 | 25 | DrbKa | 84 | ka: the other hand's rim stroke, a softer tek | `019_DarbukaKa.wav` |
 | 26 | TalkUp | 50 | talking drum squeezed as it rings: D3 up about a fifth | `025_TalkDrumUp.wav` |
-| 27 | TalkDn | 50 | talking drum released as it rings: down about a fifth to D3 | `026_TalkDrumDn.wav` |
+| 27 | TalkDn | 57 | talking drum released as it rings: down about a fifth to D3 | `026_TalkDrumDn.wav` |
 | 28 | SurdOpn | 34 | surdo, felt mallet, A#1: a long 58 Hz boom settling from 6 % sharp | `027_SurdoOpen.wav` |
 | 29 | SurdMut | 34 | the surdo damped by the hand | `028_SurdoMute.wav` |
 | 30 | Tambrim | 73 | tamborim: a small tight head under a thin stick | `029_Tamborim.wav` |
@@ -162,7 +162,19 @@ dense upper mode field of a membrane slap: CngMute, CngSlap, BngMach, Tambrim
 and DrbTek put 30-60 % less of their attack in 1-3 kHz than their samples.
 The four bends (TalkUp, TalkDn, TblGeBd, UduBass) follow their samples' pitch
 tracks within a few Hz — measured over 10-60 / 60-120 / 120-200 / 200-350 ms,
-TalkUp is 162/179/209/218 Hz against 152/173/213/218.
+TalkUp is 154/191/213/213 Hz against 152/173/213/218, TalkDn 220/207/179/152
+against 217/201/158/150.
+
+**TalkUp and TalkDn, re-voiced after the hardware test.**  First voiced as a
+lone tracked boom gliding over an 80 ms modal bank, they sounded on the
+drumlogue like a synth sweep: after 30 ms nothing but one gliding sine was
+left, while in the sample the whole head — fundamental and its overtones at
+×1.35, ×1.7, ×2-2.6 — rings ~0.7 s and bends as one.  They now play on the
+bank with **bank glide** (below): the boom is off, the modes and their decays
+are measured on the samples (T60 0.9 s on the fundamental, the upper modes
+shorter), every mode bends with the squeeze, and the stick's crack is the slap.
+TalkDn now starts on its high pitch, so its root is 57 (A3), gliding down to
+~150 Hz; TalkUp starts on 50 (D3) and rises to ~213 Hz.
 
 Two table-driven layers were added for them, both 0 on the original seven
 (which keep their own code paths and render as before):
@@ -177,7 +189,12 @@ Two table-driven layers were added for them, both 0 on the original seven
   above 0 along an S-curve (`brc::GlideCurve`, shared in
   `brachetti_common/voice_layers.h`), held and then eased in and out, the
   way a hand squeezes a talking drum or presses a bayan.  The four bends
-  use it.
+  use it;
+- `bank_glide`: the **whole head** glides.  At 1 every mode of the modal bank
+  follows the tracked boom's bend (the ratio of the boom's frequency to its
+  frequency at the strike), retuned every 16 samples with each oscillator
+  rescaled so its amplitude does not jump; the boom itself may be silent
+  (`boom_mix` 0) and still carries the bend.  TalkUp and TalkDn use it.
 
 ## Build
 

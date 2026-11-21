@@ -17,7 +17,7 @@ This unit holds mallet and struck-bar instruments on the free-bar modal bank: Ma
 | Engine | free-bar modal bank + mallet exciter (`ENGINE_BAR`) |
 | Presets | 19 (10 from the original, 9 added) |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 12476 · .rodata 3168 · .data 1584 · .bss 292 |
+| ARM size (cross-built, `arm_size.sh`) | .text 14348 · .rodata 3168 · .data 3360 · .bss 292 (the engine twice: ring-over) |
 
 ## Presets
 
@@ -45,10 +45,18 @@ Voiced by measurement against each sample with `tools/brachetti_equiv/match_samp
 | 12 | SltDrHi | 64 | log-drum tongue, E4, rubber mallet, over the trunk's cavity | `047_SlitDrumHi.wav` |
 | 13 | SltDrLo | 57 | log-drum tongue, A3 | `048_SlitDrumLo.wav` |
 | 14 | Bamboo | 64 | bamboo tube knocked with a stick: odd air-column harmonics over the wall | `049_BambooKnock.wav` |
-| 15 | Coconut | 74 | two coconut half-shells clapped: a hollow clop | `050_Coconut.wav` |
+| 15 | Coconut | 73 | two coconut half-shells clapped: a hollow clop | `050_Coconut.wav` |
 | 16 | UduTone | 45 | udu: a fingertip on the clay belly over the pot's 112 Hz air | `052_UduTone.wav` |
 | 17 | KlmbE4 | 64 | kalimba tine, E4: a clamped-free bar, its 'ping' 6.37x up | `055_KalimbaE4.wav` |
 | 18 | KlmbA4 | 69 | kalimba tine, A4 | `056_KalimbaA4.wav` |
+
+**Coconut, re-voiced after the hardware test.**  First voiced with four modes
+at 544-613 Hz, it beat: the clop swelled for 50 ms (−27 dB at 5 ms, −20 dB at
+50 ms) and rang 250 ms, a tuned block rather than two shells clapped.  It is
+now the shell cavity's air (~555 Hz, mode 1) and the shell wall (1.18 kHz and
+its ×1.43 / ×2.2 / ×3.1 overtones), all short, under a hard click: loudest at
+the stroke and −21 dB by 50 ms, as the sample (−8 / −21 / −41 dB at 5 / 50 /
+100 ms against −15 / −33 / −43).
 
 The original presets (0-9) render **bit-identically** to
 the same preset in the original `brachetti` — through the sequencer gate, MIDI

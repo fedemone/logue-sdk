@@ -140,8 +140,8 @@ static constexpr int16_t kPresetKnobs[kNumPresets][Param::k_lastParamIndex] = {
     {  23,  43,   0,   1,   0,1999,  71,   0, 400,  32,   0,   0,   2,   5, 160,   0,   0,  10,   0,  10,  22, 300,   0, 249},   // 23: DrbDoum
     {  24,  84,   0,   1,   0,1999,  71,   0, 600,  39,   0,   0,   2,   5, 160,   0,   0,  70,   0,  10,  72, 500,   2,1003},   // 24: DrbTek
     {  25,  84,   0,   1,   0,1999,  71,   0, 600,  50,   0,   0,   2,   5, 160,   0,   0,  60,   0,  10,   3, 500,   2, 501},   // 25: DrbKa
-    {  26,  50,   0,   1,   0,1999,  71,   0, 600,  35,   0,   0,   2,   5, 160,   0,   0,  30,   0,  10,  12, 941,   0, 270},   // 26: TalkUp
-    {  27,  50,   0,   1,   0,1999,  71,   0, 600,  20,   0,   0,   2,   5, 160,   0,   0,  30,   0,  10,  12, 162,   0, 832},   // 27: TalkDn
+    {  26,  50,   0,   1,   0,1999,  71,   0, 600,  35,   0,   0,   2,   5, 160,   0,   0,  30,   0,  10,  24, 400,   0, 350},   // 26: TalkUp
+    {  27,  57,   0,   1,   0,1999,  71,   0, 600,  35,   0,   0,   2,   5, 160,   0,   0,  30,   0,  10,  12, 400,   0, 350},   // 27: TalkDn
     {  28,  34,   0,   1,   0,1999,  71,   0, 350,   2,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,   2, 300,   0, 106},   // 28: SurdOpn
     {  29,  34,   0,   1,   0,1999,  71,   0, 350,  36,   0,   0,   2,   5, 160,   0,   0,  20,   0,  10,  68, 300,   0,  30},   // 29: SurdMut
     {  30,  73,   0,   1,   0,1999,  71,   0, 600,  38,   0,   0,   2,   5, 160,   0,   0,  50,   0,  10,   0, 500,   2, 300},   // 30: Tambrim
@@ -153,7 +153,7 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramPunch, 0, 0),
               "Punch is 0 (off) on every preset");
 // What Rel, whose slot Punch took, shipped with: the exciter's noise release
 // and the ring's fine length still read it, so every preset plays as voiced.
-static const int8_t kShippedRel[kNumPresets] = {12, 11, 15, 10, 20, 8, 12, 10, 10, 10, 10, 12, 10, 12, 15, 10, 0, 10, 8, 10, 10, 8, 10, 12, 17, 10, 10, 14, 10, 10, 10, 10};
+static const int8_t kShippedRel[kNumPresets] = {12, 11, 15, 10, 20, 8, 12, 10, 10, 10, 10, 12, 10, 12, 15, 10, 0, 10, 8, 10, 10, 8, 10, 12, 17, 10, 10, 12, 10, 10, 10, 10};
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramTone, 0, 0),
               "Tone is not loaded per preset: every row must ship 0");
 static_assert(brc::preset_column_in(kPresetKnobs, Param::k_paramCutoff, 1999, 1999),
@@ -252,9 +252,9 @@ static const brc::ModalPresetConfig kModalConfigs[kNumPresets] = {
     /* k_DarbukaKa: ka: the other hand's rim stroke, a softer tek */
     {0.966839765f, 0.740084402f, 0.771235792f, 265.931216f, 271.959332f, 293.0f, 328.0f, 0.35f, 0.152941176f, 0.392156863f, 0.266666667f, 0.537815126f, 6, 1.1596726f, 1.29268713f, 0.993464052f, 1.0f},
     /* k_TalkUp: talking drum squeezed as it rings: D3 up about a fifth */
-    {1.44654738f, 1.87833224f, 0.0f, 20.0f, 91.1030908f, 70.0f, 0.0f, 0.15f, 0.3f, 1.0f, 1.0f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
+    {1.3825288f, 1.75982977f, 2.57981237f, 900.0f, 250.0f, 900.0f, 600.0f, 0.35f, 1.0f, 0.333333333f, 0.888888889f, 0.225f, 5, 2.9496218f, 0.0f, 0.277777778f, 0.0f},
     /* k_TalkDown: talking drum released as it rings: down about a fifth to D3 */
-    {1.44654738f, 1.87833224f, 0.0f, 20.0f, 23.7841423f, 70.0f, 0.0f, 0.15f, 0.3f, 1.0f, 1.0f, 0.0f, 3, 0.0f, 0.0f, 0.0f, 0.0f},
+    {1.32590909f, 1.65090909f, 1.91590909f, 900.0f, 919.238816f, 654.063913f, 600.0f, 0.35f, 1.0f, 0.5f, 0.488888889f, 0.25f, 6, 2.18f, 2.41818182f, 0.305555556f, 0.466666667f},
     /* k_SurdoOpen: surdo, felt mallet, A#1: a long 58 Hz boom settling from 6 % sharp */
     {1.55310228f, 2.20008522f, 2.75954526f, 1323.07714f, 1066.0f, 884.0f, 817.0f, 0.25f, 0.175f, 0.35f, 0.894444444f, 1.0f, 6, 3.28639874f, 3.92136874f, 0.972222222f, 0.4375f},
     /* k_SurdoMute: the surdo damped by the hand */
@@ -307,6 +307,11 @@ struct Voicing {
     // depth in Hz.  A hand on a talking drum or a bayan bends that way.
     float glide_hold_ms;
     float glide_ms;
+    // The whole head glides: bank_glide 1 bends every mode of the modal bank
+    // with the tracked boom's glide (as the ratio of the boom's frequency to
+    // its frequency at the strike), the amplitude of each mode kept — a
+    // talking drum's laced heads tighten as a whole.  0 = a fixed bank.
+    float bank_glide;
 };
 static const Voicing kVoicing[kNumPresets] = {
     //                    modal  onset  chirp  band  split | pitch env decay amount | boom inc env decay mix attack_env attack_inc
@@ -336,8 +341,8 @@ static const Voicing kVoicing[kNumPresets] = {
     /* k_DarbukaDoum  */{0.141421f, 1.125f, 0.0f, 0.5f, 0.3f, 1.0f, 0.999305797f, 4.8f, 0.0125532806f, 1.0f, 0.999687198f, 0.8f, 0.0f, 0.00694444444f, 0.0f, 0.0f, 0.0f, 0.0f, 95.9f, 1.0f, 0.0f, 0.0f},
     /* k_DarbukaTek   */{0.35f, 0.0f, 0.0f, 0.5f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 4.06276598f, 0.990451772f, 0.279095954f, 0.614440512f, 0.0f, 0.0f, 0.0f, 0.0f},
     /* k_DarbukaKa    */{0.763355f, 0.84375f, 0.0f, 0.5f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.5f, 0.990451772f, 0.285207359f, 0.77975632f, 0.0f, 0.0f, 0.0f, 0.0f},
-    /* k_TalkUp       */{0.178381067f, 0.5625f, 0.0f, 0.5f, 0.3f, 1.0f, 1.0f, 56.760508f, 0.0284706834f, 1.0f, 0.999851649f, 0.518735432f, 0.0f, 0.0104166667f, 0.0f, 0.0f, 0.0f, 0.0f, 217.5f, -1.0f, 20.0f, 180.0f},
-    /* k_TalkDown     */{0.334315969f, 0.515625f, 0.0f, 0.5f, 0.3f, 1.0f, 1.0f, 67.5f, 0.0196349541f, 1.0f, 0.999851649f, 0.480862693f, 0.0f, 0.0104166667f, 0.0f, 0.0f, 0.0f, 0.0f, 150.0f, 1.0f, 25.0f, 237.841423f},
+    /* k_TalkUp       */{0.247487373f, 0.75f, 0.0f, 0.5f, 0.3f, 1.0f, 1.0f, 67.5f, 0.0284706834f, 1.0f, 0.999851649f, 0.0f, 0.0f, 0.0104166667f, 1.0f, 0.989773255f, 0.106822267f, 0.480297356f, 217.5f, -1.0f, 10.0f, 127.279221f, 1.0f},
+    /* k_TalkDown     */{0.41622249f, 0.375f, 0.0f, 0.5f, 0.3f, 1.0f, 1.0f, 67.5f, 0.0196349541f, 1.0f, 0.999851649f, 0.0f, 0.0f, 0.0104166667f, 1.41421356f, 0.989773255f, 0.0755347496f, 0.480297356f, 150.0f, 1.0f, 25.0f, 238.0f, 1.0f},
     /* k_SurdoOpen    */{0.125f, 0.9375f, 0.0f, 0.5f, 0.3f, 1.0f, 0.999479302f, 3.5f, 0.00767072206f, 1.0f, 0.999866757f, 0.790313708f, 0.0f, 0.00520833333f, 0.0f, 0.0f, 0.0f, 0.0f, 58.6f, 1.0f, 0.0f, 0.0f},
     /* k_SurdoMute    */{0.313282135f, 0.84375f, 0.0f, 0.5f, 0.3f, 1.0f, 0.999479302f, 3.5f, 0.0075267324f, 1.0f, 0.999424519f, 1.27279f, 0.0f, 0.00520833333f, 0.0f, 0.0f, 0.0f, 0.0f, 57.5f, 1.0f, 0.0f, 0.0f},
     /* k_Tamborim     */{1.5f, 0.375f, 0.0f, 0.5f, 0.3f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 2.5f, 0.988078994f, 0.0203588936f, 0.792120424f, 0.0f, 0.0f, 0.0f, 0.0f},
@@ -378,8 +383,8 @@ static const float kOutTrim[kNumPresets] = {
     /* 23 DrbDoum */ 0.72070f,
     /* 24 DrbTek  */ 0.71956f,
     /* 25 DrbKa   */ 0.39297f,
-    /* 26 TalkUp  */ 0.79085f,
-    /* 27 TalkDn  */ 0.87470f,
+    /* 26 TalkUp  */ 0.32262f,
+    /* 27 TalkDn  */ 0.21819f,
     /* 28 SurdOpn */ 0.48234f,
     /* 29 SurdMut */ 0.73453f,
     /* 30 Tambrim */ 0.17541f,

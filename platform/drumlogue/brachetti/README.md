@@ -26,7 +26,7 @@ single-family units it is built from stay available in
 | Presets | 12, one per family |
 | Instruments | 114, on `Program` |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 116,072 · .rodata 61,976 · .data.rel.ro 2,368 · .data 45,760 · .bss 353,056 (every engine twice: *Ringing on*) |
+| ARM size (cross-built, `arm_size.sh`) | .text 116,704 · .rodata 62,104 · .data.rel.ro 2,368 · .data 46,016 · .bss 353,056 (every engine twice: *Ringing on*) |
 
 ## The presets: one per family
 
@@ -216,7 +216,7 @@ build drumlogue/brachetti
 The product is `brachetti.drmlgunit`; copy it to the drumlogue's
 `Units/Synths` folder.  **Tested on hardware** (the version before ringing
 on, 106 KB of code: it loads and plays every family).  With every engine
-twice it is 116 KB of code and about 400 KB of memory (`.data` + `.bss`).
+twice it is 117 KB of code and about 400 KB of memory (`.data` + `.bss`).
 
 ## Verification
 

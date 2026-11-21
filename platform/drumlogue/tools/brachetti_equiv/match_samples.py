@@ -106,7 +106,7 @@ VOICING_FIELDS = {
     "tom": ["modal_mix", "onset_ms", "chirp_hz", "band_mix", "split", "pitch_env",
             "pitch_decay", "pitch_amount", "boom_inc", "boom_env", "boom_decay", "boom_mix",
             "boom_attack_env", "boom_attack_inc", "slap_gain", "slap_decay", "slap_a_lo",
-            "slap_a_hi", "boom_hz", "glide", "glide_hold_ms", "glide_ms"],
+            "slap_a_hi", "boom_hz", "glide", "glide_hold_ms", "glide_ms", "bank_glide"],
     "bar": ["modal_mix", "onset_ms", "chirp_hz", "band_mix", "split"],
     "plate": ["modal_mix", "onset_ms", "chirp_hz", "band_mix", "split", "noise_gain",
               "shimmer_mix", "shimmer_decay", "click_decay", "hat", "hat_mode", "hat_hz",
