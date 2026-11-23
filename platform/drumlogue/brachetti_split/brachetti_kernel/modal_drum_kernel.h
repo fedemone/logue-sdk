@@ -321,23 +321,53 @@ private:
         for (int i = 0; i < kVoices; ++i) {
             Voice& ov = m_vc[i];
             if (&ov == &vc || !ov.tuned || ov.is_silent) continue;
-            if (ov.fill_damp == 1.0f) {
-                ov.fill_damp = fill_damp;
-                ov.fill_cut_at = ov.age + (uint32_t)(kFillCutSec * m_sr);
-                // Scale the poles in place rather than re-deriving the range:
-                // a1 = 2·r·cos(th) and a2 = r², so damping r by d is exactly
-                // a1 *= d, a2 *= d² — no trig, which matters because this runs
-                // in NoteOn ALONGSIDE the new kettle's full RetuneVoice.
-                // DeriveVoiceRange and the glide fold the same factor in, so a
-                // rebuild landing mid-fade stays consistent with this.
-                const float d2 = fill_damp * fill_damp;
-                for (int m = m_skeleton_padded; m < m_num_modes_padded; ++m) {
-                    ov.a1[m] *= fill_damp;
-                    ov.a2[m] *= d2;
-                }
+            DampFill(ov, fill_damp);
+        }
+    }
+
+    // A kettle gives its dense fill up (its skeleton rings on); nothing if
+    // it already has.
+    void DampFill(Voice& ov, float fill_damp) {
+        if (ov.fill_damp == 1.0f) {
+            ov.fill_damp = fill_damp;
+            ov.fill_cut_at = ov.age + (uint32_t)(kFillCutSec * m_sr);
+            // Scale the poles in place rather than re-deriving the range:
+            // a1 = 2·r·cos(th) and a2 = r², so damping r by d is exactly
+            // a1 *= d, a2 *= d² — no trig, which matters because this runs
+            // in NoteOn ALONGSIDE the new kettle's full RetuneVoice.
+            // DeriveVoiceRange and the glide fold the same factor in, so a
+            // rebuild landing mid-fade stays consistent with this.
+            const float d2 = fill_damp * fill_damp;
+            for (int m = m_skeleton_padded; m < m_num_modes_padded; ++m) {
+                ov.a1[m] *= fill_damp;
+                ov.a2[m] *= d2;
             }
         }
     }
+
+public:
+    // ── The aggregate bound across a ring-over (brachetti_common/ring_over.h):
+    // one full bank in the two copies together.  A full bank counts as a voice.
+    int FullBanks() const {
+        int n = 0;
+        for (int i = 0; i < kVoices; ++i)
+            if (m_vc[i].tuned && !m_vc[i].is_silent && m_vc[i].fill_damp == 1.0f) ++n;
+        return n;
+    }
+
+    // The oldest full kettle gives its fill up, as when this copy's other
+    // kettle is struck (HandOverBank): its skeleton rings on.
+    void DampOldestFull() {
+        Voice* oldest = nullptr;
+        for (int i = 0; i < kVoices; ++i) {
+            Voice& vc = m_vc[i];
+            if (!vc.tuned || vc.is_silent || vc.fill_damp != 1.0f) continue;
+            if (!oldest || vc.serial < oldest->serial) oldest = &vc;
+        }
+        if (oldest) DampFill(*oldest, expf(-kFillDampRate / m_sr));
+    }
+
+private:
 
     void ArmStrike(Voice& vc, const ModalDrumRecipe& r, float v) {
         // Excitation: energy scales with velocity, and the impulse SHARPENS

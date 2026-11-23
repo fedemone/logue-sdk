@@ -174,6 +174,13 @@ public:
     // AllNoteOff do nothing (Reset / Suspend silence them).
     inline void NoteOff(uint8_t note) { (void)note; }
     inline void GateOff() {}
+    // ── The aggregate bound across a ring-over (brachetti_common/ring_over.h):
+    // one full bank in the two copies together; a strike of the new
+    // instrument damps the old copy's full kettle to its skeleton.
+    inline uint8_t LiveVoices() const  { return (uint8_t)m_kernel.FullBanks(); }
+    inline uint8_t VoiceBudget() const { return 1; }
+    inline void FadeOldestVoice()      { m_kernel.DampOldestFull(); }
+
     inline void AllNoteOff() {}
     // A new note retunes a kettle instead of bending it.
     inline void PitchBend(uint16_t bend) { (void)bend; }

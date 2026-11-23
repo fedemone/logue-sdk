@@ -17,6 +17,7 @@
 // Provides: ModalPresetConfig (a preset's calibrated bank), ModalShape,
 // ModalKnobs, ModalBank (the oscillators, NEON path), shape_modal,
 // strike_modal, format_mode_count (Partls' display), kMaxModes, kModelRatios.
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -199,7 +200,7 @@ struct ModalBank {
         }
     }
 
-    bool mode_on(int i) const { return i < 2 || count > i; }
+    force_inline bool mode_on(int i) const { return i < 2 || count > i; }
 
     // Strike the bank: tuned to the note, amplitudes scaled by velocity.
     // Exact math, NOT the faster* approximations: fastercosfullf's ~1e-3 error
@@ -258,7 +259,7 @@ struct ModalBank {
     // One sample of the bank, already weighted mode by mode (mode 2 at 0.6,
     // then 0.45, 0.28, 0.18, 0.12).  Switches itself off once every ringing
     // mode is below kSilence.
-    float process() {
+    force_inline float process() {
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
         float32x2_t k12  = {k[0], k[1]};
         float32x2_t y112 = {y1[0], y1[1]};
@@ -323,12 +324,12 @@ struct ModalBank {
     }
 
 private:
-    void step(int i) {
+    force_inline void step(int i) {
         const float yn = (k[i] * y1[i]) - y2[i];
         y2[i] = y1[i];
         y1[i] = yn;
     }
-    void renormalise(int i) {
+    force_inline void renormalise(int i) {
         const float a = fmaxf(fabsf(y1[i]), fabsf(y2[i]));
         if (a > 1.2f) {
             const float s = 1.0f / a;

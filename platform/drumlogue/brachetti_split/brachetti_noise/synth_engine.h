@@ -33,8 +33,9 @@
 //                    knob::percent, knob_text, midi_velocity, seed_host_knobs
 //   master_stage.h   MasterStage, tone_tilt
 //   models.h         k_String
-//   voice_base.h     any_fading, fade_out_all, fuses_with, kNumVoices,
-//                    kRollFuseSec, next_voice, set_all_exciters
+//   voice_base.h     any_fading, fade_out_all, fade_out_oldest, fuses_with,
+//                    kNumVoices, kRollFuseSec, live_voices, next_voice,
+//                    set_all_exciters
 //   voice_layers.h   NoiseGate, punch_amount
 #include "../../brachetti_common/common_knobs.h"
 #include "../../brachetti_common/dsp_math.h"
@@ -216,6 +217,13 @@ public:
     inline void GateOff() { NoteOff(m_common.note.gate_note); }
 
     // Panic: everything fades out at the preset's decay setting.
+    // ── The voice budget across a ring-over (brachetti_common/ring_over.h) ──
+    // RingOver keeps the voices of its two copies within one Poly: before a
+    // strike of the new instrument it fades the old copy's oldest voices.
+    inline uint8_t LiveVoices() const  { return brc::live_voices(m_voices); }
+    inline uint8_t VoiceBudget() const { return m_common.poly; }
+    inline void FadeOldestVoice()      { brc::fade_out_oldest(m_voices); }
+
     inline void AllNoteOff() {
         for (VoiceState& v : m_voices) {
             v.is_releasing = true;

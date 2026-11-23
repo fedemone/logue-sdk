@@ -34,7 +34,8 @@
 //                    knob::release, knob::tube_radius, knob_text,
 //                    midi_velocity, off_anchor, seed_host_knobs
 //   master_stage.h   MasterStage, soft_saturate_bus, tone_tilt
-//   voice_base.h     any_fading, fade_out_all, kNumVoices
+//   voice_base.h     any_fading, fade_out_all, fade_out_oldest, kNumVoices,
+//                    live_voices
 //   voice_layers.h   punch_amount
 #include "../../brachetti_common/common_knobs.h"
 #include "../../brachetti_common/dsp_math.h"
@@ -222,6 +223,13 @@ public:
     inline void GateOff() { NoteOff(m_common.note.gate_note); }
 
     // Panic: a click-free output fade (τ 8 ms: the voice is off ~55 ms later).
+    // ── The voice budget across a ring-over (brachetti_common/ring_over.h) ──
+    // RingOver keeps the voices of its two copies within one Poly: before a
+    // strike of the new instrument it fades the old copy's oldest voices.
+    inline uint8_t LiveVoices() const  { return brc::live_voices(m_voices); }
+    inline uint8_t VoiceBudget() const { return m_common.poly; }
+    inline void FadeOldestVoice()      { brc::fade_out_oldest(m_voices); }
+
     inline void AllNoteOff() {
         for (VoiceState& v : m_voices) v.cymbal.fadeMul = brc::env_mul(0.008f, brc::kSampleRate);
     }

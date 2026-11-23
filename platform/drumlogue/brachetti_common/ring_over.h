@@ -14,6 +14,18 @@
 // a third change while both still ring fades the older one, as a single
 // engine would.
 //
+// THE CPU BUDGET.  Two copies must not cost twice one: on the drumlogue that
+// is the level that stops the audio interface (the original unit's Timpani
+// note change and cymbal crash; a snare struck four times on each side of a
+// Program change measured there too).  So the copies share one instrument's
+// voices: before each strike of the new instrument, the old copy's oldest
+// voices fade out (the preset-change fade, ~10 ms) until the two together fit
+// the engine's VoiceBudget() — Poly for the voice engines, one full bank for
+// the kernel, whose old kettle gives its fill up and rings on as a skeleton.
+// The old sound rings on until the new instrument is played, then makes room
+// voice by voice.  An engine provides LiveVoices(), VoiceBudget() and
+// FadeOldestVoice().
+//
 //   static brc::RingOver<BrachettiSynth> s_synth;   // unit.cc
 //
 // It forwards the engine's unit-facing calls.  A held gate is released on
@@ -94,6 +106,17 @@ public:
     // True while either copy still sounds.
     bool Sounding() const { return m_sounding[0] || m_sounding[1]; }
 
+    // The voice budget, for a unit with several engines (Brachetti, across a
+    // family switch): live voices in both copies, and the oldest of them out
+    // (the copy ringing out first).
+    uint8_t LiveVoices() const { return (uint8_t)(m_eng[0].LiveVoices() + m_eng[1].LiveVoices()); }
+    uint8_t VoiceBudget() const { return cur().VoiceBudget(); }
+    void FadeOldestVoice() {
+        S& old = m_eng[m_cur ^ 1];
+        if (old.LiveVoices() > 0) old.FadeOldestVoice();
+        else m_eng[m_cur].FadeOldestVoice();
+    }
+
     // ── Knobs ───────────────────────────────────────────────────────────────
     void setParameter(uint8_t index, int32_t value) {
         if (index == 0 && value >= 0 && value < S::k_NumPrograms) { LoadPreset((uint8_t)value); return; }
@@ -109,6 +132,7 @@ public:
 
     // ── Notes ───────────────────────────────────────────────────────────────
     void NoteOn(uint8_t note, uint8_t velocity) {
+        make_room();
         m_eng[m_cur].NoteOn(note, velocity);
         m_sounding[m_cur] = true;
     }
@@ -116,6 +140,7 @@ public:
     void GateOn(uint8_t velocity) {
         if (velocity == 0) { GateOff(); return; }
         m_gate = m_cur;
+        make_room();
         m_eng[m_cur].GateOn(velocity);
         m_sounding[m_cur] = true;
     }
@@ -142,6 +167,22 @@ public:
 
 private:
     const S& cur() const { return m_eng[m_cur]; }
+
+    // Before a strike of the current copy: the copy ringing out gives voices
+    // up until the strike fits one instrument's budget.  (The strike adds a
+    // voice, or takes the current copy's own oldest when it is full.)
+    void make_room() {
+        S& old = m_eng[m_cur ^ 1];
+        if (!m_sounding[m_cur ^ 1]) return;
+        const int budget = m_eng[m_cur].VoiceBudget();
+        int after = m_eng[m_cur].LiveVoices() + 1;
+        if (after > budget) after = budget;
+        for (int guard = 0; guard < 8; ++guard) {
+            const int live = old.LiveVoices();
+            if (live == 0 || after + live <= budget) break;
+            old.FadeOldestVoice();
+        }
+    }
     int32_t to_engine(uint8_t index, int32_t v) const {
         return (index < kMaxKnobs && m_step[index]) ? step_to_engine(*m_step[index], v) : v;
     }

@@ -152,7 +152,8 @@ unit.
 | `ModalLayout`, `kModalHostKnobs`, `kFamilyKnob`, `ModalSynth` | `modal_synth.h` | the 24-knob layout (the common pages, then the standard dedicated set) and the engine of the eight modal units | kick, tom, snare, bar, plate, world, lippa, pizzico, cordiera |
 
 | `KnobStep`, `knob_step`, `header_to_engine`, `engine_to_header` | `knob_steps.h` | Cutoff and NzFltFrq: 1-200 on the panel (0.1 kHz), the engine's /10 value behind it | every unit through `RingOver`; equiv_driver |
-| `RingOver<Synth>` | `ring_over.h` | two copies of the engine: on a Program change while one sounds, the other takes the new instrument and the first rings out under its own settings; an engine with file-scope buffers gives each copy its own (`SetBank`) | every unit's `unit.cc` and Brachetti (lippa, pizzico, cordiera and world have `SetBank`) |
+| `RingOver<Synth>` | `ring_over.h` | two copies of the engine: on a Program change while one sounds, the other takes the new instrument and the first rings out under its own settings, within one instrument's voice budget (each strike of the new instrument fades the old copy's oldest voice first); an engine with file-scope buffers gives each copy its own (`SetBank`); the engine provides `LiveVoices()`, `VoiceBudget()`, `FadeOldestVoice()` | every unit's `unit.cc` and Brachetti (lippa, pizzico, cordiera and world have `SetBank`) |
+| `live_voices`, `fade_out_oldest`, `VoiceBase::age` | `voice_base.h` | the voice budget across a ring-over: voices ringing and not fading; the oldest of them out with the preset-change fade | library (`ModalSynth`), noise, cymbal |
 
 `ModalSynth` also hands its units these building blocks for their `NoteOn`:
 `strike_velocity`, `allocate_voice`, `shape_exciter`, `modal_knobs`,
@@ -279,9 +280,12 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
 - **Per-sample code must stay inline.**  GCC's size heuristics can leave a
   method the render loop calls every sample out of line, which costs a call
   per sample and shows up in `arm_cpu.sh` (the plate's `excite()` did, at
-  +1.7 %).  Mark such a method `force_inline` (the SDK's
-  `common/attributes.h`), and compare `arm_cpu.sh` before and after any change
-  to code a render loop runs.
+  +1.7 %).  In Brachetti, where nine families call the same library code, GCC
+  (`-Os`) kept ALL of it out of line: +20 % per voice, enough with a ring-over
+  to stop the drumlogue's audio.  So every per-sample function in this library
+  is `force_inline` (the SDK's `common/attributes.h`): a new one must be too.
+  Compare `arm_cpu.sh` before and after any change to code a render loop runs,
+  and `unit_cycles.sh` on Brachetti against the family unit (the same cost).
 - **Nothing shared between units.**  A static local of an inline function or
   a template — a table, a buffer — gets GCC's `STB_GNU_UNIQUE` binding, and
   the dynamic loader keeps ONE copy of a unique symbol for every library that

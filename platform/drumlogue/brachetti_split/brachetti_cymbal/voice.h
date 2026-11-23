@@ -508,6 +508,9 @@ struct VoiceState {
 
     bool fading() const { return is_active && fade_mul < 1.0f; }
 
+    // Samples since the strike (which voice is the oldest: brc::fade_out_oldest).
+    uint32_t age() const { return cymbal.sampleIndex; }
+
     float fade_out(float x) {
         if (fade_mul < 1.0f) {
             x *= fade;

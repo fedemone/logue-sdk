@@ -57,7 +57,7 @@ def library_exports():
             if m:
                 found += ['knob::' + n for n in re.findall(r'inline\s+\w+\s+(\w+)\s*\(', m.group(1))]
                 s = s.replace(m.group(0), '')
-            found += re.findall(r'^(?:template\s*<[^>]*>\s*)?(?:inline\s+|static\s+|constexpr\s+)*'
+            found += re.findall(r'^(?:template\s*<[^>]*>\s*)?(?:force_inline\s+|inline\s+|static\s+|constexpr\s+)*'
                                 r'(?:const\s+)?[\w:<>]+[\s*&]+(\w+)\s*\(', s, re.M)
             found += re.findall(r'^(?:struct|class)\s+(\w+)', s, re.M)
             found += re.findall(r'^(?:static\s+)?(?:constexpr|const)\s+[\w:]+\s+(k\w+)', s, re.M)

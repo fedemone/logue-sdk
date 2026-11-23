@@ -51,6 +51,10 @@ README.md lists the presets and what every knob does.
   drives it directly) still compares it with the original; the ring-over is
   checked by `brachetti_check.sh`.  A buffer outside the class (a delay line)
   needs one bank per copy (`SetBank`, as in BrcLippa).
+  The two copies share the kernel's aggregate bound — one full bank — the
+  old copy's full kettle damped to its skeleton by the new instrument's
+  strike (`ModalDrumKernel::FullBanks` / `DampOldestFull`, the same fill
+  damping as `HandOverBank`); `ring_budget_check.sh` must pass.
 - **Also played by [`brachetti`](../../brachetti/README.md)**, which compiles this
   family's `synth_engine.h` inside a namespace (`fam_<family>`) as one of its
   twelve presets.  So: no bare `::` before a family name, and a new

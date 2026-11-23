@@ -1,4 +1,5 @@
 #pragma once
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cmath>
 #include "float_math.h" // For our fast math approximations
 
@@ -62,7 +63,7 @@ struct FastSVF {
     }
 
     // Called by the Audio Thread (processBlock)
-    inline float process(float input) {
+    force_inline float process(float input) {
         // Zavalishin TPT SVF core: 2 multiplies-per-integrator, no trig.
         float v3 = input - lp;            // lp holds s2
         float v1 = a1 * bp + a2 * v3;     // bandpass output (bp holds s1)

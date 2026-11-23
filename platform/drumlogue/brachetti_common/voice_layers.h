@@ -11,6 +11,7 @@
 //   NoiseGate   enveloped-LFO gate on the noise          snare noise
 //   GlideCurve  held, then S-shaped 1 → 0 bend envelope   tom world
 //   Punch       the transient shaper (the Punch knob)    all twelve
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cmath>
 #include <cstdint>
 #include "dsp_math.h"
@@ -40,9 +41,9 @@ struct MetalChirp {
         depth = 0.16f;
     }
 
-    bool active() const { return depth > 0.0f && env > kSilence; }
+    force_inline bool active() const { return depth > 0.0f && env > kSilence; }
 
-    float process() {
+    force_inline float process() {
         const float fm = fastersinfullf(phase) * depth * env;
         phase += inc * (1.0f + (2.4f * env));
         wrap_phase(phase);
@@ -51,7 +52,7 @@ struct MetalChirp {
     }
 
     // The modal bank's level while the chirp sounds.
-    float open_modal(float modal_mix) const {
+    force_inline float open_modal(float modal_mix) const {
         return (env > kSilence) ? modal_mix * (1.0f + (0.35f * env)) : modal_mix;
     }
 };
@@ -74,7 +75,7 @@ struct Onset {
         }
     }
 
-    float apply(float x) {
+    force_inline float apply(float x) {
         if (inc > 0.0f && env < 1.0f) {
             env = fminf(1.0f, env + inc);
             x *= env;
@@ -92,7 +93,7 @@ struct PitchEnv {
 
     void reset() { env = 0.0f; decay = 1.0f; amount = 0.0f; }
     void set(float e, float d, float a) { env = e; decay = d; amount = a; }
-    void process() {
+    force_inline void process() {
         if (amount > 0.0f && env > kSilence) env *= decay;
     }
 };
@@ -122,11 +123,11 @@ struct Boom {
         attack_env = attack_env_; attack_inc = attack_inc_;
     }
 
-    bool active() const { return mix > 0.0f && env > kSilence; }
+    force_inline bool active() const { return mix > 0.0f && env > kSilence; }
 
     void set_freq(float hz) { inc = phase_inc(hz); }
 
-    float process() {
+    force_inline float process() {
         attack_env = fminf(1.0f, attack_env + attack_inc);
         const float b = fastersinfullf(phase) * env * mix * attack_env;
         phase += inc;
@@ -160,9 +161,9 @@ struct Transient {
         lp_lo = lp_hi = 0.0f;
     }
 
-    bool active() const { return env > kSilence; }
+    force_inline bool active() const { return env > kSilence; }
 
-    float process(FastNoise& noise) {
+    force_inline float process(FastNoise& noise) {
         const float wn = noise.process();
         const float lo = one_pole_lp(wn, a_lo, lp_lo);
         const float band = one_pole_lp(wn, a_hi, lp_hi) - lo;
@@ -184,10 +185,10 @@ struct NoiseGate {
 
     void reset() { phase = 0.0f; inc = 0.0f; depth = 0.0f; decay = 1.0f; }
 
-    bool active() const { return depth > kSilence; }
+    force_inline bool active() const { return depth > kSilence; }
 
     // This sample's gain on the noise.
-    float gain() {
+    force_inline float gain() {
         const float am = 1.0f - depth * (0.5f + 0.5f * fastersinfullf(phase));
         phase += inc;
         wrap_phase(phase);
@@ -220,9 +221,9 @@ struct GlideCurve {
         env     = 1.0f;
     }
 
-    bool active() const { return len > 0; }
+    force_inline bool active() const { return len > 0; }
 
-    float process() {
+    force_inline float process() {
         if (n > hold) {
             const uint32_t k = n - hold;
             if (k >= len) {
@@ -280,7 +281,7 @@ struct Punch {
         }
     }
 
-    float apply(float x) {
+    force_inline float apply(float x) {
         if (!active) return x;
         if (hold > 0) {
             --hold;

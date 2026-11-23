@@ -30,9 +30,10 @@
 //
 // Ringing on.  Each family engine is a brc::RingOver pair (ring_over.h): a
 // Program change while an instrument rings lets it ring out under its own
-// settings while the new one plays.  A family switch does the same at the
-// family level: the family left behind keeps rendering until it falls
-// silent, so its last strokes ring on under the new family.
+// settings while the new one plays, within one instrument's voice budget.  A
+// family switch does the same at the family level: the family left behind
+// keeps rendering until it falls silent, and the new family's first strike
+// fades what still rings there, so two families never cost two instruments.
 //
 // Thread safety.  A preset load prepares the new family completely (Init, or
 // a ring-over Program change if it is still ringing; the panel's common
@@ -74,6 +75,8 @@ struct Family {
     void        (*pitch_bend)(void*, uint16_t);
     bool        (*sounding)(const void*);
     void        (*set_header)(void*, const unit_header_t*);
+    uint8_t     (*live_voices)(const void*);
+    void        (*fade_oldest)(void*);
 };
 
 // The calls, for any family class (internal linkage: no symbol of these is
@@ -95,12 +98,15 @@ template <class S> static void        f_all_note_off(void* e)              { sta
 template <class S> static void        f_pitch_bend(void* e, uint16_t b)    { static_cast<S*>(e)->PitchBend(b); }
 template <class S> static bool        f_sounding(const void* e)            { return static_cast<const S*>(e)->Sounding(); }
 template <class S> static void        f_set_header(void* e, const unit_header_t* h) { static_cast<S*>(e)->SetHeader(h); }
+template <class S> static uint8_t     f_live_voices(const void* e)         { return static_cast<const S*>(e)->LiveVoices(); }
+template <class S> static void        f_fade_oldest(void* e)               { static_cast<S*>(e)->FadeOldestVoice(); }
 
 #define BRACHETTI_CALLS(S)                                                     \
     S::k_NumPrograms, &f_init<S>, &f_teardown<S>, &f_reset<S>, &f_resume<S>,   \
     &f_suspend<S>, &f_render<S>, &f_set<S>, &f_get<S>, &f_text<S>,             \
     &f_note_on<S>, &f_note_off<S>, &f_gate_on<S>, &f_gate_off<S>,              \
-    &f_all_note_off<S>, &f_pitch_bend<S>, &f_sounding<S>, &f_set_header<S>
+    &f_all_note_off<S>, &f_pitch_bend<S>, &f_sounding<S>, &f_set_header<S>,     \
+    &f_live_voices<S>, &f_fade_oldest<S>
 
 // The engines: every family is resident, each as a ring-over pair (two copies:
 // a Program change lets the ringing one ring out), so a switch never
@@ -323,11 +329,15 @@ public:
     // A strike goes to the selected family; a note-off, all-notes-off and pitch
     // bend to every family (one may still ring from before a switch); a gate's
     // release to the family the gate struck.
-    void NoteOn(uint8_t note, uint8_t vel) { active().note_on(active().engine, note, vel); }
+    void NoteOn(uint8_t note, uint8_t vel) {
+        quiet_other_families();
+        active().note_on(active().engine, note, vel);
+    }
     void NoteOff(uint8_t note)    { for (const Family& f : kFamilies) f.note_off(f.engine, note); }
     void GateOn(uint8_t vel) {
         if (vel == 0) { GateOff(); return; }
         m_gate_family = m_family.load();
+        quiet_other_families();
         active().gate_on(active().engine, vel);
     }
     void GateOff()                { kFamilies[m_gate_family].gate_off(kFamilies[m_gate_family].engine); }
@@ -354,6 +364,19 @@ public:
 
 private:
     const Family& active() const { return kFamilies[m_family.load(std::memory_order_acquire)]; }
+
+    // The CPU budget across a family switch: the family left behind rings on
+    // until the new one is played; its first strike fades what still rings
+    // there (the preset-change fade; a kettle gives its fill up and rings on
+    // as a skeleton), so two families never cost two instruments.
+    void quiet_other_families() {
+        const uint8_t cur = m_family.load();
+        for (uint8_t i = 0; i < kNumFamilies; ++i) {
+            const Family& r = kFamilies[i];
+            if (i == cur || !r.sounding(r.engine)) continue;
+            for (int guard = 0; guard < 16 && r.live_voices(r.engine) > 0; ++guard) r.fade_oldest(r.engine);
+        }
+    }
 
     // A knob the family unit declares as a blank slot (no Poly on the kernel,
     // no Pitch on the noise family).

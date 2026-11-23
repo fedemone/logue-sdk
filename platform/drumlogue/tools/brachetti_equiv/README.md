@@ -390,6 +390,30 @@ must play the new instrument.
 
 Result: `IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs, 36 ring-over cases`.
 
+**The CPU budget.**  [`ring_budget_check.sh`](ring_budget_check.sh) builds
+[`ring_budget_check.cpp`](ring_budget_check.cpp) against every family unit:
+every instrument at the voice cap, a Program change while it rings, the next
+instrument struck as often; after every strike the two copies must hold no
+more live voices than one instrument's budget (Poly; one full bank on the
+kernel), and the old sound must ring until the first strike.  Against
+Brachetti it checks the family switch: the family left behind has no live
+voice after the new one's first strike.  Without the budget it measures 8
+voices on every voice family and two full kernel banks — the level that
+stopped the drumlogue's audio.
+
+[`unit_cycles.sh`](unit_cycles.sh) estimates a whole unit's Cortex-A7 cycles
+per frame (through its callbacks: RingOver, knob steps and all) for one
+instrument, or a ring-over (with [`unit_bench.cpp`](unit_bench.cpp)).  It is
+how Brachetti's +20 % per voice was found (the shared per-sample code left out
+of line; now `force_inline`) and how its parity with the family units is
+checked: within 1 % on all twelve.
+
+```
+./ring_budget_check.sh
+./unit_cycles.sh ../../brachetti 3 0 4               # Brachetti, Snare, AcSnre x4: ~1846
+./unit_cycles.sh ../../brachetti_split/brachetti_snare -1 0 4 4800 1   # ring-over: ~1538
+```
+
 `run_equiv.sh` drives the engines directly, not through `RingOver`, so its
 Program changes over ringing voices still compare the engine's own fade with
 the original's (IDENTICAL); what the units do on the device there is the

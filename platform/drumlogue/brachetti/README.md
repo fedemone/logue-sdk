@@ -26,7 +26,7 @@ single-family units it is built from stay available in
 | Presets | 12, one per family |
 | Instruments | 114, on `Program` |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 116,944 · .rodata 62,200 · .data.rel.ro 2,368 · .data 46,016 · .bss 353,056 (every engine twice: *Ringing on*) |
+| ARM size (cross-built, `arm_size.sh`) | .text 153,476 · .rodata 62,120 · .data.rel.ro 2,544 · .data 46,688 · .bss 353,536 (every engine twice: *Ringing on*; per-sample code inlined in every family: *The CPU budget*) |
 
 ## The presets: one per family
 
@@ -195,9 +195,9 @@ plays it exactly as the family unit.
 
 All twelve engines are resident and initialised at start-up: a family
 switch constructs nothing and allocates nothing.  Only the selected family
-renders, plus whatever is still ringing from before a change, so the CPU
-cost of an instrument is the same as on its family unit, and twice that
-only while two instruments overlap.  The memory is the twelve units'
+renders, plus whatever is still ringing from before a change, and the
+voices of the two together never exceed one instrument's (*The CPU budget*,
+below), so the CPU cost is the family unit's.  The memory is the twelve units'
 together (most of `.bss` is BrcLippa's and BrcPizzico's loop delay lines,
 BrcCordiera's and BrcWorld's wires, the kernel's modes).
 
@@ -210,12 +210,51 @@ its engine, [`brc::RingOver`](../brachetti_common/ring_over.h).  New strikes
 and the knobs go to the current copy.  A Program change while the current
 copy still sounds hands the new instrument, with the panel's knobs, to the
 other copy; the first rings out untouched — its instrument, knobs and master
-stage — until it is silent.  A held gate is released on the copy it struck.
+stage — until it is silent, giving voices up only as the new instrument needs
+them (*The CPU budget*, below).  A held gate is released on the copy it struck.
 A change while nothing rings is exactly the old Program change.  At most two
 instruments of a family sound at once: a third change while both still ring
 fades the older one in ~10 ms, as before.  A family switch works the same
 way one level up: the family left behind keeps rendering until it is silent.
 The price is memory: the engines and their delay lines are there twice.
+
+### The CPU budget
+
+The drumlogue's audio stops when a synth unit needs about twice what one
+heavy instrument costs: the original unit hit that twice (a Timpani note
+change running two full kettle banks, a cymbal build), and the first ring-over
+build hit it again on hardware, with clicks and then a dead audio interface,
+soonest on the snares.  Measured with
+[`unit_cycles.sh`](../tools/brachetti_equiv/unit_cycles.sh) (estimated
+Cortex-A7 cycles per frame; BrcKernel's Timpani struck twice, ~2,080, is known
+to run on the device):
+
+| | before | now |
+|---|---|---|
+| Snare AcSnre ×4, family unit | 1,937 | 1,842 |
+| Snare AcSnre ×4, Brachetti | 2,356 | 1,846 |
+| ×4, Program change while they ring, ×4 again — family unit | 3,366 | 1,538 |
+| the same in Brachetti | 4,097 | 1,542 |
+
+Two causes, both fixed:
+- **Brachetti cost 20 % more per voice** than the family units.  With nine
+  families in one translation unit, GCC (`-Os`) stopped inlining the shared
+  per-sample building blocks (the modal bank, the exciter, the voice layers,
+  the filters) and called them for every sample of every voice.  They are now
+  `force_inline` in the library, so every family's voice loop is the same code
+  in Brachetti as in its own unit — and both got 5 % cheaper.  All twelve
+  families now cost the same in Brachetti as in their unit, within 1 %.
+- **A ring-over could run two instruments' voices.**  The two copies now share
+  one instrument's budget: the old sound rings on untouched until the new
+  instrument is struck, and each strike of the new one fades the old copy's
+  oldest voice first (the ~10 ms preset-change fade), so the two together
+  never hold more than Poly voices.  The kernel's budget is one full bank, as
+  inside one copy: the new instrument's strike damps the old kettle's fill and
+  its pitched skeleton rings on.  After a family switch, the family left
+  behind rings on until the new one is struck, then fades the same way.
+  [`ring_budget_check.sh`](../tools/brachetti_equiv/ring_budget_check.sh)
+  checks it after every strike, on all twelve families and on Brachetti's
+  family switch.
 
 The drumlogue may call the knob and preset callbacks from another thread
 than the audio: a preset load sets the new engine up completely and then
@@ -230,9 +269,10 @@ build drumlogue/brachetti
 
 (see [the drumlogue README](../README.md) for the Docker build environment).
 The product is `brachetti.drmlgunit`; copy it to the drumlogue's
-`Units/Synths` folder.  **Tested on hardware** (the version before ringing
-on, 106 KB of code: it loads and plays every family).  With every engine
-twice it is 117 KB of code and about 400 KB of memory (`.data` + `.bss`).
+`Units/Synths` folder.  **Tested on hardware**: it loads and plays every
+family (at 106 KB of code, and at 120 KB with ringing on).  With the
+per-sample code inlined in every family it is 153 KB of code and about 400 KB
+of memory (`.data` + `.bss`).
 
 ## Verification
 
@@ -241,6 +281,8 @@ cd ../tools/brachetti_equiv
 ./brachetti_check.sh          # host, bit-exact
 ./arm_brachetti_check.sh      # Cortex-A7 build under qemu-arm, NEON paths
 ./multi_load.sh               # loaded next to the twelve family units
+./ring_budget_check.sh        # a ring-over never holds more than one instrument's voices
+./unit_cycles.sh ../../brachetti 3 0 4 4800 1   # CPU: Snare x4, Program change, x4
 ./arm_size.sh ../../brachetti # sizes; fails on a GNU-unique symbol
 ```
 

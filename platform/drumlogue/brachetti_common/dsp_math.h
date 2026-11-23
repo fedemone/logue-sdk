@@ -16,6 +16,7 @@
 // constructors, no virtual functions, no dynamic memory.  That keeps each
 // unit's global synth object constant-initialised (it is loaded from the ELF
 // instead of being built at run time).  See README.md in this folder.
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cmath>
 #include <cstdint>
 #include "float_math.h"
@@ -58,7 +59,7 @@ inline float env_mul(float tau_sec, float sample_rate) {
 constexpr float phase_inc(float hz) { return (M_TWOPI * hz) * kInvSampleRate; }
 
 // Keep an oscillator phase inside one turn.
-inline void wrap_phase(float& phase) {
+force_inline void wrap_phase(float& phase) {
     if (phase > (M_TWOPI)) phase -= (M_TWOPI);
 }
 

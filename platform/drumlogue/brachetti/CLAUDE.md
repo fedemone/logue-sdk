@@ -63,6 +63,15 @@ README.md has the presets, the knob tables and the verification.
   `Init`.  Note-offs, all-notes-off and pitch bend go to every family, a
   gate's release to the family that took the gate.  `brachetti_check.sh`
   checks it (the ring-over cases).
+- **The CPU budget.**  The drumlogue's audio stops at about twice one heavy
+  instrument's cost (the original unit hit it twice, the first ring-over build
+  once).  So: (1) per-sample library code is `force_inline` — in this one
+  translation unit GCC otherwise calls it per sample, which cost +20 %; a new
+  per-sample helper must be marked too, and `unit_cycles.sh` must give the
+  same cost here as in the family unit (README.md has the table).  (2) A
+  ring-over and a family switch stay within one instrument's voices
+  (`RingOver::make_room`, `quiet_other_families`); `ring_budget_check.sh`
+  must pass.
 - **Threads.**  `LoadPreset` sets the new family up completely before the
   one atomic store that publishes it.  `Init` runs only on a family that is
   neither selected nor sounding, which the audio thread never renders.  Keep
