@@ -6,7 +6,7 @@
 
 All source files needed to build custom synths and effects for the [drumlogue](https://www.korg.com/products/drums/drumlogue) exist under this directory.
 
-> **Disclaimer:** Several projects under this directory (`EffeESP32`, `EffeMD`, `PortaCassette`, `brachetti` and its family units `brachetti_kick`, `brachetti_tom`, `brachetti_kernel`, `brachetti_snare`, `brachetti_bar`, `brachetti_plate`, `brachetti_cymbal`, `brachetti_noise` and their common library `brachetti_common`, `delay_tribal`, `omnipress`, `reverb_labirinto`, `reverb_light`, `scruta_astri`, and the test units `seq_probe` and `seq_probe_lite`) are unofficial, independently developed synth and effect units, not affiliated with or supported by KORG. They are provided "as is", with no guarantee of correct operation, and neither the developer(s) nor any distributor(s) accept liability for any damage, defect, or problem resulting from their use. See the [top-level Disclaimer](../../README.md#disclaimer) for the full terms.
+> **Disclaimer:** Several projects under this directory (`EffeESP32`, `EffeMD`, `PortaCassette`, `brachetti` (all Brachetti families in one unit), the twelve single-family units in `brachetti_split` (`brachetti_kick`, `brachetti_tom`, `brachetti_kernel`, `brachetti_snare`, `brachetti_bar`, `brachetti_plate`, `brachetti_cymbal`, `brachetti_noise`, `brachetti_world`, `brachetti_lippa`, `brachetti_pizzico`, `brachetti_cordiera`) and their common library `brachetti_common`, `delay_tribal`, `omnipress`, `pelle_legno`, `reverb_labirinto`, `reverb_light`, `scruta_astri`, the test units `seq_probe` and `seq_probe_lite`, and the planned `braquetti`) are unofficial, independently developed synth and effect units and sample kits, not affiliated with or supported by KORG. They are provided "as is", with no guarantee of correct operation, and neither the developer(s) nor any distributor(s) accept liability for any damage, defect, or problem resulting from their use. See the [top-level Disclaimer](../../README.md#disclaimer) for the full terms.
 
 #### Compatibility Notes
 
@@ -21,11 +21,13 @@ Firmware version >= 1.00 is required to run user units built with SDK version 2.
  * [dummy-delfx/](dummy-delfx/) : User delay effect project template.
  * [dummy-revfx/](dummy-revfx/) : User reverb effect project template.
  * [dummy-masterfx/](dummy-masterfx/) : User master effect project template.
+ * [brachetti/](brachetti/) : Brachetti — all twelve Brachetti instrument families in one synth unit (its presets are the families, `Program` the instruments), built from the twelve single-family units in [brachetti_split/](brachetti_split/) (`build drumlogue/brachetti_split` builds those twelve; they share the code in [`brachetti_common`](brachetti_common/)).
+ * [tools/brachetti_equiv/](tools/brachetti_equiv/) : The Brachetti family's tools — the 40-preset original `brachetti` (now on the `original_brachetti` branch) split into per-family units, and the tools that prove each renders bit-identically to it, and that Brachetti plays each family bit-identically to its unit.
  * [seq_probe/](seq_probe/) : Test unit (it makes no music) that measures, on the device, how the panel redraws, what a program load and the sequencer send, the audio thread, and file access at boot — for the planned parallel sequencer.
  * [seq_probe_lite/](seq_probe_lite/) : The same test unit without bitmap knobs or file access, to tell whether either keeps a unit off the drumlogue's list.
- * [tools/brachetti_equiv/](tools/brachetti_equiv/) : The Brachetti family — the 40-preset `brachetti` unit split into eight per-family units (`brachetti_kick` … `brachetti_noise`, sharing the code in [`brachetti_common`](brachetti_common/)) — and the tools that prove each one renders bit-identically to the original.
  * [tools/level_meter/](tools/level_meter/) : Host-side level and loudness meter for user synth units, so a unit's level in a mix is a number at build time instead of a surprise on hardware.
  * [tools/stack_meter/](tools/stack_meter/) : Host-side polyphony meter: what a user synth unit does when it is given more than one hit at a time.
+ * [pelle_legno/](pelle_legno/) : *Pelle e Legno*, 61 physically-modelled organic, skin and ethnic percussion samples for the USER sample bank, with the generator that renders them, a checker for the drumlogue's sample-file rules, and kit recipes.
 
 ### Setting up the Development Environment (Docker Only)
 

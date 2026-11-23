@@ -1,4 +1,5 @@
 #pragma once
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 
 // ENV_ATTACK_REL = "attack, then release" — a release that arrived before the
 // attack had produced anything.  See FastEnvelope::release().
@@ -46,7 +47,7 @@ struct FastEnvelope {
         }
     }
 
-    inline float process() {
+    force_inline float process() {
         switch (state) {
             case ENV_IDLE:
                 break;

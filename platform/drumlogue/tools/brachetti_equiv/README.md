@@ -8,34 +8,101 @@ for changing it) → [`brachetti_common/README.md`](../../brachetti_common/READM
 (the shared library and its helper index) → the original's documents (the
 voicing history).
 
-The 40-preset [`brachetti`](../../brachetti/) unit grew one synth engine with
+The 40-preset [`brachetti`](https://github.com/fedemone/logue-sdk/blob/original_brachetti/platform/drumlogue/brachetti/) unit grew one synth engine with
 six sound models, a cymbal port and a separate drum kernel inside it, and every
 knob ended up wired into every model.  Its percussion is split here into
 **eight units, one per instrument family**, so each can be browsed, used and
-improved on its own.  The original unit is untouched and still builds and
-ships as before.
+improved on its own.  The original unit is untouched (it now lives on the
+`original_brachetti` branch).
+
+The family units live in [`brachetti_split`](../../brachetti_split/)
+(`build drumlogue/brachetti_split` builds all twelve).  Because the
+drumlogue holds only so many units, they are also played together by one
+unit, [**`brachetti`**](../../brachetti/README.md) (`Brachetti` on the
+drumlogue): its twelve presets are the twelve families, and `Program` picks
+the instrument in the selected family — the family units' code compiled in
+unchanged, checked bit-identical to them by `brachetti_check.sh` (below,
+*Brachetti: all twelve in one unit*).
 
 | Unit (directory) | On the drumlogue | Presets | Knobs | Engine |
 |---|---|---|---|---|
-| [`brachetti_kick`](../../brachetti_kick/) | `BrcKick` | Kick2, 808Sub, Kick | 24 | membrane modes + boom + thump |
-| [`brachetti_tom`](../../brachetti_tom/) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom | 24 | membrane modes + boom + strike transient |
-| [`brachetti_kernel`](../../brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 20 | dense coupled-resonator drum kernel |
-| [`brachetti_snare`](../../brachetti_snare/) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot | 24 | modal head + snare-wire resonators |
-| [`brachetti_bar`](../../brachetti_bar/) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl | 24 | free-bar modes + mallet |
-| [`brachetti_plate`](../../brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick | 24 | plate modes + ring-coupled noise |
-| [`brachetti_cymbal`](../../brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 19 | dense-resonator cymbal |
-| [`brachetti_noise`](../../brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C | 18 | shaped noise + AM gating |
+| [`brachetti_kick`](../../brachetti_split/brachetti_kick/) | `BrcKick` | Kick2, 808Sub, Kick | 24 | membrane modes + boom + thump |
+| [`brachetti_tom`](../../brachetti_split/brachetti_tom/) | `BrcTom` | Djambe, Ac Tom, DeepBs, Conga, Handpn, Bongo, RackTom; added: DjmTone, DjmSlap, DjmBass, CngOpen, CngMute, CngSlap, CngHeel, Tumba, BngMach, BngHmbr, TblaNa, TblaTin, TblaTun, TblaGe, TblGeBd, TblaKe, DrbDoum, DrbTek, DrbKa, TalkUp, TalkDn, SurdOpn, SurdMut, Tambrim, UduBass | 24 | membrane modes + boom + strike transient |
+| [`brachetti_kernel`](../../brachetti_split/brachetti_kernel/) | `BrcKernel` | Timpni, Taiko | 21 (+1 blank) | dense coupled-resonator drum kernel |
+| [`brachetti_snare`](../../brachetti_split/brachetti_snare/) | `BrcSnare` | AcSnre, MrchSnr, BrshSnr, RimShot; added: BndDoum, BndTek, CajBass, CajSlap | 24 | modal head + snare-wire resonators |
+| [`brachetti_bar`](../../brachetti_split/brachetti_bar/) | `BrcBar` | Marmba, TblrBel, Vibrph, Wodblk, Kalimba, StelPan, Claves, GlsBwl, SltDrm, GlsBotl; added: WdBlkHi, TmplBlk, SltDrHi, SltDrLo, Bamboo, Coconut, UduTone, KlmbE4, KlmbA4 | 24 | free-bar modes + mallet |
+| [`brachetti_plate`](../../brachetti_split/brachetti_plate/) | `BrcPlate` | Cowbel, Trngle, BelTre, Tick; added: AgogoHi, AgogoLo, Zills | 24 | plate modes + ring-coupled noise |
+| [`brachetti_cymbal`](../../brachetti_split/brachetti_cymbal/) | `BrcCymbal` | Cymbal, Gong, HHat-O, Ride, RidBel, Splash | 20 | dense-resonator cymbal |
+| [`brachetti_noise`](../../brachetti_split/brachetti_noise/) | `BrcNoise` | Clap, Shaker, HHat-C; added: ShkFwd, ShkBack, Maracas, Caxixi, Cabasa | 19 (+1 blank) | shaped noise + AM gating |
+| [`brachetti_world`](../../brachetti_split/brachetti_world/) | `BrcWorld` | Cuica, Berimbu, BerimHi, BalafnC, BalafnG, Riq, Pandeir, Shekere, Rainstk (all added) | 24 | modal bank + friction voice, wire, buzz, jingles, particles |
+| [`brachetti_cordiera`](../../brachetti_split/brachetti_cordiera/) | `BrcCordiera` | Tabor, Daf, MbiraBz, TomBuzz, Marranz, Spring, Gopichd (all new) | 24 | BrcSnare's engine with the wires on the head; BrcWorld's wire, stiff and bending |
+| [`brachetti_lippa`](../../brachetti_split/brachetti_lippa/) | `BrcLippa` | Snare, SnrHvy, Bendir, MmSnare, MmKick, MmSnr2, MmTom, MmFloor (all added) | 24 | Karplus-Strong loop + all-pass (after Miguel Moreno), tension glide, snares; Moreno's mymembrane~ |
+| [`brachetti_pizzico`](../../brachetti_split/brachetti_pizzico/) | `BrcPizzico` | Harp, Oud, Fretls, Guitar, BassPiz (all added) | 24 | BrcLippa's Karplus-Strong loop, as plucked strings |
 
-All eight are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm', 'BrKn',
-'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz'), so they install next to the original
-and next to each other.  The families are the ones the original's README
-already used for its "which knobs are live" matrix.
+All twelve are `dev_id` 'FeDe' with their own `unit_id` ('BrKk', 'BrTm',
+'BrKn', 'BrSn', 'BrBr', 'BrPl', 'BrCy', 'BrNz', 'BrWd', 'BrLp', 'BrCd', 'BrPz'), so they
+install next to the original and next to each other (`multi_load.sh` fails a
+set with a duplicated id).  The first eight were split from the
+original; the ninth, **BrcWorld**, was built after the split for the
+instruments no family engine can make (the cuica's friction voice, the
+berimbau's wire, the balafon's buzz, bouncing jingles, bead and pebble
+cascades), on the same modal engine and library.  The tenth, **BrcLippa**, is
+a synthesis family the others do not have: drums from a delay loop, a
+Karplus-Strong loop with a Schroeder all-pass inside it, after Miguel
+Moreno's [*Realistic drums with karplus-strong synthesis*](https://mikemorenodsp.github.io/posts/Realistic-drums-with-karplus-strong-synthesis/)
+(2022; its [README](../../brachetti_split/brachetti_lippa/README.md#credits-and-sources) has
+the design and every source), voiced after the original's reference
+recordings of a real kit (it began as BrcLoop); five more presets play a
+port of Moreno's own Pd instrument, mymembrane~, with his settings, checked
+against Pd.  The eleventh, **BrcCordiera**
+(*cordiera*: a drum's snare wire), holds what that work offered two other units
+without changing them, on their engines and with instruments of its own: BrcSnare's
+wires driven by the head (the article's snares, the crackle of its Pd patch) for
+a tabor, a daf, an mbira with buzzers and a tom with the snares on; BrcWorld's
+wire made stiff and able to bend for a marranzano, a spring drum and a
+gopichand; its engines were first checked bit-identical to BrcSnare's and
+BrcWorld's with the additions off.  The twelfth, **BrcPizzico** (*pizzico*:
+a pluck), holds five of BrcLippa's first presets: voiced there as drums after
+a rack tom, a floor tom, a kick, a taiko and a surdo, they rang like plucked
+strings, so they became strings — named for the string each comes closest
+to, at the exact pitch of its root — on a verbatim copy of BrcLippa's loop.
+The families are the ones the original's README already used for its "which
+knobs are live" matrix.
 
 **Not split out: the Koto.**  The original's one string preset (a dual
 Karplus-Strong waveguide) is outside the percussion these units focus on, so
 it has no family unit; it stays playable in the original.  The waveguide
-engine lives on there too, should a struck-string percussion family (a
-hammered dulcimer, a berimbau) ever be worth deriving from it.
+engine lives on there too.  (The berimbau did get a struck wire: BrcWorld's
+`Wire` layer, a single Karplus-Strong loop written for it; BrcLippa makes
+drums from the same kind of loop, and BrcPizzico plucked strings: a harp, an
+oud, a fretless bass, a guitar and a double bass, not the koto.)
+
+## Presets added after the split
+
+46 presets have been added to five of the units, and BrcWorld's 9 built with it, all voiced after the
+[Pelle e Legno](../../pelle_legno/) samples (organic, skin and ethnic
+percussion): 25 hand-drum strokes in BrcTom, 9 in BrcBar, 3 in BrcPlate, 5 in
+BrcNoise and 4 in BrcSnare.  They have no counterpart in the original, so
+`run_equiv.sh` and `arm_equiv.sh` name them and compare every other preset,
+which still renders bit-identically.  How they were voiced (measured modal
+banks, the attack searched against each sample, trims by the original's
+method) is in [BrcTom's README](../../brachetti_split/brachetti_tom/README.md#how-the-added-presets-were-voiced);
+the tools are [`match_samples.py`](match_samples.py), its specs
+[`match_specs.py`](match_specs.py) and [`preset_probe.cpp`](preset_probe.cpp)
+(render / match / calib for any family unit — the family's replacement for
+the original's `calib_probe.cpp`).  BrcLippa's presets were voiced the same way, after the
+original's reference recordings (`BRACHETTI_ORIG`, below); for them
+`match_samples.py` learned to resample 44.1 kHz references and to compare
+each band's decay after 300 ms where a spec asks (`late`) — both inert for
+the specs that do not.
+
+The original is no longer on main: it lives on the `original_brachetti`
+branch.  The scripts find it through `BRACHETTI_ORIG`:
+
+```
+git worktree add /tmp/brachetti_orig origin/original_brachetti
+BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti ./run_equiv.sh ../../brachetti_split/brachetti_tom
+```
 
 ## How the units were derived
 
@@ -83,6 +150,54 @@ show a voice cap.  Poly is live there (it decides when a different note gets
 its own voice) and is kept.  On kick, tom, snare, bar and plate `Partls` keeps
 only positions 0-4: in the original, 5-7 select which resonator of the Koto
 string the knobs edit.
+
+### Knobs: common, then dedicated
+
+Each unit puts the same eight **common knobs** on its first two pages —
+`Program` · `Pitch` · `Poly` · `Velocity`, then `Tone` · `Cutoff` · `Resnc` ·
+`Gain` — and its family's **dedicated knobs** from page 3 on
+([`common_knobs.h`](../../brachetti_common/common_knobs.h); a unit without
+one of the common knobs leaves its slot blank, so they are in the same place
+on all twelve).  The dedicated knobs were then reviewed family by family with
+[`knob_liveness.py`](knob_liveness.py), which moves every knob to both ends on
+every preset and scores how much the sound changes.  Where a knob did nothing
+(or next to nothing) on most of a family, its slot got a job of that family's;
+where a standard name hid what a knob does in a family, it was relabelled:
+
+| Unit | New knobs (in the slot of) | Punch (in the slot of) | Relabelled |
+|---|---|---|---|
+| kick | `DiveTm` (Partls); `Dive` (Inharm) now dives all three kicks | Model (with the kick's onset and boom rise) | `Thump` `Snap` `VelThmp` `VelSnap` `Weight` `Click` `Tune` |
+| tom | — | Rel | `Slap` `SlapSnp` |
+| snare | `Crack` (VlMllRes) now lengthens the crack and adds one where a preset has none | Partls | `Buzz` `BuzzTon` `Tight` `BuzzLen` |
+| bar | — | VlMllRes (with the bar's onset swell) | — |
+| plate | `Chirp` (VlMllRes) | Rel | — |
+| noise | `GrnFade` (HitPos), `Swell` (VlMllStf), `Band` (Model), `VelTone` (VlMllRes); `GrnDpth` adds grains | a slot of its own | `GrnRate` |
+| world | `Rattle` (VlMllRes); `Pitch` now moves the jingles, beads and mirliton too | Rel | — |
+| cordiera | — (BrcSnare's knobs; on the wire instruments they keep BrcWorld's meanings, `Tight` the stiffness) | Partls | `Buzz` `BuzzTon` `Crack` `Tight` `BuzzLen` |
+| lippa | `Bend` (VlMllRes), `BendTm` (Partls), `Snares` (Model), `Blend` (NzRes), `SnrTone` (NzFltr) | Rel | `ApDelay` |
+| pizzico | BrcLippa's, the snares named `Buzz` (Model) and `BuzzTon` (NzFltr) | Rel | `ApDelay` |
+| cymbal | — | a slot of its own | `Tang` `Density` |
+| kernel | — | a slot of its own | `Knock` `Fill` |
+
+**Punch** is the transient shaper all twelve share (`brc::Punch`): a gain curve
+from each strike that lets the attack through and lowers the body after it
+(up), or softens the attack (down), off at 0.  It never boosts the attack:
+each unit ends in a peak limiter that takes 5-25 dB off its hard strikes
+(measured, velocity 127: 808Sub −23 dB, Marmba −18 dB, TblaNa −21 dB; the
+body untouched), so the contrast has to come from what follows the strike.
+Where a 24-knob unit had no free slot, Punch took the weakest knob: Rel, a
+second, finer ring length beside Dkay (tom, plate, world), Partls on the snare
+(the head's mode count, under 0.5 dB on the classic snares), and the kick's
+and bar's Attack knobs grew into it.
+
+Every new knob is REFERENCE-ANCHORED and ships at the identity, and the
+standard knob it displaced keeps playing at each preset's shipped value, so
+every preset renders exactly as before; each unit's README has its knob
+table and review.  For `run_equiv.sh` a relabelled knob is the same knob:
+[`aliases.txt`](aliases.txt) names it, and the original's driver finds it
+under its old name (`EQUIV_ALIASES`).  A knob with a new job has no
+counterpart in the original: the script leaves it out and names it, as it
+does the added presets.
 
 ### Then restructured onto a common library
 
@@ -132,28 +247,33 @@ Both builds are host builds without `-ffast-math`, so any difference at all in
 the output is a real one.
 
 ```
-./run_equiv.sh ../../brachetti_kick        # or any of the eight
+./run_equiv.sh ../../brachetti_split/brachetti_kick        # or any of the eight
 ```
 
 The work directory (binaries, script, hashes) is removed after an IDENTICAL
 run; `KEEP_WORK=1` keeps it, and a difference always does.
 
-Result for the shipped tree: **IDENTICAL on all eight** — 9,023 scenarios,
-23,248 rendered spans with the default seed, and again with three more seeds
-and 300 random sessions each (`--seed 7 / 2024 / 31337 --fuzz 300
+Result for the restructured tree: **IDENTICAL on all eight** — 9,023
+scenarios, 23,248 rendered spans with the default seed, and again with three
+more seeds and 300 random sessions each (`--seed 7 / 2024 / 31337 --fuzz 300
 --knob-points 2`): 24 of 24 runs identical, 29,421 more scenarios and
 102,827 more rendered spans.
 
-| Unit | Scenarios | Renders |
-|---|---|---|
-| kick | 767 | 2,209 |
-| tom | 1,670 | 3,878 |
-| kernel | 486 | 1,613 |
-| snare | 1,010 | 2,647 |
-| bar | 2,288 | 5,158 |
-| plate | 999 | 2,636 |
-| cymbal | 1,182 | 3,121 |
-| noise | 621 | 1,986 |
+With the common / dedicated layout, the knobs of the families' own left out
+(see above) and the added presets named, the default seed gives:
+
+| Unit | Scenarios | Renders | Left out (the family's own) |
+|---|---|---|---|
+| kick | 695 | 2,174 | DiveTm, Punch, Dive |
+| tom | 1,600 | 3,887 | Punch |
+| kernel | 483 | 1,627 | Punch |
+| snare | 940 | 2,578 | Crack, Punch |
+| bar | 2,196 | 4,963 | Punch |
+| plate | 922 | 2,586 | Chirp, Punch |
+| cymbal | 1,185 | 3,165 | Punch |
+| noise | 488 | 1,828 | GrnDpth, GrnFade, Swell, Band, VelTone, Punch |
+
+all IDENTICAL.
 
 ### Known differences
 
@@ -186,7 +306,7 @@ compiler may fuse and reorder float operations differently around different
 code, so bit-identity is not expected; float-rounding-level differences are.
 
 ```
-./arm_equiv.sh ../../brachetti_kick --fuzz 20 --knob-points 1
+./arm_equiv.sh ../../brachetti_split/brachetti_kick --fuzz 20 --knob-points 1
 ```
 
 | Unit | max abs diff | diff / signal (overall, worst render) |
@@ -218,7 +338,7 @@ restructuring.
 The drumlogue runs several units in one process.  [`multi_load.sh`](multi_load.sh)
 builds the units as host shared libraries and prints every display string —
 every "strings" parameter at every value, for every preset — once with each
-unit loaded alone and once with all eight loaded together, each with
+unit loaded alone and once with all of them loaded together, each with
 `RTLD_LOCAL` as a plugin host loads them; the two must be identical.  It
 found the family units' first hardware bug: each unit's preset-name table was
 a static local of an inline function, which GCC makes `STB_GNU_UNIQUE`, and
@@ -229,10 +349,94 @@ Each table is now private to its unit, and `arm_size.sh` fails any unit with a
 unique symbol.
 
 ```
-./multi_load.sh          # all eight; exit 1 and the differing strings if any
+./multi_load.sh          # Brachetti + all twelve; exit 1 and the differing strings, or a duplicated unit_id
 ```
 
-Result: 166,980 display strings identical alone and together.
+Result: 420,458 display strings identical alone and together (nine units,
+with the presets added after the split); with BrcLippa, 457,040 (ten
+units); with BrcCordiera, 503,100 (eleven); with BrcCordiera's instruments
+and BrcLippa's mymembrane~ presets, 512,286; with BrcPizzico, 512,206
+(twelve: the same thirteen loop presets in two units, eighty fewer Program
+names).  With Brachetti added (thirteen units; it is walked preset by preset,
+every Program of every family): 1,196,872 (fewer since Brachetti's number slots stopped being strings knobs and Cutoff / NzFltFrq became 1-200).
+
+### Brachetti: all twelve in one unit
+
+[`brachetti`](../../brachetti/README.md) compiles the twelve family engines
+into one unit (each family's `synth_engine.h` inside a namespace of its
+own), with the families as its presets and each family's dedicated knobs
+placed in its 24 fixed slots (its README has the tables).
+[`brachetti_check.sh`](brachetti_check.sh) builds it and the twelve family
+units as host libraries, loads them as the drumlogue does and runs
+[`brachetti_check.cpp`](brachetti_check.cpp): for every family and every
+instrument, every knob must read back as the family's own value with its
+display text, and gate and MIDI strikes at several velocities must render
+bit for bit as on the family unit — at the shipped settings and with every
+dedicated knob at its ends, centre and two random points.  It also checks
+the header defaults, that every slot is wide enough for its knobs and loses
+none of their values, that every family knob is placed once, Program's
+clamping and that the common knobs survive a family switch.
+
+```
+./brachetti_check.sh         # host, bit-exact
+./arm_brachetti_check.sh     # ARM build under qemu-arm (NEON), -90 dB per render
+```
+
+It also checks ringing on ([`ring_over.h`](../../brachetti_common/ring_over.h):
+a Program change, or Brachetti's family switch, lets the ringing sound ring
+out): two fresh instances of each unit, the same history, one changed while
+a held gate rings — the outputs must stay identical, and the next strike
+must play the new instrument.
+
+Result: `IDENTICAL — 12 families, 35736 renders, 210086 knob read-backs, 36 ring-over cases`.
+
+**The CPU budget.**  [`ring_budget_check.sh`](ring_budget_check.sh) builds
+[`ring_budget_check.cpp`](ring_budget_check.cpp) against every family unit:
+every instrument at the voice cap, a Program change while it rings, the next
+instrument struck as often; after every strike the two copies must hold no
+more live voices than one instrument's budget (Poly; one full bank on the
+kernel), and the old sound must ring until the first strike.  Against
+Brachetti it checks the family switch: the family left behind has no live
+voice after the new one's first strike.  Without the budget it measures 8
+voices on every voice family and two full kernel banks — the level that
+stopped the drumlogue's audio.
+
+[`unit_cycles.sh`](unit_cycles.sh) estimates a whole unit's Cortex-A7 cycles
+per frame (through its callbacks: RingOver, knob steps and all) for one
+instrument, or a ring-over (with [`unit_bench.cpp`](unit_bench.cpp)).  It is
+how Brachetti's +20 % per voice was found (the shared per-sample code left out
+of line; now `force_inline`) and how its parity with the family units is
+checked: within 1 % on all twelve.
+
+```
+./ring_budget_check.sh
+./unit_cycles.sh ../../brachetti 3 0 4               # Brachetti, Snare, AcSnre x4: ~1846
+./unit_cycles.sh ../../brachetti_split/brachetti_snare -1 0 4 4800 1   # ring-over: ~1538
+```
+
+`run_equiv.sh` drives the engines directly, not through `RingOver`, so its
+Program changes over ringing voices still compare the engine's own fade with
+the original's (IDENTICAL); what the units do on the device there is the
+ring-over, checked by `brachetti_check.sh`.
+Result (each dedicated knob at its two ends; `-90 dB` limit per render):
+14,564 of 14,568 renders agree within −94 dB of their signal (float
+reordering); the 4 that do not are the Gong with `Tang` (the cymbal's
+`VlMllRes` slot) at +100, at −38 dB from the first sample.  That is the
+cymbal engine's own `-ffast-math` sensitivity (BrcCymbal against the
+original measures −51 dB in its worst render, [arm_equiv](#the-neon-paths-on-arm)):
+built for ARM without `-ffast-math`, Brachetti is **bit-identical** to the
+family units on all 14,568 renders, the Gong included.
+
+**`-ffp-contract=off`.**  This check first found every modal family
+differing on ARM by −30…−50 dB from the first sample: with GCC's default
+contraction, `a*b+c` is fused into one VFMA wherever inlining puts the two
+together, and Brachetti's single translation unit inlines differently from a
+family unit's.  Some coefficients are sensitive to that rounding.  All
+thirteen units (Brachetti and the twelve family units, `config.mk`) are now
+built with `-ffp-contract=off`, which brought them back to agreement and
+keeps the ARM builds close to the host renders the presets were voiced
+against; it costs +0.1–0.3 % instructions (`arm_cpu.sh`: BrcBar 712.0 →
+714.4, BrcTom 858.7 → 861.2, BrcLippa 945.2 → 946.2).
 
 ### Sizes
 
@@ -251,6 +455,14 @@ moves a little between toolchains; data sections are exact):
 | plate | 12,996 | 1,080 | 1,808 | 292 | 16,650 → 16,240 |
 | cymbal | 11,136 | 684 | 11,936 | 292 | 24,420 → 24,552 |
 | noise | 7,500 | 300 | 992 | 292 | 8,672 → 9,144 |
+
+(These are the restructuring's figures.  With the presets added after the
+split, each unit's README carries its current sizes; BrcWorld measures
+.text 20,496 · .rodata 3,516 · .data 4 · .bss 21,296, the 16 KB of wire
+delay lines in `.bss`; BrcLippa .text 23,492 · .rodata 2,400 · .data 4 ·
+.bss 52,784, its 48 KB of loop and all-pass delay lines in `.bss`; BrcPizzico
+.text 19,492 · .rodata 1,508 · .data 4 · .bss 51,824, the same lines; BrcCordiera
+.text 23,172 · .rodata 2,652 · .data 4 · .bss 36,048.)
 
 (The totals include `.data.rel.ro`.)  The restructuring moved the preset
 tables from `.data` to `.rodata` (`static const`): the original's notes
@@ -274,7 +486,7 @@ counts instructions, not cycles, so it is a regression check — compare a
 unit with itself, never two units with each other.
 
 ```
-./arm_cpu.sh ../../brachetti_kick
+./arm_cpu.sh ../../brachetti_split/brachetti_kick
 ```
 
 | Unit | before the restructuring | after |
@@ -291,15 +503,44 @@ unit with itself, never two units with each other.
 The driver's `render_only` command renders without hashing or dumping, so the
 count is the unit's own work.
 
+[`arm_cycles.sh`](arm_cycles.sh) estimates cycles for one preset struck as N
+stacked notes: the same trace, each instruction weighted by its kind on the
+Cortex-A7 (a VDIV or VSQRT 14 cycles, the rest 1).  An instruction count
+hides a division's cost, and a voice with divisions in its per-sample path
+(BrcLippa's mymembrane~) is heavier than it reads.  Still a model, for
+comparing presets and units with each other:
+
+```
+./arm_cycles.sh ../../brachetti_split/brachetti_lippa MmFloor 4      # ~1510; Gong x2 ~1810, Timpni x2 ~1900
+```
+
 ## Maintaining the units
 
 A unit's family code is its own: a change in its folder cannot reach another
 unit.  A change in [`brachetti_common`](../../brachetti_common/) reaches all
-eight, so check all eight:
+twelve, so check them all.  BrcWorld, BrcLippa, BrcPizzico and BrcCordiera
+have no original to compare with: check each against itself (render its
+presets with `preset_probe render` before and after, and compare), and
+BrcLippa's mymembrane~ presets against Pd too
+([`mymembrane_check.py`](mymembrane_check.py)); and the other eight with:
 
 ```
-for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
+for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_split/brachetti_$u; done
 ```
+
+**Knob steps.**  Cutoff and NzFltFrq step 0.1 kHz on every unit's panel
+(header.c: 1-200) while the engines keep 10 Hz values
+([`knob_steps.h`](../../brachetti_common/knob_steps.h), applied by each
+unit's `RingOver`).  The tools drive the engines directly, in the engine's
+units: `equiv_driver --list` gives those knobs the engine's own range, and
+the boot defaults are translated (`header_to_engine`), so `run_equiv.sh`
+covers them as before.
+
+Any change in a family unit or in the library also reaches Brachetti:
+`./brachetti_check.sh` must stay IDENTICAL.  A family's code is compiled
+inside a namespace there, so it must not qualify its own names with a bare
+`::`, and a header it includes from outside its folder must be in
+`brachetti/families.h`'s list ([its CLAUDE.md](../../brachetti/CLAUDE.md)).
 
 Each unit file opens with a `From brachetti_common` block listing the library
 helpers it uses; [`lib_uses.py`](lib_uses.py) keeps those blocks true
@@ -314,7 +555,30 @@ the original, and the script then shows exactly which presets and knobs
 moved.  The original keeps its own code, so a fix that also applies to it has
 to be made there by hand.
 
+`run_equiv.sh` can also compare a unit with another family unit instead of
+the original (`BRACHETTI_ORIG` names any unit directory): BrcCordiera's
+engines were first checked against BrcSnare and BrcWorld that way.
+`EQUIV_ALIASES_FILE` gives it a knob alias list other than `aliases.txt` (the
+knobs' names in the unit compared with), and `EQUIV_CXXFLAGS` extra flags for
+the family unit's build only (a copy-check flag, for one).
+
+`match_samples.py`'s score has, besides its default features, four a spec
+can ask for: `late` (each band's decay after the first 100 ms), `sparsity`
+(how impulsive the 2-8 kHz band is: snares), `stretch` (how far the
+partials sit from harmonic: a stiff wire) and `periodic` (how string-like a
+sound is: its autocorrelation at its period).  BrcLippa's and BrcCordiera's READMEs
+say why each was needed.
+
 [`dead_params.py`](dead_params.py) works on any unit's driver, so it can show
-whether a knob has become dead after a change.  Python 3 with numpy is needed
+whether a knob has become dead after a change; [`knob_liveness.py`](knob_liveness.py)
+shows how much each knob moves each preset (`./knob_liveness.py tom noise`).
+[`restrike_check.py`](restrike_check.py) strikes each preset twice on one
+voice, 30-600 ms apart, and compares the second strike's high frequencies
+with the same strike on a silent voice plus the ring: a restrike that clicks
+stands out (BrcLippa's MmFloor did, 2.9x; `./restrike_check.py lippa
+pizzico`).  It builds [`strike_roll.cpp`](strike_roll.cpp), which renders any
+unit's output for a series of strikes.
+A knob a unit relabels goes in [`aliases.txt`](aliases.txt), so `run_equiv.sh`
+keeps comparing it.  Python 3 with numpy is needed
 for `compare_dumps.py`; the ARM scripts need
 `apt-get install g++-arm-linux-gnueabihf qemu-user`.

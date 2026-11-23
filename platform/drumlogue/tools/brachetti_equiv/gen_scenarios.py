@@ -42,7 +42,7 @@ def parse_list(path):
                 continue
             if w[0] == "preset":
                 presets.append(line.split(None, 2)[2].strip())  # "Ac Tom"
-            elif w[0] == "param":
+            elif w[0] == "param" and len(w) == 6:   # a blank slot has no name
                 params.append((w[2], int(w[3]), int(w[4]), int(w[5])))
     return presets, params
 
@@ -54,12 +54,45 @@ def main():
     ap.add_argument("--fuzz", type=int, default=120)
     ap.add_argument("--knob-points", type=int, default=3,
                     help="random points per knob, on top of the fixed ones")
+    ap.add_argument("--compare-with", metavar="LISTING",
+                    help="the other unit's --list: presets it does not have (added "
+                         "to the family unit after the split) are left out and named "
+                         "on stderr")
+    ap.add_argument("--alias", action="append", default=[], metavar="NEW=OLD",
+                    help="a knob the family unit relabelled: NEW is the same knob as "
+                         "the other unit's OLD (the other driver resolves it through "
+                         "EQUIV_ALIASES)")
     ap.add_argument("--avoid-reselect", action="append", default=[],
                     help="never select this preset while it is already selected "
                          "(a documented deviation, see run_equiv.sh)")
     a = ap.parse_args()
     rnd = random.Random(a.seed)
     presets, params = parse_list(a.listing)
+    if a.compare_with:
+        theirs = set(parse_list(a.compare_with)[0])
+        new = [p for p in presets if p not in theirs]
+        presets = [p for p in presets if p in theirs]
+        if new:
+            sys.stderr.write("not in the original, left out of the comparison: %s\n"
+                             % ", ".join(new))
+        # Knobs the family unit gave a new job (a reassigned slot) have no
+        # counterpart: left out, like the added presets.  Relabelled knobs
+        # are compared under their alias.
+        alias = dict(x.split("=", 1) for x in a.alias)
+        their_knobs = set(p[0] for p in parse_list(a.compare_with)[1])
+        own = [p for p in params if alias.get(p[0], p[0]) not in their_knobs]
+        params = [p for p in params if alias.get(p[0], p[0]) in their_knobs]
+        # Boot defaults the two units do not share (the family units' Poly is 2,
+        # the original's 4): every scenario starts by setting the family
+        # unit's own, so both boot alike.
+        their_init = {p[0]: p[3] for p in parse_list(a.compare_with)[1]}
+        boot = [(p[0], p[3]) for p in params
+                if p[0] != "Program" and their_init.get(alias.get(p[0], p[0]), p[3]) != p[3]]
+    else:
+        boot = []
+        if own:
+            sys.stderr.write("knobs of the family's own, left out of the comparison: %s\n"
+                             % ", ".join(p[0] for p in own))
     knobs = [p for p in params if p[0] != "Program"]
     out = []
     cur = [None]
@@ -72,6 +105,9 @@ def main():
             cur[0] = p
         elif line.startswith("scenario "):
             cur[0] = None
+            out.append(line)
+            out.extend("param %s %d" % b for b in boot)
+            return
         out.append(line)
 
     def scen(name, preset):

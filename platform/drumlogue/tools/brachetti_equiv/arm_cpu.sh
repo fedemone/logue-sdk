@@ -9,8 +9,8 @@
 # second time with its render commands removed, so start-up, Init and preset
 # loading cancel out and what is left is the cost of rendering.
 #
-# The bench: every preset of the unit, struck as a four-note stack (the voice
-# cap), then [frames] frames rendered (default 1200 = 25 ms, the densest part
+# The bench: every preset of the unit, struck as a four-note stack at Poly 4 (the voice
+# cap; the shipped default is 2), then [frames] frames rendered (default 1200 = 25 ms, the densest part
 # of a strike), then the same again with no voice left (the idle path).
 #
 # Prints instructions per rendered frame.  qemu counts instructions, not
@@ -29,7 +29,7 @@ ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
 # The SDK Makefile's optimisation and inlining flags (as arm_size.sh): with
 # -Os alone GCC keeps small helpers called from several places out of line,
 # which a unit built by the SDK never does.
-OPT="-Os -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 \
+OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 \
      -fno-math-errno -fomit-frame-pointer -finline-limit=2000000000 \
      --param max-inline-insns-single=2000000000"
 arm-linux-gnueabihf-g++ -static -std=gnu++17 $ARCH $OPT -w -I"$unit" -I"$unit/.." \
@@ -38,9 +38,12 @@ qemu-arm "$work/drv" --list > "$work/list"
 python3 - "$work/list" "$frames" > "$work/bench.script" <<'EOF'
 import sys
 presets = [l.split(None, 2)[2].strip() for l in open(sys.argv[1]) if l.startswith("preset ")]
+has_poly = any(l.split()[:3] == ["param", l.split()[1], "Poly"] for l in open(sys.argv[1]) if l.startswith("param "))
 frames = int(sys.argv[2])
 for p in presets:
     print("scenario bench")
+    if has_poly:
+        print("param Poly 4")   # the worst case: the voice cap (the shipped default is 2)
     print("preset %s" % p)
     for off, vel in ((0, 100), (3, 90), (7, 80), (12, 110)):
         print("note_rel %d %d" % (off, vel))

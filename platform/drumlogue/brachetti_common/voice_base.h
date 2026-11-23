@@ -13,15 +13,18 @@
 //
 //   x  = exciter + noise burst + the unit's layers
 //   x  = follow_and_gate(x)       level follower, master envelope, squelch
+//   x  = punch.apply(x)           the Punch knob's transient shaper (idle at 0)
 //   x  = tone_tilt(x)             if the Tone knob is off 0 (master_stage.h)
 //   x  = (the unit's onset ramp, if it has one)
 //   x  = fade_out(x)              only while a preset change fades it
 //   bus += x * MasterStage::kBusGain
 //   retire_when_done()
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cstddef>
 #include <cstdint>
 #include "dsp_math.h"
 #include "exciter.h"
+#include "voice_layers.h"
 
 namespace brc {
 
@@ -57,6 +60,7 @@ struct VoiceBase {
 
     float tone_lp = 0.0f;    // Tone tilt EQ memory
     float mag_env = 0.0f;    // level follower for the squelch (α = 0.01, τ ≈ 2 ms)
+    Punch punch;             // the transient shaper: the unit triggers it at the strike
 
     void start(uint8_t note, float velocity) {
         is_active        = true;
@@ -72,9 +76,13 @@ struct VoiceBase {
         fade_mul = 1.0f;
         exciter.restart();
         tone_lp  = 0.0f;
+        punch.reset();
     }
 
-    bool fading() const { return is_active && fade_mul < 1.0f; }
+    force_inline bool fading() const { return is_active && fade_mul < 1.0f; }
+
+    // Samples since the strike (which voice is the oldest).
+    uint32_t age() const { return (uint32_t)exciter.current_frame; }
 
     // State only Reset() clears (a unit's voice may define its own).
     void on_unit_reset() {}
@@ -84,7 +92,7 @@ struct VoiceBase {
     // squelch: a released voice retires when it is silent or its envelope has
     // closed; a held one when ring and exciter have both gone silent (the
     // gate may stay held long after the sound has died).
-    float follow_and_gate(float x) {
+    force_inline float follow_and_gate(float x) {
         mag_env = (fabsf(x) * 0.01f) + (mag_env * 0.99f);
         x *= exciter.master_env.process();
         if (exciter.current_frame > kSquelchGuardSamples) {
@@ -99,7 +107,7 @@ struct VoiceBase {
         return x;
     }
 
-    float fade_out(float x) {
+    force_inline float fade_out(float x) {
         if (fade_mul < 1.0f) {
             x *= fade;
             fade *= fade_mul;
@@ -109,7 +117,7 @@ struct VoiceBase {
     }
 
     // A released voice whose mallet, noise and level have all died.
-    void retire_when_done() {
+    force_inline void retire_when_done() {
         if (is_releasing && exciter.finished() && mag_env < kSquelchThreshold) {
             is_active = false;
         }
@@ -145,6 +153,31 @@ inline bool any_fading(const Voice (&voices)[N]) {
 template <class Voice, int N>
 inline void set_all_exciters(Voice (&voices)[N], void (Exciter::*set)(int32_t), int32_t value) {
     for (Voice& v : voices) (v.exciter.*set)(value);
+}
+
+// ── The voice budget across a ring-over (ring_over.h) ──────────────────────
+// Live voices: ringing and not fading out.
+template <class Voice, int N>
+inline uint8_t live_voices(const Voice (&voices)[N]) {
+    uint8_t n = 0;
+    for (int i = 0; i < N; ++i)
+        if (voices[i].is_active && voices[i].fade_mul >= 1.0f) ++n;
+    return n;
+}
+
+// Fade the oldest live voice out with the preset-change fade (~10 ms, click-
+// free): a Program change lets the old instrument ring on, and each strike of
+// the new one takes its voice from the old one's oldest, so the two together
+// never exceed one instrument's Poly (the CPU budget).  The voice needs age().
+template <class Voice, int N>
+inline void fade_out_oldest(Voice (&voices)[N]) {
+    int oldest = -1;
+    for (int i = 0; i < N; ++i) {
+        const Voice& v = voices[i];
+        if (!v.is_active || v.fade_mul < 1.0f) continue;
+        if (oldest < 0 || v.age() > voices[oldest].age()) oldest = i;
+    }
+    if (oldest >= 0) voices[oldest].fade_mul = env_mul(kPresetFadeTauSec, kSampleRate);
 }
 
 // Arm the preset-change fade on every ringing voice (an existing fade is not

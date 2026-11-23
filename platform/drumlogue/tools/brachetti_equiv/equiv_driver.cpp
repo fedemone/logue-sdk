@@ -59,12 +59,26 @@ float ut_exciter_out = 0.0f, ut_delay_read = 0.0f, ut_voice_out = 0.0f;
 
 #include "synth_engine.h"
 #include "header.c"
+#include "../../brachetti_common/knob_steps.h"
 
 static const int kBlock = 64;
 
 static int param_slot(const char* name) {
     for (uint32_t i = 0; i < unit_header.num_params; ++i)
-        if (strcmp(unit_header.params[i].name, name) == 0) return (int)i;
+        if (name[0] && strcmp(unit_header.params[i].name, name) == 0) return (int)i;
+    // EQUIV_ALIASES="Thump=MlltRes,Snap=MlltStif": a knob a family unit
+    // relabelled, found here under the name this unit gives it.
+    if (const char* al = getenv("EQUIV_ALIASES")) {
+        const std::string want = std::string(name) + "=";
+        std::string list = std::string(",") + al + ",";
+        const size_t at = list.find("," + want);
+        if (at != std::string::npos) {
+            const size_t b = at + 1 + want.size();
+            const std::string other = list.substr(b, list.find(',', b) - b);
+            for (uint32_t i = 0; i < unit_header.num_params; ++i)
+                if (strcmp(unit_header.params[i].name, other.c_str()) == 0) return (int)i;
+        }
+    }
     return -1;
 }
 
@@ -108,9 +122,11 @@ static BrachettiSynth* fresh_synth() {
         fprintf(stderr, "Init failed\n");
         exit(2);
     }
-    // What the OS does at boot: send every parameter's header default.
+    // What the OS does at boot: send every parameter's header default (a
+    // knob the panel steps more coarsely, Cutoff and NzFltFrq, as the unit
+    // hands it to the engine: knob_steps.h).
     for (uint32_t i = 0; i < unit_header.num_params; ++i)
-        s->setParameter((uint8_t)i, unit_header.params[i].init);
+        s->setParameter((uint8_t)i, brc::header_to_engine(unit_header.params[i], unit_header.params[i].init));
     return s;
 }
 
@@ -126,9 +142,13 @@ int main(int argc, char** argv) {
                (int)BrachettiSynth::k_NumPrograms, unit_header.num_params);
         for (int i = 0; i < (int)BrachettiSynth::k_NumPrograms; ++i)
             printf("preset %d %s\n", i, BrachettiSynth::getPresetName((uint8_t)i));
+        // In the ENGINE's units: the script drives the engine directly, so a
+        // stepped knob (knob_steps.h) is listed with the engine's own range.
         for (uint32_t i = 0; i < unit_header.num_params; ++i) {
             const unit_param_t& p = unit_header.params[i];
-            printf("param %u %s %d %d %d\n", i, p.name, p.min, p.max, p.init);
+            const brc::KnobStep* st = brc::knob_step(p);
+            printf("param %u %s %d %d %d\n", i, p.name, st ? st->engine_min : p.min,
+                   st ? st->engine_max : p.max, (int)brc::header_to_engine(p, p.init));
         }
         return 0;
     }

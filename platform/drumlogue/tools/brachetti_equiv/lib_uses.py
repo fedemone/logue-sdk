@@ -14,8 +14,8 @@ uses from it:
     // From brachetti_common (its README.md indexes every helper):
     //   dsp_math.h       clampf, knob_exp2
     //   knobs.h          knob::decay, off_anchor
-    #include "../brachetti_common/dsp_math.h"
-    #include "../brachetti_common/knobs.h"
+    #include "../../brachetti_common/dsp_math.h"
+    #include "../../brachetti_common/knobs.h"
 
 so a reader sees what already exists before writing a helper of their own.
 Run --write after using a new library name (or dropping one), and --check
@@ -31,7 +31,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DRUM = os.path.normpath(os.path.join(HERE, '..', '..'))
 LIB = os.path.join(DRUM, 'brachetti_common')
-UNITS = ['kick', 'tom', 'kernel', 'snare', 'bar', 'plate', 'cymbal', 'noise']
+UNITS = ['kick', 'tom', 'kernel', 'snare', 'bar', 'plate', 'cymbal', 'noise', 'world', 'lippa', 'pizzico', 'cordiera']
 FILES = ['presets.h', 'voice.h', 'synth_engine.h', 'modal_drum_kernel.h']
 BLOCK_HEAD = '// From brachetti_common (its README.md indexes every helper):'
 UNQUALIFIED = {'FastSVF', 'FastNoise', 'FastEnvelope'}
@@ -57,7 +57,7 @@ def library_exports():
             if m:
                 found += ['knob::' + n for n in re.findall(r'inline\s+\w+\s+(\w+)\s*\(', m.group(1))]
                 s = s.replace(m.group(0), '')
-            found += re.findall(r'^(?:template\s*<[^>]*>\s*)?(?:inline\s+|static\s+|constexpr\s+)*'
+            found += re.findall(r'^(?:template\s*<[^>]*>\s*)?(?:force_inline\s+|inline\s+|static\s+|constexpr\s+)*'
                                 r'(?:const\s+)?[\w:<>]+[\s*&]+(\w+)\s*\(', s, re.M)
             found += re.findall(r'^(?:struct|class)\s+(\w+)', s, re.M)
             found += re.findall(r'^(?:static\s+)?(?:constexpr|const)\s+[\w:]+\s+(k\w+)', s, re.M)
@@ -91,7 +91,7 @@ def uses_of(path, exports):
 def unit_files():
     for u in UNITS:
         for f in FILES:
-            p = os.path.join(DRUM, 'brachetti_' + u, f)
+            p = os.path.join(DRUM, 'brachetti_split', 'brachetti_' + u, f)
             if os.path.exists(p):
                 yield u, p
 
@@ -110,7 +110,7 @@ def block_for(uses):
         rows.append(line)
         out.append('//   %-17s%s' % (h, rows[0]))
         out += ['//   %-17s%s' % ('', r) for r in rows[1:]]
-    out += ['#include "../brachetti_common/%s"' % h for h in uses]
+    out += ['#include "../../brachetti_common/%s"' % h for h in uses]
     return out
 
 
@@ -121,11 +121,11 @@ def rewrite(path, uses):
         at = lines.index(BLOCK_HEAD)
         end = at + 1
         while end < len(lines) and (lines[end].startswith('//   ') or
-                                    lines[end].startswith('#include "../brachetti_common/')):
+                                    lines[end].startswith('#include "../../brachetti_common/')):
             end += 1
         del lines[at:end]
     else:
-        incs = [i for i, l in enumerate(lines) if l.startswith('#include "../brachetti_common/')]
+        incs = [i for i, l in enumerate(lines) if l.startswith('#include "../../brachetti_common/')]
         at = incs[0] if incs else max(i for i, l in enumerate(lines) if l.startswith('#include')) + 1
         for i in reversed(incs):
             del lines[i]

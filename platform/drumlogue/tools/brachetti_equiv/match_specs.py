@@ -1,0 +1,718 @@
+"""match_specs.py -- the Brachetti presets voiced after the Pelle e Legno samples.
+
+Read by match_samples.py:  python3 match_samples.py match_specs.py tom
+
+Each spec is a preset: `values` are its rows in the unit's tables as the
+search starts (everything left out takes match_samples.py's defaults), `free`
+the values the search may move, with their ranges, and `ref` the Pelle e Legno
+sample it is voiced after (../../pelle_legno/Samples, rendered by
+pelle_legno/render_kit.py from the same physical description).
+
+The modal banks come from measurement, not from the search: each sample's
+partials (frequency, level, T60, measured on the sample) are the bank's
+modes.  Two constraints of the bank shape how they are written:
+  * mode 1 sounds AT the root note (an integer MIDI note), so where a sample's
+    main partial falls between notes, mode 1 is a weak partner just below it
+    and the main partial is mode 2 at its exact ratio (CngOpen: 261.6 + 271 Hz);
+  * the bank weights its modes 1, .6, .45, .28, .18, .12 at the output, so a
+    mode's env is its measured level divided by that weight (bank() does it).
+"""
+import math
+import os
+
+SR = 48000
+P = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pelle_legno", "Samples")
+W = [1.0, 0.6, 0.45, 0.28, 0.18, 0.12]
+
+
+def note_hz(n):
+    return 440.0 * 2.0 ** ((n - 69) / 12.0)
+
+
+def dec(t60_ms):
+    """Per-sample decay for a T60."""
+    return math.exp(math.log(0.001) / (t60_ms * 1e-3 * SR))
+
+
+def pole(hz):
+    """One-pole low-pass coefficient for a corner frequency."""
+    return 1.0 - math.exp(-2.0 * math.pi * hz / SR)
+
+
+def bank(root, partials, t60, mix):
+    """A modal bank from measured partials [(Hz, level), ...]; the first is
+    mode 1 and sounds at the root (only its level is used).  t60: modes 1-4."""
+    f0 = note_hz(root)
+    r = [1.0] + [hz / f0 for hz, _ in partials[1:]]
+    a = [lvl / W[i] for i, (_, lvl) in enumerate(partials)]
+    m = max(a)
+    a = [x / m for x in a]
+    n = len(partials)
+    r += [0.0] * (6 - n)
+    a += [0.0] * (6 - n)
+    t = list(t60) + [0.0] * (4 - len(t60))
+    return dict(Root=root, r2=r[1], r3=r[2], r4=r[3], r5=r[4], r6=r[5],
+                e1=a[0], e2=a[1], e3=a[2], e4=a[3], e5=a[4], e6=a[5],
+                t1=t[0], t2=t[1], t3=t[2], t4=t[3], count=n, mix=mix, modal_mix=mix)
+
+
+def slap(gain, t60_ms, lo_hz, hi_hz):
+    return dict(slap_gain=gain, slap_decay=dec(t60_ms), slap_a_lo=pole(lo_hz), slap_a_hi=pole(hi_hz))
+
+
+def boom(hz, t60_ms, mix, attack_ms=3.0, glide=0.0, glide_hz=0.0, glide_ms=40.0):
+    """A tracked boom at hz; glide +1 settles down onto hz from hz + glide_hz,
+    -1 rises up to hz from hz - glide_hz (exponential, time constant glide_ms)."""
+    d = dict(boom_hz=hz, boom_env=1.0, boom_decay=dec(t60_ms), boom_mix=mix,
+             boom_attack_env=0.0, boom_attack_inc=1.0 / (attack_ms * 1e-3 * SR), glide=glide)
+    if glide:
+        d.update(pitch_env=1.0, pitch_decay=math.exp(-1.0 / (glide_ms * 1e-3 * SR)), pitch_amount=glide_hz)
+    return d
+
+
+def merge(*ds):
+    out = {}
+    for d in ds:
+        out.update(d)
+    return out
+
+
+# The values the search moves on a hand drum, and their ranges.
+MEMBRANE_FREE = dict(modal_mix=(0.005, 1.5, "log"), NzMx=(0, 100, "lin"), NzRs=(50, 1000, "lin"),
+                     NzFq=(30, 1500, "log"), Rel=(0, 20, "lin"), MlSt=(2, 50, "lin"),
+                     t1=(20, 4000, "log"), t2=(20, 4000, "log"), onset_ms=(0, 6, "lin"))
+SLAP_FREE = dict(slap_gain=(0.1, 8.0, "log"), slap_a_lo=(0.02, 0.6, "log"), slap_a_hi=(0.1, 0.95, "log"))
+# Bright strokes (rim, slap) also move the noise filter's mode and the burst's
+# body / click balance.
+BRIGHT_FREE = dict(NzFl=(0, 2, "int"), band_mix=(0.05, 1.0, "lin"))
+BOOM_FREE = dict(boom_mix=(0.02, 2.0, "log"))
+# A bending boom also moves the S-curve's hold and length (ms) and its depth (Hz).
+GLIDE_FREE = dict(glide_hold_ms=(0, 80, "lin"), glide_ms=(30, 600, "log"), pitch_amount=(1, 120, "log"))
+# The talking drums' upper modes' rings too.
+# (kept below the fundamental's: a head's upper modes die first, and mode 4
+# also sets modes 5 and 6).
+TALK_FREE = dict(t2=(250, 1200, "log"), t3=(150, 900, "log"), t4=(100, 600, "log"))
+
+
+def bend(hz_from, hz_to, hold_ms, len_ms):
+    """A held, then S-shaped bend from hz_from to hz_to (brc::GlideCurve):
+    the tracked boom rests on hz_to, so glide is +1 for a fall, -1 for a rise."""
+    return dict(boom_hz=hz_to, glide=1.0 if hz_from > hz_to else -1.0, pitch_env=1.0,
+                pitch_decay=1.0, pitch_amount=abs(hz_from - hz_to),
+                glide_hold_ms=hold_ms, glide_ms=len_ms)
+
+
+def free(*ds):
+    return merge(*ds)
+
+
+SKIN = dict(Mdl=5, Ptls=2, Dky=160, TbRd=10, Gain=0, MlRs=600, Hit=20, band_mix=0.5, split=0.3)
+
+SPECS = {"tom": [
+    # ── West Africa: djembe ────────────────────────────────────────────────
+    dict(name="DjmTone", enum="k_DjembeTone", ref=os.path.join(P, "002_DjembeTone.wav"),
+         note="tone: the head's 262 Hz pitch with its 0.6-1.9 kHz ring",
+         values=merge(SKIN, bank(60, [(261.6, .59), (587.0, .60), (825.1, .84), (1069.0, 1.0),
+                                      (1137.5, .78), (1889.6, .28)], [320, 240, 313, 483], 0.35),
+                      slap(2.0, 25, 2500, 8000), dict(MlSt=40, NzMx=30, NzRs=500, NzFl=1, NzFq=400)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="DjmSlap", enum="k_DjembeSlap", ref=os.path.join(P, "003_DjembeSlap.wav"),
+         note="slap: a skin crack over a 1.07 kHz ring",
+         values=merge(SKIN, bank(84, [(1046.5, .08), (1065.3, 1.0), (1133.8, .10), (1289.4, .05),
+                                      (1507.3, .04), (1726.7, .05)], [430, 432, 331, 216], 0.35),
+                      slap(4.0, 30, 2500, 7000), dict(MlSt=48, Hit=60, NzMx=40, NzRs=500, NzFl=2, NzFq=250)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="DjmBass", enum="k_DjembeBass", ref=os.path.join(P, "001_DjembeBass.wav"),
+         note="bass: the goblet's 74 Hz air, pushed by the palm, settling from 7 % sharp",
+         values=merge(SKIN, bank(38, [(73.4, .10), (94.8, .07), (204.7, .04)], [370, 370, 225], 0.10),
+                      boom(74.3, 370, 0.8, attack_ms=4, glide=1, glide_hz=5.2, glide_ms=30),
+                      slap(1.0, 40, 200, 1800), dict(MlSt=10, MlRs=300, NzMx=10, NzRs=300, NzFq=180)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BOOM_FREE)),
+    # ── the Caribbean: conga, tumba, bongo ─────────────────────────────────
+    dict(name="CngOpen", enum="k_CongaOpen", ref=os.path.join(P, "004_CongaOpen.wav"),
+         note="open tone at 271 Hz (mode 1 is its weak partner at the C4 root)",
+         values=merge(SKIN, bank(60, [(261.6, .07), (271.0, 1.0), (325.2, .43), (464.4, .23),
+                                      (643.4, .04), (509.0, .03)], [470, 474, 378, 241], 0.4),
+                      dict(MlSt=35, NzMx=15, NzRs=500, NzFq=450, onset_ms=1.0)),
+         free=free(MEMBRANE_FREE)),
+    dict(name="CngMute", enum="k_CongaMute", ref=os.path.join(P, "005_CongaMute.wav"),
+         note="muted tone: 657 Hz, closed by the hand",
+         values=merge(SKIN, bank(76, [(659.3, 1.0), (626.6, .35), (718.5, .23), (1070.1, .48),
+                                      (1042.6, .27), (574.6, .18)], [65, 55, 50, 45], 0.4),
+                      dict(MlSt=40, NzMx=15, NzRs=500, NzFq=600)),
+         free=free(MEMBRANE_FREE, BRIGHT_FREE)),
+    dict(name="CngSlap", enum="k_CongaSlap", ref=os.path.join(P, "006_CongaSlap.wav"),
+         note="open slap: the head's edge-mode cloud under a skin crack",
+         values=merge(SKIN, bank(72, [(523.3, .55), (698.0, .69), (728.0, 1.0), (789.6, .97),
+                                      (843.0, .64), (1040.0, .73)], [180, 214, 160, 149], 0.35),
+                      slap(3.0, 35, 1500, 8000), dict(MlSt=48, Hit=60, NzMx=35, NzRs=500, NzFl=2, NzFq=150)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="CngHeel", enum="k_CongaHeel", ref=os.path.join(P, "007_CongaHeel.wav"),
+         note="heel of the palm: a closed low thud",
+         values=merge(SKIN, bank(51, [(155.6, 1.0), (107.7, .31), (181.3, .21), (78.7, .23),
+                                      (66.3, .23), (318.2, .07)], [110, 110, 100, 90], 0.4),
+                      dict(MlSt=8, MlRs=300, Hit=0, NzMx=10, NzRs=300, NzFq=150)),
+         free=free(MEMBRANE_FREE)),
+    dict(name="Tumba", enum="k_Tumba", ref=os.path.join(P, "008_TumbaOpen.wav"),
+         note="the big conga's open tone, G3",
+         values=merge(SKIN, bank(55, [(196.0, 1.0), (234.7, .27), (335.1, .24), (361.8, .10),
+                                      (180.2, .07), (465.1, .06)], [458, 407, 352, 331], 0.4),
+                      dict(MlSt=35, NzMx=15, NzRs=500, NzFq=400, onset_ms=1.0)),
+         free=free(MEMBRANE_FREE)),
+    dict(name="BngMach", enum="k_BongoMacho", ref=os.path.join(P, "009_BongoMacho.wav"),
+         note="the small bongo",
+         values=merge(SKIN, bank(70, [(466.2, .40), (607.2, .17), (651.5, 1.0), (817.0, .21),
+                                      (962.4, .25), (993.9, .31)], [224, 185, 197, 198], 0.35),
+                      dict(MlSt=42, NzMx=20, NzRs=500, NzFq=800)),
+         free=free(MEMBRANE_FREE, BRIGHT_FREE)),
+    dict(name="BngHmbr", enum="k_BongoHembra", ref=os.path.join(P, "010_BongoHembra.wav"),
+         note="the large bongo",
+         values=merge(SKIN, bank(69, [(440.0, .59), (469.5, .68), (533.2, .73), (588.9, .86),
+                                      (692.1, 1.0), (807.5, .67)], [238, 228, 242, 206], 0.35),
+                      dict(MlSt=40, NzMx=20, NzRs=500, NzFq=800)),
+         free=free(MEMBRANE_FREE, BRIGHT_FREE)),
+    # ── India: tabla (dayan, bayan) ────────────────────────────────────────
+    dict(name="TblaNa", enum="k_TablaNa", ref=os.path.join(P, "011_TablaNa.wav"),
+         note="Na: the dayan's harmonic series on C#4, 2nd and 3rd harmonics ringing",
+         values=merge(SKIN, dict(Mdl=0), bank(61, [(277.2, .08), (554.4, 1.0), (831.5, .70),
+                                                   (1108.7, .18), (1385.9, .13), (1663.1, .12)],
+                                              [150, 2300, 1900, 1200], 0.35),
+                      slap(2.5, 120, 1000, 5000), dict(MlSt=45, Hit=60, NzMx=20, NzRs=500, NzFl=1, NzFq=250)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="TblaTin", enum="k_TablaTin", ref=os.path.join(P, "012_TablaTin.wav"),
+         note="Tin: harmonics of A#3, the 3rd strongest",
+         values=merge(SKIN, dict(Mdl=0), bank(58, [(233.1, .9), (466.2, .76), (699.2, 1.0),
+                                                   (932.3, .29), (1165.4, .45), (1398.5, .19)],
+                                              [120, 2400, 2800, 1500], 0.35),
+                      slap(2.0, 150, 900, 3200), dict(MlSt=42, Hit=50, NzMx=15, NzRs=500, NzFl=1, NzFq=200)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="TblaTun", enum="k_TablaTun", ref=os.path.join(P, "013_TablaTun.wav"),
+         note="Tun: the open centre stroke, the C4 fundamental rings",
+         values=merge(SKIN, dict(Mdl=0), bank(60, [(261.6, 1.0), (523.3, .26), (784.9, .16),
+                                                   (1046.5, .05)], [1145, 703, 781, 510], 0.35),
+                      dict(MlSt=30, Hit=10, NzMx=8, NzRs=400, NzFq=250)),
+         free=free(MEMBRANE_FREE)),
+    dict(name="TblaGe", enum="k_TablaGe", ref=os.path.join(P, "014_TablaGe.wav"),
+         note="Ge: the bayan's open bass on G2, settling from 6 % sharp",
+         values=merge(SKIN, dict(Mdl=0), bank(43, [(98.0, .10), (198.1, .45), (295.9, .22),
+                                                   (387.1, .10), (480.2, .05)], [500, 500, 350, 220], 0.25),
+                      boom(98.0, 750, 0.8, attack_ms=3, glide=1, glide_hz=5.9, glide_ms=50),
+                      dict(MlSt=15, MlRs=400, Hit=20, NzMx=8, NzRs=300, NzFq=150)),
+         free=free(MEMBRANE_FREE, BOOM_FREE)),
+    dict(name="TblGeBd", enum="k_TablaGeBend", ref=os.path.join(P, "015_TablaGeBend.wav"),
+         note="Ge with the heel sliding toward the syahi: the bass bends up ~5 semitones",
+         values=merge(SKIN, dict(Mdl=0), bank(43, [(98.0, .10), (198.1, .30), (295.9, .10)],
+                                              [150, 150, 120], 0.15),
+                      boom(129.4, 750, 0.8, attack_ms=3), bend(98.0, 129.4, 40, 260),
+                      dict(MlSt=15, MlRs=400, Hit=20, NzMx=8, NzRs=300, NzFq=150)),
+         free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(80, 150)),
+    dict(name="TblaKe", enum="k_TablaKe", ref=os.path.join(P, "016_TablaKe.wav"),
+         note="Ke: a flat palm on the bayan, left there",
+         values=merge(SKIN, bank(43, [(98.0, 1.0), (89.0, .64), (73.2, .61), (121.2, .57),
+                                      (164.8, .72), (193.0, .57)], [60, 60, 60, 55], 0.3),
+                      slap(1.5, 40, 300, 3000), dict(MlSt=8, MlRs=300, Hit=0, NzMx=25, NzRs=300, NzFq=200)),
+         free=free(MEMBRANE_FREE, SLAP_FREE)),
+    # ── Middle East: darbuka ───────────────────────────────────────────────
+    dict(name="DrbDoum", enum="k_DarbukaDoum", ref=os.path.join(P, "017_DarbukaDoum.wav"),
+         note="doum: the goblet's 96 Hz air under the head",
+         values=merge(SKIN, bank(43, [(98.0, .05), (227.8, .15), (243.9, .05), (358.5, .03),
+                                      (506.8, .03)], [450, 345, 373, 233], 0.2),
+                      boom(95.9, 460, 0.8, attack_ms=3, glide=1, glide_hz=4.8, glide_ms=30),
+                      dict(MlSt=20, MlRs=400, Hit=10, NzMx=10, NzRs=300, NzFq=200)),
+         free=free(MEMBRANE_FREE, BOOM_FREE)),
+    dict(name="DrbTek", enum="k_DarbukaTek", ref=os.path.join(P, "018_DarbukaTek.wav"),
+         note="tek: the ring finger on the rim, the bright edge modes ring",
+         values=merge(SKIN, bank(84, [(1046.5, .10), (1011.5, .67), (1060.9, 1.0), (1234.9, .64),
+                                      (1352.8, .79), (1619.0, 1.0)], [300, 299, 386, 322], 0.35),
+                      slap(3.0, 15, 2500, 11000), dict(MlSt=50, Hit=70, NzMx=30, NzRs=500, NzFl=2, NzFq=250)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="DrbKa", enum="k_DarbukaKa", ref=os.path.join(P, "019_DarbukaKa.wav"),
+         note="ka: the other hand's rim stroke, a softer tek",
+         values=merge(SKIN, bank(84, [(1046.5, .65), (1011.8, 1.0), (774.5, .51), (807.1, .64),
+                                      (1213.6, .76), (1352.8, .51)], [290, 284, 293, 328], 0.35),
+                      slap(1.5, 15, 2500, 11000), dict(MlSt=45, Hit=60, NzMx=20, NzRs=500, NzFl=2, NzFq=250)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    # ── West Africa: talking drum; Brazil: surdo, tamborim; Nigeria: udu ───
+    # The whole head glides (bank_glide): every mode bends with the squeeze,
+    # as the laced heads tighten together; the boom is off.  Partials and
+    # decays measured on the samples (at 30 ms; T60 of the ring ~0.9 s); the
+    # stick's crack is the slap.  (First voiced as a lone gliding boom over
+    # an 80 ms bank: on the drumlogue it sounded like a synth sweep.)
+    dict(name="TalkUp", enum="k_TalkUp", ref=os.path.join(P, "025_TalkDrumUp.wav"),
+         note="talking drum squeezed as it rings: D3 up about a fifth",
+         values=merge(SKIN, bank(50, [(146.8, 1.0), (203.0, .2), (258.4, .4), (378.8, .063),
+                                      (433.1, .05)], [900, 650, 550, 450], 0.35),
+                      boom(217.5, 970, 0.0, attack_ms=2), bend(150.0, 217.5, 20, 180),
+                      slap(1.0, 14, 600, 5000), dict(bank_glide=1.0),
+                      dict(MlSt=35, Hit=30, NzMx=12, NzRs=400, NzFq=350)),
+         free=free(MEMBRANE_FREE, GLIDE_FREE, SLAP_FREE, TALK_FREE), track=(120, 260)),
+    dict(name="TalkDn", enum="k_TalkDown", ref=os.path.join(P, "026_TalkDrumDn.wav"),
+         note="talking drum released as it rings: down about a fifth to D3",
+         values=merge(SKIN, bank(57, [(220.0, 1.0), (291.7, .3), (363.2, .22), (421.5, .07),
+                                      (479.6, .055), (532.0, .056)], [900, 650, 550, 450], 0.35),
+                      boom(150.0, 970, 0.0, attack_ms=2), bend(217.5, 150.0, 25, 238),
+                      slap(1.0, 14, 600, 5000), dict(bank_glide=1.0),
+                      dict(MlSt=35, Hit=30, NzMx=12, NzRs=400, NzFq=350)),
+         free=free(MEMBRANE_FREE, GLIDE_FREE, SLAP_FREE, TALK_FREE), track=(120, 260)),
+    dict(name="SurdOpn", enum="k_SurdoOpen", ref=os.path.join(P, "027_SurdoOpen.wav"),
+         note="surdo, felt mallet, A#1: a long 58 Hz boom settling from 6 % sharp",
+         values=merge(SKIN, bank(34, [(58.3, .10), (90.5, .12), (128.2, .23), (160.8, .16),
+                                      (191.5, .10), (228.5, .03)], [1077, 1066, 884, 817], 0.25),
+                      boom(58.6, 1080, 0.9, attack_ms=4, glide=1, glide_hz=3.5, glide_ms=40),
+                      dict(MlSt=12, MlRs=350, Hit=20, NzMx=8, NzRs=300, NzFq=150)),
+         free=free(MEMBRANE_FREE, BOOM_FREE)),
+    dict(name="SurdMut", enum="k_SurdoMute", ref=os.path.join(P, "028_SurdoMute.wav"),
+         note="the surdo damped by the hand",
+         values=merge(SKIN, bank(34, [(58.3, .10), (71.0, .45), (94.8, .41), (130.0, .60),
+                                      (169.6, .20), (152.7, .09)], [250, 256, 246, 249], 0.3),
+                      boom(57.5, 250, 0.9, attack_ms=4, glide=1, glide_hz=3.5, glide_ms=40),
+                      dict(MlSt=12, MlRs=350, Hit=20, NzMx=8, NzRs=300, NzFq=150)),
+         free=free(MEMBRANE_FREE, BOOM_FREE)),
+    dict(name="Tambrim", enum="k_Tamborim", ref=os.path.join(P, "029_Tamborim.wav"),
+         note="tamborim: a small tight head under a thin stick",
+         values=merge(SKIN, bank(73, [(554.4, .68), (574.2, .86), (886.2, 1.0), (902.0, .66),
+                                      (1190.6, .76), (1267.8, .76)], [180, 160, 140, 130], 0.35),
+                      slap(2.5, 12, 2000, 12000), dict(MlSt=50, Hit=50, NzMx=25, NzRs=500, NzFl=2, NzFq=300)),
+         free=free(MEMBRANE_FREE, SLAP_FREE, BRIGHT_FREE)),
+    dict(name="UduBass", enum="k_UduBass", ref=os.path.join(P, "051_UduBass.wav"),
+         note="udu: the palm over the side hole, the pot's air rising 85 -> 112 Hz",
+         values=merge(SKIN, bank(45, [(110.0, .05), (201.0, .03)], [300, 200], 0.05),
+                      boom(112.0, 610, 0.9, attack_ms=5), bend(89.6, 112.0, 20, 120),
+                      dict(MlSt=8, MlRs=300, Hit=0, NzMx=15, NzRs=300, NzFq=90)),
+         free=free(MEMBRANE_FREE, BOOM_FREE, GLIDE_FREE), track=(70, 130)),
+]}
+
+
+# ── BrcBar: wood, bamboo, clay and the kalimba's tine ───────────────────────
+BAR = dict(Mdl=1, Ptls=2, Dky=160, TbRd=10, Gain=0, MlRs=800, Hit=0, Mtr=0)
+BAR_FREE = dict(modal_mix=(0.02, 1.5, "log"), NzMx=(0, 100, "lin"), NzRs=(50, 1000, "lin"),
+                NzFq=(30, 1800, "log"), Rel=(0, 20, "lin"), MlSt=(2, 50, "lin"),
+                MlRs=(100, 1000, "lin"), t1=(20, 5000, "log"), t2=(15, 3000, "log"),
+                onset_ms=(0, 3, "lin"))
+# The coconut's rings stay short: a clap, not a bar.
+CLOP_FREE = dict(t1=(30, 250, "log"), t2=(30, 300, "log"), t3=(20, 200, "log"), t4=(15, 150, "log"))
+SPECS["bar"] = [
+    dict(name="WdBlkHi", enum="k_WoodBlockHi", ref=os.path.join(P, "044_WoodBlockHi.wav"),
+         note="high wood block: 1.15 kHz over a 1.11 kHz partner",
+         values=merge(BAR, bank(85, [(1108.7, .38), (1152.5, 1.0), (1230.5, .2), (2955.0, .07),
+                                     (5106.0, .07)], [200, 190, 90, 50], 0.2),
+                      dict(MlSt=45, NzMx=5, NzRs=420, NzFq=900)), free=BAR_FREE),
+    dict(name="TmplBlk", enum="k_TempleBlock", ref=os.path.join(P, "046_TempleBlock.wav"),
+         note="temple block (mokugyo): a hollow carved wood bell around C5",
+         values=merge(BAR, bank(72, [(523.3, 1.0), (417.5, .31), (487.4, .13), (790.0, .35),
+                                     (1209.0, .18), (1883.0, .06)], [270, 232, 257, 120], 0.2),
+                      dict(MlSt=40, NzMx=5, NzRs=420, NzFq=800)), free=BAR_FREE),
+    dict(name="SltDrHi", enum="k_SlitDrumHi", ref=os.path.join(P, "047_SlitDrumHi.wav"),
+         note="log-drum tongue, E4, rubber mallet, over the trunk's cavity",
+         values=merge(BAR, bank(64, [(329.6, 1.0), (164.8, .25), (962.5, .40), (1269.0, .22),
+                                     (2011.0, .10), (2868.0, .05)], [717, 300, 220, 120], 0.2),
+                      dict(MlSt=20, NzMx=5, NzRs=300, NzFq=300)), free=BAR_FREE),
+    dict(name="SltDrLo", enum="k_SlitDrumLo", ref=os.path.join(P, "048_SlitDrumLo.wav"),
+         note="log-drum tongue, A3",
+         values=merge(BAR, bank(57, [(220.0, 1.0), (110.0, .25), (642.4, .40), (847.0, .22),
+                                     (1342.0, .10), (1914.0, .05)], [693, 300, 220, 120], 0.2),
+                      dict(MlSt=20, NzMx=5, NzRs=300, NzFq=300)), free=BAR_FREE),
+    dict(name="Bamboo", enum="k_Bamboo", ref=os.path.join(P, "049_BambooKnock.wav"),
+         note="bamboo tube knocked with a stick: odd air-column harmonics over the wall",
+         values=merge(BAR, bank(64, [(329.6, .09), (340.9, 1.0), (1022.7, .35), (1450.0, .55),
+                                     (1704.5, .15), (3480.0, .2)], [184, 184, 100, 60], 0.2),
+                      dict(MlSt=45, NzMx=8, NzRs=420, NzFq=900)), free=BAR_FREE),
+    # The cavity's air (~560 Hz, mode 1) and the shell wall (1.18 kHz and its
+    # 1.43 / 2.2 / 3.1 overtones), all short, under a hard shell-on-shell
+    # click.  (First voiced with four modes 544-613 Hz: they beat, so the
+    # clop swelled for 50 ms and rang 250 ms — a tuned block, not a clap.)
+    dict(name="Coconut", enum="k_Coconut", ref=os.path.join(P, "050_Coconut.wav"),
+         note="two coconut half-shells clapped: a hollow clop",
+         values=merge(BAR, bank(73, [(554.4, .8), (1181.0, 1.0), (1690.0, .35), (2600.0, .2),
+                                     (3660.0, .1)], [90, 150, 80, 50], 0.2),
+                      dict(MlSt=50, NzMx=30, NzRs=300, NzFq=250)),
+         free=free(BAR_FREE, CLOP_FREE)),
+    dict(name="UduTone", enum="k_UduTone", ref=os.path.join(P, "052_UduTone.wav"),
+         note="udu: a fingertip on the clay belly over the pot's 112 Hz air",
+         values=merge(BAR, bank(45, [(110.0, 1.0), (410.9, .66), (797.0, .35), (1169.0, .2),
+                                     (1681.0, .1)], [317, 184, 90, 60], 0.2),
+                      dict(MlSt=30, NzMx=5, NzRs=300, NzFq=400)), free=BAR_FREE),
+    dict(name="KlmbE4", enum="k_KalimbaE4", ref=os.path.join(P, "055_KalimbaE4.wav"),
+         note="kalimba tine, E4: a clamped-free bar, its 'ping' 6.37x up",
+         values=merge(BAR, bank(64, [(329.6, 1.0), (2099.7, .9), (5867.0, .08)], [3200, 300, 80], 0.15),
+                      dict(MlSt=39, NzMx=3, NzRs=260, NzFq=720)), free=BAR_FREE),
+    dict(name="KlmbA4", enum="k_KalimbaA4", ref=os.path.join(P, "056_KalimbaA4.wav"),
+         note="kalimba tine, A4",
+         values=merge(BAR, bank(69, [(440.0, 1.0), (2802.8, .9), (7832.0, .08)], [3200, 300, 80], 0.15),
+                      dict(MlSt=39, NzMx=3, NzRs=260, NzFq=720)), free=BAR_FREE),
+]
+
+# ── BrcPlate: cone bells and finger cymbals ─────────────────────────────────
+PLATE = dict(Mdl=4, Ptls=2, Dky=175, TbRd=10, Gain=0, MlRs=900, Hit=0, Mtr=20, noise_gain=5.0)
+PLATE_FREE = dict(modal_mix=(0.02, 1.5, "log"), NzMx=(0, 100, "lin"), NzRs=(50, 1000, "lin"),
+                  NzFq=(30, 1800, "log"), MlSt=(2, 50, "lin"), t1=(50, 5000, "log"),
+                  t2=(30, 5000, "log"), chirp_hz=(100, 6000, "log"), shimmer_mix=(0.0, 0.5, "lin"))
+AGOGO = [(1.0, 1.0), (1.006, .22), (2.47, .40), (3.92, .25), (5.43, .12), (7.1, .06)]
+SPECS["plate"] = [
+    dict(name="AgogoHi", enum="k_AgogoHi", ref=os.path.join(P, "053_AgogoHi.wav"),
+         note="agogo, the high cone bell, A#5",
+         values=merge(PLATE, bank(82, [(932.3 * r, a) for r, a in AGOGO], [1100, 1000, 550, 350], 0.2),
+                      dict(MlSt=45, NzMx=10, NzRs=300, NzFq=1200, chirp_hz=900)), free=PLATE_FREE),
+    dict(name="AgogoLo", enum="k_AgogoLo", ref=os.path.join(P, "054_AgogoLo.wav"),
+         note="agogo, the low cone bell, F5",
+         values=merge(PLATE, bank(77, [(698.5 * r, a) for r, a in AGOGO], [1100, 1000, 550, 350], 0.2),
+                      dict(MlSt=45, NzMx=10, NzRs=300, NzFq=1200, chirp_hz=700)), free=PLATE_FREE),
+    dict(name="Zills", enum="k_Zills", ref=os.path.join(P, "059_Zills.wav"),
+         note="finger cymbals clashed: slowly beating partials from 2.5 kHz",
+         values=merge(PLATE, bank(99, [(2489.0, .65), (2470.1, 1.0), (3610.1, .41), (3639.8, .14),
+                                       (5289.9, .18), (6420.0, .1)], [2300, 2500, 2300, 2500], 0.2),
+                      dict(MlSt=50, NzMx=15, NzRs=300, NzFq=1500, chirp_hz=2500, shimmer_mix=0.1,
+                           shimmer_decay=0.9998)), free=PLATE_FREE),
+]
+
+
+# ── BrcNoise: seeds, beads and the guiro's ridges ───────────────────────────
+# The noise unit has no body: a filtered noise burst, and a gate (an enveloped
+# LFO on its level) for grains and ridges.  The rattles' accents land in their
+# first ~20 ms, as the samples' do.  Not here: the seed pods and the guiro.
+# Both were searched and stayed far from their samples (score ~1.0): the pods'
+# few large random clicks and the guiro's 1 kHz gourd ringing under its ridge
+# clicks need a body or random grains, which this engine does not have.
+NOISE = dict(MlRs=500, MlSt=40, Mdl=6, Hit=50, Rel=18, Gain=5, NzMx=95, NzRs=900, NzFl=1,
+             NzFq=550, Root=84, Dky=20, band_mix=0.7, split=0.5)
+NOISE_FREE = dict(NzRs=(100, 1000, "lin"), NzFq=(50, 1999, "log"), NzFl=(0, 2, "int"),
+                  Rel=(0, 20, "lin"), band_mix=(0.05, 1.0, "lin"), split=(0.05, 0.95, "lin"),
+                  attack_rate=(0.0005, 0.9, "log"))
+GATE_FREE = dict(gate_hz=(5, 300, "log"), gate_depth=(0.0, 0.98, "lin"))
+SPECS["noise"] = [
+    dict(name="ShkFwd", enum="k_ShakerFwd", ref=os.path.join(P, "033_ShakerFwd.wav"),
+         note="shaker, strong stroke: the seeds hit the end wall on the beat",
+         values=merge(NOISE, dict(NzFq=650, attack_rate=0.3, gate_hz=30, gate_depth=0.5, gate_decay=0.9995)),
+         free=free(NOISE_FREE, GATE_FREE)),
+    dict(name="ShkBack", enum="k_ShakerBack", ref=os.path.join(P, "034_ShakerBack.wav"),
+         note="shaker, weak stroke: a softer hit, more slide",
+         values=merge(NOISE, dict(NzFq=600, attack_rate=0.05, gate_hz=25, gate_depth=0.7, gate_decay=0.9998)),
+         free=free(NOISE_FREE, GATE_FREE)),
+    dict(name="Maracas", enum="k_Maracas", ref=os.path.join(P, "035_Maracas.wav"),
+         note="a pair of maracas: a bright seed cloud",
+         values=merge(NOISE, dict(NzFl=2, NzFq=400, attack_rate=0.02, gate_hz=40, gate_depth=0.3, gate_decay=0.9995)),
+         free=free(NOISE_FREE, GATE_FREE)),
+    dict(name="Caxixi", enum="k_Caxixi", ref=os.path.join(P, "036_Caxixi.wav"),
+         note="caxixi: seeds on the basket's hard gourd base, a sharp chk",
+         values=merge(NOISE, dict(NzFq=400, NzRs=600, Rel=16, attack_rate=0.5)),
+         free=free(NOISE_FREE)),
+    dict(name="Cabasa", enum="k_Cabasa", ref=os.path.join(P, "037_Cabasa.wav"),
+         note="cabasa: a steel bead chain twisted on a ridged cylinder",
+         values=merge(NOISE, dict(NzFl=2, NzFq=450, attack_rate=0.05, gate_hz=60, gate_depth=0.4, gate_decay=0.9995)),
+         free=free(NOISE_FREE, GATE_FREE)),
+]
+
+# ── BrcSnare: frame drum and cajón, whose snares are their identity ─────────
+SNR = dict(Mdl=5, Ptls=2, Dky=168, TbRd=8, Gain=5, MlRs=300, MlSt=28, Hit=40, Rel=9,
+           NzMx=50, NzRs=900, NzFl=2, NzFq=300, band_mix=0.45, split=0.85, wire_mix=0.6,
+           wire_onset_env=1.0, wire_onset_attack=0.0026, wire_a1=1.76, wire_a2=0.918)
+SNR_FREE = dict(modal_mix=(0.02, 1.5, "log"), NzMx=(0, 100, "lin"), NzRs=(100, 1000, "lin"),
+                NzFq=(30, 1999, "log"), Rel=(0, 20, "lin"), MlSt=(2, 50, "lin"),
+                t1=(30, 3000, "log"), t2=(30, 3000, "log"), wire_mix=(0.0, 1.0, "lin"))
+SPECS["snare"] = [
+    dict(name="BndDoum", enum="k_BendirDoum", ref=os.path.join(P, "020_BendirDoum.wav"),
+         note="bendir, centre: a large thin head on 88 Hz over its gut snares",
+         values=merge(SNR, bank(41, [(87.3, .89), (140.6, .58), (202.1, 1.0), (258.5, .29),
+                                     (317.5, .10), (372.8, .04)], [464, 458, 431, 390], 0.3),
+                      dict(MlSt=15, Hit=20)), free=SNR_FREE),
+    dict(name="BndTek", enum="k_BendirTek", ref=os.path.join(P, "021_BendirTek.wav"),
+         note="bendir, edge: the head's upper modes, the snares lighter",
+         values=merge(SNR, bank(66, [(370.0, .6), (406.5, 1.0), (431.8, .5), (487.1, .71),
+                                     (524.4, .59), (547.1, .72)], [330, 360, 347, 347], 0.3),
+                      dict(MlSt=40, Hit=70, wire_mix=0.35)), free=SNR_FREE),
+    dict(name="CajBass", enum="k_CajonBass", ref=os.path.join(P, "023_CajonBass.wav"),
+         note="cajon bass: the box's port air and the tapa's low modes",
+         values=merge(SNR, bank(40, [(82.4, 1.0), (95.2, .31), (116.5, .34), (139.5, .23),
+                                     (58.6, .15)], [292, 298, 231, 224], 0.35),
+                      dict(MlSt=8, MlRs=200, Hit=0, NzMx=20, wire_mix=0.1)), free=SNR_FREE),
+    dict(name="CajSlap", enum="k_CajonSlap", ref=os.path.join(P, "024_CajonSlap.wav"),
+         note="cajon slap: the tapa's edge with the snare wires",
+         values=merge(SNR, bank(65, [(349.2, .63), (378.3, .29), (569.5, .27), (590.3, 1.0),
+                                     (791.7, .71), (828.4, .22)], [250, 272, 182, 166], 0.3),
+                      dict(MlSt=45, Hit=70, wire_mix=0.7)), free=SNR_FREE),
+]
+
+
+# ── BrcWorld: the instruments no other family engine can make ───────────────
+# A modal bank as every modal unit has, plus the layers of
+# ../../brachetti_split/brachetti_world/voice.h (friction voice, wire, buzz, jingles,
+# particles), each switched on by its level in the preset's voicing row.
+WORLD = dict(Mdl=1, Ptls=2, Dky=160, TbRd=10, Gain=0, MlRs=800, MlSt=30, Hit=0, Mtr=0,
+             NzMx=10, NzRs=300, NzFl=0, NzFq=800, Rel=10, exc_gain=1.0)
+WORLD_FREE = dict(modal_mix=(0.01, 1.5, "log"), NzMx=(0, 100, "lin"), NzRs=(50, 1000, "lin"),
+                  NzFq=(30, 1800, "log"), MlSt=(2, 50, "lin"), exc_gain=(0.0, 2.0, "lin"))
+JINGLE_FREE = dict(jg_level=(0.05, 60.0, "log"), jg_t60_ms=(30, 600, "log"),
+                   jg_spread_ms=(30, 250, "log"), t1=(20, 2000, "log"),
+                   jg_lo_hz=(1500, 8000, "log"), jg_hi_hz=(4000, 16000, "log"),
+                   modal_mix=(0.001, 1.5, "log"))
+SPECS["world"] = [
+    dict(name="Cuica", enum="k_Cuica", ref=os.path.join(P, "031_Cuica.wav"),
+         note="cuica: the stick-slip voice, the thumb bending it up and back (the 'laugh')",
+         values=merge(WORLD, dict(Root=69, count=0, modal_mix=0.0, exc_gain=0.0,
+                                  fr_level=0.6, fr_hz=430.0, fr_rise=0.75, fr_rise_ms=120.0,
+                                  fr_fall=0.62, fr_fall_hold_ms=130.0, fr_fall_ms=270.0,
+                                  fr_hold_ms=320.0, fr_t60_ms=410.0, fr_formant1_hz=900.0,
+                                  fr_formant2_hz=1800.0, fr_noise=0.06)),
+         free=dict(fr_level=(0.05, 3.0, "log"), fr_rise=(0.2, 1.5, "lin"), fr_rise_ms=(30, 300, "log"),
+                   fr_fall=(0.1, 1.2, "lin"), fr_fall_hold_ms=(40, 300, "log"), fr_fall_ms=(60, 600, "log"),
+                   fr_hold_ms=(100, 600, "log"), fr_t60_ms=(80, 1500, "log"), fr_noise=(0.0, 0.5, "lin")),
+         track=(350, 900)),
+    dict(name="Berimbu", enum="k_Berimbau", ref=os.path.join(P, "060_Berimbau.wav"),
+         note="berimbau: a struck steel wire, its gourd swung away and back -- the 'wah'",
+         values=merge(WORLD, dict(Root=46, count=0, modal_mix=0.0, NzMx=40, NzRs=200, NzFl=2, NzFq=200,
+                                  wire_level=0.6, wire_hz=117.0, wire_t60_ms=830.0, wire_damp=0.55,
+                                  wire_burst_ms=1.0, wire_direct=0.45, gourd_hz=380.0, gourd_up_hz=520.0,
+                                  gourd_up_ms=160.0, gourd_down_hz=400.0, gourd_down_hold_ms=160.0,
+                                  gourd_down_ms=160.0, gourd_q=2.5)),
+         free=dict(wire_level=(0.05, 3.0, "log"), wire_t60_ms=(150, 3000, "log"), wire_damp=(0.1, 1.0, "lin"),
+                   wire_direct=(0.0, 1.5, "lin"), gourd_q=(1.0, 8.0, "log"), NzMx=(0, 100, "lin"),
+                   exc_gain=(0.0, 2.0, "lin"))),
+    dict(name="BerimHi", enum="k_BerimbauHi", ref=os.path.join(P, "061_BerimbauHi.wav"),
+         note="berimbau with the coin pressed on the wire: a whole tone up, shorter",
+         values=merge(WORLD, dict(Root=48, count=0, modal_mix=0.0, NzMx=40, NzRs=200, NzFl=2, NzFq=200,
+                                  wire_level=0.6, wire_hz=131.3, wire_t60_ms=460.0, wire_damp=0.5,
+                                  wire_burst_ms=1.0, wire_direct=0.45, gourd_hz=380.0, gourd_up_hz=520.0,
+                                  gourd_up_ms=160.0, gourd_down_hz=400.0, gourd_down_hold_ms=160.0,
+                                  gourd_down_ms=160.0, gourd_q=2.5)),
+         free=dict(wire_level=(0.05, 3.0, "log"), wire_t60_ms=(100, 3000, "log"), wire_damp=(0.1, 1.0, "lin"),
+                   wire_direct=(0.0, 1.5, "lin"), gourd_q=(1.0, 8.0, "log"), NzMx=(0, 100, "lin"),
+                   exc_gain=(0.0, 2.0, "lin"))),
+    dict(name="BalafnC", enum="k_BalafonC4", ref=os.path.join(P, "057_BalafonC4.wav"),
+         note="balafon, C4: a rosewood bar over a gourd with a buzzing mirliton",
+         values=merge(WORLD, bank(60, [(261.6, 1.0), (1025.6, .30), (2407.0, .06)], [550, 160, 50], 0.25),
+                      dict(MlSt=25, buzz_level=0.45, buzz_thresh=0.25, buzz_hz=1300.0, buzz_q=2.0)),
+         free=dict(WORLD_FREE, buzz_level=(0.02, 3.0, "log"), buzz_thresh=(0.02, 0.8, "lin"),
+                   t1=(100, 3000, "log"))),
+    dict(name="BalafnG", enum="k_BalafonG4", ref=os.path.join(P, "058_BalafonG4.wav"),
+         note="balafon, G4",
+         values=merge(WORLD, bank(67, [(392.0, 1.0), (1536.6, .30), (3606.4, .06)], [550, 160, 50], 0.25),
+                      dict(MlSt=25, buzz_level=0.45, buzz_thresh=0.25, buzz_hz=1300.0, buzz_q=2.0)),
+         free=dict(WORLD_FREE, buzz_level=(0.02, 3.0, "log"), buzz_thresh=(0.02, 0.8, "lin"),
+                   t1=(100, 3000, "log"))),
+    dict(name="Riq", enum="k_Riq", ref=os.path.join(P, "022_Riq.wav"),
+         note="riq: a finger 'tek' on the small head, five pairs of brass jingles bouncing",
+         values=merge(WORLD, dict(Mdl=3), bank(63, [(311.1, .5), (495.9, .45), (664.5, .4), (714.3, .35),
+                                                    (825.4, .3), (907.8, .25)], [120, 100, 90, 80], 0.2),
+                      dict(MlSt=45, Hit=60, NzMx=20, NzRs=400, NzFl=2, NzFq=500,
+                           jg_level=1.0, jg_lo_hz=4200.0, jg_hi_hz=14000.0, jg_t60_ms=140.0,
+                           jg_bounce_lo_ms=6.0, jg_bounce_hi_ms=20.0, jg_spread_ms=120.0, jg_clash_ms=1.2)),
+         free=dict(WORLD_FREE, **JINGLE_FREE)),
+    dict(name="Pandeir", enum="k_Pandeiro", ref=os.path.join(P, "030_Pandeiro.wav"),
+         note="pandeiro: the thumb on the edge, then the cupped platinelas",
+         values=merge(WORLD, dict(Mdl=3), bank(53, [(174.6, 1.0), (278.3, .6), (373.0, .5), (400.9, .3),
+                                                    (463.2, .25), (509.5, .2)], [300, 250, 200, 160], 0.3),
+                      dict(MlSt=30, Hit=50, NzMx=15, NzRs=400, NzFq=300,
+                           jg_level=0.6, jg_lo_hz=3000.0, jg_hi_hz=10000.0, jg_t60_ms=110.0,
+                           jg_bounce_lo_ms=8.0, jg_bounce_hi_ms=25.0, jg_spread_ms=100.0, jg_clash_ms=1.2)),
+         free=dict(WORLD_FREE, **JINGLE_FREE)),
+    dict(name="Shekere", enum="k_Shekere", ref=os.path.join(P, "038_ShekereHit.wav"),
+         note="shekere: the heel on the gourd's base, the bead net thrown",
+         values=merge(WORLD, bank(54, [(185.0, 1.0), (620.0, .5), (1054.0, .3), (1612.0, .15)],
+                                  [120, 50, 40, 30], 0.3),
+                      dict(MlSt=15, MlRs=400, NzMx=10, NzRs=300, NzFq=300,
+                           pt_level=0.8, pt_rate=5000.0, pt_attack_ms=2.0, pt_hold_ms=60.0, pt_t60_ms=150.0,
+                           pt_click_ms=0.3, pt_f1_hz=3300.0, pt_q1=6.0, pt_f2_hz=4600.0, pt_q2=6.0,
+                           pt_mix2=1.0, pt_direct=0.2)),
+         free=dict(WORLD_FREE, pt_level=(0.05, 4.0, "log"), pt_rate=(300, 20000, "log"),
+                   pt_hold_ms=(5, 200, "log"), pt_t60_ms=(30, 800, "log"), pt_direct=(0.0, 1.0, "lin"))),
+    dict(name="Rainstk", enum="k_Rainstick", ref=os.path.join(P, "040_Rainstick.wav"),
+         note="rainstick: pebbles cascading through the thorns of a dried cactus tube",
+         values=merge(WORLD, dict(Root=72, count=0, modal_mix=0.0, exc_gain=0.0,
+                                  pt_level=0.8, pt_rate=2600.0, pt_attack_ms=350.0, pt_hold_ms=500.0,
+                                  pt_t60_ms=2000.0, pt_click_ms=0.2, pt_f1_hz=4200.0, pt_q1=3.0,
+                                  pt_f2_hz=6500.0, pt_q2=2.5, pt_mix2=0.8, pt_direct=0.3)),
+         free=dict(pt_level=(0.05, 4.0, "log"), pt_rate=(300, 20000, "log"), pt_attack_ms=(50, 800, "log"),
+                   pt_hold_ms=(100, 1200, "log"), pt_t60_ms=(300, 4000, "log"), pt_click_ms=(0.05, 2.0, "log"),
+                   pt_direct=(0.0, 1.0, "lin"), pt_f1_hz=(1500, 9000, "log"))),
+]
+
+
+# ── BrcLippa: drums from a delay loop ─────────────────────────────────────────
+# The loop drum of ../../brachetti_split/brachetti_lippa/voice.h: a Karplus-Strong loop with a
+# Schroeder all-pass inside it, after Miguel Moreno's "Realistic drums with
+# karplus-strong synthesis" (2022).  The kit pieces are voiced after the
+# original brachetti's reference recordings, on the original_brachetti
+# branch; point BRACHETTI_ORIG at that unit as for run_equiv.sh:
+#   git worktree add /tmp/brachetti_orig origin/original_brachetti
+#   BRACHETTI_ORIG=/tmp/brachetti_orig/platform/drumlogue/brachetti python3 match_samples.py match_specs.py lippa
+# The frame drum and the surdo are voiced after Pelle e Legno samples.  Some of
+# the recordings are 44.1 kHz: match_samples.py resamples a reference to 48 kHz.
+ORIG = os.path.join(os.environ.get("BRACHETTI_ORIG", "/tmp/brachetti_orig/platform/drumlogue/brachetti"),
+                    "samples")
+# Bend, BendTm, Snares, Blend and SnrTone (VlRs', Ptls', Mdl's, NzRs' and
+# NzFl's slots) ship 0: match_samples.py writes 0 in those columns whatever
+# is here (FAMILY_ZERO).
+LOOP = dict(Dky=160, TbRd=10, Gain=0, MlRs=800, MlSt=30, Hit=0, Mtr=0, InHm=0, Rel=10,
+            NzMx=10, NzRs=300, NzFl=0, NzFq=800, count=0, modal_mix=0.0, mix=0.0, exc_gain=0.3,
+            lp_level=1.0, lp_hf=0.15, ap_ratio=0.3, ap_gain=0.3, blend=0.0,
+            exc_ratio=1.0, exc_noise=0.5, exc_noise_hz=3000.0, exc_pos=0.0, bend=0.05, bend_ms=40.0,
+            sn_level=0.0, sn_hz=3000.0, sn_q=2.0, sn_att_ms=1.0, sn_rel_ms=30.0)
+
+
+def loop_free(hz, t60):
+    """The loop's free values: its first resonance within a semitone or so of
+    the measured one, and the rest of its shape."""
+    return dict(lp_hz=(hz * 0.94, hz * 1.06, "log"), lp_t60_ms=(t60 / 4, t60 * 4, "log"),
+                lp_hf=(0.01, 1.0, "log"), ap_ratio=(0.02, 0.9, "lin"), ap_gain=(-0.9, 0.9, "lin"),
+                exc_ratio=(0.1, 2.0, "log"), exc_noise=(0.0, 3.0, "lin"),
+                exc_noise_hz=(300, 16000, "log"), exc_pos=(0.0, 0.5, "lin"), bend=(0.0, 0.6, "lin"),
+                bend_ms=(5, 300, "log"), exc_gain=(0.0, 2.0, "lin"))
+
+
+SNARES_FREE = dict(sn_level=(0.05, 8.0, "log"), sn_hz=(1500, 9000, "log"), sn_q=(0.7, 6.0, "log"),
+                   sn_rel_ms=(5, 200, "log"), blend=(0.0, 0.5, "lin"), sn_crackle=(0.0, 1.0, "lin"))
+
+
+def loop_spec(name, enum, ref, note, root, hz, t60, extra=None, free=None, late=((0.3, 1.0),),
+              sparsity=None):
+    # late: each band's decay is also compared, from the first 100 ms to
+    # 300 ms - 1 s (match_samples band_decay): a loop with too little loss
+    # rings its highs on long after a real head's have died.  Cut short where
+    # a recording is.
+    # sparsity: the snares' rattle is compared too (match_samples
+    # band_kurtosis): on by default where the preset has snares.
+    if sparsity is None:
+        sparsity = (extra or {}).get("sn_level", 0.0) > 0.0
+    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late or []), sparsity=sparsity,
+                values=merge(LOOP, dict(Root=root, lp_hz=hz, lp_t60_ms=t60), extra or {}),
+                free=merge(loop_free(hz, t60), free or {}))
+
+
+# A drum on mymembrane~ (voice.h mm::Membrane, Miguel Moreno's loop), voiced
+# against a recording: it starts from the mymembrane~ setting nearest it (the
+# help patch or a demo instrument), its frequencies scaled so its strongest
+# partial sits near the recording's (mymembrane~ sounds at 0.42-0.67 of its
+# delay frequency: the all-pass and the filters pull it down), and the spec
+# compares the periodicity too (match_samples "periodic").  Tried on the loop
+# presets that ring like strings (../../brachetti_split/brachetti_lippa/README.md); they became
+# the unit's strings instead, and this is kept for drums to come.
+MM_SETTINGS = {  # mymembrane~'s: frequency, feedback, damping, apgain, apfreq, noise; its strongest partial
+    "help": (277.6, 0.7908, 0.4409, 0.6378, 169.2, 0.1018, 186.0),
+    "demo1": (109.7, 1.0, 0.07874, 1.0, 500.0, 0.01786, 51.0),
+    "demo2": (245.3, 0.8677, 0.4016, 0.3071, 174.5, 0.1266, 108.0),
+    "demo3": (314.2, 0.9214, 0.2362, -0.5591, 257.0, 0.01156, 132.0),
+    "demo4": (134.1, 0.9838, 0.748, 0.3701, 309.4, 0.001, 86.0),
+}
+
+
+def mm_spec(name, enum, ref, note, root, pk, start, late=((0.3, 1.0),)):
+    f, fb, dmp, apg, apf, nse, mpk = MM_SETTINGS[start]
+    k = pk / mpk
+    return dict(name=name, enum=enum, ref=ref, note=note, late=list(late), periodic=True,
+                values=merge(LOOP, dict(Root=root, lp_level=0.0, mm_level=1.0, mm_hz=f * k,
+                                        mm_feedback=fb, mm_damping=dmp, mm_apgain=apg,
+                                        mm_apf_hz=apf * k, mm_snares=0.0, exc_gain=0.0)),
+                free=dict(mm_hz=(f * k * 0.7, f * k * 1.4, "log"), mm_feedback=(0.5, 1.0, "lin"),
+                          mm_damping=(0.0, 1.0, "lin"), mm_apgain=(-1.0, 1.0, "lin"),
+                          mm_apf_hz=(apf * k * 0.33, min(apf * k * 3.0, 20000.0), "log")))
+
+
+def string_spec(name, enum, ref, note, root, t60, extra=None):
+    """One of the loop presets that ring like strings: voiced as drums after
+    `ref`, kept as string instruments, tuned to the root note (440 Hz at 69)
+    and with the pitch pinned there, so a search cannot detune them.  The
+    score is still against the drum: a search would pull a string back
+    towards it, so a better string needs a new spec (a string's recording)."""
+    s = loop_spec(name, enum, ref, note, root, 440.0 * 2.0 ** ((root - 69) / 12.0), t60, extra)
+    del s["free"]["lp_hz"]
+    return s
+
+
+SPECS["lippa"] = [
+    loop_spec("Snare", "k_Snare", os.path.join(ORIG, "acoustic-snare.wav"),
+              "acoustic snare: the head through an all-pass, the wires on its motion", 60, 264.0, 300.0,
+              dict(sn_level=1.0), SNARES_FREE),
+    loop_spec("SnrHvy", "k_SnareHeavy", os.path.join(ORIG, "snare heavy.wav"),
+              "heavy snare: a deep, slack snare struck hard", 47, 127.0, 260.0,
+              dict(sn_level=1.0, bend=0.08), SNARES_FREE, late=None),   # the recording is 0.25 s
+    loop_spec("Bendir", "k_Bendir", os.path.join(P, "020_BendirDoum.wav"),
+              "bendir: a frame drum with a snare string across the head", 41, 87.0, 350.0,
+              dict(sn_level=0.3), merge(SNARES_FREE, dict(lp_hz=(78.0, 215.0, "log"))),
+              late=((0.2, 0.42),)),   # the recording is 0.43 s
+]
+
+# BrcPizzico's strings: voiced in BrcLippa as drums after these recordings,
+# then moved (string_spec pins each at its root's pitch).
+SPECS["pizzico"] = [
+    string_spec("Harp", "k_Harp", os.path.join(ORIG, "Tom1-001-CloseRoom.wav"),
+                "harp: a gut string plucked, warm, half a second (voiced as a drum)", 59, 600.0),
+    string_spec("Oud", "k_Oud", os.path.join(ORIG, "Tom2-004-CloseRoom.wav"),
+                "oud: a fretless lute's string, warm, a second, the pitch settling after the pluck (voiced as a drum)",
+                52, 1200.0, dict(bend=0.1)),
+    string_spec("Fretls", "k_Fretless", os.path.join(ORIG, "KickA-Hard-012-CloseRoom.wav"),
+                "fretless bass: a low string thumbed hard, its pitch dropping into the note (voiced as a drum)",
+                39, 450.0, dict(bend=0.5, MlSt=45)),
+    string_spec("Guitar", "k_Guitar", os.path.join(ORIG, "Taiko-Hit.wav"),
+                "guitar: a low string, the brightest and longest of these (voiced as a drum)", 42, 1500.0,
+                dict(bend=0.08)),
+    string_spec("BassPiz", "k_BassPizz", os.path.join(P, "027_SurdoOpen.wav"),
+                "double bass pizzicato: very dark, about 0.6 s (voiced as a drum)", 34, 900.0),
+]
+
+
+
+
+# ── BrcCordiera: the wires ───────────────────────────────────────────────────────
+# BrcSnare's eight snares and BrcWorld's two berimbaus, copied as they are
+# (../../brachetti_split/brachetti_cordiera/README.md: bit-identical with the new layers off), so
+# a spec starts from the preset's own rows, read from presets.h, and frees only
+# what BrcCordiera adds: the wires on the head (head_follow, head_rel_ms,
+# head_crackle) on the snares, the wire's stiffness (bw_stiff, bw_stages) on
+# the berimbaus.  Every other value stays as voiced.
+import re as _re
+
+_KNOB_COLS = ["Prg", "Root", "Ply", "Vel", "Ton", "Cut", "Rsnc", "Gain",
+              "MlRs", "MlSt", "VlRs", "VlSt", "Ptls", "Mdl", "Dky", "Rel",
+              "Mtr", "Hit", "InHm", "TbRd", "NzMx", "NzRs", "NzFl", "NzFq"]
+_MODAL_COLS = ["r2", "r3", "r4", "t1", "t2", "t3", "t4", "mix", "e1", "e2", "e3", "e4",
+               "count", "r5", "r6", "e5", "e6"]
+
+
+def _cvalue(tok):
+    """A C initialiser to a number: 1.5f, 3, brc::phase_inc(175.0f)."""
+    tok = tok.strip()
+    m = _re.match(r"brc::phase_inc\((.*)\)$", tok)
+    if m:
+        return 2.0 * math.pi * _cvalue(m.group(1)) / SR
+    return float(tok.rstrip("fF"))
+
+
+def _rows(block):
+    block = _re.sub(r"/\*.*?\*/", "", block, flags=_re.S)
+    block = _re.sub(r"//[^\n]*", "", block)
+    return [[_cvalue(x) for x in r.split(",") if x.strip()] for r in _re.findall(r"\{([^{}]*)\}", block)]
+
+
+def unit_rows(unit_dir, enum):
+    """A preset's values as its unit ships them: the knob row, the modal bank,
+    the voicing (in VOICING_FIELDS order), the displaced Partls."""
+    text = open(os.path.join(unit_dir, "presets.h")).read()
+    enums = [l.strip().split(",")[0].split("=")[0].strip()
+             for l in text[text.index("enum Preset"):text.index("    kNumPresets")].splitlines()
+             if l.strip().startswith("k_")]
+    i = enums.index(enum)
+
+    def table(marker):
+        a = text.index(marker)
+        a = text.index("{", text.index("=", a))
+        return _rows(text[a + 1:text.index("\n};", a)])
+
+    import importlib.util as _iu
+    _sp = _iu.spec_from_file_location("_ms", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                          "match_samples.py"))
+    _ms = _iu.module_from_spec(_sp)
+    _sp.loader.exec_module(_ms)
+    v = dict(zip(_KNOB_COLS, table("kPresetKnobs[kNumPresets]")[i]))
+    v.update(zip(_MODAL_COLS, table("kModalConfigs[kNumPresets]")[i]))
+    v.update(zip(_ms.VOICING_FIELDS["cordiera"], table("kVoicing[kNumPresets]")[i]))
+    m = _re.search(r"kShippedPartls\[kNumPresets\] = \{([^}]*)\}", text)
+    v["Ptls"] = float(m.group(1).split(",")[i])
+    return v
+
+
+CORDIERA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "brachetti_split", "brachetti_cordiera")
+# The Pelle e Legno kit and the original's recordings have none of BrcCordiera's
+# instruments, so they were voiced to measured targets instead
+# (../../brachetti_split/brachetti_cordiera/README.md, "How the instruments were voiced");
+# unit_rows() above reads their rows for a spec once a reference exists.
+SPECS["cordiera"] = []
