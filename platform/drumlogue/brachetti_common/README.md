@@ -2,15 +2,19 @@
 
 > **Disclaimer:** the Brachetti units are unofficial, independently developed units, not affiliated with or supported by KORG. Provided "as is" with no guarantee of correct operation; the developer(s) and distributor(s) accept no liability for any damage, defect, or problem resulting from their use. See the [repository disclaimer](../../../README.md#disclaimer) for full terms.
 
-The code the twelve Brachetti family units share: [`brachetti_kick`](../brachetti_kick/),
-[`brachetti_tom`](../brachetti_tom/), [`brachetti_kernel`](../brachetti_kernel/),
-[`brachetti_snare`](../brachetti_snare/), [`brachetti_bar`](../brachetti_bar/),
-[`brachetti_plate`](../brachetti_plate/), [`brachetti_cymbal`](../brachetti_cymbal/),
-[`brachetti_noise`](../brachetti_noise/), [`brachetti_world`](../brachetti_world/),
-[`brachetti_lippa`](../brachetti_lippa/), [`brachetti_pizzico`](../brachetti_pizzico/) and [`brachetti_cordiera`](../brachetti_cordiera/) (see
-[the Brachetti family](../tools/brachetti_equiv/README.md)).  It is not a unit:
-there is no Makefile here, so `build -l` does not list it.  Units include its
-headers by relative path (`#include "../brachetti_common/knobs.h"`), which
+The code the twelve Brachetti family units share: [`brachetti_kick`](../brachetti_split/brachetti_kick/),
+[`brachetti_tom`](../brachetti_split/brachetti_tom/), [`brachetti_kernel`](../brachetti_split/brachetti_kernel/),
+[`brachetti_snare`](../brachetti_split/brachetti_snare/), [`brachetti_bar`](../brachetti_split/brachetti_bar/),
+[`brachetti_plate`](../brachetti_split/brachetti_plate/), [`brachetti_cymbal`](../brachetti_split/brachetti_cymbal/),
+[`brachetti_noise`](../brachetti_split/brachetti_noise/), [`brachetti_world`](../brachetti_split/brachetti_world/),
+[`brachetti_lippa`](../brachetti_split/brachetti_lippa/), [`brachetti_pizzico`](../brachetti_split/brachetti_pizzico/) and [`brachetti_cordiera`](../brachetti_split/brachetti_cordiera/) (see
+[the Brachetti family](../tools/brachetti_equiv/README.md)), all in
+[`brachetti_split`](../brachetti_split/), and the [`brachetti`](../brachetti/README.md)
+unit that plays all twelve families as its presets (it compiles every
+family's code in one translation unit, each inside a namespace of its own).
+It is not a unit: there is no Makefile here, so `build -l` does not list it.
+Units include its headers by relative path (`#include "../../brachetti_common/knobs.h"`
+from a family unit, `"../brachetti_common/knobs.h"` from `brachetti`), which
 works the same in the SDK's Docker build, in `arm_size.sh` and in the
 equivalence driver.
 
@@ -38,6 +42,8 @@ every helper, what it does and which units use it.
 | `models.h` | the Model knob |
 | `modal_bank.h` | the six-mode bank and the knobs that shape it |
 | `modal_synth.h` | `ModalSynth`: the engine of the eight modal units |
+| `ring_over.h` | `RingOver`: two copies of a unit's engine, so a Program change lets the ringing sound ring out; it also applies the panel's knob steps |
+| `knob_steps.h` | the knobs the panel steps more coarsely than the engine stores (Cutoff, NzFltFrq: 0.1 kHz) |
 | `float_math.h`, `filter.h`, `envelope.h` | the original's support headers: fast math approximations, the TPT state-variable filter, the AR/ADSR envelope |
 
 ## Helper index
@@ -145,6 +151,10 @@ unit.
 | `shape_modal`, `strike_modal`, `ModalShape`, `ModalKnobs`, `format_mode_count` | `modal_bank.h` | the knobs on the bank, before and at the strike; Partls' display | library (`ModalSynth`) |
 | `ModalLayout`, `kModalHostKnobs`, `kFamilyKnob`, `ModalSynth` | `modal_synth.h` | the 24-knob layout (the common pages, then the standard dedicated set) and the engine of the eight modal units | kick, tom, snare, bar, plate, world, lippa, pizzico, cordiera |
 
+| `KnobStep`, `knob_step`, `header_to_engine`, `engine_to_header` | `knob_steps.h` | Cutoff and NzFltFrq: 1-200 on the panel (0.1 kHz), the engine's /10 value behind it | every unit through `RingOver`; equiv_driver |
+| `RingOver<Synth>` | `ring_over.h` | two copies of the engine: on a Program change while one sounds, the other takes the new instrument and the first rings out under its own settings, within one instrument's voice budget (each strike of the new instrument fades the old copy's oldest voice first); an engine with file-scope buffers gives each copy its own (`SetBank`); the engine provides `LiveVoices()`, `VoiceBudget()`, `FadeOldestVoice()` | every unit's `unit.cc` and Brachetti (lippa, pizzico, cordiera and world have `SetBank`) |
+| `live_voices`, `fade_out_oldest`, `VoiceBase::age` | `voice_base.h` | the voice budget across a ring-over: voices ringing and not fading; the oldest of them out with the preset-change fade | library (`ModalSynth`), noise, cymbal |
+
 `ModalSynth` also hands its units these building blocks for their `NoteOn`:
 `strike_velocity`, `allocate_voice`, `shape_exciter`, `modal_knobs`,
 `strike_modal_bank` and `load_modal_bank`.
@@ -237,12 +247,15 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
   A change in this folder reaches every unit, so check all twelve:
 
       cd ../tools/brachetti_equiv
-      for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_$u; done
+      for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_split/brachetti_$u; done
 
   and BrcWorld and BrcLippa, which have no original, against renders of
   themselves made before the change (`preset_probe render`); BrcPizzico and
   BrcCordiera likewise; BrcLippa's mymembrane~ presets also against Pd
   (`../tools/brachetti_equiv/mymembrane_check.py`).
+
+  Then `./brachetti_check.sh`: Brachetti must still play all twelve
+  families bit for bit as the family units.
 
   A knob a unit relabelled is compared under its original name
   (`../tools/brachetti_equiv/aliases.txt`); a family knob, which has no
@@ -267,9 +280,12 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
 - **Per-sample code must stay inline.**  GCC's size heuristics can leave a
   method the render loop calls every sample out of line, which costs a call
   per sample and shows up in `arm_cpu.sh` (the plate's `excite()` did, at
-  +1.7 %).  Mark such a method `force_inline` (the SDK's
-  `common/attributes.h`), and compare `arm_cpu.sh` before and after any change
-  to code a render loop runs.
+  +1.7 %).  In Brachetti, where nine families call the same library code, GCC
+  (`-Os`) kept ALL of it out of line: +20 % per voice, enough with a ring-over
+  to stop the drumlogue's audio.  So every per-sample function in this library
+  is `force_inline` (the SDK's `common/attributes.h`): a new one must be too.
+  Compare `arm_cpu.sh` before and after any change to code a render loop runs,
+  and `unit_cycles.sh` on Brachetti against the family unit (the same cost).
 - **Nothing shared between units.**  A static local of an inline function or
   a template — a table, a buffer — gets GCC's `STB_GNU_UNIQUE` binding, and
   the dynamic loader keeps ONE copy of a unique symbol for every library that
@@ -279,9 +295,15 @@ block (see [Using and adding helpers](#using-and-adding-helpers)).
   buffers live at namespace scope with `static` (each unit's `kPresetNames`,
   `kModelNames`, ...) or in a `static` function (`knob_text`).
   `arm_size.sh` fails a unit that has a unique symbol, and
-  [`multi_load.sh`](../tools/brachetti_equiv/multi_load.sh) loads all twelve
-  units into one process and checks every display string against the unit
+  [`multi_load.sh`](../tools/brachetti_equiv/multi_load.sh) loads Brachetti
+  and all twelve family units into one process and checks every display string against the unit
   loaded alone.
+- **Include guards, not namespaces, keep the library single.**  Brachetti
+  includes every header here at global scope and then each family's
+  `synth_engine.h` inside `namespace fam_<family>`; the `#pragma once` of a
+  library header is what stops a family's own `#include` of it from
+  declaring it again inside that namespace.  Keep `#pragma once` on every
+  header, and add a new header to Brachetti's `families.h` list.
 - **No constructors.**  Plain structs with default member initialisers, no
   virtual functions, no heap: each unit's global synth object stays
   constant-initialised and loads from the ELF instead of being built at run

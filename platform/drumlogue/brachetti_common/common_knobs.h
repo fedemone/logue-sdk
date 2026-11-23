@@ -40,7 +40,7 @@ struct CommonLayout {
 // preset's gain staging).  A unit's own host-knob table starts with these.
 #define BRC_COMMON_HOST_KNOBS                                   \
     { brc::CommonLayout::k_paramPitch,    0    },               \
-    { brc::CommonLayout::k_paramPoly,     4    },               \
+    { brc::CommonLayout::k_paramPoly,     2    },               \
     { brc::CommonLayout::k_paramVelocity, 0    },               \
     { brc::CommonLayout::k_paramTone,     0    },               \
     { brc::CommonLayout::k_paramCutoff,   1999 },               \
@@ -52,7 +52,7 @@ static const HostKnob kCommonHostKnobs[] = { BRC_COMMON_HOST_KNOBS };
 struct CommonKnobs {
     SequencerNote note;       // Pitch: the preset's root + the knob
     VelocityBias  velocity;   // Velocity
-    uint8_t       poly = 4;   // Poly: voice cap 1-4
+    uint8_t       poly = 2;   // Poly: voice cap 1-4 (2 by default)
 
     // A common knob (Pitch … Gain; Program is the unit's: it loads a preset)
     // into its state.  Returns the value the host should read back.

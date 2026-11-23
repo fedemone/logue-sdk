@@ -18,6 +18,7 @@
 // master_env holds every voice at 1.0 while it plays (the ring length is the
 // voice's own decay); only AllNoteOff releases it, at the rate set_release_time
 // derives from the Dkay knob.
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cstddef>
 #include <cstdint>
 #include "dsp_math.h"
@@ -204,7 +205,7 @@ struct Exciter {
     // Computes the burst's parts; false (and nothing consumed from the noise
     // generator) once both envelopes are closed.  noise_out_sample is reset
     // here and set by the caller from noise_sum().
-    bool noise_burst(NoiseBurst& b) {
+    force_inline bool noise_burst(NoiseBurst& b) {
         noise_out_sample = 0.0f;
         b.env_low  = noise_env.process();
         b.env_high = noise_env_hi.process();
@@ -225,14 +226,14 @@ struct Exciter {
         return false;
     }
 
-    float noise_sum(const NoiseBurst& b) const {
+    force_inline float noise_sum(const NoiseBurst& b) const {
         return (b.low_part + b.high_part) * noise_decay_coeff;
     }
 
     // The mallet strike, then the sample clock.  The two poles stop updating
     // once the second has decayed (1e-6 is far above the denormal range and
     // inaudible), which saves the CPU for the rest of the voice's life.
-    float mallet() {
+    force_inline float mallet() {
         float out = 0.0f;
         if (current_frame == 0 || mallet_lp2 > 1e-6f) {
             const float impulse = (current_frame == 0) ? 1.0f : 0.0f;
@@ -245,13 +246,13 @@ struct Exciter {
     }
 
     // The whole exciter for units that use the burst as it is.
-    float process() {
+    force_inline float process() {
         NoiseBurst b;
         if (noise_burst(b)) noise_out_sample = noise_sum(b);
         return mallet();
     }
 
-    bool finished() const {
+    force_inline bool finished() const {
         return mallet_lp2 < 1e-6f && noise_env.state == ENV_IDLE && noise_env_hi.state == ENV_IDLE;
     }
 };

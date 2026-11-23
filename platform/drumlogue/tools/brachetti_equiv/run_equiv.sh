@@ -7,8 +7,8 @@
 # (so it only uses what the family exposes, by name), plays it through both and
 # diffs the per-render hashes.  Exit 0 = identical on every render.
 #
-#   ./run_equiv.sh ../../brachetti_kick
-#   ./run_equiv.sh ../../brachetti_kick --fuzz 400 --seed 7
+#   ./run_equiv.sh ../../brachetti_split/brachetti_kick
+#   ./run_equiv.sh ../../brachetti_split/brachetti_kick --fuzz 400 --seed 7
 #
 # The work directory is removed after an IDENTICAL run unless KEEP_WORK=1
 # (or EQUIV_WORK names it).

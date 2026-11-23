@@ -31,7 +31,7 @@ name="$(basename "$family")"
 work="${EQUIV_WORK:-$(mktemp -d)}"
 mkdir -p "$work"
 ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
-OPT="-Os -pipe -ffast-math -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 \
+OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector -fstrict-aliasing -falign-functions=16 \
      -fno-math-errno -fomit-frame-pointer -finline-limit=2000000000 \
      --param max-inline-insns-single=2000000000"
 build() {

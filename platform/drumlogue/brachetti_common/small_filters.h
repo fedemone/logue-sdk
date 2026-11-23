@@ -11,6 +11,7 @@
 //
 // Every helper is the exact arithmetic the units used inline before, so
 // replacing an inline step with it changes no output.
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cmath>
 #include "dsp_math.h"
 
@@ -18,14 +19,14 @@ namespace brc {
 
 // One step of a one-pole low-pass: state += a·(x − state); returns the state.
 // a in (0, 1]: 1 passes x through, small values smooth harder.
-inline float one_pole_lp(float x, float a, float& state) {
+force_inline float one_pole_lp(float x, float a, float& state) {
     state += a * (x - state);
     return state;
 }
 
 // One step of a one-pole high-pass: x minus its one-pole low-pass (the state
 // is the low-pass).  Two in cascade make a 12 dB/oct DC blocker.
-inline float one_pole_hp(float x, float a, float& state) {
+force_inline float one_pole_hp(float x, float a, float& state) {
     state += a * (x - state);
     return x - state;
 }
@@ -54,7 +55,7 @@ struct Resonator2 {
         a2 = r * r;
     }
 
-    float ring(float x) {
+    force_inline float ring(float x) {
         const float w = x + (a1 * z1) - (a2 * z2);
         z2 = z1;
         z1 = w;

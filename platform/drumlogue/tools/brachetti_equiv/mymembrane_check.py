@@ -84,7 +84,7 @@ def main():
     work = tempfile.mkdtemp(prefix="mmcheck_")
     ok = True
     try:
-        unit = os.path.join(DRUM, "brachetti_lippa")
+        unit = os.path.join(DRUM, "brachetti_split", "brachetti_lippa")
         probe = os.path.join(work, "probe")
         subprocess.run(["g++", "-std=c++17", "-O2", "-w", "-I" + unit, "-I" + DRUM,
                         "-I" + os.path.join(DRUM, "common"), "-DRUNTIME_COMMON_H_",

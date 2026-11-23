@@ -25,6 +25,7 @@
 // MasterControls is the knob half on its own, for a unit that runs its own
 // stage (brachetti_kernel); the output helpers are free functions so such a
 // stage can use them too.
+#include "attributes.h"   // force_inline: per-sample code stays inline in every unit
 #include <cstddef>
 #include <cstdint>
 #include "dsp_math.h"
@@ -43,7 +44,7 @@ constexpr float kToneLpMix   = 0.3f;
 constexpr float kToneCutDiv  = 0.1f;          // 1 / 10
 constexpr float kToneBoostDiv = 0.13333334f;  // 1 / 7.5
 
-inline float tone_tilt(float x, float& lp, float tone) {
+force_inline float tone_tilt(float x, float& lp, float tone) {
     lp = (x * kToneLpMix) + (lp * (1.0f - kToneLpMix));
     if (tone < 0.0f) return x + (lp - x) * (-tone * kToneCutDiv);
     return x + (x - lp) * (tone * kToneBoostDiv);
@@ -52,7 +53,7 @@ inline float tone_tilt(float x, float& lp, float tone) {
 // ── Output helpers ──────────────────────────────────────────────────────────
 // The last safety clamp before the DAC: ±0.99.
 constexpr float kBrickwall = 0.99f;
-inline float brickwall(float x) { return clampf(x, -kBrickwall, kBrickwall); }
+force_inline float brickwall(float x) { return clampf(x, -kBrickwall, kBrickwall); }
 
 // A peak limiter on one sample: |x| <= thr passes untouched, the excess bends
 // onto thr + span·tanh((|x| − thr)·inv_span), keeping the sign.  span and
@@ -78,7 +79,7 @@ inline void soft_saturate_bus(float* out, size_t frames, float amount) {
 }
 
 // The mono result to both channels of an interleaved stereo buffer.
-inline void write_stereo(float* out, size_t frame, float x) {
+force_inline void write_stereo(float* out, size_t frame, float x) {
     out[frame * 2]     = x;
     out[frame * 2 + 1] = x;
 }
@@ -200,7 +201,7 @@ struct MasterStage : MasterControls {
         return false;
     }
 
-    float limit(float x) {
+    force_inline float limit(float x) {
         const float ax = fabsf(x);
         lim_env = (ax > lim_env) ? ax : lim_env + (ax - lim_env) * kLimRelCoef;
         const float a = lim_env;

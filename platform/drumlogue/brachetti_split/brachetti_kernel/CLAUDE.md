@@ -1,0 +1,94 @@
+# Brachetti Kernel – Session Brief
+
+`brachetti_kernel` (`BrcKernel` on the drumlogue) is one of the eight per-
+family units split out of the 40-preset original `brachetti` unit (now on the `original_brachetti` branch).  It holds Timpani
+and Taiko on the dense coupled-resonator drum kernel, and nothing else.
+README.md lists the presets and what every knob does.
+
+## Before changing anything
+
+- **The original is the reference.**  At the shipped knob values every preset
+  here renders bit-identically to the same preset in the original (`BRACHETTI_ORIG`: README of tools/brachetti_equiv).  Check it
+  after any refactor (a refactor must keep it IDENTICAL):
+
+      cd ../../tools/brachetti_equiv && ./run_equiv.sh ../../brachetti_split/brachetti_kernel
+
+  Once you change the voicing on purpose it will start to differ — that is
+  expected, and the listing then names exactly the presets and knobs that
+  moved.  Say so in the commit.
+- **Shared code.**  This folder holds the family (`presets.h`,
+  `modal_drum_kernel.h`, `synth_engine.h`); what the family units share is in
+  `../../brachetti_common`, whose README has the rules and an index of every
+  helper: look there before writing one.  Each file's `From brachetti_common`
+  block lists the helpers it uses (`../../tools/brachetti_equiv/lib_uses.py
+  --write` keeps it true, `--check` verifies it).  A change in the library
+  reaches all eight units: run `run_equiv.sh` on each.  A fix that also applies
+  to the original must be made there separately.
+- **REFERENCE ANCHORS.**  LoadPreset captures each knob's shipped value into
+  `m_anchor` through the same `knob::` function the mapping reads; every knob
+  mapping is a function of the DELTA from it, built so the delta 0 gives
+  exactly the shipped sound (`knob_exp2(0)` is exactly 1.0 — `fasterpow2f(0)`
+  is not).  A new mapping must be anchored the same way, or the presets move.
+- **Knobs: common, then dedicated.** Pages 1-2 (slots 0-7) are the common
+  knobs (`../../brachetti_common/common_knobs.h`: `brc::CommonKnobs` handles
+  them), the same on all twelve units; the pages after them are this family's.
+  `ParamIndex` (`presets.h`) must match `header.c` slot for slot (a
+  static_assert checks the count; the order is on you), header defaults must
+  equal preset 0's row, and `kHostKnobs` (`presets.h`) must match the defaults
+  of the knobs LoadPreset skips (Pitch, Velocity, Tone, Cutoff, Resnc and
+  VlMllRes — static_asserts pin their table columns).  Poly's slot is blank
+  (`k_paramNoPoly`), and slot 19 is `Punch`.  A knob relabelled in `header.c`
+  is listed in `../../tools/brachetti_equiv/aliases.txt`, so `run_equiv.sh` still
+  compares it with the original; a knob with a new job is left out of the
+  comparison and named.
+- **Punch** is the shared transient shaper (`brc::Punch`, `voice_layers.h`):
+  triggered at the end of NoteOn, applied right after `follow_and_gate` (the
+  kernel: on the unit's output, in `master()`).  At 0 it is skipped entirely,
+  so every preset renders byte-identically; keep it that way.
+- **Ringing on.**  `unit.cc` runs the engine as `brc::RingOver` (two copies,
+  `../../brachetti_common/ring_over.h`): a Program change while a sound rings
+  lets it ring out.  The engine itself is unchanged, so `run_equiv.sh` (which
+  drives it directly) still compares it with the original; the ring-over is
+  checked by `brachetti_check.sh`.  A buffer outside the class (a delay line)
+  needs one bank per copy (`SetBank`, as in BrcLippa).
+  The two copies share the kernel's aggregate bound — one full bank — the
+  old copy's full kettle damped to its skeleton by the new instrument's
+  strike (`ModalDrumKernel::FullBanks` / `DampOldestFull`, the same fill
+  damping as `HandOverBank`); `ring_budget_check.sh` must pass.
+- **Also played by [`brachetti`](../../brachetti/README.md)**, which compiles this
+  family's `synth_engine.h` inside a namespace (`fam_<family>`) as one of its
+  twelve presets.  So: no bare `::` before a family name, and a new
+  `#include` from outside this folder must also go in `../../brachetti/families.h`.
+  After a change here run `../../tools/brachetti_equiv/brachetti_check.sh` too
+  (it must stay IDENTICAL: Brachetti plays this family bit for bit as this unit).
+- **Nothing shared between units.**  The drumlogue loads several units into one
+  process, and a static local of an inline function or template (a table, a
+  buffer) becomes an STB_GNU_UNIQUE symbol the loader shares among all of
+  them: the family units once all showed the first-loaded unit's Program
+  names.  Keep tables at namespace scope with `static` (as `kPresetNames` in
+  `presets.h`) and build display strings in `brc::knob_text`.  `arm_size.sh`
+  fails a unit with a unique symbol; `multi_load.sh` checks the units loaded
+  together.
+- **Exact math for coefficients.**  Tuning and decay coefficients use exact
+  `expf` / `cosf` / `exp2f`: the `faster*` approximations in `float_math.h`
+  are badly wrong for small arguments and shift low mode frequencies.
+- **Memory layout.**  No user-defined constructors: the global synth object
+  must stay constant-initialised (it then loads from the ELF instead of being
+  built at run time).  Check `arm_size.sh` after adding members or tables.
+- No voice engine: Timpani and Taiko run on `ModalDrumKernel`
+  (`modal_drum_kernel.h`, tables in `modal_drum_data.h`) with its own master
+  stage.  NoteOff, GateOff, AllNoteOff and PitchBend do nothing — the kettles
+  ring out under their measured decays; Reset / Suspend silence them.
+- Only one kettle runs a full bank at a time (the aggregate cost bound in
+  `modal_drum_kernel.h`): two full banks measured ~110 µs/block, about twice
+  what is known to run on the drumlogue.
+
+## Measure, do not assume
+
+- ARM sizes: `../../tools/brachetti_equiv/arm_size.sh .`
+  (shipped: .text 11188 · .rodata 31256 · .data.rel.ro 144 · .data 4 · .bss 15696).
+- NEON paths on ARM (qemu): `../../tools/brachetti_equiv/arm_equiv.sh . --fuzz 20 --knob-points 1`
+- Dead knobs: build `../../tools/brachetti_equiv/equiv_driver.cpp` against this
+  unit and run `dead_params.py` on it.
+
+Not yet run on hardware.

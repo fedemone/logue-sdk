@@ -234,6 +234,13 @@ public:
     // A family knob's display string (strings-type knobs only).
     static const char* family_knob_text(uint8_t slot, int32_t value) { (void)slot; (void)value; return nullptr; }
 
+    // ── The voice budget across a ring-over (brachetti_common/ring_over.h) ──
+    // RingOver keeps the voices of its two copies within one Poly: before a
+    // strike of the new instrument it fades the old copy's oldest voices.
+    uint8_t LiveVoices() const  { return live_voices(m_voices); }
+    uint8_t VoiceBudget() const { return m_common.poly; }
+    void FadeOldestVoice()      { fade_out_oldest(m_voices); }
+
     // ==========================================================================
     // Notes (the unit supplies NoteOn: its family's strike)
     // ==========================================================================
