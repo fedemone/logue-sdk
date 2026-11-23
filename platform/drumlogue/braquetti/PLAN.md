@@ -6,8 +6,9 @@ instrument (Program) of that family.  The sequencer follows the drumlogue's
 own sequencer through the Multi-engine part's gates.
 
 This file holds what the hardware showed (SeqProbe, two runs), the design
-that follows from it, and the open items.  The sequencer core is built and
-host-tested; the unit around it is not.
+that follows from it, and the open items.  The unit is built and
+host-tested ([README.md](README.md) is its user guide); it has not run on a
+drumlogue yet.
 
 ## What the drumlogue does (SeqProbe)
 
@@ -78,18 +79,27 @@ What that means:
   (three times the memory, and the four delay-line families made to hold six
   copies instead of two).
 - **A strike** sets the family's `Program` to the step's instrument, then
-  gates it at the step's velocity: the family's ring-over lets the previous
-  instrument ring on.  The instruments play at their shipped knob values
-  (no sound design in Braquetti).
+  gates it, exactly as Brachetti's Program knob and gate do: the family's
+  ring-over lets the previous instrument ring on.  It strikes at the gate's
+  velocity, except that an accent (the bar mark) strikes as a normal trig
+  (64).  The instruments play at their shipped knob values (no sound design
+  in Braquetti).  Every engine call happens on the audio thread, at the
+  start of a block, from the hit queue.
 - **Render**: every family still sounding renders into a scratch buffer and
   is summed (as Brachetti renders a family left ringing); one limiter on the
   sum.  A lane's level scales its family's output while that lane owns it.
-- **CPU**: Brachetti's guarantee is one instrument's voices per family.
-  Three lanes on three families can sound three families at once, so each
-  family's `Poly` is set to 1 in Braquetti (a new hit fades the previous
-  one, a drum machine's choke): three voices in all, plus what rings over.
-  Measure with `tools/brachetti_equiv/unit_cycles.sh` before calling it safe,
-  the Kernel (two kettles, no Poly) on all three lanes first.
+- **CPU**: Brachetti's guarantee is one instrument's voices per family;
+  three lanes can sound three families at once.  A voice count is not
+  enough (a Timpani kettle costs three snares), so each family's voices
+  count at its measured cost (35 instruments measured over their attack,
+  the heaviest per family), and before a strike the costliest other family
+  fades its oldest voice until the strike fits a budget of 1,800 estimated
+  cycles per frame.  Each family keeps its Poly 2, so two lanes on one
+  family both sound.  README.md, "CPU", has every measurement: a light beat
+  ~980, busy mixes up to ~2,200, and the Timpani the exception (its skeleton
+  rings on and costs ~1,600 whenever it sounds, unseen and unfadeable), up
+  to ~2,755 with Gong and MmFloor on every 16th at 240 BPM: between the
+  ~2,080 known to run and the ~3,400 known to stop the audio.
 
 ### Clock
 
@@ -121,7 +131,8 @@ the pattern store and the song mode.
 - [ ] Test the store gesture (Keeping a pattern, 1).
 - [x] Align with Brachetti on main: the catalog is Brachetti's family table (12 families, 114 instruments).
 - [x] Sequencer core, host-tested: the pattern, step turns, the restore guard, the clock (below).
-- [ ] The unit: header.c, the callbacks, hits routed to the family engines, the mix; sizes (`arm_size.sh`) and CPU (`unit_cycles.sh`), then hardware.
+- [x] The unit: header.c, the callbacks, hits routed to the family engines, the mix, the CPU budget; its size (Brachetti's plus 1.4 KB) and CPU (README.md).
+- [ ] Hardware: does it load and play in time; then the CPU stress: lanes Timpni / Gong / MmFloor on every step, at 120 then 240 BPM (README.md, "CPU").  If the audio clicks or stops, skip the other lanes' hits while a Timpani rings.
 - [ ] Song mode through the drumlogue's chain, if the store gesture works.
 
 ## Code so far
@@ -131,8 +142,9 @@ the pattern store and the song mode.
 | `seq_core.h` | `brq::Sequencer<Catalog>`: three lanes × 16 steps; the knobs (steps, Lane, Family, Level read as turns, the overview bitmap, 8-character texts); the restore guard (a burst of sets, or sets right after a preset load, edits nothing and undoes the turn it started with); the clock (one gate per step, an accent or the first gate after a reset is step 1); `HitQueue`, the lock-free hand-off from gates to the audio thread.  No constructor, no heap, no clock of its own |
 | `catalog.h` | The lanes' families and instruments, read from Brachetti's family table (`../brachetti/brachetti_synth.h`); including it brings Brachetti's engines in (the pool above; link `../brachetti/family_headers.c`).  The core reads only `kFamilies`, `kMaxPrograms`, `family_name`, `programs`, `program_name`, `default_family`.  Defaults: lane A Kick, B Snare, C Noise |
 | `test/catalog_test.cc` | The catalog with Brachetti's engines compiled in: the 12 families and their counts (114), every name within 8 characters, the core driving Tom to its 32nd instrument and a family change on the real table |
-| `test/core_test.cc`, `test/run_core_test.sh` | Host test, on a small catalog of its own (no engines): defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, the queue, and gates on one thread while knobs edit on another.  `./run_core_test.sh` runs both (ASan/UBSan); `ARM=1 ./run_core_test.sh` the ARM builds under qemu-arm |
+| `unit.cc`, `header.c`, `family_headers.c` | The unit (README.md, "Files") |
+| `test/unit_test.cc` | The whole unit through its callbacks, against Brachetti's engines (README.md, "Tests") |
+| `test/cpu_bench.cpp`, `test/cpu_cycles.sh` | The CPU estimate |
+| `test/core_test.cc`, `test/run_tests.sh` | Host test, on a small catalog of its own (no engines): defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, the queue, and gates on one thread while knobs edit on another.  `./run_tests.sh` runs all three tests (ASan/UBSan); `ARM=1 ./run_tests.sh` the ARM builds under qemu-arm |
 
-Next: the unit around it — header.c with the knob layout above, the SDK
-callbacks, hits routed to Brachetti's family engines (Engines, above), the
-mix; then its size and CPU, then hardware.
+Next: the hardware test (TODO).

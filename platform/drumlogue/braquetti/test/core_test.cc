@@ -1,7 +1,7 @@
 // Braquetti sequencer core: host test.
 //
-//   ./run_core_test.sh          host, address + undefined sanitizers
-//   ARM=1 ./run_core_test.sh    ARM build (the SDK's -march/-mfpu), qemu-arm
+//   ./run_tests.sh          host, address + undefined sanitizers (all three tests)
+//   ARM=1 ./run_tests.sh    ARM build (the SDK's -march/-mfpu), qemu-arm
 #include <atomic>
 #include <cstdio>
 #include <cstring>
