@@ -358,7 +358,7 @@ units); with BrcCordiera, 503,100 (eleven); with BrcCordiera's instruments
 and BrcLippa's mymembrane~ presets, 512,286; with BrcPizzico, 512,206
 (twelve: the same thirteen loop presets in two units, eighty fewer Program
 names).  With Brachetti added (thirteen units; it is walked preset by preset,
-every Program of every family): 3,732,058.
+every Program of every family): 1,596,250 (fewer since Brachetti's number slots stopped being strings knobs).
 
 ### Brachetti: all twelve in one unit
 

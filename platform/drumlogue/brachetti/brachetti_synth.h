@@ -18,10 +18,15 @@
 // through unchanged; where it does not (a 0-4 Partls in a -100..100 slot, a
 // 0-20 Rel, a 0-100 Blend in the 0-1000 NzRes slot), the value is spread
 // linearly over the slot's range — every value of the family's knob still
-// has its own knob position, and its preset values come back exactly.  All
-// dedicated slots are "strings" knobs, so the display always shows the
-// family knob's own value (as the family unit would show it), or "---" in a
-// slot the family does not use.  README.md has the per-family knob table.
+// has its own knob position, and its preset values come back exactly.
+// A slot where every family's knob has the same range and type is declared
+// with that type, so the drumlogue formats and steps it as on the family
+// unit; the others are "strings" knobs, which show the family knob's own
+// value (as the family unit would show it), or "---" where the family has no
+// knob.  The drumlogue hands a strings knob's value over as an UNSIGNED
+// 16-bit number (-1 arrives as 65535), so no strings slot has a negative
+// range: the mixed slots run 0-200.  Cutoff and NzFltFrq step 0.1 kHz
+// (kCoarse).  README.md has the per-family knob table.
 //
 // Ringing on.  Each family engine is a brc::RingOver pair (ring_over.h): a
 // Program change while an instrument rings lets it ring out under its own
@@ -195,11 +200,42 @@ inline int32_t family_to_slot(const unit_param_t& s, const unit_param_t& f, int3
 }
 
 inline int32_t slot_to_family(const unit_param_t& s, const unit_param_t& f, int32_t v) {
-    if (s.min == f.min && s.max == f.max) return v;
+    if (s.min == f.min && s.max == f.max) return brc::knob::clamp_int(v, s.min, s.max);
     const int32_t fspan = f.max - f.min, sspan = s.max - s.min;
     if (sspan <= 0) return f.min;
     v = brc::knob::clamp_int(v, s.min, s.max);
     return f.min + mul_div_round(v - s.min, fspan, sspan);
+}
+
+// COARSE slots: Cutoff and NzFltFrq store a frequency /10 (1-1999 = 10 Hz
+// steps), which takes ten clicks to move the 0.1 kHz the display shows.
+// Brachetti's slot steps 0.1 kHz: family value = slot × 10 + offset (Cutoff's
+// offset -1 keeps its open position, 1999, on the grid).  A preset value off
+// the grid shows, and comes back from a saved project, as the nearest step
+// (at most 50 Hz away); every preset's Cutoff (1999) is on it.
+struct Coarse { int16_t factor; int16_t offset; };
+static const Coarse kCoarse[kNumSlots] = {
+    {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {10, -1}, {1, 0}, {1, 0},   // 5 Cutoff
+    {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0},
+    {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {10, 0},    // 23 NzFltFrq
+};
+
+// Slot `id`'s value -> the family knob's, and back.
+inline int32_t to_family(uint8_t id, const unit_param_t& f, int32_t v) {
+    const unit_param_t& s = unit_header.params[id];
+    const Coarse c = kCoarse[id];
+    if (c.factor > 1)
+        return brc::knob::clamp_int(brc::knob::clamp_int(v, s.min, s.max) * c.factor + c.offset, f.min, f.max);
+    return slot_to_family(s, f, v);
+}
+inline int32_t to_slot(uint8_t id, const unit_param_t& f, int32_t v) {
+    const unit_param_t& s = unit_header.params[id];
+    const Coarse c = kCoarse[id];
+    if (c.factor > 1) {
+        const int32_t x = brc::knob::clamp_int(v, f.min, f.max) - c.offset;
+        return brc::knob::clamp_int((x + c.factor / 2) / c.factor, s.min, s.max);
+    }
+    return family_to_slot(s, f, v);
 }
 
 // A numeric knob as the drumlogue would show it: `frac` fractional bits
@@ -259,7 +295,7 @@ public:
         else
             f.init(f.engine, &m_desc);   // fresh: knobs at defaults, voices silent, instrument 0
         for (uint8_t p = brc::CommonLayout::k_paramPitch; p <= brc::CommonLayout::k_paramResnc; ++p)
-            if (!blank(f, p)) f.set(f.engine, p, m_echo[p]);
+            if (!blank(f, p)) f.set(f.engine, p, to_family(p, f.hdr->params[p], m_echo[p]));
         for (uint8_t i = brc::CommonLayout::k_firstDedicated; i < kNumSlots; ++i)
             m_echo[i] = unit_header.params[i].init;   // the unused slots rest at their default
         m_family.store(idx, std::memory_order_release);
@@ -276,7 +312,7 @@ public:
             f.set(f.engine, fs, brc::knob::clamp_int(value, 0, f.num_programs - 1));
             return;
         }
-        f.set(f.engine, fs, slot_to_family(unit_header.params[id], f.hdr->params[fs], value));
+        f.set(f.engine, fs, to_family(id, f.hdr->params[fs], value));
     }
 
     int32_t GetParameter(uint8_t id) const {
@@ -285,7 +321,7 @@ public:
         const uint8_t fs = f.slot[id];
         if (fs == kNone || blank(f, fs)) return m_echo[id];
         if (id == brc::CommonLayout::k_paramProgram) return f.get(f.engine, fs);   // not scaled: an index
-        return family_to_slot(unit_header.params[id], f.hdr->params[fs], f.get(f.engine, fs));
+        return to_slot(id, f.hdr->params[fs], f.get(f.engine, fs));
     }
 
     const char* GetParameterText(uint8_t id, int32_t value) const {
@@ -296,7 +332,7 @@ public:
         if (id == brc::CommonLayout::k_paramProgram)
             return f.text(f.engine, fs, brc::knob::clamp_int(value, 0, f.num_programs - 1));
         const unit_param_t& fp = f.hdr->params[fs];
-        const int32_t v = slot_to_family(unit_header.params[id], fp, value);
+        const int32_t v = to_family(id, fp, value);
         if (fp.type == k_unit_param_type_strings) return f.text(f.engine, fs, v);
         return format_number(s_text[id], brc::kKnobTextSize, fp, v);
     }

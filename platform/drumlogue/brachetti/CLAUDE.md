@@ -35,8 +35,12 @@ README.md has the presets, the knob tables and the verification.
   family knob sits in each slot; `brachetti_check.cpp` keeps its own copy of
   that table on purpose, so a change must be made in both.  A slot must be
   at least as wide as every family knob placed in it (the check verifies that
-  every value survives the translation); dedicated slots are all "strings"
-  knobs so the family's own format is shown.  Header defaults must equal
+  every value survives the translation).  A dedicated slot is a number
+  knob only where every family's knob in it is identical (range, type,
+  fraction), else a strings knob — and a strings knob never has a negative
+  range: the drumlogue passes its value unsigned (16 bits), so −1 arrives
+  as 65535 (found on hardware; the check enforces it).  Cutoff and NzFltFrq
+  step 0.1 kHz (`kCoarse`, mirrored in the check).  Header defaults must equal
   what the first preset (Kick, Kick2) loads — the check verifies it.
 - **A new family unit** goes in five places: `families.h` (its namespace),
   `family_headers.c` (its header.c), `kFamilies` (preset name, engine, slot

@@ -104,12 +104,25 @@ static const uint8_t* const kMaps[12] = {kStd, kStd, kKernel, kStd, kStd, kStd, 
 
 static int32_t mdr(int32_t a, int32_t num, int32_t den) { return (int32_t)(((int64_t)a * num + den / 2) / den); }
 static int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : (v > hi ? hi : v); }
-static int32_t to_slot(const unit_param_t& s, const unit_param_t& f, int32_t v) {
+// Brachetti's coarse slots (kCoarse there): Cutoff and NzFltFrq step 0.1 kHz,
+// family value = slot x 10 + offset.  Kept here independently too.
+static const int kCoarseFactor[24] = {1,1,1,1,1,10,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,10};
+static const int kCoarseOffset[24] = {0,0,0,0,0,-1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0};
+static const unit_header_t* g_bhdr = nullptr;   // Brachetti's header
+static bool coarse(int slot) { return kCoarseFactor[slot] > 1; }
+static int32_t to_slot(int slot, const unit_param_t& f, int32_t v) {
+    const unit_param_t& s = g_bhdr->params[slot];
+    if (coarse(slot)) {
+        const int k = kCoarseFactor[slot];
+        return clampi((clampi(v, f.min, f.max) - kCoarseOffset[slot] + k / 2) / k, s.min, s.max);
+    }
     if (s.min == f.min && s.max == f.max) return v;
     return s.min + mdr(clampi(v, f.min, f.max) - f.min, s.max - s.min, f.max - f.min);
 }
-static int32_t to_family(const unit_param_t& s, const unit_param_t& f, int32_t v) {
-    if (s.min == f.min && s.max == f.max) return v;
+static int32_t to_family(int slot, const unit_param_t& f, int32_t v) {
+    const unit_param_t& s = g_bhdr->params[slot];
+    if (coarse(slot)) return clampi(clampi(v, s.min, s.max) * kCoarseFactor[slot] + kCoarseOffset[slot], f.min, f.max);
+    if (s.min == f.min && s.max == f.max) return clampi(v, s.min, s.max);
     return f.min + mdr(clampi(v, s.min, s.max) - s.min, f.max - f.min, s.max - s.min);
 }
 static bool blank(const unit_param_t& p) { return p.name[0] == '\0'; }
@@ -188,7 +201,8 @@ static void knobs_compare(Unit& b, Unit& f, const uint8_t* map, const std::strin
         const uint8_t fs = map[s];
         if (fs == N || blank(f.hdr->params[fs])) {
             const char* t = b.str((uint8_t)s, b.get((uint8_t)s));
-            if (s >= 8 && (!t || strcmp(t, "---") != 0)) fail(ctx + " unused slot " + std::to_string(s) + " text");
+            if (s >= 8 && b.hdr->params[s].type == k_unit_param_type_strings && (!t || strcmp(t, "---") != 0))
+                fail(ctx + " unused slot " + std::to_string(s) + " text");
             continue;
         }
         const unit_param_t& sp = b.hdr->params[s];
@@ -196,11 +210,13 @@ static void knobs_compare(Unit& b, Unit& f, const uint8_t* map, const std::strin
         const int32_t bv = b.get((uint8_t)s), fv = f.get(fs);
         ++g_knobs;
         if (bv < sp.min || bv > sp.max) fail(ctx + " slot " + sp.name + " value outside its range");
-        if ((s == 0 ? bv : to_family(sp, fp, bv)) != fv)   // Program is an index, not scaled
+        // Program is an index, not scaled; a coarse slot shows the nearest step.
+        if (s == 0 ? (bv != fv) : coarse(s) ? (bv != to_slot(s, fp, fv)) : (to_family(s, fp, bv) != fv))
             fail(ctx + " slot " + sp.name + " reads " + std::to_string(bv) + ", family " + fp.name + " = " + std::to_string(fv));
         if (fp.type == k_unit_param_type_strings) {
             const char* tb = b.str((uint8_t)s, bv);
-            std::string ref = f.str(fs, fv) ? f.str(fs, fv) : "(null)";
+            const int32_t shown = (s == 0) ? fv : to_family(s, fp, bv);   // the value the slot plays
+            std::string ref = f.str(fs, shown) ? f.str(fs, shown) : "(null)";
             if (!tb || ref != tb) fail(ctx + " slot " + sp.name + " text '" + (tb ? tb : "(null)") + "' vs '" + ref + "'");
         }
     }
@@ -250,7 +266,13 @@ int main(int argc, char** argv) {
     std::vector<Unit> fam(12);
     for (int i = 0; i < 12; ++i) if (!fam[i].open(argv[2 + i])) return 2;
 
+    g_bhdr = b.hdr;
     if (b.hdr->num_presets != 12) fail("num_presets != 12");
+    // The drumlogue passes a strings knob's value as an unsigned 16-bit number
+    // (on the device -1 arrived as 65535): no strings slot may go negative.
+    for (int s = 0; s < 24; ++s)
+        if (b.hdr->params[s].type == k_unit_param_type_strings && b.hdr->params[s].min < 0)
+            fail(std::string("strings slot ") + b.hdr->params[s].name + " has a negative range");
     // The slots are wide enough, and the Program range holds every family.
     for (int i = 0; i < 12; ++i) {
         const int n = fam[i].hdr->params[0].max + 1;
@@ -260,11 +282,16 @@ int main(int argc, char** argv) {
             if (fs == N) continue;
             const unit_param_t& sp = b.hdr->params[s];
             const unit_param_t& fp = fam[i].hdr->params[fs];
+            if (coarse(s)) continue;   // 0.1 kHz steps by design
             if (sp.max - sp.min < fp.max - fp.min)
                 fail(std::string(fam[i].hdr->name) + ": " + fp.name + " wider than slot " + sp.name);
-            if (sp.type != k_unit_param_type_strings) fail(std::string("slot ") + sp.name + " is not a strings knob");
+            // A slot with a number type is formatted and stepped by the
+            // drumlogue: every family knob in it must be exactly that knob.
+            if (sp.type != k_unit_param_type_strings &&
+                (sp.min != fp.min || sp.max != fp.max || sp.type != fp.type || sp.frac != fp.frac || sp.frac_mode != fp.frac_mode))
+                fail(std::string("slot ") + sp.name + " has a number type, but " + fam[i].hdr->name + "'s " + fp.name + " is another knob");
             for (int v = fp.min; v <= fp.max; ++v)   // every value of the knob survives the slot
-                if (to_family(sp, fp, to_slot(sp, fp, v)) != v)
+                if (to_family(s, fp, to_slot(s, fp, v)) != v)
                     fail(std::string(fam[i].hdr->name) + ": " + fp.name + " value " + std::to_string(v) + " lost in its slot");
         }
         // Every family knob is placed exactly once.
@@ -304,7 +331,7 @@ int main(int argc, char** argv) {
                 for (int r = 3; r < 5; ++r) { seed = seed * 1103515245u + 12345u; pts[r] = sp.min + (int32_t)((seed >> 8) % (uint32_t)(sp.max - sp.min + 1)); }
                 for (int k = 0; k < g_points; ++k) {
                     const int32_t v = pts[k];
-                    b.set((uint8_t)s, v); f.set(fs, to_family(sp, fp, v));
+                    b.set((uint8_t)s, v); f.set(fs, to_family(s, fp, v));
                     knobs_compare(b, f, kMaps[i], ctx + " " + sp.name + "=" + std::to_string(v));
                     strike_compare(b, f, ctx + " " + sp.name + "=" + std::to_string(v), seed);
                 }
@@ -319,9 +346,9 @@ int main(int argc, char** argv) {
 
     // The common knobs follow the panel across a family switch.
     b.load_preset(1);
-    b.set(1, 5); b.set(2, 2); b.set(3, -30); b.set(4, 12); b.set(5, 900); b.set(6, 150);
+    b.set(1, 5); b.set(2, 2); b.set(3, -30); b.set(4, 12); b.set(5, 90); b.set(6, 150);
     b.load_preset(4);
-    const int32_t want[7] = {0, 5, 2, -30, 12, 900, 150};
+    const int32_t want[7] = {0, 5, 2, -30, 12, 90, 150};
     for (int s = 1; s <= 6; ++s)
         if (b.get((uint8_t)s) != want[s]) fail(std::string("common knob ") + b.hdr->params[s].name + " not carried across a family switch");
 

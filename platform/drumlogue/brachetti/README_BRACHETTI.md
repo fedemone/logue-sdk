@@ -26,7 +26,7 @@ single-family units it is built from stay available in
 | Presets | 12, one per family |
 | Instruments | 114, on `Program` |
 | Knobs | 24 |
-| ARM size (cross-built, `arm_size.sh`) | .text 116,704 · .rodata 62,104 · .data.rel.ro 2,368 · .data 46,016 · .bss 353,056 (every engine twice: *Ringing on*) |
+| ARM size (cross-built, `arm_size.sh`) | .text 116,944 · .rodata 62,200 · .data.rel.ro 2,368 · .data 46,016 · .bss 353,056 (every engine twice: *Ringing on*) |
 
 ## The presets: one per family
 
@@ -92,15 +92,30 @@ knob keeps it in its slot, and the three families with fewer knobs (Kernel,
 Cymbal, Noise) have each knob in the slot of its kind.  The display always
 shows **the family knob's own value, formatted as on the family unit** — so
 on Tom the `Rel` slot shows the Punch amount, on Snare `MlltRes` shows the
-Buzz.  A slot the family does not use shows `---` and does nothing.
+Buzz.
 
-Where a family knob has a narrower range than the slot (marked † below), its
-values are spread evenly over the slot's travel — Partls 0-4 sits at
-−100, −50, 0, 50, 100, a 0-20 Rel takes ten knob steps per value — so the
-whole knob travel is used, every value of the family's knob has its own
-position, and preset values come back exactly.
+- **Number slots** (MlltRes, VlMllRes, VlMllStf, Mterl, HitPos, Inharm,
+  TubRad, NzMix): every family's knob there has the same range and type, so
+  the slot is declared with it and the drumlogue shows and steps it exactly
+  as on the family unit.  In a family without that knob it shows a number
+  but does nothing (Noise's Mterl, HitPos, Inharm; Cymbal's NzMix).
+- **Strings slots** (MlltStif, Partls, Model, Dkay, Rel, NzRes, NzFltr,
+  NzFltFrq, and Program, Poly, Cutoff, Resnc): the unit formats the value,
+  or shows `---` where the family has no knob.  The drumlogue passes a
+  strings knob's value as an unsigned 16-bit number (a −1 arrives as 65535),
+  so these slots never go negative: Partls, Model, Rel and NzFltr run 0..200.
+  Where a family knob's range differs from the slot's (marked † below), its
+  values are spread evenly over the slot's travel — Partls 0-4 sits at 0, 50,
+  100, 150, 200; a bipolar −100..100 knob is the slot minus 100; a 0-20 Rel
+  takes ten knob steps per value — so every value has its own position and
+  preset values come back exactly.
+- **Cutoff and NzFltFrq step 0.1 kHz** (the family units step 10 Hz, ten
+  clicks per change on the display).  A preset whose noise-filter frequency
+  is off that grid plays it exactly, but shows (and returns from a saved
+  project as) the nearest step, at most 50 Hz away; every preset's Cutoff is
+  fully open, on the grid.
 
-| Page 3 | `MlltRes` (0..1000) | `MlltStif` (0..50) | `VlMllRes` (-100..100) | `VlMllStf` (-100..100) |
+| Page 3 | `MlltRes` (0..1000, number) | `MlltStif` (0..50, strings) | `VlMllRes` (-100..100, number) | `VlMllStf` (-100..100, number) |
 |---|---|---|---|---|
 | Kick | Thump | Snap | VelThmp | VelSnap |
 | Tom | MlltRes | MlltStif | Slap | SlapSnp |
@@ -115,22 +130,22 @@ position, and preset values come back exactly.
 | Pizzico | MlltRes | MlltStif | Bend | VlMllStf |
 | Cordiera | Buzz | BuzzTon | Crack | Tight |
 
-| Page 4 | `Partls` (-100..100) | `Model` (-100..100) | `Dkay` (0..200) | `Rel` (-100..100) |
+| Page 4 | `Partls` (0..200, strings) | `Model` (0..200, strings) | `Dkay` (0..200, strings) | `Rel` (0..200, strings) |
 |---|---|---|---|---|
-| Kick | DiveTm | Punch | Dkay | Rel (0..20) † |
-| Tom | Partls (0..4) † | Model (0..8) † | Dkay | Punch |
-| Kernel | Fill (0..4) † | Punch | Dkay | Rel (0..20) † |
-| Snare | Punch | Model (0..8) † | Dkay | BuzzLen (0..20) † |
+| Kick | DiveTm (-100..100) † | Punch (-100..100) † | Dkay | Rel (0..20) † |
+| Tom | Partls (0..4) † | Model (0..8) † | Dkay | Punch (-100..100) † |
+| Kernel | Fill (0..4) † | Punch (-100..100) † | Dkay | Rel (0..20) † |
+| Snare | Punch (-100..100) † | Model (0..8) † | Dkay | BuzzLen (0..20) † |
 | Bar | Partls (0..4) † | Model (0..8) † | Dkay | Rel (0..20) † |
-| Plate | Partls (0..4) † | Model (0..8) † | Dkay | Punch |
-| Cymbal | Density (0..7) † | Punch | Dkay | Rel (0..20) † |
-| Noise | Band | VelTone | — | Punch |
-| World | Partls (0..4) † | Model (0..8) † | Dkay | Punch |
-| Lippa | BendTm | Snares | Dkay | Punch |
-| Pizzico | BendTm | Buzz | Dkay | Punch |
-| Cordiera | Punch | Model (0..8) † | Dkay | BuzzLen (0..20) † |
+| Plate | Partls (0..4) † | Model (0..8) † | Dkay | Punch (-100..100) † |
+| Cymbal | Density (0..7) † | Punch (-100..100) † | Dkay | Rel (0..20) † |
+| Noise | Band (-100..100) † | VelTone (-100..100) † | — | Punch (-100..100) † |
+| World | Partls (0..4) † | Model (0..8) † | Dkay | Punch (-100..100) † |
+| Lippa | BendTm (-100..100) † | Snares (-100..100) † | Dkay | Punch (-100..100) † |
+| Pizzico | BendTm (-100..100) † | Buzz (-100..100) † | Dkay | Punch (-100..100) † |
+| Cordiera | Punch (-100..100) † | Model (0..8) † | Dkay | BuzzLen (0..20) † |
 
-| Page 5 | `Mterl` (-10..30) | `HitPos` (-98..98) | `Inharm` (-100..100) | `TubRad` (0..20) |
+| Page 5 | `Mterl` (-10..30, number) | `HitPos` (-98..98, number) | `Inharm` (-100..100, number) | `TubRad` (0..20, number) |
 |---|---|---|---|---|
 | Kick | Weight | Click | Dive | Tune |
 | Tom | Mterl | HitPos | Inharm | TubRad |
@@ -145,7 +160,7 @@ position, and preset values come back exactly.
 | Pizzico | Mterl | HitPos | Inharm | ApDelay |
 | Cordiera | Mterl | HitPos | Inharm | TubRad |
 
-| Page 6 | `NzMix` (0..100) | `NzRes` (0..1000) | `NzFltr` (-100..100) | `NzFltFrq` (2..2000) |
+| Page 6 | `NzMix` (0..100, number) | `NzRes` (0..1000, strings) | `NzFltr` (0..200, strings) | `NzFltFrq` (1..200, strings 0.1 kHz steps) |
 |---|---|---|---|---|
 | Kick | NzMix | NzRes | NzFltr (0..2) † | NzFltFrq |
 | Tom | NzMix | NzRes | NzFltr (0..2) † | NzFltFrq |
@@ -156,8 +171,8 @@ position, and preset values come back exactly.
 | Cymbal | — | — | — | — |
 | Noise | NzMix | NzRes | NzFltr (0..2) † | NzFltFrq |
 | World | NzMix | NzRes | NzFltr (0..2) † | NzFltFrq |
-| Lippa | NzMix | Blend (0..100) † | SnrTone | NzFltFrq |
-| Pizzico | NzMix | Blend (0..100) † | BuzzTon | NzFltFrq |
+| Lippa | NzMix | Blend (0..100) † | SnrTone (-100..100) † | NzFltFrq |
+| Pizzico | NzMix | Blend (0..100) † | BuzzTon (-100..100) † | NzFltFrq |
 | Cordiera | NzMix | NzRes | NzFltr (0..2) † | NzFltFrq |
 
 What every knob does in a family is in that family unit's README (*Knobs*).
@@ -272,7 +287,7 @@ against; it costs +0.1–0.3 % instructions (`arm_cpu.sh`: BrcBar 712.0 →
 714.4, BrcTom 858.7 → 861.2, BrcLippa 945.2 → 946.2).
 
 `multi_load.sh` (Brachetti with the twelve family units, each family preset
-walked): `independent: 13 units loaded together show the same 3732058 display
+walked): `independent: 13 units loaded together show the same 1596250 display
 strings as alone`.
 
 ## Credits
