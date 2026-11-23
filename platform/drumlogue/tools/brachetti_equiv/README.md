@@ -358,7 +358,7 @@ units); with BrcCordiera, 503,100 (eleven); with BrcCordiera's instruments
 and BrcLippa's mymembrane~ presets, 512,286; with BrcPizzico, 512,206
 (twelve: the same thirteen loop presets in two units, eighty fewer Program
 names).  With Brachetti added (thirteen units; it is walked preset by preset,
-every Program of every family): 1,596,250 (fewer since Brachetti's number slots stopped being strings knobs).
+every Program of every family): 1,196,872 (fewer since Brachetti's number slots stopped being strings knobs and Cutoff / NzFltFrq became 1-200).
 
 ### Brachetti: all twelve in one unit
 
@@ -503,6 +503,14 @@ BrcLippa's mymembrane~ presets against Pd too
 ```
 for u in kick tom kernel snare bar plate cymbal noise; do ./run_equiv.sh ../../brachetti_split/brachetti_$u; done
 ```
+
+**Knob steps.**  Cutoff and NzFltFrq step 0.1 kHz on every unit's panel
+(header.c: 1-200) while the engines keep 10 Hz values
+([`knob_steps.h`](../../brachetti_common/knob_steps.h), applied by each
+unit's `RingOver`).  The tools drive the engines directly, in the engine's
+units: `equiv_driver --list` gives those knobs the engine's own range, and
+the boot defaults are translated (`header_to_engine`), so `run_equiv.sh`
+covers them as before.
 
 Any change in a family unit or in the library also reaches Brachetti:
 `./brachetti_check.sh` must stay IDENTICAL.  A family's code is compiled

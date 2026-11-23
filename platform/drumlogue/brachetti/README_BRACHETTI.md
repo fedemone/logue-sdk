@@ -109,11 +109,12 @@ Buzz.
   100, 150, 200; a bipolar −100..100 knob is the slot minus 100; a 0-20 Rel
   takes ten knob steps per value — so every value has its own position and
   preset values come back exactly.
-- **Cutoff and NzFltFrq step 0.1 kHz** (the family units step 10 Hz, ten
-  clicks per change on the display).  A preset whose noise-filter frequency
-  is off that grid plays it exactly, but shows (and returns from a saved
-  project as) the nearest step, at most 50 Hz away; every preset's Cutoff is
-  fully open, on the grid.
+- **Cutoff and NzFltFrq step 0.1 kHz**, here and on the family units alike
+  ([`knob_steps.h`](../brachetti_common/knob_steps.h)): the engine keeps its
+  10 Hz values, and a preset whose noise-filter frequency is off the 0.1 kHz
+  grid plays it exactly, but shows (and returns from a saved project as) the
+  nearest step, at most 50 Hz away; every preset's Cutoff is fully open, on
+  the grid.
 
 | Page 3 | `MlltRes` (0..1000, number) | `MlltStif` (0..50, strings) | `VlMllRes` (-100..100, number) | `VlMllStf` (-100..100, number) |
 |---|---|---|---|---|
@@ -287,7 +288,7 @@ against; it costs +0.1–0.3 % instructions (`arm_cpu.sh`: BrcBar 712.0 →
 714.4, BrcTom 858.7 → 861.2, BrcLippa 945.2 → 946.2).
 
 `multi_load.sh` (Brachetti with the twelve family units, each family preset
-walked): `independent: 13 units loaded together show the same 1596250 display
+walked): `independent: 13 units loaded together show the same 1196872 display
 strings as alone`.
 
 ## Credits

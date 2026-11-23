@@ -104,24 +104,17 @@ static const uint8_t* const kMaps[12] = {kStd, kStd, kKernel, kStd, kStd, kStd, 
 
 static int32_t mdr(int32_t a, int32_t num, int32_t den) { return (int32_t)(((int64_t)a * num + den / 2) / den); }
 static int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : (v > hi ? hi : v); }
-// Brachetti's coarse slots (kCoarse there): Cutoff and NzFltFrq step 0.1 kHz,
-// family value = slot x 10 + offset.  Kept here independently too.
-static const int kCoarseFactor[24] = {1,1,1,1,1,10,1,1, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,10};
-static const int kCoarseOffset[24] = {0,0,0,0,0,-1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0};
+// (Cutoff and NzFltFrq step 0.1 kHz on the family units and on Brachetti
+// alike — knob_steps.h, applied by each unit's RingOver — so here they are
+// slots like any other, with the family's own range.)
 static const unit_header_t* g_bhdr = nullptr;   // Brachetti's header
-static bool coarse(int slot) { return kCoarseFactor[slot] > 1; }
 static int32_t to_slot(int slot, const unit_param_t& f, int32_t v) {
     const unit_param_t& s = g_bhdr->params[slot];
-    if (coarse(slot)) {
-        const int k = kCoarseFactor[slot];
-        return clampi((clampi(v, f.min, f.max) - kCoarseOffset[slot] + k / 2) / k, s.min, s.max);
-    }
     if (s.min == f.min && s.max == f.max) return v;
     return s.min + mdr(clampi(v, f.min, f.max) - f.min, s.max - s.min, f.max - f.min);
 }
 static int32_t to_family(int slot, const unit_param_t& f, int32_t v) {
     const unit_param_t& s = g_bhdr->params[slot];
-    if (coarse(slot)) return clampi(clampi(v, s.min, s.max) * kCoarseFactor[slot] + kCoarseOffset[slot], f.min, f.max);
     if (s.min == f.min && s.max == f.max) return clampi(v, s.min, s.max);
     return f.min + mdr(clampi(v, s.min, s.max) - s.min, f.max - f.min, s.max - s.min);
 }
@@ -210,8 +203,7 @@ static void knobs_compare(Unit& b, Unit& f, const uint8_t* map, const std::strin
         const int32_t bv = b.get((uint8_t)s), fv = f.get(fs);
         ++g_knobs;
         if (bv < sp.min || bv > sp.max) fail(ctx + " slot " + sp.name + " value outside its range");
-        // Program is an index, not scaled; a coarse slot shows the nearest step.
-        if (s == 0 ? (bv != fv) : coarse(s) ? (bv != to_slot(s, fp, fv)) : (to_family(s, fp, bv) != fv))
+        if (s == 0 ? (bv != fv) : (to_family(s, fp, bv) != fv))   // Program is an index, not scaled
             fail(ctx + " slot " + sp.name + " reads " + std::to_string(bv) + ", family " + fp.name + " = " + std::to_string(fv));
         if (fp.type == k_unit_param_type_strings) {
             const char* tb = b.str((uint8_t)s, bv);
@@ -282,7 +274,6 @@ int main(int argc, char** argv) {
             if (fs == N) continue;
             const unit_param_t& sp = b.hdr->params[s];
             const unit_param_t& fp = fam[i].hdr->params[fs];
-            if (coarse(s)) continue;   // 0.1 kHz steps by design
             if (sp.max - sp.min < fp.max - fp.min)
                 fail(std::string(fam[i].hdr->name) + ": " + fp.name + " wider than slot " + sp.name);
             // A slot with a number type is formatted and stepped by the
@@ -346,11 +337,43 @@ int main(int argc, char** argv) {
 
     // The common knobs follow the panel across a family switch.
     b.load_preset(1);
-    b.set(1, 5); b.set(2, 2); b.set(3, -30); b.set(4, 12); b.set(5, 90); b.set(6, 150);
+    b.set(1, 5); b.set(2, 2); b.set(3, -30); b.set(4, 12); b.set(5, 90); b.set(6, 150);   // Cutoff 9.0 kHz
     b.load_preset(4);
     const int32_t want[7] = {0, 5, 2, -30, 12, 90, 150};
     for (int s = 1; s <= 6; ++s)
         if (b.get((uint8_t)s) != want[s]) fail(std::string("common knob ") + b.hdr->params[s].name + " not carried across a family switch");
+
+    // The panel's 0.1 kHz steps (knob_steps.h), on every family unit and on
+    // Brachetti: Cutoff opens at 200, a click down shows 19.8 kHz; NzFltFrq
+    // 100 is 10 kHz.
+    {
+        auto steps = [](Unit& u, int nz_slot, const std::string& who) {
+            const int32_t keep5 = u.get(5);
+            if (keep5 != 200) fail(who + ": Cutoff does not open at 200");
+            u.set(5, 199);
+            const char* t = u.str(5, u.get(5));
+            if (u.get(5) != 199 || !t || std::string(t) != "19.8kHz") fail(who + ": Cutoff 199 is not 19.8kHz");
+            u.set(5, keep5);
+            if (nz_slot >= 0) {
+                const int32_t keep = u.get((uint8_t)nz_slot);
+                u.set((uint8_t)nz_slot, 100);
+                const char* z = u.str((uint8_t)nz_slot, u.get((uint8_t)nz_slot));
+                if (u.get((uint8_t)nz_slot) != 100 || !z || std::string(z) != "10.0kHz") fail(who + ": NzFltFrq 100 is not 10.0kHz");
+                u.set((uint8_t)nz_slot, keep);
+            }
+        };
+        for (int i = 0; i < 12; ++i) {
+            Unit& f = fam[i];
+            int nz = -1;
+            for (uint32_t k = 0; k < f.hdr->num_params; ++k)
+                if (std::string(f.hdr->params[k].name) == "NzFltFrq") nz = (int)k;
+            steps(f, nz, f.hdr->name);
+            b.load_preset((uint8_t)i);
+            b.set(5, 200);   // the panel's Cutoff carries across families (set to 90 above)
+            steps(b, nz >= 0 ? 23 : -1, std::string("Brachetti/") + b.preset_name((uint8_t)i));
+        }
+        b.load_preset(0);
+    }
 
     // Ring-over, on every family unit and on Brachetti (each family, and a
     // family switch).  Program 0 rings; the change goes to the last instrument.

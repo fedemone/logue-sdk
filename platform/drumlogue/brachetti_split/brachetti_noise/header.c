@@ -36,8 +36,9 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 2 — common: master
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
-        // Cutoff: master low-pass, stored /10 (10-19990 Hz), 1999 = open
-        {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
+        // Cutoff: master low-pass in 0.1 kHz steps (the engine stores /10:
+        // slot x 10 - 1, knob_steps.h), 200 = open
+        {1, 200, 50, 200, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
         // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
         {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}},
         // Gain: master drive
@@ -60,8 +61,8 @@ const __unit_header unit_header_t unit_header = {
         {0, 100, 50, 95, k_unit_param_type_percent, 0, 0, 0, {"NzMix"}},
         {0, 1000, 300, 950, k_unit_param_type_percent, 1, 1, 0, {"NzRes"}},
         {0, 2, 0, 1, k_unit_param_type_strings, 0, 0, 0, {"NzFltr"}},
-        // NzFltFrq: stored /10 (20-20000 Hz)
-        {2, 2000, 1200, 200, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
+        // NzFltFrq: 0.1 kHz steps (the engine stores /10: slot x 10, knob_steps.h)
+        {1, 200, 120, 20, k_unit_param_type_strings, 0, 0, 0, {"NzFltFrq"}},
 
         // Page 5 — dedicated
         // Band (new, in Model's slot): the noise's balance, − the soft body

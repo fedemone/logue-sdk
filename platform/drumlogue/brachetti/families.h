@@ -48,6 +48,7 @@
 #include "../brachetti_common/voice_base.h"
 #include "../brachetti_common/voice_layers.h"
 #include "../brachetti_common/modal_synth.h"
+#include "../brachetti_common/knob_steps.h"
 #include "../brachetti_common/ring_over.h"
 
 // ── The families, one namespace each ────────────────────────────────────────

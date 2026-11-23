@@ -40,7 +40,8 @@ README.md has the presets, the knob tables and the verification.
   fraction), else a strings knob — and a strings knob never has a negative
   range: the drumlogue passes its value unsigned (16 bits), so −1 arrives
   as 65535 (found on hardware; the check enforces it).  Cutoff and NzFltFrq
-  step 0.1 kHz (`kCoarse`, mirrored in the check).  Header defaults must equal
+  step 0.1 kHz, as on the family units: each family's RingOver applies
+  `brachetti_common/knob_steps.h` from the family's own header (`set_header`).  Header defaults must equal
   what the first preset (Kick, Kick2) loads — the check verifies it.
 - **A new family unit** goes in five places: `families.h` (its namespace),
   `family_headers.c` (its header.c), `kFamilies` (preset name, engine, slot

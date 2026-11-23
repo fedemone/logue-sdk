@@ -37,8 +37,9 @@ const __unit_header unit_header_t unit_header = {
 
         // Page 2 — common: master
         {-10, 30, 0, 0, k_unit_param_type_none, 1, 0, 0, {"Tone"}},
-        // Cutoff: master low-pass, stored /10 (10-19990 Hz), 1999 = open
-        {1, 1999, 500, 1999, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
+        // Cutoff: master low-pass in 0.1 kHz steps (the engine stores /10:
+        // slot x 10 - 1, knob_steps.h), 200 = open
+        {1, 200, 50, 200, k_unit_param_type_strings, 0, 0, 0, {"Cutoff"}},
         // Resnc: master low-pass Q, stored /10 (displayed 710-4000)
         {71, 400, 0, 71, k_unit_param_type_strings, 0, 0, 0, {"Resnc"}},
         // Gain: master drive

@@ -26,10 +26,15 @@
 // output is exactly zero once its voices have retired and its master stage
 // has stopped, so the tail (master filter included) is never cut.
 //
+// It is also where the panel's knob steps are applied (knob_steps.h): give
+// it the unit's header with SetHeader before Init, and Cutoff and NzFltFrq
+// step 0.1 kHz on the panel while the engine keeps its 10 Hz values.
+//
 // Provides: RingOver.
 #include <cstddef>
 #include <cstdint>
 #include "unit.h"
+#include "knob_steps.h"
 #include "knobs.h"
 
 namespace brc {
@@ -45,6 +50,13 @@ class RingOver {
 public:
     static constexpr int k_NumPrograms = S::k_NumPrograms;
     static constexpr size_t kChunk = 64;   // frames per render of the copy ringing out
+
+    // The unit's knobs as the panel shows them (before Init).  Without it the
+    // values pass through as they are.
+    void SetHeader(const unit_header_t* h) {
+        for (uint8_t i = 0; i < kMaxKnobs; ++i)
+            m_step[i] = (h && i < h->num_params) ? knob_step(h->params[i]) : nullptr;
+    }
 
     int8_t Init(const unit_runtime_desc_t* desc) {
         for (uint8_t i = 0; i < 2; ++i) {
@@ -85,11 +97,14 @@ public:
     // ── Knobs ───────────────────────────────────────────────────────────────
     void setParameter(uint8_t index, int32_t value) {
         if (index == 0 && value >= 0 && value < S::k_NumPrograms) { LoadPreset((uint8_t)value); return; }
-        m_eng[m_cur].setParameter(index, value);
+        m_eng[m_cur].setParameter(index, to_engine(index, value));
     }
-    int32_t getParameterValue(uint8_t index) const { return cur().getParameterValue(index); }
+    int32_t getParameterValue(uint8_t index) const {
+        const int32_t e = cur().getParameterValue(index);
+        return (index < kMaxKnobs && m_step[index]) ? step_to_header(*m_step[index], e) : e;
+    }
     const char* getParameterStrValue(uint8_t index, int32_t value) const {
-        return cur().getParameterStrValue(index, value);
+        return cur().getParameterStrValue(index, to_engine(index, value));
     }
 
     // ── Notes ───────────────────────────────────────────────────────────────
@@ -127,6 +142,9 @@ public:
 
 private:
     const S& cur() const { return m_eng[m_cur]; }
+    int32_t to_engine(uint8_t index, int32_t v) const {
+        return (index < kMaxKnobs && m_step[index]) ? step_to_engine(*m_step[index], v) : v;
+    }
     void both_silent() { m_sounding[0] = m_sounding[1] = false; }
     static bool any_nonzero(const float* buf, size_t frames) {
         for (size_t i = 0; i < 2 * frames; ++i)
@@ -138,6 +156,7 @@ private:
     bool    m_sounding[2] = {false, false};
     uint8_t m_cur  = 0;   // the copy new strikes and the knobs go to
     uint8_t m_gate = 0;   // the copy the last gate struck (its GateOff goes there)
+    const KnobStep* m_step[kMaxKnobs] = {};   // SetHeader: the stepped knobs
 };
 
 }  // namespace brc

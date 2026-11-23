@@ -25,8 +25,8 @@
 // value (as the family unit would show it), or "---" where the family has no
 // knob.  The drumlogue hands a strings knob's value over as an UNSIGNED
 // 16-bit number (-1 arrives as 65535), so no strings slot has a negative
-// range: the mixed slots run 0-200.  Cutoff and NzFltFrq step 0.1 kHz
-// (kCoarse).  README.md has the per-family knob table.
+// range: the mixed slots run 0-200.  Cutoff and NzFltFrq step 0.1 kHz, as
+// on the family units (knob_steps.h).  README.md has the per-family knob table.
 //
 // Ringing on.  Each family engine is a brc::RingOver pair (ring_over.h): a
 // Program change while an instrument rings lets it ring out under its own
@@ -73,6 +73,7 @@ struct Family {
     void        (*all_note_off)(void*);
     void        (*pitch_bend)(void*, uint16_t);
     bool        (*sounding)(const void*);
+    void        (*set_header)(void*, const unit_header_t*);
 };
 
 // The calls, for any family class (internal linkage: no symbol of these is
@@ -93,12 +94,13 @@ template <class S> static void        f_gate_off(void* e)                  { sta
 template <class S> static void        f_all_note_off(void* e)              { static_cast<S*>(e)->AllNoteOff(); }
 template <class S> static void        f_pitch_bend(void* e, uint16_t b)    { static_cast<S*>(e)->PitchBend(b); }
 template <class S> static bool        f_sounding(const void* e)            { return static_cast<const S*>(e)->Sounding(); }
+template <class S> static void        f_set_header(void* e, const unit_header_t* h) { static_cast<S*>(e)->SetHeader(h); }
 
 #define BRACHETTI_CALLS(S)                                                     \
     S::k_NumPrograms, &f_init<S>, &f_teardown<S>, &f_reset<S>, &f_resume<S>,   \
     &f_suspend<S>, &f_render<S>, &f_set<S>, &f_get<S>, &f_text<S>,             \
     &f_note_on<S>, &f_note_off<S>, &f_gate_on<S>, &f_gate_off<S>,              \
-    &f_all_note_off<S>, &f_pitch_bend<S>, &f_sounding<S>
+    &f_all_note_off<S>, &f_pitch_bend<S>, &f_sounding<S>, &f_set_header<S>
 
 // The engines: every family is resident, each as a ring-over pair (two copies:
 // a Program change lets the ringing one ring out), so a switch never
@@ -207,35 +209,14 @@ inline int32_t slot_to_family(const unit_param_t& s, const unit_param_t& f, int3
     return f.min + mul_div_round(v - s.min, fspan, sspan);
 }
 
-// COARSE slots: Cutoff and NzFltFrq store a frequency /10 (1-1999 = 10 Hz
-// steps), which takes ten clicks to move the 0.1 kHz the display shows.
-// Brachetti's slot steps 0.1 kHz: family value = slot × 10 + offset (Cutoff's
-// offset -1 keeps its open position, 1999, on the grid).  A preset value off
-// the grid shows, and comes back from a saved project, as the nearest step
-// (at most 50 Hz away); every preset's Cutoff (1999) is on it.
-struct Coarse { int16_t factor; int16_t offset; };
-static const Coarse kCoarse[kNumSlots] = {
-    {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {10, -1}, {1, 0}, {1, 0},   // 5 Cutoff
-    {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0},
-    {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {1, 0}, {10, 0},    // 23 NzFltFrq
-};
-
-// Slot `id`'s value -> the family knob's, and back.
+// Slot `id`'s value -> the family knob's, and back.  (Cutoff and NzFltFrq
+// step 0.1 kHz: the family's own header says so and each family's RingOver
+// translates them, exactly as on the family unit — knob_steps.h.)
 inline int32_t to_family(uint8_t id, const unit_param_t& f, int32_t v) {
-    const unit_param_t& s = unit_header.params[id];
-    const Coarse c = kCoarse[id];
-    if (c.factor > 1)
-        return brc::knob::clamp_int(brc::knob::clamp_int(v, s.min, s.max) * c.factor + c.offset, f.min, f.max);
-    return slot_to_family(s, f, v);
+    return slot_to_family(unit_header.params[id], f, v);
 }
 inline int32_t to_slot(uint8_t id, const unit_param_t& f, int32_t v) {
-    const unit_param_t& s = unit_header.params[id];
-    const Coarse c = kCoarse[id];
-    if (c.factor > 1) {
-        const int32_t x = brc::knob::clamp_int(v, f.min, f.max) - c.offset;
-        return brc::knob::clamp_int((x + c.factor / 2) / c.factor, s.min, s.max);
-    }
-    return family_to_slot(s, f, v);
+    return family_to_slot(unit_header.params[id], f, v);
 }
 
 // A numeric knob as the drumlogue would show it: `frac` fractional bits
@@ -262,6 +243,7 @@ public:
     int8_t Init(const unit_runtime_desc_t* desc) {
         m_desc = *desc;
         for (const Family& f : kFamilies) {
+            f.set_header(f.engine, f.hdr);   // the family unit's knob steps, as on the unit
             const int8_t err = f.init(f.engine, desc);
             if (err != k_unit_err_none) return err;
         }

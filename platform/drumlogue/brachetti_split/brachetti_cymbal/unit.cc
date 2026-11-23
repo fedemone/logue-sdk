@@ -28,6 +28,7 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t * desc) {
     s_runtime_desc = *desc;
 
     // Hand over initialization to our synth engine
+    s_synth.SetHeader(&unit_header);   // the panel's knob steps (knob_steps.h)
     return s_synth.Init(desc);
 }
 

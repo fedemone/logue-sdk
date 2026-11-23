@@ -359,7 +359,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all tw
 | `Poly` | voice cap 1-4; every strike stacks |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
 | `Tone` | tilt EQ |
-| `Cutoff` / `Resnc` | master low-pass and its Q |
+| `Cutoff` / `Resnc` | master low-pass (0.1 kHz steps) and its Q |
 | `Gain` | drive |
 
 `Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff` and `Resnc` are performance knobs the host owns: a Program change leaves them where they are.  `Gain` loads with the preset.  The common knobs are [`brachetti_common/common_knobs.h`](../../brachetti_common/common_knobs.h).

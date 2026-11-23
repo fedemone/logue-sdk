@@ -41,7 +41,10 @@ def knobs(unit):
     rx = r'\{(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*k_unit_param_type_\w+,[^{]*\{"(\w*)"\}\}'
     for slot, m in enumerate(re.finditer(rx, txt)):
         if m.group(5) and m.group(5) not in MASTER:
-            out.append((slot, int(m.group(1)), int(m.group(2)), m.group(5)))
+            lo, hi = int(m.group(1)), int(m.group(2))
+            if m.group(5) == "NzFltFrq" and (lo, hi) == (1, 200):
+                lo, hi = 2, 2000   # 0.1 kHz panel steps; the engine's own range (knob_steps.h)
+            out.append((slot, lo, hi, m.group(5)))
     return out
 
 
