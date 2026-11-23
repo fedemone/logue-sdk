@@ -377,26 +377,34 @@ int main(int argc, char** argv) {
 
     // Ring-over, on every family unit and on Brachetti (each family, and a
     // family switch).  Program 0 rings; the change goes to the last instrument.
+    // Every case gets a fresh pair of instances, so both have the same history
+    // (after a ring-over a unit plays from its other engine copy, whose voices
+    // carry noise states of their own).
     {
-        // Fresh instances, so both of a pair have the same history.
-        Unit b, b2;
-        if (!open_copy(b, argv[1], ".ring1.so") || !open_copy(b2, argv[1], ".ring2.so")) return 2;
+        int pair = 0;
+        auto fresh = [&](Unit& u1, Unit& u2, const char* path) {
+            const std::string a = ".ring" + std::to_string(pair) + "a.so";
+            const std::string c = ".ring" + std::to_string(pair) + "b.so";
+            ++pair;
+            return open_copy(u1, path, a.c_str()) && open_copy(u2, path, c.c_str());
+        };
         for (int i = 0; i < 12; ++i) {
             Unit f, f2;
-            if (!open_copy(f, argv[2 + i], ".ring1.so") || !open_copy(f2, argv[2 + i], ".ring2.so")) return 2;
+            if (!fresh(f, f2, argv[2 + i])) return 2;
             const int last = f.hdr->params[0].max;
-            if (last == 0) continue;
-            f.reset(); f2.reset(); f.set(0, 0); f2.set(0, 0); f.reset(); f2.reset();
-            g_change_to = last;
-            ringover_compare(f, f2, std::string(f.hdr->name) + " Program change while ringing", change_program);
-            f.set(0, 0); f2.set(0, 0);
+            if (last > 0) {
+                g_change_to = last;
+                ringover_compare(f, f2, std::string(f.hdr->name) + " Program change while ringing", change_program);
+                Unit b, b2;
+                if (!fresh(b, b2, argv[1])) return 2;
+                b.load_preset((uint8_t)i); b2.load_preset((uint8_t)i);
+                ringover_compare(b, b2, std::string("Brachetti/") + b.preset_name((uint8_t)i) + " Program change while ringing", change_program);
+            }
+            Unit b, b2;
+            if (!fresh(b, b2, argv[1])) return 2;
             b.load_preset((uint8_t)i); b2.load_preset((uint8_t)i);
-            b.reset(); b2.reset(); b.set(0, 0); b2.set(0, 0); b.reset(); b2.reset();
-            ringover_compare(b, b2, std::string("Brachetti/") + b.preset_name((uint8_t)i) + " Program change while ringing", change_program);
-            b.set(0, 0); b2.set(0, 0);
             g_change_to = (i + 1) % 12;
             ringover_compare(b, b2, std::string("Brachetti ") + b.preset_name((uint8_t)i) + " -> " + b.preset_name((uint8_t)g_change_to) + " while ringing", change_family);
-            b2.load_preset((uint8_t)g_change_to);   // b2 follows, so both stay in step
         }
     }
 

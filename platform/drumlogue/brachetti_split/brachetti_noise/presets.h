@@ -117,7 +117,7 @@ static_assert(brc::preset_column_in(kPresetKnobs, k_paramResnc, 71, 71),
 // leaves them where they are and Init() seeds them (brc::HostKnob, knobs.h).
 // MUST track header.c's `.init` fields for these slots.
 static const brc::HostKnob kHostKnobs[] = {
-    { k_paramPoly,     4    },
+    { k_paramPoly,     2    },
     { k_paramVelocity, 0    },
     { k_paramTone,     0    },
     { k_paramCutoff,   1999 },

@@ -53,7 +53,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all tw
 |---|---|
 | `Program` | the preset |
 | `Pitch` | semitones from the root: transposes the whole anchor spectrum (a smaller or larger cymbal); a re-strike on the same note re-excites the ringing voice, a different note takes its own |
-| `Poly` | voice cap 1-4; the CPU budget (`kCostBudget`) affords two cymbal voices |
+| `Poly` | voice cap 1-4, 2 by default (it also bounds a Program change: the instrument ringing out gives its voices up as the new one is struck); the CPU budget (`kCostBudget`) affords two cymbal voices |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
 | `Tone` | tilt EQ |
 | `Cutoff` / `Resnc` | master low-pass (0.1 kHz steps) and its Q |

@@ -82,6 +82,14 @@ def main():
         their_knobs = set(p[0] for p in parse_list(a.compare_with)[1])
         own = [p for p in params if alias.get(p[0], p[0]) not in their_knobs]
         params = [p for p in params if alias.get(p[0], p[0]) in their_knobs]
+        # Boot defaults the two units do not share (the family units' Poly is 2,
+        # the original's 4): every scenario starts by setting the family
+        # unit's own, so both boot alike.
+        their_init = {p[0]: p[3] for p in parse_list(a.compare_with)[1]}
+        boot = [(p[0], p[3]) for p in params
+                if p[0] != "Program" and their_init.get(alias.get(p[0], p[0]), p[3]) != p[3]]
+    else:
+        boot = []
         if own:
             sys.stderr.write("knobs of the family's own, left out of the comparison: %s\n"
                              % ", ".join(p[0] for p in own))
@@ -97,6 +105,9 @@ def main():
             cur[0] = p
         elif line.startswith("scenario "):
             cur[0] = None
+            out.append(line)
+            out.extend("param %s %d" % b for b in boot)
+            return
         out.append(line)
 
     def scen(name, preset):

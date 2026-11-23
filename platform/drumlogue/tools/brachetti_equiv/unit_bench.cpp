@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
     if (unit_init(&d)) return 2;
     if (fam >= 0) unit_load_preset((uint8_t)fam);
     float buf[128];
+    unit_set_param_value(2, 4);   // Poly 4: the worst case (the shipped default is 2; no-op on the kernel)
     unit_set_param_value(0, prog);
     for (int k = 0; k < notes; ++k) unit_note_on((uint8_t)(48 + (k * 5) % 13), (uint8_t)(110 - k * 5));
     for (int f = 0; f < 1200; f += 64) unit_render(nullptr, buf, 64);

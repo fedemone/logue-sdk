@@ -43,8 +43,8 @@ const __unit_header unit_header_t unit_header = {
         {0, 31, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         // Pitch: semitones from the instrument's root note (no Pitch on Noise)
         {-24, 24, 0, 0, k_unit_param_type_semi, 0, 0, 0, {"Pitch"}},
-        // Poly: voice cap 1-4 (no Poly on Kernel)
-        {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
+        // Poly: voice cap 1-4, 2 by default (no Poly on Kernel)
+        {1, 4, 1, 2, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
         // Velocity: -100 ghost .. 0 as played .. +100 wham
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Velocity"}},
 

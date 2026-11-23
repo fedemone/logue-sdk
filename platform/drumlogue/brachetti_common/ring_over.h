@@ -1,46 +1,42 @@
 #pragma once
-// Brachetti common library — Program changes that let the ringing sound ring.
-//
-// A family engine cannot keep a voice through a Program change: its voices
-// read the current instrument's tables, anchors and master trim while they
-// ring, so a change fades them out in ~10 ms (fade_out_all).  RingOver gives a
-// unit TWO copies of its engine.  New strikes and the knobs go to the current
-// copy; on a Program change while the current copy is still sounding, the
-// other copy takes the new instrument (with the panel's knobs) and becomes
-// current, and the first rings out untouched, under its own instrument,
-// knobs and master stage, until it falls silent.  A change while nothing
-// rings, or to the instrument already playing, is the engine's own
-// LoadPreset, exactly as before.  So at most two instruments sound at once:
-// a third change while both still ring fades the older one, as a single
-// engine would.
-//
-// THE CPU BUDGET.  Two copies must not cost twice one: on the drumlogue that
-// is the level that stops the audio interface (the original unit's Timpani
-// note change and cymbal crash; a snare struck four times on each side of a
-// Program change measured there too).  So the copies share one instrument's
-// voices: before each strike of the new instrument, the old copy's oldest
-// voices fade out (the preset-change fade, ~10 ms) until the two together fit
-// the engine's VoiceBudget() — Poly for the voice engines, one full bank for
-// the kernel, whose old kettle gives its fill up and rings on as a skeleton.
-// The old sound rings on until the new instrument is played, then makes room
-// voice by voice.  An engine provides LiveVoices(), VoiceBudget() and
-// FadeOldestVoice().
+// Brachetti common library — the unit-facing wrapper of every Brachetti unit:
+// Program changes that let the ringing sound ring, within one instrument's
+// CPU budget, and the panel's knob steps.
 //
 //   static brc::RingOver<BrachettiSynth> s_synth;   // unit.cc
+//   s_synth.SetHeader(&unit_header);                // before Init
 //
-// It forwards the engine's unit-facing calls.  A held gate is released on
-// the copy it struck; a MIDI note-off, all-notes-off, reset and suspend go to
-// both.  An engine whose voices use file-scope buffers (delay lines) gives
-// each copy its own with SetBank(0 / 1), called before Init.
+// RINGING ON.  An engine cannot keep a voice through a Program change: its
+// voices read the current instrument's tables, anchors and master trim while
+// they ring, so its own LoadPreset fades them out in ~10 ms.  RingOver holds
+// TWO copies of the engine.  Strikes and knobs go to the current copy.  A
+// Program change while it still sounds hands the new instrument, with the
+// panel's knobs, to the other copy, which becomes current; the first rings on
+// untouched — its instrument, knobs and master stage.  A change while nothing
+// rings, or to the instrument already playing, is the engine's own
+// LoadPreset.  A third change while both copies still ring fades the older
+// one, as a single engine would.  A held gate is released on the copy it
+// struck; note-offs, all-notes-off, reset and suspend go to both.  An engine
+// with file-scope buffers (delay lines) gives each copy its own (SetBank).
+//
+// THE CPU BUDGET.  Two copies must never cost two instruments: on the
+// drumlogue about twice one heavy instrument stops the audio interface (the
+// original unit's Timpani note change and cymbal crash; the first ring-over
+// build, on the snares).  So before each strike of the new instrument the old
+// copy's oldest voices fade out (the same ~10 ms fade) until the two together
+// fit the engine's VoiceBudget() — Poly (2 by default) for the voice engines,
+// one full bank for the kernel, whose old kettle gives its fill up and rings
+// on as a skeleton.  The old sound rings untouched until the new instrument is
+// played, then gives way voice by voice.  An engine provides LiveVoices(),
+// VoiceBudget() and FadeOldestVoice(); ring_budget_check.sh checks it.
 //
 // "Sounding" is measured on the output: a copy sounds while its last
 // rendered block had a non-zero sample, or it was struck since.  An engine's
 // output is exactly zero once its voices have retired and its master stage
-// has stopped, so the tail (master filter included) is never cut.
+// has stopped, so no tail is cut and no silent copy is rendered.
 //
-// It is also where the panel's knob steps are applied (knob_steps.h): give
-// it the unit's header with SetHeader before Init, and Cutoff and NzFltFrq
-// step 0.1 kHz on the panel while the engine keeps its 10 Hz values.
+// KNOB STEPS (knob_steps.h).  Given the unit's header, it shows Cutoff and
+// NzFltFrq in 0.1 kHz steps while the engine keeps its 10 Hz values.
 //
 // Provides: RingOver.
 #include <cstddef>
@@ -106,9 +102,9 @@ public:
     // True while either copy still sounds.
     bool Sounding() const { return m_sounding[0] || m_sounding[1]; }
 
-    // The voice budget, for a unit with several engines (Brachetti, across a
-    // family switch): live voices in both copies, and the oldest of them out
-    // (the copy ringing out first).
+    // The voice budget seen from outside, for a unit with several engines
+    // (Brachetti, across a family switch): the live voices of both copies,
+    // and the oldest of them faded (the copy ringing out first).
     uint8_t LiveVoices() const { return (uint8_t)(m_eng[0].LiveVoices() + m_eng[1].LiveVoices()); }
     uint8_t VoiceBudget() const { return cur().VoiceBudget(); }
     void FadeOldestVoice() {

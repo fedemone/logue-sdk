@@ -29,7 +29,9 @@ OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector 
      --param max-inline-insns-single=2000000000"
 arm-linux-gnueabihf-g++ -static -std=gnu++17 $ARCH $OPT -w -I"$unit" -I"$unit/.." \
     -I"$drum/common" -DRUNTIME_COMMON_H_ "$here/equiv_driver.cpp" -o "$work/drv"
-{ echo "scenario bench"; echo "preset $preset"
+poly=""
+grep -q '^param [0-9]* Poly ' <(qemu-arm "$work/drv" --list) && poly="param Poly 4"   # the voice cap, not the default 2
+{ echo "scenario bench"; [ -n "$poly" ] && echo "$poly"; echo "preset $preset"
   for k in $(seq 0 $((notes - 1))); do echo "note_rel $(( (k * 5) % 13 )) $((110 - k * 5))"; done
   echo "render_only $frames"; } > "$work/bench.script"
 grep -v '^render_only' "$work/bench.script" > "$work/setup.script"

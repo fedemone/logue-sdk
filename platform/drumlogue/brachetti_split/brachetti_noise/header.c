@@ -29,8 +29,8 @@ const __unit_header unit_header_t unit_header = {
         // Program: the preset (this family's presets only)
         {0, 7, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Program"}},
         {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},   // blank: this unit has no Pitch (nothing in a noise voice follows the note)
-        // Poly: global voice cap 1-4
-        {1, 4, 1, 4, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
+        // Poly: global voice cap 1-4, 2 by default
+        {1, 4, 1, 2, k_unit_param_type_strings, 0, 0, 0, {"Poly"}},
         // Velocity: velocity bias: -100 ghost .. 0 as played .. +100 wham
         {-100, 100, 0, 0, k_unit_param_type_none, 0, 0, 0, {"Velocity"}},
 

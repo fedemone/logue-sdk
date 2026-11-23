@@ -121,6 +121,9 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all tw
 | 5 | dedicated | `Mterl` · `HitPos` · `Inharm` · `ApDelay` |
 | 6 | dedicated | `NzMix` · `Blend` · `BuzzTon` · `NzFltFrq` |
 
+`Poly` (voice cap 1-4) is 2 by default, and also bounds a Program change: the
+instrument ringing out gives its voices up as the new one is struck.
+
 The common knobs are [`brachetti_common/common_knobs.h`](../../brachetti_common/common_knobs.h)
 (`Pitch` is semitones from the preset's root: the loop follows the played
 note, in tune).  Every dedicated mapping is REFERENCE-ANCHORED, as on every

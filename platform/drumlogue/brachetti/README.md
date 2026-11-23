@@ -82,7 +82,8 @@ they are the same whatever the family.
 
 **Pages 1-2 — common** (the same slots, ranges and meanings on every family
 unit): `Program` · `Pitch` · `Poly` · `Velocity`, then `Tone` · `Cutoff` ·
-`Resnc` · `Gain`.  Noise has no `Pitch` (nothing in a noise voice follows
+`Resnc` · `Gain`.  `Poly` (voice cap 1-4) is 2 by default; it
+also bounds a Program change (*The CPU budget*).  Noise has no `Pitch` (nothing in a noise voice follows
 the note) and Kernel no `Poly` (it always has its two kettles): there the
 knob does nothing (`Poly` shows `---`).
 
@@ -215,7 +216,8 @@ them (*The CPU budget*, below).  A held gate is released on the copy it struck.
 A change while nothing rings is exactly the old Program change.  At most two
 instruments of a family sound at once: a third change while both still ring
 fades the older one in ~10 ms, as before.  A family switch works the same
-way one level up: the family left behind keeps rendering until it is silent.
+way one level up: the family left behind keeps rendering until it is
+silent, or until the new family is struck.
 The price is memory: the engines and their delay lines are there twice.
 
 ### The CPU budget

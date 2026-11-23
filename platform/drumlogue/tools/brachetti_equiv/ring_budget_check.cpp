@@ -41,6 +41,7 @@ static brc::RingOver<BrachettiSynth> g_rs;
 int main() {
     unit_runtime_desc_t d = desc();
     if (g_rs.Init(&d) != k_unit_err_none) { fprintf(stderr, "Init failed\n"); return 2; }
+    g_rs.setParameter(2, 4);   // Poly 4, the hardest case (the default is 2; the kernel has no Poly)
     float buf[128];
     const int n = BrachettiSynth::k_NumPrograms;
     int worst = 0, cases = 0;
@@ -76,6 +77,7 @@ static brachetti::Synth g_s;
 int main() {
     unit_runtime_desc_t d = desc();
     if (g_s.Init(&d) != k_unit_err_none) { fprintf(stderr, "Init failed\n"); return 2; }
+    g_s.SetParameter(2, 4);   // Poly 4, the hardest case (the default is 2)
     float buf[128];
     using brachetti::kFamilies;
     using brachetti::kNumFamilies;

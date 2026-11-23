@@ -104,7 +104,9 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all tw
 
 Every mapping is REFERENCE-ANCHORED (exactly the shipped sound at the shipped
 value).  `Pitch`, `Poly`, `Velocity`, `Tone`, `Cutoff`, `Resnc` and `Crack` are
-host-owned: a Program change leaves them where they are.
+host-owned: a Program change leaves them where they are.  `Poly` (voice cap
+1-4) is 2 by default, and also bounds a Program change: the instrument ringing
+out gives its voices up as the new one is struck.
 
 | Knob | On the instruments with wires on a head | On the wire instruments |
 |---|---|---|

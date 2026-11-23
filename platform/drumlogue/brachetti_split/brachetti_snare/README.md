@@ -65,7 +65,7 @@ Pages 1-2 hold the **common knobs**: the same slots, names and meaning on all tw
 |---|---|
 | `Program` | the preset |
 | `Pitch` | semitones from the preset's root: moves the modal head |
-| `Poly` | voice cap 1-4; fast same-note strokes fuse and keep the wires rattling (buzz roll) |
+| `Poly` | voice cap 1-4, 2 by default (it also bounds a Program change: the instrument ringing out gives its voices up as the new one is struck); fast same-note strokes fuse and keep the wires rattling (buzz roll) |
 | `Velocity` | velocity bias: ghost (−) … as played (0) … wham (+) |
 | `Tone` | tilt EQ |
 | `Cutoff` / `Resnc` | master low-pass (0.1 kHz steps) and its Q |

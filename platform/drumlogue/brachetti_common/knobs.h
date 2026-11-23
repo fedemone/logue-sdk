@@ -75,7 +75,7 @@ inline bool off_unity(float factor) { return factor < 0.999f || factor > 1.001f;
 // defaults.  A unit lists them once, with those defaults, and both rules read
 // the same table:
 //
-//   static const brc::HostKnob kHostKnobs[] = {{k_paramPoly, 4}, ...};
+//   static const brc::HostKnob kHostKnobs[] = {{k_paramPoly, 2}, ...};
 //   LoadPreset:  if (p != k_paramProgram && !brc::is_host_knob(kHostKnobs, p)) load p
 //   Init:        brc::seed_host_knobs(*this, kHostKnobs);
 //
