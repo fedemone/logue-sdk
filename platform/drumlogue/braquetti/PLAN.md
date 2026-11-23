@@ -49,17 +49,47 @@ host-tested; the unit around it is not.
 - A family change keeps the steps' positions: a step that is on stays on,
   on the same program number if the new family has it, else on its last.
 
-### Sound
+### Engines: Brachetti's family engines, one pool
 
-- One engine instance per lane: a Brachetti engine fades every voice of its
-  instance on a program change, so two lanes cannot share one.
-- One voice per lane, the next hit cutting the previous one off.
-- Each instance renders to its own buffer; one limiter on the sum, and a
-  level per lane.
-- A CPU budget across lanes: on hardware the original Brachetti stopped the
-  audio at about twice its known-good render cost, and one Timpani kettle
-  costs about half of that.  Measure before allowing the heavy families on
-  every lane.
+Brachetti on main is one unit holding the twelve families (its presets) and
+their 114 instruments (`Program`).  Two ways to sequence it were weighed:
+
+- **The whole unit, `brachetti::Synth`, once per lane: not possible.**  Its
+  engines and its family table are file-scope statics in
+  `brachetti_synth.h`, so a process has exactly one; and four families
+  (Lippa, Pizzico, World, Cordiera) keep their delay lines at file scope,
+  sized for one ring-over pair.  As it is, it would put all three lanes on
+  one family (no kick + snare + hat).
+- **The single families, through Brachetti's family table: chosen.**
+  `brachetti::kFamilies` gives, per family, its ring-over engine pair and
+  calls for Program, strike, render, its instruments' names.  Braquetti
+  includes it (`catalog.h`) and routes each lane's hits to its family's
+  engine: one engine pool, as in Brachetti, so the memory is Brachetti's
+  (about 400 KB, known to load on the drumlogue) and every instrument plays
+  bit for bit as in Brachetti and its family unit.  A family or instrument
+  added to Brachetti reaches Braquetti with the next build.
+
+What that means:
+
+- **Two lanes on the same family share its engine pair**: its two copies
+  let two of its instruments sound at once (the ring-over); a third strike
+  while both ring fades the older (~10 ms).  Lanes on different families are
+  fully independent.  If that limit bites, the way out is one pool per lane
+  (three times the memory, and the four delay-line families made to hold six
+  copies instead of two).
+- **A strike** sets the family's `Program` to the step's instrument, then
+  gates it at the step's velocity: the family's ring-over lets the previous
+  instrument ring on.  The instruments play at their shipped knob values
+  (no sound design in Braquetti).
+- **Render**: every family still sounding renders into a scratch buffer and
+  is summed (as Brachetti renders a family left ringing); one limiter on the
+  sum.  A lane's level scales its family's output while that lane owns it.
+- **CPU**: Brachetti's guarantee is one instrument's voices per family.
+  Three lanes on three families can sound three families at once, so each
+  family's `Poly` is set to 1 in Braquetti (a new hit fades the previous
+  one, a drum machine's choke): three voices in all, plus what rings over.
+  Measure with `tools/brachetti_equiv/unit_cycles.sh` before calling it safe,
+  the Kernel (two kettles, no Poly) on all three lanes first.
 
 ### Clock
 
@@ -74,10 +104,11 @@ do not follow the steps (finding 3).  Candidates:
 
 1. **A store gesture.**  After a preset load the panel re-reads every value
    (finding 3).  A preset named for it would let the unit hand back its
-   pattern encoded in the step knobs' numbers (3 lanes × 5 bits in one
-   16-bit number per step), and saving the program would keep it.  Test
-   first: does a program saved after that preset load keep those numbers,
-   and does loading it hand them back?
+   pattern encoded in the knobs' numbers, and saving the program would keep
+   it.  Test first: does a program saved after that preset load keep those
+   numbers, and does loading it hand them back?  The encoding is open again:
+   Tom now has 32 instruments, so a step of one lane takes 6 bits and a step
+   of all three lanes (18 bits) no longer fits one knob's number.
 2. **Patterns read at boot** from files prepared on a computer (finding 9).
    Read-only: edits made on the drumlogue are lost at power-off.
 
@@ -88,20 +119,20 @@ the pattern store and the song mode.
 
 - [x] SeqProbe, second run: accent = velocity 127; no notes from the step keys; resets only on stop.
 - [ ] Test the store gesture (Keeping a pattern, 1).
-- [ ] Align with Brachetti on main once its families are presets and its instruments the Program values.
+- [x] Align with Brachetti on main: the catalog is Brachetti's family table (12 families, 114 instruments).
 - [x] Sequencer core, host-tested: the pattern, step turns, the restore guard, the clock (below).
-- [ ] One engine per lane, the mix, the CPU budget, measured on hardware.
+- [ ] The unit: header.c, the callbacks, hits routed to the family engines, the mix; sizes (`arm_size.sh`) and CPU (`unit_cycles.sh`), then hardware.
 - [ ] Song mode through the drumlogue's chain, if the store gesture works.
 
 ## Code so far
 
 | File | What it holds |
 |---|---|
-| `seq_core.h` | `brq::Sequencer<Catalog>`: three lanes × 16 steps; the knobs (steps, Lane, Family, Level read as turns, the overview bitmap, 8-character texts); the restore guard (a burst of sets, or sets right after a preset load, edits nothing and undoes the turn it started with); the clock (one gate per step, an accent or the first gate after a reset is step 1); `pack_column` / `pack_families` for the store gesture; `HitQueue`, the lock-free hand-off from gates to the audio thread.  No constructor, no heap, no clock of its own |
-| `catalog.h` | The eight Brachetti families and their programs as the family units name them today; the core reads only `kFamilies`, `family_name`, `programs`, `program_name`, `default_family`.  Follows Brachetti on main when its families become presets |
-| `test/core_test.cc`, `test/run_core_test.sh` | Host test: defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, packing, the queue, every name within 8 characters, and gates on one thread while knobs edit on another.  `./run_core_test.sh` (ASan/UBSan) and `ARM=1 ./run_core_test.sh` (qemu-arm) |
+| `seq_core.h` | `brq::Sequencer<Catalog>`: three lanes × 16 steps; the knobs (steps, Lane, Family, Level read as turns, the overview bitmap, 8-character texts); the restore guard (a burst of sets, or sets right after a preset load, edits nothing and undoes the turn it started with); the clock (one gate per step, an accent or the first gate after a reset is step 1); `HitQueue`, the lock-free hand-off from gates to the audio thread.  No constructor, no heap, no clock of its own |
+| `catalog.h` | The lanes' families and instruments, read from Brachetti's family table (`../brachetti/brachetti_synth.h`); including it brings Brachetti's engines in (the pool above; link `../brachetti/family_headers.c`).  The core reads only `kFamilies`, `kMaxPrograms`, `family_name`, `programs`, `program_name`, `default_family`.  Defaults: lane A Kick, B Snare, C Noise |
+| `test/catalog_test.cc` | The catalog with Brachetti's engines compiled in: the 12 families and their counts (114), every name within 8 characters, the core driving Tom to its 32nd instrument and a family change on the real table |
+| `test/core_test.cc`, `test/run_core_test.sh` | Host test, on a small catalog of its own (no engines): defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, the queue, and gates on one thread while knobs edit on another.  `./run_core_test.sh` runs both (ASan/UBSan); `ARM=1 ./run_core_test.sh` the ARM builds under qemu-arm |
 
 Next: the unit around it — header.c with the knob layout above, the SDK
-callbacks, one Brachetti engine per lane playing the hits — once Brachetti
-on main has its families as presets (or on today's family units, to start
-measuring CPU).
+callbacks, hits routed to Brachetti's family engines (Engines, above), the
+mix; then its size and CPU, then hardware.

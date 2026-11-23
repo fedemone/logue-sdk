@@ -8,11 +8,37 @@
 #include <string>
 #include <thread>
 
-#include "../catalog.h"
 #include "../seq_core.h"
 
 using namespace brq;
-using Seq = Sequencer<BrachettiCatalog>;
+
+// A small catalog of its own, so this test needs no engines: Brachetti's
+// first eight families as the family units first shipped them.  The real
+// catalog (Brachetti's family table) is checked by catalog_test.cc.
+static const char* const kKickNames[]   = {"Kick2", "808Sub", "Kick"};
+static const char* const kTomNames[]    = {"Djambe", "Ac Tom", "DeepBs", "Conga", "Handpn", "Bongo", "RackTom"};
+static const char* const kKernelNames[] = {"Timpni", "Taiko"};
+static const char* const kSnareNames[]  = {"AcSnre", "MrchSnr", "BrshSnr", "RimShot"};
+static const char* const kBarNames[]    = {"Marmba", "TblrBel", "Vibrph", "Wodblk", "Kalimba",
+                                           "StelPan", "Claves", "GlsBwl", "SltDrm", "GlsBotl"};
+static const char* const kPlateNames[]  = {"Cowbel", "Trngle", "BelTre", "Tick"};
+static const char* const kCymbalNames[] = {"Cymbal", "Gong", "HHat-O", "Ride", "RidBel", "Splash"};
+static const char* const kNoiseNames[]  = {"Clap", "Shaker", "HHat-C"};
+struct TestFamily { const char* name; int count; const char* const* programs; };
+static const TestFamily kTestFamilies[] = {
+    {"Kick", 3, kKickNames},     {"Tom", 7, kTomNames},     {"Kernel", 2, kKernelNames},
+    {"Snare", 4, kSnareNames},   {"Bar", 10, kBarNames},    {"Plate", 4, kPlateNames},
+    {"Cymbal", 6, kCymbalNames}, {"Noise", 3, kNoiseNames},
+};
+struct TestCatalog {
+    static constexpr int kFamilies = 8;
+    static constexpr int kMaxPrograms = 10;
+    static const char* family_name(int f) { return kTestFamilies[f].name; }
+    static int programs(int f) { return kTestFamilies[f].count; }
+    static const char* program_name(int f, int p) { return kTestFamilies[f].programs[p]; }
+    static int default_family(int lane) { return lane == 0 ? 0 : lane == 1 ? 3 : 6; }
+};
+using Seq = Sequencer<TestCatalog>;
 constexpr uint8_t P_STEP5 = P_STEP1 + 4;
 
 static int s_fail = 0;
@@ -161,22 +187,13 @@ int main() {
     s_seq.gate_on(64, hits);
     CHECK(s_seq.position() == 0, "the first gate after a reset is step 1");
 
-    // ── Overview, packing, the queue ────────────────────────────────────────
+    // ── Overview, the queue ─────────────────────────────────────────────────
     const Bitmap* ov = reinterpret_cast<const Bitmap*>(s_seq.param_bitmap(P_OVERVIEW));
     CHECK(ov && ov->get(0, 1) && ov->get(0, 2) && ov->get(4, 1) && !ov->get(1, 1), "lane A row");
     CHECK(ov->get(4, 6) && ov->get(12, 6) && !ov->get(0, 6), "lane B row");
     CHECK(ov->get(0, 4) && !ov->get(0, 9), "dots under the selected lane (A)");
     CHECK(s_seq.param_bitmap(P_STEP1) == nullptr, "only the overview is a bitmap");
 
-    const uint16_t col = s_seq.pack_column(4);
-    CHECK(col == (1 | (2 << 4)), "column 5 packs kick 1, snare 2: %04x", col);
-    const uint16_t fam = s_seq.pack_families();
-    s_seq.unpack_column(4, 0);
-    CHECK(s_seq.step(0, 4) == 0 && s_seq.step(1, 4) == 0, "cleared");
-    s_seq.unpack_column(4, col);
-    s_seq.unpack_families(fam);
-    CHECK(s_seq.pack_column(4) == col && s_seq.pack_families() == fam, "round trip");
-    CHECK(col <= kRelMax && fam <= kRelMax, "packed numbers fit a knob's range");
 
     static HitQueue q;   // static, as in the unit: zero-initialised
     int pushed = 0;
@@ -186,15 +203,6 @@ int main() {
     while (q.pop(h)) ++popped;
     CHECK(pushed == 16 && popped == 16, "queue holds 16: %d %d", pushed, popped);
 
-    // Every name fits the panel.
-    for (int f = 0; f < BrachettiCatalog::kFamilies; ++f) {
-        CHECK(std::strlen(BrachettiCatalog::family_name(f)) <= 8, "family %d name", f);
-        CHECK(BrachettiCatalog::programs(f) <= BrachettiCatalog::kMaxPrograms, "family %d count", f);
-        for (int p = 0; p < BrachettiCatalog::programs(f); ++p)
-            CHECK(std::strlen(BrachettiCatalog::program_name(f, p)) <= 8, "%s fits",
-                  BrachettiCatalog::program_name(f, p));
-    }
-
     // ── Gates on one thread, knobs on another ───────────────────────────────
     std::atomic<bool> run{true};
     std::atomic<int> bad{0};
@@ -203,7 +211,7 @@ int main() {
         while (run.load()) {
             const int k = s_seq.gate_on(64, hh);
             for (int i = 0; i < k; ++i)
-                if (hh[i].program >= BrachettiCatalog::programs(hh[i].family)) ++bad;
+                if (hh[i].program >= TestCatalog::programs(hh[i].family)) ++bad;
         }
     });
     for (int i = 0; i < 2000; ++i) {

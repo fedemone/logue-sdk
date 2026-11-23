@@ -52,8 +52,7 @@ enum : uint8_t {
     kNumParams = 24,
 };
 
-// Relative knobs: range 0..kRelMax in the header, starting at kRelInit.  The
-// range is wide enough to carry a packed step column (pack_column) later.
+// Relative knobs: range 0..kRelMax in the header, starting at kRelInit.
 constexpr int32_t  kRelMax          = 4095;
 constexpr int32_t  kRelInit         = 2048;
 constexpr int32_t  kRelSwing        = 512;     // how far an answer sits from the panel's number
@@ -115,8 +114,8 @@ struct Bitmap {
 // zero-initialised and needs no code at load.  Call init() from unit_init.
 template <class Catalog>
 class Sequencer {
-    static_assert(Catalog::kMaxPrograms <= 15, "a step stores program + 1 in 4 bits");
-    static_assert(Catalog::kFamilies <= 16, "a family fits 4 bits");
+    static_assert(Catalog::kMaxPrograms <= 254, "a step stores program + 1 in a byte");
+    static_assert(Catalog::kFamilies <= 255, "a family fits a byte");
 
 public:
     void init() {
@@ -233,30 +232,6 @@ public:
     int level(int lane) const { return m_level[lane].load(std::memory_order_relaxed); }
     int selected_lane() const { return m_lane; }
     int position() const { return m_pos; }
-
-    // A step column, all three lanes, in one 16-bit number (4 bits a lane:
-    // program + 1, 0 = off): what the step knobs could carry for a program
-    // save (PLAN.md, "Keeping a pattern").
-    uint16_t pack_column(int s) const {
-        uint16_t c = 0;
-        for (int l = 0; l < kLanes; ++l) c = uint16_t(c | (step(l, s) << (4 * l)));
-        return c;
-    }
-    void unpack_column(int s, uint16_t c) {
-        for (int l = 0; l < kLanes; ++l) {
-            const int code = (c >> (4 * l)) & 15;
-            m_steps[l][s].store(uint8_t(clampi(code, 0, Catalog::programs(family(l)))),
-                                std::memory_order_relaxed);
-        }
-    }
-    uint16_t pack_families() const {
-        uint16_t c = 0;
-        for (int l = 0; l < kLanes; ++l) c = uint16_t(c | (family(l) << (4 * l)));
-        return c;
-    }
-    void unpack_families(uint16_t c) {
-        for (int l = 0; l < kLanes; ++l) set_family(l, clampi((c >> (4 * l)) & 15, 0, Catalog::kFamilies - 1));
-    }
 
 private:
     void turn(uint8_t id, int d) {
