@@ -16,11 +16,13 @@
 
 #include "unit.h"
 #include "../catalog.h"
+#include "../limits.h"   // kCpuBudget (the unit has its own Limit)
 #include "../seq_core.h"
 
 int braquetti_test_live_voices();   // unit.cc, BRAQUETTI_HOST_TEST
 int braquetti_test_load();
 int braquetti_test_budget();
+int braquetti_test_bad_renders();
 
 using namespace brq;
 
@@ -72,6 +74,8 @@ static std::vector<float> reference(int family, int program, uint8_t velocity, i
     if (!s_ref_ready[family]) {
         f.set_header(f.engine, f.hdr);
         f.init(f.engine, &s_desc);
+        const uint8_t poly = f.slot[brc::CommonLayout::k_paramPoly];   // one voice per lane, as the unit
+        if (poly != brachetti::kNone) f.set(f.engine, poly, 1);
         s_ref_ready[family] = true;
     }
     f.reset(f.engine);
@@ -146,8 +150,15 @@ int main() {
     for (int i = 0; i < kNumParams; ++i) {
         const unit_param_t& p = unit_header.params[i];
         CHECK(p.init >= p.min && p.init <= p.max, "P%02d default inside its range", i);
-        CHECK((p.type == k_unit_param_type_bitmaps) == is_overview(uint8_t(i)), "P%02d bitmap only for the overview", i);
+        CHECK(p.type == k_unit_param_type_strings, "P%02d is text (the overview is hidden)", i);
     }
+    CHECK(text(P_LAYER) == "Inst", "layer: %s", text(P_LAYER).c_str());
+    // Page 6, the CPU meter: text within the panel's 8 characters.
+    for (int k = 0; k < kOverviewKnobs; ++k) {
+        const std::string m = text(uint8_t(P_OVERVIEW + k));
+        CHECK(!m.empty() && m.size() <= 8, "meter %d: '%s'", k + 1, m.c_str());
+    }
+    // The overview's code stays (built with BRQ_OVERVIEW it is page 6).
     for (int k = 0; k < kOverviewKnobs; ++k)
         CHECK(unit_get_param_bmp_value(uint8_t(P_OVERVIEW + k), 0) != nullptr, "overview %d draws", k + 1);
 
@@ -167,6 +178,17 @@ int main() {
     unit_gate_on(127);
     check_scaled(render(60), reference(0, 0, 64, 60), 0.8f, "Kick2 on an accent");
 
+    // A step accented in the Accent layer strikes at 127.
+    set_abs(P_LAYER, L_ACCENT);
+    turn(P_STEP1, +1);
+    CHECK(text(P_STEP1) == "Accent", "step 1: %s", text(P_STEP1).c_str());
+    unit_reset();
+    unit_gate_on(127);
+    check_scaled(render(60), reference(0, 0, 127, 60), 0.8f, "Kick2 accented");
+    turn(P_STEP1, -1);
+    set_abs(P_LAYER, L_INST);
+
+
     // The lane's level.
     turn(P_LEVEL, -30);
     CHECK(text(P_LEVEL) == "50%", "level: %s", text(P_LEVEL).c_str());
@@ -174,6 +196,18 @@ int main() {
     unit_gate_on(64);
     check_scaled(render(60), reference(0, 0, 64, 60), 0.5f, "Kick2 at 50%");
     turn(P_LEVEL, +30);
+
+    // (After the comparisons with the Kick's reference: these strikes are
+    // history the reference does not share.)
+    // One voice per lane: a lane's new hit fades its previous one.
+    turn(uint8_t(P_STEP1 + 1), +1);   // Kick2 on step 2 too
+    unit_reset();
+    unit_gate_on(127);
+    render(20);
+    unit_gate_on(64);
+    render(20);                       // past the ~10 ms fade
+    CHECK(braquetti_test_live_voices() == 1, "one voice per lane: %d", braquetti_test_live_voices());
+    turn(uint8_t(P_STEP1 + 1), -1);
 
     // An instrument that starts silent (the Rainstk's first 9 ms) still
     // starts: a family struck renders while it holds a live voice.
@@ -221,6 +255,10 @@ int main() {
     unit_reset();
     unit_gate_on(64);
     render(3);            // one strike per block
+    for (int k = 0; k < kOverviewKnobs; ++k) {
+        const std::string m = text(uint8_t(P_OVERVIEW + k));
+        CHECK(!m.empty() && m.size() <= 8, "meter %d while playing: '%s'", k + 1, m.c_str());
+    }
     CHECK(braquetti_test_live_voices() == 3, "Kick2, AcSnre and HHat-O all sound: %d voices",
           braquetti_test_live_voices());
     turn(P_STEP1, -3);
@@ -265,6 +303,15 @@ int main() {
         CHECK(heard && bounded, "%s: it sounds, every sample finite and within +-1", what);
     };
     busy("Kick2, AcSnre, HHat-C", 3);
+
+    // The Limit knob (page 6): 5-10, tens of per cent of the budget.
+    CHECK(text(uint8_t(P_OVERVIEW + 3)) == "100%" && braquetti_test_budget() == kCpuBudget, "Limit: %s %d",
+          text(uint8_t(P_OVERVIEW + 3)).c_str(), braquetti_test_budget());
+    set_abs(uint8_t(P_OVERVIEW + 3), 7);
+    CHECK(text(uint8_t(P_OVERVIEW + 3)) == "70%" && braquetti_test_budget() == kCpuBudget * 7 / 10, "Limit 70%%: %s %d",
+          text(uint8_t(P_OVERVIEW + 3)).c_str(), braquetti_test_budget());
+    busy("Kick2, AcSnre, HHat-C at Limit 70%", 2);
+    set_abs(uint8_t(P_OVERVIEW + 3), 10);
 
     // ── The heaviest: the Timpani, under the step limits (limits.h) ─────────
     // Lane A to Kernel: its Kick2 steps become Timpani, every one refused,
@@ -328,6 +375,7 @@ int main() {
     gates.join();
     audio.join();
     CHECK(!bad.load(), "threads: every sample finite and within +-1");
+    CHECK(braquetti_test_bad_renders() == 0, "no render needed the NaN guard: %d", braquetti_test_bad_renders());
 
     unit_teardown();
     if (s_fail) { std::printf("%d check(s) FAILED\n", s_fail); return 1; }

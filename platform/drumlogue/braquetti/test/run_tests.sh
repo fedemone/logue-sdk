@@ -53,6 +53,12 @@ fi
 "$cc" "${flags[@]}" -std=c11 -W -Wall -Wextra -Werror -I"$drum/common" -c "$here/../header.c" -o "$out/header.o"
 "$cxx" "${flags[@]}" "${cxxflags[@]}" -std=gnu++14 -w -I"$drum/common" -DBRAQUETTI_HOST_TEST \
     -c "$here/../unit.cc" -o "$out/unit.o"
+# A static inside an inline or template function becomes an STB_GNU_UNIQUE
+# symbol, which a unit must not carry (it can keep the unit from unloading).
+if [ -n "${ARM:-}" ] && arm-linux-gnueabihf-readelf -s -W "$out/unit.o" | grep -q UNIQUE; then
+    arm-linux-gnueabihf-readelf -s -W "$out/unit.o" | grep UNIQUE | c++filt
+    echo "unit.o has STB_GNU_UNIQUE symbols"; exit 1
+fi
 "$cxx" "${flags[@]}" "${cxxflags[@]}" "${unit_test_defs[@]}" -std=gnu++14 -w -I"$drum/common" "$here/unit_test.cc" \
     "$out/unit.o" "$out/header.o" "$out/family_headers.o" -lpthread -o "$out/unit_test"
 "${run[@]}" "$out/unit_test"

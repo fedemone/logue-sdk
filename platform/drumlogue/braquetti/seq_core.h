@@ -5,13 +5,15 @@
 // wraps it (PLAN.md has the design and the hardware findings it rests on).
 //
 //   Knobs (the order header.c will declare):
-//     P00-P15  steps 1-16 of the selected lane (pages 1-4, a beat per page)
+//     P00-P15  steps 1-16 of the selected lane (pages 1-4, a beat per page),
+//              in the layer P19 shows: instrument, probability or accent
 //     P16      Lane: which lane page 5 and the steps show (A, B, C)
 //     P17      Family of the selected lane
 //     P18      Level of the selected lane
-//     P19      spare
-//     P20-P23  Overview, page 6: four bitmaps, steps 1-4, 5-8, 9-12, 13-16
-//              of all three lanes
+//     P19      Layer: what the steps edit (Inst, Prob, Accent), then two
+//              actions, clear the lane and clear all lanes
+//     P20-P23  page 6: the unit's (its CPU meter); with BRQ_OVERVIEW, four
+//              bitmaps of all three lanes, steps 1-4, 5-8, 9-12, 13-16
 //
 //   Steps, Family and Level are read as turns: the change from the number
 //   the panel last knew, applied to what the lane holds.  The panel keeps
@@ -25,7 +27,14 @@
 //
 //   Clock: one gate per step; an accented gate (velocity >= 100: the
 //   drumlogue sends 127 for an accent, 64 otherwise) is step 1, and so is
-//   the first gate after a reset (stop sends one).  Finding 5, 6.
+//   the first gate after a reset (stop sends one).  Finding 5, 6.  A step
+//   plays with its probability (25-100 %), at velocity 127 if accented in
+//   the Accent layer, else 64.
+//
+//   Layer is absolute, like Lane: a view, which a program load may set.  Its
+//   two actions run only on a deliberate click: one click right (not a
+//   jump), at least kConfirmUs after landing on the value before, and not
+//   in a program load.
 //
 //   Limits (hardware test: two lanes on one family stopped the audio):
 //   - One family per lane.  The Family knob browses every family; one that
@@ -57,7 +66,7 @@ enum : uint8_t {
     P_LANE = 16,
     P_FAMILY = 17,
     P_LEVEL = 18,
-    P_SPARE = 19,
+    P_LAYER = 19,
     P_OVERVIEW = 20,          // the first of four: steps 1-4 ... 13-16
     kNumParams = 24,
 };
@@ -74,6 +83,14 @@ constexpr uint8_t  kAccent          = 100;
 constexpr int      kLevelMax        = 100;
 constexpr int      kLevelInit       = 80;
 constexpr size_t   kTextLen         = 16;      // the panel shows about 8 characters
+
+// The Layer knob's values: three views of the steps, then the actions.
+enum : uint8_t { L_INST = 0, L_PROB, L_ACCENT, L_CLEAR, L_CLEAR_LANE, L_CLEAR_ALL, kLayers };
+constexpr int      kProbLevels = 4;               // 25, 50, 75, 100 %
+constexpr uint8_t  kProbAlways = kProbLevels - 1;
+constexpr uint64_t kConfirmUs  = 300000;          // a clear needs a click made after a pause
+constexpr uint8_t  kVelNormal  = 64;              // a hit's velocity: the drumlogue's normal trig
+constexpr uint8_t  kVelAccent  = 127;             // and its accent (Brachetti's voiced level)
 
 inline bool is_step(uint8_t id) { return id <= P_STEP16; }
 inline bool is_relative(uint8_t id) { return is_step(id) || id == P_FAMILY || id == P_LEVEL; }
@@ -136,6 +153,10 @@ struct Bitmap {
 // The text a refused step or an unavailable family shows.
 static const char kBlocked[] = "!!!";
 
+// The Layer knob's texts.  At namespace scope: a static inside a template's
+// function would be an STB_GNU_UNIQUE symbol, which a unit must not have.
+static const char* const kLayerNames[kLayers] = {"Inst", "Prob", "Accent", "Clear?", "ClrLane", "ClrAll"};
+
 // A Policy decides whether a lane may play an instrument (code: program + 1)
 // on a step, given what the lanes hold now:
 //   template <class Seq> static bool allows(const Seq&, int lane, int step, int family, int code);
@@ -160,9 +181,14 @@ public:
             m_level[l].store(kLevelInit, std::memory_order_relaxed);
             for (int s = 0; s < kSteps; ++s) {
                 m_steps[l][s].store(0, std::memory_order_relaxed);
+                m_prob[l][s].store(kProbAlways, std::memory_order_relaxed);
+                m_accent[l][s].store(0, std::memory_order_relaxed);
                 m_cursor[l][s] = 0;
             }
         }
+        m_layer = L_INST;
+        m_layer_us = 0;
+        m_rng = 0x9E3779B9u;
         for (int i = 0; i < kNumParams; ++i) {
             m_last_set[i] = is_relative(uint8_t(i)) ? kRelInit : 0;
             m_last_get[i] = 0;
@@ -190,6 +216,18 @@ public:
             m_family_cursor[m_lane] = uint8_t(family(m_lane));   // back on the family it plays
             return;
         }
+        if (id == P_LAYER) {
+            const int prev = m_layer;
+            m_layer = uint8_t(clampi(value, 0, kLayers - 1));
+            const bool deliberate = !restore && m_layer == prev + 1 && now_us - m_layer_us >= kConfirmUs;
+            m_layer_us = now_us;
+            if (deliberate && (m_layer == L_CLEAR_LANE || m_layer == L_CLEAR_ALL)) {
+                if (!m_snapshot_taken) { take_snapshot(); m_snapshot_taken = true; }   // a load undoes it
+                for (int l = 0; l < kLanes; ++l)
+                    if (m_layer == L_CLEAR_ALL || l == m_lane) clear_lane(l);
+            }
+            return;
+        }
         if (!is_relative(id) || restore) return;
         // If the panel asked since its last set, it may count from the
         // unit's answer; the reference closer to the new value is the one.
@@ -205,6 +243,7 @@ public:
         if (id >= kNumParams) return 0;
         int32_t v = m_last_set[id];
         if (id == P_LANE) v = m_lane;
+        else if (id == P_LAYER) v = m_layer;
         else if (is_relative(id)) v = (v < kRelInit) ? v + kRelSwing : v - kRelSwing;
         m_last_get[id] = v;
         m_asked[id] = true;
@@ -222,8 +261,15 @@ public:
         if (is_step(id)) {
             const int s = id - P_STEP1;
             const int code = step(lane, s);
-            if (!code && m_cursor[lane][s]) return kBlocked;   // refused by the Policy
-            return code ? Catalog::program_name(f, code - 1) : "---";
+            if (!m_cursor[lane][s]) return "---";
+            if (!code) return kBlocked;                        // refused by the Policy
+            switch (view()) {
+            case L_PROB:
+                snprintf(m_text[id], kTextLen, "%d%%", 100 * (prob(lane, s) + 1) / kProbLevels);
+                return m_text[id];
+            case L_ACCENT: return accent(lane, s) ? "Accent" : "Normal";
+            default:       return Catalog::program_name(f, code - 1);
+            }
         }
         switch (id) {
         case P_LANE:
@@ -234,6 +280,12 @@ public:
         case P_LEVEL:
             snprintf(s, kTextLen, "%d%%", level(lane));
             return s;
+        case P_LAYER: {
+            const int v = clampi(value, 0, kLayers - 1);
+            if (v == L_CLEAR_LANE && lane_empty(lane)) return "Cleared";
+            if (v == L_CLEAR_ALL && lane_empty(0) && lane_empty(1) && lane_empty(2)) return "AllClear";
+            return kLayerNames[v];
+        }
         default: return "-";
         }
     }
@@ -269,6 +321,8 @@ public:
     // ── Clock ───────────────────────────────────────────────────────────────
     // One gate: advance (or restart), write the lanes to strike into hits[],
     // return how many (0-3).
+    // A hit's velocity is the step's (kVelAccent or kVelNormal); the gate's
+    // own only marks the bar.
     int gate_on(uint8_t velocity, Hit* hits) {
         const bool restart = m_restart.exchange(false, std::memory_order_relaxed);
         m_pos = (velocity >= kAccent || restart) ? 0 : uint8_t((m_pos + 1) % kSteps);
@@ -278,7 +332,10 @@ public:
             // the knob thread may not have clamped the steps yet.
             const int f = family(l);
             const int code = clampi(step(l, m_pos), 0, Catalog::programs(f));
-            if (code) hits[n++] = {uint8_t(l), uint8_t(f), uint8_t(code - 1), velocity};
+            if (!code) continue;
+            const int p = prob(l, m_pos);
+            if (p < kProbAlways && int(next_random() % kProbLevels) > p) continue;   // plays (p+1) times in 4
+            hits[n++] = {uint8_t(l), uint8_t(f), uint8_t(code - 1), accent(l, m_pos) ? kVelAccent : kVelNormal};
         }
         return n;
     }
@@ -292,16 +349,44 @@ public:
     bool blocked(int lane, int s) const { return m_cursor[lane][s] && !step(lane, s); }
     int family(int lane) const { return m_family[lane].load(std::memory_order_relaxed); }
     int level(int lane) const { return m_level[lane].load(std::memory_order_relaxed); }
+    int prob(int lane, int s) const { return m_prob[lane][s].load(std::memory_order_relaxed); }     // 0-3: 25-100 %
+    bool accent(int lane, int s) const { return m_accent[lane][s].load(std::memory_order_relaxed) != 0; }
+    int layer() const { return m_layer; }
+
+    // Every step checked again against the Policy, from what its knob points
+    // at, lane A first and step 1 first: after a change of what the Policy
+    // allows (the unit's Limit knob).  Refused steps come back if they fit.
+    void recheck_all() {
+        for (int l = 0; l < kLanes; ++l)
+            for (int s = 0; s < kSteps; ++s) m_steps[l][s].store(0, std::memory_order_relaxed);
+        for (int l = 0; l < kLanes; ++l)
+            for (int s = 0; s < kSteps; ++s) check_step(l, s);
+    }
+    bool lane_empty(int lane) const {
+        for (int s = 0; s < kSteps; ++s) if (m_cursor[lane][s]) return false;
+        return true;
+    }
     int selected_lane() const { return m_lane; }
     int position() const { return m_pos; }
 
 private:
+    // What the step knobs edit: the layer, or the instruments while Layer
+    // is on an action.
+    int view() const { return m_layer <= L_ACCENT ? int(m_layer) : int(L_INST); }
+
     void turn(uint8_t id, int d) {
         const int lane = m_lane;
         if (is_step(id)) {
             const int s = id - P_STEP1;
-            m_cursor[lane][s] = uint8_t(clampi(m_cursor[lane][s] + d, 0, Catalog::programs(family(lane))));
-            check_step(lane, s);
+            if (view() == L_PROB) {                 // a step without an instrument has no probability
+                if (m_cursor[lane][s])
+                    m_prob[lane][s].store(uint8_t(clampi(prob(lane, s) + d, 0, kProbAlways)), std::memory_order_relaxed);
+            } else if (view() == L_ACCENT) {        // right: accent, left: normal
+                if (m_cursor[lane][s]) m_accent[lane][s].store(d > 0 ? 1 : 0, std::memory_order_relaxed);
+            } else {
+                m_cursor[lane][s] = uint8_t(clampi(m_cursor[lane][s] + d, 0, Catalog::programs(family(lane))));
+                check_step(lane, s);
+            }
         } else if (id == P_FAMILY) {
             const int f = clampi(m_family_cursor[lane] + d, 0, Catalog::kFamilies - 1);
             m_family_cursor[lane] = uint8_t(f);
@@ -316,6 +401,25 @@ private:
         const int code = m_cursor[lane][s];
         const bool ok = !code || Policy::allows(*this, lane, s, family(lane), code);
         m_steps[lane][s].store(uint8_t(ok ? code : 0), std::memory_order_relaxed);
+    }
+
+    // Every step of the lane off, at 100 % and not accented; its family and
+    // level stay.
+    void clear_lane(int lane) {
+        for (int s = 0; s < kSteps; ++s) {
+            m_steps[lane][s].store(0, std::memory_order_relaxed);
+            m_prob[lane][s].store(kProbAlways, std::memory_order_relaxed);
+            m_accent[lane][s].store(0, std::memory_order_relaxed);
+            m_cursor[lane][s] = 0;
+        }
+    }
+
+    // xorshift32, gate thread only.
+    uint32_t next_random() {
+        m_rng ^= m_rng << 13;
+        m_rng ^= m_rng >> 17;
+        m_rng ^= m_rng << 5;
+        return m_rng;
     }
 
     bool family_taken(int lane, int f) const {
@@ -367,6 +471,8 @@ private:
             for (int s = 0; s < kSteps; ++s) {
                 m_snap_steps[l][s] = uint8_t(step(l, s));
                 m_snap_cursor[l][s] = m_cursor[l][s];
+                m_snap_prob[l][s] = uint8_t(prob(l, s));
+                m_snap_accent[l][s] = uint8_t(accent(l, s));
             }
         }
     }
@@ -379,15 +485,21 @@ private:
             for (int s = 0; s < kSteps; ++s) {
                 m_steps[l][s].store(m_snap_steps[l][s], std::memory_order_relaxed);
                 m_cursor[l][s] = m_snap_cursor[l][s];
+                m_prob[l][s].store(m_snap_prob[l][s], std::memory_order_relaxed);
+                m_accent[l][s].store(m_snap_accent[l][s], std::memory_order_relaxed);
             }
         }
     }
 
     // The lanes (written by knob calls, read by gates and displays)
     std::atomic<uint8_t> m_steps[kLanes][kSteps];   // what plays: program + 1, 0 = off
+    std::atomic<uint8_t> m_prob[kLanes][kSteps];    // 0-3: plays 1-4 times in 4
+    std::atomic<uint8_t> m_accent[kLanes][kSteps];  // 1: strikes at kVelAccent
     std::atomic<uint8_t> m_family[kLanes];
     std::atomic<uint8_t> m_level[kLanes];
     uint8_t m_lane;
+    uint8_t m_layer;                                 // P19
+    uint64_t m_layer_us;                             // when Layer last moved
 
     // What the knobs point at (knob thread only): a step's chosen code, even
     // when the Policy refused it (then m_steps holds 0: "!!!"); the family
@@ -406,6 +518,8 @@ private:
     bool     m_group_restore, m_snapshot_taken;
     uint8_t  m_snap_steps[kLanes][kSteps];
     uint8_t  m_snap_cursor[kLanes][kSteps];
+    uint8_t  m_snap_prob[kLanes][kSteps];
+    uint8_t  m_snap_accent[kLanes][kSteps];
     uint8_t  m_snap_family[kLanes];
     uint8_t  m_snap_family_cursor[kLanes];
     uint8_t  m_snap_level[kLanes];
@@ -413,6 +527,7 @@ private:
     // The clock (gate thread; reset may come from the audio thread)
     std::atomic<bool> m_restart;
     uint8_t m_pos;
+    uint32_t m_rng;
 
     // Displays
     char   m_text[kNumParams][kTextLen];

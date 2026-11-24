@@ -48,6 +48,7 @@ ULIBS += -lc
 #
 
 # As Brachetti: no fused multiply-add, so the engines render as voiced.
+# Add -DBRQ_OVERVIEW for the overview on page 6 instead of the CPU meter.
 UDEFS = -ffp-contract=off
 
 USE_LINK_GC := yes

@@ -95,32 +95,28 @@ int main() {
         }
     CHECK(missing == 0 && extra == 0, "every instrument measured, nothing else (%d missing, %d extra)", missing, extra);
     CHECK(heavies == 1, "one heavy instrument, the Timpani: %d", heavies);
-    // README.md, "When the panel shows !!!": any three instruments of three
-    // families fit one step, but for the Timpani, the Gong, Riq and Pandeir.
-    int worst = 0;
-    for (int a = 0; a < Cat::kFamilies; ++a)
-        for (int b = a + 1; b < Cat::kFamilies; ++b)
-            for (int c = b + 1; c < Cat::kFamilies; ++c) {
-                int top[3] = {0, 0, 0};
-                const int fam[3] = {a, b, c};
-                for (int k = 0; k < 3; ++k)
-                    for (int p = 0; p < Cat::programs(fam[k]); ++p) {
-                        const char* n = Cat::program_name(fam[k], p);
-                        if (!std::strcmp(n, "Timpni") || !std::strcmp(n, "Gong") || !std::strcmp(n, "Riq") ||
-                            !std::strcmp(n, "Pandeir")) continue;
-                        if (cost(fam[k], p + 1) > top[k]) top[k] = cost(fam[k], p + 1);
-                    }
-                if (top[0] + top[1] + top[2] > worst) worst = top[0] + top[1] + top[2];
-            }
-    CHECK(worst <= kCpuBudget, "the heaviest three others cost %d, within %d", worst, kCpuBudget);
-    // Its examples (Kick2 0/1, AcSnre 3/1, Gong 6/2, Clap 7/1, HHat-C 7/3, Riq 8/6, Pandeir 8/7).
+    // README.md, "When the panel shows !!!": every instrument but the
+    // Timpani, the Gong, Riq, Pandeir and the Cymbal family's costs 600 or
+    // less, so any three of them fit one step.
+    int light_max = 0;
+    for (int f = 0; f < Cat::kFamilies; ++f)
+        for (int p = 0; p < Cat::programs(f); ++p) {
+            const char* n = Cat::program_name(f, p);
+            if (f == 6 || !std::strcmp(n, "Timpni") || !std::strcmp(n, "Riq") || !std::strcmp(n, "Pandeir")) continue;
+            if (cost(f, p + 1) > light_max) light_max = cost(f, p + 1);
+        }
+    CHECK(light_max <= 600 && 3 * 600 <= kCpuBudget, "the others cost at most %d (600)", light_max);
+    // Its examples (Kick2 0/1, AcSnre 3/1, Cymbal 6/1, Gong 6/2, HHat-O 6/3,
+    // Clap 7/1, HHat-C 7/3, Riq 8/6, Pandeir 8/7).
     auto fits = [](int a, int b, int c) { return a + b + c <= kCpuBudget; };
-    CHECK(fits(cost(6, 2), cost(0, 1), cost(7, 3)) && !fits(cost(6, 2), cost(0, 1), cost(7, 1)),
-          "the Gong with a kick and a closed hat, not a kick and a clap");
+    for (int code = 1; code <= 6; ++code)
+        CHECK(code == 2 || fits(cost(6, code), cost(0, 1), cost(3, 1)), "%s with a kick and a snare",
+              Cat::program_name(6, code - 1));
+    CHECK(fits(cost(6, 2), cost(7, 3), cost(7, 1)) && !fits(cost(6, 2), cost(0, 1), cost(3, 1)),
+          "the Gong with a closed hat and a clap, not a kick and a snare");
     for (int code = 6; code <= 7; ++code)
-        CHECK(fits(cost(8, code), cost(0, 1), cost(7, 1)) && !fits(cost(8, code), cost(0, 1), cost(3, 1)),
-              "%s with a kick and a clap, not a kick and a snare", Cat::program_name(8, code - 1));
-    CHECK(!fits(cost(6, 2), cost(8, 6), 0) && !fits(cost(6, 2), cost(8, 7), 0), "Gong and Riq or Pandeir: never");
+        CHECK(fits(cost(8, code), cost(0, 1), cost(7, 1)) && !fits(cost(8, code), cost(0, 1), cost(6, 1)),
+              "%s with a kick and a clap, not a kick and a cymbal", Cat::program_name(8, code - 1));
 
     if (s_fail) { std::printf("%d check(s) FAILED\n", s_fail); return 1; }
     std::printf("catalog: all checks passed (%d families, %d instruments)\n", Cat::kFamilies, total);

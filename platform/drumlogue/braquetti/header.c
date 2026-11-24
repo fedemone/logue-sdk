@@ -10,9 +10,9 @@
 
 // The order must match seq_core.h's P_* indices.  Steps, Family and Level
 // are read as turns (seq_core.h): their range is only room to turn in, and
-// what the panel shows is the lane's content.
+// what the panel shows is the lane's content.  Page 6 is the overview when
+// built with -DBRQ_OVERVIEW (config.mk), else the CPU meter.
 #define BRQ_STEP(n) {0, 4095, 0, 2048, k_unit_param_type_strings, 0, 0, 0, {"Step " #n}}
-#define BRQ_BLANK   {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}}
 
 const __unit_header unit_header_t unit_header = {
     .header_size = sizeof(unit_header_t),
@@ -33,16 +33,26 @@ const __unit_header unit_header_t unit_header = {
         BRQ_STEP(9),  BRQ_STEP(10), BRQ_STEP(11), BRQ_STEP(12),
         BRQ_STEP(13), BRQ_STEP(14), BRQ_STEP(15), BRQ_STEP(16),
 
-        // Page 5: the selected lane, its family, its level
+        // Page 5: the selected lane, its family, its level; what the steps edit
         {0, 2, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Lane"}},
         {0, 4095, 0, 2048, k_unit_param_type_strings, 0, 0, 0, {"Family"}},
         {0, 4095, 0, 2048, k_unit_param_type_strings, 0, 0, 0, {"Level"}},
-        BRQ_BLANK,
+        {0, 5, 0, 0, k_unit_param_type_strings, 0, 0, 0, {"Layer"}},
 
+#ifdef BRQ_OVERVIEW
         // Page 6: the three lanes at a glance, four steps per knob
         {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"1-4"}},
         {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"5-8"}},
         {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"9-12"}},
         {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"13-16"}}
+#else
+        // Page 6: the CPU meter (turn a knob to read it again) and the Limit,
+        // the CPU budget the lanes may use (50-100 %).  The page is kept for
+        // loading and saving patterns.
+        {0, 1000, 0, 500, k_unit_param_type_strings, 0, 0, 0, {"CPU"}},
+        {0, 1000, 0, 500, k_unit_param_type_strings, 0, 0, 0, {"Late"}},
+        {0, 1000, 0, 500, k_unit_param_type_strings, 0, 0, 0, {"LaneCPU"}},
+        {5, 10, 0, 10, k_unit_param_type_strings, 0, 0, 0, {"Limit"}}
+#endif
     }
 };

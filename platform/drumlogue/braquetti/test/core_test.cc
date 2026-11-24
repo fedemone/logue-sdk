@@ -305,6 +305,85 @@ int main() {
         CHECK(ptext(P_STEP1 + 8) == "---" && !ps.blocked(2, 8), "off is never refused: %s", ptext(P_STEP1 + 8).c_str());
     }
 
+    // ── The Layer knob: probability, accent, clearing ───────────────────────
+    {
+        static Seq q;
+        q.init();
+        int32_t panel[kNumParams];
+        for (int i = 0; i < kNumParams; ++i) panel[i] = is_relative(uint8_t(i)) ? kRelInit : 0;
+        uint64_t t = s_t;
+        auto qset = [&](uint8_t id, int32_t v, uint64_t after_us) { t += after_us; panel[id] = v; q.set_param(id, v, t); };
+        auto qturn = [&](uint8_t id, int clicks) { qset(id, panel[id] + clicks, 20000); };
+        auto qtext = [&](uint8_t id) { return std::string(q.param_text(id, panel[id])); };
+        CHECK(qtext(P_LAYER) == "Inst", "layer: %s", qtext(P_LAYER).c_str());
+        qturn(P_STEP1, +1);                       // lane A: Kick2 on step 1, 808Sub on step 2
+        qturn(uint8_t(P_STEP1 + 1), +2);
+
+        qset(P_LAYER, L_PROB, 20000);
+        CHECK(qtext(P_LAYER) == "Prob" && qtext(P_STEP1) == "100%" && qtext(uint8_t(P_STEP1 + 2)) == "---",
+              "Prob layer: %s %s %s", qtext(P_LAYER).c_str(), qtext(P_STEP1).c_str(), qtext(uint8_t(P_STEP1 + 2)).c_str());
+        qturn(P_STEP1, -3);
+        CHECK(qtext(P_STEP1) == "25%" && q.prob(0, 0) == 0, "step 1 at 25%%: %s", qtext(P_STEP1).c_str());
+        qturn(P_STEP1, -1);
+        CHECK(qtext(P_STEP1) == "25%", "no lower: %s", qtext(P_STEP1).c_str());
+        qturn(uint8_t(P_STEP1 + 2), -1);          // an empty step has no probability
+        CHECK(q.prob(0, 2) == kProbAlways, "an empty step keeps 100%%");
+
+        qset(P_LAYER, L_ACCENT, 20000);
+        qturn(uint8_t(P_STEP1 + 1), +1);
+        CHECK(qtext(uint8_t(P_STEP1 + 1)) == "Accent" && qtext(P_STEP1) == "Normal" && q.accent(0, 1),
+              "Accent layer: %s %s", qtext(uint8_t(P_STEP1 + 1)).c_str(), qtext(P_STEP1).c_str());
+        qset(P_LAYER, L_INST, 20000);
+        CHECK(qtext(P_STEP1) == "Kick2" && qtext(uint8_t(P_STEP1 + 1)) == "808Sub", "Inst layer again");
+
+        // Played: step 1 one time in four, step 2 always and accented.
+        Hit hits[kLanes];
+        int step1 = 0, step2 = 0, accented = 0, normal = 0;
+        for (int bar = 0; bar < 4000; ++bar)
+            for (int st = 0; st < kSteps; ++st) {
+                const int n = q.gate_on(st == 0 ? 127 : 64, hits);
+                for (int i = 0; i < n; ++i) {
+                    if (st == 0) { ++step1; if (hits[i].velocity == kVelNormal) ++normal; }
+                    if (st == 1) { ++step2; if (hits[i].velocity == kVelAccent) ++accented; }
+                }
+            }
+        CHECK(step1 > 900 && step1 < 1100 && normal == step1, "step 1 at 25%%: %d of 4000, at 64", step1);
+        CHECK(step2 == 4000 && accented == 4000, "step 2 every bar, accented: %d %d", step2, accented);
+
+        // Clearing: only a deliberate click (one click right, after a pause).
+        qset(P_LAYER, L_CLEAR, 500000);
+        qset(P_LAYER, L_CLEAR_LANE, 100000);      // too soon after: nothing
+        CHECK(!q.lane_empty(0) && qtext(P_LAYER) == "ClrLane", "a quick click clears nothing: %s", qtext(P_LAYER).c_str());
+        qset(P_LAYER, L_INST, 500000);
+        qset(P_LAYER, L_CLEAR_LANE, 500000);      // a jump: nothing
+        CHECK(!q.lane_empty(0), "a jump clears nothing");
+        qset(P_LAYER, L_CLEAR, 500000);
+        qset(P_LAYER, L_CLEAR_LANE, 500000);      // the deliberate click
+        CHECK(q.lane_empty(0) && q.step(0, 0) == 0 && q.prob(0, 0) == kProbAlways && !q.accent(0, 1) &&
+              qtext(P_LAYER) == "Cleared", "lane A cleared: %s", qtext(P_LAYER).c_str());
+        CHECK(qtext(P_STEP1) == "Kick2" || qtext(P_STEP1) == "---", "steps show instruments on an action");
+
+        // Clear all, and a program load that lands on ClrAll clears nothing.
+        qset(P_LANE, 1, 20000);
+        qturn(P_STEP1, +1);                       // lane B: AcSnre on step 1
+        qset(P_LANE, 2, 20000);
+        qturn(P_STEP1, +1);                       // lane C: Cymbal on step 1
+        t += 500000;
+        q.preset_loaded(t);
+        for (uint8_t i = 0; i < kNumParams; ++i) {
+            t += 100;
+            q.set_param(i, i == P_LAYER ? int32_t(L_CLEAR_ALL) : panel[i], t);
+        }
+        panel[P_LAYER] = L_CLEAR_ALL;
+        CHECK(!q.lane_empty(1) && !q.lane_empty(2), "a program load clears nothing");
+        qset(P_LAYER, L_CLEAR_LANE, 500000);
+        qset(P_LAYER, L_CLEAR_ALL, 500000);       // deliberate: every lane
+        CHECK(q.lane_empty(0) && q.lane_empty(1) && q.lane_empty(2) && qtext(P_LAYER) == "AllClear",
+              "all lanes cleared: %s", qtext(P_LAYER).c_str());
+        CHECK(q.family(1) == 3 && q.level(1) == kLevelInit, "families and levels stay");
+        s_t = t;
+    }
+
     // ── Braquetti's limits (limits.h) ───────────────────────────────────────
     // This catalog's eight families are Brachetti's first eight, with the
     // same indices and the same first instruments, so limits.h's costs apply.
@@ -377,6 +456,32 @@ int main() {
               "HHat-O + AcSnre + Taiko (%d) fit", cost(6, 3) + cost(3, 1) + cost(2, 2));
 
         CHECK(rules_hold(ls), "the rules hold on the whole pattern");
+
+        // The Limit knob scales rule 1's budget; one instrument alone always plays.
+        s_limit_pct.store(kLimitMin);
+        CHECK(budget() == kCpuBudget / 2, "Limit 50%%: budget %d", budget());
+        lset(P_LANE, 2);
+        lturn(step_id(7), +3);                // HHat-O alone on step 7: plays
+        lset(P_LANE, 1);
+        lturn(step_id(7), +1);                // AcSnre with it: over 900
+        CHECK(ls.step(2, 6) == 3 && (ls.step(1, 6) == 1) == (cost(6, 3) + cost(3, 1) <= budget()),
+              "at 50%%: HHat-O alone plays, AcSnre with it (%d) %s", cost(6, 3) + cost(3, 1), ltext(step_id(7)).c_str());
+        lturn(step_id(7), -1);
+        lset(P_LANE, 2);
+        lturn(step_id(7), -3);
+        lset(P_LANE, 0);
+        s_limit_pct.store(kLimitMax);
+        // A Limit change checks every step again: lowered, steps are refused
+        // until the pattern fits; raised, they come back.
+        const int before[3] = {ls.step(0, 5), ls.step(1, 5), ls.step(2, 5)};   // step 6: Taiko, AcSnre, HHat-O
+        s_limit_pct.store(kLimitMin);
+        ls.recheck_all();
+        CHECK(rules_hold(ls) && ls.step(0, 5) == 2 && ls.step(1, 5) == 0 && ls.blocked(1, 5),
+              "Limit 50%%: lane A's Taiko keeps step 6, lane B's snare refused");
+        s_limit_pct.store(kLimitMax);
+        ls.recheck_all();
+        CHECK(ls.step(0, 5) == before[0] && ls.step(1, 5) == before[1] && ls.step(2, 5) == before[2],
+              "Limit 100%%: step 6 as before");
 
         // A family change checks the lane's steps again, in order: lane A to
         // Kick plays Kick2 where a fifth Timpani was refused (step 8).
