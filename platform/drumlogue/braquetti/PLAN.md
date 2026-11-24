@@ -5,10 +5,10 @@ steps, each lane playing one Brachetti instrument family, each step one
 instrument (Program) of that family.  The sequencer follows the drumlogue's
 own sequencer through the Multi-engine part's gates.
 
-This file holds what the hardware showed (SeqProbe, two runs), the design
-that follows from it, and the open items.  The unit is built and
-host-tested ([README.md](README.md) is its user guide); it has not run on a
-drumlogue yet.
+This file holds what the hardware showed (SeqProbe, two runs; Braquetti,
+one), the design that follows from it, and the open items.  The unit is
+built and host-tested ([README.md](README.md) is its user guide), and ran on
+a drumlogue once.
 
 ## What the drumlogue does (SeqProbe)
 
@@ -25,6 +25,44 @@ drumlogue yet.
 | 9 | `unit_init` runs when the unit is first used: 18 s after power-on in run 1 (it was in the power-on program), 74 s in run 2 (selected later; file test skipped as `late`).  At boot a file in `Programs/` can be read and written, and it survives a power cycle (4 ms) | Files can be read only when Braquetti is in the program loaded at power-on.  Nothing can be saved while the drumlogue runs |
 | 10 | The lane view works: page 4 shows four steps of the lane chosen on page 5, each knob shows and edits its own step | The step pages below |
 
+## What Braquetti did on the drumlogue (first run)
+
+| # | Seen | Consequence |
+|---|---|---|
+| 11 | It loads and runs, and the knobs work.  At 120 BPM: lane A Kernel, Timpani on steps 1–4, Taiko on 7; lane B Noise, Clap on 3 and 4, HHat-C on 6 and 7, Shaker on 9, ShkBack on 12; lane C Lippa, Snare on 2, 4, 10, 11, 13, 15, 16.  It played fine | The design holds; four Timpani in a row, next to the other lanes, ran |
+| 12 | The overview (one 16×16 bitmap for all 48 steps) was too small to use | Four bitmaps, steps 1–4 … 13–16, a 3×3 square per step |
+| 13 | Moving lane B onto Lippa, lane C's family, stopped the audio at once (silence, not clicks) | One family per lane (below) |
+
+What 13 was is not established.  The CPU model saw no overload: the
+pattern averaged ~1,421 instructions per frame before the move and ~1,466
+after, and its heaviest block was ~4,856 before and ~4,951 after
+(`test/cpu_blocks.sh`, before the strikes were staggered).  The host build
+under the address and undefined-behaviour sanitizers found no fault and no
+NaN.  Either the device ran out of time where the model does not show it,
+or one engine pair playing two lanes' programs went wrong there.  Either
+way, one family per lane removes it.
+
+What the model showed when it was asked why:
+
+- **A strike's first block is the costliest.**  A Timpani's is ~3,250
+  instructions per frame, then ~1,650 for the blocks after it.  The
+  pattern's heaviest blocks were steps where the Timpani struck with other
+  lanes in the same block (steps 2–4).  Since then the lanes of a step
+  strike one per block (1.3 ms apart), and the limits play the Timpani
+  alone.  The pattern as they now play it peaks at ~4,340, on step 1, where
+  older voices are still fading for the Timpani, and ~3,400 on steps 2–4.
+  A run of Timpani does not grow the peak: every strike costs the same, the
+  first to the eighth (Timpani alone on steps 1–8).
+- **Measuring every instrument found two faults**, both fixed:
+  - the Rainstk never sounded.  Its sound starts 9 ms after the strike,
+    Brachetti's ring-over marks a copy silent after an all-zero block, and
+    Braquetti rendered only families marked sounding;
+  - the budget counted every voice at its family's heaviest instrument
+    (the Cymbal family at the Gong's cost), so Kick2, AcSnre and HHat-O on
+    one step faded the kick 2.7 ms after its strike.  It now counts each
+    instrument's own cost, and the step limits keep a step within the
+    budget.
+
 ## Design
 
 ### Knob pages
@@ -33,7 +71,7 @@ drumlogue yet.
 |---|---|---|---|---|
 | 1–4 | Step 1, 5, 9, 13 | Step 2, 6, 10, 14 | Step 3, 7, 11, 15 | Step 4, 8, 12, 16 |
 | 5 | Lane (A / B / C) | Family of that lane | Level of that lane | open (pitch, decay… of that lane) |
-| 6 | Overview: a bitmap of all 3 lanes × 16 steps | open (length, pattern…) | | |
+| 6 | Overview, steps 1–4 | Overview, steps 5–8 | Overview, steps 9–12 | Overview, steps 13–16 |
 
 - Pages 1–4 show the 16 steps of the edit lane, one beat per page.  A step
   shows its instrument's name or `---`; a turn moves it one instrument on
@@ -45,8 +83,10 @@ drumlogue yet.
   followed any turn), so the family shown is the new lane's at once; the
   step pages show it when entered.  One family per lane is chosen; the steps
   pick the instrument.
-- Page 6's overview is a static bitmap (finding 1): it shows the pattern as
-  it was when the page was entered.
+- Page 6's overview is four static bitmaps (finding 1, 12): they show the
+  pattern as it was when the page was entered, three rows of four 3×3
+  squares each (filled: plays; outlined: refused; dot: empty; dash: an empty
+  step of the selected lane).
 - A family change keeps the steps' positions: a step that is on stays on,
   on the same program number if the new family has it, else on its last.
 
@@ -72,12 +112,13 @@ their 114 instruments (`Program`).  Two ways to sequence it were weighed:
 
 What that means:
 
-- **Two lanes on the same family share its engine pair**: its two copies
-  let two of its instruments sound at once (the ring-over); a third strike
-  while both ring fades the older (~10 ms).  Lanes on different families are
-  fully independent.  If that limit bites, the way out is one pool per lane
-  (three times the memory, and the four delay-line families made to hold six
-  copies instead of two).
+- **One family per lane** (finding 13).  Two lanes on one family shared its
+  engine pair, and that stopped the audio on the drumlogue, so the Family
+  knob shows `!!!` on a family another lane plays and the lane keeps its
+  own.  Lanes on different families are fully independent.  Two lanes on
+  one family would take one pool per lane (three times the memory, and the
+  four delay-line families made to hold six copies instead of two), and a
+  hardware test of why 13 stopped.
 - **A strike** sets the family's `Program` to the step's instrument, then
   gates it, exactly as Brachetti's Program knob and gate do: the family's
   ring-over lets the previous instrument ring on.  It strikes at the gate's
@@ -88,18 +129,17 @@ What that means:
 - **Render**: every family still sounding renders into a scratch buffer and
   is summed (as Brachetti renders a family left ringing); one limiter on the
   sum.  A lane's level scales its family's output while that lane owns it.
-- **CPU**: Brachetti's guarantee is one instrument's voices per family;
-  three lanes can sound three families at once.  A voice count is not
-  enough (a Timpani kettle costs three snares), so each family's voices
-  count at its measured cost (35 instruments measured over their attack,
-  the heaviest per family), and before a strike the costliest other family
-  fades its oldest voice until the strike fits a budget of 1,800 estimated
-  cycles per frame.  Each family keeps its Poly 2, so two lanes on one
-  family both sound.  README.md, "CPU", has every measurement: a light beat
-  ~980, busy mixes up to ~2,200, and the Timpani the exception (its skeleton
-  rings on and costs ~1,600 whenever it sounds, unseen and unfadeable), up
-  to ~2,755 with Gong and MmFloor on every 16th at 240 BPM: between the
-  ~2,080 known to run and the ~3,400 known to stop the audio.
+- **CPU** (`limits.h`): Brachetti's guarantee is one instrument's voices
+  per family; three lanes can sound three families at once.  Every
+  instrument's cost was measured (one strike alone, its first 32 ms:
+  `test/instrument_costs.sh`), the Timpani 1,530, the Gong 1,000, Riq and
+  Pandeir 810, every other 240–660.  Before a strike, older voices fade until
+  the live voices, each at its instrument's cost, fit a budget of 1,800; a
+  hit of the same step is never faded.  The step limits keep a step within
+  that budget, and the Timpani — the heaviest block of all is its strike —
+  alone on its step and at most four in a row (finding 11 ran four).  The
+  lanes of a step strike one per block.  README.md, "CPU", has the
+  measurements.
 
 ### Clock
 
@@ -132,19 +172,22 @@ the pattern store and the song mode.
 - [x] Align with Brachetti on main: the catalog is Brachetti's family table (12 families, 114 instruments).
 - [x] Sequencer core, host-tested: the pattern, step turns, the restore guard, the clock (below).
 - [x] The unit: header.c, the callbacks, hits routed to the family engines, the mix, the CPU budget; its size (Brachetti's plus 1.4 KB) and CPU (README.md).
-- [ ] Hardware: does it load and play in time; then the CPU stress: lanes Timpni / Gong / MmFloor on every step, at 120 then 240 BPM (README.md, "CPU").  If the audio clicks or stops, skip the other lanes' hits while a Timpani rings.
+- [x] Hardware, first run: it loads, plays in time, the knobs work (findings 11–13).
+- [x] Four overview knobs; one family per lane; the step limits; one strike per block; the budget per instrument.
+- [ ] Hardware, second run: the limits.  The first run's pattern as the limits play it; then the heaviest mixes they allow, every step at 120 then 240 BPM: Timpni / Gong / MmKick, Cymbal / Taiko / TomBuzz, Kick2 / AcSnre / HHat-O (README.md, "CPU").  If all run, the budget and the limits may be relaxed; if one clicks or stops, they are tightened there.
 - [ ] Song mode through the drumlogue's chain, if the store gesture works.
 
 ## Code so far
 
 | File | What it holds |
 |---|---|
-| `seq_core.h` | `brq::Sequencer<Catalog>`: three lanes × 16 steps; the knobs (steps, Lane, Family, Level read as turns, the overview bitmap, 8-character texts); the restore guard (a burst of sets, or sets right after a preset load, edits nothing and undoes the turn it started with); the clock (one gate per step, an accent or the first gate after a reset is step 1); `HitQueue`, the lock-free hand-off from gates to the audio thread.  No constructor, no heap, no clock of its own |
+| `seq_core.h` | `brq::Sequencer<Catalog, Policy>`: three lanes × 16 steps; the knobs (steps, Lane, Family, Level read as turns, one family per lane, a step the Policy refuses, the four overview bitmaps, 8-character texts); the restore guard (a burst of sets, or sets right after a preset load, edits nothing and undoes the turn it started with); the clock (one gate per step, an accent or the first gate after a reset is step 1); `HitQueue`, the lock-free hand-off from gates to the audio thread.  No constructor, no heap, no clock of its own |
+| `limits.h` | `brq::CpuLimits`, the Policy: each instrument's measured cost (`kCost`), the budget, the three step limits |
 | `catalog.h` | The lanes' families and instruments, read from Brachetti's family table (`../brachetti/brachetti_synth.h`); including it brings Brachetti's engines in (the pool above; link `../brachetti/family_headers.c`).  The core reads only `kFamilies`, `kMaxPrograms`, `family_name`, `programs`, `program_name`, `default_family`.  Defaults: lane A Kick, B Snare, C Noise |
 | `test/catalog_test.cc` | The catalog with Brachetti's engines compiled in: the 12 families and their counts (114), every name within 8 characters, the core driving Tom to its 32nd instrument and a family change on the real table |
 | `unit.cc`, `header.c`, `family_headers.c` | The unit (README.md, "Files") |
 | `test/unit_test.cc` | The whole unit through its callbacks, against Brachetti's engines (README.md, "Tests") |
-| `test/cpu_bench.cpp`, `test/cpu_cycles.sh` | The CPU estimate |
-| `test/core_test.cc`, `test/run_tests.sh` | Host test, on a small catalog of its own (no engines): defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, the queue, and gates on one thread while knobs edit on another.  `./run_tests.sh` runs all three tests (ASan/UBSan); `ARM=1 ./run_tests.sh` the ARM builds under qemu-arm |
+| `test/cpu_bench.cpp`, `test/cpu_cycles.sh`, `test/cpu_blocks.sh`, `test/instrument_costs.sh` | The CPU estimate: the average, the heaviest blocks, each instrument's cost |
+| `test/core_test.cc`, `test/run_tests.sh` | Host test, on a small catalog of its own (no engines): defaults, step turns and their ends, turns counted from the panel's number and from the unit's answer, resync, lane switch, family change keeping positions, level, a program load, a burst that starts with a turn (family change undone), the clock (wrap, accent, reset), the overview, the queue, one family per lane, a Policy refusing a step, `limits.h`'s three rules (and that they hold after 400 random edits), and gates on one thread while knobs edit on another.  `./run_tests.sh` runs all three tests (ASan/UBSan); `ARM=1 ./run_tests.sh` the ARM builds under qemu-arm |
 
-Next: the hardware test (TODO).
+Next: the second hardware test (TODO).

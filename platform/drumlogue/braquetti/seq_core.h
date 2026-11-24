@@ -10,7 +10,8 @@
 //     P17      Family of the selected lane
 //     P18      Level of the selected lane
 //     P19      spare
-//     P20      Overview: a bitmap of all three lanes (page 6)
+//     P20-P23  Overview, page 6: four bitmaps, steps 1-4, 5-8, 9-12, 13-16
+//              of all three lanes
 //
 //   Steps, Family and Level are read as turns: the change from the number
 //   the panel last knew, applied to what the lane holds.  The panel keeps
@@ -25,6 +26,15 @@
 //   Clock: one gate per step; an accented gate (velocity >= 100: the
 //   drumlogue sends 127 for an accent, 64 otherwise) is step 1, and so is
 //   the first gate after a reset (stop sends one).  Finding 5, 6.
+//
+//   Limits (hardware test: two lanes on one family stopped the audio):
+//   - One family per lane.  The Family knob browses every family; one that
+//     another lane plays shows "!!!" and the lane keeps the family it has.
+//   - A Policy may refuse an instrument on a step (too heavy with what the
+//     other lanes play: limits.h).  The step knob still points at it, but
+//     the step plays nothing and shows "!!!"; the next click is checked
+//     again.  A lane's steps are checked again, in order, when its family
+//     changes.
 //
 // Threads: knob calls, gates and render may each come on their own thread
 // (finding 7).  Lane contents are atomics; gates read them, knobs write
@@ -48,7 +58,7 @@ enum : uint8_t {
     P_FAMILY = 17,
     P_LEVEL = 18,
     P_SPARE = 19,
-    P_OVERVIEW = 20,
+    P_OVERVIEW = 20,          // the first of four: steps 1-4 ... 13-16
     kNumParams = 24,
 };
 
@@ -68,6 +78,8 @@ constexpr size_t   kTextLen         = 16;      // the panel shows about 8 charac
 inline bool is_step(uint8_t id) { return id <= P_STEP16; }
 inline bool is_relative(uint8_t id) { return is_step(id) || id == P_FAMILY || id == P_LEVEL; }
 inline int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+constexpr int kOverviewKnobs = 4;
+inline bool is_overview(uint8_t id) { return id >= P_OVERVIEW && id < P_OVERVIEW + kOverviewKnobs; }
 
 // One lane to strike: its family, the program (0-based) and the velocity.
 struct Hit {
@@ -82,6 +94,13 @@ public:
         if (w - m_r.load(std::memory_order_acquire) >= kSize) return false;
         m_hits[w & (kSize - 1)] = h;
         m_w.store(w + 1, std::memory_order_release);
+        return true;
+    }
+    // The next hit without taking it (consumer side).
+    bool peek(Hit& h) const {
+        const uint32_t r = m_r.load(std::memory_order_relaxed);
+        if (r == m_w.load(std::memory_order_acquire)) return false;
+        h = m_hits[r & (kSize - 1)];
         return true;
     }
     bool pop(Hit& h) {
@@ -108,11 +127,27 @@ struct Bitmap {
         if (x >= 0 && x < 16 && y >= 0 && y < 16) px[y * 2 + (x >> 3)] |= uint8_t(1u << (x & 7));
     }
     bool get(int x, int y) const { return (px[y * 2 + (x >> 3)] >> (x & 7)) & 1u; }
+    void fill(int x0, int y0, int x1, int y1) {
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x) set(x, y);
+    }
+};
+
+// The text a refused step or an unavailable family shows.
+static const char kBlocked[] = "!!!";
+
+// A Policy decides whether a lane may play an instrument (code: program + 1)
+// on a step, given what the lanes hold now:
+//   template <class Seq> static bool allows(const Seq&, int lane, int step, int family, int code);
+// This one allows everything (the core's own tests).
+struct NoLimits {
+    template <class Seq>
+    static bool allows(const Seq&, int, int, int, int) { return true; }
 };
 
 // No constructor and no member initialisers: a global Sequencer is
 // zero-initialised and needs no code at load.  Call init() from unit_init.
-template <class Catalog>
+template <class Catalog, class Policy = NoLimits>
 class Sequencer {
     static_assert(Catalog::kMaxPrograms <= 254, "a step stores program + 1 in a byte");
     static_assert(Catalog::kFamilies <= 255, "a family fits a byte");
@@ -121,8 +156,12 @@ public:
     void init() {
         for (int l = 0; l < kLanes; ++l) {
             m_family[l].store(uint8_t(Catalog::default_family(l)), std::memory_order_relaxed);
+            m_family_cursor[l] = uint8_t(Catalog::default_family(l));
             m_level[l].store(kLevelInit, std::memory_order_relaxed);
-            for (int s = 0; s < kSteps; ++s) m_steps[l][s].store(0, std::memory_order_relaxed);
+            for (int s = 0; s < kSteps; ++s) {
+                m_steps[l][s].store(0, std::memory_order_relaxed);
+                m_cursor[l][s] = 0;
+            }
         }
         for (int i = 0; i < kNumParams; ++i) {
             m_last_set[i] = is_relative(uint8_t(i)) ? kRelInit : 0;
@@ -146,7 +185,11 @@ public:
         const bool asked = m_asked[id];
         m_last_set[id] = value;
         m_asked[id] = false;
-        if (id == P_LANE) { m_lane = uint8_t(clampi(value, 0, kLanes - 1)); return; }
+        if (id == P_LANE) {
+            m_lane = uint8_t(clampi(value, 0, kLanes - 1));
+            m_family_cursor[m_lane] = uint8_t(family(m_lane));   // back on the family it plays
+            return;
+        }
         if (!is_relative(id) || restore) return;
         // If the panel asked since its last set, it may count from the
         // unit's answer; the reference closer to the new value is the one.
@@ -177,14 +220,17 @@ public:
         const int lane = m_lane;
         const int f = family(lane);
         if (is_step(id)) {
-            const int code = step(lane, id - P_STEP1);
+            const int s = id - P_STEP1;
+            const int code = step(lane, s);
+            if (!code && m_cursor[lane][s]) return kBlocked;   // refused by the Policy
             return code ? Catalog::program_name(f, code - 1) : "---";
         }
         switch (id) {
         case P_LANE:
             snprintf(s, kTextLen, "Lane %c", char('A' + clampi(value, 0, kLanes - 1)));
             return s;
-        case P_FAMILY: return Catalog::family_name(f);
+        case P_FAMILY:   // the family browsed: "!!!" when another lane plays it
+            return m_family_cursor[lane] == f ? Catalog::family_name(f) : kBlocked;
         case P_LEVEL:
             snprintf(s, kTextLen, "%d%%", level(lane));
             return s;
@@ -192,19 +238,32 @@ public:
         }
     }
 
-    // Overview (P20): each lane a 2-pixel row (y 1, 6, 11), a step per
-    // column; dots under the selected lane.
+    // Overview (P20-P23, page 6): each knob shows four steps of all three
+    // lanes, one cell of 3x3 pixels per step (lane rows at y 0, 5, 10): a
+    // step that plays is filled, one refused ("!!!") an outline, an empty
+    // one a dot — a dash on the selected lane, which marks it.
     const uint8_t* param_bitmap(uint8_t id) {
-        if (id != P_OVERVIEW) return nullptr;
-        m_overview.clear();
+        if (!is_overview(id)) return nullptr;
+        Bitmap& b = m_overview[id - P_OVERVIEW];
+        b.clear();
+        const int first = (id - P_OVERVIEW) * 4;
         for (int l = 0; l < kLanes; ++l) {
-            const int y = 1 + l * 5;
-            for (int s = 0; s < kSteps; ++s)
-                if (step(l, s)) { m_overview.set(s, y); m_overview.set(s, y + 1); }
-            if (l == m_lane)
-                for (int s = 0; s < kSteps; s += 2) m_overview.set(s, y + 3);
+            const int y = l * 5;
+            for (int k = 0; k < 4; ++k) {
+                const int s = first + k, x = k * 4;
+                if (step(l, s)) {
+                    b.fill(x, y, x + 2, y + 2);
+                } else if (blocked(l, s)) {
+                    b.fill(x, y, x + 2, y + 2);
+                    b.px[(y + 1) * 2 + ((x + 1) >> 3)] &= uint8_t(~(1u << ((x + 1) & 7)));   // hollow
+                } else if (l == m_lane) {
+                    b.fill(x, y + 1, x + 2, y + 1);
+                } else {
+                    b.set(x + 1, y + 1);
+                }
+            }
         }
-        return m_overview.px;
+        return b.px;
     }
 
     // ── Clock ───────────────────────────────────────────────────────────────
@@ -228,6 +287,9 @@ public:
 
     // ── State ───────────────────────────────────────────────────────────────
     int step(int lane, int s) const { return m_steps[lane][s].load(std::memory_order_relaxed); }
+    // What the step knob points at: the step's code, or the one refused ("!!!").
+    int step_cursor(int lane, int s) const { return m_cursor[lane][s]; }
+    bool blocked(int lane, int s) const { return m_cursor[lane][s] && !step(lane, s); }
     int family(int lane) const { return m_family[lane].load(std::memory_order_relaxed); }
     int level(int lane) const { return m_level[lane].load(std::memory_order_relaxed); }
     int selected_lane() const { return m_lane; }
@@ -238,23 +300,42 @@ private:
         const int lane = m_lane;
         if (is_step(id)) {
             const int s = id - P_STEP1;
-            const int code = clampi(step(lane, s) + d, 0, Catalog::programs(family(lane)));
-            m_steps[lane][s].store(uint8_t(code), std::memory_order_relaxed);
+            m_cursor[lane][s] = uint8_t(clampi(m_cursor[lane][s] + d, 0, Catalog::programs(family(lane))));
+            check_step(lane, s);
         } else if (id == P_FAMILY) {
-            set_family(lane, clampi(family(lane) + d, 0, Catalog::kFamilies - 1));
+            const int f = clampi(m_family_cursor[lane] + d, 0, Catalog::kFamilies - 1);
+            m_family_cursor[lane] = uint8_t(f);
+            if (!family_taken(lane, f) && f != family(lane)) set_family(lane, f);
         } else if (id == P_LEVEL) {
             m_level[lane].store(uint8_t(clampi(level(lane) + d, 0, kLevelMax)), std::memory_order_relaxed);
         }
     }
 
+    // The step plays what its knob points at, if the Policy allows it.
+    void check_step(int lane, int s) {
+        const int code = m_cursor[lane][s];
+        const bool ok = !code || Policy::allows(*this, lane, s, family(lane), code);
+        m_steps[lane][s].store(uint8_t(ok ? code : 0), std::memory_order_relaxed);
+    }
+
+    bool family_taken(int lane, int f) const {
+        for (int l = 0; l < kLanes; ++l)
+            if (l != lane && family(l) == f) return true;
+        return false;
+    }
+
     // A new family keeps the steps' positions: a step that is on stays on,
-    // on the same program number if the family has it, else its last.
+    // on the same program number if the family has it, else its last; each
+    // is checked again against the Policy.  The steps are switched off while
+    // the family changes, so a gate meanwhile plays nothing rather than a
+    // program of the wrong family.
     void set_family(int lane, int f) {
+        for (int s = 0; s < kSteps; ++s) m_steps[lane][s].store(0, std::memory_order_relaxed);
         m_family[lane].store(uint8_t(f), std::memory_order_relaxed);
         const int n = Catalog::programs(f);
         for (int s = 0; s < kSteps; ++s) {
-            const int code = step(lane, s);
-            if (code > n) m_steps[lane][s].store(uint8_t(n), std::memory_order_relaxed);
+            if (m_cursor[lane][s] > n) m_cursor[lane][s] = uint8_t(n);
+            check_step(lane, s);
         }
     }
 
@@ -281,24 +362,38 @@ private:
     void take_snapshot() {
         for (int l = 0; l < kLanes; ++l) {
             m_snap_family[l] = uint8_t(family(l));
+            m_snap_family_cursor[l] = m_family_cursor[l];
             m_snap_level[l] = uint8_t(level(l));
-            for (int s = 0; s < kSteps; ++s) m_snap_steps[l][s] = uint8_t(step(l, s));
+            for (int s = 0; s < kSteps; ++s) {
+                m_snap_steps[l][s] = uint8_t(step(l, s));
+                m_snap_cursor[l][s] = m_cursor[l][s];
+            }
         }
     }
 
     void restore_snapshot() {
         for (int l = 0; l < kLanes; ++l) {
             m_family[l].store(m_snap_family[l], std::memory_order_relaxed);
+            m_family_cursor[l] = m_snap_family_cursor[l];
             m_level[l].store(m_snap_level[l], std::memory_order_relaxed);
-            for (int s = 0; s < kSteps; ++s) m_steps[l][s].store(m_snap_steps[l][s], std::memory_order_relaxed);
+            for (int s = 0; s < kSteps; ++s) {
+                m_steps[l][s].store(m_snap_steps[l][s], std::memory_order_relaxed);
+                m_cursor[l][s] = m_snap_cursor[l][s];
+            }
         }
     }
 
     // The lanes (written by knob calls, read by gates and displays)
-    std::atomic<uint8_t> m_steps[kLanes][kSteps];   // program + 1, 0 = off
+    std::atomic<uint8_t> m_steps[kLanes][kSteps];   // what plays: program + 1, 0 = off
     std::atomic<uint8_t> m_family[kLanes];
     std::atomic<uint8_t> m_level[kLanes];
     uint8_t m_lane;
+
+    // What the knobs point at (knob thread only): a step's chosen code, even
+    // when the Policy refused it (then m_steps holds 0: "!!!"); the family
+    // browsed, even when another lane plays it ("!!!").
+    uint8_t m_cursor[kLanes][kSteps];
+    uint8_t m_family_cursor[kLanes];
 
     // Knob reading
     int32_t m_last_set[kNumParams];
@@ -310,7 +405,9 @@ private:
     uint32_t m_group_knobs;
     bool     m_group_restore, m_snapshot_taken;
     uint8_t  m_snap_steps[kLanes][kSteps];
+    uint8_t  m_snap_cursor[kLanes][kSteps];
     uint8_t  m_snap_family[kLanes];
+    uint8_t  m_snap_family_cursor[kLanes];
     uint8_t  m_snap_level[kLanes];
 
     // The clock (gate thread; reset may come from the audio thread)
@@ -319,7 +416,7 @@ private:
 
     // Displays
     char   m_text[kNumParams][kTextLen];
-    Bitmap m_overview;
+    Bitmap m_overview[kOverviewKnobs];
 };
 
 }  // namespace brq

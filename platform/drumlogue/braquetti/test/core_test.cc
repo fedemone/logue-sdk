@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "../seq_core.h"
+#include "../limits.h"
 
 using namespace brq;
 
@@ -39,7 +40,42 @@ struct TestCatalog {
     static int default_family(int lane) { return lane == 0 ? 0 : lane == 1 ? 3 : 6; }
 };
 using Seq = Sequencer<TestCatalog>;
+
+// A Policy for the test: refuses Bar's 3rd instrument (Vibrph) on any step,
+// and anything on step 9 of lane C.
+struct TestPolicy {
+    template <class S>
+    static bool allows(const S&, int lane, int step, int family, int code) {
+        return !(family == 4 && code == 3) && !(lane == 2 && step == 8);
+    }
+};
+using PolicySeq = Sequencer<TestCatalog, TestPolicy>;
+using LimitSeq = Sequencer<TestCatalog, CpuLimits>;
 constexpr uint8_t P_STEP5 = P_STEP1 + 4;
+
+// limits.h's three rules, over the whole pattern.
+static bool rules_hold(const LimitSeq& s) {
+    for (int st = 0; st < kSteps; ++st) {
+        int sum = 0, hits = 0, heavies = 0;
+        for (int l = 0; l < kLanes; ++l) {
+            const int c = s.step(l, st);
+            if (!c) continue;
+            ++hits;
+            sum += cost(s.family(l), c);
+            if (heavy(s.family(l), c)) ++heavies;
+        }
+        if (sum > kCpuBudget || (heavies && hits > 1)) return false;
+    }
+    for (int l = 0; l < kLanes; ++l) {
+        int run = 0, longest = 0;
+        for (int k = 0; k < 2 * kSteps; ++k) {   // twice round: runs across 16 -> 1
+            run = heavy(s.family(l), s.step(l, k % kSteps)) ? run + 1 : 0;
+            if (run > longest) longest = run;
+        }
+        if (longest > kHeavyRun) return false;
+    }
+    return true;
+}
 
 static int s_fail = 0;
 #define CHECK(cond, ...) do { if (!(cond)) { ++s_fail; std::printf("FAIL %s:%d  ", __FILE__, __LINE__); \
@@ -188,11 +224,19 @@ int main() {
     CHECK(s_seq.position() == 0, "the first gate after a reset is step 1");
 
     // ── Overview, the queue ─────────────────────────────────────────────────
-    const Bitmap* ov = reinterpret_cast<const Bitmap*>(s_seq.param_bitmap(P_OVERVIEW));
-    CHECK(ov && ov->get(0, 1) && ov->get(0, 2) && ov->get(4, 1) && !ov->get(1, 1), "lane A row");
-    CHECK(ov->get(4, 6) && ov->get(12, 6) && !ov->get(0, 6), "lane B row");
-    CHECK(ov->get(0, 4) && !ov->get(0, 9), "dots under the selected lane (A)");
-    CHECK(s_seq.param_bitmap(P_STEP1) == nullptr, "only the overview is a bitmap");
+    // Lane A Kick2 on 1, 5, 9, 13; lane B on 5 and 13; lane A selected.
+    // Four knobs, four steps each: a cell of 3x3 pixels per step, lanes at
+    // y 0, 5, 10.
+    const Bitmap* ov1 = reinterpret_cast<const Bitmap*>(s_seq.param_bitmap(P_OVERVIEW));       // steps 1-4
+    const Bitmap* ov2 = reinterpret_cast<const Bitmap*>(s_seq.param_bitmap(P_OVERVIEW + 1));   // steps 5-8
+    CHECK(ov1 && ov2 && ov1 != ov2, "four overview bitmaps");
+    CHECK(ov1->get(0, 0) && ov1->get(2, 2) && !ov1->get(4, 0) && ov1->get(4, 1) && ov1->get(6, 1),
+          "lane A (selected): step 1 filled, step 2 a dash");
+    CHECK(!ov1->get(0, 5) && ov1->get(1, 6) && !ov1->get(0, 6), "lane B step 1: a dot");
+    CHECK(ov2->get(0, 0) && ov2->get(1, 6) && ov2->get(2, 7), "step 5: lanes A and B filled");
+    CHECK(!ov1->get(0, 3) && !ov1->get(0, 4), "nothing between the lanes");
+    CHECK(s_seq.param_bitmap(P_OVERVIEW + 3) != nullptr && s_seq.param_bitmap(P_OVERVIEW + 4) == nullptr &&
+          s_seq.param_bitmap(P_STEP1) == nullptr, "only the four overview knobs are bitmaps");
 
 
     static HitQueue q;   // static, as in the unit: zero-initialised
@@ -202,6 +246,160 @@ int main() {
     int popped = 0;
     while (q.pop(h)) ++popped;
     CHECK(pushed == 16 && popped == 16, "queue holds 16: %d %d", pushed, popped);
+
+    // ── One family per lane ─────────────────────────────────────────────────
+    // Lane A Kick, B Snare, C Cymbal: browsing lane B onto Cymbal shows "!!!"
+    // and keeps Snare playing; one click on (Plate is free) switches.
+    set_abs(P_LANE, 1);
+    CHECK(text(P_FAMILY) == "Snare", "lane B: %s", text(P_FAMILY).c_str());
+    turn(P_FAMILY, +3);   // Snare -> Cymbal, lane C's
+    CHECK(text(P_FAMILY) == "!!!" && s_seq.family(1) == 3, "a family in use shows !!!, lane B keeps Snare: %s %d",
+          text(P_FAMILY).c_str(), s_seq.family(1));
+    turn(P_FAMILY, -1);   // -> Plate, free
+    CHECK(text(P_FAMILY) == "Plate" && s_seq.family(1) == 5, "a free family is taken: %s", text(P_FAMILY).c_str());
+    turn(P_FAMILY, -5);   // -> Kick, lane A's
+    CHECK(text(P_FAMILY) == "!!!" && s_seq.family(1) == 5, "Kick in use: %s", text(P_FAMILY).c_str());
+    set_abs(P_LANE, 0);
+    set_abs(P_LANE, 1);   // selecting the lane shows the family it plays again
+    CHECK(text(P_FAMILY) == "Plate", "back on its own family: %s", text(P_FAMILY).c_str());
+    turn(P_FAMILY, -2);   // -> Snare again
+    CHECK(s_seq.family(0) == 0 && s_seq.family(1) == 3 && s_seq.family(2) == 6, "families as before");
+    int distinct = 1;
+    for (int i = 0; i < 200; ++i) {   // random browsing never puts two lanes on one family
+        set_abs(P_LANE, i % 3);
+        turn(P_FAMILY, (i * 7) % 11 - 5);
+        if (s_seq.family(0) == s_seq.family(1) || s_seq.family(1) == s_seq.family(2) ||
+            s_seq.family(0) == s_seq.family(2)) distinct = 0;
+    }
+    CHECK(distinct, "no two lanes ever share a family");
+
+    // ── A Policy refusing a step ────────────────────────────────────────────
+    {
+        static PolicySeq ps;
+        ps.init();
+        int32_t panel[kNumParams];
+        for (int i = 0; i < kNumParams; ++i) panel[i] = is_relative(uint8_t(i)) ? kRelInit : 0;
+        auto pturn = [&](uint8_t id, int clicks) { s_t += 20000; panel[id] += clicks; ps.set_param(id, panel[id], s_t); };
+        auto pset = [&](uint8_t id, int32_t v) { s_t += 20000; panel[id] = v; ps.set_param(id, v, s_t); };
+        auto ptext = [&](uint8_t id) { return std::string(ps.param_text(id, panel[id])); };
+        pset(P_LANE, 1);
+        pturn(P_FAMILY, +1);   // lane B: Snare -> Bar
+        CHECK(ptext(P_FAMILY) == "Bar", "policy seq lane B: %s", ptext(P_FAMILY).c_str());
+        pturn(P_STEP1, +2);
+        CHECK(ptext(P_STEP1) == "TblrBel" && ps.step(1, 0) == 2, "allowed: %s", ptext(P_STEP1).c_str());
+        pturn(P_STEP1, +1);    // Vibrph: refused
+        CHECK(ptext(P_STEP1) == "!!!" && ps.step(1, 0) == 0 && ps.step_cursor(1, 0) == 3 && ps.blocked(1, 0),
+              "refused: shows !!!, plays nothing: %s", ptext(P_STEP1).c_str());
+        Hit hits[kLanes];
+        CHECK(ps.gate_on(64, hits) == 0, "a refused step strikes nothing");
+        pturn(P_STEP1, +1);    // Wodblk: allowed again
+        CHECK(ptext(P_STEP1) == "Wodblk" && ps.step(1, 0) == 4, "next click checked again: %s", ptext(P_STEP1).c_str());
+        pturn(P_STEP1, -1);    // back onto Vibrph
+        CHECK(ptext(P_STEP1) == "!!!", "refused again: %s", ptext(P_STEP1).c_str());
+        pturn(P_FAMILY, +1);   // Bar -> Plate: the step is checked again, Plate's 3rd (BelTre) is allowed
+        CHECK(ptext(P_STEP1) == "BelTre" && ps.step(1, 0) == 3, "a family change unblocks: %s", ptext(P_STEP1).c_str());
+        pset(P_LANE, 2);
+        pturn(P_STEP1 + 8, +1);   // lane C step 9: refused whatever it is
+        CHECK(ptext(P_STEP1 + 8) == "!!!" && ps.step(2, 8) == 0, "lane C step 9 refused: %s", ptext(P_STEP1 + 8).c_str());
+        pturn(P_STEP1 + 8, -1);   // back to off
+        CHECK(ptext(P_STEP1 + 8) == "---" && !ps.blocked(2, 8), "off is never refused: %s", ptext(P_STEP1 + 8).c_str());
+    }
+
+    // ── Braquetti's limits (limits.h) ───────────────────────────────────────
+    // This catalog's eight families are Brachetti's first eight, with the
+    // same indices and the same first instruments, so limits.h's costs apply.
+    {
+        static LimitSeq ls;
+        ls.init();
+        int32_t panel[kNumParams];
+        for (int i = 0; i < kNumParams; ++i) panel[i] = is_relative(uint8_t(i)) ? kRelInit : 0;
+        auto lturn = [&](uint8_t id, int clicks) { s_t += 20000; panel[id] += clicks; ls.set_param(id, panel[id], s_t); };
+        auto lset = [&](uint8_t id, int32_t v) { s_t += 20000; panel[id] = v; ls.set_param(id, v, s_t); };
+        auto ltext = [&](uint8_t id) { return std::string(ls.param_text(id, panel[id])); };
+        auto step_id = [](int s) { return uint8_t(P_STEP1 + s - 1); };   // steps 1-16
+        CHECK(heavy(2, 1) && !heavy(2, 2) && !heavy(6, 2), "heavy: the Timpani, not the Taiko nor the Gong");
+
+        // Lane A on Kernel: a Timpani on step 1 plays; nothing joins it there.
+        lset(P_LANE, 0);
+        lturn(P_FAMILY, +2);                  // Kick -> Kernel
+        lturn(step_id(1), +1);
+        CHECK(ltext(step_id(1)) == "Timpni" && ls.step(0, 0) == 1, "a Timpani alone plays: %s", ltext(step_id(1)).c_str());
+        lset(P_LANE, 1);                      // lane B, Snare
+        lturn(step_id(1), +1);
+        CHECK(ltext(step_id(1)) == "!!!" && ls.step(1, 0) == 0, "a snare on the Timpani's step: %s", ltext(step_id(1)).c_str());
+        lturn(step_id(2), +1);                // AcSnre on step 2
+        CHECK(ltext(step_id(2)) == "AcSnre", "step 2: %s", ltext(step_id(2)).c_str());
+        lset(P_LANE, 0);
+        lturn(step_id(2), +1);                // a Timpani where the snare plays
+        CHECK(ltext(step_id(2)) == "!!!" && ls.step(0, 1) == 0, "a Timpani on the snare's step: %s", ltext(step_id(2)).c_str());
+        lturn(step_id(2), +1);                // on to the Taiko: not heavy, joins the snare
+        CHECK(ltext(step_id(2)) == "Taiko" && ls.step(0, 1) == 2, "a Taiko with the snare: %s", ltext(step_id(2)).c_str());
+        Hit hits[kLanes];
+        CHECK(ls.gate_on(127, hits) == 1 && hits[0].lane == 0 && ls.gate_on(64, hits) == 2,
+              "step 1 strikes the Timpani alone, step 2 the Taiko and the snare");
+
+        // Four Timpani in a row, not five; the 16 steps loop (16 -> 1).
+        for (int s = 9; s <= 12; ++s) lturn(step_id(s), +1);
+        CHECK(ls.step(0, 8) == 1 && ls.step(0, 11) == 1, "steps 9-12: four Timpani");
+        lturn(step_id(13), +1);
+        lturn(step_id(8), +1);
+        CHECK(ltext(step_id(13)) == "!!!" && ltext(step_id(8)) == "!!!", "a fifth either side: %s %s",
+              ltext(step_id(13)).c_str(), ltext(step_id(8)).c_str());
+        lturn(step_id(13), +1);               // the Taiko is not counted
+        CHECK(ltext(step_id(13)) == "Taiko", "step 13: %s", ltext(step_id(13)).c_str());
+        lturn(step_id(14), +1);
+        lturn(step_id(15), +1);
+        lturn(step_id(16), +1);               // 14, 15, 16 and step 1: four
+        CHECK(ls.step(0, 15) == 1, "steps 14-16 with step 1: four in a row: %s", ltext(step_id(16)).c_str());
+        lturn(step_id(13), -1);               // step 13 back to a Timpani: 9-16 and 1 would be nine
+        CHECK(ltext(step_id(13)) == "!!!", "joining two runs: %s", ltext(step_id(13)).c_str());
+
+        // Together a step's instruments fit the budget.
+        lturn(step_id(13), -1);               // off
+        lset(P_LANE, 2);                      // lane C, Cymbal: the Gong on step 5
+        lturn(step_id(5), +2);
+        lset(P_LANE, 1);
+        lturn(step_id(5), +1);                // AcSnre with the Gong
+        const bool both = cost(6, 2) + cost(3, 1) <= kCpuBudget;
+        CHECK((ltext(step_id(5)) == "AcSnre") == both, "Gong + AcSnre (%d): %s", cost(6, 2) + cost(3, 1),
+              ltext(step_id(5)).c_str());
+        lset(P_LANE, 0);
+        lturn(step_id(5), +2);                // and a Taiko: over the budget
+        CHECK(cost(6, 2) + cost(3, 1) + cost(2, 2) > kCpuBudget && ltext(step_id(5)) == "!!!",
+              "Gong + AcSnre + Taiko (%d): %s", cost(6, 2) + cost(3, 1) + cost(2, 2), ltext(step_id(5)).c_str());
+        lset(P_LANE, 2);
+        lturn(step_id(6), +3);                // HHat-O, AcSnre and a Taiko on step 6
+        lset(P_LANE, 1);
+        lturn(step_id(6), +1);
+        lset(P_LANE, 0);
+        lturn(step_id(6), +2);
+        CHECK(ls.step(0, 5) == 2 && ls.step(1, 5) == 1 && ls.step(2, 5) == 3,
+              "HHat-O + AcSnre + Taiko (%d) fit", cost(6, 3) + cost(3, 1) + cost(2, 2));
+
+        CHECK(rules_hold(ls), "the rules hold on the whole pattern");
+
+        // A family change checks the lane's steps again, in order: lane A to
+        // Kick plays Kick2 where a fifth Timpani was refused (step 8).
+        lturn(P_FAMILY, -2);                  // Kernel -> Kick
+        CHECK(ls.family(0) == 0 && ls.step(0, 7) == 1, "step 8 plays Kick2: %d", ls.step(0, 7));
+        CHECK(rules_hold(ls), "the rules hold after Kernel -> Kick");
+        lturn(P_FAMILY, +2);                  // and back
+        CHECK(ls.step(0, 0) == 1 && ls.step(0, 1) == 2, "Kernel again: step 1 Timpni, step 2 Taiko: %d %d",
+              ls.step(0, 0), ls.step(0, 1));
+        CHECK(rules_hold(ls), "the rules hold after Kick -> Kernel");
+
+        // Any edit keeps them: random turns, lanes and families.
+        uint32_t rnd = 12345;
+        auto next = [&](int n) { rnd = rnd * 1103515245u + 12345u; return int((rnd >> 16) % uint32_t(n)); };
+        int broken = 0;
+        for (int i = 0; i < 400; ++i) {
+            lset(P_LANE, next(kLanes));
+            if (next(8) == 0) lturn(P_FAMILY, next(5) - 2);
+            else lturn(step_id(1 + next(kSteps)), next(7) - 3);
+            if (!rules_hold(ls)) ++broken;
+        }
+        CHECK(broken == 0, "400 random edits: the rules always hold (%d broken)", broken);
+    }
 
     // ── Gates on one thread, knobs on another ───────────────────────────────
     std::atomic<bool> run{true};

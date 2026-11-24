@@ -7,7 +7,9 @@
  *
  *   - seq_core.h: the lanes, the knobs that edit them, the clock;
  *   - catalog.h:  Brachetti's family table, i.e. its twelve family engines
- *     (one ring-over pair each), shared by the lanes.
+ *     (one ring-over pair each), one family per lane;
+ *   - limits.h:   what each instrument costs, the CPU budget, the step
+ *     limits that refuse a step too heavy for it.
  *
  * Every Multi-part gate is one step.  Its hits (lane, family, instrument)
  * go through a lock-free queue to the audio thread, which at the start of a
@@ -17,9 +19,14 @@
  * summed, at the level of the lane that struck it last, then a soft
  * limiter.
  *
- * The CPU: voices cost very different amounts (a Timpani kettle three times
- * a snare), so the budget counts each family's voices at their measured
- * cost and fades older voices before a strike that would go over it.
+ * The CPU (limits.h): every live voice counts at its instrument's measured
+ * cost, and before a strike that would go over the budget, older voices
+ * fade (~10 ms) — never a hit of the same step: the step limits keep what
+ * one step strikes within the budget, so fading older voices always makes
+ * room.  And a strike is the costliest moment of a voice (a Timpani strike
+ * block costs about twice its next ones, test/cpu_blocks.sh), so a block
+ * carries at most one strike: the other lanes' hits of the same step follow
+ * in the next blocks, 1.3 ms apart.
  */
 
 #include <atomic>
@@ -30,6 +37,7 @@
 
 #include "unit.h"
 #include "catalog.h"
+#include "limits.h"
 #include "seq_core.h"
 
 // Optional: a weak undefined symbol resolves to null instead of failing the
@@ -44,32 +52,11 @@ using brachetti::kNumFamilies;
 
 constexpr size_t   kChunk          = 64;      // frames per family render (stack buffer)
 
-// The CPU budget, in estimated Cortex-A7 cycles per rendered frame
-// (test/cpu_cycles.sh, the method of tools/brachetti_equiv/unit_cycles.sh):
-// BrcKernel's Timpani struck twice (~2,080) runs on the drumlogue, and
-// Brachetti's first ring-over build stopped its audio at ~3,400.  The
-// budget counts live voices only; what it cannot see (voices fading out,
-// the Kernel's ringing skeleton) adds about a quarter in the heaviest case
-// measured (README.md, "CPU"), so 1,800 keeps that case near the level
-// known to run.  To be confirmed on the drumlogue (PLAN.md, TODO).
-constexpr int kCpuBudget = 1800;
-
-// What one voice of each family costs on that scale: the heaviest of the
-// instruments measured over its attack (test/cpu_cycles.sh with gap 0 and
-// 1536 frames: one strike, its first 32 ms, which dense playing repeats),
-// rounded up, in brachetti::kFamilies order.  README.md, "CPU", lists the
-// 35 measurements; re-measure when a family's instruments change.
-constexpr int kVoiceCost[] = {
-    //  Kick  Tom  Kernel  Snare  Bar  Plate  Cymbal  Noise  World  Lippa  Pizzico  Cordiera
-        590,  550, 1680,   570,   450, 570,   1040,   390,   940,   660,   470,     580,
-};
-static_assert(sizeof(kVoiceCost) / sizeof(kVoiceCost[0]) == brachetti::kNumFamilies,
-              "one cost per Brachetti family");
 constexpr uint8_t  kNormalVelocity = 64;      // an accent marks the bar; it strikes as a normal trig
 constexpr float    kKnee           = 0.9f;    // the soft limiter starts here
 constexpr uint8_t  kRelease        = 0;       // a Hit with this velocity is a gate-off
 
-brq::Sequencer<brq::BrachettiCatalog> s_seq;
+brq::Sequencer<brq::BrachettiCatalog, brq::CpuLimits> s_seq;
 brq::HitQueue s_hits;
 
 uint32_t s_sr = 48000;
@@ -91,9 +78,21 @@ std::atomic<bool> s_all_off_req;
 // The families the last gate struck (gate thread), for its gate-off.
 uint32_t s_gate_families;
 
-// Per family: its output level now and where it goes (audio thread).
-float s_gain[kNumFamilies];
-float s_gain_target[kNumFamilies];
+// Audio thread: whether this block has struck already.
+bool s_struck_this_block;
+
+// Per family (audio thread): its output level now and where it goes; the
+// instrument it was struck with last and the one before (step codes:
+// program + 1), whose ring-over copy may still ring; the blocks since its
+// last strike.
+float   s_gain[kNumFamilies];
+float   s_gain_target[kNumFamilies];
+uint8_t s_code[kNumFamilies];
+uint8_t s_prev_code[kNumFamilies];
+uint8_t s_age[kNumFamilies];
+constexpr uint8_t kAgeMax = 255;
+// Per family (audio thread): struck since it last fell silent, so rendered.
+bool    s_active[kNumFamilies];
 
 int live(int i) { return kFamilies[i].live_voices(kFamilies[i].engine); }
 
@@ -103,30 +102,42 @@ int total_live_voices() {
     return n;
 }
 
-// The voices sounding, at their families' cost.
+// A voice of family i counts at the costlier of the two instruments it
+// may be playing.
+int voice_cost(int i) {
+    const int a = brq::cost(i, s_code[i]), b = brq::cost(i, s_prev_code[i]);
+    return a > b ? a : b;
+}
+
+// The voices sounding, at their instruments' cost.
 int load() {
     int n = 0;
-    for (int i = 0; i < kNumFamilies; ++i) n += live(i) * kVoiceCost[i];
+    for (int i = 0; i < kNumFamilies; ++i) n += live(i) * voice_cost(i);
     return n;
 }
 
-// Before a strike: until it fits the budget, the family costing the most
-// (other than the one struck) fades its oldest voice — the ~10 ms
-// preset-change fade, which no longer counts as a live voice.  If only the
-// struck family sounds, its own oldest voice goes.  Within a family, its
-// ring-over keeps two instruments inside its own Poly.
-void make_room(uint8_t family) {
-    for (int guard = 0; guard < 24 && load() + kVoiceCost[family] > kCpuBudget; ++guard) {
+// A family struck in the last kLanes blocks holds a hit of this step: its
+// newest voice.  Its other voices are older.
+int older_voices(int i) {
+    const int n = live(i);
+    return (s_age[i] < brq::kLanes && n > 0) ? n - 1 : n;
+}
+
+// Before a strike: until it fits the budget, the family whose older voices
+// cost the most fades its oldest (the ~10 ms preset-change fade, which no
+// longer counts as a live voice).  A hit of this step is never faded: the
+// step limits keep the step within the budget, so if only those sound the
+// strike goes ahead.  Within a family, its ring-over keeps two instruments
+// inside its own Poly.
+void make_room(int family, int code) {
+    const int need = brq::cost(family, code);
+    for (int guard = 0; guard < 24 && load() + need > brq::kCpuBudget; ++guard) {
         int victim = -1, most = 0;
         for (int i = 0; i < kNumFamilies; ++i) {
-            if (i == family) continue;
-            const int c = live(i) * kVoiceCost[i];
+            const int c = older_voices(i) * voice_cost(i);
             if (c > most) { most = c; victim = i; }
         }
-        if (victim < 0) {
-            if (live(family) == 0) break;   // one voice alone is always allowed
-            victim = family;
-        }
+        if (victim < 0) break;
         kFamilies[victim].fade_oldest(kFamilies[victim].engine);
     }
 }
@@ -137,9 +148,19 @@ void strike(const brq::Hit& h) {
     const Family& f = kFamilies[h.family];
     if (h.velocity == kRelease) { f.gate_off(f.engine); return; }
     const float target = float(s_seq.level(h.lane)) / float(brq::kLevelMax);
-    if (!f.sounding(f.engine)) s_gain[h.family] = target;   // nothing to glide from
+    const uint8_t code = uint8_t(h.program + 1);
+    if (!f.sounding(f.engine) && live(h.family) == 0) {
+        s_gain[h.family] = target;            // nothing to glide from
+        s_prev_code[h.family] = 0;            // nor anything ringing on
+    }
     s_gain_target[h.family] = target;
-    make_room(h.family);
+    make_room(h.family, code);
+    if (code != s_code[h.family]) {
+        s_prev_code[h.family] = s_code[h.family];
+        s_code[h.family] = code;
+    }
+    s_age[h.family] = 0;
+    s_active[h.family] = true;
     f.set(f.engine, f.slot[brc::CommonLayout::k_paramProgram], h.program);
     f.gate_on(f.engine, h.velocity);
 }
@@ -167,7 +188,12 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t* desc) {
         const int8_t err = f.init(f.engine, desc);
         if (err != k_unit_err_none) return err;
     }
-    for (int i = 0; i < kNumFamilies; ++i) s_gain[i] = s_gain_target[i] = 1.0f;
+    for (int i = 0; i < kNumFamilies; ++i) {
+        s_gain[i] = s_gain_target[i] = 1.0f;
+        s_code[i] = s_prev_code[i] = 0;
+        s_age[i] = kAgeMax;
+        s_active[i] = false;
+    }
     s_seq.init();
     brq::Hit h;
     while (s_hits.pop(h)) {}
@@ -196,14 +222,29 @@ __unit_callback void unit_render(const float* in, float* out, uint32_t frames) {
         for (const Family& f : kFamilies) f.reset(f.engine);
     if (s_all_off_req.exchange(false, std::memory_order_acquire))
         for (const Family& f : kFamilies) f.all_note_off(f.engine);
+    for (int i = 0; i < kNumFamilies; ++i)
+        if (s_age[i] < kAgeMax) ++s_age[i];
+    // Releases as they come; at most one strike per block (the rest wait,
+    // in order, for the next blocks).
     brq::Hit h;
-    while (s_hits.pop(h)) strike(h);
+    while (s_hits.peek(h)) {
+        if (h.velocity != kRelease && s_struck_this_block) break;
+        s_hits.pop(h);
+        if (h.velocity != kRelease) s_struck_this_block = true;
+        strike(h);
+    }
+    s_struck_this_block = false;
 
     std::memset(out, 0, sizeof(float) * 2 * frames);
     float tmp[kChunk * 2];
     for (int i = 0; i < kNumFamilies; ++i) {
         const Family& f = kFamilies[i];
-        if (!f.sounding(f.engine)) continue;
+        // A family struck renders while it sounds or holds a live voice.
+        // "Sounding" is measured on the output (brachetti_common/ring_over.h),
+        // and an instrument may start silent (the Rainstk's first 9 ms):
+        // skipped then, it would never start.
+        if (!s_active[i]) continue;
+        if (!f.sounding(f.engine) && live(i) == 0) { s_active[i] = false; continue; }
         for (uint32_t done = 0; done < frames; done += kChunk) {
             const uint32_t n = (frames - done < kChunk) ? frames - done : uint32_t(kChunk);
             f.render(f.engine, tmp, n);
@@ -279,5 +320,5 @@ __unit_callback const char* unit_get_preset_name(uint8_t idx) { (void)idx; retur
 // their cost, the budget.
 int braquetti_test_live_voices() { return total_live_voices(); }
 int braquetti_test_load() { return load(); }
-int braquetti_test_budget() { return kCpuBudget; }
+int braquetti_test_budget() { return brq::kCpuBudget; }
 #endif

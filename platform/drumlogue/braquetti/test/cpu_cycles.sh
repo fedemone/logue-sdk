@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cpu_cycles.sh <famA> <progA> <famB> <progB> <famC> <progC> [gap] [frames]
+# cpu_cycles.sh <famA> <progA> <famB> <progB> <famC> <progC> [gap] [frames] [settle]
 #
 # Estimated Cortex-A7 cycles per rendered frame of Braquetti playing: each
 # lane on its family and instrument on all 16 steps (family -1: lane empty),
@@ -12,12 +12,14 @@
 # about twice one heavy instrument.  A model, not the device's clock.
 #
 #   ./cpu_cycles.sh 0 0 3 0 7 2          # Kick2, AcSnre, HHat-C on every step
+#   ./cpu_cycles.sh 2 1,1,1,1,0,0,2,0,0,0,0,0,0,0,0,0 -1 0 -1 0 6000 24000 0
+#                                        # a pattern (step codes), steps 1-4 measured
 # Needs: apt-get install g++-arm-linux-gnueabihf qemu-user
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 unit="$(cd "$here/.." && pwd)"
 drum="$(cd "$unit/.." && pwd)"
-gap="${7:-3000}"; frames="${8:-12000}"
+gap="${7:-3000}"; frames="${8:-12000}"; settle="${9:-4}"
 w="$(mktemp -d)"; trap 'rm -rf "$w"' EXIT
 ARCH="-march=armv7-a -mtune=cortex-a7 -marm -mfloat-abi=hard -mfpu=neon-vfpv4"
 OPT="-Os -pipe -ffast-math -ffp-contract=off -fsigned-char -fno-stack-protector -fstrict-aliasing \
@@ -37,7 +39,7 @@ trace() {
     qemu-arm -one-insn-per-tb -d exec,nochain -D /dev/stdout "$w/bench" "$@" |
         awk '/^Trace/ { split($0, f, "["); split(f[2], g, "/"); n[g[2]]++ } END { for (k in n) print k, n[k] }'
 }
-args=("$1" "$2" "$3" "$4" "$5" "$6" "$gap" "$frames")
+args=("$1" "$2" "$3" "$4" "$5" "$6" "$gap" "$frames" "$settle")
 trace render "${args[@]}" > "$w/b.pcs"
 trace setup  "${args[@]}" > "$w/s.pcs"
 python3 - "$w/map" "$w/b.pcs" "$w/s.pcs" "$frames" "braquetti A $1/$2 B $3/$4 C $5/$6, a gate every $gap frames" <<'PY'

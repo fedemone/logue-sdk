@@ -36,7 +36,7 @@ fi
 # fails the build.
 "$cc" "${flags[@]}" -std=c11 -w -I"$drum/common" -c "$drum/brachetti/family_headers.c" -o "$out/family_headers.o"
 if "$cxx" "${flags[@]}" "${cxxflags[@]}" -std=gnu++14 -fsyntax-only -W -Wall -Wextra -I"$drum/common" \
-       "$here/catalog_test.cc" 2>&1 | grep -E '(catalog_test\.cc|seq_core\.h|braquetti/catalog\.h):[0-9]+:[0-9]+: (warning|error)'; then
+       "$here/catalog_test.cc" 2>&1 | grep -E '(catalog_test\.cc|seq_core\.h|braquetti/catalog\.h|braquetti/limits\.h):[0-9]+:[0-9]+: (warning|error)'; then
     echo "warnings in Braquetti's files"; exit 1
 fi
 "$cxx" "${flags[@]}" "${cxxflags[@]}" -std=gnu++14 -w -I"$drum/common" "$here/catalog_test.cc" \
@@ -47,7 +47,7 @@ fi
 # header.c, the family headers, and the test with its own reference engines.
 if "$cxx" "${flags[@]}" "${cxxflags[@]}" -std=gnu++14 -fsyntax-only -W -Wall -Wextra -I"$drum/common" \
        -DBRAQUETTI_HOST_TEST "$here/../unit.cc" "$here/unit_test.cc" 2>&1 |
-       grep -E '(unit\.cc|unit_test\.cc|seq_core\.h|braquetti/catalog\.h):[0-9]+:[0-9]+: (warning|error)'; then
+       grep -E '(unit\.cc|unit_test\.cc|seq_core\.h|braquetti/catalog\.h|braquetti/limits\.h):[0-9]+:[0-9]+: (warning|error)'; then
     echo "warnings in Braquetti's files"; exit 1
 fi
 "$cc" "${flags[@]}" -std=c11 -W -Wall -Wextra -Werror -I"$drum/common" -c "$here/../header.c" -o "$out/header.o"

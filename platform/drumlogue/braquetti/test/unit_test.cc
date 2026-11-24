@@ -146,9 +146,10 @@ int main() {
     for (int i = 0; i < kNumParams; ++i) {
         const unit_param_t& p = unit_header.params[i];
         CHECK(p.init >= p.min && p.init <= p.max, "P%02d default inside its range", i);
-        CHECK((p.type == k_unit_param_type_bitmaps) == (i == P_OVERVIEW), "P%02d bitmap only for Overview", i);
+        CHECK((p.type == k_unit_param_type_bitmaps) == is_overview(uint8_t(i)), "P%02d bitmap only for the overview", i);
     }
-    CHECK(unit_get_param_bmp_value(P_OVERVIEW, 0) != nullptr, "Overview draws");
+    for (int k = 0; k < kOverviewKnobs; ++k)
+        CHECK(unit_get_param_bmp_value(uint8_t(P_OVERVIEW + k), 0) != nullptr, "overview %d draws", k + 1);
 
     // ── Empty lanes: a gate plays nothing ───────────────────────────────────
     unit_gate_on(64);
@@ -174,6 +175,18 @@ int main() {
     check_scaled(render(60), reference(0, 0, 64, 60), 0.5f, "Kick2 at 50%");
     turn(P_LEVEL, +30);
 
+    // An instrument that starts silent (the Rainstk's first 9 ms) still
+    // starts: a family struck renders while it holds a live voice.
+    turn(P_FAMILY, +8);   // Kick -> World: step 1 on its first, Cuica
+    turn(P_STEP1, +8);    // its ninth, Rainstk
+    CHECK(text(P_STEP1) == "Rainstk", "step 1: %s", text(P_STEP1).c_str());
+    unit_reset();
+    unit_gate_on(64);
+    check_scaled(render(60), reference(8, 8, 64, 60), 0.8f, "Rainstk at 80%");
+    turn(P_STEP1, -8);
+    turn(P_FAMILY, -8);   // back to Kick: Kick2
+    CHECK(text(P_STEP1) == "Kick2", "step 1: %s", text(P_STEP1).c_str());
+
     // Reset (sent on stop) silences at once.
     unit_reset();
     unit_gate_on(64);
@@ -181,19 +194,39 @@ int main() {
     unit_reset();
     CHECK(silent(render(4)), "silent right after a reset");
 
-    // ── Two lanes on one family: both sound (its ring-over pair) ────────────
+    // ── One family per lane (two lanes on one family stopped the audio) ──
     set_abs(P_LANE, 1);
-    turn(P_FAMILY, -3);   // lane B: Snare -> Kick
-    CHECK(text(P_FAMILY) == "Kick", "lane B family: %s", text(P_FAMILY).c_str());
-    turn(P_STEP1, +2);    // lane B step 1: 808Sub
-    CHECK(text(P_STEP1) == "808Sub", "lane B step 1: %s", text(P_STEP1).c_str());
+    turn(P_FAMILY, -3);   // lane B: Snare -> Kick, lane A's
+    CHECK(text(P_FAMILY) == "!!!", "lane B on Kick: %s", text(P_FAMILY).c_str());
+    turn(P_STEP1, +2);    // lane B step 1: still a Snare instrument (MrchSnr)
+    CHECK(text(P_STEP1) == "MrchSnr", "lane B kept Snare: %s", text(P_STEP1).c_str());
     unit_reset();
     unit_gate_on(64);
     render(4);
-    CHECK(braquetti_test_live_voices() == 2, "Kick2 and 808Sub both sound: %d voices",
+    CHECK(braquetti_test_live_voices() == 2, "Kick2 and MrchSnr sound, on two families: %d voices",
           braquetti_test_live_voices());
     turn(P_STEP1, -2);    // lane B step 1 off again
     turn(P_FAMILY, +3);   // back to Snare
+    CHECK(text(P_FAMILY) == "Snare", "lane B: %s", text(P_FAMILY).c_str());
+
+    // ── Three lanes on one step: none fades the others ──────────────────────
+    // Kick2, AcSnre and HHat-O: each voice counts at its own instrument's
+    // cost (limits.h), and together they fit the budget.
+    set_abs(P_LANE, 1);
+    turn(P_STEP1, +1);    // lane B: AcSnre
+    set_abs(P_LANE, 2);
+    turn(P_FAMILY, -1);   // lane C: Noise -> Cymbal
+    turn(P_STEP1, +3);    // HHat-O
+    CHECK(text(P_STEP1) == "HHat-O", "lane C step 1: %s", text(P_STEP1).c_str());
+    unit_reset();
+    unit_gate_on(64);
+    render(3);            // one strike per block
+    CHECK(braquetti_test_live_voices() == 3, "Kick2, AcSnre and HHat-O all sound: %d voices",
+          braquetti_test_live_voices());
+    turn(P_STEP1, -3);
+    turn(P_FAMILY, +1);   // back to Noise
+    set_abs(P_LANE, 1);
+    turn(P_STEP1, -1);
 
     // ── A busy pattern: every step on every lane ────────────────────────────
     // Lane A Kick2, lane B AcSnre, lane C HHat-C, on all 16 steps.
@@ -205,24 +238,24 @@ int main() {
     }
     set_abs(P_LANE, 2);
     CHECK(text(P_STEP16) == "HHat-C", "lane C step 16: %s", text(P_STEP16).c_str());
-    // Plays 48 gates; the load (each family's voices at its cost) must stay
-    // within the budget right after every strike.
+    // Plays 48 gates; the load (each voice at its instrument's cost) must stay
+    // within the budget after every strike (one per block).
     auto busy = [](const char* what, int min_voices) {
         unit_reset();
         int over = 0, most_load = 0, most = 0;
         bool bounded = true, heard = false;
         for (int g = 0; g < 48; ++g) {
             unit_gate_on(g % 16 == 0 ? 127 : 64);
-            std::vector<float> out = render(1);       // the strikes happen in this block
-            const int load = braquetti_test_load(), live = braquetti_test_live_voices();
-            if (load > braquetti_test_budget()) ++over;
-            if (load > most_load) most_load = load;
-            if (live > most) most = live;
-            const std::vector<float> rest = render(2);
-            out.insert(out.end(), rest.begin(), rest.end());
-            for (float x : out) {
-                if (!(std::fabs(x) <= 1.0f)) bounded = false;
-                if (x != 0.0f) heard = true;
+            for (int b = 0; b < 4; ++b) {
+                const std::vector<float> out = render(1);
+                const int load = braquetti_test_load(), live = braquetti_test_live_voices();
+                if (load > braquetti_test_budget()) ++over;
+                if (load > most_load) most_load = load;
+                if (live > most) most = live;
+                for (float x : out) {
+                    if (!(std::fabs(x) <= 1.0f)) bounded = false;
+                    if (x != 0.0f) heard = true;
+                }
             }
             unit_gate_off();
         }
@@ -233,16 +266,37 @@ int main() {
     };
     busy("Kick2, AcSnre, HHat-C", 3);
 
-    // The heaviest families on every step: Timpani, Cymbal and a Lippa drum.
-    // The family changes keep the steps on.
+    // ── The heaviest: the Timpani, under the step limits (limits.h) ─────────
+    // Lane A to Kernel: its Kick2 steps become Timpani, every one refused,
+    // as the other lanes play every step.
     set_abs(P_LANE, 0);
-    turn(P_FAMILY, +2);   // Kick -> Kernel: Timpni
+    turn(P_FAMILY, +2);   // Kick -> Kernel
+    CHECK(text(P_FAMILY) == "Kernel" && text(P_STEP1) == "!!!" && text(P_STEP16) == "!!!",
+          "lane A: %s, steps %s %s", text(P_FAMILY).c_str(), text(P_STEP1).c_str(), text(P_STEP16).c_str());
     set_abs(P_LANE, 1);
-    turn(P_FAMILY, +3);   // Snare -> Cymbal: Cymbal
+    turn(P_FAMILY, +3);   // Snare -> Cymbal: Cymbal on every step
     set_abs(P_LANE, 2);
     turn(P_FAMILY, +2);   // Noise -> Lippa: its third, Bendir
     CHECK(text(P_FAMILY) == "Lippa" && text(P_STEP1) == "Bendir", "lane C: %s %s", text(P_FAMILY).c_str(),
           text(P_STEP1).c_str());
+    busy("Cymbal, Bendir, the Timpani refused", 2);
+
+    // Lanes B and C rest on steps 1-6; lane A's steps there are chosen again
+    // (a click away and back): four Timpani in a row, the fifth refused.
+    for (int s = 0; s < 6; ++s) turn(uint8_t(P_STEP1 + s), -3);   // lane C: Bendir -> off
+    set_abs(P_LANE, 1);
+    for (int s = 0; s < 6; ++s) turn(uint8_t(P_STEP1 + s), -1);   // lane B: Cymbal -> off
+    set_abs(P_LANE, 0);
+    for (int s = 0; s < 6; ++s) {
+        turn(uint8_t(P_STEP1 + s), -1);
+        turn(uint8_t(P_STEP1 + s), +1);
+    }
+    std::string lane_a;
+    for (int s = 0; s < 7; ++s) lane_a += text(uint8_t(P_STEP1 + s)) + " ";
+    CHECK(lane_a == "Timpni Timpni Timpni Timpni !!! Timpni !!! ", "lane A steps 1-7: %s", lane_a.c_str());
+    const uint8_t* bmp = unit_get_param_bmp_value(uint8_t(P_OVERVIEW + 1), 0);   // steps 5-8
+    CHECK(bmp && (bmp[0] & 1) && !(bmp[2] & 2) && (bmp[0] & 0x10) && (bmp[2] & 0x20),
+          "overview: step 5 refused (an outline), step 6 on (filled)");
     busy("Timpni, Cymbal, Bendir", 1);
 
     // ── Gates, knobs and audio on three threads ─────────────────────────────

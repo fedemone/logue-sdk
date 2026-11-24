@@ -39,8 +39,10 @@ const __unit_header unit_header_t unit_header = {
         {0, 4095, 0, 2048, k_unit_param_type_strings, 0, 0, 0, {"Level"}},
         BRQ_BLANK,
 
-        // Page 6: the three lanes at a glance
-        {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"Overview"}},
-        BRQ_BLANK, BRQ_BLANK, BRQ_BLANK
+        // Page 6: the three lanes at a glance, four steps per knob
+        {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"1-4"}},
+        {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"5-8"}},
+        {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"9-12"}},
+        {0, 1, 0, 0, k_unit_param_type_bitmaps, 0, 0, 0, {"13-16"}}
     }
 };

@@ -1,12 +1,14 @@
 // Braquetti: the catalog read from Brachetti's family table, with Brachetti's
 // engines compiled in (as the unit will have them).  Checks the families and
-// instruments the lanes offer, that every name fits the panel, and that the
-// core drives the largest family (Tom, 32 instruments) to its end.
+// instruments the lanes offer, that every name fits the panel, that the
+// core drives the largest family (Tom, 32 instruments) to its end, and that
+// limits.h has a cost for every instrument (and what README.md says of them).
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 #include "../catalog.h"
+#include "../limits.h"
 #include "../seq_core.h"
 
 using namespace brq;
@@ -78,6 +80,47 @@ int main() {
     const int n = s_seq.gate_on(127, hits);
     CHECK(n == 2 && hits[0].lane == 1 && hits[0].family == 11 && hits[0].program == 6 &&
           hits[1].lane == 2 && hits[1].family == 7 && hits[1].program == 2, "step 1 strikes Gopichd and HHat-C");
+
+    // limits.h: a cost for every instrument, measured (test/instrument_costs.sh).
+    CHECK(kCostFamilies == Cat::kFamilies && kCostPrograms == Cat::kMaxPrograms, "the cost table's size");
+    int missing = 0, extra = 0, heavies = 0;
+    for (int f = 0; f < Cat::kFamilies && f < kCostFamilies; ++f)
+        for (int p = 0; p < kCostPrograms; ++p) {
+            if (p < Cat::programs(f) && kCost[f][p] == 0) ++missing;
+            if (p >= Cat::programs(f) && kCost[f][p] != 0) ++extra;
+            if (p < Cat::programs(f) && heavy(f, p + 1)) {
+                ++heavies;
+                CHECK(std::strcmp(Cat::program_name(f, p), "Timpni") == 0, "heavy: %s", Cat::program_name(f, p));
+            }
+        }
+    CHECK(missing == 0 && extra == 0, "every instrument measured, nothing else (%d missing, %d extra)", missing, extra);
+    CHECK(heavies == 1, "one heavy instrument, the Timpani: %d", heavies);
+    // README.md, "When the panel shows !!!": any three instruments of three
+    // families fit one step, but for the Timpani, the Gong, Riq and Pandeir.
+    int worst = 0;
+    for (int a = 0; a < Cat::kFamilies; ++a)
+        for (int b = a + 1; b < Cat::kFamilies; ++b)
+            for (int c = b + 1; c < Cat::kFamilies; ++c) {
+                int top[3] = {0, 0, 0};
+                const int fam[3] = {a, b, c};
+                for (int k = 0; k < 3; ++k)
+                    for (int p = 0; p < Cat::programs(fam[k]); ++p) {
+                        const char* n = Cat::program_name(fam[k], p);
+                        if (!std::strcmp(n, "Timpni") || !std::strcmp(n, "Gong") || !std::strcmp(n, "Riq") ||
+                            !std::strcmp(n, "Pandeir")) continue;
+                        if (cost(fam[k], p + 1) > top[k]) top[k] = cost(fam[k], p + 1);
+                    }
+                if (top[0] + top[1] + top[2] > worst) worst = top[0] + top[1] + top[2];
+            }
+    CHECK(worst <= kCpuBudget, "the heaviest three others cost %d, within %d", worst, kCpuBudget);
+    // Its examples (Kick2 0/1, AcSnre 3/1, Gong 6/2, Clap 7/1, HHat-C 7/3, Riq 8/6, Pandeir 8/7).
+    auto fits = [](int a, int b, int c) { return a + b + c <= kCpuBudget; };
+    CHECK(fits(cost(6, 2), cost(0, 1), cost(7, 3)) && !fits(cost(6, 2), cost(0, 1), cost(7, 1)),
+          "the Gong with a kick and a closed hat, not a kick and a clap");
+    for (int code = 6; code <= 7; ++code)
+        CHECK(fits(cost(8, code), cost(0, 1), cost(7, 1)) && !fits(cost(8, code), cost(0, 1), cost(3, 1)),
+              "%s with a kick and a clap, not a kick and a snare", Cat::program_name(8, code - 1));
+    CHECK(!fits(cost(6, 2), cost(8, 6), 0) && !fits(cost(6, 2), cost(8, 7), 0), "Gong and Riq or Pandeir: never");
 
     if (s_fail) { std::printf("%d check(s) FAILED\n", s_fail); return 1; }
     std::printf("catalog: all checks passed (%d families, %d instruments)\n", Cat::kFamilies, total);
