@@ -209,28 +209,47 @@ and how much is what the next test should tell.
 ## The next hardware test
 
 The goal is to learn where the drumlogue's limit is, so the restrictions
-can be set from measurements instead of guesses:
+can be set from measurements instead of guesses.  The second test ran with
+the drumlogue's own sequencer and parts playing, and those take time from
+the same processor, so this test separates the two.
 
-1. Before anything else, write down what else runs: other parts playing,
-   the master effects, any user effect unit loaded.
-2. Load the second test's pattern 2 (Bar, Cordiera, Snare: it stopped
-   fastest) at Limit 100 %.  Read CPU and Late every few seconds (turn a
-   page 6 knob).  If the audio stops, read all four knobs straight away
-   and note them.
-3. If it stopped: restart, enter it again, set Limit to 80 %, then 60 %,
-   and repeat.  Note the CPU, Late and LaneCPU of each lane (change Lane
-   on page 5 between reads) at each Limit.
-4. The same with pattern 1 (Kernel, Cymbal, Pizzico) and with the first
-   test's pattern (Kernel, Noise, Lippa), which ran.
+**Setup**: this build; 120 BPM; the Multi part with a trig on all 16 steps
+and an accent on step 1; Limit 100 %.  Pick one pattern for the
+drumlogue's other parts and keep it for every run.
+
+**Each run**: play it for two minutes, or until the audio stops.  Turn a
+page 6 knob to read CPU and Late at the start and every 20 seconds or so.
+For LaneCPU, choose the lane on page 5 first.  If the audio stops, read all
+four knobs straight away, before anything else.  Run it first with the
+other parts **muted**, then **playing**.
+
+The runs go from light to heavy, so a crash (which needs a restart and the
+pattern entered again) comes as late as possible:
+
+| Run | Braquetti plays | What it tells |
+|---|---|---|
+| 0 | nothing (empty lanes) | what Braquetti costs idle |
+| 1 | lane C Snare: AcSnre on every step | one light lane |
+| 2 | lane B Cordiera: Tabor on every step | a delay-line family, one instrument |
+| 3 | lane B Cordiera: Tabor, Daf, TomBuzz, Marranz, MbiraBz, then again, on every step | the same, changing instrument at every step (what the failing patterns had) |
+| 4 | the second test's pattern 2 (Bar, Cordiera, Snare) | the pattern that failed fastest |
+| 5 | if 4 stopped: pattern 2 at Limit 70 %, then 50 % | how much less is enough |
+| 6 | the second test's pattern 1 (Kernel, Cymbal, Pizzico) | the Timpani, and its clicks |
+
+Per run, note: muted or playing; CPU (`average/peak`); Late (`L`, `N`);
+LaneCPU of each lane that plays; clicks; and when the audio stopped, if it
+did.
 
 What it will tell:
-- **CPU near or over 100 %, Late climbing**: the CPU, and at which
-  per cent; the budget and costs get calibrated to it.
-- **CPU well under 100 % and Late at 0 when it stops**: not the CPU.
-  Then `N` above 0 points at an engine, and `stalled` at the drumlogue
-  stopping Braquetti.
-- **LaneCPU** per family shows which families cost more on the drumlogue
-  than the model says.
+- **CPU near or over 100 %, `L` climbing before the stop**: the CPU, and at
+  which per cent; the budget and the costs get calibrated to it.
+- **Runs 2 and 3 far apart**: changing instrument on a delay-line family
+  costs far more on the drumlogue than the model says.
+- **Muted and playing far apart**: the drumlogue's own parts leave
+  Braquetti less time than assumed.
+- **CPU well under 100 % and `L` at 0 when it stops**: not the CPU.  Then
+  `N` above 0 points at an engine, and `stalled` at the drumlogue no longer
+  calling Braquetti.
 
 ## CPU (the model)
 
